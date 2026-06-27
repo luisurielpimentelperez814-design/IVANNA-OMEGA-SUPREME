@@ -9,6 +9,9 @@
  *    (antes el track no solicitaba el hardware path dedicado → latencia innecesaria
  *     y mayor probabilidad de underruns cuando la CPU fluctúa)
  *  - Hilo de audio elevado a Process.THREAD_PRIORITY_AUDIO (máximo Android sin root)
+import com.ivanna.omega.audio.OmegaParameters
+import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.audio.OmegaVibratoryProcessor
  *  - Tamaño de buffer explícito: 4× el mínimo garantiza estabilidad sin inflar latencia
  *  - AudioRecord: UNPROCESSED source mantenido (sin procesamiento del sistema Android)
  */

@@ -1,4 +1,4 @@
-package com.ivannafusion
+package com.ivanna.omega.audio
 
 import android.content.Context
 import android.media.AudioFormat
@@ -7,6 +7,8 @@ import android.media.MediaRecorder
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.math.*
+import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.ai.YamnetClassifier
 
 /**
  * AudioEngine — Motor de audio DSP.

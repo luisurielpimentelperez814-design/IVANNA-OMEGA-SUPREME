@@ -1,7 +1,9 @@
-package com.ivannafusion
+package com.ivanna.omega.audio
 
 import android.media.AudioFormat
 import android.media.AudioRecord
+import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.dsp.DSPState
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import kotlinx.coroutines.*

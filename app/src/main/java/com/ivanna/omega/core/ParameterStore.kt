@@ -1,4 +1,4 @@
-package com.ivannafusion.persistence
+package com.ivanna.omega.core
 
 import android.content.Context
 import androidx.datastore.preferences.core.*
