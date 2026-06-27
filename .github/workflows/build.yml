@@ -9,6 +9,13 @@ concurrency:
   group: omega-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ANDROID_COMPILE_SDK: "35"
+  ANDROID_BUILD_TOOLS: "35.0.0"
+  ANDROID_NDK_VERSION: "25.1.8937393"
+  ANDROID_CMAKE_VERSION: "3.22.1"
+  CMDLINE_TOOLS_VERSION: "11076708"   # commandlinetools-linux-11076708_latest.zip (estable)
+
 jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,28 +34,54 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK components
+      - name: Install Android SDK (manual, sin acción rota)
         run: |
-          SDKMGR=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
-          yes | $SDKMGR \
+          set -euo pipefail
+          export ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          cd "$ANDROID_SDK_ROOT/cmdline-tools"
+
+          echo "▶ Descargando commandlinetools..."
+          curl -fsSL -o tools.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
+          unzip -q tools.zip
+          rm tools.zip
+          # Estructura esperada por sdkmanager: cmdline-tools/latest/...
+          mv cmdline-tools latest
+
+          SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+
+          echo "▶ Aceptando licencias..."
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+
+          echo "▶ Instalando paquetes SDK..."
+          "$SDKMGR" \
             "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;25.1.8937393" \
-            "cmake;3.22.1" 2>/dev/null || true
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            "cmake;${ANDROID_CMAKE_VERSION}"
+
+          # Exporta para los siguientes pasos
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"    >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
 
       - name: Create debug keystore
         run: |
           mkdir -p ~/.android
-          keytool -genkeypair -noprompt \
-            -keystore ~/.android/debug.keystore \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -noprompt \
+              -keystore ~/.android/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build Debug APK
         run: |
@@ -63,7 +96,11 @@ jobs:
 
       - name: Verify libomega_effect.so NOT in APK
         run: |
+          set -e
           APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK produced"; exit 1
+          fi
           if unzip -l "$APK" | grep -q "libomega_effect.so"; then
             echo "ERROR: libomega_effect.so leaked into APK"
             exit 1
@@ -80,14 +117,14 @@ jobs:
 
       - name: Extract libomega_effect.so for Magisk
         run: |
-          SO=$(find app/build/intermediates/cxx -name "libomega_effect.so" \
+          SO=$(find app/build/intermediates -name "libomega_effect.so" \
                -path "*/arm64-v8a/*" 2>/dev/null | head -1)
           if [ -n "$SO" ]; then
             cp "$SO" libomega_effect_arm64.so
             echo "Extracted: $SO"
           else
             echo "WARN: libomega_effect.so not found — creating placeholder"
-            touch libomega_effect_arm64.so
+            : > libomega_effect_arm64.so
           fi
 
       - name: Upload libomega_effect.so
