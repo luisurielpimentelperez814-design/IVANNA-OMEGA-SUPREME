@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- IVANNA FUSION DSP — Registro de efecto de audio
+     Este archivo se fusiona/parchea por customize.sh con el audio_effects.xml del dispositivo.
+     Compatible: Android 8.0+ (AOSP audio effects XML v2.0)
+-->
+<audio_effects_conf version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+
+    <libraries>
+        <!-- libivanna_fusion.so instalada en /system/lib64/soundfx/ por el módulo Magisk -->
+        <library name="ivanna_fusion" path="libivanna_fusion.so"/>
+    </libraries>
+
+    <effects>
+        <!--
+            UUID: 7b3be4ec-c23c-4e6e-8c6d-49e5f4d54ea3  (IVANNA FUSION DSP)
+            type: ec7178a0-847d-11e0-a3cb-0002a5d5c51b  (EFFECT_TYPE_NULL / propietario)
+        -->
+        <effect name="ivanna_fusion_dsp"
+                library="ivanna_fusion"
+                uuid="7b3be4ec-c23c-4e6e-8c6d-49e5f4d54ea3"/>
+    </effects>
+
+    <!--
+        Aplicar como efecto INSERT global en streams de música.
+        EFFECT_FLAG_INSERT_LAST: se aplica al final de la cadena (post-mezcla).
+    -->
+    <postprocess>
+        <stream type="music">
+            <apply effect="ivanna_fusion_dsp"/>
+        </stream>
+        <!-- Opcional: activar también en ring/notification -->
+        <!-- <stream type="ring">
+            <apply effect="ivanna_fusion_dsp"/>
+        </stream> -->
+    </postprocess>
+
+</audio_effects_conf>

@@ -1,0 +1,174 @@
+name: IVANNA-OMEGA-SUPREME CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+concurrency:
+  group: omega-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 — APK (NDK C++ + Kotlin/Compose)
+# ─────────────────────────────────────────────────────────────────────────────
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK components
+        run: |
+          SDKMGR=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+          yes | $SDKMGR \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;25.1.8937393" \
+            "cmake;3.22.1" 2>/dev/null || true
+
+      - name: Create debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -noprompt \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: List generated APKs
+        run: find app/build/outputs/apk -name "*.apk" | sort
+
+      - name: Verify libomega_effect.so NOT in APK
+        run: |
+          APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if unzip -l "$APK" | grep -q "libomega_effect.so"; then
+            echo "ERROR: libomega_effect.so leaked into APK"
+            exit 1
+          fi
+          echo "OK: libomega_effect.so correctly excluded"
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Extract libomega_effect.so for Magisk
+        run: |
+          SO=$(find app/build/intermediates/cxx -name "libomega_effect.so" \
+               -path "*/arm64-v8a/*" 2>/dev/null | head -1)
+          if [ -n "$SO" ]; then
+            cp "$SO" libomega_effect_arm64.so
+            echo "Extracted: $SO"
+          else
+            echo "WARN: libomega_effect.so not found — creating placeholder"
+            touch libomega_effect_arm64.so
+          fi
+
+      - name: Upload libomega_effect.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-effect-so
+          path: libomega_effect_arm64.so
+          if-no-files-found: warn
+          retention-days: 14
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2 — Magisk Module
+# ─────────────────────────────────────────────────────────────────────────────
+  build-magisk:
+    name: Build Magisk Module
+    runs-on: ubuntu-latest
+    needs: [build-apk]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download libomega_effect.so
+        uses: actions/download-artifact@v4
+        with:
+          name: omega-effect-so
+          path: effect-so/
+
+      - name: Assemble Magisk module
+        run: |
+          DST="magisk_module/system/vendor/lib64/soundfx"
+          mkdir -p "$DST"
+          cp effect-so/libomega_effect_arm64.so "$DST/libomega_effect.so"
+          ls -lh "$DST/"
+
+      - name: Package Magisk zip
+        run: |
+          cd magisk_module
+          zip -r ../ivanna-omega-magisk.zip . \
+            --exclude "*.git*" --exclude "*.DS_Store"
+          echo "=== Module contents ==="
+          unzip -l ../ivanna-omega-magisk.zip
+          du -sh ../ivanna-omega-magisk.zip
+
+      - name: Upload Magisk module
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: ivanna-omega-magisk.zip
+          if-no-files-found: error
+          retention-days: 14
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 3 — Release Bundle
+# ─────────────────────────────────────────────────────────────────────────────
+  bundle-release:
+    name: Bundle Release
+    runs-on: ubuntu-latest
+    needs: [build-apk, build-magisk]
+
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: release/apk
+
+      - name: Download Magisk module
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: release/magisk
+
+      - name: Release inventory
+        run: |
+          echo "=== APKs ===" && find release/apk -name "*.apk" -exec ls -lh {} \;
+          echo "=== Magisk ===" && ls -lh release/magisk/
+
+      - name: Upload complete release
+        uses: actions/upload-artifact@v4
+        with:
+          name: IVANNA-OMEGA-SUPREME-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30

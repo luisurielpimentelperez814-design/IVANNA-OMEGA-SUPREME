@@ -1,0 +1,16 @@
+# IVANNA FUSION DSP — SELinux Policy
+# Permite que audioserver cargue el .so desde /system/lib64/soundfx/
+
+# audioserver puede leer y ejecutar librerías de soundfx
+allow audioserver system_lib_file:file { read open execute execute_no_trans getattr };
+allow audioserver soundfx_lib:file { read open execute execute_no_trans getattr map };
+
+# Fallback: si el label es genérico
+allow audioserver system_file:file { read open execute execute_no_trans getattr map };
+
+# mediaserver también puede necesitar acceso
+allow mediaserver system_lib_file:file { read open execute execute_no_trans getattr };
+allow mediaserver system_file:file { read open execute execute_no_trans getattr map };
+
+# hal_audio_default también carga efectos en Qualcomm
+allow hal_audio_default system_lib_file:file { read open execute execute_no_trans getattr map };
