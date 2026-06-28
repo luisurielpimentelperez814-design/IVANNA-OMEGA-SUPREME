@@ -57,7 +57,10 @@ static constexpr uint32_t HVX_VECTOR_WIDTH = 128; // bytes (32 floats de 32-bit)
 
 // Coeficientes del filtro (pre-calculados, ventana Blackman-Harris)
 // Generados offline con precisión de 64 bits, truncados a 32-bit float
-static alignas(64) float g_fir_coefficients[FIR_TAPS];
+// FIX: alignas on static array - use struct wrapper for NDK compatibility
+struct alignas(64) FIRCoefficients { float data[FIR_TAPS]; };
+static FIRCoefficients g_fir_coefficients_storage;
+static float* g_fir_coefficients = g_fir_coefficients_storage.data;
 static std::atomic<bool> g_coefficients_initialized{false};
 static std::atomic_flag g_coefficients_lock = ATOMIC_FLAG_INIT;
 

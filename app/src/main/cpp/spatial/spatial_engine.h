@@ -26,6 +26,9 @@ typedef struct {
     int32_t posX;
     int32_t posY;
     int32_t posZ;
+    // Energías para el motor Ω (FIX: added missing fields)
+    float n_energy;
+    float omega_energy;
 } SpatialState;
 
 // Funciones principales
