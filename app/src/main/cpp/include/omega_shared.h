@@ -44,6 +44,26 @@ struct OmegaSharedState {
     std::atomic<float> current_temperature;
     std::atomic<float> current_latency_ms;
 
+    // ── PF Engine parameters ──────────────────────────────────────────────────
+    // Mirroran DSPParams de dsp_types.h; escritos desde la APK vía JNI,
+    // leídos en el hot-path del daemon para el procesamiento real de audio.
+    std::atomic<float>    pf_drive;       // 0..1 → pre-gain antes del tanh
+    std::atomic<float>    pf_wet;         // 0..1 → cuánto efecto se aplica
+    std::atomic<float>    pf_mix;         // 0..1 → mezcla salida
+    std::atomic<float>    pf_alpha;       // reservado (parámetro auxiliar 1)
+    std::atomic<float>    pf_beta;        // reservado (parámetro auxiliar 2)
+    std::atomic<float>    pf_gamma;       // reservado (parámetro auxiliar 3)
+    std::atomic<float>    pf_freq;        // Hz — frecuencia central del mid EQ
+    std::atomic<float>    pf_resonance;   // Q — factor de resonancia del mid EQ
+    std::atomic<float>    pf_low;         // dB — ganancia low shelf (~200 Hz)
+    std::atomic<float>    pf_mid;         // dB — ganancia mid peak (pf_freq)
+    std::atomic<float>    pf_high;        // dB — ganancia high shelf (~8 kHz)
+    std::atomic<float>    pf_presence;    // dB — ganancia presence peak (~6 kHz)
+    std::atomic<float>    pf_master;      // dB — ganancia de salida global
+    // Bump este contador cada vez que cambien los params de EQ para que el
+    // hot-path recompute los coeficientes Biquad sin mutex.
+    std::atomic<uint32_t> pf_param_version;
+
     // ── AI adaptativa ─────────────────────────────────────────────────────────
     // ai_enabled:   activa el AGC (Auto Gain Control) en el hot path del efecto.
     //               El efecto mide el RMS del input y aplica ganancia inversa
@@ -73,6 +93,12 @@ struct OmegaSharedState {
         : intensity(0.8f), is_processing(false), bypass_enabled(false),
           phase_coherence(1.0f), collapse_strength(0.5f), vocoder_mix(0.8f),
           current_temperature(35.0f), current_latency_ms(0.0f),
+          pf_drive(0.65f), pf_wet(0.5f), pf_mix(0.7f),
+          pf_alpha(0.5f), pf_beta(0.5f), pf_gamma(0.5f),
+          pf_freq(1000.f), pf_resonance(0.707f),
+          pf_low(0.0f), pf_mid(0.0f), pf_high(0.0f),
+          pf_presence(0.0f), pf_master(0.0f),
+          pf_param_version(1),
           ai_enabled(false), ai_auto_adapt(false), ai_sensitivity(0.5f),
           ai_rms_level(0.0f), ai_gain_db(0.0f),
           write_pos(0), read_pos(0) {}
