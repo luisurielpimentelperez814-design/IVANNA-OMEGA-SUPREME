@@ -16,6 +16,7 @@
  */
 
 #include "volterra_h2_symmetric.hpp"
+#include <malloc.h>
 #include <cstring>
 #include <cmath>
 
@@ -32,12 +33,12 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     const size_t align = 64;
 
     // Kernel lineal
-    m_h1 = static_cast<float*>(aligned_alloc(align, kernel_length * sizeof(float)));
+    m_h1 = static_cast<float*>(memalign(align, kernel_length * sizeof(float)));
     memset(m_h1, 0, kernel_length * sizeof(float));
 
     // Kernel cuadrático simétrico (triangular superior)
     const size_t h2_size = (kernel_length * (kernel_length + 1)) / 2;
-    m_h2 = static_cast<float*>(aligned_alloc(align, h2_size * sizeof(float)));
+    m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
     memset(m_h2, 0, h2_size * sizeof(float));
 
     // Delay lines por canal
@@ -45,7 +46,7 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     m_delay_indices = static_cast<uint32_t*>(malloc(channels * sizeof(uint32_t)));
 
     for (uint32_t ch = 0; ch < channels; ++ch) {
-        m_delay_lines[ch] = static_cast<float*>(aligned_alloc(align, kernel_length * sizeof(float)));
+        m_delay_lines[ch] = static_cast<float*>(memalign(align, kernel_length * sizeof(float)));
         memset(m_delay_lines[ch], 0, kernel_length * sizeof(float));
         m_delay_indices[ch] = 0;
     }
