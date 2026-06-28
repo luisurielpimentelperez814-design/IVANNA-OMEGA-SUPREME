@@ -8,7 +8,7 @@
  * 3. Proper planar vs interleaved handling
  */
 
-#include "dsp/ivanna_fastrpc_client.hpp"
+#include "../hexagon/ivanna_fastrpc_client.hpp"
 #include "include/volterra_h2_symmetric.hpp"
 #include <cstdlib>
 #include <cstring>

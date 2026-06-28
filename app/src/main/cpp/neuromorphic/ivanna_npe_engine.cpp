@@ -57,7 +57,7 @@ static constexpr uint32_t HVX_VECTOR_WIDTH = 128; // bytes (32 floats de 32-bit)
 
 // Coeficientes del filtro (pre-calculados, ventana Blackman-Harris)
 // Generados offline con precisión de 64 bits, truncados a 32-bit float
-static float g_fir_coefficients __attribute__((aligned(64)))[FIR_TAPS];
+static alignas(64) float g_fir_coefficients[FIR_TAPS];
 static std::atomic<bool> g_coefficients_initialized{false};
 static std::atomic_flag g_coefficients_lock = ATOMIC_FLAG_INIT;
 
