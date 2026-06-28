@@ -16,7 +16,7 @@
  * ============================================================================
  */
 
-#include "dsp/ivanna_fastrpc_client.hpp"
+#include "hexagon/ivanna_fastrpc_client.hpp"
 #include "include/volterra_h2_symmetric.hpp"
 #include <cstdint>
 #include <cstdlib>

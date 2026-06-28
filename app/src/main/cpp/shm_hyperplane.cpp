@@ -12,7 +12,7 @@
 
 __attribute__((hot))
 extern "C" JNIEXPORT jint JNICALL
-Java_com_ivannafusion_ShmManager_nativeMlock(JNIEnv *, jobject, jlong addr, jlong len) {
+Java_com_ivanna_omega_ShmManager_nativeMlock(JNIEnv *, jobject, jlong addr, jlong len) {
     if (__builtin_expect(addr == 0 || len <= 0, 0)) {
         LOGE("mlock: parámetros inválidos addr=%lld len=%lld", (long long)addr, (long long)len);
         return -1;
