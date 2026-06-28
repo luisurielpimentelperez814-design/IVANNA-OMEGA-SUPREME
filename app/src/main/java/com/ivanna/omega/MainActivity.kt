@@ -35,26 +35,25 @@ import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.dsp.DSPViewModel
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import kotlin.math.log10
 
-// ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
-private val Carbon   = Color(0xFF0A0A0A)
+private val Carbon = Color(0xFF0A0A0A)
 private val Surface1 = Color(0xFF111111)
 private val Surface2 = Color(0xFF181818)
-private val Border1  = Color(0xFF222222)
+private val Border1 = Color(0xFF222222)
 private val CyanGlow = Color(0xFF00F5FF)
-private val CyanDim  = Color(0x3300F5FF)
+private val CyanDim = Color(0x3300F5FF)
 private val GoldGlow = Color(0xFFFFD700)
-private val TextPri  = Color(0xFFFFFFFF)
-private val TextSec  = Color(0xFF888888)
-private val TextMid  = Color(0xFFCCCCCC)
+private val TextPri = Color(0xFFFFFFFF)
+private val TextSec = Color(0xFF888888)
+private val TextMid = Color(0xFFCCCCCC)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Real device sample rate (FIX from FUSION-PRO)
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
         DSPBridge.init(sr)
@@ -65,12 +64,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OmegaApp() {
     val nav = rememberNavController()
-    val dsp: DSPState = viewModel()
+    val dspViewModel: DSPViewModel = viewModel()
+    val dsp = dspViewModel.state
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         NavHost(nav, startDestination = "splash") {
-            composable("splash")     { SplashScreen    { nav.navigate("intro") } }
-            composable("intro")      { IntroScreen     { nav.navigate("dashboard") } }
-            composable("dashboard")  { DashboardScreen(dsp) }
+            composable("splash") { SplashScreen { nav.navigate("intro") } }
+            composable("intro") { IntroScreen { nav.navigate("dashboard") } }
+            composable("dashboard") { DashboardScreen(dspViewModel) }
         }
     }
 }
@@ -80,7 +80,7 @@ fun SplashScreen(onAccept: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars),
         contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally,
-               modifier = Modifier.padding(horizontal = 28.dp)) {
+            modifier = Modifier.padding(horizontal = 28.dp)) {
             Text("IVANNA-OMEGA-SUPREME", color = TextPri, fontSize = 22.sp,
                 fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
             Spacer(Modifier.height(4.dp))
@@ -100,10 +100,10 @@ fun SplashScreen(onAccept: () -> Unit) {
                     fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(10.dp))
                 Text("© 2025–2026 Luis Uriel Pimentel Pérez · GORE TNS. " +
-                     "Software propietario y confidencial. " +
-                     "Uso no autorizado prohibido. " +
-                     "Este software modifica el pipeline de audio del sistema. " +
-                     "El usuario asume plena responsabilidad.",
+                    "Software propietario y confidencial. " +
+                    "Uso no autorizado prohibido. " +
+                    "Este software modifica el pipeline de audio del sistema. " +
+                    "El usuario asume plena responsabilidad.",
                     color = TextMid, fontSize = 12.sp, lineHeight = 18.sp,
                     textAlign = TextAlign.Justify)
             }
@@ -162,9 +162,10 @@ fun IntroScreen(onEnter: () -> Unit) {
 }
 
 @Composable
-fun DashboardScreen(dsp: DSPState) {
-    val eqActive  = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
-    val fxActive  = dsp.wet > 0.01f
+fun DashboardScreen(dspViewModel: DSPViewModel) {
+    val dsp = dspViewModel.state
+    val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
+    val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
 
     Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
@@ -175,7 +176,6 @@ fun DashboardScreen(dsp: DSPState) {
                     color = Color(0xFFFF4444), fontSize = 11.sp)
             }
         }
-        // Header
         Row(Modifier.fillMaxWidth().background(Surface2)
             .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -199,41 +199,75 @@ fun DashboardScreen(dsp: DSPState) {
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación")  { dsp.drive = it; dsp.pushToNative() }
-                    FaderControl("WET",   dsp.wet,   "Señal proc.") { dsp.wet   = it; dsp.pushToNative() }
-                    FaderControl("MIX",   dsp.mix,   "Seca/Húmeda") { dsp.mix   = it; dsp.pushToNative() }
+                    FaderControl("DRIVE", dsp.drive, "Saturación") { newVal ->
+                        dspViewModel.updateState { it.copy(drive = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    FaderControl("WET", dsp.wet, "Señal proc.") { newVal ->
+                        dspViewModel.updateState { it.copy(wet = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { newVal ->
+                        dspViewModel.updateState { it.copy(mix = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
                 }
             }
             item {
-                DspSection("DSP ENGINE  α·β·γ") {
-                    FaderControl("ALPHA", dsp.alpha, "Compresor")   { dsp.alpha = it; dsp.pushToNative() }
-                    FaderControl("BETA",  dsp.beta,  "Ratio")       { dsp.beta  = it; dsp.pushToNative() }
-                    FaderControl("GAMMA", dsp.gamma, "Width")       { dsp.gamma = it; dsp.pushToNative() }
+                DspSection("DSP ENGINE α·β·γ") {
+                    FaderControl("ALPHA", dsp.alpha, "Compresor") { newVal ->
+                        dspViewModel.updateState { it.copy(alpha = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    FaderControl("BETA", dsp.beta, "Ratio") { newVal ->
+                        dspViewModel.updateState { it.copy(beta = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    FaderControl("GAMMA", dsp.gamma, "Width") { newVal ->
+                        dspViewModel.updateState { it.copy(gamma = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
                     val freqSl = remember(dsp.freq) {
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
-                    FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        dsp.freq = DSPState.sliderToFreq(it); dsp.pushToNative()
+                    FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") { newVal ->
+                        dspViewModel.updateState { it.copy(freq = DSPState.sliderToFreq(newVal)) }
+                        dspViewModel.state.pushToNative()
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
-                    FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                        dsp.resonance = DSPState.sliderToQ(it); dsp.pushToNative()
+                    FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) { newVal ->
+                        dspViewModel.updateState { it.copy(resonance = DSPState.sliderToQ(newVal)) }
+                        dspViewModel.state.pushToNative()
                     }
                 }
             }
             item {
                 DspSection("PARAMETRIC EQ") {
-                    EqFader("LOW",      dsp.low)      { dsp.low      = it; dsp.pushToNative() }
-                    EqFader("MID",      dsp.mid)      { dsp.mid      = it; dsp.pushToNative() }
-                    EqFader("HIGH",     dsp.high)     { dsp.high     = it; dsp.pushToNative() }
-                    EqFader("PRESENCE", dsp.presence) { dsp.presence = it; dsp.pushToNative() }
-                    EqFader("MASTER",   dsp.master)   { dsp.master   = it; dsp.pushToNative() }
+                    EqFader("LOW", dsp.low) { newVal ->
+                        dspViewModel.updateState { it.copy(low = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    EqFader("MID", dsp.mid) { newVal ->
+                        dspViewModel.updateState { it.copy(mid = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    EqFader("HIGH", dsp.high) { newVal ->
+                        dspViewModel.updateState { it.copy(high = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    EqFader("PRESENCE", dsp.presence) { newVal ->
+                        dspViewModel.updateState { it.copy(presence = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
+                    EqFader("MASTER", dsp.master) { newVal ->
+                        dspViewModel.updateState { it.copy(master = newVal) }
+                        dspViewModel.state.pushToNative()
+                    }
                 }
             }
             item {
-                // Processing mode selector
                 var mode by remember { mutableStateOf(OmegaEngine.getMode()) }
                 Column(Modifier.fillMaxWidth().border(1.dp, Border1, RoundedCornerShape(10.dp))
                     .background(Surface1, RoundedCornerShape(10.dp)).padding(10.dp)) {
@@ -259,7 +293,6 @@ fun DashboardScreen(dsp: DSPState) {
     }
 }
 
-// ── Components ────────────────────────────────────────────────────────────────
 @Composable
 fun StatusDot(active: Boolean, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -320,3 +353,4 @@ fun EqFader(name: String, db: Float, onDbChange: (Float) -> Unit) {
         Text("dB", color = TextSec, fontSize = 7.sp, textAlign = TextAlign.Center)
     }
 }
+
