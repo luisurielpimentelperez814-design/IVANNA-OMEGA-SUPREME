@@ -1,27 +1,17 @@
 /*
- * IVANNA-OMEGA-SUPREME — JNI Bridge Unificado
+ * IVANNA-OMEGA-SUPREME — JNI Bridge Unificado OPTIMIZADO (QUIRÚRGICO)
  * © 2025-2026 Luis Uriel Pimentel Pérez · GORE TNS
  * Todos los derechos reservados.
- *
- * Fusiona:
- *   • Motor DSP de IVANNA-FUSION-PRO (ParametricEQ/Compressor/HarmonicExciter/
- *     StereoWidener/GainStage — con todos los FIX acumulados)
- *   • Evolutionary kernel de IVANNA-FUSION
- *   • Motor espacial Ω-ATLAS de IVANNA-FUSION
- *   • PI-LSTM Milenio de IVANNA-ULTRA
- *   • IvannaDspManager (Hexagon FastRPC) de IVANNA-ULTRA
- *
- * Paquete Android: com.ivanna.omega
- * Lib nativa: libivanna_omega.so
  */
+
 #include <jni.h>
 #include <android/log.h>
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <vector>
+#include <algorithm>
+#include <cstring>
 
-// ── DSP core (FUSION-PRO) ────────────────────────────────────────────────────
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
@@ -29,11 +19,9 @@
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
 
-// ── Neuromorphic (ULTRA) ─────────────────────────────────────────────────────
 #include "../neuromorphic/pi_lstm_milenio.hpp"
 #include "../neuromorphic/lif_neuron_pool.hpp"
 
-// ── Spatial (FUSION) ─────────────────────────────────────────────────────────
 #include "../spatial/spatial_engine.h"
 
 #define TAG  "IVANNA_OMEGA"
@@ -44,7 +32,6 @@ using namespace ivanna;
 
 static constexpr int kMaxFrames = 4096;
 
-// ─── DSP Engine singleton (FUSION-PRO grade, race-free) ──────────────────────
 struct DSPEngine {
     std::mutex              mtx;
     DSPParams               params;
@@ -70,7 +57,6 @@ static DSPEngine& dspEngine() {
     return *g;
 }
 
-// ─── PI-LSTM Milenio singleton (ULTRA) ───────────────────────────────────────
 static PILSTMMilenio& piLstm() {
     static PILSTMMilenio g;
     return g;
@@ -78,16 +64,9 @@ static PILSTMMilenio& piLstm() {
 static std::mutex piMtx;
 static std::atomic<bool> piReady{false};
 
-// ─── Spatial state (FUSION) ──────────────────────────────────────────────────
 static SpatialState g_spatial{};
-
-// ─── Process mode ────────────────────────────────────────────────────────────
-// 0 = DSP only, 1 = DSP + PI-LSTM, 2 = DSP + PI-LSTM + Spatial
 static std::atomic<int> g_mode{0};
 
-// ═════════════════════════════════════════════════════════════════════════════
-// DSP JNI  (com.ivanna.omega.dsp.DSPBridge)
-// ═════════════════════════════════════════════════════════════════════════════
 extern "C" {
 
 JNIEXPORT void JNICALL
@@ -118,62 +97,70 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     e.applyParams();
 }
 
+__attribute__((hot, flatten))
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject,
     jfloatArray buf, jint numFrames
 ) {
     auto& e = dspEngine();
-    if (!e.ready.load(std::memory_order_acquire)) return;
+    if (__builtin_expect(!e.ready.load(std::memory_order_acquire), 0)) return;
 
-    jfloat* data = env->GetFloatArrayElements(buf, nullptr);
-    if (!data) return;
+    float* __restrict__ data = env->GetFloatArrayElements(buf, nullptr);
+    if (__builtin_expect(!data, 0)) return;
 
-    const int n = (numFrames > kMaxFrames) ? kMaxFrames : numFrames;
-    std::vector<float> lBuf(n), rBuf(n);
+    const int n = (numFrames < kMaxFrames) ? numFrames : kMaxFrames;
 
-    for (int i = 0; i < n; ++i) { lBuf[i] = data[i*2]; rBuf[i] = data[i*2+1]; }
+    alignas(64) float lBuf[kMaxFrames];
+    alignas(64) float rBuf[kMaxFrames];
+
+    #pragma clang loop vectorize(enable) interleave(enable)
+    for (int i = 0; i < n; ++i) {
+        lBuf[i] = data[i * 2];
+        rBuf[i] = data[i * 2 + 1];
+    }
 
     {
         std::lock_guard<std::mutex> lk(e.mtx);
-        e.gain.processInput(lBuf.data(), rBuf.data(), n);
-        e.exciter.process(lBuf.data(), rBuf.data(), n);
-        e.comp.process(lBuf.data(), rBuf.data(), n);
-        e.eq.process(lBuf.data(), rBuf.data(), n);
-        e.widener.process(lBuf.data(), rBuf.data(), n);
-        e.gain.processOutput(lBuf.data(), rBuf.data(), n);
+        e.gain.processInput(lBuf, rBuf, n);
+        e.exciter.process(lBuf, rBuf, n);
+        e.comp.process(lBuf, rBuf, n);
+        e.eq.process(lBuf, rBuf, n);
+        e.widener.process(lBuf, rBuf, n);
+        e.gain.processOutput(lBuf, rBuf, n);
     }
 
-    // Optional PI-LSTM post-process
     int mode = g_mode.load(std::memory_order_acquire);
-    if (mode >= 1 && piReady.load(std::memory_order_acquire)) {
+    if (__builtin_expect(mode >= 1 && piReady.load(std::memory_order_acquire), 0)) {
         std::lock_guard<std::mutex> lk(piMtx);
-        // Process in BLOCK-sized chunks
         int done = 0;
         while (done < n) {
-            int chunk = std::min(n - done, (int)BLOCK);
-            float oL[BLOCK], oR[BLOCK];
-            piLstm().process_block(lBuf.data() + done, rBuf.data() + done, oL, oR);
-            for (int i = 0; i < chunk; ++i) {
-                lBuf[done + i] = oL[i];
-                rBuf[done + i] = oR[i];
-            }
+            int chunk = (n - done) < BLOCK ? (n - done) : BLOCK;
+            alignas(64) float oL[BLOCK], oR[BLOCK];
+            piLstm().process_block(lBuf + done, rBuf + done, oL, oR);
+            memcpy(lBuf + done, oL, chunk * sizeof(float));
+            memcpy(rBuf + done, oR, chunk * sizeof(float));
             done += chunk;
         }
     }
 
-    // Optional spatial
-    if (mode >= 2) {
-        std::vector<float> outBuf(n);
-        spatial_process(lBuf.data(), outBuf.data(), n, &g_spatial);
-        // blend spatial back to stereo
+    if (__builtin_expect(mode >= 2, 0)) {
+        alignas(64) float outBuf[kMaxFrames];
+        spatial_process(lBuf, outBuf, n, &g_spatial);
+        const float w0 = 0.7f, w1 = 0.3f;
+        #pragma clang loop vectorize(enable) interleave(enable)
         for (int i = 0; i < n; ++i) {
-            lBuf[i] = 0.7f * lBuf[i] + 0.3f * outBuf[i];
-            rBuf[i] = 0.7f * rBuf[i] + 0.3f * outBuf[i];
+            lBuf[i] = fmaf(w1, outBuf[i], w0 * lBuf[i]);
+            rBuf[i] = fmaf(w1, outBuf[i], w0 * rBuf[i]);
         }
     }
 
-    for (int i = 0; i < n; ++i) { data[i*2] = lBuf[i]; data[i*2+1] = rBuf[i]; }
+    #pragma clang loop vectorize(enable) interleave(enable)
+    for (int i = 0; i < n; ++i) {
+        data[i * 2]     = lBuf[i];
+        data[i * 2 + 1] = rBuf[i];
+    }
+
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
 
@@ -190,10 +177,6 @@ JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
     return env->NewStringUTF("IVANNA-OMEGA-SUPREME v1.0 | GORE TNS");
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
-// PI-LSTM JNI  (com.ivanna.omega.neuromorphic.PiLstmBridge)
-// ═════════════════════════════════════════════════════════════════════════════
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeInit(JNIEnv*, jobject) {
@@ -249,13 +232,8 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetError(JNIEnv*, jobject)
     return piLstm().get_error();
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Mode control  (com.ivanna.omega.core.OmegaEngine)
-// ═════════════════════════════════════════════════════════════════════════════
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_OmegaEngine_nativeSetMode(JNIEnv*, jobject, jint mode) {
-    // 0=DSP, 1=DSP+LSTM, 2=DSP+LSTM+Spatial
     g_mode.store(mode, std::memory_order_release);
     LOGI("Processing mode -> %d", mode);
 }
@@ -265,17 +243,14 @@ Java_com_ivanna_omega_core_OmegaEngine_nativeGetMode(JNIEnv*, jobject) {
     return g_mode.load(std::memory_order_acquire);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Spatial JNI  (com.ivanna.omega.core.IvannaNativeLib  — spatial subset)
-// ═════════════════════════════════════════════════════════════════════════════
-
 JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitSpatialEngine(JNIEnv*, jobject, jint /*sr*/, jint /*buf*/) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitSpatialEngine(JNIEnv*, jobject, jint, jint) {
     memset(&g_spatial, 0, sizeof(g_spatial));
     g_spatial.mu = 500;
     return JNI_TRUE;
 }
 
+__attribute__((hot, flatten))
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
     JNIEnv* env, jobject,
@@ -285,13 +260,20 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
     g_spatial.posX = posX; g_spatial.posY = posY; g_spatial.posZ = posZ;
     g_spatial.mu   = mu;
 
-    jfloat* in  = env->GetFloatArrayElements(input, nullptr);
-    jfloat* oL  = env->GetFloatArrayElements(outL, nullptr);
-    jfloat* oR  = env->GetFloatArrayElements(outR, nullptr);
-    jsize   n   = env->GetArrayLength(input);
+    float* __restrict__ in = env->GetFloatArrayElements(input, nullptr);
+    float* __restrict__ oL = env->GetFloatArrayElements(outL, nullptr);
+    float* __restrict__ oR = env->GetFloatArrayElements(outR, nullptr);
+    jsize n = env->GetArrayLength(input);
+
+    if (__builtin_expect(!in || !oL || !oR || n <= 0, 0)) {
+        if (in) env->ReleaseFloatArrayElements(input, in, JNI_ABORT);
+        if (oL) env->ReleaseFloatArrayElements(outL, oL, 0);
+        if (oR) env->ReleaseFloatArrayElements(outR, oR, 0);
+        return 0;
+    }
 
     spatial_process(in, oL, n, &g_spatial);
-    for (int i = 0; i < n; i++) oR[i] = oL[i]; // simple mono→stereo for now
+    memcpy(oR, oL, n * sizeof(float));
 
     env->ReleaseFloatArrayElements(input, in, JNI_ABORT);
     env->ReleaseFloatArrayElements(outL, oL, 0);
