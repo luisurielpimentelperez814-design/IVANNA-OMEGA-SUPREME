@@ -12,14 +12,29 @@ void ParametricEQ::setParams(const DSPParams& p) {
     last_ = p;
 }
 
-void ParametricEQ::process(float* left, float* right, int frames) {
+// flatten fuerza el inlining de los Biquad::process, eliminando overhead de llamadas
+__attribute__((hot, flatten))
+void ParametricEQ::process(float* __restrict__ left, float* __restrict__ right, int frames) {
+    if (frames <= 0) return;
+
+    #pragma clang loop vectorize(enable) interleave(enable)
     for (int i = 0; i < frames; ++i) {
-        float l = left[i],  r = right[i];
-        l = lowL.process(l);  r = lowR.process(r);
-        l = midL.process(l);  r = midR.process(r);
-        l = highL.process(l); r = highR.process(r);
-        l = presL.process(l); r = presR.process(r);
-        left[i] = l; right[i] = r;
+        float l = left[i];
+        float r = right[i];
+
+        // Cadena de filtros (estado independiente por canal)
+        l = lowL.process(l);
+        l = midL.process(l);
+        l = highL.process(l);
+        l = presL.process(l);
+
+        r = lowR.process(r);
+        r = midR.process(r);
+        r = highR.process(r);
+        r = presR.process(r);
+
+        left[i]  = l;
+        right[i] = r;
     }
 }
 
