@@ -20,6 +20,7 @@
  */
 #include <cmath>
 #include <cstring>
+#include "../include/HarmonicExciter.h"
 #include <algorithm>
 
 namespace ivanna {
@@ -259,7 +260,7 @@ struct HRTFReflectionEngine {
 struct PILSTMMilenioEngine {
     PolyphasicUpsampler up;
     CTLSTMCell lstm;
-    HarmonicExciter exciter;
+    ivanna::HarmonicExciter exciter;
     HRTFReflectionEngine hrtf;
 
     float harmonic_gain = 0.3f;
@@ -305,12 +306,7 @@ struct PILSTMMilenioEngine {
         }
 
         // Harmonic exciter
-        for (int i = 0; i < n * UP_FACTOR; ++i) {
-            float eL, eR;
-            exciter.process(upL[i], upR[i], eL, eR);
-            upL[i] = eL;
-            upR[i] = eR;
-        }
+        exciter.process(upL, upR, n * UP_FACTOR);
 
         // HRTF + reflections
         for (int i = 0; i < n * UP_FACTOR; ++i) {

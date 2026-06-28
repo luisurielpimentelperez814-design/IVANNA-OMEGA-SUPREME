@@ -42,6 +42,8 @@ struct ManifoldState {
 
 static ManifoldState g_manifold;
 
+void neuro_cochlear_manifold_teardown();
+
 bool neuro_cochlear_manifold_init(
     uint32_t block_size,
     uint32_t sample_rate_in,
@@ -69,10 +71,10 @@ bool neuro_cochlear_manifold_init(
     const size_t up_N = block_size * g_manifold.upsample_factor;
     const size_t post_up_sz = up_N * channels * sizeof(float);
 
-    g_manifold.buffer_pre_hrtf = static_cast<float*>(aligned_alloc(align, pre_size));
-    g_manifold.buffer_post_hrtf = static_cast<float*>(aligned_alloc(align, post_hrtf_sz));
-    g_manifold.buffer_post_up = static_cast<float*>(aligned_alloc(align, post_up_sz));
-    g_manifold.buffer_final = static_cast<float*>(aligned_alloc(align, post_up_sz));
+    g_manifold.buffer_pre_hrtf = static_cast<float*>(memalign(align, pre_size));
+    g_manifold.buffer_post_hrtf = static_cast<float*>(memalign(align, post_hrtf_sz));
+    g_manifold.buffer_post_up = static_cast<float*>(memalign(align, post_up_sz));
+    g_manifold.buffer_final = static_cast<float*>(memalign(align, post_up_sz));
 
     if (!g_manifold.buffer_pre_hrtf || !g_manifold.buffer_post_hrtf ||
         !g_manifold.buffer_post_up || !g_manifold.buffer_final) {

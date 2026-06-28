@@ -88,7 +88,8 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
     g_comp.process(lBuf, rBuf, n);
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
-    g_gain.process(lBuf, rBuf, n);
+    g_gain.processInput(lBuf, rBuf, n);
+    g_gain.processOutput(lBuf, rBuf, n);
 
     // PI-LSTM processing
     for (int done = 0; done < n; done += BLOCK) {
@@ -143,8 +144,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_eq.reset();
     g_comp.reset();
     g_exciter.reset();
-    g_widener.reset();
-    g_gain.reset();
+        g_gain.reset();
     g_piLstm.reset();
     LOGI("DSP reset");
 }
