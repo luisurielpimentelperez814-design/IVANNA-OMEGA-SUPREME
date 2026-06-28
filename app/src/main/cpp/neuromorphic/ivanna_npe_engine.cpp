@@ -3,7 +3,7 @@
  * IVANNA Singularity V3.0 — Motor de Audio Holográfico de Bajo Nivel
  * ============================================================================
  * Autoría Exclusiva y Propiedad Absoluta:
- *   Luis Uriel Pimentel Pérez (alias Gore TNS)
+ * Luis Uriel Pimentel Pérez (alias Gore TNS)
  *
  * Todos los modelos matemáticos, arquitecturas de sistema y implementaciones
  * de código contenidos en este archivo son propiedad intelectual exclusiva
@@ -16,29 +16,27 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
-#include <malloc.h>
-// #include <hexagon_nn.h>  // Hexagon NN SDK (device only)
-// #include <hvx_hexagon.h>  // HVX intrinsics (device only)
-#include <cstdint>
-#include <cstring>
 #include <cmath>
+#include <cstring>
 #include <atomic>
+// #include <hexagon_nn.h>  // Hexagon NN SDK (device only)
+// #include <hvx_hexagon_protos.h>  // HVX intrinsics (device only)
+
 // ── Hexagon DSP API stubs ────────────────────────────────────────────────────
 // Las librerias reales (libcdsprpc.so / libadsprpc.so) se cargan en runtime via
 // dlopen() en dispositivos Qualcomm. Estos stubs permiten compilar sin el SDK
 // de Qualcomm; initialize() retornara false y el codigo usara fallback CPU.
-static inline void*  dsp_open()                                 { return nullptr; }
-static inline void*  adsprpc_open()                             { return nullptr; }
-static inline void*  dsp_alloc_dma(size_t, void*)               { return nullptr; }
-static inline bool   dsp_free_dma(void*, void*)                 { return false;   }
-static inline void*  dsp_create_module(void*, const char*, const void*) { return nullptr; }
-static inline bool   dsp_destroy_module(void*, void*)           { return false;   }
-static inline bool   dsp_close(void*)                           { return false;   }
-static inline float  dsp_get_thermal_load(void*)                { return 0.0f;    }
+static inline void* dsp_open() { return nullptr; }
+static inline void* adsprpc_open() { return nullptr; }
+static inline void* dsp_alloc_dma(size_t, void*) { return nullptr; }
+static inline bool dsp_free_dma(void*, void*) { return false; }
+static inline void* dsp_create_module(void*, const char*, const void*) { return nullptr; }
+static inline bool dsp_destroy_module(void*, void*) { return false; }
+static inline bool dsp_close(void*) { return false; }
+static inline float dsp_get_thermal_load(void*) { return 0.0f; }
 template<typename... Args>
-static inline bool   dsp_invoke(void*, void*, Args...)          { return false;   }
+static inline bool dsp_invoke(void*, void*, Args...) { return false; }
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 namespace ivanna {
 namespace dsp {
@@ -50,15 +48,18 @@ namespace dsp {
 // Operación concurrente y lock-free sobre Hexagon DSP con HVX.
 // ============================================================================
 
-// Constantes del filtro FIR
-static constexpr uint32_t FIR_TAPS = 8192;           // Miles de taps para precisión quirúrgica
-static constexpr uint32_t UPSAMPLE_FACTOR = 16;        // 48kHz -> 768kHz
-static constexpr uint32_t HVX_VECTOR_WIDTH = 128;      // bytes (32 floats de 32-bit)
+// FIX #36: Reduced FIR_TAPS from 8192 to 1024 for Android real-time performance
+// 8192 taps @ 768kHz = ~6.1 GMACs/second, impossible on Android in real-time
+// 1024 taps @ 768kHz = ~0.78 GMACs/second, feasible with HVX
+static constexpr uint32_t FIR_TAPS = 1024;
+static constexpr uint32_t UPSAMPLE_FACTOR = 16; // 48kHz -> 768kHz
+static constexpr uint32_t HVX_VECTOR_WIDTH = 128; // bytes (32 floats de 32-bit)
 
 // Coeficientes del filtro (pre-calculados, ventana Blackman-Harris)
 // Generados offline con precisión de 64 bits, truncados a 32-bit float
 static float g_fir_coefficients __attribute__((aligned(64)))[FIR_TAPS];
 static std::atomic<bool> g_coefficients_initialized{false};
+static std::atomic_flag g_coefficients_lock = ATOMIC_FLAG_INIT;
 
 // Ventana Blackman-Harris de 4 términos
 static inline float blackmanHarrisWindow(int n, int N) {
@@ -72,8 +73,24 @@ static inline float blackmanHarrisWindow(int n, int N) {
 }
 
 // Genera coeficientes FIR de fase lineal (sinc windowed)
+// FIX #37: Thread-safe initialization with spinlock
 static void generateFIRCoefficients() {
     if (g_coefficients_initialized.load(std::memory_order_acquire)) return;
+
+    // Spinlock for thread-safe initialization
+    while (g_coefficients_lock.test_and_set(std::memory_order_acquire)) {
+        // Spin until lock acquired
+        if (g_coefficients_initialized.load(std::memory_order_acquire)) {
+            g_coefficients_lock.clear(std::memory_order_release);
+            return;
+        }
+    }
+
+    // Double-check after acquiring lock
+    if (g_coefficients_initialized.load(std::memory_order_relaxed)) {
+        g_coefficients_lock.clear(std::memory_order_release);
+        return;
+    }
 
     const float cutoff = 1.0f / (2.0f * UPSAMPLE_FACTOR); // Frecuencia de corte normalizada
 
@@ -85,6 +102,7 @@ static void generateFIRCoefficients() {
     }
 
     g_coefficients_initialized.store(true, std::memory_order_release);
+    g_coefficients_lock.clear(std::memory_order_release);
 }
 
 // ============================================================================
@@ -168,6 +186,8 @@ bool IvannaFastRpcClient::delegateBinauralConvolution(
     uint32_t num_frames
 ) noexcept {
     if (!m_dsp_ready.load(std::memory_order_acquire)) return false;
+    if (!input_left || !input_right || !output_left || !output_right) return false;
+    if (num_frames == 0) return false;
 
     // Copia datos a buffer DMA de entrada
     float* dma_in = static_cast<float*>(m_dma_buffer_in);
@@ -177,9 +197,12 @@ bool IvannaFastRpcClient::delegateBinauralConvolution(
     }
 
     // Invoca convolución HRTF en DSP
-    dsp_invoke(m_dsp_handle, m_hrtf_convolver, 
-               m_dma_buffer_in, m_dma_buffer_out, num_frames,
-               position.azimuth, position.elevation, position.distance);
+    // FIX #39: Check dsp_invoke return value
+    bool success = dsp_invoke(m_dsp_handle, m_hrtf_convolver,
+        m_dma_buffer_in, m_dma_buffer_out, num_frames,
+        position.azimuth, position.elevation, position.distance);
+
+    if (!success) return false;
 
     // Recupera resultados
     float* dma_out = static_cast<float*>(m_dma_buffer_out);
@@ -198,15 +221,18 @@ bool IvannaFastRpcClient::delegateFIRUpsampling(
     uint32_t output_frames
 ) noexcept {
     if (!m_dsp_ready.load(std::memory_order_acquire)) return false;
+    if (!input || !output) return false;
     if (output_frames != input_frames * UPSAMPLE_FACTOR) return false;
 
     // Copia entrada a DMA
     memcpy(m_dma_buffer_in, input, input_frames * sizeof(float));
 
     // Invoca upsampling FIR en DSP con HVX aceleración
-    dsp_invoke(m_dsp_handle, m_fir_upsampler,
-               m_dma_buffer_in, m_dma_buffer_out, input_frames,
-               FIR_TAPS, UPSAMPLE_FACTOR);
+    bool success = dsp_invoke(m_dsp_handle, m_fir_upsampler,
+        m_dma_buffer_in, m_dma_buffer_out, input_frames,
+        FIR_TAPS, UPSAMPLE_FACTOR);
+
+    if (!success) return false;
 
     // Recupera salida upsampled
     memcpy(output, m_dma_buffer_out, output_frames * sizeof(float));
@@ -241,10 +267,12 @@ public:
      * Upsampling FIR de fase lineal con HVX SIMD.
      * Entrada: input_frames a tasa Fs
      * Salida: output_frames = input_frames * UPSAMPLE_FACTOR a tarea Fs * UPSAMPLE_FACTOR
-     * 
+     *
      * Implementación lock-free, sin bloqueos, punteros crudos.
      */
     void process(const float* input, float* output, uint32_t input_frames) {
+        if (!input || !output || input_frames == 0) return;
+
         const uint32_t output_frames = input_frames * UPSAMPLE_FACTOR;
 
         for (uint32_t n = 0; n < input_frames; ++n) {
@@ -263,8 +291,11 @@ public:
 
                 // Versión escalar (HVX requiere compilación con toolchain Qualcomm)
                 // En producción: reemplazar con intrinsics HVX
+                // FIX #38: Bounds check on tap index
                 while (tap < FIR_TAPS) {
-                    uint32_t d = (delay_idx + FIR_TAPS - (tap / UPSAMPLE_FACTOR) - 1) % FIR_TAPS;
+                    uint32_t tap_div = tap / UPSAMPLE_FACTOR;
+                    if (tap_div >= FIR_TAPS) break;  // Safety check
+                    uint32_t d = (delay_idx + FIR_TAPS - tap_div - 1) % FIR_TAPS;
                     accumulator += m_delay_line[d] * g_fir_coefficients[tap];
                     tap += UPSAMPLE_FACTOR;
                 }
