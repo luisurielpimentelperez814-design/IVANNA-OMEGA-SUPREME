@@ -22,10 +22,15 @@ typedef struct {
     int32_t spatialErr;    // acumuladores para ajuste dinámico
     int32_t roomErr;
     int32_t maskingErr;
+    // Posición 3D usada por el JNI bridge (en grados/unidades fijas)
+    int32_t posX;
+    int32_t posY;
+    int32_t posZ;
 } SpatialState;
 
 // Funciones principales
 void spatial_init(SpatialState* state);
+void spatial_process(float* audio_in, float* audio_out, int frames, SpatialState* state);
 void render_object(AudioObject* obj, int16_t* outL, int16_t* outR, const SpatialState* state);
 void omega_engine(const int16_t* n, const int16_t* omega, int16_t* p, int16_t mu);
 void update_mu(SpatialState* state, int32_t spatialErr, int32_t roomErr, int32_t maskingErr);
