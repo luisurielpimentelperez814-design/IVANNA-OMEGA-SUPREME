@@ -9,8 +9,11 @@
 package com.goretns.ivannuri.ultra
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import com.ivanna.omega.MainActivity
+import android.app.Notification
+import com.ivanna.omega.MainActivityChannel
+import android.app.Notification
+import com.ivanna.omega.MainActivityManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent

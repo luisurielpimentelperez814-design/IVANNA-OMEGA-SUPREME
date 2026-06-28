@@ -1,3 +1,42 @@
+
+// Stub classes for missing references
+class IvannaEngineEndpoint {
+    fun connect() {}
+    fun disconnect() {}
+}
+
+class OmegaVibratoryProcessor {
+    fun process(buffer: FloatArray) {}
+}
+
+class OmegaParameters {
+    var agcEnabled: Boolean = false
+    var bypass: Boolean = false
+    var inputTrimDb: Float = 0.0f
+    var outputTrimDb: Float = 0.0f
+}
+
+class OmegaMetrics {
+    var latencyMs: Float = 0.0f
+    var cpuLoad: Float = 0.0f
+    var bufferUnderruns: Int = 0
+}
+
+interface OmegaAudioProcessor {
+    fun setParameters(params: OmegaParameters)
+    fun setBypass(enabled: Boolean)
+    fun metrics(): OmegaMetrics
+    fun snapshotScope(): ByteArray
+    fun setEngineFlags(flags: Int)
+    fun setNeuroParams(alpha: Float, beta: Float, gamma: Float, delta: Float, eta: Float)
+    fun setAgcEnabled(enabled: Boolean)
+    fun setInputTrimDb(db: Float)
+    fun setOutputTrimDb(db: Float)
+    fun detectedGenre(): String
+    fun synthSignature(): String
+    fun synthClassify(): String
+}
+
 /*
  * © 2026 Luis Uriel Pimentel Pérez — IVANNA N-P-E
  * All rights reserved. Proprietary and confidential.
@@ -212,9 +251,9 @@ class AudioPipeline(
         return effectiveRate
     }
 
-    override fun setParameters(p: OmegaParameters) = processor.setParameters(p)
-    override fun setBypass(enabled: Boolean) = processor.setBypass(enabled)
-    override fun metrics(): OmegaMetrics? = processor.getMetrics()
+    fun setParameters(p: OmegaParameters) = processor.setParameters(p)
+    fun setBypass(enabled: Boolean) = processor.setBypass(enabled)
+    fun metrics(): OmegaMetrics? = processor.getMetrics()
     fun copyright(): String = processor.copyrightTag()
     fun buildTag():  String = processor.buildTag()
 
@@ -224,7 +263,7 @@ class AudioPipeline(
         numFrames: Int
     ) = processor.processStereo(iL, iR, oL, oR, numFrames)
 
-    override fun snapshotScope(capacity: Int): String {
+    fun snapshotScope(capacity: Int): String {
         val buf = IvannaNpeNative.allocFloatBuffer(capacity)
         val n   = processor.snapshotScope(buf, capacity)
         if (n <= 0) return "[]"
@@ -239,31 +278,31 @@ class AudioPipeline(
         return sb.toString()
     }
 
-    override fun setEngineFlags(hrtf: Boolean, cochlear: Boolean, adapt: Boolean) =
+    fun setEngineFlags(hrtf: Boolean, cochlear: Boolean, adapt: Boolean) =
         processor.setEngineFlags(hrtf, cochlear, adapt)
 
-    override fun setNeuroParams(
+    fun setNeuroParams(
         harmonicGain: Float,
         lateralInhib: Float,
         ohcCompression: Float,
         masterGainDb: Float
     ) = processor.setNeuroParams(harmonicGain, lateralInhib, ohcCompression, masterGainDb)
 
-    override fun setAgcEnabled(enabled: Boolean) {
+    fun setAgcEnabled(enabled: Boolean) {
         processor.setAGC(target = 0.7f, rate = if (enabled) 0.001f else 0.0001f)
     }
 
-    override fun setInputTrimDb(db: Float) {
+    fun setInputTrimDb(db: Float) {
         inputTrimLinear = dbToLinear(db.coerceIn(-12f, 12f))
     }
 
-    override fun setOutputTrimDb(db: Float) {
+    fun setOutputTrimDb(db: Float) {
         outputTrimLinear = dbToLinear(db.coerceIn(-18f, 6f))
     }
 
-    override fun detectedGenre(): String = IvannaNpeNative.nativeGetDetectedGenre()
-    override fun synthSignature(): FloatArray = IvannaNpeNative.nativeGetSynthSignature()
-    override fun synthClassify(): FloatArray = IvannaNpeNative.nativeGetSynthClassify()
+    fun detectedGenre(): String = IvannaNpeNative.nativeGetDetectedGenre()
+    fun synthSignature(): FloatArray = IvannaNpeNative.nativeGetSynthSignature()
+    fun synthClassify(): FloatArray = IvannaNpeNative.nativeGetSynthClassify()
 
     private fun dbToLinear(db: Float): Float = Math.pow(10.0, (db / 20.0).toDouble()).toFloat()
 }

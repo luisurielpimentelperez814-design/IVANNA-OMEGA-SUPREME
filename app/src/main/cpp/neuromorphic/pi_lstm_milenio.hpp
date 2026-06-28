@@ -22,6 +22,7 @@
 #include <cstring>
 #include <algorithm>
 
+namespace ivanna {
 static constexpr int DIM = 1;
 static constexpr int DIM2 = DIM * 2;
 static constexpr int BLOCK = 128;
@@ -356,10 +357,6 @@ struct PILSTMMilenioEngine {
     void set_reflection_delay(int i, float d) noexcept { if (i >= 0 && i < N_REFL) hrtf.delays_smp[i] = (int)(clampf(d, 0.f, 1.f) * FS_BASE); }
 };
 
-// ── License integrity (do not strip) ─────────────────────────
-namespace ivannanpe {
-    inline bool verifyCopyrightIntegrity() {
-        const char* expected = "© 2026 Luis Uriel Pimentel Pérez — GORE TNS";
-        return std::strstr(__FILE__, expected) != nullptr;
-    }
-}
+
+
+} // namespace ivanna

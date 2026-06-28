@@ -9,6 +9,10 @@ import android.media.MediaRecorder
 import kotlinx.coroutines.*
 
 class SpatialAudioEngineV2 {
+    var posX: Float = 0.0f
+    var posY: Float = 0.0f
+    var posZ: Float = 0.0f
+    var mu: Float = 1.0f {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isRunning = false
     private var audioRecord: AudioRecord? = null

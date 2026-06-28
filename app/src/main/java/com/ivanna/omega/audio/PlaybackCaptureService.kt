@@ -1,3 +1,9 @@
+
+// Stub for YamnetClassifier
+class YamnetClassifier {
+    fun classify(audioData: FloatArray): String = "unknown"
+}
+
 /*
  * IVANNA-FUSION TRASCENDENTAL
  * © 2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.

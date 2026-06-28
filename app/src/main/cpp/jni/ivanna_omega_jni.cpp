@@ -1,290 +1,214 @@
 /*
- * IVANNA-OMEGA-SUPREME — JNI Bridge Unificado OPTIMIZADO (QUIRÚRGICO)
- * © 2025-2026 Luis Uriel Pimentel Pérez · GORE TNS
- * Todos los derechos reservados.
+ * ivanna_omega_jni.cpp
+ * JNI bridge for IVANNA OMEGA SUPREME
+ * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
  */
 
 #include <jni.h>
 #include <android/log.h>
-#include <atomic>
-#include <memory>
-#include <mutex>
-#include <algorithm>
 #include <cstring>
-
+#include <cmath>
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
-
 #include "../neuromorphic/pi_lstm_milenio.hpp"
-#include "../neuromorphic/lif_neuron_pool.hpp"
 
-#include "../spatial/spatial_engine.h"
-
-#define TAG  "IVANNA_OMEGA"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define LOG_TAG "IVANNA-JNI"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 using namespace ivanna;
 
-static constexpr int kMaxFrames = 4096;
+// ── Engine singletons ──────────────────────────────────────────────────────────
+static ParametricEQ         g_eq;
+static Compressor           g_comp;
+// Use ivanna::HarmonicExciter from include (not pi_lstm_milenio.hpp)
+static ivanna::HarmonicExciter g_exciter;
+static StereoWidener        g_widener;
+static GainStage            g_gain;
 
-struct DSPEngine {
-    std::mutex              mtx;
-    DSPParams               params;
-    ParametricEQ            eq;
-    Compressor              comp;
-    HarmonicExciter         exciter;
-    StereoWidener           widener;
-    GainStage               gain;
-    std::atomic<bool>       ready{false};
+// PI-LSTM Milenio engine
+static PILSTMMilenioEngine  g_piLstm;
 
-    void applyParams() {
-        eq.setParams(params);
-        comp.setParams(params);
-        exciter.setParams(params);
-        widener.setParams(params);
-        gain.setParams(params);
-        ready.store(true, std::memory_order_release);
-    }
-};
+static DSPParams            g_params;
+static std::atomic<bool>    g_initialized{false};
 
-static DSPEngine& dspEngine() {
-    static auto g = std::make_unique<DSPEngine>();
-    return *g;
+// ── Helper: copy jfloatArray ─────────────────────────────────────────────────
+static inline bool copyJFloatArray(JNIEnv* env, jfloatArray src, float* dst, int n) {
+    if (!src || !dst || n <= 0) return false;
+    jfloat* tmp = env->GetFloatArrayElements(src, nullptr);
+    if (!tmp) return false;
+    memcpy(dst, tmp, n * sizeof(float));
+    env->ReleaseFloatArrayElements(src, tmp, JNI_ABORT);
+    return true;
 }
 
-static PILSTMMilenio& piLstm() {
-    static PILSTMMilenio g;
-    return g;
-}
-static std::mutex piMtx;
-static std::atomic<bool> piReady{false};
-
-static SpatialState g_spatial{};
-static std::atomic<int> g_mode{0};
-
+// ── JNI: Initialization ───────────────────────────────────────────────────────
 extern "C" {
 
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sampleRate) {
-    auto& e = dspEngine();
-    std::lock_guard<std::mutex> lk(e.mtx);
-    e.params.sampleRate = (uint32_t)sampleRate;
-    e.applyParams();
-    LOGI("DSP engine init  sr=%d", sampleRate);
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
+    if (sr < 8000 || sr > 192000) {
+        LOGE("Invalid sample rate: %d", sr);
+        return JNI_FALSE;
+    }
+    g_params.sampleRate = static_cast<uint32_t>(sr);
+    g_eq.setParams(g_params);
+    g_comp.setParams(g_params);
+    g_exciter.setParams(g_params);
+    g_widener.setParams(g_params);
+    g_gain.setParams(g_params);
+    g_piLstm.reset();
+    g_initialized.store(true, std::memory_order_release);
+    LOGI("DSP initialized @ %d Hz", sr);
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
-    JNIEnv*, jobject,
-    jfloat drive, jfloat wet,  jfloat mix,
-    jfloat alpha, jfloat beta, jfloat gamma,
-    jfloat freq,  jfloat resonance,
-    jfloat low,   jfloat mid,  jfloat high,
-    jfloat presence, jfloat master
-) {
-    auto& e = dspEngine();
-    std::lock_guard<std::mutex> lk(e.mtx);
-    e.params.drive = drive; e.params.wet = wet; e.params.mix = mix;
-    e.params.alpha = alpha; e.params.beta = beta; e.params.gamma = gamma;
-    e.params.freq = freq;   e.params.resonance = resonance;
-    e.params.low = low;     e.params.mid = mid;  e.params.high = high;
-    e.params.presence = presence; e.params.master = master;
-    e.applyParams();
-}
-
-__attribute__((hot, flatten))
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
+Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
     JNIEnv* env, jobject,
-    jfloatArray buf, jint numFrames
-) {
-    auto& e = dspEngine();
-    if (__builtin_expect(!e.ready.load(std::memory_order_acquire), 0)) return;
+    jfloatArray inL, jfloatArray inR,
+    jfloatArray outL, jfloatArray outR,
+    jint frames) {
 
-    float* __restrict__ data = env->GetFloatArrayElements(buf, nullptr);
-    if (__builtin_expect(!data, 0)) return;
+    if (!g_initialized.load(std::memory_order_acquire)) return;
+    if (frames <= 0) return;
 
-    const int n = (numFrames < kMaxFrames) ? numFrames : kMaxFrames;
+    float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
+    int n = (frames > 2048) ? 2048 : frames;
 
-    alignas(64) float lBuf[kMaxFrames];
-    alignas(64) float rBuf[kMaxFrames];
+    if (!copyJFloatArray(env, inL, lBuf, n)) return;
+    if (!copyJFloatArray(env, inR, rBuf, n)) return;
 
-    #pragma clang loop vectorize(enable) interleave(enable)
-    for (int i = 0; i < n; ++i) {
-        lBuf[i] = data[i * 2];
-        rBuf[i] = data[i * 2 + 1];
+    // Process through DSP chain
+    g_eq.process(lBuf, rBuf, n);
+    g_comp.process(lBuf, rBuf, n);
+    g_exciter.process(lBuf, rBuf, n);
+    g_widener.process(lBuf, rBuf, n);
+    g_gain.process(lBuf, rBuf, n);
+
+    // PI-LSTM processing
+    for (int done = 0; done < n; done += BLOCK) {
+        int chunk = (n - done < BLOCK) ? (n - done) : BLOCK;
+        g_piLstm.process_block(lBuf + done, rBuf + done, oL, oR, chunk);
+        memcpy(lBuf + done, oL, chunk * sizeof(float));
+        memcpy(rBuf + done, oR, chunk * sizeof(float));
     }
 
-    {
-        std::lock_guard<std::mutex> lk(e.mtx);
-        e.gain.processInput(lBuf, rBuf, n);
-        e.exciter.process(lBuf, rBuf, n);
-        e.comp.process(lBuf, rBuf, n);
-        e.eq.process(lBuf, rBuf, n);
-        e.widener.process(lBuf, rBuf, n);
-        e.gain.processOutput(lBuf, rBuf, n);
+    // Copy back
+    jfloat* outLPtr = env->GetFloatArrayElements(outL, nullptr);
+    jfloat* outRPtr = env->GetFloatArrayElements(outR, nullptr);
+    if (outLPtr && outRPtr) {
+        memcpy(outLPtr, lBuf, n * sizeof(float));
+        memcpy(outRPtr, rBuf, n * sizeof(float));
     }
-
-    int mode = g_mode.load(std::memory_order_acquire);
-    if (__builtin_expect(mode >= 1 && piReady.load(std::memory_order_acquire), 0)) {
-        std::lock_guard<std::mutex> lk(piMtx);
-        int done = 0;
-        while (done < n) {
-            int chunk = (n - done) < BLOCK ? (n - done) : BLOCK;
-            alignas(64) float oL[BLOCK], oR[BLOCK];
-            piLstm().process_block(lBuf + done, rBuf + done, oL, oR);
-            memcpy(lBuf + done, oL, chunk * sizeof(float));
-            memcpy(rBuf + done, oR, chunk * sizeof(float));
-            done += chunk;
-        }
-    }
-
-    if (__builtin_expect(mode >= 2, 0)) {
-        alignas(64) float outBuf[kMaxFrames];
-        spatial_process(lBuf, outBuf, n, &g_spatial);
-        const float w0 = 0.7f, w1 = 0.3f;
-        #pragma clang loop vectorize(enable) interleave(enable)
-        for (int i = 0; i < n; ++i) {
-            lBuf[i] = fmaf(w1, outBuf[i], w0 * lBuf[i]);
-            rBuf[i] = fmaf(w1, outBuf[i], w0 * rBuf[i]);
-        }
-    }
-
-    #pragma clang loop vectorize(enable) interleave(enable)
-    for (int i = 0; i < n; ++i) {
-        data[i * 2]     = lBuf[i];
-        data[i * 2 + 1] = rBuf[i];
-    }
-
-    env->ReleaseFloatArrayElements(buf, data, 0);
+    if (outLPtr) env->ReleaseFloatArrayElements(outL, outLPtr, 0);
+    if (outRPtr) env->ReleaseFloatArrayElements(outR, outRPtr, 0);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
-    auto& e = dspEngine();
-    std::lock_guard<std::mutex> lk(e.mtx);
-    e.eq.reset(); e.comp.reset(); e.exciter.reset(); e.gain.reset();
-    e.ready.store(false, std::memory_order_release);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetParams(
+    JNIEnv* env, jobject, jfloatArray params) {
+    if (!params) return;
+    jfloat* p = env->GetFloatArrayElements(params, nullptr);
+    if (!p) return;
+    int n = env->GetArrayLength(params);
+    if (n >= 1) g_params.drive = p[0];
+    if (n >= 2) g_params.wet = p[1];
+    if (n >= 3) g_params.mix = p[2];
+    if (n >= 4) g_params.alpha = p[3];
+    if (n >= 5) g_params.beta = p[4];
+    if (n >= 6) g_params.gamma = p[5];
+    if (n >= 7) g_params.freq = p[6];
+    if (n >= 8) g_params.resonance = p[7];
+    if (n >= 9) g_params.low = p[8];
+    if (n >= 10) g_params.mid = p[9];
+    if (n >= 11) g_params.high = p[10];
+    if (n >= 12) g_params.presence = p[11];
+    if (n >= 13) g_params.master = p[12];
+    env->ReleaseFloatArrayElements(params, p, JNI_ABORT);
+
+    g_eq.setParams(g_params);
+    g_comp.setParams(g_params);
+    g_exciter.setParams(g_params);
+    g_widener.setParams(g_params);
+    g_gain.setParams(g_params);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+    g_eq.reset();
+    g_comp.reset();
+    g_exciter.reset();
+    g_widener.reset();
+    g_gain.reset();
+    g_piLstm.reset();
     LOGI("DSP reset");
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
-    return env->NewStringUTF("IVANNA-OMEGA-SUPREME v1.0 | GORE TNS");
+// PI-LSTM Milenio setters
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_alpha(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeInit(JNIEnv*, jobject) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().init();
-    piReady.store(true, std::memory_order_release);
-    LOGI("PI-LSTM Milenio initialized");
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_beta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_alpha(v);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_gamma(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_beta(v);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_delta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_gamma(v);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetEta(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_eta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_delta(v);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_harmonic_gain(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_harmonic_gain(v);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*, jobject, jboolean en) {
+    g_piLstm.set_hrtf_enabled(en == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHrtfEnabled(JNIEnv*, jobject, jboolean en) {
-    std::lock_guard<std::mutex> lk(piMtx);
-    piLstm().set_hrtf_enabled(en);
-}
-
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetNpSat(JNIEnv*, jobject) {
-    return piLstm().get_np_sat();
-}
-
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetError(JNIEnv*, jobject) {
-    return piLstm().get_error();
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*, jobject, jboolean en) {
+    g_piLstm.set_adapt_enabled(en == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_OmegaEngine_nativeSetMode(JNIEnv*, jobject, jint mode) {
-    g_mode.store(mode, std::memory_order_release);
-    LOGI("Processing mode -> %d", mode);
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
+    g_piLstm.set_np_max(v);
 }
 
-JNIEXPORT jint JNICALL
-Java_com_ivanna_omega_core_OmegaEngine_nativeGetMode(JNIEnv*, jobject) {
-    return g_mode.load(std::memory_order_acquire);
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint i, jfloat g) {
+    g_piLstm.set_reflection_gain(i, g);
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitSpatialEngine(JNIEnv*, jobject, jint, jint) {
-    memset(&g_spatial, 0, sizeof(g_spatial));
-    g_spatial.mu = 500;
-    return JNI_TRUE;
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint i, jfloat d) {
+    g_piLstm.set_reflection_delay(i, d);
 }
 
-__attribute__((hot, flatten))
-JNIEXPORT jint JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
-    JNIEnv* env, jobject,
-    jfloatArray input, jfloatArray outL, jfloatArray outR,
-    jint posX, jint posY, jint posZ, jint mu
-) {
-    g_spatial.posX = posX; g_spatial.posY = posY; g_spatial.posZ = posZ;
-    g_spatial.mu   = mu;
-
-    float* __restrict__ in = env->GetFloatArrayElements(input, nullptr);
-    float* __restrict__ oL = env->GetFloatArrayElements(outL, nullptr);
-    float* __restrict__ oR = env->GetFloatArrayElements(outR, nullptr);
-    jsize n = env->GetArrayLength(input);
-
-    if (__builtin_expect(!in || !oL || !oR || n <= 0, 0)) {
-        if (in) env->ReleaseFloatArrayElements(input, in, JNI_ABORT);
-        if (oL) env->ReleaseFloatArrayElements(outL, oL, 0);
-        if (oR) env->ReleaseFloatArrayElements(outR, oR, 0);
-        return 0;
-    }
-
-    spatial_process(in, oL, n, &g_spatial);
-    memcpy(oR, oL, n * sizeof(float));
-
-    env->ReleaseFloatArrayElements(input, in, JNI_ABORT);
-    env->ReleaseFloatArrayElements(outL, oL, 0);
-    env->ReleaseFloatArrayElements(outR, oR, 0);
-    return (jint)n;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeReleaseSpatialEngine(JNIEnv*, jobject) {
-    memset(&g_spatial, 0, sizeof(g_spatial));
-    return JNI_TRUE;
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_IvannaNativeLib_nativeInitPILSTM(JNIEnv*, jobject) {
+    g_piLstm.reset();
+    LOGI("PI-LSTM initialized");
 }
 
 } // extern "C"
