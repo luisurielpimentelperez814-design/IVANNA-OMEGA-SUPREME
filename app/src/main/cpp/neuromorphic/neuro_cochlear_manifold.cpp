@@ -16,6 +16,7 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
+#include <malloc.h>
 #include "volterra_h2_symmetric.hpp"
 #include "fir_upsampler_engine.hpp"
 #include <cstdint>
@@ -81,10 +82,10 @@ bool neuro_cochlear_manifold_init(
     const size_t post_up_size = block_size * g_manifold.upsample_factor * channels * sizeof(float);
     const size_t final_size = post_up_size;
 
-    g_manifold.buffer_pre_hrtf = static_cast<float*>(aligned_alloc(align, pre_size));
-    g_manifold.buffer_post_hrtf = static_cast<float*>(aligned_alloc(align, post_hrtf_size));
-    g_manifold.buffer_post_up = static_cast<float*>(aligned_alloc(align, post_up_size));
-    g_manifold.buffer_final = static_cast<float*>(aligned_alloc(align, final_size));
+    g_manifold.buffer_pre_hrtf = static_cast<float*>(memalign(align, pre_size));
+    g_manifold.buffer_post_hrtf = static_cast<float*>(memalign(align, post_hrtf_size));
+    g_manifold.buffer_post_up = static_cast<float*>(memalign(align, post_up_size));
+    g_manifold.buffer_final = static_cast<float*>(memalign(align, final_size));
 
     if (!g_manifold.buffer_pre_hrtf || !g_manifold.buffer_post_hrtf ||
         !g_manifold.buffer_post_up || !g_manifold.buffer_final) {
