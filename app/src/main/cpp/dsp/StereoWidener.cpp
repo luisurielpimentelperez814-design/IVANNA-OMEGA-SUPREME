@@ -27,4 +27,8 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
     }
 }
 
+void StereoWidener::reset() {
+    // No persistent state to reset (width_ is set via setParams)
+}
+
 } // namespace ivanna

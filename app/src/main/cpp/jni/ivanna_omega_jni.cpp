@@ -144,7 +144,8 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_eq.reset();
     g_comp.reset();
     g_exciter.reset();
-        g_gain.reset();
+    g_widener.reset();
+    g_gain.reset();
     g_piLstm.reset();
     LOGI("DSP reset");
 }

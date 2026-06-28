@@ -288,8 +288,16 @@ struct PILSTMMilenioEngine {
             upR[i] *= mod;
         }
 
-        // Harmonic exciter
-        exciter.process(upL, upR, n * UP_FACTOR);
+        // Inline harmonic exciter (replaced removed struct)
+        for (int i = 0; i < n * UP_FACTOR; ++i) {
+            float xL = upL[i] * harmonic_gain;
+            float xR = upR[i] * harmonic_gain;
+            // Soft-clip saturation (tanh approximation)
+            upL[i] += fast_tanh(xL) * 0.3f;
+            upR[i] += fast_tanh(xR) * 0.3f;
+            upL[i] = sf(upL[i]);
+            upR[i] = sf(upR[i]);
+        }
 
         // HRTF + reflections
         for (int i = 0; i < n * UP_FACTOR; ++i) {

@@ -7,6 +7,7 @@ class StereoWidener {
 public:
     void setParams(const DSPParams& p);
     void process(float* left, float* right, int frames);
+    void reset();  // FIX: Added missing reset() method
 
 private:
     float width_     = 1.f;
