@@ -1,3 +1,4 @@
+#include <jni.h>
 /*
  * IVANNA-FUSION TRASCENDENTAL - OPTIMIZADO v2.1 (FIXED)
  * © 2025 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
@@ -107,7 +108,7 @@ struct alignas(64) AudioEngine {
     KalmanState kalman;
     std::atomic<float> phase_error_rms{0.0f};
     float phase = 0.0f;
-    float h[8] alignas(32) = {0.5f,0.25f,0.12f,0.06f,0.03f,0.02f,0.01f,0.01f};
+    alignas(32) float h[8] = {0.5f,0.25f,0.12f,0.06f,0.03f,0.02f,0.01f,0.01f};
     uint64_t genome_hash = 0;
 };
 

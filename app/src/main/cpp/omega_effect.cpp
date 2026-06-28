@@ -1,3 +1,4 @@
+#include <jni.h>
 /*
  * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO v1.1 (FIXED)
  * FIXES:
