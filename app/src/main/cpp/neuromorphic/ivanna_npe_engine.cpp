@@ -5,7 +5,7 @@
  * ============================================================================
  */
 
-#include "dsp/ivanna_fastrpc_client.hpp"
+#include "../hexagon/ivanna_fastrpc_client.hpp"
 #include <hexagon_nn.h>
 #include <hvx_hexagon.h>
 #include <cstdint>

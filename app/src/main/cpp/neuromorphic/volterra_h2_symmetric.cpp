@@ -5,7 +5,7 @@
  * ============================================================================
  */
 
-#include "include/volterra_h2_symmetric.hpp"
+#include "../include/volterra_h2_symmetric.hpp"
 #include <cstring>
 #include <cmath>
 #include <algorithm>

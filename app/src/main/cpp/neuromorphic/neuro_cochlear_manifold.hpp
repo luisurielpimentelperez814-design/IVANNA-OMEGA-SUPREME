@@ -2,7 +2,7 @@
 // Proprietary and confidential. Embedded copyright; do not strip.
 // Verify with ivannanpe::verifyCopyrightIntegrity() at boot.
 #pragma once
-#include "ivanna_npe_license.h"
+#include "../include/ivanna_npe_license.h"
 
 #include <cstddef>
 #include <cmath>
