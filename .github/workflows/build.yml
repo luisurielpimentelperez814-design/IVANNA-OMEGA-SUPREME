@@ -83,6 +83,11 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      - name: Setup Gradle (cache + retry on distribution download)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
       - name: Build Debug APK
         run: |
           chmod +x gradlew
