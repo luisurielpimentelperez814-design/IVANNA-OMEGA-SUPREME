@@ -203,7 +203,7 @@ public:
      * procesa solo TAPS_PER_PHASE (128) taps por muestra.
      * Reducción: 16x menos operaciones.
      */
-    void process(const float* input, float* output, uint32_t input_frames) {
+    __attribute__((optimize("O3"))) void process(const float* input, float* output, uint32_t input_frames) {
         const uint32_t output_frames = input_frames * UPSAMPLE_FACTOR;
 
         for (uint32_t n = 0; n < input_frames; ++n) {
