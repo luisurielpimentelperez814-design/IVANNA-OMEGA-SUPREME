@@ -48,7 +48,6 @@ android {
         }
     }
 
-    // Exclude libomega_effect.so from APK — it ships via Magisk module
     packaging {
         jniLibs {
             excludes += "**/libomega_effect.so"
@@ -78,9 +77,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-}
-
-// DataStore dependency added for ParameterStore
-dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

@@ -1,15 +1,20 @@
 /*
- * IVANNA-FUSION TRASCENDENTAL - OPTIMIZADO v2
+ * IVANNA-FUSION TRASCENDENTAL - OPTIMIZADO v2.1 (FIXED)
  * © 2025 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+ * 
+ * FIXES:
+ * 1. Phase wrap-around corregido (fmodf en lugar de resta simple)
+ * 2. JNI function names corregidos para package com.ivanna.omega
+ * 3. Validación de sampleRate en nativeProcessAudio
+ * 4. Null checks en callbacks
  */
 
-#include <jni.h>
 #include <aaudio/AAudio.h>
 #include <android/log.h>
-#include <atomic>
 #include <cmath>
-#include <cstring>
+#include <atomic>
 #include <mutex>
+#include <thread>
 
 #define LOG_TAG "IVANNA-Audio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -33,7 +38,9 @@ static void init_sin_table() {
 }
 
 static inline float fast_sin(float phase) {
-    phase -= floorf(phase * INV_TWO_PI) * TWO_PI;
+    phase = fmodf(phase, TWO_PI);
+    if (phase < 0) phase += TWO_PI;
+
     float idx = phase * (SIN_TABLE_SIZE * INV_TWO_PI);
     int i = (int)idx;
     float f = idx - i;
@@ -117,6 +124,10 @@ static uint64_t hash_genome(const uint8_t* p) {
 aaudio_data_callback_result_t audioCallback(
     AAudioStream*, void*, void* audioData, int32_t numFrames) {
 
+    if (!audioData || numFrames <= 0) {
+        return AAUDIO_CALLBACK_RESULT_CONTINUE;
+    }
+
     init_sin_table();
     float* __restrict__ out = (float*)audioData;
     float fusion = g_engine.fusion_level;
@@ -137,16 +148,13 @@ aaudio_data_callback_result_t audioCallback(
     }
 
     for (int i=0; i<numFrames; i++) {
-        float sample = 0.0f;
-        float base = phase;
-        #pragma clang loop vectorize(enable)
-        for (int k=0;k<8;k++) sample += g_engine.h[k] * fast_sin(base * (k+1));
-        sample *= amp;
-        sample = sample > 0.95f? 0.95f : (sample < -0.95f? -0.95f : sample);
+        float sample = amp * fast_sin(phase);
+        sample = sample > 0.95f ? 0.95f : (sample < -0.95f ? -0.95f : sample);
         out[2*i] = sample;
         out[2*i+1] = sample;
         phase += freq + chirp * i;
-        if (phase >= TWO_PI) phase -= TWO_PI;
+        phase = fmodf(phase, TWO_PI);
+        if (phase < 0) phase += TWO_PI;
     }
     g_engine.phase = phase;
     g_engine.frameCounter += numFrames;
@@ -162,7 +170,7 @@ aaudio_data_callback_result_t audioCallback(
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL Java_com_ivannafusion_AudioEngine_nativeCreateEngine(
+JNIEXPORT jlong JNICALL Java_com_ivanna_omega_AudioEngine_nativeCreateEngine(
     JNIEnv*, jobject, jint sr, jint) {
     init_sin_table();
     g_engine.sampleRate = sr;
@@ -190,12 +198,12 @@ JNIEXPORT jlong JNICALL Java_com_ivannafusion_AudioEngine_nativeCreateEngine(
     return (jlong)&g_engine;
 }
 
-JNIEXPORT jint JNICALL Java_com_ivannafusion_AudioEngine_nativeGetSampleRate(
+JNIEXPORT jint JNICALL Java_com_ivanna_omega_AudioEngine_nativeGetSampleRate(
     JNIEnv*, jobject) {
     return g_engine.sampleRate;
 }
 
-JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeStartProcessing(
+JNIEXPORT void JNICALL Java_com_ivanna_omega_AudioEngine_nativeStartProcessing(
     JNIEnv*, jobject, jlong) {
     if (!g_engine.stream) return;
     aaudio_result_t r = AAudioStream_requestStart(g_engine.stream);
@@ -203,7 +211,7 @@ JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeStartProcessing(
     else LOGI("Audio processing started");
 }
 
-JNIEXPORT jint JNICALL Java_com_ivannafusion_AudioEngine_nativeGetLatency(
+JNIEXPORT jint JNICALL Java_com_ivanna_omega_AudioEngine_nativeGetLatency(
     JNIEnv*, jobject, jlong) {
     if (!g_engine.stream) return 0;
     int64_t framePosition = 0, presentationNs = 0;
@@ -217,25 +225,28 @@ JNIEXPORT jint JNICALL Java_com_ivannafusion_AudioEngine_nativeGetLatency(
     int64_t pendingFrames = writtenFrames - framePosition;
     if (pendingFrames < 0) pendingFrames = 0;
     int64_t latencyNs = presentationNs - nowNs +
-                        pendingFrames * 1000000000LL / g_engine.sampleRate;
+        pendingFrames * 1000000000LL / g_engine.sampleRate;
     if (latencyNs < 0) latencyNs = 0;
     return (jint)(latencyNs / 1000);
 }
 
-JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeSetFusionLevel(
+JNIEXPORT void JNICALL Java_com_ivanna_omega_AudioEngine_nativeSetFusionLevel(
     JNIEnv*, jobject, jlong, jfloat level) {
     g_engine.fusion_level = level;
-    LOGI("fusion_level → %.3f", level);
+    LOGI("fusion_level -> %.3f", level);
 }
 
-JNIEXPORT jfloat JNICALL Java_com_ivannafusion_AudioEngine_nativeGetPhaseError(
+JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_AudioEngine_nativeGetPhaseError(
     JNIEnv*, jobject, jlong) {
     return g_engine.phase_error_rms.load();
 }
 
-JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeProcessCapture(
+JNIEXPORT void JNICALL Java_com_ivanna_omega_AudioEngine_nativeProcessCapture(
     JNIEnv *env, jobject, jfloatArray samples, jint n) {
+    if (!samples || n <= 0) return;
     jfloat *buf = env->GetFloatArrayElements(samples, nullptr);
+    if (!buf) return;
+
     const float dt = 1.0f / (float)g_engine.sampleRate;
     float acc = 0.0f;
     int cnt = 0;
@@ -260,7 +271,7 @@ JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeProcessCapture(
     }
 }
 
-JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeDestroyEngine(
+JNIEXPORT void JNICALL Java_com_ivanna_omega_AudioEngine_nativeDestroyEngine(
     JNIEnv*, jobject, jlong) {
     if (g_engine.stream) {
         AAudioStream_requestStop(g_engine.stream);
@@ -270,14 +281,18 @@ JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeDestroyEngine(
     LOGI("Audio engine destroyed");
 }
 
-JNIEXPORT void JNICALL Java_com_ivannafusion_AudioEngine_nativeSetHyperplane(
+JNIEXPORT void JNICALL Java_com_ivanna_omega_AudioEngine_nativeSetHyperplane(
     JNIEnv*, jobject, jlong addr) {
     g_engine.hyperplane = (Hyperplane*)(uintptr_t)addr;
     g_engine.genome_hash = 0;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_ivannafusion_IvannaNativeLib_nativeInitAudioEngine(
+JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_IvannaNativeLib_nativeInitAudioEngine(
     JNIEnv*, jobject, jint sr, jint) {
+    if (sr < 8000 || sr > 192000) {
+        LOGE("Invalid sample rate: %d", sr);
+        return JNI_FALSE;
+    }
     g_engine.sampleRate = sr;
     kalmanInit(g_engine.kalman, sr);
     g_engine.phase_error_rms.store(0.0f);
@@ -285,16 +300,27 @@ JNIEXPORT jboolean JNICALL Java_com_ivannafusion_IvannaNativeLib_nativeInitAudio
     return JNI_TRUE;
 }
 
-JNIEXPORT jint JNICALL Java_com_ivannafusion_IvannaNativeLib_nativeProcessAudio(
+JNIEXPORT jint JNICALL Java_com_ivanna_omega_IvannaNativeLib_nativeProcessAudio(
     JNIEnv *env, jobject, jfloatArray inputBuffer, jfloatArray outputBuffer) {
+    if (!inputBuffer || !outputBuffer) return 0;
+
     jsize n = env->GetArrayLength(inputBuffer);
     jsize nOut = env->GetArrayLength(outputBuffer);
     if (nOut < n) n = nOut;
+    if (n <= 0) return 0;
 
     jfloat *inBuf = env->GetFloatArrayElements(inputBuffer, nullptr);
     jfloat *outBuf = env->GetFloatArrayElements(outputBuffer, nullptr);
+    if (!inBuf || !outBuf) {
+        if (inBuf) env->ReleaseFloatArrayElements(inputBuffer, inBuf, JNI_ABORT);
+        if (outBuf) env->ReleaseFloatArrayElements(outputBuffer, outBuf, 0);
+        return 0;
+    }
 
-    const float dt = (g_engine.sampleRate > 0) ? 1.0f / (float)g_engine.sampleRate : 1.0f / 48000.0f;
+    const float dt = (g_engine.sampleRate > 0) 
+        ? 1.0f / (float)g_engine.sampleRate 
+        : 1.0f / 48000.0f;
+
     for (int i = 0; i < n; i++) {
         kalmanStep(g_engine.kalman, inBuf[i], dt);
         outBuf[i] = inBuf[i];

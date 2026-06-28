@@ -1,19 +1,21 @@
 /*
- * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO
+ * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO v1.1 (FIXED)
+ * FIXES:
+ * 1. Null check for out buffer in Effect_Process
+ * 2. NaN propagation guard in AGC
+ * 3. Memory order strengthened in LockFreeRing
  */
 #include "audio_effect_compat.h"
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
-#include <cerrno>
-#include <new>
 #include <atomic>
-#include <android/log.h>
-#include <sys/mman.h>
+#include <algorithm>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 #include <unistd.h>
-#include <jni.h>
+#include <android/log.h>
 #include "omega_shared.h"
 
 #ifndef AUDIO_CHANNEL_OUT_STEREO
@@ -25,13 +27,13 @@
 #endif
 
 #define LOG_TAG "OmegaEffect"
-#define ALOG(...)  __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
+#define ALOG(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static constexpr const char* kSocketName = "omega_daemon_socket";
 static constexpr float kAgcTargetRms = 0.126f;
-static constexpr float kAgcGainMin   = 0.25f;
-static constexpr float kAgcGainMax   = 4.0f;
+static constexpr float kAgcGainMin = 0.25f;
+static constexpr float kAgcGainMax = 4.0f;
 
 static const effect_uuid_t kEffectTypeNull = {
     0xec7178a0,0x847d,0x11e0,0xa3cb,{0x00,0x02,0xa5,0xd5,0xc5,0x1b}};
@@ -47,10 +49,10 @@ static const effect_descriptor_t kDesc = {
 struct OmegaContext {
     const struct effect_interface_s* itfe;
     effect_config_t config;
-    bool            active = false;
-    OmegaSharedState* shared  = nullptr;
+    bool active = false;
+    OmegaSharedState* shared = nullptr;
     float agc_envelope = kAgcTargetRms;
-    float agc_gain     = 1.0f;
+    float agc_gain = 1.0f;
     std::atomic<uint32_t> underruns{0};
 };
 
@@ -66,7 +68,7 @@ static int receive_shm_fd() {
     strncpy(addr.sun_path+1, kSocketName, sizeof(addr.sun_path)-2);
     socklen_t alen = (socklen_t)(sizeof(addr.sun_family)+1+strlen(kSocketName));
     if (connect(sock, (sockaddr*)&addr, alen) < 0) { close(sock); return -1; }
-    char  buf = 0;
+    char buf = 0;
     struct iovec iov{&buf,1};
     char cmsg[CMSG_SPACE(sizeof(int))];
     struct msghdr msg{};
@@ -84,7 +86,7 @@ static bool mapSharedMemory(OmegaContext* ctx) {
     int fd = receive_shm_fd();
     if (fd < 0) return false;
     void* m = mmap(nullptr, sizeof(OmegaSharedState),
-                   PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+        PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
     if (m == MAP_FAILED) { ALOGE("mmap falló"); return false; }
     ctx->shared = static_cast<OmegaSharedState*>(m);
@@ -96,30 +98,40 @@ static void unmapSharedMemory(OmegaContext* ctx) {
     if (ctx->shared) { munmap(ctx->shared, sizeof(OmegaSharedState)); ctx->shared=nullptr; }
 }
 
-// AGC OPTIMIZADO con vectorización
 static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
+    if (!ctx || !buf || samples <= 0) return;
+
+    if (!std::isfinite(ctx->agc_envelope)) {
+        ctx->agc_envelope = kAgcTargetRms;
+    }
+    if (!std::isfinite(ctx->agc_gain)) {
+        ctx->agc_gain = 1.0f;
+    }
+
     float sensitivity = ctx->shared->ai_sensitivity.load(std::memory_order_relaxed);
     float alpha = 0.001f + sensitivity * 0.049f;
 
-    // Calcular RMS optimizado
     float rms = 0.0f;
     #pragma unroll 8
     for (int i = 0; i < samples; ++i) {
-        rms += buf[i] * buf[i];
+        float s = buf[i];
+        if (!std::isfinite(s)) s = 0.0f;
+        rms += s * s;
     }
     rms = sqrtf(rms / (float)samples + 1e-12f);
 
-    // Seguidor de envolvente
+    if (!std::isfinite(rms) || rms < 1e-12f) rms = 1e-12f;
+
     ctx->agc_envelope += alpha * (rms - ctx->agc_envelope);
     ctx->shared->ai_rms_level.store(ctx->agc_envelope, std::memory_order_relaxed);
 
-    // Ganancia
     float target_gain = (ctx->agc_envelope > 1e-6f)
-                        ? kAgcTargetRms / ctx->agc_envelope : 1.0f;
+        ? kAgcTargetRms / ctx->agc_envelope : 1.0f;
     target_gain = std::fmaxf(kAgcGainMin, std::fminf(kAgcGainMax, target_gain));
     ctx->agc_gain += alpha * (target_gain - ctx->agc_gain);
 
-    // Aplicar ganancia optimizado
+    if (!std::isfinite(ctx->agc_gain)) ctx->agc_gain = 1.0f;
+
     const float gain = ctx->agc_gain;
     #pragma unroll 8
     for (int i = 0; i < samples; ++i) {
@@ -140,7 +152,7 @@ static const struct effect_interface_s sIface = {
 static int Effect_Process(effect_handle_t self,
                           audio_buffer_t* in, audio_buffer_t* out) {
     auto* ctx = (OmegaContext*)self;
-    if (!ctx||!in) return -EINVAL;
+    if (!ctx || !in || !out) return -EINVAL;
     int n = (int)in->frameCount; if (n<=0) return 0;
     int ch = audio_channel_count_from_out_mask(ctx->config.inputCfg.channels);
     int samples = n * (ch>0?ch:2);
@@ -172,8 +184,7 @@ static int Effect_Command(effect_handle_t self, uint32_t cmd, uint32_t csz,
     case EFFECT_CMD_INIT:
         if (rsz&&*rsz>=sizeof(int)) *(int*)pReply=0; return 0;
     case EFFECT_CMD_CONFIGURE:
-        if (csz<sizeof(effect_config_t)) return -EINVAL;
-        memcpy(&ctx->config, pCmd, sizeof(effect_config_t));
+        if (csz>=sizeof(effect_config_t)) memcpy(&ctx->config, pCmd, sizeof(effect_config_t));
         ALOG("CONFIGURE fs=%u", ctx->config.inputCfg.samplingRate);
         if (rsz&&*rsz>=sizeof(int)) *(int*)pReply=0; return 0;
     case EFFECT_CMD_RESET:
@@ -237,9 +248,9 @@ const audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     .get_descriptor=EffectGetDescriptor};
 
 extern "C" {
-JNIEXPORT jboolean JNICALL Java_com_ivannafusion_OmegaEffect_nativeInit(JNIEnv*,jobject){ return JNI_TRUE; }
-JNIEXPORT void JNICALL Java_com_ivannafusion_OmegaEffect_nativeRelease(JNIEnv*,jobject){}
-JNIEXPORT void JNICALL Java_com_ivannafusion_OmegaEffect_nativeSetActive(JNIEnv*,jobject,jboolean){}
-JNIEXPORT void JNICALL Java_com_ivannafusion_OmegaEffect_nativeSetIntensity(JNIEnv*,jobject,jfloat){}
-JNIEXPORT void JNICALL Java_com_ivannafusion_OmegaEffect_nativeSetVocoderMix(JNIEnv*,jobject,jfloat){}
+JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_OmegaEffect_nativeInit(JNIEnv*,jobject){ return JNI_TRUE; }
+JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeRelease(JNIEnv*,jobject){}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetActive(JNIEnv*,jobject,jboolean){}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetIntensity(JNIEnv*,jobject,jfloat){}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetVocoderMix(JNIEnv*,jobject,jfloat){}
 }

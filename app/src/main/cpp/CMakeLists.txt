@@ -10,50 +10,48 @@ set(BASE_FLAGS
     -ffast-math
     -fno-exceptions
     -Wall
+    -Werror=return-type
     -Wno-unused-result
     -Wno-unused-variable
 )
 
 # ── ABI-specific flags ────────────────────────────────────────────────────────
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    list(APPEND BASE_FLAGS -march=armv8-a)
+    list(APPEND BASE_FLAGS -march=armv8-a+simd)
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(APPEND BASE_FLAGS -march=armv7-a -mfpu=neon)
 endif()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Target: libivanna_omega.so
+# Target: libivanna_omega.so (APK NDK library)
 # ─────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
-
-    # JNI bridge (all packages)
+    # JNI bridge
     jni/ivanna_omega_jni.cpp
 
-    # DSP core (FUSION-PRO grade)
+    # DSP core
     dsp/ParametricEQ.cpp
     dsp/Compressor.cpp
     dsp/HarmonicExciter.cpp
     dsp/StereoWidener.cpp
     dsp/GainStage.cpp
 
-    # Neuromorphic (ULTRA)
+    # Neuromorphic
     neuromorphic/neuro_cochlear_manifold.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     neuromorphic/ivanna_npe_engine.cpp
 
-    # Evolutionary (FUSION)
+    # Evolutionary
     evolutionary_kernel.cpp
     phase_oracle.cpp
 
-    # Spatial (FUSION)
+    # Spatial
     spatial/spatial_engine.cpp
     spatial/room_model.cpp
 
-    # System audio integration (FUSION)
-    # audio_orchestrator.cpp — EXCLUIDO: huérfano (AudioEngine.kt fuera del build)
-    #                          Fuente conservada en docs/future-work/
+    # System audio integration
+    audio_orchestrator.cpp
     shm_hyperplane.cpp
-    omega_effect.cpp
     omega_daemon.cpp
 )
 
@@ -63,21 +61,21 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/neuromorphic
     ${CMAKE_SOURCE_DIR}/spatial
-    ${CMAKE_SOURCE_DIR}/hexagon
 )
 
-find_library(log-lib    log)
+find_library(log-lib log)
 find_library(android-lib android)
+find_library(aaudio-lib aaudio)
 
 target_link_libraries(ivanna_omega
     ${log-lib}
     ${android-lib}
+    ${aaudio-lib}
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Target: libomega_effect.so   (AudioFlinger GlobalEffect — Magisk module)
-# Built but excluded from APK via packagingOptions; CI extracts and ships
-# it into the Magisk module zip under system/vendor/lib64/soundfx/.
+# Target: libomega_effect.so (AudioFlinger GlobalEffect — Magisk module)
+# Built separately, NOT linked with ivanna_omega
 # ─────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
@@ -94,11 +92,7 @@ target_link_libraries(omega_effect
     ${android-lib}
 )
 
-# Optimizaciones globales (condicionales por ABI)
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -march=armv8-a+simd")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -ffast-math -march=armv8-a+simd")
-elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -march=armv7-a -mfpu=neon")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -ffast-math -march=armv7-a -mfpu=neon")
-endif()
+# Exclude from APK packaging (shipped via Magisk)
+set_target_properties(omega_effect PROPERTIES
+    EXCLUDE_FROM_ALL TRUE
+)
