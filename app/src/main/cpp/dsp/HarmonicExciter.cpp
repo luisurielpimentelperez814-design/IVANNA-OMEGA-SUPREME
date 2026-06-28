@@ -3,36 +3,60 @@
 
 namespace ivanna {
 
-// Asymmetric soft-clip that generates 2nd + 3rd harmonics
-static inline float softClip(float x, float drive) {
+// Padé approximant optimizado (3/2) — más rápido que std::tanh
+// Precalculamos la constante 27.f para evitar división en cada muestra
+static inline __attribute__((always_inline)) float softClip(float x, float drive) {
     x *= drive;
-    // tanh approximation (Padé) — cheaper than std::tanh
     float x2 = x * x;
-    return x * (27.f + x2) / (27.f + 9.f * x2);
+    // Numerador: x*(27 + x²), Denominador: 27 + 9x²
+    // Multiplicar por inverso precalculado: 1/27 = 0.037037f
+    return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
     drive_ = 1.f + p.drive * 15.f;  // 1..16
     wet_   = p.wet;
     dry_   = 1.f - p.wet;
-    // HPF at 3 kHz: feed only high content into exciter
-    double w0 = 2.0*M_PI*3000.0 / p.sampleRate;
+
+    // HPF a 3 kHz – convertir a float de una vez
+    double w0 = 2.0 * M_PI * 3000.0 / p.sampleRate;
     double cw = std::cos(w0), sw = std::sin(w0);
     double alpha = sw / (2.0 * 0.707);
-    double a0 = 1 + alpha;
-    hpfL_.b0 = (1+cw)/(2*a0); hpfL_.b1 = -(1+cw)/a0; hpfL_.b2 = hpfL_.b0;
-    hpfL_.a1 = -2*cw/a0;      hpfL_.a2 = (1-alpha)/a0;
+    double a0_inv = 1.0 / (1.0 + alpha);  // inverso para multiplicar
+
+    hpfL_.b0 = (float)((1.0 + cw) * 0.5 * a0_inv);
+    hpfL_.b1 = (float)(-(1.0 + cw) * a0_inv);
+    hpfL_.b2 = hpfL_.b0;
+    hpfL_.a1 = (float)(-2.0 * cw * a0_inv);
+    hpfL_.a2 = (float)((1.0 - alpha) * a0_inv);
     hpfR_ = hpfL_;
 }
 
-void HarmonicExciter::process(float* left, float* right, int frames) {
+__attribute__((hot, flatten))
+void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
+    if (frames <= 0) return;
+
+    // Cargar parámetros en registros (fuera del bucle)
+    const float drive = drive_;
+    const float wet   = wet_;
+    const float dry   = dry_;
+
     for (int i = 0; i < frames; ++i) {
-        float hL = hpfL_.process(left[i]);
-        float hR = hpfR_.process(right[i]);
-        float excL = softClip(hL, drive_) - hL;  // only the generated harmonics
-        float excR = softClip(hR, drive_) - hR;
-        left[i]  = dry_ * left[i]  + wet_ * (left[i]  + excL);
-        right[i] = dry_ * right[i] + wet_ * (right[i] + excR);
+        // Extraer muestras a variables locales
+        float l = left[i];
+        float r = right[i];
+
+        // HPF para contenido agudo
+        float hL = hpfL_.process(l);
+        float hR = hpfR_.process(r);
+
+        // Excitación = softClip(h) – h (solo armónicos añadidos)
+        float excL = softClip(hL, drive) - hL;
+        float excR = softClip(hR, drive) - hR;
+
+        // Mezcla final: dry*l + wet*(l+exc) = l*(dry+wet) + wet*exc = l + wet*exc
+        left[i]  = l + wet * excL;
+        right[i] = r + wet * excR;
     }
 }
 
