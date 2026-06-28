@@ -20,7 +20,6 @@
  */
 #include <cmath>
 #include <cstring>
-#include "../include/HarmonicExciter.h"
 #include <algorithm>
 
 namespace ivanna {
@@ -175,22 +174,7 @@ struct CTLSTMCell {
 };
 
 // ── Harmonic Exciter ────────────────────────────────────────
-struct HarmonicExciter {
-    float drive = 0.3f, blend = 0.15f, tone = 0.5f;
-    float lp1 = 0.f, lp2 = 0.f;
 
-    void process(float L, float R, float& oL, float& oR) {
-        float m = (L + R) * 0.5f;
-        float d = fast_tanh(m * (1.f + drive * 4.f)) * (1.f / (1.f + drive * 4.f));
-        float h = d - m;  // harmonic difference
-        lp1 += tone * (h - lp1);
-        lp2 += tone * 0.3f * (lp1 - lp2);
-        oL = sf(L + lp2 * blend);
-        oR = sf(R + lp2 * blend);
-    }
-
-    void reset() noexcept { lp1 = 0.f; lp2 = 0.f; }
-};
 
 // ── HRTF + Early Reflections ──────────────────────────────────
 struct HRTFReflectionEngine {
@@ -260,7 +244,7 @@ struct HRTFReflectionEngine {
 struct PILSTMMilenioEngine {
     PolyphasicUpsampler up;
     CTLSTMCell lstm;
-    ivanna::HarmonicExciter exciter;
+    // Harmonic exciter removed - using inline processing
     HRTFReflectionEngine hrtf;
 
     float harmonic_gain = 0.3f;
@@ -275,8 +259,7 @@ struct PILSTMMilenioEngine {
     void reset() {
         up = PolyphasicUpsampler();
         lstm.reset();
-        exciter.reset();
-        hrtf.reset();
+                hrtf.reset();
         memset(inL, 0, sizeof(inL));
         memset(inR, 0, sizeof(inR));
         memset(upL, 0, sizeof(upL));
