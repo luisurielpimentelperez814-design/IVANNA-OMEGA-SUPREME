@@ -1,10 +1,5 @@
 /*
- * omega_effect.cpp — Audio Effect Plugin (INSERT, corre en audioserver)
- *
- * hot path:
- *  1. Empuja samples al ring_in para el daemon (inferencia).
- *  2. Si ai_enabled: aplica AGC (Auto Gain Control) al output.
- *  3. Hace pop del ring_out procesado por el daemon.
+ * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO
  */
 #include "audio_effect_compat.h"
 #include <cstdlib>
@@ -24,6 +19,7 @@
 #ifndef AUDIO_CHANNEL_OUT_STEREO
 #define AUDIO_CHANNEL_OUT_STEREO 0x3u
 #endif
+
 #ifndef AUDIO_FORMAT_PCM_FLOAT
 #define AUDIO_FORMAT_PCM_FLOAT 0x5u
 #endif
@@ -33,9 +29,7 @@
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static constexpr const char* kSocketName = "omega_daemon_socket";
-// Target AGC: -18 dBFS ≈ 0.126 normalizado
 static constexpr float kAgcTargetRms = 0.126f;
-// Clamp ganancia AGC: ±12 dB = ×0.25 .. ×4.0
 static constexpr float kAgcGainMin   = 0.25f;
 static constexpr float kAgcGainMax   = 4.0f;
 
@@ -55,14 +49,11 @@ struct OmegaContext {
     effect_config_t config;
     bool            active = false;
     OmegaSharedState* shared  = nullptr;
-    // Estado del AGC por instancia (el shared state es para control,
-    // el seguidor de envolvente vive aquí para evitar race conditions)
     float agc_envelope = kAgcTargetRms;
     float agc_gain     = 1.0f;
     std::atomic<uint32_t> underruns{0};
 };
 
-// ── SCM_RIGHTS ────────────────────────────────────────────────────────────────
 static int receive_shm_fd() {
     int sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) return -1;
@@ -105,36 +96,40 @@ static void unmapSharedMemory(OmegaContext* ctx) {
     if (ctx->shared) { munmap(ctx->shared, sizeof(OmegaSharedState)); ctx->shared=nullptr; }
 }
 
-// ── AGC inline — corre en el hot path ────────────────────────────────────────
+// AGC OPTIMIZADO con vectorización
 static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
     float sensitivity = ctx->shared->ai_sensitivity.load(std::memory_order_relaxed);
-    // time-constant: sensitivity 0 → α=0.001 (muy lento), 1 → α=0.05 (rápido)
     float alpha = 0.001f + sensitivity * 0.049f;
 
-    // Calcular RMS del bloque
+    // Calcular RMS optimizado
     float rms = 0.0f;
-    for (int i = 0; i < samples; ++i) rms += buf[i] * buf[i];
+    #pragma unroll 8
+    for (int i = 0; i < samples; ++i) {
+        rms += buf[i] * buf[i];
+    }
     rms = sqrtf(rms / (float)samples + 1e-12f);
 
-    // Actualizar seguidor de envolvente
+    // Seguidor de envolvente
     ctx->agc_envelope += alpha * (rms - ctx->agc_envelope);
     ctx->shared->ai_rms_level.store(ctx->agc_envelope, std::memory_order_relaxed);
 
-    // Ganancia suavizada hacia el target
+    // Ganancia
     float target_gain = (ctx->agc_envelope > 1e-6f)
-        ? kAgcTargetRms / ctx->agc_envelope : 1.0f;
+                        ? kAgcTargetRms / ctx->agc_envelope : 1.0f;
     target_gain = std::fmaxf(kAgcGainMin, std::fminf(kAgcGainMax, target_gain));
     ctx->agc_gain += alpha * (target_gain - ctx->agc_gain);
 
-    // Guardar en shared para telemetría
+    // Aplicar ganancia optimizado
+    const float gain = ctx->agc_gain;
+    #pragma unroll 8
+    for (int i = 0; i < samples; ++i) {
+        buf[i] *= gain;
+    }
+
     float gain_db = 20.0f * log10f(std::fmaxf(ctx->agc_gain, 1e-6f));
     ctx->shared->ai_gain_db.store(gain_db, std::memory_order_relaxed);
-
-    // Aplicar ganancia
-    for (int i = 0; i < samples; ++i) buf[i] *= ctx->agc_gain;
 }
 
-// ── Forwards ──────────────────────────────────────────────────────────────────
 static int Effect_Process(effect_handle_t, audio_buffer_t*, audio_buffer_t*);
 static int Effect_Command(effect_handle_t, uint32_t, uint32_t, void*, uint32_t*, void*);
 static int Effect_GetDescriptor(effect_handle_t, effect_descriptor_t*);
@@ -142,7 +137,6 @@ static int Effect_GetDescriptor(effect_handle_t, effect_descriptor_t*);
 static const struct effect_interface_s sIface = {
     Effect_Process, Effect_Command, Effect_GetDescriptor, nullptr};
 
-// ── PROCESS ───────────────────────────────────────────────────────────────────
 static int Effect_Process(effect_handle_t self,
                           audio_buffer_t* in, audio_buffer_t* out) {
     auto* ctx = (OmegaContext*)self;
@@ -164,14 +158,12 @@ static int Effect_Process(effect_handle_t self,
     bool got = ctx->shared->ring_out.tryPop(out->f32, cap, &ctx->shared->output_buffer[0][0]);
     if (!got) ctx->underruns.fetch_add(1, std::memory_order_relaxed);
 
-    // AGC: se aplica DESPUÉS del pop para no bloquear el daemon
     if (ctx->shared->ai_enabled.load(std::memory_order_relaxed) && got)
         applyAgc(ctx, out->f32, cap);
 
     return 0;
 }
 
-// ── COMMAND ───────────────────────────────────────────────────────────────────
 static int Effect_Command(effect_handle_t self, uint32_t cmd, uint32_t csz,
                           void* pCmd, uint32_t* rsz, void* pReply) {
     auto* ctx = (OmegaContext*)self; if (!ctx) return -EINVAL;
@@ -201,7 +193,6 @@ static int Effect_GetDescriptor(effect_handle_t, effect_descriptor_t* d) {
     if (!d) return -EINVAL; memcpy(d, &kDesc, sizeof(kDesc)); return 0;
 }
 
-// ── Library ───────────────────────────────────────────────────────────────────
 static int EffectCreate(const effect_uuid_t* uuid, int32_t sid, int32_t iid,
                         effect_handle_t* handle) {
     (void)sid;(void)iid;
@@ -219,17 +210,20 @@ static int EffectCreate(const effect_uuid_t* uuid, int32_t sid, int32_t iid,
     ALOG("EffectCreate OK");
     return 0;
 }
+
 static int EffectRelease(effect_handle_t h) {
     if (!h) return -EINVAL;
     auto* ctx=(OmegaContext*)h; unmapSharedMemory(ctx); delete ctx;
     ALOG("EffectRelease OK"); return 0;
 }
+
 static int EffectGetDescriptor(const effect_uuid_t* uuid, effect_descriptor_t* d) {
     if (!uuid||!d) return -EINVAL;
     if (memcmp(uuid,&kEffectUuid,sizeof(effect_uuid_t))!=0&&
         memcmp(uuid,EFFECT_UUID_NULL,sizeof(effect_uuid_t))!=0) return -ENOENT;
     memcpy(d,&kDesc,sizeof(kDesc)); return 0;
 }
+
 static int QueryNumEffects(uint32_t* n) { if(!n) return -EINVAL; *n=1; return 0; }
 static int QueryEffect(uint32_t i, effect_descriptor_t* d) {
     if(!d||i!=0) return -ENOENT; memcpy(d,&kDesc,sizeof(kDesc)); return 0; }
@@ -242,7 +236,6 @@ const audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     .create_effect=EffectCreate,.release_effect=EffectRelease,
     .get_descriptor=EffectGetDescriptor};
 
-// ── JNI diagnóstico ───────────────────────────────────────────────────────────
 extern "C" {
 JNIEXPORT jboolean JNICALL Java_com_ivannafusion_OmegaEffect_nativeInit(JNIEnv*,jobject){ return JNI_TRUE; }
 JNIEXPORT void JNICALL Java_com_ivannafusion_OmegaEffect_nativeRelease(JNIEnv*,jobject){}
