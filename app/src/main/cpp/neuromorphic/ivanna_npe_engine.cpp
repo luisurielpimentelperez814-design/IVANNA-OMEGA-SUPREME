@@ -16,6 +16,7 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
+#include <malloc.h>
 // #include <hexagon_nn.h>  // Hexagon NN SDK (device only)
 // #include <hvx_hexagon.h>  // HVX intrinsics (device only)
 #include <cstdint>
@@ -211,7 +212,7 @@ public:
     FIRUpsamplerEngine() {
         generateFIRCoefficients();
         // Estado del filtro: delay line circular
-        m_delay_line = static_cast<float*>(aligned_alloc(64, FIR_TAPS * sizeof(float)));
+        m_delay_line = static_cast<float*>(memalign(64, FIR_TAPS * sizeof(float)));
         memset(m_delay_line, 0, FIR_TAPS * sizeof(float));
         m_delay_index = 0;
     }
