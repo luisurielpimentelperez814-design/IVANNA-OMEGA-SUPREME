@@ -516,7 +516,7 @@ class AudioEngine {
     }
 
     /** Confianza real del último resultado de YAMNet (0 si no hay clasificador cargado o aún no clasificó nada). */
-    fun aiGetConfidence(): Float = lastYamnetResult?.topScore?.coerceIn(0f, 1f) ?: 0f
+    fun aiGetConfidence(): Float = lastYamnetResult?.score?.coerceIn(0f, 1f) ?: 0f
 
     // ── Native methods — TODOS implementados realmente en jni_wrapper.cpp
     //     (verificado: grep de los símbolos Java_com_ivannafusion_AudioEngine_*

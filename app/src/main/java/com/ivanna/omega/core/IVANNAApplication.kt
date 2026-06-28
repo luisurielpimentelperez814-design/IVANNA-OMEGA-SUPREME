@@ -2,8 +2,7 @@ package com.ivannafusion
 
 import android.app.Application
 import android.util.Log
-import com.ivanna.omega.dsp.DSPState
-import com.ivannafusion.persistence.ParameterStore
+import com.ivanna.omega.dsp.DSPBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,11 +10,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class IVANNAApplication : Application() {
+
     companion object {
         private const val TAG = "IVANNAApplication"
-        lateinit var parameterStore: ParameterStore
-            private set
-        val appScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val appScope    = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         var isInitialized = false
             private set
         val omegaBridge = OmegaEngineBridge()
@@ -24,19 +22,16 @@ class IVANNAApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
-        parameterStore = ParameterStore(this)
 
         appScope.launch {
             try {
-                DSPState.initialize(parameterStore)
-                DSPState.detectRealHardwareCapabilities(this@IVANNAApplication)
-                Log.d(TAG, "✅ DSPState listo — ${DSPState.deviceSampleRateHz} Hz")
+                // Inicializar DSP nativo
+                DSPBridge.init(sampleRate = 48000)
+                Log.d(TAG, "✅ DSPBridge listo — 48000 Hz")
 
                 val daemonOk = OmegaDaemon.start()
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
                            else          "⚠️ OmegaDaemon no disponible (Magisk standalone activo?)")
-
-
 
                 delay(300)
                 omegaBridge.connect()

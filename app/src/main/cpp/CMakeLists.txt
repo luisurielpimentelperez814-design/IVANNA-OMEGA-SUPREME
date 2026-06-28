@@ -50,7 +50,7 @@ add_library(ivanna_omega SHARED
     spatial/room_model.cpp
 
     # System audio integration
-    audio_orchestrator.cpp
+    # audio_orchestrator.cpp  # EXCLUIDO: huérfano (AudioEngine.kt fuera del build)
     shm_hyperplane.cpp
     omega_daemon.cpp
 )

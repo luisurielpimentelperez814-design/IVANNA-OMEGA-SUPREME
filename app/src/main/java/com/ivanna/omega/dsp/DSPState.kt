@@ -1,110 +1,86 @@
 package com.ivanna.omega.dsp
 
 /**
- * DSP State - Immutable data class for all DSP parameters
+ * DSP State — inmutable data class para todos los parámetros DSP.
  * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
  */
 data class DSPState(
     // Core parameters
-    val drive: Float = 0.65f,
-    val wet: Float = 0.50f,
-    val mix: Float = 0.70f,
-    val alpha: Float = 0.50f,
-    val beta: Float = 0.50f,
-    val gamma: Float = 0.50f,
-    val freq: Float = 1000f,
+    val drive: Float     = 0.65f,
+    val wet: Float       = 0.50f,
+    val mix: Float       = 0.70f,
+    val alpha: Float     = 0.50f,
+    val beta: Float      = 0.50f,
+    val gamma: Float     = 0.50f,
+    val freq: Float      = 1000f,
     val resonance: Float = 0.707f,
 
-    // EQ gains
-    val low: Float = 0.0f,
-    val mid: Float = 0.0f,
-    val high: Float = 0.0f,
+    // EQ gains (dB)
+    val low: Float      = 0.0f,
+    val mid: Float      = 0.0f,
+    val high: Float     = 0.0f,
     val presence: Float = 0.0f,
-    val master: Float = 0.0f,
+    val master: Float   = 0.0f,
 
     // Compressor
     val compThreshold: Float = -18.0f,
-    val compRatio: Float = 4.0f,
+    val compRatio: Float     =   4.0f,
 
     // Exciter
     val exciterDrive: Float = 0.3f,
 
     // Stereo
     val stereoWidth: Float = 1.0f,
-    val makeupGain: Float = 0.0f,
+    val makeupGain: Float  = 0.0f,
 
     // Bypass
     val bypass: Boolean = false
 ) {
-    // EQ gains array for native
+    /** EQ gains array para JNI */
     val eqGains: FloatArray
         get() = floatArrayOf(low, mid, high, presence)
 
     /**
-     * Push all parameters to native DSP
+     * Envía todos los parámetros al DSP nativo vía DSPBridge.
      */
     fun pushToNative() {
-        val params = floatArrayOf(
-            drive,
-            wet,
-            mix,
-            alpha,
-            beta,
-            gamma,
-            freq,
-            resonance,
-            low,
-            mid,
-            high,
-            presence,
-            master
+        DSPBridge.setParams(
+            drive, wet, mix,
+            alpha, beta, gamma,
+            freq, resonance,
+            low, mid, high, presence, master
         )
-        IvannaNativeLib.nativeSetParams(params)
     }
 
     companion object {
-        // PF Engine static properties (used by AudioEngine)
-        var pfDrive: Float = 0.65f
-        var pfWet: Float = 0.50f
-        var pfAlpha: Float = 0.50f
-        var pfBeta: Float = 0.50f
-        var pfDelta: Float = 0.50f
-        var pfSigma: Float = 0.50f
-        var pfFreq: Float = 1000f
-        var pfResonance: Float = 0.707f
-        var pfMix: Float = 0.70f
-        var pfLowGain: Float = 0.0f
-        var pfMidGain: Float = 0.0f
-        var pfHighGain: Float = 0.0f
-        var pfPresence: Float = 0.0f
-        var pfAmpModel: Int = 0
+        // ── Campos estáticos del PF Engine (escritos desde AudioEngine) ──────
+        @JvmField var pfDrive:     Float = 0.65f
+        @JvmField var pfWet:       Float = 0.50f
+        @JvmField var pfAlpha:     Float = 0.50f
+        @JvmField var pfBeta:      Float = 0.50f
+        @JvmField var pfDelta:     Float = 0.50f
+        @JvmField var pfSigma:     Float = 0.50f
+        @JvmField var pfFreq:      Float = 1000f
+        @JvmField var pfResonance: Float = 0.707f
+        @JvmField var pfMix:       Float = 0.70f
+        @JvmField var pfLowGain:   Float = 0.0f
+        @JvmField var pfMidGain:   Float = 0.0f
+        @JvmField var pfHighGain:  Float = 0.0f
+        @JvmField var pfPresence:  Float = 0.0f
+        @JvmField var pfAmpModel:  Int   = 0
 
-        /**
-         * Convert dB slider value (-12..+12) to linear gain
-         */
-        fun sliderToDb(slider: Float): Float {
-            return slider * 24f - 12f  // 0..1 -> -12..+12 dB
-        }
+        /** Slider [0..1] → ganancia dB [-12..+12] */
+        fun sliderToDb(slider: Float): Float = slider * 24f - 12f
 
-        /**
-         * Convert linear gain to dB slider value
-         */
-        fun dbToSlider(db: Float): Float {
-            return (db + 12f) / 24f  // -12..+12 dB -> 0..1
-        }
+        /** Ganancia dB [-12..+12] → slider [0..1] */
+        fun dbToSlider(db: Float): Float = (db + 12f) / 24f
 
-        /**
-         * Convert slider (0..1) to frequency (20..20000 Hz)
-         */
-        fun sliderToFreq(slider: Float): Float {
-            return 20f * kotlin.math.pow(1000f, slider)  // 20..20000 Hz
-        }
+        /** Slider [0..1] → frecuencia Hz [20..20000] (escala logarítmica) */
+        fun sliderToFreq(slider: Float): Float =
+            (20.0 * Math.pow(1000.0, slider.toDouble())).toFloat()
 
-        /**
-         * Convert slider (0..1) to Q factor (0.1..10.0)
-         */
-        fun sliderToQ(slider: Float): Float {
-            return 0.1f * kotlin.math.pow(100f, slider)  // 0.1..10.0
-        }
+        /** Slider [0..1] → factor Q [0.1..10] (escala logarítmica) */
+        fun sliderToQ(slider: Float): Float =
+            (0.1 * Math.pow(100.0, slider.toDouble())).toFloat()
     }
 }
