@@ -6,6 +6,7 @@
  */
 
 #include "../include/volterra_h2_symmetric.hpp"
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
