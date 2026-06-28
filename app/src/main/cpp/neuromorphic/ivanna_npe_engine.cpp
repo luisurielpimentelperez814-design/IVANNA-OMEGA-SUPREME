@@ -23,6 +23,22 @@
 #include <cstring>
 #include <cmath>
 #include <atomic>
+// ── Hexagon DSP API stubs ────────────────────────────────────────────────────
+// Las librerias reales (libcdsprpc.so / libadsprpc.so) se cargan en runtime via
+// dlopen() en dispositivos Qualcomm. Estos stubs permiten compilar sin el SDK
+// de Qualcomm; initialize() retornara false y el codigo usara fallback CPU.
+static inline void*  dsp_open()                                 { return nullptr; }
+static inline void*  adsprpc_open()                             { return nullptr; }
+static inline void*  dsp_alloc_dma(size_t, void*)               { return nullptr; }
+static inline bool   dsp_free_dma(void*, void*)                 { return false;   }
+static inline void*  dsp_create_module(void*, const char*, const void*) { return nullptr; }
+static inline bool   dsp_destroy_module(void*, void*)           { return false;   }
+static inline bool   dsp_close(void*)                           { return false;   }
+static inline float  dsp_get_thermal_load(void*)                { return 0.0f;    }
+template<typename... Args>
+static inline bool   dsp_invoke(void*, void*, Args...)          { return false;   }
+// ─────────────────────────────────────────────────────────────────────────────
+
 
 namespace ivanna {
 namespace dsp {
@@ -41,7 +57,7 @@ static constexpr uint32_t HVX_VECTOR_WIDTH = 128;      // bytes (32 floats de 32
 
 // Coeficientes del filtro (pre-calculados, ventana Blackman-Harris)
 // Generados offline con precisión de 64 bits, truncados a 32-bit float
-static alignas(64) float g_fir_coefficients[FIR_TAPS];
+static float g_fir_coefficients __attribute__((aligned(64)))[FIR_TAPS];
 static std::atomic<bool> g_coefficients_initialized{false};
 
 // Ventana Blackman-Harris de 4 términos

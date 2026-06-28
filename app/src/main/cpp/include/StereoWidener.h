@@ -3,14 +3,14 @@
 
 namespace ivanna {
 
-// M/S stereo widener — gamma controls width 0..2 (1=original)
 class StereoWidener {
 public:
     void setParams(const DSPParams& p);
     void process(float* left, float* right, int frames);
 
 private:
-    float width_ = 1.f;
+    float width_     = 1.f;
+    float halfWidth_ = 0.5f;  // width * 0.5, precomputado
 };
 
 } // namespace ivanna

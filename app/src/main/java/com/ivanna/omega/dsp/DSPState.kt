@@ -22,11 +22,39 @@ data class DSPState(
     var makeupGain: Float = 0f,
     var bypass: Boolean = false
 ) {
+
     companion object {
+        // ── Campos PF Engine (referenciados por AudioEngine.kt) ──────────────
+        @JvmField var pfDrive:     Float = 0.65f
+        @JvmField var pfWet:       Float = 0.50f
+        @JvmField var pfAlpha:     Float = 0.50f
+        @JvmField var pfBeta:      Float = 0.50f
+        @JvmField var pfDelta:     Float = 0.00f
+        @JvmField var pfSigma:     Float = 0.00f
+        @JvmField var pfFreq:      Float = 1000f
+        @JvmField var pfResonance: Float = 0.707f
+        @JvmField var pfMix:       Float = 0.70f
+        @JvmField var pfLowGain:   Float = 0.00f
+        @JvmField var pfMidGain:   Float = 0.00f
+        @JvmField var pfHighGain:  Float = 0.00f
+        @JvmField var pfPresence:  Float = 0.00f
+        @JvmField var pfAmpModel:  Int   = 0
+
         fun sliderToFreq(slider: Float): Float {
             val clamped = slider.coerceIn(0f, 1f)
             return 20f * kotlin.math.pow(1000f, clamped)
         }
+        fun sliderToQ(slider: Float): Float {
+            val clamped = slider.coerceIn(0f, 1f)
+            return 0.1f * kotlin.math.pow(100f, clamped)
+        }
+        fun dbToSlider(db: Float): Float {
+            return ((db + 12f) / 24f).coerceIn(0f, 1f)
+        }
+        fun sliderToDb(slider: Float): Float {
+            return (slider * 24f - 12f).coerceIn(-12f, 12f)
+        }
+    }
         fun sliderToQ(slider: Float): Float {
             val clamped = slider.coerceIn(0f, 1f)
             return 0.1f * kotlin.math.pow(100f, clamped)
