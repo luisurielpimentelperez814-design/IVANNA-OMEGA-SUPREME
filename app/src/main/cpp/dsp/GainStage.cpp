@@ -12,57 +12,61 @@ static inline __attribute__((always_inline)) float dbToLin(float db) {
 void GainStage::setParams(const DSPParams& p) {
     sr_ = p.sampleRate;
     // Coeficiente de suavizado precalculado (15 ms)
-    smoothCoeff_      = std::exp(-1.f / (sr_ * 0.015f));
-    oneMinusSmooth_   = 1.f - smoothCoeff_;
-    
-    inputGain_  = dbToLin((p.mix - 0.5f) * 12.f);
+    smoothCoeff_ = std::exp(-1.f / (sr_ * 0.015f));
+    oneMinusSmooth_ = 1.f - smoothCoeff_;
+
+    inputGain_ = dbToLin((p.mix - 0.5f) * 12.f);
     outputGain_ = dbToLin(p.master);
-    
+
     // Reiniciar estado al cambiar parámetros
-    currentIn_  = inputGain_;
+    currentIn_ = inputGain_;
     currentOut_ = outputGain_;
 }
 
 __attribute__((hot, flatten))
 void GainStage::processInput(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-    
+
     const float smooth = smoothCoeff_;
     const float one_minus_smooth = oneMinusSmooth_;
     const float target = inputGain_;
     float current = currentIn_;
-    
-    #pragma clang loop vectorize(enable) interleave(enable)
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
         current = smooth * current + one_minus_smooth * target;
-        left[i]  *= current;
+        left[i] *= current;
         right[i] *= current;
     }
-    
+#pragma clang diagnostic pop
+
     currentIn_ = current;
 }
 
 __attribute__((hot, flatten))
 void GainStage::processOutput(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-    
+
     const float smooth = smoothCoeff_;
     const float one_minus_smooth = oneMinusSmooth_;
     const float target = outputGain_;
     float current = currentOut_;
-    
-    #pragma clang loop vectorize(enable) interleave(enable)
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
         current = smooth * current + one_minus_smooth * target;
-        left[i]  *= current;
+        left[i] *= current;
         right[i] *= current;
     }
-    
+#pragma clang diagnostic pop
+
     currentOut_ = current;
 }
 
 void GainStage::reset() {
-    currentIn_  = inputGain_;
+    currentIn_ = inputGain_;
     currentOut_ = outputGain_;
 }
 
