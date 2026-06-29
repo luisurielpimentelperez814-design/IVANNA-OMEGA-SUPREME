@@ -20,6 +20,26 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     bandsR[b] = bandsL[b];
 }
 
+void ParametricEQ::setParams(const DSPParams& p) noexcept {
+    // Map DSPParams to 8 parametric bands
+    // Band 0: Low shelf  ~80 Hz
+    // Band 1: Peaking    ~200 Hz (low param)
+    // Band 2: Peaking    ~500 Hz
+    // Band 3: Peaking    ~1 kHz (freq param)
+    // Band 4: Peaking    ~2.5 kHz (mid param)
+    // Band 5: Peaking    ~5 kHz (high param)
+    // Band 6: Peaking    ~8 kHz (presence param)
+    // Band 7: High shelf ~12 kHz
+    setBand(0, 80.f, 0.707f, p.low * 12.f);
+    setBand(1, 200.f, p.resonance, p.low * 8.f);
+    setBand(2, 500.f, p.resonance, 0.f);
+    setBand(3, p.freq, p.resonance, 0.f);
+    setBand(4, 2500.f, p.resonance, p.mid * 8.f);
+    setBand(5, 5000.f, p.resonance, p.high * 8.f);
+    setBand(6, 8000.f, p.resonance, p.presence * 8.f);
+    setBand(7, 12000.f, 0.707f, p.high * 6.f);
+}
+
 void ParametricEQ::process(float* l,float* r,int frames) noexcept {
     if(frames<=0) return;
 #pragma clang diagnostic push
@@ -32,4 +52,4 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
 #pragma clang diagnostic pop
 }
 
-}
+} // namespace ivanna

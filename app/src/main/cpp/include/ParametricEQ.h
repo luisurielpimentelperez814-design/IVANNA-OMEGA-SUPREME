@@ -1,4 +1,6 @@
 #pragma once
+#include "dsp_types.h"
+
 namespace ivanna {
 class ParametricEQ {
 public:
@@ -6,6 +8,7 @@ public:
     void reset() noexcept;
     void setSampleRate(float sr) noexcept;
     void setBand(int band, float freq, float q, float gainDb) noexcept;
+    void setParams(const DSPParams& p) noexcept;
     void process(float* left, float* right, int frames) noexcept;
 private:
     struct Biquad {
