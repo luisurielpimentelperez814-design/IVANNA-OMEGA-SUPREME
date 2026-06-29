@@ -69,11 +69,30 @@ data class DSPState(
         @JvmField var pfPresence:  Float = 0.0f
         @JvmField var pfAmpModel:  Int   = 0
 
-        /** Slider [0..1] → ganancia dB [-12..+12] */
-        fun sliderToDb(slider: Float): Float = slider * 24f - 12f
+        /**
+         * Slider [0..1] → ganancia dB [-18..+18]
+         * Rango ampliado de ±12 a ±18 dB para mayor dinámica.
+         */
+        fun sliderToDb(slider: Float): Float = slider * 36f - 18f
 
-        /** Ganancia dB [-12..+12] → slider [0..1] */
-        fun dbToSlider(db: Float): Float = (db + 12f) / 24f
+        /**
+         * Ganancia dB [-18..+18] → slider [0..1]
+         */
+        fun dbToSlider(db: Float): Float = (db + 18f) / 36f
+
+        /**
+         * Slider [0..1] → drive con curva logarítmica suave.
+         * Permite control fino en valores bajos y agresivo en altos.
+         * Rango efectivo: 0.0 (limpio) → 4.0 (saturación máxima).
+         */
+        fun sliderToDrive(slider: Float): Float =
+            (Math.pow(slider.toDouble(), 2.0) * 4.0).toFloat().coerceIn(0f, 4f)
+
+        /**
+         * Drive [0..4] → slider [0..1]
+         */
+        fun driveToSlider(drive: Float): Float =
+            Math.sqrt((drive / 4.0).coerceIn(0.0, 1.0)).toFloat()
 
         /** Slider [0..1] → frecuencia Hz [20..20000] (escala logarítmica) */
         fun sliderToFreq(slider: Float): Float =

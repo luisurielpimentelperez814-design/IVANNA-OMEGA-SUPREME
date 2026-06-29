@@ -199,71 +199,86 @@ fun DashboardScreen(dspViewModel: DSPViewModel) {
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación") { newVal ->
-                        dspViewModel.updateState { it.copy(drive = newVal) }
-                        dspViewModel.state.pushToNative()
+                    // Drive usa curva logarítmica: slider → [0..4]
+                    val driveSl = remember(dsp.drive) { DSPState.driveToSlider(dsp.drive) }
+                    FaderControl("DRIVE", driveSl, "x%.2f".format(dsp.drive)) { newVal ->
+                        val newState = dsp.copy(drive = DSPState.sliderToDrive(newVal))
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()                   // ← usa newState, no dspViewModel.state
                     }
                     FaderControl("WET", dsp.wet, "Señal proc.") { newVal ->
-                        dspViewModel.updateState { it.copy(wet = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(wet = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     FaderControl("MIX", dsp.mix, "Seca/Húmeda") { newVal ->
-                        dspViewModel.updateState { it.copy(mix = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(mix = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                 }
             }
             item {
                 DspSection("DSP ENGINE α·β·γ") {
                     FaderControl("ALPHA", dsp.alpha, "Compresor") { newVal ->
-                        dspViewModel.updateState { it.copy(alpha = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(alpha = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     FaderControl("BETA", dsp.beta, "Ratio") { newVal ->
-                        dspViewModel.updateState { it.copy(beta = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(beta = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     FaderControl("GAMMA", dsp.gamma, "Width") { newVal ->
-                        dspViewModel.updateState { it.copy(gamma = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(gamma = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     val freqSl = remember(dsp.freq) {
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") { newVal ->
-                        dspViewModel.updateState { it.copy(freq = DSPState.sliderToFreq(newVal)) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(freq = DSPState.sliderToFreq(newVal))
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) { newVal ->
-                        dspViewModel.updateState { it.copy(resonance = DSPState.sliderToQ(newVal)) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(resonance = DSPState.sliderToQ(newVal))
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                 }
             }
             item {
-                DspSection("PARAMETRIC EQ") {
+                DspSection("PARAMETRIC EQ  [±18 dB]") {
                     EqFader("LOW", dsp.low) { newVal ->
-                        dspViewModel.updateState { it.copy(low = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(low = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     EqFader("MID", dsp.mid) { newVal ->
-                        dspViewModel.updateState { it.copy(mid = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(mid = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     EqFader("HIGH", dsp.high) { newVal ->
-                        dspViewModel.updateState { it.copy(high = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(high = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     EqFader("PRESENCE", dsp.presence) { newVal ->
-                        dspViewModel.updateState { it.copy(presence = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(presence = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                     EqFader("MASTER", dsp.master) { newVal ->
-                        dspViewModel.updateState { it.copy(master = newVal) }
-                        dspViewModel.state.pushToNative()
+                        val newState = dsp.copy(master = newVal)
+                        dspViewModel.updateState { newState }
+                        newState.pushToNative()
                     }
                 }
             }
@@ -336,16 +351,23 @@ fun FaderControl(name: String, value: Float, desc: String, onValueChange: (Float
 @Composable
 fun EqFader(name: String, db: Float, onDbChange: (Float) -> Unit) {
     val sliderVal = DSPState.dbToSlider(db)
+    // Visual feedback: cyan normal, gold when "hot" (>+9 dB out of ±18 dB range)
+    val thumbColor = when {
+        db > 9f -> GoldGlow
+        db > 0f -> CyanGlow
+        else    -> Color(0xFF00AACC)
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(54.dp)) {
         Text(if (db >= 0) "+%.1f".format(db) else "%.1f".format(db),
-            color = CyanGlow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            color = thumbColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(2.dp))
         Box(Modifier.width(34.dp).height(88.dp), contentAlignment = Alignment.Center) {
             Slider(value = sliderVal, onValueChange = { onDbChange(DSPState.sliderToDb(it)) },
                 modifier = Modifier.width(88.dp).rotate(-90f),
                 colors = SliderDefaults.colors(
-                    thumbColor = if (db > 0f) CyanGlow else Color(0xFF00AACC),
-                    activeTrackColor = CyanGlow, inactiveTrackColor = Border1))
+                    thumbColor = thumbColor,
+                    activeTrackColor = thumbColor,
+                    inactiveTrackColor = Border1))
         }
         Spacer(Modifier.height(2.dp))
         Text(name, color = TextPri, fontSize = 10.sp, fontWeight = FontWeight.Bold,

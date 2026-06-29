@@ -21,23 +21,28 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
 }
 
 void ParametricEQ::setParams(const DSPParams& p) noexcept {
-    // Map DSPParams to 8 parametric bands
-    // Band 0: Low shelf  ~80 Hz
-    // Band 1: Peaking    ~200 Hz (low param)
-    // Band 2: Peaking    ~500 Hz
-    // Band 3: Peaking    ~1 kHz (freq param)
-    // Band 4: Peaking    ~2.5 kHz (mid param)
-    // Band 5: Peaking    ~5 kHz (high param)
-    // Band 6: Peaking    ~8 kHz (presence param)
-    // Band 7: High shelf ~12 kHz
-    setBand(0, 80.f, 0.707f, p.low * 12.f);
-    setBand(1, 200.f, p.resonance, p.low * 8.f);
-    setBand(2, 500.f, p.resonance, 0.f);
-    setBand(3, p.freq, p.resonance, 0.f);
-    setBand(4, 2500.f, p.resonance, p.mid * 8.f);
-    setBand(5, 5000.f, p.resonance, p.high * 8.f);
-    setBand(6, 8000.f, p.resonance, p.presence * 8.f);
-    setBand(7, 12000.f, 0.707f, p.high * 6.f);
+    // p.low / p.mid / p.high / p.presence arrive as dB values directly from Kotlin
+    // (DSPBridge.setParams passes them verbatim — they are NOT 0..1 scalars).
+    // Previous code multiplied by 8/12 which produced wild values (e.g. +6 dB * 12 = +72 dB).
+    // Fix: use dB values directly. clamp to ±18 dB for safety.
+    auto clampDb = [](float db) { return db < -18.f ? -18.f : db > 18.f ? 18.f : db; };
+
+    // Band 0: Low shelf  ~80 Hz  — driven by low param
+    setBand(0, 80.f,   0.707f, clampDb(p.low));
+    // Band 1: Peaking   ~200 Hz — low param (half weight for smooth shelf)
+    setBand(1, 200.f,  p.resonance, clampDb(p.low * 0.5f));
+    // Band 2: Peaking   ~500 Hz — mid transition (no direct param, flat)
+    setBand(2, 500.f,  p.resonance, 0.f);
+    // Band 3: Peaking   at freq Hz — used as a parametric bell, gain from master
+    setBand(3, p.freq, p.resonance, clampDb(p.master * 0.25f));
+    // Band 4: Peaking   ~2.5 kHz — mid param
+    setBand(4, 2500.f, p.resonance, clampDb(p.mid));
+    // Band 5: Peaking   ~5 kHz  — high param
+    setBand(5, 5000.f, p.resonance, clampDb(p.high));
+    // Band 6: Peaking   ~8 kHz  — presence param
+    setBand(6, 8000.f, p.resonance, clampDb(p.presence));
+    // Band 7: High shelf ~12 kHz — high param (half for air)
+    setBand(7, 12000.f, 0.707f, clampDb(p.high * 0.5f));
 }
 
 void ParametricEQ::process(float* l,float* r,int frames) noexcept {
