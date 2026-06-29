@@ -1,24 +1,19 @@
 #pragma once
 #include "dsp_types.h"
-
 namespace ivanna {
-
-// Input gain + output master with smooth ramping
 class GainStage {
 public:
     void setParams(const DSPParams& p);
     void processInput(float* left, float* right, int frames);
     void processOutput(float* left, float* right, int frames);
-    void reset(); // FIX: reinicia rampeos para evitar clicks post-reset
-
+    void reset();
 private:
-    float inputGain_  = 1.f;
-    float outputGain_ = 1.f;
-    float currentIn_  = 1.f;
-    float currentOut_ = 1.f;
-    uint32_t sr_ = 48000;
-    float smoothCoeff_ = 0.0f;      // Precalculado en setParams
-    float oneMinusSmooth_ = 1.0f;   // 1 - smoothCoeff_
+    float sr_ = 48000.0f;
+    float smoothCoeff_ = 0.99f;
+    float oneMinusSmooth_ = 0.01f;
+    float inputGain_ = 1.0f;
+    float outputGain_ = 1.0f;
+    float currentIn_ = 1.0f;
+    float currentOut_ = 1.0f;
 };
-
-} // namespace ivanna
+}
