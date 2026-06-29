@@ -145,7 +145,7 @@ static inline void predictSamples(const float* __restrict__ inBuf, float* __rest
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivannafusion_AudioEngine_nativePredictSamples(
+Java_com_ivanna_omega_core_AudioEngine_nativePredictSamples(
         JNIEnv* env, jobject, jlong, jfloatArray input, jfloatArray output, jint n) {
 
     static bool initialized = false;
@@ -164,7 +164,7 @@ Java_com_ivannafusion_AudioEngine_nativePredictSamples(
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativePredictSamples(
+Java_com_ivanna_omega_core_IvannaNativeLib_nativePredictSamples(
         JNIEnv* env, jobject, jfloatArray audioBuffer, jint sampleCount) {
 
     static bool initialized = false;
@@ -187,12 +187,12 @@ Java_com_ivannafusion_IvannaNativeLib_nativePredictSamples(
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject) {
     return g_kalman.state[0];
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeSetPhaseParameters(
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
         JNIEnv*, jobject, jfloat alpha, jfloat beta, jfloat gamma) {
     g_kalman.Q[0][0] = alpha;
     g_kalman.Q[1][1] = beta;

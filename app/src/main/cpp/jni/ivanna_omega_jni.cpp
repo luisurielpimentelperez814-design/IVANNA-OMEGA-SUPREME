@@ -50,7 +50,7 @@ static inline bool copyJFloatArray(JNIEnv* env, jfloatArray src, float* dst, int
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 192000) {
         LOGE("Invalid sample rate: %d", sr);
         return JNI_FALSE;
@@ -68,7 +68,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     JNIEnv* env, jobject,
     jfloatArray inL, jfloatArray inR,
     jfloatArray outL, jfloatArray outR,
@@ -111,7 +111,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetParams(
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     JNIEnv* env, jobject, jfloatArray params) {
     if (!params) return;
     jfloat* p = env->GetFloatArrayElements(params, nullptr);
@@ -140,7 +140,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeSetParams(
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_eq.reset();
     g_comp.reset();
     g_exciter.reset();
@@ -152,62 +152,62 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
 
 // PI-LSTM Milenio setters
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_alpha(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_beta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_gamma(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_delta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetEta(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_eta(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_harmonic_gain(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*, jobject, jboolean en) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*, jobject, jboolean en) {
     g_piLstm.set_hrtf_enabled(en == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*, jobject, jboolean en) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*, jobject, jboolean en) {
     g_piLstm.set_adapt_enabled(en == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
     g_piLstm.set_np_max(v);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint i, jfloat g) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint i, jfloat g) {
     g_piLstm.set_reflection_gain(i, g);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint i, jfloat d) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint i, jfloat d) {
     g_piLstm.set_reflection_delay(i, d);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeInitPILSTM(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*, jobject) {
     g_piLstm.reset();
     LOGI("PI-LSTM initialized");
 }

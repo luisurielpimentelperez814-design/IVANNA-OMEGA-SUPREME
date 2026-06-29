@@ -1,0 +1,601 @@
+From e1d0ea11e7fd248b5f6fd2b0cc9f42801d2aa2a5 Mon Sep 17 00:00:00 2001
+From: CI Fix Bot <fix@ivanna.dev>
+Date: Tue, 30 Jun 2026 02:02:21 +0800
+Subject: [PATCH] fix: unificar todo bajo IvannaNativeLib, corregir namespaces,
+ audio funcional
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- C++: Fix JNI namespaces (com_ivannafusion -> com_ivanna_omega_core)
+- C++: Crear spatial_jni.cpp con puente JNI para motor espacial
+- C++: Añadir spatial_jni.cpp a CMakeLists.txt
+- C++: Añadir apply_reverb_f declaration a room_model.h
+- C++: Añadir nativeSetMutationRate/nativeGetMutationRate a evolutionary_kernel
+- Kotlin: Reescribir IvannaNativeLib.kt con todos los métodos (DSP, PI-LSTM, evolutionary, phase, spatial)
+---
+ app/src/main/cpp/CMakeLists.txt               |   1 +
+ app/src/main/cpp/evolutionary_kernel.cpp      |  33 ++-
+ app/src/main/cpp/jni/ivanna_omega_jni.cpp     |  32 +--
+ app/src/main/cpp/phase_oracle.cpp             |   8 +-
+ app/src/main/cpp/spatial/room_model.h         |   1 +
+ app/src/main/cpp/spatial/spatial_jni.cpp      | 222 ++++++++++++++++++
+ .../com/ivanna/omega/core/IvannaNativeLib.kt  |  60 ++++-
+ 7 files changed, 319 insertions(+), 38 deletions(-)
+ create mode 100644 app/src/main/cpp/spatial/spatial_jni.cpp
+
+diff --git a/app/src/main/cpp/CMakeLists.txt b/app/src/main/cpp/CMakeLists.txt
+index 75ecd6f..be054fc 100644
+--- a/app/src/main/cpp/CMakeLists.txt
++++ b/app/src/main/cpp/CMakeLists.txt
+@@ -48,6 +48,7 @@ add_library(ivanna_omega SHARED
+     # Spatial
+     spatial/spatial_engine.cpp
+     spatial/room_model.cpp
++    spatial/spatial_jni.cpp
+ 
+     # System audio integration
+     # audio_orchestrator.cpp  # EXCLUIDO: huérfano (AudioEngine.kt fuera del build)
+diff --git a/app/src/main/cpp/evolutionary_kernel.cpp b/app/src/main/cpp/evolutionary_kernel.cpp
+index 4af81fa..14e2a96 100644
+--- a/app/src/main/cpp/evolutionary_kernel.cpp
++++ b/app/src/main/cpp/evolutionary_kernel.cpp
+@@ -132,56 +132,69 @@ static void evolveGeneration() {
+ extern "C" {
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeInitializeEvolution(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_AudioEngine_nativeInitializeEvolution(JNIEnv*, jobject) {
+     initializePopulation();
+ }
+ 
+ JNIEXPORT jfloat JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeGetBestFitness(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_AudioEngine_nativeGetBestFitness(JNIEnv*, jobject) {
+     return g_population.bestFitness;
+ }
+ 
+ JNIEXPORT jint JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeGetGeneration(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_AudioEngine_nativeGetGeneration(JNIEnv*, jobject) {
+     return static_cast<jint>(g_population.generation);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeEvolveStep(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_AudioEngine_nativeEvolveStep(JNIEnv*, jobject) {
+     evolveGeneration();
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
++Java_com_ivanna_omega_core_AudioEngine_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
+     if (rate > 0.0f && rate <= 1.0f) g_mutationRate = rate;
+ }
+ 
+ JNIEXPORT jfloat JNICALL
+-Java_com_ivannafusion_AudioEngine_nativeGetMutationRate(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_AudioEngine_nativeGetMutationRate(JNIEnv*, jobject) {
+     return g_mutationRate;
+ }
+ 
+ JNIEXPORT jboolean JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeInitializeEvolution(
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
+         JNIEnv*, jobject, jint, jint) {
+     initializePopulation();
+     return JNI_TRUE;
+ }
+ 
+ JNIEXPORT jdouble JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeGetBestFitness(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBestFitness(JNIEnv*, jobject) {
+     return static_cast<jdouble>(g_population.bestFitness);
+ }
+ 
+ JNIEXPORT jint JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
+     return static_cast<jint>(g_population.generation);
+ }
+ 
+ JNIEXPORT jboolean JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
+     evolveGeneration();
+     return JNI_TRUE;
+ }
+ 
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(
++    JNIEnv*, jobject, jfloat rate) {
++    if (rate > 0.0f && rate <= 1.0f) g_mutationRate = rate;
++}
++
++JNIEXPORT jfloat JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(
++    JNIEnv*, jobject) {
++    return g_mutationRate;
++}
++
+ } // extern "C"
+diff --git a/app/src/main/cpp/jni/ivanna_omega_jni.cpp b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+index 418060f..04db2b5 100644
+--- a/app/src/main/cpp/jni/ivanna_omega_jni.cpp
++++ b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+@@ -50,7 +50,7 @@ static inline bool copyJFloatArray(JNIEnv* env, jfloatArray src, float* dst, int
+ extern "C" {
+ 
+ JNIEXPORT jboolean JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
+     if (sr < 8000 || sr > 192000) {
+         LOGE("Invalid sample rate: %d", sr);
+         return JNI_FALSE;
+@@ -68,7 +68,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
+     JNIEnv* env, jobject,
+     jfloatArray inL, jfloatArray inR,
+     jfloatArray outL, jfloatArray outR,
+@@ -111,7 +111,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeProcessBlock(
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetParams(
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
+     JNIEnv* env, jobject, jfloatArray params) {
+     if (!params) return;
+     jfloat* p = env->GetFloatArrayElements(params, nullptr);
+@@ -140,7 +140,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeSetParams(
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+     g_eq.reset();
+     g_comp.reset();
+     g_exciter.reset();
+@@ -152,62 +152,62 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+ 
+ // PI-LSTM Milenio setters
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_alpha(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_beta(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetGamma(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_gamma(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_delta(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetEta(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_eta(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_harmonic_gain(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*, jobject, jboolean en) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*, jobject, jboolean en) {
+     g_piLstm.set_hrtf_enabled(en == JNI_TRUE);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*, jobject, jboolean en) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*, jobject, jboolean en) {
+     g_piLstm.set_adapt_enabled(en == JNI_TRUE);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
+     g_piLstm.set_np_max(v);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint i, jfloat g) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint i, jfloat g) {
+     g_piLstm.set_reflection_gain(i, g);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint i, jfloat d) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint i, jfloat d) {
+     g_piLstm.set_reflection_delay(i, d);
+ }
+ 
+ JNIEXPORT void JNICALL
+-Java_com_ivanna_omega_IvannaNativeLib_nativeInitPILSTM(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*, jobject) {
+     g_piLstm.reset();
+     LOGI("PI-LSTM initialized");
+ }
+diff --git a/app/src/main/cpp/phase_oracle.cpp b/app/src/main/cpp/phase_oracle.cpp
+index 1c0a386..4041c3f 100644
+--- a/app/src/main/cpp/phase_oracle.cpp
++++ b/app/src/main/cpp/phase_oracle.cpp
+@@ -145,7 +145,7 @@ static inline void predictSamples(const float* __restrict__ inBuf, float* __rest
+ }
+ 
+ extern "C" JNIEXPORT void JNICALL
+-Java_com_ivannafusion_AudioEngine_nativePredictSamples(
++Java_com_ivanna_omega_core_AudioEngine_nativePredictSamples(
+         JNIEnv* env, jobject, jlong, jfloatArray input, jfloatArray output, jint n) {
+ 
+     static bool initialized = false;
+@@ -164,7 +164,7 @@ Java_com_ivannafusion_AudioEngine_nativePredictSamples(
+ }
+ 
+ extern "C" JNIEXPORT jfloatArray JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativePredictSamples(
++Java_com_ivanna_omega_core_IvannaNativeLib_nativePredictSamples(
+         JNIEnv* env, jobject, jfloatArray audioBuffer, jint sampleCount) {
+ 
+     static bool initialized = false;
+@@ -187,12 +187,12 @@ Java_com_ivannafusion_IvannaNativeLib_nativePredictSamples(
+ }
+ 
+ extern "C" JNIEXPORT jfloat JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject) {
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject) {
+     return g_kalman.state[0];
+ }
+ 
+ extern "C" JNIEXPORT jboolean JNICALL
+-Java_com_ivannafusion_IvannaNativeLib_nativeSetPhaseParameters(
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
+         JNIEnv*, jobject, jfloat alpha, jfloat beta, jfloat gamma) {
+     g_kalman.Q[0][0] = alpha;
+     g_kalman.Q[1][1] = beta;
+diff --git a/app/src/main/cpp/spatial/room_model.h b/app/src/main/cpp/spatial/room_model.h
+index 4e1ec83..342bcf2 100644
+--- a/app/src/main/cpp/spatial/room_model.h
++++ b/app/src/main/cpp/spatial/room_model.h
+@@ -2,3 +2,4 @@
+ #include <cstdint>
+ 
+ void apply_reverb(const int16_t* __restrict__ in, int16_t* __restrict__ out, int samples, int delay_ms, float decay);
++void apply_reverb_f(const float* __restrict__ in, float* __restrict__ out, int samples, int delay_ms, float decay);
+diff --git a/app/src/main/cpp/spatial/spatial_jni.cpp b/app/src/main/cpp/spatial/spatial_jni.cpp
+new file mode 100644
+index 0000000..d032679
+--- /dev/null
++++ b/app/src/main/cpp/spatial/spatial_jni.cpp
+@@ -0,0 +1,222 @@
++/*
++ * spatial_jni.cpp
++ * JNI bridge for IVANNA OMEGA SUPREME Spatial Engine
++ * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
++ */
++
++#include <jni.h>
++#include <cstring>
++#include <cmath>
++#include <string>
++#include <android/log.h>
++#include "spatial_engine.h"
++#include "room_model.h"
++
++#define LOG_TAG "SpatialJNI"
++#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
++#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
++
++static SpatialState g_spatialState;
++static bool g_spatialInitialized = false;
++static int g_spatialSampleRate = 48000;
++static int g_spatialBufferSize = 1024;
++
++// Local head-shadow filter (isolated from spatial_engine.cpp globals)
++struct HeadShadowFilter {
++    float z1 = 0.f;
++    inline float process(float x, float cutoff) {
++        cutoff = std::max(0.01f, std::min(0.99f, cutoff));
++        float y = x - z1;
++        z1 = cutoff * z1 + (1.0f - cutoff) * x;
++        return y;
++    }
++    void reset() { z1 = 0.f; }
++};
++
++static void hrtfProcessChannel(const float* __restrict__ in,
++                                float* __restrict__ out,
++                                int len,
++                                float angle_deg,
++                                bool is_left) {
++    if (!std::isfinite(angle_deg)) angle_deg = 0.0f;
++    while (angle_deg > 180.0f) angle_deg -= 360.0f;
++    while (angle_deg < -180.0f) angle_deg += 360.0f;
++
++    const float angle_rad = angle_deg * 3.14159265f / 180.0f;
++
++    float delay_f = 0.5f * sinf(angle_rad) * 20.0f;
++    if (!std::isfinite(delay_f)) delay_f = 0.0f;
++    const int delay = static_cast<int>(delay_f);
++
++    float cutoff = 0.8f + 0.2f * cosf(angle_rad);
++    if (!std::isfinite(cutoff)) cutoff = 0.8f;
++    cutoff = std::max(0.01f, std::min(0.99f, cutoff));
++
++    HeadShadowFilter hp;
++    for (int i = 0; i < len; ++i) {
++        int idx = i - delay;
++        float sample = (idx >= 0 && idx < len) ? in[idx] : in[i] * 0.5f;
++        float filtered = hp.process(sample, cutoff);
++        out[i] = filtered;
++    }
++}
++
++static float computePStar() {
++    float n_e = std::isfinite(g_spatialState.n_energy) ? g_spatialState.n_energy : 0.0f;
++    float o_e = std::isfinite(g_spatialState.omega_energy) ? g_spatialState.omega_energy : 0.0f;
++    float mu_f = std::isfinite((float)g_spatialState.mu) ? (float)g_spatialState.mu / 1000.0f : 1.0f;
++    if (mu_f < -0.99f) mu_f = -0.99f;
++
++    float p_star = (n_e + mu_f * o_e) / (1.0f + mu_f);
++    if (!std::isfinite(p_star)) p_star = 1.0f;
++    if (p_star < 0.01f) p_star = 0.01f;
++    if (p_star > 2.0f) p_star = 2.0f;
++    return p_star;
++}
++
++extern "C" {
++
++JNIEXPORT jboolean JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitSpatialEngine(
++    JNIEnv*, jobject, jint sr, jint bs) {
++    g_spatialSampleRate = sr;
++    g_spatialBufferSize = bs;
++    spatial_init(&g_spatialState);
++    g_spatialInitialized = true;
++    ALOGI("Spatial engine initialized @ %d Hz, buffer=%d", sr, bs);
++    return JNI_TRUE;
++}
++
++JNIEXPORT jint JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
++    JNIEnv* env, jobject,
++    jfloatArray inputBuffer,
++    jfloatArray outL,
++    jfloatArray outR,
++    jint posX, jint posY, jint posZ, jint mu) {
++
++    if (!g_spatialInitialized) {
++        ALOGE("Spatial engine not initialized");
++        return 0;
++    }
++
++    jsize n = env->GetArrayLength(inputBuffer);
++    if (n <= 0) return 0;
++
++    jfloat* inBuf = env->GetFloatArrayElements(inputBuffer, nullptr);
++    if (!inBuf) return 0;
++
++    jfloat* lBuf = env->GetFloatArrayElements(outL, nullptr);
++    jfloat* rBuf = env->GetFloatArrayElements(outR, nullptr);
++    if (!lBuf || !rBuf) {
++        if (inBuf) env->ReleaseFloatArrayElements(inputBuffer, inBuf, JNI_ABORT);
++        if (lBuf) env->ReleaseFloatArrayElements(outL, lBuf, 0);
++        if (rBuf) env->ReleaseFloatArrayElements(outR, rBuf, 0);
++        return 0;
++    }
++
++    // Update spatial state
++    g_spatialState.posX = static_cast<int32_t>(posX);
++    g_spatialState.posY = static_cast<int32_t>(posY);
++    g_spatialState.posZ = static_cast<int32_t>(posZ);
++    g_spatialState.mu = static_cast<int16_t>(mu);
++
++    // Process left and right channels
++    hrtfProcessChannel(inBuf, lBuf, n, (float)posX, true);
++    hrtfProcessChannel(inBuf, rBuf, n, -(float)posX, false);
++
++    // Apply consensus scaling (p*)
++    float p_star = computePStar();
++    for (int i = 0; i < n; ++i) {
++        lBuf[i] *= p_star;
++        rBuf[i] *= p_star;
++    }
++
++    // Apply light room reverb (FDN) for spatial depth
++    constexpr int MAX_BLOCK = 2048;
++    if (n <= MAX_BLOCK) {
++        alignas(16) float revL[MAX_BLOCK];
++        alignas(16) float revR[MAX_BLOCK];
++        apply_reverb_f(lBuf, revL, n, 50, 0.3f);
++        apply_reverb_f(rBuf, revR, n, 50, 0.3f);
++        const float revMix = 0.25f;
++        for (int i = 0; i < n; ++i) {
++            lBuf[i] = lBuf[i] * (1.0f - revMix) + revL[i] * revMix;
++            rBuf[i] = rBuf[i] * (1.0f - revMix) + revR[i] * revMix;
++        }
++    }
++
++    env->ReleaseFloatArrayElements(inputBuffer, inBuf, JNI_ABORT);
++    env->ReleaseFloatArrayElements(outL, lBuf, 0);
++    env->ReleaseFloatArrayElements(outR, rBuf, 0);
++
++    return n;
++}
++
++JNIEXPORT jboolean JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeReleaseSpatialEngine(JNIEnv*, jobject) {
++    g_spatialInitialized = false;
++    memset(&g_spatialState, 0, sizeof(g_spatialState));
++    ALOGI("Spatial engine released");
++    return JNI_TRUE;
++}
++
++JNIEXPORT jstring JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialState(JNIEnv* env, jobject) {
++    char buf[512];
++    snprintf(buf, sizeof(buf),
++        "{\"posX\":%d,\"posY\":%d,\"posZ\":%d,\"mu\":%d,"
++        "\"n_energy\":%.4f,\"omega_energy\":%.4f,"
++        "\"initialized\":%s}",
++        g_spatialState.posX, g_spatialState.posY, g_spatialState.posZ,
++        g_spatialState.mu,
++        g_spatialState.n_energy, g_spatialState.omega_energy,
++        g_spatialInitialized ? "true" : "false");
++    return env->NewStringUTF(buf);
++}
++
++JNIEXPORT jboolean JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialParams(
++    JNIEnv* env, jobject, jstring params) {
++    if (!params) return JNI_FALSE;
++    const char* str = env->GetStringUTFChars(params, nullptr);
++    if (!str) return JNI_FALSE;
++
++    // Simple JSON parser for key-value pairs
++    const char* p = str;
++    while (*p) {
++        if (strncmp(p, "\"mu\":", 5) == 0) {
++            p += 5;
++            while (*p && (*p < '0' || *p > '9') && *p != '-') p++;
++            g_spatialState.mu = static_cast<int16_t>(atoi(p));
++        } else if (strncmp(p, "\"n_energy\":", 11) == 0) {
++            p += 11;
++            while (*p && (*p < '0' || *p > '9') && *p != '-' && *p != '.') p++;
++            g_spatialState.n_energy = strtof(p, nullptr);
++        } else if (strncmp(p, "\"omega_energy\":", 15) == 0) {
++            p += 15;
++            while (*p && (*p < '0' || *p > '9') && *p != '-' && *p != '.') p++;
++            g_spatialState.omega_energy = strtof(p, nullptr);
++        } else if (strncmp(p, "\"posX\":", 7) == 0) {
++            p += 7;
++            while (*p && (*p < '0' || *p > '9') && *p != '-') p++;
++            g_spatialState.posX = atoi(p);
++        } else if (strncmp(p, "\"posY\":", 7) == 0) {
++            p += 7;
++            while (*p && (*p < '0' || *p > '9') && *p != '-') p++;
++            g_spatialState.posY = atoi(p);
++        } else if (strncmp(p, "\"posZ\":", 7) == 0) {
++            p += 7;
++            while (*p && (*p < '0' || *p > '9') && *p != '-') p++;
++            g_spatialState.posZ = atoi(p);
++        }
++        p++;
++    }
++
++    env->ReleaseStringUTFChars(params, str);
++    ALOGI("Spatial params updated: mu=%d n_energy=%.4f omega_energy=%.4f",
++          g_spatialState.mu, g_spatialState.n_energy, g_spatialState.omega_energy);
++    return JNI_TRUE;
++}
++
++} // extern "C"
+diff --git a/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt b/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
+index 899081e..e14cbf7 100644
+--- a/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
++++ b/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
+@@ -1,30 +1,74 @@
+ package com.ivanna.omega.core
+ 
++import android.util.Log
++
+ /**
+- * JNI bindings for evolutionary kernel, phase oracle, and spatial engine.
+- * Compiled into libivanna_omega.so — same lib as DSPBridge/PiLstmBridge.
++ * JNI bindings for IVANNA OMEGA SUPREME native library.
++ * Compiled into libivanna_omega.so — unified entry point for DSP, PI-LSTM,
++ * evolutionary kernel, phase oracle, and spatial engine.
+  */
+ object IvannaNativeLib {
+     init {
+-        try { System.loadLibrary("ivanna_omega") }
+-        catch (e: UnsatisfiedLinkError) { android.util.Log.e("IvannaNativeLib", "Failed", e) }
++        try {
++            System.loadLibrary("ivanna_omega")
++            Log.i("IvannaNativeLib", "Native library loaded successfully")
++        } catch (e: UnsatisfiedLinkError) {
++            Log.e("IvannaNativeLib", "Failed to load native library", e)
++        }
+     }
+ 
+-    // Evolutionary kernel
++    // ═══════════════════════════════════════════════════════════════════════
++    //  DSP Core (ivanna_omega_jni.cpp)
++    // ═══════════════════════════════════════════════════════════════════════
++    external fun nativeInitDSP(sampleRate: Int): Boolean
++    external fun nativeProcessBlock(
++        inL: FloatArray, inR: FloatArray,
++        outL: FloatArray, outR: FloatArray,
++        frames: Int
++    )
++    external fun nativeSetParams(params: FloatArray)
++    external fun nativeResetDSP()
++
++    // ═══════════════════════════════════════════════════════════════════════
++    //  PI-LSTM Milenio (ivanna_omega_jni.cpp)
++    // ═══════════════════════════════════════════════════════════════════════
++    external fun nativeInitPILSTM()
++    external fun nativeSetAlpha(v: Float)
++    external fun nativeSetBeta(v: Float)
++    external fun nativeSetGamma(v: Float)
++    external fun nativeSetDelta(v: Float)
++    external fun nativeSetEta(v: Float)
++    external fun nativeSetHarmonicGain(v: Float)
++    external fun nativeSetHRTFEnabled(en: Boolean)
++    external fun nativeSetAdaptEnabled(en: Boolean)
++    external fun nativeSetNPMax(v: Float)
++    external fun nativeSetReflectionGain(i: Int, g: Float)
++    external fun nativeSetReflectionDelay(i: Int, d: Float)
++
++    // ═══════════════════════════════════════════════════════════════════════
++    //  Evolutionary Kernel (evolutionary_kernel.cpp)
++    // ═══════════════════════════════════════════════════════════════════════
+     external fun nativeInitializeEvolution(populationSize: Int, generations: Int): Boolean
+     external fun nativeGetBestFitness(): Double
+     external fun nativeGetGeneration(): Int
+     external fun nativeEvolveStep(): Boolean
++    external fun nativeSetMutationRate(rate: Float)
++    external fun nativeGetMutationRate(): Float
+ 
+-    // Phase oracle
++    // ═══════════════════════════════════════════════════════════════════════
++    //  Phase Oracle (phase_oracle.cpp)
++    // ═══════════════════════════════════════════════════════════════════════
+     external fun nativePredictSamples(audioBuffer: FloatArray, sampleCount: Int): FloatArray
+     external fun nativeGetPhaseState(): Float
+     external fun nativeSetPhaseParameters(alpha: Float, beta: Float, gamma: Float): Boolean
+ 
+-    // Spatial engine
++    // ═══════════════════════════════════════════════════════════════════════
++    //  Spatial Engine (spatial_jni.cpp)
++    // ═══════════════════════════════════════════════════════════════════════
+     external fun nativeInitSpatialEngine(sampleRate: Int, bufferSize: Int): Boolean
+     external fun nativeRenderSpatialBlock(
+-        inputBuffer: FloatArray, outL: FloatArray, outR: FloatArray,
++        inputBuffer: FloatArray,
++        outL: FloatArray, outR: FloatArray,
+         posX: Int, posY: Int, posZ: Int, mu: Int
+     ): Int
+     external fun nativeReleaseSpatialEngine(): Boolean
+-- 
+2.39.5
+

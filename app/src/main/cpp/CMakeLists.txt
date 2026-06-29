@@ -48,6 +48,7 @@ add_library(ivanna_omega SHARED
     # Spatial
     spatial/spatial_engine.cpp
     spatial/room_model.cpp
+    spatial/spatial_jni.cpp
 
     # System audio integration
     # audio_orchestrator.cpp  # EXCLUIDO: huérfano (AudioEngine.kt fuera del build)

@@ -132,56 +132,69 @@ static void evolveGeneration() {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_ivannafusion_AudioEngine_nativeInitializeEvolution(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_AudioEngine_nativeInitializeEvolution(JNIEnv*, jobject) {
     initializePopulation();
 }
 
 JNIEXPORT jfloat JNICALL
-Java_com_ivannafusion_AudioEngine_nativeGetBestFitness(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_AudioEngine_nativeGetBestFitness(JNIEnv*, jobject) {
     return g_population.bestFitness;
 }
 
 JNIEXPORT jint JNICALL
-Java_com_ivannafusion_AudioEngine_nativeGetGeneration(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_AudioEngine_nativeGetGeneration(JNIEnv*, jobject) {
     return static_cast<jint>(g_population.generation);
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivannafusion_AudioEngine_nativeEvolveStep(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_AudioEngine_nativeEvolveStep(JNIEnv*, jobject) {
     evolveGeneration();
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivannafusion_AudioEngine_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
+Java_com_ivanna_omega_core_AudioEngine_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
     if (rate > 0.0f && rate <= 1.0f) g_mutationRate = rate;
 }
 
 JNIEXPORT jfloat JNICALL
-Java_com_ivannafusion_AudioEngine_nativeGetMutationRate(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_AudioEngine_nativeGetMutationRate(JNIEnv*, jobject) {
     return g_mutationRate;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeInitializeEvolution(
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
         JNIEnv*, jobject, jint, jint) {
     initializePopulation();
     return JNI_TRUE;
 }
 
 JNIEXPORT jdouble JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeGetBestFitness(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBestFitness(JNIEnv*, jobject) {
     return static_cast<jdouble>(g_population.bestFitness);
 }
 
 JNIEXPORT jint JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
     return static_cast<jint>(g_population.generation);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_ivannafusion_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
     evolveGeneration();
     return JNI_TRUE;
+}
+
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(
+    JNIEnv*, jobject, jfloat rate) {
+    if (rate > 0.0f && rate <= 1.0f) g_mutationRate = rate;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(
+    JNIEnv*, jobject) {
+    return g_mutationRate;
 }
 
 } // extern "C"
