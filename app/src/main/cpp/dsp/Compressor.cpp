@@ -9,7 +9,7 @@ Compressor::Compressor() {
 }
 
 void Compressor::setParams(const DSPParams& p) {
-    sr_ = p.sampleRate;
+    sr_ = static_cast<float>(p.sampleRate);
     threshold_ = -24.0f + p.alpha * 24.0f;
     ratio_ = 1.0f + p.beta * 19.0f;
     float atMs = 5.0f + (1.0f - p.gamma) * 95.0f;
@@ -18,18 +18,30 @@ void Compressor::setParams(const DSPParams& p) {
     releaseCoef_ = std::exp(-1.0f / (sr_ * relMs * 0.001f));
     float reduction = threshold_ * (1.0f - 1.0f / ratio_);
     makeupGain_ = std::pow(10.0f, (-reduction * 0.5f) / 20.0f);
-
     inv_atk_ = 1.0f - attackCoef_;
     inv_rel_ = 1.0f - releaseCoef_;
     slope_ = 1.0f - 1.0f / ratio_;
 }
 
-void Compressor::setThreshold(float db) { threshold_ = db; }
-void Compressor::setRatio(float ratio) { ratio_ = ratio; }
-void Compressor::setAttack(float ms) { attackCoef_ = std::exp(-1.0f / (sr_ * ms * 0.001f)); }
-void Compressor::setRelease(float ms) { releaseCoef_ = std::exp(-1.0f / (sr_ * ms * 0.001f)); }
+void Compressor::setThreshold(float db) {
+    threshold_ = db;
+}
 
-__attribute__((hot, flatten))
+void Compressor::setRatio(float ratio) {
+    ratio_ = ratio;
+    slope_ = 1.0f - 1.0f / ratio_;
+}
+
+void Compressor::setAttack(float ms) {
+    attackCoef_ = std::exp(-1.0f / (sr_ * ms * 0.001f));
+    inv_atk_ = 1.0f - attackCoef_;
+}
+
+void Compressor::setRelease(float ms) {
+    releaseCoef_ = std::exp(-1.0f / (sr_ * ms * 0.001f));
+    inv_rel_ = 1.0f - releaseCoef_;
+}
+
 void Compressor::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
 
@@ -46,7 +58,7 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
-        float peak = std::fmaxf(std::fabs(left[i]), std::fabs(right[i]));
+        float peak = std::fmaxf(std::fabsf(left[i]), std::fabsf(right[i]));
         if (peak < 1e-6f) peak = 1e-6f;
 
         float coef = (peak > env)? attackCoef : releaseCoef;
