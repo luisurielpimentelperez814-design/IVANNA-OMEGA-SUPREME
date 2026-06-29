@@ -1,0 +1,100 @@
+diff --git a/app/src/main/cpp/dsp/ParametricEQ.cpp b/app/src/main/cpp/dsp/ParametricEQ.cpp
+index b0cb2c6..2729b25 100644
+--- a/app/src/main/cpp/dsp/ParametricEQ.cpp
++++ b/app/src/main/cpp/dsp/ParametricEQ.cpp
+@@ -20,6 +20,26 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
+     bandsR[b] = bandsL[b];
+ }
+ 
++void ParametricEQ::setParams(const DSPParams& p) noexcept {
++    // Map DSPParams to 8 parametric bands
++    // Band 0: Low shelf  ~80 Hz
++    // Band 1: Peaking    ~200 Hz (low param)
++    // Band 2: Peaking    ~500 Hz
++    // Band 3: Peaking    ~1 kHz (freq param)
++    // Band 4: Peaking    ~2.5 kHz (mid param)
++    // Band 5: Peaking    ~5 kHz (high param)
++    // Band 6: Peaking    ~8 kHz (presence param)
++    // Band 7: High shelf ~12 kHz
++    setBand(0, 80.f, 0.707f, p.low * 12.f);
++    setBand(1, 200.f, p.resonance, p.low * 8.f);
++    setBand(2, 500.f, p.resonance, 0.f);
++    setBand(3, p.freq, p.resonance, 0.f);
++    setBand(4, 2500.f, p.resonance, p.mid * 8.f);
++    setBand(5, 5000.f, p.resonance, p.high * 8.f);
++    setBand(6, 8000.f, p.resonance, p.presence * 8.f);
++    setBand(7, 12000.f, 0.707f, p.high * 6.f);
++}
++
+ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
+     if(frames<=0) return;
+ #pragma clang diagnostic push
+@@ -32,4 +52,4 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
+ #pragma clang diagnostic pop
+ }
+ 
+-}
++} // namespace ivanna
+diff --git a/app/src/main/cpp/include/ParametricEQ.h b/app/src/main/cpp/include/ParametricEQ.h
+index ac3d013..a89b485 100644
+--- a/app/src/main/cpp/include/ParametricEQ.h
++++ b/app/src/main/cpp/include/ParametricEQ.h
+@@ -1,4 +1,6 @@
+ #pragma once
++#include "dsp_types.h"
++
+ namespace ivanna {
+ class ParametricEQ {
+ public:
+@@ -6,6 +8,7 @@ public:
+     void reset() noexcept;
+     void setSampleRate(float sr) noexcept;
+     void setBand(int band, float freq, float q, float gainDb) noexcept;
++    void setParams(const DSPParams& p) noexcept;
+     void process(float* left, float* right, int frames) noexcept;
+ private:
+     struct Biquad {
+diff --git a/app/src/main/cpp/include/StereoWidener.h b/app/src/main/cpp/include/StereoWidener.h
+index c301b31..ef80acc 100644
+--- a/app/src/main/cpp/include/StereoWidener.h
++++ b/app/src/main/cpp/include/StereoWidener.h
+@@ -1,9 +1,13 @@
+ #pragma once
++#include "dsp_types.h"
++
+ namespace ivanna {
+ class StereoWidener {
+ public:
++    void setParams(const DSPParams& p);
+     void setWidth(float w);
+     void process(float* l, float* r, int frames);
++    void reset();
+ private:
+     float width_ = 1.0f;
+     [[maybe_unused]] float halfWidth_ = 0.5f;
+diff --git a/app/src/main/cpp/spatial/spatial_engine.cpp b/app/src/main/cpp/spatial/spatial_engine.cpp
+index 2fdfa25..f30cc68 100644
+--- a/app/src/main/cpp/spatial/spatial_engine.cpp
++++ b/app/src/main/cpp/spatial/spatial_engine.cpp
+@@ -64,6 +64,21 @@ static void convolve_hrtf(const float* __restrict__ input,
+     }
+ }
+ 
++
++void spatial_init(SpatialState* state) {
++    if (!state) return;
++    memset(state, 0, sizeof(SpatialState));
++    state->mu = 500;          // default consensus factor (0.5 scaled)
++    state->posX = 0;
++    state->posY = 0;
++    state->posZ = 0;
++    state->n_energy = 1.0f;
++    state->omega_energy = 1.0f;
++    g_hpL.reset();
++    g_hpR.reset();
++    ALOG("Spatial state initialized");
++}
++
+ void spatial_process(float* __restrict__ audio_in,
+                      float* __restrict__ audio_out,
+                      int frames,
