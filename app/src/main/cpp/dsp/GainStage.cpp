@@ -1,73 +1,69 @@
-#include "../include/GainStage.h"
+#include "../include/ParametricEQ.h"
 #include <cmath>
 
 namespace ivanna {
 
-// Aproximación rápida de dB a lineal usando exp2f (más rápido que pow)
-// 10^(x/20) = 2^(x * log2(10)/20) ≈ 2^(x * 0.166096404f)
-static inline __attribute__((always_inline)) float dbToLin(float db) {
-    return std::exp2f(db * 0.1660964f);
+ParametricEQ::ParametricEQ() {
+    reset();
 }
 
-void GainStage::setParams(const DSPParams& p) {
-    sr_ = p.sampleRate;
-    // Coeficiente de suavizado precalculado (15 ms)
-    smoothCoeff_ = std::exp(-1.f / (sr_ * 0.015f));
-    oneMinusSmooth_ = 1.f - smoothCoeff_;
-
-    inputGain_ = dbToLin((p.mix - 0.5f) * 12.f);
-    outputGain_ = dbToLin(p.master);
-
-    // Reiniciar estado al cambiar parámetros
-    currentIn_ = inputGain_;
-    currentOut_ = outputGain_;
+void ParametricEQ::reset() {
+    for (int i = 0; i < NUM_BANDS; ++i) {
+        bandsL[i].reset();
+        bandsR[i].reset();
+    }
 }
 
-__attribute__((hot, flatten))
-void GainStage::processInput(float* __restrict__ left, float* __restrict__ right, int frames) {
+void ParametricEQ::setSampleRate(float sr) {
+    sampleRate_ = sr;
+}
+
+void ParametricEQ::setBand(int band, float freq, float q, float gainDb) {
+    if (band < 0 || band >= NUM_BANDS) return;
+
+    const float A = std::pow(10.0f, gainDb / 40.0f);
+    const float w0 = 2.0f * M_PI * freq / sampleRate_;
+    const float cosw0 = std::cos(w0);
+    const float sinw0 = std::sin(w0);
+    const float alpha = sinw0 / (2.0f * q);
+
+    float b0 = 1.0f + alpha * A;
+    float b1 = -2.0f * cosw0;
+    float b2 = 1.0f - alpha * A;
+    float a0 = 1.0f + alpha / A;
+    float a1 = -2.0f * cosw0;
+    float a2 = 1.0f - alpha / A;
+
+    // Normalizar
+    b0 /= a0; b1 /= a0; b2 /= a0;
+    a1 /= a0; a2 /= a0;
+
+    bandsL[band].b0 = b0; bandsL[band].b1 = b1; bandsL[band].b2 = b2;
+    bandsL[band].a1 = a1; bandsL[band].a2 = a2;
+
+    bandsR[band].b0 = b0; bandsR[band].b1 = b1; bandsR[band].b2 = b2;
+    bandsR[band].a1 = a1; bandsR[band].a2 = a2;
+}
+
+void ParametricEQ::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-
-    const float smooth = smoothCoeff_;
-    const float one_minus_smooth = oneMinusSmooth_;
-    const float target = inputGain_;
-    float current = currentIn_;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
-        current = smooth * current + one_minus_smooth * target;
-        left[i] *= current;
-        right[i] *= current;
+        float l = left[i];
+        float r = right[i];
+
+        // cascada de 8 biquads
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            l = bandsL[b].processSample(l);
+            r = bandsR[b].processSample(r);
+        }
+
+        left[i] = l;
+        right[i] = r;
     }
 #pragma clang diagnostic pop
-
-    currentIn_ = current;
-}
-
-__attribute__((hot, flatten))
-void GainStage::processOutput(float* __restrict__ left, float* __restrict__ right, int frames) {
-    if (frames <= 0) return;
-
-    const float smooth = smoothCoeff_;
-    const float one_minus_smooth = oneMinusSmooth_;
-    const float target = outputGain_;
-    float current = currentOut_;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wpass-failed"
-    for (int i = 0; i < frames; ++i) {
-        current = smooth * current + one_minus_smooth * target;
-        left[i] *= current;
-        right[i] *= current;
-    }
-#pragma clang diagnostic pop
-
-    currentOut_ = current;
-}
-
-void GainStage::reset() {
-    currentIn_ = inputGain_;
-    currentOut_ = outputGain_;
 }
 
 } // namespace ivanna
