@@ -1,13 +1,7 @@
 #pragma once
+#include "dsp_types.h"
 
 namespace ivanna {
-
-struct DSPParams {
-    float sampleRate = 48000.0f;
-    float alpha = 0.5f; // para threshold
-    float beta = 0.5f; // para ratio
-    float gamma = 0.5f; // para attack/release
-};
 
 class Compressor {
 public:
