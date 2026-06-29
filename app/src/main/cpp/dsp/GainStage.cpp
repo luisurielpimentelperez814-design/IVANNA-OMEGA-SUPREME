@@ -1,69 +1,56 @@
-#include "../include/ParametricEQ.h"
+#include "../include/GainStage.h"
+#include "../include/dsp_types.h"
 #include <cmath>
 
 namespace ivanna {
 
-ParametricEQ::ParametricEQ() {
-    reset();
+static inline float dbToLin(float db) {
+    return std::exp2f(db * 0.1660964f);
 }
 
-void ParametricEQ::reset() {
-    for (int i = 0; i < NUM_BANDS; ++i) {
-        bandsL[i].reset();
-        bandsR[i].reset();
-    }
+void GainStage::setParams(const DSPParams& p) {
+    sr_ = static_cast<float>(p.sampleRate);
+    smoothCoeff_ = std::exp(-1.0f / (sr_ * 0.015f));
+    oneMinusSmooth_ = 1.0f - smoothCoeff_;
+    inputGain_ = dbToLin((p.mix - 0.5f) * 12.0f);
+    outputGain_ = dbToLin(p.master);
+    currentIn_ = inputGain_;
+    currentOut_ = outputGain_;
 }
 
-void ParametricEQ::setSampleRate(float sr) {
-    sampleRate_ = sr;
-}
-
-void ParametricEQ::setBand(int band, float freq, float q, float gainDb) {
-    if (band < 0 || band >= NUM_BANDS) return;
-
-    const float A = std::pow(10.0f, gainDb / 40.0f);
-    const float w0 = 2.0f * M_PI * freq / sampleRate_;
-    const float cosw0 = std::cos(w0);
-    const float sinw0 = std::sin(w0);
-    const float alpha = sinw0 / (2.0f * q);
-
-    float b0 = 1.0f + alpha * A;
-    float b1 = -2.0f * cosw0;
-    float b2 = 1.0f - alpha * A;
-    float a0 = 1.0f + alpha / A;
-    float a1 = -2.0f * cosw0;
-    float a2 = 1.0f - alpha / A;
-
-    // Normalizar
-    b0 /= a0; b1 /= a0; b2 /= a0;
-    a1 /= a0; a2 /= a0;
-
-    bandsL[band].b0 = b0; bandsL[band].b1 = b1; bandsL[band].b2 = b2;
-    bandsL[band].a1 = a1; bandsL[band].a2 = a2;
-
-    bandsR[band].b0 = b0; bandsR[band].b1 = b1; bandsR[band].b2 = b2;
-    bandsR[band].a1 = a1; bandsR[band].a2 = a2;
-}
-
-void ParametricEQ::process(float* __restrict__ left, float* __restrict__ right, int frames) {
+void GainStage::processInput(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-
+    const float s = smoothCoeff_, o = oneMinusSmooth_, t = inputGain_;
+    float c = currentIn_;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
-        float l = left[i];
-        float r = right[i];
-
-        // cascada de 8 biquads
-        for (int b = 0; b < NUM_BANDS; ++b) {
-            l = bandsL[b].processSample(l);
-            r = bandsR[b].processSample(r);
-        }
-
-        left[i] = l;
-        right[i] = r;
+        c = s * c + o * t;
+        left[i] *= c;
+        right[i] *= c;
     }
 #pragma clang diagnostic pop
+    currentIn_ = c;
+}
+
+void GainStage::processOutput(float* __restrict__ left, float* __restrict__ right, int frames) {
+    if (frames <= 0) return;
+    const float s = smoothCoeff_, o = oneMinusSmooth_, t = outputGain_;
+    float c = currentOut_;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+    for (int i = 0; i < frames; ++i) {
+        c = s * c + o * t;
+        left[i] *= c;
+        right[i] *= c;
+    }
+#pragma clang diagnostic pop
+    currentOut_ = c;
+}
+
+void GainStage::reset() {
+    currentIn_ = inputGain_;
+    currentOut_ = outputGain_;
 }
 
 } // namespace ivanna
