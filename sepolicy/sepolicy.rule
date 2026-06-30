@@ -1,0 +1,29 @@
+# IVANNA-OMEGA-SUPREME v1.5 — SELinux Policy
+# FIX v1.5: elimina permisos execute sobre system_file (AVC denial Android 13+)
+# FIX v1.5: crea tipo propio omega_effect_lib con vendor_file_type
+
+# ── Tipos propios ─────────────────────────────────────────────────────────────
+type omega_effect_lib, vendor_file_type, file_type;
+type omega_daemon, domain;
+type omega_daemon_exec, exec_type, vendor_file_type;
+
+# ── Permisos audioserver sobre omega_effect_lib ──────────────────────────────
+# Solo read/open/getattr/map — NO execute (el .so se mapea, no ejecuta)
+allow audioserver omega_effect_lib:file { read open getattr map };
+allow audioserver omega_effect_lib:dir { search };
+
+# ── Permisos mediaserver ──────────────────────────────────────────────────────
+allow mediaserver omega_effect_lib:file { read open getattr map };
+
+# ── Permisos hal_audio_default (Qualcomm) ─────────────────────────────────────
+allow hal_audio_default omega_effect_lib:file { read open getattr map };
+
+# ── Daemon omega ───────────────────────────────────────────────────────────────
+init_daemon_domain(omega_daemon)
+allow omega_daemon self:capability { sys_nice };
+allow omega_daemon audioserver:binder call;
+
+# ── ELIMINADO en v1.5 (causaba AVC denial): ──────────────────────────────────
+# allow audioserver system_file:file { read open execute execute_no_trans getattr };
+# allow mediaserver system_file:file { read open execute execute_no_trans getattr map };
+# allow hal_audio_default system_file:file { read open execute execute_no_trans getattr map };
