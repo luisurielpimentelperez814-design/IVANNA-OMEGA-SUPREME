@@ -1,106 +1,59 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME — service.sh v2.1 (PATCH)
-# Late-start: lanza daemon real-time, monitor MQA y marca boot OK
-# para que post-fs-data no dispare safe_mode.
+# IVANNA-OMEGA-SUPREME v1.5 — service.sh
+# Se ejecuta después de que el sistema arranque completamente.
+# FIX v1.5: corrige grep libivanna_fusion -> libomega_effect.so
+# FIX v1.5: añade verificación de carga y rollback automático
 
-MODDIR=${0%/*}
-LOG=/data/adb/ivanna_omega.log
-SOCKET=/dev/socket/ivanna_omega
-DAEMON_BIN="$MODDIR/system/bin/ivanna_daemon"
-LAST_OK=/data/adb/ivanna_omega_last_boot_ok
+MODDIR="${0%/*}"
+LOG="/data/local/tmp/ivanna_omega.log"
+LIB_NAME="libomega_effect.so"
+LIB_PATH="$MODDIR/system/lib64/soundfx/$LIB_NAME"
 
-log() { echo "[$(date '+%H:%M:%S')] service: $1" >> "$LOG" 2>/dev/null; }
+echo "[IVANNA-OMEGA] $(date) — service.sh start v1.5" >> "$LOG"
 
-# ── 1. Esperar boot ─────────────────────────────────────────────────────────
-until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 2; done
-log "boot_completed"
+# Esperar a que audioserver esté listo
+sleep 3
 
-# ── 2. Reset contador anti-bootloop y marca de boot OK ──────────────────────
-echo "0" > /data/adb/ivanna_omega_boot_counter
-touch "$LAST_OK"
-log "bootloop counter reset + last_boot_ok tocado"
-
-# ── 3. Detectar dependencias opcionales ─────────────────────────────────────
-HAS_NC=0;    command -v nc    >/dev/null 2>&1 && HAS_NC=1
-HAS_CHRT=0;  command -v chrt  >/dev/null 2>&1 && HAS_CHRT=1
-HAS_TASKSET=0; command -v taskset >/dev/null 2>&1 && HAS_TASKSET=1
-HAS_IONICE=0;  command -v ionice  >/dev/null 2>&1 && HAS_IONICE=1
-log "deps: nc=$HAS_NC chrt=$HAS_CHRT taskset=$HAS_TASKSET ionice=$HAS_IONICE"
-
-# ── 4. audioserver realtime hint ────────────────────────────────────────────
-AUDIO_PID=$(pidof audioserver 2>/dev/null | awk '{print $1}')
-if [ -n "$AUDIO_PID" ]; then
-    log "audioserver pid=$AUDIO_PID"
-    [ "$HAS_CHRT" = "1" ] && chrt -f -p 96 "$AUDIO_PID" 2>/dev/null \
-        && log "audioserver → SCHED_FIFO 96"
-else
-    log "AVISO: audioserver no encontrado"
+# Verificación 1: ¿el .so existe en el módulo?
+if [ ! -f "$LIB_PATH" ]; then
+    echo "[IVANNA-OMEGA] ERROR: $LIB_NAME no encontrado en módulo" >> "$LOG"
+    setprop ivanna.omega.status "error:so_missing"
+    exit 1
 fi
 
-# ── 5. Daemon IVANNA ────────────────────────────────────────────────────────
-DAEMON_STARTED=0
-if [ -f "$DAEMON_BIN" ] && [ -x "$DAEMON_BIN" ]; then
-    nohup "$DAEMON_BIN" \
-        --socket "$SOCKET" \
-        --rate 48000 \
-        --buffer 64 \
-        --realtime \
-        > /data/adb/ivanna_daemon.log 2>&1 &
-    DAEMON_PID=$!
-    sleep 1
+# Verificación 2: ¿audioserver lo ha mapeado?
+# FIX v1.5: busca libomega_effect.so, NO libivanna_fusion
+LOADED=$(cat /proc/$(pidof audioserver)/maps 2>/dev/null | grep "$LIB_NAME")
+if [ -n "$LOADED" ]; then
+    echo "[IVANNA-OMEGA] DSP cargado correctamente por audioserver ✓" >> "$LOG"
+    setprop ivanna.omega.status "active"
+else
+    echo "[IVANNA-OMEGA] WARNING: $LIB_NAME no detectado en audioserver. Reintentando..." >> "$LOG"
+    sleep 2
 
-    if kill -0 "$DAEMON_PID" 2>/dev/null; then
-        DAEMON_STARTED=1
-        log "ivanna_daemon arrancó pid=$DAEMON_PID"
-        [ "$HAS_CHRT" = "1" ] && chrt -f -p 98 "$DAEMON_PID" 2>/dev/null \
-            && log "ivanna_daemon → SCHED_FIFO 98"
-
-        # Big cores dynamic detection
-        if [ "$HAS_TASKSET" = "1" ]; then
-            BIG=""
-            for cpu in 0 1 2 3 4 5 6 7; do
-                F=$(cat /sys/devices/system/cpu/cpu${cpu}/cpufreq/cpuinfo_max_freq 2>/dev/null || echo 0)
-                [ "$F" -gt 2000000 ] && BIG="${BIG}${cpu},"
-            done
-            BIG="${BIG%,}"
-            [ -n "$BIG" ] && taskset -pc "$BIG" "$DAEMON_PID" 2>/dev/null \
-                && log "ivanna_daemon → big cores [$BIG]"
-        fi
-
-        [ "$HAS_IONICE" = "1" ] && ionice -c 1 -n 0 -p "$DAEMON_PID" 2>/dev/null \
-            && log "ivanna_daemon → ionice RT 0"
-
-        echo "$DAEMON_PID" > /data/adb/ivanna_daemon.pid
-
-        # Restore mínimos vía ivanna_control.sh (solo si tenemos nc)
-        if [ "$HAS_NC" = "1" ] && [ -x "$MODDIR/ivanna_control.sh" ]; then
-            "$MODDIR/ivanna_control.sh" status  >> "$LOG" 2>&1
-            "$MODDIR/ivanna_control.sh" bypass off >> "$LOG" 2>&1
-            "$MODDIR/ivanna_control.sh" volume 0.8 >> "$LOG" 2>&1
-            log "ivanna_control restore aplicado"
-        else
-            log "restore omitido (nc=$HAS_NC, ctrl=$( [ -x $MODDIR/ivanna_control.sh ] && echo yes || echo no ))"
-        fi
+    # Segundo intento
+    LOADED2=$(cat /proc/$(pidof audioserver)/maps 2>/dev/null | grep "$LIB_NAME")
+    if [ -n "$LOADED2" ]; then
+        echo "[IVANNA-OMEGA] DSP cargado en segundo intento ✓" >> "$LOG"
+        setprop ivanna.omega.status "active"
     else
-        log "ERROR: ivanna_daemon no arrancó — ver /data/adb/ivanna_daemon.log"
+        echo "[IVANNA-OMEGA] ERROR: $LIB_NAME no cargado tras 2 intentos. ROLLBACK." >> "$LOG"
+
+        # ROLLBACK: restaurar backup si existe
+        if [ -f "$LIB_PATH.bak" ]; then
+            echo "[IVANNA-OMEGA] Restaurando backup..." >> "$LOG"
+            cp "$LIB_PATH.bak" "$LIB_PATH"
+            chmod 644 "$LIB_PATH"
+            setprop ivanna.omega.status "rollback"
+            # Reiniciar audioserver para cargar versión anterior
+            setprop sys.audio.effects.restart 1 2>/dev/null
+        else
+            echo "[IVANNA-OMEGA] Sin backup disponible. Deshabilitando módulo." >> "$LOG"
+            # Crear flag de disable para Magisk
+            touch /data/adb/modules/ivanna_omega/disable 2>/dev/null
+            setprop ivanna.omega.status "safe_mode"
+        fi
     fi
-else
-    log "ivanna_daemon NO instalado en $DAEMON_BIN — modo app-only (DSP local sigue vía libomega_effect)"
 fi
 
-# Propiedad de sistema que refleja estado real del daemon
-setprop persist.ivanna.daemon_active "$DAEMON_STARTED"
-
-# ── 6. MQA monitor ──────────────────────────────────────────────────────────
-if [ "$DAEMON_STARTED" = "1" ] && [ -x "$MODDIR/mqa_monitor.sh" ]; then
-    nohup "$MODDIR/mqa_monitor.sh" "$MODDIR" > /data/adb/ivanna_mqa.log 2>&1 &
-    log "mqa_monitor arrancado pid=$!"
-fi
-
-# ── 7. Dump de estado de audio effects ──────────────────────────────────────
-if command -v dumpsys >/dev/null 2>&1; then
-    dumpsys media.audio_policy 2>/dev/null \
-        | grep -A2 -i "omega\|dolby\|effect" >> "$LOG" 2>&1
-fi
-
-log "service.sh v2.1 completado"
+echo "[IVANNA-OMEGA] service.sh complete — status=$(getprop ivanna.omega.status)" >> "$LOG"
