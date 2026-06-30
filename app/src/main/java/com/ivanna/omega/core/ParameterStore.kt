@@ -19,6 +19,7 @@ class ParameterStore(context: Context) {
         private const val KEY_WIDTH = "width"
         private const val KEY_ANTI_DOLBY = "anti_dolby"
         private const val KEY_PRESET = "current_preset"
+        private const val KEY_AUTO_MODE = "auto_classifier_mode"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.3f)
@@ -33,8 +34,11 @@ class ParameterStore(context: Context) {
     fun isAntiDolbyEnabled(): Boolean = prefs.getBoolean(KEY_ANTI_DOLBY, false)
     fun setAntiDolbyEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ANTI_DOLBY, enabled).apply()
 
-    fun getCurrentPreset(): String = prefs.getString(KEY_PRESET, "Studio Reference") ?: "Studio Reference"
+    fun getCurrentPreset(): String = prefs.getString(KEY_PRESET, "Warm") ?: "Warm"
     fun setCurrentPreset(name: String) = prefs.edit().putString(KEY_PRESET, name).apply()
+
+    fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
+    fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()
