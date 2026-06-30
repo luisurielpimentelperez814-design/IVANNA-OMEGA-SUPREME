@@ -3,48 +3,32 @@ package com.ivanna.omega.audio
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
 import android.util.Log
 
-/**
- * AudioSessionReceiver — Receptor de sesiones de audio globales.
- *
- * FIX: Este receptor faltaba completamente. Sin él, IvannaGlobalEffectManager
- * nunca recibía las sesiones de otras apps (Spotify, YouTube, etc.) y los
- * efectos globales no se aplicaban.
- *
- * Funcionamiento (idéntico a Wavelet EQ y Poweramp Equalizer):
- *   1. Android emite OPEN_AUDIO_EFFECT_CONTROL_SESSION cuando cualquier app
- *      abre una sesión de audio.
- *   2. Este receptor captura el audioSessionId y el packageName de la app.
- *   3. Delega a IvannaGlobalEffectManager para aplicar el perfil activo.
- *   4. Cuando la sesión se cierra, libera los efectos sin memory leak.
- */
 class AudioSessionReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "AudioSessionReceiver"
+        const val ACTION_OPEN = "android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION"
+        const val ACTION_CLOSE = "android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION"
+        const val EXTRA_SESSION = "android.media.extra.AUDIO_SESSION"
+        const val EXTRA_PACKAGE = "android.media.extra.PACKAGE_NAME"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        val sessionId = intent.getIntExtra(AudioManager.EXTRA_AUDIO_SESSION, 0)
-        val packageName = intent.getStringExtra("android.media.extra.PACKAGE_NAME")
+        val sessionId = intent.getIntExtra(EXTRA_SESSION, 0)
+        val packageName = intent.getStringExtra(EXTRA_PACKAGE)
+
+        val app = context.applicationContext as? com.ivanna.omega.core.IVANNAApplication ?: return
 
         when (intent.action) {
-            AudioManager.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
-                Log.i(TAG, "Nueva sesión de audio: id=$sessionId pkg=$packageName")
-                // Acceder al manager global via Application
-                val app = context.applicationContext
-                if (app is com.ivanna.omega.core.IVANNAApplication) {
-                    app.globalEffectManager.openSession(sessionId, packageName)
-                }
+            ACTION_OPEN -> {
+                Log.i(TAG, "Sesión abierta: id=$sessionId pkg=$packageName")
+                app.globalEffectManager.openSession(sessionId, packageName)
             }
-            AudioManager.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {
-                Log.i(TAG, "Cerrando sesión de audio: id=$sessionId")
-                val app = context.applicationContext
-                if (app is com.ivanna.omega.core.IVANNAApplication) {
-                    app.globalEffectManager.closeSession(sessionId)
-                }
+            ACTION_CLOSE -> {
+                Log.i(TAG, "Sesión cerrada: id=$sessionId")
+                app.globalEffectManager.closeSession(sessionId)
             }
         }
     }
