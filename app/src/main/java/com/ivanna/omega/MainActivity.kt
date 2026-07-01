@@ -25,12 +25,21 @@ import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
 import com.ivanna.omega.core.IVANNAApplication
+import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
 
 /**
- * MainActivity v1.6 — UI Compose Material3
+ * MainActivity v1.7 — UI Compose Material3
  *
- * CABLEADO v1.6 (esta entrega):
+ * CABLEADO v1.7 (esta entrega):
+ *   1. Selector de motor OPE (PDEngine): DSP / DSP+NHO / DSP+NHO+Spatial,
+ *      conectado a OmegaEngine.setMode() y persistido en ParameterStore.
+ *      Requirió arreglar DSPBridge_nativeProcess (ivanna_omega_jni.cpp):
+ *      antes trataba el buffer estéreo intercalado como mono (L==R
+ *      aliased) y nunca llamaba a g_pd.process_block(), así que el modo
+ *      no tenía ningún efecto audible sin importar su valor.
+ *
+ * CABLEADO v1.6:
  *   1. Presets reales de IvannaEffectProfile (Flat/Warm/Rock 70s/Spatial/Punch)
  *      expuestos como chips seleccionables, conectados a
  *      IVANNAApplication.globalEffectManager.applyProfile() — antes solo
@@ -102,6 +111,7 @@ class MainActivity : ComponentActivity() {
                         initialAntiDolby = parameterStore.isAntiDolbyEnabled(),
                         initialPreset = parameterStore.getCurrentPreset(),
                         initialAutoMode = parameterStore.isAutoModeEnabled(),
+                        initialOmegaMode = parameterStore.getOmegaMode(),
                         onExciterChange = { value ->
                             parameterStore.setExciter(value)
                             audioEngine.setExciter(value)
@@ -138,6 +148,15 @@ class MainActivity : ComponentActivity() {
                         onAutoModeChange = { enabled ->
                             parameterStore.setAutoModeEnabled(enabled)
                             Log.i(TAG, "Auto IA: ${if (enabled) "ON" else "OFF"}")
+                        },
+                        // CABLEADO v1.7: selector de motor PDEngine (NHO / Spatial).
+                        // Antes el modo se seteaba en g_pd pero nativeProcess() nunca
+                        // llamaba a process_block(), así que no tenía ningún efecto
+                        // audible sin importar qué modo estuviera activo.
+                        onOmegaModeChange = { mode ->
+                            parameterStore.setOmegaMode(mode)
+                            OmegaEngine.setMode(mode)
+                            Log.i(TAG, "PDEngine mode: $mode")
                         }
                     )
                 }
@@ -162,6 +181,9 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "Iniciando modo no-root")
             noRootProcessor!!.start()
         }
+
+        // CABLEADO: restaura el modo PDEngine persistido (0=DSP, 1=+NHO, 2=+NHO+Spatial)
+        OmegaEngine.setMode(parameterStore.getOmegaMode())
     }
 
     override fun onDestroy() {
@@ -189,12 +211,14 @@ fun IvannaControlPanel(
     initialAntiDolby: Boolean = false,
     initialPreset: String = "Warm",
     initialAutoMode: Boolean = false,
+    initialOmegaMode: Int = 0,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
     onAntiDolbyChange: (Boolean) -> Unit = {},
     onPresetSelected: (String) -> Unit = {},
-    onAutoModeChange: (Boolean) -> Unit = {}
+    onAutoModeChange: (Boolean) -> Unit = {},
+    onOmegaModeChange: (Int) -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -202,6 +226,7 @@ fun IvannaControlPanel(
     var antiDolbyEnabled by remember { mutableStateOf(initialAntiDolby) }
     var selectedPreset by remember { mutableStateOf(initialPreset) }
     var autoMode by remember { mutableStateOf(initialAutoMode) }
+    var omegaMode by remember { mutableIntStateOf(initialOmegaMode) }
 
     // CABLEADO: recolecta en vivo el SharedFlow real del SpectralClassifier (FFT en Kotlin).
     var classification by remember { mutableStateOf<SpectralClassifier.Classification?>(null) }
@@ -294,6 +319,39 @@ fun IvannaControlPanel(
                         },
                         label = { Text(name) }
                     )
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        // ── Motor PDEngine (NHO harmonic shaping + Spatial ITD/ILD) ──
+        // CABLEADO v1.7: antes solo existía en C++, sin ningún control.
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("Motor OPE", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                when (omegaMode) {
+                    1 -> "DSP + NHO (saturación armónica no lineal)"
+                    2 -> "DSP + NHO + Spatial (ITD/ILD, imagen estéreo)"
+                    else -> "Solo DSP (EQ/Comp/Exciter/Widener)"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                listOf("DSP", "+NHO", "+NHO+Spatial").forEachIndexed { index, label ->
+                    SegmentedButton(
+                        selected = omegaMode == index,
+                        onClick = {
+                            omegaMode = index
+                            onOmegaModeChange(index)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = 3)
+                    ) {
+                        Text(label)
+                    }
                 }
             }
         }

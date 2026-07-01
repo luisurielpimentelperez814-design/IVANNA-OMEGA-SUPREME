@@ -106,13 +106,42 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
-    // Mono: apply DSP chain then PDEngine in mode 0 (passthrough for PD)
-    g_eq.process(data, data, n);
-    g_comp.process(data, data, n);
-    g_exciter.process(data, data, n);
-    g_widener.process(data, data, n);
-    g_gain.processInput(data, data, n);
-    g_gain.processOutput(data, data, n);
+
+    // FIX v1.7 — CABLEADO OPE: el buffer llega intercalado estéreo
+    // (L,R,L,R...) desde AudioPipeline. Antes se le pasaba el mismo
+    // puntero como "left" y "right" a toda la cadena DSP, tratando el
+    // bloque entero como mono y aliasing L==R (procesaba muestras
+    // intercaladas como si fueran consecutivas de un solo canal — imagen
+    // estéreo corrompida). Además nunca se llamaba a g_pd.process_block(),
+    // así que el modo NHO/Spatial y el EvolutionaryKernel (que se
+    // alimenta de cues reales dentro de process_block) nunca recibían
+    // audio real, sin importar qué modo estuviera activo.
+    static thread_local float inL[2048], inR[2048];
+    static thread_local float outL[2048], outR[2048];
+
+    for (int i = 0; i < n; ++i) {
+        inL[i] = data[2 * i];
+        inR[i] = data[2 * i + 1];
+    }
+
+    // Cadena DSP real por canal (ya soportaba L/R, solo nunca se le dio)
+    g_eq.process(inL, inR, n);
+    g_comp.process(inL, inR, n);
+    g_exciter.process(inL, inR, n);
+    g_widener.process(inL, inR, n);
+    g_gain.processInput(inL, inR, n);
+
+    // PDEngine: modo 0 = passthrough, 1 = +NHO, 2 = +NHO+Spatial.
+    // También alimenta al EvolutionaryKernel con cues de audio reales.
+    g_pd.process_block(inL, inR, outL, outR, n);
+
+    g_gain.processOutput(outL, outR, n);
+
+    for (int i = 0; i < n; ++i) {
+        data[2 * i]     = std::clamp(outL[i], -1.0f, 1.0f);
+        data[2 * i + 1] = std::clamp(outR[i], -1.0f, 1.0f);
+    }
+
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
 

@@ -20,6 +20,7 @@ class ParameterStore(context: Context) {
         private const val KEY_ANTI_DOLBY = "anti_dolby"
         private const val KEY_PRESET = "current_preset"
         private const val KEY_AUTO_MODE = "auto_classifier_mode"
+        private const val KEY_OMEGA_MODE = "omega_pd_mode"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.3f)
@@ -39,6 +40,10 @@ class ParameterStore(context: Context) {
 
     fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
+
+    /** 0 = DSP only, 1 = DSP+NHO, 2 = DSP+NHO+Spatial (PDEngine / OmegaEngine.setMode). */
+    fun getOmegaMode(): Int = prefs.getInt(KEY_OMEGA_MODE, 0).coerceIn(0, 2)
+    fun setOmegaMode(mode: Int) = prefs.edit().putInt(KEY_OMEGA_MODE, mode.coerceIn(0, 2)).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()
