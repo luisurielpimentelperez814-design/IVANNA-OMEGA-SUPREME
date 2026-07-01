@@ -127,10 +127,12 @@ class MainActivity : ComponentActivity() {
                         // CABLEADO: selección manual de preset → efecto global real
                         onPresetSelected = { name ->
                             parameterStore.setCurrentPreset(name)
-                            val profile = IvannaEffectProfile.byName[name] ?: return@onPresetSelected
-                            val app = application as? IVANNAApplication
-                            app?.globalEffectManager?.applyProfile(profile)
-                            Log.i(TAG, "Preset aplicado: $name")
+                            val profile = IvannaEffectProfile.byName[name]
+                            if (profile != null) {
+                                val app = application as? IVANNAApplication
+                                app?.globalEffectManager?.applyProfile(profile)
+                                Log.i(TAG, "Preset aplicado: $name")
+                            }
                         },
                         // CABLEADO: modo automático guiado por el clasificador FFT
                         onAutoModeChange = { enabled ->
