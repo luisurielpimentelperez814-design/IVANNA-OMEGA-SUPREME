@@ -32,6 +32,14 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfR_ = hpfL_;
 }
 
+void HarmonicExciter::setAmount(float amount) {
+    amount = amount < 0.f ? 0.f : (amount > 1.f ? 1.f : amount);
+    drive_ = 1.f + amount * 15.f;  // 1..16
+    wet_   = amount;
+    dry_   = 1.f - amount;
+    // HPF ya inicializado en setParams() con el sampleRate correcto; no se toca aquí.
+}
+
 __attribute__((hot, flatten))
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;

@@ -291,7 +291,7 @@ fun IvannaControlPanel(
         ControlSlider(
             label = "EQ Gain",
             value = eq,
-            valueRange = -12f..12f,
+            valueRange = -18f..18f,
             onValueChange = { eq = it; onEqChange(it) }
         )
 

@@ -86,7 +86,7 @@ class AudioEngine {
     }
 
     fun setEqGain(gain: Float) {
-        eqGainAmount = gain.coerceIn(-12f, 12f)
+        eqGainAmount = gain.coerceIn(-18f, 18f)
         if (libLoaded) nativeSetEqGain(eqGainAmount)
     }
 
