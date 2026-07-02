@@ -343,12 +343,22 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDbfs(JNIEnv* /*env*/, jobje
 }
 
 // ── JNI: set Anti-Dolby classification scores ───────────────────────────────
+// FIX: el nombre real exportado no coincidia con lo que declara
+// AudioEngine.kt (companion @JvmStatic external fun
+// nativeSetAntiDolbyScoresStatic(voice, music, bass, silence)) -- faltaba
+// el sufijo "Static" y el 4to parametro "silence". Eso causaba
+// UnsatisfiedLinkError garantizado en cada frame de clasificacion YAMNet
+// (AudioPipeline.classifyWithYamnet), sin contar que ademas AudioEngine
+// cargaba la .so equivocada (ver AudioEngine.kt).
+// "silence" no se usa todavia en AntiDolbyState::updateFromClassification
+// (solo toma speech/music/bass); se recibe y valida pero no se descarta
+// silenciosamente si es invalido.
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
-    JNIEnv* /*env*/, jobject /*thiz*/, jfloat speech, jfloat music, jfloat bass
+Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresStatic(
+    JNIEnv* /*env*/, jclass /*clazz*/, jfloat speech, jfloat music, jfloat bass, jfloat silence
 ) {
-    if (!std::isfinite(speech) || !std::isfinite(music) || !std::isfinite(bass)) {
-        LOGE("nativeSetAntiDolbyScores: valores NaN/Inf recibidos");
+    if (!std::isfinite(speech) || !std::isfinite(music) || !std::isfinite(bass) || !std::isfinite(silence)) {
+        LOGE("nativeSetAntiDolbyScoresStatic: valores NaN/Inf recibidos");
         return;
     }
     gState.antiDolby.updateFromClassification(
@@ -356,7 +366,28 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
         std::clamp(music, 0.0f, 1.0f),
         std::clamp(bass, 0.0f, 1.0f)
     );
-    LOGI("Anti-Dolby: speech=%.2f music=%.2f bass=%.2f", speech, music, bass);
+    LOGI("Anti-Dolby: speech=%.2f music=%.2f bass=%.2f silence=%.2f", speech, music, bass, silence);
+}
+
+// ── JNI: getters de parametros de AudioEngine (para fusion en PDEngine) ─────
+// FIX: declarados en AudioEngine.kt (nativeGetExciterValue/nativeGetEqGainDb/
+// nativeGetWidthValue) pero sin implementacion en ningun .cpp -- dormidos
+// (no llamados desde ningun otro Kotlin todavia), pero garantizaban
+// UnsatisfiedLinkError en cuanto alguien los usara. gState ya guarda estos
+// valores desde los setters existentes, asi que exponerlos es directo.
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetExciterValue(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.exciterAmount;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetEqGainDb(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.eqGain;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetWidthValue(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.widthAmount;
 }
 
 

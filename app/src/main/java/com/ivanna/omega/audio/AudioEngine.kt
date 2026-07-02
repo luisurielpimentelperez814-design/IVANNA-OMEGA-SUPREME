@@ -29,11 +29,19 @@ class AudioEngine {
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
         init {
+            // FIX: AudioEngine cargaba "ivanna_jni" (libivanna_jni.so), que solo
+            // contiene un stub vacío (jni/ivanna_jni_stub.cpp) con una única
+            // función y mal nombrada. La implementación real de estas funciones
+            // (nativeInit, nativeSetExciter, nativeSetAntiDolbyScores, etc.) vive
+            // en audio_orchestrator.cpp, compilado dentro de libivanna_omega.so
+            // (ver CMakeLists.txt: "# Audio orchestrator (JNI para AudioEngine.kt)").
+            // Cargar la librería equivocada garantizaba UnsatisfiedLinkError en
+            // CADA llamada nativa de esta clase.
             try {
-                System.loadLibrary("ivanna_jni")
-                Log.d(TAG, "Librería ivanna_jni cargada")
+                System.loadLibrary("ivanna_omega")
+                Log.d(TAG, "Librería ivanna_omega cargada")
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "Error cargando ivanna_jni: ${e.message}")
+                Log.e(TAG, "Error cargando ivanna_omega: ${e.message}")
             }
         }
 
