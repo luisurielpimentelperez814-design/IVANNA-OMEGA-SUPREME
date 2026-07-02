@@ -1,5 +1,6 @@
 package com.ivanna.omega.audio
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -9,7 +10,7 @@ import android.os.Process
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
-import com.ivanna.omega.ml.YamnetClassifier
+import com.ivanna.omega.ai.YamnetClassifier
 import kotlinx.coroutines.*
 import kotlin.math.sqrt
 
@@ -25,7 +26,7 @@ import kotlin.math.sqrt
  *      como multiplicadores dinámicos en EQ/Widener/Spatial.
  *   4. No se bloquea audio thread — clasificación en coroutine async.
  */
-class AudioPipeline {
+class AudioPipeline(private val context: Context) {
     companion object {
         private const val TAG = "AudioPipeline"
         private const val SAMPLE_RATE = 48000
@@ -74,8 +75,10 @@ class AudioPipeline {
                 android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
             )
 
-            yamnetClassifier = YamnetClassifier()
-            yamnetClassifier?.initialize()
+            // El constructor de YamnetClassifier ya inicializa el intérprete TFLite
+            // (ver com.ivanna.omega.ai.YamnetClassifier). No hay método initialize()
+            // separado; si el modelo no está disponible entra en modo fallback.
+            yamnetClassifier = YamnetClassifier(context)
 
             Log.i(TAG, "AudioPipeline inicializado: $SAMPLE_RATE Hz, buffer=$bufferSize")
         } catch (e: Exception) {
@@ -139,7 +142,7 @@ class AudioPipeline {
                 for (i in 0 until samplesRead / 2) {
                     if (i % DOWNSAMPLE_FACTOR == 0) {
                         if (yamnetAccumIndex < yamnetAccumulator.size) {
-                            yamnetAccumulator[yamnetAccumIndex++] = buffer[i * 2].toFloat() / 32768.f
+                            yamnetAccumulator[yamnetAccumIndex++] = buffer[i * 2].toFloat() / 32768.0f
                         }
                         downsampled++
                     }
@@ -171,12 +174,20 @@ class AudioPipeline {
             val downsampled = yamnetAccumulator.slice(0 until yamnetAccumIndex).toFloatArray()
             if (downsampled.isEmpty()) return
 
-            yamnetClassifier?.classify(downsampled, yamnetScores)
-
-            val voice = yamnetScores.getOrNull(0) ?: 0f
-            val music = yamnetScores.getOrNull(1) ?: 0f
-            val bass = yamnetScores.getOrNull(2) ?: 0f
-            val silence = yamnetScores.getOrNull(3) ?: 0f
+            // YamnetClassifier.classify(FloatArray) devuelve ClassificationResult
+            // (speech, music, bass, isValid). Volcamos en yamnetScores para mantener
+            // el bus interno de este pipeline.
+            val result = yamnetClassifier?.classify(downsampled)
+            val voice   = result?.speech ?: 0f
+            val music   = result?.music  ?: 0f
+            val bass    = result?.bass   ?: 0f
+            // YAMNet no expone 'silence' directamente; se aproxima como
+            // complemento de la energía de las tres clases informativas.
+            val silence = (1f - (voice + music + bass)).coerceIn(0f, 1f)
+            yamnetScores[0] = voice
+            yamnetScores[1] = music
+            yamnetScores[2] = bass
+            yamnetScores[3] = silence
 
             Log.d(TAG, "YAMNet scores: voice=$voice music=$music bass=$bass silence=$silence")
 

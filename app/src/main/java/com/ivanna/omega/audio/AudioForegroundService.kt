@@ -44,7 +44,7 @@ class AudioForegroundService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         if (audioPipeline == null) {
-            audioPipeline = AudioPipeline().apply { start() }
+            audioPipeline = AudioPipeline(this).apply { initialize(); start() }
         }
 
         return START_STICKY
