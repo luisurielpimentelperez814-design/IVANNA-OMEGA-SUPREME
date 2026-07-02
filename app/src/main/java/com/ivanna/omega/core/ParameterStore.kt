@@ -21,7 +21,31 @@ class ParameterStore(context: Context) {
         private const val KEY_PRESET = "current_preset"
         private const val KEY_AUTO_MODE = "auto_classifier_mode"
         private const val KEY_OMEGA_MODE = "omega_pd_mode"
+        private const val KEY_COMP_THRESH = "comp_threshold"
+        private const val KEY_COMP_RATIO = "comp_ratio"
+        private const val KEY_NHO_HARMONIC = "nho_harmonic"
+        private const val KEY_SPATIAL_ANGLE = "spatial_angle"
+        private const val KEY_SPATIAL_WIDTH = "spatial_width"
+        private const val KEY_EVO_ENABLED = "evo_enabled"
     }
+
+    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESH, 0.5f)
+    fun setCompThreshold(value: Float) = prefs.edit().putFloat(KEY_COMP_THRESH, value).apply()
+
+    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.16f)
+    fun setCompRatio(value: Float) = prefs.edit().putFloat(KEY_COMP_RATIO, value).apply()
+
+    fun getNhoHarmonic(): Float = prefs.getFloat(KEY_NHO_HARMONIC, 0.0f)
+    fun setNhoHarmonic(value: Float) = prefs.edit().putFloat(KEY_NHO_HARMONIC, value).apply()
+
+    fun getSpatialAngle(): Float = prefs.getFloat(KEY_SPATIAL_ANGLE, 0.5f)
+    fun setSpatialAngle(value: Float) = prefs.edit().putFloat(KEY_SPATIAL_ANGLE, value).apply()
+
+    fun getSpatialWidth(): Float = prefs.getFloat(KEY_SPATIAL_WIDTH, 0.5f)
+    fun setSpatialWidth(value: Float) = prefs.edit().putFloat(KEY_SPATIAL_WIDTH, value).apply()
+
+    fun isEvoEnabled(): Boolean = prefs.getBoolean(KEY_EVO_ENABLED, true)
+    fun setEvoEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_EVO_ENABLED, enabled).apply()
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.3f)
     fun setExciter(value: Float) = prefs.edit().putFloat(KEY_EXCITER, value).apply()
