@@ -11,6 +11,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -18,6 +19,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
+import com.ivanna.omega.dsp.DSPBridge
 import kotlinx.coroutines.*
 
 /**
@@ -34,11 +36,13 @@ class PlaybackCaptureService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null
     private var isRunning = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        DSPBridge.init(48000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,7 +96,30 @@ class PlaybackCaptureService : Service() {
             .setAudioPlaybackCaptureConfig(config)
             .build()
 
+        // FIX: salida marcada ALLOW_CAPTURE_BY_NONE — evita que esta misma
+        // AudioTrack (USAGE_MEDIA) sea vuelta a capturar por el
+        // AudioPlaybackCaptureConfiguration de arriba (loop de feedback).
+        audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(48000)
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufferSize)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+
         audioRecord?.startRecording()
+        audioTrack?.play()
         isRunning = true
 
         scope.launch {
@@ -100,7 +127,8 @@ class PlaybackCaptureService : Service() {
             while (isRunning && isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
                 if (read > 0) {
-                    // Procesar buffer capturado
+                    DSPBridge.process(buffer, read / 2)
+                    audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
                 }
             }
         }
@@ -112,6 +140,9 @@ class PlaybackCaptureService : Service() {
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
     }
 
     private fun createNotificationChannel() {

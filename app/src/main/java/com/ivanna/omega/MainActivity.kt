@@ -1,8 +1,12 @@
 package com.ivanna.omega
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -24,6 +28,7 @@ import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
+import com.ivanna.omega.audio.PlaybackCaptureService
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
@@ -71,6 +76,34 @@ class MainActivity : ComponentActivity() {
     private var noRootProcessor: NoRootAudioProcessor? = null
     private var liveDspState = DSPState()
 
+    private val mediaProjectionManager by lazy {
+        getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+
+    // FIX: motor de audio real ahora requiere consentimiento de captura de
+    // pantalla (MediaProjection) para leer el audio interno digitalmente en
+    // vez de usar el micrófono (que recapturaba la salida y sonaba horrible).
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val serviceIntent = Intent(this, PlaybackCaptureService::class.java).apply {
+                putExtra("resultCode", result.resultCode)
+                putExtra("data", result.data)
+            }
+            ContextCompat.startForegroundService(this, serviceIntent)
+            Log.i(TAG, "Captura de audio de reproducción iniciada")
+        } else {
+            Log.w(TAG, "Captura de audio de reproducción denegada")
+        }
+    }
+
+    private fun requestPlaybackCapture() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+    }
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -78,6 +111,7 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "RECORD_AUDIO concedido — iniciando AudioEngine + Clasificador")
             initAudioEngine()
             SpectralClassifier.start()
+            requestPlaybackCapture()
         } else {
             Log.w(TAG, "RECORD_AUDIO denegado — funcionalidad limitada (sin clasificador)")
         }
@@ -95,10 +129,13 @@ class MainActivity : ComponentActivity() {
         if (hasMicPermission) {
             initAudioEngine()
             SpectralClassifier.start()
+            requestPlaybackCapture()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
 
+        // FIX: ya no depende del permiso de mic — este servicio solo hace
+        // init de DSPBridge y mantiene el proceso vivo, sin AudioRecord.
         val serviceIntent = Intent(this, AudioForegroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
