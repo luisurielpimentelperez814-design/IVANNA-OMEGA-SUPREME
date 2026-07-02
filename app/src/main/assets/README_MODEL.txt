@@ -7,12 +7,10 @@ clasificador de género musical específico — distingue categorías
 generales como Música, Habla, Silencio, y cientos de eventos de audio
 más (aplausos, ladridos, etc.).
 
-Por qué no viene incluido en el repo: el archivo .tflite pesa 4.13 MB,
-y los binarios grandes de terceros no deben versionarse en git sin
-verificar explícitamente la licencia de redistribución en ESTE
-repositorio. Descárgalo tú mismo con los comandos exactos de abajo
-(son los mismos publicados en la documentación oficial de
-TensorFlow/tflite-support).
+Actualización: el modelo (4.13 MB, licencia Apache 2.0, verificada como
+redistribuible) y el class map ya están versionados directamente en este
+repositorio junto a este README. Los pasos de abajo quedan solo como
+referencia por si necesitas reemplazar el archivo por otra versión.
 
 PASO 1 — Descargar el modelo (4.13 MB, licencia Apache 2.0):
 --------------------------------------------------------------

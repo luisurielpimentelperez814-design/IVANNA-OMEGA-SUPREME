@@ -1,9 +1,10 @@
 # YAMNet Model
 
-El modelo YAMNet (yamnet.tflite) debe colocarse en:
-`app/src/main/assets/yamnet.tflite`
+El modelo YAMNet (yamnet.tflite) y su class map ya están incluidos en este
+directorio (licencia Apache 2.0, ver README_MODEL.txt para detalles y
+referencia de origen).
 
-## Descarga
+## Descarga manual (solo si necesitas reemplazarlo)
 1. Descargar desde: https://www.tensorflow.org/lite/models/yamnet/overview
 2. Versión lite (~3.7 MB): https://storage.googleapis.com/download.tensorflow.org/models/tflite/yamnet/yamnet.tflite
 

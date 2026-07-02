@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA-OMEGA-SUPREME
-version=v1.5
-versionCode=1500
+version=v1.8
+versionCode=1800
 author=IVANNA Team
-description=Anti-Dolby audio engine — motor de audio neuromórfico unificado
+description=Anti-Dolby audio engine — motor de audio neuromórfico unificado. Instala libomega_effect.so y FUSIONA omega_effect dentro del audio_effects.xml real del vendor (ya no lo reemplaza: bassboost/equalizer/Dolby/AEC-NS de llamadas se preservan), con verificación ELF y modo seguro anti-bootloop.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/update.json
