@@ -129,8 +129,17 @@ class AudioPipeline(private val context: Context) {
                 // ────────────────────────────────────────────────────────────────
                 // 2. Procesa DSP (DSPBridge.process) en tiempo real
                 // ────────────────────────────────────────────────────────────────
+                val floatBuffer = FloatArray(samplesRead)
+                for (i in 0 until samplesRead) {
+                    floatBuffer[i] = buffer[i].toFloat() / 32768.0f
+                }
+                // DSPBridge.process opera in-place sobre FloatArray normalizado a [-1,1]
+                DSPBridge.process(floatBuffer, samplesRead / 2)
                 val processedBuffer = ShortArray(samplesRead)
-                DSPBridge.process(buffer, processedBuffer, samplesRead / 2)
+                for (i in 0 until samplesRead) {
+                    processedBuffer[i] = (floatBuffer[i] * 32767.0f)
+                        .coerceIn(-32768.0f, 32767.0f).toInt().toShort()
+                }
 
                 // ────────────────────────────────────────────────────────────────
                 // 3. Acumula muestras para clasificación YAMNet (downsample)
