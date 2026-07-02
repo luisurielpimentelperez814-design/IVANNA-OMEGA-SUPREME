@@ -1,0 +1,14 @@
+
+# Android / Gradle
+.gradle/
+**/.cxx/
+**/build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+
+# Logs / cache
+*.log
+
