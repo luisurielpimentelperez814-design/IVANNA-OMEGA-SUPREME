@@ -57,11 +57,15 @@ static uint32_t        g_sample_rate{48000};
 static std::atomic<bool> g_initialized{false};
 
 // ── Bus de control lock-free (seqlock) — único canal JNI → audio thread ──
-static ControlFrameBus g_control_bus;
+// NOTE: no-static para permitir que audio_control_plane.cpp publique el
+// frame unificado (YAMNet + PhaseOracle + Evo) sin duplicar la lógica DSP.
+ControlFrameBus g_control_bus;
 
 // Copia de staging en el hilo de control (JNI/UI). No es tocada por el
 // hilo de audio; cada setter la actualiza y publica una copia inmutable.
-static ControlFrame g_staging_frame;
+// Expuesta (no-static) para que audio_control_plane.cpp pueda leer el
+// último estado publicado como base al aplicar fusiones (YAMNet, evo, etc.).
+ControlFrame g_staging_frame;
 
 // Última secuencia aplicada por CADA camino de audio (DSPBridge vs
 // IvannaNativeLib comparten motor pero pueden ser llamados por hilos de

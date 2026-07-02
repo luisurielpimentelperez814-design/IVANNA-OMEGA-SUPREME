@@ -180,4 +180,4 @@ inline float control_get_phase_oracle_T() noexcept {
     return g_control_frame.phase_oracle_T_refined.load(std::memory_order_relaxed);
 }
 
-#endif  // AUDIO_CONTROL_PLANE_HPP
+// NOTE: este header usa #pragma once (línea 2). No lleva #endif final.
