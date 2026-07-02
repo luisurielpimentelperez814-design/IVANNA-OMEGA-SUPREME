@@ -4,7 +4,7 @@ project(ivanna_omega_supreme)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ── Compile flags ──────────────────────────────────────────────────────────[...]
+# ── Compile flags ──────────────────────────────────────────────────────────
 # FIX v1.5: elimina -ffast-math (rompe NEON en SD8 Gen2/3, genera NaN)
 # FIX v1.5: añade -fno-fast-math, -fno-associative-math, -ffp-contract=off
 set(BASE_FLAGS
@@ -28,9 +28,9 @@ endif()
 # ── Definiciones globales ─────────────────────────────────────────────────────
 add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 
-# ────────────────────────────────────────────────────────────────��[...]
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libivanna_omega.so (APK NDK library)
-# ────────────────────────────────────────────────────────────────��[...]
+# ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
     # JNI bridge
     jni/ivanna_omega_jni.cpp
@@ -70,6 +70,22 @@ add_library(ivanna_omega SHARED
 
     # USB Audio Pro Manager (JNI para UsbAudioProManager.kt) — FIX v1.5
     usb_audio_pro_manager.cpp
+
+    # ════════════════════════════════════════════════════════════════════════
+    # NUEVA: Unified Engine Integration v2.0 (Fase 1-6)
+    # ════════════════════════════════════════════════════════════════════════
+
+    # Fase 1: Orquestador central (UnifiedControlFrame + control_apply_frame)
+    audio_control_plane.cpp
+
+    # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
+    # (header-only, no .cpp necesario)
+
+    # Fase 5: Evolutionary Adapter (mapeo genoma → parámetros real-time)
+    # (header-only, no .cpp necesario)
+
+    # Fase 6: Kotlin integration (AudioPipeline, AudioEngine, OmegaEngineBridge)
+    # (lado Kotlin, no .cpp aquí)
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
@@ -91,9 +107,9 @@ target_link_libraries(ivanna_omega
     ${aaudio-lib}
 )
 
-# ────────────────────────────────────────────────────────────────��[...]
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libomega_effect.so (AudioFlinger GlobalEffect — Magisk module)
-# ────────────────────────────────────────────────────────────────��[...]
+# ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
 )
@@ -114,9 +130,9 @@ set_target_properties(omega_effect PROPERTIES
     EXCLUDE_FROM_ALL TRUE
 )
 
-# ────────────────────────────────────────────────────────────────�[...]
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libivanna_jni.so (stub for AudioEngine.kt loadLibrary)
-# ────────────────────────────────────────────────────────────────�[...]
+# ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_jni SHARED
     jni/ivanna_jni_stub.cpp
 )
@@ -132,9 +148,9 @@ target_link_libraries(ivanna_jni
     ${android-lib}
 )
 
-# ────────────────────────────────────────────────────────────────�[...]
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libomega_vibratory.so (stub for IvannaNpeNative.kt)
-# ────────────────────────────────────────────────────────────────�[...]
+# ────────────────────────────────────────────────────────────────────────────
 add_library(omega_vibratory SHARED
     jni/omega_vibratory_stub.cpp
 )
