@@ -1,53 +1,45 @@
 # IVANNA-OMEGA-SUPREME
 
-**Motor de Audio Espacial y Procesamiento Dinámico de Nueva Generación para Android**
+**Motor de audio DSP nativo para Android (Snapdragon / ARM64)**
 
-IVANNA-OMEGA-SUPREME es un motor de audio avanzado diseñado con un objetivo claro: superar la calidad, transparencia y espacialidad de los procesadores comerciales como Dolby Atmos, operando de forma nativa en Android sin depender de las licencias o efectos de "caja negra" del sistema.
+IVANNA-OMEGA-SUPREME es un procesador de audio en tiempo real para Android, implementado en C++/NDK con puente JNI a una app Kotlin/Jetpack Compose. Se distribuye como APK independiente o como módulo Magisk.
 
-## 🎯 ¿Qué es el modo "Anti-Dolby"?
+## Cadena de procesamiento activa
 
-El término **Anti-Dolby** no es un ataque a la marca, sino una filosofía de diseño acústico. Los procesadores comerciales suelen aplicar una "firma de sonido" predefinida, comprimiendo la dinámica y alterando la fase para simular espacialidad. 
+El pipeline real (`AudioEngine.kt` → `audio_orchestrator.cpp`, target nativo `libivanna_omega.so`) aplica, en orden, sobre buffers de entrada capturados por `AudioRecord`:
 
-El modo **Anti-Dolby** de IVANNA toma un enfoque completamente distinto:
-1. **Transparencia y Control:** No fuerza un sello de coloración. En su lugar, utiliza procesamiento dinámico adaptativo para respetar la mezcla original mientras expande el campo sonoro de forma natural.
-2. **Independencia de Metadatos:** Mientras que las soluciones comerciales dependen de metadatos espaciales incrustados en el archivo (que a menudo se pierden o ignoran), IVANNA genera su propio campo 3D en tiempo real.
-3. **Superación en su propio formato:** Cuando IVANNA detecta audio decodificado de formatos espaciales (como E-AC3/JOC), aplica un *downmix inteligente* y un *motor pseudo-espacial* que preserva la integridad del canal central y la altura acústica, sonando más amplio y definido que el procesador nativo de Dolby del dispositivo.
+1. **Downmix multicanal → estéreo**, si la fuente trae más de 2 canales (`L = FL + 0.7·FC + 0.5·SL + 0.3·BL`, y equivalente para R).
+2. **Gain** de entrada (0.0–2.0).
+3. **Anti-Dolby dinámico**: ajuste de ancho estéreo (mid/side) en función de la clasificación de audio en tiempo real hecha por un modelo YAMNet (`yamnet.tflite`) que distingue voz, música y graves.
+4. **Excitador armónico**: filtro paso-alto a 3 kHz + saturación suave (softclip Padé), con mezcla wet/dry controlada por el parámetro Exciter (0–1).
+5. **Stereo Widener**: procesamiento mid/side con ancho ajustable (0 = mono, 0.5 = unity, 1 = máximo), controlado por el parámetro Stereo Width.
+6. **Limiter hard-clip** a -0.1 dBFS, siempre activo, como protección final contra clipping.
 
-## ✨ Características Principales
+Los parámetros de Exciter, Stereo Width y Gain se envían vía JNI y afectan el audio en tiempo real. El parámetro **EQ Gain** (±18 dB) existe en la UI y se almacena en el estado nativo, pero **todavía no se aplica** a la señal procesada.
 
-### 🧠 Clasificación de Audio en Tiempo Real (YAMNet)
-IVANNA "escucha" lo que estás reproduciendo. Utiliza un modelo de inteligencia artificial local para clasificar el audio en **Voz, Música o Graves** y adapta la cadena de efectos al instante:
-* **Voz (Podcasts/Llamadas):** Reduce la expansión estéreo para mantener la claridad y el anclaje central, aplicando un realce quirúrgico en las frecuencias de inteligibilidad (2-4 kHz).
-* **Música:** Activa el motor pseudo-espacial y el excitador armónico para dar calidez y amplitud.
-* **Graves:** Aísla las frecuencias sub-bajas (<120Hz) para aplicar excitación de armónicos sin ensuciar los medios.
+`nativeGetLufs()` y `nativeGetPeakDbfs()` devuelven valores fijos de marcador de posición (-23.0 / -6.0), no mediciones reales del audio.
 
-### 🌌 Motor Pseudo-Espacial (HRTF Ligero)
-Crea la sensación de "altura" y "profundidad" sin metadatos. Aplica funciones de transferencia relacionadas con la cabeza (HRTF) de 128 taps, micro-retrasos (0.3ms) y filtros *shelving* en frecuencias altas (>8kHz) exclusivamente al contenido no-vocal, engañando al cerebro para percibir un escenario sonoro tridimensional.
+## Clasificación de audio (YAMNet)
 
-### 🎛️ Cadena de Procesamiento Dinámico
-* **Downmix Inteligente:** Si el sistema recibe un stream multicanal, IVANNA intercepta la señal y realiza un downmix matemático (L+R+0.7C) antes de que el sistema operativo lo aplaste, preservando la energía del canal central.
-* **Preset "Anti-Dolby":** Compresor óptico lento (2:1), excitador de armónicos pares, expansión estéreo controlada y reverberación que solo actúa en la "cola" de los transitorios para no embarrar la mezcla.
-* **Limiter Hard-Clip:** Protección absoluta a -0.1 dBFS para evitar cualquier distorsión digital o clipping en los altavoces del dispositivo.
+`YamnetClassifier.kt` ejecuta el modelo TFLite `yamnet.tflite` sobre el audio capturado y clasifica en voz / música / graves. Los scores se envían al motor nativo (`nativeSetAntiDolbyScores`) y modulan el multiplicador de ancho estéreo del downmix multicanal.
 
-## 📱 Modos de Instalación
+## Otros módulos del repositorio
 
-IVANNA se adapta a tu nivel de acceso al dispositivo:
+El repositorio incluye código adicional (motor pseudo-espacial HRTF, compresor, reverberación, kernel evolutivo, PI-LSTM, capa `IvannaNativeLib`/`SpatialAudioEngineV2`) que **no está conectado** al flujo de `MainActivity` → `AudioEngine`. Existen como módulos independientes en `app/src/main/cpp/`, compilados dentro del mismo `.so`, pero sin invocación desde la UI actual.
 
-* **Modo Root (Magisk):** Se instala como un módulo de sistema. Intercepta el servidor de audio de Android (`audioserver`) para procesar toda la salida de audio del dispositivo con latencia casi nula a nivel de kernel.
-* **Modo No-Root:** Funciona como una aplicación independiente que utiliza la API nativa `AudioTrack` y `DynamicsProcessing` de Android para procesar el audio localmente sin necesidad de permisos de superusuario.
+## Modos de instalación
 
-## 🚀 Instalación
+* **Modo Root (Magisk):** target nativo `libomega_effect.so`, pensado para operar como efecto global de `audioserver`. Empaquetado para distribución vía módulo Magisk, excluido del APK.
+* **Modo No-Root:** APK independiente que usa `AudioRecord`/`AudioTrack` de Android para capturar y procesar audio a nivel de aplicación.
 
-**Para usuarios con Root (Recomendado):**
-1. Descarga el archivo `.zip` del módulo desde la sección de [Releases](../../releases).
-2. Abre la aplicación Magisk.
-3. Ve a la pestaña de Módulos e "Instalar desde almacenamiento".
-4. Selecciona el zip de IVANNA-OMEGA-SUPREME y reinicia.
+## Build
 
-**Para usuarios sin Root:**
-1. Descarga el archivo `.apk` desde la sección de [Releases](../../releases).
-2. Instálalo como una aplicación normal.
-3. Abre la app y activa el procesamiento.
+Proyecto Android Gradle estándar con NDK (CMake 3.22.1, C++17). Targets nativos definidos en `app/src/main/cpp/CMakeLists.txt`:
+- `ivanna_omega` (librería principal, empaquetada en el APK)
+- `omega_effect` (Magisk, excluida del APK)
+- `ivanna_jni` (stub de carga para `AudioEngine`)
+- `omega_vibratory` (stub para `IvannaNpeNative`)
 
----
-*IVANNA-OMEGA-SUPREME está diseñado para audiófilos, entusiastas del cine en casa y usuarios que exigen el máximo rendimiento acústico de sus dispositivos Android.*
+## Dispositivos objetivo
+
+Desarrollado y probado sobre hardware Snapdragon (Moto G85, SM6375), arquitectura arm64-v8a.
