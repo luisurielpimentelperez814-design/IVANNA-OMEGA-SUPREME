@@ -33,16 +33,14 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     setBand(1, 200.f,  p.resonance, clampDb(p.low * 0.5f));
     // Band 2: Peaking   ~500 Hz — mid transition (no direct param, flat)
     setBand(2, 500.f,  p.resonance, 0.f);
-    // Band 3: Peaking   at freq Hz — used as a parametric bell, gain from master
-    setBand(3, p.freq, p.resonance, clampDb(p.master * 0.25f));
+    // Band 3: FIX audio-cleanup: ya no usa p.master (evita doble ganancia con GainStage)
+    setBand(3, p.freq, p.resonance, 0.f);
     // Band 4: Peaking   ~2.5 kHz — mid param
     setBand(4, 2500.f, p.resonance, clampDb(p.mid));
-    // Band 5: Peaking   ~5 kHz  — high param
-    setBand(5, 5000.f, p.resonance, clampDb(p.high));
-    // Band 6: Peaking   ~8 kHz  — presence param
-    setBand(6, 8000.f, p.resonance, clampDb(p.presence));
-    // Band 7: High shelf ~12 kHz — high param (half for air)
-    setBand(7, 12000.f, 0.707f, clampDb(p.high * 0.5f));
+    // FIX audio-cleanup (sibilancia): bandas 5/6/7 desacopladas para no sumar boost en 5-12kHz
+    setBand(5, 5000.f, p.resonance, 0.f);
+    setBand(6, 7500.f, 2.2f, clampDb(p.presence * 0.7f));
+    setBand(7, 12000.f, 0.707f, clampDb(p.high * 0.6f));
 }
 
 void ParametricEQ::process(float* l,float* r,int frames) noexcept {

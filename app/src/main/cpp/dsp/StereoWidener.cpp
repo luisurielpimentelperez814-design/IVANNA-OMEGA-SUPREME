@@ -3,8 +3,8 @@
 namespace ivanna {
 
 void StereoWidener::setParams(const DSPParams& p) {
-    // gamma 0→narrow (0.0), 0.5→unity (1.0), 1→wide (2.0)
-    width_ = p.gamma * 2.f;
+    // FIX audio-cleanup: cap width 2.0->1.5 (evita hiss/artefactos de fase en Side)
+    width_ = p.gamma * 1.5f;
 }
 
 // Setter directo, independiente de DSPParams::gamma. Declarado en el header
@@ -12,8 +12,8 @@ void StereoWidener::setParams(const DSPParams& p) {
 // setParams cuando solo ese parámetro cambia, p.ej. desde un control de UI
 // dedicado o el preset Anti-Dolby que reduce widener 30% en modo Speech).
 void StereoWidener::setWidth(float w) {
-    // w en rango [0,2]: 0=mono, 1=unity, 2=ancho máximo (mismo rango que gamma*2)
-    width_ = w < 0.f ? 0.f : (w > 2.f ? 2.f : w);
+    // FIX audio-cleanup: cap width 1.5
+    width_ = w < 0.f ? 0.f : (w > 1.5f ? 1.5f : w);
 }
 
 __attribute__((hot, flatten))
