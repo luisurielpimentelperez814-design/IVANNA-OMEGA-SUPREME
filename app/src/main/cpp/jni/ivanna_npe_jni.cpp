@@ -247,7 +247,7 @@ public:
             const float rawStep = agc_rate_ * 0.05f * (desiredGain - agc_gain_);
             const float step = std::clamp(rawStep, -0.02f, 0.02f);
             agc_gain_ += step;
-            agc_gain_ = std::clamp(agc_gain_, 0.1f, 8.f);
+            agc_gain_ = std::clamp(agc_gain_, 0.25f, 4.f);
             yL *= agc_gain_; yR *= agc_gain_;
 
             // ── Master gain (dB) ─────────────────────────────────────────
@@ -265,7 +265,7 @@ public:
 
             outL[i] = yL; outR[i] = yR;
 
-            const float mono = 0.5f * (yL + yR);
+            const float mono = 0.5f * (outL[i] + outR[i]);
             update_velocity(mono, sample_rate_);
             scope_[scope_write_] = mono;
             scope_write_ = (scope_write_ + 1) % SCOPE_SIZE;

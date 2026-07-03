@@ -18,9 +18,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ivanna.omega.audio.AudioEngine
@@ -35,6 +39,7 @@ import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.visualizer.VisualizerSurface
 
 /**
  * MainActivity v1.7 — UI Compose Material3
@@ -133,11 +138,24 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, serviceIntent)
 
         setContent {
+            var showVisualizer by remember { mutableStateOf(false) }
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    if (showVisualizer) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            VisualizerSurface(modifier = Modifier.fillMaxSize())
+                            IconButton(
+                                onClick = { showVisualizer = false },
+                                modifier = Modifier.align(Alignment.TopStart)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Cerrar visualizador", tint = Color.White)
+                            }
+                        }
+                        return@Surface
+                    }
                     IvannaControlPanel(
                         initialExciter = parameterStore.getExciter(),
                         initialEq = parameterStore.getEqGain(),
@@ -287,7 +305,8 @@ class MainActivity : ComponentActivity() {
                             parameterStore.setNpeCochlearEnabled(cochlear)
                             parameterStore.setNpeAdaptEnabled(adapt)
                             IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
-                        }
+                        },
+                        onOpenVisualizer = { showVisualizer = true }
                     )
                 }
             }
@@ -388,7 +407,8 @@ fun IvannaControlPanel(
     onNpeOhcCompressionChange: (Float) -> Unit = {},
     onNpeMasterGainChange: (Float) -> Unit = {},
     onNpeAgcChange: (Float, Float) -> Unit = { _, _ -> },
-    onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> }
+    onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
+    onOpenVisualizer: () -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -641,6 +661,11 @@ fun IvannaControlPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            OutlinedButton(onClick = onOpenVisualizer, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Visibility, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Abrir visualizador")
+            }
             Spacer(modifier = Modifier.height(4.dp))
             ControlSlider(
                 label = "Ganancia armónica (NHO)",

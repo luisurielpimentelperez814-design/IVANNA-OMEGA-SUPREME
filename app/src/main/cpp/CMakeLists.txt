@@ -168,3 +168,22 @@ target_link_libraries(omega_vibratory
     ${log-lib}
     ${android-lib}
 )
+
+# ────────────────────────────────────────────────────────────────────────────
+# Target: libivanna_visualizer.so (Gammatone13 + GLUniformBridge → shader GL)
+# ────────────────────────────────────────────────────────────────────────────
+add_library(ivanna_visualizer SHARED
+    jni/ivanna_visualizer_jni.cpp
+)
+
+target_compile_options(ivanna_visualizer PRIVATE ${BASE_FLAGS})
+
+target_include_directories(ivanna_visualizer PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/visualizer
+)
+
+target_link_libraries(ivanna_visualizer
+    ${log-lib}
+    ${android-lib}
+)

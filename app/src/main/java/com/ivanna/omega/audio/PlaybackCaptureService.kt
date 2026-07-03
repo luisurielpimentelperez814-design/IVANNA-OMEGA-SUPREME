@@ -26,6 +26,7 @@ import com.ivanna.omega.R
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.visualizer.IvannaVisualizerBridge
 import kotlinx.coroutines.*
 
 /**
@@ -51,6 +52,7 @@ class PlaybackCaptureService : Service() {
         createNotificationChannel()
         DSPBridge.init(48000)
         IvannaNpeEngine.init(48000, INPUT_SAMPLES / 2)
+        IvannaVisualizerBridge.init(48000, INPUT_SAMPLES / 2)
         val params = ParameterStore(this)
         IvannaNpeEngine.setBypass(params.isNpeBypass())
         IvannaNpeEngine.setEngineFlags(
@@ -196,12 +198,17 @@ class PlaybackCaptureService : Service() {
 
         scope.launch {
             val buffer = FloatArray(INPUT_SAMPLES)
+            val mono = FloatArray(INPUT_SAMPLES / 2)
             while (isRunning && isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
                 if (read > 0) {
                     val frames = read / 2
                     DSPBridge.process(buffer, frames)
                     IvannaNpeEngine.processInterleavedStereo(buffer, frames)
+                    for (i in 0 until frames) {
+                        mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
+                    }
+                    IvannaVisualizerBridge.processBlock(mono, frames)
                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
                 }
             }
@@ -211,6 +218,7 @@ class PlaybackCaptureService : Service() {
     private fun stopCapture() {
         isRunning = false
         scope.cancel()
+        IvannaVisualizerBridge.release()
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
