@@ -2,6 +2,8 @@ package com.ivanna.omega.core
 
 import android.app.Application
 import android.util.Log
+import com.ivanna.omega.audio.AntiDolbyController
+import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaDaemon
@@ -33,6 +35,13 @@ class IVANNAApplication : Application() {
         @Volatile
         var isInitialized = false
             private set
+
+        // Anti-Dolby adaptativo: instancia global accesible desde cualquier contexto
+        var audioEngine: AudioEngine? = null
+            private set
+        
+        var antiDolbyController: AntiDolbyController? = null
+            private set
     }
 
     // FIX: expuesto como propiedad de instancia (no companion) para que
@@ -52,18 +61,30 @@ class IVANNAApplication : Application() {
                 DSPBridge.init(sampleRate = 48000)
                 Log.d(TAG, "✅ DSPBridge listo — 48000 Hz")
 
-                // 2. Daemon Magisk (puede fallar sin root — no es fatal)
+                // 2. Motor de audio: AudioEngine + Anti-Dolby adaptativo
+                audioEngine = AudioEngine().apply {
+                    initialize(sampleRate = 48000)
+                }
+                Log.d(TAG, "✅ AudioEngine inicializado")
+                
+                antiDolbyController = AntiDolbyController(this@IVANNAApplication).apply {
+                    initialize(audioEngine!!)
+                    enableAntiDolby()
+                }
+                Log.d(TAG, "✅ AntiDolbyController inicializado — YAMNet conectado")
+
+                // 3. Daemon Magisk (puede fallar sin root — no es fatal)
                 val daemonOk = OmegaDaemon.start()
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
                            else          "⚠️ OmegaDaemon no disponible (modo no-root activo)")
 
-                // 3. Socket bridge al daemon (esperar 300ms a que inicie)
+                // 4. Socket bridge al daemon (esperar 300ms a que inicie)
                 delay(300)
                 omegaBridge.connect()
                 Log.d(TAG, "✅ OmegaEngineBridge conectando en background")
 
                 isInitialized = true
-                Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista")
+                Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista (Anti-Dolby adaptativo activo)")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "❌ Librería nativa no disponible: ${e.message}")
             } catch (e: Exception) {
@@ -73,6 +94,11 @@ class IVANNAApplication : Application() {
     }
 
     override fun onTerminate() {
+        antiDolbyController?.release()
+        antiDolbyController = null
+        audioEngine?.release()
+        audioEngine = null
+        
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()
