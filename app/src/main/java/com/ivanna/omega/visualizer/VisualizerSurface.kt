@@ -13,6 +13,7 @@ fun VisualizerSurface(modifier: Modifier = Modifier) {
         factory = { ctx ->
             GLSurfaceView(ctx).apply {
                 setEGLContextClientVersion(3)
+                setZOrderOnTop(true)
                 setRenderer(VisualizerRenderer())
                 renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
             }

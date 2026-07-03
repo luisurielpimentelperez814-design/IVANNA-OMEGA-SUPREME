@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -19,12 +20,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ivanna.omega.audio.AudioEngine
@@ -145,15 +144,8 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     if (showVisualizer) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            VisualizerSurface(modifier = Modifier.fillMaxSize())
-                            IconButton(
-                                onClick = { showVisualizer = false },
-                                modifier = Modifier.align(Alignment.TopStart)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Cerrar visualizador", tint = Color.White)
-                            }
-                        }
+                        BackHandler(enabled = true) { showVisualizer = false }
+                        VisualizerSurface(modifier = Modifier.fillMaxSize())
                         return@Surface
                     }
                     IvannaControlPanel(

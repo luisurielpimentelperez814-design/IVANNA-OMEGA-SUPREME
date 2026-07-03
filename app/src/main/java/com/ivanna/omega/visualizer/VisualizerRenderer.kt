@@ -90,7 +90,7 @@ void main() {
 
     float pulseRadius = 0.22 + 0.18 * u_bass_pulse;
     float distCenter = length(uv);
-    float node = smoothstep(pulseRadius, pulseRadius - 0.02, distCenter);
+    float node = 1.0 - smoothstep(pulseRadius - 0.02, pulseRadius, distCenter);
 
     vec2 flowUV = uv * rot(u_time * 0.05);
     vec2 warp = curlNoise(flowUV * 3.0 + u_time * 0.1) * u_mid_flow * 0.35;
@@ -105,7 +105,7 @@ void main() {
         pPos *= 0.9;
         float d = length(uv - pPos);
         float twinkle = hash21(seed + floor(u_time * 6.0));
-        particleField += smoothstep(0.018, 0.0, d) * twinkle * u_high_flicker;
+        particleField += (1.0 - smoothstep(0.0, 0.018, d)) * twinkle * u_high_flicker;
     }
 
     vec3 N = normalize(vec3(warp.x * 1.5, warp.y * 1.5, 1.0));
