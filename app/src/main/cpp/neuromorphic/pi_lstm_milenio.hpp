@@ -122,6 +122,12 @@ struct CTLSTMCell {
     float alpha = 1.0f, beta = 1.0f, gamma_p = 1.0f;
     float delta = 0.1f, eta = 1.0f;
     float NP_max = 1.0f;
+    // AUDIT FIX (TODO pi_lstm_bridge_jni.cpp:nativeGetError): la celda no
+    // exponía ningún residual real. rk4_step ya calcula k1_h..k4_h (derivada
+    // de h en cada sub-paso RK4); su combinación es literalmente el residuo
+    // de la ODE dh/dt en ese paso. Se guarda para exponerlo sin inventar una
+    // métrica nueva ni requerir ground-truth externo.
+    float last_residual = 0.f;
 
     float f_gate(float x) const noexcept { return fast_sig(alpha * x + bf); }
     float i_gate(float x) const noexcept { return fast_sig(beta * x + bi); }
@@ -162,15 +168,20 @@ struct CTLSTMCell {
         float k4_c = dc_dt(c4, h4, x);
         float k4_h = dh_dt(c4, h4, x);
 
-        c += (k1_c + 2.f * k2_c + 2.f * k3_c + k4_c) * dt / 6.f;
-        h += (k1_h + 2.f * k2_h + 2.f * k3_h + k4_h) * dt / 6.f;
+        const float dc = (k1_c + 2.f * k2_c + 2.f * k3_c + k4_c) / 6.f;
+        const float dh = (k1_h + 2.f * k2_h + 2.f * k3_h + k4_h) / 6.f;
+        c += dc * dt;
+        h += dh * dt;
 
         // FIX: Clamp states to prevent divergence
         c = clampf(c, -NP_max, NP_max);
         h = clampf(h, -NP_max, NP_max);
+
+        // AUDIT FIX: residuo real de la ODE en este paso (antes se perdía).
+        last_residual = std::fabs(dc) + std::fabs(dh);
     }
 
-    void reset() noexcept { c = 0.f; h = 0.f; }
+    void reset() noexcept { c = 0.f; h = 0.f; last_residual = 0.f; }
 };
 
 // ── Harmonic Exciter ────────────────────────────────────────

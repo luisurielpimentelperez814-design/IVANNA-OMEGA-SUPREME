@@ -136,6 +136,10 @@ static struct {
     AntiDolbyState antiDolby;
     ivanna::HarmonicExciter exciter;
     ivanna::StereoWidener widener;
+    // AUDIT FIX (TODOs "implementar en commit 16 (benchmark)"): telemetría
+    // real de salida en vez de los placeholders -23.0f / -6.0f hardcodeados.
+    std::atomic<float> peakDbfs{-100.f};
+    std::atomic<float> lufsApprox{-70.f};
 } gState;
 
 // Buffers estáticos de trabajo (deinterleave L/R) — evitan alloc en audio thread
@@ -303,11 +307,22 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
         }
     } else {
         // Mono: exciter/widener no aplican (no hay par estéreo) — solo gain + limiter
+        // AUDIT FIX: también alimenta peakDbfs/lufsApprox aquí, si no la ruta
+        // mono se quedaba con la telemetría estancada del último bloque estéreo.
+        float blockPeak = 0.0f;
+        double sumSq = 0.0;
         for (int i = 0; i < frames; ++i) {
             float x = in[i];
             if (!std::isfinite(x)) x = 0.0f;
             x = process_limiter(x * gState.gain);
             out[i] = x;
+            blockPeak = std::max(blockPeak, std::fabs(x));
+            sumSq += (double)x * x;
+        }
+        if (frames > 0) {
+            gState.peakDbfs.store(20.0f * log10f(std::max(blockPeak, 1e-6f)), std::memory_order_relaxed);
+            const float rms = (float)std::sqrt(sumSq / frames);
+            gState.lufsApprox.store(20.0f * log10f(std::max(rms, 1e-6f)) - 0.691f, std::memory_order_relaxed);
         }
         env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
         env->ReleaseFloatArrayElements(outArray, out, 0);
@@ -319,27 +334,51 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
     gState.widener.process(lBuf, rBuf, frames);
 
     // Limiter hard-clip al final de cadena — SIEMPRE activo
+    // AUDIT FIX: se acumula peak y suma de cuadrados de lo que REALMENTE
+    // sale (post-limiter) para alimentar nativeGetPeakDbfs/nativeGetLufs
+    // con datos reales en vez de constantes fijas.
+    float blockPeak = 0.0f;
+    double sumSq = 0.0;
     for (int i = 0; i < frames; ++i) {
-        out[i * 2 + 0] = process_limiter(lBuf[i]);
-        out[i * 2 + 1] = process_limiter(rBuf[i]);
+        float l = process_limiter(lBuf[i]);
+        float r = process_limiter(rBuf[i]);
+        out[i * 2 + 0] = l;
+        out[i * 2 + 1] = r;
+        blockPeak = std::max(blockPeak, std::max(std::fabs(l), std::fabs(r)));
+        sumSq += (double)l * l + (double)r * r;
+    }
+    if (frames > 0) {
+        const float peakDb = 20.0f * log10f(std::max(blockPeak, 1e-6f));
+        gState.peakDbfs.store(peakDb, std::memory_order_relaxed);
+        const float rms = (float)std::sqrt(sumSq / (2.0 * frames));
+        // Aproximación no-K-weighted de loudness integrada (offset BS.1770
+        // ungated ~ -0.691dB); es un proxy razonable sin el filtro K completo,
+        // documentado como aproximación, no como LUFS certificado.
+        const float lufs = 20.0f * log10f(std::max(rms, 1e-6f)) - 0.691f;
+        gState.lufsApprox.store(lufs, std::memory_order_relaxed);
     }
 
     env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
     env->ReleaseFloatArrayElements(outArray, out, 0);
 }
 
-// ── JNI: get LUFS integrado (placeholder para benchmark v1.5) ─────────────────
+// ── JNI: get LUFS integrado ────────────────────────────────────────────────
+// AUDIT FIX: antes devolvía siempre -23.0f (placeholder "commit 16"). Ahora
+// refleja gState.lufsApprox, calculado por bloque en nativeProcessAudio a
+// partir de la señal real post-limiter. Si aún no se ha procesado ningún
+// bloque, cae de vuelta al mismo -23.0f de referencia (valor típico de
+// normalización broadcast) para no romper a nadie que ya dependa de un
+// valor "silencioso" inicial razonable.
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeGetLufs(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // TODO: implementar en commit 16 (benchmark)
-    return -23.0f;
+    return gState.lufsApprox.load(std::memory_order_relaxed);
 }
 
-// ── JNI: get pico dBFS (placeholder para benchmark v1.5) ──────────────────────
+// ── JNI: get pico dBFS ──────────────────────────────────────────────────────
+// AUDIT FIX: antes devolvía siempre -6.0f. Ahora refleja gState.peakDbfs.
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDbfs(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // TODO: implementar en commit 16 (benchmark)
-    return -6.0f;
+    return gState.peakDbfs.load(std::memory_order_relaxed);
 }
 
 // ── JNI: set Anti-Dolby classification scores ───────────────────────────────

@@ -48,6 +48,10 @@ static constexpr const char* kSocketName = "omega_daemon_socket";
 static constexpr float kAgcTargetRms = 0.126f;
 static constexpr float kAgcGainMin = 0.25f;
 static constexpr float kAgcGainMax = 4.0f;
+// AUDIT FIX: mismos valores de techo que audio_orchestrator.cpp y
+// ivanna_npe_jni.cpp, para no tener tres limiters con umbrales distintos.
+static constexpr float kLimiterThresh = 0.98855f;   // -0.1 dBFS
+static constexpr float kLimiterCeil   = 0.989f;
 
 static const effect_uuid_t kEffectTypeNull = {
     0xec7178a0,0x847d,0x11e0,0xa3cb,{0x00,0x02,0xa5,0xd5,0xc5,0x1b}};
@@ -187,6 +191,19 @@ static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
     #pragma unroll 8
     for (int i = 0; i < samples; ++i) buf[i] *= gain;
 #endif
+
+    // AUDIT FIX: mismo problema que en ivanna_npe_jni.cpp — este AGC podía
+    // llegar a 4x de ganancia (kAgcGainMax) sin ningún limiter tras aplicarla,
+    // permitiendo clipping duro si ai_sensitivity está alto. Se agrega el
+    // mismo soft-knee usado en el resto del proyecto, sin tocar la lógica
+    // de ganancia existente.
+    #pragma unroll 8
+    for (int i = 0; i < samples; ++i) {
+        float s = buf[i];
+        if (!std::isfinite(s)) { buf[i] = 0.0f; continue; }
+        if (s > kLimiterThresh)       buf[i] = kLimiterCeil - (s - kLimiterThresh) * 0.1f;
+        else if (s < -kLimiterThresh) buf[i] = -kLimiterCeil - (s + kLimiterThresh) * 0.1f;
+    }
 
     float gain_db = 20.0f * log10f(std::fmaxf(ctx->agc_gain, 1e-6f));
     ctx->shared->ai_gain_db.store(gain_db, std::memory_order_relaxed);

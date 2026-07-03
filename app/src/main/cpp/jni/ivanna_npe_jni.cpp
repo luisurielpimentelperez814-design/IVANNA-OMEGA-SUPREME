@@ -63,6 +63,23 @@ extern "C" float phase_oracle_velocity() {
     return g_velocity.load(std::memory_order_relaxed);
 }
 
+// ── AUDIT FIX (AGC crackle) ─────────────────────────────────────────────────
+// Antes: yL/yR se escribían a outL/outR sin ningún techo tras el AGC + Master
+// Gain, así que AGC rate alto (ganancia saltando hasta 8x) + Master Gain
+// positivo producía clipping digital duro y crujidos audibles. Se reutiliza
+// el mismo esquema de soft-knee limiter que ya usa audio_orchestrator.cpp
+// (LIMITER_THRESH/LIMITER_CEIL) para mantener consistencia en todo el
+// proyecto en lugar de introducir un limiter nuevo.
+static constexpr float NPE_LIMITER_THRESH = 0.98855f;   // -0.1 dBFS
+static constexpr float NPE_LIMITER_CEIL   = 0.989f;
+
+static inline float npe_soft_limit(float x) noexcept {
+    if (!std::isfinite(x)) return 0.0f;
+    if (x > NPE_LIMITER_THRESH)  return NPE_LIMITER_CEIL  - (x - NPE_LIMITER_THRESH) * 0.1f;
+    if (x < -NPE_LIMITER_THRESH) return -NPE_LIMITER_CEIL - (x + NPE_LIMITER_THRESH) * 0.1f;
+    return x;
+}
+
 static inline void update_velocity(float x, float sample_rate) noexcept {
     const float prev = g_last_sample.exchange(x, std::memory_order_relaxed);
     const float diff = x - prev;
@@ -221,7 +238,16 @@ public:
             rms_envelope_ += 0.02f * (instRms - rms_envelope_);
             const float rmsDb = lin_to_db(rms_envelope_);
             const float desiredGain = db_to_lin(agc_target_db_ - rmsDb);
-            agc_gain_ += agc_rate_ * 0.05f * (desiredGain - agc_gain_);
+            // AUDIT FIX: slew-rate cap sobre el delta de ganancia por muestra.
+            // Antes, con agc_rate_ ~1 el salto podía acercarse al 5% del gap
+            // TOTAL entre ganancia actual y deseada (hasta 8x) en una sola
+            // muestra, produciendo "pumping" audible además del riesgo de
+            // clipping. Se mantiene la misma fórmula (no se borra) pero se
+            // acota el paso máximo por muestra a 0.02 (~0.17dB/muestra a 48kHz),
+            // así el slider sigue siendo más rápido al subirlo, sin saltar.
+            const float rawStep = agc_rate_ * 0.05f * (desiredGain - agc_gain_);
+            const float step = std::clamp(rawStep, -0.02f, 0.02f);
+            agc_gain_ += step;
             agc_gain_ = std::clamp(agc_gain_, 0.1f, 8.f);
             yL *= agc_gain_; yR *= agc_gain_;
 
@@ -232,6 +258,11 @@ public:
             // ── Gate de piso de ruido ────────────────────────────────────
             if (std::fabs(yL) < noise_floor_lin_) yL = 0.f;
             if (std::fabs(yR) < noise_floor_lin_) yR = 0.f;
+
+            // AUDIT FIX: limiter final — nunca existía un techo aquí. Este es
+            // el causante directo del crujido al subir AGC rate + Master gain.
+            yL = npe_soft_limit(yL);
+            yR = npe_soft_limit(yR);
 
             outL[i] = yL; outR[i] = yR;
 

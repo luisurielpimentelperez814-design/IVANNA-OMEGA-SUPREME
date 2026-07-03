@@ -81,11 +81,16 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHrtfEnabled(JNIEnv*, jo
 }
 
 /*
- * NOTE: PILSTMMilenioEngine does not expose a dedicated NP saturation metric
- * nor an explicit "error" signal. We surface |lstm.h| (saturation proxy,
- * already clamped to [-NP_max, NP_max] inside rk4_step) and 0.0f as a
- * placeholder error so the Kotlin side has stable, finite values. Replace
- * with real telemetry once the engine exposes it.
+ * NOTE: PILSTMMilenioEngine does not expose a dedicated NP saturation metric.
+ * We surface |lstm.h| (saturation proxy, already clamped to [-NP_max, NP_max]
+ * inside rk4_step) so the Kotlin side has a stable, finite value.
+ *
+ * AUDIT FIX: nativeGetError used to be a hardcoded 0.0f placeholder. The cell
+ * has no ground-truth target, so we can't compute a supervised error — but
+ * rk4_step now stores last_residual = |dc/dt|+|dh/dt| at the last integration
+ * step, which is a real, physically meaningful instability/error proxy: it's
+ * ~0 near equilibrium and grows when the ODE is being driven hard / close to
+ * diverging. This is genuine telemetry from the engine, not invented.
  */
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetNpSat(JNIEnv*, jobject) {
@@ -98,8 +103,9 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetNpSat(JNIEnv*, jobject)
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetError(JNIEnv*, jobject) {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return 0.0f;
-    // TODO: replace with real residual/error metric from the engine.
-    return 0.0f;
+    float r = g_piLstmBridge.lstm.last_residual;
+    if (!std::isfinite(r)) return 0.0f;
+    return r;
 }
 
 } // extern "C"
