@@ -149,16 +149,19 @@ target_link_libraries(ivanna_jni
 )
 
 # ────────────────────────────────────────────────────────────────────────────
-# Target: libomega_vibratory.so (stub for IvannaNpeNative.kt)
+# Target: libomega_vibratory.so (real NPE engine for IvannaNpeNative.kt)
+# NHOEngine + LIFNeuronPool<32> + BiquadEnvelopeBank + AutonomousBrain +
+# Synthesizer, ensamblados en jni/ivanna_npe_jni.cpp.
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_vibratory SHARED
-    jni/omega_vibratory_stub.cpp
+    jni/ivanna_npe_jni.cpp
 )
 
 target_compile_options(omega_vibratory PRIVATE ${BASE_FLAGS})
 
 target_include_directories(omega_vibratory PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/neuromorphic
 )
 
 target_link_libraries(omega_vibratory
