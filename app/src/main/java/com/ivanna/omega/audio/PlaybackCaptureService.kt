@@ -15,9 +15,12 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
 import com.ivanna.omega.dsp.DSPBridge
@@ -51,9 +54,35 @@ class PlaybackCaptureService : Service() {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
+        // [FIX-CRASH] Guard de permiso RECORD_AUDIO antes de tocar AudioRecord.
+        // AudioPlaybackCaptureConfiguration sigue exigiendo este permiso a nivel
+        // de plataforma aunque no se use el micrófono físico. Sin este guard,
+        // AudioRecord.Builder().build() lanza UnsupportedOperationException
+        // dentro de onStartCommand() -> excepción no capturada en un Service
+        // -> crash de la app completa.
+        val hasRecordPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasRecordPermission) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val mediaProjection = getMediaProjection(intent)
         if (mediaProjection != null) {
-            startCapture(mediaProjection)
+            try {
+                startCapture(mediaProjection)
+            } catch (e: Exception) {
+                // [FIX-CRASH] Cualquier fallo de inicialización de AudioRecord/
+                // AudioTrack (bufferSize inválido, hardware no estándar, permiso
+                // revocado justo después del check, etc.) se contiene aquí en
+                // vez de propagarse y matar la app.
+                stopCapture()
+                stopSelf()
+            }
+        } else {
+            stopSelf()
         }
 
         return START_STICKY
@@ -80,11 +109,18 @@ class PlaybackCaptureService : Service() {
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
             .build()
 
-        val bufferSize = AudioRecord.getMinBufferSize(
+        val minBuf = AudioRecord.getMinBufferSize(
             48000,
             AudioFormat.CHANNEL_IN_STEREO,
             AudioFormat.ENCODING_PCM_FLOAT
         )
+        // [FIX-CRASH] getMinBufferSize puede devolver ERROR_BAD_VALUE (-2) o
+        // ERROR (-1) en hardware no estándar. Pasar un tamaño negativo a
+        // setBufferSizeInBytes lanza IllegalArgumentException sin capturar.
+        if (minBuf <= 0) {
+            throw IllegalStateException("AudioRecord.getMinBufferSize inválido ($minBuf) para 48kHz/stereo/float")
+        }
+        val bufferSize = minBuf
 
         audioRecord = AudioRecord.Builder()
             .setAudioFormat(
@@ -97,6 +133,14 @@ class PlaybackCaptureService : Service() {
             .setBufferSizeInBytes(bufferSize)
             .setAudioPlaybackCaptureConfig(config)
             .build()
+
+        // [FIX-CRASH] Igual que SystemAudioCapture.kt: si AudioRecord no llega a
+        // STATE_INITIALIZED (permiso revocado, política de audio, etc.) hay que
+        // abortar aquí en vez de llamar startRecording() sobre un objeto inválido
+        // (eso lanza IllegalStateException más abajo, sin contexto claro).
+        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+            throw IllegalStateException("AudioRecord no se pudo inicializar (permiso o política de audio)")
+        }
 
         // FIX: silencia el stream de música original (la fuente sigue
         // generando PCM y se sigue capturando arriba, solo se apaga su
@@ -125,6 +169,13 @@ class PlaybackCaptureService : Service() {
             .setBufferSizeInBytes(bufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+
+        // [FIX-CRASH] Mismo principio que AudioRecord: si AudioTrack no inicializa
+        // (ruta de salida ASSISTANCE_ACCESSIBILITY no disponible en el dispositivo,
+        // por ejemplo), abortar limpiamente en vez de reproducir sobre un track roto.
+        if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+            throw IllegalStateException("AudioTrack no se pudo inicializar")
+        }
 
         audioRecord?.startRecording()
         audioTrack?.play()
