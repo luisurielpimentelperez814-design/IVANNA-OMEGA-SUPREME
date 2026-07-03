@@ -89,33 +89,23 @@ struct ControlFrame {
 };
 
 // ── Bus lock-free SPSC (seqlock) ──────────────────────────────────────────
-// Un único productor (hilo JNI/control) y un único consumidor (hilo de
-// audio). No usa mutex ni allocations; el "worst case" del lector es girar
-// mientras dura una copia de struct POD (~decenas de floats), nunca
-// bloquea contra I/O ni contra el scheduler.
 class ControlFrameBus {
 public:
-    // Llamado SOLO desde el hilo de control (JNI). Publica un frame
-    // completo y nuevo — jamás edita el frame anterior.
     void publish(ControlFrame f) noexcept {
         const uint64_t s = seq_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
         f.seq = s;
-        const uint32_t g = guard_.fetch_add(1, std::memory_order_acq_rel); // impar = escribiendo
+        const uint32_t g = guard_.fetch_add(1, std::memory_order_acq_rel);
         (void)g;
         frame_ = f;
-        guard_.fetch_add(1, std::memory_order_release); // par = listo
+        guard_.fetch_add(1, std::memory_order_release);
     }
 
-    // Llamado SOLO desde el hilo de audio, como máximo una vez por bloque.
-    // Devuelve true y llena 'out' si hay un frame más nuevo que
-    // 'lastSeenSeq'; si no hubo cambios desde el último bloque, no toca
-    // 'out' — evita recalcular coeficientes cuando nada cambió.
     bool consumeIfNewer(ControlFrame& out, uint64_t& lastSeenSeq) const noexcept {
         ControlFrame snapshot;
         uint32_t g1, g2;
         do {
             g1 = guard_.load(std::memory_order_acquire);
-            if (g1 & 1u) continue;  // escritor a mitad de publish(), reintenta
+            if (g1 & 1u) continue;
             snapshot = frame_;
             g2 = guard_.load(std::memory_order_acquire);
         } while (g1 != g2);
@@ -128,7 +118,7 @@ public:
 
 private:
     alignas(64) ControlFrame     frame_{};
-    std::atomic<uint32_t>        guard_{0};        // seqlock guard
+    std::atomic<uint32_t>        guard_{0};
     std::atomic<uint64_t>        seq_counter_{0};
 };
 
