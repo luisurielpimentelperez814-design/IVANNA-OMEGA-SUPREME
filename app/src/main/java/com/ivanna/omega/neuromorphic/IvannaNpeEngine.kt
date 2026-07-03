@@ -91,7 +91,7 @@ object IvannaNpeEngine {
 
     /** [cpuLoad, rmsOut, agcGain, spectralEntropy, lifFireRateHz, transientCue, spatialCue, residualCue] */
     fun getMetrics(): FloatArray =
-        if (handle != 0L) (IvannaNpeNative.nativeGetMetrics() ?: FloatArray(8)) else FloatArray(8)
+        if (handle != 0L) (IvannaNpeNative.nativeGetMetrics(handle) ?: FloatArray(8)) else FloatArray(8)
 
     fun reset() {
         if (handle != 0L) IvannaNpeNative.nativeReset(handle)
