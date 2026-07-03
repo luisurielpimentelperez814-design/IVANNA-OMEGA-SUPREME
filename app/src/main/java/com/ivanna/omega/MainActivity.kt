@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.ivanna.omega.ai.SpectralClassifier
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaEffectProfile
@@ -108,12 +107,8 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            Log.i(TAG, "RECORD_AUDIO concedido — iniciando AudioEngine + Clasificador")
             initAudioEngine()
-            SpectralClassifier.start()
             requestPlaybackCapture()
-        } else {
-            Log.w(TAG, "RECORD_AUDIO denegado — funcionalidad limitada (sin clasificador)")
         }
     }
 
@@ -128,14 +123,11 @@ class MainActivity : ComponentActivity() {
 
         if (hasMicPermission) {
             initAudioEngine()
-            SpectralClassifier.start()
             requestPlaybackCapture()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
 
-        // FIX: ya no depende del permiso de mic — este servicio solo hace
-        // init de DSPBridge y mantiene el proceso vivo, sin AudioRecord.
         val serviceIntent = Intent(this, AudioForegroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
@@ -281,7 +273,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        SpectralClassifier.stop()
         noRootProcessor?.stop()
         audioEngine.release()
     }
@@ -351,23 +342,7 @@ fun IvannaControlPanel(
         }
     }
 
-    // CABLEADO: recolecta en vivo el SharedFlow real del SpectralClassifier (FFT en Kotlin).
-    var classification by remember { mutableStateOf<SpectralClassifier.Classification?>(null) }
     var lastAutoPreset by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        SpectralClassifier.results.collect { result ->
-            classification = result
-            if (autoMode) {
-                val target = AUTO_PRESET_MAP[result.label] ?: return@collect
-                // Debounce: solo re-aplica el perfil si cambió la categoría detectada.
-                if (target != lastAutoPreset) {
-                    lastAutoPreset = target
-                    selectedPreset = target
-                    onPresetSelected(target)
-                }
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -545,46 +520,6 @@ fun IvannaControlPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-
-        HorizontalDivider()
-
-        // ── Clasificador en vivo (SpectralClassifier — FFT real, sin modelo externo) ──
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Auto IA (clasificador en vivo)", style = MaterialTheme.typography.titleMedium)
-                Switch(
-                    checked = autoMode,
-                    onCheckedChange = { enabled ->
-                        autoMode = enabled
-                        onAutoModeChange(enabled)
-                        if (!enabled) lastAutoPreset = null
-                    }
-                )
-            }
-
-            val c = classification
-            if (c == null) {
-                Text(
-                    "Escuchando…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "${c.label}  ·  ${"%.0f".format(c.confidence * 100)}%  ·  ${"%.0f".format(c.bpm)} BPM",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                EnergyBar("Bass", c.bassEnergy)
-                EnergyBar("Mid", c.midEnergy)
-                EnergyBar("High", c.highEnergy)
-            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))

@@ -2,8 +2,6 @@ package com.ivanna.omega.audio
 
 import android.content.Context
 import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.math.*
@@ -25,8 +23,6 @@ class AudioEngine {
     companion object {
         private const val TAG = "AudioEngine"
         private const val SAMPLE_RATE = 48000
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
         init {
             // FIX: AudioEngine cargaba "ivanna_jni" (libivanna_jni.so), que solo
@@ -78,26 +74,10 @@ class AudioEngine {
         external fun nativeSetWidth(value: Float)
     }
 
-    private var audioRecord: AudioRecord? = null
     private var isInitialized = false
 
     fun initialize(sampleRate: Int = SAMPLE_RATE) {
-        if (isInitialized) return
-
-        try {
-            val bufferSize = AudioRecord.getMinBufferSize(sampleRate, CHANNEL_CONFIG, AUDIO_FORMAT)
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.DEFAULT,
-                sampleRate,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
-            isInitialized = true
-            Log.i(TAG, "AudioEngine inicializado @ $sampleRate Hz")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error inicializando AudioEngine: ${e.message}")
-        }
+        isInitialized = true
     }
 
     fun setExciter(value: Float) {
@@ -117,8 +97,6 @@ class AudioEngine {
     fun getWidth(): Float = nativeGetWidthValue()
 
     fun release() {
-        audioRecord?.release()
         isInitialized = false
-        Log.i(TAG, "AudioEngine liberado")
     }
 }
