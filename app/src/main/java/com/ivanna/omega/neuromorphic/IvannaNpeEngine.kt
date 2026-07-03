@@ -57,7 +57,6 @@ object IvannaNpeEngine {
 
         IvannaNpeNative.nativeProcessStereo(handle, inL, inR, outL, outR, numFrames)
 
-        outL.flip(); outR.flip()
         for (i in 0 until numFrames) {
             buffer[i * 2] = outL.get(i)
             buffer[i * 2 + 1] = outR.get(i)
