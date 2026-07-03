@@ -46,8 +46,8 @@ struct UnifiedControlFrame {
     // ── PDEngine Mode & Parameters ──────────────────────────────────
     std::atomic<int> pd_mode{0};                     // 0=DSP, 1=+NHO, 2=+NHO+Spatial
     std::atomic<float> nho_harmonic_gain{0.2f};      // [0..1] intensidad armónica
-    std::atomic<float> spatial_angle_deg{0.f};       // [0..90] ITD/ILD ángulo
-    std::atomic<float> spatial_width{0.5f};          // [0..1] ancho del campo
+    std::atomic<float> spatial_angle_deg{0.f};       // [0..120] ITD/ILD ángulo
+    std::atomic<float> spatial_width{0.5f};          // [0..1.5] ancho del campo
     std::atomic<int> evo_mode{0};                    // 0=off, 1=on (kernel corre)
 
     // ── Phase Oracle Prediction ────────────────────────────────────

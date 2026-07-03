@@ -502,7 +502,7 @@ fun IvannaControlPanel(
         ControlSlider(
             label = "Stereo Width",
             value = width,
-            valueRange = 0f..1f,
+            valueRange = 0f..1.5f,
             onValueChange = { width = it; onWidthChange(it) }
         )
 
@@ -595,13 +595,13 @@ fun IvannaControlPanel(
             ControlSlider(
                 label = "Ángulo espacial",
                 value = spatialAngle,
-                valueRange = 0f..1f,
+                valueRange = 0f..1.33f,
                 onValueChange = { spatialAngle = it; onSpatialAngleChange(it) }
             )
             ControlSlider(
                 label = "Ancho espacial",
                 value = spatialWidth,
-                valueRange = 0f..1f,
+                valueRange = 0f..1.5f,
                 onValueChange = { spatialWidth = it; onSpatialWidthChange(it) }
             )
         }

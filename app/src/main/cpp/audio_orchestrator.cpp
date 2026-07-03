@@ -164,7 +164,7 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeInit(JNIEnv* env, jobject /*thiz*/
     p.wet = gState.exciterAmount;
     gState.exciter.setParams(p);
     gState.exciter.setAmount(gState.exciterAmount);
-    gState.widener.setWidth(gState.widthAmount * 2.0f);
+    gState.widener.setWidth(gState.widthAmount);
 
     LOGI("nativeInit: sampleRate=%d, limiter -0.1dB activo", sampleRate);
 }
@@ -198,8 +198,8 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetEqGain(JNIEnv* /*env*/, jobject
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetWidth(JNIEnv* /*env*/, jobject /*thiz*/, jfloat width) {
     if (!std::isfinite(width)) return;
-    gState.widthAmount = std::clamp(width, 0.0f, 1.0f);
-    gState.widener.setWidth(gState.widthAmount * 2.0f); // [0..1] UI -> [0..2] DSP (0.5=unity)
+    gState.widthAmount = std::clamp(width, 0.0f, 1.5f);
+    gState.widener.setWidth(gState.widthAmount); // [0..1.5] UI -> [0..1.5] DSP (1:1, tope real de StereoWidener)
 }
 
 // ── JNI: set bypass ───────────────────────────────────────────────────────────

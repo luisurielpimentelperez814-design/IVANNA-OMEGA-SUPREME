@@ -117,8 +117,8 @@ int control_apply_frame() noexcept {
 
     // PDEngine: modo + spatial (respeta rangos válidos del enum interno)
     f.mode              = std::clamp(pd_mode, 0, 2);
-    f.spatial_angle_deg = std::clamp(spatial_angle, 0.f, 90.f);
-    f.spatial_width     = std::clamp(spatial_width, 0.f, 1.f);
+    f.spatial_angle_deg = std::clamp(spatial_angle, 0.f, 120.f);
+    f.spatial_width     = std::clamp(spatial_width, 0.f, 1.5f);
     updates += 3;
 
     // NHO harmonic gain
@@ -152,8 +152,8 @@ int control_apply_frame() noexcept {
         f.nho_harmonic_gain = std::clamp(evo_nho[3], 0.f, 2.f);
 
         // Spatial
-        f.spatial_angle_deg = std::clamp(evo_spatial[0] * 90.f, 0.f, 90.f);
-        f.spatial_width     = std::clamp(evo_spatial[1],        0.f, 1.f);
+        f.spatial_angle_deg = std::clamp(evo_spatial[0] * 120.f, 0.f, 120.f);
+        f.spatial_width     = std::clamp(evo_spatial[1] * 1.5f,  0.f, 1.5f);
 
         updates += 8;
 
