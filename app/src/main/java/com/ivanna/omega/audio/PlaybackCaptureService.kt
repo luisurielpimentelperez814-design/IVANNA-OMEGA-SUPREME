@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -38,6 +39,7 @@ class PlaybackCaptureService : Service() {
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var isRunning = false
+    private var savedMusicVolume: Int? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -96,13 +98,19 @@ class PlaybackCaptureService : Service() {
             .setAudioPlaybackCaptureConfig(config)
             .build()
 
-        // FIX: salida marcada ALLOW_CAPTURE_BY_NONE — evita que esta misma
-        // AudioTrack (USAGE_MEDIA) sea vuelta a capturar por el
-        // AudioPlaybackCaptureConfiguration de arriba (loop de feedback).
+        // FIX: silencia el stream de música original (la fuente sigue
+        // generando PCM y se sigue capturando arriba, solo se apaga su
+        // salida al altavoz) y saca el audio procesado por un stream
+        // distinto (ACCESSIBILITY) que no se ve afectado por ese mute.
+        // Resultado: solo se escucha el audio ya procesado por IVANNA.
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        savedMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
                     .build()
@@ -143,6 +151,11 @@ class PlaybackCaptureService : Service() {
         audioTrack?.stop()
         audioTrack?.release()
         audioTrack = null
+        savedMusicVolume?.let {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0)
+        }
+        savedMusicVolume = null
     }
 
     private fun createNotificationChannel() {
