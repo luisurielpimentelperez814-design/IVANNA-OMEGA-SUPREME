@@ -23,7 +23,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
+import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import kotlinx.coroutines.*
 
 /**
@@ -48,6 +50,17 @@ class PlaybackCaptureService : Service() {
         super.onCreate()
         createNotificationChannel()
         DSPBridge.init(48000)
+        IvannaNpeEngine.init(48000, INPUT_SAMPLES / 2)
+        val params = ParameterStore(this)
+        IvannaNpeEngine.setBypass(params.isNpeBypass())
+        IvannaNpeEngine.setEngineFlags(
+            params.isNpeHrtfEnabled(), params.isNpeCochlearEnabled(), params.isNpeAdaptEnabled()
+        )
+        IvannaNpeEngine.setNeuroParams(
+            params.getNpeHarmonicGain(), params.getNpeLateralInhib(),
+            params.getNpeOhcCompression(), params.getNpeMasterGainDb()
+        )
+        IvannaNpeEngine.setAGC(params.getNpeAgcTargetDb(), params.getNpeAgcRate())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -186,7 +199,9 @@ class PlaybackCaptureService : Service() {
             while (isRunning && isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
                 if (read > 0) {
-                    DSPBridge.process(buffer, read / 2)
+                    val frames = read / 2
+                    DSPBridge.process(buffer, frames)
+                    IvannaNpeEngine.processInterleavedStereo(buffer, frames)
                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
                 }
             }
@@ -202,6 +217,7 @@ class PlaybackCaptureService : Service() {
         audioTrack?.stop()
         audioTrack?.release()
         audioTrack = null
+        IvannaNpeEngine.release()
         savedMusicVolume?.let {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0)

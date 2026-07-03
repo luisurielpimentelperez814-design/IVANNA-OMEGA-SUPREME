@@ -27,7 +27,47 @@ class ParameterStore(context: Context) {
         private const val KEY_SPATIAL_ANGLE = "spatial_angle"
         private const val KEY_SPATIAL_WIDTH = "spatial_width"
         private const val KEY_EVO_ENABLED = "evo_enabled"
+        private const val KEY_NPE_BYPASS = "npe_bypass"
+        private const val KEY_NPE_HARMONIC = "npe_harmonic_gain"
+        private const val KEY_NPE_LATERAL_INHIB = "npe_lateral_inhib"
+        private const val KEY_NPE_OHC_COMP = "npe_ohc_compression"
+        private const val KEY_NPE_MASTER_GAIN = "npe_master_gain_db"
+        private const val KEY_NPE_AGC_TARGET = "npe_agc_target_db"
+        private const val KEY_NPE_AGC_RATE = "npe_agc_rate"
+        private const val KEY_NPE_HRTF = "npe_hrtf_enabled"
+        private const val KEY_NPE_COCHLEAR = "npe_cochlear_enabled"
+        private const val KEY_NPE_ADAPT = "npe_adapt_enabled"
     }
+
+    fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
+    fun setNpeBypass(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, enabled).apply()
+
+    fun getNpeHarmonicGain(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.2f)
+    fun setNpeHarmonicGain(value: Float) = prefs.edit().putFloat(KEY_NPE_HARMONIC, value).apply()
+
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.2f)
+    fun setNpeLateralInhib(value: Float) = prefs.edit().putFloat(KEY_NPE_LATERAL_INHIB, value).apply()
+
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMP, 0.3f)
+    fun setNpeOhcCompression(value: Float) = prefs.edit().putFloat(KEY_NPE_OHC_COMP, value).apply()
+
+    fun getNpeMasterGainDb(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 0.0f)
+    fun setNpeMasterGainDb(value: Float) = prefs.edit().putFloat(KEY_NPE_MASTER_GAIN, value).apply()
+
+    fun getNpeAgcTargetDb(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -18.0f)
+    fun setNpeAgcTargetDb(value: Float) = prefs.edit().putFloat(KEY_NPE_AGC_TARGET, value).apply()
+
+    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.3f)
+    fun setNpeAgcRate(value: Float) = prefs.edit().putFloat(KEY_NPE_AGC_RATE, value).apply()
+
+    fun isNpeHrtfEnabled(): Boolean = prefs.getBoolean(KEY_NPE_HRTF, true)
+    fun setNpeHrtfEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_HRTF, enabled).apply()
+
+    fun isNpeCochlearEnabled(): Boolean = prefs.getBoolean(KEY_NPE_COCHLEAR, true)
+    fun setNpeCochlearEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_COCHLEAR, enabled).apply()
+
+    fun isNpeAdaptEnabled(): Boolean = prefs.getBoolean(KEY_NPE_ADAPT, true)
+    fun setNpeAdaptEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_ADAPT, enabled).apply()
 
     fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESH, 0.5f)
     fun setCompThreshold(value: Float) = prefs.edit().putFloat(KEY_COMP_THRESH, value).apply()

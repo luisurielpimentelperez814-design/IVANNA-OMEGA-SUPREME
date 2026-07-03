@@ -34,6 +34,7 @@ import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 
 /**
  * MainActivity v1.7 — UI Compose Material3
@@ -151,6 +152,16 @@ class MainActivity : ComponentActivity() {
                         initialSpatialAngle = parameterStore.getSpatialAngle(),
                         initialSpatialWidth = parameterStore.getSpatialWidth(),
                         initialEvoEnabled = parameterStore.isEvoEnabled(),
+                        initialNpeBypass = parameterStore.isNpeBypass(),
+                        initialNpeHarmonic = parameterStore.getNpeHarmonicGain(),
+                        initialNpeLateralInhib = parameterStore.getNpeLateralInhib(),
+                        initialNpeOhcCompression = parameterStore.getNpeOhcCompression(),
+                        initialNpeMasterGain = parameterStore.getNpeMasterGainDb(),
+                        initialNpeAgcTarget = parameterStore.getNpeAgcTargetDb(),
+                        initialNpeAgcRate = parameterStore.getNpeAgcRate(),
+                        initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
+                        initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
+                        initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
                         onExciterChange = { value ->
                             parameterStore.setExciter(value)
                             audioEngine.setExciter(value)
@@ -230,6 +241,52 @@ class MainActivity : ComponentActivity() {
                             parameterStore.setEvoEnabled(enabled)
                             if (enabled) IvannaNativeLib.nativeStartEvoThread()
                             else IvannaNativeLib.nativeStopEvoThread()
+                        },
+                        // CABLEADO: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain)
+                        // — llama directo a IvannaNpeEngine, que corre en el mismo hilo
+                        // de audio real de PlaybackCaptureService (impacto audible directo).
+                        onNpeBypassChange = { enabled ->
+                            parameterStore.setNpeBypass(enabled)
+                            IvannaNpeEngine.setBypass(enabled)
+                        },
+                        onNpeHarmonicChange = { value ->
+                            parameterStore.setNpeHarmonicGain(value)
+                            IvannaNpeEngine.setNeuroParams(
+                                value, parameterStore.getNpeLateralInhib(),
+                                parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
+                            )
+                        },
+                        onNpeLateralInhibChange = { value ->
+                            parameterStore.setNpeLateralInhib(value)
+                            IvannaNpeEngine.setNeuroParams(
+                                parameterStore.getNpeHarmonicGain(), value,
+                                parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
+                            )
+                        },
+                        onNpeOhcCompressionChange = { value ->
+                            parameterStore.setNpeOhcCompression(value)
+                            IvannaNpeEngine.setNeuroParams(
+                                parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
+                                value, parameterStore.getNpeMasterGainDb()
+                            )
+                        },
+                        onNpeMasterGainChange = { value ->
+                            parameterStore.setNpeMasterGainDb(value)
+                            IvannaNpeEngine.setNeuroParams(
+                                parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
+                                parameterStore.getNpeOhcCompression(), value
+                            )
+                        },
+                        onNpeAgcChange = { target, rate ->
+                            parameterStore.setNpeAgcTargetDb(target)
+                            parameterStore.setNpeAgcRate(rate)
+                            IvannaNpeEngine.setAGC(target, rate)
+                        },
+                        onNpeFlagsChange = { hrtf, cochlear, adapt ->
+                            parameterStore.setNpeHrtfEnabled(hrtf)
+                            parameterStore.setNpeCochlearEnabled(cochlear)
+                            parameterStore.setNpeAdaptEnabled(adapt)
+                            IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
                         }
                     )
                 }
@@ -302,6 +359,16 @@ fun IvannaControlPanel(
     initialSpatialAngle: Float = 0.5f,
     initialSpatialWidth: Float = 0.5f,
     initialEvoEnabled: Boolean = true,
+    initialNpeBypass: Boolean = false,
+    initialNpeHarmonic: Float = 0.2f,
+    initialNpeLateralInhib: Float = 0.2f,
+    initialNpeOhcCompression: Float = 0.3f,
+    initialNpeMasterGain: Float = 0.0f,
+    initialNpeAgcTarget: Float = -18.0f,
+    initialNpeAgcRate: Float = 0.3f,
+    initialNpeHrtf: Boolean = true,
+    initialNpeCochlear: Boolean = true,
+    initialNpeAdapt: Boolean = true,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -314,7 +381,14 @@ fun IvannaControlPanel(
     onNhoHarmonicChange: (Float) -> Unit = {},
     onSpatialAngleChange: (Float) -> Unit = {},
     onSpatialWidthChange: (Float) -> Unit = {},
-    onEvoEnabledChange: (Boolean) -> Unit = {}
+    onEvoEnabledChange: (Boolean) -> Unit = {},
+    onNpeBypassChange: (Boolean) -> Unit = {},
+    onNpeHarmonicChange: (Float) -> Unit = {},
+    onNpeLateralInhibChange: (Float) -> Unit = {},
+    onNpeOhcCompressionChange: (Float) -> Unit = {},
+    onNpeMasterGainChange: (Float) -> Unit = {},
+    onNpeAgcChange: (Float, Float) -> Unit = { _, _ -> },
+    onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> }
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -331,6 +405,26 @@ fun IvannaControlPanel(
     var evoEnabled by remember { mutableStateOf(initialEvoEnabled) }
     var evoFitness by remember { mutableFloatStateOf(0f) }
     var evoGeneration by remember { mutableIntStateOf(0) }
+    var npeBypass by remember { mutableStateOf(initialNpeBypass) }
+    var npeHarmonic by remember { mutableFloatStateOf(initialNpeHarmonic) }
+    var npeLateralInhib by remember { mutableFloatStateOf(initialNpeLateralInhib) }
+    var npeOhcCompression by remember { mutableFloatStateOf(initialNpeOhcCompression) }
+    var npeMasterGain by remember { mutableFloatStateOf(initialNpeMasterGain) }
+    var npeAgcTarget by remember { mutableFloatStateOf(initialNpeAgcTarget) }
+    var npeAgcRate by remember { mutableFloatStateOf(initialNpeAgcRate) }
+    var npeHrtf by remember { mutableStateOf(initialNpeHrtf) }
+    var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
+    var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
+    var npeGenre by remember { mutableStateOf("\u2014") }
+
+    // CABLEADO: lectura periódica del género detectado por AutonomousBrain
+    // (motor NPE real, IvannaNpeEngine, corriendo en PlaybackCaptureService).
+    LaunchedEffect(Unit) {
+        while (true) {
+            npeGenre = IvannaNpeEngine.getDetectedGenre()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
 
     // CABLEADO: lectura periódica del kernel evolutivo real (g_population),
     // acoplado a cues de audio reales dentro de PDEngine::process_block().
@@ -520,6 +614,87 @@ fun IvannaControlPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        HorizontalDivider()
+
+        // ── Motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain) ──
+        // Procesa en PlaybackCaptureService, después de DSPBridge, sobre el
+        // mismo buffer intercalado — impacto audible directo.
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Motor NPE (neuromórfico)", style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = !npeBypass,
+                    onCheckedChange = { on ->
+                        npeBypass = !on
+                        onNpeBypassChange(!on)
+                    }
+                )
+            }
+            Text(
+                "Género detectado: $npeGenre",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            ControlSlider(
+                label = "Ganancia armónica (NHO)",
+                value = npeHarmonic,
+                valueRange = 0f..2f,
+                onValueChange = { npeHarmonic = it; onNpeHarmonicChange(it) }
+            )
+            ControlSlider(
+                label = "Inhibición lateral",
+                value = npeLateralInhib,
+                valueRange = 0f..1f,
+                onValueChange = { npeLateralInhib = it; onNpeLateralInhibChange(it) }
+            )
+            ControlSlider(
+                label = "Compresión OHC",
+                value = npeOhcCompression,
+                valueRange = 0f..1f,
+                onValueChange = { npeOhcCompression = it; onNpeOhcCompressionChange(it) }
+            )
+            ControlSlider(
+                label = "Master gain (dB)",
+                value = npeMasterGain,
+                valueRange = -18f..18f,
+                onValueChange = { npeMasterGain = it; onNpeMasterGainChange(it) }
+            )
+            ControlSlider(
+                label = "AGC target (dB)",
+                value = npeAgcTarget,
+                valueRange = -36f..0f,
+                onValueChange = { npeAgcTarget = it; onNpeAgcChange(it, npeAgcRate) }
+            )
+            ControlSlider(
+                label = "AGC rate",
+                value = npeAgcRate,
+                valueRange = 0f..1f,
+                onValueChange = { npeAgcRate = it; onNpeAgcChange(npeAgcTarget, it) }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("HRTF", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = npeHrtf, onCheckedChange = { npeHrtf = it; onNpeFlagsChange(it, npeCochlear, npeAdapt) })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Coclear", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = npeCochlear, onCheckedChange = { npeCochlear = it; onNpeFlagsChange(npeHrtf, it, npeAdapt) })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Adapt (LIF)", style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = npeAdapt, onCheckedChange = { npeAdapt = it; onNpeFlagsChange(npeHrtf, npeCochlear, it) })
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
