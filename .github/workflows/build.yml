@@ -2,7 +2,8 @@ name: IVANNA-OMEGA-SUPREME CI
 
 on:
   push:
-    branches: [main, development]
+    branches:
+      - "**"
   pull_request:
 
 concurrency:
@@ -12,7 +13,7 @@ concurrency:
 env:
   ANDROID_COMPILE_SDK: "35"
   ANDROID_BUILD_TOOLS: "35.0.0"
-  ANDROID_NDK_VERSION: "26.1.10909125"
+  ANDROID_NDK_VERSION: "25.1.8937393"
   ANDROID_CMAKE_VERSION: "3.22.1"
   CMDLINE_TOOLS_VERSION: "11076708"   # commandlinetools-linux-11076708_latest.zip (estable)
 
@@ -70,6 +71,10 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
+
+      - name: Generate local.properties
+        run: |
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
 
       - name: Create debug keystore
         run: |

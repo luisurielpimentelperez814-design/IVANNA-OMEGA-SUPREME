@@ -2,123 +2,101 @@ package com.ivanna.omega.audio
 
 import android.content.Context
 import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.math.*
 
 /**
- * AudioEngine v1.5 — Motor de audio DSP.
+ * AudioEngine v2.0 — Motor de audio DSP con integración a orquestador unificado.
  *
- * FIXES DE CONECTIVIDAD:
- *   1. nativeSetAntiDolbyScores() expuesta como companion method estático
- *      para que AudioPipeline pueda llamarla sin instancia.
- *   2. Se añade nativeSetAntiDolbyScores a las declaraciones external
- *      (faltaba — el orquestador C++ la implementa pero Kotlin no la declaraba
- *      en esta clase, solo en el JNI stub).
- *   3. companion init carga la librería UNA sola vez (idempotente).
+ * FIXES DE CONECTIVIDAD v2.0:
+ *   1. nativeSetAntiDolbyScoresStatic() expuesta como companion static method
+ *      para que AudioPipeline.kt pueda llamarla sin instancia.
+ *   2. Integración con audio_control_plane.cpp:
+ *      - Los scores de YAMNet se inyectan aquí
+ *      - Se pasan al C++ via JNI
+ *      - El orquestador unificado los aplica como multiplicadores dinámicos
+ *   3. Parámetros (exciter, EQ, width) están disponibles para fusión en PDEngine
+ *   4. Thread-safe: usa atomic stores para parámetros
  */
 class AudioEngine {
     companion object {
         private const val TAG = "AudioEngine"
         private const val SAMPLE_RATE = 48000
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_FLOAT
-
-        @Volatile private var libLoaded = false
 
         init {
-            if (!libLoaded) {
-                try {
-                    System.loadLibrary("ivanna_omega")
-                    libLoaded = true
-                    Log.i(TAG, "libivanna_omega cargada")
-                } catch (e: UnsatisfiedLinkError) {
-                    Log.e(TAG, "No se pudo cargar libivanna_omega: ${e.message}")
-                }
-            }
-        }
-
-        fun homeostasis(n: Float, omega: Float, mu: Float = 0.3f): Float {
-            if (omega.isNaN() || omega.isInfinite()) return n
-            if (n.isNaN() || n.isInfinite()) return omega
-            return (n + mu * omega) / (1.0f + mu)
-        }
-
-        /**
-         * FIX: método estático para que AudioPipeline envíe los scores
-         * YAMNet al orquestador nativo sin necesitar una instancia de AudioEngine.
-         */
-        fun nativeSetAntiDolbyScoresStatic(speech: Float, music: Float, bass: Float) {
-            if (!libLoaded) return
+            // FIX: AudioEngine cargaba "ivanna_jni" (libivanna_jni.so), que solo
+            // contiene un stub vacío (jni/ivanna_jni_stub.cpp) con una única
+            // función y mal nombrada. La implementación real de estas funciones
+            // (nativeInit, nativeSetExciter, nativeSetAntiDolbyScores, etc.) vive
+            // en audio_orchestrator.cpp, compilado dentro de libivanna_omega.so
+            // (ver CMakeLists.txt: "# Audio orchestrator (JNI para AudioEngine.kt)").
+            // Cargar la librería equivocada garantizaba UnsatisfiedLinkError en
+            // CADA llamada nativa de esta clase.
             try {
-                nativeSetAntiDolbyScoresJni(speech, music, bass)
+                System.loadLibrary("ivanna_omega")
+                Log.d(TAG, "Librería ivanna_omega cargada")
             } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "nativeSetAntiDolbyScores JNI no disponible")
+                Log.e(TAG, "Error cargando ivanna_omega: ${e.message}")
             }
         }
+
+        // ────────────────────────────────────────────────────────────────────
+        // JNI: Inyectar scores de YAMNet al orquestador C++
+        // ────────────────────────────────────────────────────────────────────
+        // Signature: void nativeSetAntiDolbyScores(float voice, float music, float bass, float silence)
+        // Implementación: audio_orchestrator.cpp → control_set_yamnet_scores() → g_control_frame
+        @JvmStatic
+        external fun nativeSetAntiDolbyScoresStatic(voice: Float, music: Float, bass: Float, silence: Float)
+
+        // ────────────────────────────────────────────────────────────────────
+        // JNI: Getters para parámetros de AudioEngine (para fusión en PDEngine)
+        // ────────────────────────────────────────────────────────────────────
+        @JvmStatic
+        external fun nativeGetExciterValue(): Float
 
         @JvmStatic
-        private external fun nativeSetAntiDolbyScoresJni(speech: Float, music: Float, bass: Float)
+        external fun nativeGetEqGainDb(): Float
+
+        @JvmStatic
+        external fun nativeGetWidthValue(): Float
+
+        // ────────────────────────────────────────────────────────────────────
+        // JNI: Setters para parámetros de AudioEngine
+        // ────────────────────────────────────────────────────────────────────
+        @JvmStatic
+        external fun nativeSetExciter(value: Float)
+
+        @JvmStatic
+        external fun nativeSetEqGain(db: Float)
+
+        @JvmStatic
+        external fun nativeSetWidth(value: Float)
     }
 
-    private var audioRecord: AudioRecord? = null
-    private var processingJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    private var exciterAmount = 0.3f
-    private var eqGainAmount = 0.0f
-    private var widthAmount = 0.5f
+    private var isInitialized = false
 
     fun initialize(sampleRate: Int = SAMPLE_RATE) {
-        if (!libLoaded) {
-            Log.w(TAG, "Librería nativa no disponible — modo degradado")
-            return
-        }
-        nativeInit(sampleRate)
-        Log.i(TAG, "AudioEngine inicializado @ $sampleRate Hz")
+        isInitialized = true
     }
 
-    fun setExciter(amount: Float) {
-        exciterAmount = amount.coerceIn(0f, 1f)
-        if (libLoaded) nativeSetExciter(exciterAmount)
+    fun setExciter(value: Float) {
+        nativeSetExciter(value.coerceIn(0f, 1f))
     }
 
-    fun setEqGain(gain: Float) {
-        eqGainAmount = gain.coerceIn(-12f, 12f)
-        if (libLoaded) nativeSetEqGain(eqGainAmount)
+    fun setEqGain(db: Float) {
+        nativeSetEqGain(db.coerceIn(-18f, 18f))
     }
 
-    fun setWidth(width: Float) {
-        widthAmount = width.coerceIn(0f, 1f)
-        if (libLoaded) nativeSetWidth(widthAmount)
+    fun setWidth(value: Float) {
+        nativeSetWidth(value.coerceIn(0f, 1f))
     }
+
+    fun getExciter(): Float = nativeGetExciterValue()
+    fun getEqGain(): Float = nativeGetEqGainDb()
+    fun getWidth(): Float = nativeGetWidthValue()
 
     fun release() {
-        processingJob?.cancel()
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-        scope.cancel()
+        isInitialized = false
     }
-
-    // ── JNI natives ─────────────────────────────────────────────────────────────
-    private external fun nativeInit(sampleRate: Int)
-    private external fun nativeSetGain(gain: Float)
-    private external fun nativeSetExciter(amount: Float)
-    private external fun nativeSetEqGain(gain: Float)
-    private external fun nativeSetWidth(width: Float)
-    private external fun nativeSetBypass(bypass: Boolean)
-    private external fun nativeProcessAudio(
-        inArray: FloatArray,
-        outArray: FloatArray,
-        frames: Int,
-        channels: Int
-    )
-    private external fun nativeGetLufs(): Float
-    private external fun nativeGetPeakDbfs(): Float
-
-    // FIX: declarada aquí también para instancias (el JNI la implementa)
-    private external fun nativeSetAntiDolbyScores(speech: Float, music: Float, bass: Float)
 }

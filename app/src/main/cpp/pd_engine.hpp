@@ -34,6 +34,7 @@
 #include "neuromorphic/nho_engine.hpp"
 #include "neuromorphic/biquad_envelope_bank.hpp"
 #include "spatial/cue_based_spatial.hpp"
+#include "control_frame.hpp"
 #include <cmath>
 #include <algorithm>
 #include <atomic>
@@ -189,14 +190,25 @@ public:
         }
     }
 
-    void set_mode(int m)           noexcept { mode.store(std::clamp(m, 0, 2)); }
-    int  get_mode()          const noexcept { return mode.load(); }
-    void set_spatial_angle(float d) noexcept { spatial.set_angle_deg(d); }
-    void set_spatial_width(float w) noexcept { spatial.set_width(w); }
-    void set_nho_alpha(float v)     noexcept { nho.set_alpha(v); }
-    void set_nho_beta(float v)      noexcept { nho.set_beta(v); }
-    void set_nho_wet(float v)       noexcept { nho.set_wet(v); }
-    void set_nho_harmonic(float v)  noexcept { nho.set_harmonic_gain(v); }
+    int  get_mode() const noexcept { return mode.load(std::memory_order_relaxed); }
+
+    // ── Único punto de entrada de control externo ──────────────────────
+    // Llamado por el hilo de audio, como máximo una vez por bloque, ANTES
+    // de process_block(). Aplica un ControlFrame inmutable ya congelado —
+    // nunca se llama a mitad de un bloque, así que dentro de un mismo
+    // bloque los parámetros no cambian: process_block() es una función
+    // pura de (entrada, este frame, estado interno) → salida.
+    // Los setters individuales (antes públicos) quedan privados: ya no
+    // existe una vía para que el hilo JNI mute el motor directamente.
+    void applyControlFrame(const ControlFrame& f) noexcept {
+        set_mode_(f.mode);
+        set_nho_alpha_(f.nho_alpha);
+        set_nho_beta_(f.nho_beta);
+        set_nho_wet_(f.nho_wet);
+        set_nho_harmonic_(f.nho_harmonic_gain);
+        set_spatial_angle_(f.spatial_angle_deg);
+        set_spatial_width_(f.spatial_width);
+    }
 
     // ── EvolutionaryKernel background integration ─────────────────────────
     //
@@ -248,6 +260,17 @@ public:
     ~PDEngine() { stop_evo_thread(); }
 
 private:
+    // ── Setters privados: solo alcanzables vía applyControlFrame() ──────
+    // Nunca públicos de nuevo — evita que cualquier hilo externo (JNI)
+    // vuelva a mutar el motor fuera del punto de sincronización de bloque.
+    void set_mode_(int m)            noexcept { mode.store(std::clamp(m, 0, 2), std::memory_order_relaxed); }
+    void set_spatial_angle_(float d) noexcept { spatial.set_angle_deg(d); }
+    void set_spatial_width_(float w) noexcept { spatial.set_width(w); }
+    void set_nho_alpha_(float v)     noexcept { nho.set_alpha(v); }
+    void set_nho_beta_(float v)      noexcept { nho.set_beta(v); }
+    void set_nho_wet_(float v)       noexcept { nho.set_wet(v); }
+    void set_nho_harmonic_(float v)  noexcept { nho.set_harmonic_gain(v); }
+
     // ── EvolutionaryKernel thread state ──────────────────────────────────
     static constexpr float EVO_IMPROVEMENT_THRESHOLD = 0.01f;  // 1% improvement gate
 

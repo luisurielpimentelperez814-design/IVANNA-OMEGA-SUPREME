@@ -30,29 +30,28 @@ class AudioForegroundService : Service() {
         const val NOTIFICATION_ID = 1
     }
 
-    private var audioPipeline: AudioPipeline? = null
+    // FIX: se eliminó AudioPipeline (captura por mic) de este servicio.
+    // Capturaba con MediaRecorder.AudioSource.DEFAULT mientras AudioTrack
+    // reproducía por el altavoz al mismo tiempo -> el mic recapturaba la
+    // salida ya procesada (feedback acústico) = sonido horrible, y además
+    // arrancaba en onCreate() de MainActivity sin checar RECORD_AUDIO ->
+    // AudioRecord lanzaba SecurityException -> crash si no había permiso.
+    // La captura real ahora vive en PlaybackCaptureService (MediaProjection),
+    // que lee el audio interno digitalmente, sin pasar por el micrófono.
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        // FIX: inicializar DSP al crear el servicio (no solo en la Activity)
         DSPBridge.init(48000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
-
-        if (audioPipeline == null) {
-            audioPipeline = AudioPipeline().apply { start() }
-        }
-
         return START_STICKY
     }
 
     override fun onDestroy() {
-        audioPipeline?.stop()
-        audioPipeline = null
         super.onDestroy()
     }
 

@@ -20,6 +20,9 @@
 #include <thread>
 #include <algorithm>
 #include "anti_dolby.h"
+#include "include/dsp_types.h"
+#include "include/HarmonicExciter.h"
+#include "include/StereoWidener.h"
 
 #define LOG_TAG "IVANNA-Audio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -131,7 +134,13 @@ static struct {
     float widthAmount = 0.0f;
     bool bypass = false;
     AntiDolbyState antiDolby;
+    ivanna::HarmonicExciter exciter;
+    ivanna::StereoWidener widener;
 } gState;
+
+// Buffers estáticos de trabajo (deinterleave L/R) — evitan alloc en audio thread
+alignas(64) static float g_leftBuf[4096];
+alignas(64) static float g_rightBuf[4096];
 
 // ── JNI: inicialización ───────────────────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
@@ -143,6 +152,16 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeInit(JNIEnv* env, jobject /*thiz*/
     gState.sampleRate = sampleRate;
     init_sin_table();
     kalmanInit(gState.kalman, sampleRate);
+
+    // Inicializa exciter (HPF a 3kHz depende del sampleRate real)
+    ivanna::DSPParams p;
+    p.sampleRate = (uint32_t)sampleRate;
+    p.drive = gState.exciterAmount;
+    p.wet = gState.exciterAmount;
+    gState.exciter.setParams(p);
+    gState.exciter.setAmount(gState.exciterAmount);
+    gState.widener.setWidth(gState.widthAmount * 2.0f);
+
     LOGI("nativeInit: sampleRate=%d, limiter -0.1dB activo", sampleRate);
 }
 
@@ -161,13 +180,14 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetExciter(JNIEnv* /*env*/, jobject /*thiz*/, jfloat amount) {
     if (!std::isfinite(amount)) return;
     gState.exciterAmount = std::clamp(amount, 0.0f, 1.0f);
+    gState.exciter.setAmount(gState.exciterAmount);
 }
 
 // ── JNI: set EQ gain ──────────────────────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetEqGain(JNIEnv* /*env*/, jobject /*thiz*/, jfloat gain) {
     if (!std::isfinite(gain)) return;
-    gState.eqGain = std::clamp(gain, -12.0f, 12.0f);
+    gState.eqGain = std::clamp(gain, -18.0f, 18.0f);
 }
 
 // ── JNI: set width ────────────────────────────────────────────────────────────
@@ -175,6 +195,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetWidth(JNIEnv* /*env*/, jobject /*thiz*/, jfloat width) {
     if (!std::isfinite(width)) return;
     gState.widthAmount = std::clamp(width, 0.0f, 1.0f);
+    gState.widener.setWidth(gState.widthAmount * 2.0f); // [0..1] UI -> [0..2] DSP (0.5=unity)
 }
 
 // ── JNI: set bypass ───────────────────────────────────────────────────────────
@@ -225,6 +246,18 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
     // Anti-Dolby v1.5: downmix inteligente si channelCount > 2
     // Layout Android típico: FL(0) FR(1) FC(2) LFE(3) BL(4) BR(5) SL(6) SR(7)
+    if (gState.bypass) {
+        // Bypass total: copia directa, sin exciter/widener/limiter
+        int total = (channels > 2) ? frames * 2 : frames * channels;
+        for (int i = 0; i < total; ++i) out[i] = in[i];
+        env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
+        env->ReleaseFloatArrayElements(outArray, out, 0);
+        return;
+    }
+
+    float* lBuf = g_leftBuf;
+    float* rBuf = g_rightBuf;
+
     if (channels > 2) {
         for (int i = 0; i < frames; ++i) {
             int base = i * channels;
@@ -252,49 +285,43 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
             // Anti-Dolby: ajustes dinámicos por clasificación YAMNet
             float widthMul = gState.antiDolby.widenerMultiplier.load(std::memory_order_relaxed);
-            float eqBoost = gState.antiDolby.eqBoost2k4k.load(std::memory_order_relaxed);
 
             // Aplicar width reducido si speech detectado
             float mid = (left + right) * 0.5f;
             float side = (left - right) * 0.5f * widthMul;
-            left = mid + side;
-            right = mid - side;
-
-            // Limiter hard-clip al final de cadena — SIEMPRE activo
-            left = process_limiter(left);
-            right = process_limiter(right);
-
-            out[i * 2 + 0] = left;
-            out[i * 2 + 1] = right;
+            lBuf[i] = mid + side;
+            rBuf[i] = mid - side;
+        }
+    } else if (channels == 2) {
+        for (int i = 0; i < frames; ++i) {
+            float l = in[i * 2 + 0];
+            float r = in[i * 2 + 1];
+            if (!std::isfinite(l)) l = 0.0f;
+            if (!std::isfinite(r)) r = 0.0f;
+            lBuf[i] = l * gState.gain;
+            rBuf[i] = r * gState.gain;
         }
     } else {
-        // Procesamiento estéreo normal
-        for (int i = 0; i < frames * channels; ++i) {
+        // Mono: exciter/widener no aplican (no hay par estéreo) — solo gain + limiter
+        for (int i = 0; i < frames; ++i) {
             float x = in[i];
-
-            if (gState.bypass) {
-                out[i] = x;
-                continue;
-            }
-
-            // Validación NaN/Inf por sample
-            if (!std::isfinite(x)) {
-                out[i] = 0.0f;
-                continue;
-            }
-
-            // Aplicar gain
-            x *= gState.gain;
-
-            // Anti-Dolby: ajustes dinámicos
-            float widthMul = gState.antiDolby.widenerMultiplier.load(std::memory_order_relaxed);
-            // Aplicar width reducido si es necesario (placeholder para StereoWidener)
-
-            // Limiter hard-clip al final de cadena — SIEMPRE activo
-            x = process_limiter(x);
-
+            if (!std::isfinite(x)) x = 0.0f;
+            x = process_limiter(x * gState.gain);
             out[i] = x;
         }
+        env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
+        env->ReleaseFloatArrayElements(outArray, out, 0);
+        return;
+    }
+
+    // Exciter armónico y stereo widener — YA CONECTADOS al pipeline (antes mudos)
+    gState.exciter.process(lBuf, rBuf, frames);
+    gState.widener.process(lBuf, rBuf, frames);
+
+    // Limiter hard-clip al final de cadena — SIEMPRE activo
+    for (int i = 0; i < frames; ++i) {
+        out[i * 2 + 0] = process_limiter(lBuf[i]);
+        out[i * 2 + 1] = process_limiter(rBuf[i]);
     }
 
     env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
@@ -316,12 +343,22 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDbfs(JNIEnv* /*env*/, jobje
 }
 
 // ── JNI: set Anti-Dolby classification scores ───────────────────────────────
+// FIX: el nombre real exportado no coincidia con lo que declara
+// AudioEngine.kt (companion @JvmStatic external fun
+// nativeSetAntiDolbyScoresStatic(voice, music, bass, silence)) -- faltaba
+// el sufijo "Static" y el 4to parametro "silence". Eso causaba
+// UnsatisfiedLinkError garantizado en cada frame de clasificacion YAMNet
+// (AudioPipeline.classifyWithYamnet), sin contar que ademas AudioEngine
+// cargaba la .so equivocada (ver AudioEngine.kt).
+// "silence" no se usa todavia en AntiDolbyState::updateFromClassification
+// (solo toma speech/music/bass); se recibe y valida pero no se descarta
+// silenciosamente si es invalido.
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
-    JNIEnv* /*env*/, jobject /*thiz*/, jfloat speech, jfloat music, jfloat bass
+Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresStatic(
+    JNIEnv* /*env*/, jclass /*clazz*/, jfloat speech, jfloat music, jfloat bass, jfloat silence
 ) {
-    if (!std::isfinite(speech) || !std::isfinite(music) || !std::isfinite(bass)) {
-        LOGE("nativeSetAntiDolbyScores: valores NaN/Inf recibidos");
+    if (!std::isfinite(speech) || !std::isfinite(music) || !std::isfinite(bass) || !std::isfinite(silence)) {
+        LOGE("nativeSetAntiDolbyScoresStatic: valores NaN/Inf recibidos");
         return;
     }
     gState.antiDolby.updateFromClassification(
@@ -329,7 +366,28 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
         std::clamp(music, 0.0f, 1.0f),
         std::clamp(bass, 0.0f, 1.0f)
     );
-    LOGI("Anti-Dolby: speech=%.2f music=%.2f bass=%.2f", speech, music, bass);
+    LOGI("Anti-Dolby: speech=%.2f music=%.2f bass=%.2f silence=%.2f", speech, music, bass, silence);
+}
+
+// ── JNI: getters de parametros de AudioEngine (para fusion en PDEngine) ─────
+// FIX: declarados en AudioEngine.kt (nativeGetExciterValue/nativeGetEqGainDb/
+// nativeGetWidthValue) pero sin implementacion en ningun .cpp -- dormidos
+// (no llamados desde ningun otro Kotlin todavia), pero garantizaban
+// UnsatisfiedLinkError en cuanto alguien los usara. gState ya guarda estos
+// valores desde los setters existentes, asi que exponerlos es directo.
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetExciterValue(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.exciterAmount;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetEqGainDb(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.eqGain;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetWidthValue(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return gState.widthAmount;
 }
 
 

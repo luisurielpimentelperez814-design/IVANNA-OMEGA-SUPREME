@@ -9,6 +9,10 @@ app/build/
 .idea/
 *.iml
 
+# Local machine config
+local.properties
+*.keystore
+
 # Logs / cache
 *.log
 

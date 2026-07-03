@@ -1,8 +1,12 @@
 package com.ivanna.omega
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -19,14 +23,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.ivanna.omega.ai.SpectralClassifier
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
+import com.ivanna.omega.audio.PlaybackCaptureService
 import com.ivanna.omega.core.IVANNAApplication
+import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.dsp.DSPState
 
 /**
  * MainActivity v1.7 — UI Compose Material3
@@ -66,16 +73,42 @@ class MainActivity : ComponentActivity() {
     private lateinit var audioEngine: AudioEngine
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
+    private var liveDspState = DSPState()
+
+    private val mediaProjectionManager by lazy {
+        getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+
+    // FIX: motor de audio real ahora requiere consentimiento de captura de
+    // pantalla (MediaProjection) para leer el audio interno digitalmente en
+    // vez de usar el micrófono (que recapturaba la salida y sonaba horrible).
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val serviceIntent = Intent(this, PlaybackCaptureService::class.java).apply {
+                putExtra("resultCode", result.resultCode)
+                putExtra("data", result.data)
+            }
+            ContextCompat.startForegroundService(this, serviceIntent)
+            Log.i(TAG, "Captura de audio de reproducción iniciada")
+        } else {
+            Log.w(TAG, "Captura de audio de reproducción denegada")
+        }
+    }
+
+    private fun requestPlaybackCapture() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+    }
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            Log.i(TAG, "RECORD_AUDIO concedido — iniciando AudioEngine + Clasificador")
             initAudioEngine()
-            SpectralClassifier.start()
-        } else {
-            Log.w(TAG, "RECORD_AUDIO denegado — funcionalidad limitada (sin clasificador)")
+            requestPlaybackCapture()
         }
     }
 
@@ -90,7 +123,7 @@ class MainActivity : ComponentActivity() {
 
         if (hasMicPermission) {
             initAudioEngine()
-            SpectralClassifier.start()
+            requestPlaybackCapture()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
@@ -112,6 +145,12 @@ class MainActivity : ComponentActivity() {
                         initialPreset = parameterStore.getCurrentPreset(),
                         initialAutoMode = parameterStore.isAutoModeEnabled(),
                         initialOmegaMode = parameterStore.getOmegaMode(),
+                        initialCompThreshold = parameterStore.getCompThreshold(),
+                        initialCompRatio = parameterStore.getCompRatio(),
+                        initialNhoHarmonic = parameterStore.getNhoHarmonic(),
+                        initialSpatialAngle = parameterStore.getSpatialAngle(),
+                        initialSpatialWidth = parameterStore.getSpatialWidth(),
+                        initialEvoEnabled = parameterStore.isEvoEnabled(),
                         onExciterChange = { value ->
                             parameterStore.setExciter(value)
                             audioEngine.setExciter(value)
@@ -157,6 +196,40 @@ class MainActivity : ComponentActivity() {
                             parameterStore.setOmegaMode(mode)
                             OmegaEngine.setMode(mode)
                             Log.i(TAG, "PDEngine mode: $mode")
+                        },
+                        // CABLEADO: Compresor real (g_comp) — vive en el mismo motor
+                        // nativo (DSPBridge) que ya procesa audio vía AudioForegroundService.
+                        // alpha→threshold(-24..0dB), beta→ratio(1:1..20:1).
+                        onCompThresholdChange = { value ->
+                            parameterStore.setCompThreshold(value)
+                            liveDspState = liveDspState.copy(alpha = value)
+                            liveDspState.pushToNative()
+                        },
+                        onCompRatioChange = { value ->
+                            parameterStore.setCompRatio(value)
+                            liveDspState = liveDspState.copy(beta = value)
+                            liveDspState.pushToNative()
+                        },
+                        // CABLEADO: NHO harmonic gain y parámetros espaciales del PDEngine
+                        // (g_pd), activo solo cuando Motor OPE está en +NHO / +NHO+Spatial.
+                        onNhoHarmonicChange = { value ->
+                            parameterStore.setNhoHarmonic(value)
+                            IvannaNativeLib.nativeSetHarmonicGain(value)
+                        },
+                        onSpatialAngleChange = { value ->
+                            parameterStore.setSpatialAngle(value)
+                            IvannaNativeLib.nativeSetGamma(value)
+                        },
+                        onSpatialWidthChange = { value ->
+                            parameterStore.setSpatialWidth(value)
+                            IvannaNativeLib.nativeSetDelta(value)
+                        },
+                        // CABLEADO: kernel evolutivo (evo_thread_ dentro de g_pd) — ya
+                        // arranca solo en DSPBridge.nativeInit; este switch permite pararlo.
+                        onEvoEnabledChange = { enabled ->
+                            parameterStore.setEvoEnabled(enabled)
+                            if (enabled) IvannaNativeLib.nativeStartEvoThread()
+                            else IvannaNativeLib.nativeStopEvoThread()
                         }
                     )
                 }
@@ -184,11 +257,22 @@ class MainActivity : ComponentActivity() {
 
         // CABLEADO: restaura el modo PDEngine persistido (0=DSP, 1=+NHO, 2=+NHO+Spatial)
         OmegaEngine.setMode(parameterStore.getOmegaMode())
+
+        // CABLEADO: restaura compresor (g_comp) y parámetros NHO/espaciales (g_pd)
+        // sobre el motor DSPBridge que ya corre en AudioForegroundService.
+        liveDspState = liveDspState.copy(
+            alpha = parameterStore.getCompThreshold(),
+            beta = parameterStore.getCompRatio()
+        )
+        liveDspState.pushToNative()
+        IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
+        IvannaNativeLib.nativeSetGamma(parameterStore.getSpatialAngle())
+        IvannaNativeLib.nativeSetDelta(parameterStore.getSpatialWidth())
+        if (!parameterStore.isEvoEnabled()) IvannaNativeLib.nativeStopEvoThread()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        SpectralClassifier.stop()
         noRootProcessor?.stop()
         audioEngine.release()
     }
@@ -212,13 +296,25 @@ fun IvannaControlPanel(
     initialPreset: String = "Warm",
     initialAutoMode: Boolean = false,
     initialOmegaMode: Int = 0,
+    initialCompThreshold: Float = 0.5f,
+    initialCompRatio: Float = 0.16f,
+    initialNhoHarmonic: Float = 0.0f,
+    initialSpatialAngle: Float = 0.5f,
+    initialSpatialWidth: Float = 0.5f,
+    initialEvoEnabled: Boolean = true,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
     onAntiDolbyChange: (Boolean) -> Unit = {},
     onPresetSelected: (String) -> Unit = {},
     onAutoModeChange: (Boolean) -> Unit = {},
-    onOmegaModeChange: (Int) -> Unit = {}
+    onOmegaModeChange: (Int) -> Unit = {},
+    onCompThresholdChange: (Float) -> Unit = {},
+    onCompRatioChange: (Float) -> Unit = {},
+    onNhoHarmonicChange: (Float) -> Unit = {},
+    onSpatialAngleChange: (Float) -> Unit = {},
+    onSpatialWidthChange: (Float) -> Unit = {},
+    onEvoEnabledChange: (Boolean) -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -227,24 +323,26 @@ fun IvannaControlPanel(
     var selectedPreset by remember { mutableStateOf(initialPreset) }
     var autoMode by remember { mutableStateOf(initialAutoMode) }
     var omegaMode by remember { mutableIntStateOf(initialOmegaMode) }
+    var compThreshold by remember { mutableFloatStateOf(initialCompThreshold) }
+    var compRatio by remember { mutableFloatStateOf(initialCompRatio) }
+    var nhoHarmonic by remember { mutableFloatStateOf(initialNhoHarmonic) }
+    var spatialAngle by remember { mutableFloatStateOf(initialSpatialAngle) }
+    var spatialWidth by remember { mutableFloatStateOf(initialSpatialWidth) }
+    var evoEnabled by remember { mutableStateOf(initialEvoEnabled) }
+    var evoFitness by remember { mutableFloatStateOf(0f) }
+    var evoGeneration by remember { mutableIntStateOf(0) }
 
-    // CABLEADO: recolecta en vivo el SharedFlow real del SpectralClassifier (FFT en Kotlin).
-    var classification by remember { mutableStateOf<SpectralClassifier.Classification?>(null) }
-    var lastAutoPreset by remember { mutableStateOf<String?>(null) }
+    // CABLEADO: lectura periódica del kernel evolutivo real (g_population),
+    // acoplado a cues de audio reales dentro de PDEngine::process_block().
     LaunchedEffect(Unit) {
-        SpectralClassifier.results.collect { result ->
-            classification = result
-            if (autoMode) {
-                val target = AUTO_PRESET_MAP[result.label] ?: return@collect
-                // Debounce: solo re-aplica el perfil si cambió la categoría detectada.
-                if (target != lastAutoPreset) {
-                    lastAutoPreset = target
-                    selectedPreset = target
-                    onPresetSelected(target)
-                }
-            }
+        while (true) {
+            evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
+            evoGeneration = IvannaNativeLib.nativeGetGeneration()
+            kotlinx.coroutines.delay(1000)
         }
     }
+
+    var lastAutoPreset by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -291,7 +389,7 @@ fun IvannaControlPanel(
         ControlSlider(
             label = "EQ Gain",
             value = eq,
-            valueRange = -12f..12f,
+            valueRange = -18f..18f,
             onValueChange = { eq = it; onEqChange(it) }
         )
 
@@ -358,42 +456,70 @@ fun IvannaControlPanel(
 
         HorizontalDivider()
 
-        // ── Clasificador en vivo (SpectralClassifier — FFT real, sin modelo externo) ──
+        // ── Compresor (g_comp) — parte del motor DSPBridge activo ──
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("Compresor", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            ControlSlider(
+                label = "Threshold (${"%.1f".format(-24f + compThreshold * 24f)} dB)",
+                value = compThreshold,
+                valueRange = 0f..1f,
+                onValueChange = { compThreshold = it; onCompThresholdChange(it) }
+            )
+            ControlSlider(
+                label = "Ratio (${"%.1f".format(1f + compRatio * 19f)}:1)",
+                value = compRatio,
+                valueRange = 0f..1f,
+                onValueChange = { compRatio = it; onCompRatioChange(it) }
+            )
+        }
+
+        HorizontalDivider()
+
+        // ── NHO / Motor espacial (g_pd) — activo en modo +NHO / +NHO+Spatial ──
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("NHO / Espacial", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            ControlSlider(
+                label = "Ganancia armónica",
+                value = nhoHarmonic,
+                valueRange = 0f..1f,
+                onValueChange = { nhoHarmonic = it; onNhoHarmonicChange(it) }
+            )
+            ControlSlider(
+                label = "Ángulo espacial",
+                value = spatialAngle,
+                valueRange = 0f..1f,
+                onValueChange = { spatialAngle = it; onSpatialAngleChange(it) }
+            )
+            ControlSlider(
+                label = "Ancho espacial",
+                value = spatialWidth,
+                valueRange = 0f..1f,
+                onValueChange = { spatialWidth = it; onSpatialWidthChange(it) }
+            )
+        }
+
+        HorizontalDivider()
+
+        // ── Kernel evolutivo (g_population, hilo de fondo dentro de g_pd) ──
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Auto IA (clasificador en vivo)", style = MaterialTheme.typography.titleMedium)
+                Text("Kernel evolutivo", style = MaterialTheme.typography.titleMedium)
                 Switch(
-                    checked = autoMode,
-                    onCheckedChange = { enabled ->
-                        autoMode = enabled
-                        onAutoModeChange(enabled)
-                        if (!enabled) lastAutoPreset = null
-                    }
+                    checked = evoEnabled,
+                    onCheckedChange = { evoEnabled = it; onEvoEnabledChange(it) }
                 )
             }
-
-            val c = classification
-            if (c == null) {
-                Text(
-                    "Escuchando…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "${c.label}  ·  ${"%.0f".format(c.confidence * 100)}%  ·  ${"%.0f".format(c.bpm)} BPM",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                EnergyBar("Bass", c.bassEnergy)
-                EnergyBar("Mid", c.midEnergy)
-                EnergyBar("High", c.highEnergy)
-            }
+            Text(
+                "Generación $evoGeneration · fitness ${"%.3f".format(evoFitness)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
