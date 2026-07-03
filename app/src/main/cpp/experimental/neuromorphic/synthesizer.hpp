@@ -137,6 +137,100 @@ public:
     [[nodiscard]] inline float warmth()      const noexcept { return current_.warmth; }
     [[nodiscard]] inline float clarity()     const noexcept { return current_.clarity; }
 
+    // ── Sesión 2: consolidado desde ivanna_synthesizer.hpp ────────────────
+    // Esas tres funciones (smoothTick/getSignature/classify) se escribieron
+    // en una sesión paralela en un archivo nuevo que redefinía esta misma
+    // clase `ivanna::acoustic::Synthesizer` — dos definiciones del mismo
+    // nombre en el mismo namespace no compilan (ODR violation). Se fusiona
+    // aquí para tener una sola fuente de verdad; ivanna_synthesizer.hpp se
+    // deja intacto en disco (no se borra nada) pero ya no se incluye desde
+    // ivanna_npe_jni.cpp.
+
+    /**
+     * smoothTick — variante de processFrameSmoothing() con tau fijo de 60ms,
+     * tal como la necesita IvannaNpeEngine (jni/ivanna_npe_jni.cpp). Coexiste
+     * con processFrameSmoothing() sin conflicto: ambas leen los mismos
+     * targets atómicos y escriben el mismo estado current_.
+     */
+    inline void smoothTick(int num_frames, float sample_rate) noexcept {
+        if (num_frames <= 0 || sample_rate <= 0.f) return;
+        constexpr float TAU = 0.060f;
+        const float block_dt = static_cast<float>(num_frames) / sample_rate;
+        const float coeff = 1.f - __builtin_expf(-block_dt / TAU);
+
+        const float t_bass    = target_bass_.load(std::memory_order_acquire);
+        const float t_mid     = target_mid_.load(std::memory_order_relaxed);
+        const float t_treble  = target_treble_.load(std::memory_order_relaxed);
+        const float t_warmth  = target_warmth_.load(std::memory_order_relaxed);
+        const float t_clarity = target_clarity_.load(std::memory_order_relaxed);
+
+        current_.bass_weight  += coeff * (t_bass    - current_.bass_weight);
+        current_.mid_presence += coeff * (t_mid     - current_.mid_presence);
+        current_.treble_air   += coeff * (t_treble  - current_.treble_air);
+        current_.warmth       += coeff * (t_warmth  - current_.warmth);
+        current_.clarity      += coeff * (t_clarity - current_.clarity);
+    }
+
+    /// Firma de 5 bandas (dB): [sub_bass, mid_bass, mids, presence, brilliance].
+    inline void getSignature(float out[5]) const noexcept {
+        constexpr float SPAN_DB = 12.f;
+        out[0] = current_.bass_weight * SPAN_DB;
+        out[1] = (0.5f * current_.bass_weight + 0.5f * current_.warmth) * SPAN_DB;
+        out[2] = current_.mid_presence * SPAN_DB;
+        out[3] = (0.3f * current_.mid_presence + 0.7f * current_.clarity) * SPAN_DB;
+        out[4] = current_.treble_air * SPAN_DB;
+    }
+
+    /// Clasificación K-means (3 centroides fijos, mismos perfiles que
+    /// AutonomousBrain Caso A / Caso B / Transición).
+    /// out[7] = [cluster_id, confidence, thd_pred, score, pca0, pca1, pca2]
+    inline void classify(float out[7]) const noexcept {
+        static constexpr float kCentroids[3][5] = {
+            { 0.30f, -0.25f, -0.10f,  0.10f, -0.30f },  // 0: comprimido (EDM/Pop/Reggaetón)
+            {-0.05f,  0.20f,  0.25f,  0.35f,  0.05f },  // 1: dinámico (Rock/Jazz/Acústica)
+            { 0.05f, -0.02f,  0.05f,  0.20f, -0.05f }   // 2: transición/mixto
+        };
+        const float cur[5] = { current_.bass_weight, current_.mid_presence,
+                                current_.treble_air, current_.warmth, current_.clarity };
+
+        float d[3];
+        for (int c = 0; c < 3; ++c) {
+            float acc = 0.f;
+            for (int i = 0; i < 5; ++i) {
+                const float diff = cur[i] - kCentroids[c][i];
+                acc += diff * diff;
+            }
+            d[c] = acc;
+        }
+
+        int best = 0;
+        for (int c = 1; c < 3; ++c) if (d[c] < d[best]) best = c;
+        int second = (best == 0) ? 1 : 0;
+        for (int c = 0; c < 3; ++c) if (c != best && d[c] < d[second]) second = c;
+
+        constexpr float EPS = 1e-6f;
+        const float confidence = 1.f - d[best] / (d[best] + d[second] + EPS);
+        const float thd_pred = 0.5f + 1.5f * ((1.f - cur[4]) * 0.5f) *
+                                       ((1.f + cur[3]) * 0.5f);
+        const float score = 1.f / (1.f + d[best]);
+
+        static constexpr float kPca[3][5] = {
+            { 0.5f,  0.5f,  0.5f,  0.3f, -0.3f},
+            { 0.6f, -0.4f, -0.2f,  0.4f,  0.5f},
+            {-0.2f,  0.3f, -0.6f,  0.5f,  0.4f}
+        };
+        for (int p = 0; p < 3; ++p) {
+            float acc = 0.f;
+            for (int i = 0; i < 5; ++i) acc += kPca[p][i] * cur[i];
+            out[4 + p] = acc;
+        }
+
+        out[0] = static_cast<float>(best);
+        out[1] = confidence;
+        out[2] = thd_pred;
+        out[3] = score;
+    }
+
 private:
     static inline float clamp11(float v) noexcept {
         return (v < -1.0f) ? -1.0f : (v > 1.0f ? 1.0f : v);

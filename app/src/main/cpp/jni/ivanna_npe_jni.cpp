@@ -42,7 +42,6 @@
 #include "../neuromorphic/nho_engine.hpp"
 #include "../neuromorphic/lif_neuron_pool.hpp"
 #include "../neuromorphic/biquad_envelope_bank.hpp"
-#include "../neuromorphic/ivanna_synthesizer.hpp"
 #include "../neuromorphic/autonomous_brain.hpp"
 
 #define LOG_TAG "IVANNA-NPE"

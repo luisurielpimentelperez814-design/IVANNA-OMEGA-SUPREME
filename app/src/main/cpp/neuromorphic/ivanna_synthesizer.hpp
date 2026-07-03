@@ -1,4 +1,13 @@
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+//
+// ⚠️ SUPERSEDIDO (sesión 2) — NO SE INCLUYE DESDE NINGÚN TARGET.
+// Esta clase ivanna::acoustic::Synthesizer colisionaba (misma clase, mismo
+// namespace, dos definiciones) con neuromorphic/synthesizer.hpp, ya usada
+// por autonomous_brain.hpp. No compilaba junto ("redefinition of class").
+// smoothTick/getSignature/classify se fusionaron a synthesizer.hpp, que es
+// ahora la unica fuente de verdad. Este archivo se conserva en disco por
+// politica de no borrar nada, pero jni/ivanna_npe_jni.cpp ya no lo incluye.
+//
 // Synthesizer real consumido por AutonomousBrain::processBlock().
 // Doble búfer atómico (target_*) + One-Pole smoother (current_[5]) — sin
 // zipper noise. Deriva firma de 5 bandas y clasificación K-means (3
