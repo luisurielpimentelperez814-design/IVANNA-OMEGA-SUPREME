@@ -10,4 +10,7 @@ object IvannaVisualizerNative {
     external fun nativeVisReset(handle: Long)
     external fun nativeVisProcessBlock(handle: Long, monoBuffer: java.nio.FloatBuffer, numFrames: Int)
     external fun nativeVisSample(handle: Long): FloatArray
+
+    /** Compensación de latencia AV (v3.0): informar latencia medida del pipeline de captura. */
+    external fun nativeVisSetDeviceLatency(handle: Long, latencyMs: Float)
 }

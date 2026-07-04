@@ -41,6 +41,18 @@ object IvannaVisualizerBridge {
         IvannaVisualizerNative.nativeVisProcessBlock(h, buf, numFrames)
     }
 
+    /**
+     * Compensación de latencia A/V (v3.0): informa la latencia medida del
+     * pipeline de captura (AudioPlaybackCapture/AAudio) para que el motor
+     * nativo acelere el ataque de los smoothers y reduzca el lag visual
+     * percibido. Llamar tras medir la latencia real (p.ej. al arrancar
+     * PlaybackCaptureService).
+     */
+    fun setDeviceLatencyMs(latencyMs: Float) {
+        val h = handle.get()
+        if (h != 0L) IvannaVisualizerNative.nativeVisSetDeviceLatency(h, latencyMs)
+    }
+
     /** Llamado desde el hilo GL en cada frame — [bass_pulse, mid_flow, high_flicker]. */
     fun sample(): FloatArray {
         val h = handle.get()

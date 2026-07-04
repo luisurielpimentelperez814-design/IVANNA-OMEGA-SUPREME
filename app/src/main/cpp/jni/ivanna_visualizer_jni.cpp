@@ -42,6 +42,12 @@ Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisReset(
 }
 
 JNIEXPORT void JNICALL
+Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisSetDeviceLatency(
+    JNIEnv*, jclass, jlong handle, jfloat latencyMs) {
+    if (auto* b = toPtr(handle)) b->setDeviceLatencyMs(latencyMs);
+}
+
+JNIEXPORT void JNICALL
 Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisProcessBlock(
     JNIEnv* env, jclass, jlong handle, jobject monoBuffer, jint numFrames) {
     auto* b = toPtr(handle);
