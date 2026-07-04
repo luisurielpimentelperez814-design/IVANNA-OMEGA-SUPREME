@@ -27,6 +27,7 @@ import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBridge
+import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
 
 /**
@@ -53,6 +54,7 @@ class PlaybackCaptureService : Service() {
         DSPBridge.init(48000)
         IvannaNpeEngine.init(48000, INPUT_SAMPLES / 2)
         IvannaVisualizerBridge.init(48000, INPUT_SAMPLES / 2)
+        IvannaVisualizerBridgeV2.init(48000, INPUT_SAMPLES / 2)
         val params = ParameterStore(this)
         IvannaNpeEngine.setBypass(params.isNpeBypass())
         IvannaNpeEngine.setEngineFlags(
@@ -209,6 +211,8 @@ class PlaybackCaptureService : Service() {
                         mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
                     }
                     IvannaVisualizerBridge.processBlock(mono, frames)
+                    // v2: mismo downmix post-NPE, para el wallpaper de 13 bandas.
+                    IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
                 }
             }
@@ -219,6 +223,7 @@ class PlaybackCaptureService : Service() {
         isRunning = false
         scope.cancel()
         IvannaVisualizerBridge.release()
+        IvannaVisualizerBridgeV2.release()
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null

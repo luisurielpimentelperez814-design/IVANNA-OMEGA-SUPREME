@@ -35,6 +35,7 @@ add_library(ivanna_omega SHARED
     # JNI bridge consolidado (libivanna_omega.so único)
     jni/ivanna_omega_jni.cpp
     jni/ivanna_visualizer_jni.cpp
+    jni/ivanna_visualizer_v2_jni.cpp
     jni/ivanna_npe_jni.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
