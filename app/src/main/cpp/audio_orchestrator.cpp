@@ -209,44 +209,16 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetBypass(JNIEnv* /*env*/, jobject
     gState.bypass = bypass;
 }
 
-// ── Procesamiento principal ───────────────────────────────────────────────────
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
-    JNIEnv* env,
-    jobject /*thiz*/,
-    jfloatArray inArray,
-    jfloatArray outArray,
-    jint frames,
-    jint channels
-) {
-    // FIX v1.5: validaciones críticas
-    if (inArray == nullptr || outArray == nullptr) {
-        LOGE("nativeProcessAudio: array nulo");
-        return;
-    }
-    if (frames <= 0 || frames > 4096) {
-        LOGE("nativeProcessAudio: frames inválido: %d", frames);
-        return;
-    }
-    if (channels <= 0 || channels > 8) {
-        LOGE("nativeProcessAudio: channels inválido: %d", channels);
-        return;
-    }
-    if (gState.sampleRate <= 0) {
-        LOGE("nativeProcessAudio: sampleRate no inicializado");
-        return;
-    }
-
-    jfloat* in = env->GetFloatArrayElements(inArray, nullptr);
-    jfloat* out = env->GetFloatArrayElements(outArray, nullptr);
-
-    if (in == nullptr || out == nullptr) {
-        LOGE("nativeProcessAudio: GetFloatArrayElements falló");
-        if (in) env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
-        if (out) env->ReleaseFloatArrayElements(outArray, out, JNI_ABORT);
-        return;
-    }
-
+// ── Procesamiento principal (nucleo compartido) ────────────────────────────────
+// OPTIMIZACION (fricción JNI): este nucleo antes vivía solo dentro de
+// nativeProcessAudio operando sobre punteros obtenidos con
+// GetFloatArrayElements (que en ART puede copiar el heap Java en cada
+// callback). Se extrae a una funcion sobre punteros crudos, IDENTICA en
+// logica al original, para que dos entry points JNI puedan compartirla:
+// el existente (compatibilidad, jfloatArray) y uno nuevo zero-copy
+// (nativeProcessAudioDirect, ByteBuffer directo) que sigue el mismo
+// patron que ya usa ivanna_npe_jni.cpp con GetDirectBufferAddress.
+static void processAudioCore(jfloat* in, jfloat* out, jint frames, jint channels) {
     ivanna::audio::enableAudioThreadFastMathOnce();
     const float dt = 1.0f / (float)gState.sampleRate;
 
@@ -256,8 +228,6 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
         // Bypass total: copia directa, sin exciter/widener/limiter
         int total = (channels > 2) ? frames * 2 : frames * channels;
         for (int i = 0; i < total; ++i) out[i] = in[i];
-        env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
-        env->ReleaseFloatArrayElements(outArray, out, 0);
         return;
     }
 
@@ -326,8 +296,6 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
             const float rms = (float)std::sqrt(sumSq / frames);
             gState.lufsApprox.store(20.0f * log10f(std::max(rms, 1e-6f)) - 0.691f, std::memory_order_relaxed);
         }
-        env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
-        env->ReleaseFloatArrayElements(outArray, out, 0);
         return;
     }
 
@@ -359,9 +327,95 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
         const float lufs = 20.0f * log10f(std::max(rms, 1e-6f)) - 0.691f;
         gState.lufsApprox.store(lufs, std::memory_order_relaxed);
     }
+}
 
+// ── JNI: entry point compatible (jfloatArray, sin cambios de comportamiento) ──
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
+    JNIEnv* env,
+    jobject /*thiz*/,
+    jfloatArray inArray,
+    jfloatArray outArray,
+    jint frames,
+    jint channels
+) {
+    // FIX v1.5: validaciones críticas
+    if (inArray == nullptr || outArray == nullptr) {
+        LOGE("nativeProcessAudio: array nulo");
+        return;
+    }
+    if (frames <= 0 || frames > 4096) {
+        LOGE("nativeProcessAudio: frames inválido: %d", frames);
+        return;
+    }
+    if (channels <= 0 || channels > 8) {
+        LOGE("nativeProcessAudio: channels inválido: %d", channels);
+        return;
+    }
+    if (gState.sampleRate <= 0) {
+        LOGE("nativeProcessAudio: sampleRate no inicializado");
+        return;
+    }
+
+    jfloat* in = env->GetFloatArrayElements(inArray, nullptr);
+    jfloat* out = env->GetFloatArrayElements(outArray, nullptr);
+    if (in == nullptr || out == nullptr) {
+        LOGE("nativeProcessAudio: GetFloatArrayElements falló");
+        if (in) env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
+        if (out) env->ReleaseFloatArrayElements(outArray, out, JNI_ABORT);
+        return;
+    }
+
+    processAudioCore(in, out, frames, channels);
+
+    // Input: nunca se escribe -> JNI_ABORT (no hay que copiar de vuelta a la JVM).
+    // Output: siempre se escribe -> 0 (commit).
     env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
     env->ReleaseFloatArrayElements(outArray, out, 0);
+}
+
+// ── JNI: entry point ZERO-COPY (ByteBuffer directo) ────────────────────────────
+// OPTIMIZACION (fricción NDK<->OS): mismo procesamiento exacto que
+// nativeProcessAudio (misma processAudioCore), pero el puntero viene de
+// GetDirectBufferAddress sobre un ByteBuffer.allocateDirect() del lado
+// Kotlin, reutilizado por bloque. Sin pineo, sin copia GC — igual al
+// patrón que ya usa ivanna_npe_jni.cpp. Requiere que Kotlin cree los
+// buffers con ByteOrder.nativeOrder() y los reutilice entre callbacks.
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudioDirect(
+    JNIEnv* env,
+    jobject /*thiz*/,
+    jobject inBuffer,
+    jobject outBuffer,
+    jint frames,
+    jint channels
+) {
+    if (inBuffer == nullptr || outBuffer == nullptr) {
+        LOGE("nativeProcessAudioDirect: buffer nulo");
+        return;
+    }
+    if (frames <= 0 || frames > 4096) {
+        LOGE("nativeProcessAudioDirect: frames inválido: %d", frames);
+        return;
+    }
+    if (channels <= 0 || channels > 8) {
+        LOGE("nativeProcessAudioDirect: channels inválido: %d", channels);
+        return;
+    }
+    if (gState.sampleRate <= 0) {
+        LOGE("nativeProcessAudioDirect: sampleRate no inicializado");
+        return;
+    }
+
+    auto* in = static_cast<jfloat*>(env->GetDirectBufferAddress(inBuffer));
+    auto* out = static_cast<jfloat*>(env->GetDirectBufferAddress(outBuffer));
+    if (in == nullptr || out == nullptr) {
+        LOGE("nativeProcessAudioDirect: GetDirectBufferAddress falló (¿el buffer no es direct?)");
+        return;
+    }
+
+    processAudioCore(in, out, frames, channels);
+    // Sin release: la memoria de un DirectByteBuffer no está pineada por la JVM.
 }
 
 // ── JNI: get LUFS integrado ────────────────────────────────────────────────
