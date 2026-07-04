@@ -16,3 +16,7 @@ local.properties
 # Logs / cache
 *.log
 
+*.apk
+app/src/main/cpp/tests/build/
+app/src/main/cpp/tests/build-asan/
+app/src/main/cpp/tests/build-tsan/
