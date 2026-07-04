@@ -106,8 +106,8 @@ class ParameterStore(context: Context) {
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
     /** 0 = DSP only, 1 = DSP+NHO, 2 = DSP+NHO+Spatial (PDEngine / OmegaEngine.setMode). */
-    fun getOmegaMode(): Int = prefs.getInt(KEY_OMEGA_MODE, 0).coerceIn(0, 2)
-    fun setOmegaMode(mode: Int) = prefs.edit().putInt(KEY_OMEGA_MODE, mode.coerceIn(0, 2)).apply()
+    fun getOmegaMode(): Int = prefs.getInt(KEY_OMEGA_MODE, 0).coerceIn(0, 3)
+    fun setOmegaMode(mode: Int) = prefs.edit().putInt(KEY_OMEGA_MODE, mode.coerceIn(0, 3)).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()

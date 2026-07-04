@@ -38,7 +38,7 @@ object OmegaEngine {
     /** 0 = DSP, 1 = DSP+LSTM, 2 = DSP+LSTM+Spatial */
     fun setMode(mode: Int) {
         if (!loaded) return
-        if (mode in 0..2) {
+        if (mode in 0..3) {
             try {
                 nativeSetMode(mode)
             } catch (e: UnsatisfiedLinkError) {
