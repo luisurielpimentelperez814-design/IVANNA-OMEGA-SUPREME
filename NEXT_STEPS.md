@@ -132,4 +132,4 @@ Código está documentado con:
 - Logs DEBUG en puntos críticos
 - Fallbacks graceful si algo falla
 
-Ver `ANTI_DOLBY_INTEGRATION_GUIDE.md` para detalles completos.
+Ver [`docs/ANTI_DOLBY_INTEGRATION_GUIDE.md`](docs/ANTI_DOLBY_INTEGRATION_GUIDE.md) para detalles completos.

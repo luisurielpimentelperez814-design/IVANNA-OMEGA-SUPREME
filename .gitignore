@@ -1,22 +1,76 @@
+# ─────────────────────────────────────────────────────────────
+# IVANNA-OMEGA-SUPREME · .gitignore (hardened)
+# ─────────────────────────────────────────────────────────────
 
-# Android / Gradle
+# Android / Gradle build
 .gradle/
 **/.cxx/
 **/build/
 app/build/
-
-# IDE
-.idea/
-*.iml
-
-# Local machine config
-local.properties
-*.keystore
-
-# Logs / cache
-*.log
-
 *.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# NDK / native artifacts
+**/*.o
+**/*.obj
+**/*.so.dbg
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/Makefile
 app/src/main/cpp/tests/build/
 app/src/main/cpp/tests/build-asan/
 app/src/main/cpp/tests/build-tsan/
+app/src/main/cpp/tests/build-*/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local machine config (NUNCA commitear)
+local.properties
+*.keystore
+*.jks
+*.p12
+keystore.properties
+signing.properties
+
+# Secretos / credenciales (defensa en profundidad)
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+secrets/
+**/google-services.json
+
+# Logs / cache
+*.log
+*.tmp
+/tmp/
+
+# Reportes de test / coverage
+**/reports/
+**/coverage/
+*.lcov
+tests/results/
+
+# Sandbox / temporales del proyecto
+node_modules/
+.cache/
+__pycache__/
+*.pyc
+
+# Artefactos empaquetados de release (se generan en CI, no se commitean)
+ivanna-omega-magisk.zip
+libomega_effect_arm64.so
+release/
