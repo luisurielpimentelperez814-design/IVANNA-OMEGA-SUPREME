@@ -60,7 +60,8 @@ class YamnetClassifier(context: Context) {
      * @return ClassificationResult con scores 0.0-1.0
      */
     fun classify(audioFrame: FloatArray): ClassificationResult {
-        if (!isAvailable || interpreter == null) {
+        val localInterpreter = interpreter
+        if (!isAvailable || localInterpreter == null) {
             return ClassificationResult(0f, 0f, 0f, false)
         }
 
@@ -77,7 +78,7 @@ class YamnetClassifier(context: Context) {
 
             // YAMNet output: [1, 521] scores por clase
             val output = Array(1) { FloatArray(521) }
-            interpreter!!.run(input, output)
+            localInterpreter.run(input, output)
 
             val scores = output[0]
             val speechScore = scores[IDX_SPEECH]

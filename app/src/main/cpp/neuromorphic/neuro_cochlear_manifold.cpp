@@ -9,7 +9,7 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
-#include "../include/volterra_h2_symmetric.hpp"
+#include "volterra_h2_symmetric.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -103,8 +103,16 @@ bool neuro_cochlear_manifold_init(
         g_manifold.dsp_client = nullptr;
     }
 
-    g_manifold.upsampler = new FIRUpsamplerEngine();
-    g_manifold.volterra = new VolterraH2Symmetric(8192, channels);
+    try {
+        g_manifold.upsampler = new FIRUpsamplerEngine();
+        g_manifold.volterra = new VolterraH2Symmetric(8192, channels);
+    } catch (...) {
+        delete g_manifold.upsampler; g_manifold.upsampler = nullptr;
+        delete g_manifold.volterra;  g_manifold.volterra = nullptr;
+        delete g_manifold.dsp_client; g_manifold.dsp_client = nullptr;
+        neuro_cochlear_manifold_teardown();
+        return false;
+    }
 
     g_manifold.pipeline_active.store(true, std::memory_order_release);
     return true;

@@ -7,6 +7,7 @@
  */
 
 #include <jni.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -127,7 +128,10 @@ static inline void crossover(const uint8_t* __restrict__ p1,
 
 __attribute__((hot, flatten))
 static void mutate(uint8_t* __restrict__ genome, float rate) {
-    const uint32_t threshold = static_cast<uint32_t>(rate * static_cast<float>(g_rng.max()));
+    const float rate_clamped = std::clamp(rate, 0.0f, 1.0f);
+    const uint32_t threshold = static_cast<uint32_t>(
+        std::clamp(rate_clamped * static_cast<float>(g_rng.max()),
+                   0.0f, static_cast<float>(g_rng.max())));
     #pragma clang loop vectorize(enable) interleave(enable)
     for (int i = 0; i < GENOME_SIZE; ++i) {
         if (g_rng() < threshold) {

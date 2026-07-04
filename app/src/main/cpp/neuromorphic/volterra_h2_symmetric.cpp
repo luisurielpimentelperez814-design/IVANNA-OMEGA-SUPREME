@@ -20,12 +20,14 @@
 #include <cstring>
 #include <cmath>
 #include <malloc.h>
+#include <new>
 
 namespace ivanna {
 namespace dsp {
 
 VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels)
-    : m_kernel_length(kernel_length), m_channels(channels) {
+    : m_kernel_length(kernel_length), m_channels(channels),
+      m_h1(nullptr), m_h2(nullptr), m_delay_lines(nullptr), m_delay_indices(nullptr) {
 
     const size_t align = 64;
 
@@ -34,35 +36,57 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     if (m_channels == 0) m_channels = 2;
     if (m_channels > 16) m_channels = 16;
 
-    m_h1 = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
-    if (m_h1) memset(m_h1, 0, m_kernel_length * sizeof(float));
+    try {
+        m_h1 = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
+        if (!m_h1) throw std::bad_alloc();
+        memset(m_h1, 0, m_kernel_length * sizeof(float));
 
-    const size_t h2_size = (m_kernel_length * (m_kernel_length + 1)) / 2;
-    m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
-    if (m_h2) memset(m_h2, 0, h2_size * sizeof(float));
+        const size_t h2_size = (m_kernel_length * (m_kernel_length + 1)) / 2;
+        m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
+        if (!m_h2) throw std::bad_alloc();
+        memset(m_h2, 0, h2_size * sizeof(float));
 
-    m_delay_lines = static_cast<float**>(malloc(m_channels * sizeof(float*)));
-    m_delay_indices = static_cast<uint32_t*>(malloc(m_channels * sizeof(uint32_t)));
+        m_delay_lines = static_cast<float**>(malloc(m_channels * sizeof(float*)));
+        if (!m_delay_lines) throw std::bad_alloc();
+        memset(m_delay_lines, 0, m_channels * sizeof(float*));
 
-    for (uint32_t ch = 0; ch < m_channels; ++ch) {
-        m_delay_lines[ch] = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
-        if (m_delay_lines[ch]) memset(m_delay_lines[ch], 0, m_kernel_length * sizeof(float));
-        m_delay_indices[ch] = 0;
+        m_delay_indices = static_cast<uint32_t*>(malloc(m_channels * sizeof(uint32_t)));
+        if (!m_delay_indices) throw std::bad_alloc();
+
+        for (uint32_t ch = 0; ch < m_channels; ++ch) {
+            m_delay_lines[ch] = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
+            if (!m_delay_lines[ch]) throw std::bad_alloc();
+            memset(m_delay_lines[ch], 0, m_kernel_length * sizeof(float));
+            m_delay_indices[ch] = 0;
+        }
+
+        m_h1[0] = 1.0f;
+        m_kernels_ready.store(true, std::memory_order_release);
+    } catch (...) {
+        if (m_delay_lines) {
+            for (uint32_t ch = 0; ch < m_channels; ++ch) {
+                if (m_delay_lines[ch]) free(m_delay_lines[ch]);
+            }
+            free(m_delay_lines);
+            m_delay_lines = nullptr;
+        }
+        free(m_delay_indices); m_delay_indices = nullptr;
+        free(m_h2); m_h2 = nullptr;
+        free(m_h1); m_h1 = nullptr;
+        throw;
     }
-
-    if (m_h1) m_h1[0] = 1.0f;
-
-    m_kernels_ready.store(true, std::memory_order_release);
 }
 
 VolterraH2Symmetric::~VolterraH2Symmetric() {
     free(m_h1);
     free(m_h2);
 
-    for (uint32_t ch = 0; ch < m_channels; ++ch) {
-        free(m_delay_lines[ch]);
+    if (m_delay_lines) {
+        for (uint32_t ch = 0; ch < m_channels; ++ch) {
+            free(m_delay_lines[ch]);
+        }
+        free(m_delay_lines);
     }
-    free(m_delay_lines);
     free(m_delay_indices);
 }
 
@@ -73,13 +97,14 @@ void VolterraH2Symmetric::updateKernels(
 ) noexcept {
     if (!h1_kernel || !h2_kernel) return;
     if (length != m_kernel_length) return;
+    if (!m_h1 || !m_h2) return;  // no inicializados: no fingir "ready"
 
     m_kernels_ready.store(false, std::memory_order_release);
 
-    if (m_h1) memcpy(m_h1, h1_kernel, length * sizeof(float));
+    memcpy(m_h1, h1_kernel, length * sizeof(float));
 
     const size_t h2_size = (length * (length + 1)) / 2;
-    if (m_h2) memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
+    memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
 
     m_kernels_ready.store(true, std::memory_order_release);
 }
