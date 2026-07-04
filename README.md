@@ -33,7 +33,7 @@ IVANNA procesa audio con un pipeline DSP en C++ optimizado para Android, pensado
 
 ## Benchmarks
 
-Consulta `BENCHMARKS.md` para:
+Consulta [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) para:
 
 - salida de referencia host-side del benchmark
 - protocolo recomendado para corrida real sobre Moto G85
@@ -44,6 +44,25 @@ Consulta `BENCHMARKS.md` para:
 - Android arm64-v8a
 - Cadena NDK/Gradle del proyecto para build de APK
 - CMake + compilador C++17 para la suite host-side de `cpp/tests`
+
+## Estructura del repositorio
+
+```
+IVANNA-OMEGA-SUPREME/
+├── app/                    → Aplicación Android (Kotlin + JNI + C++ nativo)
+│   └── src/main/cpp/       → Motor DSP nativo (dsp, spatial, neuromorphic, visualizer, tests)
+├── magisk_module/          → Módulo Magisk (system-wide audio effect)
+├── tools/                  → Herramientas de desarrollo (benchmark suite)
+├── sepolicy/               → Políticas SELinux del módulo Magisk
+├── .github/workflows/      → CI/CD (APK + Magisk zip + release bundle)
+├── docs/                   → Documentación técnica, guías de integración, auditorías
+│   └── archive/            → Snapshots históricos y artefactos huérfanos (regla de oro)
+├── README.md               → Este documento
+├── CHANGELOG.md            → Registro de versiones
+└── NEXT_STEPS.md           → Roadmap abierto
+```
+
+Índice detallado de documentación: [`docs/README.md`](docs/README.md).
 
 ## Nota sobre build
 
