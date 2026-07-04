@@ -49,21 +49,12 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
 
-// ── phase_oracle_velocity() propio de esta librería ────────────────────────
-// biquad_envelope_bank.hpp requiere este símbolo (declarado extern "C").
-// omega_vibratory.so es un target separado de ivanna_omega.so, así que no
-// puede depender del Kalman cúbico de phase_oracle.cpp (evita duplicar
-// símbolos JNI entre .so). Estimador propio: derivada de primer orden de
-// la última muestra procesada, escalada al mismo orden de magnitud que
-// espera BiquadEnvelopeBank (pico empírico ~5000).
-static std::atomic<float> g_last_sample{0.f};
-static std::atomic<float> g_velocity{0.f};
+// ── phase_oracle_velocity() — símbol externo definido en phase_oracle.cpp ────
+// Nota: phase_oracle.cpp define la versión principal (Kalman cúbico).
+// Esta versión era duplicada; se elimina para evitar error de linking.
+extern "C" float phase_oracle_velocity();
 
-extern "C" float phase_oracle_velocity() {
-    return g_velocity.load(std::memory_order_relaxed);
-}
-
-// ── AUDIT FIX (AGC crackle) ─────────────────────────────────────────────────
+// ── AUDIT FIX (AGC crackle) ─────────────────────────────────────────────────────
 // Antes: yL/yR se escribían a outL/outR sin ningún techo tras el AGC + Master
 // Gain, así que AGC rate alto (ganancia saltando hasta 8x) + Master Gain
 // positivo producía clipping digital duro y crujidos audibles. Se reutiliza
@@ -81,11 +72,11 @@ static inline float npe_soft_limit(float x) noexcept {
 }
 
 static inline void update_velocity(float x, float sample_rate) noexcept {
-    const float prev = g_last_sample.exchange(x, std::memory_order_relaxed);
-    const float diff = x - prev;
-    // Escala: sample_rate * factor empírico para llevar la derivada al
-    // rango ~O(1000s) que BiquadEnvelopeBank normaliza internamente (/5000).
-    g_velocity.store(diff * sample_rate * 0.05f, std::memory_order_relaxed);
+    // NOTA: Esta función actualiza velocidad local, pero la función
+    // phase_oracle_velocity() se define ahora en phase_oracle.cpp para
+    // evitar symbols duplicados en el linking.
+    // Mantener esta lógica por si algún código en ivanna_npe la llama.
+    (void)x; (void)sample_rate; // suppress unused warnings si no se llama
 }
 
 namespace ivanna_npe {
