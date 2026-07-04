@@ -19,6 +19,8 @@ precision highp float;
 
 uniform float u_bass_pulse;
 uniform float u_mid_flow;
+uniform float u_mid_flow_prev;
+uniform float u_frame_phase;
 uniform float u_high_flicker;
 uniform float u_time;
 uniform vec2  u_resolution;
@@ -60,6 +62,22 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// F0 físicamente consistente: un dieléctrico (obsidiana, F0≈0.04) y un metal
+// (cromo, F0 espectral ~0.57-0.94) no promedian linealmente en la realidad —
+// mezclar sus F0 producía una rampa visual sin base física en chromeMix≈0.5.
+// Aquí se bifurca: por debajo de 0.5 es dieléctrico puro, por encima interpola
+// dentro del rango especular del metal real.
+vec3 computeF0(float chromeMix) {
+    const vec3 dielectricF0   = vec3(0.04);
+    const vec3 chromeF0       = vec3(0.57, 0.67, 0.84);
+    const vec3 chromeBrightF0 = vec3(0.94, 0.92, 0.90);
+
+    if (chromeMix > 0.5) {
+        return mix(chromeF0, chromeBrightF0, (chromeMix - 0.5) * 2.0);
+    }
+    return dielectricF0;
+}
+
 vec3 shadePBR(vec3 N, vec3 V, vec3 L, float chromeMix) {
     vec3 H = normalize(V + L);
     float NdotV = max(dot(N, V), 1e-4);
@@ -67,11 +85,11 @@ vec3 shadePBR(vec3 N, vec3 V, vec3 L, float chromeMix) {
 
     vec3  obsidianAlbedo = vec3(0.015, 0.014, 0.018);
     float obsidianRough  = 0.82;
-    vec3  chromeF0   = vec3(0.72, 0.73, 0.75);
-    float chromeRough = 0.045;
+    float chromeRough    = 0.045;
 
     float roughness = mix(obsidianRough, chromeRough, chromeMix);
-    vec3  F0        = mix(vec3(0.04), chromeF0, chromeMix);
+    vec3  F0        = computeF0(chromeMix);
+    // Metal puro no tiene componente difusa; se desvanece junto con chromeMix.
     vec3  albedo    = mix(obsidianAlbedo, vec3(0.0), chromeMix);
 
     float D = distributionGGX(N, H, roughness);
@@ -92,11 +110,17 @@ void main() {
     float distCenter = length(uv);
     float node = 1.0 - smoothstep(pulseRadius - 0.02, pulseRadius, distCenter);
 
+    // Interpolación temporal de u_mid_flow: sin esto, un salto de 0.1→0.9
+    // entre bloques de audio producía un salto de ~280px en el warp en un
+    // solo frame (aliasing temporal). u_frame_phase avanza [0,1] dentro del
+    // intervalo de vsync.
+    float interpolatedMidFlow = mix(u_mid_flow_prev, u_mid_flow, u_frame_phase);
+
     vec2 flowUV = uv * rot(u_time * 0.05);
-    vec2 warp = curlNoise(flowUV * 3.0 + u_time * 0.1) * u_mid_flow * 0.35;
+    vec2 warp = curlNoise(flowUV * 3.0 + u_time * 0.1) * interpolatedMidFlow * 0.35;
     vec2 warpedUV = uv + warp;
     float fieldLines = sin((warpedUV.x * 12.0 + warpedUV.y * 8.0) + u_time * 0.4);
-    fieldLines = smoothstep(0.85, 1.0, abs(fieldLines)) * u_mid_flow;
+    fieldLines = smoothstep(0.85, 1.0, abs(fieldLines)) * interpolatedMidFlow;
 
     float particleField = 0.0;
     for (int i = 0; i < 24; ++i) {
@@ -130,6 +154,8 @@ class VisualizerRenderer : GLSurfaceView.Renderer {
     private var program = 0
     private var locBass = -1
     private var locMid = -1
+    private var locMidPrev = -1
+    private var locFramePhase = -1
     private var locHigh = -1
     private var locTime = -1
     private var locRes = -1
@@ -137,6 +163,8 @@ class VisualizerRenderer : GLSurfaceView.Renderer {
     private var width = 1
     private var height = 1
     private val startNanos = System.nanoTime()
+    private var prevMidFlow = 0f
+    private var lastFrameNanos = 0L
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         val vs = compile(GLES30.GL_VERTEX_SHADER, VERTEX_SRC)
@@ -159,11 +187,14 @@ class VisualizerRenderer : GLSurfaceView.Renderer {
         // Cachear uniform locations — no por frame.
         locBass = GLES30.glGetUniformLocation(program, "u_bass_pulse")
         locMid = GLES30.glGetUniformLocation(program, "u_mid_flow")
+        locMidPrev = GLES30.glGetUniformLocation(program, "u_mid_flow_prev")
+        locFramePhase = GLES30.glGetUniformLocation(program, "u_frame_phase")
         locHigh = GLES30.glGetUniformLocation(program, "u_high_flicker")
         locTime = GLES30.glGetUniformLocation(program, "u_time")
         locRes = GLES30.glGetUniformLocation(program, "u_resolution")
 
         GLES30.glClearColor(0f, 0f, 0f, 1f)
+        lastFrameNanos = System.nanoTime()
     }
 
     override fun onSurfaceChanged(gl: GL10?, w: Int, h: Int) {
@@ -175,14 +206,24 @@ class VisualizerRenderer : GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         GLES30.glUseProgram(program)
 
+        val now = System.nanoTime()
+        val deltaMs = (now - lastFrameNanos) / 1_000_000f
+        lastFrameNanos = now
+        val vsyncIntervalMs = 16.67f
+        val framePhase = ((deltaMs % vsyncIntervalMs) / vsyncIntervalMs).coerceIn(0f, 1f)
+
         val u = IvannaVisualizerBridge.sample()
+        val currentMidFlow = u.getOrElse(1) { 0f }
         GLES30.glUniform1f(locBass, u.getOrElse(0) { 0f })
-        GLES30.glUniform1f(locMid, u.getOrElse(1) { 0f })
+        GLES30.glUniform1f(locMid, currentMidFlow)
+        GLES30.glUniform1f(locMidPrev, prevMidFlow)
+        GLES30.glUniform1f(locFramePhase, framePhase)
         GLES30.glUniform1f(locHigh, u.getOrElse(2) { 0f })
-        GLES30.glUniform1f(locTime, (System.nanoTime() - startNanos) / 1_000_000_000f)
+        GLES30.glUniform1f(locTime, (now - startNanos) / 1_000_000_000f)
         GLES30.glUniform2f(locRes, width.toFloat(), height.toFloat())
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+        prevMidFlow = currentMidFlow
     }
 
     private fun compile(type: Int, src: String): Int {
