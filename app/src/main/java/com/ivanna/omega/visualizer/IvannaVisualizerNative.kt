@@ -2,7 +2,7 @@ package com.ivanna.omega.visualizer
 
 object IvannaVisualizerNative {
     init {
-        System.loadLibrary("ivanna_visualizer")
+        System.loadLibrary("ivanna_omega")
     }
 
     external fun nativeVisCreate(sampleRate: Float): Long
