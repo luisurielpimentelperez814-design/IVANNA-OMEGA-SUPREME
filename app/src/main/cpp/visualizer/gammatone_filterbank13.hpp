@@ -5,6 +5,13 @@
 #include <atomic>
 #include <algorithm>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define IVANNA_GAMMATONE_HAS_NEON 1
+#else
+#define IVANNA_GAMMATONE_HAS_NEON 0
+#endif
+
 namespace ivanna::vis {
 
 static constexpr int GT_BANDS = 13;
@@ -64,7 +71,6 @@ struct GammatoneChannel {
         const float denomIm =        a1_df2 * sinf(w0 * T) + a2_df2 * sinf(2.0f * w0 * T);
         const float magSection = 1.0f / sqrtf(denomRe * denomRe + denomIm * denomIm);
         gain = powf(magSection, -static_cast<float>(GT_ORDER));
-        gain = 1.0f / gain;
     }
 
     // Sección Lattice: |s| ≤ |x| por invariante (k1*k1 < 1), lo que
@@ -104,10 +110,75 @@ public:
     }
 
     inline void process(const float* __restrict__ in, int n, float out[GT_BANDS]) noexcept {
-        for (int b = 0; b < GT_BANDS; ++b) {
+        int b = 0;
+#if IVANNA_GAMMATONE_HAS_NEON
+        for (; b + 3 < GT_BANDS; b += 4) {
+            process4BandsNeon(b, in, n, out);
+        }
+#endif
+        for (; b < GT_BANDS; ++b) {
             out[b] = channels_[b].processBlockEnergy(in, n);
         }
     }
+
+#if IVANNA_GAMMATONE_HAS_NEON
+    inline void process4BandsNeon(int base, const float* __restrict__ in, int n, float out[GT_BANDS]) noexcept {
+        float gainV[4], k1V[4], k2V[4];
+        float s1V[GT_ORDER][4], s2V[GT_ORDER][4];
+        for (int lane = 0; lane < 4; ++lane) {
+            auto& ch = channels_[base + lane];
+            gainV[lane] = ch.gain;
+            k1V[lane] = ch.k1;
+            k2V[lane] = ch.k2;
+            for (int sec = 0; sec < GT_ORDER; ++sec) {
+                s1V[sec][lane] = ch.s1[sec];
+                s2V[sec][lane] = ch.s2[sec];
+            }
+        }
+
+        const float32x4_t gain = vld1q_f32(gainV);
+        const float32x4_t k1 = vld1q_f32(k1V);
+        const float32x4_t k2 = vld1q_f32(k2V);
+        const float32x4_t one = vdupq_n_f32(1.0f);
+        const float32x4_t damp = vsubq_f32(one, vmulq_f32(k1, k1));
+        float32x4_t s1[GT_ORDER], s2[GT_ORDER];
+        for (int sec = 0; sec < GT_ORDER; ++sec) {
+            s1[sec] = vld1q_f32(s1V[sec]);
+            s2[sec] = vld1q_f32(s2V[sec]);
+        }
+
+        float32x4_t acc = vdupq_n_f32(0.0f);
+        for (int i = 0; i < n; ++i) {
+            float32x4_t x = vmulq_f32(vdupq_n_f32(in[i]), gain);
+            for (int sec = 0; sec < GT_ORDER; ++sec) {
+                const float32x4_t tmp1 = vmlaq_f32(x, k2, s2[sec]);
+                const float32x4_t tmp2 = vmlaq_f32(s1[sec], k1, tmp1);
+                const float32x4_t y = vmlaq_f32(s2[sec], k1, tmp1);
+                s2[sec] = s1[sec];
+                s1[sec] = vmulq_f32(tmp2, damp);
+                x = y;
+            }
+            acc = vmlaq_f32(acc, x, x);
+        }
+
+        float accV[4];
+        vst1q_f32(accV, acc);
+        for (int lane = 0; lane < 4; ++lane) {
+            out[base + lane] = sqrtf(accV[lane] / static_cast<float>(n));
+        }
+        for (int sec = 0; sec < GT_ORDER; ++sec) {
+            vst1q_f32(s1V[sec], s1[sec]);
+            vst1q_f32(s2V[sec], s2[sec]);
+        }
+        for (int lane = 0; lane < 4; ++lane) {
+            auto& ch = channels_[base + lane];
+            for (int sec = 0; sec < GT_ORDER; ++sec) {
+                ch.s1[sec] = s1V[sec][lane];
+                ch.s2[sec] = s2V[sec][lane];
+            }
+        }
+    }
+#endif
 
 private:
     static float hzToErbRate(float f) noexcept {

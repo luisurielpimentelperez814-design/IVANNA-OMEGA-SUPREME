@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "anti_dolby.h"
 #include "include/dsp_types.h"
+#include "include/audio_thread_priority.h"
 #include "include/HarmonicExciter.h"
 #include "include/StereoWidener.h"
 
@@ -246,6 +247,7 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
         return;
     }
 
+    ivanna::audio::enableAudioThreadFastMathOnce();
     const float dt = 1.0f / (float)gState.sampleRate;
 
     // Anti-Dolby v1.5: downmix inteligente si channelCount > 2

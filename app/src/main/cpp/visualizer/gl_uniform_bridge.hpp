@@ -4,52 +4,12 @@
 #include <atomic>
 #include <algorithm>
 #include <array>
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#define IVANNA_HAS_NEON 1
-#else
-#define IVANNA_HAS_NEON 0
-#endif
-
-#if defined(__ANDROID__)
-#include <sys/resource.h>
-#include <unistd.h>
-#endif
+#include "../include/audio_thread_priority.h"
 
 namespace ivanna::vis {
 
-// Habilita Flush-To-Zero + Denormal-Are-Zero en el hilo actual y sube su
-// prioridad a AUDIO. Los denormales generados por AsymSmoother/Gammatone
-// en pasajes silenciosos cuestan 30-50 ciclos por muestra en FPUs ARM sin
-// FTZ; con FTZ/DAZ ese costo cae a 1 ciclo. Llamar una vez al inicio del
-// hilo de audio (nativeVisCreate corre en ese hilo — ver comentario en
-// ivanna_visualizer_jni.cpp).
-//
-// Nota: android_set_thread_priority()/ANDROID_PRIORITY_AUDIO viven en
-// <android/thread_priority.h>, header PRIVADO de AOSP, no expuesto por el
-// NDK público → rompe CMake/ninja en CI ("file not found"). Se usa en su
-// lugar setpriority() de POSIX (sys/resource.h, sí es NDK público) con el
-// valor nice equivalente a ANDROID_PRIORITY_AUDIO (-16).
-inline void enableAudioThreadFastMath() noexcept {
-#if IVANNA_HAS_NEON && defined(__aarch64__)
-    uint64_t fpcr;
-    asm volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= (1ULL << 24); // FZ (Flush-to-Zero, cubre FTZ+DAZ en AArch64)
-    asm volatile("msr fpcr, %0" : : "r"(fpcr));
-#elif IVANNA_HAS_NEON
-    uint32_t fpscr;
-    asm volatile("vmrs %0, fpscr" : "=r"(fpscr));
-    fpscr |= (1u << 24); // FTZ
-    fpscr |= (1u << 19); // DAZ
-    asm volatile("vmsr fpscr, %0" : : "r"(fpscr));
-#endif
-#if defined(__ANDROID__)
-    static constexpr int kAndroidPriorityAudio = -16; // equivalente a ANDROID_PRIORITY_AUDIO
-    setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), kAndroidPriorityAudio);
-#endif
-}
-
 static constexpr int BASS_LO = 0, BASS_HI = 3;
+
 static constexpr int MID_LO  = 4, MID_HI  = 8;
 static constexpr int HIGH_LO = 9, HIGH_HI = 12;
 
@@ -84,7 +44,7 @@ public:
     void init(float fs) noexcept {
         fb_.init(fs);
         fs_ = fs;
-        enableAudioThreadFastMath();
+        ivanna::audio::enableAudioThreadFastMathOnce();
     }
 
     // Informa la latencia medida del pipeline de captura (AudioPlaybackCapture

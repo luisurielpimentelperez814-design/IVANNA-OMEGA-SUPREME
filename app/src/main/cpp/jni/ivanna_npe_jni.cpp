@@ -39,6 +39,7 @@
 #include <mutex>
 #include <vector>
 
+#include "../include/audio_thread_priority.h"
 #include "../neuromorphic/nho_engine.hpp"
 #include "../neuromorphic/lif_neuron_pool.hpp"
 #include "../neuromorphic/biquad_envelope_bank.hpp"
@@ -426,6 +427,7 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcess(
     auto* in  = static_cast<float*>(env->GetDirectBufferAddress(inputBuffer));
     auto* out = static_cast<float*>(env->GetDirectBufferAddress(outputBuffer));
     if (!in || !out) return;
+    ivanna::audio::enableAudioThreadFastMathOnce();
     eng->process(in, out, numFrames);
 }
 
@@ -440,6 +442,7 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcessStereo(
     auto* pOutL = static_cast<float*>(env->GetDirectBufferAddress(outL));
     auto* pOutR = static_cast<float*>(env->GetDirectBufferAddress(outR));
     if (!pInL || !pInR || !pOutL || !pOutR) return;
+    ivanna::audio::enableAudioThreadFastMathOnce();
     eng->processStereo(pInL, pInR, pOutL, pOutR, numFrames);
 }
 

@@ -33,6 +33,7 @@
 
 #include "omega_shared.h"
 #include "dsp_types.h"
+#include "include/audio_thread_priority.h"
 
 #define LOG_TAG "OmegaDaemon"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -209,6 +210,7 @@ static void enterSafeMode() {
 
 // ── Proceso de audio ──────────────────────────────────────────────────────────
 static void processLoop() {
+    ivanna::audio::enableAudioThreadFastMathOnce();
     while (g_running.load()) {
         if (!g_shared) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));

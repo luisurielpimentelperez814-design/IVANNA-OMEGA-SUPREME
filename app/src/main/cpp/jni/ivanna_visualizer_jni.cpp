@@ -11,6 +11,7 @@
  */
 
 #include <jni.h>
+#include "../include/audio_thread_priority.h"
 #include "../visualizer/gl_uniform_bridge.hpp"
 
 namespace {
@@ -50,6 +51,7 @@ Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisSetDeviceLatenc
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisProcessBlock(
     JNIEnv* env, jclass, jlong handle, jobject monoBuffer, jint numFrames) {
+    ivanna::audio::enableAudioThreadFastMathOnce();
     auto* b = toPtr(handle);
     if (!b) return;
     auto* mono = static_cast<float*>(env->GetDirectBufferAddress(monoBuffer));
