@@ -211,7 +211,7 @@ static void enterSafeMode() {
 // ── Proceso de audio ──────────────────────────────────────────────────────────
 static void processLoop() {
     ivanna::audio::enableAudioThreadFastMathOnce();
-    while (g_running.load()) {
+    while (g_running.load(std::memory_order_acquire)) {
         if (!g_shared) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -297,7 +297,7 @@ static void socketLoop() {
         return;
     }
 
-    while (g_running.load()) {
+    while (g_running.load(std::memory_order_acquire)) {
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(g_socket_fd, &fds);
@@ -325,7 +325,7 @@ static void socketLoop() {
             if (strncmp(cmd, "ping", 4) == 0) {
                 send(client, "pong", 4, MSG_DONTWAIT);
             } else if (strncmp(cmd, "status", 6) == 0) {
-                const char* st = g_running.load() ? "running" : "stopped";
+                const char* st = g_running.load(std::memory_order_acquire) ? "running" : "stopped";
                 send(client, st, strlen(st), MSG_DONTWAIT);
             }
         }
@@ -350,7 +350,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     g_shm_fd = memfd_create_compat("ivanna_omega_shm", MFD_CLOEXEC);
     if (g_shm_fd < 0) {
         LOGE("memfd_create falló: %s", strerror(errno));
-        g_running = false;
+        g_running.store(false, std::memory_order_release);
         return JNI_FALSE;
     }
 
@@ -358,7 +358,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         LOGE("ftruncate falló: %s", strerror(errno));
         close(g_shm_fd);
         g_shm_fd = -1;
-        g_running = false;
+        g_running.store(false, std::memory_order_release);
         return JNI_FALSE;
     }
 
@@ -369,7 +369,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         LOGE("mmap falló: %s", strerror(errno));
         close(g_shm_fd);
         g_shm_fd = -1;
-        g_running = false;
+        g_running.store(false, std::memory_order_release);
         return JNI_FALSE;
     }
 
@@ -386,7 +386,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     // Watchdog v1.5: 3 fallos antes de safe_mode
     std::thread([]() {
         int failures = 0;
-        while (g_running.load()) {
+        while (g_running.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::seconds(5));
 
             // FIX (auditoría): current_temperature se inicializaba en 35.0f
@@ -404,7 +404,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
                 LOGW("Watchdog: fallo %d/3 — AudioFlinger no responde", failures);
                 if (failures >= 3) {
                     enterSafeMode();
-                    g_running = false;
+                    g_running.store(false, std::memory_order_release);
                     break;
                 }
             } else {
@@ -423,7 +423,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
 // ── Finalización ──────────────────────────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStop(JNIEnv* /*env*/, jobject /*thiz*/) {
-    g_running = false;
+    g_running.store(false, std::memory_order_release);
 
     if (g_process_thread.joinable()) g_process_thread.join();
     if (g_socket_thread.joinable()) g_socket_thread.join();

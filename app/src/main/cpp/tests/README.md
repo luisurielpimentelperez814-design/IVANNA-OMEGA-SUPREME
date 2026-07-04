@@ -31,5 +31,5 @@ ctest --test-dir build-tsan --output-on-failure
 ## Resultado de esta pasada
 
 - Release host suite: PASS
-- ASan host suite: pendiente de ejecutar en este entorno
-- TSan host suite: pendiente de ejecutar en este entorno
+- ASan host suite: PASS
+- TSan host suite: PASS

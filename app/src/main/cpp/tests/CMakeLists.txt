@@ -35,11 +35,11 @@ target_include_directories(ivanna_dsp_under_test PUBLIC
 
 target_compile_options(ivanna_dsp_under_test PRIVATE -Wall -Wextra)
 
-set(IVANNA_SAN_FLAGS "")
+set(IVANNA_SAN_FLAGS)
 if(IVANNA_TEST_ENABLE_ASAN)
-  set(IVANNA_SAN_FLAGS "-fsanitize=address,undefined -fno-omit-frame-pointer")
+  list(APPEND IVANNA_SAN_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
 elseif(IVANNA_TEST_ENABLE_TSAN)
-  set(IVANNA_SAN_FLAGS "-fsanitize=thread -fno-omit-frame-pointer")
+  list(APPEND IVANNA_SAN_FLAGS -fsanitize=thread -fno-omit-frame-pointer)
 endif()
 
 foreach(tgt ivanna_dsp_under_test)
