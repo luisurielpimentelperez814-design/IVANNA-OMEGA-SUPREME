@@ -12,7 +12,8 @@
 #endif
 
 #if defined(__ANDROID__)
-#include <android/thread_priority.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 namespace ivanna::vis {
@@ -23,6 +24,12 @@ namespace ivanna::vis {
 // FTZ; con FTZ/DAZ ese costo cae a 1 ciclo. Llamar una vez al inicio del
 // hilo de audio (nativeVisCreate corre en ese hilo — ver comentario en
 // ivanna_visualizer_jni.cpp).
+//
+// Nota: android_set_thread_priority()/ANDROID_PRIORITY_AUDIO viven en
+// <android/thread_priority.h>, header PRIVADO de AOSP, no expuesto por el
+// NDK público → rompe CMake/ninja en CI ("file not found"). Se usa en su
+// lugar setpriority() de POSIX (sys/resource.h, sí es NDK público) con el
+// valor nice equivalente a ANDROID_PRIORITY_AUDIO (-16).
 inline void enableAudioThreadFastMath() noexcept {
 #if IVANNA_HAS_NEON && defined(__aarch64__)
     uint64_t fpcr;
@@ -37,7 +44,8 @@ inline void enableAudioThreadFastMath() noexcept {
     asm volatile("vmsr fpscr, %0" : : "r"(fpscr));
 #endif
 #if defined(__ANDROID__)
-    android_set_thread_priority(0, ANDROID_PRIORITY_AUDIO);
+    static constexpr int kAndroidPriorityAudio = -16; // equivalente a ANDROID_PRIORITY_AUDIO
+    setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), kAndroidPriorityAudio);
 #endif
 }
 
