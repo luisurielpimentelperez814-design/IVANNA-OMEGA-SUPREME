@@ -39,9 +39,9 @@ static std::atomic<int>   g_engine_fd{-1};
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(
         JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jint fd) {
-    if (g_engine_running.load()) {
+    if (g_engine_running.load(std::memory_order_acquire)) {
         LOGI("nativeStartAsyncEngine: engine ya está corriendo (handle=%lld)",
-             (long long)g_engine_handle.load());
+             (long long)g_engine_handle.load(std::memory_order_relaxed));
         return;
     }
     if (fd < 0) {
@@ -49,9 +49,9 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(
         return;
     }
 
-    g_engine_handle.store(handle);
-    g_engine_fd.store(fd);
-    g_engine_running.store(true);
+    g_engine_handle.store(handle, std::memory_order_relaxed);
+    g_engine_fd.store(fd, std::memory_order_relaxed);
+    g_engine_running.store(true, std::memory_order_release);
 
     // TODO (real, honesto): falta el loop de transferencia isochronous/bulk
     // sobre g_engine_fd (poll() del FD como "slave" del reloj del DAC, según
@@ -64,16 +64,16 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStopAsyncEngine(
         JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
-    if (!g_engine_running.load()) {
+    if (!g_engine_running.load(std::memory_order_acquire)) {
         LOGI("nativeStopAsyncEngine: engine no está corriendo");
         return;
     }
-    if (handle != g_engine_handle.load()) {
+    if (handle != g_engine_handle.load(std::memory_order_relaxed)) {
         LOGE("nativeStopAsyncEngine: handle=%lld no coincide con el activo=%lld",
-             (long long)handle, (long long)g_engine_handle.load());
+             (long long)handle, (long long)g_engine_handle.load(std::memory_order_relaxed));
     }
 
-    g_engine_running.store(false);
-    g_engine_fd.store(-1);
+    g_engine_running.store(false, std::memory_order_release);
+    g_engine_fd.store(-1, std::memory_order_relaxed);
     LOGI("nativeStopAsyncEngine: engine detenido (handle=%lld)", (long long)handle);
 }

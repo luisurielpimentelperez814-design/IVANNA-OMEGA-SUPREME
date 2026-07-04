@@ -32,8 +32,11 @@ add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 # Target: libivanna_omega.so (APK NDK library)
 # ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
-    # JNI bridge
+    # JNI bridge consolidado (libivanna_omega.so único)
     jni/ivanna_omega_jni.cpp
+    jni/ivanna_visualizer_jni.cpp
+    jni/ivanna_npe_jni.cpp
+    jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
 
@@ -95,6 +98,7 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/neuromorphic
     ${CMAKE_SOURCE_DIR}/spatial
+    ${CMAKE_SOURCE_DIR}/visualizer
 )
 
 find_library(log-lib log)
@@ -130,60 +134,3 @@ set_target_properties(omega_effect PROPERTIES
     EXCLUDE_FROM_ALL TRUE
 )
 
-# ────────────────────────────────────────────────────────────────────────────
-# Target: libivanna_jni.so (stub for AudioEngine.kt loadLibrary)
-# ────────────────────────────────────────────────────────────────────────────
-add_library(ivanna_jni SHARED
-    jni/ivanna_jni_stub.cpp
-)
-
-target_compile_options(ivanna_jni PRIVATE ${BASE_FLAGS})
-
-target_include_directories(ivanna_jni PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(ivanna_jni
-    ${log-lib}
-    ${android-lib}
-)
-
-# ────────────────────────────────────────────────────────────────────────────
-# Target: libomega_vibratory.so (real NPE engine for IvannaNpeNative.kt)
-# NHOEngine + LIFNeuronPool<32> + BiquadEnvelopeBank + AutonomousBrain +
-# Synthesizer, ensamblados en jni/ivanna_npe_jni.cpp.
-# ────────────────────────────────────────────────────────────────────────────
-add_library(omega_vibratory SHARED
-    jni/ivanna_npe_jni.cpp
-)
-
-target_compile_options(omega_vibratory PRIVATE ${BASE_FLAGS})
-
-target_include_directories(omega_vibratory PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/neuromorphic
-)
-
-target_link_libraries(omega_vibratory
-    ${log-lib}
-    ${android-lib}
-)
-
-# ────────────────────────────────────────────────────────────────────────────
-# Target: libivanna_visualizer.so (Gammatone13 + GLUniformBridge → shader GL)
-# ────────────────────────────────────────────────────────────────────────────
-add_library(ivanna_visualizer SHARED
-    jni/ivanna_visualizer_jni.cpp
-)
-
-target_compile_options(ivanna_visualizer PRIVATE ${BASE_FLAGS})
-
-target_include_directories(ivanna_visualizer PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/visualizer
-)
-
-target_link_libraries(ivanna_visualizer
-    ${log-lib}
-    ${android-lib}
-)

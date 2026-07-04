@@ -15,7 +15,7 @@ import java.nio.FloatBuffer
  */
 object IvannaNpeNative {
 
-    init { System.loadLibrary("omega_vibratory") }
+    init { System.loadLibrary("ivanna_omega") }
 
     @JvmStatic external fun nativeCreate(sampleRate: Float, maxBlockFrames: Int): Long
     @JvmStatic external fun nativeDestroy(handle: Long)

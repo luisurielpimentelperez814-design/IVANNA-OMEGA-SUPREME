@@ -1,35 +1,53 @@
 # IVANNA OMEGA SUPREME
 
-**Procesador de audio en tiempo real para Android.**
+**Procesador de audio en tiempo real para Android con núcleo nativo consolidado.**
 
-IVANNA transforma el sonido de tu teléfono con un motor DSP profesional escrito en C++ nativo, optimizado para hardware Snapdragon. Mejora la música que reproduces desde cualquier app, sin cables ni hardware adicional.
+IVANNA procesa audio con un pipeline DSP en C++ optimizado para Android, pensado para ejecución en tiempo real y visualización reactiva del contenido capturado.
 
-## Qué hace por tu sonido
+## Arquitectura actual
 
-- **Ecualizador paramétrico** de 8 bandas (graves, medios, agudos, presencia, master) para dar forma tonal precisa.
-- **Compresor** con control de umbral y ratio, para un volumen percibido más consistente y potente.
-- **Excitador armónico** que añade brillo y presencia a las voces e instrumentos.
-- **Ensanchador estéreo (Stereo Widener)** para una imagen sonora más amplia e inmersiva.
-- **Motor espacial NHO** con posicionamiento de ángulo y ancho, para efectos de espacialidad tipo "3D".
-- **Kernel evolutivo**: un motor de optimización que ajusta el sonido en segundo plano buscando el mejor resultado en tiempo real.
-- **Clasificador de audio en vivo**: detecta si estás escuchando voz, música o electrónica y ajusta el preset automáticamente.
+- **Una sola librería nativa de APK:** `libivanna_omega.so`
+- **JNI consolidado:** audio core, visualizer, NPE y stubs históricos viven bajo el mismo binario de app
+- **Árbol C++ deduplicado:** `cpp/dsp/`, `cpp/spatial/` y `cpp/neuromorphic/` quedan como fuente de verdad activa
+- **Visualizer Gammatone13:** ruta escalar estable + ruta NEON para 4 bandas en paralelo bajo ARM NEON
+- **Hardening de audio threads:** FTZ/DAZ + prioridad de audio en los hot paths nativos principales
 
-## Presets de sonido
+## Bloques DSP incluidos
 
-Flat · Warm · Rock 70s · Spatial · Punch — perfiles listos para distintos géneros y gustos, con modo "Auto IA" que los selecciona por ti según lo que estés escuchando.
+- Ecualizador paramétrico
+- Compresor
+- Excitador armónico
+- Stereo widener
+- Gain staging de entrada / salida
+- Motor espacial
+- Motor neuromórfico NPE
+- Visualizador reactivo basado en Gammatone13
 
-## Captura de audio
+## Calidad y validación
 
-IVANNA procesa el audio interno del dispositivo directamente (a través de la función de grabación de pantalla/audio del sistema), no por el micrófono — así el sonido llega limpio, sin ruido ambiente ni eco.
+- `app/src/main/cpp/tests/` incluye una suite GTest host-side
+- Cobertura de estabilidad numérica para Gammatone13
+- Cobertura del pipeline real de `dsp/` con EQ, compresor, excitador, widener y gain stage
+- Corridas host verificadas en modo Release, AddressSanitizer y ThreadSanitizer
+- `tools/benchmark_suite.cpp` entrega mediciones de CPU, latencia, jitter y estimación gruesa de consumo
 
-## Modos de instalación
+## Benchmarks
 
-- **APK independiente** — funciona en cualquier dispositivo Android compatible, sin permisos especiales de sistema.
-- **Módulo Magisk (root)** — para quienes buscan integración a nivel de sistema como efecto de audio global.
+Consulta `BENCHMARKS.md` para:
+
+- salida de referencia host-side del benchmark
+- protocolo recomendado para corrida real sobre Moto G85
+- comparativa contextual contra referencias públicas de Dolby Atmos, DTS:X e iZotope Neutron
 
 ## Requisitos
 
-Android con arquitectura arm64-v8a. Probado y optimizado sobre hardware Snapdragon (Moto G85).
+- Android arm64-v8a
+- Cadena NDK/Gradle del proyecto para build de APK
+- CMake + compilador C++17 para la suite host-side de `cpp/tests`
+
+## Nota sobre build
+
+En este pase se verificó la parte nativa con compilación host-side y tests automatizados. El build Android completo sigue requiriendo un SDK Android configurado en `local.properties` o `ANDROID_HOME`.
 
 ---
 
