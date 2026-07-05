@@ -264,3 +264,33 @@ Después de integrar audio:
 2. **Calibrar parámetros** → Ajustar thresholds (60% voz, 40% bajos)
 3. **Optimizar latencia** → Reducir buffer si es necesario
 4. **Pulir Dolby detection** → `AntiDolbyPreset.isDolbyPresent()` debería activar curva EQ inversa
+
+---
+
+## Compensación por ruta de salida (Bluetooth/AUX/USB)
+
+Ver `AudioRouteManager.kt` + `audio_control_plane.hpp::control_set_route_profile()`.
+
+**Mecanismo:** SBC/AAC recodifican con pérdida en la banda 2-4kHz (inteligibilidad
+de diálogo) y colapsan parcialmente la imagen estéreo. `AudioRouteManager`
+detecta la ruta activa vía `AudioDeviceCallback` y aplica tres parámetros al
+pipeline (`route_bass_boost_db`, `route_dialog_boost_db`, `route_widener_mult`)
+que se funden en `f.low`, `f.mid` y el ancho estéreo combinado respectivamente.
+
+**Fallback por bitrate bajo:** cuando `AudioManager.getParameters("bt_codec_bitrate")`
+reporta menos de 200kbps (API no pública/vendor-specific, sin garantía en todos
+los OEM — se degrada a `null` sin romper nada si falla), se usa un perfil más
+agresivo: `widenerMult=0.5`, `dialogBoostDb=4.5` en vez de `0.65`/`3.5`.
+
+**Los valores de boost (3.5dB, 4.5dB, etc.) son heurísticas de partida, no
+mediciones verificadas contra hardware real.** Antes de publicar cualquier
+comparación cuantitativa contra otro sistema (Dolby u otro), se requiere:
+1. Medición de latencia roundtrip real por ruta (herramienta tipo Oboe
+   `LatencyTuner` con loopback físico, no simulado).
+2. Medición de nivel de diálogo real (RMS banda 1-4kHz) en material de
+   referencia, en ambos sistemas, con la misma fuente y mismo hardware de
+   salida.
+3. Ninguna de las dos mediciones anteriores se ha ejecutado todavía en este
+   repositorio — no hay hardware de prueba ni cámara de alta velocidad
+   disponibles en este entorno de desarrollo. Cualquier tabla de "ms" o "dB"
+   publicada sin esa medición sería una afirmación falsa.

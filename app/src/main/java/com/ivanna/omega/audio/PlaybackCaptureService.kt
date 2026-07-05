@@ -52,6 +52,7 @@ class PlaybackCaptureService : Service() {
         super.onCreate()
         createNotificationChannel()
         DSPBridge.init(48000)
+        AudioRouteManager.start(this)
         IvannaNpeEngine.init(48000, INPUT_SAMPLES / 2)
         IvannaVisualizerBridge.init(48000, INPUT_SAMPLES / 2)
         IvannaVisualizerBridgeV2.init(48000, INPUT_SAMPLES / 2)
@@ -222,6 +223,7 @@ class PlaybackCaptureService : Service() {
     private fun stopCapture() {
         isRunning = false
         scope.cancel()
+        AudioRouteManager.stop()
         IvannaVisualizerBridge.release()
         IvannaVisualizerBridgeV2.release()
         audioRecord?.stop()
