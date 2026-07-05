@@ -24,6 +24,7 @@
 #include "include/audio_thread_priority.h"
 #include "include/HarmonicExciter.h"
 #include "include/StereoWidener.h"
+#include "audio_control_plane.hpp"
 
 #define LOG_TAG "IVANNA-Audio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -462,6 +463,23 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresStatic(
         std::clamp(bass, 0.0f, 1.0f)
     );
     LOGI("Anti-Dolby: speech=%.2f music=%.2f bass=%.2f silence=%.2f", speech, music, bass, silence);
+}
+
+// ── JNI: perfil de compensación por ruta de salida (BT/AUX/USB) ────────────
+// Llamado desde AudioRouteManager.kt cuando cambia la ruta de audio activa
+// (AudioDeviceCallback / al iniciar captura). Ver control_set_route_profile().
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
+    JNIEnv* /*env*/, jclass /*clazz*/,
+    jfloat bassBoostDb, jfloat dialogBoostDb, jfloat widenerMult
+) {
+    if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) {
+        LOGE("nativeSetRouteProfile: valores NaN/Inf recibidos");
+        return;
+    }
+    control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+    LOGI("RouteProfile: bassBoost=%.1fdB dialogBoost=%.1fdB widenerMult=%.2f",
+         bassBoostDb, dialogBoostDb, widenerMult);
 }
 
 // ── JNI: getters de parametros de AudioEngine (para fusion en PDEngine) ─────

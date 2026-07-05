@@ -323,7 +323,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmo
     g_staging_frame.nho_harmonic_gain = v; g_control_bus.publish(g_staging_frame);
 }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*,jobject,jboolean en) {
-    g_staging_frame.mode = en ? 2 : 0; g_control_bus.publish(g_staging_frame);
+    g_staging_frame.mode = en ? 3 : 0; g_control_bus.publish(g_staging_frame);
 }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*,jobject,jboolean) {}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax(JNIEnv*,jobject,jfloat) {}
@@ -337,7 +337,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILS
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_OmegaEngine_nativeSetMode(JNIEnv*, jobject, jint mode) {
-    g_staging_frame.mode = std::clamp((int)mode, 0, 2);
+    g_staging_frame.mode = std::clamp((int)mode, 0, 3);
     g_control_bus.publish(g_staging_frame);
 }
 

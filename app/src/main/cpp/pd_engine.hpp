@@ -239,8 +239,8 @@ public:
         // Modo 3 (HRTF binaural real): reutiliza los MISMOS 2 controles
         // espaciales que ya existían para CueBasedSpatial — cumple la
         // regla de los 13 controles, ningún control nuevo en la UI.
-        // spatial_width [0,2] -> "agresividad HRTF" [0,1].
-        const float aggressiveness = std::clamp(f.spatial_width * 0.5f, 0.f, 1.f);
+        // spatial_width [0,1.5] -> "agresividad HRTF" [0,1].
+        const float aggressiveness = std::clamp(f.spatial_width * (1.f / 1.5f), 0.f, 1.f);
         hrtf_conv.set_position(f.spatial_angle_deg, aggressiveness);
     }
 
