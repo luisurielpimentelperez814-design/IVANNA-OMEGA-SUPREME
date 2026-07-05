@@ -43,13 +43,21 @@ class PlaybackCaptureService : Service() {
         // [FIX-FREEZE] tope de errores consecutivos de AudioRecord.read() antes
         // de abandonar el spin y reconstruir la sesión de captura.
         private const val MAX_CONSECUTIVE_ERRORS = 25
+        // [FIX-FREEZE-2] tope de reintentos de reconstrucción de sesión antes
+        // de rendirse (evita loop infinito si la ruta de audio está realmente muerta).
+        private const val MAX_SESSION_RESTARTS = 3
+        private const val SESSION_RESTART_BACKOFF_MS = 500L
     }
 
+    // scope de vida larga (todo el Service); NO se cancela en cada reinicio de
+    // sesión, solo en onDestroy. captureJob es el que se cancela/relanza.
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var captureJob: Job? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var isRunning = false
     private var savedMusicVolume: Int? = null
+    private var sessionRestarts = 0
 
     // [HI-RES][AVISO HONESTO] DSPBridge/IvannaNpeEngine/Visualizer se inicializan
     // aquí, ANTES de que startCapture() negocie el sample rate real (candidateRates
@@ -125,6 +133,7 @@ class PlaybackCaptureService : Service() {
 
     override fun onDestroy() {
         stopCapture()
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -255,7 +264,7 @@ class PlaybackCaptureService : Service() {
         audioTrack?.play()
         isRunning = true
 
-        scope.launch {
+        captureJob = scope.launch {
             val buffer = FloatArray(INPUT_SAMPLES)
             val mono = FloatArray(INPUT_SAMPLES / 2)
 
@@ -285,6 +294,7 @@ class PlaybackCaptureService : Service() {
 
                 if (read > 0) {
                     consecutiveErrors = 0
+                    sessionRestarts = 0
                     lastGoodBlockNanos = System.nanoTime()
                     watchdogReset = false
 
@@ -319,9 +329,27 @@ class PlaybackCaptureService : Service() {
             }
 
             if (isActive && consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                // Reinicio limpio de la sesión de captura tras fallo real de hardware/ruta.
+                // [FIX-FREEZE-2] Antes esto solo llamaba stopCapture() y ahí
+                // moría la sesión para siempre (visualizer/audio quedaban
+                // "trabados" sin nadie relanzando nada). Ahora reconstruimos
+                // de verdad con el mismo MediaProjection (sigue vivo mientras
+                // no se llame mediaProjection.stop(), que no ocurre en
+                // stopCapture()), con backoff y tope de reintentos para no
+                // spinnear si la ruta de audio está realmente muerta.
                 withContext(Dispatchers.Main) {
                     stopCapture()
+                    if (sessionRestarts < MAX_SESSION_RESTARTS) {
+                        sessionRestarts++
+                        delay(SESSION_RESTART_BACKOFF_MS)
+                        try {
+                            startCapture(mediaProjection)
+                        } catch (e: Exception) {
+                            stopCapture()
+                            stopSelf()
+                        }
+                    } else {
+                        stopSelf()
+                    }
                 }
             }
         }
@@ -329,7 +357,13 @@ class PlaybackCaptureService : Service() {
 
     private fun stopCapture() {
         isRunning = false
-        scope.cancel()
+        // [FIX-FREEZE-2] antes cancelaba `scope` completo -> tras el primer
+        // error, ningún scope.launch futuro volvía a ejecutarse (Job
+        // cancelado no acepta más corrutinas) y la sesión quedaba muerta
+        // para siempre. Ahora solo se cancela el job de esta sesión de
+        // captura; `scope` vive hasta onDestroy().
+        captureJob?.cancel()
+        captureJob = null
         AudioRouteManager.stop()
         IvannaVisualizerBridge.release()
         IvannaVisualizerBridgeV2.release()

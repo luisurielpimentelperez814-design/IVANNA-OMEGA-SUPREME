@@ -120,6 +120,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // [FIX-AURORA-BG] un GLSurfaceView sin zOrderOnTop se compone DETRÁS
+        // de toda la ventana — invisible si el fondo de la ventana (o de la
+        // raíz Compose) es opaco. Sin esto, el wallpaper aurora queda oculto
+        // aunque el layering de Compose ya esté bien resuelto.
+        window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
 
@@ -141,165 +148,180 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    // [FIX-AURORA-BG] antes opaco (colorScheme.background) — pintaba
+                    // encima del GLSurfaceView del wallpaper en cada frame. Los
+                    // componentes propios de IvannaControlPanel (cards, sliders)
+                    // mantienen su propio fondo opaco; solo el "vacío" alrededor
+                    // debe dejar ver la aurora detrás.
+                    color = androidx.compose.ui.graphics.Color.Transparent
                 ) {
-                    if (showVisualizer) {
-                        BackHandler(enabled = true) { showVisualizer = false }
+                    // [FIX-AURORA-BG] antes VisualizerSurface e IvannaControlPanel
+                    // eran mutuamente excluyentes (if/return@Surface): el wallpaper
+                    // aurora solo se veía en pantalla completa, nunca como fondo real
+                    // de la interfaz. Ahora VisualizerSurface vive siempre como capa
+                    // de fondo (z-index 0) y el panel de control se dibuja encima
+                    // (z-index 1); showVisualizer solo decide si el panel se oculta
+                    // para ver el wallpaper a pantalla completa.
+                    Box(modifier = Modifier.fillMaxSize()) {
                         VisualizerSurface(modifier = Modifier.fillMaxSize())
-                        return@Surface
+
+                        if (showVisualizer) {
+                            BackHandler(enabled = true) { showVisualizer = false }
+                        } else {
+                            IvannaControlPanel(
+                                initialExciter = parameterStore.getExciter(),
+                                initialEq = parameterStore.getEqGain(),
+                                initialWidth = parameterStore.getWidth(),
+                                initialAntiDolby = parameterStore.isAntiDolbyEnabled(),
+                                initialPreset = parameterStore.getCurrentPreset(),
+                                initialAutoMode = parameterStore.isAutoModeEnabled(),
+                                initialOmegaMode = parameterStore.getOmegaMode(),
+                                initialCompThreshold = parameterStore.getCompThreshold(),
+                                initialCompRatio = parameterStore.getCompRatio(),
+                                initialNhoHarmonic = parameterStore.getNhoHarmonic(),
+                                initialSpatialAngle = parameterStore.getSpatialAngle(),
+                                initialSpatialWidth = parameterStore.getSpatialWidth(),
+                                initialEvoEnabled = parameterStore.isEvoEnabled(),
+                                initialNpeBypass = parameterStore.isNpeBypass(),
+                                initialNpeHarmonic = parameterStore.getNpeHarmonicGain(),
+                                initialNpeLateralInhib = parameterStore.getNpeLateralInhib(),
+                                initialNpeOhcCompression = parameterStore.getNpeOhcCompression(),
+                                initialNpeMasterGain = parameterStore.getNpeMasterGainDb(),
+                                initialNpeAgcTarget = parameterStore.getNpeAgcTargetDb(),
+                                initialNpeAgcRate = parameterStore.getNpeAgcRate(),
+                                initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
+                                initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
+                                initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
+                                onExciterChange = { value ->
+                                    parameterStore.setExciter(value)
+                                    audioEngine.setExciter(value)
+                                },
+                                onEqChange = { value ->
+                                    parameterStore.setEqGain(value)
+                                    audioEngine.setEqGain(value)
+                                },
+                                onWidthChange = { value ->
+                                    parameterStore.setWidth(value)
+                                    audioEngine.setWidth(value)
+                                },
+                                onAntiDolbyChange = { enabled ->
+                                    parameterStore.setAntiDolbyEnabled(enabled)
+                                    val app = application as? IVANNAApplication
+                                    if (enabled) {
+                                        app?.globalEffectManager?.applyProfile(IvannaEffectProfile.SPATIAL)
+                                    } else {
+                                        app?.globalEffectManager?.applyProfile(IvannaEffectProfile.FLAT)
+                                    }
+                                    Log.i(TAG, "Anti-Dolby: ${if (enabled) "ON" else "OFF"}")
+                                },
+                                // CABLEADO: selección manual de preset → efecto global real
+                                onPresetSelected = { name ->
+                                    parameterStore.setCurrentPreset(name)
+                                    val profile = IvannaEffectProfile.byName[name]
+                                    if (profile != null) {
+                                        val app = application as? IVANNAApplication
+                                        app?.globalEffectManager?.applyProfile(profile)
+                                        Log.i(TAG, "Preset aplicado: $name")
+                                    }
+                                },
+                                // CABLEADO: modo automático guiado por el clasificador FFT
+                                onAutoModeChange = { enabled ->
+                                    parameterStore.setAutoModeEnabled(enabled)
+                                    Log.i(TAG, "Auto IA: ${if (enabled) "ON" else "OFF"}")
+                                },
+                                // CABLEADO v1.7: selector de motor PDEngine (NHO / Spatial).
+                                // Antes el modo se seteaba en g_pd pero nativeProcess() nunca
+                                // llamaba a process_block(), así que no tenía ningún efecto
+                                // audible sin importar qué modo estuviera activo.
+                                onOmegaModeChange = { mode ->
+                                    parameterStore.setOmegaMode(mode)
+                                    OmegaEngine.setMode(mode)
+                                    Log.i(TAG, "PDEngine mode: $mode")
+                                },
+                                // CABLEADO: Compresor real (g_comp) — vive en el mismo motor
+                                // nativo (DSPBridge) que ya procesa audio vía AudioForegroundService.
+                                // alpha→threshold(-24..0dB), beta→ratio(1:1..20:1).
+                                onCompThresholdChange = { value ->
+                                    parameterStore.setCompThreshold(value)
+                                    liveDspState = liveDspState.copy(alpha = value)
+                                    liveDspState.pushToNative()
+                                },
+                                onCompRatioChange = { value ->
+                                    parameterStore.setCompRatio(value)
+                                    liveDspState = liveDspState.copy(beta = value)
+                                    liveDspState.pushToNative()
+                                },
+                                // CABLEADO: NHO harmonic gain y parámetros espaciales del PDEngine
+                                // (g_pd), activo solo cuando Motor OPE está en +NHO / +NHO+Spatial.
+                                onNhoHarmonicChange = { value ->
+                                    parameterStore.setNhoHarmonic(value)
+                                    IvannaNativeLib.nativeSetHarmonicGain(value)
+                                },
+                                onSpatialAngleChange = { value ->
+                                    parameterStore.setSpatialAngle(value)
+                                    IvannaNativeLib.nativeSetGamma(value)
+                                },
+                                onSpatialWidthChange = { value ->
+                                    parameterStore.setSpatialWidth(value)
+                                    IvannaNativeLib.nativeSetDelta(value)
+                                },
+                                // CABLEADO: kernel evolutivo (evo_thread_ dentro de g_pd) — ya
+                                // arranca solo en DSPBridge.nativeInit; este switch permite pararlo.
+                                onEvoEnabledChange = { enabled ->
+                                    parameterStore.setEvoEnabled(enabled)
+                                    if (enabled) IvannaNativeLib.nativeStartEvoThread()
+                                    else IvannaNativeLib.nativeStopEvoThread()
+                                },
+                                // CABLEADO: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain)
+                                // — llama directo a IvannaNpeEngine, que corre en el mismo hilo
+                                // de audio real de PlaybackCaptureService (impacto audible directo).
+                                onNpeBypassChange = { enabled ->
+                                    parameterStore.setNpeBypass(enabled)
+                                    IvannaNpeEngine.setBypass(enabled)
+                                },
+                                onNpeHarmonicChange = { value ->
+                                    parameterStore.setNpeHarmonicGain(value)
+                                    IvannaNpeEngine.setNeuroParams(
+                                        value, parameterStore.getNpeLateralInhib(),
+                                        parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
+                                    )
+                                },
+                                onNpeLateralInhibChange = { value ->
+                                    parameterStore.setNpeLateralInhib(value)
+                                    IvannaNpeEngine.setNeuroParams(
+                                        parameterStore.getNpeHarmonicGain(), value,
+                                        parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
+                                    )
+                                },
+                                onNpeOhcCompressionChange = { value ->
+                                    parameterStore.setNpeOhcCompression(value)
+                                    IvannaNpeEngine.setNeuroParams(
+                                        parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
+                                        value, parameterStore.getNpeMasterGainDb()
+                                    )
+                                },
+                                onNpeMasterGainChange = { value ->
+                                    parameterStore.setNpeMasterGainDb(value)
+                                    IvannaNpeEngine.setNeuroParams(
+                                        parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
+                                        parameterStore.getNpeOhcCompression(), value
+                                    )
+                                },
+                                onNpeAgcChange = { target, rate ->
+                                    parameterStore.setNpeAgcTargetDb(target)
+                                    parameterStore.setNpeAgcRate(rate)
+                                    IvannaNpeEngine.setAGC(target, rate)
+                                },
+                                onNpeFlagsChange = { hrtf, cochlear, adapt ->
+                                    parameterStore.setNpeHrtfEnabled(hrtf)
+                                    parameterStore.setNpeCochlearEnabled(cochlear)
+                                    parameterStore.setNpeAdaptEnabled(adapt)
+                                    IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
+                                },
+                                onOpenVisualizer = { showVisualizer = true }
+                            )
+                        }
                     }
-                    IvannaControlPanel(
-                        initialExciter = parameterStore.getExciter(),
-                        initialEq = parameterStore.getEqGain(),
-                        initialWidth = parameterStore.getWidth(),
-                        initialAntiDolby = parameterStore.isAntiDolbyEnabled(),
-                        initialPreset = parameterStore.getCurrentPreset(),
-                        initialAutoMode = parameterStore.isAutoModeEnabled(),
-                        initialOmegaMode = parameterStore.getOmegaMode(),
-                        initialCompThreshold = parameterStore.getCompThreshold(),
-                        initialCompRatio = parameterStore.getCompRatio(),
-                        initialNhoHarmonic = parameterStore.getNhoHarmonic(),
-                        initialSpatialAngle = parameterStore.getSpatialAngle(),
-                        initialSpatialWidth = parameterStore.getSpatialWidth(),
-                        initialEvoEnabled = parameterStore.isEvoEnabled(),
-                        initialNpeBypass = parameterStore.isNpeBypass(),
-                        initialNpeHarmonic = parameterStore.getNpeHarmonicGain(),
-                        initialNpeLateralInhib = parameterStore.getNpeLateralInhib(),
-                        initialNpeOhcCompression = parameterStore.getNpeOhcCompression(),
-                        initialNpeMasterGain = parameterStore.getNpeMasterGainDb(),
-                        initialNpeAgcTarget = parameterStore.getNpeAgcTargetDb(),
-                        initialNpeAgcRate = parameterStore.getNpeAgcRate(),
-                        initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
-                        initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
-                        initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
-                        onExciterChange = { value ->
-                            parameterStore.setExciter(value)
-                            audioEngine.setExciter(value)
-                        },
-                        onEqChange = { value ->
-                            parameterStore.setEqGain(value)
-                            audioEngine.setEqGain(value)
-                        },
-                        onWidthChange = { value ->
-                            parameterStore.setWidth(value)
-                            audioEngine.setWidth(value)
-                        },
-                        onAntiDolbyChange = { enabled ->
-                            parameterStore.setAntiDolbyEnabled(enabled)
-                            val app = application as? IVANNAApplication
-                            if (enabled) {
-                                app?.globalEffectManager?.applyProfile(IvannaEffectProfile.SPATIAL)
-                            } else {
-                                app?.globalEffectManager?.applyProfile(IvannaEffectProfile.FLAT)
-                            }
-                            Log.i(TAG, "Anti-Dolby: ${if (enabled) "ON" else "OFF"}")
-                        },
-                        // CABLEADO: selección manual de preset → efecto global real
-                        onPresetSelected = { name ->
-                            parameterStore.setCurrentPreset(name)
-                            val profile = IvannaEffectProfile.byName[name]
-                            if (profile != null) {
-                                val app = application as? IVANNAApplication
-                                app?.globalEffectManager?.applyProfile(profile)
-                                Log.i(TAG, "Preset aplicado: $name")
-                            }
-                        },
-                        // CABLEADO: modo automático guiado por el clasificador FFT
-                        onAutoModeChange = { enabled ->
-                            parameterStore.setAutoModeEnabled(enabled)
-                            Log.i(TAG, "Auto IA: ${if (enabled) "ON" else "OFF"}")
-                        },
-                        // CABLEADO v1.7: selector de motor PDEngine (NHO / Spatial).
-                        // Antes el modo se seteaba en g_pd pero nativeProcess() nunca
-                        // llamaba a process_block(), así que no tenía ningún efecto
-                        // audible sin importar qué modo estuviera activo.
-                        onOmegaModeChange = { mode ->
-                            parameterStore.setOmegaMode(mode)
-                            OmegaEngine.setMode(mode)
-                            Log.i(TAG, "PDEngine mode: $mode")
-                        },
-                        // CABLEADO: Compresor real (g_comp) — vive en el mismo motor
-                        // nativo (DSPBridge) que ya procesa audio vía AudioForegroundService.
-                        // alpha→threshold(-24..0dB), beta→ratio(1:1..20:1).
-                        onCompThresholdChange = { value ->
-                            parameterStore.setCompThreshold(value)
-                            liveDspState = liveDspState.copy(alpha = value)
-                            liveDspState.pushToNative()
-                        },
-                        onCompRatioChange = { value ->
-                            parameterStore.setCompRatio(value)
-                            liveDspState = liveDspState.copy(beta = value)
-                            liveDspState.pushToNative()
-                        },
-                        // CABLEADO: NHO harmonic gain y parámetros espaciales del PDEngine
-                        // (g_pd), activo solo cuando Motor OPE está en +NHO / +NHO+Spatial.
-                        onNhoHarmonicChange = { value ->
-                            parameterStore.setNhoHarmonic(value)
-                            IvannaNativeLib.nativeSetHarmonicGain(value)
-                        },
-                        onSpatialAngleChange = { value ->
-                            parameterStore.setSpatialAngle(value)
-                            IvannaNativeLib.nativeSetGamma(value)
-                        },
-                        onSpatialWidthChange = { value ->
-                            parameterStore.setSpatialWidth(value)
-                            IvannaNativeLib.nativeSetDelta(value)
-                        },
-                        // CABLEADO: kernel evolutivo (evo_thread_ dentro de g_pd) — ya
-                        // arranca solo en DSPBridge.nativeInit; este switch permite pararlo.
-                        onEvoEnabledChange = { enabled ->
-                            parameterStore.setEvoEnabled(enabled)
-                            if (enabled) IvannaNativeLib.nativeStartEvoThread()
-                            else IvannaNativeLib.nativeStopEvoThread()
-                        },
-                        // CABLEADO: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain)
-                        // — llama directo a IvannaNpeEngine, que corre en el mismo hilo
-                        // de audio real de PlaybackCaptureService (impacto audible directo).
-                        onNpeBypassChange = { enabled ->
-                            parameterStore.setNpeBypass(enabled)
-                            IvannaNpeEngine.setBypass(enabled)
-                        },
-                        onNpeHarmonicChange = { value ->
-                            parameterStore.setNpeHarmonicGain(value)
-                            IvannaNpeEngine.setNeuroParams(
-                                value, parameterStore.getNpeLateralInhib(),
-                                parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
-                            )
-                        },
-                        onNpeLateralInhibChange = { value ->
-                            parameterStore.setNpeLateralInhib(value)
-                            IvannaNpeEngine.setNeuroParams(
-                                parameterStore.getNpeHarmonicGain(), value,
-                                parameterStore.getNpeOhcCompression(), parameterStore.getNpeMasterGainDb()
-                            )
-                        },
-                        onNpeOhcCompressionChange = { value ->
-                            parameterStore.setNpeOhcCompression(value)
-                            IvannaNpeEngine.setNeuroParams(
-                                parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
-                                value, parameterStore.getNpeMasterGainDb()
-                            )
-                        },
-                        onNpeMasterGainChange = { value ->
-                            parameterStore.setNpeMasterGainDb(value)
-                            IvannaNpeEngine.setNeuroParams(
-                                parameterStore.getNpeHarmonicGain(), parameterStore.getNpeLateralInhib(),
-                                parameterStore.getNpeOhcCompression(), value
-                            )
-                        },
-                        onNpeAgcChange = { target, rate ->
-                            parameterStore.setNpeAgcTargetDb(target)
-                            parameterStore.setNpeAgcRate(rate)
-                            IvannaNpeEngine.setAGC(target, rate)
-                        },
-                        onNpeFlagsChange = { hrtf, cochlear, adapt ->
-                            parameterStore.setNpeHrtfEnabled(hrtf)
-                            parameterStore.setNpeCochlearEnabled(cochlear)
-                            parameterStore.setNpeAdaptEnabled(adapt)
-                            IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
-                        },
-                        onOpenVisualizer = { showVisualizer = true }
-                    )
                 }
             }
         }
