@@ -31,7 +31,7 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
-    private var nativeHandle: Long = 0
+    internal var nativeHandle: Long = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isRunning = false
 
