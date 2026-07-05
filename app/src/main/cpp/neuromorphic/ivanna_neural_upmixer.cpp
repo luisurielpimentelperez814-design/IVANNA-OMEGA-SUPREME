@@ -1,63 +1,40 @@
 // ivanna_neural_upmixer.cpp
 // ============================================================================
-// IVANNA — AI Neural Upmixer Implementation
+// IVANNA — AI Neural Upmixer Implementation (Heurístico SIMD)
 // ============================================================================
 
 #include "ivanna_neural_upmixer.hpp"
 #include "../include/audio_thread_priority.h"
 #include <cmath>
 
-// TFLite includes (asumiendo que ya están en el build)
-#include "tensorflow/lite/interpreter.h"
-#include "tensorflow/lite/kernels/register.h"
-#include "tensorflow/lite/model.h"
-
 namespace ivanna::ai {
 
-bool NeuralUpmixer::init(const char* modelPath, float sampleRate, int blockSize) {
+bool NeuralUpmixer::init(float sampleRate, int blockSize) {
     sampleRate_ = sampleRate;
     blockSize_ = blockSize;
 
-    // Cargar modelo TFLite desde archivo
-    model_.reset(tflite::FlatBufferModel::BuildFromFile(modelPath));
-    if (!model_) return false;
-
-    tflite::ops::builtin::BuiltinOpResolver resolver;
-    tflite::InterpreterBuilder builder(*model_, resolver);
-    builder(&interpreter_);
-    if (!interpreter_) return false;
-
-    // Configurar tensores: entrada [1, kWindowSize, 2] (mono L/R como canales)
-    // salida [1, kWindowSize, 4, 2] (4 stems, L/R)
-    interpreter_->AllocateTensors();
-
-    // Inicializar buffers de overlap-add
-    for (int i = 0; i < static_cast<int>(StemType::kNumStems); ++i) {
-        overlapBuffer_[i].resize(kWindowSize, 0.f);
-    }
+    bassStateL_ = bassStateR_ = 0.f;
+    vocalStateL_ = vocalStateR_ = 0.f;
 
     ivanna::audio::enableAudioThreadFastMathOnce();
     return true;
 }
 
 void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept {
-    if (!enabled_ || !interpreter_) {
-        // Passthrough: copiar entrada a "Other" stem, resto silencio
+    if (!enabled_) {
+        // Passthrough: todo a "Other" stem
         for (int n = 0; n < numFrames; ++n) {
             out[n*8 + 0] = 0.f; out[n*8 + 1] = 0.f;   // Vocals
             out[n*8 + 2] = 0.f; out[n*8 + 3] = 0.f;   // Drums
             out[n*8 + 4] = 0.f; out[n*8 + 5] = 0.f;   // Bass
-            out[n*8 + 6] = in[n*2]; out[n*8 + 7] = in[n*2 + 1];  // Other = passthrough
+            out[n*8 + 6] = in[n*2]; out[n*8 + 7] = in[n*2 + 1];  // Other
         }
         return;
     }
 
-    // Procesamiento por ventanas con overlap-add
-    // Simplificación: para bloques pequeños, usar STFT + máscara espectral
-    // (el modelo TFLite real haría esto internamente)
-
-    // Implementación fallback: separación espectral simple basada en frecuencia
-    // (placeholder hasta que el modelo TFLite esté entrenado)
+    // Coeficientes de filtro adaptados a sampleRate
+    float bassCoeff = 200.f / (sampleRate_ + 200.f);      // ~200Hz cutoff
+    float vocalCoeff = 2000.f / (sampleRate_ + 2000.f);   // ~2kHz cutoff
 
     for (int n = 0; n < numFrames; ++n) {
         float L = in[n*2];
@@ -65,32 +42,45 @@ void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept
         float mono = (L + R) * 0.5f;
         float side = (L - R) * 0.5f;
 
-        // Separación heurística (mejorada por el modelo neural real):
-        // - Vocals: centro (mono), frecuencias medias
-        // - Drums: transientes, todo el espectro
-        // - Bass: frecuencias bajas
-        // - Other: side, frecuencias altas
+        // Filtro paso-bajo para bass (integrador leaky)
+        bassStateL_ += bassCoeff * (L - bassStateL_);
+        bassStateR_ += bassCoeff * (R - bassStateR_);
+        float bassL = bassStateL_;
+        float bassR = bassStateR_;
 
-        float vocal = mono * 0.7f;
-        float drum = std::abs(mono) * 0.3f;  // Aproximación de envolvente
-        float bass = mono * 0.3f;  // Placeholder para filtro paso-bajo
-        float other = side * 0.8f + mono * 0.1f;
+        // Filtro paso-bajo para vocals (integrador leaky más rápido)
+        vocalStateL_ += vocalCoeff * (L - vocalStateL_);
+        vocalStateR_ += vocalCoeff * (R - vocalStateR_);
+        float vocalL = vocalStateL_ - bassStateL_;  // Restar bass
+        float vocalR = vocalStateR_ - bassStateR_;
 
-        out[n*8 + 0] = vocal; out[n*8 + 1] = vocal;   // Vocals (mono)
-        out[n*8 + 2] = drum;  out[n*8 + 3] = drum;    // Drums (mono)
-        out[n*8 + 4] = bass;  out[n*8 + 5] = bass;    // Bass (mono)
-        out[n*8 + 6] = other; out[n*8 + 7] = other;   // Other
+        // Drums = transitorios (diferencia de señal)
+        static float prevMono = 0.f;
+        float drum = std::abs(mono - prevMono) * 2.f;
+        prevMono = mono;
+        float drumL = drum;
+        float drumR = drum;
+
+        // Other = todo lo demás (side + residuo)
+        float otherL = L - vocalL - bassL;
+        float otherR = R - vocalR - bassR;
+
+        // Normalizar y escribir
+        out[n*8 + 0] = vocalL; out[n*8 + 1] = vocalR;
+        out[n*8 + 2] = drumL;  out[n*8 + 3] = drumR;
+        out[n*8 + 4] = bassL;  out[n*8 + 5] = bassR;
+        out[n*8 + 6] = otherL; out[n*8 + 7] = otherR;
     }
 }
 
 void NeuralUpmixer::stemsToObjects(const float* stems, int numFrames,
                                    std::vector<spatial::AudioObject>& objects) noexcept {
     objects.clear();
-    objects.reserve(static_cast<int>(StemType::kNumStems));
+    objects.reserve(4);
 
     const auto& positions = useCustomPositions_ ? customPositions_ : kStemPositions;
 
-    for (int i = 0; i < static_cast<int>(StemType::kNumStems); ++i) {
+    for (int i = 0; i < 4; ++i) {
         spatial::AudioObject obj;
         obj.id = i;
         obj.x = positions[i].x;
@@ -113,25 +103,12 @@ void NeuralUpmixer::setStemPosition(StemType stem, float x, float y, float z, fl
 }
 
 void NeuralUpmixer::reset() noexcept {
-    for (int i = 0; i < 4; ++i) {
-        std::fill(overlapBuffer_[i].begin(), overlapBuffer_[i].end(), 0.f);
-    }
-    if (interpreter_) {
-        interpreter_->ResetVariableTensors();
-    }
+    bassStateL_ = bassStateR_ = 0.f;
+    vocalStateL_ = vocalStateR_ = 0.f;
 }
 
 void NeuralUpmixer::release() noexcept {
-    interpreter_.reset();
-    model_.reset();
-}
-
-void NeuralUpmixer::applyWindow(float* data, int size) noexcept {
-    // Hann window
-    for (int i = 0; i < size; ++i) {
-        float w = 0.5f * (1.f - std::cos(2.f * 3.14159265f * i / (size - 1)));
-        data[i] *= w;
-    }
+    // Nada que liberar sin TFLite
 }
 
 } // namespace ivanna::ai
