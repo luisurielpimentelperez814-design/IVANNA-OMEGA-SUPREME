@@ -45,10 +45,14 @@ add_library(ivanna_omega SHARED
     # Spatial engine (MAJESTY-6DoF)
     spatial/ivanna_head_tracker.cpp
     spatial/ivanna_object_renderer.cpp
+    spatial/room_model.cpp
     spatial/spatial_engine.cpp
 
     # Neural Upmixer (MAJESTY-AI)
     neuromorphic/ivanna_neural_upmixer.cpp
+    neuromorphic/ivanna_npe_engine.cpp
+    neuromorphic/neuro_cochlear_manifold.cpp
+    neuromorphic/volterra_h2_symmetric.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
@@ -56,6 +60,9 @@ add_library(ivanna_omega SHARED
     dsp/HarmonicExciter.cpp
     dsp/StereoWidener.cpp
     dsp/GainStage.cpp
+
+    # Hexagon DSP (Qualcomm offload)
+    hexagon/ivanna_dsp_impl.cpp
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp

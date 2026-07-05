@@ -23,7 +23,7 @@
 #include <atomic>
 #include <cmath>
 
-#include "../neuromorphic/pi_lstm_milenio.hpp"
+#include "neuromorphic/pi_lstm_milenio.hpp"
 
 #define LOG_TAG "IVANNA-JNI-PILSTM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
