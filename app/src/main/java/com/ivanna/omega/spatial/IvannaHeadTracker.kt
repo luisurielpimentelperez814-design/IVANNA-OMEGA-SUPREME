@@ -83,7 +83,16 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
         val x = event.values[0]
         val y = event.values[1]
         val z = event.values[2]
-        val w = event.values[3]
+        // [FIX-CRASH] TYPE_ROTATION_VECTOR puede reportar solo 3 elementos
+        // (sin el componente escalar) en algunos HALs/dispositivos —
+        // Motorola incluido. Leer values[3] directo revienta con
+        // ArrayIndexOutOfBoundsException en cuanto llega el primer evento,
+        // justo al encender el head tracker. Si falta, se deriva w.
+        val w = if (event.values.size > 3) event.values[3]
+                else {
+                    val sq = 1f - (x * x + y * y + z * z)
+                    if (sq > 0f) kotlin.math.sqrt(sq) else 0f
+                }
         val timestampMs = event.timestamp / 1_000_000f  // ns → ms
 
         IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs)
