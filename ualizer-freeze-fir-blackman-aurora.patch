@@ -1,0 +1,455 @@
+[33mcommit 61acd869b59f9e9df7d6c31682395f3758d87110[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: luisurielpimentelperez814 <luisurielpimentelperez814@gmail.com>
+Date:   Sat Jul 4 22:29:21 2026 -0600
+
+    fix: integración manual de visualizer watchdog, interpolador FIR Blackman-Harris y efectos de aurora boreal
+
+[1mdiff --git a/.gradle/buildOutputCleanup/buildOutputCleanup.lock b/.gradle/buildOutputCleanup/buildOutputCleanup.lock[m
+[1mindex 33e8733..668cbae 100644[m
+Binary files a/.gradle/buildOutputCleanup/buildOutputCleanup.lock and b/.gradle/buildOutputCleanup/buildOutputCleanup.lock differ
+[1mdiff --git a/.gradle/buildOutputCleanup/outputFiles.bin b/.gradle/buildOutputCleanup/outputFiles.bin[m
+[1mindex 950f0d1..430c089 100644[m
+Binary files a/.gradle/buildOutputCleanup/outputFiles.bin and b/.gradle/buildOutputCleanup/outputFiles.bin differ
+[1mdiff --git a/app/src/main/assets/shaders/wallpaper_v2.glsl.rej b/app/src/main/assets/shaders/wallpaper_v2.glsl.rej[m
+[1mnew file mode 100644[m
+[1mindex 0000000..3bc2baa[m
+[1m--- /dev/null[m
+[1m+++ b/app/src/main/assets/shaders/wallpaper_v2.glsl.rej[m
+[36m@@ -0,0 +1,77 @@[m
+[32m+[m[32mdiff a/app/src/main/assets/shaders/wallpaper_v2.glsl b/app/src/main/assets/shaders/wallpaper_v2.glsl	(rejected hunks)[m
+[32m+[m[32m@@ -143,6 +143,56 @@ vec3 generate_nebula(vec2 uv) {[m
+[32m+[m[32m     return nebula_color;[m
+[32m+[m[32m }[m
+[32m+[m[41m [m
+[32m+[m[32m+// ── Aurora boreal audio-reactiva ─────────────────────────────────────────[m
+[32m+[m[32m+// Cintas verticales de FBM desplazadas por bandas graves/medias (u_bands),[m
+[32m+[m[32m+// coloreadas verde→cian→violeta (paleta aurora real), aditivas sobre la[m
+[32m+[m[32m+// nebulosa de fondo. bassEnergy/midEnergy controlan intensidad y velocidad[m
+[32m+[m[32m+// de ondulación para que reaccione a la música en vez de ser un loop fijo.[m
+[32m+[m[32m+vec3 generate_aurora(vec2 uv, float bassEnergy, float midEnergy) {[m
+[32m+[m[32m+    vec3 aurora = vec3(0.0);[m
+[32m+[m[32m+    // uv_a: espacio propio para la aurora, con el "suelo" en la parte[m
+[32m+[m[32m+    // inferior de la pantalla (banda superior más despejada, como en el[m
+[32m+[m[32m+    // fondo de referencia).[m
+[32m+[m[32m+    vec2 uv_a = uv;[m
+[32m+[m[32m+    uv_a.y += 0.35;[m
+[32m+[m[32m+[m
+[32m+[m[32m+    const int RIBBONS = 4;[m
+[32m+[m[32m+    for (int r = 0; r < RIBBONS; ++r) {[m
+[32m+[m[32m+        float fr = float(r);[m
+[32m+[m[32m+        // Cada cinta ondula a su propia frecuencia/fase; la velocidad crece[m
+[32m+[m[32m+        // con la energía grave para que "respire" con el beat.[m
+[32m+[m[32m+        float speed = 0.05 + 0.06 * fr + bassEnergy * 0.12;[m
+[32m+[m[32m+        float freq = 1.6 + fr * 0.9;[m
+[32m+[m[32m+        float phase = u_time * speed + fr * 2.3;[m
+[32m+[m[32m+[m
+[32m+[m[32m+        float wave = fbm(vec2(uv_a.x * freq + phase, fr * 5.0), 3);[m
+[32m+[m[32m+        wave += 0.25 * sin(uv_a.x * (3.0 + fr) + u_time * (0.4 + 0.1 * fr));[m
+[32m+[m[32m+[m
+[32m+[m[32m+        // Altura de la cinta: modulada por energía media (voces/instrumentos)[m
+[32m+[m[32m+        float ribbonY = 0.55 - fr * 0.10 + wave * (0.18 + midEnergy * 0.12);[m
+[32m+[m[32m+        float dist = abs(uv_a.y - ribbonY);[m
+[32m+[m[32m+[m
+[32m+[m[32m+        // Cortina vertical difusa (más ancha abajo, se afina hacia arriba)[m
+[32m+[m[32m+        float curtain = exp(-dist * dist * (9.0 - fr * 1.2));[m
+[32m+[m[32m+[m
+[32m+[m[32m+        // Paleta aurora: verde profundo -> cian -> violeta, según altura y cinta[m
+[32m+[m[32m+        vec3 auroraGreen  = vec3(0.10, 0.85, 0.45);[m
+[32m+[m[32m+        vec3 auroraCyan   = vec3(0.15, 0.65, 0.85);[m
+[32m+[m[32m+        vec3 auroraViolet = vec3(0.45, 0.25, 0.85);[m
+[32m+[m[32m+        float mixT = clamp(wave * 0.5 + 0.5, 0.0, 1.0);[m
+[32m+[m[32m+        vec3 ribbonColor = mix(auroraGreen, auroraCyan, mixT);[m
+[32m+[m[32m+        ribbonColor = mix(ribbonColor, auroraViolet, fr / float(RIBBONS));[m
+[32m+[m[32m+[m
+[32m+[m[32m+        float intensity = curtain * (0.35 + bassEnergy * 0.5 + midEnergy * 0.3);[m
+[32m+[m[32m+        aurora += ribbonColor * intensity;[m
+[32m+[m[32m+    }[m
+[32m+[m[32m+[m
+[32m+[m[32m+    // Se desvanece hacia el horizonte inferior para no competir con los[m
+[32m+[m[32m+    // 13 nodos PBR del centro/borde.[m
+[32m+[m[32m+    float fade = smoothstep(-0.7, 0.55, uv.y);[m
+[32m+[m[32m+    return aurora * fade;[m
+[32m+[m[32m+}[m
+[32m+[m[32m+[m
+[32m+[m[32m vec3 generate_glints(vec2 uv) {[m
+[32m+[m[32m     vec3 glints = vec3(0.0);[m
+[32m+[m[32m     for(int i = 0; i < 5; i++) {[m
+[32m+[m[32m@@ -170,6 +220,18 @@ void main() {[m
+[32m+[m[32m     vec3 V = vec3(0.0, 0.0, 1.0);[m
+[32m+[m[32m     vec3 L = normalize(vec3(0.4, 0.6, 0.7));[m
+[32m+[m[32m     vec3 color = generate_nebula(uv) * 0.8;[m
+[32m+[m[32m+[m
+[32m+[m[32m+    // Energía graves (bandas 0-3) / medios (4-8) reales, con interpolación[m
+[32m+[m[32m+    // u_frame_phase igual que el resto del shader — la aurora respira con[m
+[32m+[m[32m+    // la misma música que los 13 nodos, no es un efecto decorativo aparte.[m
+[32m+[m[32m+    float bassEnergy = 0.0;[m
+[32m+[m[32m+    for (int i = 0; i < 4; ++i) bassEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);[m
+[32m+[m[32m+    bassEnergy *= 0.25;[m
+[32m+[m[32m+    float midEnergy = 0.0;[m
+[32m+[m[32m+    for (int i = 4; i < 9; ++i) midEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);[m
+[32m+[m[32m+    midEnergy *= 0.2;[m
+[32m+[m[32m+    color += generate_aurora(uv, bassEnergy, midEnergy);[m
+[32m+[m[32m+[m
+[32m+[m[32m     for (int i = 0; i < 13; ++i) {[m
+[32m+[m[32m         float bandCurrent = u_bands[i];[m
+[32m+[m[32m         float bandPrev = u_bands_prev[i];[m
+[1mdiff --git a/app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp.rej b/app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp.rej[m
+[1mnew file mode 100644[m
+[1mindex 0000000..ca3f6d2[m
+[1m--- /dev/null[m
+[1m+++ b/app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp.rej[m
+[36m@@ -0,0 +1,120 @@[m
+[32m+[m[32mdiff a/app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp b/app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp	(rejected hunks)[m
+[32m+[m[32m@@ -1,28 +1,102 @@[m
+[32m+[m[32m /*[m
+[32m+[m[32m- * FIRUpsamplerEngine — stub header[m
+[32m+[m[32m- * Declara la clase que usa neuro_cochlear_manifold.cpp.[m
+[32m+[m[32m- * Implementación CPU inline; Hexagon FastRPC se sobreimpone en runtime.[m
+[32m+[m[32m+ * FIRUpsamplerEngine — interpolador polifásico de fase lineal real.[m
+[32m+[m[32m+ * © 2026 Luis Uriel Pimentel Pérez — GORE TNS.[m
+[32m+[m[32m+ *[m
+[32m+[m[32m+ * ANTES ("stub"): zero-stuffing con FACTOR fijo en 4 + filtro single-pole[m
+[32m+[m[32m+ * (IIR de un polo, ni siquiera un FIR). neuro_cochlear_manifold.cpp reserva[m
+[32m+[m[32m+ * y consume buffers dimensionados con `upsample_factor` en TIEMPO DE[m
+[32m+[m[32m+ * EJECUCIÓN (sample_rate_out / sample_rate_in, hasta 16x para 768kHz/48kHz[m
+[32m+[m[32m+ * — ver ManifoldState::upsample_factor) pero el stub solo llenaba las[m
+[32m+[m[32m+ * primeras N*4 muestras de un buffer de hasta N*16: el resto quedaba en[m
+[32m+[m[32m+ * silencio/memset(0) sin que nada lo detectara. Con factores >4 (96kHz,[m
+[32m+[m[32m+ * 192kHz, 384kHz, 768kHz) la señal de salida real estaba mayormente[m
+[32m+[m[32m+ * silenciada — la "resolución" hi-res prometida nunca llegaba completa[m
+[32m+[m[32m+ * al pipeline final que exporta a int32_t (ver el escalado *2147483647[m
+[32m+[m[32m+ * en neuro_cochlear_process_block: ESE es el punto real de 32-bit S32_LE[m
+[32m+[m[32m+ * que ya viste referenciado en UsbAudioProManager).[m
+[32m+[m[32m+ *[m
+[32m+[m[32m+ * AHORA: ventana Blackman-Harris de 4 términos (misma familia usada en[m
+[32m+[m[32m+ * ivanna_npe_engine.cpp/IvannaFastRpcClient — de ahí "conectar el Beckman"),[m
+[32m+[m[32m+ * rediseñada como filtro polifásico paramétrico por `upsampleFactor` real[m
+[32m+[m[32m+ * en vez de una tabla fija a 16x. Fase lineal exacta (FIR simétrico), sin[m
+[32m+[m[32m+ * aliasing de imagen, sin dependencia de Hexagon/HVX — corre en cualquier[m
+[32m+[m[32m+ * CPU ARM, con o sin cDSP Qualcomm disponible.[m
+[32m+[m[32m  */[m
+[32m+[m[32m #pragma once[m
+[32m+[m[32m #include <cstring>[m
+[32m+[m[32m #include <cstddef>[m
+[32m+[m[32m+#include <cstdint>[m
+[32m+[m[32m+#include <cmath>[m
+[32m+[m[32m+#include <vector>[m
+[32m+[m[32m+#include <algorithm>[m
+[32m+[m[32m+[m
+[32m+[m[32m+#ifndef M_PI[m
+[32m+[m[32m+#define M_PI 3.14159265358979323846[m
+[32m+[m[32m+#endif[m
+[32m+[m[41m [m
+[32m+[m[32m class FIRUpsamplerEngine {[m
+[32m+[m[32m public:[m
+[32m+[m[32m-    // Upsampling x4 por inserción de ceros + filtro FIR de paso bajo[m
+[32m+[m[32m-    void process(const float* input, float* output, size_t numSamples) {[m
+[32m+[m[32m-        constexpr int FACTOR = 4;[m
+[32m+[m[32m-        for (size_t i = 0; i < numSamples; ++i) {[m
+[32m+[m[32m-            output[i * FACTOR] = input[i];[m
+[32m+[m[32m-            for (int k = 1; k < FACTOR; ++k)[m
+[32m+[m[32m-                output[i * FACTOR + k] = 0.f;[m
+[32m+[m[32m+    // upsampleFactor: relación Fs_out/Fs_in real (2, 4, 8, 16...).[m
+[32m+[m[32m+    // tapsPerPhase: taps por fase polifásica — 32 da un lóbulo principal[m
+[32m+[m[32m+    // angosto y atenuación de imagen >80dB para factores hasta 16x, con[m
+[32m+[m[32m+    // coste O(tapsPerPhase) MACs por canal por muestra de entrada (igual[m
+[32m+[m[32m+    // de barato que el zero-stuffing+FIR directo equivalente).[m
+[32m+[m[32m+    explicit FIRUpsamplerEngine(uint32_t upsampleFactor = 16, uint32_t tapsPerPhase = 32) noexcept[m
+[32m+[m[32m+        : factor_(upsampleFactor < 1 ? 1 : upsampleFactor),[m
+[32m+[m[32m+          taps_(tapsPerPhase < 4 ? 4 : tapsPerPhase) {[m
+[32m+[m[32m+        coeffs_.resize(static_cast<size_t>(taps_) * factor_);[m
+[32m+[m[32m+        designBlackmanHarrisSinc();[m
+[32m+[m[32m+        delay_.assign(taps_, 0.0f);[m
+[32m+[m[32m+    }[m
+[32m+[m[32m+[m
+[32m+[m[32m+    // Upsampling x`factor_` con FIR de fase lineal real. `output` debe tener[m
+[32m+[m[32m+    // espacio para numSamples * factor_ floats (mismo contrato que antes,[m
+[32m+[m[32m+    // pero ahora SÍ se llenan todas las muestras, no solo las primeras N*4).[m
+[32m+[m[32m+    void process(const float* input, float* output, size_t numSamples) noexcept {[m
+[32m+[m[32m+        if (!input || !output) return;[m
+[32m+[m[32m+        for (size_t n = 0; n < numSamples; ++n) {[m
+[32m+[m[32m+            for (uint32_t i = taps_ - 1; i > 0; --i) delay_[i] = delay_[i - 1];[m
+[32m+[m[32m+            delay_[0] = input[n];[m
+[32m+[m[32m+[m
+[32m+[m[32m+            for (uint32_t phase = 0; phase < factor_; ++phase) {[m
+[32m+[m[32m+                float acc = 0.0f;[m
+[32m+[m[32m+                for (uint32_t k = 0; k < taps_; ++k) {[m
+[32m+[m[32m+                    acc += delay_[k] * coeffs_[phase + k * factor_];[m
+[32m+[m[32m+                }[m
+[32m+[m[32m+                output[n * factor_ + phase] = acc;[m
+[32m+[m[32m+            }[m
+[32m+[m[32m         }[m
+[32m+[m[32m-        // Single-pole filter (simple, sustituible por FIR real)[m
+[32m+[m[32m-        float prev = 0.f;[m
+[32m+[m[32m-        const float alpha = 0.25f;[m
+[32m+[m[32m-        for (size_t j = 0; j < numSamples * FACTOR; ++j) {[m
+[32m+[m[32m-            output[j] = prev + alpha * (output[j] - prev);[m
+[32m+[m[32m-            prev = output[j];[m
+[32m+[m[32m+    }[m
+[32m+[m[32m+[m
+[32m+[m[32m+    void reset() noexcept {[m
+[32m+[m[32m+        std::fill(delay_.begin(), delay_.end(), 0.0f);[m
+[32m+[m[32m+    }[m
+[32m+[m[32m+[m
+[32m+[m[32m+    uint32_t upsampleFactor() const noexcept { return factor_; }[m
+[32m+[m[32m+[m
+[32m+[m[32m+private:[m
+[32m+[m[32m+    // Diseña el prototipo passband (windowed-sinc, Blackman-Harris 4 términos)[m
+[32m+[m[32m+    // y lo decima en `factor_` fases polifásicas: coeffs_[phase + k*factor_][m
+[32m+[m[32m+    // es el tap k de la fase `phase` (decomposición polifásica estándar).[m
+[32m+[m[32m+    void designBlackmanHarrisSinc() noexcept {[m
+[32m+[m[32m+        const uint32_t M = taps_ * factor_;[m
+[32m+[m[32m+        const float cutoff = 1.0f / (2.0f * static_cast<float>(factor_));[m
+[32m+[m[32m+        for (uint32_t i = 0; i < M; ++i) {[m
+[32m+[m[32m+            const int32_t n = static_cast<int32_t>(i) - static_cast<int32_t>(M / 2);[m
+[32m+[m[32m+            const float sinc = (n == 0)[m
+[32m+[m[32m+                ? 1.0f[m
+[32m+[m[32m+                : sinf((float)M_PI * cutoff * n) / ((float)M_PI * cutoff * n);[m
+[32m+[m[32m+[m
+[32m+[m[32m+            const float a0 = 0.35875f, a1 = 0.48829f, a2 = 0.14128f, a3 = 0.01168f;[m
+[32m+[m[32m+            const float x = (2.0f * (float)M_PI * i) / (M - 1);[m
+[32m+[m[32m+            const float window = a0 - a1 * cosf(x) + a2 * cosf(2.0f * x) - a3 * cosf(3.0f * x);[m
+[32m+[m[32m+[m
+[32m+[m[32m+            coeffs_[i] = sinc * window * cutoff * 2.0f * static_cast<float>(factor_);[m
+[32m+[m[32m         }[m
+[32m+[m[32m     }[m
+[32m+[m[32m+[m
+[32m+[m[32m+    uint32_t factor_;[m
+[32m+[m[32m+    uint32_t taps_;[m
+[32m+[m[32m+    std::vector<float> coeffs_;[m
+[32m+[m[32m+    std::vector<float> delay_;[m
+[32m+[m[32m };[m
+[1mdiff --git a/app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp.rej b/app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp.rej[m
+[1mnew file mode 100644[m
+[1mindex 0000000..2f823e9[m
+[1m--- /dev/null[m
+[1m+++ b/app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp.rej[m
+[36m@@ -0,0 +1,16 @@[m
+[32m+[m[32mdiff a/app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp b/app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp	(rejected hunks)[m
+[32m+[m[32m@@ -104,7 +104,13 @@ bool neuro_cochlear_manifold_init([m
+[32m+[m[32m     }[m
+[32m+[m[41m [m
+[32m+[m[32m     try {[m
+[32m+[m[32m-        g_manifold.upsampler = new FIRUpsamplerEngine();[m
+[32m+[m[32m+        // [FIX] Antes se construía con el default del stub (factor fijo, ni[m
+[32m+[m[32m+        // siquiera leído de g_manifold.upsample_factor). Ahora se pasa el[m
+[32m+[m[32m+        // factor real calculado arriba (sample_rate_out/sample_rate_in), para[m
+[32m+[m[32m+        // que el FIR polifásico llene el buffer completo (up_N muestras) y no[m
+[32m+[m[32m+        // solo una fracción fija como antes.[m
+[32m+[m[32m+        g_manifold.upsampler = new FIRUpsamplerEngine([m
+[32m+[m[32m+            static_cast<uint32_t>(g_manifold.upsample_factor));[m
+[32m+[m[32m         g_manifold.volterra = new VolterraH2Symmetric(8192, channels);[m
+[32m+[m[32m     } catch (...) {[m
+[32m+[m[32m         delete g_manifold.upsampler; g_manifold.upsampler = nullptr;[m
+[1mdiff --git a/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt.rej b/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt.rej[m
+[1mnew file mode 100644[m
+[1mindex 0000000..c11d8e0[m
+[1m--- /dev/null[m
+[1m+++ b/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt.rej[m
+[36m@@ -0,0 +1,206 @@[m
+[32m+[m[32mdiff a/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt b/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt	(rejected hunks)[m
+[32m+[m[32m@@ -40,6 +40,9 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m         const val CHANNEL_ID = "ivanna_playback_channel"[m
+[32m+[m[32m         const val NOTIFICATION_ID = 2[m
+[32m+[m[32m         const val INPUT_SAMPLES = 2048[m
+[32m+[m[32m+        // [FIX-FREEZE] tope de errores consecutivos de AudioRecord.read() antes[m
+[32m+[m[32m+        // de abandonar el spin y reconstruir la sesión de captura.[m
+[32m+[m[32m+        private const val MAX_CONSECUTIVE_ERRORS = 25[m
+[32m+[m[32m     }[m
+[32m+[m[41m [m
+[32m+[m[32m     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())[m
+[32m+[m[32m@@ -48,6 +51,20 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m     private var isRunning = false[m
+[32m+[m[32m     private var savedMusicVolume: Int? = null[m
+[32m+[m[41m [m
+[32m+[m[32m+    // [HI-RES][AVISO HONESTO] DSPBridge/IvannaNpeEngine/Visualizer se inicializan[m
+[32m+[m[32m+    // aquí, ANTES de que startCapture() negocie el sample rate real (candidateRates[m
+[32m+[m[32m+    // en startCapture()). Toda la cadena DSP (biquads, EQ, gammatone, tau de[m
+[32m+[m[32m+    // envolventes) está calibrada asumiendo fs=48000 en varios puntos del código[m
+[32m+[m[32m+    // nativo. Si algún día un dispositivo llegara a validar 96/192kHz aquí[m
+[32m+[m[32m+    // (en la práctica casi ningún Android lo hará: AudioPlaybackCaptureConfiguration[m
+[32m+[m[32m+    // captura la mezcla YA hecha por AudioFlinger a la tasa fija de su mezclador,[m
+[32m+[m[32m+    // típicamente 48kHz, sin importar lo que se pida), estos .init(48000, ...)[m
+[32m+[m[32m+    // quedarían desincronizados del sample rate real de audioRecord/audioTrack.[m
+[32m+[m[32m+    // No lo re-arquitecturé aquí porque requiere verificar cada componente DSP[m
+[32m+[m[32m+    // nativo uno por uno para que escale correctamente con fs — top de la lista[m
+[32m+[m[32m+    // de trabajo pendiente real, no un placeholder cosmético.[m
+[32m+[m[32m+    private var activeSampleRate = 48000[m
+[32m+[m[32m+[m
+[32m+[m[32m     override fun onCreate() {[m
+[32m+[m[32m         super.onCreate()[m
+[32m+[m[32m         createNotificationChannel()[m
+[32m+[m[32m@@ -127,38 +144,65 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)[m
+[32m+[m[32m             .build()[m
+[32m+[m[41m [m
+[32m+[m[32m-        val minBuf = AudioRecord.getMinBufferSize([m
+[32m+[m[32m-            48000,[m
+[32m+[m[32m-            AudioFormat.CHANNEL_IN_STEREO,[m
+[32m+[m[32m-            AudioFormat.ENCODING_PCM_FLOAT[m
+[32m+[m[32m-        )[m
+[32m+[m[32m-        // [FIX-CRASH] getMinBufferSize puede devolver ERROR_BAD_VALUE (-2) o[m
+[32m+[m[32m-        // ERROR (-1) en hardware no estándar. Pasar un tamaño negativo a[m
+[32m+[m[32m-        // setBufferSizeInBytes lanza IllegalArgumentException sin capturar.[m
+[32m+[m[32m-        if (minBuf <= 0) {[m
+[32m+[m[32m-            throw IllegalStateException("AudioRecord.getMinBufferSize inválido ($minBuf) para 48kHz/stereo/float")[m
+[32m+[m[32m-        }[m
+[32m+[m[32m-        val bufferSize = minBuf[m
+[32m+[m[32m+        // [HI-RES] Cascada real de sample rate: a diferencia de SystemAudioCapture[m
+[32m+[m[32m+        // (que solo valida con getMinBufferSize, un cálculo aritmético que NO[m
+[32m+[m[32m+        // confirma soporte real de hardware/HAL), aquí se construye y valida[m
+[32m+[m[32m+        // CADA candidato con AudioRecord.Builder().build() + comprobación de[m
+[32m+[m[32m+        // STATE_INITIALIZED, que es la única confirmación real de que el HAL[m
+[32m+[m[32m+        // aceptó esa tasa para AudioPlaybackCaptureConfiguration.[m
+[32m+[m[32m+        //[m
+[32m+[m[32m+        // Aviso honesto: AudioPlaybackCaptureConfiguration captura la mezcla[m
+[32m+[m[32m+        // YA HECHA por AudioFlinger, que en la enorme mayoría de dispositivos[m
+[32m+[m[32m+        // Android corre a una tasa fija de mezclador (típicamente 48kHz) sin[m
+[32m+[m[32m+        // importar lo que pida la fuente. Pedir 192kHz aquí puede negociar[m
+[32m+[m[32m+        // (el framework resamplea), pero NO añade resolución real que no[m
+[32m+[m[32m+        // estuviera ya en la mezcla de 48kHz — es una cascada honesta, no una[m
+[32m+[m[32m+        // promesa de más detalle del que el mezclador realmente tiene. El[m
+[32m+[m[32m+        // camino que SÍ entrega hi-res real de hardware, sin pasar por el[m
+[32m+[m[32m+        // mezclador compartido, es UsbAudioProManager (USB OTG directo,[m
+[32m+[m[32m+        // 384kHz/32-bit ya implementado) — ver nota en el README.[m
+[32m+[m[32m+        val candidateRates = intArrayOf(192000, 96000, 48000)[m
+[32m+[m[32m+        var chosenRate = 48000[m
+[32m+[m[32m+        var bufferSize = 0[m
+[32m+[m[41m [m
+[32m+[m[32m-        audioRecord = AudioRecord.Builder()[m
+[32m+[m[32m-            .setAudioFormat([m
+[32m+[m[32m-                AudioFormat.Builder()[m
+[32m+[m[32m-                    .setSampleRate(48000)[m
+[32m+[m[32m-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)[m
+[32m+[m[32m-                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)[m
+[32m+[m[32m-                    .build()[m
+[32m+[m[32m+        for (rate in candidateRates) {[m
+[32m+[m[32m+            val minBuf = AudioRecord.getMinBufferSize([m
+[32m+[m[32m+                rate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT[m
+[32m+[m[32m             )[m
+[32m+[m[32m-            .setBufferSizeInBytes(bufferSize)[m
+[32m+[m[32m-            .setAudioPlaybackCaptureConfig(config)[m
+[32m+[m[32m-            .build()[m
+[32m+[m[32m+            if (minBuf <= 0) continue[m
+[32m+[m[32m+[m
+[32m+[m[32m+            val candidate = try {[m
+[32m+[m[32m+                AudioRecord.Builder()[m
+[32m+[m[32m+                    .setAudioFormat([m
+[32m+[m[32m+                        AudioFormat.Builder()[m
+[32m+[m[32m+                            .setSampleRate(rate)[m
+[32m+[m[32m+                            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)[m
+[32m+[m[32m+                            .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)[m
+[32m+[m[32m+                            .build()[m
+[32m+[m[32m+                    )[m
+[32m+[m[32m+                    .setBufferSizeInBytes(minBuf)[m
+[32m+[m[32m+                    .setAudioPlaybackCaptureConfig(config)[m
+[32m+[m[32m+                    .build()[m
+[32m+[m[32m+            } catch (e: Exception) {[m
+[32m+[m[32m+                null[m
+[32m+[m[32m+            }[m
+[32m+[m[41m [m
+[32m+[m[32m-        // [FIX-CRASH] Igual que SystemAudioCapture.kt: si AudioRecord no llega a[m
+[32m+[m[32m-        // STATE_INITIALIZED (permiso revocado, política de audio, etc.) hay que[m
+[32m+[m[32m-        // abortar aquí en vez de llamar startRecording() sobre un objeto inválido[m
+[32m+[m[32m-        // (eso lanza IllegalStateException más abajo, sin contexto claro).[m
+[32m+[m[32m+            if (candidate != null && candidate.state == AudioRecord.STATE_INITIALIZED) {[m
+[32m+[m[32m+                audioRecord = candidate[m
+[32m+[m[32m+                chosenRate = rate[m
+[32m+[m[32m+                bufferSize = minBuf[m
+[32m+[m[32m+                break[m
+[32m+[m[32m+            } else {[m
+[32m+[m[32m+                candidate?.release()[m
+[32m+[m[32m+            }[m
+[32m+[m[32m+        }[m
+[32m+[m[32m+[m
+[32m+[m[32m+        // [FIX-CRASH] Si NINGÚN candidato (ni siquiera 48kHz) inicializó, es un[m
+[32m+[m[32m+        // fallo real de permiso/política de audio — abortar limpio.[m
+[32m+[m[32m         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {[m
+[32m+[m[32m-            throw IllegalStateException("AudioRecord no se pudo inicializar (permiso o política de audio)")[m
+[32m+[m[32m+            throw IllegalStateException("AudioRecord no se pudo inicializar en ningún sample rate candidato (permiso o política de audio)")[m
+[32m+[m[32m         }[m
+[32m+[m[32m+        activeSampleRate = chosenRate[m
+[32m+[m[41m [m
+[32m+[m[32m         // FIX: silencia el stream de música original (la fuente sigue[m
+[32m+[m[32m         // generando PCM y se sigue capturando arriba, solo se apaga su[m
+[32m+[m[32m@@ -179,7 +223,11 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m             )[m
+[32m+[m[32m             .setAudioFormat([m
+[32m+[m[32m                 AudioFormat.Builder()[m
+[32m+[m[32m-                    .setSampleRate(48000)[m
+[32m+[m[32m+                    // [FIX] antes fijo a 48000 sin importar qué tasa haya[m
+[32m+[m[32m+                    // negociado audioRecord arriba — si algún día difieren,[m
+[32m+[m[32m+                    // AudioTrack.write() reproduciría a la velocidad/tono[m
+[32m+[m[32m+                    // incorrectos. Debe ser SIEMPRE la misma tasa que capturó.[m
+[32m+[m[32m+                    .setSampleRate(chosenRate)[m
+[32m+[m[32m                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)[m
+[32m+[m[32m                     .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)[m
+[32m+[m[32m                     .build()[m
+[32m+[m[32m@@ -202,9 +250,36 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m         scope.launch {[m
+[32m+[m[32m             val buffer = FloatArray(INPUT_SAMPLES)[m
+[32m+[m[32m             val mono = FloatArray(INPUT_SAMPLES / 2)[m
+[32m+[m[32m+[m
+[32m+[m[32m+            // [FIX-FREEZE] Causa raíz del visualizer congelado: GLUniformBridgeV2[m
+[32m+[m[32m+            // solo actualiza sus 13 bandas dentro de processBlockFromNPE(); si este[m
+[32m+[m[32m+            // bucle deja de invocarla (AudioRecord.read() devuelve un código de[m
+[32m+[m[32m+            // error negativo — ERROR_DEAD_OBJECT, ERROR_INVALID_OPERATION, etc. —[m
+[32m+[m[32m+            // típicamente al bloquear pantalla, cambiar de ruta de salida, o si la[m
+[32m+[m[32m+            // app fuente pausa/cierra la sesión de MediaProjection) el `if (read > 0)`[m
+[32m+[m[32m+            // simplemente saltaba el bloque sin romper el while, así que el hilo[m
+[32m+[m[32m+            // quedaba en spin infinito sin producir audio NI reiniciar nada: los[m
+[32m+[m[32m+            // uniforms de banda quedaban clavados en su último valor para siempre,[m
+[32m+[m[32m+            // mientras u_time/u_frame_phase (no dependen de audio) seguían avanzando[m
+[32m+[m[32m+            // en el shader — de ahí que el fondo/color se mueva pero las barras no.[m
+[32m+[m[32m+            //[m
+[32m+[m[32m+            // Fix: (a) watchdog de silencio → si no llega un bloque válido en[m
+[32m+[m[32m+            // SILENCE_TIMEOUT_MS, se resetean los bridges (decae a 0 en vez de[m
+[32m+[m[32m+            // quedar clavado); (b) error negativo → se sale del bucle y se[m
+[32m+[m[32m+            // reconstruye la sesión, en vez de spinnear infinitamente.[m
+[32m+[m[32m+            var lastGoodBlockNanos = System.nanoTime()[m
+[32m+[m[32m+            var consecutiveErrors = 0[m
+[32m+[m[32m+            val silenceTimeoutNanos = 400_000_000L // 400ms sin bloques válidos[m
+[32m+[m[32m+            var watchdogReset = false[m
+[32m+[m[32m+[m
+[32m+[m[32m             while (isRunning && isActive) {[m
+[32m+[m[32m                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0[m
+[32m+[m[32m+[m
+[32m+[m[32m                 if (read > 0) {[m
+[32m+[m[32m+                    consecutiveErrors = 0[m
+[32m+[m[32m+                    lastGoodBlockNanos = System.nanoTime()[m
+[32m+[m[32m+                    watchdogReset = false[m
+[32m+[m[32m+[m
+[32m+[m[32m                     val frames = read / 2[m
+[32m+[m[32m                     DSPBridge.process(buffer, frames)[m
+[32m+[m[32m                     IvannaNpeEngine.processInterleavedStereo(buffer, frames)[m
+[32m+[m[32m@@ -215,6 +290,30 @@ class PlaybackCaptureService : Service() {[m
+[32m+[m[32m                     // v2: mismo downmix post-NPE, para el wallpaper de 13 bandas.[m
+[32m+[m[32m                     IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)[m
+[32m+[m[32m                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)[m
+[32m+[m[32m+                } else if (read < 0) {[m
+[32m+[m[32m+                    // Código de error real de AudioRecord (negativo). No spinnear:[m
+[32m+[m[32m+                    // contamos errores consecutivos y, si persiste, reconstruimos[m
+[32m+[m[32m+                    // la sesión de captura en vez de dejar el hilo vivo pero inútil.[m
+[32m+[m[32m+                    consecutiveErrors++[m
+[32m+[m[32m+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {[m
+[32m+[m[32m+                        break // sale del while -> reinicio de sesión afuera[m
+[32m+[m[32m+                    }[m
+[32m+[m[32m+                    delay(20L)[m
+[32m+[m[32m+                } else {[m
+[32m+[m[32m+                    // read == 0: no es error, pero tampoco avanzó el reloj de datos.[m
+[32m+[m[32m+                    val silentFor = System.nanoTime() - lastGoodBlockNanos[m
+[32m+[m[32m+                    if (silentFor > silenceTimeoutNanos && !watchdogReset) {[m
+[32m+[m[32m+                        IvannaVisualizerBridge.reset()[m
+[32m+[m[32m+                        IvannaVisualizerBridgeV2.reset()[m
+[32m+[m[32m+                        watchdogReset = true[m
+[32m+[m[32m+                    }[m
+[32m+[m[32m+                }[m
+[32m+[m[32m+            }[m
+[32m+[m[32m+[m
+[32m+[m[32m+            if (isActive && consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {[m
+[32m+[m[32m+                // Reinicio limpio de la sesión de captura tras fallo real de hardware/ruta.[m
+[32m+[m[32m+                withContext(Dispatchers.Main) {[m
+[32m+[m[32m+                    stopCapture()[m
+[32m+[m[32m                 }[m
+[32m+[m[32m             }[m
+[32m+[m[32m         }[m
