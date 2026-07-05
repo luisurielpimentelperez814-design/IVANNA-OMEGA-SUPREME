@@ -40,10 +40,15 @@ add_library(ivanna_omega SHARED
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
+    jni/ivanna_spatial_jni.cpp
 
-    # Spatial engine
+    # Spatial engine (MAJESTY-6DoF)
+    spatial/ivanna_head_tracker.cpp
+    spatial/ivanna_object_renderer.cpp
     spatial/spatial_engine.cpp
-    spatial/room_model.cpp
+
+    # Neural Upmixer (MAJESTY-AI)
+    neuromorphic/ivanna_neural_upmixer.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
