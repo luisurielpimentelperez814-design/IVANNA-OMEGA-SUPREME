@@ -143,18 +143,46 @@ class IvannaSpatialEngine(
         if (upmixerHandle != 0L && isUpmixerEnabled) {
             IvannaSpatialNative.nativeUpmixerProcess(upmixerHandle, upmixerIn, upmixerOut, numFrames)
         } else {
-            // Passthrough: copiar entrada a "Other" stem
-            upmixerOut.put(upmixerIn)
-            upmixerOut.flip()
+            // Passthrough: mismo formato intercalado (n*8+k) que produce el
+            // upmixer nativo cuando enabled_=false — todo el audio va al
+            // stem "Other" (índices 6,7), el resto en silencio. Antes esto
+            // hacía upmixerOut.put(upmixerIn), que solo copiaba los primeros
+            // numFrames*2 floats en el LAYOUT INCORRECTO (no intercalado
+            // por frame de 8 canales) — con el fix de deinterleave de abajo
+            // eso habría leído basura/silencio donde no tocaba.
+            for (i in 0 until numFrames) {
+                val base = i * 8
+                for (ch in 0 until 6) upmixerOut.put(base + ch, 0f)
+                upmixerOut.put(base + 6, upmixerIn.get(i * 2))
+                upmixerOut.put(base + 7, upmixerIn.get(i * 2 + 1))
+            }
         }
 
-        // 2. Convertir stems a objetos espaciales
-        // (En C++: stemsToObjects genera la lista de objetos)
-        // Aquí simplificamos: los stems ya están en el buffer de objetos
+        // 2. Convertir stems (formato intercalado por frame del upmixer:
+        //    out[n*8 + stem*2 + ch]) al formato block-planar que espera
+        //    ObjectRenderer (por objeto: bloque L de numFrames muestras
+        //    contiguas, luego bloque R de numFrames muestras contiguas —
+        //    ver objL/objR en ivanna_object_renderer.cpp::renderBlock).
+        //
+        // [FIX-WHISTLE-2] Antes esto era un objectsBuf.put(upmixerOut) — un
+        // memcpy directo entre dos layouts incompatibles. Leer un buffer
+        // intercalado (8 floats/frame) como si fuera plano (bloque L de
+        // 1024 muestras contiguas por objeto) hace que la "R" de cada
+        // objeto empiece a leer, en realidad, muestras L de un stem
+        // DISTINTO 128 frames más adelante (1024/8) — el equivalente a
+        // diezmar sin filtro antialiasing. Eso pliega el espectro y
+        // produce un tono fijo y agudo — el silbido reportado.
         val objectsBuf = rendererObjectsBuf!!
         objectsBuf.clear()
-        objectsBuf.put(upmixerOut)
-        objectsBuf.flip()
+        for (stem in 0 until NUM_STEMS) {
+            val base = stem * 2 * numFrames
+            for (i in 0 until numFrames) {
+                objectsBuf.put(base + i, upmixerOut.get(i * 8 + stem * 2))              // L
+            }
+            for (i in 0 until numFrames) {
+                objectsBuf.put(base + numFrames + i, upmixerOut.get(i * 8 + stem * 2 + 1)) // R
+            }
+        }
 
         // 3. Renderizar objetos a binaural
         val outL = rendererOutLBuf!!
