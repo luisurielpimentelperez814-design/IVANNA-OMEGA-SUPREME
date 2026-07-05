@@ -88,6 +88,10 @@ object IvannaNpeEngine {
     fun getSynthSignature(): FloatArray =
         if (handle != 0L) IvannaNpeNative.nativeGetSynthSignature() else FloatArray(5)
 
+    /** [cluster_id, confidence, thd_pred_pct, score, pca0, pca1, pca2] */
+    fun getSynthClassify(): FloatArray =
+        if (handle != 0L) IvannaNpeNative.nativeGetSynthClassify() else FloatArray(7)
+
     /** [cpuLoad, rmsOut, agcGain, spectralEntropy, lifFireRateHz, transientCue, spatialCue, residualCue] */
     fun getMetrics(): FloatArray =
         if (handle != 0L) (IvannaNpeNative.nativeGetMetrics(handle) ?: FloatArray(8)) else FloatArray(8)

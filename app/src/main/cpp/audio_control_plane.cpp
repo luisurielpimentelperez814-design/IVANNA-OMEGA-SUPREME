@@ -52,6 +52,9 @@ namespace ivanna {
 //
 // Devuelve el número de campos ajustados por la fusión (para debug/telemetry).
 
+// phase_oracle_velocity() — definida en phase_oracle.cpp (Kalman cúbico 384kHz)
+extern "C" float phase_oracle_velocity();
+
 int control_apply_frame() noexcept {
     using namespace ivanna;
 
@@ -79,6 +82,10 @@ int control_apply_frame() noexcept {
 
     const auto evo_active = g_control_frame.evolutionary_active.load(std::memory_order_relaxed);
 
+    const auto route_bass_boost   = g_control_frame.route_bass_boost_db.load(std::memory_order_relaxed);
+    const auto route_dialog_boost = g_control_frame.route_dialog_boost_db.load(std::memory_order_relaxed);
+    const auto route_widener_mult = g_control_frame.route_widener_mult.load(std::memory_order_relaxed);
+
     // ────────────────────────────────────────────────────────────────
     // 2. YAMNet → ajustes dinámicos del pipeline
     // ────────────────────────────────────────────────────────────────
@@ -93,15 +100,27 @@ int control_apply_frame() noexcept {
         updates++;
     }
 
+    // PhaseOracle: cierra el widener en transitorios reales (derivada de
+    // fase instantánea), evita que el ensanchado dilate ataques (kicks,
+    // snares, plosivas) antes de que YAMNet siquiera clasifique el bloque.
+    const float phase_vel = phase_oracle_velocity();
+    const float transient_protect = 1.0f - std::clamp(std::abs(phase_vel) * 0.0015f, 0.f, 0.4f);
+    yamnet_widener_mult *= transient_protect;
+    updates++;
+
     // ────────────────────────────────────────────────────────────────
     // 3. Construye un ControlFrame nuevo a partir del staging vigente
     //    (respeta la disciplina "snapshot inmutable" del bus seqlock)
     // ────────────────────────────────────────────────────────────────
     ControlFrame f = g_staging_frame;
 
-    // EQ: gain combinado (control + YAMNet + AudioEngine) mapeado a 'mid'
-    const float combined_eq_gain = eq_gain_db + yamnet_eq_boost_2k + audio_engine_eq;
+    // EQ: gain combinado (control + YAMNet + AudioEngine + ruta de salida) mapeado a 'mid'
+    const float combined_eq_gain = eq_gain_db + yamnet_eq_boost_2k + audio_engine_eq + route_dialog_boost;
     f.mid = std::clamp(combined_eq_gain, -18.f, 18.f);
+    updates++;
+
+    // Bass shelf: compensa impedancia/rolloff de graves de la ruta activa (AUX)
+    f.low = std::clamp(f.low + route_bass_boost, -18.f, 18.f);
     updates++;
 
     // Exciter: fusiona AudioEngine + control frame → 'wet'
@@ -109,14 +128,14 @@ int control_apply_frame() noexcept {
     f.wet = std::clamp(combined_exciter, 0.f, 1.f);
     updates++;
 
-    // Widener: fusiona AudioEngine + YAMNet
-    const float combined_width = (widener_stereo + audio_engine_width) * 0.5f * yamnet_widener_mult;
+    // Widener: fusiona AudioEngine + YAMNet + ruta de salida (BT reduce ancho)
+    const float combined_width = (widener_stereo + audio_engine_width) * 0.5f * yamnet_widener_mult * route_widener_mult;
     // El ancho estéreo del pipeline se controla vía nho_wet (0..1) para el bloque spatial
     f.nho_wet = std::clamp(combined_width, 0.f, 1.f);
     updates++;
 
     // PDEngine: modo + spatial (respeta rangos válidos del enum interno)
-    f.mode              = std::clamp(pd_mode, 0, 2);
+    f.mode              = std::clamp(pd_mode, 0, 3);
     f.spatial_angle_deg = std::clamp(spatial_angle, 0.f, 120.f);
     f.spatial_width     = std::clamp(spatial_width, 0.f, 1.5f);
     updates += 3;

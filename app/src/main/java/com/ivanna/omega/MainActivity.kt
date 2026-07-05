@@ -428,12 +428,24 @@ fun IvannaControlPanel(
     var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
     var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
     var npeGenre by remember { mutableStateOf("\u2014") }
+    var npeRmsDb by remember { mutableFloatStateOf(-60f) }
+    var npeAgcGainDb by remember { mutableFloatStateOf(0f) }
+    var npeClassifyConfidence by remember { mutableFloatStateOf(0f) }
+    var npeClassifyThd by remember { mutableFloatStateOf(0f) }
 
     // CABLEADO: lectura periódica del género detectado por AutonomousBrain
     // (motor NPE real, IvannaNpeEngine, corriendo en PlaybackCaptureService).
     LaunchedEffect(Unit) {
         while (true) {
             npeGenre = IvannaNpeEngine.getDetectedGenre()
+            val m = IvannaNpeEngine.getMetrics()  // [cpuLoad,rmsOut,agcGain,entropy,lifHz,T,S,R]
+            val rmsLin = m.getOrElse(1) { 0f }
+            npeRmsDb = if (rmsLin > 1e-6f) (20f * kotlin.math.log10(rmsLin)) else -60f
+            val agcLin = m.getOrElse(2) { 1f }
+            npeAgcGainDb = if (agcLin > 1e-6f) (20f * kotlin.math.log10(agcLin)) else 0f
+            val c = IvannaNpeEngine.getSynthClassify()  // [cluster,confidence,thd%,score,pca0,pca1,pca2]
+            npeClassifyConfidence = c.getOrElse(1) { 0f }
+            npeClassifyThd = c.getOrElse(2) { 0f }
             kotlinx.coroutines.delay(1000)
         }
     }
@@ -652,6 +664,13 @@ Text("Motor OPE", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Género detectado: $npeGenre",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "RMS: %.1f dB   AGC: %+.1f dB   Confianza clasif.: %.0f%%   THD est.: %.1f%%".format(
+                    npeRmsDb, npeAgcGainDb, npeClassifyConfidence * 100f, npeClassifyThd
+                ),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedButton(onClick = onOpenVisualizer, modifier = Modifier.fillMaxWidth()) {

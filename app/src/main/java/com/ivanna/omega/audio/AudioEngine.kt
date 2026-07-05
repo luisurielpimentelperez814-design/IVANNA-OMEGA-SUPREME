@@ -50,6 +50,8 @@ class AudioEngine {
         // Implementación: audio_orchestrator.cpp → control_set_yamnet_scores() → g_control_frame
         @JvmStatic
         external fun nativeSetAntiDolbyScoresStatic(voice: Float, music: Float, bass: Float, silence: Float)
+        @JvmStatic
+        external fun nativeSetRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
 
         // ────────────────────────────────────────────────────────────────────
         // JNI: Getters para parámetros de AudioEngine (para fusión en PDEngine)

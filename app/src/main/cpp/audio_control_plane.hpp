@@ -59,6 +59,11 @@ struct UnifiedControlFrame {
     std::atomic<float> audio_engine_eq_gain{0.f};    // dB from AudioEngine
     std::atomic<float> audio_engine_width{0.f};      // [0..1] stereo width from AudioEngine
 
+    // ── Route Profile (BT/AUX/USB) — ver control_set_route_profile() ──
+    std::atomic<float> route_bass_boost_db{0.f};     // compensa pérdida de graves (AUX)
+    std::atomic<float> route_dialog_boost_db{0.f};   // compensa codec lossy (BT SBC/AAC)
+    std::atomic<float> route_widener_mult{1.f};      // reduce ancho en BT (mono-compat)
+
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
     std::atomic<float> evo_genome_dsp[5]{};          // [0..4] DSP params
     std::atomic<float> evo_genome_nho[4]{};          // [5..8] NHO params
@@ -94,6 +99,9 @@ struct UnifiedControlFrame {
         audio_engine_exciter.store(0.f, std::memory_order_relaxed);
         audio_engine_eq_gain.store(0.f, std::memory_order_relaxed);
         audio_engine_width.store(0.f, std::memory_order_relaxed);
+        route_bass_boost_db.store(0.f, std::memory_order_relaxed);
+        route_dialog_boost_db.store(0.f, std::memory_order_relaxed);
+        route_widener_mult.store(1.f, std::memory_order_relaxed);
         anti_dolby_enabled.store(false, std::memory_order_relaxed);
         spatial_rendering_active.store(false, std::memory_order_relaxed);
         evolutionary_active.store(false, std::memory_order_relaxed);
@@ -157,6 +165,19 @@ inline void control_set_evo_genome(const float* genome, int genome_size) noexcep
     for (int i = 0; i < 3 && (9 + i) < genome_size; ++i) {
         g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[9 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
+}
+
+/*
+ * Inyecta el perfil de compensación de la ruta de salida activa
+ * (Bluetooth A2DP / AUX / USB), detectada desde AudioRouteManager.kt.
+ * bassBoostDb: compensa impedancia/rolloff de graves en AUX.
+ * dialogBoostDb: compensa la pérdida de banda 2-4kHz de codecs lossy (SBC/AAC).
+ * widenerMult: reduce el ancho estéreo en BT (SBC colapsa mejor en mono-compat).
+ */
+inline void control_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) noexcept {
+    g_control_frame.route_bass_boost_db.store(std::clamp(bassBoostDb, 0.f, 6.f), std::memory_order_relaxed);
+    g_control_frame.route_dialog_boost_db.store(std::clamp(dialogBoostDb, 0.f, 6.f), std::memory_order_relaxed);
+    g_control_frame.route_widener_mult.store(std::clamp(widenerMult, 0.4f, 1.4f), std::memory_order_relaxed);
 }
 
 /*
