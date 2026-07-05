@@ -84,12 +84,41 @@ object AudioRouteManager {
     fun profileFor(route: OutputRoute): RouteProfile = when (route) {
         // SBC/AAC pierden presencia 2-4kHz y el estéreo se degrada al
         // recodificar; se compensa diálogo y se reduce ancho.
-        OutputRoute.BLUETOOTH -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
+        OutputRoute.BLUETOOTH -> btProfile()
         // AUX cableado: rolloff de graves común por impedancia de salida.
         OutputRoute.WIRED_AUX -> RouteProfile(bassBoostDb = 2.0f, dialogBoostDb = 1.0f, widenerMult = 1.0f)
         // USB-C: DAC dedicado, sin compensación necesaria.
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
         OutputRoute.SPEAKER, OutputRoute.UNKNOWN -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
+    }
+
+    // Umbral de bitrate bajo (kbps) por debajo del cual SBC degrada
+    // audiblemente banda 2-4kHz y separación estéreo.
+    private const val BT_LOW_BITRATE_KBPS = 200
+
+    private fun currentBtBitrateKbps(): Int? {
+        val am = audioManager ?: return null
+        return try {
+            // API no pública/vendor-specific (sin garantía en todos los OEM);
+            // se envuelve en try/catch y se degrada a null sin romper nada.
+            val raw = am.getParameters("bt_codec_bitrate")
+            raw.substringAfter("=", "").trim().toIntOrNull()
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo leer bt_codec_bitrate: ${e.message}")
+            null
+        }
+    }
+
+    private fun btProfile(): RouteProfile {
+        val bitrate = currentBtBitrateKbps()
+        return if (bitrate != null && bitrate < BT_LOW_BITRATE_KBPS) {
+            // SBC en bitrate bajo: ensanchado casi anulado, diálogo elevado
+            // más agresivo que el perfil BT estándar.
+            Log.i(TAG, "BT bitrate bajo detectado: ${bitrate}kbps -> perfil low-bitrate")
+            RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
+        } else {
+            RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
+        }
     }
 
     private fun applyRoute(route: OutputRoute) {
