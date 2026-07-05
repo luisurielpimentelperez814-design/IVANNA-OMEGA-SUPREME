@@ -97,6 +97,10 @@ class PlaybackCaptureService : Service() {
     @Volatile private var spatialEngine: IvannaSpatialEngine? = null
     @Volatile private var headTracker: IvannaHeadTracker? = null
     @Volatile private var spatialEnabled = false
+    
+    // [ANTI-DOLBY INTEGRATION] Controller para análisis en tiempo real
+    private var antiDolbyController: AntiDolbyController? = null
+    private var antiDolbyResampler: AudioResampler? = null  // 48kHz → 16kHz para YAMNet
 
     private fun initSpatialEngineIfNeeded() {
         if (!spatialEnabled || spatialEngine != null) return
@@ -125,6 +129,15 @@ class PlaybackCaptureService : Service() {
         IvannaNpeEngine.init(48000, INPUT_SAMPLES / 2)
         IvannaVisualizerBridge.init(48000, INPUT_SAMPLES / 2)
         IvannaVisualizerBridgeV2.init(48000, INPUT_SAMPLES / 2)
+        
+        // [ANTI-DOLBY INTEGRATION] Inicializar controller + resampler
+        val audioEngine = AudioEngine()
+        antiDolbyController = AntiDolbyController(this).apply {
+            initialize(audioEngine)
+            enableAntiDolby()  // ← Comienza análisis YAMNet en tiempo real
+        }
+        antiDolbyResampler = AudioResampler(48000, 16000)
+        
         val params = ParameterStore(this)
         IvannaNpeEngine.setBypass(params.isNpeBypass())
         IvannaNpeEngine.setEngineFlags(
@@ -178,6 +191,11 @@ class PlaybackCaptureService : Service() {
     }
 
     override fun onDestroy() {
+        // [ANTI-DOLBY] Liberar controller antes de cancelar scope
+        antiDolbyController?.release()
+        antiDolbyController = null
+        antiDolbyResampler = null
+        
         stopCapture()
         scope.cancel()
         if (runningInstance === this) runningInstance = null
@@ -322,26 +340,15 @@ class PlaybackCaptureService : Service() {
             val spatialOutL = FloatArray(INPUT_SAMPLES / 2)
             val spatialOutR = FloatArray(INPUT_SAMPLES / 2)
 
-            // [FIX-FREEZE] Causa raíz del visualizer congelado: GLUniformBridgeV2
-            // solo actualiza sus 13 bandas dentro de processBlockFromNPE(); si este
-            // bucle deja de invocarla (AudioRecord.read() devuelve un código de
-            // error negativo — ERROR_DEAD_OBJECT, ERROR_INVALID_OPERATION, etc. —
-            // típicamente al bloquear pantalla, cambiar de ruta de salida, o si la
-            // app fuente pausa/cierra la sesión de MediaProjection) el `if (read > 0)`
-            // simplemente saltaba el bloque sin romper el while, así que el hilo
-            // quedaba en spin infinito sin producir audio NI reiniciar nada: los
-            // uniforms de banda quedaban clavados en su último valor para siempre,
-            // mientras u_time/u_frame_phase (no dependen de audio) seguían avanzando
-            // en el shader — de ahí que el fondo/color se mueva pero las barras no.
-            //
-            // Fix: (a) watchdog de silencio → si no llega un bloque válido en
-            // SILENCE_TIMEOUT_MS, se resetean los bridges (decae a 0 en vez de
-            // quedar clavado); (b) error negativo → se sale del bucle y se
-            // reconstruye la sesión, en vez de spinnear infinitamente.
+            // [FIX-FREEZE-IMPROVED] Watchdog mejorado para visualizer congelado:
+            // - Reducido timeout de 400ms → 100ms (detecta freeze mucho más rápido)
+            // - Múltiples resets de componentes en fallback
+            // - Anti-Dolby puede generar latencia adicional → timeout más generoso
             var lastGoodBlockNanos = System.nanoTime()
             var consecutiveErrors = 0
-            val silenceTimeoutNanos = 400_000_000L // 400ms sin bloques válidos
+            val silenceTimeoutNanos = 100_000_000L // 100ms (fue 400ms) → más sensible
             var watchdogReset = false
+            var watchdogResetCount = 0
 
             while (isRunning && isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
@@ -353,6 +360,18 @@ class PlaybackCaptureService : Service() {
                     watchdogReset = false
 
                     val frames = read / 2
+                    
+                    // [ANTI-DOLBY INTEGRATION] Procesar audio para YAMNet (48kHz → 16kHz)
+                    // Downsample mono para clasificación en paralelo con DSP
+                    antiDolbyResampler?.let { resampler ->
+                        val monoIn = FloatArray(frames)
+                        for (i in 0 until frames) {
+                            monoIn[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
+                        }
+                        val monoResampled = resampler.resample(monoIn)
+                        antiDolbyController?.processAudioFrame(monoResampled)
+                    }
+                    
                     DSPBridge.process(buffer, frames)
                     IvannaNpeEngine.processInterleavedStereo(buffer, frames)
                     // CABLEADO: motor espacial binaural (upmixer + object renderer +
@@ -389,10 +408,17 @@ class PlaybackCaptureService : Service() {
                 } else {
                     // read == 0: no es error, pero tampoco avanzó el reloj de datos.
                     val silentFor = System.nanoTime() - lastGoodBlockNanos
-                    if (silentFor > silenceTimeoutNanos && !watchdogReset) {
-                        IvannaVisualizerBridge.reset()
-                        IvannaVisualizerBridgeV2.reset()
-                        watchdogReset = true
+                    if (silentFor > silenceTimeoutNanos) {
+                        if (!watchdogReset) {
+                            // Primer timeout: reset suave
+                            IvannaVisualizerBridge.reset()
+                            IvannaVisualizerBridgeV2.reset()
+                            watchdogReset = true
+                            watchdogResetCount++
+                        } else if (watchdogResetCount > 3) {
+                            // Demasiados timeouts consecutivos: salir del loop y reconstruir sesión
+                            break
+                        }
                     }
                 }
             }
