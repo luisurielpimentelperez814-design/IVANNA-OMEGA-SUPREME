@@ -6,15 +6,11 @@ import java.nio.FloatBuffer
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * IvannaVisualizerBridgeV2 — como IvannaVisualizerBridge (v1), pero:
- *   - processBlockFromNPE() espera el mono downmix YA procesado por
- *     IvannaNpeEngine (el mismo buffer `mono` que PlaybackCaptureService ya
- *     calcula para v1, calculado después de processInterleavedStereo()).
- *   - sample() devuelve 13 valores (bandas crudas), no 3 agregados.
+ * IvannaVisualizerBridgeV2 — Bridge optimizado con zero-allocation sampling.
  *
- * Lock-free igual que v1: GLUniformBridgeV2 en C++ usa atomics
- * relaxed/acquire-release; acá solo se evita usar el handle antes de
- * crearse o después de destruirse.
+ * [FIX-FREEZE-5.1] Nuevos métodos:
+ *   - sampleInto(dst: FloatArray): rellena array existente, sin alloc.
+ *   - sample(): mantiene compatibilidad pero delega a sampleInto.
  */
 object IvannaVisualizerBridgeV2 {
     const val BAND_COUNT = 13
@@ -36,7 +32,6 @@ object IvannaVisualizerBridgeV2 {
         handle.set(h)
     }
 
-    /** Llamado desde el hilo de audio con el mono downmix post-NPE. */
     fun processBlockFromNPE(mono: FloatArray, numFrames: Int) {
         val h = handle.get()
         if (h == 0L || numFrames <= 0 || numFrames > maxFrames) return
@@ -52,10 +47,24 @@ object IvannaVisualizerBridgeV2 {
         if (h != 0L) IvannaVisualizerNativeV2.nativeVisV2SetDeviceLatency(h, latencyMs)
     }
 
-    /** Llamado desde el hilo GL en cada frame — 13 bandas crudas grave→agudo. */
-    fun sample(): FloatArray {
+    /**
+     * [FIX-FREEZE-5.1] Zero-alloc sampling: rellena dst in-place.
+     * dst debe tener al menos BAND_COUNT elementos.
+     */
+    fun sampleInto(dst: FloatArray) {
         val h = handle.get()
-        return if (h != 0L) IvannaVisualizerNativeV2.nativeVisV2Sample(h) else FloatArray(BAND_COUNT)
+        if (h == 0L) {
+            java.util.Arrays.fill(dst, 0, BAND_COUNT, 0f)
+            return
+        }
+        IvannaVisualizerNativeV2.nativeVisV2SampleInto(h, dst)
+    }
+
+    /** Compatibilidad: devuelve nuevo array (legacy, preferir sampleInto). */
+    fun sample(): FloatArray {
+        val arr = FloatArray(BAND_COUNT)
+        sampleInto(arr)
+        return arr
     }
 
     fun reset() {

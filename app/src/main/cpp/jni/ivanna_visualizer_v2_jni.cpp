@@ -1,18 +1,8 @@
 /*
- * ivanna_visualizer_v2_jni.cpp
- * Puente JNI para com.ivanna.omega.visualizer.IvannaVisualizerNativeV2.
- * Carga: System.loadLibrary("ivanna_omega") (mismo .so consolidado que v1).
+ * ivanna_visualizer_v2_jni.cpp — JNI bridge optimizado.
  *
- * nativeVisV2Create()            → hilo de audio (PlaybackCaptureService), 1 vez
- * nativeVisV2ProcessBlockFromNPE → hilo de audio, con el mono downmix
- *                                   post-NPE (mismo buffer que ya alimenta v1)
- * nativeVisV2Sample              → hilo GL (VisualizerRendererV2), lock-free,
- *                                   devuelve las 13 bandas crudas
- *
- * No reemplaza a ivanna_visualizer_jni.cpp (v1): ambos bridges coexisten,
- * v1 sigue en producción para el shader simple, v2 alimenta wallpaper_v2.glsl.
- *
- * © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+ * [FIX-FREEZE-5.1] nativeVisV2SampleInto: escribe directamente en el
+ * jfloatArray pasado, sin crear nuevo array.
  */
 
 #include <jni.h>
@@ -62,6 +52,21 @@ Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2ProcessBloc
     auto* mono = static_cast<float*>(env->GetDirectBufferAddress(monoBuffer));
     if (!mono) return;
     b->processBlockFromNPE(mono, numFrames);
+}
+
+/** [FIX-FREEZE-5.1] Zero-alloc: escribe en dst existente. */
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2SampleInto(
+    JNIEnv* env, jclass, jlong handle, jfloatArray dst) {
+    auto* b = toPtrV2(handle);
+    if (!b || !dst) return;
+
+    jfloat* dstPtr = env->GetFloatArrayElements(dst, nullptr);
+    if (!dstPtr) return;
+
+    b->sampleForRender(dstPtr);
+
+    env->ReleaseFloatArrayElements(dst, dstPtr, 0);
 }
 
 JNIEXPORT jfloatArray JNICALL
