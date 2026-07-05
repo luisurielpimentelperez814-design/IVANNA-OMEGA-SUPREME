@@ -58,7 +58,12 @@ object AudioRouteManager {
         audioManager = null
     }
 
-    fun detectOutputRoute(am: AudioManager = audioManager ?: return OutputRoute.UNKNOWN): OutputRoute {
+    fun detectOutputRoute(): OutputRoute {
+        val am = audioManager ?: return OutputRoute.UNKNOWN
+        return detectOutputRoute(am)
+    }
+
+    fun detectOutputRoute(am: AudioManager): OutputRoute {
         val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         return when {
             outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET } ->
