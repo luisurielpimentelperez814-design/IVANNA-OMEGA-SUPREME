@@ -122,7 +122,7 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerCreate(
     JNIEnv* env, jclass, jstring modelPath, jfloat sampleRate, jint blockSize) {
     auto* upmixer = new ivanna::ai::NeuralUpmixer();
     const char* path = env->GetStringUTFChars(modelPath, nullptr);
-    bool ok = upmixer->init(path, sampleRate, blockSize);
+    bool ok = upmixer->init(sampleRate, blockSize);
     env->ReleaseStringUTFChars(modelPath, path);
     if (!ok) {
         delete upmixer;
