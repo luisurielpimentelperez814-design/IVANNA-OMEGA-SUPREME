@@ -28,6 +28,7 @@ class ParameterStore(context: Context) {
         private const val KEY_SPATIAL_WIDTH = "spatial_width"
         private const val KEY_EVO_ENABLED = "evo_enabled"
         private const val KEY_NPE_BYPASS = "npe_bypass"
+        private const val KEY_SPATIAL_ENGINE_ENABLED = "spatial_engine_enabled"
         private const val KEY_NPE_HARMONIC = "npe_harmonic_gain"
         private const val KEY_NPE_LATERAL_INHIB = "npe_lateral_inhib"
         private const val KEY_NPE_OHC_COMP = "npe_ohc_compression"
@@ -41,6 +42,12 @@ class ParameterStore(context: Context) {
 
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, enabled).apply()
+
+    // Motor espacial binaural (neural upmixer + object renderer + head-tracking 6DoF).
+    // Opt-in por defecto: procesamiento pesado (32 objetos + upsampler + sensores),
+    // no se activa sin consentimiento explícito del usuario.
+    fun isSpatialEngineEnabled(): Boolean = prefs.getBoolean(KEY_SPATIAL_ENGINE_ENABLED, false)
+    fun setSpatialEngineEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_ENGINE_ENABLED, enabled).apply()
 
     fun getNpeHarmonicGain(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.2f)
     fun setNpeHarmonicGain(value: Float) = prefs.edit().putFloat(KEY_NPE_HARMONIC, value).apply()

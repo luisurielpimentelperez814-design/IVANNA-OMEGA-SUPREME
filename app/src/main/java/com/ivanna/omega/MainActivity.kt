@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
                                 initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
                                 initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
                                 initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
+                                initialSpatialEnabled = parameterStore.isSpatialEngineEnabled(),
                                 // CABLEADO-FIX: Exciter/EQ/Width solo llamaban a audioEngine.set*(),
                                 // que escribe en gState de audio_orchestrator.cpp. Ese motor nunca
                                 // procesa audio real (nativeProcessAudio/nativeProcessAudioDirect no
@@ -324,7 +325,12 @@ class MainActivity : ComponentActivity() {
                                     parameterStore.setNpeAdaptEnabled(adapt)
                                     IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
                                 },
-                                onOpenVisualizer = { showVisualizer = true }
+                                onOpenVisualizer = { showVisualizer = true },
+                onSpatialEnabledChange = { enabled ->
+                    parameterStore.setSpatialEngineEnabled(enabled)
+                    PlaybackCaptureService.setSpatialEnabledLive(enabled)
+                    Log.i(TAG, "Motor Espacial Binaural: ${if (enabled) "ON" else "OFF"}")
+                }
                             )
                         }
                     }
@@ -414,6 +420,7 @@ fun IvannaControlPanel(
     initialNpeHrtf: Boolean = true,
     initialNpeCochlear: Boolean = true,
     initialNpeAdapt: Boolean = true,
+    initialSpatialEnabled: Boolean = false,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -434,6 +441,7 @@ fun IvannaControlPanel(
     onNpeMasterGainChange: (Float) -> Unit = {},
     onNpeAgcChange: (Float, Float) -> Unit = { _, _ -> },
     onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
+    onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
@@ -466,6 +474,7 @@ fun IvannaControlPanel(
     var npeAgcGainDb by remember { mutableFloatStateOf(0f) }
     var npeClassifyConfidence by remember { mutableFloatStateOf(0f) }
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
+    var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
 
     // CABLEADO: lectura periódica del género detectado por AutonomousBrain
     // (motor NPE real, IvannaNpeEngine, corriendo en PlaybackCaptureService).
@@ -766,6 +775,32 @@ Text("Motor OPE", style = MaterialTheme.typography.titleMedium)
                     Switch(checked = npeAdapt, onCheckedChange = { npeAdapt = it; onNpeFlagsChange(npeHrtf, npeCochlear, it) })
                 }
             }
+        }
+
+        HorizontalDivider()
+
+        // ── Motor Espacial Binaural (upmixer neural + 32 objetos + head-tracking) ──
+        // CABLEADO: motor completo (spatial_engine.cpp + head_tracker.cpp +
+        // object_renderer.cpp), compilado desde siempre, nunca instanciado
+        // hasta ahora. Opt-in: usa sensores (giroscopio a 100Hz) y separación
+        // neural de stems, más costoso que el resto de la cadena.
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Motor Espacial Binaural", style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = spatialEnabled,
+                    onCheckedChange = { spatialEnabled = it; onSpatialEnabledChange(it) }
+                )
+            }
+            Text(
+                "Upmixer neural (4 stems) + renderer de 32 objetos + head-tracking 6DoF",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))

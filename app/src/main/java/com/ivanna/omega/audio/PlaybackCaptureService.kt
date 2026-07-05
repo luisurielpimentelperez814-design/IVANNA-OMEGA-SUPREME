@@ -26,6 +26,8 @@ import com.ivanna.omega.R
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.spatial.IvannaHeadTracker
+import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBridge
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
@@ -47,6 +49,20 @@ class PlaybackCaptureService : Service() {
         // de rendirse (evita loop infinito si la ruta de audio está realmente muerta).
         private const val MAX_SESSION_RESTARTS = 3
         private const val SESSION_RESTART_BACKOFF_MS = 500L
+
+        // CABLEADO: referencia a la instancia viva del servicio, siguiendo el
+        // mismo patrón de estado estático compartido ya usado en DSPState
+        // (pfDrive/pfWet/...) para cruzar el límite Activity <-> Service sin
+        // Binder. Permite que el switch de MainActivity togguee el motor
+        // espacial EN VIVO, sin esperar a un reinicio de captura.
+        @Volatile private var runningInstance: PlaybackCaptureService? = null
+
+        fun setSpatialEnabledLive(enabled: Boolean) {
+            runningInstance?.let { svc ->
+                svc.spatialEnabled = enabled
+                if (enabled) svc.initSpatialEngineIfNeeded() else svc.releaseSpatialEngine()
+            }
+        }
     }
 
     // scope de vida larga (todo el Service); NO se cancela en cada reinicio de
@@ -73,8 +89,36 @@ class PlaybackCaptureService : Service() {
     // de trabajo pendiente real, no un placeholder cosmético.
     private var activeSampleRate = 48000
 
+    // CABLEADO: motor espacial binaural (neural upmixer + object renderer +
+    // head-tracking 6DoF). Escrito y compilado en el .so desde el principio
+    // pero jamás instanciado en ningún punto del proyecto — ver auditoría de
+    // motores huérfanos. Opt-in vía ParameterStore.isSpatialEngineEnabled()
+    // (procesamiento pesado: 32 objetos + upmixer + sensor a 100Hz).
+    private var spatialEngine: IvannaSpatialEngine? = null
+    private var headTracker: IvannaHeadTracker? = null
+    private var spatialEnabled = false
+
+    private fun initSpatialEngineIfNeeded() {
+        if (!spatialEnabled || spatialEngine != null) return
+        val engine = IvannaSpatialEngine(sampleRate = 48000f, blockSize = INPUT_SAMPLES / 2)
+        engine.init()
+        val tracker = IvannaHeadTracker(this)
+        tracker.start()
+        engine.setHeadTracker(tracker)
+        spatialEngine = engine
+        headTracker = tracker
+    }
+
+    private fun releaseSpatialEngine() {
+        headTracker?.release()
+        headTracker = null
+        spatialEngine?.release()
+        spatialEngine = null
+    }
+
     override fun onCreate() {
         super.onCreate()
+        runningInstance = this
         createNotificationChannel()
         DSPBridge.init(48000)
         AudioRouteManager.start(this)
@@ -91,6 +135,8 @@ class PlaybackCaptureService : Service() {
             params.getNpeOhcCompression(), params.getNpeMasterGainDb()
         )
         IvannaNpeEngine.setAGC(params.getNpeAgcTargetDb(), params.getNpeAgcRate())
+        spatialEnabled = params.isSpatialEngineEnabled()
+        initSpatialEngineIfNeeded()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -134,6 +180,7 @@ class PlaybackCaptureService : Service() {
     override fun onDestroy() {
         stopCapture()
         scope.cancel()
+        if (runningInstance === this) runningInstance = null
         super.onDestroy()
     }
 
@@ -148,6 +195,7 @@ class PlaybackCaptureService : Service() {
 
     private fun startCapture(mediaProjection: MediaProjection) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        initSpatialEngineIfNeeded() // robustez: re-arma tras un restart de sesión
 
         val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
@@ -267,6 +315,12 @@ class PlaybackCaptureService : Service() {
         captureJob = scope.launch {
             val buffer = FloatArray(INPUT_SAMPLES)
             val mono = FloatArray(INPUT_SAMPLES / 2)
+            // Buffers de deinterleave para el motor espacial (opera en L/R
+            // separados, no en el intercalado que usan DSPBridge/NPE).
+            val spatialInL = FloatArray(INPUT_SAMPLES / 2)
+            val spatialInR = FloatArray(INPUT_SAMPLES / 2)
+            val spatialOutL = FloatArray(INPUT_SAMPLES / 2)
+            val spatialOutR = FloatArray(INPUT_SAMPLES / 2)
 
             // [FIX-FREEZE] Causa raíz del visualizer congelado: GLUniformBridgeV2
             // solo actualiza sus 13 bandas dentro de processBlockFromNPE(); si este
@@ -301,6 +355,21 @@ class PlaybackCaptureService : Service() {
                     val frames = read / 2
                     DSPBridge.process(buffer, frames)
                     IvannaNpeEngine.processInterleavedStereo(buffer, frames)
+                    // CABLEADO: motor espacial binaural (upmixer + object renderer +
+                    // head-tracking). Opera sobre el mismo buffer, después del NPE,
+                    // igual patrón que el resto de la cadena. Deinterleave -> proceso
+                    // -> reinterleave in-place sobre `buffer`.
+                    spatialEngine?.let { engine ->
+                        for (i in 0 until frames) {
+                            spatialInL[i] = buffer[i * 2]
+                            spatialInR[i] = buffer[i * 2 + 1]
+                        }
+                        engine.processStereoInput(spatialInL, spatialInR, spatialOutL, spatialOutR, frames)
+                        for (i in 0 until frames) {
+                            buffer[i * 2] = spatialOutL[i]
+                            buffer[i * 2 + 1] = spatialOutR[i]
+                        }
+                    }
                     for (i in 0 until frames) {
                         mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
                     }
@@ -374,6 +443,7 @@ class PlaybackCaptureService : Service() {
         audioTrack?.release()
         audioTrack = null
         IvannaNpeEngine.release()
+        releaseSpatialEngine()
         savedMusicVolume?.let {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0)
