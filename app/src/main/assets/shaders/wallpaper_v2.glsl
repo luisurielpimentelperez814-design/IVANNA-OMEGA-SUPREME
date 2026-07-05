@@ -1,24 +1,26 @@
 #version 320 es
-// wallpaper_v2.glsl — GEMINI DEPTH / AURORA GLASS
+// wallpaper_v2.glsl — GEMINI DEPTH / AURORA GLASS  (v2.1 · magistral)
 // ============================================================================
 // IVANNA — Wallpaper dinámico audio-reactivo v2+ (OpenGL ES 3.2)
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 //
-// [STYLE-GEMINI-DEPTH]
-// La referencia del video no pide una pantalla saturada tipo plasma arcoíris,
-// sino un fondo premium, limpio y profundo: negro/azul noche, un glow frío en
-// la base, niebla auroral muy suave y transiciones fluidas al estilo Gemini.
+// [STYLE-GEMINI-DEPTH · v2.1]
+// Referencia: el video pide un fondo premium — negro/azul noche, glow frío
+// en la base, niebla auroral suave y transiciones cinematográficas. No un
+// plasma arcoíris.
 //
-// Objetivo visual de esta versión:
-//   - base oscura y elegante, sin “lavar” el panel Compose;
-//   - glow cian/azul en el tercio inferior, como luz difusa desde abajo;
-//   - aurora y ondas muy sutiles, no un festival de color;
-//   - respuesta al audio visible pero fina, cinematográfica, no agresiva;
-//   - 13 acentos por banda integrados como destellos/vidrio, no como burbujas
-//     protagonistas que rompan la limpieza del fondo.
+// v2.1 (esta iteración, tras el fix de congelamiento):
+//   - clamps defensivos en los exp() de los acentos (evita picos infinitos
+//     cuando alguna banda se dispara),
+//   - respuesta al bajo más orgánica: swell suave, no bounce brusco,
+//   - halo profundo detrás del glow inferior para dar sensación de
+//     "cristal iluminado por dentro",
+//   - bloom sutil sobre los picos altos (chispas), no sobre todo el fondo,
+//   - tonemapping filmico + gamma ligeramente más oscura para preservar
+//     el negro real del OLED en el Moto G85.
 //
-// El FIX de congelamiento / cuadrantes vive en GLTextureView.kt. Aquí solo se
-// pule la estética para que el wallpaper se parezca más al fondo del video.
+// El FIX de congelamiento / cuadrantes vive en GLTextureView.kt y
+// VisualizerRendererV2.kt. Aquí solo se pule la estética.
 // ============================================================================
 precision highp float;
 
@@ -160,6 +162,10 @@ vec3 generateGeminiField(vec2 uv, float bassEnergy, float midEnergy, float highE
     float bottomGlow = exp(-length((uv - glowPos) * vec2(1.15, 2.35)) * (2.8 - bassEnergy * 0.9));
     vec3 glowColor = mix(vec3(0.03, 0.08, 0.20), vec3(0.18, 0.62, 0.95), 0.58 + 0.20 * field);
 
+    // [v2.1] Halo profundo detrás del glow — da sensación de "cristal por dentro".
+    float deepHalo = exp(-length((uv - vec2(0.0, -0.95)) * vec2(0.85, 1.85)) * 1.35);
+    vec3 deepHaloCol = vec3(0.02, 0.09, 0.22);
+
     // Aurora suave: columnas / velos verticales con poco contraste.
     float veil = flowField(vec2(uv.x * 1.3, uv.y * 0.55 + 1.5), u_time * (0.10 + midEnergy * 0.20));
     float auroraShape = smoothstep(0.26, 0.86, veil);
@@ -177,12 +183,13 @@ vec3 generateGeminiField(vec2 uv, float bassEnergy, float midEnergy, float highE
     vec3 mistColor = vec3(0.012, 0.026, 0.055) * upperMist;
 
     vec3 color = deepBase;
+    color += deepHaloCol * deepHalo * (0.50 + bassEnergy * 0.55);
     color += glowColor * bottomGlow * (0.85 + bassEnergy * 0.65);
     color += auroraColor * auroraShape;
     color += waveColor;
     color += mistColor;
 
-    // Foco central inferior extra: ayuda a recordar el “glow” del video.
+    // Foco central inferior extra: ayuda a recordar el "glow" del video.
     float core = exp(-dot(uv - vec2(0.0, -0.64), uv - vec2(0.0, -0.64)) * (8.5 - bassEnergy * 2.5));
     color += vec3(0.03, 0.16, 0.30) * core * (0.65 + bassEnergy * 0.40);
 
@@ -194,24 +201,32 @@ void main() {
     vec3 V = vec3(0.0, 0.0, 1.0);
     vec3 L = normalize(vec3(0.28, 0.58, 0.76));
 
+    // Energías agregadas por bandas (0..3=grave, 4..8=medio, 9..12=agudo).
     float bassEnergy = 0.0;
     for (int i = 0; i < 4; ++i) bassEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
     bassEnergy *= 0.25;
+    bassEnergy = clamp(bassEnergy, 0.0, 1.4);
 
     float midEnergy = 0.0;
     for (int i = 4; i < 9; ++i) midEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
     midEnergy *= 0.20;
+    midEnergy = clamp(midEnergy, 0.0, 1.4);
 
     float highEnergy = 0.0;
     for (int i = 9; i < 13; ++i) highEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
     highEnergy *= 0.25;
+    highEnergy = clamp(highEnergy, 0.0, 1.4);
 
     vec3 color = generateGeminiField(uv, bassEnergy, midEnergy, highEnergy);
+
+    // Acumulador para chispas altas (usado en bloom sutil al final).
+    float sparkAccum = 0.0;
 
     // 13 acentos de cristal: siguen representando las bandas, pero ahora más
     // integrados y discretos, como chispas suspendidas en el campo.
     for (int i = 0; i < 13; ++i) {
         float band = mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+        band = clamp(band, 0.0, 1.5);   // [v2.1] safety clamp
         float t = float(i) / 12.0;
 
         float layer = mix(0.14, 0.82, t);
@@ -221,9 +236,14 @@ void main() {
         nodePos.x += sin(u_time * 0.10 + t * 17.0) * 0.05;
 
         float d = length(uv - nodePos);
-        float nodeSize = 0.008 + 0.026 * band;
-        float spark = exp(-d * d * (240.0 - band * 90.0));
-        float halo = exp(-d * d * (28.0 - band * 10.0)) * band;
+        // [v2.1] mantener el ancho de las gaussianas siempre positivo — antes
+        // (240 - band*90) podía volverse negativo con band>2.66 y hacía que
+        // exp() explotara a +inf, con el resultado de "toda la pantalla
+        // blanca" (visto como flash en el video de referencia del bug).
+        float sparkSharpness = max(160.0, 240.0 - band * 60.0);
+        float haloSharpness  = max(18.0,  28.0  - band * 6.0);
+        float spark = exp(-d * d * sparkSharpness);
+        float halo  = exp(-d * d * haloSharpness) * band;
 
         vec2 warp = (uv - nodePos) * rot(u_time * 0.06 + t * 4.0);
         vec3 N = normalize(vec3(warp.x * 4.0, warp.y * 4.0, 1.0));
@@ -231,9 +251,16 @@ void main() {
         vec3 tint = accentColor(t, band);
 
         color += tint * spark * (0.28 + band * 0.55);
-        color += tint * halo * 0.16;
+        color += tint * halo  * 0.16;
         color += spec * tint * spark * 0.55;
+
+        // Solo acumulamos chispas de banda alta para el bloom final.
+        if (i >= 9) sparkAccum += spark * band;
     }
+
+    // [v2.1] Bloom sutil sólo sobre las chispas altas — brillito de cristal,
+    // NO neblina general. Evita "lavar" el negro del OLED.
+    color += vec3(0.35, 0.60, 0.95) * (sparkAccum * 0.08);
 
     // Viñeta elegante: oscurece bordes y deja respirar el centro inferior.
     float vignette = smoothstep(1.30, 0.18, length(uv * vec2(0.92, 1.10)));
@@ -241,7 +268,8 @@ void main() {
 
     // Contraste muy suave, preservando el look premium oscuro.
     color = tonemap_filmic(color * 1.18);
-    color = pow(max(color, 0.0), vec3(0.92));
+    // [v2.1] gamma un pelín más oscura (0.90) para negros más profundos.
+    color = pow(max(color, 0.0), vec3(0.90));
 
     fragColor = vec4(color, 1.0);
 }
