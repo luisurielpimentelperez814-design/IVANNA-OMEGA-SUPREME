@@ -9,6 +9,8 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.Choreographer
 import android.view.TextureView
@@ -34,6 +36,9 @@ import java.util.concurrent.atomic.AtomicLong
  * 
  * [FIX-FREEZE-5.2] Shader optimization bridge:
  *   - Interfaz QualityHint para que el renderer sepa si debe simplificar.
+ * 
+ * [FIX-KOTLIN-RECURSIVE] Línea 142: tipo explícito en FrameCallback para evitar
+ * "Type checking has run into a recursive problem" del compilador Kotlin.
  */
 class GLTextureView @JvmOverloads constructor(
     context: Context,
@@ -125,23 +130,27 @@ class GLTextureView @JvmOverloads constructor(
         private val hasNewFrame = AtomicBoolean(false)
 
         private val consecutiveDrops = AtomicLong(0)
-        private var lastFrameTime = 0L
         private val FRAME_TIME_THRESHOLD_NS = 33_000_000L
-        private val DROP_RECOVERY_FRAMES = 60
 
         private var eglDisplay: android.opengl.EGLDisplay = EGL14.EGL_NO_DISPLAY
         private var eglContext: android.opengl.EGLContext = EGL14.EGL_NO_CONTEXT
         private var eglSurface: android.opengl.EGLSurface = EGL14.EGL_NO_SURFACE
 
-        private val choreographer = Choreographer.getInstance()
-        private val frameCallback = Choreographer.FrameCallback { frameTimeNanos ->
-            if (!running) return@FrameCallback
-            hasNewFrame.set(true)
-            frameRequested.set(true)
-            if (!paused) {
-                choreographer.postFrameCallback(this.frameCallback)
+        // [FIX-KOTLIN-RECURSIVE] Tipo explícito en FrameCallback para evitar
+        // "Type checking has run into a recursive problem"
+        private val frameCallback: Choreographer.FrameCallback = object : Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                if (!running) return
+                hasNewFrame.set(true)
+                frameRequested.set(true)
+                if (!paused) {
+                    postNextFrame()
+                }
             }
         }
+
+        // Handler al hilo principal para operaciones de Choreographer
+        private val mainHandler = Handler(Looper.getMainLooper())
 
         fun onSizeChanged(w: Int, h: Int) {
             width = w
@@ -153,16 +162,16 @@ class GLTextureView @JvmOverloads constructor(
             if (paused == p) return
             paused = p
             if (!p) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                mainHandler.post {
                     if (running && !paused) {
-                        choreographer.removeFrameCallback(frameCallback)
-                        choreographer.postFrameCallback(frameCallback)
+                        Choreographer.getInstance().removeFrameCallback(frameCallback)
+                        Choreographer.getInstance().postFrameCallback(frameCallback)
                     }
                 }
                 frameRequested.set(true)
             } else {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    choreographer.removeFrameCallback(frameCallback)
+                mainHandler.post {
+                    Choreographer.getInstance().removeFrameCallback(frameCallback)
                 }
             }
         }
@@ -170,11 +179,19 @@ class GLTextureView @JvmOverloads constructor(
         fun shutdown() {
             running = false
             paused = true
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                choreographer.removeFrameCallback(frameCallback)
+            mainHandler.post {
+                Choreographer.getInstance().removeFrameCallback(frameCallback)
             }
             frameRequested.set(true)
             interrupt()
+        }
+
+        private fun postNextFrame() {
+            mainHandler.post {
+                if (running && !paused) {
+                    Choreographer.getInstance().postFrameCallback(frameCallback)
+                }
+            }
         }
 
         private fun initEGL(): Boolean {
@@ -244,9 +261,9 @@ class GLTextureView @JvmOverloads constructor(
 
             renderer.onSurfaceCreated(null, null)
 
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
+            mainHandler.post {
                 if (running && !paused) {
-                    choreographer.postFrameCallback(frameCallback)
+                    Choreographer.getInstance().postFrameCallback(frameCallback)
                 }
             }
 
@@ -305,14 +322,14 @@ class GLTextureView @JvmOverloads constructor(
                     val drops = consecutiveDrops.incrementAndGet()
                     dropCount++
                     if (drops == 3L) {
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        mainHandler.post {
                             renderer.onFrameDropDetected(dropCount)
                         }
                     }
                 } else {
                     val prevDrops = consecutiveDrops.getAndSet(0)
                     if (prevDrops >= 3) {
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        mainHandler.post {
                             renderer.onFrameDropRecovered()
                         }
                     }
