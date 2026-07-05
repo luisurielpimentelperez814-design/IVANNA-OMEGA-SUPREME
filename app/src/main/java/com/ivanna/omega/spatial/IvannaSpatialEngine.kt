@@ -166,12 +166,17 @@ class IvannaSpatialEngine(
             rendererHandle, objectsBuf, 4, outL, outR, numFrames
         )
 
-        // 4. Copiar salida a arrays de Kotlin
-        outL.flip()
-        outR.flip()
+        // [FIX-CRASH] outL/outR se escriben desde C++ vía puntero crudo
+        // (GetDirectBufferAddress), lo que NO mueve el position Java del
+        // FloatBuffer. clear() deja position=0. flip() aquí hacía
+        // limit=position(0) -> limit quedaba en 0 -> outL.get() lanzaba
+        // BufferUnderflowException en la primera muestra de cada bloque,
+        // crasheando la app en cuanto llegaba el primer audio tras
+        // encender el motor. Se lee por índice absoluto en vez de
+        // depender del position/limit relativo.
         for (i in 0 until numFrames) {
-            outLeft[i] = outL.get()
-            outRight[i] = outR.get()
+            outLeft[i] = outL.get(i)
+            outRight[i] = outR.get(i)
         }
     }
 
