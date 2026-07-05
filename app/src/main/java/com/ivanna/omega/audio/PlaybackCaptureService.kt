@@ -94,9 +94,9 @@ class PlaybackCaptureService : Service() {
     // pero jamás instanciado en ningún punto del proyecto — ver auditoría de
     // motores huérfanos. Opt-in vía ParameterStore.isSpatialEngineEnabled()
     // (procesamiento pesado: 32 objetos + upmixer + sensor a 100Hz).
-    private var spatialEngine: IvannaSpatialEngine? = null
-    private var headTracker: IvannaHeadTracker? = null
-    private var spatialEnabled = false
+    @Volatile private var spatialEngine: IvannaSpatialEngine? = null
+    @Volatile private var headTracker: IvannaHeadTracker? = null
+    @Volatile private var spatialEnabled = false
 
     private fun initSpatialEngineIfNeeded() {
         if (!spatialEnabled || spatialEngine != null) return
