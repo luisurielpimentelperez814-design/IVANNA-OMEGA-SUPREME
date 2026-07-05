@@ -161,7 +161,15 @@ class PlaybackCaptureService : Service() {
         // camino que SÍ entrega hi-res real de hardware, sin pasar por el
         // mezclador compartido, es UsbAudioProManager (USB OTG directo,
         // 384kHz/32-bit ya implementado) — ver nota en el README.
-        val candidateRates = intArrayOf(192000, 96000, 48000)
+        //
+        // [HOTFIX] Forzado a 48kHz para sincronizar con inicialización de DSP en
+        // onCreate(). AudioPlaybackCaptureConfiguration está limitada por AudioFlinger
+        // que típicamente corre a 48kHz. Candidatos 96k/192k fueron removidos porque:
+        // - DSPBridge, IvannaNpeEngine, Gammatone se inicializan a 48kHz en onCreate()
+        // - Si AudioRecord se negocia a 96k/192k, hay mismatch → visualizer congela + glitches
+        // - La solución correcta requiere reinicializar DSP en startCapture() (TODO)
+        // - Por ahora: forzado a 48kHz donde REALMENTE está AudioFlinger
+        val candidateRates = intArrayOf(48000)
         var chosenRate = 48000
         var bufferSize = 0
 
