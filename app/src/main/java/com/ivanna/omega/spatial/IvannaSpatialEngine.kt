@@ -83,6 +83,13 @@ class IvannaSpatialEngine(
         // Crear renderer
         rendererHandle = IvannaSpatialNative.nativeObjectRendererCreate(sampleRate, blockSize)
 
+        // [FIX-SILENCE] Sin esto, el renderer nunca tiene objetos activos
+        // (numActiveObjects_ = 0 para siempre) y la salida binaural queda
+        // en silencio aunque el upmixer y el HRTF sí estén corriendo.
+        if (upmixerHandle != 0L && rendererHandle != 0L) {
+            IvannaSpatialNative.nativeObjectRendererSyncStemObjects(rendererHandle, upmixerHandle)
+        }
+
         // Allocar buffers directos
         upmixerInBuf = createDirectFloatBuffer(blockSize * 2)      // Stereo input
         upmixerOutBuf = createDirectFloatBuffer(blockSize * 8)     // 4 stems × stereo
@@ -173,6 +180,11 @@ class IvannaSpatialEngine(
             IvannaSpatialNative.nativeUpmixerSetStemPosition(
                 upmixerHandle, stemType.ordinal, x, y, z, width
             )
+            // Re-sincronizar la lista de objetos activos del renderer con
+            // la nueva posición custom del stem.
+            if (rendererHandle != 0L) {
+                IvannaSpatialNative.nativeObjectRendererSyncStemObjects(rendererHandle, upmixerHandle)
+            }
         }
     }
 

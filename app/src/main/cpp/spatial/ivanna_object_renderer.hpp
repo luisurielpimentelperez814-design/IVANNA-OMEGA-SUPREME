@@ -82,6 +82,17 @@ private:
     HeadTracker* headTracker_ = nullptr;
     float reverbLevel_ = 0.3f;
 
+    // [FIX-CRASH-BLOCKSIZE] Buffers internos de renderBlock() dimensionados
+    // dinámicamente a blockSize_ en init(). Antes eran arrays fijos de 512
+    // en el stack (virtualSpk[12][512], spkL/R[512], inL/inR[512]) mientras
+    // que PlaybackCaptureService llama a init(sampleRate, INPUT_SAMPLES/2)
+    // == init(48000, 1024): con numFrames=1024 > 512 cada escritura se
+    // salía del array -> stack buffer overflow -> stack smashing / SIGABRT
+    // al encender el motor espacial (upmixer+renderer+head tracking).
+    std::vector<std::vector<float>> virtualSpk_;   // [kNumVirtualSpeakers][blockSize_]
+    std::vector<float> spkL_, spkR_;
+    std::vector<float> hrtfInL_, hrtfInR_;
+
     // [FIX-HRTF] HRTFConvolver::init() solo recibe sampleRate
     std::array<HRTFConvolver, kNumVirtualSpeakers> hrtfConvolvers_;
 

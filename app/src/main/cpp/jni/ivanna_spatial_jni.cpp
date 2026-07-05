@@ -113,6 +113,23 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererReset(JNIE
     if (renderer) renderer->reset();
 }
 
+// [FIX-SILENCE] Puentea las posiciones de stem del upmixer (kStemPositions
+// o customPositions_ tras setStemPosition) hacia la lista de objetos
+// activos del renderer. stemsToObjects() ignora el puntero/numFrames de
+// audio que recibe (solo usa las posiciones), así que se puede invocar
+// con nullptr/0 de forma segura únicamente para (re)generar la lista.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSyncStemObjects(
+    JNIEnv*, jclass, jlong rendererHandle, jlong upmixerHandle) {
+    auto* renderer = toObjectRenderer(rendererHandle);
+    auto* upmixer = toUpmixer(upmixerHandle);
+    if (!renderer || !upmixer) return;
+
+    std::vector<ivanna::spatial::AudioObject> objects;
+    upmixer->stemsToObjects(nullptr, 0, objects);
+    renderer->setObjects(objects);
+}
+
 // ============================================================================
 // NeuralUpmixer JNI
 // ============================================================================

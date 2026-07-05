@@ -17,6 +17,14 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
         hrtfConvolvers_[i].init(static_cast<uint32_t>(sampleRate));
     }
 
+    // [FIX-CRASH-BLOCKSIZE] Dimensionar buffers internos al blockSize real
+    // en vez de arrays fijos de 512 (ver comentario en el header).
+    virtualSpk_.assign(kNumVirtualSpeakers, std::vector<float>(blockSize_, 0.f));
+    spkL_.assign(blockSize_, 0.f);
+    spkR_.assign(blockSize_, 0.f);
+    hrtfInL_.assign(blockSize_, 0.f);
+    hrtfInR_.assign(blockSize_, 0.f);
+
     reverb_.init();
     ivanna::audio::enableAudioThreadFastMathOnce();
 }
@@ -36,6 +44,13 @@ void ObjectRenderer::setObjects(const std::vector<AudioObject>& objects) noexcep
 
 void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
                                  float* outLeft, float* outRight, int numFrames) noexcept {
+    // [FIX-CRASH-BLOCKSIZE] Clamp defensivo: nunca procesar más frames que
+    // lo que los buffers internos soportan (dimensionados a blockSize_ en
+    // init()). Si algún día un caller pide más frames que blockSize_, se
+    // recorta en vez de desbordar memoria.
+    if (numFrames > blockSize_) numFrames = blockSize_;
+    if (numFrames <= 0) return;
+
     int readBuf = activeBuffer_.load(std::memory_order_acquire);
     const auto& objects = (readBuf == 0) ? objectsA_ : objectsB_;
     int numActive = numActiveObjects_.load(std::memory_order_acquire);
@@ -49,9 +64,8 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
         pose = headTracker_->getPoseForAudioFrame(frameTimeMs);
     }
 
-    alignas(16) float virtualSpk[kNumVirtualSpeakers][512];
     for (int i = 0; i < kNumVirtualSpeakers; ++i) {
-        std::fill(virtualSpk[i], virtualSpk[i] + numFrames, 0.f);
+        std::fill(virtualSpk_[i].begin(), virtualSpk_[i].begin() + numFrames, 0.f);
     }
 
     for (int objIdx = 0; objIdx < numActive && objIdx < numObjects; ++objIdx) {
@@ -67,19 +81,21 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
         for (int n = 0; n < numFrames; ++n) {
             float mono = (objL[n] + objR[n]) * 0.5f * obj.gain;
             for (int s = 0; s < kNumVirtualSpeakers; ++s) {
-                virtualSpk[s][n] += mono * vbapGains[s];
+                virtualSpk_[s][n] += mono * vbapGains[s];
             }
         }
     }
 
     // [FIX-HRTF] process() recibe inL, inR, outL, outR, n (5 args)
-    alignas(16) float spkL[512], spkR[512];
+    float* spkL = spkL_.data();
+    float* spkR = spkR_.data();
     for (int s = 0; s < kNumVirtualSpeakers; ++s) {
         // Crear buffers de entrada separados para L/R (mismo contenido = mono)
-        alignas(16) float inL[512], inR[512];
+        float* inL = hrtfInL_.data();
+        float* inR = hrtfInR_.data();
         for (int n = 0; n < numFrames; ++n) {
-            inL[n] = virtualSpk[s][n];
-            inR[n] = virtualSpk[s][n];
+            inL[n] = virtualSpk_[s][n];
+            inR[n] = virtualSpk_[s][n];
         }
 
         hrtfConvolvers_[s].process(inL, inR, spkL, spkR, numFrames);

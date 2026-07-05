@@ -31,6 +31,14 @@ object IvannaSpatialNative {
         outLeftBuffer: java.nio.FloatBuffer, outRightBuffer: java.nio.FloatBuffer, numFrames: Int
     )
     external fun nativeObjectRendererReset(handle: Long)
+    // [FIX-SILENCE] El renderer solo produce audio para objetos activos en
+    // su lista interna (setObjects()/objectsA_/objectsB_), que ANTES nunca
+    // se poblaba: el motor corría (upmixer + renderer + HRTF) pero
+    // numActiveObjects_ quedaba en 0 para siempre -> salida binaural
+    // silenciosa. Este puente sincroniza las 4 posiciones de stem del
+    // upmixer (defaults o custom vía setStemPosition) hacia la lista de
+    // objetos activos del renderer.
+    external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
 
     // NeuralUpmixer
     external fun nativeUpmixerCreate(modelPath: String, sampleRate: Float, blockSize: Int): Long
