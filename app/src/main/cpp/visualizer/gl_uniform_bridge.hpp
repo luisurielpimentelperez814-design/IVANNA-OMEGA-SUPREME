@@ -101,12 +101,13 @@ public:
         high_flicker_.store(u.high_flicker, std::memory_order_release);
     }
 
+    // [FIX-GLITCH] Mismo bug que v2: el acquire debe leerse primero para
+    // garantizar happens-before sobre los relaxed subsecuentes.
     inline VisualUniforms sampleForRender() const noexcept {
-        return {
-            bass_pulse_.load(std::memory_order_relaxed),
-            mid_flow_.load(std::memory_order_relaxed),
-            high_flicker_.load(std::memory_order_acquire)
-        };
+        const float high = high_flicker_.load(std::memory_order_acquire);
+        const float bass = bass_pulse_.load(std::memory_order_relaxed);
+        const float mid  = mid_flow_.load(std::memory_order_relaxed);
+        return { bass, mid, high };
     }
 
     void reset() noexcept {

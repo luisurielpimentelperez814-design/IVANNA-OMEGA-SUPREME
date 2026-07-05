@@ -137,11 +137,20 @@ public:
     }
 
     // sampleForRender: llamado desde el hilo GL, lock-free.
+    // [FIX-GLITCH] El load acquire debe ir PRIMERO: es la sincronización que
+    // garantiza que los loads relaxed posteriores (en program order) vean
+    // las escrituras relaxed que el hilo de audio hizo antes de su propio
+    // store release. Antes se leían los relaxed 0..11 ANTES del acquire de
+    // la banda 12 -> sin garantía de happens-before -> esas bandas podían
+    // quedarse con el valor del bloque anterior mientras la última ya
+    // avanzaba, produciendo tearing entre bandas visible como glitches/lag
+    // en la imagen del wallpaper.
     inline void sampleForRender(float out[GTL_BANDS]) const noexcept {
+        const float last = bandUniforms_[GTL_BANDS - 1].load(std::memory_order_acquire);
         for (int b = 0; b < GTL_BANDS - 1; ++b) {
             out[b] = bandUniforms_[b].load(std::memory_order_relaxed);
         }
-        out[GTL_BANDS - 1] = bandUniforms_[GTL_BANDS - 1].load(std::memory_order_acquire);
+        out[GTL_BANDS - 1] = last;
     }
 
     void reset() noexcept {
