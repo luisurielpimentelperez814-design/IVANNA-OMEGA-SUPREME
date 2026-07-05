@@ -180,17 +180,35 @@ class MainActivity : ComponentActivity() {
                                 initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
                                 initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
                                 initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
+                                // CABLEADO-FIX: Exciter/EQ/Width solo llamaban a audioEngine.set*(),
+                                // que escribe en gState de audio_orchestrator.cpp. Ese motor nunca
+                                // procesa audio real (nativeProcessAudio/nativeProcessAudioDirect no
+                                // los llama nadie) — el motor que SÍ suena es DSPBridge (ControlFrame
+                                // → g_eq/g_exciter/g_widener/g_gain en ivanna_omega_jni.cpp), igual
+                                // que ya hacían los sliders de Compresor (alpha/beta) más abajo.
+                                // Se mantiene audioEngine.set*() para los getters de fusión en
+                                // PDEngine (nativeGetExciterValue/EqGainDb/WidthValue) y se añade el
+                                // push real al motor vivo.
                                 onExciterChange = { value ->
                                     parameterStore.setExciter(value)
                                     audioEngine.setExciter(value)
+                                    // HarmonicExciter: drive_ = 1+drive*5, wet_ = wet (setAmount semantics)
+                                    liveDspState = liveDspState.copy(drive = value, wet = value)
+                                    liveDspState.pushToNative()
                                 },
                                 onEqChange = { value ->
                                     parameterStore.setEqGain(value)
                                     audioEngine.setEqGain(value)
+                                    // GainStage: outputGain = dbToLin(master) — pasa directo en dB
+                                    liveDspState = liveDspState.copy(master = value)
+                                    liveDspState.pushToNative()
                                 },
                                 onWidthChange = { value ->
                                     parameterStore.setWidth(value)
                                     audioEngine.setWidth(value)
+                                    // StereoWidener: width_ = gamma * 1.5 → invertir escala UI [0..1.5]
+                                    liveDspState = liveDspState.copy(gamma = value / 1.5f)
+                                    liveDspState.pushToNative()
                                 },
                                 onAntiDolbyChange = { enabled ->
                                     parameterStore.setAntiDolbyEnabled(enabled)
@@ -336,11 +354,17 @@ class MainActivity : ComponentActivity() {
         // CABLEADO: restaura el modo PDEngine persistido (0=DSP, 1=+NHO, 2=+NHO+Spatial)
         OmegaEngine.setMode(parameterStore.getOmegaMode())
 
-        // CABLEADO: restaura compresor (g_comp) y parámetros NHO/espaciales (g_pd)
-        // sobre el motor DSPBridge que ya corre en AudioForegroundService.
+        // CABLEADO: restaura compresor (g_comp), Exciter/EQ/Width y parámetros
+        // NHO/espaciales (g_pd) sobre el motor DSPBridge que ya corre en
+        // AudioForegroundService. Exciter/EQ/Width antes solo se restauraban
+        // en el motor muerto (audio_orchestrator.cpp, ver arriba).
         liveDspState = liveDspState.copy(
             alpha = parameterStore.getCompThreshold(),
-            beta = parameterStore.getCompRatio()
+            beta = parameterStore.getCompRatio(),
+            drive = parameterStore.getExciter(),
+            wet = parameterStore.getExciter(),
+            master = parameterStore.getEqGain(),
+            gamma = parameterStore.getWidth() / 1.5f
         )
         liveDspState.pushToNative()
         IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
