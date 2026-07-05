@@ -104,7 +104,13 @@ bool neuro_cochlear_manifold_init(
     }
 
     try {
-        g_manifold.upsampler = new FIRUpsamplerEngine();
+        // [FIX] Antes se construía con el default del stub (factor fijo, ni
+        // siquiera leído de g_manifold.upsample_factor). Ahora se pasa el
+        // factor real calculado arriba (sample_rate_out/sample_rate_in), para
+        // que el FIR polifásico llene el buffer completo (up_N muestras) y no
+        // solo una fracción fija como antes.
+        g_manifold.upsampler = new FIRUpsamplerEngine(
+            static_cast<uint32_t>(g_manifold.upsample_factor));
         g_manifold.volterra = new VolterraH2Symmetric(8192, channels);
     } catch (...) {
         delete g_manifold.upsampler; g_manifold.upsampler = nullptr;

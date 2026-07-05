@@ -143,6 +143,56 @@ vec3 generate_nebula(vec2 uv) {
     return nebula_color;
 }
 
+// ── Aurora boreal audio-reactiva ─────────────────────────────────────────
+// Cintas verticales de FBM desplazadas por bandas graves/medias (u_bands),
+// coloreadas verde→cian→violeta (paleta aurora real), aditivas sobre la
+// nebulosa de fondo. bassEnergy/midEnergy controlan intensidad y velocidad
+// de ondulación para que reaccione a la música en vez de ser un loop fijo.
+vec3 generate_aurora(vec2 uv, float bassEnergy, float midEnergy) {
+    vec3 aurora = vec3(0.0);
+    // uv_a: espacio propio para la aurora, con el "suelo" en la parte
+    // inferior de la pantalla (banda superior más despejada, como en el
+    // fondo de referencia).
+    vec2 uv_a = uv;
+    uv_a.y += 0.35;
+
+    const int RIBBONS = 4;
+    for (int r = 0; r < RIBBONS; ++r) {
+        float fr = float(r);
+        // Cada cinta ondula a su propia frecuencia/fase; la velocidad crece
+        // con la energía grave para que "respire" con el beat.
+        float speed = 0.05 + 0.06 * fr + bassEnergy * 0.12;
+        float freq = 1.6 + fr * 0.9;
+        float phase = u_time * speed + fr * 2.3;
+
+        float wave = fbm(vec2(uv_a.x * freq + phase, fr * 5.0), 3);
+        wave += 0.25 * sin(uv_a.x * (3.0 + fr) + u_time * (0.4 + 0.1 * fr));
+
+        // Altura de la cinta: modulada por energía media (voces/instrumentos)
+        float ribbonY = 0.55 - fr * 0.10 + wave * (0.18 + midEnergy * 0.12);
+        float dist = abs(uv_a.y - ribbonY);
+
+        // Cortina vertical difusa (más ancha abajo, se afina hacia arriba)
+        float curtain = exp(-dist * dist * (9.0 - fr * 1.2));
+
+        // Paleta aurora: verde profundo -> cian -> violeta, según altura y cinta
+        vec3 auroraGreen  = vec3(0.10, 0.85, 0.45);
+        vec3 auroraCyan   = vec3(0.15, 0.65, 0.85);
+        vec3 auroraViolet = vec3(0.45, 0.25, 0.85);
+        float mixT = clamp(wave * 0.5 + 0.5, 0.0, 1.0);
+        vec3 ribbonColor = mix(auroraGreen, auroraCyan, mixT);
+        ribbonColor = mix(ribbonColor, auroraViolet, fr / float(RIBBONS));
+
+        float intensity = curtain * (0.35 + bassEnergy * 0.5 + midEnergy * 0.3);
+        aurora += ribbonColor * intensity;
+    }
+
+    // Se desvanece hacia el horizonte inferior para no competir con los
+    // 13 nodos PBR del centro/borde.
+    float fade = smoothstep(-0.7, 0.55, uv.y);
+    return aurora * fade;
+}
+
 vec3 generate_glints(vec2 uv) {
     vec3 glints = vec3(0.0);
     for(int i = 0; i < 5; i++) {
@@ -170,6 +220,18 @@ void main() {
     vec3 V = vec3(0.0, 0.0, 1.0);
     vec3 L = normalize(vec3(0.4, 0.6, 0.7));
     vec3 color = generate_nebula(uv) * 0.8;
+
+    // Energía graves (bandas 0-3) / medios (4-8) reales, con interpolación
+    // u_frame_phase igual que el resto del shader — la aurora respira con
+    // la misma música que los 13 nodos, no es un efecto decorativo aparte.
+    float bassEnergy = 0.0;
+    for (int i = 0; i < 4; ++i) bassEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+    bassEnergy *= 0.25;
+    float midEnergy = 0.0;
+    for (int i = 4; i < 9; ++i) midEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+    midEnergy *= 0.2;
+    color += generate_aurora(uv, bassEnergy, midEnergy);
+
     for (int i = 0; i < 13; ++i) {
         float bandCurrent = u_bands[i];
         float bandPrev = u_bands_prev[i];

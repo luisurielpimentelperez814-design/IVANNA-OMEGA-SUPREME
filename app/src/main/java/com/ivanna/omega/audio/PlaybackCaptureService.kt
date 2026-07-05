@@ -40,6 +40,9 @@ class PlaybackCaptureService : Service() {
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
         const val INPUT_SAMPLES = 2048
+        // [FIX-FREEZE] tope de errores consecutivos de AudioRecord.read() antes
+        // de abandonar el spin y reconstruir la sesión de captura.
+        private const val MAX_CONSECUTIVE_ERRORS = 25
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -47,6 +50,20 @@ class PlaybackCaptureService : Service() {
     private var audioTrack: AudioTrack? = null
     private var isRunning = false
     private var savedMusicVolume: Int? = null
+
+    // [HI-RES][AVISO HONESTO] DSPBridge/IvannaNpeEngine/Visualizer se inicializan
+    // aquí, ANTES de que startCapture() negocie el sample rate real (candidateRates
+    // en startCapture()). Toda la cadena DSP (biquads, EQ, gammatone, tau de
+    // envolventes) está calibrada asumiendo fs=48000 en varios puntos del código
+    // nativo. Si algún día un dispositivo llegara a validar 96/192kHz aquí
+    // (en la práctica casi ningún Android lo hará: AudioPlaybackCaptureConfiguration
+    // captura la mezcla YA hecha por AudioFlinger a la tasa fija de su mezclador,
+    // típicamente 48kHz, sin importar lo que se pida), estos .init(48000, ...)
+    // quedarían desincronizados del sample rate real de audioRecord/audioTrack.
+    // No lo re-arquitecturé aquí porque requiere verificar cada componente DSP
+    // nativo uno por uno para que escale correctamente con fs — top de la lista
+    // de trabajo pendiente real, no un placeholder cosmético.
+    private var activeSampleRate = 48000
 
     override fun onCreate() {
         super.onCreate()
@@ -127,38 +144,65 @@ class PlaybackCaptureService : Service() {
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
             .build()
 
-        val minBuf = AudioRecord.getMinBufferSize(
-            48000,
-            AudioFormat.CHANNEL_IN_STEREO,
-            AudioFormat.ENCODING_PCM_FLOAT
-        )
-        // [FIX-CRASH] getMinBufferSize puede devolver ERROR_BAD_VALUE (-2) o
-        // ERROR (-1) en hardware no estándar. Pasar un tamaño negativo a
-        // setBufferSizeInBytes lanza IllegalArgumentException sin capturar.
-        if (minBuf <= 0) {
-            throw IllegalStateException("AudioRecord.getMinBufferSize inválido ($minBuf) para 48kHz/stereo/float")
-        }
-        val bufferSize = minBuf
+        // [HI-RES] Cascada real de sample rate: a diferencia de SystemAudioCapture
+        // (que solo valida con getMinBufferSize, un cálculo aritmético que NO
+        // confirma soporte real de hardware/HAL), aquí se construye y valida
+        // CADA candidato con AudioRecord.Builder().build() + comprobación de
+        // STATE_INITIALIZED, que es la única confirmación real de que el HAL
+        // aceptó esa tasa para AudioPlaybackCaptureConfiguration.
+        //
+        // Aviso honesto: AudioPlaybackCaptureConfiguration captura la mezcla
+        // YA HECHA por AudioFlinger, que en la enorme mayoría de dispositivos
+        // Android corre a una tasa fija de mezclador (típicamente 48kHz) sin
+        // importar lo que pida la fuente. Pedir 192kHz aquí puede negociar
+        // (el framework resamplea), pero NO añade resolución real que no
+        // estuviera ya en la mezcla de 48kHz — es una cascada honesta, no una
+        // promesa de más detalle del que el mezclador realmente tiene. El
+        // camino que SÍ entrega hi-res real de hardware, sin pasar por el
+        // mezclador compartido, es UsbAudioProManager (USB OTG directo,
+        // 384kHz/32-bit ya implementado) — ver nota en el README.
+        val candidateRates = intArrayOf(192000, 96000, 48000)
+        var chosenRate = 48000
+        var bufferSize = 0
 
-        audioRecord = AudioRecord.Builder()
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(48000)
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                    .build()
+        for (rate in candidateRates) {
+            val minBuf = AudioRecord.getMinBufferSize(
+                rate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT
             )
-            .setBufferSizeInBytes(bufferSize)
-            .setAudioPlaybackCaptureConfig(config)
-            .build()
+            if (minBuf <= 0) continue
 
-        // [FIX-CRASH] Igual que SystemAudioCapture.kt: si AudioRecord no llega a
-        // STATE_INITIALIZED (permiso revocado, política de audio, etc.) hay que
-        // abortar aquí en vez de llamar startRecording() sobre un objeto inválido
-        // (eso lanza IllegalStateException más abajo, sin contexto claro).
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            throw IllegalStateException("AudioRecord no se pudo inicializar (permiso o política de audio)")
+            val candidate = try {
+                AudioRecord.Builder()
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(rate)
+                            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                            .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(minBuf)
+                    .setAudioPlaybackCaptureConfig(config)
+                    .build()
+            } catch (e: Exception) {
+                null
+            }
+
+            if (candidate != null && candidate.state == AudioRecord.STATE_INITIALIZED) {
+                audioRecord = candidate
+                chosenRate = rate
+                bufferSize = minBuf
+                break
+            } else {
+                candidate?.release()
+            }
         }
+
+        // [FIX-CRASH] Si NINGÚN candidato (ni siquiera 48kHz) inicializó, es un
+        // fallo real de permiso/política de audio — abortar limpio.
+        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+            throw IllegalStateException("AudioRecord no se pudo inicializar en ningún sample rate candidato (permiso o política de audio)")
+        }
+        activeSampleRate = chosenRate
 
         // FIX: silencia el stream de música original (la fuente sigue
         // generando PCM y se sigue capturando arriba, solo se apaga su
@@ -179,7 +223,11 @@ class PlaybackCaptureService : Service() {
             )
             .setAudioFormat(
                 AudioFormat.Builder()
-                    .setSampleRate(48000)
+                    // [FIX] antes fijo a 48000 sin importar qué tasa haya
+                    // negociado audioRecord arriba — si algún día difieren,
+                    // AudioTrack.write() reproduciría a la velocidad/tono
+                    // incorrectos. Debe ser SIEMPRE la misma tasa que capturó.
+                    .setSampleRate(chosenRate)
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build()
@@ -202,9 +250,36 @@ class PlaybackCaptureService : Service() {
         scope.launch {
             val buffer = FloatArray(INPUT_SAMPLES)
             val mono = FloatArray(INPUT_SAMPLES / 2)
+
+            // [FIX-FREEZE] Causa raíz del visualizer congelado: GLUniformBridgeV2
+            // solo actualiza sus 13 bandas dentro de processBlockFromNPE(); si este
+            // bucle deja de invocarla (AudioRecord.read() devuelve un código de
+            // error negativo — ERROR_DEAD_OBJECT, ERROR_INVALID_OPERATION, etc. —
+            // típicamente al bloquear pantalla, cambiar de ruta de salida, o si la
+            // app fuente pausa/cierra la sesión de MediaProjection) el `if (read > 0)`
+            // simplemente saltaba el bloque sin romper el while, así que el hilo
+            // quedaba en spin infinito sin producir audio NI reiniciar nada: los
+            // uniforms de banda quedaban clavados en su último valor para siempre,
+            // mientras u_time/u_frame_phase (no dependen de audio) seguían avanzando
+            // en el shader — de ahí que el fondo/color se mueva pero las barras no.
+            //
+            // Fix: (a) watchdog de silencio → si no llega un bloque válido en
+            // SILENCE_TIMEOUT_MS, se resetean los bridges (decae a 0 en vez de
+            // quedar clavado); (b) error negativo → se sale del bucle y se
+            // reconstruye la sesión, en vez de spinnear infinitamente.
+            var lastGoodBlockNanos = System.nanoTime()
+            var consecutiveErrors = 0
+            val silenceTimeoutNanos = 400_000_000L // 400ms sin bloques válidos
+            var watchdogReset = false
+
             while (isRunning && isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
+
                 if (read > 0) {
+                    consecutiveErrors = 0
+                    lastGoodBlockNanos = System.nanoTime()
+                    watchdogReset = false
+
                     val frames = read / 2
                     DSPBridge.process(buffer, frames)
                     IvannaNpeEngine.processInterleavedStereo(buffer, frames)
@@ -215,6 +290,30 @@ class PlaybackCaptureService : Service() {
                     // v2: mismo downmix post-NPE, para el wallpaper de 13 bandas.
                     IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
+                } else if (read < 0) {
+                    // Código de error real de AudioRecord (negativo). No spinnear:
+                    // contamos errores consecutivos y, si persiste, reconstruimos
+                    // la sesión de captura en vez de dejar el hilo vivo pero inútil.
+                    consecutiveErrors++
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        break // sale del while -> reinicio de sesión afuera
+                    }
+                    delay(20L)
+                } else {
+                    // read == 0: no es error, pero tampoco avanzó el reloj de datos.
+                    val silentFor = System.nanoTime() - lastGoodBlockNanos
+                    if (silentFor > silenceTimeoutNanos && !watchdogReset) {
+                        IvannaVisualizerBridge.reset()
+                        IvannaVisualizerBridgeV2.reset()
+                        watchdogReset = true
+                    }
+                }
+            }
+
+            if (isActive && consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                // Reinicio limpio de la sesión de captura tras fallo real de hardware/ruta.
+                withContext(Dispatchers.Main) {
+                    stopCapture()
                 }
             }
         }
