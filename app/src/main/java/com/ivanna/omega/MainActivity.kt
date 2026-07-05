@@ -120,13 +120,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // [FIX-AURORA-BG] un GLSurfaceView sin zOrderOnTop se compone DETRÁS
-        // de toda la ventana — invisible si el fondo de la ventana (o de la
-        // raíz Compose) es opaco. Sin esto, el wallpaper aurora queda oculto
-        // aunque el layering de Compose ya esté bien resuelto.
-        window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
 
@@ -148,12 +141,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    // [FIX-AURORA-BG] antes opaco (colorScheme.background) — pintaba
-                    // encima del GLSurfaceView del wallpaper en cada frame. Los
-                    // componentes propios de IvannaControlPanel (cards, sliders)
-                    // mantienen su propio fondo opaco; solo el "vacío" alrededor
-                    // debe dejar ver la aurora detrás.
-                    color = androidx.compose.ui.graphics.Color.Transparent
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     // [FIX-AURORA-BG] antes VisualizerSurface e IvannaControlPanel
                     // eran mutuamente excluyentes (if/return@Surface): el wallpaper
