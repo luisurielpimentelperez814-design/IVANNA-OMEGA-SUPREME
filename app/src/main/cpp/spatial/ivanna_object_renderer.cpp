@@ -17,6 +17,17 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
         hrtfConvolvers_[i].init(static_cast<uint32_t>(sampleRate));
     }
 
+    // [FIX-WHISTLE] Azimut base por speaker a partir de su posición X/Y.
+    // atan2(y,x) dado que el anillo ecuatorial vive en el plano X-Y; los
+    // polos (x pequeño/0, y=0) caen naturalmente en azimut ~0 (frente),
+    // consistente con que HRTFConvolver no modela elevación.
+    for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+        const auto& sp = kVirtualSpeakers[i];
+        float az = std::atan2(sp.y, sp.x) * 180.f / static_cast<float>(M_PI);
+        baseAzimuthDeg_[i] = std::clamp(az, -90.f, 90.f);
+        hrtfConvolvers_[i].set_position(baseAzimuthDeg_[i], kHrtfAggressiveness);
+    }
+
     // [FIX-CRASH-BLOCKSIZE] Dimensionar buffers internos al blockSize real
     // en vez de arrays fijos de 512 (ver comentario en el header).
     virtualSpk_.assign(kNumVirtualSpeakers, std::vector<float>(blockSize_, 0.f));
@@ -59,9 +70,24 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
     std::fill(outRight, outRight + numFrames, 0.f);
 
     HeadPose pose;
+    bool haveHeadPose = false;
     if (headTracker_) {
         float frameTimeMs = static_cast<float>(numFrames) / sampleRate_ * 1000.f;
         pose = headTracker_->getPoseForAudioFrame(frameTimeMs);
+        haveHeadPose = true;
+    }
+
+    // [FIX-WHISTLE] Reorientar el azimut de cada speaker según el yaw de la
+    // cabeza (en vez de rotar las muestras de audio ya renderizadas, que era
+    // el bug: tomaba 3 muestras consecutivas de PCM y las trataba como un
+    // vector XYZ, inyectando un artefacto tonal fijo). Restar el yaw hace
+    // que el campo sonoro se sienta fijo en el espacio al girar la cabeza.
+    if (haveHeadPose) {
+        const float yawDeg = pose.orientation.yawDegrees();
+        for (int s = 0; s < kNumVirtualSpeakers; ++s) {
+            const float az = std::clamp(baseAzimuthDeg_[s] - yawDeg, -90.f, 90.f);
+            hrtfConvolvers_[s].set_position(az, kHrtfAggressiveness);
+        }
     }
 
     for (int i = 0; i < kNumVirtualSpeakers; ++i) {
@@ -99,10 +125,6 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
         }
 
         hrtfConvolvers_[s].process(inL, inR, spkL, spkR, numFrames);
-
-        if (headTracker_) {
-            headTracker_->rotateHRTF(spkL, spkR, pose, numFrames);
-        }
 
         for (int n = 0; n < numFrames; ++n) {
             outLeft[n] += spkL[n];

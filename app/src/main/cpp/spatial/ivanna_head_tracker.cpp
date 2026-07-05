@@ -70,30 +70,6 @@ HeadPose HeadTracker::getPoseForAudioFrame(float audioFrameTimeMs) const noexcep
     return result;
 }
 
-void HeadTracker::rotateHRTF(float* hrtfLeft, float* hrtfRight,
-                             const HeadPose& pose, int numTaps) const noexcept {
-    float rot[9];
-    pose.orientation.toRotationMatrix(rot);
-
-    // Aplicar rotación 3D a los coeficientes HRTF
-    // Esto rota el campo sonoro para que el sonido se quede "fijo en el espacio"
-    for (int i = 0; i < numTaps; i += 3) {
-        if (i + 2 >= numTaps) break;
-
-        float lx = hrtfLeft[i], ly = hrtfLeft[i+1], lz = hrtfLeft[i+2];
-        float rx = hrtfRight[i], ry = hrtfRight[i+1], rz = hrtfRight[i+2];
-
-        // Rotación inversa (el sonido se mueve en dirección opuesta a la cabeza)
-        hrtfLeft[i]   = rot[0]*lx + rot[1]*ly + rot[2]*lz;
-        hrtfLeft[i+1] = rot[3]*lx + rot[4]*ly + rot[5]*lz;
-        hrtfLeft[i+2] = rot[6]*lx + rot[7]*ly + rot[8]*lz;
-
-        hrtfRight[i]   = rot[0]*rx + rot[1]*ry + rot[2]*rz;
-        hrtfRight[i+1] = rot[3]*rx + rot[4]*ry + rot[5]*rz;
-        hrtfRight[i+2] = rot[6]*rx + rot[7]*ry + rot[8]*rz;
-    }
-}
-
 void HeadTracker::reset() noexcept {
     HeadPose identity;
     identity.orientation.w = 1.f;

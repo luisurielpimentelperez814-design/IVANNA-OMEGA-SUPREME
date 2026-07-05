@@ -96,6 +96,19 @@ private:
     // [FIX-HRTF] HRTFConvolver::init() solo recibe sampleRate
     std::array<HRTFConvolver, kNumVirtualSpeakers> hrtfConvolvers_;
 
+    // [FIX-WHISTLE] Azimut base (grados, -90..+90, +=derecha) de cada
+    // virtual speaker, precalculado una vez en init() a partir de su
+    // posición X/Y (plano horizontal, consistente con kVirtualSpeakers:
+    // anillo ecuatorial en X-Y, polos en ±Z). El head tracking ya NO rota
+    // muestras de audio (eso era el bug del silbido): en su lugar, cada
+    // bloque se resta el yaw de la cabeza a este azimut base y se llama
+    // HRTFConvolver::set_position con el resultado — así el filtro HRTF
+    // correcto para el nuevo ángulo relativo se recalcula (con cache y
+    // crossfade ya existentes en HRTFConvolver), y el campo sonoro se
+    // mantiene "fijo en el espacio" al girar la cabeza.
+    std::array<float, kNumVirtualSpeakers> baseAzimuthDeg_{};
+    static constexpr float kHrtfAggressiveness = 0.5f;
+
     std::array<AudioObject, kMaxObjects> objectsA_{};
     std::array<AudioObject, kMaxObjects> objectsB_{};
     std::atomic<int> activeBuffer_{0};

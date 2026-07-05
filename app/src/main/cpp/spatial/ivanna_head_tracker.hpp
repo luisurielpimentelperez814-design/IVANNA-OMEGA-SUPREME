@@ -16,6 +16,7 @@
 // Latencia objetivo: <5ms desde sample IMU hasta aplicación HRTF.
 // ============================================================================
 #pragma once
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -45,6 +46,15 @@ struct alignas(16) Quaternion {
         out[0] = 1.f - 2.f*(yy + zz);  out[3] = 2.f*(xy - wz);       out[6] = 2.f*(xz + wy);
         out[1] = 2.f*(xy + wz);        out[4] = 1.f - 2.f*(xx + zz); out[7] = 2.f*(yz - wx);
         out[2] = 2.f*(xz - wy);        out[5] = 2.f*(yz + wx);       out[8] = 1.f - 2.f*(xx + yy);
+    }
+
+    // Yaw (rotación alrededor del eje Z, "arriba") extraído del quaternion,
+    // en grados. Convención Z-up consistente con kVirtualSpeakers (el anillo
+    // ecuatorial vive en el plano X-Y, los polos son ±Z).
+    inline float yawDegrees() const noexcept {
+        const float sinYawCosPitch = 2.f * (w*z + x*y);
+        const float cosYawCosPitch = 1.f - 2.f * (y*y + z*z);
+        return std::atan2(sinYawCosPitch, cosYawCosPitch) * 180.f / (float)M_PI;
     }
 
     // Interpolación esférica (SLERP) para suavizar entre poses
@@ -92,10 +102,6 @@ public:
 
     // Llamado desde hilo de audio a ~48000Hz — interpolación suave
     HeadPose getPoseForAudioFrame(float audioFrameTimeMs) const noexcept;
-
-    // Aplica rotación a HRTF coefficients (in-place)
-    void rotateHRTF(float* hrtfLeft, float* hrtfRight, 
-                    const HeadPose& pose, int numTaps) const noexcept;
 
     // Reset cuando el usuario se quita los auriculares
     void reset() noexcept;
