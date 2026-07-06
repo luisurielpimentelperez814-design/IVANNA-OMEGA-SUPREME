@@ -359,7 +359,12 @@ class PlaybackCaptureService : Service() {
                     // head-tracking). Opera sobre el mismo buffer, después del NPE,
                     // igual patrón que el resto de la cadena. Deinterleave -> proceso
                     // -> reinterleave in-place sobre `buffer`.
-                    spatialEngine?.let { engine ->
+                    // Captura atómica: una sola lectura volatile a una referencia local.
+                    // Aunque `spatialEngine` se ponga en null en otro hilo justo después,
+                    // esta copia local sigue siendo válida durante todo este bloque,
+                    // evitando el crash JNI con rendererHandle=0.
+                    val engine = spatialEngine
+                    if (engine != null) {
                         for (i in 0 until frames) {
                             spatialInL[i] = buffer[i * 2]
                             spatialInR[i] = buffer[i * 2 + 1]

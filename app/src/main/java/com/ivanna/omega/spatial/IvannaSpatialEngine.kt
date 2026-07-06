@@ -121,7 +121,7 @@ class IvannaSpatialEngine(
         outLeft: FloatArray, outRight: FloatArray,
         numFrames: Int
     ) {
-        if (!isInitialized || rendererHandle == 0L) {
+        if (!isInitialized || rendererHandle == 0L || upmixerHandle == 0L) {
             // Passthrough
             System.arraycopy(inLeft, 0, outLeft, 0, numFrames)
             System.arraycopy(inRight, 0, outRight, 0, numFrames)

@@ -24,6 +24,7 @@
 
 #include "fft_radix2.hpp"
 #include "synthetic_hrtf.hpp"
+#include "../include/audio_thread_priority.h"
 #include <vector>
 #include <memory>
 #include <cmath>
@@ -39,6 +40,11 @@ public:
     void init(uint32_t sampleRate) {
         sr_ = sampleRate;
         hrtf_.init(sampleRate, IR_LEN);
+
+        // Sin esto, denormals acumulados en histL_/histR_ tras varios minutos
+        // de reproducción provocan que la FFT se vuelva 10-100x más lenta
+        // (modo microcódigo de la CPU), causando underruns y crashes.
+        ivanna::audio::enableAudioThreadFastMathOnce();
 
         fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
         fft_ = std::make_unique<FFTRadix2>(fftSize_);
@@ -195,6 +201,13 @@ private:
         for (int i = 0; i < BLOCK; ++i) {
             histL_[fftSize_ - BLOCK + i] = pendingIn_L_[i];
             histR_[fftSize_ - BLOCK + i] = pendingIn_R_[i];
+        }
+
+        // Flush explícito de denormals recién insertados (defensa en profundidad,
+        // además del flush-to-zero de la FPU activado en init()).
+        for (int i = fftSize_ - BLOCK; i < fftSize_; ++i) {
+            if (std::abs(histL_[i]) < 1e-15f) histL_[i] = 0.f;
+            if (std::abs(histR_[i]) < 1e-15f) histR_[i] = 0.f;
         }
 
         std::vector<float> blockL, blockR;

@@ -55,9 +55,8 @@ void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept
         float vocalR = vocalStateR_ - bassStateR_;
 
         // Drums = transitorios (diferencia de señal)
-        static float prevMono = 0.f;
-        float drum = std::abs(mono - prevMono) * 2.f;
-        prevMono = mono;
+        float drum = std::abs(mono - drumPrevMono_) * 2.f;
+        drumPrevMono_ = mono;
         float drumL = drum;
         float drumR = drum;
 
@@ -105,6 +104,7 @@ void NeuralUpmixer::setStemPosition(StemType stem, float x, float y, float z, fl
 void NeuralUpmixer::reset() noexcept {
     bassStateL_ = bassStateR_ = 0.f;
     vocalStateL_ = vocalStateR_ = 0.f;
+    drumPrevMono_ = 0.f;
 }
 
 void NeuralUpmixer::release() noexcept {

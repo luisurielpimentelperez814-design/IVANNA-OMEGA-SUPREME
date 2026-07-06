@@ -57,6 +57,12 @@ public:
     // + = derecha) y una "agresividad" [0,1] que escala la profundidad
     // del shadowing/notch (mapeada desde el control de UI existente).
     HRIRPair generate(float azimuthDeg, float aggressiveness) const {
+        // Guarda contra NaN/inf de entrada (p.ej. propagados desde un
+        // head-tracker con timestamps duplicados): sin esto, theta se vuelve
+        // NaN y contamina toda la IR -> convolución con NaN -> silencio/distorsión.
+        if (!std::isfinite(azimuthDeg)) azimuthDeg = 0.f;
+        if (!std::isfinite(aggressiveness)) aggressiveness = 0.5f;
+
         aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
         const float theta = azimuthDeg * (float)M_PI / 180.f;
         const float absTheta = std::fabs(theta);
