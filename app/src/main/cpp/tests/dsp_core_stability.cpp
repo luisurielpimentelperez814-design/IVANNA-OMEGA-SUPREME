@@ -44,7 +44,7 @@ TEST(DspCoreStability, RealPipelineRemainsFiniteAcrossStressBlocks) {
     ivanna::ParametricEQ eq;    eq.setParams(p);
     ivanna::Compressor comp;    comp.setParams(p);
     comp.setThreshold(-18.0f); comp.setRatio(3.0f); comp.setAttack(5.0f); comp.setRelease(80.0f);
-    ivanna::HarmonicExciter exciter; exciter.setParams(p); exciter.setAmount(0.45f);
+    ivanna::HarmonicExciter exciter; exciter.setParams(p);
     ivanna::StereoWidener widener;   widener.setParams(p); widener.setWidth(1.25f);
     ivanna::GainStage gain;          gain.setParams(p);
 
@@ -96,7 +96,7 @@ TEST(AntiDolbyStateStability, ConvergesToTargetBounded) {
 
 // ── V2: VolterraH2Symmetric mantiene salida finita y acotada por soft-clip ─
 TEST(VolterraH2Stability, BypassIsIdentity) {
-    ivanna::dsp::VolterraH2Symmetric v(64, 2, 8);
+    ivanna::dsp::VolterraH2Symmetric v(64, 2);
     v.setEnabled(false);
 
     std::vector<float> in(256), out(256);
@@ -109,7 +109,7 @@ TEST(VolterraH2Stability, BypassIsIdentity) {
 }
 
 TEST(VolterraH2Stability, EnabledStaysFiniteAndSoftClipped) {
-    ivanna::dsp::VolterraH2Symmetric v(64, 2, 8);
+    ivanna::dsp::VolterraH2Symmetric v(64, 2);
     v.setEnabled(true);
 
     std::vector<float> in(2048), out(2048);

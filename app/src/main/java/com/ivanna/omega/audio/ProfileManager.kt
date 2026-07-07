@@ -137,7 +137,7 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
             audioEngine.setBypass(profile.audioEngine.bypass)
 
             // Aplicar ruta de audio
-            audioEngine.nativeSetRouteProfileStatic(
+            AudioEngine.nativeSetRouteProfileStatic(
                 profile.route.bassBoostDb,
                 profile.route.dialogBoostDb,
                 profile.route.widenerMult
