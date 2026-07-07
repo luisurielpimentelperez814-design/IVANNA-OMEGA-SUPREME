@@ -25,6 +25,8 @@ add_library(ivanna_dsp_under_test STATIC
   ../dsp/HarmonicExciter.cpp
   ../dsp/StereoWidener.cpp
   ../dsp/GainStage.cpp
+  ../anti_dolby.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
 )
 
 target_include_directories(ivanna_dsp_under_test PUBLIC
