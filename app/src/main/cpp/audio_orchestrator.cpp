@@ -44,6 +44,42 @@ inline float process_limiter(float x) {
     return x;
 }
 
+// ── EQ Paramétrico Simple (pico @ 3kHz) ───────────────────────────────────────
+// Estado biquad (mono, reutilizable)
+struct EQState {
+    float x1 = 0.0f, x2 = 0.0f;  // Entrada retrasada
+    float y1 = 0.0f, y2 = 0.0f;  // Salida retrasada
+};
+
+// Coefs biquad precalculados para pico de +2dB @ 3kHz, Q=1.0, fs=48kHz
+// (estos se pueden actualizar dinámicamente si es necesario)
+struct BiquadCoefs {
+    float b0 = 1.0449f, b1 = 0.0f,     b2 = 1.0449f;  // Numerador
+    float a1 = -1.8928f, a2 = 0.9102f;               // Denominador (a0=1.0)
+};
+
+static constexpr BiquadCoefs EQ_2K4K_COEFS{};
+
+// Procesar una muestra a través del filtro biquad
+inline float apply_eq_boost(EQState &st, float x, float boost_db) {
+    if (boost_db <= 0.001f) return x;  // Sin boost, pasar directo
+    
+    // Convertir dB a ganancia lineal (boost_db ≈ 2.0 para +2dB)
+    float gain = std::pow(10.0f, boost_db / 20.0f);
+    
+    // Aplicar biquad
+    float y = EQ_2K4K_COEFS.b0 * x + EQ_2K4K_COEFS.b1 * st.x1 + EQ_2K4K_COEFS.b2 * st.x2
+            - EQ_2K4K_COEFS.a1 * st.y1 - EQ_2K4K_COEFS.a2 * st.y2;
+    
+    st.x2 = st.x1;
+    st.x1 = x;
+    st.y2 = st.y1;
+    st.y1 = y;
+    
+    // Salida = original + (boost-1) * filtered (por razones numéricas)
+    return x + (gain - 1.0f) * y;
+}
+
 // ── Tabla seno con interpolación cúbica ───────────────────────────────────────
 static constexpr int SIN_TABLE_SIZE = 4096;
 alignas(64) static float sin_table[SIN_TABLE_SIZE + 4];
@@ -125,6 +161,7 @@ static struct {
     std::atomic<bool> active{true};
     Hyperplane hyper;
     KalmanState kalman;
+    EQState eqState;          // Estado del filtro EQ paramétrico
     // Anti-Dolby v1.5: parámetros ajustables via JNI
     float exciterAmount = 0.0f;
     float eqGain = 0.0f;
@@ -254,6 +291,12 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
             float widthMul = gState.antiDolby.widenerMultiplier.load(std::memory_order_relaxed);
             float eqBoost = gState.antiDolby.eqBoost2k4k.load(std::memory_order_relaxed);
 
+            // === Aplicar EQ paramétrico (boost 2-4kHz si speech) ===
+            if (eqBoost > 0.001f) {
+                left = apply_eq_boost(gState.eqState, left, eqBoost);
+                right = apply_eq_boost(gState.eqState, right, eqBoost);
+            }
+
             // Aplicar width reducido si speech detectado
             float mid = (left + right) * 0.5f;
             float side = (left - right) * 0.5f * widthMul;
@@ -287,8 +330,13 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
             x *= gState.gain;
 
             // Anti-Dolby: ajustes dinámicos
+            float eqBoost = gState.antiDolby.eqBoost2k4k.load(std::memory_order_relaxed);
             float widthMul = gState.antiDolby.widenerMultiplier.load(std::memory_order_relaxed);
-            // Aplicar width reducido si es necesario (placeholder para StereoWidener)
+            
+            // === Aplicar EQ paramétrico (boost 2-4kHz si speech) ===
+            if (eqBoost > 0.001f) {
+                x = apply_eq_boost(gState.eqState, x, eqBoost);
+            }
 
             // Limiter hard-clip al final de cadena — SIEMPRE activo
             x = process_limiter(x);

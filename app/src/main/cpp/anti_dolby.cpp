@@ -20,27 +20,70 @@ AntiDolbyState::AntiDolbyState() {
 }
 
 void AntiDolbyState::reset() {
-    std::lock_guard<std::mutex> lk(mtx);
-    targetWidener   = 1.0f;
-    smoothedWidener = 1.0f;
+    // Reset de parámetros de suavizado
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        targetWidener   = 1.0f;
+        smoothedWidener = 1.0f;
+    }
+    
+    // Reset de clasificación y parámetros DSP (sin lock, son atomics)
+    speechScore.store(0.0f, std::memory_order_relaxed);
+    musicScore.store(0.0f, std::memory_order_relaxed);
+    bassScore.store(0.0f, std::memory_order_relaxed);
+    classificationValid.store(false, std::memory_order_relaxed);
+    
     widenerMultiplier.store(1.0f, std::memory_order_release);
+    eqBoost2k4k.store(0.0f, std::memory_order_relaxed);
+    exciterLowOnly.store(false, std::memory_order_relaxed);
+    
+    frameCounter.store(0, std::memory_order_relaxed);
 }
 
 void AntiDolbyState::updateFromClassification(float speech, float music, float bass) {
+    // Sanidad numérica
     if (!std::isfinite(speech)) speech = 0.0f;
     if (!std::isfinite(music))  music  = 0.0f;
     if (!std::isfinite(bass))   bass   = 0.0f;
+    
+    // Clampear a [0, 1]
+    speech = clampf(speech, 0.0f, 1.0f);
+    music  = clampf(music,  0.0f, 1.0f);
+    bass   = clampf(bass,   0.0f, 1.0f);
 
-    // Los pesos exactos vienen del análisis perceptual V1 (mantenidos):
-    //   • speech ↑ ⇒ estrechar (inteligibilidad).
-    //   • music  ↑ ⇒ ensanchar (envoltura).
-    //   • bass   ↑ ⇒ estrechar levemente (foco monofónico de graves).
+    // === Almacenar scores de clasificación ===
+    speechScore.store(speech, std::memory_order_relaxed);
+    musicScore.store(music, std::memory_order_relaxed);
+    bassScore.store(bass, std::memory_order_relaxed);
+    classificationValid.store(true, std::memory_order_relaxed);
+
+    // === Ajustar parámetros DSP según clasificación ===
+    
+    // Widener: speech ↑ ⇒ estrechar (inteligibilidad)
+    //          music  ↑ ⇒ ensanchar (envoltura)
+    //          bass   ↑ ⇒ estrechar levemente
     const float base  = 1.0f;
     const float delta = (music - speech) * 0.6f - bass * 0.25f;
     const float tgt   = clampf(base + delta, 0.5f, 1.6f);
 
-    std::lock_guard<std::mutex> lk(mtx);
-    targetWidener = tgt;
+    {
+        std::lock_guard<std::mutex> lk(mtx);
+        targetWidener = tgt;
+    }
+
+    // EQ 2-4kHz: boost si speech > threshold
+    if (speech > SPEECH_THRESHOLD) {
+        eqBoost2k4k.store(2.0f, std::memory_order_relaxed);  // +2dB
+    } else {
+        eqBoost2k4k.store(0.0f, std::memory_order_relaxed);
+    }
+
+    // Exciter: solo <120Hz si bass > threshold
+    if (bass > BASS_THRESHOLD) {
+        exciterLowOnly.store(true, std::memory_order_relaxed);
+    } else {
+        exciterLowOnly.store(false, std::memory_order_relaxed);
+    }
 }
 
 void AntiDolbyState::tick(float dt) {
