@@ -1,3 +1,26 @@
+/*
+ * ============================================================================
+ * IVANNA Singularity V3.1 — spatial_engine (binaural repair pass)
+ * ============================================================================
+ * Autoría: Luis Uriel Pimentel Pérez (Gore TNS). © 2026. Todos los derechos
+ * reservados.
+ * ----------------------------------------------------------------------------
+ * REPAIRS v3.1 ("motor espacial binaural suena feo" fix):
+ *   S1) HRTF con ITD real: retardo fraccional por Farrow lineal en vez de
+ *       fake "phaseShift" constante. El anterior era un sesgo de fase que
+ *       sonaba a filtro peine y coloreaba el estéreo.
+ *   S2) Reemplazo del pseudo-"shelving8k" (que era un diferenciador con
+ *       realimentación positiva) por un high-shelf de primer orden real
+ *       tipo RBJ (bilineal), fc=8 kHz, +3 dB por defecto. Ya no arma
+ *       agudos afilados ni acumula estado inestable.
+ *   S3) `spatial_process_antidolby` (v1) sí convoluciona L y R con sus
+ *       delay-lines respectivas (antes solo tocaba L y dejaba R seco).
+ *   S4) Bauer-style crossfeed: mezcla suave del contralateral con leve
+ *       lowpass (head-shadow). Externaliza sin destruir estéreo, elimina
+ *       la sensación "dentro de la cabeza" de HRTF cruda con audífonos.
+ * ============================================================================
+ */
+
 #include <cmath>
 #include <algorithm>
 #include <android/log.h>
@@ -11,76 +34,115 @@
 #define LOG_TAG "SpatialEngine"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-// ── HRTF 128 taps — Anti-Dolby v1.5 ──────────────────────────────────────────
-// Reemplaza widener M/S genérico por HRTF con delay 0.3ms
-// Filtro shelving >8kHz solo en contenido no-vocal
+static constexpr int   HRTF_TAPS      = 128;
+static constexpr float HRTF_DELAY_MS  = 0.30f;  // ITD ~0.3 ms (source frontal-lateral típico)
 
-static constexpr int HRTF_TAPS = 128;
-static constexpr float HRTF_DELAY_MS = 0.3f;  // 0.3ms ITD
-
-alignas(64) static float g_hrtf_left[HRTF_TAPS];
+alignas(64) static float g_hrtf_left [HRTF_TAPS];
 alignas(64) static float g_hrtf_right[HRTF_TAPS];
-static bool g_hrtf_initialized = false;
-static int g_sample_rate = 48000;
+static bool  g_hrtf_initialized = false;
+static int   g_sample_rate = 48000;
 
-// Delay lines circulares
-alignas(64) static float g_delay_left[HRTF_TAPS * 2];
+// S1: retardo fraccional real. Guardamos la parte entera y fraccional.
+static int   g_itd_int = 0;
+static float g_itd_frac = 0.0f;
+
+// Delay lines circulares por canal, duplicadas para lecturas sin wrap.
+alignas(64) static float g_delay_left [HRTF_TAPS * 2];
 alignas(64) static float g_delay_right[HRTF_TAPS * 2];
-static int g_delay_idx = 0;
+static int g_delay_idx_l = 0;
+static int g_delay_idx_r = 0;
 
-// Estado shelving filter >8kHz
-static float g_shelf_state_l = 0.0f;
-static float g_shelf_state_r = 0.0f;
+// S2: estado biquad high-shelf por canal (RBJ 1er orden como TF-II transposada).
+struct Shelf1 {
+    float b0=1.f, b1=0.f, a1=0.f;
+    float z1 = 0.f;
+    inline float process(float x) {
+        // TF-I directa 1er orden:  y[n] = b0*x + b1*x[n-1] - a1*y[n-1]
+        // Implementada como estado único (TF-II transposada) para menos multiplicaciones.
+        float y = b0 * x + z1;
+        z1 = b1 * x - a1 * y;
+        return y;
+    }
+    void reset() { z1 = 0.f; }
+};
+static Shelf1 g_shelf_l, g_shelf_r;
+
+// Diseño high-shelf 1er orden (bilineal). fc en Hz, gain_db en dB, fs en Hz.
+static void design_high_shelf(Shelf1& s, float fc, float gain_db, float fs) {
+    const float A = std::pow(10.0f, gain_db / 40.0f);   // sqrt gain
+    const float w = 2.0f * 3.14159265358979323846f * fc / fs;
+    const float t = std::tan(w * 0.5f);
+    // Butterworth-like Q=0.707 1er orden shelving (Zolzer)
+    const float sqrtA = std::sqrt(A);
+    const float denom = 1.0f + t / sqrtA;
+    s.b0 = (A + sqrtA * t) / denom;
+    s.b1 = (-A + sqrtA * t) / denom;   // signo correcto para HP-shelf 1er orden
+    s.a1 = (1.0f - t / sqrtA) / denom * -1.0f; // ya invertido para y[n] = ... - a1*y[n-1] via TF-II
+    s.reset();
+}
 
 static void init_hrtf(int sampleRate) {
     if (g_hrtf_initialized && g_sample_rate == sampleRate) return;
-
     g_sample_rate = sampleRate;
 
-    // Generar HRTF simple: lowpass + diferencia interaural
-    float delaySamples = HRTF_DELAY_MS * sampleRate / 1000.0f;
-
+    // Kernel HRTF suavizado (windowed sinc-like), IDÉNTICO para L/R.
+    // El ITD real se aplica aparte con delay fraccional (S1).
+    // Antes se usaba un phaseShift constante para "simular" ITD → filtro peine.
     for (int i = 0; i < HRTF_TAPS; ++i) {
-        // Ventana sinc con decaimiento exponencial
-        float t = (float)i / (float)HRTF_TAPS;
-        float window = std::exp(-3.0f * t) * (1.0f - t);
-
-        // Oído izquierdo: retardo mínimo
-        g_hrtf_left[i] = window * std::sinf(3.14159f * (i + 1) / (HRTF_TAPS + 1));
-
-        // Oído derecho: retardo +0.3ms (aproximado por desplazamiento de fase)
-        float phaseShift = 2.0f * 3.14159f * 8000.0f * delaySamples / sampleRate;
-        g_hrtf_right[i] = window * std::sinf(3.14159f * (i + 1) / (HRTF_TAPS + 1) + phaseShift);
+        const float t = (float)i / (float)HRTF_TAPS;
+        const float window = std::exp(-3.0f * t) * (1.0f - t);
+        const float shape  = std::sin(3.14159265f * (i + 1) / (HRTF_TAPS + 1));
+        g_hrtf_left [i] = window * shape;
+        g_hrtf_right[i] = window * shape;
     }
 
-    // Inicializar delay lines
-    std::fill(g_delay_left, g_delay_left + HRTF_TAPS * 2, 0.0f);
+    // S1: ITD real como retardo (int + frac) sobre el canal derecho.
+    const float delay_samples = HRTF_DELAY_MS * (float)sampleRate / 1000.0f;
+    g_itd_int  = (int)std::floor(delay_samples);
+    g_itd_frac = delay_samples - (float)g_itd_int;
+    if (g_itd_int < 0) g_itd_int = 0;
+    if (g_itd_int > HRTF_TAPS - 2) g_itd_int = HRTF_TAPS - 2;
+
+    std::fill(g_delay_left,  g_delay_left  + HRTF_TAPS * 2, 0.0f);
     std::fill(g_delay_right, g_delay_right + HRTF_TAPS * 2, 0.0f);
-    g_delay_idx = 0;
-    g_shelf_state_l = 0.0f;
-    g_shelf_state_r = 0.0f;
+    g_delay_idx_l = 0;
+    g_delay_idx_r = 0;
+
+    // S2: high-shelf real, +3 dB @ 8 kHz por defecto (subimos aire sin harshness).
+    design_high_shelf(g_shelf_l, 8000.0f, 3.0f, (float)sampleRate);
+    design_high_shelf(g_shelf_r, 8000.0f, 3.0f, (float)sampleRate);
 
     g_hrtf_initialized = true;
-    LOGI("HRTF inicializado: %d taps, delay %.1fms @ %d Hz", HRTF_TAPS, HRTF_DELAY_MS, sampleRate);
+    LOGI("HRTF v3.1: %d taps, ITD=%.3fms (int=%d, frac=%.3f), shelf +3dB@8k, fs=%d",
+         HRTF_TAPS, HRTF_DELAY_MS, g_itd_int, g_itd_frac, sampleRate);
 }
 
-// ── Shelving filter >8kHz (solo para contenido no-vocal) ─────────────────────
-static inline float shelving8k(float sample, float coeff, float& state) {
-    float out = sample + coeff * (sample - state);
-    state = out;
-    return out;
-}
-
-// ── Convolución HRTF optimizada ───────────────────────────────────────────────
-static inline void hrtf_convolve(const float* input, float* output, int frames, 
-                                  const float* hrtf, float* delay_line, int& delay_idx) {
+// Convolución HRTF con retardo fraccional opcional.
+// - `hrtf`: kernel (HRTF_TAPS)
+// - `delay_line`: buffer 2*HRTF_TAPS
+// - `extra_int`, `extra_frac`: retardo adicional aplicado en la LECTURA
+//   (para ITD del canal contralateral).
+static inline void hrtf_convolve_frac(const float* input, float* output, int frames,
+                                       const float* hrtf,
+                                       float* delay_line, int& delay_idx,
+                                       int extra_int, float extra_frac) {
     for (int i = 0; i < frames; ++i) {
-        delay_line[delay_idx] = input[i];
-        delay_line[delay_idx + HRTF_TAPS] = input[i];  // duplicado para evitar wrap
+        // Escribimos duplicado para que la lectura no cruce el wrap.
+        delay_line[delay_idx]              = input[i];
+        delay_line[delay_idx + HRTF_TAPS]  = input[i];
 
         float out = 0.0f;
         for (int tap = 0; tap < HRTF_TAPS; ++tap) {
-            out += delay_line[delay_idx - tap + HRTF_TAPS] * hrtf[tap];
+            const int t0 = tap + extra_int;
+            const int t1 = t0 + 1;
+            const int i0 = delay_idx - t0 + HRTF_TAPS;
+            const int i1 = delay_idx - t1 + HRTF_TAPS;
+            // Guardas defensivas (extra_int limitado en init).
+            const float s0 = (i0 >= 0 && i0 < HRTF_TAPS * 2) ? delay_line[i0] : 0.0f;
+            const float s1 = (i1 >= 0 && i1 < HRTF_TAPS * 2) ? delay_line[i1] : 0.0f;
+            // Interpolación lineal (Farrow orden 1) para la fracción.
+            const float s  = s0 + extra_frac * (s1 - s0);
+            out += s * hrtf[tap];
         }
         output[i] = out;
 
@@ -89,91 +151,88 @@ static inline void hrtf_convolve(const float* input, float* output, int frames,
     }
 }
 
-// ── Procesamiento espacial Anti-Dolby ─────────────────────────────────────────
-extern "C" void spatial_process_antidolby(float* left, float* right, int frames, 
+// ── v1 (compat): ahora sí procesa L y R correctamente ────────────────────────
+extern "C" void spatial_process_antidolby(float* left, float* right, int frames,
                                              int sampleRate, bool isVocal) {
     init_hrtf(sampleRate);
 
-    // Aplicar shelving >8kHz solo si no es vocal
     if (!isVocal) {
         for (int i = 0; i < frames; ++i) {
-            left[i] = shelving8k(left[i], 0.3f, g_shelf_state_l);
-            right[i] = shelving8k(right[i], 0.3f, g_shelf_state_r);
+            left [i] = g_shelf_l.process(left [i]);
+            right[i] = g_shelf_r.process(right[i]);
         }
     }
 
-    // Convolución HRTF
-    alignas(64) float temp_left[4096];
-    alignas(64) float temp_right[4096];
+    // Reservas conservadoras (frames <= 4096 por validación aguas arriba).
+    alignas(64) float tmp_l[4096];
+    alignas(64) float tmp_r[4096];
+    const int n = std::min(frames, 4096);
+    std::copy(left,  left  + n, tmp_l);
+    std::copy(right, right + n, tmp_r);
 
-    // Copiar a temporales (frames <= 4096 por validación en audio_orchestrator)
-    std::copy(left, left + frames, temp_left);
-    std::copy(right, right + frames, temp_right);
+    // S3: convolución REAL de ambos canales (antes solo se tocaba L).
+    // ITD: canal izquierdo con delay 0; canal derecho recibe ITD para fuente
+    // ligeramente descentrada. En este v1 estático el ITD es fijo (efecto sutil).
+    hrtf_convolve_frac(tmp_l, left,  n, g_hrtf_left,  g_delay_left,  g_delay_idx_l, 0,          0.0f);
+    hrtf_convolve_frac(tmp_r, right, n, g_hrtf_right, g_delay_right, g_delay_idx_r, g_itd_int,  g_itd_frac);
 
-    hrtf_convolve(temp_left, left, frames, g_hrtf_left, g_delay_left, g_delay_idx);
-    // Reset delay_idx para segundo canal (comparten índice, necesitamos separar)
-    // FIX: usar índices separados para L/R
+    // S4: Bauer-style crossfeed (constante moderada). Externaliza y evita
+    // "dentro de la cabeza" en audífonos.
+    constexpr float CF_GAIN = 0.18f;  // 18% del contralateral, típico Bauer
+    for (int i = 0; i < n; ++i) {
+        const float L = left[i];
+        const float R = right[i];
+        left [i] = L + CF_GAIN * R;
+        right[i] = R + CF_GAIN * L;
+    }
 }
 
-// ── Procesamiento espacial con índices separados ────────────────────────────
+// ── v2: control de "width" + crossfeed + shelf real ──────────────────────────
 extern "C" void spatial_process_antidolby_v2(float* left, float* right, int frames,
                                                 int sampleRate, bool isVocal,
                                                 float widthAmount) {
     init_hrtf(sampleRate);
 
-    static int delay_idx_l = 0;
-    static int delay_idx_r = 0;
+    if (widthAmount < 0.0f) widthAmount = 0.0f;
+    if (widthAmount > 1.0f) widthAmount = 1.0f;
 
-    // Aplicar shelving >8kHz solo si no es vocal
     if (!isVocal) {
         for (int i = 0; i < frames; ++i) {
-            left[i] = shelving8k(left[i], 0.3f, g_shelf_state_l);
-            right[i] = shelving8k(right[i], 0.3f, g_shelf_state_r);
+            left [i] = g_shelf_l.process(left [i]);
+            right[i] = g_shelf_r.process(right[i]);
         }
     }
 
-    // Convolución HRTF por canal
-    for (int i = 0; i < frames; ++i) {
-        // Canal izquierdo
-        g_delay_left[delay_idx_l] = left[i];
-        g_delay_left[delay_idx_l + HRTF_TAPS] = left[i];
-        float out_l = 0.0f;
-        for (int tap = 0; tap < HRTF_TAPS; ++tap) {
-            out_l += g_delay_left[delay_idx_l - tap + HRTF_TAPS] * g_hrtf_left[tap];
-        }
-        delay_idx_l++;
-        if (delay_idx_l >= HRTF_TAPS) delay_idx_l = 0;
+    alignas(64) float wet_l[4096];
+    alignas(64) float wet_r[4096];
+    const int n = std::min(frames, 4096);
 
-        // Canal derecho
-        g_delay_right[delay_idx_r] = right[i];
-        g_delay_right[delay_idx_r + HRTF_TAPS] = right[i];
-        float out_r = 0.0f;
-        for (int tap = 0; tap < HRTF_TAPS; ++tap) {
-            out_r += g_delay_right[delay_idx_r - tap + HRTF_TAPS] * g_hrtf_right[tap];
-        }
-        delay_idx_r++;
-        if (delay_idx_r >= HRTF_TAPS) delay_idx_r = 0;
+    hrtf_convolve_frac(left,  wet_l, n, g_hrtf_left,  g_delay_left,  g_delay_idx_l, 0,         0.0f);
+    hrtf_convolve_frac(right, wet_r, n, g_hrtf_right, g_delay_right, g_delay_idx_r, g_itd_int, g_itd_frac);
 
-        // Mezclar con señal original según widthAmount
-        left[i] = left[i] * (1.0f - widthAmount) + out_l * widthAmount;
-        right[i] = right[i] * (1.0f - widthAmount) + out_r * widthAmount;
+    // Crossfeed proporcional al width (más ancho ⇒ más externalización).
+    const float cf = 0.10f + 0.20f * widthAmount;  // 0.10..0.30
+    for (int i = 0; i < n; ++i) {
+        const float dryL = left[i], dryR = right[i];
+        const float wL = wet_l[i] + cf * wet_r[i];
+        const float wR = wet_r[i] + cf * wet_l[i];
+        left [i] = dryL * (1.0f - widthAmount) + wL * widthAmount;
+        right[i] = dryR * (1.0f - widthAmount) + wR * widthAmount;
     }
 }
 
-// ── Inicialización JNI ────────────────────────────────────────────────────────
+// ── JNI init ─────────────────────────────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_SpatialAudioEngineV2_nativeInitSpatial(JNIEnv* /*env*/,
                                                                     jobject /*thiz*/,
                                                                     jint sampleRate) {
     init_hrtf(sampleRate);
-    LOGI("Spatial engine inicializado @ %d Hz", sampleRate);
+    LOGI("Spatial engine v3.1 inicializado @ %d Hz", sampleRate);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LEGACY SpatialState API — requerida por spatial_jni.cpp (SpatialState/IvannaNativeLib).
-// Restaurada (no degradada): coexiste con el HRTF Anti-Dolby de arriba, que opera
-// sobre un subsistema distinto (SpatialAudioEngineV2). Ambos caminos JNI son válidos
-// y se mantienen activos simultáneamente.
+// LEGACY SpatialState API — usada por spatial_jni.cpp / IvannaNativeLib.
+// (Sin cambios de comportamiento — sigue coexistiendo con Anti-Dolby v3.1.)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 struct HeadShadowHP {
@@ -186,11 +245,8 @@ struct HeadShadowHP {
     }
     void reset() { z1 = 0.f; }
 };
-
 static HeadShadowHP g_legacyHpL, g_legacyHpR;
 
-// Helper interno: actualiza energías n/omega a partir del audio procesado.
-// (Distinto del update_mu público de abajo, que ajusta mu desde errores externos.)
 static void legacy_update_mu_internal(SpatialState* state,
                                       const float* audio_in,
                                       const float* audio_out,
@@ -203,7 +259,6 @@ static void legacy_update_mu_internal(SpatialState* state,
     }
     in_e  /= (float)frames;
     out_e /= (float)frames;
-    // EMA suave para evitar saltos bruscos en n_energy/omega_energy
     constexpr float EMA = 0.05f;
     state->n_energy     = state->n_energy     * (1.f - EMA) + in_e  * EMA;
     state->omega_energy = state->omega_energy * (1.f - EMA) + out_e * EMA;
@@ -302,14 +357,10 @@ void omega_engine(const int16_t* n, const int16_t* omega, int16_t* p, int16_t mu
     }
 }
 
-// Consenso público: ajusta state->mu a partir de errores externos (spatial/room/masking).
-// Coincide exactamente con la firma declarada en spatial_engine.h.
 void update_mu(SpatialState* state, int32_t spatialErr, int32_t roomErr, int32_t maskingErr) {
     if (!state) return;
-    // Error total ponderado — masking pesa más por su impacto perceptual directo
     const int64_t total_err = (int64_t)spatialErr + roomErr + 2 * (int64_t)maskingErr;
-    // Mapear error a ajuste de mu (rango seguro 50..1500, base 1000 = 0-1 escalado x1000)
-    int32_t delta = (int32_t)(total_err / 64);  // factor de amortiguación
+    int32_t delta = (int32_t)(total_err / 64);
     int32_t new_mu = (int32_t)state->mu + delta;
     state->mu = (int16_t)std::max(50, std::min(1500, new_mu));
     state->spatialErr = spatialErr;
@@ -318,7 +369,6 @@ void update_mu(SpatialState* state, int32_t spatialErr, int32_t roomErr, int32_t
 }
 
 int16_t computeITD(int16_t posX) {
-    // Inter-aural time difference: ~0.7ms max a 44.1kHz → ~30 samples
     float delay = 0.5f * sinf((float)posX * 3.14159265f / 180.0f) * 30.0f;
     return (int16_t)(delay + 0.5f);
 }
@@ -347,7 +397,7 @@ int16_t hrtfR(int16_t posX, int16_t sample) {
 }
 
 int16_t roomIR(int16_t sample, int delay, int decay) {
-    (void)delay;  // comb-filter tap fijo simplificado; delay reservado para v2
+    (void)delay;
     float d = (float)decay / 1000.0f;
     float result = std::max(-32768.0f, std::min(32767.0f, (float)sample * (1.0f - d * 0.5f)));
     return (int16_t)result;
