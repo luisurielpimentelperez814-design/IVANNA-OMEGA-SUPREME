@@ -78,8 +78,18 @@ static thread_local uint64_t t_last_seq_dspbridge{0};
 static thread_local uint64_t t_last_seq_nativelib{0};
 
 // ── Helper ───────────────────────────────────────────────────────────────────
+// [FIX-OOB-JNI] Antes se confiaba ciegamente en el 'n' pedido por el
+// llamador Kotlin sin comprobar el tamaño REAL del jfloatArray. Si algún
+// caller (bug de cableado, versión desalineada, JNI mal usado desde otro
+// módulo) pedía más frames que los que el array Java realmente tenía,
+// memcpy leía fuera de los límites del array -> heap buffer over-read
+// silencioso. Ahora se recorta 'n' al mínimo entre lo pedido y
+// GetArrayLength(src) real.
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     if (!src || n <= 0) return false;
+    const jsize len = env->GetArrayLength(src);
+    if (len <= 0) return false;
+    if (n > len) n = len;
     jfloat* p = env->GetFloatArrayElements(src, nullptr);
     if (!p) return false;
     memcpy(dst, p, n * sizeof(float));
@@ -170,7 +180,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ninguna muestra. A partir de aquí el bloque entero es determinista.
     apply_pending_control_frame(t_last_seq_dspbridge);
 
-    const int n = std::min((int)nFrames, 2048);
+    // [FIX-OOB-JNI] 'buf' es estéreo intercalado (2 floats/frame). Antes solo
+    // se recortaba n contra el límite fijo de 2048 sin comprobar el tamaño
+    // REAL del array Java: si nFrames pedía más de lo que 'buf' realmente
+    // tenía, el for de abajo leía/escribía data[2*i+1] fuera del array ->
+    // heap buffer overflow. Ahora también se recorta contra buf.length/2.
+    const jsize bufLen = env->GetArrayLength(buf);
+    int n = std::min((int)nFrames, 2048);
+    n = std::min(n, (int)(bufLen / 2));
+    if (n <= 0) return;
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
 
@@ -264,10 +282,16 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
 
-    jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
-    jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
-    if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
-    if (pR) { memcpy(pR, oR, n*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
+    // [FIX-OOB-JNI] Mismo recorte defensivo que copyJFloat pero en el lado
+    // de escritura: nunca copiar más de lo que outL/outR realmente tienen.
+    const jsize lenOutL = outL ? env->GetArrayLength(outL) : 0;
+    const jsize lenOutR = outR ? env->GetArrayLength(outR) : 0;
+    const int nOutL = std::min(n, (int)lenOutL);
+    const int nOutR = std::min(n, (int)lenOutR);
+    jfloat* pL = (nOutL > 0) ? env->GetFloatArrayElements(outL, nullptr) : nullptr;
+    jfloat* pR = (nOutR > 0) ? env->GetFloatArrayElements(outR, nullptr) : nullptr;
+    if (pL) { memcpy(pL, oL, nOutL*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
+    if (pR) { memcpy(pR, oR, nOutR*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
 }
 
 JNIEXPORT void JNICALL
