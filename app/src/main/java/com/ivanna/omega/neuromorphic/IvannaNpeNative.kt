@@ -42,6 +42,7 @@ object IvannaNpeNative {
 
     @JvmStatic external fun nativeSetAGC(handle: Long, target: Float, rate: Float)
     @JvmStatic external fun nativeSetBypass(handle: Long, bypass: Boolean)
+    @JvmStatic external fun nativeSetManifoldEnabled(handle: Long, enabled: Boolean)
     @JvmStatic external fun nativeGetMetrics(handle: Long): FloatArray?
 
     @JvmStatic external fun nativeSnapshotScope(

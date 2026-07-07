@@ -110,6 +110,8 @@ class AudioEngine {
     private external fun nativeSetEqGain(gain: Float)
     private external fun nativeSetWidth(width: Float)
     private external fun nativeSetBypass(bypass: Boolean)
+    private external fun nativeSetRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
+    private external fun nativeSetManifoldEnabled(enabled: Boolean)
     private external fun nativeProcessAudio(
         inArray: FloatArray,
         outArray: FloatArray,
