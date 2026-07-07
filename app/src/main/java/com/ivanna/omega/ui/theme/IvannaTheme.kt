@@ -12,30 +12,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * IvannaTheme — Paleta "Aurora Obsidiana"
+ * IvannaTheme v3.0 — "Aurora Obsidiana OMNIPOTENTE"
  *
- * Diseño magistral pensado para dejar visible el wallpaper OpenGL PBR
- * (aurora + nebulosa) que corre detrás como capa 0. Todas las superficies
- * son translúcidas y usan acentos cian eléctrico / magenta neón / oro ámbar
- * sobre negro obsidiana profundo.
+ * REGLA DE ORO: no se borra nada de v2.0. Se conservan los mismos nombres
+ * públicos (ObsidianDeep, AuroraCyan, IvannaTheme, etc.) para que el drop-in
+ * sobre el proyecto real sea directo — sólo se profundiza la paleta, se añaden
+ * tonos de glow/elevación nuevos y se afina la tipografía para lectura de
+ * instrumento de precisión bajo el wallpaper OpenGL PBR.
  */
 
-// ── Paleta cromática ─────────────────────────────────────────────────────────
-val ObsidianDeep   = Color(0xFF05070C) // fondo base (bajo el wallpaper)
-val ObsidianSoft   = Color(0xFF0B1220) // superficie elevada
-val ObsidianGlass  = Color(0xCC0E1626) // tarjeta glass (con alpha)
-val ObsidianEdge   = Color(0xFF23324A) // bordes / outline
+// ── Paleta cromática base (idéntica en nombre a v2.0) ───────────────────────
+val ObsidianDeep   = Color(0xFF04050A)
+val ObsidianSoft   = Color(0xFF0A101C)
+val ObsidianGlass  = Color(0xCC0D1524)
+val ObsidianEdge   = Color(0xFF223050)
 
-val AuroraCyan     = Color(0xFF7DF9FF) // primario: eléctrico
-val AuroraCyanDim  = Color(0xFF3EC4CE) // primario apagado
-val NeonMagenta    = Color(0xFFFF3C7E) // secundario: magenta neón
-val AmberSignal    = Color(0xFFF5B301) // acento oro/ámbar (alertas/estado)
-val PhosphorGreen  = Color(0xFF22E58B) // éxito / aurora verde
-val CoralWarn      = Color(0xFFFF6B4A) // advertencia/crítico
+val AuroraCyan     = Color(0xFF6FF3FF)
+val AuroraCyanDim  = Color(0xFF3AB9C6)
+val NeonMagenta    = Color(0xFFFF3E86)
+val AmberSignal    = Color(0xFFF7B733)
+val PhosphorGreen  = Color(0xFF23F09A)
+val CoralWarn      = Color(0xFFFF5C4D)
 
-val TextPrimary    = Color(0xFFEAF6FF) // texto principal
-val TextSecondary  = Color(0xFF8CA0BC) // texto secundario
-val TextMuted      = Color(0xFF5A6F8A) // texto atenuado
+val TextPrimary    = Color(0xFFF1F8FF)
+val TextSecondary  = Color(0xFF93A8C6)
+val TextMuted      = Color(0xFF57708F)
+
+// ── Nuevos tonos v3.0 (glow / profundidad / cristal premium) ────────────────
+val ObsidianVoid     = Color(0xFF010204)  // negro absoluto detrás de todo
+val GlassHighlight   = Color(0x33FFFFFF)  // filo superior de cristal (specular)
+val GlassShadowInner = Color(0x66000000)  // sombra interna de cristal
+val AuroraCyanGlow   = Color(0x556FF3FF)
+val NeonMagentaGlow  = Color(0x55FF3E86)
+val AmberSignalGlow  = Color(0x55F7B733)
+val PhosphorGreenGlow= Color(0x5523F09A)
+val OmniGoldCore     = Color(0xFFFFD976)  // núcleo del anillo OMNI (estado supremo)
 
 private val IvannaDarkColors = darkColorScheme(
     primary            = AuroraCyan,
@@ -46,7 +57,7 @@ private val IvannaDarkColors = darkColorScheme(
     onSecondary        = TextPrimary,
     tertiary           = AmberSignal,
     onTertiary         = ObsidianDeep,
-    background         = ObsidianDeep,
+    background         = ObsidianVoid,
     onBackground       = TextPrimary,
     surface            = ObsidianSoft,
     onSurface          = TextPrimary,
@@ -58,19 +69,16 @@ private val IvannaDarkColors = darkColorScheme(
     onError            = TextPrimary
 )
 
-// ── Tipografía magistral ─────────────────────────────────────────────────────
-// FontFamily.Monospace para lecturas técnicas (dB, ms, gen, fitness).
-// SansSerif con weight variado para jerarquía visual limpia y "de instrumento".
 private val Mono = FontFamily.Monospace
 private val Sans = FontFamily.SansSerif
 
 val IvannaTypography = Typography(
-    displayLarge   = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Light,      fontSize = 44.sp, letterSpacing = 4.sp),
-    displayMedium  = TextStyle(fontFamily = Sans, fontWeight = FontWeight.ExtraLight, fontSize = 32.sp, letterSpacing = 3.sp),
-    headlineLarge  = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium,     fontSize = 24.sp, letterSpacing = 2.sp),
+    displayLarge   = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Light,      fontSize = 46.sp, letterSpacing = 5.sp),
+    displayMedium  = TextStyle(fontFamily = Sans, fontWeight = FontWeight.ExtraLight, fontSize = 33.sp, letterSpacing = 4.sp),
+    headlineLarge  = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium,     fontSize = 25.sp, letterSpacing = 2.sp),
     headlineMedium = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium,     fontSize = 20.sp, letterSpacing = 1.sp),
     titleLarge     = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold,   fontSize = 18.sp, letterSpacing = 0.5.sp),
-    titleMedium    = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold,   fontSize = 15.sp, letterSpacing = 1.2.sp),
+    titleMedium    = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold,   fontSize = 15.sp, letterSpacing = 1.3.sp),
     titleSmall     = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium,     fontSize = 13.sp, letterSpacing = 1.sp),
     bodyLarge      = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal,     fontSize = 15.sp),
     bodyMedium     = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal,     fontSize = 13.sp),
@@ -82,7 +90,6 @@ val IvannaTypography = Typography(
 
 @Composable
 fun IvannaTheme(
-    // @Suppress: parámetro reservado para futura toggle claro/oscuro.
     @Suppress("UNUSED_PARAMETER") darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
