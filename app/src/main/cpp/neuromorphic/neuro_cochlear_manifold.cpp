@@ -9,7 +9,7 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
-#include "volterra_h2_symmetric.hpp"
+#include "../include/volterra_h2_symmetric.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -35,17 +35,7 @@ struct ManifoldState {
     size_t channels = 2;
 
     IvannaFastRpcClient* dsp_client = nullptr;
-    // AUDIT FIX (crítico, correctness): antes había UN solo FIRUpsamplerEngine
-    // compartido, y se llamaba a ->process() dos veces por bloque (L y luego R)
-    // sobre el MISMO objeto. FIRUpsamplerEngine mantiene una única línea de
-    // retardo (delay_) como estado interno mono — al procesar R justo después
-    // de L, R heredaba la cola de memoria de L en vez de la suya propia:
-    // contaminación cruzada entre canales en cada bloque, audible como fantasma
-    // del canal opuesto / imagen estéreo corrida. Ahora cada canal tiene su
-    // propia instancia con su propia línea de retardo — mismos coeficientes
-    // (mismo factor), estado independiente.
-    FIRUpsamplerEngine* upsampler_l = nullptr;
-    FIRUpsamplerEngine* upsampler_r = nullptr;
+    FIRUpsamplerEngine* upsampler = nullptr;
     VolterraH2Symmetric* volterra = nullptr;
 
     std::atomic<bool> pipeline_active{false};
@@ -113,27 +103,8 @@ bool neuro_cochlear_manifold_init(
         g_manifold.dsp_client = nullptr;
     }
 
-    try {
-        // [FIX] Antes se construía con el default del stub (factor fijo, ni
-        // siquiera leído de g_manifold.upsample_factor). Ahora se pasa el
-        // factor real calculado arriba (sample_rate_out/sample_rate_in), para
-        // que el FIR polifásico llene el buffer completo (up_N muestras) y no
-        // solo una fracción fija como antes.
-        g_manifold.upsampler_l = new FIRUpsamplerEngine(
-            static_cast<uint32_t>(g_manifold.upsample_factor));
-        g_manifold.upsampler_r = new FIRUpsamplerEngine(
-            static_cast<uint32_t>(g_manifold.upsample_factor));
-        // AUDIT FIX: quad_kernel_length explícito (64) en vez de reusar 8192
-        // como ventana cuadrática — ver volterra_h2_symmetric.cpp/.hpp.
-        g_manifold.volterra = new VolterraH2Symmetric(8192, channels, 64);
-    } catch (...) {
-        delete g_manifold.upsampler_l; g_manifold.upsampler_l = nullptr;
-        delete g_manifold.upsampler_r; g_manifold.upsampler_r = nullptr;
-        delete g_manifold.volterra;  g_manifold.volterra = nullptr;
-        delete g_manifold.dsp_client; g_manifold.dsp_client = nullptr;
-        neuro_cochlear_manifold_teardown();
-        return false;
-    }
+    g_manifold.upsampler = new FIRUpsamplerEngine();
+    g_manifold.volterra = new VolterraH2Symmetric(8192, channels);
 
     g_manifold.pipeline_active.store(true, std::memory_order_release);
     return true;
@@ -156,31 +127,22 @@ void neuro_cochlear_process_block(
     if (ch < 2) return;
 
     if (g_manifold.dsp_client && g_manifold.dsp_client->isDSPReady()) {
-        // AUDIT FIX (crítico, heap overflow): buffer_post_hrtf se asigna con
-        // post_hrtf_sz = block_size * channels * sizeof(float), es decir,
-        // espacio para N muestras por canal (N + N = 2N floats totales), NO
-        // up_N (= N*upsample_factor, hasta 16x mayor). Escribir el canal derecho
-        // en el offset `up_N` corrompía heap más allá del buffer asignado —
-        // dormido hoy porque isDSPReady() nunca es true (el cliente FastRPC no
-        // tiene el cDSP real enlazado todavía), pero listo para tronar en cuanto
-        // se conecte el Hexagon real. El offset correcto es N, igual que en la
-        // rama de fallback de abajo.
         g_manifold.dsp_client->delegateBinauralConvolution(
             input_left, input_right,
             g_manifold.buffer_post_hrtf,
-            g_manifold.buffer_post_hrtf + N,
+            g_manifold.buffer_post_hrtf + up_N,
             position, N);
     } else {
         memcpy(g_manifold.buffer_post_hrtf, input_left, N * sizeof(float));
         memcpy(g_manifold.buffer_post_hrtf + N, input_right, N * sizeof(float));
     }
 
-    if (g_manifold.upsampler_l && g_manifold.upsampler_r) {
-        g_manifold.upsampler_l->process(
+    if (g_manifold.upsampler) {
+        g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf, 
             g_manifold.buffer_post_up, 
             N);
-        g_manifold.upsampler_r->process(
+        g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf + N, 
             g_manifold.buffer_post_up + up_N, 
             N);
@@ -237,12 +199,10 @@ void neuro_cochlear_manifold_teardown() {
     free(g_manifold.buffer_post_up);
     free(g_manifold.buffer_final);
     delete g_manifold.dsp_client;
-    delete g_manifold.upsampler_l;
-    delete g_manifold.upsampler_r;
+    delete g_manifold.upsampler;
     delete g_manifold.volterra;
     g_manifold.dsp_client = nullptr;
-    g_manifold.upsampler_l = nullptr;
-    g_manifold.upsampler_r = nullptr;
+    g_manifold.upsampler = nullptr;
     g_manifold.volterra = nullptr;
     g_manifold.buffer_pre_hrtf = nullptr;
     g_manifold.buffer_post_hrtf = nullptr;

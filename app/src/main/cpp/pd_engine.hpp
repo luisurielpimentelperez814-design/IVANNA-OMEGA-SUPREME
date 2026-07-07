@@ -28,22 +28,18 @@
  *   0 = DSP only (GainStage+EQ+Comp+Exciter+Widener)
  *   1 = DSP + NHO harmonic shaping
  *   2 = DSP + NHO + Spatial (ITD+ILD)
- *   3 = DSP + NHO + HRTF binaural real (FFT overlap-save + crossfade)
  * ============================================================
  */
 
 #include "neuromorphic/nho_engine.hpp"
 #include "neuromorphic/biquad_envelope_bank.hpp"
 #include "spatial/cue_based_spatial.hpp"
-#include "spatial/hrtf_convolver.hpp"
-#include "control_frame.hpp"
 #include <cmath>
 #include <algorithm>
 #include <atomic>
 #include <thread>
 #include <chrono>
 #include <pthread.h>
-#include <vector>
 
 // Forward declarations from evolutionary_kernel.cpp (C linkage)
 #ifdef __cplusplus
@@ -72,13 +68,9 @@ public:
     NHOEngine           nho;
     BiquadEnvelopeBank  cue_bank;   // incluye refinamiento PhaseOracle (T_refined)
     CueBasedSpatial     spatial;
-    // Modo 3: convolución binaural HRTF real (FFT overlap-save + crossfade).
-    // Opera sobre el PCM ya presente en el pipeline (post EQ/Comp/Exciter/
-    // Widener) — no decodifica ni intercepta ningún contenedor propietario.
-    HRTFConvolver       hrtf_conv;
 
     // ── Parameters ───────────────────────────────────────────────────────────
-    std::atomic<int>   mode{0};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial, 3=+HRTF
+    std::atomic<int>   mode{0};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
     float sample_rate = 48000.f;
 
     // Output mix coefficients (from spec)
@@ -89,7 +81,6 @@ public:
     void init(uint32_t sr) noexcept {
         sample_rate = (float)sr;
         cue_bank.init(sr);
-        hrtf_conv.init(sr);
         reset();
     }
 
@@ -98,7 +89,6 @@ public:
         nho.reset();
         cue_bank.reset();
         spatial.reset();
-        hrtf_conv.reset();
     }
 
     // ── F(c_t) — cue-driven state update function ─────────────────────────
@@ -174,25 +164,6 @@ public:
         // agnóstico). Ahora busca genomas coherentes con el audio en curso.
         evo_update_audio_cues(cues.L, cues.T, cues.S);
 
-        if (m == 3) {
-            // Modo 3: HRTF binaural real. El convolver opera en bloque
-            // completo (internamente sub-divide en BLOCK=256), no por
-            // muestra — más eficiente y evita romper la ventana FFT.
-            hrtfNhL_.resize(n); hrtfNhR_.resize(n);
-            hrtfSL_.resize(n);  hrtfSR_.resize(n);
-            for (int i = 0; i < n; ++i)
-                nho.process_sample(inL[i], inR[i], hrtfNhL_[i], hrtfNhR_[i]);
-
-            hrtf_conv.process(hrtfNhL_.data(), hrtfNhR_.data(),
-                               hrtfSL_.data(), hrtfSR_.data(), n);
-
-            for (int i = 0; i < n; ++i) {
-                update_state(cues);
-                decode(inL[i], inR[i], hrtfSL_[i], hrtfSR_[i], outL[i], outR[i]);
-            }
-            return;
-        }
-
         for (int i = 0; i < n; ++i) {
             float xL = inL[i], xR = inR[i];
 
@@ -218,31 +189,14 @@ public:
         }
     }
 
-    int  get_mode() const noexcept { return mode.load(std::memory_order_relaxed); }
-
-    // ── Único punto de entrada de control externo ──────────────────────
-    // Llamado por el hilo de audio, como máximo una vez por bloque, ANTES
-    // de process_block(). Aplica un ControlFrame inmutable ya congelado —
-    // nunca se llama a mitad de un bloque, así que dentro de un mismo
-    // bloque los parámetros no cambian: process_block() es una función
-    // pura de (entrada, este frame, estado interno) → salida.
-    // Los setters individuales (antes públicos) quedan privados: ya no
-    // existe una vía para que el hilo JNI mute el motor directamente.
-    void applyControlFrame(const ControlFrame& f) noexcept {
-        set_mode_(f.mode);
-        set_nho_alpha_(f.nho_alpha);
-        set_nho_beta_(f.nho_beta);
-        set_nho_wet_(f.nho_wet);
-        set_nho_harmonic_(f.nho_harmonic_gain);
-        set_spatial_angle_(f.spatial_angle_deg);
-        set_spatial_width_(f.spatial_width);
-        // Modo 3 (HRTF binaural real): reutiliza los MISMOS 2 controles
-        // espaciales que ya existían para CueBasedSpatial — cumple la
-        // regla de los 13 controles, ningún control nuevo en la UI.
-        // spatial_width [0,1.5] -> "agresividad HRTF" [0,1].
-        const float aggressiveness = std::clamp(f.spatial_width * (1.f / 1.5f), 0.f, 1.f);
-        hrtf_conv.set_position(f.spatial_angle_deg, aggressiveness);
-    }
+    void set_mode(int m)           noexcept { mode.store(std::clamp(m, 0, 2)); }
+    int  get_mode()          const noexcept { return mode.load(); }
+    void set_spatial_angle(float d) noexcept { spatial.set_angle_deg(d); }
+    void set_spatial_width(float w) noexcept { spatial.set_width(w); }
+    void set_nho_alpha(float v)     noexcept { nho.set_alpha(v); }
+    void set_nho_beta(float v)      noexcept { nho.set_beta(v); }
+    void set_nho_wet(float v)       noexcept { nho.set_wet(v); }
+    void set_nho_harmonic(float v)  noexcept { nho.set_harmonic_gain(v); }
 
     // ── EvolutionaryKernel background integration ─────────────────────────
     //
@@ -294,22 +248,8 @@ public:
     ~PDEngine() { stop_evo_thread(); }
 
 private:
-    // ── Setters privados: solo alcanzables vía applyControlFrame() ──────
-    // Nunca públicos de nuevo — evita que cualquier hilo externo (JNI)
-    // vuelva a mutar el motor fuera del punto de sincronización de bloque.
-    void set_mode_(int m)            noexcept { mode.store(std::clamp(m, 0, 3), std::memory_order_relaxed); }
-    void set_spatial_angle_(float d) noexcept { spatial.set_angle_deg(d); }
-    void set_spatial_width_(float w) noexcept { spatial.set_width(w); }
-    void set_nho_alpha_(float v)     noexcept { nho.set_alpha(v); }
-    void set_nho_beta_(float v)      noexcept { nho.set_beta(v); }
-    void set_nho_wet_(float v)       noexcept { nho.set_wet(v); }
-    void set_nho_harmonic_(float v)  noexcept { nho.set_harmonic_gain(v); }
-
     // ── EvolutionaryKernel thread state ──────────────────────────────────
     static constexpr float EVO_IMPROVEMENT_THRESHOLD = 0.01f;  // 1% improvement gate
-
-    // Buffers reusables para el modo 3 (se reencogen solo si n crece)
-    std::vector<float> hrtfNhL_, hrtfNhR_, hrtfSL_, hrtfSR_;
 
     std::thread        evo_thread_;
     std::atomic<bool>  evo_running_{false};

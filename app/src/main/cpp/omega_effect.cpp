@@ -1,8 +1,10 @@
 #include <jni.h>
 /*
- * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO v1.2 (POST_PROC + NEON)
- * FIXES v1.1: null check out buffer, NaN guard AGC, memory order LockFreeRing
- * v1.2: EFFECT_FLAG_TYPE_POST_PROC + INSERT_LAST, AGC vectorizado NEON
+ * omega_effect.cpp — Audio Effect Plugin OPTIMIZADO v1.1 (FIXED)
+ * FIXES:
+ * 1. Null check for out buffer in Effect_Process
+ * 2. NaN propagation guard in AGC
+ * 3. Memory order strengthened in LockFreeRing
  */
 #include "audio_effect_compat.h"
 #include <cstdlib>
@@ -17,27 +19,12 @@
 #include <android/log.h>
 #include "omega_shared.h"
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
-#define OMEGA_HAVE_NEON 1
-#endif
-
 #ifndef AUDIO_CHANNEL_OUT_STEREO
 #define AUDIO_CHANNEL_OUT_STEREO 0x3u
 #endif
 
 #ifndef AUDIO_FORMAT_PCM_FLOAT
 #define AUDIO_FORMAT_PCM_FLOAT 0x5u
-#endif
-
-#ifndef EFFECT_FLAG_TYPE_SHIFT
-#define EFFECT_FLAG_TYPE_SHIFT 0
-#endif
-#ifndef EFFECT_FLAG_TYPE_POST_PROC
-#define EFFECT_FLAG_TYPE_POST_PROC (4 << EFFECT_FLAG_TYPE_SHIFT)
-#endif
-#ifndef EFFECT_FLAG_INSERT_LAST
-#define EFFECT_FLAG_INSERT_LAST (2 << 8)
 #endif
 
 #define LOG_TAG "OmegaEffect"
@@ -48,10 +35,6 @@ static constexpr const char* kSocketName = "omega_daemon_socket";
 static constexpr float kAgcTargetRms = 0.126f;
 static constexpr float kAgcGainMin = 0.25f;
 static constexpr float kAgcGainMax = 4.0f;
-// AUDIT FIX: mismos valores de techo que audio_orchestrator.cpp y
-// ivanna_npe_jni.cpp, para no tener tres limiters con umbrales distintos.
-static constexpr float kLimiterThresh = 0.98855f;   // -0.1 dBFS
-static constexpr float kLimiterCeil   = 0.989f;
 
 static const effect_uuid_t kEffectTypeNull = {
     0xec7178a0,0x847d,0x11e0,0xa3cb,{0x00,0x02,0xa5,0xd5,0xc5,0x1b}};
@@ -60,7 +43,7 @@ static const effect_uuid_t kEffectUuid = {
 static const effect_descriptor_t kDesc = {
     .type=kEffectTypeNull,.uuid=kEffectUuid,
     .apiVersion=EFFECT_CONTROL_API_VERSION,
-    .flags=EFFECT_FLAG_TYPE_POST_PROC|EFFECT_FLAG_INSERT_LAST,
+    .flags=EFFECT_FLAG_TYPE_INSERT|EFFECT_FLAG_INSERT_LAST,
     .cpuLoad=30,.memoryUsage=200,
     .name="OMEGA Omega_in AI Bridge",.implementor="GORE TNS"};
 
@@ -72,6 +55,7 @@ struct OmegaContext {
     float agc_envelope = kAgcTargetRms;
     float agc_gain = 1.0f;
     std::atomic<uint32_t> underruns{0};
+    // Anti-Dolby v1.5: detección EAC3
     bool antiDolbyActive = false;
     bool isEac3Decoder = false;
 };
@@ -118,61 +102,28 @@ static void unmapSharedMemory(OmegaContext* ctx) {
     if (ctx->shared) { munmap(ctx->shared, sizeof(OmegaSharedState)); ctx->shared=nullptr; }
 }
 
-#if defined(OMEGA_HAVE_NEON)
-static inline float neon_sum_sq(const float* buf, int samples, int* processed) {
-    int i = 0;
-    float32x4_t acc = vdupq_n_f32(0.0f);
-    for (; i + 4 <= samples; i += 4) {
-        float32x4_t v = vld1q_f32(buf + i);
-        uint32x4_t finite_mask = vceqq_f32(v, v); // NaN != NaN
-        v = vbslq_f32(finite_mask, v, vdupq_n_f32(0.0f));
-        acc = vmlaq_f32(acc, v, v);
-    }
-    float32x2_t sum2 = vadd_f32(vget_low_f32(acc), vget_high_f32(acc));
-    sum2 = vpadd_f32(sum2, sum2);
-    *processed = i;
-    return vget_lane_f32(sum2, 0);
-}
-
-static inline void neon_scale(float* buf, int samples, float gain, int start) {
-    int i = start;
-    float32x4_t g = vdupq_n_f32(gain);
-    for (; i + 4 <= samples; i += 4) {
-        float32x4_t v = vld1q_f32(buf + i);
-        v = vmulq_f32(v, g);
-        vst1q_f32(buf + i, v);
-    }
-    for (; i < samples; ++i) buf[i] *= gain;
-}
-#endif
-
 static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
     if (!ctx || !buf || samples <= 0) return;
 
-    if (!std::isfinite(ctx->agc_envelope)) ctx->agc_envelope = kAgcTargetRms;
-    if (!std::isfinite(ctx->agc_gain)) ctx->agc_gain = 1.0f;
+    if (!std::isfinite(ctx->agc_envelope)) {
+        ctx->agc_envelope = kAgcTargetRms;
+    }
+    if (!std::isfinite(ctx->agc_gain)) {
+        ctx->agc_gain = 1.0f;
+    }
 
     float sensitivity = ctx->shared->ai_sensitivity.load(std::memory_order_relaxed);
     float alpha = 0.001f + sensitivity * 0.049f;
 
     float rms = 0.0f;
-#if defined(OMEGA_HAVE_NEON)
-    int done = 0;
-    rms = neon_sum_sq(buf, samples, &done);
-    for (int i = done; i < samples; ++i) {
-        float s = buf[i];
-        if (!std::isfinite(s)) s = 0.0f;
-        rms += s * s;
-    }
-#else
     #pragma unroll 8
     for (int i = 0; i < samples; ++i) {
         float s = buf[i];
         if (!std::isfinite(s)) s = 0.0f;
         rms += s * s;
     }
-#endif
     rms = sqrtf(rms / (float)samples + 1e-12f);
+
     if (!std::isfinite(rms) || rms < 1e-12f) rms = 1e-12f;
 
     ctx->agc_envelope += alpha * (rms - ctx->agc_envelope);
@@ -182,27 +133,13 @@ static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
         ? kAgcTargetRms / ctx->agc_envelope : 1.0f;
     target_gain = std::fmaxf(kAgcGainMin, std::fminf(kAgcGainMax, target_gain));
     ctx->agc_gain += alpha * (target_gain - ctx->agc_gain);
+
     if (!std::isfinite(ctx->agc_gain)) ctx->agc_gain = 1.0f;
 
     const float gain = ctx->agc_gain;
-#if defined(OMEGA_HAVE_NEON)
-    neon_scale(buf, samples, gain, 0);
-#else
-    #pragma unroll 8
-    for (int i = 0; i < samples; ++i) buf[i] *= gain;
-#endif
-
-    // AUDIT FIX: mismo problema que en ivanna_npe_jni.cpp — este AGC podía
-    // llegar a 4x de ganancia (kAgcGainMax) sin ningún limiter tras aplicarla,
-    // permitiendo clipping duro si ai_sensitivity está alto. Se agrega el
-    // mismo soft-knee usado en el resto del proyecto, sin tocar la lógica
-    // de ganancia existente.
     #pragma unroll 8
     for (int i = 0; i < samples; ++i) {
-        float s = buf[i];
-        if (!std::isfinite(s)) { buf[i] = 0.0f; continue; }
-        if (s > kLimiterThresh)       buf[i] = kLimiterCeil - (s - kLimiterThresh) * 0.1f;
-        else if (s < -kLimiterThresh) buf[i] = -kLimiterCeil - (s + kLimiterThresh) * 0.1f;
+        buf[i] *= gain;
     }
 
     float gain_db = 20.0f * log10f(std::fmaxf(ctx->agc_gain, 1e-6f));

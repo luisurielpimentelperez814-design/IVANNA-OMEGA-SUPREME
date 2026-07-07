@@ -18,7 +18,7 @@
  */
 #pragma once
 
-#include "synthesizer.hpp"
+#include "acoustic_synthesis_core.hpp"
 
 #include <cmath>    // std::fabs, std::sqrt (reemplazados por builtins abajo)
 #include <cstring>  // std::memset

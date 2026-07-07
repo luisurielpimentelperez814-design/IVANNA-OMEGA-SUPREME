@@ -1,9 +1,6 @@
-# IVANNA-OMEGA-SUPREME v1.8.1 — SELinux Policy
+# IVANNA-OMEGA-SUPREME v1.5 — SELinux Policy
 # FIX v1.5: elimina permisos execute sobre system_file (AVC denial Android 13+)
 # FIX v1.5: crea tipo propio omega_effect_lib con vendor_file_type
-# audit v1.8.1: documenta AudioSessionReceiver (broadcast in-process, no
-#               requiere allow SELinux nuevo pero lo dejamos constatado
-#               para el próximo auditor que se pregunte "¿y este receiver?")
 
 # ── Tipos propios ─────────────────────────────────────────────────────────────
 type omega_effect_lib, vendor_file_type, file_type;
@@ -25,18 +22,6 @@ allow hal_audio_default omega_effect_lib:file { read open getattr map };
 init_daemon_domain(omega_daemon)
 allow omega_daemon self:capability { sys_nice };
 allow omega_daemon audioserver:binder call;
-
-# ── AudioSessionReceiver (audit v1.8.1) ──────────────────────────────────────
-# El AudioManifest declara un BroadcastReceiver interno para los intents:
-#   android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION
-#   android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION
-# Estos broadcasts son emitidos por AudioFlinger dentro del propio proceso
-# de la app (categoría "in-process app broadcast" del framework), NO cruzan
-# el binder de audioserver a un dominio SELinux distinto. Por eso NO
-# necesita ninguna regla `allow` en este archivo — la política default de
-# untrusted_app (o platform_app si estuviera firmada) ya la cubre.
-# Se documenta aquí para que un futuro auditor no se pregunte por qué el
-# receiver no aparece en sepolicy.rule.
 
 # ── ELIMINADO en v1.5 (causaba AVC denial): ──────────────────────────────────
 # allow audioserver system_file:file { read open execute execute_no_trans getattr };

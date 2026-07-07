@@ -11,8 +11,8 @@ android {
         applicationId = "com.ivanna.omega"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1800
-        versionName = "1.8"
+        versionCode = 1500
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -47,7 +47,7 @@ android {
         }
     }
 
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "26.1.10909125"
 
     androidResources {
         noCompress += listOf("tflite")

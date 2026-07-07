@@ -80,20 +80,6 @@ data class IvannaEffectProfile(
             bassStrength = 700, virtualizerStrength = 200, loudnessGainMb = 300,
             compThresholdDb = -12f, compRatio = 5f
         )
-
-        // FIX (cableado UI): mapa nombre→perfil para exponer los 5 presets
-        // reales en la UI (antes solo se usaban internamente para Anti-Dolby).
-        val byName: LinkedHashMap<String, IvannaEffectProfile> = linkedMapOf(
-            "Flat" to FLAT,
-            "Warm" to WARM,
-            "Rock 70s" to ROCK_70S,
-            "Spatial" to SPATIAL,
-            "Punch" to PUNCH
-        )
-
-        /** Nombre del primer preset cuyo perfil coincide por referencia con [profile]. */
-        fun nameOf(profile: IvannaEffectProfile): String =
-            byName.entries.firstOrNull { it.value === profile }?.key ?: "Warm"
     }
 }
 

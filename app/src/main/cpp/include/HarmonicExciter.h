@@ -8,7 +8,6 @@ namespace ivanna {
 class HarmonicExciter {
 public:
     void setParams(const DSPParams& p);
-    void setAmount(float amount); // amount [0..1] -> drive 1..16, wet=amount (sin tocar HPF)
     void process(float* left, float* right, int frames);
     void reset();
 

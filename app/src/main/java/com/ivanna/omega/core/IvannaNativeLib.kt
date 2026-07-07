@@ -8,14 +8,12 @@ import android.util.Log
  * evolutionary kernel, phase oracle, and spatial engine.
  */
 object IvannaNativeLib {
-    // NOTA (audit v1.8.1): unificada la carga via NativeLibraryLoader.
-    // Antes cada bridge (DSPBridge, OmegaEngine, AudioEngine, este) hacía
-    // System.loadLibrary por su cuenta → warnings de re-carga.
     init {
-        if (NativeLibraryLoader.ensureLoaded()) {
-            Log.i("IvannaNativeLib", "Native library ready")
-        } else {
-            Log.e("IvannaNativeLib", "Native library not available")
+        try {
+            System.loadLibrary("ivanna_omega")
+            Log.i("IvannaNativeLib", "Native library loaded successfully")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("IvannaNativeLib", "Failed to load native library", e)
         }
     }
 

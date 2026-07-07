@@ -14,12 +14,12 @@ static inline __attribute__((always_inline)) float softClip(float x, float drive
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    // FIX audio-cleanup: drive 16x + HPF 3kHz generaba sibilancia. Cap 6x, HPF 5kHz.
-    drive_ = 1.f + p.drive * 5.f;  // 1..6
+    drive_ = 1.f + p.drive * 15.f;  // 1..16
     wet_   = p.wet;
     dry_   = 1.f - p.wet;
 
-    double w0 = 2.0 * M_PI * 5000.0 / p.sampleRate;
+    // HPF a 3 kHz – convertir a float de una vez
+    double w0 = 2.0 * M_PI * 3000.0 / p.sampleRate;
     double cw = std::cos(w0), sw = std::sin(w0);
     double alpha = sw / (2.0 * 0.707);
     double a0_inv = 1.0 / (1.0 + alpha);  // inverso para multiplicar
@@ -30,14 +30,6 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfL_.a1 = (float)(-2.0 * cw * a0_inv);
     hpfL_.a2 = (float)((1.0 - alpha) * a0_inv);
     hpfR_ = hpfL_;
-}
-
-void HarmonicExciter::setAmount(float amount) {
-    amount = amount < 0.f ? 0.f : (amount > 1.f ? 1.f : amount);
-    drive_ = 1.f + amount * 15.f;  // 1..16
-    wet_   = amount;
-    dry_   = 1.f - amount;
-    // HPF ya inicializado en setParams() con el sampleRate correcto; no se toca aquí.
 }
 
 __attribute__((hot, flatten))

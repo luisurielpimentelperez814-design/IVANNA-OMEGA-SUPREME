@@ -88,12 +88,6 @@ static inline float dsp_sqrt(float x) {
 }
 
 #ifdef __hexagon__
-static inline uint32_t f2bits(float f) noexcept {
-    uint32_t bits;
-    std::memcpy(&bits, &f, sizeof(float));
-    return bits;
-}
-
 static void lif_pool_hvx(const float* input, int n_frames) {
     const float dt = 1.f / (float)g_sample_rate;
     const float tau = 1.f / (g_alpha * 100.f + 0.01f);
@@ -102,15 +96,15 @@ static void lif_pool_hvx(const float* input, int n_frames) {
     const float v_reset = -g_delta;
     const int t_ref = (int)(g_eta * 2.f);
 
-    HVX_Vector vdecay = Q6_V_vsplat_R(f2bits(decay));
-    HVX_Vector vthresh = Q6_V_vsplat_R(f2bits(v_thresh));
-    HVX_Vector vreset = Q6_V_vsplat_R(f2bits(v_reset));
+    HVX_Vector vdecay = Q6_V_vsplat_R(*(uint32_t*)&decay);
+    HVX_Vector vthresh = Q6_V_vsplat_R(*(uint32_t*)&v_thresh);
+    HVX_Vector vreset = Q6_V_vsplat_R(*(uint32_t*)&v_reset);
 
     float fire_count = 0.f;
 
     for (int t = 0; t < n_frames; ++t) {
         const float in_t = input[t] * g_beta;
-        HVX_Vector vin = Q6_V_vsplat_R(f2bits(in_t));
+        HVX_Vector vin = Q6_V_vsplat_R(*(uint32_t*)&in_t);
         const int neurons_hvx = (g_n_neurons / 32) * 32;
 
         for (int ni = 0; ni < neurons_hvx; ni += 32) {
@@ -134,14 +128,14 @@ static void lif_pool_hvx(const float* input, int n_frames) {
             vref = Q6_V_vmux_QVV(ref_pos, vref_dec, Q6_V_vsplat_R(0));
 
             float tref_f = (float)t_ref;
-            HVX_Vector vtref = Q6_V_vsplat_R(f2bits(tref_f));
+            HVX_Vector vtref = Q6_V_vsplat_R(*(uint32_t*)&tref_f);
             vref = Q6_V_vmux_QVV(spike_mask, vtref, vref);
 
             float one = 1.f, zero = 0.f;
             *((HVX_Vector*)(g_spikes + ni)) = Q6_V_vmux_QVV(
                 spike_mask,
-                Q6_V_vsplat_R(f2bits(one)),
-                Q6_V_vsplat_R(f2bits(zero)));
+                Q6_V_vsplat_R(*(uint32_t*)&one),
+                Q6_V_vsplat_R(*(uint32_t*)&zero));
 
             *((HVX_Vector*)(g_v_mem + ni)) = vnew;
             *((HVX_Vector*)(g_v_ref + ni)) = vref;

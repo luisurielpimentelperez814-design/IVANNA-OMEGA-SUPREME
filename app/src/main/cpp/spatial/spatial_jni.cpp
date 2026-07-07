@@ -93,7 +93,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
     jfloatArray inputBuffer,
     jfloatArray outL,
     jfloatArray outR,
-    jfloat posX, jfloat posY, jfloat posZ, jfloat mu) {
+    jint posX, jint posY, jint posZ, jint mu) {
 
     if (!g_spatialInitialized) {
         ALOGE("Spatial engine not initialized");
@@ -115,16 +115,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderSpatialBlock(
         return 0;
     }
 
-    // FIX: Preservar float precision en lugar de truncar a int
-    // Update spatial state con valores float → int32_t (para compatibilidad con struct legacy)
-    g_spatialState.posX = static_cast<int32_t>(posX * 100.0f);  // Escala: 0.01 metros de precision
-    g_spatialState.posY = static_cast<int32_t>(posY * 100.0f);
-    g_spatialState.posZ = static_cast<int32_t>(posZ * 100.0f);
-    g_spatialState.mu = static_cast<int16_t>(mu * 1000.0f);      // Escala: 0.001 de precision en mu
+    // Update spatial state
+    g_spatialState.posX = static_cast<int32_t>(posX);
+    g_spatialState.posY = static_cast<int32_t>(posY);
+    g_spatialState.posZ = static_cast<int32_t>(posZ);
+    g_spatialState.mu = static_cast<int16_t>(mu);
 
-    // Process left and right channels con float precision preservada
-    hrtfProcessChannel(inBuf, lBuf, n, posX, true);
-    hrtfProcessChannel(inBuf, rBuf, n, -posX, false);
+    // Process left and right channels
+    hrtfProcessChannel(inBuf, lBuf, n, (float)posX, true);
+    hrtfProcessChannel(inBuf, rBuf, n, -(float)posX, false);
 
     // Apply consensus scaling (p*)
     float p_star = computePStar();

@@ -23,14 +23,13 @@ class YamnetClassifier(context: Context) {
         private const val SAMPLE_RATE = 16000
         private const val INPUT_LENGTH = 15600  // 0.975s @ 16kHz
 
-        // Índices YAMNet para clases relevantes (verificados contra CSV real del modelo YAMNet v1)
-        // Estos índices corresponden a las clases reales en el ontology de 521 clases
-        private const val IDX_SPEECH = 0      // "Speech" (índice 0)
-        private const val IDX_MUSIC = 132     // "Music" (índice 132)
-        private const val IDX_MUSICAL_INSTRUMENT = 133  // "Musical instrument" (índice 133)
-        private const val IDX_BASS_DRUM = 163 // "Bass drum" (índice 163)
-        private const val IDX_BASS_GUITAR = 137  // "Bass guitar" (índice 137)
-        private const val IDX_DOUBLE_BASS = 189  // "Double bass" (índice 189)
+        // Índices YAMNet para clases relevantes
+        private const val IDX_SPEECH = 0      // "Speech"
+        private const val IDX_MUSIC = 137    // "Music"
+        private const val IDX_MUSICAL_INSTRUMENT = 138
+        private const val IDX_BASS = 54       // "Bass drum"
+        private const val IDX_BASS_GUITAR = 55
+        private const val IDX_ELECTRIC_BASS = 56
     }
 
     private var interpreter: Interpreter? = null
@@ -60,8 +59,7 @@ class YamnetClassifier(context: Context) {
      * @return ClassificationResult con scores 0.0-1.0
      */
     fun classify(audioFrame: FloatArray): ClassificationResult {
-        val localInterpreter = interpreter
-        if (!isAvailable || localInterpreter == null) {
+        if (!isAvailable || interpreter == null) {
             return ClassificationResult(0f, 0f, 0f, false)
         }
 
@@ -78,7 +76,7 @@ class YamnetClassifier(context: Context) {
 
             // YAMNet output: [1, 521] scores por clase
             val output = Array(1) { FloatArray(521) }
-            localInterpreter.run(input, output)
+            interpreter!!.run(input, output)
 
             val scores = output[0]
             val speechScore = scores[IDX_SPEECH]
@@ -87,9 +85,9 @@ class YamnetClassifier(context: Context) {
                 scores[IDX_MUSICAL_INSTRUMENT]
             )
             val bassScore = maxOf(
-                scores[IDX_BASS_DRUM],
+                scores[IDX_BASS],
                 scores[IDX_BASS_GUITAR],
-                scores[IDX_DOUBLE_BASS]
+                scores[IDX_ELECTRIC_BASS]
             )
 
             return ClassificationResult(
