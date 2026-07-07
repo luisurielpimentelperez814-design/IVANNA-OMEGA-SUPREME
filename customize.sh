@@ -1,37 +1,62 @@
 #!/system/bin/sh
-# IVANNA-OMEGA-SUPREME v1.5 — customize.sh
-# Se ejecuta durante la instalación del módulo Magisk.
-# FIX v1.5: etiqueta el .so con chcon para SELinux propio
+# IVANNA-OMEGA-SUPREME — customize.sh (root shim)
+#
+# HISTORIAL:
+#   Este customize.sh raíz nació con la primera versión del módulo cuando
+#   todo el proyecto vivía en un layout plano. La versión hardened v1.8 —
+#   con verificación ELF real, símbolo AUDIO_EFFECT_LIBRARY_INFO_SYM,
+#   fusión idempotente de audio_effects.xml, validación anti-duplicación
+#   de omega_effect y detección de SKU — vive AHORA en:
+#      magisk_module/customize.sh
+#
+#   Este archivo tenía una lógica MUCHO más simple (etiquetar el .so con
+#   chcon, backup .bak, chmod 644) y funcionaba sobre una ruta antigua
+#   ($MODDIR/system/lib64/soundfx/libomega_effect.so, sin /vendor).
+#   Mantenerlo divergente arriesga que un pipeline empaquete el ZIP desde
+#   la raíz y el módulo instalado se salte todas las verificaciones nuevas.
+#
+# REGLA DE ORO — no borramos, mejoramos:
+#   Este archivo se preserva y ahora delega en el customize.sh canónico
+#   del módulo cuando está disponible (camino real de instalación via
+#   ivanna-omega-magisk.zip). En modo standalone (ejecución manual, tests),
+#   avisa claramente que la instalación completa requiere el ZIP oficial.
 
-ui_print "[IVANNA-OMEGA] Instalando v1.5..."
+CANONICAL_REL="magisk_module/customize.sh"
+[ -n "$MODPATH" ] && CANONICAL="$MODPATH/$CANONICAL_REL"
+[ -z "$CANONICAL" ] && CANONICAL="${0%/*}/$CANONICAL_REL"
 
-MODDIR="$MODPATH"
-LIB_PATH="$MODDIR/system/lib64/soundfx/libomega_effect.so"
-
-# Verificar que el .so existe
-if [ ! -f "$LIB_PATH" ]; then
-    ui_print "[IVANNA-OMEGA] ERROR: libomega_effect.so no encontrado"
-    abort "Instalación fallida: falta librería nativa"
-fi
-
-# Etiquetar con tipo propio (omega_effect_lib)
-# Nota: chcon requiere que el tipo esté definido en sepolicy.rule
-ui_print "[IVANNA-OMEGA] Etiquetando librería con SELinux..."
-chcon u:object_r:omega_effect_lib:s0 "$LIB_PATH" 2>/dev/null ||     ui_print "[IVANNA-OMEGA] WARNING: chcon falló (sepolicy puede no estar cargado aún)"
-
-# Verificar permisos
-chmod 644 "$LIB_PATH"
-
-# Crear backup para rollback
-ui_print "[IVANNA-OMEGA] Creando backup..."
-cp "$LIB_PATH" "$LIB_PATH.bak"
-
-# Verificación final: ¿se puede leer?
-if [ -r "$LIB_PATH" ]; then
-    ui_print "[IVANNA-OMEGA] Librería verificada ✓"
+if command -v ui_print >/dev/null 2>&1; then
+    :
 else
-    ui_print "[IVANNA-OMEGA] ERROR: no se puede leer la librería"
-    abort "Instalación fallida: permisos incorrectos"
+    ui_print() { echo "$1"; }
 fi
 
-ui_print "[IVANNA-OMEGA] Instalación completa. Reinicia para activar."
+ui_print " "
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print "  IVANNA-OMEGA-SUPREME — root customize shim"
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Camino canónico: delegar en el customize.sh real del módulo
+if [ -f "$CANONICAL" ]; then
+    ui_print "- Delegando en $CANONICAL_REL (instalador canónico v1.8)"
+    # shellcheck disable=SC1090
+    . "$CANONICAL"
+    return $? 2>/dev/null || exit $?
+fi
+
+# Fallback: se está empaquetando desde raíz sin magisk_module/ presente
+ui_print " "
+ui_print "! magisk_module/customize.sh NO encontrado."
+ui_print "! Este ZIP no es el paquete de release correcto."
+ui_print "! Usa el artefacto ivanna-omega-magisk.zip generado por CI:"
+ui_print "!   - GitHub Actions -> artifact 'ivanna-omega-magisk', o"
+ui_print "!   - Release publicada (tag vX.Y)"
+ui_print " "
+ui_print "! Abortando: no vamos a instalar un módulo incompleto sin"
+ui_print "! la verificación ELF/símbolo/idempotencia de v1.8."
+
+if command -v abort >/dev/null 2>&1; then
+    abort "! Módulo incompleto: falta magisk_module/customize.sh"
+else
+    exit 1
+fi
