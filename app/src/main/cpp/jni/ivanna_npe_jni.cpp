@@ -33,6 +33,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <memory>
@@ -44,6 +45,19 @@
 #include "../neuromorphic/lif_neuron_pool.hpp"
 #include "../neuromorphic/biquad_envelope_bank.hpp"
 #include "../neuromorphic/autonomous_brain.hpp"
+#include "../hexagon/ivanna_fastrpc_client.hpp"
+
+// ── Motor coclear completo (Volterra H2 + upsampling) — opt-in, paralelo ────
+// Free functions definidas en neuromorphic/neuro_cochlear_manifold.cpp.
+// No hay header público para ellas (el .hpp del mismo nombre es una clase
+// distinta y no ligada); se declaran aquí con la firma exacta del .cpp.
+namespace ivanna { namespace dsp {
+bool neuro_cochlear_manifold_init(uint32_t block_size, uint32_t sample_rate_in,
+                                   uint32_t sample_rate_out, uint32_t channels);
+void neuro_cochlear_process_block(const float* input_left, const float* input_right,
+                                   int32_t* output_s32, const SpatialPosition& position);
+void neuro_cochlear_manifold_teardown();
+} } // namespace ivanna::dsp
 
 #define LOG_TAG "IVANNA-NPE"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -126,6 +140,16 @@ public:
 
     void setEngineFlags(bool hrtf, bool cochlear, bool adapt) noexcept {
         hrtf_enabled_ = hrtf; cochlear_enabled_ = cochlear; adapt_enabled_ = adapt;
+    }
+
+    // NUEVO: motor coclear completo (Volterra H2 + upsampling polifásico).
+    // Opt-in y en paralelo — NO reemplaza envBank_/cochlear_enabled_.
+    // Corre a nivel de bloque; su salida aún no se mezcla al camino de
+    // señal (yL/yR), sólo se activa/instrumenta, siguiendo el mismo
+    // patrón incremental que cochlear_enabled_.
+    void setManifoldEnabled(bool enabled) noexcept {
+        manifold_enabled_ = enabled;
+        if (enabled) ensureManifoldInit();
     }
 
     void setNeuroParams(float harmonic_gain, float lateral_inhib,
@@ -269,6 +293,18 @@ public:
             if (mag > peak) peak = mag;
         }
 
+        // ── Manifold coclear completo (Volterra H2) — opt-in, paralelo ─────
+        // Corre a nivel de bloque, no altera outL/outR todavía (ver
+        // setManifoldEnabled). Sólo se ejecuta si fue habilitado y el init
+        // perezoso tuvo éxito.
+        if (manifold_enabled_ && manifold_initialized_ && n > 0) {
+            thread_local std::vector<int32_t> manifold_scratch;
+            manifold_scratch.resize(static_cast<size_t>(n) * 2);
+            ivanna::dsp::SpatialPosition pos{0.f, 0.f, 1.f};
+            ivanna::dsp::neuro_cochlear_process_block(
+                inL, inR, manifold_scratch.data(), pos);
+        }
+
         // ── AutonomousBrain: análisis de ventana → género + Synthesizer ────
         const int brain_n = std::min(n, mono_cap);
         brain_.processBlock(mono_buf, brain_n, synth_);
@@ -324,6 +360,31 @@ public:
     void getSynthClassify(float out[7]) const noexcept { synth_.classify(out); }
 
 private:
+    // Init perezoso y único (estado del manifold es un singleton global en
+    // neuro_cochlear_manifold.cpp — g_manifold), guardado por instancia con
+    // un flag propio para no re-inicializar en cada llamada.
+    void ensureManifoldInit() noexcept {
+        if (manifold_initialized_) return;
+        static std::atomic<bool> g_manifold_init_attempted{false};
+        bool expected = false;
+        if (!g_manifold_init_attempted.compare_exchange_strong(expected, true)) {
+            // Otra instancia ya intentó inicializar el singleton global.
+            manifold_initialized_ = true;
+            return;
+        }
+        const uint32_t sr_in = static_cast<uint32_t>(sample_rate_);
+        const uint32_t block = static_cast<uint32_t>(
+            std::clamp(max_block_frames_, 1, 512));
+        // FIX: fastrpc_client.hpp actual son stubs inline (dsp_open()==nullptr),
+        // por lo que initialize() del cliente FastRPC retorna false de forma
+        // no bloqueante — el fallback CPU es seguro en el hilo de audio.
+        manifold_initialized_ = ivanna::dsp::neuro_cochlear_manifold_init(
+            block, sr_in, sr_in, /*channels=*/2);
+        if (!manifold_initialized_) {
+            LOGW("neuro_cochlear_manifold_init failed, manifold queda inactivo");
+        }
+    }
+
     float spectralEntropy() const noexcept {
         // Entropía de Shannon sobre la energía de 8 bandas (BiquadEnvelopeBank).
         float total = 1e-12f;
@@ -352,6 +413,7 @@ private:
 
     std::atomic<bool> bypass_{false};
     bool  hrtf_enabled_ = true, cochlear_enabled_ = true, adapt_enabled_ = true;
+    bool  manifold_enabled_ = false, manifold_initialized_ = false;
 
     float harmonic_gain_ = 0.2f, lateral_inhib_ = 0.2f, ohc_compression_ = 0.3f,
           master_gain_db_ = 0.f;
@@ -492,6 +554,17 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeSetEngineFlags(
     JNIEnv*, jclass, jlong handle, jboolean hrtf, jboolean cochlear, jboolean adapt) {
     if (Engine* eng = handle_to_engine(handle)) {
         eng->setEngineFlags(hrtf == JNI_TRUE, cochlear == JNI_TRUE, adapt == JNI_TRUE);
+    }
+}
+
+// NUEVO: motor coclear completo (Volterra H2 + upsampling) — flag separado,
+// opt-in, no forma parte de nativeSetEngineFlags para no romper la firma
+// existente ya usada por Kotlin.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeSetManifoldEnabled(
+    JNIEnv*, jclass, jlong handle, jboolean enabled) {
+    if (Engine* eng = handle_to_engine(handle)) {
+        eng->setManifoldEnabled(enabled == JNI_TRUE);
     }
 }
 
