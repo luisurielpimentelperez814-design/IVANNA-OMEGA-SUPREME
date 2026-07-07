@@ -80,6 +80,16 @@ data class IvannaEffectProfile(
             bassStrength = 700, virtualizerStrength = 200, loudnessGainMb = 300,
             compThresholdDb = -12f, compRatio = 5f
         )
+
+        // FIX: mapa nombre → perfil, usado por IvannaControlPanel para listar
+        // los presets seleccionables en la UI (LazyRow de FilterChip).
+        val byName: Map<String, IvannaEffectProfile> = linkedMapOf(
+            "Flat" to FLAT,
+            "Warm" to WARM,
+            "Rock 70s" to ROCK_70S,
+            "Spatial" to SPATIAL,
+            "Punch" to PUNCH
+        )
     }
 }
 

@@ -3,7 +3,7 @@ package com.ivanna.omega.audio
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
+import android.media.audiofx.AudioEffect
 import android.util.Log
 
 /**
@@ -27,11 +27,11 @@ class AudioSessionReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        val sessionId = intent.getIntExtra(AudioManager.EXTRA_AUDIO_SESSION, 0)
+        val sessionId = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, 0)
         val packageName = intent.getStringExtra("android.media.extra.PACKAGE_NAME")
 
         when (intent.action) {
-            AudioManager.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
+            AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
                 Log.i(TAG, "Nueva sesión de audio: id=$sessionId pkg=$packageName")
                 // Acceder al manager global via Application
                 val app = context.applicationContext
@@ -39,7 +39,7 @@ class AudioSessionReceiver : BroadcastReceiver() {
                     app.globalEffectManager.openSession(sessionId, packageName)
                 }
             }
-            AudioManager.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {
+            AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {
                 Log.i(TAG, "Cerrando sesión de audio: id=$sessionId")
                 val app = context.applicationContext
                 if (app is com.ivanna.omega.core.IVANNAApplication) {

@@ -115,7 +115,7 @@ class AntiDolbyController(private val context: Context) {
         classificationJob = null
         
         // Resetear scores a cero (parámetros vuelven a valores por defecto)
-        AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f, 1f)
+        AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f)
         
         Log.i(TAG, "Anti-Dolby adaptativo deshabilitado")
     }
@@ -164,7 +164,7 @@ class AntiDolbyController(private val context: Context) {
             
             if (!result.isValid) {
                 Log.d(TAG, "Clasificación no válida (fallback model?), usando scores neutros")
-                AudioEngine.nativeSetAntiDolbyScoresStatic(0.5f, 0.5f, 0.5f, 0f)
+                AudioEngine.nativeSetAntiDolbyScoresStatic(0.5f, 0.5f, 0.5f)
                 return
             }
 
@@ -179,7 +179,7 @@ class AntiDolbyController(private val context: Context) {
             
             // Llamar a C++ con scores normalizados
             AudioEngine.nativeSetAntiDolbyScoresStatic(
-                normSpeech, normMusic, normBass, normSilence
+                normSpeech, normMusic, normBass
             )
             
             Log.d(TAG, String.format(

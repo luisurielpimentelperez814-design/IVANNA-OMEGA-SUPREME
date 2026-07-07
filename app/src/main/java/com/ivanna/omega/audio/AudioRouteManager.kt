@@ -126,6 +126,7 @@ object AudioRouteManager {
         currentRoute = route
         val p = profileFor(route)
         Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
-        AudioEngine.nativeSetRouteProfile(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
+        AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
+        // (implementado vía AudioEngine.nativeSetRouteProfileJni -> control_set_route_profile)
     }
 }

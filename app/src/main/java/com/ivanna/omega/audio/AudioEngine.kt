@@ -61,6 +61,25 @@ class AudioEngine {
 
         @JvmStatic
         private external fun nativeSetAntiDolbyScoresJni(speech: Float, music: Float, bass: Float)
+
+        /**
+         * FIX: método estático para que AudioRouteManager envíe el perfil de
+         * compensación (BT/AUX/USB) al orquestador nativo.
+         * Nota: se nombra con sufijo Static para no colisionar con el
+         * external fun de instancia `nativeSetRouteProfile` (sin implementación
+         * JNI, declarado más abajo, no usado directamente).
+         */
+        fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
+            if (!libLoaded) return
+            try {
+                nativeSetRouteProfileJni(bassBoostDb, dialogBoostDb, widenerMult)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "nativeSetRouteProfileStatic JNI no disponible")
+            }
+        }
+
+        @JvmStatic
+        private external fun nativeSetRouteProfileJni(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
     }
 
     private var audioRecord: AudioRecord? = null
@@ -83,6 +102,14 @@ class AudioEngine {
     fun setExciter(amount: Float) {
         exciterAmount = amount.coerceIn(0f, 1f)
         if (libLoaded) nativeSetExciter(exciterAmount)
+    }
+
+    fun setGain(gain: Float) {
+        if (libLoaded) nativeSetGain(gain)
+    }
+
+    fun setBypass(bypass: Boolean) {
+        if (libLoaded) nativeSetBypass(bypass)
     }
 
     fun setEqGain(gain: Float) {
