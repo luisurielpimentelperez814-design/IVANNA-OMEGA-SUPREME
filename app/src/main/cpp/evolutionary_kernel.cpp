@@ -144,9 +144,49 @@ __attribute__((hot, flatten))
 static void evolveGeneration() {
     static Individual next[POPULATION_SIZE];
 
-    memcpy(next, g_population.individuals, sizeof(Individual) * ELITE_COUNT);
+    // AUDIT FIX (correctness): antes se copiaban ciegamente
+    // g_population.individuals[0..ELITE_COUNT) a next[] asumiendo que eran
+    // los "elite" (mejor fitness). La población NUNCA se ordena por fitness
+    // (la selección es por torneo aleatorio), así que los índices 0..3 son
+    // arbitrarios — el mejor genoma real de la generación podía vivir en
+    // cualquier posición y perderse sin que el elitismo lo protegiera. Esto
+    // rompe la garantía central de un GA con elitismo (fitness no-decreciente
+    // generación a generación) y además `best` se inicializaba desde
+    // individuals[0].fitness (también arbitrario) en vez del máximo real.
+    //
+    // Ahora se seleccionan explícitamente los ELITE_COUNT individuos de
+    // mayor fitness (selección parcial O(N*ELITE_COUNT), barato para
+    // POPULATION_SIZE=128 / ELITE_COUNT=4) y se usa su fitness real como
+    // punto de partida de `best`.
+    int elite_idx[ELITE_COUNT];
+    for (int e = 0; e < ELITE_COUNT; ++e) elite_idx[e] = -1;
 
-    float best = g_population.individuals[0].fitness;
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        const float fi = g_population.individuals[i].fitness;
+        // Inserta i en elite_idx si supera al peor elite actual (o hay hueco)
+        int worst_slot = -1;
+        for (int e = 0; e < ELITE_COUNT; ++e) {
+            if (elite_idx[e] == -1) { worst_slot = e; break; }
+            if (worst_slot == -1 ||
+                g_population.individuals[elite_idx[e]].fitness <
+                g_population.individuals[elite_idx[worst_slot]].fitness) {
+                worst_slot = e;
+            }
+        }
+        if (elite_idx[worst_slot] == -1 ||
+            fi > g_population.individuals[elite_idx[worst_slot]].fitness) {
+            elite_idx[worst_slot] = i;
+        }
+    }
+
+    for (int e = 0; e < ELITE_COUNT; ++e) {
+        next[e] = g_population.individuals[elite_idx[e]];
+    }
+
+    float best = next[0].fitness;
+    for (int e = 1; e < ELITE_COUNT; ++e) {
+        if (next[e].fitness > best) best = next[e].fitness;
+    }
 
     constexpr uint32_t MASK = POPULATION_SIZE - 1;
     for (int i = ELITE_COUNT; i < POPULATION_SIZE; ++i) {
