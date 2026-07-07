@@ -63,7 +63,13 @@ static void init_sin_table() {
     });
 }
 
-static inline float fast_sin(float phase) {
+// [FIX-DEAD-CODE] fast_sin/kalmanStep generaban warning -Wunused-function
+// en cada build (ver logs CI). Regla de oro: no se borran — son un
+// oscilador tabulado + filtro de fase reservados para el siguiente motor
+// de fase (phase-locked oscillator) que aún no está cableado end-to-end.
+// Se marcan [[maybe_unused]] para silenciar el warning sin perder el
+// símbolo ni el trabajo ya invertido en ellos.
+[[maybe_unused]] static inline float fast_sin(float phase) {
     phase = fmodf(phase, TWO_PI);
     if (phase < 0) phase += TWO_PI;
 
@@ -104,7 +110,7 @@ static inline void kalmanInit(KalmanState &k, int sr) {
     k.P00 = 0.1f; k.P01 = 0.0f; k.P11 = 1.0f;
 }
 
-static inline float kalmanStep(KalmanState &k, float meas, float dt) {
+[[maybe_unused]] static inline float kalmanStep(KalmanState &k, float meas, float dt) {
     const float qPhase = 1e-8f, qFreq = 1e-6f;
     float pred_phase = k.phase + k.freq * dt;
     float pred_freq = k.freq;

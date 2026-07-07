@@ -89,3 +89,17 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_SystemAudioCapture_nativeGetLastPeakDb(JNIEnv* env, jobject /*thiz*/) {
     return g_last_peak_db.load(std::memory_order_relaxed);
 }
+
+// AUDIT FIX: nativeResetMetrics() estaba declarada como "external fun" en
+// SystemAudioCapture.kt pero no tenía ninguna implementación JNI en este
+// archivo. En cuanto algo la invocara desde Kotlin, el runtime habría
+// lanzado UnsatisfiedLinkError (símbolo nativo no encontrado) — un crash
+// garantizado, no un bug latente. Se implementa reseteando las métricas de
+// RMS/peak a su estado inicial neutro, sin tocar el buffer circular (para
+// eso ya existe nativeClearBuffer, con semántica distinta).
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_SystemAudioCapture_nativeResetMetrics(JNIEnv* env, jobject /*thiz*/) {
+    g_last_rms_db.store(-120.0f, std::memory_order_relaxed);
+    g_last_peak_db.store(-120.0f, std::memory_order_relaxed);
+    LOGI("nativeResetMetrics: métricas RMS/Peak reseteadas a -120 dB");
+}

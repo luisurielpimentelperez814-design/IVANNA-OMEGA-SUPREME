@@ -58,6 +58,14 @@ object IvannaNpeNative {
     )
 
     /**
+     * NUEVO: motor coclear completo (NeuroCochlearManifold — Volterra H2 +
+     * upsampling polifásico), antes 100% fuera del build. Flag separado y
+     * opt-in — no reemplaza cochlear_enabled_/envBank_, corre en paralelo.
+     * Sigue el mismo patrón que nativeSetEngineFlags.
+     */
+    @JvmStatic external fun nativeSetManifoldEnabled(handle: Long, enabled: Boolean)
+
+    /**
      * Actualiza los cuatro parámetros del motor que no tenían ruta JNI:
      * harmonic_gain (slider "Ganancia Armónica" — clave corregida 'harm'),
      * lateral_inhib, ohc_compression y master_gain_db.

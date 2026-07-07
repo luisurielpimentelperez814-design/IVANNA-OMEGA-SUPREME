@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - "**"
+    tags:
+      - "v*"
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: omega-${{ github.ref }}
@@ -18,6 +24,35 @@ env:
   CMDLINE_TOOLS_VERSION: "11076708"   # commandlinetools-linux-11076708_latest.zip (estable)
 
 jobs:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 0 — DSP native unit tests (host-side, sin NDK, ~1 min)
+#
+# AUDIT ADD: cpp/tests/ (GoogleTest + CTest, con perfiles ASan/TSan) ya
+# existía en el repo con 3 suites de estabilidad numérica del DSP real
+# (gammatone, denormals, pipeline EQ/compresor/exciter/widener/gain), pero
+# ningún job de este workflow las compilaba ni ejecutaba — vivían en disco
+# sin correr nunca en CI. Se agregan aquí como gate rápido e independiente
+# del build de Android: no requiere NDK/SDK, corre en segundos, y da señal
+# de "¿el DSP sigue siendo numéricamente estable?" mucho antes de esperar
+# los ~10 min del build completo con NDK.
+# ─────────────────────────────────────────────────────────────────────────────
+  test-native-dsp:
+    name: DSP Native Tests (host, CTest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Release)
+        run: |
+          cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-tests -j
+
+      - name: Run tests
+        run: ctest --test-dir build-tests --output-on-failure
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JOB 1 — APK (NDK C++ + Kotlin/Compose)
@@ -126,17 +161,23 @@ jobs:
           overwrite: true
           retention-days: 14
 
-      - name: Extract libomega_effect.so for Magisk
+      - name: Extract and validate libomega_effect.so for Magisk
         run: |
+          set -euo pipefail
           SO=$(find app/build/intermediates -name "libomega_effect.so" \
                -path "*/arm64-v8a/*" 2>/dev/null | head -1)
-          if [ -n "$SO" ]; then
-            cp "$SO" libomega_effect_arm64.so
-            echo "Extracted: $SO"
-          else
-            echo "WARN: libomega_effect.so not found — creating placeholder"
-            : > libomega_effect_arm64.so
+          if [ -z "$SO" ]; then
+            echo "ERROR: libomega_effect.so not found in build intermediates"
+            exit 1
           fi
+          test -s "$SO"
+          file "$SO" | grep -q "ELF"
+          if command -v strings >/dev/null 2>&1; then
+            strings "$SO" | grep -q "AUDIO_EFFECT_LIBRARY_INFO_SYM"
+          fi
+          cp "$SO" libomega_effect_arm64.so
+          ls -lh libomega_effect_arm64.so
+          echo "Extracted and validated: $SO"
 
       - name: Upload libomega_effect.so
         uses: actions/upload-artifact@v4
@@ -163,11 +204,15 @@ jobs:
           name: omega-effect-so
           path: effect-so/
 
-      - name: Assemble Magisk module
+      - name: Assemble and validate Magisk module
         run: |
+          set -euo pipefail
           DST="magisk_module/system/vendor/lib64/soundfx"
           mkdir -p "$DST"
+          test -s effect-so/libomega_effect_arm64.so
+          file effect-so/libomega_effect_arm64.so | grep -q "ELF"
           cp effect-so/libomega_effect_arm64.so "$DST/libomega_effect.so"
+          test -s "$DST/libomega_effect.so"
           ls -lh "$DST/"
 
       - name: Package Magisk zip
@@ -221,3 +266,31 @@ jobs:
           path: release/
           if-no-files-found: error
           retention-days: 30
+
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [bundle-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: release/apk
+
+      - name: Download Magisk module
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: release/magisk
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/magisk/ivanna-omega-magisk.zip
+            release/apk/**/*.apk
+          generate_release_notes: true

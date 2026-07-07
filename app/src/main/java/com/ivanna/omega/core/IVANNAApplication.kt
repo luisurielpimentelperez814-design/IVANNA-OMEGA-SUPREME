@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
  *   3. isInitialized es Thread-safe (@Volatile).
  *   4. onTerminate() libera globalEffectManager correctamente.
  */
-class IVANNAApplication : Application() {
+open class IVANNAApplication : Application() {
 
     companion object {
         private const val TAG = "IVANNAApplication"

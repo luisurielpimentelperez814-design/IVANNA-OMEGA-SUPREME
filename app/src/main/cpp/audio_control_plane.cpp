@@ -26,6 +26,7 @@
 
 #include "audio_control_plane.hpp"
 #include "control_frame.hpp"
+#include "phase_oracle_engine.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <android/log.h>
@@ -34,6 +35,21 @@
 
 // ── Global singleton (declarado en audio_control_plane.hpp) ─────
 UnifiedControlFrame g_control_frame;
+
+// ── DESPERTAR: ivanna::PhaseOracle (phase_oracle_engine.hpp) ────────────
+// Este motor existía compilado (header-only, sin .cpp) desde la "Fase 3"
+// documentada en CMakeLists, pero jamás se instanciaba en ningún punto del
+// proyecto — control_set_phase_oracle() nunca tenía llamador real y
+// phase_oracle_T_refined / phase_coherence quedaban clavados en 0.0
+// para siempre. El motor de transitorios en vivo (phase_oracle_velocity(),
+// Kalman cúbico 3x3 @ 384kHz) sigue intacto y sigue gobernando el widener
+// — no se toca ni se reemplaza. Esto solo añade un segundo predictor,
+// más rico (posición+velocidad+aceleración con covarianza diagonal),
+// alimentado por la misma señal de velocidad ya disponible en este hilo
+// de control, para poblar telemetría que antes era permanentemente cero.
+// Regla de oro: no se borra nada, solo se enciende lo que ya existía.
+static ivanna::PhaseOracle g_phase_oracle_refined;
+static bool g_phase_oracle_refined_init = false;
 
 // ── Bus + staging frame propiedad de ivanna_omega_jni.cpp ───────
 // Se exponen no-static para poder publicar desde aquí también.
@@ -106,6 +122,22 @@ int control_apply_frame() noexcept {
     const float phase_vel = phase_oracle_velocity();
     const float transient_protect = 1.0f - std::clamp(std::abs(phase_vel) * 0.0015f, 0.f, 0.4f);
     yamnet_widener_mult *= transient_protect;
+    updates++;
+
+    // ── PhaseOracle refinado (motor Fase 3, despertado) ──────────────────
+    // Alimenta el predictor cúbico con covarianza usando la misma señal de
+    // velocidad del oráculo en vivo como medición. Publica look-ahead
+    // (T_refined) y una coherencia [0..1] derivada de la covarianza P0
+    // (baja P0 = alta confianza = alta coherencia). Puramente aditivo:
+    // estos dos campos no tenían ningún lector antes de este cambio.
+    if (!g_phase_oracle_refined_init) {
+        g_phase_oracle_refined.init(48000.f);
+        g_phase_oracle_refined_init = true;
+    }
+    g_phase_oracle_refined.tick(phase_vel);
+    const float T_refined = g_phase_oracle_refined.predict_next();
+    const float coherence = std::clamp(1.f / (1.f + g_phase_oracle_refined.P0 * 4.f), 0.f, 1.f);
+    control_set_phase_oracle(T_refined, coherence);
     updates++;
 
     // ────────────────────────────────────────────────────────────────

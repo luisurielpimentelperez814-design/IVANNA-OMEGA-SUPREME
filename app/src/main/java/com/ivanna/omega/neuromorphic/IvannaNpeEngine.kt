@@ -75,6 +75,14 @@ object IvannaNpeEngine {
         if (handle != 0L) IvannaNpeNative.nativeSetEngineFlags(handle, hrtf, cochlear, adapt)
     }
 
+    // NUEVO: motor coclear completo (Volterra H2 + upsampling polifásico).
+    // Opt-in, en paralelo — no reemplaza cochlear (envBank_) de setEngineFlags.
+    var isManifoldEnabled = false
+        set(value) {
+            field = value
+            if (handle != 0L) IvannaNpeNative.nativeSetManifoldEnabled(handle, value)
+        }
+
     fun setNeuroParams(harmonicGain: Float, lateralInhib: Float, ohcCompression: Float, masterGainDb: Float) {
         if (handle != 0L) {
             IvannaNpeNative.nativeSetNeuroParams(handle, harmonicGain, lateralInhib, ohcCompression, masterGainDb)

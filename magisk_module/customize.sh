@@ -1,18 +1,74 @@
+#!/system/bin/sh
 ##########################################################################################
 # IVANNA OMEGA SUPREME — customize.sh
 # Magisk module install logic
 #
 # Autor: Luis Uriel Pimentel Pérez / IVANNA Team
-# v1.8: FIX CRÍTICO — ya NO se reemplaza /vendor/etc/audio_effects.xml por un XML
-#       mínimo (eso borraba bassboost, equalizer, virtualizer, reverb, Dolby, AEC/NS
-#       de llamadas, y los helpers de ring/notification/voice del OEM). Ahora se
-#       FUSIONA omega_effect dentro del XML real del dispositivo, preservando todo
-#       lo demás. Se usa el XML vivo del propio equipo como base; si no se puede
-#       leer, se cae a una copia de referencia (blair=con Dolby / holi=sin Dolby)
-#       empaquetada en el módulo.
+# v1.8: HARDENING CRÍTICO
+#   - la fusión de audio_effects.xml ahora es idempotente (sin duplicar omega_effect)
+#   - valida el XML fusionado antes de instalar el overlay
+#   - añade shebang explícito para ejecución consistente en entornos shell estrictos
 ##########################################################################################
 
 SKIPUNZIP=0   # dejamos que Magisk extraiga a $MODPATH automáticamente
+
+append_library_once() {
+  in_file="$1"
+  out_file="$2"
+  if grep -q '<library name="omega_effect"' "$in_file" 2>/dev/null; then
+    cp "$in_file" "$out_file"
+  else
+    sed 's#</libraries>#    <library name="omega_effect" path="libomega_effect.so"/>\n</libraries>#'       "$in_file" > "$out_file"
+  fi
+}
+
+append_effect_once() {
+  in_file="$1"
+  out_file="$2"
+  if grep -q '<effect name="omega_effect"' "$in_file" 2>/dev/null; then
+    cp "$in_file" "$out_file"
+  else
+    sed 's#</effects>#    <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e" priority="1000"/>\n</effects>#'       "$in_file" > "$out_file"
+  fi
+}
+
+append_music_apply_once() {
+  in_file="$1"
+  out_file="$2"
+  if grep -q '<postprocess>' "$in_file" 2>/dev/null && grep -q '<stream type="music">' "$in_file" 2>/dev/null; then
+    awk '
+      BEGIN { in_music = 0; has_apply = 0 }
+      {
+        if ($0 ~ /<stream type="music">/) {
+          in_music = 1
+          has_apply = 0
+          print
+          next
+        }
+        if (in_music && $0 ~ /<apply effect="omega_effect"\/>/) {
+          has_apply = 1
+          print
+          next
+        }
+        if (in_music && $0 ~ /<\/stream>/) {
+          if (!has_apply) print "            <apply effect=\"omega_effect\"/>"
+          in_music = 0
+          print
+          next
+        }
+        print
+      }
+    ' "$in_file" > "$out_file"
+  else
+    sed 's#</audio_effects_conf>#    <postprocess>\n        <stream type="music">\n            <apply effect="omega_effect"/>\n        </stream>\n    </postprocess>\n</audio_effects_conf>#'       "$in_file" > "$out_file"
+  fi
+}
+
+count_matches() {
+  pattern="$1"
+  file="$2"
+  grep -c "$pattern" "$file" 2>/dev/null || echo 0
+}
 
 # ── 1. Comprobaciones de entorno ─────────────────────────────────────────────────────────
 ui_print " "
@@ -46,15 +102,16 @@ fi
 
 SO_SIZE=$(stat -c%s "$SO_PATH" 2>/dev/null || wc -c < "$SO_PATH")
 ui_print "  Tamaño: ${SO_SIZE} bytes"
+if [ "$SO_SIZE" -le 0 ]; then
+  abort "! libomega_effect.so está vacío"
+fi
 
-# ELF magic check (0x7F 'E' 'L' 'F')
 MAGIC=$(dd if="$SO_PATH" bs=1 count=4 2>/dev/null | od -An -c | tr -d ' \n')
 case "$MAGIC" in
   *ELF*) ui_print "  ELF header OK" ;;
   *)     abort "! libomega_effect.so no es un ELF válido" ;;
 esac
 
-# Símbolo obligatorio para el framework de audio de Android
 if command -v strings >/dev/null 2>&1; then
   if strings "$SO_PATH" | grep -q "AUDIO_EFFECT_LIBRARY_INFO_SYM"; then
     ui_print "  Símbolo AUDIO_EFFECT_LIBRARY_INFO_SYM presente"
@@ -67,11 +124,6 @@ if command -v strings >/dev/null 2>&1; then
 fi
 
 # ── 3. Fusión de omega_effect dentro del audio_effects.xml REAL del vendor ───────────────
-# Android solo lee UN archivo (/vendor/etc/audio_effects.xml, con fallback a /odm/ o
-# /system/etc/ según el OEM). En vez de sustituirlo por un XML mínimo (lo que rompía
-# bassboost/equalizer/Dolby/AEC/NS de llamadas), lo copiamos tal cual y le INSERTAMOS
-# nuestra librería + efecto + <apply> dentro del stream "music", dejando todo lo demás
-# (voice_call, ring, alarm, notification, system) intacto.
 ui_print "- Localizando audio_effects.xml real del dispositivo..."
 
 LIVE_XML=""
@@ -96,34 +148,25 @@ else
     SKU_GUESS="holi"
   fi
   ui_print "  SKU estimado: $SKU_GUESS"
-  cp "$MODPATH/vendor_base/sku_${SKU_GUESS}_audio_effects.xml" "$BASE_XML" 2>/dev/null \
-    || cp "$MODPATH/vendor_base/sku_blair_audio_effects.xml" "$BASE_XML"
+  cp "$MODPATH/vendor_base/sku_${SKU_GUESS}_audio_effects.xml" "$BASE_XML" 2>/dev/null     || cp "$MODPATH/vendor_base/sku_blair_audio_effects.xml" "$BASE_XML"
 fi
 
-# Guardamos copia intacta del original para soporte/rollback
 cp "$BASE_XML" "$MODPATH/audio_effects.xml.orig"
 
 MERGED_XML="$MODPATH/.merged_audio_effects.xml"
+append_library_once "$BASE_XML" "${MERGED_XML}.1"
+append_effect_once "${MERGED_XML}.1" "${MERGED_XML}.2"
+append_music_apply_once "${MERGED_XML}.2" "${MERGED_XML}.3"
 
-# 3a. Insertar <library> antes de </libraries>
-sed 's#</libraries>#    <library name="omega_effect" path="libomega_effect.so"/>\n</libraries>#' \
-  "$BASE_XML" > "${MERGED_XML}.1"
+LIB_COUNT=$(count_matches '<library name="omega_effect"' "${MERGED_XML}.3")
+EFFECT_COUNT=$(count_matches '<effect name="omega_effect"' "${MERGED_XML}.3")
+APPLY_COUNT=$(count_matches '<apply effect="omega_effect"/>' "${MERGED_XML}.3")
 
-# 3b. Insertar <effect> antes de </effects>
-sed 's#</effects>#    <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e" priority="1000"/>\n</effects>#' \
-  "${MERGED_XML}.1" > "${MERGED_XML}.2"
-
-# 3c. Aplicar omega_effect al stream "music" (cubre música, video/juegos vía STREAM_MUSIC).
-#     NO se toca voice_call para no interferir con llamadas.
-if grep -q '<postprocess>' "${MERGED_XML}.2" && grep -q '<stream type="music">' "${MERGED_XML}.2"; then
-  awk '{
-    print $0
-    if ($0 ~ /<stream type="music">/) { print "            <apply effect=\"omega_effect\"/>" }
-  }' "${MERGED_XML}.2" > "${MERGED_XML}.3"
-else
-  ui_print "  No había <postprocess>/music en el XML base; se añade bloque nuevo"
-  sed 's#</audio_effects_conf>#    <postprocess>\n        <stream type="music">\n            <apply effect="omega_effect"/>\n        </stream>\n    </postprocess>\n</audio_effects_conf>#' \
-    "${MERGED_XML}.2" > "${MERGED_XML}.3"
+if ! grep -q '<audio_effects_conf' "${MERGED_XML}.3" 2>/dev/null; then
+  abort "! El audio_effects.xml fusionado quedó inválido (falta <audio_effects_conf>)"
+fi
+if [ "$LIB_COUNT" -ne 1 ] || [ "$EFFECT_COUNT" -ne 1 ] || [ "$APPLY_COUNT" -ne 1 ]; then
+  abort "! Fusión insegura: omega_effect quedó duplicado o incompleto (lib=$LIB_COUNT effect=$EFFECT_COUNT apply=$APPLY_COUNT)"
 fi
 
 mkdir -p "$MODPATH/system/vendor/etc"
@@ -132,14 +175,13 @@ cp "${MERGED_XML}.3" "$MODPATH/system/vendor/etc/audio_effects.xml"
 cp "${MERGED_XML}.3" "$MODPATH/system/etc/audio_effects.xml"
 rm -f "${MERGED_XML}.1" "${MERGED_XML}.2" "${MERGED_XML}.3" "$BASE_XML"
 
-ui_print "  audio_effects.xml fusionado (bassboost/equalizer/Dolby/AEC/NS preservados)"
+ui_print "  audio_effects.xml fusionado de forma idempotente"
 ui_print "  omega_effect aplicado a: music (backup del original en audio_effects.xml.orig)"
 
 # ── 4. Modo seguro: si el .so no expone la interfaz, no registramos el overlay XML ───────
 if [ -f "$MODPATH/.safe_mode" ]; then
   ui_print "- MODO SEGURO activo: se retira el overlay XML para evitar crash de audioserver"
-  rm -f "$MODPATH/system/vendor/etc/audio_effects.xml" \
-        "$MODPATH/system/etc/audio_effects.xml"
+  rm -f "$MODPATH/system/vendor/etc/audio_effects.xml"         "$MODPATH/system/etc/audio_effects.xml"
   ui_print "  La .so queda instalada solo como librería JNI (accesible desde la app IVANNA)"
 fi
 
@@ -147,15 +189,12 @@ fi
 ui_print "- Ajustando permisos y propietarios..."
 set_perm_recursive "$MODPATH/system"                      0 0 0755 0644
 set_perm           "$SO_PATH"                             0 0 0644
-[ -f "$MODPATH/system/vendor/etc/audio_effects.xml" ] && \
-  set_perm         "$MODPATH/system/vendor/etc/audio_effects.xml" 0 0 0644
-[ -f "$MODPATH/system/etc/audio_effects.xml" ] && \
-  set_perm         "$MODPATH/system/etc/audio_effects.xml"        0 0 0644
+[ -f "$MODPATH/system/vendor/etc/audio_effects.xml" ] &&   set_perm         "$MODPATH/system/vendor/etc/audio_effects.xml" 0 0 0644
+[ -f "$MODPATH/system/etc/audio_effects.xml" ] &&   set_perm         "$MODPATH/system/etc/audio_effects.xml"        0 0 0644
 
 # ── 6. Contexto SELinux para audioserver ─────────────────────────────────────────────────
 if command -v chcon >/dev/null 2>&1; then
-  chcon u:object_r:vendor_file:s0 "$SO_PATH" 2>/dev/null && \
-    ui_print "  SELinux: $SO_REL → u:object_r:vendor_file:s0"
+  chcon u:object_r:vendor_file:s0 "$SO_PATH" 2>/dev/null &&     ui_print "  SELinux: $SO_REL → u:object_r:vendor_file:s0"
 fi
 
 # ── 7. Resumen final ─────────────────────────────────────────────────────────────────────

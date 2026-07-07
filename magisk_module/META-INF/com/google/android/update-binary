@@ -1,58 +1,65 @@
 #!/sbin/sh
-# IVANNA OMEGA SUPREME — Magisk Module Installer
-# © 2026 Luis Uriel Pimentel Pérez — GORE TNS
+##########################################################################################
+# IVANNA OMEGA SUPREME — update-binary
+#
+# AUDIT FIX CRÍTICO: la versión anterior de este script reimplementaba a mano
+# la extracción del zip y los permisos, y NUNCA invocaba customize.sh. Como
+# este es el script que de verdad se ejecuta tanto al flashear desde Magisk
+# Manager como desde TWRP/recovery (el "install from storage" de Magisk
+# Manager también corre update-binary, no es un atajo interno distinto),
+# la consecuencia real era: la fusión de audio_effects.xml, la verificación
+# ELF/símbolo, y el modo seguro anti-bootloop de customize.sh JAMÁS se
+# ejecutaban en ninguna instalación real — sin importar el método.
+#
+# Este es el boilerplate genérico oficial de Magisk (el mismo que usa el
+# module template de topjohnwu). Su única responsabilidad es cargar
+# util_functions.sh real de Magisk y delegar en install_module, que es
+# quien de verdad extrae el módulo, invoca customize.sh en el momento
+# correcto, y aplica permisos por defecto. No reimplementamos nada de eso
+# aquí — evita que la lógica diverja entre dos scripts otra vez.
+##########################################################################################
 
-SKIPUNZIP=1
+umask 022
 
-# ── Magisk bootstrap ──────────────────────────────────────────────────────────
-if [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
-  # Running inside Magisk Manager (BOOTMODE)
-  print_modname() { ui_print "  IVANNA OMEGA SUPREME"; }
-else
-  # Recovery / legacy installer
-  OUTFD=$2
-  ZIPFILE=$3
-  ui_print() { echo "$1"; }
-fi
+# ui_print de emergencia por si el zip se ejecuta antes de cargar util_functions.sh
+ui_print() { echo "$1"; }
 
-ui_print ""
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print "   IVANNA OMEGA SUPREME v1.0"
-ui_print "   © 2026 Luis Uriel Pimentel"
-ui_print "   Motor audio neuromórfico NDK"
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print ""
+require_new_magisk() {
+  ui_print "***********************************"
+  ui_print "! Se requiere Magisk v20.4 o superior"
+  ui_print "! Actualiza Magisk e intenta de nuevo"
+  ui_print "***********************************"
+  exit 1
+}
 
-# ── Extract module files ──────────────────────────────────────────────────────
-ui_print "- Extrayendo archivos del módulo..."
-unzip -o "$ZIPFILE" 'system/*' -d "$MODPATH" >/dev/null 2>&1
+# Hook oficial de Magisk: install_module llama a print_modname() (si existe)
+# antes de correr customize.sh, para mostrar el banner del módulo.
+print_modname() {
+  ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ui_print "   IVANNA OMEGA SUPREME"
+  ui_print "   © 2026 Luis Uriel Pimentel Pérez"
+  ui_print "   Motor de audio neuromórfico (Anti-Dolby)"
+  ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
 
-# ── Verify libomega_effect.so ─────────────────────────────────────────────────
-SO_PATH="$MODPATH/system/vendor/lib64/soundfx/libomega_effect.so"
-if [ -f "$SO_PATH" ]; then
-  ui_print "- libomega_effect.so instalado correctamente"
-  SO_SIZE=$(wc -c < "$SO_PATH")
-  ui_print "  Tamaño: ${SO_SIZE} bytes"
-else
-  ui_print "! ADVERTENCIA: libomega_effect.so no encontrado"
-  ui_print "  El efecto global no estará activo"
-fi
+##########################################################################################
+# Preparación — variables estándar que Magisk pasa al script
+##########################################################################################
 
-# ── Set permissions ───────────────────────────────────────────────────────────
-ui_print "- Ajustando permisos..."
-set_perm_recursive "$MODPATH/system" root root 0755 0644
-if [ -f "$SO_PATH" ]; then
-  set_perm "$SO_PATH" root root 0644
-fi
+OUTFD=$2
+ZIPFILE=$3
 
-# ── Audio effect XML configs ──────────────────────────────────────────────────
-for XML in "$MODPATH"/system/etc/audio_effects*.xml; do
-  [ -f "$XML" ] && ui_print "  Config: $(basename $XML)"
-done
+mount /data 2>/dev/null
 
-ui_print ""
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print "  Instalación completada."
-ui_print "  Reinicia para activar el efecto."
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print ""
+[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
+. /data/adb/magisk/util_functions.sh
+[ "$MAGISK_VER_CODE" -lt 20400 ] && require_new_magisk
+
+##########################################################################################
+# Instalación real — install_module extrae el zip a MODPATH y de ahí SÍ
+# invoca customize.sh (que contiene toda la lógica real: fusión idempotente
+# del audio_effects.xml del vendor, verificación ELF, modo seguro, SELinux).
+##########################################################################################
+
+install_module
+exit 0

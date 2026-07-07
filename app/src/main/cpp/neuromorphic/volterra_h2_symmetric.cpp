@@ -25,8 +25,10 @@
 namespace ivanna {
 namespace dsp {
 
-VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels)
+VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels,
+                                          uint32_t quad_kernel_length)
     : m_kernel_length(kernel_length), m_channels(channels),
+      m_quad_kernel_length(quad_kernel_length),
       m_h1(nullptr), m_h2(nullptr), m_delay_lines(nullptr), m_delay_indices(nullptr) {
 
     const size_t align = 64;
@@ -36,12 +38,26 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     if (m_channels == 0) m_channels = 2;
     if (m_channels > 16) m_channels = 16;
 
+    // AUDIT FIX (crítico): h2 es O(quad_kernel_length^2), NO O(kernel_length^2).
+    // Antes se usaba m_kernel_length también para h2 (8192 → ~33.5M MACs/muestra/
+    // canal → >51 TOPS/seg a 768kHz, imposible en cualquier CPU móvil: el motor
+    // colgaba/producía underruns garantizados en cuanto se activaba MANIFOLD).
+    // Se autoderiva a min(kernel_length, 64) si no se especifica; 64 taps de
+    // ventana cuadrática siguen dando compensación no-lineal audible (resonancias
+    // mecánicas de corto alcance) a un costo de ~2080 MACs/muestra/canal — más
+    // de 16000x más barato, real-time incluso en gama media.
+    if (m_quad_kernel_length == 0) {
+        m_quad_kernel_length = (m_kernel_length < 64) ? m_kernel_length : 64;
+    }
+    if (m_quad_kernel_length > m_kernel_length) m_quad_kernel_length = m_kernel_length;
+    if (m_quad_kernel_length == 0) m_quad_kernel_length = 1;
+
     try {
         m_h1 = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
         if (!m_h1) throw std::bad_alloc();
         memset(m_h1, 0, m_kernel_length * sizeof(float));
 
-        const size_t h2_size = (m_kernel_length * (m_kernel_length + 1)) / 2;
+        const size_t h2_size = (static_cast<size_t>(m_quad_kernel_length) * (m_quad_kernel_length + 1)) / 2;
         m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
         if (!m_h2) throw std::bad_alloc();
         memset(m_h2, 0, h2_size * sizeof(float));
@@ -103,7 +119,9 @@ void VolterraH2Symmetric::updateKernels(
 
     memcpy(m_h1, h1_kernel, length * sizeof(float));
 
-    const size_t h2_size = (length * (length + 1)) / 2;
+    // h2_kernel tiene tamaño según m_quad_kernel_length (ventana O(K2^2)), NO
+    // según `length` (que es la longitud de h1/memoria lineal). Ver constructor.
+    const size_t h2_size = (static_cast<size_t>(m_quad_kernel_length) * (m_quad_kernel_length + 1)) / 2;
     memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
 
     m_kernels_ready.store(true, std::memory_order_release);
@@ -165,18 +183,26 @@ void VolterraH2Symmetric::processInterleaved(
                 y_linear += m_h1[k] * delay[delay_k];
             }
 
+            // AUDIT FIX (crítico, real-time): el término cuadrático SOLO recorre
+            // la ventana K2 = m_quad_kernel_length (no las K completas del delay
+            // lineal). Antes esto era O(K^2) con K=8192 (~33.5M MACs/muestra/canal,
+            // >51 TOPS/seg a 768kHz) — un colgado/underrun garantizado del hilo de
+            // audio en cuanto se activaba MANIFOLD. Con K2 (p.ej. 64) el costo es
+            // O(K2^2) — ~2080 MACs/muestra/canal, >16000x más barato y real-time
+            // viable, sin tocar ni reducir la memoria lineal h1 (K completo).
+            const uint32_t K2 = m_quad_kernel_length;
             float y_quad = 0.0f;
 
-            for (uint32_t k = 0; k < K; ++k) {
+            for (uint32_t k = 0; k < K2; ++k) {
                 uint32_t delay_k = (d_idx + K - k) % K;
                 float x_k = delay[delay_k];
 
-                for (uint32_t l = k; l < K; ++l) {
+                for (uint32_t l = k; l < K2; ++l) {
                     uint32_t delay_l = (d_idx + K - l) % K;
                     float x_l = delay[delay_l];
 
-                    uint32_t h2_idx = k * K + l - (k * (k + 1)) / 2;
-                    const size_t h2_size = (K * (K + 1)) / 2;
+                    uint32_t h2_idx = k * K2 + l - (k * (k + 1)) / 2;
+                    const size_t h2_size = (static_cast<size_t>(K2) * (K2 + 1)) / 2;
                     if (h2_idx >= h2_size) continue;
 
                     float h2_val = m_h2[h2_idx];

@@ -59,6 +59,20 @@ add_library(ivanna_omega SHARED
     evolutionary_kernel.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
 
+    # Motor coclear completo (Volterra H2 + upsampling polifásico) — opt-in
+    neuromorphic/volterra_h2_symmetric.cpp
+    neuromorphic/neuro_cochlear_manifold.cpp
+
+    # [FIX-LINK] Implementación real de IvannaFastRpcClient (declarada en
+    # hexagon/ivanna_fastrpc_client.hpp). Nunca estuvo en el build: no daba
+    # error porque nada llamaba a `new IvannaFastRpcClient()` en código
+    # enlazado. neuro_cochlear_manifold.cpp (arriba) sí lo instancia, así que
+    # el linker ahora reclama el símbolo. NO añadir también
+    # neuromorphic/ivanna_npe_engine.cpp: es una implementación duplicada y
+    # obsoleta de la misma clase (huérfana desde 832c272, nunca en CMake) —
+    # agregarla junto a esta produciría "duplicate symbol" en el linker.
+    hexagon/ivanna_fastrpc_client.cpp
+
     # System audio integration
     shm_hyperplane.cpp
     omega_daemon.cpp

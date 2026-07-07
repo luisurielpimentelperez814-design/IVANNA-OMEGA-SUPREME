@@ -42,10 +42,26 @@ class VolterraH2Symmetric {
 public:
     /**
      * Constructor.
-     * @param kernel_length Longitud del kernel de memoria (taps)
-     * @param channels Número de canales (1 o 2)
+     * @param kernel_length Longitud del kernel lineal h1 (taps de memoria).
+     * @param channels Número de canales (1 o 2).
+     * @param quad_kernel_length Longitud de la VENTANA del kernel cuadrático h2.
+     *
+     * AUDIT FIX (crítico, real-time): el término cuadrático de un Volterra
+     * de orden 2 es O(K^2) por muestra (suma doble sobre k,l). Con
+     * kernel_length=8192 (como se instanciaba desde neuro_cochlear_manifold.cpp)
+     * eso son ~33.5M MACs por muestra por canal — a 768kHz esto exige más de
+     * 51 TERA-operaciones/segundo, imposible en cualquier CPU móvil. El
+     * término h1 (lineal) sí puede usar memoria larga (K completo) porque es
+     * O(K), pero h2 NECESITA una ventana propia y mucho más corta.
+     *
+     * quad_kernel_length limita h2 a operar solo sobre las últimas
+     * quad_kernel_length muestras del delay line (en vez de las K completas),
+     * reduciendo el costo a O(quad_kernel_length^2) — controlable de forma
+     * independiente sin tocar la memoria lineal h1 ni borrar nada del motor.
+     * Si se omite (0), se autoderiva como min(kernel_length, 64).
      */
-    VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels);
+    VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels,
+                         uint32_t quad_kernel_length = 0);
     ~VolterraH2Symmetric();
 
     /**
@@ -67,15 +83,18 @@ public:
      * Actualiza los kernels de corrección basándose en caracterización
      * del transductor (medición de impedancia, respuesta en frecuencia).
      * 
-     * @param h1_kernel Kernel lineal (FIR de compensación)
-     * @param h2_kernel Kernel cuadrático simétrico (matriz triangular superior)
-     * @param length Longitud de los kernels
+     * @param h1_kernel Kernel lineal (FIR de compensación), longitud = kernel_length
+     * @param h2_kernel Kernel cuadrático simétrico (matriz triangular superior),
+     *                  longitud = quad_kernel_length (ver constructor)
+     * @param length Longitud del kernel lineal h1 (debe igualar kernel_length)
      */
     void updateKernels(
         const float* h1_kernel,
         const float* h2_kernel,
         uint32_t length
     ) noexcept;
+
+    uint32_t quadKernelLength() const noexcept { return m_quad_kernel_length; }
 
     /**
      * Activa/desactiva la corrección H2 (para bypass A/B testing)
@@ -91,6 +110,7 @@ public:
 private:
     uint32_t m_kernel_length;
     uint32_t m_channels;
+    uint32_t m_quad_kernel_length;  // AUDIT FIX: ventana O(K2^2), independiente de m_kernel_length
 
     // Kernel lineal h1 (FIR de compensación)
     float* m_h1 = nullptr;
