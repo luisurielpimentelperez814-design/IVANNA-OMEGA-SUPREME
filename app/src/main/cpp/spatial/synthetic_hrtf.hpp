@@ -83,16 +83,19 @@ public:
 
         // ── 2) Head shadowing (paso-bajo IIR de 1er orden, aplicado como
         //      respuesta al impulso truncada) en el oído lejano ─────────
-        // fc baja de ~16kHz (theta=0, sin sombra) a ~1.5kHz (theta=90°,
-        // sombra máxima), escalado por 'aggressiveness'.
+        // FIX: Shadowing menos agresivo para sonido más natural
+        // Antes: bajaba de 16kHz a 1.5kHz (demasiado brusco)
+        // Ahora: baja de 14kHz a 3.5kHz (más natural, preserva más riqueza)
         const float shadowAmount = (absTheta / (float)(M_PI * 0.5)) * aggressiveness;
-        const float fc = 16000.f - shadowAmount * 14500.f;
+        const float fc = 14000.f - shadowAmount * 10500.f;  // FIX: rango menos agresivo
         const float rc = 1.f / (2.f * (float)M_PI * fc);
         const float dt = 1.f / sr_;
         const float alpha = dt / (rc + dt);   // coeficiente paso-bajo
 
-        // Ganancia DC del shadowing (atenuación adicional por sombra de cabeza)
-        const float shadowGain = 1.f - 0.5f * shadowAmount;
+        // FIX: Ganancia DC más suave (no atenúa tanto)
+        // Antes: hasta -50% ganancia
+        // Ahora: hasta -30% ganancia (mejor balance)
+        const float shadowGain = 1.f - 0.3f * shadowAmount;
 
         // Generamos la IR del paso-bajo de 1er orden truncada a irLen_ taps,
         // desplazada por el retardo ITD.
@@ -117,16 +120,27 @@ public:
     }
 
 private:
-    // Notch FIR simple de 3 taps (aproximación a un notch espectral en freqHz)
-    // aplicado in-place como convolución corta sobre el buffer IR.
+    // FIX: Notch FIR mejorado con mejor balance
+    // El notch anterior causaba artefactos audibles (cambios bruscos de ganancia)
+    // Ahora usa kernel normalizado + notch más suave
     void apply_notch_fir(std::vector<float>& buf, float freqHz, float depth) const {
+        depth = std::clamp(depth, 0.f, 0.6f);  // Limitar profundidad para evitar notch excesivo
+        
         const float w0 = 2.f * (float)M_PI * freqHz / sr_;
-        // Kernel de 3 taps tipo [g, -2g*cos(w0), g] normalizado para
-        // atenuar energía alrededor de w0 sin alterar DC significativamente.
-        const float g = depth * 0.5f;
-        const float k0 = g;
-        const float k1 = 1.f - 2.f * g * std::cos(w0);
-        const float k2 = g;
+        const float cosw0 = std::cos(w0);
+        
+        // FIX: Kernel notch mejorado (simétrico, mejor comportamiento en fase)
+        // [a, b, a] donde: a controla profundidad, b = 2*(1-a)
+        const float a = depth * 0.2f;  // Reducir sensibilidad a depth
+        const float b = 2.f * (1.f - a * cosw0);
+        
+        // Normalización para mantener DC gain = 1
+        const float norm = a + b + a;  // = 2a + 2(1-a*cosw0) = 2(1 - a*cosw0 + a) 
+        const float normFactor = (norm > 0.001f) ? 1.f / norm : 1.f;
+        
+        const float k0 = a * normFactor;
+        const float k1 = b * normFactor;
+        const float k2 = a * normFactor;
 
         std::vector<float> tmp(buf.size(), 0.f);
         for (size_t n = 0; n < buf.size(); ++n) {

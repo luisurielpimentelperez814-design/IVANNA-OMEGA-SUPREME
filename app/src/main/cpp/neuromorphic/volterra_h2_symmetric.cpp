@@ -191,8 +191,18 @@ void VolterraH2Symmetric::processInterleaved(
 
             float y = y_linear + y_quad;
 
-            if (y > 1.0f) y = 1.0f;
-            if (y < -1.0f) y = -1.0f;
+            // FIX: Reemplazar hard clipping brutal con soft clipping (waveshaping suave)
+            // Hard clipping causaba distorsión digital horrible
+            // Usar tanh para suavizar sin artefactos abruptos
+            // tanh(x) ≈ saturación suave, preserva bajos, suaviza picos
+            const float threshold = 0.8f;  // Empieza a saturar antes de 1.0
+            if (std::fabs(y) > threshold) {
+                // Aplica compresión suave en lugar de clipping abrupto
+                const float sign = (y >= 0.0f) ? 1.0f : -1.0f;
+                const float absY = std::fabs(y);
+                // Transición suave: lineal hasta threshold, luego logarítmica
+                y = sign * (threshold + (absY - threshold) / (1.0f + (absY - threshold)));
+            }
 
             output[idx] = y;
         }
