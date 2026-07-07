@@ -37,9 +37,19 @@ void HeadTracker::update(const float rotationVector[4], float timestampMs) noexc
         newPose.confidence = std::clamp(1.f - (angularVelocity / 8.7f), 0.1f, 1.f);  // 8.7 rad/s ≈ 500 deg/s
     }
 
-    // Guardar en historial
-    int idx = historyWriteIdx_.fetch_add(1, std::memory_order_relaxed) % kPoseHistorySize;
+    // Guardar en historial.
+    // [FIX-RACE-HEADPOSE] update() corre en el hilo de sensores mientras
+    // getPoseForAudioFrame() lee poseHistory_ desde el hilo de audio. El
+    // fetch_add relaxed publicaba el nuevo índice ANTES de escribir
+    // poseHistory_[idx]: el hilo de audio podía ver el índice avanzado y
+    // leer una entrada a medio escribir (torn read) sin ninguna garantía
+    // de happens-before entre la escritura del struct y su publicación.
+    // Se escribe primero el struct y SOLO DESPUÉS se publica el índice
+    // con release, para que el acquire del lado de lectura garantice que
+    // toda la escritura de poseHistory_[idx] es visible antes de usarla.
+    int idx = historyWriteIdx_.load(std::memory_order_relaxed) % kPoseHistorySize;
     poseHistory_[idx] = newPose;
+    historyWriteIdx_.fetch_add(1, std::memory_order_release);
 
     previousPose_ = currentPose_.load(std::memory_order_relaxed);
     currentPose_.store(newPose, std::memory_order_release);
