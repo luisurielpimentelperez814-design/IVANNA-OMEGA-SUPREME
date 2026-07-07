@@ -22,6 +22,13 @@
 #include "anti_dolby.h"
 #include "audio_control_plane.hpp"
 
+// FIX: g_control_frame se define aquí (no se compila audio_control_plane.cpp
+// completo — esa TU arrastra control_apply_frame(), que referencia
+// ivanna::g_control_bus / ivanna::g_staging_frame, nunca definidos en
+// ningún .cpp del proyecto. control_set_route_profile() es inline en el
+// .hpp y solo necesita este singleton).
+UnifiedControlFrame g_control_frame;
+
 #define LOG_TAG "IVANNA-Audio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)

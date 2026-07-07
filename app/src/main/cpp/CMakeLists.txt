@@ -34,6 +34,7 @@ add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 add_library(ivanna_omega SHARED
     # JNI bridge
     jni/ivanna_omega_jni.cpp
+    jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
 
@@ -57,7 +58,7 @@ add_library(ivanna_omega SHARED
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
-    audio_control_plane.cpp
+    anti_dolby.cpp
 
     # Benchmark logger (JNI para benchmarking) — FIX v1.5
     benchmark_logger.cpp
@@ -114,23 +115,6 @@ set_target_properties(omega_effect PROPERTIES
     EXCLUDE_FROM_ALL TRUE
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Target: libivanna_jni.so (stub for AudioEngine.kt loadLibrary)
-# ─────────────────────────────────────────────────────────────────────────────
-add_library(ivanna_jni SHARED
-    jni/ivanna_jni_stub.cpp
-)
-
-target_compile_options(ivanna_jni PRIVATE ${BASE_FLAGS})
-
-target_include_directories(ivanna_jni PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(ivanna_jni
-    ${log-lib}
-    ${android-lib}
-)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Target: libomega_vibratory.so (stub for IvannaNpeNative.kt)
