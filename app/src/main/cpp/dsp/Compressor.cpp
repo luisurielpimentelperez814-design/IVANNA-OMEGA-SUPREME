@@ -58,19 +58,19 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
     for (int i = 0; i < frames; ++i) {
-        float peak = std::fmaxf(std::fabsf(left[i]), std::fabsf(right[i]));
+        float peak = std::fmax(std::fabs(left[i]), std::fabs(right[i]));
         if (peak < 1e-6f) peak = 1e-6f;
 
         float coef = (peak > env)? attackCoef : releaseCoef;
         env = coef * env + (1.0f - coef) * peak;
 
-        float envDb = k20DivLn10 * std::logf(env);
+        float envDb = k20DivLn10 * std::log(env);
         float gainDb = 0.0f;
         if (envDb > threshold) {
             gainDb = (threshold - envDb) * ratioInv;
         }
 
-        float lin = makeup * std::expf(gainDb * kLn10Div20);
+        float lin = makeup * std::exp(gainDb * kLn10Div20);
         left[i] *= lin;
         right[i] *= lin;
     }

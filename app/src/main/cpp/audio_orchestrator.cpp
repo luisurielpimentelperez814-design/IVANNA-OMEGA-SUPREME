@@ -20,6 +20,7 @@
 #include <thread>
 #include <algorithm>
 #include "anti_dolby.h"
+#include "audio_control_plane.hpp"
 
 #define LOG_TAG "IVANNA-Audio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -392,4 +393,12 @@ extern "C" void ivanna_set_anti_dolby_scores(float speech, float music, float ba
         std::clamp(music,  0.0f, 1.0f),
         std::clamp(bass,   0.0f, 1.0f)
     );
+}
+
+// ── Símbolo externo para el stub JNI: perfil de ruta (BT/AUX/USB) ───────────
+// Llamado desde ivanna_jni_stub.cpp → AudioEngine companion @JvmStatic.
+// Delega al UnifiedControlFrame vía control_set_route_profile() (audio_control_plane.hpp).
+extern "C" void ivanna_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) {
+    if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) return;
+    control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
 }

@@ -57,6 +57,7 @@ add_library(ivanna_omega SHARED
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
+    audio_control_plane.cpp
 
     # Benchmark logger (JNI para benchmarking) — FIX v1.5
     benchmark_logger.cpp
