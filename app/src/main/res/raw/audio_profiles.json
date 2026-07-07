@@ -1,0 +1,157 @@
+{
+  "audioProfiles": [
+    {
+      "id": "steve_miller_band",
+      "name": "Steve Miller Band",
+      "description": "Funky rock with clear vocals - Fly Like an Eagle, Jet Airliner",
+      "category": "classic_rock_70s",
+      "priority": 1,
+      "audioEngine": {
+        "gain": 0.95,
+        "exciterAmount": 0.35,
+        "eqGain": 2.0,
+        "widthAmount": 0.85,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.65,
+        "bassThreshold": 0.50,
+        "eqBoost2k4k": 2.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.85
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.45,
+        "lateralInhibition": 0.55,
+        "ohcCompression": 0.50,
+        "masterGainDb": 0.0,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 2.5,
+        "dialogBoostDb": 3.0,
+        "widenerMult": 0.85
+      },
+      "tags": ["vocal", "funk", "warm", "clarity"],
+      "recommendedFor": "Groove-oriented rock, funk-influenced vocals, moderate dynamics"
+    },
+    {
+      "id": "rush",
+      "name": "RUSH",
+      "description": "Progressive rock technical mastery - Tom Sawyer, Limelight, Spirit of Radio",
+      "category": "progressive_rock",
+      "priority": 2,
+      "audioEngine": {
+        "gain": 0.80,
+        "exciterAmount": 0.55,
+        "eqGain": 3.5,
+        "widthAmount": 1.20,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.55,
+        "bassThreshold": 0.45,
+        "eqBoost2k4k": 3.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.15
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.75,
+        "lateralInhibition": 0.85,
+        "ohcCompression": 0.60,
+        "masterGainDb": -1.0,
+        "cochlearBandwidth": "expanded"
+      },
+      "route": {
+        "bassBoostDb": 3.5,
+        "dialogBoostDb": 4.0,
+        "widenerMult": 1.20
+      },
+      "tags": ["progressive", "technical", "high_dynamics", "spatial", "complex"],
+      "recommendedFor": "Complex arrangements, technical bass/drums, extreme dynamics, high-pitched vocals (Geddy Lee)"
+    },
+    {
+      "id": "budgie",
+      "name": "Budgie",
+      "description": "Power-driven hard rock - Breadfan, Rocking Man",
+      "category": "hard_rock",
+      "priority": 3,
+      "audioEngine": {
+        "gain": 0.75,
+        "exciterAmount": 0.70,
+        "eqGain": 4.0,
+        "widthAmount": 0.65,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.70,
+        "bassThreshold": 0.60,
+        "eqBoost2k4k": 4.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.68
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.85,
+        "lateralInhibition": 0.75,
+        "ohcCompression": 0.80,
+        "masterGainDb": -2.0,
+        "cochlearBandwidth": "compressed"
+      },
+      "route": {
+        "bassBoostDb": 4.5,
+        "dialogBoostDb": 4.5,
+        "widenerMult": 0.65
+      },
+      "tags": ["hard_rock", "power", "dense", "heavy_bass", "compressed"],
+      "recommendedFor": "Heavy distorted guitars, powerful screaming vocals, dense arrangement, natural compression, heavy bass"
+    },
+    {
+      "id": "grand_funk_railroad",
+      "name": "Grand Funk Railroad",
+      "description": "Groove-heavy rock - We're An American Band, Footstompin' Music",
+      "category": "classic_rock_70s",
+      "priority": 4,
+      "audioEngine": {
+        "gain": 0.80,
+        "exciterAmount": 0.65,
+        "eqGain": 3.0,
+        "widthAmount": 0.75,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.65,
+        "bassThreshold": 0.55,
+        "eqBoost2k4k": 3.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.78
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.60,
+        "lateralInhibition": 0.65,
+        "ohcCompression": 0.65,
+        "masterGainDb": -1.5,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 3.8,
+        "dialogBoostDb": 3.2,
+        "widenerMult": 0.75
+      },
+      "tags": ["groove", "heavy_bass", "powerful_vocals", "classic_rock", "danceable"],
+      "recommendedFor": "Groove-oriented arrangements, extremely present bass, powerful vocals, moderate complexity, danceability"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "createdDate": "2026-07-07",
+    "lastModified": "2026-07-07",
+    "totalProfiles": 4,
+    "trainingSequence": [
+      "steve_miller_band",
+      "grand_funk_railroad",
+      "rush",
+      "budgie"
+    ],
+    "trainingNotes": "Sequence optimized for IVANNA neural learning curve. Start with Steve Miller (warmth baseline), move to Grand Funk (bass dynamics), then RUSH (extreme complexity for manifold learning), finish with Budgie (power/distortion refinement)."
+  }
+}
