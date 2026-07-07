@@ -97,14 +97,24 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
 
         IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs)
 
-        // Calcular pitch/yaw/roll para UI
-        val rotationMatrix = FloatArray(9)
-        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-        val orientation = FloatArray(3)
-        SensorManager.getOrientation(rotationMatrix, orientation)
-
-        // orientation[0] = azimuth (yaw), [1] = pitch, [2] = roll
-        onOrientationChanged?.invoke(orientation[1], orientation[0], orientation[2])
+        // [FIX-CRASH] getRotationMatrixFromVector puede lanzar IllegalArgumentException
+        // en algunos HALs cuando event.values tiene formato inesperado. La UI se
+        // limita a mostrar orientación — no crítico para audio — así que un fallo
+        // aquí nunca debe tumbar el hilo de sensor. Se envuelve en try/catch y solo
+        // se emite el callback si la conversión tuvo éxito.
+        val listener = onOrientationChanged
+        if (listener != null) {
+            try {
+                val rotationMatrix = FloatArray(9)
+                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                val orientation = FloatArray(3)
+                SensorManager.getOrientation(rotationMatrix, orientation)
+                // orientation[0] = azimuth (yaw), [1] = pitch, [2] = roll
+                listener(orientation[1], orientation[0], orientation[2])
+            } catch (_: Throwable) {
+                // silencioso — el hilo debe seguir procesando frames del giroscopio
+            }
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}

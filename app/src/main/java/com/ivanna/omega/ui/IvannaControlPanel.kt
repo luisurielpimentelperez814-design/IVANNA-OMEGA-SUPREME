@@ -143,8 +143,13 @@ fun IvannaControlPanel(
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
 
-    // Telemetría motor NPE (idéntico al v1.7)
+    // [FIX-STARTUP-LAG] Telemetría del motor NPE.
+    // Antes: 1s exactos + arranque inmediato -> pico de JNI calls justo en
+    // los primeros segundos de la app, coincidiendo con el warmup del hilo
+    // de audio. Ahora: se retrasa 800ms el primer poll (deja arrancar todo
+    // limpio) y luego pollea cada 750ms (más fluido para el HUD).
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(800)
         while (true) {
             npeGenre = IvannaNpeEngine.getDetectedGenre()
             val m = IvannaNpeEngine.getMetrics()
@@ -155,16 +160,18 @@ fun IvannaControlPanel(
             val c = IvannaNpeEngine.getSynthClassify()
             npeClassifyConfidence = c.getOrElse(1) { 0f }
             npeClassifyThd = c.getOrElse(2) { 0f }
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(750)
         }
     }
 
-    // Telemetría kernel evolutivo (idéntico al v1.7)
+    // Telemetría kernel evolutivo — el fitness cambia mucho más lento que las
+    // métricas de audio, así que polleamos cada 2s (mitad de carga JNI que antes).
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1200)
         while (true) {
             evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
             evoGeneration = IvannaNativeLib.nativeGetGeneration()
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(2000)
         }
     }
 

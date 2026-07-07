@@ -54,8 +54,20 @@ class VisualizerRendererV2(context: Context) : GLSurfaceView.Renderer,
     private val curBands = FloatArray(IvannaVisualizerBridgeV2.BAND_COUNT)
     private val sampleBuffer = FloatArray(IvannaVisualizerBridgeV2.BAND_COUNT)
 
-    @Volatile private var qualityLevel = 1.0f
+    // [FIX-STARTUP-LAG] Antes: qualityLevel = 1.0 desde el frame 0 -> shader
+    // psicodélico completo (5 octavas fbm + 12 sectores + 13 nodos + aberración)
+    // ejecutándose antes de que el JIT/warmup terminaran + antes de que el hilo
+    // de audio estuviera estable. Eso causó el "la app se traba al arrancar":
+    // GPU stalls + CPU pico simultáneos con la inicialización del DSP nativo.
+    // Nuevo: arranca en 0.6 (modo simplificado) y sube a 1.0 tras ~2s de
+    // frames estables (ver onDrawFrame).
+    @Volatile private var qualityLevel = 0.6f
     private var dropStreak = 0
+    // frames desde onSurfaceCreated — usados para el ramp de qualityLevel.
+    private var frameCount = 0
+    // Umbral en frames tras el cual, si no hay drops, subimos a calidad máxima.
+    // ~120 frames ≈ 2s a 60fps.
+    private val QUALITY_RAMPUP_FRAMES = 120
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         val fragmentSrc = loadShaderAsset()
@@ -124,6 +136,15 @@ class VisualizerRendererV2(context: Context) : GLSurfaceView.Renderer,
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
         System.arraycopy(curBands, 0, prevBands, 0, n)
+
+        // [FIX-STARTUP-LAG] Ramp progresivo de calidad: si llevamos suficientes
+        // frames sin drops, subimos a calidad máxima. Si ya había drops, el
+        // callback onFrameDropDetected() ya bajó qualityLevel a 0.5 y este
+        // código no vuelve a subir hasta que onFrameDropRecovered() se dispare.
+        frameCount++
+        if (frameCount == QUALITY_RAMPUP_FRAMES && dropStreak == 0 && qualityLevel < 1.0f) {
+            qualityLevel = 1.0f
+        }
     }
 
     override fun onFrameDropDetected(droppedFrames: Int) {

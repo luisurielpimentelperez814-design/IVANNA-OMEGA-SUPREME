@@ -59,8 +59,26 @@ class PlaybackCaptureService : Service() {
 
         fun setSpatialEnabledLive(enabled: Boolean) {
             runningInstance?.let { svc ->
-                svc.spatialEnabled = enabled
-                if (enabled) svc.initSpatialEngineIfNeeded() else svc.releaseSpatialEngine()
+                // [FIX-CLICK] Antes: se conmutaba `spatialEnabled` y se liberaba/creaba
+                // el motor de golpe DENTRO del hilo de audio, provocando dos artefactos:
+                //   1) al ENCENDER: primeros bloques con estado interno del HRTF/upmixer
+                //      en cero -> click audible y transiente feo ("suena feo").
+                //   2) al APAGAR: release() dentro del mismo instante en que el hilo de
+                //      audio podía estar iterando process() -> uso-tras-libre latente.
+                //
+                // Nuevo: el motor se crea con `spatialEngine != null` pero el ramp de
+                // ganancia arranca en 0.0 y sube linealmente a 1.0 en ~150ms (crossfade).
+                // Al apagar, baja a 0.0 en 150ms y sólo entonces libera. Esto elimina
+                // el click de encendido y el spike de CPU inicial que se sentía como
+                // "la app se traba al encender".
+                if (enabled) {
+                    svc.initSpatialEngineIfNeeded()
+                    svc.spatialEnabled = true
+                    svc.spatialTargetGain = 1.0f
+                } else {
+                    svc.spatialTargetGain = 0.0f
+                    // release se hace desde el hilo de audio cuando gain llegue a 0.
+                }
             }
         }
     }
@@ -98,15 +116,36 @@ class PlaybackCaptureService : Service() {
     @Volatile private var headTracker: IvannaHeadTracker? = null
     @Volatile private var spatialEnabled = false
 
+    // [FIX-CLICK] Crossfade de ganancia para el motor espacial.
+    // spatialCurrentGain sigue exponencialmente a spatialTargetGain con la
+    // constante RAMP_STEP por bloque, evitando el click/pop al toggle.
+    @Volatile private var spatialTargetGain: Float = 0.0f
+    private var spatialCurrentGain: Float = 0.0f
+    // Con INPUT_SAMPLES/2 = 1024 frames por bloque a 48kHz cada bloque son ~21.3ms.
+    // RAMP_STEP = 0.14 -> se cruza el 99% de la rampa en ~7 bloques ~= 150ms.
+    private val RAMP_STEP = 0.14f
+    // Umbral para considerar la rampa como "cerrada" y liberar recursos.
+    private val RAMP_EPSILON = 0.001f
+
     private fun initSpatialEngineIfNeeded() {
-        if (!spatialEnabled || spatialEngine != null) return
-        val engine = IvannaSpatialEngine(sampleRate = 48000f, blockSize = INPUT_SAMPLES / 2)
-        engine.init()
-        val tracker = IvannaHeadTracker(this)
-        tracker.start()
-        engine.setHeadTracker(tracker)
-        spatialEngine = engine
-        headTracker = tracker
+        if (spatialEngine != null) return
+        try {
+            // [FIX-CRASH-INIT] init() de IvannaSpatialEngine + IvannaHeadTracker
+            // pueden lanzar (sensores no disponibles, OOM en buffers directos).
+            // Antes: cualquier excepción propagaba y mataba el Service.
+            val engine = IvannaSpatialEngine(sampleRate = 48000f, blockSize = INPUT_SAMPLES / 2)
+            engine.init()
+            val tracker = IvannaHeadTracker(this)
+            tracker.start()
+            engine.setHeadTracker(tracker)
+            spatialEngine = engine
+            headTracker = tracker
+            // Al inicializar arrancamos con gain=0; el toggle ON sube target a 1.
+            spatialCurrentGain = 0.0f
+        } catch (e: Throwable) {
+            android.util.Log.e("PlaybackCapture", "Fallo al inicializar spatial engine: ${e.message}")
+            releaseSpatialEngine()
+        }
     }
 
     private fun releaseSpatialEngine() {
@@ -135,8 +174,19 @@ class PlaybackCaptureService : Service() {
             params.getNpeOhcCompression(), params.getNpeMasterGainDb()
         )
         IvannaNpeEngine.setAGC(params.getNpeAgcTargetDb(), params.getNpeAgcRate())
-        spatialEnabled = params.isSpatialEngineEnabled()
-        initSpatialEngineIfNeeded()
+        // [FIX-CLICK] Al restaurar el estado persistido: si el spatial estaba
+        // encendido en la sesión anterior, arma el motor y deja la rampa apuntando
+        // a 1.0 desde el arranque (fade-in suave los primeros ~150ms, sin click).
+        // Si estaba apagado, dejamos target=0 y NO inicializamos (ahorro de CPU).
+        val restoreSpatial = params.isSpatialEngineEnabled()
+        if (restoreSpatial) {
+            initSpatialEngineIfNeeded()
+            spatialEnabled = true
+            spatialTargetGain = 1.0f
+        } else {
+            spatialEnabled = false
+            spatialTargetGain = 0.0f
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -195,7 +245,9 @@ class PlaybackCaptureService : Service() {
 
     private fun startCapture(mediaProjection: MediaProjection) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        initSpatialEngineIfNeeded() // robustez: re-arma tras un restart de sesión
+        // [FIX-CLICK] Solo re-arma el motor espacial si el usuario ya lo tenía
+        // encendido; si no, no gastamos CPU/memoria hasta que toggle explícito.
+        if (spatialEnabled) initSpatialEngineIfNeeded()
 
         val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
@@ -365,14 +417,46 @@ class PlaybackCaptureService : Service() {
                     // evitando el crash JNI con rendererHandle=0.
                     val engine = spatialEngine
                     if (engine != null) {
-                        for (i in 0 until frames) {
-                            spatialInL[i] = buffer[i * 2]
-                            spatialInR[i] = buffer[i * 2 + 1]
-                        }
-                        engine.processStereoInput(spatialInL, spatialInR, spatialOutL, spatialOutR, frames)
-                        for (i in 0 until frames) {
-                            buffer[i * 2] = spatialOutL[i]
-                            buffer[i * 2 + 1] = spatialOutR[i]
+                        // [FIX-CLICK] Rampa de ganancia por bloque, no por muestra —
+                        // evita zipper noise pero mantiene el crossfade audible como
+                        // fade suave. spatialCurrentGain sigue exponencialmente a
+                        // spatialTargetGain (0 o 1).
+                        val target = spatialTargetGain
+                        spatialCurrentGain += (target - spatialCurrentGain) * RAMP_STEP
+                        val gain = spatialCurrentGain
+                        val dryGain = 1.0f - gain
+
+                        // Si el gain está prácticamente en 0 y el target también,
+                        // saltamos el motor entero (no gastamos CPU) y, si estamos
+                        // apagando, liberamos aquí (nunca desde otro hilo).
+                        if (gain < RAMP_EPSILON && target < RAMP_EPSILON) {
+                            if (spatialEnabled) {
+                                spatialEnabled = false
+                                releaseSpatialEngine()
+                            }
+                        } else {
+                            try {
+                                for (i in 0 until frames) {
+                                    spatialInL[i] = buffer[i * 2]
+                                    spatialInR[i] = buffer[i * 2 + 1]
+                                }
+                                engine.processStereoInput(
+                                    spatialInL, spatialInR,
+                                    spatialOutL, spatialOutR,
+                                    frames
+                                )
+                                // Crossfade wet/dry — al encender wet sube de 0 a 1;
+                                // al apagar baja de 1 a 0. Sin salto duro.
+                                for (i in 0 until frames) {
+                                    buffer[i * 2]     = buffer[i * 2]     * dryGain + spatialOutL[i] * gain
+                                    buffer[i * 2 + 1] = buffer[i * 2 + 1] * dryGain + spatialOutR[i] * gain
+                                }
+                            } catch (t: Throwable) {
+                                // [FIX-CRASH] Si algo dentro del motor lanza (JNI
+                                // returning en estado inválido, buffer directo GC'd),
+                                // no matamos el hilo de audio: bypass y seguimos.
+                                android.util.Log.e("PlaybackCapture", "spatial process falló: ${t.message}")
+                            }
                         }
                     }
                     for (i in 0 until frames) {

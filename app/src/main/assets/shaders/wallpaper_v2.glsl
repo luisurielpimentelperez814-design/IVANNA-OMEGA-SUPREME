@@ -1,15 +1,21 @@
 #version 320 es
-// wallpaper_v2.glsl — GEMINI DEPTH / AURORA GLASS  (v3.0 · magistral-optimizado)
+// wallpaper_v2.glsl — PSYCHEDELIC AURORA / KALEIDOSCOPIC PLASMA
 // ============================================================================
-// [FIX-FREEZE-5.2] Shader adaptativo: u_quality controla nivel de detalle.
-//   u_quality = 1.0: calidad completa (6 octavas de fbm, 13 nodos PBR)
-//   u_quality = 0.5: modo rendimiento (4 octavas, 8 nodos, PBR simplificado)
+// [PSYCHEDELIC-1.0] Rediseño psicodélico manteniendo el contrato de uniforms
+//   y la interfaz de bandas del bridge (13 bandas, u_bands + u_bands_prev,
+//   u_frame_phase, u_time, u_resolution, u_quality). Cero cambios en Kotlin.
 //
-// [FIX-FREEZE-5.3] Optimizaciones de shader:
-//   - fbm con max 4 octavas en modo quality bajo
-//   - flowField cachea resultados intermedios
-//   - shadeGlassNode usa aproximación en quality < 0.7
-//   - Loop de nodos con step calculado dinámicamente
+// Estética:
+//   - Plasma multicolor con warping fractal (domain warping en 2 niveles).
+//   - Simetría caleidoscópica de 6-12 sectores modulada por bajos.
+//   - Cromatismo IRIS: paleta arco iris que rota con u_time y latidos de bajo.
+//   - Anillos de energía por banda (13 nodos orbitales pulsantes).
+//   - Auroras psicodélicas que "respiran" con los medios.
+//   - Chromatic aberration sutil en los brillos altos.
+//
+// [FIX-FREEZE-5.2] Shader adaptativo: u_quality controla nivel de detalle.
+//   u_quality = 1.0: calidad completa (5 octavas fbm, 12 sectores, 13 nodos)
+//   u_quality = 0.5: modo rendimiento (3 octavas, 6 sectores, 8 nodos)
 // ============================================================================
 precision highp float;
 
@@ -22,6 +28,7 @@ uniform float u_quality;
 
 out vec4 fragColor;
 
+// ── Utils ──────────────────────────────────────────────────────────────────
 mat2 rot(float a) {
     float s = sin(a), c = cos(a);
     return mat2(c, -s, s, c);
@@ -45,223 +52,251 @@ float noise(vec2 p) {
 }
 
 int getOctaves() {
-    return (u_quality > 0.7) ? 6 : 4;
+    return (u_quality > 0.7) ? 5 : 3;
 }
 
-float fbm(vec2 p, int maxOctaves) {
+float fbm(vec2 p) {
     float value = 0.0;
     float amplitude = 1.0;
     float frequency = 1.0;
     float maxValue = 0.0;
     int octaves = getOctaves();
-    for (int i = 0; i < 6; ++i) {
-        if (i >= octaves || i >= maxOctaves) break;
+    for (int i = 0; i < 5; ++i) {
+        if (i >= octaves) break;
         value += amplitude * noise(p * frequency);
         maxValue += amplitude;
-        amplitude *= 0.5;
-        frequency *= 2.0;
+        amplitude *= 0.55;
+        frequency *= 2.02;
     }
     return value / maxValue;
 }
 
-float flowField(vec2 p, float t, out vec2 qOut) {
-    float speed = 0.16;
+// Domain warping fractal — el corazón del look psicodélico.
+float warpedField(vec2 p, float t, float bass, float mids, float highs) {
+    float speed = 0.20 + bass * 0.75;
     vec2 q = vec2(
-        fbm(p + vec2(0.0, 0.0) + t * 0.035, 4),
-        fbm(p + vec2(5.2, 1.3) - t * 0.030, 4)
+        fbm(p + vec2(0.0, 0.0) + t * 0.045 * speed),
+        fbm(p + vec2(5.2, 1.3) - t * 0.038 * speed)
     );
-    qOut = q;
+    // Segundo warp (más chaótico con highs)
     vec2 r = vec2(
-        fbm(p + 2.5 * q + vec2(1.7, 9.2) + t * 0.055, 4),
-        fbm(p + 2.5 * q + vec2(8.3, 2.8) - t * 0.050, 4)
+        fbm(p + (2.4 + mids * 1.6) * q + vec2(1.7, 9.2) + t * 0.075),
+        fbm(p + (2.4 + mids * 1.6) * q + vec2(8.3, 2.8) - t * 0.065)
     );
-    return fbm(p + 2.8 * r, 5);
+    // Modulación de highs para "crispación"
+    r *= 1.0 + highs * 0.85;
+    return fbm(p + (2.8 + bass * 1.5) * r);
 }
 
-vec3 tonemap_filmic(vec3 x) {
-    float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30, W = 11.2;
-    x = ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
-    float whiteScale = 1.0 / (((W * (A * W + C * B) + D * E) / (W * (A * W + B) + D * F)) - E / F);
-    return x * whiteScale;
+// ── Paleta arco iris psicodélica ────────────────────────────────────────────
+// Basado en la fórmula de Iñigo Quilez, con desplazamiento animado.
+vec3 iridescent(float t) {
+    vec3 a = vec3(0.5, 0.5, 0.5);
+    vec3 b = vec3(0.5, 0.5, 0.5);
+    vec3 c = vec3(1.0, 1.0, 1.0);
+    // Fases desincronizadas → sensación cromática viva
+    vec3 d = vec3(0.00, 0.33, 0.67);
+    return a + b * cos(6.28318 * (c * t + d));
 }
 
-float distributionGGX(vec3 N, vec3 H, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float d = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
-    return a2 / (3.14159265 * d * d + 1e-6);
-}
-
-float geometrySmith(float NdotV, float NdotL, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    float gV = NdotV / (NdotV * (1.0 - k) + k);
-    float gL = NdotL / (NdotL * (1.0 - k) + k);
-    return gV * gL;
-}
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-vec3 shadeGlassNode(vec3 N, vec3 V, vec3 L, float quality) {
-    if (quality < 0.6) {
-        vec3 H = normalize(V + L);
-        float spec = pow(max(dot(N, H), 0.0), 64.0);
-        return vec3(0.06, 0.08, 0.10) * spec * 2.0;
-    }
-
-    vec3 H = normalize(V + L);
-    float NdotV = max(dot(N, V), 1e-4);
-    float NdotL = max(dot(N, L), 1e-4);
-    float roughness = 0.10;
-    vec3 F0 = vec3(0.06, 0.08, 0.10);
-    float D = distributionGGX(N, H, roughness);
-    float G = geometrySmith(NdotV, NdotL, roughness);
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-    vec3 spec = (D * G * F) / (4.0 * NdotV * NdotL + 1e-6);
-    return spec * NdotL;
-}
-
-vec3 geminiPalette(float t) {
-    vec3 c0 = vec3(0.010, 0.018, 0.040);
-    vec3 c1 = vec3(0.030, 0.060, 0.140);
-    vec3 c2 = vec3(0.080, 0.160, 0.320);
-    vec3 c3 = vec3(0.090, 0.280, 0.520);
-    vec3 c4 = vec3(0.160, 0.520, 0.760);
+// Paleta "neón fluorescente" — para nodos pulsantes de altas frecuencias.
+vec3 neonPalette(float t) {
+    vec3 magenta = vec3(1.00, 0.15, 0.85);
+    vec3 cyan    = vec3(0.10, 0.95, 1.00);
+    vec3 lime    = vec3(0.55, 1.00, 0.20);
+    vec3 orange  = vec3(1.00, 0.55, 0.10);
     float tt = fract(t);
-    if (tt < 0.25)      return mix(c0, c1, tt / 0.25);
-    else if (tt < 0.50) return mix(c1, c2, (tt - 0.25) / 0.25);
-    else if (tt < 0.75) return mix(c2, c3, (tt - 0.50) / 0.25);
-    else                return mix(c3, c4, (tt - 0.75) / 0.25);
+    if (tt < 0.333)       return mix(magenta, cyan,   tt * 3.0);
+    else if (tt < 0.666)  return mix(cyan,    lime,   (tt - 0.333) * 3.0);
+    else                  return mix(lime,    orange, (tt - 0.666) * 3.0);
+    // (por completitud: cierra el ciclo naturalmente con la siguiente frac)
 }
 
-vec3 accentColor(float t, float magnitude) {
-    vec3 icy = mix(vec3(0.46, 0.70, 1.00), vec3(0.82, 0.95, 1.00), t);
-    vec3 lilac = mix(vec3(0.24, 0.36, 0.82), vec3(0.55, 0.48, 0.96), t * 0.6);
-    vec3 c = mix(lilac, icy, 0.55 + 0.25 * sin(t * 6.28318 + u_time * 0.08));
-    return c * (0.45 + magnitude * 0.75);
+// ── Kaleidoscopio ───────────────────────────────────────────────────────────
+// Repliega el plano en N sectores angulares para crear simetría psicodélica.
+vec2 kaleidoscope(vec2 uv, float sectors, float t) {
+    float r = length(uv);
+    float a = atan(uv.y, uv.x);
+    // Sector angular
+    float sector = 6.28318 / sectors;
+    a = mod(a, sector);
+    a = abs(a - sector * 0.5); // mirror en cada sector
+    // Rotación global lenta con u_time
+    a += t * 0.06;
+    return vec2(cos(a), sin(a)) * r;
 }
 
-vec3 generateGeminiField(vec2 uv, float bassEnergy, float midEnergy, float highEnergy, float quality) {
-    float speed = 0.16 + bassEnergy * 0.45;
-    vec2 p = uv * vec2(1.10, 1.55);
-    p += vec2(0.0, 0.08);
+// ── Tonemap suave (Reinhard extendido, más colorido que filmic) ─────────────
+vec3 tonemap(vec3 x) {
+    // Reinhard con boost cromático
+    return x / (1.0 + x * 0.85);
+}
 
-    vec2 qCache;
-    float warpA = flowField(p * 1.15, u_time * speed, qCache);
-    float warpB = warpA;
-    if (quality > 0.7) {
-        warpB = flowField((p + vec2(2.7, -1.9)) * 1.95, u_time * (speed * 1.55 + highEnergy * 0.25), qCache);
-    }
-    float field = mix(warpA, warpB, 0.42);
-
-    vec3 deepBase = mix(
-        vec3(0.004, 0.008, 0.018),
-        geminiPalette(0.12 + field * 0.38 + u_time * 0.008),
-        0.40 + midEnergy * 0.10
+// ── Aberración cromática ────────────────────────────────────────────────────
+// Desplaza R/G/B ligeramente hacia afuera desde el centro → brillos irisados.
+vec3 chromaticAberration(vec2 uv, float intensity, vec3 baseColor) {
+    vec2 dir = uv;
+    float dist = length(uv);
+    vec3 shift = vec3(
+        dist * intensity * 0.008,
+        0.0,
+       -dist * intensity * 0.008
     );
+    // Retorna el color base modulado por el desplazamiento (aproximación
+    // pantalla-espacio sin sample de textura, seguro en shader procedural).
+    return baseColor + shift * baseColor.gbr;
+}
 
-    vec2 glowPos = vec2(0.0, -0.78);
-    float bottomGlow = exp(-length((uv - glowPos) * vec2(1.15, 2.35)) * (2.8 - bassEnergy * 0.9));
-    vec3 glowColor = mix(vec3(0.03, 0.08, 0.20), vec3(0.18, 0.62, 0.95), 0.58 + 0.20 * field);
+// ── Campo psicodélico principal ─────────────────────────────────────────────
+vec3 generatePsychedelicField(vec2 uv, float bass, float mids, float highs) {
+    // Sectores caleidoscópicos: 6 en bajo quality, 12 en alto, modulado por bass
+    float sectors = (u_quality > 0.7) ? (8.0 + bass * 4.0) : 6.0;
+    vec2 kuv = kaleidoscope(uv * 1.4, sectors, u_time);
 
-    float deepHalo = exp(-length((uv - vec2(0.0, -0.95)) * vec2(0.85, 1.85)) * 1.35);
-    vec3 deepHaloCol = vec3(0.02, 0.09, 0.22);
+    // Field warpeado, animado
+    float field = warpedField(kuv * 1.2, u_time, bass, mids, highs);
 
-    int auroraOctaves = (quality > 0.7) ? 5 : 3;
-    float veil = fbm(vec2(uv.x * 1.3, uv.y * 0.55 + 1.5), auroraOctaves) * 
-                 (0.5 + 0.5 * sin(u_time * (0.10 + midEnergy * 0.20)));
-    float auroraShape = smoothstep(0.26, 0.86, veil);
-    auroraShape *= smoothstep(-0.92, -0.18, uv.y) * (1.0 - smoothstep(0.10, 0.88, uv.y));
-    auroraShape *= 0.24 + highEnergy * 0.12;
-    vec3 auroraColor = mix(vec3(0.02, 0.12, 0.24), vec3(0.12, 0.42, 0.72), auroraShape + 0.15);
+    // Color IRIS que rota con el tiempo + reacciona a bajos
+    float hue = field * 1.15 + u_time * 0.045 + bass * 0.32;
+    vec3 baseColor = iridescent(hue);
 
-    float wave = sin(uv.x * 7.5 + field * 6.0 - u_time * (0.16 + bassEnergy * 0.50));
-    float waveMask = exp(-abs(uv.y + 0.38) * 7.0) * (0.5 + 0.5 * wave);
-    vec3 waveColor = vec3(0.05, 0.18, 0.34) * waveMask * (0.18 + bassEnergy * 0.20);
+    // Segunda capa: field diferente para dar profundidad
+    float field2 = warpedField(kuv * 2.3 + vec2(3.7, 1.9), u_time * 1.35, bass, mids, highs);
+    vec3 layerColor = iridescent(field2 * 0.85 - u_time * 0.028 + mids * 0.42);
 
-    float upperMist = exp(-abs(uv.y - 0.46) * 3.0) * (0.28 + 0.22 * warpB);
-    vec3 mistColor = vec3(0.012, 0.026, 0.055) * upperMist;
+    // Combinar por energía media
+    vec3 color = mix(baseColor, layerColor, 0.42 + 0.22 * sin(u_time * 0.35));
 
-    vec3 color = deepBase;
-    color += deepHaloCol * deepHalo * (0.50 + bassEnergy * 0.55);
-    color += glowColor * bottomGlow * (0.85 + bassEnergy * 0.65);
-    color += auroraColor * auroraShape;
-    color += waveColor;
-    color += mistColor;
+    // Boost de saturación con bajos — el "trip"
+    float sat = 1.0 + bass * 0.75;
+    float lum = dot(color, vec3(0.299, 0.587, 0.114));
+    color = mix(vec3(lum), color, sat);
 
-    float core = exp(-dot(uv - vec2(0.0, -0.64), uv - vec2(0.0, -0.64)) * (8.5 - bassEnergy * 2.5));
-    color += vec3(0.03, 0.16, 0.30) * core * (0.65 + bassEnergy * 0.40);
+    // Ondas concéntricas de bajos (respiración)
+    float r = length(uv);
+    float breath = sin(r * 12.0 - u_time * 2.5 + bass * 8.0) * 0.5 + 0.5;
+    breath *= exp(-r * 0.9); // atenúa en los bordes
+    color += neonPalette(u_time * 0.12 + bass * 0.4) * breath * (0.10 + bass * 0.30);
+
+    // "Auroras" filamentosas horizontales — moduladas por medios
+    float aurora = sin(uv.x * 4.0 + field * 5.0 + u_time * 0.7) *
+                   sin(uv.y * 2.5 - u_time * 0.35) * 0.5 + 0.5;
+    aurora *= exp(-abs(uv.y) * 1.6);
+    aurora *= smoothstep(0.0, 1.0, mids);
+    color += iridescent(u_time * 0.08 + aurora * 0.9) * aurora * 0.35;
+
+    // Vignette psicodélico invertido: bordes más oscuros con matiz púrpura
+    float vig = 1.0 - smoothstep(0.55, 1.35, length(uv * vec2(0.95, 1.05)));
+    color *= mix(vec3(0.35, 0.15, 0.55), vec3(1.0), vig);
+
+    // Fondo base para evitar zonas totalmente negras
+    color += vec3(0.020, 0.008, 0.040) * (1.0 - vig);
 
     return color;
 }
 
-void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
-    vec3 V = vec3(0.0, 0.0, 1.0);
-    vec3 L = normalize(vec3(0.28, 0.58, 0.76));
-
-    float bassEnergy = 0.0;
-    for (int i = 0; i < 4; ++i) bassEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
-    bassEnergy *= 0.25;
-    bassEnergy = clamp(bassEnergy, 0.0, 1.4);
-
-    float midEnergy = 0.0;
-    for (int i = 4; i < 9; ++i) midEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
-    midEnergy *= 0.20;
-    midEnergy = clamp(midEnergy, 0.0, 1.4);
-
-    float highEnergy = 0.0;
-    for (int i = 9; i < 13; ++i) highEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
-    highEnergy *= 0.25;
-    highEnergy = clamp(highEnergy, 0.0, 1.4);
-
-    vec3 color = generateGeminiField(uv, bassEnergy, midEnergy, highEnergy, u_quality);
-
+// ── Nodos orbitales (13 bandas del bridge) ──────────────────────────────────
+vec3 renderBandNodes(vec2 uv, float baseTime) {
     int nodeCount = (u_quality > 0.7) ? 13 : 8;
+    vec3 nodeGlow = vec3(0.0);
     float sparkAccum = 0.0;
 
+    // Cada banda gira en una órbita distinta con una fase distinta
     for (int i = 0; i < 13; ++i) {
         if (i >= nodeCount) break;
 
         float band = mix(u_bands_prev[i], u_bands[i], u_frame_phase);
-        band = clamp(band, 0.0, 1.5);
+        band = clamp(band, 0.0, 1.8);
         float t = float(i) / 12.0;
 
-        float layer = mix(0.14, 0.82, t);
-        float drift = u_time * (0.045 + 0.020 * t);
-        float angle = t * 6.28318 * 1.55 + drift;
-        vec2 nodePos = vec2(cos(angle) * (0.10 + layer * 0.36), -0.30 + layer * 0.76 + sin(drift + t * 9.0) * 0.04);
-        nodePos.x += sin(u_time * 0.10 + t * 17.0) * 0.05;
+        // Órbita: radio depende de la frecuencia (bajos al centro, altos afuera)
+        float radius = 0.15 + t * 0.55;
+        // Velocidad angular: bandas altas rotan más rápido
+        float angSpeed = 0.12 + t * 0.45;
+        // Fase inicial distinta por banda
+        float angle = t * 6.28318 * 1.7 + baseTime * angSpeed + sin(baseTime * 0.3 + t * 9.0);
+
+        vec2 nodePos = vec2(cos(angle), sin(angle)) * radius;
+        // "Wobble" psicodélico
+        nodePos += 0.06 * vec2(
+            sin(baseTime * 0.7 + t * 12.0),
+            cos(baseTime * 0.55 - t * 7.5)
+        );
 
         float d = length(uv - nodePos);
-        float sparkSharpness = max(160.0, 240.0 - band * 60.0);
-        float haloSharpness  = max(18.0,  28.0  - band * 6.0);
+        // Spark núcleo — muy nítido
+        float sparkSharpness = max(120.0, 260.0 - band * 90.0);
         float spark = exp(-d * d * sparkSharpness);
+        // Halo suave — se expande con la energía de la banda
+        float haloSharpness  = max(10.0, 24.0 - band * 8.0);
         float halo  = exp(-d * d * haloSharpness) * band;
+        // Anillo (ring) alrededor del nodo — se expande con la banda
+        float ringR = 0.02 + band * 0.05;
+        float ring = exp(-abs(d - ringR) * 45.0) * band * 0.55;
 
-        vec2 warp = (uv - nodePos) * rot(u_time * 0.06 + t * 4.0);
-        vec3 N = normalize(vec3(warp.x * 4.0, warp.y * 4.0, 1.0));
+        // Color: bajos = magenta/rojo, medios = verde/amarillo, altos = cyan/violeta
+        vec3 nodeColor = neonPalette(t + baseTime * 0.05);
 
-        vec3 spec = shadeGlassNode(N, V, L, u_quality);
-        vec3 tint = accentColor(t, band);
-
-        color += tint * spark * (0.28 + band * 0.55);
-        color += tint * halo  * 0.16;
-        color += spec * tint * spark * 0.55;
+        nodeGlow += nodeColor * spark * (0.35 + band * 0.85);
+        nodeGlow += nodeColor * halo  * 0.25;
+        nodeGlow += nodeColor * ring;
 
         if (i >= 9) sparkAccum += spark * band;
     }
 
-    color += vec3(0.35, 0.60, 0.95) * (sparkAccum * 0.08);
+    // Acumulación de brillo blanco en los altos (efecto "estrellas")
+    nodeGlow += vec3(1.0, 0.95, 0.85) * (sparkAccum * 0.12);
 
-    float vignette = smoothstep(1.30, 0.18, length(uv * vec2(0.92, 1.10)));
-    color *= mix(0.52, 1.0, vignette);
+    return nodeGlow;
+}
 
-    color = tonemap_filmic(color * 1.18);
-    color = pow(max(color, 0.0), vec3(0.90));
+// ── Main ────────────────────────────────────────────────────────────────────
+void main() {
+    // uv centrado, aspect-corrected
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+
+    // Bajos: 4 primeras bandas
+    float bassEnergy = 0.0;
+    for (int i = 0; i < 4; ++i) bassEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+    bassEnergy *= 0.25;
+    bassEnergy = clamp(bassEnergy, 0.0, 1.5);
+
+    // Medios: bandas 4..8
+    float midEnergy = 0.0;
+    for (int i = 4; i < 9; ++i) midEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+    midEnergy *= 0.20;
+    midEnergy = clamp(midEnergy, 0.0, 1.5);
+
+    // Altos: bandas 9..12
+    float highEnergy = 0.0;
+    for (int i = 9; i < 13; ++i) highEnergy += mix(u_bands_prev[i], u_bands[i], u_frame_phase);
+    highEnergy *= 0.25;
+    highEnergy = clamp(highEnergy, 0.0, 1.5);
+
+    // Rotación global del plano — modulada por bajos (mareo psicodélico)
+    float globalRot = u_time * 0.035 + bassEnergy * 0.18;
+    uv = rot(globalRot) * uv;
+
+    // Zoom respiratorio con medios
+    float zoom = 1.0 - midEnergy * 0.08 * (0.5 + 0.5 * sin(u_time * 0.9));
+    uv *= zoom;
+
+    // Campo psicodélico base
+    vec3 color = generatePsychedelicField(uv, bassEnergy, midEnergy, highEnergy);
+
+    // Nodos por banda
+    color += renderBandNodes(uv, u_time);
+
+    // Aberración cromática con altos
+    color = chromaticAberration(uv, highEnergy * 1.4, color);
+
+    // Boost final de contraste con bajos
+    float contrast = 1.0 + bassEnergy * 0.30;
+    color = (color - 0.5) * contrast + 0.5;
+
+    // Tonemap y gamma
+    color = tonemap(color * 1.35);
+    color = pow(max(color, 0.0), vec3(0.88));
 
     fragColor = vec4(color, 1.0);
 }
