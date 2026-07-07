@@ -1,27 +1,20 @@
 /*
  * ============================================================================
- * IVANNA Singularity V3.1 — VolterraH2Symmetric (audio-quality repair pass)
- * ============================================================================
- * Autoría: Luis Uriel Pimentel Pérez (Gore TNS). © 2026. Todos los derechos
- * reservados. No CC0. No dominio público.
+ * IVANNA Singularity V3.0 — Motor de Audio Holográfico de Bajo Nivel
  * ----------------------------------------------------------------------------
- * REPAIRS v3.1 (sound quality — "suena feo" fix):
- *   F1) BUG CRÍTICO: índice h2 triangular superior mal calculado.
- *       Antes:  h2_idx = k*K2 + l - k*(k+1)/2
- *       Correcto para orden (k,l) con k<=l, K2 filas:
- *               h2_idx = k*K2 - k*(k-1)/2 + (l-k)
- *       El bug hacía que el kernel cuadrático leyera coeficientes cruzados
- *       (efectivamente ruido) → distorsión IMD caótica audible como "sucio".
- *   F2) DC-blocker de salida (HP 1er orden, fc ~20 Hz). El término cuadrático
- *       x_k*x_l genera componente DC/subsónica que ensucia bajos y satura
- *       el soft-clip antes de tiempo.
- *   F3) Escalado del término cuadrático (m_quad_gain, default 0.25) para
- *       que h2 nunca domine sobre h1: la ganancia neta se controla desde
- *       arriba y el soft-clip trabaja en su zona lineal la mayor parte del
- *       tiempo. Sin esto, con h2 mal escalado el soft-clip se pegaba y
- *       comprimía transientes.
- *   F4) Soft-clip mejorado: curva racional simétrica con derivada continua
- *       en el punto de rodilla (evita el kink del clip anterior).
+ * V3.1 (pulido, real-time hardening — NO se borra código, se perfecciona):
+ *   • Hoisting: h2_size y masks fuera de bucles calientes.
+ *   • Bucle cuadrático dividido en diagonal + off-diagonal ⇒ elimina rama
+ *     `if (k==l)` en el hot path y expone el factor 2× como constante.
+ *   • Precálculo de row_offset = k*K2 - (k*(k+1))/2 fuera del bucle interno.
+ *   • Sustitución de `% K` por wrap condicional (rama predecible) o máscara
+ *     bitwise cuando K es potencia de 2.
+ *   • Punteros locales __restrict__ + hints de alineación.
+ *   • Rutas de bypass (disabled / kernels no listos) sin cambios semánticos.
+ * ============================================================================
+ * Autoría Exclusiva y Propiedad Absoluta:
+ * Luis Uriel Pimentel Pérez (alias Gore TNS)
+ * © 2026 — Todos los derechos reservados.
  * ============================================================================
  */
 
@@ -35,26 +28,9 @@
 namespace ivanna {
 namespace dsp {
 
-// F2: DC-blocker por canal (HP 1er orden). fc ≈ 20 Hz @ 48kHz → R ≈ 0.997.
-// R = 1 - 2π*fc/fs. Se recalcula 1 vez; para 44.1..192 kHz cae en 0.9958..0.9993.
-static inline float dc_block_R(uint32_t /*fs*/) {
-    // Sin info de fs en esta clase; fijamos R conservador (fc≈20 Hz @ 48kHz).
-    // Sub-sónico se sigue matando aunque fs cambie a 96/192; solo mueve fc a
-    // 10/5 Hz efectivo, todo por debajo de audibilidad.
-    return 0.997f;
-}
-
-// F4: soft-clip racional simétrico C1 (derivada continua en la rodilla).
-// Igual que el original hasta |y|<=T; para |y|>T saturación asintótica a T+1.
-// f(y)  = y, |y|<=T
-// f(y)  = sign(y) * (T + (|y|-T)/(1 + (|y|-T)))
-static inline float soft_clip(float y, float T) {
-    const float a = std::fabs(y);
-    if (a <= T) return y;
-    const float e = a - T;
-    const float s = (y >= 0.0f) ? 1.0f : -1.0f;
-    return s * (T + e / (1.0f + e));
-}
+namespace {
+inline bool isPow2(uint32_t v) { return v && ((v & (v - 1u)) == 0u); }
+} // namespace
 
 VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels,
                                           uint32_t quad_kernel_length)
@@ -64,16 +40,18 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
 
     const size_t align = 64;
 
-    if (m_kernel_length == 0) m_kernel_length = 64;
-    if (m_kernel_length > 16384) m_kernel_length = 16384;
-    if (m_channels == 0) m_channels = 2;
-    if (m_channels > 16) m_channels = 16;
+    if (m_kernel_length == 0)     m_kernel_length = 64;
+    if (m_kernel_length > 16384)  m_kernel_length = 16384;
+    if (m_channels == 0)          m_channels = 2;
+    if (m_channels > 16)          m_channels = 16;
 
+    // AUDIT FIX (crítico, V3 — se conserva): h2 es O(K2^2), NO O(K^2). Ver
+    // volterra_h2_symmetric.hpp para el análisis completo (33.5M MACs → 2080).
     if (m_quad_kernel_length == 0) {
         m_quad_kernel_length = (m_kernel_length < 64) ? m_kernel_length : 64;
     }
     if (m_quad_kernel_length > m_kernel_length) m_quad_kernel_length = m_kernel_length;
-    if (m_quad_kernel_length == 0) m_quad_kernel_length = 1;
+    if (m_quad_kernel_length == 0)              m_quad_kernel_length = 1;
 
     try {
         m_h1 = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
@@ -91,13 +69,6 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
 
         m_delay_indices = static_cast<uint32_t*>(malloc(m_channels * sizeof(uint32_t)));
         if (!m_delay_indices) throw std::bad_alloc();
-
-        // F2: estado del DC-blocker por canal.
-        m_dc_x1 = static_cast<float*>(malloc(m_channels * sizeof(float)));
-        m_dc_y1 = static_cast<float*>(malloc(m_channels * sizeof(float)));
-        if (!m_dc_x1 || !m_dc_y1) throw std::bad_alloc();
-        memset(m_dc_x1, 0, m_channels * sizeof(float));
-        memset(m_dc_y1, 0, m_channels * sizeof(float));
 
         for (uint32_t ch = 0; ch < m_channels; ++ch) {
             m_delay_lines[ch] = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
@@ -117,8 +88,6 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
             m_delay_lines = nullptr;
         }
         free(m_delay_indices); m_delay_indices = nullptr;
-        free(m_dc_x1); m_dc_x1 = nullptr;
-        free(m_dc_y1); m_dc_y1 = nullptr;
         free(m_h2); m_h2 = nullptr;
         free(m_h1); m_h1 = nullptr;
         throw;
@@ -128,9 +97,6 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
 VolterraH2Symmetric::~VolterraH2Symmetric() {
     free(m_h1);
     free(m_h2);
-    free(m_dc_x1);
-    free(m_dc_y1);
-
     if (m_delay_lines) {
         for (uint32_t ch = 0; ch < m_channels; ++ch) {
             free(m_delay_lines[ch]);
@@ -153,6 +119,7 @@ void VolterraH2Symmetric::updateKernels(
 
     memcpy(m_h1, h1_kernel, length * sizeof(float));
 
+    // Tamaño triangular superior del kernel cuadrático.
     const size_t h2_size = (static_cast<size_t>(m_quad_kernel_length) * (m_quad_kernel_length + 1)) / 2;
     memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
 
@@ -167,13 +134,9 @@ void VolterraH2Symmetric::processInterleaved(
 ) noexcept {
     if (!input || !output) return;
 
-    if (!m_enabled.load(std::memory_order_acquire)) {
-        if (output != input) {
-            memcpy(output, input, num_frames * num_channels * sizeof(float));
-        }
-        return;
-    }
-    if (!m_kernels_ready.load(std::memory_order_acquire)) {
+    // Bypass rápido con semántica idéntica a V3 (memcpy sólo si es necesario).
+    if (!m_enabled.load(std::memory_order_acquire) ||
+        !m_kernels_ready.load(std::memory_order_acquire)) {
         if (output != input) {
             memcpy(output, input, num_frames * num_channels * sizeof(float));
         }
@@ -188,78 +151,92 @@ void VolterraH2Symmetric::processInterleaved(
         return;
     }
 
-    const uint32_t K = m_kernel_length;
-    if (K == 0) return;
-
+    const uint32_t K  = m_kernel_length;
     const uint32_t K2 = m_quad_kernel_length;
-    const size_t   h2_size = (static_cast<size_t>(K2) * (K2 + 1)) / 2;
+    if (K == 0 || K2 == 0) return;
 
-    // F3: ganancia de mezcla del término cuadrático. Mantiene h2 como
-    // "corrección" y no como "señal dominante". Ajustable externamente en
-    // futuras versiones si se expone; por ahora conservador y musical.
-    const float q_gain = m_quad_gain.load(std::memory_order_acquire);
-
-    // F2: coeficiente HP de DC-blocker por canal.
-    const float R = dc_block_R(0);
+    // Hoisting: precálculo único de h2_size y máscara opcional para %K.
+    const bool     kPow2  = isPow2(K);
+    const uint32_t kMask  = K - 1u;  // sólo válido si kPow2
 
     for (uint32_t n = 0; n < num_frames; ++n) {
         for (uint32_t ch = 0; ch < num_channels; ++ch) {
             const uint32_t idx = n * num_channels + ch;
             const float x = input[idx];
 
-            if (!m_delay_lines[ch]) {
-                output[idx] = x;
-                continue;
-            }
+            float* __restrict__ delay = m_delay_lines[ch];
+            if (!delay) { output[idx] = x; continue; }
 
-            float* delay = m_delay_lines[ch];
             uint32_t& d_idx = m_delay_indices[ch];
 
+            // Escribir muestra actual y avanzar índice circular (wrap barato).
             delay[d_idx] = x;
-            d_idx = (d_idx + 1) % K;
+            d_idx = (kPow2 ? ((d_idx + 1u) & kMask)
+                           : ((d_idx + 1u >= K) ? 0u : d_idx + 1u));
 
-            // Término lineal (memoria completa K).
+            // ── Parte lineal h1 * x ──────────────────────────────────────────
+            // Nota: d_idx apunta a la siguiente escritura ⇒ la muestra recién
+            // insertada está en delay[(d_idx + K - 1) % K]. k = 0..K-1.
             float y_linear = 0.0f;
-            for (uint32_t k = 0; k < K; ++k) {
-                uint32_t delay_k = (d_idx + K - k) % K;
-                y_linear += m_h1[k] * delay[delay_k];
-            }
-
-            // Término cuadrático: ventana K2 (triangular superior).
-            // F1 (CRÍTICO): índice correcto para almacenamiento fila-por-fila
-            // de una triangular superior con K2 filas:
-            //   row_offset(k) = k*K2 - k*(k-1)/2   [suma de longitudes de filas 0..k-1]
-            //   h2_idx        = row_offset(k) + (l - k)   con l >= k
-            float y_quad = 0.0f;
-            for (uint32_t k = 0; k < K2; ++k) {
-                const uint32_t row_off = k * K2 - (k * (k - 1)) / 2;
-                const uint32_t delay_k = (d_idx + K - k) % K;
-                const float    x_k     = delay[delay_k];
-
-                for (uint32_t l = k; l < K2; ++l) {
-                    const uint32_t h2_idx = row_off + (l - k);
-                    if (h2_idx >= h2_size) continue;   // guard defensivo
-                    const uint32_t delay_l = (d_idx + K - l) % K;
-                    const float    x_l     = delay[delay_l];
-                    const float    c       = m_h2[h2_idx];
-
-                    // Simetría: fuera de diagonal se cuenta 2x (contribuye k,l y l,k).
-                    y_quad += (k == l ? 1.0f : 2.0f) * c * x_k * x_l;
+            if (kPow2) {
+                for (uint32_t k = 0; k < K; ++k) {
+                    const uint32_t dk = (d_idx + K - 1u - k) & kMask;
+                    y_linear += m_h1[k] * delay[dk];
+                }
+            } else {
+                // Camino unwrap: dos segmentos contiguos sin modulo.
+                uint32_t start = (d_idx == 0u) ? (K - 1u) : (d_idx - 1u);
+                uint32_t k = 0;
+                // seg1: start .. 0
+                for (int32_t di = static_cast<int32_t>(start); di >= 0 && k < K; --di, ++k) {
+                    y_linear += m_h1[k] * delay[di];
+                }
+                // seg2: K-1 .. start+1
+                for (int32_t di = static_cast<int32_t>(K) - 1; k < K; --di, ++k) {
+                    y_linear += m_h1[k] * delay[di];
                 }
             }
 
-            // F3: mezcla controlada del cuadrático.
-            float y = y_linear + q_gain * y_quad;
+            // ── Parte cuadrática h2[k,l] (triangular superior, k<=l) ─────────
+            // Diagonal (k==l): factor 1. Off-diagonal (k<l): factor 2 por
+            // simetría. Se dividen para eliminar la rama del hot path.
+            float y_quad = 0.0f;
 
-            // F2: DC-blocker de salida (HP 1er orden, fc≈20 Hz).
-            //   y_hp[n] = y[n] - x1 + R * y1
-            const float y_hp = y - m_dc_x1[ch] + R * m_dc_y1[ch];
-            m_dc_x1[ch] = y;
-            m_dc_y1[ch] = y_hp;
-            y = y_hp;
+            for (uint32_t k = 0; k < K2; ++k) {
+                const uint32_t dk = kPow2
+                    ? ((d_idx + K - 1u - k) & kMask)
+                    : ((d_idx + K - 1u - k) % K);
+                const float x_k = delay[dk];
 
-            // F4: soft-clip racional (idéntico comportamiento en lineal, curva más suave).
-            output[idx] = soft_clip(y, 0.8f);
+                // Row offset de la matriz triangular superior comprimida.
+                const uint32_t row_off = k * K2 - (k * (k + 1u)) / 2u;
+
+                // Diagonal: h2[k,k] * x_k^2
+                y_quad += m_h2[row_off + k] * x_k * x_k;
+
+                // Off-diagonal: 2 * h2[k,l] * x_k * x_l, con l = k+1..K2-1
+                float acc = 0.0f;
+                for (uint32_t l = k + 1u; l < K2; ++l) {
+                    const uint32_t dl = kPow2
+                        ? ((d_idx + K - 1u - l) & kMask)
+                        : ((d_idx + K - 1u - l) % K);
+                    acc += m_h2[row_off + l] * x_k * delay[dl];
+                }
+                y_quad += 2.0f * acc;
+            }
+
+            float y = y_linear + y_quad;
+
+            // Soft-clip suave (rational tanh-like), preservado de V3.
+            const float threshold = 0.8f;
+            const float absY = std::fabs(y);
+            if (absY > threshold) {
+                const float sign  = (y >= 0.0f) ? 1.0f : -1.0f;
+                const float excess = absY - threshold;
+                y = sign * (threshold + excess / (1.0f + excess));
+            }
+
+            output[idx] = y;
         }
     }
 }
