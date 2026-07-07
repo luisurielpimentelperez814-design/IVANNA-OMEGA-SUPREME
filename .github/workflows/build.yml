@@ -26,6 +26,35 @@ env:
 jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
+# JOB 0 — DSP native unit tests (host-side, sin NDK, ~1 min)
+#
+# AUDIT ADD: cpp/tests/ (GoogleTest + CTest, con perfiles ASan/TSan) ya
+# existía en el repo con 3 suites de estabilidad numérica del DSP real
+# (gammatone, denormals, pipeline EQ/compresor/exciter/widener/gain), pero
+# ningún job de este workflow las compilaba ni ejecutaba — vivían en disco
+# sin correr nunca en CI. Se agregan aquí como gate rápido e independiente
+# del build de Android: no requiere NDK/SDK, corre en segundos, y da señal
+# de "¿el DSP sigue siendo numéricamente estable?" mucho antes de esperar
+# los ~10 min del build completo con NDK.
+# ─────────────────────────────────────────────────────────────────────────────
+  test-native-dsp:
+    name: DSP Native Tests (host, CTest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Release)
+        run: |
+          cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-tests -j
+
+      - name: Run tests
+        run: ctest --test-dir build-tests --output-on-failure
+
+# ─────────────────────────────────────────────────────────────────────────────
 # JOB 1 — APK (NDK C++ + Kotlin/Compose)
 # ─────────────────────────────────────────────────────────────────────────────
   build-apk:
