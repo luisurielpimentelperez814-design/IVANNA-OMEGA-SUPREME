@@ -177,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                 initialNpeHrtf = parameterStore.isNpeHrtfEnabled(),
                                 initialNpeCochlear = parameterStore.isNpeCochlearEnabled(),
                                 initialNpeAdapt = parameterStore.isNpeAdaptEnabled(),
+                                initialNpeManifold = parameterStore.isNpeManifoldEnabled(),
                                 initialSpatialEnabled = parameterStore.isSpatialEngineEnabled(),
                                 // CABLEADO-FIX: Exciter/EQ/Width solo llamaban a audioEngine.set*(),
                                 // que escribe en gState de audio_orchestrator.cpp. Ese motor nunca
@@ -321,6 +322,10 @@ class MainActivity : ComponentActivity() {
                                     parameterStore.setNpeCochlearEnabled(cochlear)
                                     parameterStore.setNpeAdaptEnabled(adapt)
                                     IvannaNpeEngine.setEngineFlags(hrtf, cochlear, adapt)
+                                },
+                                onNpeManifoldChange = { enabled ->
+                                    parameterStore.setNpeManifoldEnabled(enabled)
+                                    IvannaNpeEngine.isManifoldEnabled = enabled
                                 },
                                 onOpenVisualizer = { showVisualizer = true },
                 onSpatialEnabledChange = { enabled ->

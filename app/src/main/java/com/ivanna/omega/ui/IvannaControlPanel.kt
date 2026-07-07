@@ -82,6 +82,8 @@ fun IvannaControlPanel(
     initialNpeHrtf: Boolean = true,
     initialNpeCochlear: Boolean = true,
     initialNpeAdapt: Boolean = true,
+    // NUEVO: motor coclear completo (Volterra H2) — opt-in, off por defecto
+    initialNpeManifold: Boolean = false,
     initialSpatialEnabled: Boolean = false,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
@@ -103,6 +105,7 @@ fun IvannaControlPanel(
     onNpeMasterGainChange: (Float) -> Unit = {},
     onNpeAgcChange: (Float, Float) -> Unit = { _, _ -> },
     onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
+    onNpeManifoldChange: (Boolean) -> Unit = {},
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {}
 ) {
@@ -132,6 +135,7 @@ fun IvannaControlPanel(
     var npeHrtf by remember { mutableStateOf(initialNpeHrtf) }
     var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
     var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
+    var npeManifold by remember { mutableStateOf(initialNpeManifold) }
     var npeGenre by remember { mutableStateOf("\u2014") }
     var npeRmsDb by remember { mutableFloatStateOf(-60f) }
     var npeAgcGainDb by remember { mutableFloatStateOf(0f) }
@@ -476,6 +480,12 @@ fun IvannaControlPanel(
                 FlagToggle("ADAPT/LIF", npeAdapt, PhosphorGreen, Modifier.weight(1f)) {
                     npeAdapt = it; onNpeFlagsChange(npeHrtf, npeCochlear, it)
                 }
+            }
+            Spacer(Modifier.height(6.dp))
+            // NUEVO: motor coclear completo (Volterra H2 + upsampling) — opt-in,
+            // en paralelo, no reemplaza el toggle COCLEAR (envBank_) de arriba.
+            FlagToggle("MANIFOLD (Volterra H2)", npeManifold, AuroraCyan, Modifier.fillMaxWidth()) {
+                npeManifold = it; onNpeManifoldChange(it)
             }
         }
 

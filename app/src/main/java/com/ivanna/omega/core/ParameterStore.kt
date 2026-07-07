@@ -38,6 +38,7 @@ class ParameterStore(context: Context) {
         private const val KEY_NPE_HRTF = "npe_hrtf_enabled"
         private const val KEY_NPE_COCHLEAR = "npe_cochlear_enabled"
         private const val KEY_NPE_ADAPT = "npe_adapt_enabled"
+        private const val KEY_NPE_MANIFOLD = "npe_manifold_enabled"
     }
 
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
@@ -75,6 +76,9 @@ class ParameterStore(context: Context) {
 
     fun isNpeAdaptEnabled(): Boolean = prefs.getBoolean(KEY_NPE_ADAPT, true)
     fun setNpeAdaptEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_ADAPT, enabled).apply()
+
+    fun isNpeManifoldEnabled(): Boolean = prefs.getBoolean(KEY_NPE_MANIFOLD, false)
+    fun setNpeManifoldEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_MANIFOLD, enabled).apply()
 
     fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESH, 0.5f)
     fun setCompThreshold(value: Float) = prefs.edit().putFloat(KEY_COMP_THRESH, value).apply()
