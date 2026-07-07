@@ -14,9 +14,10 @@ done
 echo "[$(date '+%H:%M:%S')] service: boot_completed → reset contador" >> "$LOG"
 echo "0" > /data/adb/ivanna_omega_boot_counter
 
-# Verificar que audioserver está vivo (proceso u:r:audioserver:s0)
-if pgrep -f audioserver >/dev/null 2>&1; then
-  echo "[$(date '+%H:%M:%S')] service: audioserver activo ✓" >> "$LOG"
+# Verificar que audioserver está vivo (tomando el primer PID válido)
+AUDIO_PID=$(pidof audioserver 2>/dev/null | awk '{print $1}')
+if [ -n "$AUDIO_PID" ]; then
+  echo "[$(date '+%H:%M:%S')] service: audioserver activo ✓ pid=$AUDIO_PID" >> "$LOG"
 else
   echo "[$(date '+%H:%M:%S')] service: ⚠ audioserver NO activo — posible conflicto con overlay" >> "$LOG"
 fi

@@ -22,18 +22,19 @@ if [ ! -f "$LIB_PATH" ]; then
 fi
 
 # Verificación 2: ¿audioserver lo ha mapeado?
-# FIX v1.5: busca libomega_effect.so, NO libivanna_fusion
-LOADED=$(cat /proc/$(pidof audioserver)/maps 2>/dev/null | grep "$LIB_NAME")
-if [ -n "$LOADED" ]; then
+# FIX v1.6: evita expandir /proc//maps cuando audioserver aún no existe.
+# Usa solo el primer PID y grep -q sobre el maps real, sin subshells inútiles.
+AUDIO_PID=$(pidof audioserver 2>/dev/null | awk '{print $1}')
+if [ -n "$AUDIO_PID" ] && grep -q "$LIB_NAME" "/proc/$AUDIO_PID/maps" 2>/dev/null; then
     echo "[IVANNA-OMEGA] DSP cargado correctamente por audioserver ✓" >> "$LOG"
     setprop ivanna.omega.status "active"
 else
-    echo "[IVANNA-OMEGA] WARNING: $LIB_NAME no detectado en audioserver. Reintentando..." >> "$LOG"
+    echo "[IVANNA-OMEGA] WARNING: $LIB_NAME no detectado en audioserver (pid=${AUDIO_PID:-none}). Reintentando..." >> "$LOG"
     sleep 2
 
     # Segundo intento
-    LOADED2=$(cat /proc/$(pidof audioserver)/maps 2>/dev/null | grep "$LIB_NAME")
-    if [ -n "$LOADED2" ]; then
+    AUDIO_PID=$(pidof audioserver 2>/dev/null | awk '{print $1}')
+    if [ -n "$AUDIO_PID" ] && grep -q "$LIB_NAME" "/proc/$AUDIO_PID/maps" 2>/dev/null; then
         echo "[IVANNA-OMEGA] DSP cargado en segundo intento ✓" >> "$LOG"
         setprop ivanna.omega.status "active"
     else
