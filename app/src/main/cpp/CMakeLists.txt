@@ -59,6 +59,10 @@ add_library(ivanna_omega SHARED
     evolutionary_kernel.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
 
+    # Motor coclear completo (Volterra H2 + upsampling polifásico) — opt-in
+    neuromorphic/volterra_h2_symmetric.cpp
+    neuromorphic/neuro_cochlear_manifold.cpp
+
     # System audio integration
     shm_hyperplane.cpp
     omega_daemon.cpp
