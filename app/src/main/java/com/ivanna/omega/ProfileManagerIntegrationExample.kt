@@ -108,7 +108,7 @@ object ProfileManagerUsageExample {
         
         // ── Opción H: Obtener notas de entrenamiento ────────────────────────
         val notes = profileManager.getTrainingNotes()
-        Log.d(TAG, notes)
+        Log.d(TAG, notes ?: "Sin notas de entrenamiento")
         
         // ── Opción I: Obtener perfil actual ────────────────────────────────
         val currentId = profileManager.getCurrentProfileId()
