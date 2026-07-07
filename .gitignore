@@ -16,7 +16,33 @@ local.properties
 # Logs / cache
 *.log
 
+# Build artifacts — deben ir a GitHub Releases, no al árbol fuente
 *.apk
+*.aab
 app/src/main/cpp/tests/build/
 app/src/main/cpp/tests/build-asan/
 app/src/main/cpp/tests/build-tsan/
+
+# ── Release artifacts que NO deben versionarse ────────────────────────────────
+# El repo tenía IVANNA-OMEGA-SUPREME-main (11).zip, -auditado.zip, -v1.6.zip
+# viviendo en la raíz (~1.2MB combinados). Se distribuyen por Releases +
+# artifacts del workflow build.yml — no por el tree.
+*.zip
+ivanna-omega-magisk.zip
+libomega_effect_arm64.so
+
+# Patches sueltos (git format-patch / diffs manuales) no deben commitearse
+# a main. Aplícalos, elimínalos, y deja el commit como registro histórico
+# — el .patch en el árbol es ruido y confunde a los reviewers.
+*.patch
+*.rej
+*.orig
+
+# CMake / native build detritus
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Native test binaries
+app/src/main/cpp/tests/build*/

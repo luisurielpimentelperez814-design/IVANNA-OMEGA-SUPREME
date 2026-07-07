@@ -278,6 +278,17 @@ class PlaybackCaptureService : Service() {
         // - Si AudioRecord se negocia a 96k/192k, hay mismatch → visualizer congela + glitches
         // - La solución correcta requiere reinicializar DSP en startCapture() (TODO)
         // - Por ahora: forzado a 48kHz donde REALMENTE está AudioFlinger
+        //
+        // AVISO DE CONSISTENCIA README ↔ CÓDIGO (audit v1.8.1):
+        //   El README anuncia "Cascada real de sample rate 192k → 96k → 48k".
+        //   Es cierto en `SystemAudioCapture` (otra ruta, ya validada con
+        //   AudioRecord.Builder+STATE_INITIALIZED) y en `UsbAudioProManager`
+        //   (USB OTG directo, 384kHz/32-bit real bypasando el mezclador).
+        //   Esta ruta (playback capture vía MediaProjection) está fijada a
+        //   48kHz por AudioFlinger — no por decisión de diseño — y el DSP
+        //   se inicializa con esa misma tasa. Cuando el TODO de reinicializar
+        //   DSP en startCapture() se cierre, este array vuelve a
+        //   [192000, 96000, 48000] y este comentario debe actualizarse.
         val candidateRates = intArrayOf(48000)
         var chosenRate = 48000
         var bufferSize = 0

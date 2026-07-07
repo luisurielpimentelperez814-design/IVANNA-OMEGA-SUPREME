@@ -16,16 +16,11 @@ import com.ivanna.omega.neuromorphic.PiLstmBridge
  */
 object OmegaEngine {
     private const val TAG = "IVANNA_OMEGA"
-    private var loaded = false
 
-    init {
-        try {
-            System.loadLibrary("ivanna_omega")
-            loaded = true
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Native lib unavailable for OmegaEngine: ${e.message}")
-        }
-    }
+    // NOTA (audit v1.8.1): la carga se delegó a NativeLibraryLoader para
+    // evitar tener 4-5 System.loadLibrary distintos en el proyecto.
+    // ensureLoaded() es idempotente y thread-safe.
+    private val loaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     fun init(context: Context) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

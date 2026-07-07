@@ -27,19 +27,21 @@ class AudioEngine {
         private const val BYTES_PER_FLOAT = 4
 
         init {
-            // FIX: AudioEngine cargaba "ivanna_jni" (libivanna_jni.so), que solo
-            // contiene un stub vacío (jni/ivanna_jni_stub.cpp) con una única
-            // función y mal nombrada. La implementación real de estas funciones
-            // (nativeInit, nativeSetExciter, nativeSetAntiDolbyScores, etc.) vive
-            // en audio_orchestrator.cpp, compilado dentro de libivanna_omega.so
+            // HISTÓRICO: AudioEngine cargaba "ivanna_jni" (libivanna_jni.so), que
+            // solo contiene un stub vacío (jni/ivanna_jni_stub.cpp). La
+            // implementación real de estas funciones (nativeInit,
+            // nativeSetExciter, nativeSetAntiDolbyScores, etc.) vive en
+            // audio_orchestrator.cpp, compilado dentro de libivanna_omega.so
             // (ver CMakeLists.txt: "# Audio orchestrator (JNI para AudioEngine.kt)").
-            // Cargar la librería equivocada garantizaba UnsatisfiedLinkError en
-            // CADA llamada nativa de esta clase.
-            try {
-                System.loadLibrary("ivanna_omega")
-                Log.d(TAG, "Librería ivanna_omega cargada")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "Error cargando ivanna_omega: ${e.message}")
+            // Cargar la librería equivocada garantizaba UnsatisfiedLinkError.
+            //
+            // audit v1.8.1: la carga se centralizó en NativeLibraryLoader
+            // (idempotente + thread-safe) para eliminar los 4–5
+            // System.loadLibrary distintos que había por el proyecto.
+            if (com.ivanna.omega.core.NativeLibraryLoader.ensureLoaded()) {
+                Log.d(TAG, "Librería ivanna_omega lista (via NativeLibraryLoader)")
+            } else {
+                Log.e(TAG, "Error cargando ivanna_omega — ver logs de NativeLibraryLoader")
             }
         }
 
