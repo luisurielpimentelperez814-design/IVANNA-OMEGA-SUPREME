@@ -337,7 +337,18 @@ class MainActivity : ComponentActivity() {
                             },
                             onSpatialEnabledChange = { enabled ->
                                 parameterStore.setSpatialEnabled(enabled)
-                                if (enabled) spatialEngineV2.start() else spatialEngineV2.stop()
+                                if (enabled) {
+                                    // Solo iniciar si permiso confirmado
+                                    if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO)
+                                        == PackageManager.PERMISSION_GRANTED) {
+                                        spatialEngineV2.start()
+                                    } else {
+                                        Log.w(TAG, "Permiso RECORD_AUDIO no confirmado — no iniciando SpatialAudioEngineV2")
+                                        parameterStore.setSpatialEnabled(false)
+                                    }
+                                } else {
+                                    spatialEngineV2.stop()
+                                }
                             },
                             onOpenVisualizer = { requestVisualizer() }
                         )
