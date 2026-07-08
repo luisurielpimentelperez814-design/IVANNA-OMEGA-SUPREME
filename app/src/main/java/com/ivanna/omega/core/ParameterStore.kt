@@ -58,6 +58,7 @@ class ParameterStore(context: Context) {
 
         // Motor Binaural (32 objetos)
         private const val KEY_SPATIAL_ENABLED = "spatial_enabled"
+        private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.3f)
@@ -136,6 +137,9 @@ class ParameterStore(context: Context) {
 
     fun isSpatialEnabled(): Boolean = prefs.getBoolean(KEY_SPATIAL_ENABLED, false)
     fun setSpatialEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_ENABLED, enabled).apply()
+
+    fun isSpatialInitPending(): Boolean = prefs.getBoolean(KEY_SPATIAL_INIT_PENDING, false)
+    fun setSpatialInitPending(pending: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_INIT_PENDING, pending).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()
