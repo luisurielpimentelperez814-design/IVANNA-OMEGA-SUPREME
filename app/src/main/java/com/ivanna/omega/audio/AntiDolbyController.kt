@@ -27,14 +27,38 @@ import kotlin.math.*
 class AntiDolbyController(private val context: Context) {
     companion object {
         private const val TAG = "AntiDolbyController"
-        
+
         // YAMNet espera 15600 samples @ 16kHz = 0.975s (≈1s útil)
         private const val YAMNET_INPUT_LENGTH = 15600
         private const val YAMNET_SAMPLE_RATE = 16000
-        
+
         // Thread de procesamiento dedicado (cada 100ms = tiempo real práctico)
         private const val CLASSIFICATION_INTERVAL_MS = 100L
+
+        // v3.1 PAR 2 tuning:
+        // Histéresis para evitar oscilación cerca de las fronteras (voz/música/bajos):
+        // una vez detectado un dominio, se necesita AT_ENTER para entrar,
+        // pero sólo AT_EXIT (menor) para salir. Con eso frenamos el chatter
+        // típico cuando la clasificación titubea entre 0.55 y 0.65.
+        private const val DOMINANT_AT_ENTER_SPEECH = 0.60f
+        private const val DOMINANT_AT_EXIT_SPEECH  = 0.48f
+        private const val DOMINANT_AT_ENTER_MUSIC  = 0.60f
+        private const val DOMINANT_AT_EXIT_MUSIC   = 0.48f
+        private const val DOMINANT_AT_ENTER_BASS   = 0.40f
+        private const val DOMINANT_AT_EXIT_BASS    = 0.30f
+
+        // Rampa suave: factor de mezcla exponencial (alpha) hacia el target.
+        // alpha=0.25 ≈ tiempo de ataque ~400ms con clasificación cada 100ms.
+        private const val PARAM_RAMP_ALPHA = 0.25f
     }
+
+    // v3.1 PAR 2: estado con histéresis y valores actuales (ramp) para
+    // suavizar los ajustes dinámicos de exciter/width/eqGain.
+    private enum class Domain { NONE, SPEECH, MUSIC, BASS }
+    private var currentDomain: Domain = Domain.NONE
+    private var curExciter: Float = 0.4f
+    private var curWidth: Float = 0.5f
+    private var curEqGain: Float = 0.0f
 
     private var yamnetClassifier: YamnetClassifier? = null
     private var audioEngine: AudioEngine? = null
@@ -113,7 +137,14 @@ class AntiDolbyController(private val context: Context) {
         isAntiDolbyEnabled = false
         classificationJob?.cancel()
         classificationJob = null
-        
+
+        // v3.1 PAR 2: al deshabilitar reseteamos histéresis + estado de ramp
+        // para que la próxima activación no arranque desde el último dominio.
+        currentDomain = Domain.NONE
+        curExciter = 0.4f
+        curWidth = 0.5f
+        curEqGain = 0.0f
+
         // Resetear scores a cero (parámetros vuelven a valores por defecto)
         AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f)
         
@@ -197,43 +228,67 @@ class AntiDolbyController(private val context: Context) {
 
     /**
      * Ajusta parámetros del AudioEngine según clasificación.
-     * 
-     * Lógica:
-     * - Si voz > 60%: reducir exciter y widener (preservar claridad)
-     * - Si música > 60%: aumentar exciter y ancho (enriquecer)
-     * - Si bajos > 40%: aplicar compresor más agresivo (control dinámico)
-     * - Si silencio > 60%: resetear a defaults
+     *
+     * v3.1 PAR 2 tuning:
+     *   - Histéresis (AT_ENTER > AT_EXIT) sobre el score dominante para
+     *     eliminar el chatter que producía saltos de preset cerca de 0.6.
+     *   - Rampa exponencial suave (alpha=0.25 por clasificación) hacia el
+     *     target — los cambios ya no son escalones de un frame, se sienten
+     *     como transiciones naturales de ~400 ms.
+     *   - El dominio previo se mantiene si nadie supera su AT_ENTER, por
+     *     lo que la escena "silencio débil" no rompe el preset activo.
      */
     private fun adjustParameters(speech: Float, music: Float, bass: Float) {
-        audioEngine ?: return
-        
+        val engine = audioEngine ?: return
         try {
-            when {
-                speech > 0.6f -> {
-                    // Domina voz: preservar claridad, reducir efectos
-                    audioEngine!!.setExciter(0.2f)
-                    audioEngine!!.setWidth(0.3f)
-                    audioEngine!!.setEqGain(0f)
+            // 1) Decidir nuevo dominio con histéresis.
+            val newDomain = when (currentDomain) {
+                Domain.SPEECH -> when {
+                    speech >= DOMINANT_AT_EXIT_SPEECH -> Domain.SPEECH  // sigue en SPEECH
+                    music >= DOMINANT_AT_ENTER_MUSIC -> Domain.MUSIC
+                    bass  >= DOMINANT_AT_ENTER_BASS  -> Domain.BASS
+                    else -> Domain.NONE
                 }
-                music > 0.6f -> {
-                    // Domina música: enriquecer con exciter y ancho
-                    audioEngine!!.setExciter(0.6f)
-                    audioEngine!!.setWidth(0.7f)
-                    audioEngine!!.setEqGain(3f)
+                Domain.MUSIC -> when {
+                    music >= DOMINANT_AT_EXIT_MUSIC -> Domain.MUSIC
+                    speech >= DOMINANT_AT_ENTER_SPEECH -> Domain.SPEECH
+                    bass  >= DOMINANT_AT_ENTER_BASS   -> Domain.BASS
+                    else -> Domain.NONE
                 }
-                bass > 0.4f -> {
-                    // Bajos presentes: aplicar compresión sin distorsión
-                    audioEngine!!.setExciter(0.3f)
-                    audioEngine!!.setWidth(0.5f)
-                    audioEngine!!.setEqGain(-2f)  // Reducir ligeramente bajos extremos
+                Domain.BASS -> when {
+                    bass  >= DOMINANT_AT_EXIT_BASS  -> Domain.BASS
+                    speech >= DOMINANT_AT_ENTER_SPEECH -> Domain.SPEECH
+                    music  >= DOMINANT_AT_ENTER_MUSIC  -> Domain.MUSIC
+                    else -> Domain.NONE
                 }
-                else -> {
-                    // Modo default / silencio
-                    audioEngine!!.setExciter(0.4f)
-                    audioEngine!!.setWidth(0.5f)
-                    audioEngine!!.setEqGain(0f)
+                Domain.NONE -> when {
+                    speech >= DOMINANT_AT_ENTER_SPEECH -> Domain.SPEECH
+                    music  >= DOMINANT_AT_ENTER_MUSIC  -> Domain.MUSIC
+                    bass   >= DOMINANT_AT_ENTER_BASS   -> Domain.BASS
+                    else -> Domain.NONE
                 }
             }
+            if (newDomain != currentDomain) {
+                Log.i(TAG, "Anti-Dolby dominio: $currentDomain → $newDomain")
+                currentDomain = newDomain
+            }
+
+            // 2) Fijar TARGETS del dominio activo (no aplicamos directo, rampeamos).
+            val (tgtExciter, tgtWidth, tgtEq) = when (newDomain) {
+                Domain.SPEECH -> Triple(0.20f, 0.30f,  0.0f)
+                Domain.MUSIC  -> Triple(0.60f, 0.70f,  3.0f)
+                Domain.BASS   -> Triple(0.30f, 0.50f, -2.0f)
+                Domain.NONE   -> Triple(0.40f, 0.50f,  0.0f)
+            }
+
+            // 3) Ramp exponencial hacia el target y aplicar.
+            curExciter += (tgtExciter - curExciter) * PARAM_RAMP_ALPHA
+            curWidth   += (tgtWidth   - curWidth)   * PARAM_RAMP_ALPHA
+            curEqGain  += (tgtEq      - curEqGain)  * PARAM_RAMP_ALPHA
+
+            engine.setExciter(curExciter)
+            engine.setWidth(curWidth)
+            engine.setEqGain(curEqGain)
         } catch (e: Exception) {
             Log.e(TAG, "Error ajustando parámetros: ${e.message}")
         }
