@@ -35,9 +35,20 @@ import kotlinx.coroutines.*
  *   AudioRecord (MediaProjection, stereo interleaved)
  *     → IvannaNpeEngine.processInterleavedStereo()  (análisis neuromórfico:
  *       alimenta género/RMS/AGC/confianza que la UI ya lee por polling)
+ *     → SpatialAudioEngineV2.feedCapturedBlock()  (motor binaural: actualiza
+ *       estado espacial nativo de los 32 objetos con audio REAL de las apps,
+ *       no con el micrófono — ver fix en SpatialAudioEngineV2)
  *     → downmix a mono
  *     → IvannaVisualizerBridgeV2.processBlockFromNPE() (bandas espectrales
  *       para el shader GLSL del fondo Aurora)
+ *
+ * FIX (telemetría desconectada / captura solo-visualizer): este servicio
+ * antes sólo se arrancaba al abrir la UI del visualizer, así que NPE y el
+ * motor espacial nunca recibían audio real salvo que el usuario abriera esa
+ * pantalla. Ahora MainActivity lo arranca al iniciar la app (junto al
+ * permiso RECORD_AUDIO), independientemente de si el visualizer está
+ * visible, para que NPE y el motor espacial siempre tengan señal real que
+ * analizar.
  *
  * Nota: esta captura es sólo de LECTURA/ANÁLISIS — no se reinyecta a la
  * salida de audio (evitaría eco/duplicado). El procesamiento audible real
@@ -139,6 +150,9 @@ class PlaybackCaptureService : Service() {
                         if (IvannaNpeEngine.isReady) {
                             IvannaNpeEngine.processInterleavedStereo(buffer, numFrames)
                         }
+                        // FIX: motor binaural alimentado con audio REAL capturado
+                        // (antes nunca recibía nada — capturaba el mic físico).
+                        SpatialAudioEngineV2.feedCapturedBlock(buffer, numFrames)
                         // Downmix a mono para el visualizador
                         for (i in 0 until numFrames) {
                             mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])

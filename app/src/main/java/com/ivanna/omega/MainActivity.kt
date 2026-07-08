@@ -105,30 +105,54 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // FIX: flujo real de MediaProjection para el visualizador — antes
-    // onOpenVisualizer no solicitaba ningún permiso ni arrancaba el servicio.
+    // FIX: flujo real de MediaProjection — antes esto solo se disparaba al
+    // abrir el visualizer, así que PlaybackCaptureService (y con él, NPE y
+    // el motor espacial) nunca recibían audio real a menos que el usuario
+    // abriera esa pantalla. Ahora se solicita al ARRANCAR la app y la
+    // captura corre siempre en segundo plano; el visualizer sólo controla
+    // si se MUESTRA la UI, no si la captura está activa.
     private var showVisualizer by mutableStateOf(false)
+    private var captureServiceRunning by mutableStateOf(false)
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            Log.i(TAG, "MediaProjection concedido — arrancando PlaybackCaptureService")
+            Log.i(TAG, "MediaProjection concedido — arrancando PlaybackCaptureService (siempre activo)")
             val intent = Intent(this, PlaybackCaptureService::class.java).apply {
                 putExtra("resultCode", result.resultCode)
                 putExtra("data", result.data)
             }
             ContextCompat.startForegroundService(this, intent)
-            showVisualizer = true
+            captureServiceRunning = true
         } else {
-            Log.w(TAG, "MediaProjection denegado — visualizador mostrará silencio")
-            showVisualizer = true // se abre igual, sólo que sin señal real
+            Log.w(TAG, "MediaProjection denegado — NPE/motor espacial/visualizer sin señal real")
+        }
+        if (pendingVisualizerOpen) {
+            showVisualizer = true
+            pendingVisualizerOpen = false
         }
     }
 
-    private fun requestVisualizer() {
+    // FIX: solicitar MediaProjection al arrancar la app, no al abrir el visualizer.
+    private fun requestMediaProjectionAtStartup() {
         val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionLauncher.launch(mgr.createScreenCaptureIntent())
+    }
+
+    // El botón de visualizer ya no dispara el permiso (la captura ya corre
+    // desde el arranque); si por algún motivo aún no está activa (usuario
+    // denegó al inicio), se reintenta aquí antes de mostrar la UI.
+    private var pendingVisualizerOpen = false
+
+    private fun requestVisualizer() {
+        if (captureServiceRunning) {
+            showVisualizer = true
+        } else {
+            pendingVisualizerOpen = true
+            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjectionLauncher.launch(mgr.createScreenCaptureIntent())
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -175,6 +199,12 @@ class MainActivity : ComponentActivity() {
         // FIX: arrancar el servicio en primer plano para audio en background
         val serviceIntent = Intent(this, AudioForegroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
+
+        // FIX (telemetría desconectada / captura solo-visualizer): arrancar
+        // PlaybackCaptureService desde YA, no esperar a que se abra el
+        // visualizer. Así NPE y SpatialAudioEngineV2 siempre reciben audio
+        // real de reproducción en cuanto Android lo permite.
+        requestMediaProjectionAtStartup()
 
         // FIX: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain) — sin
         // este init() el handle nativo se queda en 0 y todos los setters de
