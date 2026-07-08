@@ -231,6 +231,32 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRefle
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*,jobject,jint,jfloat) {}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*,jobject) { g_pd.reset(); }
 
+// ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
+// UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
+
+// Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
+    JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio) {
+    g_comp.setThreshold(thresholdDb);
+    g_comp.setRatio(ratio);
+}
+
+// NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo.
+// Se declaran explícitas (no reusar nativeSetGamma/nativeSetDelta, que ya
+// tienen semántica normalizada [0..1]→grados heredada de la UI PI-LSTM v1).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
+    JNIEnv*, jobject, jfloat rad) {
+    g_pd.set_spatial_angle(rad * 57.29578f); // rad → deg
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
+    JNIEnv*, jobject, jfloat width) {
+    g_pd.set_spatial_width(width);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // OmegaEngine mode control
 // ═══════════════════════════════════════════════════════════════════════════════
