@@ -21,6 +21,7 @@ import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.ui.IvannaControlPanel
 
 /**
  * MainActivity v1.5 — UI Compose Material3
@@ -132,112 +133,5 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         noRootProcessor?.stop()
         audioEngine.release()
-    }
-}
-
-@Composable
-fun IvannaControlPanel(
-    initialExciter: Float,
-    initialEq: Float,
-    initialWidth: Float,
-    initialAntiDolby: Boolean = false,
-    onExciterChange: (Float) -> Unit,
-    onEqChange: (Float) -> Unit,
-    onWidthChange: (Float) -> Unit,
-    onAntiDolbyChange: (Boolean) -> Unit = {}
-) {
-    var exciter by remember { mutableFloatStateOf(initialExciter) }
-    var eq by remember { mutableFloatStateOf(initialEq) }
-    var width by remember { mutableFloatStateOf(initialWidth) }
-    // FIX: estado inicial desde ParameterStore, no siempre false
-    var antiDolbyEnabled by remember { mutableStateOf(initialAntiDolby) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "IVANNA-OMEGA-SUPREME v1.5",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Text(
-            text = "Anti-Dolby Audio Engine",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        // FIX: toggle ahora llama a onAntiDolbyChange (estaba desconectado)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("Modo Anti-Dolby", style = MaterialTheme.typography.bodyLarge)
-            Switch(
-                checked = antiDolbyEnabled,
-                onCheckedChange = { enabled ->
-                    antiDolbyEnabled = enabled
-                    onAntiDolbyChange(enabled)
-                }
-            )
-        }
-
-        HorizontalDivider()
-
-        ControlSlider(
-            label = "Exciter",
-            value = exciter,
-            valueRange = 0f..1f,
-            onValueChange = { exciter = it; onExciterChange(it) }
-        )
-
-        ControlSlider(
-            label = "EQ Gain",
-            value = eq,
-            valueRange = -12f..12f,
-            onValueChange = { eq = it; onEqChange(it) }
-        )
-
-        ControlSlider(
-            label = "Stereo Width",
-            value = width,
-            valueRange = 0f..1f,
-            onValueChange = { width = it; onWidthChange(it) }
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Text(
-            text = "\u00A9 2025-2026 IVANNA Team — Apache-2.0",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun ControlSlider(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text("%.1f".format(value), style = MaterialTheme.typography.bodyMedium)
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
