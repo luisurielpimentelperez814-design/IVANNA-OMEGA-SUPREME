@@ -31,6 +31,7 @@ import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.IvannaControlPanel
+import com.ivanna.omega.ui.theme.IvannaTheme
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.VisualizerSurface
 import kotlinx.coroutines.delay
@@ -194,30 +195,46 @@ class MainActivity : ComponentActivity() {
         )
         IvannaNpeEngine.isManifoldEnabled = parameterStore.isNpeManifoldEnabled()
 
-        // FIX: restaurar Compresor / NHO-Espacial / Kernel evolutivo / OmegaMode
-        IvannaNativeLib.nativeSetCompressorParams(
-            compThresholdSliderToDb(parameterStore.getCompThreshold()),
-            compRatioSliderToRatio(parameterStore.getCompRatio())
-        )
-        IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
-        IvannaNativeLib.nativeSetSpatialAngleRad(parameterStore.getSpatialAngle())
-        IvannaNativeLib.nativeSetSpatialWidthDirect(parameterStore.getSpatialWidth())
-        OmegaEngine.setMode(parameterStore.getOmegaMode().coerceIn(0, 2))
-        if (parameterStore.isEvoEnabled()) {
-            IvannaNativeLib.nativeStartEvoThread()
+        // FIX (crash #2): Ahora IvannaNativeLib expone isLoaded; se guarda con él
+        // antes de llamar cualquier external fun desde onCreate(). Sin este guard,
+        // si libivanna_omega.so falla al cargar la llamada lanzaba UnsatisfiedLinkError
+        // y crasheaba la app (el try-catch del init solo evita el crash del init,
+        // no el de las llamadas posteriores a external fun).
+        if (IvannaNativeLib.isLoaded) {
+            IvannaNativeLib.nativeSetCompressorParams(
+                compThresholdSliderToDb(parameterStore.getCompThreshold()),
+                compRatioSliderToRatio(parameterStore.getCompRatio())
+            )
+            IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
+            IvannaNativeLib.nativeSetSpatialAngleRad(parameterStore.getSpatialAngle())
+            IvannaNativeLib.nativeSetSpatialWidthDirect(parameterStore.getSpatialWidth())
+            if (parameterStore.isEvoEnabled()) {
+                IvannaNativeLib.nativeStartEvoThread()
+            } else {
+                IvannaNativeLib.nativeStopEvoThread()
+            }
         } else {
-            IvannaNativeLib.nativeStopEvoThread()
+            Log.w(TAG, "libivanna_omega.so no disponible — parámetros DSP nativos omitidos")
         }
+        OmegaEngine.setMode(parameterStore.getOmegaMode().coerceIn(0, 2)) // ya tiene guard interno
         // BUGFIX: NO arrancar spatialEngineV2 aquí. Esto crashea porque se ejecuta
         // antes de confirmar permiso RECORD_AUDIO. Se arranca en initAudioEngine()
         // DESPUÉS de confirmar el permiso de micrófono.
         // if (parameterStore.isSpatialEnabled()) spatialEngineV2.start()
 
         setContent {
-            MaterialTheme {
+            // FIX (branding): MaterialTheme genérico → IvannaTheme.
+            // MaterialTheme usaba el esquema de colores y tipografía de Material3
+            // por defecto, así que Surface.background era el gris/blanco de M3
+            // (no ObsidianVoid) y MaterialTheme.typography.* resolvía a la
+            // fuente estándar (no IvannaTypography con Mono/Sans y letterSpacing
+            // calibrados). El branding solo sobrevivía en el logo porque los
+            // colores Aurora/Obsidian se usan hardcodeados en los composables,
+            // pero toda la tipografía y el fondo del Surface quedaban sin tema.
+            IvannaTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = MaterialTheme.colorScheme.background // ahora resuelve a ObsidianVoid
                 ) {
                     if (showVisualizer) {
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -290,7 +307,9 @@ class MainActivity : ComponentActivity() {
                             onOmegaModeChange = { mode ->
                                 parameterStore.setOmegaMode(mode)
                                 OmegaEngine.setMode(mode.coerceIn(0, 2))
-                                if (mode == 3) IvannaNativeLib.nativeSetHRTFEnabled(true)
+                                if (mode == 3 && IvannaNativeLib.isLoaded) {
+                                    IvannaNativeLib.nativeSetHRTFEnabled(true)
+                                }
                             },
                             onCompThresholdChange = { slider ->
                                 val ratioSlider = parameterStore.getCompRatio()

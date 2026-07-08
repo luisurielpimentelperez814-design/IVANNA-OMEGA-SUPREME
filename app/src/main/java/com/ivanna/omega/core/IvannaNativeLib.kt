@@ -8,14 +8,28 @@ import android.util.Log
  * evolutionary kernel, phase oracle, and spatial engine.
  */
 object IvannaNativeLib {
+    /**
+     * FIX (crash #2): El init original capturaba UnsatisfiedLinkError pero no
+     * guardaba ningún flag, así que las llamadas a `external fun` posteriores
+     * (nativeSetCompressorParams, nativeSetHarmonicGain, nativeSetSpatialAngleRad,
+     * nativeSetSpatialWidthDirect, nativeStartEvoThread, etc.) en MainActivity.onCreate()
+     * seguían lanzando UnsatisfiedLinkError y crasheaban la app.
+     * Ahora se expone `isLoaded` para que MainActivity y callbacks puedan hacer guard.
+     * Patrón idéntico al de DSPBridge y OmegaEngine.
+     */
+    private var loaded = false
+
     init {
         try {
             System.loadLibrary("ivanna_omega")
+            loaded = true
             Log.i("IvannaNativeLib", "Native library loaded successfully")
         } catch (e: UnsatisfiedLinkError) {
             Log.e("IvannaNativeLib", "Failed to load native library", e)
         }
     }
+
+    val isLoaded: Boolean get() = loaded
 
     // ═══════════════════════════════════════════════════════════════════════
     //  DSP Core (ivanna_omega_jni.cpp)

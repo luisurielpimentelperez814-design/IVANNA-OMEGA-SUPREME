@@ -15,7 +15,25 @@ import java.nio.FloatBuffer
  */
 object IvannaNpeNative {
 
-    init { System.loadLibrary("omega_vibratory") }
+    /**
+     * FIX (crash #1): El init original lanzaba UnsatisfiedLinkError sin capturar,
+     * convirtiéndose en ExceptionInInitializerError cuando MainActivity llama a
+     * IvannaNpeEngine.init() → nativeCreate(). Ahora se captura y se expone
+     * `isLoaded` para que los callers puedan hacer un guard limpio.
+     */
+    val isLoaded: Boolean
+
+    init {
+        var ok = false
+        try {
+            System.loadLibrary("omega_vibratory")
+            ok = true
+            android.util.Log.i("IvannaNpeNative", "libomega_vibratory.so cargada")
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e("IvannaNpeNative", "Fallo al cargar omega_vibratory: ${e.message}")
+        }
+        isLoaded = ok
+    }
 
     @JvmStatic external fun nativeCreate(sampleRate: Float, maxBlockFrames: Int): Long
     @JvmStatic external fun nativeDestroy(handle: Long)
