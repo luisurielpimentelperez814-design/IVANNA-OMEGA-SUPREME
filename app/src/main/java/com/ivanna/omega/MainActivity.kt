@@ -87,21 +87,19 @@ class MainActivity : ComponentActivity() {
         "acoustic" to "Flat"
     )
 
-    // FIX: solicitar permiso RECORD_AUDIO antes de iniciar el engine
+    // FIX (independencia del mic): RECORD_AUDIO sólo hace falta para
+    // AudioPlaybackCaptureConfiguration (MediaProjection/PlaybackCaptureService).
+    // Ya no dispara initAudioEngine() — el núcleo DSP arranca siempre en
+    // onCreate(), sin esperar este permiso.
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            Log.i(TAG, "RECORD_AUDIO concedido")
-            // Si spatial_init_pending=true, restaurar spatial_enabled=true
-            if (parameterStore.isSpatialInitPending()) {
-                Log.i(TAG, "Restaurando spatial_enabled = true (pendiente desde antes)")
-                parameterStore.setSpatialEnabled(true)
-                parameterStore.setSpatialInitPending(false)
-            }
-            initAudioEngine()
+            Log.i(TAG, "RECORD_AUDIO concedido — arrancando captura de reproducción")
+            requestMediaProjectionAtStartup()
         } else {
-            Log.w(TAG, "RECORD_AUDIO denegado — funcionalidad limitada")
+            Log.w(TAG, "RECORD_AUDIO denegado — captura de reproducción (MediaProjection) " +
+                    "deshabilitada; el resto del motor (DSP/Espacial/NPE local/Evolutivo) sigue activo")
         }
     }
 
@@ -175,41 +173,37 @@ class MainActivity : ComponentActivity() {
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
 
-        val hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-
-        // CRITICAL: Si spatial_enabled=true pero NO hay permiso:
-        // - Guardar flag spatial_init_pending = true
-        // - NO resetear spatial_enabled (mantener el guardado)
-        // - Setear spatial_enabled = false temporalmente solo en UI
-        if (parameterStore.isSpatialEnabled() && !hasPermission) {
-            Log.i(TAG, "spatial_enabled=true pero sin permiso — marcar spatial_init_pending")
-            parameterStore.setSpatialInitPending(true)
-        } else if (hasPermission) {
-            // Hay permiso: limpiar el flag
-            parameterStore.setSpatialInitPending(false)
-        }
-
-        // FIX: pedir permiso antes de inicializar
-        if (hasPermission) {
-            initAudioEngine()
-        } else {
-            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        // FIX (independencia del mic — pedido explícito de GORE): antes TODO
+        // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
+        // modo no-root) esperaba a que RECORD_AUDIO estuviera concedido, porque
+        // initAudioEngine() cargaba de un tirón cosas que sí lo necesitan
+        // (MediaProjection/PlaybackCaptureService) junto con cosas que NUNCA
+        // lo necesitaron. SpatialAudioEngineV2 es un procesador de bloques puro
+        // (sin AudioRecord/AudioTrack propios — ver su cabecera); sólo recibe
+        // bloques de PlaybackCaptureService cuando ese permiso está disponible,
+        // pero puede inicializarse y correr sin él. AudioEngine (nativeInit,
+        // exciter/EQ/width) tampoco toca el mic en ningún punto. El ÚNICO
+        // requisito real de RECORD_AUDIO es AudioPlaybackCaptureConfiguration
+        // (restricción del propio Android, no de esta app), usado sólo por
+        // PlaybackCaptureService. Ya no existe "spatial_init_pending": el
+        // motor espacial ya no depende del mic, así que se limpia el flag.
+        parameterStore.setSpatialInitPending(false)
+        initCoreAudioEngine()
 
         // FIX: arrancar el servicio en primer plano para audio en background
         val serviceIntent = Intent(this, AudioForegroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        // FIX (telemetría desconectada / captura solo-visualizer): la solicitud
-        // de MediaProjection se dispara DESPUÉS de confirmar RECORD_AUDIO, desde
-        // initAudioEngine() — NO aquí. Antes esta línea corría en paralelo con
-        // requestPermissionLauncher.launch(RECORD_AUDIO) sin esperar su resultado:
-        // si el usuario aún no había concedido el mic cuando PlaybackCaptureService
-        // arrancaba, AudioRecord con AudioPlaybackCaptureConfiguration fallaba
-        // silenciosamente (sin permiso) y el loop de captura corría leyendo ceros
-        // para siempre — la telemetría se quedaba muerta sin ningún log de error
-        // visible en la UI. Ahora el orden es estrictamente secuencial: permiso
-        // de mic confirmado → initAudioEngine() → recién ahí se pide MediaProjection.
+        // RECORD_AUDIO se pide en paralelo, sólo para habilitar la captura de
+        // reproducción (MediaProjection). Si se deniega, el núcleo de arriba
+        // ya está corriendo — no se pierde nada más que esa fuente de señal
+        // real para telemetría NPE/espacial vía PlaybackCaptureService.
+        val hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            requestMediaProjectionAtStartup()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
 
         // FIX: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain) — sin
         // este init() el handle nativo se queda en 0 y todos los setters de
@@ -252,10 +246,8 @@ class MainActivity : ComponentActivity() {
             Log.w(TAG, "libivanna_omega.so no disponible — parámetros DSP nativos omitidos")
         }
         OmegaEngine.setMode(parameterStore.getOmegaMode().coerceIn(0, 2)) // ya tiene guard interno
-        // BUGFIX: NO arrancar spatialEngineV2 aquí. Esto crashea porque se ejecuta
-        // antes de confirmar permiso RECORD_AUDIO. Se arranca en initAudioEngine()
-        // DESPUÉS de confirmar el permiso de micrófono.
-        // if (parameterStore.isSpatialEnabled()) spatialEngineV2.start()
+        // spatialEngineV2.start() ya se ejecuta dentro de initCoreAudioEngine(),
+        // sin esperar RECORD_AUDIO (ver comentario ahí).
 
         setContent {
             // FIX (branding): MaterialTheme genérico → IvannaTheme.
@@ -303,7 +295,7 @@ class MainActivity : ComponentActivity() {
                             initialNpeAdapt = parameterStore.getNpeAdapt(),
                             initialNpeManifold = parameterStore.isNpeManifoldEnabled(),
                             // CRITICAL: Si spatial_init_pending=true, mostrar false en UI (motor no iniciado aún)
-                            initialSpatialEnabled = if (parameterStore.isSpatialInitPending()) false else parameterStore.isSpatialEnabled(),
+                            initialSpatialEnabled = parameterStore.isSpatialEnabled(),
 
                             onExciterChange = { value ->
                                 parameterStore.setExciter(value)
@@ -496,23 +488,26 @@ class MainActivity : ComponentActivity() {
     private fun compThresholdSliderToDb(slider: Float): Float = -24f + slider * 24f
     private fun compRatioSliderToRatio(slider: Float): Float = 1f + slider * 19f
 
-    private fun initAudioEngine() {
+    private fun initCoreAudioEngine() {
         try {
             audioEngine.initialize(48000)
             audioEngine.setExciter(parameterStore.getExciter())
             audioEngine.setEqGain(parameterStore.getEqGain())
             audioEngine.setWidth(parameterStore.getWidth())
 
-            // CRITICAL: Ahora que el permiso RECORD_AUDIO está confirmado, iniciar
-            // SpatialAudioEngineV2 si spatial_enabled=true
+            // FIX (independencia del mic): SpatialAudioEngineV2 es un procesador
+            // de bloques puro (sin AudioRecord/AudioTrack propios — ver su
+            // cabecera). No necesita RECORD_AUDIO para inicializarse; sólo deja
+            // de recibir bloques reales si PlaybackCaptureService no está activo
+            // (porque el usuario denegó el permiso), pero eso no es un crash ni
+            // requiere esperar nada aquí.
             if (parameterStore.isSpatialEnabled()) {
-                Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2")
+                Log.i(TAG, "Iniciando SpatialAudioEngineV2 (no depende de RECORD_AUDIO)")
                 try {
                     spatialEngineV2.start()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error iniciando SpatialAudioEngineV2 en initAudioEngine", e)
+                    Log.e(TAG, "Error iniciando SpatialAudioEngineV2 en initCoreAudioEngine", e)
                     parameterStore.setSpatialEnabled(false)
-                    parameterStore.setSpatialInitPending(false)
                 }
             }
 
@@ -522,19 +517,9 @@ class MainActivity : ComponentActivity() {
                 Log.i(TAG, "Iniciando modo no-root")
                 noRootProcessor!!.start()
             }
-
-            // FIX: RECORD_AUDIO ya confirmado en este punto (initAudioEngine()
-            // sólo se llama tras confirmarlo) — recién ahora es seguro pedir
-            // MediaProjection y arrancar PlaybackCaptureService, que construye
-            // su AudioRecord con AudioPlaybackCaptureConfiguration y necesita
-            // ese permiso concedido o falla en silencio.
-            if (!captureServiceRunning) {
-                requestMediaProjectionAtStartup()
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error crítico en initAudioEngine", e)
+            Log.e(TAG, "Error crítico en initCoreAudioEngine", e)
             parameterStore.setSpatialEnabled(false)
-            parameterStore.setSpatialInitPending(false)
         }
     }
 
