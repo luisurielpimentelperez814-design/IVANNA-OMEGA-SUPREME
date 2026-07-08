@@ -133,6 +133,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // DEFENSIVE: Capturar cualquier crash no capturado
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Log.e(TAG, "CRASH NO CAPTURADO en thread=${thread.name}", throwable)
+            // Forzar spatial_enabled = false si crash ocurre
+            try {
+                parameterStore.setSpatialEnabled(false)
+                parameterStore.setSpatialInitPending(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error limpiando spatial en handler", e)
+            }
+            // Re-lanzar para que Android lo reporte
+            throw throwable
+        }
+
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
 
@@ -356,18 +370,32 @@ class MainActivity : ComponentActivity() {
                                 IvannaNpeEngine.isManifoldEnabled = enabled
                             },
                             onSpatialEnabledChange = { enabled ->
-                                parameterStore.setSpatialEnabled(enabled)
-                                if (enabled) {
-                                    // Solo iniciar si permiso confirmado
-                                    if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO)
-                                        == PackageManager.PERMISSION_GRANTED) {
-                                        spatialEngineV2.start()
+                                try {
+                                    parameterStore.setSpatialEnabled(enabled)
+                                    if (enabled) {
+                                        // Solo iniciar si permiso confirmado
+                                        if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO)
+                                            == PackageManager.PERMISSION_GRANTED) {
+                                            try {
+                                                spatialEngineV2.start()
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "Error iniciando SpatialAudioEngineV2 desde UI", e)
+                                                parameterStore.setSpatialEnabled(false)
+                                            }
+                                        } else {
+                                            Log.w(TAG, "Permiso RECORD_AUDIO no confirmado — no iniciando SpatialAudioEngineV2")
+                                            parameterStore.setSpatialEnabled(false)
+                                        }
                                     } else {
-                                        Log.w(TAG, "Permiso RECORD_AUDIO no confirmado — no iniciando SpatialAudioEngineV2")
-                                        parameterStore.setSpatialEnabled(false)
+                                        try {
+                                            spatialEngineV2.stop()
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error deteniendo SpatialAudioEngineV2", e)
+                                        }
                                     }
-                                } else {
-                                    spatialEngineV2.stop()
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error en onSpatialEnabledChange", e)
+                                    parameterStore.setSpatialEnabled(false)
                                 }
                             },
                             onOpenVisualizer = { requestVisualizer() }
@@ -415,39 +443,70 @@ class MainActivity : ComponentActivity() {
     private fun compRatioSliderToRatio(slider: Float): Float = 1f + slider * 19f
 
     private fun initAudioEngine() {
-        audioEngine.initialize(48000)
-        audioEngine.setExciter(parameterStore.getExciter())
-        audioEngine.setEqGain(parameterStore.getEqGain())
-        audioEngine.setWidth(parameterStore.getWidth())
+        try {
+            audioEngine.initialize(48000)
+            audioEngine.setExciter(parameterStore.getExciter())
+            audioEngine.setEqGain(parameterStore.getEqGain())
+            audioEngine.setWidth(parameterStore.getWidth())
 
-        // CRITICAL: Ahora que el permiso RECORD_AUDIO está confirmado, iniciar
-        // SpatialAudioEngineV2 si spatial_enabled=true
-        if (parameterStore.isSpatialEnabled()) {
-            Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2")
-            try {
-                spatialEngineV2.start()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error iniciando SpatialAudioEngineV2", e)
-                parameterStore.setSpatialEnabled(false)
+            // CRITICAL: Ahora que el permiso RECORD_AUDIO está confirmado, iniciar
+            // SpatialAudioEngineV2 si spatial_enabled=true
+            if (parameterStore.isSpatialEnabled()) {
+                Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2")
+                try {
+                    spatialEngineV2.start()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error iniciando SpatialAudioEngineV2 en initAudioEngine", e)
+                    parameterStore.setSpatialEnabled(false)
+                    parameterStore.setSpatialInitPending(false)
+                }
             }
-        }
 
-        // Modo no-root si no hay Magisk
-        noRootProcessor = NoRootAudioProcessor(this)
-        if (!noRootProcessor!!.hasMagisk()) {
-            Log.i(TAG, "Iniciando modo no-root")
-            noRootProcessor!!.start()
+            // Modo no-root si no hay Magisk
+            noRootProcessor = NoRootAudioProcessor(this)
+            if (!noRootProcessor!!.hasMagisk()) {
+                Log.i(TAG, "Iniciando modo no-root")
+                noRootProcessor!!.start()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error crítico en initAudioEngine", e)
+            parameterStore.setSpatialEnabled(false)
+            parameterStore.setSpatialInitPending(false)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        autoPresetJob?.cancel()
-        noRootProcessor?.stop()
-        audioEngine.release()
-        spatialEngineV2.stop()
-        IvannaVisualizerBridgeV2.release()
-        IvannaNpeEngine.release()
+        try {
+            autoPresetJob?.cancel()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error canceling autoPresetJob", e)
+        }
+        try {
+            noRootProcessor?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping noRootProcessor", e)
+        }
+        try {
+            audioEngine.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing audioEngine", e)
+        }
+        try {
+            spatialEngineV2.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping spatialEngineV2", e)
+        }
+        try {
+            IvannaVisualizerBridgeV2.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing visualizer", e)
+        }
+        try {
+            IvannaNpeEngine.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing NPE engine", e)
+        }
     }
 }
 
