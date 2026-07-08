@@ -61,14 +61,13 @@ class ParameterStore(context: Context) {
         private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
     }
 
-    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.3f)
+    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.45f) // TUNED v3.1: 0.3→0.45 (presencia armónica mejorada)
     fun setExciter(value: Float) = prefs.edit().putFloat(KEY_EXCITER, value).apply()
 
-    fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 0.0f)
+    fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
     fun setEqGain(value: Float) = prefs.edit().putFloat(KEY_EQ_GAIN, value).apply()
 
-    fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.5f)
-    fun setWidth(value: Float) = prefs.edit().putFloat(KEY_WIDTH, value).apply()
+    fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
 
     fun isAntiDolbyEnabled(): Boolean = prefs.getBoolean(KEY_ANTI_DOLBY, false)
     fun setAntiDolbyEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ANTI_DOLBY, enabled).apply()
@@ -82,8 +81,8 @@ class ParameterStore(context: Context) {
     fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
-    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.5f)
-    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.16f)
+    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.4f) // TUNED v3.1: 0.5→0.4 (-14.4dB, punto dulce)
+    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.30f) // TUNED v3.1: 0.16→0.30 (2.7:1, control suave)
     fun setCompParams(threshold: Float, ratio: Float) = prefs.edit()
         .putFloat(KEY_COMP_THRESHOLD, threshold)
         .putFloat(KEY_COMP_RATIO, ratio)
@@ -104,10 +103,10 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.2f)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.2f)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.3f)
-    fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 0.0f)
+    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.5f) // TUNED v3.1: 0.2→0.5 (respuesta armónica fuerte)
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.45f) // TUNED v3.1: 0.2→0.45 (mejor detalle, menos mascara)
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.55f) // TUNED v3.1: 0.3→0.55 (más natural, menos rígido)
+    fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.0f) // TUNED v3.1: 0.0→2.0 dB (nivel NPE mejorado)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
             .putFloat(KEY_NPE_HARMONIC, harmonic)
@@ -116,8 +115,8 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_NPE_MASTER_GAIN, masterGain)
             .apply()
 
-    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -18.0f)
-    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.3f)
+    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -16.0f) // TUNED v3.1: -18→-16 dB (menos invasivo, más dinámico)
+    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.5f) // TUNED v3.1: 0.3→0.5 (respuesta más rápida)
     fun setNpeAgc(target: Float, rate: Float) = prefs.edit()
         .putFloat(KEY_NPE_AGC_TARGET, target)
         .putFloat(KEY_NPE_AGC_RATE, rate)

@@ -210,13 +210,15 @@ class MainActivity : ComponentActivity() {
         // IvannaNpeEngine son no-ops silenciosos.
         IvannaNpeEngine.init(48000, NPE_BLOCK_FRAMES)
         IvannaNpeEngine.setBypass(parameterStore.isNpeBypass())
+        // TUNING v3.1: Optimización de motor neuromorphic
         IvannaNpeEngine.setNeuroParams(
-            parameterStore.getNpeHarmonic(),
-            parameterStore.getNpeLateralInhib(),
-            parameterStore.getNpeOhcCompression(),
-            parameterStore.getNpeMasterGain()
+            parameterStore.getNpeHarmonic(),       // TUNED: 0.2→0.5 (harmonics)
+            parameterStore.getNpeLateralInhib(),   // TUNED: 0.2→0.45 (detail)
+            parameterStore.getNpeOhcCompression(), // TUNED: 0.3→0.55 (naturality)
+            parameterStore.getNpeMasterGain()      // TUNED: 0.0→2.0 dB
         )
         IvannaNpeEngine.setAGC(parameterStore.getNpeAgcTarget(), parameterStore.getNpeAgcRate())
+        // TUNED: agcTarget -18→-16dB (less aggressive), agcRate 0.3→0.5 (faster response)
         IvannaNpeEngine.setEngineFlags(
             parameterStore.getNpeHrtf(),
             parameterStore.getNpeCochlear(),
