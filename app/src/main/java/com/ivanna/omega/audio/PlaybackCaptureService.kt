@@ -15,6 +15,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
@@ -101,66 +102,94 @@ class PlaybackCaptureService : Service() {
     private fun startCapture(mediaProjection: MediaProjection) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
 
-        val sampleRate = 48000
+        try {
+            val sampleRate = 48000
 
-        val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
-            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-            .build()
+            val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .build()
 
-        val bufferSize = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_STEREO,
-            AudioFormat.ENCODING_PCM_FLOAT
-        )
-
-        audioRecord = AudioRecord.Builder()
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                    .build()
+            val bufferSize = AudioRecord.getMinBufferSize(
+                sampleRate,
+                AudioFormat.CHANNEL_IN_STEREO,
+                AudioFormat.ENCODING_PCM_FLOAT
             )
-            .setBufferSizeInBytes(bufferSize)
-            .setAudioPlaybackCaptureConfig(config)
-            .build()
 
-        // FIX: handle nativo del visualizador — maxBlockFrames en FRAMES por
-        // canal (INPUT_SAMPLES es el tamaño del array intercalado L,R,L,R,
-        // así que el máximo de frames por canal es la mitad).
-        IvannaVisualizerBridgeV2.init(sampleRate, INPUT_SAMPLES / 2)
-        // bufferSize está en bytes; frame estéreo float = 2 canales * 4 bytes
-        val estimatedLatencyMs = (bufferSize.toFloat() / 8f) / sampleRate * 1000f
-        IvannaVisualizerBridgeV2.setDeviceLatencyMs(estimatedLatencyMs)
+            audioRecord = AudioRecord.Builder()
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                        .build()
+                )
+                .setBufferSizeInBytes(bufferSize)
+                .setAudioPlaybackCaptureConfig(config)
+                .build()
 
-        audioRecord?.startRecording()
-        isRunning = true
+            // FIX (telemetría muerta en silencio): antes no se verificaba el
+            // estado de AudioRecord tras construirlo. Si RECORD_AUDIO no estaba
+            // concedido (u otra falla de plataforma), build() dejaba el
+            // AudioRecord en STATE_UNINITIALIZED y startRecording() lanzaba
+            // IllegalStateException sin log claro — o, peor, el loop de lectura
+            // corría igual leyendo siempre 0 muestras: NPE/motor espacial/
+            // visualizer nunca recibían nada y no había ningún indicio del porqué.
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e("PlaybackCaptureService", "AudioRecord de captura no inicializó (state=${audioRecord?.state}) — " +
+                    "¿falta permiso RECORD_AUDIO? Cancelando captura.")
+                audioRecord?.release()
+                audioRecord = null
+                stopSelf()
+                return
+            }
 
-        scope.launch {
-            val buffer = FloatArray(INPUT_SAMPLES)
-            val mono = FloatArray(INPUT_SAMPLES / 2)
-            while (isRunning && isActive) {
-                val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
-                if (read > 0) {
-                    // read son muestras intercaladas L,R; frames por canal = read/2
-                    val numFrames = read / 2
-                    if (numFrames > 0) {
-                        // Análisis neuromórfico (género/RMS/AGC/confianza) —
-                        // in-place, no altera el audio real de salida.
-                        if (IvannaNpeEngine.isReady) {
-                            IvannaNpeEngine.processInterleavedStereo(buffer, numFrames)
+            // FIX: handle nativo del visualizador — maxBlockFrames en FRAMES por
+            // canal (INPUT_SAMPLES es el tamaño del array intercalado L,R,L,R,
+            // así que el máximo de frames por canal es la mitad).
+            IvannaVisualizerBridgeV2.init(sampleRate, INPUT_SAMPLES / 2)
+            // bufferSize está en bytes; frame estéreo float = 2 canales * 4 bytes
+            val estimatedLatencyMs = (bufferSize.toFloat() / 8f) / sampleRate * 1000f
+            IvannaVisualizerBridgeV2.setDeviceLatencyMs(estimatedLatencyMs)
+
+            audioRecord?.startRecording()
+            isRunning = true
+
+            scope.launch {
+                val buffer = FloatArray(INPUT_SAMPLES)
+                val mono = FloatArray(INPUT_SAMPLES / 2)
+                while (isRunning && isActive) {
+                    val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
+                    if (read > 0) {
+                        // read son muestras intercaladas L,R; frames por canal = read/2
+                        val numFrames = read / 2
+                        if (numFrames > 0) {
+                            // Análisis neuromórfico (género/RMS/AGC/confianza) —
+                            // in-place, no altera el audio real de salida.
+                            if (IvannaNpeEngine.isReady) {
+                                IvannaNpeEngine.processInterleavedStereo(buffer, numFrames)
+                            }
+                            // FIX: motor binaural alimentado con audio REAL capturado
+                            // (antes nunca recibía nada — capturaba el mic físico).
+                            SpatialAudioEngineV2.feedCapturedBlock(buffer, numFrames)
+                            // Downmix a mono para el visualizador
+                            for (i in 0 until numFrames) {
+                                mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
+                            }
+                            IvannaVisualizerBridgeV2.processBlockFromNPE(mono, numFrames)
                         }
-                        // FIX: motor binaural alimentado con audio REAL capturado
-                        // (antes nunca recibía nada — capturaba el mic físico).
-                        SpatialAudioEngineV2.feedCapturedBlock(buffer, numFrames)
-                        // Downmix a mono para el visualizador
-                        for (i in 0 until numFrames) {
-                            mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
-                        }
-                        IvannaVisualizerBridgeV2.processBlockFromNPE(mono, numFrames)
                     }
                 }
             }
+        } catch (e: SecurityException) {
+            Log.e("PlaybackCaptureService", "SecurityException al iniciar captura — falta RECORD_AUDIO", e)
+            audioRecord?.release()
+            audioRecord = null
+            stopSelf()
+        } catch (e: Exception) {
+            Log.e("PlaybackCaptureService", "Error iniciando captura de reproducción", e)
+            audioRecord?.release()
+            audioRecord = null
+            stopSelf()
         }
     }
 

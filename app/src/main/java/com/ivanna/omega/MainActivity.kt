@@ -200,11 +200,16 @@ class MainActivity : ComponentActivity() {
         val serviceIntent = Intent(this, AudioForegroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        // FIX (telemetría desconectada / captura solo-visualizer): arrancar
-        // PlaybackCaptureService desde YA, no esperar a que se abra el
-        // visualizer. Así NPE y SpatialAudioEngineV2 siempre reciben audio
-        // real de reproducción en cuanto Android lo permite.
-        requestMediaProjectionAtStartup()
+        // FIX (telemetría desconectada / captura solo-visualizer): la solicitud
+        // de MediaProjection se dispara DESPUÉS de confirmar RECORD_AUDIO, desde
+        // initAudioEngine() — NO aquí. Antes esta línea corría en paralelo con
+        // requestPermissionLauncher.launch(RECORD_AUDIO) sin esperar su resultado:
+        // si el usuario aún no había concedido el mic cuando PlaybackCaptureService
+        // arrancaba, AudioRecord con AudioPlaybackCaptureConfiguration fallaba
+        // silenciosamente (sin permiso) y el loop de captura corría leyendo ceros
+        // para siempre — la telemetría se quedaba muerta sin ningún log de error
+        // visible en la UI. Ahora el orden es estrictamente secuencial: permiso
+        // de mic confirmado → initAudioEngine() → recién ahí se pide MediaProjection.
 
         // FIX: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain) — sin
         // este init() el handle nativo se queda en 0 y todos los setters de
@@ -516,6 +521,15 @@ class MainActivity : ComponentActivity() {
             if (!noRootProcessor!!.hasMagisk()) {
                 Log.i(TAG, "Iniciando modo no-root")
                 noRootProcessor!!.start()
+            }
+
+            // FIX: RECORD_AUDIO ya confirmado en este punto (initAudioEngine()
+            // sólo se llama tras confirmarlo) — recién ahora es seguro pedir
+            // MediaProjection y arrancar PlaybackCaptureService, que construye
+            // su AudioRecord con AudioPlaybackCaptureConfiguration y necesita
+            // ese permiso concedido o falla en silencio.
+            if (!captureServiceRunning) {
+                requestMediaProjectionAtStartup()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error crítico en initAudioEngine", e)
