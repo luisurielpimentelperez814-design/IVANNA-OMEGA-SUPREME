@@ -1,18 +1,12 @@
 package com.ivanna.omega.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,12 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,28 +35,18 @@ import com.ivanna.omega.ui.theme.*
 import kotlin.math.log10
 
 /**
- * IvannaControlPanel v3.0 — "OMNIPOTENTE"
+ * IvannaControlPanel v2.0 — Rediseño MAGISTRAL
  *
- * REGLA DE ORO: no borramos, mejoramos y perfeccionamos. Este archivo es un
- * REEMPLAZO DE PRESENTACIÓN drop-in de IvannaControlPanel v2.0: la firma
- * pública de la función — nombre, todos los parámetros, todos los callbacks —
- * es EXACTAMENTE la misma. Cualquier cableado (ViewModel, Activity, etc.) que
- * ya invoque IvannaControlPanel(...) sigue funcionando sin cambiar una línea.
- * Toda la lógica de estado/telemetría es funcionalmente idéntica; sólo cambia
- * radicalmente la presentación:
- *
- *  - Anillo OMNI: un solo indicador circular en el header que fusiona en un
- *    vistazo el estado de TODOS los motores (OPE + NPE + Spatial + Evo +
- *    Anti-Dolby + Auto IA) en vez de repartir esa lectura en 5 chips sueltos.
- *  - Glass cards con doble borde (glow exterior + highlight superior
- *    especular) para dar sensación real de cristal iluminado, no un tinte
- *    plano.
- *  - AuroraSlider con pista de glow detrás del thumb y marca de posición
- *    animada — se "siente" el valor, no sólo se lee.
- *  - HUD de telemetría con mini-sparkline de RMS en vivo en vez de sólo barras
- *    estáticas.
- *  - Jerarquía tipográfica más agresiva (display/headline) para que el
- *    nombre del proyecto y el modo activo dominen visualmente el header.
+ * REGLA DE ORO: no se borra nada. Toda la lógica de callbacks es la misma
+ * que en la versión v1.7 previa; sólo cambia la presentación:
+ *  - Paleta "Aurora Obsidiana" con acentos cian/magenta/oro/aurora-verde
+ *  - HUD superior en vivo (RMS, AGC, género, generación evolutiva, motor OPE)
+ *  - Master bar con controles críticos siempre visibles (Anti-Dolby, Motor OPE,
+ *    Presets, Auto IA)
+ *  - Secciones organizadas en GlassCard translúcidas dejando ver el wallpaper
+ *    OpenGL PBR audio-reactivo detrás.
+ *  - Sliders custom AuroraSlider con lectura técnica formateada por unidad.
+ *  - Chips de estado con color semántico (ON/OFF/AUTO).
  *
  * Se conservan absolutamente todas las funciones expuestas del motor:
  * DSP core (Exciter/EQ/Width) · Compresor · Motor OPE (DSP/NHO/Spatial/HRTF)
@@ -102,7 +82,6 @@ fun IvannaControlPanel(
     initialNpeHrtf: Boolean = true,
     initialNpeCochlear: Boolean = true,
     initialNpeAdapt: Boolean = true,
-    initialNpeManifold: Boolean = false,
     initialSpatialEnabled: Boolean = false,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
@@ -124,10 +103,10 @@ fun IvannaControlPanel(
     onNpeMasterGainChange: (Float) -> Unit = {},
     onNpeAgcChange: (Float, Float) -> Unit = { _, _ -> },
     onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
-    onNpeManifoldChange: (Boolean) -> Unit = {},
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {}
 ) {
+    // Estado UI (idéntico al v1.7)
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
@@ -153,7 +132,6 @@ fun IvannaControlPanel(
     var npeHrtf by remember { mutableStateOf(initialNpeHrtf) }
     var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
     var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
-    var npeManifold by remember { mutableStateOf(initialNpeManifold) }
     var npeGenre by remember { mutableStateOf("\u2014") }
     var npeRmsDb by remember { mutableFloatStateOf(-60f) }
     var npeAgcGainDb by remember { mutableFloatStateOf(0f) }
@@ -161,11 +139,8 @@ fun IvannaControlPanel(
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
 
-    // Historial corto para el mini-sparkline de RMS del HUD (sólo visual).
-    val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
-
+    // Telemetría motor NPE (idéntico al v1.7)
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(800)
         while (true) {
             npeGenre = IvannaNpeEngine.getDetectedGenre()
             val m = IvannaNpeEngine.getMetrics()
@@ -176,63 +151,47 @@ fun IvannaControlPanel(
             val c = IvannaNpeEngine.getSynthClassify()
             npeClassifyConfidence = c.getOrElse(1) { 0f }
             npeClassifyThd = c.getOrElse(2) { 0f }
-            rmsHistory.removeAt(0)
-            rmsHistory.add(npeRmsDb)
-            kotlinx.coroutines.delay(750)
+            kotlinx.coroutines.delay(1000)
         }
     }
 
+    // Telemetría kernel evolutivo (idéntico al v1.7)
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1200)
         while (true) {
             evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
             evoGeneration = IvannaNativeLib.nativeGetGeneration()
-            kotlinx.coroutines.delay(2000)
+            kotlinx.coroutines.delay(1000)
         }
     }
 
-    // Nivel "OMNI" agregado: 0..1, promedio ponderado de motores activos —
-    // sólo alimenta el anillo del header, no toca ningún parámetro real.
-    val omniLevel by remember(omegaMode, npeBypass, spatialEnabled, evoEnabled, antiDolbyEnabled, autoMode) {
-        mutableFloatStateOf(
-            listOf(
-                if (omegaMode > 0) 1f else 0.3f,
-                if (!npeBypass) 1f else 0.15f,
-                if (spatialEnabled) 1f else 0.2f,
-                if (evoEnabled) 1f else 0.2f,
-                if (antiDolbyEnabled) 1f else 0.4f,
-                if (autoMode) 1f else 0.6f
-            ).average().toFloat()
-        )
-    }
-
+    // ═══════════════════════════════════════════════════════════════════════
+    //  LAYOUT MAGISTRAL
+    // ═══════════════════════════════════════════════════════════════════════
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        ObsidianSoft.copy(alpha = 0.65f),
-                        ObsidianVoid.copy(alpha = 0.92f)
-                    ),
-                    radius = 1400f
+                Brush.verticalGradient(
+                    0f to ObsidianDeep.copy(alpha = 0.55f),
+                    0.5f to ObsidianDeep.copy(alpha = 0.35f),
+                    1f to ObsidianDeep.copy(alpha = 0.75f)
                 )
             )
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        OmniHeroHeader(
+        // ── Marca + versión + estado global ─────────────────────────────
+        HeroHeader(
             omegaMode = omegaMode,
             npeActive = !npeBypass,
             spatialActive = spatialEnabled,
-            autoMode = autoMode,
-            omniLevel = omniLevel
+            autoMode = autoMode
         )
 
+        // ── HUD de telemetría en vivo ───────────────────────────────────
         LiveTelemetryHud(
             rmsDb = npeRmsDb,
-            rmsHistory = rmsHistory,
             agcDb = npeAgcGainDb,
             genre = npeGenre,
             confidence = npeClassifyConfidence,
@@ -241,14 +200,22 @@ fun IvannaControlPanel(
             evoGeneration = evoGeneration
         )
 
+        // ── Master Bar: Anti-Dolby + Auto IA + visualizer ───────────────
         MasterBar(
             antiDolbyEnabled = antiDolbyEnabled,
-            onAntiDolbyChange = { enabled -> antiDolbyEnabled = enabled; onAntiDolbyChange(enabled) },
+            onAntiDolbyChange = { enabled ->
+                antiDolbyEnabled = enabled
+                onAntiDolbyChange(enabled)
+            },
             autoMode = autoMode,
-            onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
+            onAutoModeChange = { enabled ->
+                autoMode = enabled
+                onAutoModeChange(enabled)
+            },
             onOpenVisualizer = onOpenVisualizer
         )
 
+        // ── Motor OPE (segmentado) ──────────────────────────────────────
         GlassCard(
             title = "MOTOR OPE",
             accent = AuroraCyan,
@@ -266,7 +233,7 @@ fun IvannaControlPanel(
                         onClick = { omegaMode = idx; onOmegaModeChange(idx) },
                         shape = SegmentedButtonDefaults.itemShape(idx, 4),
                         colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = AuroraCyan.copy(alpha = 0.20f),
+                            activeContainerColor = AuroraCyan.copy(alpha = 0.18f),
                             activeContentColor = AuroraCyan,
                             activeBorderColor = AuroraCyan,
                             inactiveContainerColor = Color.Transparent,
@@ -278,6 +245,7 @@ fun IvannaControlPanel(
             }
         }
 
+        // ── Presets ─────────────────────────────────────────────────────
         GlassCard(
             title = "PRESETS DE SONIDO",
             accent = NeonMagenta,
@@ -289,12 +257,15 @@ fun IvannaControlPanel(
                     FilterChip(
                         selected = selectedPreset == name,
                         enabled = !autoMode,
-                        onClick = { selectedPreset = name; onPresetSelected(name) },
+                        onClick = {
+                            selectedPreset = name
+                            onPresetSelected(name)
+                        },
                         label = { Text(name, fontWeight = FontWeight.Medium) },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = Color.Transparent,
                             labelColor = TextSecondary,
-                            selectedContainerColor = NeonMagenta.copy(alpha = 0.24f),
+                            selectedContainerColor = NeonMagenta.copy(alpha = 0.22f),
                             selectedLabelColor = NeonMagenta
                         ),
                         border = FilterChipDefaults.filterChipBorder(
@@ -308,87 +279,194 @@ fun IvannaControlPanel(
             }
         }
 
+        // ── DSP Core ────────────────────────────────────────────────────
         GlassCard(title = "DSP CORE", accent = AuroraCyan, subtitle = "EQ · Exciter · Widener · Gain") {
-            AuroraSlider("EXCITER", exciter, 0f..1f, unit = "×") { exciter = it; onExciterChange(it) }
-            AuroraSlider("EQ GAIN", eq, -18f..18f, unit = "dB") { eq = it; onEqChange(it) }
-            AuroraSlider("STEREO WIDTH", width, 0f..1.5f, unit = "γ") { width = it; onWidthChange(it) }
+            AuroraSlider(
+                label = "EXCITER",
+                value = exciter,
+                range = 0f..1f,
+                unit = "×",
+                onValueChange = { exciter = it; onExciterChange(it) }
+            )
+            AuroraSlider(
+                label = "EQ GAIN",
+                value = eq,
+                range = -18f..18f,
+                unit = "dB",
+                onValueChange = { eq = it; onEqChange(it) }
+            )
+            AuroraSlider(
+                label = "STEREO WIDTH",
+                value = width,
+                range = 0f..1.5f,
+                unit = "γ",
+                onValueChange = { width = it; onWidthChange(it) }
+            )
         }
 
+        // ── Compresor ───────────────────────────────────────────────────
         GlassCard(title = "COMPRESOR", accent = AmberSignal, subtitle = "g_comp · dinámica lock-free") {
-            AuroraSlider("THRESHOLD", compThreshold, 0f..1f,
-                displayValue = { "%.1f dB".format(-24f + it * 24f) }) {
-                compThreshold = it; onCompThresholdChange(it)
-            }
-            AuroraSlider("RATIO", compRatio, 0f..1f,
-                displayValue = { "%.1f:1".format(1f + it * 19f) }) {
-                compRatio = it; onCompRatioChange(it)
-            }
+            AuroraSlider(
+                label = "THRESHOLD",
+                value = compThreshold,
+                range = 0f..1f,
+                displayValue = { "%.1f dB".format(-24f + it * 24f) },
+                onValueChange = { compThreshold = it; onCompThresholdChange(it) }
+            )
+            AuroraSlider(
+                label = "RATIO",
+                value = compRatio,
+                range = 0f..1f,
+                displayValue = { "%.1f:1".format(1f + it * 19f) },
+                onValueChange = { compRatio = it; onCompRatioChange(it) }
+            )
         }
 
+        // ── NHO / Espacial (PDEngine g_pd) ──────────────────────────────
         GlassCard(
             title = "NHO / ESPACIAL",
             accent = PhosphorGreen,
             subtitle = "PDEngine g_pd · activo en +NHO / +Spatial"
         ) {
-            AuroraSlider("GANANCIA ARMÓNICA (NHO)", nhoHarmonic, 0f..1f) {
-                nhoHarmonic = it; onNhoHarmonicChange(it)
-            }
-            AuroraSlider("ÁNGULO ESPACIAL", spatialAngle, 0f..1.33f, unit = "rad") {
-                spatialAngle = it; onSpatialAngleChange(it)
-            }
-            AuroraSlider("ANCHO ESPACIAL", spatialWidth, 0f..1.5f) {
-                spatialWidth = it; onSpatialWidthChange(it)
-            }
+            AuroraSlider(
+                label = "GANANCIA ARMÓNICA (NHO)",
+                value = nhoHarmonic,
+                range = 0f..1f,
+                unit = "",
+                onValueChange = { nhoHarmonic = it; onNhoHarmonicChange(it) }
+            )
+            AuroraSlider(
+                label = "ÁNGULO ESPACIAL",
+                value = spatialAngle,
+                range = 0f..1.33f,
+                unit = "rad",
+                onValueChange = { spatialAngle = it; onSpatialAngleChange(it) }
+            )
+            AuroraSlider(
+                label = "ANCHO ESPACIAL",
+                value = spatialWidth,
+                range = 0f..1.5f,
+                unit = "",
+                onValueChange = { spatialWidth = it; onSpatialWidthChange(it) }
+            )
         }
 
+        // ── Kernel Evolutivo ────────────────────────────────────────────
         GlassCard(
             title = "KERNEL EVOLUTIVO",
             accent = AmberSignal,
             subtitle = "g_population · hilo de baja prioridad",
             rightSlot = {
-                ToggleSwitch(evoEnabled, { evoEnabled = it; onEvoEnabledChange(it) }, AmberSignal)
+                ToggleSwitch(
+                    checked = evoEnabled,
+                    onCheckedChange = { evoEnabled = it; onEvoEnabledChange(it) },
+                    accent = AmberSignal
+                )
             }
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatBlock("GENERACIÓN", evoGeneration.toString(), AmberSignal, Modifier.weight(1f))
-                StatBlock("FITNESS", "%.3f".format(evoFitness), PhosphorGreen, Modifier.weight(1f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatBlock(
+                    label = "GENERACIÓN",
+                    value = evoGeneration.toString(),
+                    accent = AmberSignal,
+                    modifier = Modifier.weight(1f)
+                )
+                StatBlock(
+                    label = "FITNESS",
+                    value = "%.3f".format(evoFitness),
+                    accent = PhosphorGreen,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
+        // ── Motor NPE ───────────────────────────────────────────────────
         GlassCard(
             title = "MOTOR NPE · NEUROMÓRFICO",
             accent = AuroraCyan,
             subtitle = "NHO + LIF + BiquadEnvelopeBank + AutonomousBrain",
             rightSlot = {
-                ToggleSwitch(!npeBypass, { on -> npeBypass = !on; onNpeBypassChange(!on) }, AuroraCyan)
+                ToggleSwitch(
+                    checked = !npeBypass,
+                    onCheckedChange = { on -> npeBypass = !on; onNpeBypassChange(!on) },
+                    accent = AuroraCyan
+                )
             }
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBlock("GÉNERO", npeGenre, NeonMagenta, Modifier.weight(1.4f))
-                StatBlock("CONF.", "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
-                StatBlock("THD", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StatBlock(
+                    label = "GÉNERO",
+                    value = npeGenre,
+                    accent = NeonMagenta,
+                    modifier = Modifier.weight(1.4f)
+                )
+                StatBlock(
+                    label = "CONF.",
+                    value = "%.0f%%".format(npeClassifyConfidence * 100f),
+                    accent = PhosphorGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                StatBlock(
+                    label = "THD",
+                    value = "%.1f%%".format(npeClassifyThd),
+                    accent = AmberSignal,
+                    modifier = Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(4.dp))
-            AuroraSlider("GANANCIA ARMÓNICA · NHO", npeHarmonic, 0f..2f, unit = "×") {
-                npeHarmonic = it; onNpeHarmonicChange(it)
-            }
-            AuroraSlider("INHIBICIÓN LATERAL", npeLateralInhib, 0f..1f) {
-                npeLateralInhib = it; onNpeLateralInhibChange(it)
-            }
-            AuroraSlider("COMPRESIÓN OHC", npeOhcCompression, 0f..1f) {
-                npeOhcCompression = it; onNpeOhcCompressionChange(it)
-            }
-            AuroraSlider("MASTER GAIN", npeMasterGain, -18f..18f, unit = "dB") {
-                npeMasterGain = it; onNpeMasterGainChange(it)
-            }
-            AuroraSlider("AGC TARGET", npeAgcTarget, -36f..0f, unit = "dB") {
-                npeAgcTarget = it; onNpeAgcChange(it, npeAgcRate)
-            }
-            AuroraSlider("AGC RATE", npeAgcRate, 0f..1f) {
-                npeAgcRate = it; onNpeAgcChange(npeAgcTarget, it)
-            }
+            AuroraSlider(
+                label = "GANANCIA ARMÓNICA · NHO",
+                value = npeHarmonic,
+                range = 0f..2f,
+                unit = "×",
+                onValueChange = { npeHarmonic = it; onNpeHarmonicChange(it) }
+            )
+            AuroraSlider(
+                label = "INHIBICIÓN LATERAL",
+                value = npeLateralInhib,
+                range = 0f..1f,
+                unit = "",
+                onValueChange = { npeLateralInhib = it; onNpeLateralInhibChange(it) }
+            )
+            AuroraSlider(
+                label = "COMPRESIÓN OHC",
+                value = npeOhcCompression,
+                range = 0f..1f,
+                unit = "",
+                onValueChange = { npeOhcCompression = it; onNpeOhcCompressionChange(it) }
+            )
+            AuroraSlider(
+                label = "MASTER GAIN",
+                value = npeMasterGain,
+                range = -18f..18f,
+                unit = "dB",
+                onValueChange = { npeMasterGain = it; onNpeMasterGainChange(it) }
+            )
+            AuroraSlider(
+                label = "AGC TARGET",
+                value = npeAgcTarget,
+                range = -36f..0f,
+                unit = "dB",
+                onValueChange = { npeAgcTarget = it; onNpeAgcChange(it, npeAgcRate) }
+            )
+            AuroraSlider(
+                label = "AGC RATE",
+                value = npeAgcRate,
+                range = 0f..1f,
+                unit = "",
+                onValueChange = { npeAgcRate = it; onNpeAgcChange(npeAgcTarget, it) }
+            )
             Spacer(Modifier.height(4.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 FlagToggle("HRTF", npeHrtf, AuroraCyan, Modifier.weight(1f)) {
                     npeHrtf = it; onNpeFlagsChange(it, npeCochlear, npeAdapt)
                 }
@@ -399,37 +477,501 @@ fun IvannaControlPanel(
                     npeAdapt = it; onNpeFlagsChange(npeHrtf, npeCochlear, it)
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            FlagToggle("MANIFOLD (Volterra H2)", npeManifold, AuroraCyan, Modifier.fillMaxWidth()) {
-                npeManifold = it; onNpeManifoldChange(it)
-            }
         }
 
+        // ── Motor Binaural ──────────────────────────────────────────────
         GlassCard(
-            title = "MOTOR BINAURAL · 32 OBJETOS",
+            title = "MOTOR ESPACIAL BINAURAL",
             accent = NeonMagenta,
-            subtitle = "Upmix neural + VBAP/HRTF + head-tracking 6DoF",
+            subtitle = "Upmix neural 4-stems · 32 objetos · head-tracking 6DoF",
             rightSlot = {
-                ToggleSwitch(spatialEnabled, { spatialEnabled = it; onSpatialEnabledChange(it) }, NeonMagenta)
+                ToggleSwitch(
+                    checked = spatialEnabled,
+                    onCheckedChange = { spatialEnabled = it; onSpatialEnabledChange(it) },
+                    accent = NeonMagenta
+                )
             }
         ) {
             Text(
-                "Activa el renderer de objetos completo: separa hasta 32 stems " +
-                "virtuales, los posiciona en el anillo VBAP y aplica convolución " +
-                "HRTF con seguimiento de cabeza en tiempo real.",
+                "Opt-in: usa giroscopio a 100Hz + separación neural de stems. " +
+                        "Recomendado usar audífonos. Consume ~15% CPU adicional.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
         }
 
+        // ── Footer ──────────────────────────────────────────────────────
         Spacer(Modifier.height(4.dp))
         Text(
-            "IVANNA-OMEGA-SUPREME · GORE TNS / LUPP-OR9 © 2026",
+            "IVANNA-OMEGA-SUPREME v1.7 · © 2025-2026 Luis Uriel Pimentel Pérez",
             style = MaterialTheme.typography.labelSmall,
             color = TextMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(20.dp))
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  COMPONENTES CUSTOM
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun HeroHeader(
+    omegaMode: Int,
+    npeActive: Boolean,
+    spatialActive: Boolean,
+    autoMode: Boolean
+) {
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                Brush.horizontalGradient(
+                    0f to ObsidianGlass,
+                    0.5f to ObsidianSoft.copy(alpha = 0.85f),
+                    1f to ObsidianGlass
+                )
+            )
+            .border(
+                1.dp,
+                Brush.horizontalGradient(
+                    0f to AuroraCyan.copy(alpha = 0.5f),
+                    0.5f to NeonMagenta.copy(alpha = 0.4f),
+                    1f to AmberSignal.copy(alpha = 0.5f)
+                ),
+                RoundedCornerShape(20.dp)
+            )
+            .padding(horizontal = 20.dp, vertical = 18.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(PhosphorGreen.copy(alpha = pulse))
+            )
+            Text(
+                "IVANNA",
+                style = MaterialTheme.typography.displayMedium,
+                color = TextPrimary
+            )
+            Text(
+                "OMEGA · SUPREME",
+                style = MaterialTheme.typography.headlineMedium,
+                color = AuroraCyan
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "MOTOR NEUROMÓRFICO ESPACIAL · v1.7",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusPill(
+                text = when (omegaMode) {
+                    1 -> "OPE · +NHO"; 2 -> "OPE · +SPATIAL"; 3 -> "OPE · +HRTF"
+                    else -> "OPE · DSP"
+                },
+                accent = AuroraCyan
+            )
+            StatusPill(text = if (npeActive) "NPE · ON" else "NPE · OFF",
+                accent = if (npeActive) PhosphorGreen else TextMuted)
+            StatusPill(text = if (spatialActive) "BIN · 6DoF" else "BIN · OFF",
+                accent = if (spatialActive) NeonMagenta else TextMuted)
+            if (autoMode) StatusPill(text = "AUTO IA", accent = AmberSignal)
+        }
+    }
+}
+
+@Composable
+private fun LiveTelemetryHud(
+    rmsDb: Float,
+    agcDb: Float,
+    genre: String,
+    confidence: Float,
+    thd: Float,
+    evoFitness: Float,
+    evoGeneration: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(ObsidianGlass)
+            .border(1.dp, ObsidianEdge, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("TELEMETRÍA EN VIVO",
+                style = MaterialTheme.typography.titleSmall,
+                color = TextSecondary)
+            Text("● LIVE",
+                style = MaterialTheme.typography.labelSmall,
+                color = PhosphorGreen)
+        }
+        // Barra RMS
+        MeterRow(label = "RMS", valueText = "%.1f dB".format(rmsDb),
+            fill = ((rmsDb + 60f) / 60f).coerceIn(0f, 1f),
+            barColor = AuroraCyan)
+        MeterRow(label = "AGC", valueText = "%+.1f dB".format(agcDb),
+            fill = ((agcDb + 18f) / 36f).coerceIn(0f, 1f),
+            barColor = NeonMagenta)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatBlock(label = "GÉNERO", value = genre, accent = AuroraCyan,
+                modifier = Modifier.weight(1.4f))
+            StatBlock(label = "CONF.", value = "%.0f%%".format(confidence * 100f),
+                accent = PhosphorGreen, modifier = Modifier.weight(1f))
+            StatBlock(label = "THD", value = "%.1f%%".format(thd),
+                accent = AmberSignal, modifier = Modifier.weight(1f))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatBlock(label = "GENERACIÓN", value = evoGeneration.toString(),
+                accent = AmberSignal, modifier = Modifier.weight(1f))
+            StatBlock(label = "FITNESS", value = "%.3f".format(evoFitness),
+                accent = PhosphorGreen, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MasterBar(
+    antiDolbyEnabled: Boolean,
+    onAntiDolbyChange: (Boolean) -> Unit,
+    autoMode: Boolean,
+    onAutoModeChange: (Boolean) -> Unit,
+    onOpenVisualizer: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(ObsidianSoft.copy(alpha = 0.85f))
+            .border(
+                1.dp,
+                Brush.horizontalGradient(
+                    0f to AuroraCyan.copy(alpha = 0.5f),
+                    1f to NeonMagenta.copy(alpha = 0.5f)
+                ),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MasterChip(
+            label = "ANTI-DOLBY",
+            active = antiDolbyEnabled,
+            accent = NeonMagenta,
+            modifier = Modifier.weight(1f),
+            onClick = { onAntiDolbyChange(!antiDolbyEnabled) }
+        )
+        MasterChip(
+            label = "AUTO IA",
+            active = autoMode,
+            accent = AmberSignal,
+            modifier = Modifier.weight(1f),
+            onClick = { onAutoModeChange(!autoMode) }
+        )
+        MasterChip(
+            label = "VISUAL",
+            active = false,
+            accent = AuroraCyan,
+            icon = Icons.Default.PlayArrow,
+            modifier = Modifier.weight(1f),
+            onClick = onOpenVisualizer
+        )
+    }
+}
+
+@Composable
+private fun MasterChip(
+    label: String,
+    active: Boolean,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit
+) {
+    val bg by animateColorAsState(
+        targetValue = if (active) accent.copy(alpha = 0.22f) else Color.Transparent,
+        label = "chipBg"
+    )
+    val border by animateColorAsState(
+        targetValue = if (active) accent else ObsidianEdge,
+        label = "chipBorder"
+    )
+    val fg by animateColorAsState(
+        targetValue = if (active) accent else TextSecondary,
+        label = "chipFg"
+    )
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(46.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = bg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, border)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge, color = fg,
+                fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun GlassCard(
+    title: String,
+    accent: Color,
+    subtitle: String? = null,
+    rightSlot: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(ObsidianGlass)
+            .border(
+                1.dp,
+                Brush.verticalGradient(
+                    0f to accent.copy(alpha = 0.55f),
+                    1f to ObsidianEdge
+                ),
+                RoundedCornerShape(18.dp)
+            )
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                    )
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                }
+                if (subtitle != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                }
+            }
+            if (rightSlot != null) rightSlot()
+        }
+        content()
+    }
+}
+
+@Composable
+private fun AuroraSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    unit: String = "",
+    displayValue: ((Float) -> String)? = null,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Text(
+                displayValue?.invoke(value) ?: "%.2f%s".format(value,
+                    if (unit.isNotEmpty()) " $unit" else ""),
+                style = MaterialTheme.typography.labelLarge,
+                color = AuroraCyan
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = range,
+            colors = SliderDefaults.colors(
+                thumbColor = AuroraCyan,
+                activeTrackColor = AuroraCyan,
+                inactiveTrackColor = ObsidianEdge,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun ToggleSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    accent: Color
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = ObsidianDeep,
+            checkedTrackColor = accent,
+            checkedBorderColor = accent,
+            uncheckedThumbColor = TextMuted,
+            uncheckedTrackColor = Color.Transparent,
+            uncheckedBorderColor = ObsidianEdge
+        )
+    )
+}
+
+@Composable
+private fun FlagToggle(
+    label: String,
+    checked: Boolean,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val bg by animateColorAsState(
+        targetValue = if (checked) accent.copy(alpha = 0.18f) else Color.Transparent,
+        label = "flagBg"
+    )
+    val border by animateColorAsState(
+        targetValue = if (checked) accent else ObsidianEdge, label = "flagBorder")
+    val fg by animateColorAsState(
+        targetValue = if (checked) accent else TextMuted, label = "flagFg")
+    Surface(
+        onClick = { onCheckedChange(!checked) },
+        modifier = modifier.height(58.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = bg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, border)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(6.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = fg,
+                fontWeight = FontWeight.SemiBold)
+            Text(if (checked) "ON" else "OFF",
+                style = MaterialTheme.typography.labelMedium, color = fg,
+                fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, accent: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(accent.copy(alpha = 0.16f))
+            .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, color = accent,
+            fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun StatBlock(
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(ObsidianDeep.copy(alpha = 0.55f))
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .padding(vertical = 8.dp, horizontal = 10.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = TextMuted)
+        Spacer(Modifier.height(2.dp))
+        Text(value, style = MaterialTheme.typography.titleSmall, color = accent,
+            fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun MeterRow(
+    label: String,
+    valueText: String,
+    fill: Float,
+    barColor: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary,
+            modifier = Modifier.width(38.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(10.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(ObsidianDeep)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fill)
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to barColor.copy(alpha = 0.5f),
+                            1f to barColor
+                        )
+                    )
+            )
+        }
+        Text(valueText, style = MaterialTheme.typography.labelLarge, color = barColor,
+            modifier = Modifier.width(78.dp), textAlign = TextAlign.End)
+    }
+}
+
+// Fin del archivo.
