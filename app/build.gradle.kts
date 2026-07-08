@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -12,8 +11,8 @@ android {
         applicationId = "com.ivanna.omega"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1500
-        versionName = "1.5"
+        versionCode = 1800
+        versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,7 +47,7 @@ android {
         }
     }
 
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "25.1.8937393"
 
     androidResources {
         noCompress += listOf("tflite")
@@ -77,7 +76,6 @@ android {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
