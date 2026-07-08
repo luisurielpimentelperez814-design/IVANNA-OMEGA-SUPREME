@@ -4,7 +4,7 @@ project(ivanna_omega_supreme)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ── Compile flags ─────────────────────────────────────────────────────────────
+# ── Compile flags ──────────────────────────────────────────────────────────
 # FIX v1.5: elimina -ffast-math (rompe NEON en SD8 Gen2/3, genera NaN)
 # FIX v1.5: añade -fno-fast-math, -fno-associative-math, -ffp-contract=off
 set(BASE_FLAGS
@@ -18,7 +18,7 @@ set(BASE_FLAGS
     -Wno-unused-variable
 )
 
-# ── ABI-specific flags ────────────────────────────────────────────────────────
+# ── ABI-specific flags ───────────────────────────────────────────────────────
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     list(APPEND BASE_FLAGS -march=armv8-a+simd)
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
@@ -28,19 +28,25 @@ endif()
 # ── Definiciones globales ─────────────────────────────────────────────────────
 add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libivanna_omega.so (APK NDK library)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
-    # JNI bridge
+    # JNI bridge consolidado (libivanna_omega.so único)
     jni/ivanna_omega_jni.cpp
+    jni/ivanna_visualizer_jni.cpp
+    jni/ivanna_visualizer_v2_jni.cpp
+    jni/ivanna_npe_jni.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
+    jni/ivanna_spatial_jni.cpp
 
     # Spatial engine
     spatial/spatial_engine.cpp
     spatial/room_model.cpp
+    spatial/ivanna_head_tracker.cpp
+    spatial/ivanna_object_renderer.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
@@ -51,6 +57,21 @@ add_library(ivanna_omega SHARED
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp
+    neuromorphic/ivanna_neural_upmixer.cpp
+
+    # Motor coclear completo (Volterra H2 + upsampling polifásico) — opt-in
+    neuromorphic/volterra_h2_symmetric.cpp
+    neuromorphic/neuro_cochlear_manifold.cpp
+
+    # [FIX-LINK] Implementación real de IvannaFastRpcClient (declarada en
+    # hexagon/ivanna_fastrpc_client.hpp). Nunca estuvo en el build: no daba
+    # error porque nada llamaba a `new IvannaFastRpcClient()` en código
+    # enlazado. neuro_cochlear_manifold.cpp (arriba) sí lo instancia, así que
+    # el linker ahora reclama el símbolo. NO añadir también
+    # neuromorphic/ivanna_npe_engine.cpp: es una implementación duplicada y
+    # obsoleta de la misma clase (huérfana desde 832c272, nunca en CMake) —
+    # agregarla junto a esta produciría "duplicate symbol" en el linker.
+    hexagon/ivanna_fastrpc_client.cpp
 
     # System audio integration
     shm_hyperplane.cpp
@@ -71,6 +92,22 @@ add_library(ivanna_omega SHARED
 
     # USB Audio Pro Manager (JNI para UsbAudioProManager.kt) — FIX v1.5
     usb_audio_pro_manager.cpp
+
+    # ════════════════════════════════════════════════════════════════════════
+    # NUEVA: Unified Engine Integration v2.0 (Fase 1-6)
+    # ════════════════════════════════════════════════════════════════════════
+
+    # Fase 1: Orquestador central (UnifiedControlFrame + control_apply_frame)
+    audio_control_plane.cpp
+
+    # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
+    # (header-only, no .cpp necesario)
+
+    # Fase 5: Evolutionary Adapter (mapeo genoma → parámetros real-time)
+    # (header-only, no .cpp necesario)
+
+    # Fase 6: Kotlin integration (AudioPipeline, AudioEngine, OmegaEngineBridge)
+    # (lado Kotlin, no .cpp aquí)
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
@@ -80,6 +117,7 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/neuromorphic
     ${CMAKE_SOURCE_DIR}/spatial
+    ${CMAKE_SOURCE_DIR}/visualizer
 )
 
 find_library(log-lib log)
@@ -92,9 +130,9 @@ target_link_libraries(ivanna_omega
     ${aaudio-lib}
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 # Target: libomega_effect.so (AudioFlinger GlobalEffect — Magisk module)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
 )
@@ -115,21 +153,3 @@ set_target_properties(omega_effect PROPERTIES
     EXCLUDE_FROM_ALL TRUE
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Target: libomega_vibratory.so (stub for IvannaNpeNative.kt)
-# ─────────────────────────────────────────────────────────────────────────────
-add_library(omega_vibratory SHARED
-    jni/omega_vibratory_stub.cpp
-)
-
-target_compile_options(omega_vibratory PRIVATE ${BASE_FLAGS})
-
-target_include_directories(omega_vibratory PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(omega_vibratory
-    ${log-lib}
-    ${android-lib}
-)
