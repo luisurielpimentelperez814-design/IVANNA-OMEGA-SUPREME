@@ -68,6 +68,7 @@ class ParameterStore(context: Context) {
     fun setEqGain(value: Float) = prefs.edit().putFloat(KEY_EQ_GAIN, value).apply()
 
     fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
+    fun setWidth(value: Float) = prefs.edit().putFloat(KEY_WIDTH, value).apply()
 
     fun isAntiDolbyEnabled(): Boolean = prefs.getBoolean(KEY_ANTI_DOLBY, false)
     fun setAntiDolbyEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ANTI_DOLBY, enabled).apply()
