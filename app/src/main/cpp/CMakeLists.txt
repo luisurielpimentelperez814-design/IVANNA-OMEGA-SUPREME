@@ -86,6 +86,11 @@ add_library(ivanna_omega SHARED
     # Fase 1: Orquestador central (UnifiedControlFrame + control_apply_frame)
     audio_control_plane.cpp
 
+    # Fase 4: NeuroCochlearManifold + VolterraH2Symmetric (motor cochlear)
+    neuromorphic/neuro_cochlear_manifold.cpp
+    neuromorphic/volterra_h2_symmetric.cpp
+    hexagon/ivanna_fastrpc_client.cpp
+
     # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
     # (header-only, no .cpp necesario)
 

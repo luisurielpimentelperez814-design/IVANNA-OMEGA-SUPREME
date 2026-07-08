@@ -21,12 +21,22 @@
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
 #include "../pd_engine.hpp"
+#include "../control_frame.hpp"
 
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 using namespace ivanna;
+
+// ── Bus + staging frame (ver audio_control_plane.cpp) ────────────────────────
+// Definición real de los externs declarados en audio_control_plane.cpp.
+// El hilo JNI/UI publica ControlFrame nuevos aquí; el hilo de audio los
+// consume vía ControlFrameBus::consumeIfNewer().
+namespace ivanna {
+    ControlFrameBus g_control_bus;
+    ControlFrame    g_staging_frame;
+}
 
 // ── Engine singletons (static storage — zero allocations) ────────────────────
 static ParametricEQ   g_eq;

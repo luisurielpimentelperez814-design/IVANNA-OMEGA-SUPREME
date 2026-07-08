@@ -9,7 +9,7 @@
  */
 
 #include "../hexagon/ivanna_fastrpc_client.hpp"
-#include "../include/volterra_h2_symmetric.hpp"
+#include "volterra_h2_symmetric.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
