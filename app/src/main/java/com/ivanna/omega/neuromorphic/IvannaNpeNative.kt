@@ -9,9 +9,20 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
- * Static JNI shim. Loads libomega_vibratory.so once and exposes the raw
+ * Static JNI shim. Loads libivanna_omega.so once and exposes the raw
  * native entry points. All higher-level wrappers (OmegaVibratoryProcessor,
  * IvannaNpeEngine) sit on top of this.
+ *
+ * FIX (NPE muerto): esto cargaba "omega_vibratory", una librería que NUNCA
+ * existió como target de CMake (ni el .so real ni el stub omega_vibratory_stub.cpp
+ * llegaron a compilarse en ningún target). System.loadLibrary() fallaba SIEMPRE,
+ * silenciosamente capturado como UnsatisfiedLinkError -> isLoaded=false para
+ * siempre -> todo IvannaNpeEngine (telemetría RMS/género/AGC/classify +
+ * controles Compresor NPE/Harmonic/LateralInhib/OHC/MasterGain/HRTF/Cochlear/
+ * Adapt/Manifold) era un no-op silencioso, sin logs de error visibles.
+ * La implementación real (23 funciones JNI, motor completo NHO+LIF+
+ * BiquadEnvelopeBank+AutonomousBrain) siempre estuvo en jni/ivanna_npe_jni.cpp,
+ * que SÍ está compilado dentro de libivanna_omega.so (ver CMakeLists.txt).
  */
 object IvannaNpeNative {
 
@@ -26,11 +37,11 @@ object IvannaNpeNative {
     init {
         var ok = false
         try {
-            System.loadLibrary("omega_vibratory")
+            System.loadLibrary("ivanna_omega")
             ok = true
-            android.util.Log.i("IvannaNpeNative", "libomega_vibratory.so cargada")
+            android.util.Log.i("IvannaNpeNative", "libivanna_omega.so cargada (NPE)")
         } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e("IvannaNpeNative", "Fallo al cargar omega_vibratory: ${e.message}")
+            android.util.Log.e("IvannaNpeNative", "Fallo al cargar ivanna_omega: ${e.message}")
         }
         isLoaded = ok
     }

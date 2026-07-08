@@ -1,7 +1,8 @@
 /*
  * ivanna_npe_jni.cpp
  * Implementación real de com.ivanna.omega.neuromorphic.IvannaNpeNative.
- * Carga: System.loadLibrary("omega_vibratory")
+ * Carga: System.loadLibrary("ivanna_omega") — JNI bridge consolidado
+ * (libivanna_omega.so único; ver CMakeLists.txt, target `ivanna_omega`).
  *
  * Ensambla las piezas antes aisladas del motor neuromórfico:
  *   NHOEngine          → oscilador armónico no lineal (excitador/shaper)

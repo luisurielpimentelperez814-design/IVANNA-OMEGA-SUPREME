@@ -46,18 +46,20 @@ class IVANNAApplication : Application() {
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)
 
+        // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
+        // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()
+        // directamente (si evo_enabled) en el hilo principal, sin esperar a
+        // Application.appScope (Dispatchers.IO) — si el path se fijara ahí,
+        // llegaría tarde la mayoría de las veces y evo_initialize_population()
+        // correría con g_savePath vacío (persistencia deshabilitada de facto).
+        if (IvannaNativeLib.isLoaded) {
+            IvannaNativeLib.nativeSetEvoSavePath(
+                "${filesDir.absolutePath}/evo_population.bin"
+            )
+        }
+
         appScope.launch {
             try {
-                // 0. Persistencia del EvolutionaryKernel — DEBE fijarse ANTES
-                //    de DSPBridge.init(), porque este dispara start_evo_thread()
-                //    -> evo_initialize_population(), que intenta cargar el
-                //    save-state en ese mismo instante.
-                if (IvannaNativeLib.isLoaded) {
-                    IvannaNativeLib.nativeSetEvoSavePath(
-                        "${filesDir.absolutePath}/evo_population.bin"
-                    )
-                }
-
                 // 1. DSP nativo
                 DSPBridge.init(sampleRate = 48000)
                 Log.d(TAG, "✅ DSPBridge listo — 48000 Hz")

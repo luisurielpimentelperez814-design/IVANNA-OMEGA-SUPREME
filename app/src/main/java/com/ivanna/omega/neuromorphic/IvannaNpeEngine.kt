@@ -24,11 +24,11 @@ object IvannaNpeEngine {
 
     fun init(sampleRate: Int, maxBlockFrames: Int) {
         if (handle != 0L) return
-        // FIX (crash #1b): Si omega_vibratory no cargó, nativeCreate lanza
+        // FIX (crash #1b): Si ivanna_omega no cargó, nativeCreate lanza
         // UnsatisfiedLinkError. Se captura aquí para que el motor quede en
         // estado no-op (handle=0L) en vez de crashear la Activity.
         if (!IvannaNpeNative.isLoaded) {
-            Log.w(TAG, "libomega_vibratory.so no disponible — motor NPE deshabilitado")
+            Log.w(TAG, "libivanna_omega.so no disponible — motor NPE deshabilitado")
             return
         }
         try {

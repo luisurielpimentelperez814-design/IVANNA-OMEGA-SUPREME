@@ -1,11 +1,21 @@
 /*
  * omega_vibratory_stub.cpp
  * Stub JNI para IvannaNpeNative (com.ivanna.omega.neuromorphic.IvannaNpeNative)
- * Carga: System.loadLibrary("omega_vibratory")
  *
- * Propósito: evitar UnsatisfiedLinkError al cargar la librería.
- * La implementación completa del motor NPE está en ivanna_npe_engine.cpp
- * compilado dentro de libivanna_omega.so.
+ * NOTA (regla de oro: no se borra, sólo se documenta): este archivo NUNCA
+ * estuvo en ningún target de CMakeLists.txt, y "omega_vibratory" nunca
+ * existió como librería real. IvannaNpeNative.kt cargaba ese nombre
+ * inexistente y fallaba siempre — la telemetría/controles NPE quedaban
+ * en no-op. FIX: IvannaNpeNative.kt ahora carga "ivanna_omega", donde
+ * jni/ivanna_npe_jni.cpp (implementación real, completa, 23 funciones)
+ * ya estaba compilado. Este stub queda huérfano/sin usar intencionalmente.
+ *
+ * Carga (nunca activa): System.loadLibrary("omega_vibratory")
+ *
+ * Propósito original: evitar UnsatisfiedLinkError al cargar la librería.
+ * La implementación completa del motor NPE está en jni/ivanna_npe_jni.cpp
+ * (NO en neuromorphic/ivanna_npe_engine.cpp — ese archivo es en realidad
+ * una copia de hexagon/ivanna_fastrpc_client.cpp, nombre engañoso).
  *
  * © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
  */
