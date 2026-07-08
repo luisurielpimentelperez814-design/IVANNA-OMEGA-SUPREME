@@ -71,6 +71,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
+    
+    // CRITICAL: Guardar el verdadero estado de spatial_enabled antes de resetear
+    // cuando no hay permiso, para restaurarlo después
+    private var savedSpatialEnabledState = false
 
     // Mapea género detectado por el motor NPE → preset más afín, para Auto IA.
     private val genreToPreset = mapOf(
@@ -92,6 +96,11 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         if (granted) {
             Log.i(TAG, "RECORD_AUDIO concedido — iniciando AudioEngine")
+            // CRITICAL: Restaurar el verdadero estado de spatial_enabled si fue true antes
+            if (savedSpatialEnabledState) {
+                parameterStore.setSpatialEnabled(true)
+                Log.i(TAG, "Restaurando spatial_enabled = true")
+            }
             initAudioEngine()
         } else {
             Log.w(TAG, "RECORD_AUDIO denegado — funcionalidad limitada")
@@ -130,9 +139,22 @@ class MainActivity : ComponentActivity() {
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
 
+        // CRITICAL: Si no tiene permiso RECORD_AUDIO al inicio, guardar el estado verdadero
+        // y forzar spatial_enabled = false para evitar que setContent() intente restaurar
+        // spatial=true antes de confirmar permiso
+        val hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) {
+            savedSpatialEnabledState = parameterStore.isSpatialEnabled()
+            if (savedSpatialEnabledState) {
+                Log.i(TAG, "Sin permiso aún — guardando spatial_enabled=true para después, ahora resetear a false")
+                parameterStore.setSpatialEnabled(false)
+            }
+        } else {
+            savedSpatialEnabledState = false
+        }
+
         // FIX: pedir permiso antes de inicializar
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) {
+        if (hasPermission) {
             initAudioEngine()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -400,11 +422,13 @@ class MainActivity : ComponentActivity() {
         audioEngine.setEqGain(parameterStore.getEqGain())
         audioEngine.setWidth(parameterStore.getWidth())
 
-        // BUGFIX: Ahora que el permiso RECORD_AUDIO está confirmado, arrancar
-        // SpatialAudioEngineV2 si está habilitado (se guardó de sesiones previas)
-        if (parameterStore.isSpatialEnabled()) {
-            Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2")
+        // CRITICAL: Usar savedSpatialEnabledState que contiene el verdadero valor
+        // guardado ANTES de resetear cuando no había permiso
+        if (savedSpatialEnabledState) {
+            Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2 (estado guardado=$savedSpatialEnabledState)")
             spatialEngineV2.start()
+            // Restaurar en SharedPreferences para que la UI se actualice eventualmente
+            parameterStore.setSpatialEnabled(true)
         }
 
         // Modo no-root si no hay Magisk

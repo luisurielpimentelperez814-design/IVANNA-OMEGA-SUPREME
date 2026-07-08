@@ -33,7 +33,12 @@ class SpatialAudioEngineV2 {
             isRunning = true
             
             try {
-                IvannaNativeLib.nativeInitSpatialEngine(sampleRate, bufferSize)
+                val initialized = IvannaNativeLib.nativeInitSpatialEngine(sampleRate, bufferSize)
+                if (!initialized) {
+                    Log.e("SpatialAudioEngineV2", "nativeInitSpatialEngine retornó false")
+                    isRunning = false
+                    return
+                }
                 Log.i("SpatialAudioEngineV2", "Motor nativo inicializado: sr=$sampleRate, bufSize=$bufferSize")
             } catch (e: Exception) {
                 Log.e("SpatialAudioEngineV2", "nativeInitSpatialEngine falló", e)
@@ -165,8 +170,12 @@ class SpatialAudioEngineV2 {
             audioTrack = null
             
             try {
-                IvannaNativeLib.nativeReleaseSpatialEngine()
-                Log.i("SpatialAudioEngineV2", "Motor nativo liberado")
+                val released = IvannaNativeLib.nativeReleaseSpatialEngine()
+                if (released) {
+                    Log.i("SpatialAudioEngineV2", "Motor nativo liberado correctamente")
+                } else {
+                    Log.w("SpatialAudioEngineV2", "nativeReleaseSpatialEngine retornó false")
+                }
             } catch (e: Exception) {
                 Log.e("SpatialAudioEngineV2", "Error liberando motor nativo", e)
             }
