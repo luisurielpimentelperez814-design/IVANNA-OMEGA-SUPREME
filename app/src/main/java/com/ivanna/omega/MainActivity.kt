@@ -175,7 +175,10 @@ class MainActivity : ComponentActivity() {
         } else {
             IvannaNativeLib.nativeStopEvoThread()
         }
-        if (parameterStore.isSpatialEnabled()) spatialEngineV2.start()
+        // BUGFIX: NO arrancar spatialEngineV2 aquí. Esto crashea porque se ejecuta
+        // antes de confirmar permiso RECORD_AUDIO. Se arranca en initAudioEngine()
+        // DESPUÉS de confirmar el permiso de micrófono.
+        // if (parameterStore.isSpatialEnabled()) spatialEngineV2.start()
 
         setContent {
             MaterialTheme {
@@ -385,6 +388,13 @@ class MainActivity : ComponentActivity() {
         audioEngine.setExciter(parameterStore.getExciter())
         audioEngine.setEqGain(parameterStore.getEqGain())
         audioEngine.setWidth(parameterStore.getWidth())
+
+        // BUGFIX: Ahora que el permiso RECORD_AUDIO está confirmado, arrancar
+        // SpatialAudioEngineV2 si está habilitado (se guardó de sesiones previas)
+        if (parameterStore.isSpatialEnabled()) {
+            Log.i(TAG, "Permiso confirmado — iniciando SpatialAudioEngineV2")
+            spatialEngineV2.start()
+        }
 
         // Modo no-root si no hay Magisk
         noRootProcessor = NoRootAudioProcessor(this)
