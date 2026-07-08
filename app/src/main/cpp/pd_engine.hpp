@@ -34,6 +34,7 @@
 #include "neuromorphic/nho_engine.hpp"
 #include "neuromorphic/biquad_envelope_bank.hpp"
 #include "spatial/cue_based_spatial.hpp"
+#include "audio_control_plane.hpp"
 #include <cmath>
 #include <algorithm>
 #include <atomic>
@@ -216,6 +217,14 @@ public:
         bool expected = false;
         if (!evo_running_.compare_exchange_strong(expected, true)) return;  // already started
         evo_initialize_population();
+        // FIX: activa el orquestador central para este genoma. Antes,
+        // evolutionary_active quedaba en false para siempre y
+        // control_set_evo_genome() jamás tenía llamador — el kernel evolutivo
+        // evolucionaba en el vacío, sin que el genoma ganador tocara nada
+        // fuera de z[]/harmonic_gain. Regla de oro: no se borra el mecanismo
+        // legado (z[]/harmonic_gain sigue igual), solo se enciende el que
+        // faltaba (NHO alpha/beta/harmonic + Spatial angle/width).
+        g_control_frame.evolutionary_active.store(true, std::memory_order_release);
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
             float prev_fitness = 0.f;
@@ -229,6 +238,14 @@ public:
                     for (int i = 0; i < 33; ++i) evo_staging_[i] = genome[i];
                     evo_pending_.store(true, std::memory_order_release);
                     prev_fitness = fit;
+
+                    // NUEVO: alimenta el UnifiedControlFrame con el mismo genoma
+                    // ganador (normalizado a [0..1]) para que el orquestador
+                    // central module NHO alpha/beta/harmonic y Spatial
+                    // angle/width en tiempo real (ver nativeProcessBlock).
+                    float fgenome[12];
+                    for (int i = 0; i < 12; ++i) fgenome[i] = genome[i] * (1.0f / 255.0f);
+                    control_set_evo_genome(fgenome, 12);
                 }
                 std::this_thread::sleep_for(
                     std::chrono::milliseconds(EVO_INTERVAL_MS));
@@ -245,6 +262,7 @@ public:
     }
 
     void stop_evo_thread() noexcept {
+        g_control_frame.evolutionary_active.store(false, std::memory_order_release);
         evo_running_.store(false, std::memory_order_release);
         if (evo_thread_.joinable()) evo_thread_.join();
     }
