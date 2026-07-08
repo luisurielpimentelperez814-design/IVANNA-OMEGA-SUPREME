@@ -22,6 +22,7 @@
 #include "../include/GainStage.h"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
+#include "../audio_control_plane.hpp"
 
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -174,6 +175,28 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
     g_gain.processOutput(lBuf, rBuf, n);
+
+    // FIX: Kernel Evolutivo → orquestador central real (antes: el genoma
+    // ganador solo llegaba a z[]/harmonic_gain vía apply_evo_genome() interno
+    // de PDEngine; evolutionary_active nunca se activaba y
+    // control_set_evo_genome() no tenía llamador — el resto del genoma
+    // (NHO alpha/beta, Spatial angle/width) se evolucionaba en el vacío).
+    // Cuando el Kernel Evolutivo está ON, modula NHO+Spatial en tiempo real
+    // con el mejor genoma de la generación actual (mismos rangos que
+    // audio_control_plane.cpp). No toca EQ/Comp/Exciter/Widener: esos
+    // permanecen bajo control manual/YAMNet hasta que se audite esa fusión.
+    if (g_control_frame.evolutionary_active.load(std::memory_order_relaxed)) {
+        const float nho_a = 0.5f + g_control_frame.evo_genome_nho[0].load(std::memory_order_relaxed) * 0.4f;
+        const float nho_b = 0.1f + g_control_frame.evo_genome_nho[1].load(std::memory_order_relaxed) * 0.3f;
+        const float nho_h = std::clamp(g_control_frame.evo_genome_nho[3].load(std::memory_order_relaxed), 0.f, 2.f);
+        const float sp_angle = std::clamp(g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) * 120.f, 0.f, 120.f);
+        const float sp_width = std::clamp(g_control_frame.evo_genome_spatial[1].load(std::memory_order_relaxed) * 1.5f, 0.f, 1.5f);
+        g_pd.set_nho_alpha(nho_a);
+        g_pd.set_nho_beta(nho_b);
+        g_pd.set_nho_harmonic(nho_h);
+        g_pd.set_spatial_angle(sp_angle);
+        g_pd.set_spatial_width(sp_width);
+    }
 
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
