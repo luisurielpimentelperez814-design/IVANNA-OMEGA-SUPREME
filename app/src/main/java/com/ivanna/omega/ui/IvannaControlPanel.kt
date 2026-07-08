@@ -250,8 +250,8 @@ fun IvannaControlPanel(
         )
 
         GlassCard(
-            title = "MOTOR OPE",
-            accent = AuroraCyan,
+            title = if (omegaMode == 3) "MOTOR OPE · SUPREME" else "MOTOR OPE",
+            accent = if (omegaMode == 3) SupremeViolet else AuroraCyan,
             subtitle = when (omegaMode) {
                 1 -> "DSP + NHO · saturación armónica no lineal"
                 2 -> "DSP + NHO + Spatial · ITD/ILD, imagen estéreo"
@@ -424,7 +424,7 @@ fun IvannaControlPanel(
 
         Spacer(Modifier.height(4.dp))
         Text(
-            "IVANNA-OMEGA-SUPREME · GORE TNS / LUPP-OR9 © 2026",
+            "IVANNA-OMEGA-SUPREME v3.1 MAJESTIC · GORE TNS / LUPP-OR9 © 2026",
             style = MaterialTheme.typography.labelSmall,
             color = TextMuted,
             textAlign = TextAlign.Center,

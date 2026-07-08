@@ -58,49 +58,84 @@ internal fun OmniHeroHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
-            Canvas(modifier = Modifier.size(72.dp)) {
-                val strokeW = 5.dp.toPx()
+        // v3.1 MAJESTIC: anillo doble (halo suave exterior + anillo iridiscente
+        // + núcleo con degradado hacia SupremeViolet cuando omegaMode == 3).
+        val supreme = omegaMode >= 3
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+            Canvas(modifier = Modifier.size(80.dp)) {
+                val strokeOuter = 8.dp.toPx()
+                val strokeInner = 5.dp.toPx()
+                // Halo suave exterior (segunda capa, ambient)
+                drawArc(
+                    brush = Brush.sweepGradient(
+                        listOf(
+                            AuroraCyanGlowSoft, NeonMagentaGlowSoft,
+                            AmberSignalGlowSoft, PhosphorGreenGlowSoft, AuroraCyanGlowSoft
+                        )
+                    ),
+                    startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                    style = Stroke(width = strokeOuter)
+                )
+                // Track base
                 drawArc(
                     color = ObsidianEdge,
                     startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                    style = Stroke(width = strokeW)
+                    style = Stroke(width = strokeInner)
                 )
+                // Anillo iridiscente activo (progresa con omniLevel)
+                val ringPalette = if (supreme) {
+                    listOf(SupremeViolet, AuroraCyan, OmniGoldDeep, NeonMagenta, SupremeViolet)
+                } else {
+                    listOf(AuroraCyan, NeonMagenta, AmberSignal, PhosphorGreen, AuroraCyan)
+                }
                 drawArc(
-                    brush = Brush.sweepGradient(listOf(AuroraCyan, NeonMagenta, AmberSignal, AuroraCyan)),
+                    brush = Brush.sweepGradient(ringPalette),
                     startAngle = -90f, sweepAngle = 360f * ringProgress, useCenter = false,
-                    style = Stroke(width = strokeW)
+                    style = Stroke(width = strokeInner)
                 )
             }
             Box(
                 modifier = Modifier
-                    .size((44 * pulse).dp)
+                    .size((48 * pulse).dp)
                     .clip(CircleShape)
                     .background(
                         Brush.radialGradient(
-                            listOf(OmniGoldCore.copy(alpha = 0.9f), AuroraCyan.copy(alpha = 0.25f), Color.Transparent)
+                            if (supreme) listOf(
+                                OmniGoldDeep.copy(alpha = 0.95f),
+                                SupremeViolet.copy(alpha = 0.35f),
+                                Color.Transparent
+                            ) else listOf(
+                                OmniGoldCore.copy(alpha = 0.9f),
+                                AuroraCyan.copy(alpha = 0.25f),
+                                Color.Transparent
+                            )
                         )
                     )
             )
-            Text("OMNI", style = MaterialTheme.typography.labelSmall, color = ObsidianDeep, fontWeight = FontWeight.Bold)
+            Text(
+                if (supreme) "SUPR" else "OMNI",
+                style = MaterialTheme.typography.labelSmall,
+                color = ObsidianDeep,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 "IVANNA",
-                style = MaterialTheme.typography.displayMedium,
+                style = MaterialTheme.typography.displayLarge, // v3.1: ExtraBold, dominante
                 color = TextPrimary
             )
             Text(
-                "OMEGA · SUPREME",
+                if (supreme) "OMEGA · SUPREME · HRTF" else "OMEGA · SUPREME",
                 style = MaterialTheme.typography.titleMedium,
-                color = AuroraCyan
+                color = if (supreme) SupremeViolet else AuroraCyan
             )
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 StatusPill(
                     text = when (omegaMode) { 1 -> "OPE +NHO"; 2 -> "OPE +SPATIAL"; 3 -> "OPE +HRTF"; else -> "OPE DSP" },
-                    accent = AuroraCyan
+                    accent = if (supreme) SupremeViolet else AuroraCyan
                 )
                 if (npeActive) StatusPill("NPE", NeonMagenta)
                 if (spatialActive) StatusPill("BINAURAL", PhosphorGreen)
@@ -166,12 +201,23 @@ private fun Sparkline(
         if (values.size < 2) return@Canvas
         val range = max(1e-3f, maxVal - minVal)
         val stepX = size.width / (values.size - 1)
+        // v3.1 MAJESTIC: pintamos DOS trazos:
+        //  1) trazo grueso translucido — halo del trazo (“glow”)
+        //  2) trazo fino brillante — el dato en sí
+        // Además marcamos con CriticalRed cualquier muestra > -3 dBFS (clip cercano).
         var prev: Offset? = null
+        var prevClip = false
         values.forEachIndexed { i, v ->
             val t = min(1f, max(0f, (v - minVal) / range))
             val point = Offset(i * stepX, size.height * (1f - t))
-            prev?.let { p -> drawLine(color = color.copy(alpha = 0.85f), start = p, end = point, strokeWidth = 2.5f) }
+            val nearClip = v > -3f
+            prev?.let { p ->
+                val segColor = if (nearClip || prevClip) CriticalRed else color
+                drawLine(color = segColor.copy(alpha = 0.25f), start = p, end = point, strokeWidth = 6.5f)
+                drawLine(color = segColor.copy(alpha = 0.95f), start = p, end = point, strokeWidth = 2.2f)
+            }
             prev = point
+            prevClip = nearClip
         }
     }
 }
@@ -233,7 +279,9 @@ internal fun GlassCard(
                     listOf(ObsidianGlass, ObsidianSoft.copy(alpha = 0.85f))
                 )
             )
+            // v3.1 MAJESTIC: triple borde — acento coloreado + iridiscente + highlight especular
             .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
+            .border(1.dp, IridescentBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp))
             .border(1.dp, GlassHighlight, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -286,15 +334,34 @@ internal fun AuroraSlider(
             Text(
                 displayValue?.invoke(value) ?: "%.2f%s".format(value, if (unit.isNotEmpty()) " $unit" else ""),
                 style = MaterialTheme.typography.labelLarge,
-                color = AuroraCyan
+                color = AuroraCyan,
+                fontWeight = FontWeight.SemiBold
             )
         }
+        // v3.1 MAJESTIC: el color del thumb reacciona al valor — amarillo
+        // cerca del límite superior, rojo si excede (indica saturación).
+        val span = (range.endInclusive - range.start).coerceAtLeast(1e-6f)
+        val norm = ((value - range.start) / span).coerceIn(0f, 1f)
+        val thumbAccent by animateColorAsState(
+            targetValue = when {
+                norm >= 0.92f -> CoralWarn
+                norm >= 0.75f -> AmberSignal
+                else -> AuroraCyan
+            },
+            label = "thumbAccent"
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 2.dp)
                 .background(
-                    Brush.horizontalGradient(listOf(AuroraCyanGlow.copy(alpha = 0.18f), Color.Transparent)),
+                    Brush.horizontalGradient(
+                        listOf(
+                            thumbAccent.copy(alpha = 0.22f),
+                            thumbAccent.copy(alpha = 0.06f),
+                            Color.Transparent
+                        )
+                    ),
                     RoundedCornerShape(8.dp)
                 )
         ) {
@@ -303,8 +370,8 @@ internal fun AuroraSlider(
                 onValueChange = onValueChange,
                 valueRange = range,
                 colors = SliderDefaults.colors(
-                    thumbColor = AuroraCyan,
-                    activeTrackColor = AuroraCyan,
+                    thumbColor = thumbAccent,
+                    activeTrackColor = thumbAccent,
                     inactiveTrackColor = ObsidianEdge,
                     activeTickColor = Color.Transparent,
                     inactiveTickColor = Color.Transparent
