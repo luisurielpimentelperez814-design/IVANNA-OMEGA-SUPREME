@@ -117,12 +117,34 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
-    g_eq.process(data, data, n);
-    g_comp.process(data, data, n);
-    g_exciter.process(data, data, n);
-    g_widener.process(data, data, n);
-    g_gain.processInput(data, data, n);
-    g_gain.processOutput(data, data, n);
+
+    // FIX CRÍTICO (audio mono): `buf` llega INTERCALADO estéreo desde
+    // AudioPipeline.kt (LRLRLR..., BUFFER_SIZE = FRAMES_PER_BLOCK * 2),
+    // pero toda la cadena DSP (ParametricEQ/Compressor/Exciter/Widener/
+    // GainStage) espera punteros L y R SEPARADOS: process(float* left,
+    // float* right, int frames). Antes se llamaba g_eq.process(data, data, n)
+    // pasando el mismo puntero intercalado como "left" y "right" — cada
+    // etapa procesaba solo la mitad del buffer (interpretando frames L/R
+    // alternados como si fueran n muestras mono) y la escribía dos veces
+    // sobre sí misma; la segunda mitad real de frames nunca se tocaba.
+    // Luego g_pd.process_block(data, data, ...) repetía el mismo error, y
+    // el downmix final `data[i] = 0.5f*(pdOutL[i]+pdOutR[i])` colapsaba
+    // el resultado a mono — ese era el síntoma audible, no la causa raíz.
+    //
+    // Fix: de-intercalar a buffers L/R reales, correr la cadena en estéreo
+    // verdadero, y re-intercalar el resultado (sin downmix) al final.
+    static thread_local float chL[2048], chR[2048];
+    for (int i = 0; i < n; ++i) {
+        chL[i] = data[2 * i];
+        chR[i] = data[2 * i + 1];
+    }
+
+    g_eq.process(chL, chR, n);
+    g_comp.process(chL, chR, n);
+    g_exciter.process(chL, chR, n);
+    g_widener.process(chL, chR, n);
+    g_gain.processInput(chL, chR, n);
+    g_gain.processOutput(chL, chR, n);
 
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
     // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
@@ -145,9 +167,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_pd.set_spatial_angle(sp_angle);
         g_pd.set_spatial_width(sp_width);
     }
-    float pdOutL[2048], pdOutR[2048];
-    g_pd.process_block(data, data, pdOutL, pdOutR, n);
-    for (int i = 0; i < n; ++i) data[i] = 0.5f * (pdOutL[i] + pdOutR[i]);
+    static thread_local float pdOutL[2048], pdOutR[2048];
+    g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
+
+    // Re-intercalar el resultado estéreo real de vuelta en `data` — sin
+    // downmix. Esto es lo que corrige el audio saliendo en mono.
+    for (int i = 0; i < n; ++i) {
+        data[2 * i]     = pdOutL[i];
+        data[2 * i + 1] = pdOutR[i];
+    }
 
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
