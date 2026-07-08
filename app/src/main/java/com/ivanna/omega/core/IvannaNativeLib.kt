@@ -97,6 +97,16 @@ object IvannaNativeLib {
     external fun nativeGetEvoBestFitness(): Float
 
     // ═══════════════════════════════════════════════════════════════════════
+    //  EvolutionaryKernel: persistencia (evolutionary_kernel.cpp)
+    //  nativeSetEvoSavePath() DEBE llamarse antes de DSPBridge.init(), ya que
+    //  start_evo_thread() dispara evo_initialize_population() -> intenta
+    //  cargar el save-state en ese preciso momento.
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeSetEvoSavePath(path: String)
+    external fun nativeSaveEvoState(): Boolean
+    external fun nativeLoadEvoState(): Boolean
+
+    // ═══════════════════════════════════════════════════════════════════════
     //  FIX v3.0: cableado GlassCard "COMPRESOR" y "NHO / ESPACIAL"
     //  (ivanna_omega_jni.cpp — g_comp.setThreshold/setRatio, g_pd.set_spatial_*)
     // ═══════════════════════════════════════════════════════════════════════

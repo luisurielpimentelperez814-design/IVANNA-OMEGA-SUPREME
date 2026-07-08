@@ -50,6 +50,10 @@ void   evo_evolve_generation();
 float  evo_best_fitness();
 void   evo_get_best_genome(uint8_t* out_genome, int len);  // len must be ≥ 33
 void   evo_update_audio_cues(float loudness, float transient, float spatial);
+// Persistencia de la población (save/load). path=nullptr desactiva.
+void   evo_set_save_path(const char* path);
+int    evo_save_state();   // 1 = ok, 0 = fallo/deshabilitado
+int    evo_load_state();   // 1 = ok, 0 = fallo/deshabilitado
 #ifdef __cplusplus
 }
 #endif

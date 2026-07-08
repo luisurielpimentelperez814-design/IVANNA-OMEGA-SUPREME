@@ -288,4 +288,30 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEvoBestFitness(JNIEnv*, jobj
     return evo_best_fitness();
 }
 
+// ─── EvolutionaryKernel: persistencia (save/load population) ────────────────
+// IMPORTANTE: nativeSetEvoSavePath debe llamarse ANTES de nativeInitDSP/
+// DSPBridge.nativeInit, porque start_evo_thread() dispara
+// evo_initialize_population() -> intenta cargar el save-state en ese momento.
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvoSavePath(
+    JNIEnv* env, jobject, jstring path) {
+    if (!path) { evo_set_save_path(nullptr); return; }
+    const char* cpath = env->GetStringUTFChars(path, nullptr);
+    if (cpath) {
+        evo_set_save_path(cpath);
+        env->ReleaseStringUTFChars(path, cpath);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSaveEvoState(JNIEnv*, jobject) {
+    return evo_save_state() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadEvoState(JNIEnv*, jobject) {
+    return evo_load_state() ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"

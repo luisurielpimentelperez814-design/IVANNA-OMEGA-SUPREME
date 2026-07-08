@@ -9,10 +9,13 @@
 #include <jni.h>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <random>
 #include <limits>
 #include <atomic>
+#include <mutex>
+#include <string>
 
 #define POPULATION_SIZE 128
 #define GENOME_SIZE     256
@@ -32,6 +35,69 @@ struct Population {
 static Population g_population;
 static std::mt19937 g_rng(42);
 static float g_mutationRate = 0.01f;
+
+// ── Persistencia de la población (survive app restarts) ──────────────────────
+// Ruta fijada desde Kotlin (filesDir, antes de start_evo_thread()) vía
+// evo_set_save_path(). Si nunca se fija, la persistencia queda deshabilitada
+// y el comportamiento es idéntico al original (randomize-on-init).
+static constexpr uint32_t EVO_SAVE_MAGIC   = 0x494F4B31; // "IOK1"
+static constexpr uint32_t EVO_SAVE_VERSION = 1;
+static constexpr uint32_t EVO_AUTOSAVE_INTERVAL_GENERATIONS = 25;
+
+struct EvoSaveHeader {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t populationSize;
+    uint32_t genomeSize;
+};
+
+static std::string g_savePath;
+static std::mutex  g_saveMutex;
+
+static bool savePopulationLocked() {
+    if (g_savePath.empty()) return false;
+    FILE* f = std::fopen(g_savePath.c_str(), "wb");
+    if (!f) return false;
+    EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION, POPULATION_SIZE, GENOME_SIZE};
+    bool ok = std::fwrite(&hdr, sizeof(hdr), 1, f) == 1
+           && std::fwrite(&g_population, sizeof(Population), 1, f) == 1;
+    std::fclose(f);
+    return ok;
+}
+
+static bool loadPopulationLocked() {
+    if (g_savePath.empty()) return false;
+    FILE* f = std::fopen(g_savePath.c_str(), "rb");
+    if (!f) return false;
+    EvoSaveHeader hdr{};
+    bool ok = std::fread(&hdr, sizeof(hdr), 1, f) == 1
+           && hdr.magic == EVO_SAVE_MAGIC
+           && hdr.version == EVO_SAVE_VERSION
+           && hdr.populationSize == POPULATION_SIZE
+           && hdr.genomeSize == GENOME_SIZE;
+    if (ok) {
+        Population loaded;
+        ok = std::fread(&loaded, sizeof(Population), 1, f) == 1;
+        if (ok) g_population = loaded;
+    }
+    std::fclose(f);
+    return ok;
+}
+
+extern "C" void evo_set_save_path(const char* path) {
+    std::lock_guard<std::mutex> lock(g_saveMutex);
+    g_savePath = (path != nullptr) ? path : "";
+}
+
+extern "C" int evo_save_state() {
+    std::lock_guard<std::mutex> lock(g_saveMutex);
+    return savePopulationLocked() ? 1 : 0;
+}
+
+extern "C" int evo_load_state() {
+    std::lock_guard<std::mutex> lock(g_saveMutex);
+    return loadPopulationLocked() ? 1 : 0;
+}
 
 // ── Acoplamiento a audio real (FIX: antes el fitness era audio-agnóstico) ─────
 // PDEngine::process_block() actualiza estos atomics cada bloque con los cues
@@ -101,6 +167,14 @@ static float evaluateFitness(const uint8_t* __restrict__ genome) {
 
 __attribute__((hot))
 static void initializePopulation() {
+    // FIX: intentar recuperar la población guardada antes de randomizar.
+    // Si hay un save-state válido (mismo layout), continúa la evolución
+    // donde se quedó en vez de perder todo el progreso al reabrir la app.
+    {
+        std::lock_guard<std::mutex> lock(g_saveMutex);
+        if (loadPopulationLocked()) return;
+    }
+
     float best = -std::numeric_limits<float>::max();
 
     for (int i = 0; i < POPULATION_SIZE; ++i) {
@@ -166,6 +240,14 @@ static void evolveGeneration() {
     memcpy(g_population.individuals, next, sizeof(next));
     g_population.generation++;
     g_population.bestFitness = best;
+
+    // Autosave periódico: no depende de que stop_evo_thread()/onTerminate()
+    // se llamen limpiamente (el hilo evo puede morir con la app en cualquier
+    // momento — proceso matado por el sistema, crash, force-stop, etc).
+    if (g_population.generation % EVO_AUTOSAVE_INTERVAL_GENERATIONS == 0) {
+        std::lock_guard<std::mutex> lock(g_saveMutex);
+        savePopulationLocked();
+    }
 }
 
 extern "C" {

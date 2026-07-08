@@ -48,6 +48,16 @@ class IVANNAApplication : Application() {
 
         appScope.launch {
             try {
+                // 0. Persistencia del EvolutionaryKernel — DEBE fijarse ANTES
+                //    de DSPBridge.init(), porque este dispara start_evo_thread()
+                //    -> evo_initialize_population(), que intenta cargar el
+                //    save-state en ese mismo instante.
+                if (IvannaNativeLib.isLoaded) {
+                    IvannaNativeLib.nativeSetEvoSavePath(
+                        "${filesDir.absolutePath}/evo_population.bin"
+                    )
+                }
+
                 // 1. DSP nativo
                 DSPBridge.init(sampleRate = 48000)
                 Log.d(TAG, "✅ DSPBridge listo — 48000 Hz")
@@ -73,6 +83,16 @@ class IVANNAApplication : Application() {
     }
 
     override fun onTerminate() {
+        // Best-effort: onTerminate() no está garantizado en dispositivos reales,
+        // pero el autosave periódico en evolveGeneration() ya cubre el caso de
+        // que el proceso muera sin pasar por aquí.
+        if (IvannaNativeLib.isLoaded) {
+            try {
+                IvannaNativeLib.nativeSaveEvoState()
+            } catch (e: Exception) {
+                Log.e(TAG, "⚠️ No se pudo guardar evo state en onTerminate: ${e.message}")
+            }
+        }
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()
