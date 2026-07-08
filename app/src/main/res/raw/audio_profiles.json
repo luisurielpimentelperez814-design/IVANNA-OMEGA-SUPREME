@@ -139,19 +139,307 @@
       },
       "tags": ["groove", "heavy_bass", "powerful_vocals", "classic_rock", "danceable"],
       "recommendedFor": "Groove-oriented arrangements, extremely present bass, powerful vocals, moderate complexity, danceability"
+    },
+    {
+      "id": "flat",
+      "name": "Flat",
+      "description": "Referencia neutra sin coloración - monitoreo y comparación A/B",
+      "category": "reference",
+      "priority": 5,
+      "audioEngine": {
+        "gain": 1.0,
+        "exciterAmount": 0.0,
+        "eqGain": 0.0,
+        "widthAmount": 0.5,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.5,
+        "bassThreshold": 0.5,
+        "eqBoost2k4k": 0.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.5
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.0,
+        "lateralInhibition": 0.0,
+        "ohcCompression": 0.0,
+        "masterGainDb": 0.0,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 0.0,
+        "dialogBoostDb": 0.0,
+        "widenerMult": 0.5
+      },
+      "tags": ["reference", "neutral", "monitoring"],
+      "recommendedFor": "Escucha de referencia sin procesamiento, comparación A/B contra otros perfiles"
+    },
+    {
+      "id": "warm",
+      "name": "Warm",
+      "description": "Coloración cálida, armónicos pares suaves - vocales y guitarra acústica",
+      "category": "coloration",
+      "priority": 6,
+      "audioEngine": {
+        "gain": 0.90,
+        "exciterAmount": 0.25,
+        "eqGain": 1.5,
+        "widthAmount": 0.6,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.6,
+        "bassThreshold": 0.45,
+        "eqBoost2k4k": 1.5,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 0.6
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.35,
+        "lateralInhibition": 0.30,
+        "ohcCompression": 0.35,
+        "masterGainDb": 0.5,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 2.0,
+        "dialogBoostDb": 2.0,
+        "widenerMult": 0.6
+      },
+      "tags": ["warm", "vocal", "soft", "acoustic"],
+      "recommendedFor": "Voces, acústicos, material con exceso de brillo digital"
+    },
+    {
+      "id": "bright",
+      "name": "Bright",
+      "description": "Aire y definición en agudos - grabaciones apagadas o con poca brillantez",
+      "category": "coloration",
+      "priority": 7,
+      "audioEngine": {
+        "gain": 0.90,
+        "exciterAmount": 0.60,
+        "eqGain": 4.5,
+        "widthAmount": 0.90,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.6,
+        "bassThreshold": 0.40,
+        "eqBoost2k4k": 4.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.90
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.55,
+        "lateralInhibition": 0.60,
+        "ohcCompression": 0.35,
+        "masterGainDb": -0.5,
+        "cochlearBandwidth": "expanded"
+      },
+      "route": {
+        "bassBoostDb": 1.0,
+        "dialogBoostDb": 3.5,
+        "widenerMult": 0.90
+      },
+      "tags": ["bright", "airy", "detail", "high_frequency"],
+      "recommendedFor": "Masters apagados, mp3 de baja calidad, material que necesita aire en agudos"
+    },
+    {
+      "id": "punch",
+      "name": "Punch",
+      "description": "Ataque y pegada en batería/bajo - foco en transientes",
+      "category": "dynamics",
+      "priority": 8,
+      "audioEngine": {
+        "gain": 0.85,
+        "exciterAmount": 0.45,
+        "eqGain": 2.5,
+        "widthAmount": 0.55,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.55,
+        "bassThreshold": 0.65,
+        "eqBoost2k4k": 2.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.55
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.45,
+        "lateralInhibition": 0.50,
+        "ohcCompression": 0.55,
+        "masterGainDb": -0.5,
+        "cochlearBandwidth": "compressed"
+      },
+      "route": {
+        "bassBoostDb": 3.0,
+        "dialogBoostDb": 2.0,
+        "widenerMult": 0.55
+      },
+      "tags": ["punch", "transient", "drums", "attack"],
+      "recommendedFor": "Batería y bajo prominentes, material con transientes que se pierden al comprimir"
+    },
+    {
+      "id": "spatial",
+      "name": "Spatial",
+      "description": "Imagen estéreo amplia, motor binaural al máximo - escucha con audífonos",
+      "category": "spatial",
+      "priority": 9,
+      "audioEngine": {
+        "gain": 0.85,
+        "exciterAmount": 0.40,
+        "eqGain": 2.0,
+        "widthAmount": 1.35,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.55,
+        "bassThreshold": 0.45,
+        "eqBoost2k4k": 2.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.35
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.40,
+        "lateralInhibition": 0.45,
+        "ohcCompression": 0.35,
+        "masterGainDb": -1.0,
+        "cochlearBandwidth": "expanded"
+      },
+      "route": {
+        "bassBoostDb": 2.0,
+        "dialogBoostDb": 2.5,
+        "widenerMult": 1.35
+      },
+      "tags": ["spatial", "binaural", "headphones", "wide"],
+      "recommendedFor": "Escucha con audífonos, mezclas con mucha información estéreo, motor binaural activo"
+    },
+    {
+      "id": "heavy",
+      "name": "Heavy",
+      "description": "Máxima densidad y peso - metal, rock pesado, guitarras muy distorsionadas",
+      "category": "hard_rock",
+      "priority": 10,
+      "audioEngine": {
+        "gain": 0.75,
+        "exciterAmount": 0.75,
+        "eqGain": 4.5,
+        "widthAmount": 0.60,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.75,
+        "bassThreshold": 0.65,
+        "eqBoost2k4k": 4.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 0.62
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.90,
+        "lateralInhibition": 0.80,
+        "ohcCompression": 0.85,
+        "masterGainDb": -2.5,
+        "cochlearBandwidth": "compressed"
+      },
+      "route": {
+        "bassBoostDb": 5.0,
+        "dialogBoostDb": 4.5,
+        "widenerMult": 0.60
+      },
+      "tags": ["heavy", "metal", "distortion", "dense", "aggressive"],
+      "recommendedFor": "Metal, guitarras muy distorsionadas, material extremadamente denso y comprimido en origen"
+    },
+    {
+      "id": "vocal",
+      "name": "Vocal",
+      "description": "Voz al frente y clara - podcasts, voz principal en primer plano",
+      "category": "vocal",
+      "priority": 11,
+      "audioEngine": {
+        "gain": 0.95,
+        "exciterAmount": 0.20,
+        "eqGain": 2.5,
+        "widthAmount": 0.40,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.80,
+        "bassThreshold": 0.35,
+        "eqBoost2k4k": 2.5,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 0.40
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.30,
+        "lateralInhibition": 0.25,
+        "ohcCompression": 0.30,
+        "masterGainDb": 1.0,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 0.5,
+        "dialogBoostDb": 5.0,
+        "widenerMult": 0.40
+      },
+      "tags": ["vocal", "dialog", "podcast", "clarity", "narrow"],
+      "recommendedFor": "Podcasts, voz principal, contenido donde la inteligibilidad importa más que el ambiente"
+    },
+    {
+      "id": "bass",
+      "name": "Bass",
+      "description": "Graves realzados y profundos - electrónica, hip-hop, material con bajo protagonista",
+      "category": "dynamics",
+      "priority": 12,
+      "audioEngine": {
+        "gain": 0.85,
+        "exciterAmount": 0.30,
+        "eqGain": 1.5,
+        "widthAmount": 0.60,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.50,
+        "bassThreshold": 0.75,
+        "eqBoost2k4k": 1.0,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 0.60
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.35,
+        "lateralInhibition": 0.35,
+        "ohcCompression": 0.50,
+        "masterGainDb": -0.5,
+        "cochlearBandwidth": "compressed"
+      },
+      "route": {
+        "bassBoostDb": 5.5,
+        "dialogBoostDb": 1.0,
+        "widenerMult": 0.60
+      },
+      "tags": ["bass", "sub", "electronic", "hip_hop", "deep"],
+      "recommendedFor": "Electrónica, hip-hop, material con bajo/sub-bajo como elemento protagonista"
     }
   ],
   "metadata": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "createdDate": "2026-07-07",
-    "lastModified": "2026-07-07",
-    "totalProfiles": 4,
+    "lastModified": "2026-07-08",
+    "totalProfiles": 12,
     "trainingSequence": [
+      "flat",
+      "warm",
       "steve_miller_band",
+      "vocal",
       "grand_funk_railroad",
+      "bass",
+      "punch",
+      "bright",
       "rush",
-      "budgie"
+      "spatial",
+      "budgie",
+      "heavy"
     ],
-    "trainingNotes": "Sequence optimized for IVANNA neural learning curve. Start with Steve Miller (warmth baseline), move to Grand Funk (bass dynamics), then RUSH (extreme complexity for manifold learning), finish with Budgie (power/distortion refinement)."
+    "trainingNotes": "Sequence optimized for IVANNA neural learning curve. Empieza en Flat (línea base sin coloración) y Warm (armónicos suaves), pasa por los 4 perfiles musicales originales intercalados con los géneros de utilidad (Vocal, Bass, Punch, Bright) en orden creciente de intensidad de procesamiento, y termina en Spatial/Heavy, los dos extremos de ancho estéreo y densidad armónica respectivamente."
   }
 }

@@ -82,8 +82,10 @@ class ParameterStore(context: Context) {
     fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
+    // TUNED v3.1: ratio de compresión por defecto casi no comprimía (0.16:1
+    // es prácticamente transparente). Se sube a un ratio suave pero real.
     fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.5f)
-    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.16f)
+    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.35f)
     fun setCompParams(threshold: Float, ratio: Float) = prefs.edit()
         .putFloat(KEY_COMP_THRESHOLD, threshold)
         .putFloat(KEY_COMP_RATIO, ratio)
@@ -104,9 +106,13 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.2f)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.2f)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.3f)
+    // TUNED v3.1: defaults de fábrica del motor NPE subidos de un punto de
+    // partida casi-plano (0.2/0.2/0.3) a valores que dan presencia armónica
+    // y separación audibles desde el primer arranque, sin llegar a los
+    // extremos que usan los perfiles "hard rock" (Budgie llega a 0.85/0.75).
+    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.35f)
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.35f)
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.4f)
     fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 0.0f)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
