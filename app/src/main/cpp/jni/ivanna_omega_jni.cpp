@@ -126,13 +126,38 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
-    // Mono: apply DSP chain then PDEngine in mode 0 (passthrough for PD)
     g_eq.process(data, data, n);
     g_comp.process(data, data, n);
     g_exciter.process(data, data, n);
     g_widener.process(data, data, n);
     g_gain.processInput(data, data, n);
     g_gain.processOutput(data, data, n);
+
+    // FIX CRÍTICO: este es el único proceso que el bucle de audio real
+    // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
+    // PDEngine (NHO + Spatial + HRTF) se inicializa y arranca su hilo
+    // evolutivo desde nativeInit(), pero nunca se llamaba aquí — el motor
+    // espacial completo y la modulación del Kernel Evolutivo (ver
+    // pd_engine.hpp) eran inertes en el audio que realmente suena.
+    // Modo 0 (default) hace passthrough exacto dentro de process_block(),
+    // así que esto no cambia nada para quien no activó NHO/Spatial/Omega
+    // Mode — solo enciende lo que ya estaba construido y esperando.
+    if (g_control_frame.evolutionary_active.load(std::memory_order_relaxed)) {
+        const float nho_a = 0.5f + g_control_frame.evo_genome_nho[0].load(std::memory_order_relaxed) * 0.4f;
+        const float nho_b = 0.1f + g_control_frame.evo_genome_nho[1].load(std::memory_order_relaxed) * 0.3f;
+        const float nho_h = std::clamp(g_control_frame.evo_genome_nho[3].load(std::memory_order_relaxed), 0.f, 2.f);
+        const float sp_angle = std::clamp(g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) * 120.f, 0.f, 120.f);
+        const float sp_width = std::clamp(g_control_frame.evo_genome_spatial[1].load(std::memory_order_relaxed) * 1.5f, 0.f, 1.5f);
+        g_pd.set_nho_alpha(nho_a);
+        g_pd.set_nho_beta(nho_b);
+        g_pd.set_nho_harmonic(nho_h);
+        g_pd.set_spatial_angle(sp_angle);
+        g_pd.set_spatial_width(sp_width);
+    }
+    float pdOutL[2048], pdOutR[2048];
+    g_pd.process_block(data, data, pdOutL, pdOutR, n);
+    for (int i = 0; i < n; ++i) data[i] = 0.5f * (pdOutL[i] + pdOutR[i]);
+
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
 
