@@ -61,7 +61,7 @@ class ParameterStore(context: Context) {
         private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
     }
 
-    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.45f) // TUNED v3.1: 0.3→0.45 (presencia armónica mejorada)
+    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.35f) // TUNED v3.1.1: 0.45→0.35 (anti-aliasing: oversampling 2x activado)
     fun setExciter(value: Float) = prefs.edit().putFloat(KEY_EXCITER, value).apply()
 
     fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
