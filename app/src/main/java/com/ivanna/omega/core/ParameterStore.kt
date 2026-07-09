@@ -103,9 +103,9 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.5f) // TUNED v3.1: 0.2→0.5 (respuesta armónica fuerte)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.45f) // TUNED v3.1: 0.2→0.45 (mejor detalle, menos mascara)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.55f) // TUNED v3.1: 0.3→0.55 (más natural, menos rígido)
+    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.55f) // TUNED v3.2: 0.5→0.55 (+10% presencia magistral)
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // TUNED v3.2: 0.45→0.50 (+11% detalle crystal clear)
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.58f) // TUNED v3.2: 0.55→0.58 (+5% natural + definición)
     fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.0f) // TUNED v3.1: 0.0→2.0 dB (nivel NPE mejorado)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
@@ -115,8 +115,8 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_NPE_MASTER_GAIN, masterGain)
             .apply()
 
-    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -16.0f) // TUNED v3.1: -18→-16 dB (menos invasivo, más dinámico)
-    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.5f) // TUNED v3.1: 0.3→0.5 (respuesta más rápida)
+    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -15.0f) // TUNED v3.2: -16→-15 dB (menos invasivo, dinámico)
+    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.55f) // TUNED v3.2: 0.5→0.55 (+10% respuesta musical)
     fun setNpeAgc(target: Float, rate: Float) = prefs.edit()
         .putFloat(KEY_NPE_AGC_TARGET, target)
         .putFloat(KEY_NPE_AGC_RATE, rate)
