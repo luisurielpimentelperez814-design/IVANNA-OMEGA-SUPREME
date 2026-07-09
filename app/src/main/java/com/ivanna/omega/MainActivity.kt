@@ -190,9 +190,24 @@ class MainActivity : ComponentActivity() {
         parameterStore.setSpatialInitPending(false)
         initCoreAudioEngine()
 
-        // FIX: arrancar el servicio en primer plano para audio en background
-        val serviceIntent = Intent(this, AudioForegroundService::class.java)
-        ContextCompat.startForegroundService(this, serviceIntent)
+        // FIX (retroalimentación acústica): AudioForegroundService arranca
+        // AudioPipeline, que es un loopback físico real -- AudioRecord(MIC/
+        // UNPROCESSED) -> DSPBridge.process() -> AudioTrack a la bocina. El
+        // micrófono capta acústicamente lo que la propia bocina reproduce y
+        // lo vuelve a meter al DSP: retroalimentación audible (choques,
+        // silbidos colándose). No se borra AudioForegroundService/
+        // AudioPipeline (regla de oro: no borramos, solo mejoramos) -- queda
+        // aquí documentado y desactivado por defecto. La ruta audible activa
+        // ahora es IvannaGlobalEffectManager (ya cableado desde
+        // IVANNAApplication + AudioSessionReceiver, sin mic, sin captura, sin
+        // riesgo de eco: engancha AudioEffect directo en la sesión de la app
+        // fuente). Si más adelante se implementa la ruta con root para
+        // interceptar el audio real de las apps con la cadena DSP completa
+        // (NHO/Evolutivo/PDEngine) antes de la bocina, este es el punto para
+        // reactivar un pipeline equivalente -- pero alimentado por esa
+        // intercepción, nunca por el mic.
+        // val serviceIntent = Intent(this, AudioForegroundService::class.java)
+        // ContextCompat.startForegroundService(this, serviceIntent)
 
         // RECORD_AUDIO se pide en paralelo, sólo para habilitar la captura de
         // reproducción (MediaProjection). Si se deniega, el núcleo de arriba
