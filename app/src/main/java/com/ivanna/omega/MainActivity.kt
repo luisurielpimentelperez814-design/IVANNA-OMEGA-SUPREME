@@ -301,15 +301,15 @@ class MainActivity : ComponentActivity() {
 
                             onExciterChange = { value ->
                                 parameterStore.setExciter(value)
-                                audioEngine.setExciter(value)
+                                this@MainActivity.audioEngine.setExciter(value)
                             },
                             onEqChange = { value ->
                                 parameterStore.setEqGain(value)
-                                audioEngine.setEqGain(value)
+                                this@MainActivity.audioEngine.setEqGain(value)
                             },
                             onWidthChange = { value ->
                                 parameterStore.setWidth(value)
-                                audioEngine.setWidth(value)
+                                this@MainActivity.audioEngine.setWidth(value)
                             },
                             onAntiDolbyChange = { enabled ->
                                 parameterStore.setAntiDolbyEnabled(enabled)
