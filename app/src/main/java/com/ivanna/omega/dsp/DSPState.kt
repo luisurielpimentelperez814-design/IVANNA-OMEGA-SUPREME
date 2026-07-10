@@ -1,6 +1,7 @@
 package com.ivanna.omega.dsp
 
 import com.ivanna.omega.core.IVANNAApplication
+import kotlinx.coroutines.launch
 
 /**
  * DSP State — inmutable data class para todos los parámetros DSP.
@@ -70,12 +71,31 @@ data class DSPState(
         )
         DSPBridge.setStereoWidth(stereoWidth)
 
-        IVANNAApplication.omegaBridge.setPFParams(
-            drive, wet, mix,
-            alpha, beta, gamma,
-            freq, resonance,
-            low, mid, high, presence, master
-        )
+        // FIX CRÍTICO (causa real de trabazón/crash al mover sliders):
+        // omegaBridge.setPFParams() hace I/O de socket Unix síncrono (13
+        // comandos de texto en serie, cada uno con su propio write()+flush(),
+        // y potencialmente un connect() bloqueante si la conexión se cayó).
+        // pushToNative() se llama en CADA tick de CUALQUIER slider del DSP
+        // (onExciterChange/onEqChange/onWidthChange/onCompThresholdChange/
+        // etc.), disparado desde Compose en el hilo principal — eso
+        // significa que se estaba haciendo I/O de red síncrono en el hilo
+        // de UI decenas de veces por segundo mientras se arrastraba un
+        // slider. Combinado con el bug del lado del daemon (que cerraba la
+        // conexión tras cada comando, forzando reconexión en cada uno de
+        // los 13 — ver fix en omega_daemon.cpp/socketLoop), esto producía
+        // ANR/trabazón real y, en carga sostenida, el sistema mataba el
+        // proceso. Con el daemon ya arreglado esto es mucho más rápido,
+        // pero I/O de red síncrono en el hilo principal sigue siendo
+        // arquitectónicamente incorrecto — se despacha al appScope (IO)
+        // igual que se hizo con LearningBias.captureCorrection().
+        IVANNAApplication.appScope.launch {
+            IVANNAApplication.omegaBridge.setPFParams(
+                drive, wet, mix,
+                alpha, beta, gamma,
+                freq, resonance,
+                low, mid, high, presence, master
+            )
+        }
     }
 
     companion object {

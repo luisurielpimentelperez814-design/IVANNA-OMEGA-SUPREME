@@ -444,6 +444,68 @@ static void socketLoop() {
             } else {
                 handleSocketCommand(cmd, (size_t)n);
             }
+
+            // FIX CRÍTICO (causa real de trabazón/crash al mover sliders):
+            // este socket se cerraba con close(client) despues de UN solo
+            // comando. OmegaEngineBridge.kt (lado Kotlin) asume conexion
+            // persistente y, via DSPState.pushToNative() -> setPFParams(),
+            // manda 13 comandos SET_PF_* seguidos por CADA tick de CUALQUIER
+            // slider del DSP (onExciterChange/onEqChange/onWidthChange/etc,
+            // que disparan en cada frame del gesto de arrastre, decenas de
+            // veces por segundo, en el hilo principal de la UI). Con el
+            // cierre inmediato, cada uno de esos 13 comandos forzaba al
+            // cliente a reconectar (LocalSocket.connect() bloqueante) antes
+            // de escribir el siguiente — hasta 13 conexiones TCP-like
+            // sincronas en el hilo de UI por cada tick de slider. Eso es
+            // ANR/trabazon garantizada, y con carga sostenida (arrastrar el
+            // slider) puede degenerar en que el sistema mate el proceso.
+            //
+            // Fix: en vez de cerrar de inmediato, seguir leyendo del MISMO
+            // cliente (no-blocking, con una espera corta entre intentos) por
+            // hasta ~150ms de inactividad total, o hasta que el cliente
+            // cierre su lado (recv devuelve 0). Esto cubre el caso real de
+            // 13 comandos consecutivos sin cambiar el protocolo de traspaso
+            // SHM via SCM_RIGHTS (rama de arriba, que sigue cerrando
+            // inmediatamente porque ahi "sin datos" YA es la señal completa
+            // para ese cliente — omega_effect.cpp no manda comandos de texto).
+            const int kIdleBudgetMs = 150;
+            int idleMs = 0;
+            while (idleMs < kIdleBudgetMs) {
+                char cmd2[128] = {};
+                ssize_t n2 = recv(client, cmd2, sizeof(cmd2) - 1, MSG_DONTWAIT);
+                if (n2 == 0) {
+                    break; // cliente cerró su lado — fin de la sesión
+                } else if (n2 < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        idleMs += 5;
+                        continue;
+                    }
+                    break; // error real de socket
+                }
+                cmd2[n2] = '\0';
+                idleMs = 0; // llegó dato — resetear el presupuesto de inactividad
+                if (strncmp(cmd2, "ping", 4) == 0) {
+                    send(client, "pong\n", 5, MSG_DONTWAIT);
+                } else if (strncmp(cmd2, "status", 6) == 0) {
+                    const char* st = g_running.load() ? "running\n" : "stopped\n";
+                    send(client, st, strlen(st), MSG_DONTWAIT);
+                } else if (strncmp(cmd2, "GET_TELEMETRY", 13) == 0) {
+                    char resp[128];
+                    snprintf(resp, sizeof(resp),
+                        "rms=%.4f,gain_db=%.2f,temp=%d,lat=%.2f\n",
+                        g_shared ? g_shared->ai_rms_level.load(std::memory_order_relaxed) : 0.0f,
+                        g_shared ? g_shared->ai_gain_db.load(std::memory_order_relaxed) : 0.0f,
+                        g_shared ? (int)g_shared->current_temperature.load(std::memory_order_relaxed) : 0,
+                        g_shared ? g_shared->current_latency_ms.load(std::memory_order_relaxed) : 0.0f);
+                    send(client, resp, strlen(resp), MSG_DONTWAIT);
+                } else if (strncmp(cmd2, "RESET_DEFAULTS", 14) == 0) {
+                    resetPFDefaults();
+                    send(client, "ok\n", 3, MSG_DONTWAIT);
+                } else {
+                    handleSocketCommand(cmd2, (size_t)n2);
+                }
+            }
         }
         close(client);
     }

@@ -59,6 +59,16 @@ class OmegaEngineBridge {
 
     // ── Envío de comandos ─────────────────────────────────────────────────────
 
+    // FIX (concurrencia): pushToNative() ahora despacha esta llamada via
+    // appScope.launch (Dispatchers.IO, pool de varios hilos) para sacarla
+    // del hilo principal — pero eso significa que ticks de sliders muy
+    // seguidos pueden ejecutar send() en hilos distintos AL MISMO TIEMPO.
+    // Sin sincronizar, dos escrituras concurrentes al mismo OutputStream
+    // podrían entrelazarse (mitad de un comando de un tick, mitad de otro),
+    // mandando basura al daemon. @Synchronized serializa todas las llamadas
+    // a send() sobre esta instancia — el costo es despreciable (un write a
+    // un socket Unix local es rapidísimo).
+    @Synchronized
     private fun send(cmd: String) {
         // FIX: reconexión automática si el socket murió
         if (!isConnected) {
