@@ -118,7 +118,16 @@ class LearningBias(private val context: Context) {
         } else prev
         inner[paramKey] = next
 
-        appendJsonLine(ctx, paramKey, autonomous, userValue, delta, next)
+        // FIX (bloqueo del hilo principal): captureCorrection() se llama desde
+        // los onValueChange de los sliders en MainActivity, que disparan en
+        // CADA tick del gesto de arrastre (decenas de veces por segundo) en
+        // el hilo de UI. appendJsonLine() hace I/O de disco sincrono
+        // (File.appendText dentro de un synchronized) - antes se ejecutaba
+        // ahi mismo, en el hilo principal, en cada tick. Eso traba/entrecorta
+        // cualquier slider del DSP al moverlo. El calculo de la EMA (rapido,
+        // in-memory, ConcurrentHashMap) se queda sincrono; solo el disk I/O
+        // se despacha al scope de IO ya existente en esta clase.
+        scope.launch { appendJsonLine(ctx, paramKey, autonomous, userValue, delta, next) }
         scheduleFlush()
 
         Log.i(TAG, "capture ctx=$ctx param=$paramKey user=$userValue auto=$autonomous " +
