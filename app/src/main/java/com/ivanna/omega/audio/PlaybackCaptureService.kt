@@ -105,8 +105,20 @@ class PlaybackCaptureService : Service() {
         try {
             val sampleRate = 48000
 
+            // FIX (auto-captura — "el problema del micrófono" que en realidad
+            // nunca fue el mic físico): por defecto, AudioPlaybackCaptureConfiguration
+            // captura audio de OTRAS apps *y de la propia* (documentado por
+            // Android: "capturing audio signals played by other apps (and
+            // yours)"). NoRootAudioProcessor/IvannaBridgePlayer sacan el
+            // audio ya procesado con USAGE_MEDIA — el mismo usage que este
+            // servicio está capturando. Sin excludeUid(), la app se
+            // recaptura a sí misma: salida procesada → recapturada →
+            // reprocesada → vuelta a sacar, un loop 100% digital que suena
+            // igual que feedback acústico de mic pero no depende de él en
+            // absoluto. Excluir el propio UID rompe el ciclo.
             val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .excludeUid(android.os.Process.myUid())
                 .build()
 
             val bufferSize = AudioRecord.getMinBufferSize(
