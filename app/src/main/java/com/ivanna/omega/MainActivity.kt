@@ -29,6 +29,9 @@ import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.core.UserProfileManager
+import com.ivanna.omega.dsp.ConcertMode
+import com.ivanna.omega.audio.AppMetadataListener
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.IvannaControlPanel
 import com.ivanna.omega.ui.theme.IvannaTheme
@@ -72,6 +75,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
+    private val profileManager = UserProfileManager(this)
+    private val concertMode = ConcertMode()
+    private val metadataListener = AppMetadataListener(this)
 
     // Mapea género detectado por el motor NPE → preset más afín, para Auto IA.
     private val genreToPreset = mapOf(
@@ -189,6 +195,10 @@ class MainActivity : ComponentActivity() {
         // motor espacial ya no depende del mic, así que se limpia el flag.
         parameterStore.setSpatialInitPending(false)
         initCoreAudioEngine()
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
 
         // FIX (retroalimentación acústica): AudioForegroundService arranca
         // AudioPipeline, que es un loopback físico real -- AudioRecord(MIC/
@@ -264,6 +274,10 @@ class MainActivity : ComponentActivity() {
         }
         OmegaEngine.setMode(parameterStore.getOmegaMode().coerceIn(0, 2)) // ya tiene guard interno
         // spatialEngineV2.start() ya se ejecuta dentro de initCoreAudioEngine(),
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
         // sin esperar RECORD_AUDIO (ver comentario ahí).
 
         setContent {
@@ -506,6 +520,10 @@ class MainActivity : ComponentActivity() {
     private fun compRatioSliderToRatio(slider: Float): Float = 1f + slider * 19f
 
     private fun initCoreAudioEngine() {
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
         try {
             audioEngine.initialize(48000)
             audioEngine.setExciter(parameterStore.getExciter())

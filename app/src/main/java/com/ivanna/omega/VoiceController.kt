@@ -15,6 +15,7 @@ class VoiceController(private val context: Context) {
         "music_mode" to listOf("music", "song", "pop", "rock"),
         "flat_mode" to listOf("flat", "neutral", "normal"),
         "spatial_mode" to listOf("spatial", "surround", "3d")
+        "concert_mode" to listOf("concert", "live", "hall", "reverb")
     )
 
     fun processCommand(audioBuffer: FloatArray): String {
@@ -81,6 +82,11 @@ class VoiceController(private val context: Context) {
                 Log.i("VoiceController", "Modo plano activado")
             }
             "spatial_mode" -> {
+            "concert_mode" -> {
+                val concert = ConcertMode()
+                concert.setRoomSize(0.7f)
+                Log.i("VoiceController", "Modo concierto activado")
+            }
                 app.globalEffectManager.applyProfile(
                     com.ivanna.omega.audio.IvannaEffectProfile.SPATIAL
                 )
