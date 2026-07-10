@@ -133,22 +133,26 @@ struct PFEngineState {
     Biquad presence[2];
     uint32_t coeff_version = 0;
 
+    // FIX v2.0: usaba pf_mid para las 4 bandas e ignoraba pf_low/pf_high/pf_presence.
+    // Ademas usaba pf_freq como frecuencia de low shelf y high shelf (incorrecto:
+    // esas bandas son shelves fijos; solo el mid peak sigue pf_freq).
     void recompute(const OmegaSharedState* s) {
-        double freq = (double)s->pf_freq.load(std::memory_order_relaxed);
-        double Q = (double)s->pf_resonance.load(std::memory_order_relaxed);
-        double gain = (double)s->pf_mid.load(std::memory_order_relaxed);
-        // Low shelf @ 200 Hz
-        calcLowShelf(low[0], freq, Q, gain);
-        calcLowShelf(low[1], freq, Q, gain);
-        // Peaking @ 1 kHz
-        calcPeaking(mid[0], freq, Q, gain);
-        calcPeaking(mid[1], freq, Q, gain);
-        // High shelf @ 6 kHz
-        calcHighShelf(high[0], freq, Q, gain);
-        calcHighShelf(high[1], freq, Q, gain);
-        // Presence peaking @ 3.5 kHz
-        calcPeaking(presence[0], freq, Q, gain * 0.5);
-        calcPeaking(presence[1], freq, Q, gain * 0.5);
+        const float Q        = s->pf_resonance.load(std::memory_order_relaxed);
+        const float freq     = s->pf_freq.load(std::memory_order_relaxed);     // mid peak, user-adjustable
+        const float gainLow  = s->pf_low.load(std::memory_order_relaxed);      // dB — was: pf_mid (BUG)
+        const float gainMid  = s->pf_mid.load(std::memory_order_relaxed);      // dB
+        const float gainHigh = s->pf_high.load(std::memory_order_relaxed);     // dB — was: pf_mid (BUG)
+        const float gainPres = s->pf_presence.load(std::memory_order_relaxed); // dB — was: pf_mid*0.5 (BUG)
+
+        calcLowShelf (low[0],       200.0f, Q, gainLow);   // Bass warmth shelf @ 200 Hz
+        calcLowShelf (low[1],       200.0f, Q, gainLow);
+        calcPeaking  (mid[0],       freq,   Q, gainMid);   // Mid peak @ pf_freq (default 1kHz)
+        calcPeaking  (mid[1],       freq,   Q, gainMid);
+        calcHighShelf(high[0],     8000.0f, Q, gainHigh);  // Clarity/air shelf @ 8 kHz
+        calcHighShelf(high[1],     8000.0f, Q, gainHigh);
+        calcPeaking  (presence[0], 3500.0f, Q, gainPres);  // Definition peak @ 3.5 kHz
+        calcPeaking  (presence[1], 3500.0f, Q, gainPres);
+
         coeff_version = s->pf_param_version.load(std::memory_order_relaxed);
     }
 };
@@ -195,30 +199,80 @@ static void enterSafeMode() {
 }
 
 // ── Proceso de audio ──────────────────────────────────────────────────────────
+//
+// FIX v2.0 — CONECTAR ring_in/ring_out + APLICAR Biquads
+//
+// Bugs anteriores:
+//   1. Operaba sobre g_process_buf (buffer estatico aislado que nadie llenaba
+//      con audio real y cuyo resultado nadie leia — audio muerto).
+//   2. Los Biquads del PF Engine se recomputaban correctamente pero nunca se
+//      llamaba a .process() — todo el EQ era letra muerta.
+//
+// Flujo correcto (omega_effect.cpp empuja/jala):
+//   omega_effect  →  ring_in (input_buffer)  →  processLoop()
+//   processLoop() →  ring_out (output_buffer) →  omega_effect
+//
 static void processLoop() {
-    while (g_running.load()) {
+    alignas(64) float work_buf[OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS];
+    const int blockSamples = OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS;
+
+    while (g_running.load(std::memory_order_acquire)) {
         if (!g_shared) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
-        // Recompute coeffs si cambiaron
-        uint32_t cv = g_shared->pf_param_version.load(std::memory_order_acquire);
+        // ── Recompute EQ coefficients si version cambi\u00f3 ──────────────────────────
+        const uint32_t cv = g_shared->pf_param_version.load(std::memory_order_acquire);
         if (cv != g_pf.coeff_version) {
             g_pf.recompute(g_shared);
         }
 
-        // Procesar buffer (simplificado — integra con cadena DSP real)
-        float temp = g_shared->current_temperature.load(std::memory_order_relaxed);
-        float tGain = thermalGain(temp);
-
-        for (int i = 0; i < OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS; ++i) {
-            float x = g_process_buf[i] * tGain;
-            x = softClip(x);
-            g_process_buf[i] = x;
+        // ── Pop un bloque de ring_in ──────────────────────────────────────────────
+        if (!g_shared->ring_in.tryPop(work_buf, blockSamples,
+                                       &g_shared->input_buffer[0][0])) {
+            // Ring vacio: yield 500us en vez de quemar CPU
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            continue;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        // ── Cadena DSP (si no bypass) ─────────────────────────────────────────────
+        const bool bypass = g_shared->bypass_enabled.load(std::memory_order_relaxed);
+        if (!bypass && g_shared->is_processing.load(std::memory_order_relaxed)) {
+            const float tGain  = thermalGain(
+                g_shared->current_temperature.load(std::memory_order_relaxed));
+            const float drive  = g_shared->pf_drive.load(std::memory_order_relaxed);
+            const float wet    = g_shared->pf_wet.load(std::memory_order_relaxed);
+            const float dry    = 1.0f - wet;
+            const float master = std::pow(10.0f,
+                g_shared->pf_master.load(std::memory_order_relaxed) / 20.0f);
+
+            // Estereo intercalado: [L0,R0, L1,R1, ...]
+            for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                float l = work_buf[i * 2];
+                float r = work_buf[i * 2 + 1];
+                const float origL = l, origR = r;
+
+                // 1. Pre-gain + saturacion tanh
+                const float dv = 1.0f + drive * 8.0f;
+                l = softClip(l * dv);
+                r = softClip(r * dv);
+
+                // 2. 4-band PF EQ — Biquads APLICADOS por primera vez
+                l = g_pf.low[0].process(l);       r = g_pf.low[1].process(r);
+                l = g_pf.mid[0].process(l);       r = g_pf.mid[1].process(r);
+                l = g_pf.high[0].process(l);      r = g_pf.high[1].process(r);
+                l = g_pf.presence[0].process(l);  r = g_pf.presence[1].process(r);
+
+                // 3. Mezcla wet/dry + limitacion termica + ganancia maestra
+                work_buf[i * 2]     = (wet * l + dry * origL) * tGain * master;
+                work_buf[i * 2 + 1] = (wet * r + dry * origR) * tGain * master;
+            }
+        }
+
+        // ── Push bloque procesado a ring_out ──────────────────────────────────────
+        g_shared->ring_out.tryPush(work_buf, blockSamples,
+                                    &g_shared->output_buffer[0][0]);
     }
 }
 
