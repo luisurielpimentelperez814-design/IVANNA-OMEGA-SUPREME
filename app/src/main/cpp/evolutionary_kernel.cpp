@@ -202,7 +202,7 @@ static inline void crossover(const uint8_t* __restrict__ p1,
 __attribute__((hot, flatten))
 static void mutate(uint8_t* __restrict__ genome, float rate) {
     const uint32_t threshold = static_cast<uint32_t>(rate * static_cast<float>(g_rng.max()));
-    #pragma clang loop vectorize(enable) interleave(enable)
+    // NOTE: loop contains stateful RNG call — cannot be auto-vectorized.
     for (int i = 0; i < GENOME_SIZE; ++i) {
         if (g_rng() < threshold) {
             genome[i] = static_cast<uint8_t>(g_rng() & 0xFF);

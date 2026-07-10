@@ -38,57 +38,80 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 data class IvannaEffectProfile(
-    // EQ: 10 bandas, valores en milliBels (-1500 a +1500 mB)
-    val eqBands: IntArray = intArrayOf(150, 100, 50, 0, -50, 0, 100, 200, 250, 300),
+    // EQ: 10 bandas @ 31/63/125/250/500/1k/2k/4k/8k/16kHz, milliBels (-1500..+1500)
+    // TUNED v3.3: default es la curva "IVANNA signature" — enhancement balanceado
+    val eqBands: IntArray = intArrayOf(80, 60, 30, 0, -20, 0, 60, 100, 120, 100),
     // BassBoost: 0–1000
-    val bassStrength: Short = 500,
+    val bassStrength: Short = 420,
     // Virtualizer: 0–1000
-    val virtualizerStrength: Short = 400,
+    val virtualizerStrength: Short = 380,
     // LoudnessEnhancer: ganancia en mB (0–1000)
-    val loudnessGainMb: Int = 0,
+    val loudnessGainMb: Int = 80,
     // Compresor (DynamicsProcessing): threshold dBFS, ratio
-    val compThresholdDb: Float = -18f,
-    val compRatio: Float = 3.5f
+    val compThresholdDb: Float = -15f,
+    val compRatio: Float = 3.0f
 ) {
     companion object {
-        // Perfiles inspirados en los OmegaParameters existentes
+        // ── FLAT — referencia limpia ────────────────────────────────────────────
         val FLAT = IvannaEffectProfile(
-            eqBands = intArrayOf(0,0,0,0,0,0,0,0,0,0),
-            bassStrength = 0, virtualizerStrength = 0, loudnessGainMb = 0
-        )
-        val WARM = IvannaEffectProfile(
-            eqBands = intArrayOf(200,150,100,50,0,-50,0,50,100,150),
-            bassStrength = 450, virtualizerStrength = 300, loudnessGainMb = 150
-        )
-        val ROCK_70S = IvannaEffectProfile(
-            // Curva clásica para rock de los 70s: sub-bass controlado,
-            // mids presentes, presencia 3-5kHz, brillo suave en treble.
-            // Ideal para Zeppelin, Pink Floyd, Sabbath, Eagles.
-            eqBands = intArrayOf(180, 220, 150, 80, 0, 120, 280, 300, 250, 180),
-            bassStrength = 600,
-            virtualizerStrength = 500,
-            loudnessGainMb = 200,
-            compThresholdDb = -14f,
-            compRatio = 3f
-        )
-        val SPATIAL = IvannaEffectProfile(
-            eqBands = intArrayOf(100,80,60,0,-80,0,80,160,200,240),
-            bassStrength = 300, virtualizerStrength = 800, loudnessGainMb = 0
-        )
-        val PUNCH = IvannaEffectProfile(
-            eqBands = intArrayOf(300,250,200,100,0,0,100,200,300,350),
-            bassStrength = 700, virtualizerStrength = 200, loudnessGainMb = 300,
-            compThresholdDb = -12f, compRatio = 5f
+            eqBands = intArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            bassStrength = 0, virtualizerStrength = 0, loudnessGainMb = 0,
+            compThresholdDb = -24f, compRatio = 1.5f
         )
 
-        // FIX: mapa nombre → perfil, usado por IvannaControlPanel para listar
-        // los presets seleccionables en la UI (LazyRow de FilterChip).
+        // ── WARM — calidez analógica, vocales en primer plano ──────────────────
+        // TUNED v3.3: eliminado el dip en 1kHz que huecaba las vocales.
+        // Curva Baxandall cálida con presence sutil y air controlado.
+        val WARM = IvannaEffectProfile(
+            eqBands = intArrayOf(180, 160, 120, 80, 40, 0, 0, 30, 70, 90),
+            bassStrength = 420, virtualizerStrength = 280, loudnessGainMb = 160,
+            compThresholdDb = -16f, compRatio = 2.8f
+        )
+
+        // ── ROCK 70s — cuerpo, punch, presencia de guitarra ───────────────────
+        // TUNED v3.3: mids más presentes, 4kHz destacado (ataque de guitarra),
+        // treble controlado (no sibilante). Zeppelin, Floyd, Sabbath.
+        val ROCK_70S = IvannaEffectProfile(
+            eqBands = intArrayOf(160, 200, 160, 100, 40, 60, 180, 240, 170, 100),
+            bassStrength = 560, virtualizerStrength = 460, loudnessGainMb = 200,
+            compThresholdDb = -14f, compRatio = 3.2f
+        )
+
+        // ── SPATIAL — escenario headphone, imagen stereo magistral ─────────────
+        // TUNED v3.3: presencia 2-4kHz boosteada (posicionamiento 3D),
+        // sub controlado, virtualizer al máximo musical sin fatiga.
+        val SPATIAL = IvannaEffectProfile(
+            eqBands = intArrayOf(80, 60, 40, 0, -40, 20, 120, 200, 230, 190),
+            bassStrength = 280, virtualizerStrength = 720, loudnessGainMb = 0,
+            compThresholdDb = -16f, compRatio = 2.5f
+        )
+
+        // ── PUNCH — EDM / Hip-hop / Trap / Reggaetón ──────────────────────────
+        // TUNED v3.3: sub-bass autoridad, mids limpios, presencia controlada.
+        // Compresión más agresiva para ese golpe de bajo de EDM.
+        val PUNCH = IvannaEffectProfile(
+            eqBands = intArrayOf(280, 240, 160, 60, 0, 0, 60, 120, 150, 110),
+            bassStrength = 680, virtualizerStrength = 200, loudnessGainMb = 300,
+            compThresholdDb = -12f, compRatio = 4.0f
+        )
+
+        // ── IVANNA OMEGA — preset firma prodigio magistral ─────────────────────
+        // El sonido definitivo de IVANNA: autoridad de bajo, mids cristalinos,
+        // presencia que corta, aire que respira. Pop/R&B/Soul/Electrónica/Modern.
+        val IVANNA_OMEGA = IvannaEffectProfile(
+            eqBands = intArrayOf(200, 160, 100, 40, 0, 0, 80, 160, 200, 160),
+            bassStrength = 540, virtualizerStrength = 460, loudnessGainMb = 120,
+            compThresholdDb = -14f, compRatio = 3.2f
+        )
+
+        // mapa nombre → perfil para la UI (LazyRow de FilterChip)
         val byName: Map<String, IvannaEffectProfile> = linkedMapOf(
-            "Flat" to FLAT,
-            "Warm" to WARM,
-            "Rock 70s" to ROCK_70S,
-            "Spatial" to SPATIAL,
-            "Punch" to PUNCH
+            "Flat"         to FLAT,
+            "Warm"         to WARM,
+            "Rock 70s"     to ROCK_70S,
+            "Spatial"      to SPATIAL,
+            "Punch"        to PUNCH,
+            "IVANNA OMEGA" to IVANNA_OMEGA
         )
     }
 }

@@ -101,7 +101,7 @@ static void init_sin_table() {
     });
 }
 
-static inline float fast_sin(float phase) {
+[[maybe_unused]] static inline float fast_sin(float phase) {
     phase = fmodf(phase, TWO_PI);
     if (phase < 0) phase += TWO_PI;
 
@@ -142,7 +142,7 @@ static inline void kalmanInit(KalmanState &k, int sr) {
     k.P00 = 0.1f; k.P01 = 0.0f; k.P11 = 1.0f;
 }
 
-static inline float kalmanStep(KalmanState &k, float meas, float dt) {
+[[maybe_unused]] static inline float kalmanStep(KalmanState &k, float meas, float dt) {
     const float qPhase = 1e-8f, qFreq = 1e-6f;
     float pred_phase = k.phase + k.freq * dt;
     float pred_freq = k.freq;

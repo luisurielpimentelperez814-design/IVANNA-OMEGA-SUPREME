@@ -39,7 +39,8 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
     // al ancho máximo, altas siguen recibiendo el ensanche completo).
     const float bassFactor = (w <= 1.0f) ? w : (1.0f + (0.25f - 1.0f) * (w - 1.0f));
 
-    #pragma clang loop vectorize(enable) interleave(enable)
+    // NOTE: loop contains stateful sideLpf_.process() — cannot be auto-vectorized.
+    // Pragma removed to suppress -Wpass-failed=transform-warning.
     for (int i = 0; i < frames; ++i) {
         const float l = left[i];
         const float r = right[i];
