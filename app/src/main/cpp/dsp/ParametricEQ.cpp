@@ -33,8 +33,18 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     setBand(1, 200.f,  p.resonance, clampDb(p.low * 0.5f));
     // Band 2: Peaking   ~500 Hz — mid transition (no direct param, flat)
     setBand(2, 500.f,  p.resonance, 0.f);
-    // Band 3: Peaking   at freq Hz — used as a parametric bell, gain from master
-    setBand(3, p.freq, p.resonance, clampDb(p.master * 0.25f));
+    // Band 3: Peaking   at freq Hz — banda paramétrica libre (freq/Q ajustables).
+    //
+    // FIX (tuning magistral): antes su ganancia venía de `p.master * 0.25f`
+    // — es decir, el volumen final de salida (GainStage::outputGain_ =
+    // dbToLin(p.master), ver GainStage.cpp) TAMBIÉN reformaba el timbre en
+    // esta banda cada vez que el usuario subía/bajaba el volumen. No es una
+    // curva de compensación Fletcher-Munson intencional (sería dependiente
+    // de frecuencia grave/aguda, no un solo bell en freq=1kHz por defecto);
+    // es un parámetro reusado por atajo. Se desacopla: sin ganancia propia
+    // dedicada expuesta desde Kotlin, queda plana (igual que banda 2) hasta
+    // que se cablee un control real — así el volumen deja de teñir el tono.
+    setBand(3, p.freq, p.resonance, 0.f);
     // Band 4: Peaking   ~2.5 kHz — mid param
     setBand(4, 2500.f, p.resonance, clampDb(p.mid));
     // Band 5: Peaking   ~5 kHz  — high param
