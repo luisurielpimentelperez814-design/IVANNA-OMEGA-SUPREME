@@ -82,8 +82,8 @@ class ParameterStore(context: Context) {
     fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
-    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.4f) // TUNED v3.1: 0.5→0.4 (-14.4dB, punto dulce)
-    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.30f) // TUNED v3.1: 0.16→0.30 (2.7:1, control suave)
+    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.375f) // TUNED v3.3: 0.4→0.375 (-15.0dB, kick-in más musical)
+    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.105f) // TUNED v3.3: 0.30→0.105 | fórmula 1+x*19 → antes 6.7:1, ahora 3.0:1 (transparente)
     fun setCompParams(threshold: Float, ratio: Float) = prefs.edit()
         .putFloat(KEY_COMP_THRESHOLD, threshold)
         .putFloat(KEY_COMP_RATIO, ratio)
