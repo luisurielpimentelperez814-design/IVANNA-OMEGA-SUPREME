@@ -5,6 +5,7 @@ import android.util.Log
 import com.ivanna.omega.ai.YamnetClassifier
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.dsp.ConcertMode
 
 class VoiceController(private val context: Context) {
     private val classifier = YamnetClassifier(context)
@@ -14,7 +15,7 @@ class VoiceController(private val context: Context) {
         "cinema_mode" to listOf("movie", "film", "cinema", "dolby"),
         "music_mode" to listOf("music", "song", "pop", "rock"),
         "flat_mode" to listOf("flat", "neutral", "normal"),
-        "spatial_mode" to listOf("spatial", "surround", "3d")
+        "spatial_mode" to listOf("spatial", "surround", "3d"),
         "concert_mode" to listOf("concert", "live", "hall", "reverb")
     )
 
@@ -82,15 +83,15 @@ class VoiceController(private val context: Context) {
                 Log.i("VoiceController", "Modo plano activado")
             }
             "spatial_mode" -> {
-            "concert_mode" -> {
-                val concert = ConcertMode()
-                concert.setRoomSize(0.7f)
-                Log.i("VoiceController", "Modo concierto activado")
-            }
                 app.globalEffectManager.applyProfile(
                     com.ivanna.omega.audio.IvannaEffectProfile.SPATIAL
                 )
                 Log.i("VoiceController", "Modo espacial activado")
+            }
+            "concert_mode" -> {
+                val concert = ConcertMode()
+                concert.setRoomSize(0.7f)
+                Log.i("VoiceController", "Modo concierto activado")
             }
         }
     }

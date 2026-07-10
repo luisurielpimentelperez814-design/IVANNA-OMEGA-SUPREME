@@ -44,7 +44,7 @@ object PiLstmBridge {
     private external fun nativeSetHrtfEnabled(en: Boolean)
     private external fun nativeGetNpSat(): Float
     private external fun nativeGetError(): Float
-}
+
     // === NUEVOS PARÁMETROS NEURO-COCHLEAR ===
     fun setClarity(clarity: Float) {
         // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition
@@ -63,3 +63,4 @@ object PiLstmBridge {
         // pero usamos nativeSetAlpha como proxy (ajuste de ganancia maestra)
         nativeSetAlpha(ohcComp)
     }
+}

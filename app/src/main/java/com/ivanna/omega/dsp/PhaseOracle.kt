@@ -34,7 +34,7 @@ class PhaseOracle(private val sampleRate: Float = 48000f) {
         }
     }
 
-    private class AllpassFilter(sampleRate: Float, centerFreq: Float, q: Float) {
+    private class AllpassFilter(private val sampleRate: Float, centerFreq: Float, q: Float) {
         private var a0: Float = 0f
         private var a1: Float = 0f
         private var a2: Float = 0f
