@@ -126,12 +126,27 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
-    g_eq.process(data, data, n);
-    g_comp.process(data, data, n);
-    g_exciter.process(data, data, n);
-    g_widener.process(data, data, n);
-    g_gain.processInput(data, data, n);
-    g_gain.processOutput(data, data, n);
+
+    // FIX: 'data' viene intercalado estéreo [L0,R0,L1,R1,...] con 2*n
+    // muestras válidas (n = frames reales, ver DSPBridge.process(buf,
+    // read/2) en Kotlin). El código anterior llamaba a
+    // g_eq.process(data, data, n) — left==right sobre el MISMO puntero,
+    // interpretando los primeros n floats intercalados como si fueran n
+    // muestras mono. Efecto real: el canal derecho jamás se procesaba
+    // aparte del izquierdo (todo el chain — EQ/Comp/Exciter/Widener/PD —
+    // corría sobre una mezcla L/R aliasada), y la segunda mitad del
+    // buffer (las muestras 'n' a '2n', frames reales n/2..n) ni siquiera
+    // se tocaba y se escribía sin procesar. StereoWidener en particular
+    // no podía hacer nada real sin left/right separados.
+    float left[2048], right[2048];
+    for (int i = 0; i < n; ++i) { left[i] = data[2 * i]; right[i] = data[2 * i + 1]; }
+
+    g_eq.process(left, right, n);
+    g_comp.process(left, right, n);
+    g_exciter.process(left, right, n);
+    g_widener.process(left, right, n);
+    g_gain.processInput(left, right, n);
+    g_gain.processOutput(left, right, n);
 
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
     // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
@@ -155,8 +170,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_pd.set_spatial_width(sp_width);
     }
     float pdOutL[2048], pdOutR[2048];
-    g_pd.process_block(data, data, pdOutL, pdOutR, n);
-    for (int i = 0; i < n; ++i) data[i] = 0.5f * (pdOutL[i] + pdOutR[i]);
+    g_pd.process_block(left, right, pdOutL, pdOutR, n);
+
+    // Reinterleave: escribe de vuelta en el layout [L0,R0,L1,R1,...] que
+    // espera AudioTrack (stereo intercalado), ahora con las 2*n muestras
+    // reales procesadas (antes solo se escribían n de 2n, la mitad cruda).
+    for (int i = 0; i < n; ++i) { data[2 * i] = pdOutL[i]; data[2 * i + 1] = pdOutR[i]; }
 
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
