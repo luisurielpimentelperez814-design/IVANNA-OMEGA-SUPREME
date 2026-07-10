@@ -33,10 +33,15 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfL_.a2 = (float)((1.0 - alpha) * a0_inv);
     hpfR_ = hpfL_;
 
-    // ANTI-ALIASING LPF @ 10.8 kHz en la tasa oversampled (2x = 96kHz)
-    // TUNED v3.3: era 11.5kHz, se baja ligeramente para suavizar los armónicos
+    // ANTI-ALIASING LPF @ 14.5 kHz en la tasa oversampled (2x = 96kHz)
+    // TUNING RESOLUCIÓN v3.4: era 10.8kHz → subimos a 14.5kHz.
+    // El aliasing real de softClip ocurre cuando los armónicos superan Nyquist
+    // de la tasa oversampled (48kHz). A 14.5kHz dejamos pasar la banda de AIRE
+    // completa (12-16kHz: shimmer de platillos, respiración vocal, armónicos
+    // de cuerdas). Era eso exactamente lo que faltaba para "saborear" el audio.
+    // Matemáticamente seguro: 14.5kHz << 48kHz Nyquist OS.
     // generados desde 2.4kHz y darles más cuerpo en vez de brillo agudo.
-    double wOS = 2.0 * M_PI * 10800.0 / (p.sampleRate * OS_FACTOR);
+    double wOS = 2.0 * M_PI * 14500.0 / (p.sampleRate * OS_FACTOR);
     double cwOS = std::cos(wOS), swOS = std::sin(wOS);
     double alphaOS = swOS / (2.0 * 0.707);
     double a0OS_inv = 1.0 / (1.0 + alphaOS);

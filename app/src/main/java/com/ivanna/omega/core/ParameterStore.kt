@@ -61,7 +61,7 @@ class ParameterStore(context: Context) {
         private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
     }
 
-    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.35f) // TUNED v3.1.1: 0.45→0.35 (anti-aliasing: oversampling 2x activado)
+    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
     fun setExciter(value: Float) = prefs.edit().putFloat(KEY_EXCITER, value).apply()
 
     fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
@@ -85,8 +85,8 @@ class ParameterStore(context: Context) {
     fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
-    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.375f) // TUNED v3.3: 0.4→0.375 (-15.0dB, kick-in más musical)
-    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.105f) // TUNED v3.3: 0.30→0.105 | fórmula 1+x*19 → antes 6.7:1, ahora 3.0:1 (transparente)
+    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.32f) // RESOLUCIÓN v3.4: 0.375→0.32 (-12dB, comprime menos material, más dinámicas)
+    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.042f) // RESOLUCIÓN v3.4: 0.105→0.042 | 3.0:1→1.8:1 (micro-transientes libres)
     fun setCompParams(threshold: Float, ratio: Float) = prefs.edit()
         .putFloat(KEY_COMP_THRESHOLD, threshold)
         .putFloat(KEY_COMP_RATIO, ratio)
@@ -107,9 +107,9 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.58f) // TUNED v3.3: 0.55→0.58 (resonancia coclear máxima sin artefactos)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.56f) // TUNED v3.3: 0.50→0.56 (inhibición lateral, separación frecuencial magistral)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.60f) // TUNED v3.3: 0.58→0.60 (compresión OHC, micro-dinámicas naturales del oído)
+    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.60f) // RESOLUCIÓN v3.4: 0.58→0.60 (más color armónico para sabor analógico)
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // RESOLUCIÓN v3.4: 0.56→0.50 (menos inhibición = menos artificioso, más natural)
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.40f) // RESOLUCIÓN v3.4: 0.60→0.40 — CRÍTICO: OHC alta aplana micro-dinámicas que dan textura
     fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.5f) // TUNED v3.3: 2.0→2.5 dB (volumen percibido NPE óptimo)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
