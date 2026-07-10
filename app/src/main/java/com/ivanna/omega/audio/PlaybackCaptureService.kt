@@ -67,6 +67,8 @@ class PlaybackCaptureService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var audioRecord: AudioRecord? = null
     private var isRunning = false
+    private var mediaProjection: MediaProjection? = null
+    private var projectionCallback: MediaProjection.Callback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -103,6 +105,23 @@ class PlaybackCaptureService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
 
         try {
+            this.mediaProjection = mediaProjection
+
+            // FIX (sesión de MediaProjection sin callback — obligatorio desde
+            // Android 14): sin esto la app no se entera cuando el usuario
+            // corta la captura desde el chip del sistema, o el sistema la
+            // revoca por otro motivo — el AudioRecord se queda leyendo sobre
+            // una sesión muerta en vez de limpiar.
+            val callback = object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.i("PlaybackCaptureService", "MediaProjection.onStop: sesión terminada — limpiando captura")
+                    stopCapture()
+                    stopSelf()
+                }
+            }
+            projectionCallback = callback
+            mediaProjection.registerCallback(callback, null)
+
             val sampleRate = 48000
 
             // FIX (auto-captura — "el problema del micrófono" que en realidad
@@ -206,12 +225,17 @@ class PlaybackCaptureService : Service() {
     }
 
     private fun stopCapture() {
+        if (!isRunning && audioRecord == null && mediaProjection == null) return // idempotente
         isRunning = false
         scope.cancel()
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
         IvannaVisualizerBridgeV2.release()
+
+        projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
+        projectionCallback = null
+        mediaProjection = null
     }
 
     private fun createNotificationChannel() {
