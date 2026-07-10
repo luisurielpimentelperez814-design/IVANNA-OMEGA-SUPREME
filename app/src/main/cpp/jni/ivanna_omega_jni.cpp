@@ -108,6 +108,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     g_pd.set_nho_wet(wet * 0.5f);
 }
 
+// FIX (tuning magistral): DSPState.stereoWidth (Kotlin) nunca llegaba al
+// motor nativo — pushToNative() no lo incluía en nativeSetParams(), y
+// StereoWidener derivaba el ancho de "gamma" (colisión con el timing del
+// compresor). Ahora hay un canal dedicado, independiente de setParams().
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeSetStereoWidth(JNIEnv*, jobject, jfloat width) {
+    g_widener.setWidth(width);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {

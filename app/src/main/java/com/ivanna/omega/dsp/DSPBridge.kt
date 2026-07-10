@@ -41,6 +41,15 @@ object DSPBridge {
         nativeSetParams(drive, wet, mix, alpha, beta, gamma, freq, resonance, low, mid, high, presence, master)
     }
 
+    // FIX (tuning magistral): antes el ancho estéreo (DSPState.stereoWidth)
+    // nunca llegaba al motor nativo — StereoWidener derivaba el ancho de
+    // "gamma", que también controla el timing del compresor (colisión de
+    // parámetros). Canal dedicado, sin relación con setParams()/gamma.
+    fun setStereoWidth(width: Float) {
+        if (!loaded) return
+        nativeSetStereoWidth(width)
+    }
+
     fun process(buffer: FloatArray, numFrames: Int) {
         if (loaded) nativeProcess(buffer, numFrames)
     }
@@ -57,6 +66,7 @@ object DSPBridge {
         low: Float, mid: Float, high: Float,
         presence: Float, master: Float
     )
+    private external fun nativeSetStereoWidth(width: Float)
     private external fun nativeProcess(buf: FloatArray, numFrames: Int)
     private external fun nativeReset()
     private external fun nativeVersion(): String

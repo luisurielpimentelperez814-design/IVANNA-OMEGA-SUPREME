@@ -103,6 +103,26 @@ struct Biquad {
         b0=b0_/a0_; b1=b1_/a0_; b2=b2_/a0_;
         a1=a1_/a0_; a2=a2_/a0_;
     }
+
+    // FIX (tuning magistral): lowpass RBJ estándar — faltaba un pasa-bajos
+    // real (solo había peaking/shelf). Lo usa StereoWidener para el
+    // crossover mono-safe de graves (evita cancelación de fase en mono).
+    void setLowpass(double freq, double Q, double sr) {
+        if (!validSampleRate(sr)) return;
+        freq = clampFreq(freq, sr);
+        Q = clampQ(Q);
+        double w0 = 2.0*M_PI*freq/sr;
+        double cw = std::cos(w0), sw = std::sin(w0);
+        double alpha_val = sw/(2.0*Q);
+        double b0_ = (1.0 - cw) * 0.5;
+        double b1_ = 1.0 - cw;
+        double b2_ = (1.0 - cw) * 0.5;
+        double a0_ = 1.0 + alpha_val;
+        double a1_ = -2.0*cw;
+        double a2_ = 1.0 - alpha_val;
+        b0=b0_/a0_; b1=b1_/a0_; b2=b2_/a0_;
+        a1=a1_/a0_; a2=a2_/a0_;
+    }
 };
 
 } // namespace ivanna

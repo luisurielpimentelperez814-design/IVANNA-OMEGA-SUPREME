@@ -2,42 +2,62 @@
 
 namespace ivanna {
 
+// FIX (tuning magistral): antes gamma alimentaba EL MISMO parámetro que
+// controla el timing del compresor (ver Compressor.cpp: atk/rel dependen
+// de p.gamma). StereoWidener::setParams también leía p.gamma para el
+// ancho estéreo — colisión real: mover el timing del compresor cambiaba
+// el ancho estéreo en silencio, y viceversa. DSPState.stereoWidth (Kotlin)
+// nunca llegaba al motor nativo (pushToNative() no lo incluía) — el
+// control de ancho de la UI estaba completamente muerto.
+// Ahora setParams() ya NO deriva el ancho de gamma; sólo setWidth() (vía
+// nativeSetStereoWidth, wireado end-to-end) lo controla.
 void StereoWidener::setParams(const DSPParams& p) {
-    // gamma 0→narrow (0.0), 0.5→unity (1.0), 1→wide (2.0)
-    width_ = p.gamma * 2.f;
+    if (p.sampleRate != lastSampleRate_) {
+        lastSampleRate_ = p.sampleRate;
+        // Corte a 150Hz, Q=0.707 (Butterworth) — protege el "punch" de bajo
+        // (kick/bajo eléctrico) de cancelación de fase al sumar en mono.
+        sideLpf_.setLowpass(150.0, 0.70710678, static_cast<double>(p.sampleRate));
+    }
 }
 
-// Setter directo, independiente de DSPParams::gamma. Declarado en el header
-// pero sin cuerpo (FIX: completar API — permite ajustar width sin pasar por
-// setParams cuando solo ese parámetro cambia, p.ej. desde un control de UI
-// dedicado o el preset Anti-Dolby que reduce widener 30% en modo Speech).
 void StereoWidener::setWidth(float w) {
-    // w en rango [0,2]: 0=mono, 1=unity, 2=ancho máximo (mismo rango que gamma*2)
+    // w en rango [0,2]: 0=mono, 1=unity, 2=ancho máximo
     width_ = w < 0.f ? 0.f : (w > 2.f ? 2.f : w);
 }
 
 __attribute__((hot, flatten))
 void StereoWidener::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-    
+
     const float w = width_;
-    // Coeficientes precalculados para Mid/Side directo:
-    // left_out  = 0.5*(1+w)*L + 0.5*(1-w)*R
-    // right_out = 0.5*(1-w)*L + 0.5*(1+w)*R
-    const float c_plus  = 0.5f * (1.f + w);
-    const float c_minus = 0.5f * (1.f - w);
-    
+
+    // FIX (tuning magistral): a w<=1 (unity/narrow) el comportamiento es
+    // IDÉNTICO al widener naive anterior (bassFactor==w) — no cambia el
+    // sonido por defecto. Sólo al ensanchar (w>1, el caso real de riesgo
+    // de cancelación en mono) se limita el boost de graves, rampa lineal
+    // de 1.0 en w=1 hasta 0.25 en w=2 (75% menos boost de side en graves
+    // al ancho máximo, altas siguen recibiendo el ensanche completo).
+    const float bassFactor = (w <= 1.0f) ? w : (1.0f + (0.25f - 1.0f) * (w - 1.0f));
+
     #pragma clang loop vectorize(enable) interleave(enable)
     for (int i = 0; i < frames; ++i) {
-        float l = left[i];
-        float r = right[i];
-        left[i]  = c_plus * l + c_minus * r;
-        right[i] = c_minus * l + c_plus * r;
+        const float l = left[i];
+        const float r = right[i];
+        const float mid  = 0.5f * (l + r);
+        const float side = 0.5f * (l - r);
+
+        const float sideLow  = sideLpf_.process(side);
+        const float sideHigh = side - sideLow;
+
+        const float sideOut = sideHigh * w + sideLow * bassFactor;
+
+        left[i]  = mid + sideOut;
+        right[i] = mid - sideOut;
     }
 }
 
 void StereoWidener::reset() {
-    // No persistent state to reset (width_ is set via setParams)
+    sideLpf_.reset();
 }
 
 } // namespace ivanna

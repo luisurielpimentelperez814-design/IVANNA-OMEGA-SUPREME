@@ -42,6 +42,11 @@ data class DSPState(
 
     /**
      * Envía todos los parámetros al DSP nativo vía DSPBridge.
+     *
+     * FIX (tuning magistral): stereoWidth nunca se enviaba — nativeSetParams
+     * no lo incluía en su firma. Ahora va por un canal JNI dedicado
+     * (nativeSetStereoWidth), separado de gamma (que sólo controla timing
+     * del compresor).
      */
     fun pushToNative() {
         DSPBridge.setParams(
@@ -50,6 +55,7 @@ data class DSPState(
             freq, resonance,
             low, mid, high, presence, master
         )
+        DSPBridge.setStereoWidth(stereoWidth)
     }
 
     companion object {
