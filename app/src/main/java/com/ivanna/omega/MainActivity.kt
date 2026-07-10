@@ -6,12 +6,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,8 +22,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.ivanna.omega.ai.LearningBias
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
+import com.ivanna.omega.audio.IvannaBridgePlayer
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
 import com.ivanna.omega.audio.PlaybackCaptureService
@@ -30,10 +35,12 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
 import com.ivanna.omega.ui.theme.IvannaTheme
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.VisualizerSurface
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -72,6 +79,29 @@ class MainActivity : ComponentActivity() {
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
+
+    // FASE 1: reproductor propio (decodifica archivo -> DSPBridge -> AudioTrack).
+    // Vive en MainActivity scope, se libera en onDestroy().
+    private lateinit var bridgePlayer: IvannaBridgePlayer
+    private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
+    private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
+
+    // Picker de archivo (ActivityResultContracts.OpenDocument, filtrado a audio/*).
+    private val openAudioLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Throwable) { /* algunas fuentes no admiten persist */ }
+            bridgePlayerUri.value = uri
+            Log.i(TAG, "BridgePlayer: archivo seleccionado -> $uri")
+        }
+    }
+
+    // FASE 2: capturador/aplicador de sesgo aprendido por (contexto, param).
+    private lateinit var learningBias: LearningBias
 
     // Mapea género detectado por el motor NPE → preset más afín, para Auto IA.
     private val genreToPreset = mapOf(
@@ -172,6 +202,8 @@ class MainActivity : ComponentActivity() {
 
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
+        bridgePlayer = IvannaBridgePlayer(applicationContext)
+        learningBias = LearningBias(applicationContext).also { it.load() }
 
         // FIX (independencia del mic — pedido explícito de GORE): antes TODO
         // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
@@ -271,6 +303,34 @@ class MainActivity : ComponentActivity() {
                             IconButtonClose { showVisualizer = false }
                         }
                     } else {
+                      Column(
+                        modifier = Modifier
+                          .fillMaxSize()
+                          .verticalScroll(rememberScrollState())
+                      ) {
+                        BridgePlayerCard(
+                            playerState = bridgePlayerState.value,
+                            currentUri  = bridgePlayerUri.value,
+                            onPickFile  = { openAudioLauncher.launch(arrayOf("audio/*")) },
+                            onPlay      = {
+                                bridgePlayerUri.value?.let { uri ->
+                                    bridgePlayer.play(uri)
+                                    bridgePlayerState.value = IvannaBridgePlayer.State.PLAYING
+                                    // Poll estado real (el player lo actualiza en su hilo).
+                                    lifecycleScope.launch {
+                                        while (bridgePlayer.state != IvannaBridgePlayer.State.STOPPED &&
+                                               bridgePlayer.state != IvannaBridgePlayer.State.ERROR) {
+                                            bridgePlayerState.value = bridgePlayer.state
+                                            delay(500)
+                                        }
+                                        bridgePlayerState.value = bridgePlayer.state
+                                    }
+                                }
+                            },
+                            onPause  = { bridgePlayer.pause();  bridgePlayerState.value = bridgePlayer.state },
+                            onResume = { bridgePlayer.resume(); bridgePlayerState.value = bridgePlayer.state },
+                            onStop   = { bridgePlayer.stop();   bridgePlayerState.value = bridgePlayer.state }
+                        )
                         IvannaControlPanel(
                             initialExciter = parameterStore.getExciter(),
                             initialEq = parameterStore.getEqGain(),
@@ -300,14 +360,17 @@ class MainActivity : ComponentActivity() {
                             initialSpatialEnabled = parameterStore.isSpatialEnabled(),
 
                             onExciterChange = { value ->
+                                captureCorrection("exciter", value)
                                 parameterStore.setExciter(value)
                                 this@MainActivity.audioEngine.setExciter(value)
                             },
                             onEqChange = { value ->
+                                captureCorrection("eq_gain", value)
                                 parameterStore.setEqGain(value)
                                 this@MainActivity.audioEngine.setEqGain(value)
                             },
                             onWidthChange = { value ->
+                                captureCorrection("width", value)
                                 parameterStore.setWidth(value)
                                 this@MainActivity.audioEngine.setWidth(value)
                             },
@@ -341,6 +404,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onCompThresholdChange = { slider ->
+                                captureCorrection("comp_threshold", slider)
                                 val ratioSlider = parameterStore.getCompRatio()
                                 parameterStore.setCompParams(slider, ratioSlider)
                                 IvannaNativeLib.nativeSetCompressorParams(
@@ -349,6 +413,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onCompRatioChange = { slider ->
+                                captureCorrection("comp_ratio", slider)
                                 val threshSlider = parameterStore.getCompThreshold()
                                 parameterStore.setCompParams(threshSlider, slider)
                                 IvannaNativeLib.nativeSetCompressorParams(
@@ -357,14 +422,17 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onNhoHarmonicChange = { value ->
+                                captureCorrection("nho_harmonic", value)
                                 parameterStore.setNhoHarmonic(value)
                                 IvannaNativeLib.nativeSetHarmonicGain(value)
                             },
                             onSpatialAngleChange = { rad ->
+                                captureCorrection("spatial_angle", rad)
                                 parameterStore.setSpatialAngle(rad)
                                 IvannaNativeLib.nativeSetSpatialAngleRad(rad)
                             },
                             onSpatialWidthChange = { width ->
+                                captureCorrection("spatial_width", width)
                                 parameterStore.setSpatialWidth(width)
                                 IvannaNativeLib.nativeSetSpatialWidthDirect(width)
                             },
@@ -448,12 +516,68 @@ class MainActivity : ComponentActivity() {
                             },
                             onOpenVisualizer = { requestVisualizer() }
                         )
+                      }
                     }
                 }
             }
         }
 
         if (parameterStore.isAutoModeEnabled()) startAutoPresetLoop()
+        startControlFrameLoop()
+    }
+
+    // FASE 2: loop de control (fuera del audio thread) que empuja el sesgo
+    // aprendido + genoma evolutivo + YAMNet al bus seqlock. 20 Hz basta:
+    // el ControlFrame es paramétrico, no muestra a muestra.
+    private var controlFrameJob: Job? = null
+    private fun startControlFrameLoop() {
+        controlFrameJob?.cancel()
+        controlFrameJob = lifecycleScope.launch {
+            while (true) {
+                if (IvannaNativeLib.isLoaded) {
+                    try {
+                        val genre = IvannaNpeEngine.getDetectedGenre().lowercase()
+                        val ctx = if (genre.isNotBlank() && genre != "unknown")
+                            "genre:$genre" else "preset:${parameterStore.getCurrentPreset()}"
+                        IvannaNativeLib.nativeSetLearningContext(ctx)
+                        IvannaNativeLib.nativeApplyControlFrame()
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "controlFrameLoop tick fallo", t)
+                    }
+                }
+                delay(50L)
+            }
+        }
+    }
+
+    // FASE 2: captura la corrección del usuario sobre un parámetro. El valor
+    // "autónomo" (Kernel Evo / Auto IA) se lee del ParameterStore justo antes
+    // de aplicar el cambio nuevo; el sesgo se persiste y se acumula por
+    // (género_detectado o preset_activo, param_key). El punto de aplicación
+    // real del sesgo ocurre en el hilo de control C++ (control_apply_frame),
+    // que consulta LearningBias.jniGetBiasForActiveContext(...).
+    private fun captureCorrection(paramKey: String, userValue: Float) {
+        try {
+            val genre = IvannaNpeEngine.getDetectedGenre().lowercase()
+            val preset = parameterStore.getCurrentPreset()
+            val ctx = if (genre.isNotBlank() && genre != "unknown") "genre:$genre" else "preset:$preset"
+            val autonomous: Float? = readAutonomousValue(paramKey)
+            learningBias.captureCorrection(ctx, paramKey, autonomous, userValue)
+        } catch (t: Throwable) {
+            Log.w(TAG, "captureCorrection($paramKey) fallo silencioso", t)
+        }
+    }
+
+    private fun readAutonomousValue(paramKey: String): Float? = when (paramKey) {
+        "nho_harmonic"    -> parameterStore.getNhoHarmonic()
+        "spatial_angle"   -> parameterStore.getSpatialAngle()
+        "spatial_width"   -> parameterStore.getSpatialWidth()
+        "exciter"         -> parameterStore.getExciter()
+        "eq_gain"         -> parameterStore.getEqGain()
+        "width"           -> parameterStore.getWidth()
+        "comp_threshold"  -> parameterStore.getCompThreshold()
+        "comp_ratio"      -> parameterStore.getCompRatio()
+        else -> null
     }
 
     private var autoPresetJob: kotlinx.coroutines.Job? = null
@@ -527,6 +651,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
+        try { learningBias.release() } catch (e: Exception) { Log.e(TAG, "Error releasing learningBias", e) }
+        try { bridgePlayer.stop() } catch (e: Exception) { Log.e(TAG, "Error stopping bridgePlayer", e) }
         try {
             autoPresetJob?.cancel()
         } catch (e: Exception) {

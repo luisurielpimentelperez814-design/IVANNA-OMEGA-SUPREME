@@ -71,6 +71,11 @@ namespace ivanna {
 // phase_oracle_velocity() — definida en phase_oracle.cpp (Kalman cúbico 384kHz)
 extern "C" float phase_oracle_velocity();
 
+// FASE 2: sesgo aprendido — definida en ivanna_omega_jni.cpp. Devuelve 0.f
+// si la JVM todavía no está conectada o el método no está cacheado (por
+// ejemplo, si se llama antes de que MainActivity instancie LearningBias).
+extern "C" float learning_bias_get(const char* param_key);
+
 int control_apply_frame() noexcept {
     using namespace ivanna;
 
@@ -175,6 +180,35 @@ int control_apply_frame() noexcept {
     // NHO harmonic gain
     f.nho_harmonic_gain = std::clamp(nho_harmonic, 0.f, 2.f);
     updates++;
+
+    // ───────────────────────────────────────────────────────────
+    // 3b. FASE 2 — sesgo aprendido (LearningBias, ruta A).
+    // Se suma al valor propuesto por el motor autónomo (YAMNet+Evo+PhaseOracle)
+    // ANTES de publicar el frame al bus. Mismo camino que el genoma evolutivo,
+    // NO se crea un sexto camino paralelo (ver prompt: "punto de integración").
+    // Clamps preservan los rangos válidos del enum interno de PDEngine/DSP.
+    // ───────────────────────────────────────────────────────────
+    const float bias_nho    = learning_bias_get("nho_harmonic");
+    const float bias_angle  = learning_bias_get("spatial_angle");
+    const float bias_width  = learning_bias_get("spatial_width");
+    const float bias_exc    = learning_bias_get("exciter");
+    const float bias_eq     = learning_bias_get("eq_gain");
+    const float bias_stereo = learning_bias_get("width");
+
+    f.nho_harmonic_gain = std::clamp(f.nho_harmonic_gain + bias_nho, 0.f, 2.f);
+    f.spatial_angle_deg = std::clamp(f.spatial_angle_deg + bias_angle * 120.f, 0.f, 120.f);
+    f.spatial_width     = std::clamp(f.spatial_width     + bias_width * 1.5f,  0.f, 1.5f);
+    f.wet               = std::clamp(f.wet               + bias_exc,           0.f, 1.f);
+    f.mid               = std::clamp(f.mid               + bias_eq,          -18.f, 18.f);
+    f.nho_wet           = std::clamp(f.nho_wet           + bias_stereo,        0.f, 1.f);
+    updates += 6;
+
+    if (std::abs(bias_nho) + std::abs(bias_angle) + std::abs(bias_width) +
+        std::abs(bias_exc) + std::abs(bias_eq) + std::abs(bias_stereo) > 0.001f) {
+        ALOG(ANDROID_LOG_INFO, TAG,
+             "bias→frame: nho=%.3f ang=%.3f w=%.3f exc=%.3f eq=%.3f stereo=%.3f",
+             bias_nho, bias_angle, bias_width, bias_exc, bias_eq, bias_stereo);
+    }
 
     // ────────────────────────────────────────────────────────────────
     // 4. Evolutionary genome mapping (real-time, si está activo)

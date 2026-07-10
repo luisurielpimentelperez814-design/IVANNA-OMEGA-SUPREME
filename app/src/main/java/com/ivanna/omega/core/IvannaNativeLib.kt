@@ -113,4 +113,16 @@ object IvannaNativeLib {
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
     external fun nativeSetSpatialWidthDirect(width: Float)
+
+    // ═══ FASE 2: aplicación del ControlFrame desde el hilo de control ═══
+    // Llama a control_apply_frame() en C++, que fusiona:
+    //   - UnifiedControlFrame (YAMNet + PhaseOracle + Evo genome)
+    //   - Sesgo aprendido por (contexto, param) vía LearningBias.jniGetBias
+    // y publica un ControlFrame nuevo al bus seqlock. NUNCA llamar desde
+    // el hilo de audio (nativeProcess / g_pd.process_block).
+    external fun nativeApplyControlFrame(): Int
+
+    // Setter del contexto activo ("genre:rock", "preset:Warm", ...). El C++
+    // lo pasa a LearningBias.jniSetActiveContext().
+    external fun nativeSetLearningContext(ctx: String)
 }

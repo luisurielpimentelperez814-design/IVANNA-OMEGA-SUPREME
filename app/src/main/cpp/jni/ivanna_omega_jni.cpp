@@ -390,4 +390,70 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadEvoState(JNIEnv*, jobject) 
     return evo_load_state() ? JNI_TRUE : JNI_FALSE;
 }
 
+// ─── FASE 2: puente JVM ↔ C++ para leer sesgo aprendido ──────────────────
+// Cache de JavaVM + method ID de LearningBias.jniGetBiasForActiveContext(String)F.
+// audio_control_plane.cpp los usa para consultar el sesgo cada vez que
+// control_apply_frame() corre (hilo de control, no audio).
+JavaVM*   g_jvm = nullptr;
+jclass    g_learningBias_cls = nullptr;
+jmethodID g_learningBias_getBias = nullptr;
+
+static void cache_learning_bindings(JNIEnv* env) {
+    if (g_learningBias_cls && g_learningBias_getBias) return;
+    if (g_jvm == nullptr) env->GetJavaVM(&g_jvm);
+    jclass local = env->FindClass("com/ivanna/omega/ai/LearningBias");
+    if (!local) { env->ExceptionClear(); return; }
+    g_learningBias_cls = static_cast<jclass>(env->NewGlobalRef(local));
+    env->DeleteLocalRef(local);
+    g_learningBias_getBias = env->GetStaticMethodID(
+        g_learningBias_cls, "jniGetBiasForActiveContext", "(Ljava/lang/String;)F");
+    if (!g_learningBias_getBias) env->ExceptionClear();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeApplyControlFrame(JNIEnv* env, jobject) {
+    cache_learning_bindings(env);
+    return (jint) control_apply_frame();
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLearningContext(
+    JNIEnv* env, jobject, jstring ctx) {
+    cache_learning_bindings(env);
+    if (!ctx || !g_learningBias_cls) return;
+    jmethodID mid = env->GetStaticMethodID(
+        g_learningBias_cls, "jniSetActiveContext", "(Ljava/lang/String;)V");
+    if (!mid) { env->ExceptionClear(); return; }
+    env->CallStaticVoidMethod(g_learningBias_cls, mid, ctx);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
+// Consulta el sesgo aprendido para un paramKey. Devuelve 0 si no hay JVM
+// o el método no está cacheado. Llamada desde audio_control_plane.cpp.
+extern "C" float learning_bias_get(const char* param_key) {
+    if (!g_jvm || !g_learningBias_cls || !g_learningBias_getBias || !param_key) return 0.f;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        // Android NDK: AttachCurrentThread(JNIEnv**, void*); OpenJDK: (void**, void*).
+        // El cast a void** funciona en ambos (Android acepta la conversión implícita
+        // JNIEnv** → void** o el cast explícito, y OpenJDK lo requiere).
+#ifdef __ANDROID__
+        if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return 0.f;
+#else
+        if (g_jvm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return 0.f;
+#endif
+        attached = true;
+    }
+    jstring jkey = env->NewStringUTF(param_key);
+    jfloat v = 0.f;
+    if (jkey) {
+        v = env->CallStaticFloatMethod(g_learningBias_cls, g_learningBias_getBias, jkey);
+        env->DeleteLocalRef(jkey);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (attached) g_jvm->DetachCurrentThread();
+    return (float) v;
+}
+
 } // extern "C"
