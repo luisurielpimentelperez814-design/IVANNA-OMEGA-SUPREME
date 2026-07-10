@@ -82,6 +82,18 @@ class IVANNAApplication : Application() {
                 Log.e(TAG, "❌ Error de inicialización: ${e.message}")
             }
         }
+
+        // Sync de perfiles en la nube: no-op seguro si CloudSyncManager no
+        // está configurado todavía (ver CloudSyncManager.kt). Separado del
+        // bloque de arriba a propósito — no debe bloquear ni afectar el
+        // arranque del motor DSP si falla o tarda (red lenta, etc.).
+        appScope.launch {
+            try {
+                CloudSyncManager.syncDown(this@IVANNAApplication, UserProfileManager(this@IVANNAApplication))
+            } catch (e: Exception) {
+                Log.w(TAG, "syncDown en arranque falló (no crítico): ${e.message}")
+            }
+        }
     }
 
     override fun onTerminate() {

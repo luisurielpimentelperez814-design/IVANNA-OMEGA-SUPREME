@@ -88,4 +88,26 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // Firebase (sync de perfiles en la nube) — inicializado manualmente via
+    // FirebaseOptions.Builder en CloudSyncManager.kt, SIN el plugin
+    // com.google.gms.google-services ni google-services.json (no existe un
+    // proyecto Firebase real todavia). Esto es una forma soportada y
+    // documentada oficialmente por Firebase de usar el SDK sin el plugin;
+    // ver comentarios en CloudSyncManager.kt para instrucciones de setup.
+    //
+    // BoM fijado en 33.1.2 a proposito: Firebase dejo de publicar los
+    // modulos "-ktx" (firebase-firestore-ktx, firebase-auth-ktx) a partir
+    // del BoM 34.0.0 (jul 2025), migrando esas extensiones a los modulos
+    // principales. Si en el futuro se sube el BoM por encima de 34.x, hay
+    // que quitar el sufijo "-ktx" de las dos lineas de abajo y ajustar los
+    // imports en CloudSyncManager.kt (firestoreSettings/persistentCacheSettings
+    // pasan a vivir en com.google.firebase.firestore, no en .ktx).
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-auth-ktx")
+    // Necesaria para el .await() de kotlinx.coroutines.tasks sobre
+    // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
+    // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
 }

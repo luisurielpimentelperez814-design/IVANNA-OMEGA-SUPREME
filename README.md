@@ -152,7 +152,7 @@ C++ Native (libivanna_omega.so)
 - [x] Perfiles de usuario con aprendizaje
 - [x] Modo Concierto
 - [x] Anti-aliasing en HarmonicExciter
-- [ ] Convolución de sala real (IR loading)
-- [ ] Sincronización de perfiles en la nube
-- [ ] Soporte USB DAC dedicado
+- [~] Sincronización de perfiles en la nube — código listo (`CloudSyncManager.kt`, Firestore + Auth anónimo, sin plugin `google-services`), pendiente que se cree el proyecto real en Firebase console y se rellenen los 3 placeholders (ver instrucciones en el propio archivo). Hasta entonces es no-op seguro.
+- [ ] Convolución de sala real (IR loading) — no es prioridad por ahora, requiere impulse responses grabadas reales
+- [ ] Soporte USB DAC dedicado — en progreso (firma JNI corregida, diagnóstico de descriptor USB listo), bloqueado en el dump real del descriptor del DAC
 

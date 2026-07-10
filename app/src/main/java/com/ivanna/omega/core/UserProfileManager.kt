@@ -3,6 +3,7 @@ package com.ivanna.omega.core
 import android.content.Context
 import android.content.SharedPreferences
 import com.ivanna.omega.audio.IvannaEffectProfile
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -32,6 +33,18 @@ class UserProfileManager(private val context: Context) {
         saveHistory(trimmed)
         // Establecer como actual
         prefs.edit().putString(currentProfileKey, presetName).apply()
+
+        // Sync en la nube best-effort — no-op seguro si CloudSyncManager no
+        // está configurado (placeholders sin rellenar, ver CloudSyncManager.kt).
+        // No se espera el resultado: el guardado local ya está hecho y no debe
+        // depender de la red.
+        IVANNAApplication.appScope.launch {
+            try {
+                CloudSyncManager.syncUp(context, this@UserProfileManager)
+            } catch (e: Exception) {
+                android.util.Log.w("UserProfileManager", "syncUp falló (no crítico): ${e.message}")
+            }
+        }
     }
 
     fun getCurrentPreset(): String = prefs.getString(currentProfileKey, "Warm") ?: "Warm"
@@ -64,6 +77,16 @@ class UserProfileManager(private val context: Context) {
             arr.put(obj)
         }
         prefs.edit().putString(profileHistoryKey, arr.toString()).apply()
+    }
+
+    /**
+     * Reemplaza el historial completo (usado por CloudSyncManager tras
+     * fusionar local + remoto). Publico a diferencia de saveHistory porque
+     * el merge por timestamp vive fuera de esta clase, en CloudSyncManager,
+     * para no acoplar UserProfileManager a Firebase.
+     */
+    fun replaceHistory(history: List<UserProfile>) {
+        saveHistory(history.takeLast(50))
     }
 
     fun getMostUsedPreset(): String {
