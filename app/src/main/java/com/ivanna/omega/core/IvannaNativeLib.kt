@@ -17,17 +17,7 @@ object IvannaNativeLib {
      * Ahora se expone `isLoaded` para que MainActivity y callbacks puedan hacer guard.
      * Patrón idéntico al de DSPBridge y OmegaEngine.
      */
-    private var loaded = false
-
-    init {
-        try {
-            System.loadLibrary("ivanna_omega")
-            loaded = true
-            Log.i("IvannaNativeLib", "Native library loaded successfully")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e("IvannaNativeLib", "Failed to load native library", e)
-        }
-    }
+    private val loaded = NativeLibraryLoader.ensureLoaded()
 
     val isLoaded: Boolean get() = loaded
 

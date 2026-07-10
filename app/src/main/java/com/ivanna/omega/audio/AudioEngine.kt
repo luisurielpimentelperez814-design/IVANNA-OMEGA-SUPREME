@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import com.ivanna.omega.core.NativeLibraryLoader
 import kotlinx.coroutines.*
 import kotlin.math.*
 
@@ -26,19 +27,7 @@ class AudioEngine {
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_FLOAT
 
-        @Volatile private var libLoaded = false
-
-        init {
-            if (!libLoaded) {
-                try {
-                    System.loadLibrary("ivanna_omega")
-                    libLoaded = true
-                    Log.i(TAG, "libivanna_omega cargada")
-                } catch (e: UnsatisfiedLinkError) {
-                    Log.e(TAG, "No se pudo cargar libivanna_omega: ${e.message}")
-                }
-            }
-        }
+        @Volatile private var libLoaded = NativeLibraryLoader.ensureLoaded()
 
         fun homeostasis(n: Float, omega: Float, mu: Float = 0.3f): Float {
             if (omega.isNaN() || omega.isInfinite()) return n

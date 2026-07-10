@@ -1,6 +1,7 @@
 package com.ivanna.omega.magisk
 
 import android.util.Log
+import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
  * IVANNA-OMEGA-SUPREME — OmegaDaemon JNI Bridge
@@ -22,17 +23,7 @@ import android.util.Log
 object OmegaDaemon {
 
     private const val TAG = "OmegaDaemon"
-    private var loaded = false
-
-    init {
-        try {
-            System.loadLibrary("ivanna_omega")
-            loaded = true
-            Log.i(TAG, "libivanna_omega cargada")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libivanna_omega no disponible: ${e.message}")
-        }
-    }
+    private val loaded = NativeLibraryLoader.ensureLoaded()
 
     val isLoaded: Boolean get() = loaded
 

@@ -1,6 +1,7 @@
 package com.ivanna.omega.dsp
 
 import android.util.Log
+import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
  * IVANNA-OMEGA-SUPREME — DSP Bridge
@@ -12,17 +13,7 @@ import android.util.Log
 object DSPBridge {
 
     private const val TAG = "IVANNA_OMEGA_DSP"
-    private var loaded = false
-
-    init {
-        try {
-            System.loadLibrary("ivanna_omega")
-            loaded = true
-            Log.i(TAG, "libivanna_omega loaded — ${nativeVersion()}")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Native lib unavailable: ${e.message}")
-        }
-    }
+    private val loaded = NativeLibraryLoader.ensureLoaded()
 
     val isLoaded: Boolean get() = loaded
 

@@ -1,5 +1,7 @@
 package com.ivanna.omega.spatial
 
+import com.ivanna.omega.core.NativeLibraryLoader
+
 /**
  * IvannaSpatialNative — Declaración JNI del motor espacial majestuoso.
  *
@@ -11,9 +13,7 @@ package com.ivanna.omega.spatial
  * Todo el procesamiento ocurre en C++ con zero-allocation y lock-free.
  */
 object IvannaSpatialNative {
-    init {
-        System.loadLibrary("ivanna_omega")
-    }
+    val isLoaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     // HeadTracker
     external fun nativeHeadTrackerCreate(): Long

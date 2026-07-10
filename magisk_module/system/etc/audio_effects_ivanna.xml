@@ -16,7 +16,7 @@
     </effects>
 
     <!-- Preprocesamiento -->
-    <preprocess>
+    <postprocess>
         <stream type="music">
             <apply effect="omega_effect"/>
         </stream>
@@ -26,6 +26,6 @@
         <stream type="game">
             <apply effect="omega_effect"/>
         </stream>
-    </preprocess>
+    </postprocess>
 
 </audio_effects_conf>

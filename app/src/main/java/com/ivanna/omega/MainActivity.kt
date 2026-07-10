@@ -492,22 +492,24 @@ class MainActivity : ComponentActivity() {
                             onNhoHarmonicChange = { value ->
                                 captureCorrection("nho_harmonic", value)
                                 parameterStore.setNhoHarmonic(value)
-                                IvannaNativeLib.nativeSetHarmonicGain(value)
+                                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(value)
                             },
                             onSpatialAngleChange = { rad ->
                                 captureCorrection("spatial_angle", rad)
                                 parameterStore.setSpatialAngle(rad)
-                                IvannaNativeLib.nativeSetSpatialAngleRad(rad)
+                                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetSpatialAngleRad(rad)
                             },
                             onSpatialWidthChange = { width ->
                                 captureCorrection("spatial_width", width)
                                 parameterStore.setSpatialWidth(width)
-                                IvannaNativeLib.nativeSetSpatialWidthDirect(width)
+                                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetSpatialWidthDirect(width)
                             },
                             onEvoEnabledChange = { enabled ->
                                 parameterStore.setEvoEnabled(enabled)
-                                if (enabled) IvannaNativeLib.nativeStartEvoThread()
-                                else IvannaNativeLib.nativeStopEvoThread()
+                                if (IvannaNativeLib.isLoaded) {
+                                    if (enabled) IvannaNativeLib.nativeStartEvoThread()
+                                    else IvannaNativeLib.nativeStopEvoThread()
+                                }
                             },
                             onNpeBypassChange = { bypass ->
                                 parameterStore.setNpeBypass(bypass)

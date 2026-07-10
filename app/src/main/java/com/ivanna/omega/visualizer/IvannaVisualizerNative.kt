@@ -1,9 +1,9 @@
 package com.ivanna.omega.visualizer
 
+import com.ivanna.omega.core.NativeLibraryLoader
+
 object IvannaVisualizerNative {
-    init {
-        System.loadLibrary("ivanna_omega")
-    }
+    val isLoaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     external fun nativeVisCreate(sampleRate: Float): Long
     external fun nativeVisDestroy(handle: Long)

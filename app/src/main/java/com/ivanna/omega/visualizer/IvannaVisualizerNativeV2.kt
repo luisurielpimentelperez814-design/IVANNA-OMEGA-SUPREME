@@ -1,5 +1,7 @@
 package com.ivanna.omega.visualizer
 
+import com.ivanna.omega.core.NativeLibraryLoader
+
 /**
  * IvannaVisualizerNativeV2 — Declaración JNI con método sampleInto zero-alloc.
  *
@@ -7,9 +9,7 @@ package com.ivanna.omega.visualizer
  * evitando la creación de jfloatArray en cada frame.
  */
 object IvannaVisualizerNativeV2 {
-    init {
-        System.loadLibrary("ivanna_omega")
-    }
+    val isLoaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     external fun nativeVisV2Create(sampleRate: Float): Long
     external fun nativeVisV2Destroy(handle: Long)

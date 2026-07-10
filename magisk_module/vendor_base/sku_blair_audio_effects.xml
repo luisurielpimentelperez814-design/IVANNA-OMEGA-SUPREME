@@ -17,7 +17,7 @@
         <library name="gamedap" path="libswgamedap.so"/>
         <!--DOLBY END-->
         
-        <library name="omega_effect" path="libomega_effect.so"/><library name="omega_effect" path="libomega_effect.so"/>
+        <library name="omega_effect" path="libomega_effect.so"/>
 </libraries>
     <effects>
         <effect name="bassboost" library="bundle" uuid="8631f300-72e2-11df-b57e-0002a5d5c51b"/>
@@ -51,17 +51,13 @@
         <!--DOLBY GAME-->
         <effect name="gamedap" library="gamedap" uuid="3783c334-d3a0-4d13-874f-0032e5fb80e2"/>
         <!--DOLBY END-->
-        <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
         <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e" priority="1000"/>
-    <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e" priority="1000"/>
 </effects>
     <postprocess>
         <stream type="music">
             <apply effect="omega_effect"/>
-            <apply effect="omega_effect"/>
             <apply effect="music_helper"/>
             <apply effect="dlb_music_listener"/>
-            <apply effect="omega_effect"/>
         </stream>
         <stream type="ring">
             <apply effect="ring_helper"/>
@@ -80,7 +76,6 @@
         <stream type="notification">
             <apply effect="notification_helper"/>
             <apply effect="dlb_notification_listener"/>
-            <apply effect="omega_effect"/>
         </stream>
     </postprocess>
     <preprocess>

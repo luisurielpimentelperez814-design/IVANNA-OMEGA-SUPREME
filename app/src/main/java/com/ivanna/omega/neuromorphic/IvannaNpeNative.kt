@@ -4,6 +4,7 @@
  */
 package com.ivanna.omega.neuromorphic
 
+import com.ivanna.omega.core.NativeLibraryLoader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -32,19 +33,7 @@ object IvannaNpeNative {
      * IvannaNpeEngine.init() → nativeCreate(). Ahora se captura y se expone
      * `isLoaded` para que los callers puedan hacer un guard limpio.
      */
-    val isLoaded: Boolean
-
-    init {
-        var ok = false
-        try {
-            System.loadLibrary("ivanna_omega")
-            ok = true
-            android.util.Log.i("IvannaNpeNative", "libivanna_omega.so cargada (NPE)")
-        } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e("IvannaNpeNative", "Fallo al cargar ivanna_omega: ${e.message}")
-        }
-        isLoaded = ok
-    }
+    val isLoaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     @JvmStatic external fun nativeCreate(sampleRate: Float, maxBlockFrames: Int): Long
     @JvmStatic external fun nativeDestroy(handle: Long)

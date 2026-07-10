@@ -1,6 +1,7 @@
 package com.ivanna.omega.neuromorphic
 
 import android.util.Log
+import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
  * Kotlin bridge for PI-LSTM Milenio v2.0 (from IVANNA-ULTRA).
@@ -12,10 +13,11 @@ object PiLstmBridge {
 
     init {
         try {
-            System.loadLibrary("ivanna_omega")
-            nativeInit()
-            ready = true
-            Log.i(TAG, "PI-LSTM Milenio initialized")
+            if (NativeLibraryLoader.ensureLoaded()) {
+                nativeInit()
+                ready = true
+                Log.i(TAG, "PI-LSTM Milenio initialized")
+            }
         } catch (t: Throwable) {
             ready = false
             Log.e(TAG, "PI-LSTM init failed", t)
