@@ -6,19 +6,20 @@
 namespace ivanna {
 
 struct DSPParams {
-    float drive = 0.65f;
-    float wet = 0.50f;
-    float mix = 0.70f;
-    float alpha = 0.50f;
-    float beta = 0.50f;
-    float gamma = 0.50f;
-    float freq = 1000.f;
+    // TUNED v3.3 — defaults calibrados para audio magistral desde cold start
+    float drive     = 0.45f;   // exciter drive 1+0.45*15=7.75x (era 0.65→10.75x, demasiado agresivo)
+    float wet       = 0.32f;   // exciter wet 32% (era 50%, ahora más sutil y musical)
+    float mix       = 0.70f;   // dry/wet mix del chain (sin cambio)
+    float alpha     = 0.375f;  // comp threshold -24+0.375*24=-15.0 dB (era 0.5→-12 dB, demasiado bajo)
+    float beta      = 0.105f;  // comp ratio 1+0.105*19=3.0:1 (era 0.5→10.5:1 — LIMITADOR, no compresor)
+    float gamma     = 0.72f;   // timing: atk=5+(1-0.72)*95=≈31ms, rel=50+(1-0.72)*450=≈176ms (musical)
+    float freq      = 1000.f;
     float resonance = 0.707f;
-    float low = 0.0f;
-    float mid = 0.0f;
-    float high = 0.0f;
-    float presence = 0.0f;
-    float master = 0.0f;
+    float low       = 0.0f;
+    float mid       = 0.0f;
+    float high      = 0.0f;
+    float presence  = 0.0f;
+    float master    = 0.0f;
     uint32_t sampleRate = 48000;
 };
 
