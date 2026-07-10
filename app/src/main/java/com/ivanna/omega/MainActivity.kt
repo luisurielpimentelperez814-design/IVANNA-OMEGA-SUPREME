@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
-    private val profileManager = UserProfileManager(this)
+    private lateinit var profileManager: UserProfileManager
     private val concertMode = ConcertMode()
     private val metadataListener = AppMetadataListener(this)
 
@@ -191,6 +191,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        profileManager = UserProfileManager(applicationContext)
 
         // DEFENSIVE: Capturar cualquier crash no capturado
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
