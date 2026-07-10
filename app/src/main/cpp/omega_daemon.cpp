@@ -314,6 +314,32 @@ static void handleSocketCommand(const char* cmd, size_t len) {
     else LOGW("handleSocketCommand: comando desconocido: %.*s", (int)(colon - cmd), cmd);
 }
 
+// FIX (comando fantasma): OmegaEngineBridge.resetDefaults() manda
+// "RESET_DEFAULTS" — SIN ':'. handleSocketCommand() exige un separador ':'
+// como primer paso (`memchr(cmd, ':', len)`), así que este comando se
+// descartaba ANTES de siquiera loguearse como desconocido; era, en la
+// práctica, un botón que no hacía nada. Se despacha aparte, como ping/
+// status/GET_TELEMETRY, y reinicia los 13 parámetros del PF Engine a los
+// mismos valores que usa el constructor de OmegaSharedState.
+static void resetPFDefaults() {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_drive.store(0.65f,     std::memory_order_relaxed);
+    g_shared->pf_wet.store(0.5f,        std::memory_order_relaxed);
+    g_shared->pf_mix.store(0.7f,        std::memory_order_relaxed);
+    g_shared->pf_alpha.store(0.5f,      std::memory_order_relaxed);
+    g_shared->pf_beta.store(0.5f,       std::memory_order_relaxed);
+    g_shared->pf_gamma.store(0.5f,      std::memory_order_relaxed);
+    g_shared->pf_freq.store(1000.0f,    std::memory_order_relaxed);
+    g_shared->pf_resonance.store(0.707f, std::memory_order_relaxed);
+    g_shared->pf_low.store(0.0f,        std::memory_order_relaxed);
+    g_shared->pf_mid.store(0.0f,        std::memory_order_relaxed);
+    g_shared->pf_high.store(0.0f,       std::memory_order_relaxed);
+    g_shared->pf_presence.store(0.0f,   std::memory_order_relaxed);
+    g_shared->pf_master.store(0.0f,     std::memory_order_relaxed);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+    LOGI("RESET_DEFAULTS: PF Engine restaurado a valores de fábrica");
+}
+
 // ── Socket server ─────────────────────────────────────────────────────────────
 static void socketLoop() {
     g_socket_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -403,6 +429,9 @@ static void socketLoop() {
                     g_shared ? (int)g_shared->current_temperature.load(std::memory_order_relaxed) : 0,
                     g_shared ? g_shared->current_latency_ms.load(std::memory_order_relaxed) : 0.0f);
                 send(client, resp, strlen(resp), MSG_DONTWAIT);
+            } else if (strncmp(cmd, "RESET_DEFAULTS", 14) == 0) {
+                resetPFDefaults();
+                send(client, "ok\n", 3, MSG_DONTWAIT);
             } else {
                 handleSocketCommand(cmd, (size_t)n);
             }
