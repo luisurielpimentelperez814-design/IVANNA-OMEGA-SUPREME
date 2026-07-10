@@ -35,7 +35,7 @@ class SpatialAudioEngineV2 {
     var mu: Float = 1.0f
 
     @Volatile private var isRunning = false
-    private val bufferSize = 64
+    private val bufferSize = 16
     private val sampleRate = 48000
 
     // Buffers de trabajo reutilizados entre bloques para no allocar por chunk.

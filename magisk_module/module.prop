@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA-OMEGA-SUPREME
-version=v1.8.1
-versionCode=1801
+version=v2.0.0
+versionCode=2000
 author=IVANNA Team
-description=Anti-Dolby audio engine — app Android + módulo Magisk conectados y seguros
+description=Motor DSP neuromorphic global — daemon real-time SCHED_FIFO + monitor MQA + Modo Concierto
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/update.json
