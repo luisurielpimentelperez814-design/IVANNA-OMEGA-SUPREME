@@ -32,6 +32,7 @@ import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var audioEngine: AudioEngine
+    private lateinit var dspState: DSPState
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
@@ -200,6 +202,32 @@ class MainActivity : ComponentActivity() {
 
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
+        // FIX (recableo a DSP real — ver hallazgo de auditoría): audioEngine
+        // (AudioEngine/audio_orchestrator.cpp) es un motor huérfano — su
+        // nativeProcessAudio() nunca se invoca con audio real en ningún lado
+        // del código; mover sus sliders no cambiaba el sonido de nadie. El
+        // motor real es DSPBridge (el que IvannaBridgePlayer efectivamente
+        // reproduce), alimentado por DSPState.pushToNative() — que además ya
+        // espeja al daemon Magisk system-wide. dspState reemplaza a
+        // audioEngine como destino real de Exciter/EQ/Width (ver callbacks
+        // más abajo). No se borra ni se toca la clase AudioEngine.
+        dspState = DSPState(
+            drive = parameterStore.getExciter(),
+            low = parameterStore.getEqGain(), mid = parameterStore.getEqGain(),
+            high = parameterStore.getEqGain(), presence = parameterStore.getEqGain(),
+            stereoWidth = parameterStore.getWidth(),
+            // alpha/beta son los que Compressor::setParams() lee de verdad
+            // (threshold_ = -24+alpha*24, ratio_ = 1+beta*19) — son los MISMOS
+            // sliders 0..1 que compThresholdSliderToDb()/compRatioSliderToRatio()
+            // convierten a dB/ratio para mostrar en la UI. Sin esto, el primer
+            // pushToNative() de initCoreAudioEngine() resetea el compresor a
+            // alpha=beta=0.5 (defaults de DSPState) hasta que el usuario
+            // tocara un slider de compresor.
+            alpha = parameterStore.getCompThreshold(),
+            beta = parameterStore.getCompRatio(),
+            compThreshold = compThresholdSliderToDb(parameterStore.getCompThreshold()),
+            compRatio = compRatioSliderToRatio(parameterStore.getCompRatio())
+        )
         bridgePlayer = IvannaBridgePlayer(applicationContext)
         learningBias = LearningBias(applicationContext).also { it.load() }
 
@@ -262,10 +290,14 @@ class MainActivity : ComponentActivity() {
         // y crasheaba la app (el try-catch del init solo evita el crash del init,
         // no el de las llamadas posteriores a external fun).
         if (IvannaNativeLib.isLoaded) {
-            IvannaNativeLib.nativeSetCompressorParams(
-                compThresholdSliderToDb(parameterStore.getCompThreshold()),
-                compRatioSliderToRatio(parameterStore.getCompRatio())
-            )
+            // FIX (colisión con dspState.pushToNative(), ver constructor de
+            // dspState arriba): antes acá se llamaba nativeSetCompressorParams
+            // directo con dB/ratio reales, escribiendo el mismo g_comp que
+            // dspState.pushToNative() (ya ejecutado en initCoreAudioEngine())
+            // sobreescribe vía alpha/beta en cada cambio de Exciter/EQ/Width/
+            // Comp. Dos rutas al mismo objeto compartido. dspState ya se
+            // construyó con alpha/beta = los sliders persistidos, así que el
+            // compresor ya quedó bien seteado — no se repite acá.
             IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
             IvannaNativeLib.nativeSetSpatialAngleRad(parameterStore.getSpatialAngle())
             IvannaNativeLib.nativeSetSpatialWidthDirect(parameterStore.getSpatialWidth())
@@ -365,17 +397,40 @@ class MainActivity : ComponentActivity() {
                             onExciterChange = { value ->
                                 captureCorrection("exciter", value)
                                 parameterStore.setExciter(value)
-                                this@MainActivity.audioEngine.setExciter(value)
+                                // FIX (recableo a DSP real): audioEngine
+                                // (audio_orchestrator.cpp) es un motor huérfano
+                                // — nunca procesa audio real, así que mover este
+                                // slider no cambiaba el sonido de nadie. El motor
+                                // real es DSPBridge, alimentado por
+                                // DSPState.pushToNative() (que también espeja al
+                                // daemon Magisk). EXCITER en la UI es 0..1 y
+                                // mapea 1:1 a DSPState.drive (HarmonicExciter lee
+                                // p.drive directamente).
+                                dspState = dspState.copy(drive = value)
+                                dspState.pushToNative()
                             },
                             onEqChange = { value ->
                                 captureCorrection("eq_gain", value)
                                 parameterStore.setEqGain(value)
-                                this@MainActivity.audioEngine.setEqGain(value)
+                                // EQ GAIN es un único knob -18..18 dB; se aplica
+                                // parejo a las 4 bandas (low/mid/high/presence)
+                                // de ParametricEQ — no hay 4 sliders separados
+                                // en esta UI, así que este es el control de tono
+                                // global. Documentado acá porque no era obvio.
+                                dspState = dspState.copy(
+                                    low = value, mid = value, high = value, presence = value
+                                )
+                                dspState.pushToNative()
                             },
                             onWidthChange = { value ->
                                 captureCorrection("width", value)
                                 parameterStore.setWidth(value)
-                                this@MainActivity.audioEngine.setWidth(value)
+                                // STEREO WIDTH en la UI es 0..1.5 y mapea 1:1 a
+                                // DSPState.stereoWidth (StereoWidener acepta
+                                // 0..2, canal dedicado vía nativeSetStereoWidth,
+                                // ya no colisiona con gamma/timing del compresor).
+                                dspState = dspState.copy(stereoWidth = value)
+                                dspState.pushToNative()
                             },
                             onAntiDolbyChange = { enabled ->
                                 parameterStore.setAntiDolbyEnabled(enabled)
@@ -410,19 +465,29 @@ class MainActivity : ComponentActivity() {
                                 captureCorrection("comp_threshold", slider)
                                 val ratioSlider = parameterStore.getCompRatio()
                                 parameterStore.setCompParams(slider, ratioSlider)
-                                IvannaNativeLib.nativeSetCompressorParams(
-                                    compThresholdSliderToDb(slider),
-                                    compRatioSliderToRatio(ratioSlider)
-                                )
+                                // FIX (colisión real, hallazgo de auditoría):
+                                // Compressor::setParams(DSPParams) — llamado por
+                                // dspState.pushToNative() en CADA cambio de
+                                // Exciter/EQ/Width — deriva threshold/ratio de
+                                // p.alpha/p.beta (0..1), sobreescribiendo el
+                                // mismo g_comp que nativeSetCompressorParams()
+                                // tocaba con dB/ratio reales por una ruta
+                                // separada. Dos rutas escribiendo el mismo
+                                // objeto compartido = el compresor se reseteaba
+                                // en silencio cada vez que se tocaba otro
+                                // slider. Se consolida: alpha/beta SON los
+                                // mismos sliders 0..1 que ya se usaban acá, así
+                                // que se pasan directo a dspState y se elimina
+                                // la llamada directa a nativeSetCompressorParams.
+                                dspState = dspState.copy(alpha = slider, beta = ratioSlider)
+                                dspState.pushToNative()
                             },
                             onCompRatioChange = { slider ->
                                 captureCorrection("comp_ratio", slider)
                                 val threshSlider = parameterStore.getCompThreshold()
                                 parameterStore.setCompParams(threshSlider, slider)
-                                IvannaNativeLib.nativeSetCompressorParams(
-                                    compThresholdSliderToDb(threshSlider),
-                                    compRatioSliderToRatio(slider)
-                                )
+                                dspState = dspState.copy(alpha = threshSlider, beta = slider)
+                                dspState.pushToNative()
                             },
                             onNhoHarmonicChange = { value ->
                                 captureCorrection("nho_harmonic", value)
@@ -623,6 +688,13 @@ class MainActivity : ComponentActivity() {
             audioEngine.setExciter(parameterStore.getExciter())
             audioEngine.setEqGain(parameterStore.getEqGain())
             audioEngine.setWidth(parameterStore.getWidth())
+
+            // FIX (recableo a DSP real): dspState ya viene hidratado desde
+            // ParameterStore en onCreate(); acá se empuja por primera vez al
+            // motor nativo real (DSPBridge + daemon Magisk), que antes solo
+            // recibía los valores por defecto hasta que alguien tocara un
+            // slider.
+            dspState.pushToNative()
 
             // FIX (independencia del mic): SpatialAudioEngineV2 es un procesador
             // de bloques puro (sin AudioRecord/AudioTrack propios — ver su
