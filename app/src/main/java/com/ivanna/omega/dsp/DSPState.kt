@@ -1,5 +1,7 @@
 package com.ivanna.omega.dsp
 
+import com.ivanna.omega.core.IVANNAApplication
+
 /**
  * DSP State — inmutable data class para todos los parámetros DSP.
  * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
@@ -47,6 +49,17 @@ data class DSPState(
      * no lo incluía en su firma. Ahora va por un canal JNI dedicado
      * (nativeSetStereoWidth), separado de gamma (que sólo controla timing
      * del compresor).
+     *
+     * FIX (auditoría del módulo Magisk — hallazgo crítico): IVANNAApplication.
+     * omegaBridge (el cliente socket hacia el daemon system-wide) sólo se
+     * usaba para connect()/disconnect() — ningún control de la UI le llegaba
+     * nunca. El daemon procesaba TODAS las apps del sistema con los valores
+     * por defecto de OmegaSharedState congelados desde el arranque, sordo a
+     * cualquier ajuste. Ahora pushToNative() —el único punto de entrada real
+     * de cambios de parámetros en toda la app— también espeja hacia el
+     * daemon. setPFParams() de OmegaEngineBridge ya maneja reconexión/no-op
+     * silencioso si el daemon no está disponible (modo no-root), así que
+     * esta llamada es segura incondicionalmente.
      */
     fun pushToNative() {
         DSPBridge.setParams(
@@ -56,6 +69,13 @@ data class DSPState(
             low, mid, high, presence, master
         )
         DSPBridge.setStereoWidth(stereoWidth)
+
+        IVANNAApplication.omegaBridge.setPFParams(
+            drive, wet, mix,
+            alpha, beta, gamma,
+            freq, resonance,
+            low, mid, high, presence, master
+        )
     }
 
     companion object {
