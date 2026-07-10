@@ -19,8 +19,9 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     wet_   = p.wet;
     dry_   = 1.f - p.wet;
 
-    // HPF a 3 kHz para extraer contenido agudo
-    double w0 = 2.0 * M_PI * 3000.0 / p.sampleRate;
+    // HPF a 2.4 kHz — TUNED v3.3: era 3kHz, ahora captura upper-mids (2.4-8kHz)
+    // para presencia vocal e instrumental más evidente sin sonar agudo/chirriante.
+    double w0 = 2.0 * M_PI * 2400.0 / p.sampleRate;
     double cw = std::cos(w0), sw = std::sin(w0);
     double alpha = sw / (2.0 * 0.707);
     double a0_inv = 1.0 / (1.0 + alpha);
@@ -32,9 +33,10 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfL_.a2 = (float)((1.0 - alpha) * a0_inv);
     hpfR_ = hpfL_;
 
-    // ANTI-ALIASING LPF @ 11.5 kHz en la tasa oversampled (2x = 96kHz)
-    // Esto previene aliasing al downsample
-    double wOS = 2.0 * M_PI * 11500.0 / (p.sampleRate * OS_FACTOR);
+    // ANTI-ALIASING LPF @ 10.8 kHz en la tasa oversampled (2x = 96kHz)
+    // TUNED v3.3: era 11.5kHz, se baja ligeramente para suavizar los armónicos
+    // generados desde 2.4kHz y darles más cuerpo en vez de brillo agudo.
+    double wOS = 2.0 * M_PI * 10800.0 / (p.sampleRate * OS_FACTOR);
     double cwOS = std::cos(wOS), swOS = std::sin(wOS);
     double alphaOS = swOS / (2.0 * 0.707);
     double a0OS_inv = 1.0 / (1.0 + alphaOS);
