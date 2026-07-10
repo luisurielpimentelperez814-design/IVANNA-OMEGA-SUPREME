@@ -107,6 +107,7 @@ class AudioEngine {
     }
 
     fun setWidth(width: Float) {
+    fun setMasterGain(gain: Float) { if (libLoaded) nativeSetGain(gain) }
         widthAmount = width.coerceIn(0f, 1f)
         if (libLoaded) nativeSetWidth(widthAmount)
     }

@@ -70,6 +70,9 @@ class ParameterStore(context: Context) {
     fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
     fun setWidth(value: Float) = prefs.edit().putFloat(KEY_WIDTH, value).apply()
 
+    fun getMasterVolume(): Float = prefs.getFloat("master_volume", 0.8f)
+    fun setMasterVolume(value: Float) = prefs.edit().putFloat("master_volume", value.coerceIn(0f, 1f)).apply()
+
     fun isAntiDolbyEnabled(): Boolean = prefs.getBoolean(KEY_ANTI_DOLBY, false)
     fun setAntiDolbyEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ANTI_DOLBY, enabled).apply()
 

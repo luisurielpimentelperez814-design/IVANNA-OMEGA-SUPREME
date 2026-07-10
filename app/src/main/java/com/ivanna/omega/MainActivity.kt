@@ -32,7 +32,10 @@ import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
+import com.ivanna.omega.core.UserProfileManager
+import com.ivanna.omega.dsp.ConcertMode
 import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.audio.AppMetadataListener
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
@@ -79,6 +82,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var parameterStore: ParameterStore
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
+    private val profileManager = UserProfileManager(this)
+    private val concertMode = ConcertMode()
+    private val metadataListener = AppMetadataListener(this)
 
     // FASE 1: reproductor propio (decodifica archivo -> DSPBridge -> AudioTrack).
     // Vive en MainActivity scope, se libera en onDestroy().
@@ -247,10 +253,29 @@ class MainActivity : ComponentActivity() {
         // motor espacial ya no depende del mic, así que se limpia el flag.
         parameterStore.setSpatialInitPending(false)
         initCoreAudioEngine()
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
 
-        // FIX: arrancar el servicio en primer plano para audio en background
-        val serviceIntent = Intent(this, AudioForegroundService::class.java)
-        ContextCompat.startForegroundService(this, serviceIntent)
+        // FIX (retroalimentación acústica): AudioForegroundService arranca
+        // AudioPipeline, que es un loopback físico real -- AudioRecord(MIC/
+        // UNPROCESSED) -> DSPBridge.process() -> AudioTrack a la bocina. El
+        // micrófono capta acústicamente lo que la propia bocina reproduce y
+        // lo vuelve a meter al DSP: retroalimentación audible (choques,
+        // silbidos colándose). No se borra AudioForegroundService/
+        // AudioPipeline (regla de oro: no borramos, solo mejoramos) -- queda
+        // aquí documentado y desactivado por defecto. La ruta audible activa
+        // ahora es IvannaGlobalEffectManager (ya cableado desde
+        // IVANNAApplication + AudioSessionReceiver, sin mic, sin captura, sin
+        // riesgo de eco: engancha AudioEffect directo en la sesión de la app
+        // fuente). Si más adelante se implementa la ruta con root para
+        // interceptar el audio real de las apps con la cadena DSP completa
+        // (NHO/Evolutivo/PDEngine) antes de la bocina, este es el punto para
+        // reactivar un pipeline equivalente -- pero alimentado por esa
+        // intercepción, nunca por el mic.
+        // val serviceIntent = Intent(this, AudioForegroundService::class.java)
+        // ContextCompat.startForegroundService(this, serviceIntent)
 
         // RECORD_AUDIO se pide en paralelo, sólo para habilitar la captura de
         // reproducción (MediaProjection). Si se deniega, el núcleo de arriba
@@ -311,6 +336,10 @@ class MainActivity : ComponentActivity() {
         }
         OmegaEngine.setMode(parameterStore.getOmegaMode().coerceIn(0, 2)) // ya tiene guard interno
         // spatialEngineV2.start() ya se ejecuta dentro de initCoreAudioEngine(),
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
         // sin esperar RECORD_AUDIO (ver comentario ahí).
 
         setContent {
@@ -685,6 +714,10 @@ class MainActivity : ComponentActivity() {
     private fun compRatioSliderToRatio(slider: Float): Float = 1f + slider * 19f
 
     private fun initCoreAudioEngine() {
+        // Iniciar escucha de apps (Spotify/YouTube)
+        metadataListener.startListening()
+        // Aplicar perfil inteligente
+        profileManager.applySmartProfile(application as IVANNAApplication)
         try {
             audioEngine.initialize(48000)
             audioEngine.setExciter(parameterStore.getExciter())

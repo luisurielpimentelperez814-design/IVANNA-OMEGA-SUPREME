@@ -45,3 +45,21 @@ object PiLstmBridge {
     private external fun nativeGetNpSat(): Float
     private external fun nativeGetError(): Float
 }
+    // === NUEVOS PARÁMETROS NEURO-COCHLEAR ===
+    fun setClarity(clarity: Float) {
+        // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition
+        val harmonicGain = 0.1f + clarity * 0.8f
+        val lateralInhib = 0.2f + clarity * 0.6f
+        nativeSetHarmonicGain(harmonicGain)
+        nativeSetBeta(lateralInhib)
+    }
+
+    fun setWarmth(warmth: Float) {
+        // Mapear calidez (0-1) a compresión OHC y gamma
+        val ohcComp = 0.1f + warmth * 0.7f
+        val gamma = 0.5f + warmth * 0.5f
+        nativeSetGamma(gamma)
+        // Nota: nativeSetOhcCompression se añadiría en C++ si existiera,
+        // pero usamos nativeSetAlpha como proxy (ajuste de ganancia maestra)
+        nativeSetAlpha(ohcComp)
+    }
