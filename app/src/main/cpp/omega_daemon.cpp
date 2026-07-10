@@ -303,6 +303,15 @@ static void handleSocketCommand(const char* cmd, size_t len) {
     else if (strncmp(cmd, "SET_PF_BETA:",    12) == 0)  g_shared->pf_beta.store(v,     std::memory_order_release);
     else if (strncmp(cmd, "SET_PF_GAMMA:",   13) == 0)  g_shared->pf_gamma.store(v,    std::memory_order_release);
     else if (strncmp(cmd, "SET_PF_MASTER:",  14) == 0)  g_shared->pf_master.store(v,   std::memory_order_release);
+    // FIX (comando fantasma): OmegaEngineBridge.setVocoderMix() manda
+    // "SET_VOCODER_MIX:x" desde el día uno del socket bridge, pero nunca
+    // fue parseado aquí — caía siempre a "comando desconocido". El campo
+    // vocoder_mix SÍ existe en OmegaSharedState (constructor lo inicializa
+    // en 0.8f), así que sólo faltaba esta línea para que el valor de la UI
+    // llegara al shared state. processLoop() aún no tiene una etapa de
+    // vocoder en la cadena DSP — eso es trabajo aparte, no de este fix —
+    // pero al menos el parámetro ya no se pierde en el camino.
+    else if (strncmp(cmd, "SET_VOCODER_MIX:", 16) == 0) g_shared->vocoder_mix.store(v, std::memory_order_release);
     // Control
     else if (strncmp(cmd, "SET_PROCESSING:", 15) == 0)  g_shared->is_processing.store(v != 0.0f, std::memory_order_release);
     else if (strncmp(cmd, "SET_BYPASS:",     11) == 0)  g_shared->bypass_enabled.store(v != 0.0f, std::memory_order_release);
