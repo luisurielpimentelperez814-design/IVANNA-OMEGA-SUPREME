@@ -276,6 +276,44 @@ static void processLoop() {
     }
 }
 
+// ── Parseo de comandos del socket (OmegaEngineBridge) ────────────────────────
+//
+// FIX v2.0: el server solo respondía "ping"/"status". OmegaEngineBridge
+// envía "SET_PF_LOW:0.5", "SET_PF_MID:-2.0", etc. — comandos que eran
+// ignorados silenciosamente. Se añade parseo completo del protocolo.
+static void handleSocketCommand(const char* cmd, size_t len) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    // Buscar separador ':'
+    const char* colon = (const char*)memchr(cmd, ':', len);
+    if (!colon) return;
+    const float v = strtof(colon + 1, nullptr);
+
+    // EQ bands — requieren recompute de Biquads (bump version)
+    if      (strncmp(cmd, "SET_PF_LOW:",       11) == 0) { g_shared->pf_low.store(v,       std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    else if (strncmp(cmd, "SET_PF_MID:",       11) == 0) { g_shared->pf_mid.store(v,       std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    else if (strncmp(cmd, "SET_PF_HIGH:",      12) == 0) { g_shared->pf_high.store(v,      std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    else if (strncmp(cmd, "SET_PF_PRESENCE:",  16) == 0) { g_shared->pf_presence.store(v,  std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    else if (strncmp(cmd, "SET_PF_FREQ:",      12) == 0) { g_shared->pf_freq.store(v,      std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    else if (strncmp(cmd, "SET_PF_RESONANCE:", 17) == 0) { g_shared->pf_resonance.store(v, std::memory_order_release); g_shared->pf_param_version.fetch_add(1, std::memory_order_release); }
+    // Scalares — sin recompute
+    else if (strncmp(cmd, "SET_PF_DRIVE:",   13) == 0)  g_shared->pf_drive.store(v,    std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_WET:",     11) == 0)  g_shared->pf_wet.store(v,      std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_MIX:",     11) == 0)  g_shared->pf_mix.store(v,      std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_ALPHA:",   13) == 0)  g_shared->pf_alpha.store(v,    std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_BETA:",    12) == 0)  g_shared->pf_beta.store(v,     std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_GAMMA:",   13) == 0)  g_shared->pf_gamma.store(v,    std::memory_order_release);
+    else if (strncmp(cmd, "SET_PF_MASTER:",  14) == 0)  g_shared->pf_master.store(v,   std::memory_order_release);
+    // Control
+    else if (strncmp(cmd, "SET_PROCESSING:", 15) == 0)  g_shared->is_processing.store(v != 0.0f, std::memory_order_release);
+    else if (strncmp(cmd, "SET_BYPASS:",     11) == 0)  g_shared->bypass_enabled.store(v != 0.0f, std::memory_order_release);
+    else if (strncmp(cmd, "SET_INTENSITY:",  14) == 0)  g_shared->intensity.store(v,   std::memory_order_release);
+    // AI
+    else if (strncmp(cmd, "SET_AI_ENABLED:",     15) == 0) g_shared->ai_enabled.store(v != 0.0f,  std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_AUTO_ADAPT:",  18) == 0) g_shared->ai_auto_adapt.store(v != 0.0f, std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_SENSITIVITY:", 19) == 0) g_shared->ai_sensitivity.store(v, std::memory_order_release);
+    else LOGW("handleSocketCommand: comando desconocido: %.*s", (int)(colon - cmd), cmd);
+}
+
 // ── Socket server ─────────────────────────────────────────────────────────────
 static void socketLoop() {
     g_socket_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -324,15 +362,49 @@ static void socketLoop() {
             continue;
         }
 
-        // Leer comando simple
-        char cmd[64] = {};
+        // Leer comando (non-blocking, 5ms timeout)
+        char cmd[128] = {};
         ssize_t n = recv(client, cmd, sizeof(cmd) - 1, MSG_DONTWAIT);
-        if (n > 0) {
+
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            // FIX v2.0: sin datos inmediatos → omega_effect.cpp esperando
+            // el SHM FD vía SCM_RIGHTS (recvmsg bloqueante sin enviar nada).
+            // Enviamos el FD por el mecanismo SCM_RIGHTS del kernel.
+            if (g_shm_fd >= 0) {
+                char zero = '\0';
+                struct iovec iov{ &zero, 1 };
+                char cm[CMSG_SPACE(sizeof(int))]{};
+                struct msghdr msgh{};
+                msgh.msg_iov = &iov;  msgh.msg_iovlen = 1;
+                msgh.msg_control = cm; msgh.msg_controllen = sizeof(cm);
+                struct cmsghdr* hdr = CMSG_FIRSTHDR(&msgh);
+                hdr->cmsg_level = SOL_SOCKET;
+                hdr->cmsg_type  = SCM_RIGHTS;
+                hdr->cmsg_len   = CMSG_LEN(sizeof(int));
+                memcpy(CMSG_DATA(hdr), &g_shm_fd, sizeof(int));
+                if (sendmsg(client, &msgh, 0) < 0)
+                    LOGE("socketLoop: sendmsg SCM_RIGHTS falló: %s", strerror(errno));
+                else
+                    LOGI("socketLoop: SHM FD=%d enviado via SCM_RIGHTS", g_shm_fd);
+            }
+        } else if (n > 0) {
+            cmd[n] = '\0';
             if (strncmp(cmd, "ping", 4) == 0) {
-                send(client, "pong", 4, MSG_DONTWAIT);
+                send(client, "pong\n", 5, MSG_DONTWAIT);
             } else if (strncmp(cmd, "status", 6) == 0) {
-                const char* st = g_running.load() ? "running" : "stopped";
+                const char* st = g_running.load() ? "running\n" : "stopped\n";
                 send(client, st, strlen(st), MSG_DONTWAIT);
+            } else if (strncmp(cmd, "GET_TELEMETRY", 13) == 0) {
+                char resp[128];
+                snprintf(resp, sizeof(resp),
+                    "rms=%.4f,gain_db=%.2f,temp=%d,lat=%.2f\n",
+                    g_shared ? g_shared->ai_rms_level.load(std::memory_order_relaxed) : 0.0f,
+                    g_shared ? g_shared->ai_gain_db.load(std::memory_order_relaxed) : 0.0f,
+                    g_shared ? (int)g_shared->current_temperature.load(std::memory_order_relaxed) : 0,
+                    g_shared ? g_shared->current_latency_ms.load(std::memory_order_relaxed) : 0.0f);
+                send(client, resp, strlen(resp), MSG_DONTWAIT);
+            } else {
+                handleSocketCommand(cmd, (size_t)n);
             }
         }
         close(client);
