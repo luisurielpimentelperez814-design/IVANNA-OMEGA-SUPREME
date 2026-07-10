@@ -135,6 +135,33 @@ class OmegaEngineBridge {
     fun setPFPresence(v: Float)   = send("SET_PF_PRESENCE:$v")
     fun setPFMaster(v: Float)     = send("SET_PF_MASTER:$v")
 
+    // FIX: DSPState.pushToNative() llama a setPFParams(...) como batch de
+    // los 13 parámetros del PF Engine, pero solo existían los setters
+    // individuales de arriba (uno por comando de socket) — rompía el build
+    // (compileDebugKotlin: Unresolved reference). No hay comando de socket
+    // batch en el daemon (omega_daemon.cpp solo parsea SET_PF_* uno por
+    // uno), así que esto simplemente encadena los 13 setters ya probados.
+    fun setPFParams(
+        drive: Float, wet: Float, mix: Float,
+        alpha: Float, beta: Float, gamma: Float,
+        freq: Float, resonance: Float,
+        low: Float, mid: Float, high: Float, presence: Float, master: Float
+    ) {
+        setPFDrive(drive)
+        setPFWet(wet)
+        setPFMix(mix)
+        setPFAlpha(alpha)
+        setPFBeta(beta)
+        setPFGamma(gamma)
+        setPFFreq(freq)
+        setPFResonance(resonance)
+        setPFLow(low)
+        setPFMid(mid)
+        setPFHigh(high)
+        setPFPresence(presence)
+        setPFMaster(master)
+    }
+
     fun requestTelemetry(): String {
         send("GET_TELEMETRY")
         return readResponse()
