@@ -89,7 +89,7 @@ class ParameterStore(context: Context) {
         .putFloat(KEY_COMP_RATIO, ratio)
         .apply()
 
-    fun getNhoHarmonic(): Float = prefs.getFloat(KEY_NHO_HARMONIC, 0.0f)
+    fun getNhoHarmonic(): Float = prefs.getFloat(KEY_NHO_HARMONIC, 0.18f) // TUNED v3.3: 0.0→0.18 (NHO activo — 2ª/3ª armónica, calidez analógica)
     fun setNhoHarmonic(value: Float) = prefs.edit().putFloat(KEY_NHO_HARMONIC, value).apply()
 
     fun getSpatialAngle(): Float = prefs.getFloat(KEY_SPATIAL_ANGLE, 0.5f)
