@@ -16,6 +16,11 @@ android {
         versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Solo arm64-v8a — Moto G85 es ARM64, elimina x86/armeabi-v7a del APK (~60% menos)
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -29,6 +34,8 @@ android {
         }
         debug {
             isDebuggable = true
+            // Minify también en debug para reducir tamaño de descarga
+            isMinifyEnabled = false
         }
     }
 
