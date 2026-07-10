@@ -61,7 +61,7 @@ class PlaybackCaptureService : Service() {
     companion object {
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
-        const val INPUT_SAMPLES = 2048
+        const val INPUT_SAMPLES = 128
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())

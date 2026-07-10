@@ -13,6 +13,9 @@ import android.content.SharedPreferences
  * sobrevivían a un reinicio; el resto volvía siempre a sus defaults de UI).
  */
 class ParameterStore(context: Context) {
+    fun getMasterVolume(): Float = getFloat("master_volume", 0.8f)
+
+    fun setMasterVolume(value: Float) { putFloat("master_volume", value.coerceIn(0f, 1f)) }
     private val prefs: SharedPreferences = context.getSharedPreferences(
         PREFS_NAME, Context.MODE_PRIVATE
     )
