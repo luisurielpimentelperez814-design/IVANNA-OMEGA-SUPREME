@@ -104,10 +104,10 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.55f) // TUNED v3.2: 0.5→0.55 (+10% presencia magistral)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // TUNED v3.2: 0.45→0.50 (+11% detalle crystal clear)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.58f) // TUNED v3.2: 0.55→0.58 (+5% natural + definición)
-    fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.0f) // TUNED v3.1: 0.0→2.0 dB (nivel NPE mejorado)
+    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.58f) // TUNED v3.3: 0.55→0.58 (resonancia coclear máxima sin artefactos)
+    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.56f) // TUNED v3.3: 0.50→0.56 (inhibición lateral, separación frecuencial magistral)
+    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.60f) // TUNED v3.3: 0.58→0.60 (compresión OHC, micro-dinámicas naturales del oído)
+    fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.5f) // TUNED v3.3: 2.0→2.5 dB (volumen percibido NPE óptimo)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
             .putFloat(KEY_NPE_HARMONIC, harmonic)
@@ -116,8 +116,8 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_NPE_MASTER_GAIN, masterGain)
             .apply()
 
-    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -15.0f) // TUNED v3.2: -16→-15 dB (menos invasivo, dinámico)
-    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.55f) // TUNED v3.2: 0.5→0.55 (+10% respuesta musical)
+    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -14.0f) // TUNED v3.3: -15→-14 dB (AGC menos restrictivo, dinámica real conservada)
+    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.62f) // TUNED v3.3: 0.55→0.62 (respuesta AGC más ágil, sigue transientes musicales)
     fun setNpeAgc(target: Float, rate: Float) = prefs.edit()
         .putFloat(KEY_NPE_AGC_TARGET, target)
         .putFloat(KEY_NPE_AGC_RATE, rate)
