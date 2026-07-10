@@ -6,21 +6,29 @@ import java.nio.FloatBuffer
 /**
  * IvannaNpeEngine — wrapper de IvannaNpeNative.
  * Único punto de entrada al motor NHO+LIF+BiquadEnvelopeBank+AutonomousBrain.
- * Se llama desde PlaybackCaptureService, en el mismo hilo de audio real que
- * ya ejecuta DSPBridge.process() — impacto audible directo.
+ *
+ * FIX (comentario anterior era falso — hallazgo de auditoría): decía que se
+ * llamaba desde PlaybackCaptureService "con impacto audible directo", pero
+ * esa ruta es captura+análisis del sistema vía MediaProjection y NUNCA
+ * escribe su resultado a ningún AudioTrack — se descarta siempre. El único
+ * lugar de toda la app que sí saca audio real es IvannaBridgePlayer, que
+ * hasta este fix nunca llamaba a este motor.
  */
 object IvannaNpeEngine {
     private const val TAG = "IvannaNpeEngine"
 
     private var handle: Long = 0L
     private var maxFrames: Int = 0
+    private var initSampleRate: Int = 0
+
+    val isReady: Boolean get() = handle != 0L
+    /** Sample rate con el que se inicializó el motor (0 si no está listo). */
+    val sampleRate: Int get() = initSampleRate
 
     private var bufInL: FloatBuffer? = null
     private var bufInR: FloatBuffer? = null
     private var bufOutL: FloatBuffer? = null
     private var bufOutR: FloatBuffer? = null
-
-    val isReady: Boolean get() = handle != 0L
 
     fun init(sampleRate: Int, maxBlockFrames: Int) {
         if (handle != 0L) return
@@ -42,6 +50,7 @@ object IvannaNpeEngine {
             return
         }
         maxFrames = maxBlockFrames
+        initSampleRate = sampleRate
         bufInL = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufInR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufOutL = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)

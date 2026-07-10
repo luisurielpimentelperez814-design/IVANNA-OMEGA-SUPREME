@@ -10,6 +10,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import kotlinx.coroutines.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -115,6 +116,19 @@ class IvannaBridgePlayer(private val context: Context) {
             // a 44100/22050/etc.
             DSPBridge.init(sampleRate)
 
+            // IvannaNpeEngine, en cambio, se inicializa UNA sola vez en
+            // MainActivity.onCreate() a un sample rate fijo (no se puede
+            // reinicializar por archivo sin destruir y recrear el handle
+            // nativo — no implementado). Si el archivo actual no coincide,
+            // sus filtros internos (calculados para la fs de init) sonarían
+            // desafinados. Se salta el procesamiento en ese caso, en vez de
+            // procesar mal en silencio — misma fs es el caso común (los
+            // presets de referencia del proyecto son 48000).
+            val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
+            if (npeSampleRateMismatch) {
+                Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, archivo es ${sampleRate}Hz — NPE desactivado para esta reproducción")
+            }
+
             // FIX: DSPBridge.nativeProcess asume SIEMPRE 2ch intercalado
             // (L0,R0,L1,R1,...) — no soporta mono. Se fuerza salida estéreo
             // real y, si la fuente es mono, se upmixea (L=R) antes de
@@ -196,6 +210,30 @@ class IvannaBridgePlayer(private val context: Context) {
                             val chunkFrames = minOf(2048, totalFrames - offset)
                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
                             DSPBridge.process(chunk, chunkFrames)
+                            // FIX (motor NPE nunca sonaba): IvannaNpeEngine
+                            // (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain,
+                            // el motor detrás de los sliders de Inhibición
+                            // Lateral/Compresión OHC/Master Gain/AGC/HRTF/
+                            // Coclear/Adapt/Manifold en la UI) solo se
+                            // llamaba desde PlaybackCaptureService, cuyo
+                            // resultado se descarta siempre (esa ruta es
+                            // captura+análisis del sistema, sin salida de
+                            // audio real — ver auditoría). Este es el único
+                            // lugar de toda la app que escribe a un
+                            // AudioTrack real, así que es el único lugar
+                            // donde procesar aquí tiene efecto audible.
+                            // isReady evita el costo si el motor no
+                            // inicializó (ver IvannaNpeEngine.init).
+                            if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
+                                IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames)
+                            }
+                            // FIX (control sin efecto real): "modo concierto"
+                            // por voz encendía parámetros de un motor que
+                            // nadie ejecutaba nunca. Ahora sí se aplica, acá,
+                            // el único lugar con salida de audio audible real.
+                            if (com.ivanna.omega.dsp.ConcertMode.enabled) {
+                                com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
+                            }
                             track.write(chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING)
                             offset += chunkFrames
                         }

@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
-        private const val NPE_BLOCK_FRAMES = PlaybackCaptureService.INPUT_SAMPLES
+        private const val NPE_BLOCK_FRAMES = 2048
     }
 
     private lateinit var audioEngine: AudioEngine

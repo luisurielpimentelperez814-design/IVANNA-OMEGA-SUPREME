@@ -80,6 +80,7 @@ class VoiceController(private val context: Context) {
                 app.globalEffectManager.applyProfile(
                     com.ivanna.omega.audio.IvannaEffectProfile.FLAT
                 )
+                ConcertMode.enabled = false
                 Log.i("VoiceController", "Modo plano activado")
             }
             "spatial_mode" -> {
@@ -89,8 +90,8 @@ class VoiceController(private val context: Context) {
                 Log.i("VoiceController", "Modo espacial activado")
             }
             "concert_mode" -> {
-                val concert = ConcertMode()
-                concert.setRoomSize(0.7f)
+                ConcertMode.shared.setRoomSize(0.7f)
+                ConcertMode.enabled = true
                 Log.i("VoiceController", "Modo concierto activado")
             }
         }

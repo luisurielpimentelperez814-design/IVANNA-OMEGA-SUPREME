@@ -7,6 +7,18 @@ import kotlin.math.*
  * Crea sensación de sala en vivo.
  */
 class ConcertMode(private val sampleRate: Float = 48000f) {
+    companion object {
+        // FIX (control sin efecto real — hallazgo de auditoría): ni la
+        // instancia de MainActivity ni la que creaba VoiceController al
+        // decir "modo concierto" llamaban jamás a process() sobre audio
+        // real — solo ajustaban parámetros de un motor que nadie ejecutaba.
+        // Estado compartido: VoiceController lo activa, IvannaBridgePlayer
+        // (el único lugar de la app con salida de audio audible real) lo
+        // aplica si está encendido.
+        val shared = ConcertMode()
+        @Volatile var enabled: Boolean = false
+    }
+
     private val delayBuffer = FloatArray((sampleRate * 0.5f).toInt()) // 500ms max
     private var writePos = 0
     private var readPos = 0
