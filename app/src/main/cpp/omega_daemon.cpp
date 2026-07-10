@@ -414,11 +414,17 @@ static void socketLoop() {
 } // namespace
 
 // ── Inicialización ────────────────────────────────────────────────────────────
-extern "C" JNIEXPORT jint JNICALL
+//
+// FIX (BUG 6 parcial): declaraba jint pero Kotlin espera `external fun
+// nativeStart(): Boolean`. jint/jboolean comparten registro de retorno en
+// ARM así que no crasheaba, pero el valor cruzaba el límite JNI sin la
+// semántica correcta (el fd real nunca se necesitó del lado Kotlin — se usa
+// internamente vía g_shm_fd). Ahora retorna jboolean explícito.
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*thiz*/) {
     if (g_running.exchange(true)) {
         LOGI("Daemon ya está corriendo");
-        return 0;
+        return JNI_TRUE;
     }
 
     // Crear shared memory
@@ -426,7 +432,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     if (g_shm_fd < 0) {
         LOGE("memfd_create falló: %s", strerror(errno));
         g_running = false;
-        return -1;
+        return JNI_FALSE;
     }
 
     if (ftruncate(g_shm_fd, sizeof(OmegaSharedState)) < 0) {
@@ -434,7 +440,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         close(g_shm_fd);
         g_shm_fd = -1;
         g_running = false;
-        return -1;
+        return JNI_FALSE;
     }
 
     g_shared = (OmegaSharedState*)mmap(nullptr, sizeof(OmegaSharedState),
@@ -445,7 +451,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         close(g_shm_fd);
         g_shm_fd = -1;
         g_running = false;
-        return -1;
+        return JNI_FALSE;
     }
 
     memset(g_shared, 0, sizeof(OmegaSharedState));
@@ -481,7 +487,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     }).detach();
 
     LOGI("OmegaDaemon iniciado. Watchdog activo (3 fallos = safe_mode).");
-    return g_shm_fd;
+    return JNI_TRUE;
 }
 
 // ── Finalización ──────────────────────────────────────────────────────────────
@@ -518,17 +524,167 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetProcessing(JNIEnv* /*env*/, jo
     }
 }
 
-extern "C" JNIEXPORT jint JNICALL
+// FIX (BUG 6 — el más grave de la auditoría): declaraba jint pero Kotlin
+// espera `external fun nativeGetTemperature(): Float`. A diferencia de
+// nativeStart (jint/jboolean, mismo registro entero en ARM), int y float
+// usan registros de retorno DISTINTOS en la ABI (r0/x0 vs s0/d0) — el valor
+// entero nunca llegaba al registro que Kotlin lee, así que el valor recibido
+// era literalmente basura del registro flotante sin inicializar, no una
+// reinterpretación válida del entero. Ahora retorna jfloat real.
+extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_magisk_OmegaDaemon_nativeGetTemperature(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // Leer temperatura desde /sys/class/thermal/thermal_zone0/temp
     FILE* temp_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
     if (temp_file) {
         int temp_milli = 0;
         if (fscanf(temp_file, "%d", &temp_milli) == 1) {
             fclose(temp_file);
-            return temp_milli / 1000;  // Convertir a grados Celsius
+            return (jfloat)temp_milli / 1000.0f;  // °C con precisión decimal
         }
         fclose(temp_file);
     }
-    return -1;  // Error o no disponible
+    // Fallback: última temperatura conocida del hot-path del daemon
+    // (current_temperature ya la mantiene actualizada el watchdog/efecto).
+    if (g_shared && g_shared != MAP_FAILED) {
+        return g_shared->current_temperature.load(std::memory_order_relaxed);
+    }
+    return -1.0f;  // sin sysfs y sin daemon corriendo
+}
+
+// ── FIX (BUG 7): 16 funciones declaradas `external fun` en OmegaDaemon.kt
+// sin implementación nativa → UnsatisfiedLinkError garantizado en la
+// primera llamada a cualquiera de ellas (setIntensity, getLatency, todo el
+// bulk/individual setter del PF Engine). Se implementan todas contra
+// OmegaSharedState — mismo patrón defensivo (g_shared nullptr/MAP_FAILED
+// guard) que ya usa nativeSetProcessing.
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetIntensity(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->intensity.store(v, std::memory_order_release);
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeGetLatency(JNIEnv*, jobject) {
+    if (g_shared && g_shared != MAP_FAILED)
+        return g_shared->current_latency_ms.load(std::memory_order_relaxed);
+    return 0.0f;
+}
+
+// Bulk setter — un solo bump de pf_param_version para los 13 parámetros
+// (coincide con el doc de OmegaDaemon.kt: "un solo bump de coeff_version").
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFParams(
+    JNIEnv*, jobject,
+    jfloat drive, jfloat wet, jfloat mix,
+    jfloat alpha, jfloat beta, jfloat gamma,
+    jfloat freq, jfloat resonance,
+    jfloat low, jfloat mid, jfloat high,
+    jfloat presence, jfloat master) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_drive.store(drive,       std::memory_order_relaxed);
+    g_shared->pf_wet.store(wet,           std::memory_order_relaxed);
+    g_shared->pf_mix.store(mix,           std::memory_order_relaxed);
+    g_shared->pf_alpha.store(alpha,       std::memory_order_relaxed);
+    g_shared->pf_beta.store(beta,         std::memory_order_relaxed);
+    g_shared->pf_gamma.store(gamma,       std::memory_order_relaxed);
+    g_shared->pf_freq.store(freq,         std::memory_order_relaxed);
+    g_shared->pf_resonance.store(resonance, std::memory_order_relaxed);
+    g_shared->pf_low.store(low,           std::memory_order_relaxed);
+    g_shared->pf_mid.store(mid,           std::memory_order_relaxed);
+    g_shared->pf_high.store(high,         std::memory_order_relaxed);
+    g_shared->pf_presence.store(presence, std::memory_order_relaxed);
+    g_shared->pf_master.store(master,     std::memory_order_relaxed);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeGetPFParams(JNIEnv* env, jobject) {
+    jfloat out[13] = {0};
+    if (g_shared && g_shared != MAP_FAILED) {
+        out[0]  = g_shared->pf_drive.load(std::memory_order_relaxed);
+        out[1]  = g_shared->pf_wet.load(std::memory_order_relaxed);
+        out[2]  = g_shared->pf_mix.load(std::memory_order_relaxed);
+        out[3]  = g_shared->pf_alpha.load(std::memory_order_relaxed);
+        out[4]  = g_shared->pf_beta.load(std::memory_order_relaxed);
+        out[5]  = g_shared->pf_gamma.load(std::memory_order_relaxed);
+        out[6]  = g_shared->pf_freq.load(std::memory_order_relaxed);
+        out[7]  = g_shared->pf_resonance.load(std::memory_order_relaxed);
+        out[8]  = g_shared->pf_low.load(std::memory_order_relaxed);
+        out[9]  = g_shared->pf_mid.load(std::memory_order_relaxed);
+        out[10] = g_shared->pf_high.load(std::memory_order_relaxed);
+        out[11] = g_shared->pf_presence.load(std::memory_order_relaxed);
+        out[12] = g_shared->pf_master.load(std::memory_order_relaxed);
+    }
+    jfloatArray arr = env->NewFloatArray(13);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+}
+
+// Setters individuales SIN recomputación de Biquad (escalares del hot-path,
+// coincide con el comentario de OmegaDaemon.kt).
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFDrive(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_drive.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFWet(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_wet.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFMix(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_mix.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFAlpha(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_alpha.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFBeta(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_beta.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFGamma(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_gamma.store(v, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFMaster(JNIEnv*, jobject, jfloat v) {
+    if (g_shared && g_shared != MAP_FAILED) g_shared->pf_master.store(v, std::memory_order_release);
+}
+
+// Setters individuales CON recomputación de Biquad (bump de pf_param_version) —
+// coincide con el comentario de OmegaDaemon.kt para freq/resonance/low/mid/
+// high/presence.
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFFreq(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_freq.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFResonance(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_resonance.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFLow(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_low.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFMid(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_mid.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFHigh(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_high.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFPresence(JNIEnv*, jobject, jfloat v) {
+    if (!g_shared || g_shared == MAP_FAILED) return;
+    g_shared->pf_presence.store(v, std::memory_order_release);
+    g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
 }
