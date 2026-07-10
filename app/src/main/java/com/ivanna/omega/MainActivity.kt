@@ -13,8 +13,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -303,10 +301,15 @@ class MainActivity : ComponentActivity() {
                             IconButtonClose { showVisualizer = false }
                         }
                     } else {
+                      // FIX CRASH (df77763): El Column externo tenía .verticalScroll() que
+                      // pasaba constraints de altura INFINITA a IvannaControlPanel, que a su
+                      // vez tiene .fillMaxSize().verticalScroll() en su raíz.
+                      // fillMaxSize() con altura infinita → IllegalArgumentException en Compose
+                      // → app muerta al iniciar.
+                      // Solución: Column sin verticalScroll. BridgePlayerCard es wrapContentHeight,
+                      // IvannaControlPanel gestiona su propio scroll interno con fillMaxSize().
                       Column(
-                        modifier = Modifier
-                          .fillMaxSize()
-                          .verticalScroll(rememberScrollState())
+                        modifier = Modifier.fillMaxSize()
                       ) {
                         BridgePlayerCard(
                             playerState = bridgePlayerState.value,
