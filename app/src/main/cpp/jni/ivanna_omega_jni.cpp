@@ -48,6 +48,11 @@ static GainStage      g_gain;
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
+// FEATURE (Voice Protection): 0..1, cuánta voz detecta YamnetClassifier en
+// el bloque actual. Protege la inteligibilidad de la voz mezclando de
+// vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
+// dejar que Exciter/Compresor la sobre-procesen.
+static std::atomic<float> g_voice_protect_score{0.f};
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
@@ -118,6 +123,16 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetStereoWidth(JNIEnv*, jobject, jfloa
     g_widener.setWidth(width);
 }
 
+// FEATURE (Voice Protection): recibe el score de voz (0..1) desde
+// VoiceProtectionController (Kotlin, YamnetClassifier real). Canal
+// dedicado, no pasa por setParams() — igual patrón que nativeSetStereoWidth
+// de arriba, por la misma razón (evitar colisión con otros parámetros).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject, jfloat score) {
+    g_voice_protect_score.store(
+        std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
@@ -136,6 +151,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         chL[i] = data[2 * i];
         chR[i] = data[2 * i + 1];
     }
+
+    // FEATURE (Voice Protection): copia seca (pre-DSP) para poder mezclar
+    // de vuelta hacia ella si YamnetClassifier detecta voz dominante — ver
+    // blend al final de esta función, después de PDEngine.
+    static thread_local float dryL[2048], dryR[2048];
+    std::memcpy(dryL, chL, n * sizeof(float));
+    std::memcpy(dryR, chR, n * sizeof(float));
 
     g_eq.process(chL, chR, n);
     g_comp.process(chL, chR, n);
@@ -167,6 +189,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
     static thread_local float pdOutL[2048], pdOutR[2048];
     g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
+
+    // FEATURE (Voice Protection): cuando YamnetClassifier detecta voz
+    // dominante en el bloque, mezcla de vuelta hacia la señal seca en vez
+    // de dejar que Exciter/Compresor/Widener sobre-procesen la voz. Máximo
+    // 55% de mezcla seca aun con score=1.0 — protege sin anular el DSP.
+    const float vp = g_voice_protect_score.load(std::memory_order_relaxed);
+    if (vp > 0.01f) {
+        constexpr float VOICE_PROTECT_MAX = 0.55f;
+        const float dryMix = vp * VOICE_PROTECT_MAX;
+        const float wetMix = 1.f - dryMix;
+        for (int i = 0; i < n; ++i) {
+            pdOutL[i] = pdOutL[i] * wetMix + dryL[i] * dryMix;
+            pdOutR[i] = pdOutR[i] * wetMix + dryR[i] * dryMix;
+        }
+    }
 
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {

@@ -62,6 +62,14 @@ class IvannaBridgePlayer(private val context: Context) {
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
+    // FEATURE (Voice Protection): lazy para no cargar YamnetClassifier
+    // (modelo TFLite) hasta la primera reproducción real.
+    private val voiceProtection: VoiceProtectionController? by lazy {
+        try { VoiceProtectionController(context) } catch (e: Exception) {
+            Log.w(TAG, "Voice Protection no disponible: ${e.message}"); null
+        }
+    }
+
     /** Reproduce el archivo en [uri]. Cancela cualquier reproducción previa. */
     fun play(uri: Uri) {
         stop()
@@ -209,6 +217,11 @@ class IvannaBridgePlayer(private val context: Context) {
                         while (offset < totalFrames) {
                             val chunkFrames = minOf(2048, totalFrames - offset)
                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
+                            // FEATURE (Voice Protection): clasifica el audio
+                            // CRUDO (antes del DSP) — clasificar después
+                            // sería sobre una señal ya coloreada por
+                            // Exciter/EQ, menos fiel a lo que YAMNet espera.
+                            voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             DSPBridge.process(chunk, chunkFrames)
                             // FIX (motor NPE nunca sonaba): IvannaNpeEngine
                             // (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain,

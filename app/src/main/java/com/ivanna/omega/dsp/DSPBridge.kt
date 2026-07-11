@@ -41,6 +41,14 @@ object DSPBridge {
         nativeSetStereoWidth(width)
     }
 
+    // FEATURE (Voice Protection): score 0..1 de voz detectada
+    // (VoiceProtectionController, YamnetClassifier real). Canal dedicado,
+    // mismo patrón que setStereoWidth.
+    fun setVoiceProtectScore(score: Float) {
+        if (!loaded) return
+        nativeSetVoiceProtectScore(score)
+    }
+
     fun process(buffer: FloatArray, numFrames: Int) {
         if (loaded) nativeProcess(buffer, numFrames)
     }
@@ -58,6 +66,7 @@ object DSPBridge {
         presence: Float, master: Float
     )
     private external fun nativeSetStereoWidth(width: Float)
+    private external fun nativeSetVoiceProtectScore(score: Float)
     private external fun nativeProcess(buf: FloatArray, numFrames: Int)
     private external fun nativeReset()
     private external fun nativeVersion(): String
