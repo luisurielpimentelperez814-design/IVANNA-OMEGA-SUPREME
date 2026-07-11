@@ -82,7 +82,9 @@ class GLTextureView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
-        renderThread?.shutdown()
+        // FIX (ver shutdownAndWait): esperar a que el hilo GL realmente
+        // termine (destroyEGL() incluido) antes de seguir con el detach.
+        renderThread?.shutdownAndWait()
         renderThread = null
         super.onDetachedFromWindow()
     }
@@ -106,7 +108,15 @@ class GLTextureView @JvmOverloads constructor(
     }
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-        renderThread?.shutdown()
+        // FIX CRÍTICO (causa raíz del crash SIGSEGV en RenderThread del
+        // sistema, driver Adreno): antes se llamaba a shutdown() (async) y
+        // se devolvía `true` en el mismo instante, dejando que Android
+        // destruyera la SurfaceTexture mientras el hilo GL propio podía
+        // seguir escribiendo sobre ella (eglSwapBuffers en vuelo). Ahora se
+        // espera (con timeout) a que el hilo termine — y por lo tanto a que
+        // destroyEGL() ya haya liberado la superficie/contexto — antes de
+        // devolver `true` y ceder el control de la superficie al framework.
+        renderThread?.shutdownAndWait()
         renderThread = null
         return true
     }
@@ -184,6 +194,32 @@ class GLTextureView @JvmOverloads constructor(
             }
             frameRequested.set(true)
             interrupt()
+        }
+
+        /**
+         * FIX (crash real de RenderThread — tombstone del 11/07, signal 11 en
+         * libGLESv2_adreno.so durante GrGLOpsRenderPass::onDraw): shutdown()
+         * por sí solo es asíncrono — señaliza al hilo pero no espera a que
+         * termine. GLTextureView.onSurfaceTextureDestroyed() llamaba a
+         * shutdown() y devolvía `true` en el mismo instante, indicándole al
+         * framework que ya podía destruir la SurfaceTexture/buffer queue.
+         * Si en ese momento el hilo seguía bloqueado dentro de
+         * eglSwapBuffers() sobre esa misma superficie, quedaban dos hilos
+         * (el nuestro y el RenderThread del sistema componiendo la textura)
+         * tocando el mismo buffer queue mientras se destruía — carrera real
+         * que corrompía estado compartido del driver Adreno y crasheaba el
+         * RenderThread del sistema, no el nuestro (por eso costaba tanto
+         * encontrarlo). destroyEGL() ya se llamaba correctamente al salir
+         * del loop de run() — lo que faltaba era ESPERAR a que eso pasara
+         * antes de decirle a Android que la superficie estaba libre.
+         */
+        fun shutdownAndWait(timeoutMs: Long = 300L) {
+            shutdown()
+            try {
+                join(timeoutMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
 
         private fun postNextFrame() {
