@@ -9,6 +9,21 @@ namespace ivanna {
 // Solución: Procesar en 2x oversampling, luego downsample con LPF
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {
     x *= drive;
+    // FIX (Fase C, pulido de oído absoluto): el Padé [3/2] es una
+    // aproximación de tanh(x) válida solo para |x| pequeño. Para |x|
+    // mayor NO satura hacia ±1 como tanh — lo SOBREPASA: en x=9 (el drive
+    // por defecto, 7.75x, sobre una señal ~1.0 tras el HPF) da 1.29; en
+    // x=16 (drive máximo del slider) da 1.94, casi el doble del límite
+    // que "soft clip" promete por nombre. Verificado numéricamente:
+    // softClip(1)=0.78 vs tanh(1)=0.76 (bien), softClip(9)=1.29 vs
+    // tanh(9)≈1.00 (mal), softClip(16)=1.94 vs tanh(16)≈1.00 (muy mal).
+    // Esa energía de más, sin límite real, es exactamente lo que un
+    // oversampling de 2x no alcanza a contener sin aliasing en material
+    // con transientes fuertes (rock con mucha dinámica). Clamp de entrada
+    // a ±3 (donde el aproximante SÍ satura limpio en 1.0 — ver cálculo
+    // arriba) restaura la saturación real sin tocar la curva ni el rango
+    // de drive existente.
+    x = x < -3.0f ? -3.0f : (x > 3.0f ? 3.0f : x);
     float x2 = x * x;
     // Numerador: x*(27 + x²), Denominador: 27 + 9x²
     return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
