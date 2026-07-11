@@ -159,11 +159,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     std::memcpy(dryL, chL, n * sizeof(float));
     std::memcpy(dryR, chR, n * sizeof(float));
 
+    // FIX (Fase C, pulido de oído absoluto): processInput() (trim de
+    // entrada, derivado de p.mix, ±6dB) corría DESPUÉS de EQ/Compressor/
+    // Exciter/Widener — violando el orden de una cadena de ganancia
+    // estándar (Input Trim → procesadores dependientes del nivel →
+    // Output Gain). Con el trim aplicado al final, cada etapa
+    // level-dependent (el threshold del compresor, el drive del exciter
+    // — ver el clamp de softClip recién corregido) veía el nivel CRUDO,
+    // no el nivel que p.mix estaba pensado para normalizar antes de
+    // llegar ahí. processOutput() (ganancia final, derivada de p.master)
+    // sí pertenece al final de la cadena — ahí se queda.
+    g_gain.processInput(chL, chR, n);
     g_eq.process(chL, chR, n);
     g_comp.process(chL, chR, n);
     g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
-    g_gain.processInput(chL, chR, n);
     g_gain.processOutput(chL, chR, n);
 
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
