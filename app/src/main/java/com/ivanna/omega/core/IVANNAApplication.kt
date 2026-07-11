@@ -9,6 +9,10 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import android.content.IntentFilter
+import android.media.audiofx.AudioEffect
+import com.ivanna.omega.audio.AudioSessionReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -28,6 +32,15 @@ class IVANNAApplication : Application() {
     companion object {
         private const val TAG = "IVANNAApplication"
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * Canal CONFLATED: sustituye appScope.launch x N en pushToNative().
+         * Con CONFLATED solo el ultimo valor de parametros DSP llega al socket;
+         * los intermedios se descartan. Elimina el crash por OOM (coroutines
+         * bloqueadas en connect() CONNECT_TIMEOUT_MS=2000ms a 60fps = miles de
+         * threads IO bloqueados despues de minutos de uso).
+         */
+        val pfParamChannel = Channel<FloatArray>(Channel.CONFLATED)
         val omegaBridge = OmegaEngineBridge()
 
         @Volatile
@@ -43,10 +56,38 @@ class IVANNAApplication : Application() {
         super.onCreate()
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
 
+        // FIX (crash): consumer unico del canal DSP.
+        // Un solo socket write activo a la vez; CONFLATED descarta los intermedios.
+        appScope.launch {
+            for (params in pfParamChannel) {
+                runCatching {
+                    omegaBridge.setPFParams(
+                        params[0], params[1], params[2],
+                        params[3], params[4], params[5],
+                        params[6], params[7],
+                        params[8], params[9], params[10], params[11], params[12]
+                    )
+                }
+            }
+        }
+
         // Conectar DSPState con GlobalEffectManager ANTES de que la UI cargue.
         // Sin esto, pushToNative() nunca llama adjustLiveParams() y los sliders
         // de EQ/Width/Exciter/Comp no afectan Spotify/YouTube/ninguna app externa.
         com.ivanna.omega.dsp.DSPState.globalEffectManager = globalEffectManager
+
+        // FIX (controles Android 13+): registrar AudioSessionReceiver dinámicamente
+        // con RECEIVER_NOT_EXPORTED ademas del Manifest, ya que en API33+
+        // el sistema puede no enviar broadcasts implícitos a receivers solo de Manifest.
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
+                addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
+            }
+            val flags = if (android.os.Build.VERSION.SDK_INT >= 33)
+                android.content.Context.RECEIVER_NOT_EXPORTED else 0
+            registerReceiver(AudioSessionReceiver(), filter, flags)
+        }.onFailure { Log.w("IVANNAApp", "AudioSessionReceiver dyn reg failed: ${it.message}") }
 
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)

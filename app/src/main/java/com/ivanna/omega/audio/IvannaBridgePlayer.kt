@@ -91,6 +91,13 @@ class IvannaBridgePlayer(private val context: Context) {
     }
 
     private fun releaseTrack() {
+        // Desregistrar la sesion de AudioEffect antes de liberar
+        runCatching {
+            audioTrack?.audioSessionId?.let { sid ->
+                (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
+                    ?.globalEffectManager?.closeSession(sid)
+            }
+        }
         try { audioTrack?.stop() } catch (_: Throwable) {}
         try { audioTrack?.release() } catch (_: Throwable) {}
         audioTrack = null
@@ -163,6 +170,15 @@ class IvannaBridgePlayer(private val context: Context) {
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioTrack no inicializó"); state = State.ERROR; return@withContext
             }
+            // FIX (controles desconectados): registrar la sesion del AudioTrack
+            // en IvannaGlobalEffectManager para que adjustLiveParams() tenga
+            // al menos una sesion real sobre la que aplicar EQ/Virtualizer/Comp.
+            // Sin esto, activeSessions esta vacio y los sliders no afectan nada.
+            runCatching {
+                (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
+                    ?.globalEffectManager
+                    ?.openSession(track.audioSessionId, context.packageName)
+            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: \${it.message}") }
             audioTrack = track
 
             codec = MediaCodec.createDecoderByType(mime)

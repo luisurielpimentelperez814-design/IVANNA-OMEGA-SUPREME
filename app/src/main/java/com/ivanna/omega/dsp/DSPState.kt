@@ -98,14 +98,14 @@ data class DSPState(
             compRatio       = 1f + beta * 19f
         )
 
-        IVANNAApplication.appScope.launch {
-            IVANNAApplication.omegaBridge.setPFParams(
-                drive, wet, mix,
-                alpha, beta, gamma,
-                freq, resonance,
-                low, mid, high, presence, master
-            )
-        }
+        // FIX (crash): trySend es non-blocking y O(1).
+        // Channel(CONFLATED) en IVANNAApplication descarta valores intermedios
+        // — solo el ultimo llega al socket. Elimina la acumulacion de coroutines
+        // bloqueadas (CONNECT_TIMEOUT_MS=2000ms x 60fps = OOM en minutos).
+        IVANNAApplication.pfParamChannel.trySend(
+            floatArrayOf(drive, wet, mix, alpha, beta, gamma,
+                         freq, resonance, low, mid, high, presence, master)
+        )
     }
 
     companion object {
