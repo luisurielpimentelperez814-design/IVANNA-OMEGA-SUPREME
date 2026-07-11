@@ -181,37 +181,24 @@ int control_apply_frame() noexcept {
     f.nho_harmonic_gain = std::clamp(nho_harmonic, 0.f, 2.f);
     updates++;
 
-    // ───────────────────────────────────────────────────────────
-    // 3b. FASE 2 — sesgo aprendido (LearningBias, ruta A).
-    // Se suma al valor propuesto por el motor autónomo (YAMNet+Evo+PhaseOracle)
-    // ANTES de publicar el frame al bus. Mismo camino que el genoma evolutivo,
-    // NO se crea un sexto camino paralelo (ver prompt: "punto de integración").
-    // Clamps preservan los rangos válidos del enum interno de PDEngine/DSP.
-    // ───────────────────────────────────────────────────────────
-    const float bias_nho    = learning_bias_get("nho_harmonic");
-    const float bias_angle  = learning_bias_get("spatial_angle");
-    const float bias_width  = learning_bias_get("spatial_width");
-    const float bias_exc    = learning_bias_get("exciter");
-    const float bias_eq     = learning_bias_get("eq_gain");
-    const float bias_stereo = learning_bias_get("width");
-
-    f.nho_harmonic_gain = std::clamp(f.nho_harmonic_gain + bias_nho, 0.f, 2.f);
-    f.spatial_angle_deg = std::clamp(f.spatial_angle_deg + bias_angle * 120.f, 0.f, 120.f);
-    f.spatial_width     = std::clamp(f.spatial_width     + bias_width * 1.5f,  0.f, 1.5f);
-    f.wet               = std::clamp(f.wet               + bias_exc,           0.f, 1.f);
-    f.mid               = std::clamp(f.mid               + bias_eq,          -18.f, 18.f);
-    f.nho_wet           = std::clamp(f.nho_wet           + bias_stereo,        0.f, 1.f);
-    updates += 6;
-
-    if (std::abs(bias_nho) + std::abs(bias_angle) + std::abs(bias_width) +
-        std::abs(bias_exc) + std::abs(bias_eq) + std::abs(bias_stereo) > 0.001f) {
-        ALOG(ANDROID_LOG_INFO, TAG,
-             "bias→frame: nho=%.3f ang=%.3f w=%.3f exc=%.3f eq=%.3f stereo=%.3f",
-             bias_nho, bias_angle, bias_width, bias_exc, bias_eq, bias_stereo);
-    }
-
     // ────────────────────────────────────────────────────────────────
-    // 4. Evolutionary genome mapping (real-time, si está activo)
+    // 3b. Evolutionary genome mapping (real-time, si está activo)
+    //
+    // FIX (colisión Fase B): este bloque estaba DESPUÉS del sesgo
+    // aprendido (más abajo) y lo sobreescribía con '=' directo para
+    // nho_harmonic_gain/spatial_angle_deg/spatial_width/nho_wet — justo
+    // los campos que LearningBias existe para modular. Con el kernel
+    // evolutivo activo, el sesgo del usuario se perdía en silencio en
+    // cada bloque: se calculaba, se sumaba, y un paso después se pisaba
+    // sin dejar rastro. Ahora el genoma evolutivo (o, si no está activo,
+    // la fusión YAMNet/AudioEngine ya calculada arriba) establece la
+    // PROPUESTA AUTÓNOMA primero — y el sesgo aprendido se suma encima
+    // de esa propuesta final, sin importar cuál la generó. Coincide con
+    // el propio contrato de LearningBias.captureCorrection(): "autonomous
+    // = valor propuesto por el motor autónomo" — el motor autónomo es
+    // YAMNet+AudioEngine+PhaseOracle, o el kernel evolutivo cuando está
+    // activo; nunca ambos "compiten" por el mismo campo sin que el sesgo
+    // sobreviva a cualquiera de los dos.
     // ────────────────────────────────────────────────────────────────
     if (evo_active) {
         const float evo_drive     = g_control_frame.evo_genome_dsp[0].load(std::memory_order_relaxed);
@@ -246,6 +233,37 @@ int control_apply_frame() noexcept {
              "evo→frame: drive=%.2f res=%.2f nho[a=%.2f b=%.2f w=%.2f h=%.2f] sp[a=%.1f w=%.2f]",
              f.drive, f.resonance, f.nho_alpha, f.nho_beta, f.nho_wet, f.nho_harmonic_gain,
              f.spatial_angle_deg, f.spatial_width);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // 4. FASE 2 — sesgo aprendido (LearningBias, ruta A).
+    // Se suma al valor propuesto por el motor autónomo — YAMNet+Evo+
+    // PhaseOracle si evo_active, o solo YAMNet+PhaseOracle+AudioEngine
+    // si no — DESPUÉS de que esa propuesta quede fijada en 'f'. Mismo
+    // camino que el genoma evolutivo, NO se crea un sexto camino
+    // paralelo (ver prompt: "punto de integración"). Clamps preservan
+    // los rangos válidos del enum interno de PDEngine/DSP.
+    // ───────────────────────────────────────────────────────────
+    const float bias_nho    = learning_bias_get("nho_harmonic");
+    const float bias_angle  = learning_bias_get("spatial_angle");
+    const float bias_width  = learning_bias_get("spatial_width");
+    const float bias_exc    = learning_bias_get("exciter");
+    const float bias_eq     = learning_bias_get("eq_gain");
+    const float bias_stereo = learning_bias_get("width");
+
+    f.nho_harmonic_gain = std::clamp(f.nho_harmonic_gain + bias_nho, 0.f, 2.f);
+    f.spatial_angle_deg = std::clamp(f.spatial_angle_deg + bias_angle * 120.f, 0.f, 120.f);
+    f.spatial_width     = std::clamp(f.spatial_width     + bias_width * 1.5f,  0.f, 1.5f);
+    f.wet               = std::clamp(f.wet               + bias_exc,           0.f, 1.f);
+    f.mid               = std::clamp(f.mid               + bias_eq,          -18.f, 18.f);
+    f.nho_wet           = std::clamp(f.nho_wet           + bias_stereo,        0.f, 1.f);
+    updates += 6;
+
+    if (std::abs(bias_nho) + std::abs(bias_angle) + std::abs(bias_width) +
+        std::abs(bias_exc) + std::abs(bias_eq) + std::abs(bias_stereo) > 0.001f) {
+        ALOG(ANDROID_LOG_INFO, TAG,
+             "bias→frame: nho=%.3f ang=%.3f w=%.3f exc=%.3f eq=%.3f stereo=%.3f",
+             bias_nho, bias_angle, bias_width, bias_exc, bias_eq, bias_stereo);
     }
 
     // ────────────────────────────────────────────────────────────────
