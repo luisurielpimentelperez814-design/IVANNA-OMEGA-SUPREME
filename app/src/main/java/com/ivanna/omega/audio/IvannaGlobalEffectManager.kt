@@ -219,7 +219,7 @@ class IvannaGlobalEffectManager {
                     fx.dynamics,
                     prof.copy(compThresholdDb = compThresholdDb, compRatio = compRatio)
                 )
-            }.onFailure { Log.w(tag, "adjustLiveParams sesion $sessionId: \${it.message}") }
+            }.onFailure { Log.w(tag, "adjustLiveParams sesion $sessionId: ${it.message}") }
         }
     }
 
