@@ -28,7 +28,7 @@ App (Kotlin + Compose)
 │
 ├── IvannaControlPanel          UI de todos los motores
 ├── DSPBridge → libivanna_omega.so
-│     ├── ParametricEQ          3 bandas + presence
+│     ├── ParametricEQ          8 bandas (low shelf, low-mid, banda libre, mid, high, presence, high shelf)
 │     ├── Compressor            threshold/ratio adaptativo
 │     ├── HarmonicExciter       2x oversampling anti-aliasing
 │     ├── StereoWidener         crossover mono-safe de graves
@@ -45,7 +45,7 @@ App (Kotlin + Compose)
 ├── LearningBias                Aprende correcciones del usuario por contexto
 ├── UserProfileManager          Perfiles de usuario persistentes
 ├── CloudSyncManager            Sincronización Firebase (requiere setup)
-├── VoiceController             Control por voz
+├── VoiceController             Control por voz — EXISTE, no está cableado en MainActivity (huérfano)
 ├── AppMetadataListener         Detecta app activa para auto-preset
 └── IvannaBridgePlayer          Reproductor propio (archivos locales)
 
@@ -160,10 +160,11 @@ Requiere setup manual en Firebase Console (ver `CloudSyncManager.kt` para instru
 - Reproductor propio (IvannaBridgePlayer)
 - Captura de sistema via MediaProjection
 - Modo Concierto
-- Control por voz
 - CloudSync (Firebase, requiere setup)
 
 ### 🔧 En progreso / pendiente
+- VoiceController: la clase existe y funciona en aislamiento, pero no se instancia en ningún lado de la app (huérfana, sin botón/intent que la active)
+- Slider "MASTER GAIN" del panel controla el motor NPE, no `DSPState.master`/`GainStage` (la ganancia de salida real de la cadena DSPBridge) — gap detectado en el commit `5fdb814`, no corregido todavía
 - Convolución de sala real (carga de IR)
 - Soporte USB DAC dedicado
 - Setup Firebase (requiere acción del autor)
