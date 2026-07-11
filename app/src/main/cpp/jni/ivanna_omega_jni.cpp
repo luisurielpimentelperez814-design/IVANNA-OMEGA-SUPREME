@@ -190,6 +190,47 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     static thread_local float pdOutL[2048], pdOutR[2048];
     g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
 
+    // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
+    // correlación L/R real del material SECO (dryL/dryR, antes de
+    // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
+    // contenido es casi-mono, sin tocar mezclas que ya vienen anchas por
+    // sí solas. Es una etapa INDEPENDIENTE del ángulo/width de
+    // CueBasedSpatial (que ya lo controla el Kernel Evolutivo/slider
+    // manual) — no compite por el mismo parámetro, evita el mismo tipo de
+    // colisión que ya se encontró y corrigió con el compresor.
+    // No confundir con el motor binaural de 32 objetos
+    // (SpatialAudioEngineV2/HRTFConvolver): ese sigue siendo, a propósito,
+    // puro análisis/telemetría (ver su propio comentario de clase sobre el
+    // bug de eco que resolvió) — activarlo como salida de audio real es un
+    // trabajo aparte, más grande, pendiente.
+    {
+        double sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
+        for (int i = 0; i < n; ++i) {
+            sumLR += (double)dryL[i] * dryR[i];
+            sumLL += (double)dryL[i] * dryL[i];
+            sumRR += (double)dryR[i] * dryR[i];
+        }
+        const double denom = std::sqrt(sumLL * sumRR) + 1e-9;
+        const float corrRaw = (float)std::clamp(sumLR / denom, -1.0, 1.0);
+
+        static thread_local float corrSmooth = 0.7f;  // arranca neutral, no en 1.0
+        corrSmooth += 0.08f * (corrRaw - corrSmooth);  // EMA suave, sin saltos por transitorio
+
+        // corr alto (≈mono) → ensancha hasta +40%. corr bajo (ya ancho) →
+        // no toca (multiplicador 1.0). Zona muerta entre 0.4 y 0.8 para no
+        // reaccionar a fluctuaciones normales de una mezcla ya balanceada.
+        const float widenAmount = std::clamp((corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
+        if (widenAmount > 0.005f) {
+            const float sideMul = 1.f + widenAmount;
+            for (int i = 0; i < n; ++i) {
+                const float mid  = (pdOutL[i] + pdOutR[i]) * 0.5f;
+                const float side = (pdOutL[i] - pdOutR[i]) * 0.5f * sideMul;
+                pdOutL[i] = mid + side;
+                pdOutR[i] = mid - side;
+            }
+        }
+    }
+
     // FEATURE (Voice Protection): cuando YamnetClassifier detecta voz
     // dominante en el bloque, mezcla de vuelta hacia la señal seca en vez
     // de dejar que Exciter/Compresor/Widener sobre-procesen la voz. Máximo
