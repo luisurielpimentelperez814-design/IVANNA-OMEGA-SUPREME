@@ -212,6 +212,15 @@ class IvannaBridgePlayer(private val context: Context) {
                         // salida del decoder respete ese límite en todos los
                         // codecs/dispositivos, así que se trocea aquí para
                         // que nunca se escriba audio sin procesar.
+                        // Buffers reutilizables para IvannaSpatialEngine
+                        // (opera sobre canales separados, no intercalados —
+                        // se declaran una vez fuera del loop para no
+                        // reasignar memoria en cada chunk).
+                        val spatialInL = FloatArray(2048)
+                        val spatialInR = FloatArray(2048)
+                        val spatialOutL = FloatArray(2048)
+                        val spatialOutR = FloatArray(2048)
+
                         val totalFrames = stereo.size / 2
                         var offset = 0
                         while (offset < totalFrames) {
@@ -246,6 +255,29 @@ class IvannaBridgePlayer(private val context: Context) {
                             // el único lugar con salida de audio audible real.
                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {
                                 com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
+                            }
+                            // FIX (toggle conectado al motor equivocado —
+                            // auditoría de cableado): "MOTOR BINAURAL · 32
+                            // OBJETOS" en la UI describe textualmente a
+                            // IvannaSpatialEngine (upmixer+VBAP+HRTF+head-
+                            // tracking) pero estaba wireado a
+                            // SpatialAudioEngineV2, que es solo telemetría
+                            // (se deja para el HUD). Se aplica acá el motor
+                            // real, sobre canales deinterleaved — este sí
+                            // preserva la separación estéreo (dos fuentes
+                            // virtuales L/R, no un downmix a mono).
+                            if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
+                                for (i in 0 until chunkFrames) {
+                                    spatialInL[i] = chunk[i * 2]
+                                    spatialInR[i] = chunk[i * 2 + 1]
+                                }
+                                com.ivanna.omega.spatial.IvannaSpatialEngine.shared.processStereoInput(
+                                    spatialInL, spatialInR, spatialOutL, spatialOutR, chunkFrames
+                                )
+                                for (i in 0 until chunkFrames) {
+                                    chunk[i * 2] = spatialOutL[i]
+                                    chunk[i * 2 + 1] = spatialOutR[i]
+                                }
                             }
                             track.write(chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING)
                             offset += chunkFrames

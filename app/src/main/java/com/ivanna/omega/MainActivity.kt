@@ -607,6 +607,17 @@ class MainActivity : ComponentActivity() {
                                             == PackageManager.PERMISSION_GRANTED) {
                                             try {
                                                 spatialEngineV2.start()
+                                                // FIX (control sin efecto real — auditoría de
+                                                // cableado): este toggle solo arrancaba
+                                                // spatialEngineV2 (telemetría pura, no produce
+                                                // audio — se deja porque alimenta el HUD de
+                                                // "32 objetos" en la UI). El motor que sí
+                                                // produce binaural real preservando el estéreo
+                                                // (IvannaSpatialEngine, upmixer+VBAP+HRTF+
+                                                // head-tracking) nunca se instanciaba en toda
+                                                // la app. Se inicializa y activa acá también.
+                                                com.ivanna.omega.spatial.IvannaSpatialEngine.shared.init()
+                                                com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = true
                                             } catch (e: Exception) {
                                                 Log.e(TAG, "Error iniciando SpatialAudioEngineV2 desde UI", e)
                                                 parameterStore.setSpatialEnabled(false)
@@ -618,6 +629,8 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         try {
                                             spatialEngineV2.stop()
+                                            com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = false
+                                            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.release()
                                         } catch (e: Exception) {
                                             Log.e(TAG, "Error deteniendo SpatialAudioEngineV2", e)
                                         }

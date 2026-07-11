@@ -38,6 +38,33 @@ class IvannaSpatialEngine(
     private val sampleRate: Float = 48000f,
     private val blockSize: Int = 512
 ) {
+    companion object {
+        const val TAG = "IvannaSpatialEngine"
+        const val MAX_OBJECTS = 32
+        const val NUM_STEMS = 4
+
+        // FIX (control sin efecto real — auditoría de cableado): nadie
+        // instanciaba esta clase en todo el repo. El toggle "MOTOR BINAURAL
+        // · 32 OBJETOS" de la UI (IvannaControlPanel) describe TEXTUALMENTE
+        // las capacidades de este motor ("Upmix neural + VBAP/HRTF +
+        // head-tracking 6DoF... separa hasta 32 stems virtuales... aplica
+        // convolución HRTF con seguimiento de cabeza") pero estaba cableado
+        // a SpatialAudioEngineV2, que es puramente telemetría/análisis (no
+        // produce salida de audio — ver auditoría previa). blockSize=2048
+        // para coincidir con el tamaño máximo de bloque que usa
+        // IvannaBridgePlayer (el único path con salida de audio audible
+        // real), evitando trocear en dos niveles distintos.
+        //
+        // Sin modelo TFLite de separación de stems real disponible en el
+        // repo (solo existe yamnet.tflite, el clasificador de género/voz,
+        // no un modelo de stem-separation) — se inicializa con
+        // modelPath=null, así que el "upmixer neural" corre en su fallback
+        // heurístico, no con IA real. Documentado para no prometer más de
+        // lo que hay.
+        val shared = IvannaSpatialEngine(48000f, 2048)
+        @Volatile var enabled: Boolean = false
+    }
+
     private var upmixerHandle: Long = 0
     private var rendererHandle: Long = 0
 
@@ -251,11 +278,5 @@ class IvannaSpatialEngine(
 
     enum class StemType {
         VOCALS, DRUMS, BASS, OTHER
-    }
-
-    companion object {
-        const val TAG = "IvannaSpatialEngine"
-        const val MAX_OBJECTS = 32
-        const val NUM_STEMS = 4
     }
 }
