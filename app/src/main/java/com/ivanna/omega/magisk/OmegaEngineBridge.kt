@@ -30,9 +30,39 @@ class OmegaEngineBridge {
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
+    private var lastFailedConnectMs: Long = 0L
+    private val RECONNECT_COOLDOWN_MS = 2000L
+
+    // FIX (fuga de file descriptors — crash tras minutos de uso): 'socket = s'
+    // solo se ejecutaba en el camino de ÉXITO. Si s.connect() lanzaba
+    // excepción (daemon no disponible / sin root), el LocalSocket() recién
+    // creado — con su fd nativo ya asignado por el constructor — quedaba
+    // colgado de la variable local 's', que desaparecía al salir del método
+    // SIN cerrarse explícitamente. Confiar en el GC de ART para cerrar
+    // sockets Unix nativos es indefinido y en la práctica no ocurre a
+    // tiempo. pushToNative() llama a 13 send()s por CADA tick de slider —
+    // con el daemon no disponible, cada tick disparaba 13 connect()
+    // fallidos, 13 fds fugados. El límite de fds del proceso (~1024 en
+    // Android) se agotaba en minutos de arrastrar sliders con normalidad,
+    // y a partir de ahí CUALQUIER cosa que abriera un fd (AudioTrack,
+    // AudioRecord, disco para LearningBias/CloudSync) empezaba a fallar —
+    // crashes aparentemente aleatorios y sin relación entre sí en partes
+    // completamente distintas de la app.
+    //
+    // Fix: se cierra explícitamente el socket local en el catch, se limpia
+    // cualquier resto previo antes de intentar de nuevo, y se agrega un
+    // cooldown de 2s para no reintentar connect() en cada uno de los 13
+    // sends de cada tick cuando el daemon simplemente no está disponible
+    // (reduce también la carga de syscalls, no solo el leak).
     fun connect(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastFailedConnectMs < RECONNECT_COOLDOWN_MS) return false
+
+        disconnect()  // limpia cualquier resto de una conexión previa a medio morir
+
+        var s: LocalSocket? = null
         return try {
-            val s = LocalSocket()
+            s = LocalSocket()
             s.connect(LocalSocketAddress(SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT))
             socket = s
             out = s.outputStream
@@ -41,6 +71,8 @@ class OmegaEngineBridge {
             true
         } catch (e: Exception) {
             Log.w(TAG, "connect() no disponible (daemon no activo): ${e.message}")
+            try { s?.close() } catch (_: Exception) {}
+            lastFailedConnectMs = now
             false
         }
     }
