@@ -8,13 +8,13 @@ import kotlinx.coroutines.launch
  * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
  */
 data class DSPState(
-    // Core parameters
-    val drive: Float     = 0.65f,
-    val wet: Float       = 0.50f,
+    // Core parameters — TUNED v3.3 (alineados con dsp_types.h + ParameterStore)
+    val drive: Float     = 0.45f,  // TUNED v3.3: 0.65→0.45 (drive 10.75x→7.75x, menos distorsion)
+    val wet: Float       = 0.32f,  // TUNED v3.3: 0.50→0.32 (exciter wet 50%→32%, mas sutil)
     val mix: Float       = 0.70f,
-    val alpha: Float     = 0.50f,
-    val beta: Float      = 0.50f,
-    val gamma: Float     = 0.50f,
+    val alpha: Float     = 0.375f, // TUNED v3.3: 0.50→0.375 (comp threshold -12→-15 dB)
+    val beta: Float      = 0.105f, // TUNED v3.3: 0.50→0.105 (ratio 10.5:1→3.0:1, musical)
+    val gamma: Float     = 0.72f,  // TUNED v3.3: 0.50→0.72 (attack 31ms, release 176ms)
     val freq: Float      = 1000f,
     val resonance: Float = 0.707f,
 
@@ -88,6 +88,16 @@ data class DSPState(
         // pero I/O de red síncrono en el hilo principal sigue siendo
         // arquitectónicamente incorrecto — se despacha al appScope (IO)
         // igual que se hizo con LearningBias.captureCorrection().
+        // Actualizar AudioEffect sessions (Spotify/YouTube/etc) con sliders actuales.
+        // mid == EQ global dB (la UI setea low=mid=high=presence al mismo valor).
+        // alpha/beta → compressor threshold/ratio con la misma formula que el C++.
+        globalEffectManager?.adjustLiveParams(
+            eqGainDb        = mid,
+            stereoWidth     = stereoWidth,
+            compThresholdDb = -24f + alpha * 24f,
+            compRatio       = 1f + beta * 19f
+        )
+
         IVANNAApplication.appScope.launch {
             IVANNAApplication.omegaBridge.setPFParams(
                 drive, wet, mix,
@@ -99,6 +109,14 @@ data class DSPState(
     }
 
     companion object {
+        /**
+         * Referencia a IvannaGlobalEffectManager seteada por IVANNAApplication.
+         * Permite que pushToNative() actualice las sesiones de AudioEffect
+         * (Spotify, YouTube, etc.) sin necesitar un Context.
+         */
+        @Volatile
+        var globalEffectManager: com.ivanna.omega.audio.IvannaGlobalEffectManager? = null
+
         // ── Campos estáticos del PF Engine (escritos desde AudioEngine) ──────
         @JvmField var pfDrive:     Float = 0.65f
         @JvmField var pfWet:       Float = 0.50f

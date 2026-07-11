@@ -175,6 +175,54 @@ class IvannaGlobalEffectManager {
         activeSessions.keys.forEach { applyProfileToSession(it, profile) }
     }
 
+    /**
+     * Ajusta efectos en vivo desde los sliders de la UI SIN cambiar el preset.
+     * Opera sobre el perfil activo: suma eqGainDb a las bandas, actualiza
+     * virtualizer (width) y compresor (threshold/ratio) con los valores actuales.
+     *
+     * Llamado desde DSPState.pushToNative() — unico punto de entrada real de
+     * cambios de parametro en toda la app. Con esto, mover cualquier slider
+     * afecta en tiempo real a Spotify, YouTube y cualquier app con sesion abierta,
+     * identico al mecanismo de Wavelet EQ y Poweramp Equalizer.
+     */
+    fun adjustLiveParams(
+        eqGainDb: Float,        // -18..18 dB, offset sobre las bandas del perfil activo
+        stereoWidth: Float,     // 0..1.5 → virtualizer strength 0..1000
+        compThresholdDb: Float, // dBFS (usualmente -24..0)
+        compRatio: Float        // 1.0..20.0
+    ) {
+        val prof = activeProfile
+        val offsetMb = (eqGainDb * 100f).toInt()  // dB → milliBels
+        activeSessions.forEach { (sessionId, fx) ->
+            runCatching {
+                // EQ: offset sobre las bandas del perfil activo
+                fx.equalizer?.let { eq ->
+                    if (!eq.enabled) return@let
+                    val numBands = eq.numberOfBands.toInt()
+                    for (band in 0 until numBands) {
+                        val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
+                        eq.setBandLevel(
+                            band.toShort(),
+                            (baseMb + offsetMb).coerceIn(-1500, 1500).toShort()
+                        )
+                    }
+                }
+                // Virtualizer: width 0..1.5 → strength 0..1000
+                fx.virtualizer?.let { v ->
+                    if (v.strengthSupported)
+                        v.setStrength(
+                            (stereoWidth / 1.5f * 1000f).toInt().coerceIn(0, 1000).toShort()
+                        )
+                }
+                // Compressor: reemplaza threshold/ratio del perfil activo
+                applyDynamicsProfile(
+                    fx.dynamics,
+                    prof.copy(compThresholdDb = compThresholdDb, compRatio = compRatio)
+                )
+            }.onFailure { Log.w(tag, "adjustLiveParams sesion $sessionId: \${it.message}") }
+        }
+    }
+
     // ── Cierra todas las sesiones ─────────────────────────────────────────────
     fun releaseAll() {
         activeSessions.values.forEach { it.releaseAll() }

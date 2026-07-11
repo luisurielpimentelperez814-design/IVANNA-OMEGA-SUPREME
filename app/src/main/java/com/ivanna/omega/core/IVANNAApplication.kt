@@ -43,6 +43,11 @@ class IVANNAApplication : Application() {
         super.onCreate()
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
 
+        // Conectar DSPState con GlobalEffectManager ANTES de que la UI cargue.
+        // Sin esto, pushToNative() nunca llama adjustLiveParams() y los sliders
+        // de EQ/Width/Exciter/Comp no afectan Spotify/YouTube/ninguna app externa.
+        com.ivanna.omega.dsp.DSPState.globalEffectManager = globalEffectManager
+
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)
 
