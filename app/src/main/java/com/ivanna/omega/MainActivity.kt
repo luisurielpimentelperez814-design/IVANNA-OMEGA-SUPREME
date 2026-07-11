@@ -573,6 +573,18 @@ class MainActivity : ComponentActivity() {
                                     parameterStore.getNpeOhcCompression(), value
                                 )
                                 pushNpeNeuroParams()
+                                // FIX (Fase A, gap del README): el slider "MASTER GAIN" (-18..18 dB)
+                                // solo llegaba al motor NPE (ganancia de compensación interna
+                                // post-neuromorphic), nunca a DSPState.master/GainStage — la
+                                // ganancia de salida real de la cadena DSPBridge (que suena en
+                                // IvannaBridgePlayer, en las AudioEffect sessions de terceros vía
+                                // globalEffectManager, y en el daemon Magisk vía omegaBridge). El
+                                // rango del slider coincide exactamente con lo que GainStage espera
+                                // en p.master (dB directo, ver dbToLin(p.master) en GainStage.cpp) —
+                                // no hace falta reescalar. No se quita el envío al NPE (sigue siendo
+                                // válido para su propia compensación interna); se agrega el real.
+                                dspState = dspState.copy(master = value)
+                                dspState.pushToNative()
                             },
                             onNpeAgcChange = { target, rate ->
                                 parameterStore.setNpeAgc(target, rate)
