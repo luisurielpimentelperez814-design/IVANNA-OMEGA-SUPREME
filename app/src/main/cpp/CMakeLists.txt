@@ -54,6 +54,7 @@ add_library(ivanna_omega SHARED
     dsp/HarmonicExciter.cpp
     dsp/StereoWidener.cpp
     dsp/GainStage.cpp
+    dsp/SafetyLimiter.cpp
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp

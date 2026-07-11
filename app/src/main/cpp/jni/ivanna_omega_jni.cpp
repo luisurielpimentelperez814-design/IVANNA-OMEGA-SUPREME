@@ -20,6 +20,7 @@
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
+#include "../include/SafetyLimiter.h"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../audio_control_plane.hpp"
@@ -45,6 +46,7 @@ static Compressor     g_comp;
 static HarmonicExciter g_exciter;
 static StereoWidener  g_widener;
 static GainStage      g_gain;
+static SafetyLimiter  g_safety_limiter;
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
@@ -175,6 +177,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
     g_gain.processOutput(chL, chR, n);
+    g_safety_limiter.process(chL, chR, n);
 
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
     // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
@@ -269,7 +272,8 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
-    g_widener.reset(); g_gain.reset(); g_pd.reset();
+    g_widener.reset(); g_gain.reset();
+    g_safety_limiter.reset(); g_pd.reset();
     LOGI("OPE reset");
 }
 
@@ -375,7 +379,10 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
-    g_widener.reset(); g_gain.reset(); g_pd.reset();
+    g_widener.reset();
+    g_gain.reset();
+    g_safety_limiter.reset();
+    g_pd.reset();
 }
 
 // PDEngine / NHO setters exposed to Kotlin
