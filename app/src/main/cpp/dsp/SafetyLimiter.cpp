@@ -1,4 +1,8 @@
 #include "../include/SafetyLimiter.h"
+#include <algorithm>  // FIX: std::max — el NDK (libc++) no lo incluye
+                       // transitivamente vía <cmath>, a diferencia de otros
+                       // toolchains. Sin esto, ninja falla en arm64-v8a:
+                       // "no member named 'max' in namespace 'std'".
 
 namespace ivanna {
 
