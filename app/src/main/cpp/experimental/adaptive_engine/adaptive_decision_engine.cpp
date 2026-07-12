@@ -16,6 +16,10 @@ constexpr float kEps = 1e-8f;
 // SafetyLimiter, solo del VALOR que ya es de dominio público en el pipeline,
 // para poder calcular "qué tan cerca está el pico del techo real".
 constexpr float kLimiterThreshold = 0.98855f;
+// Idem — ceiling real de SafetyLimiter (setParams() default). Necesario
+// para gainReductionLinearToDb(); no existía esta constante en el archivo
+// todavía porque hasta ahora nada la usaba.
+constexpr float kLimiterCeiling = 0.989f;
 
 inline float clamp01(float x) noexcept {
     if (!std::isfinite(x)) return 0.0f;   // NaN/Inf nunca sale de esta función
@@ -98,6 +102,17 @@ float AdaptiveDecisionEngine::computeSafetyMargin(const RawAudioMetrics& m) noex
     // El margen real es el más conservador de los dos indicadores, nunca
     // un promedio que pueda ocultar que uno de los dos ya está en rojo.
     return std::min(proximityDb, reductionPenalty);
+}
+
+float AdaptiveDecisionEngine::gainReductionLinearToDb(float reductionLinear, float ceiling) noexcept {
+    const float rl = std::max(0.0f, reductionLinear);
+    if (rl < kEps) return 0.0f;
+    if (!std::isfinite(ceiling) || ceiling < kEps) return 0.0f;  // fallback seguro
+    // peak = reductionLinear + ceiling (ver derivación en el .hpp — se
+    // reconstruye peak sin depender de SafetyLimiter directamente).
+    const float peak = rl + ceiling;
+    const float db = 20.0f * std::log10(peak / ceiling);
+    return std::isfinite(db) ? std::max(0.0f, db) : 0.0f;
 }
 
 AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,

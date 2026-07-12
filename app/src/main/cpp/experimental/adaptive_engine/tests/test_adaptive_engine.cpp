@@ -172,6 +172,50 @@ void testBusRoundTrip() {
     expect(stOut.target_gain == 0.75f, "AdaptiveStateBus: valor round-trip exacto");
 }
 
+void testGainReductionConversion() {
+    std::printf("\n=== gainReductionLinearToDb — conversión lineal→dB (fix de mismatch de unidades) ===\n");
+
+    // Caso limpio: ceiling=1.0, reductionLinear=1.0 -> peak=2.0 -> 20*log10(2) ≈ 6.0206dB.
+    float db1 = AdaptiveDecisionEngine::gainReductionLinearToDb(1.0f, 1.0f);
+    expect(std::fabs(db1 - 6.0206f) < 0.01f, "6.02dB exactos para peak=2x ceiling");
+
+    // Sin reducción -> 0dB.
+    float db0 = AdaptiveDecisionEngine::gainReductionLinearToDb(0.0f, 0.989f);
+    expect(db0 == 0.0f, "reductionLinear=0 -> 0dB");
+
+    // Valor negativo de entrada (no debería ocurrir, pero SafetyLimiter usa
+    // memory_order_relaxed — un read a mitad de escritura no está excluido
+    // por contrato) -> se clampea a 0, no debe dar NaN ni negativo.
+    float dbNeg = AdaptiveDecisionEngine::gainReductionLinearToDb(-0.5f, 0.989f);
+    expect(dbNeg == 0.0f, "reductionLinear negativo -> 0dB (clamp seguro)");
+
+    // Ceiling degenerado (0 o negativo) -> fallback seguro, no división por cero.
+    float dbBadCeiling = AdaptiveDecisionEngine::gainReductionLinearToDb(0.05f, 0.0f);
+    expect(std::isfinite(dbBadCeiling) && dbBadCeiling == 0.0f, "ceiling=0 -> fallback seguro, sin división por cero");
+
+    // Caso real con los valores de producción de SafetyLimiter
+    // (threshold=0.98855f, ceiling=0.989f): reductionLinear típico de un
+    // transiente moderado, ~0.03 lineal.
+    float dbReal = AdaptiveDecisionEngine::gainReductionLinearToDb(0.03f, 0.989f);
+    expect(dbReal > 0.2f && dbReal < 1.0f, "caso realista: reduction lineal 0.03 -> algo menos de 1dB (orden de magnitud correcto, no ~0)");
+
+    // Demuestra el bug real que esto arregla: ANTES de este fix,
+    // computeSafetyMargin() recibía 0.03 directo como si ya fuera dB y
+    // calculaba reductionPenalty=clamp01(1-0.03/6)≈0.995 (como si el
+    // limiter casi no estuviera trabajando). Con la conversión correcta,
+    // el valor en dB real (~0.26dB) sigue siendo bajo para ESTE caso
+    // puntual porque 0.03 lineal es una reducción chica de verdad — pero
+    // ahora la escala es la correcta: un reductionLinear más grande sí
+    // mueve la aguja proporcionalmente en dB, no en fracciones de una
+    // escala de 6.0 que nunca aplicaba.
+    float grDb6 = AdaptiveDecisionEngine::gainReductionLinearToDb(0.989f, 0.989f); // peak=2x ceiling=6.02dB
+    RawAudioMetrics mSixDb{};
+    mSixDb.peak = 1.978f; // ~2x ceiling
+    mSixDb.gain_reduction_db = grDb6; // ya convertido, como debe llegar
+    float margin = AdaptiveDecisionEngine::computeSafetyMargin(mSixDb);
+    expect(margin < 0.2f, "con 6dB reales de reducción (convertidos), safety_margin sí cae a zona de riesgo (<0.2)");
+}
+
 } // namespace
 
 int main() {
@@ -183,6 +227,7 @@ int main() {
     testSaturatedSignal();
     testExtremeAndDegenerateInputs();
     testBusRoundTrip();
+    testGainReductionConversion();
 
     std::printf("\n====================================================\n");
     if (g_failures == 0) {

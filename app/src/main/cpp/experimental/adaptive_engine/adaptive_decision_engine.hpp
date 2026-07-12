@@ -85,7 +85,13 @@ struct RawAudioMetrics {
     float band_low_energy   = 0.0f;  // energía aproximada <250Hz, lineal
     float band_mid_energy   = 0.0f;  // energía aproximada 250Hz-4kHz, lineal
     float band_high_energy  = 0.0f;  // energía aproximada 5-9kHz — proxy de sibilancia
-    float gain_reduction_db = 0.0f;  // de SafetyLimiter::getGainReduction(), ya atómico
+    // FIX (mismatch de unidades detectado — ver gainReductionLinearToDb()
+    // más abajo): SafetyLimiter::getGainReduction() devuelve peak-ceiling
+    // en amplitud LINEAL (típicamente ~0.01-0.05), NO decibeles pese al
+    // nombre del campo. Quien publique este struct debe convertir con
+    // AdaptiveDecisionEngine::gainReductionLinearToDb() ANTES de llamar
+    // rawMetrics.publish() — este campo asume que ya llegó convertido.
+    float gain_reduction_db = 0.0f;
     uint64_t seq             = 0;
 };
 
@@ -190,6 +196,28 @@ public:
     static float computeExciterReduction(const RawAudioMetrics& m, float sibilanceEma) noexcept;
     static float computeSpatialWidth(const RawAudioMetrics& m) noexcept;
     static float computeSafetyMargin(const RawAudioMetrics& m) noexcept;
+
+    // FIX (mismatch de unidades — Fase 3→4, detectado antes de wirear a
+    // producción): SafetyLimiter::getGainReduction() devuelve peak-ceiling
+    // en amplitud LINEAL, no dB pese a lo que sugería el nombre del campo
+    // gain_reduction_db. Este conversor deriva el valor real en dB a
+    // partir del peak absoluto reportado por getPeakBeforeLimit() y el
+    // ceiling del limiter (conocido — ver SafetyLimiter::setParams(),
+    // default 0.989f). Fórmula: si peak > ceiling, la salida del limiter
+    // tiende hacia 'ceiling' para picos grandes (ver SafetyLimiter::
+    // limitSample: excess*0.1, luego clamp a ceiling) — la reducción real
+    // en dB es 20*log10(peak/ceiling). Con peak == getPeakBeforeLimit() y
+    // reductionLinear == getGainReduction() (== peak - ceiling), se puede
+    // reconstruir peak sin tocar SafetyLimiter (no se modifica esa clase
+    // en esta fase, según regla del protocolo): peak = reductionLinear +
+    // ceiling.
+    //
+    // NO SE LLAMA TODAVÍA DESDE NINGÚN PUNTO DE PRODUCCIÓN — el punto real
+    // donde debería invocarse (justo antes de rawMetrics.publish(), en el
+    // audio thread real) no existe todavía porque RawAudioMetrics no se
+    // calcula en ningún lado del hot-path actual (ver README.md, punto 1
+    // de Fase 4). Queda lista y testeada para cuando ese wiring se decida.
+    static float gainReductionLinearToDb(float reductionLinear, float ceiling = 0.989f) noexcept;
 
     // Combina las cinco funciones puras de arriba en un AdaptiveState
     // completo. Público y estático para que los tests puedan verificar el
