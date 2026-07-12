@@ -100,6 +100,14 @@ add_library(ivanna_omega SHARED
 
     # Fase 6: Kotlin integration (AudioPipeline, AudioEngine, OmegaEngineBridge)
     # (lado Kotlin, no .cpp aquí)
+
+    # ============================================================================
+    # Fase 4B: AdaptiveDecisionEngine (cierre del lazo adaptativo en producción)
+    # Antes vivía aislado en experimental/, ahora entra al .so real para que
+    # DSPBridge.nativeProcess() pueda publicar RawAudioMetrics y consumir
+    # AdaptiveState. NO se crea una segunda implementación — único target.
+    # ============================================================================
+    experimental/adaptive_engine/adaptive_decision_engine.cpp
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
@@ -110,6 +118,7 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/neuromorphic
     ${CMAKE_SOURCE_DIR}/spatial
     ${CMAKE_SOURCE_DIR}/visualizer
+    ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
 )
 
 find_library(log-lib log)

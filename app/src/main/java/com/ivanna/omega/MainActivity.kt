@@ -650,6 +650,37 @@ class MainActivity : ComponentActivity() {
 
         if (parameterStore.isAutoModeEnabled()) startAutoPresetLoop()
         startControlFrameLoop()
+        startAdaptiveTelemetryLoop()
+    }
+
+    // FASE 4B: log de telemetría del ciclo adaptativo real. Corre fuera del
+    // audio thread, throttle 500 ms (mínimo pedido por el prompt). El origen
+    // es único: DSPBridge.nativeProcess() actualiza los atomics, y este loop
+    // los saca por logcat con un tag dedicado. No usa omega_daemon / NPE /
+    // HUD independientes — esos no representan la ruta audible real.
+    private var adaptiveTelemetryJob: Job? = null
+    private fun startAdaptiveTelemetryLoop() {
+        adaptiveTelemetryJob?.cancel()
+        adaptiveTelemetryJob = lifecycleScope.launch {
+            while (true) {
+                if (IvannaNativeLib.isLoaded) {
+                    try {
+                        val t = IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                        if (t != null && t.size >= 10) {
+                            Log.i("IVANNA.AdaptiveTelemetry",
+                                "running=${IvannaNativeLib.nativeIsAdaptiveEngineRunning()} " +
+                                "rms=%.4f peak=%.4f gr_db=%.2f target_gain=%.3f comp=%.3f ".format(
+                                    t[0], t[1], t[2], t[3], t[4]) +
+                                "exc_red=%.3f width=%.3f margin=%.3f voice_prot=%.3f applied=%.0f".format(
+                                    t[5], t[6], t[7], t[8], t[9]))
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "adaptiveTelemetryLoop tick fallo", t)
+                    }
+                }
+                delay(500L)
+            }
+        }
     }
 
     // FASE 2: loop de control (fuera del audio thread) que empuja el sesgo
@@ -789,6 +820,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
+        try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
         try { learningBias.release() } catch (e: Exception) { Log.e(TAG, "Error releasing learningBias", e) }
         try { bridgePlayer.stop() } catch (e: Exception) { Log.e(TAG, "Error stopping bridgePlayer", e) }
         try {

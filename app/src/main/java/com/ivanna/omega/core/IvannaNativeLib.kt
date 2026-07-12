@@ -115,4 +115,21 @@ object IvannaNativeLib {
     // Setter del contexto activo ("genre:rock", "preset:Warm", ...). El C++
     // lo pasa a LearningBias.jniSetActiveContext().
     external fun nativeSetLearningContext(ctx: String)
+
+    // ═══ FASE 4B: telemetría del ciclo adaptativo real ════════════════════
+    // Snapshot POD de 10 floats — fuente única de telemetría del lazo
+    // adaptativo, alimentado por nativeProcess() (audio thread) y consumido
+    // por la UI/logs (con throttle recomendado ≥500 ms). Layout fijo:
+    //   [0] rms                       (lineal, salida procesada)
+    //   [1] peak                      (lineal, salida procesada)
+    //   [2] gain_reduction_db         (post gainReductionLinearToDb)
+    //   [3] target_gain               (0..2)
+    //   [4] compressor_amount         (0..1)
+    //   [5] exciter_reduction         (0..1)
+    //   [6] spatial_width             (0..1.5, sugerido por el motor)
+    //   [7] safety_margin             (1 sano → 0 crítico)
+    //   [8] voice_protection_amount   (0..1)
+    //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
+    external fun nativeGetAdaptiveTelemetry(): FloatArray?
+    external fun nativeIsAdaptiveEngineRunning(): Boolean
 }

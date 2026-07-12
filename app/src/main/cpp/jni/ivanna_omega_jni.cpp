@@ -24,6 +24,7 @@
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../audio_control_plane.hpp"
+#include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "../perceptual_loudness.hpp"
 
 #define LOG_TAG "IVANNA-JNI"
@@ -68,6 +69,29 @@ static std::atomic<bool> g_loudnessMeterInit{false};
 // sin importar el mastering original.
 static std::atomic<float> g_loudness_target{-14.f};
 
+// ═══ FASE 4B: AdaptiveDecisionEngine — cierre del lazo adaptativo ════════════
+// Única instancia del motor. Sus buses (rawMetrics, adaptiveState) son
+// SPSC seqlock — el audio thread publica RawAudioMetrics + consume
+// AdaptiveState, el hilo de control interno hace el trabajo lento.
+// g_adaptiveEngineStarted evita doble start() si nativeInit se llama más
+// de una vez (p. ej. cambio de sample rate por reproductor de archivo).
+static ivanna::experimental::AdaptiveDecisionEngine g_adaptiveEngine;
+static std::atomic<bool> g_adaptiveEngineStarted{false};
+
+// Snapshot del último AdaptiveState publicado — lo leen los JNI getters de
+// telemetría (fuera del audio thread) para exponer el ciclo a Kotlin/UI.
+// Se actualiza dentro del audio thread justo después de consumeIfNewer().
+static std::atomic<float> g_lastAdaptiveTargetGain{1.0f};
+static std::atomic<float> g_lastAdaptiveCompAmount{0.0f};
+static std::atomic<float> g_lastAdaptiveExcReduction{0.0f};
+static std::atomic<float> g_lastAdaptiveSpatialWidth{1.0f};
+static std::atomic<float> g_lastAdaptiveSafetyMargin{1.0f};
+static std::atomic<float> g_lastAdaptiveVoiceProtect{0.0f};
+static std::atomic<float> g_lastRawRms{0.0f};
+static std::atomic<float> g_lastRawPeak{0.0f};
+static std::atomic<float> g_lastRawGrDb{0.0f};
+static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     if (!src || n <= 0) return false;
@@ -102,6 +126,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_pd.start_evo_thread();
     g_loudnessMeter.init((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
+
+    // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
+    // start() crea un std::thread propio (el hilo de control lento) que
+    // corre controlLoop() a 50ms. NO se dispara desde el audio thread
+    // — este nativeInit siempre se llama desde el hilo de UI o el hilo
+    // que abre el player (ver IvannaBridgePlayer.play() y
+    // AudioForegroundService.onStartCommand()). exchange() garantiza
+    // idempotencia si el sample rate cambia y nativeInit se re-llama.
+    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
+        g_adaptiveEngine.start();
+        LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
+    }
+
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
@@ -287,6 +324,92 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             for (int i = 0; i < n; ++i) {
                 pdOutL[i] *= trimLin;
                 pdOutR[i] *= trimLin;
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // FASE 4B: ciclo adaptativo cerrado. Publicar RawAudioMetrics ANTES
+    // del re-intercalado + consumir AdaptiveState y aplicar UN parámetro
+    // audible (spatial_width sugerido, vía M/S post-scaling encima de
+    // pdOutL/pdOutR). No se toca la cadena DSP existente ni SafetyLimiter
+    // — solo un ajuste M/S adicional al final, como el ensanche por
+    // correlación de arriba. Cero malloc, cero mutex, cero I/O, cero FFT.
+    // ═══════════════════════════════════════════════════════════
+    {
+        // 1) RMS + Peak sobre la salida real (pdOutL/pdOutR), un solo
+        //    pase, cero asignaciones. Igual filosofía que el bloque de
+        //    correlación L/R de más arriba — se acumula en doubles y se
+        //    reduce a float al final.
+        double sumSq = 0.0;
+        float peakAbs = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            const float l = pdOutL[i];
+            const float r = pdOutR[i];
+            sumSq += (double)l * l + (double)r * r;
+            const float al = std::fabs(l);
+            const float ar = std::fabs(r);
+            if (al > peakAbs) peakAbs = al;
+            if (ar > peakAbs) peakAbs = ar;
+        }
+        const float rms = (float)std::sqrt(sumSq / (double)(2 * std::max(n, 1)));
+
+        // 2) Convertir GR lineal → dB con la función pura del motor. Nunca
+        //    enviar valor lineal como dB (mismatch documentado en el hpp).
+        const float grLin = g_safety_limiter.getGainReduction();
+        const float grDb = ivanna::experimental::AdaptiveDecisionEngine
+                            ::gainReductionLinearToDb(grLin);
+
+        // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
+        const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
+
+        // 4) Publicar. Es un memcpy de POD atrás de un seqlock, no bloquea.
+        ivanna::experimental::RawAudioMetrics rawM{};
+        rawM.rms               = rms;
+        rawM.peak              = peakAbs;
+        rawM.band_low_energy   = 0.0f;   // fase futura: separación por bandas
+        rawM.band_mid_energy   = 0.0f;
+        rawM.band_high_energy  = 0.0f;
+        rawM.gain_reduction_db = grDb;
+        rawM.voice_score       = vpScore;
+        g_adaptiveEngine.rawMetrics.publish(rawM);
+
+        // Snapshot para telemetría (getters JNI, fuera del audio thread).
+        g_lastRawRms.store(rms,     std::memory_order_relaxed);
+        g_lastRawPeak.store(peakAbs, std::memory_order_relaxed);
+        g_lastRawGrDb.store(grDb,    std::memory_order_relaxed);
+
+        // 5) Consumir el último AdaptiveState publicado por el hilo de
+        //    control (lock-free, no bloquea si no hay uno nuevo). El seq
+        //    local persiste en thread_local (audio thread es único caller).
+        static thread_local uint64_t s_lastAdaptiveSeq = 0;
+        ivanna::experimental::AdaptiveState st;
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastAdaptiveSeq)) {
+            g_lastAdaptiveTargetGain .store(st.target_gain,             std::memory_order_relaxed);
+            g_lastAdaptiveCompAmount .store(st.compressor_amount,       std::memory_order_relaxed);
+            g_lastAdaptiveExcReduction.store(st.exciter_reduction,       std::memory_order_relaxed);
+            g_lastAdaptiveSpatialWidth.store(st.spatial_width,           std::memory_order_relaxed);
+            g_lastAdaptiveSafetyMargin.store(st.safety_margin,           std::memory_order_relaxed);
+            g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_relaxed);
+            g_lastAdaptiveApplied.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        // 6) APLICAR UN parámetro audible: spatial_width sugerido.
+        //    Encoding M/S: pdOut = mid + side*sideMul, donde sideMul
+        //    interpola 1.0 (nominal) ↔ st.spatial_width (0..1.5).
+        //    Se usa un smoothing exponencial (thread_local) para evitar
+        //    clics ante cambios abruptos del motor de control.
+        static thread_local float s_widthSmooth = 1.0f;
+        const float widthTarget = std::clamp(
+            g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f);
+        s_widthSmooth += 0.02f * (widthTarget - s_widthSmooth);  // ~50 bloques a τ
+        if (std::fabs(s_widthSmooth - 1.0f) > 0.005f) {
+            const float sideMul = s_widthSmooth;
+            for (int i = 0; i < n; ++i) {
+                const float mid  = (pdOutL[i] + pdOutR[i]) * 0.5f;
+                const float side = (pdOutL[i] - pdOutR[i]) * 0.5f * sideMul;
+                pdOutL[i] = mid + side;
+                pdOutR[i] = mid - side;
             }
         }
     }
@@ -578,6 +701,39 @@ extern "C" float learning_bias_get(const char* param_key) {
     if (env->ExceptionCheck()) env->ExceptionClear();
     if (attached) g_jvm->DetachCurrentThread();
     return (float) v;
+}
+
+// ─── FASE 4B: telemetría del ciclo adaptativo real ──────────────────────
+// Devuelve un snapshot POD de 10 floats con: [rms, peak, gr_db, target_gain,
+// comp_amount, exc_reduction, spatial_width, safety_margin, voice_protect,
+// adaptive_applied_count]. Se llena fuera del audio thread desde los
+// atomics que el audio thread ya actualiza cada bloque. Uso desde Kotlin
+// con throttle (recomendado ≥500 ms) — este getter en sí no throttlea,
+// para que la UI decida la cadencia.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(10);
+    if (!arr) return nullptr;
+    float v[10];
+    v[0] = g_lastRawRms.load(std::memory_order_relaxed);
+    v[1] = g_lastRawPeak.load(std::memory_order_relaxed);
+    v[2] = g_lastRawGrDb.load(std::memory_order_relaxed);
+    v[3] = g_lastAdaptiveTargetGain.load(std::memory_order_relaxed);
+    v[4] = g_lastAdaptiveCompAmount.load(std::memory_order_relaxed);
+    v[5] = g_lastAdaptiveExcReduction.load(std::memory_order_relaxed);
+    v[6] = g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed);
+    v[7] = g_lastAdaptiveSafetyMargin.load(std::memory_order_relaxed);
+    v[8] = g_lastAdaptiveVoiceProtect.load(std::memory_order_relaxed);
+    v[9] = (float) g_lastAdaptiveApplied.load(std::memory_order_relaxed);
+    env->SetFloatArrayRegion(arr, 0, 10, v);
+    return arr;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
+    JNIEnv*, jobject) {
+    return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"
