@@ -366,7 +366,18 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatBlock("GÉNERO", npeGenre, NeonMagenta, Modifier.weight(1.4f))
                 StatBlock("CONF.", "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
-                StatBlock("THD", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
+                // FIX (credibilidad — Prioridad 1.5, item 4 del reporte de
+                // arquitectura): esto nunca fue un THD medido (requeriría
+                // FFT real: detectar fundamental, medir energía en
+                // armónicos 2f/3f/4f/... relativa a la fundamental). Es
+                // npeClassifyThd, una heurística derivada de clarity/warmth
+                // del clasificador — barata y útil como proxy interno, pero
+                // el label "THD" en la UI reclamaba ser una medición física
+                // que no es. Un THD real queda para un futuro módulo de
+                // diagnóstico separado (ver reporte, sección "THD medido
+                // real (futuro, IvannaLab)") — no se toca el cálculo en sí,
+                // solo el nombre que ve el usuario.
+                StatBlock("ASPEREZA", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
             }
             Spacer(Modifier.height(4.dp))
             AuroraSlider("GANANCIA ARMÓNICA · NHO", npeHarmonic, 0f..2f, unit = "×") {
