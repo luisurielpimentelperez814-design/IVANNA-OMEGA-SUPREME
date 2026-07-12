@@ -42,7 +42,7 @@ void expect(bool cond, const char* what) {
 bool allFinite(const AdaptiveState& s) {
     return std::isfinite(s.target_gain) && std::isfinite(s.compressor_amount) &&
            std::isfinite(s.exciter_reduction) && std::isfinite(s.spatial_width) &&
-           std::isfinite(s.safety_margin);
+           std::isfinite(s.safety_margin) && std::isfinite(s.voice_protection_amount);
 }
 
 bool inDocumentedRanges(const AdaptiveState& s) {
@@ -50,13 +50,14 @@ bool inDocumentedRanges(const AdaptiveState& s) {
            s.compressor_amount >= 0.0f && s.compressor_amount <= 1.0f &&
            s.exciter_reduction >= 0.0f && s.exciter_reduction <= 1.0f &&
            s.spatial_width     >= 0.0f && s.spatial_width     <= 1.5f &&
-           s.safety_margin     >= 0.0f && s.safety_margin     <= 1.0f;
+           s.safety_margin     >= 0.0f && s.safety_margin     <= 1.0f &&
+           s.voice_protection_amount >= 0.0f && s.voice_protection_amount <= 1.0f;
 }
 
 void printState(const char* label, const AdaptiveState& s) {
-    std::printf("  %s → target_gain=%.4f comp=%.4f exc_red=%.4f width=%.4f margin=%.4f\n",
+    std::printf("  %s → target_gain=%.4f comp=%.4f exc_red=%.4f width=%.4f margin=%.4f voice_prot=%.4f\n",
                 label, s.target_gain, s.compressor_amount, s.exciter_reduction,
-                s.spatial_width, s.safety_margin);
+                s.spatial_width, s.safety_margin, s.voice_protection_amount);
 }
 
 void testSilentInput() {
@@ -126,6 +127,56 @@ void testSaturatedSignal() {
     expect(s.safety_margin < 0.2f, "saturada: safety_margin bajo (<0.2, sistema en riesgo)");
     expect(s.exciter_reduction > 0.5f, "saturada: exciter_reduction alto (>0.5)");
     expect(s.compressor_amount > 0.5f, "saturada: compressor_amount alto (crest factor grande, 0.995/0.15≈6.6)");
+}
+
+void testExtremeTrebleNoise() {
+    // GAP cerrado (auditoría vs. spec de Fase 3): el "Caso 4" pedido
+    // (ruido agudo extremo → aumentar exciter_reduction) no existía como
+    // escenario propio — testSaturatedSignal() lo mezclaba con clipping.
+    // Este caso aísla la sibilancia SOLA: RMS/peak moderados, lejos del
+    // threshold del limiter (gain_reduction=0), para confirmar que
+    // computeExciterReduction() reacciona a la energía de banda alta por
+    // sí misma, no como efecto secundario de estar cerca de saturar.
+    std::printf("\n=== Ruido agudo extremo (sin clipping, banda alta dominante) ===\n");
+    RawAudioMetrics m{};
+    m.rms  = 0.2f;
+    m.peak = 0.35f;                 // lejos del threshold — no debe disparar el limiter
+    m.band_low_energy  = 0.05f;
+    m.band_mid_energy  = 0.15f;
+    m.band_high_energy = 0.80f;     // 80% de la energía en 5-9kHz — sibilancia extrema
+    m.gain_reduction_db = 0.0f;     // limiter inactivo — aísla la causa
+    // sibilanceEma alto también: exposición sostenida, no solo un pico.
+    AdaptiveState s = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.9f);
+    printState("agudo_extremo", s);
+
+    expect(allFinite(s), "agudo_extremo: sin NaN/Inf");
+    expect(inDocumentedRanges(s), "agudo_extremo: rangos documentados");
+    expect(s.exciter_reduction > 0.7f, "agudo_extremo: exciter_reduction alto (>0.7) por sibilancia sola");
+    expect(s.safety_margin > 0.7f, "agudo_extremo: safety_margin razonablemente sano (>0.7, el limiter no está en juego acá)");
+}
+
+void testVoiceProtectionPassthrough() {
+    // GAP cerrado: voice_protection_amount es pass-through directo de
+    // m.voice_score (real, viene de YamnetClassifier vía
+    // VoiceProtectionController — este motor no inventa detección de voz).
+    std::printf("\n=== Voice protection — pass-through de voice_score ===\n");
+    RawAudioMetrics m{};
+    m.rms = 0.1f; m.peak = 0.2f;
+    m.band_low_energy = 0.3f; m.band_mid_energy = 0.4f; m.band_high_energy = 0.3f;
+
+    m.voice_score = 0.85f;
+    AdaptiveState sHigh = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.1f);
+    expect(std::fabs(sHigh.voice_protection_amount - 0.85f) < 1e-5f,
+           "voice_score=0.85 -> voice_protection_amount=0.85 (pass-through exacto)");
+
+    m.voice_score = std::numeric_limits<float>::quiet_NaN();
+    AdaptiveState sNan = AdaptiveDecisionEngine::evaluate(m, 0.1f);
+    expect(allFinite(sNan), "voice_score=NaN -> voice_protection_amount cae a 0.0, sin propagar NaN");
+    expect(sNan.voice_protection_amount == 0.0f, "voice_score=NaN -> fallback seguro 0.0");
+
+    m.voice_score = 1.5f;  // fuera de rango de entrada (no debería pasar, pero no debe romper)
+    AdaptiveState sClamp = AdaptiveDecisionEngine::evaluate(m, 0.1f);
+    expect(sClamp.voice_protection_amount <= 1.0f, "voice_score=1.5 (inválido) -> se clampea a 1.0");
 }
 
 void testExtremeAndDegenerateInputs() {
@@ -225,6 +276,8 @@ int main() {
     testSilentInput();
     testNormalSignal();
     testSaturatedSignal();
+    testExtremeTrebleNoise();
+    testVoiceProtectionPassthrough();
     testExtremeAndDegenerateInputs();
     testBusRoundTrip();
     testGainReductionConversion();

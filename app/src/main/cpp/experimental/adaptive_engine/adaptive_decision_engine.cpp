@@ -115,6 +115,17 @@ float AdaptiveDecisionEngine::gainReductionLinearToDb(float reductionLinear, flo
     return std::isfinite(db) ? std::max(0.0f, db) : 0.0f;
 }
 
+float AdaptiveDecisionEngine::computeVoiceProtection(const RawAudioMetrics& m) noexcept {
+    // GAP cerrado (auditoría vs. spec de Fase 3): pass-through directo del
+    // score real de VoiceProtectionController/YamnetClassifier. Este motor
+    // no detecta voz por sí mismo (no tiene acceso a un clasificador ML,
+    // y no lo va a fingir con heurísticas de RMS/bandas — eso sería una
+    // métrica falsa, exactamente el patrón que este proyecto viene
+    // corrigiendo toda la sesión).
+    if (!std::isfinite(m.voice_score)) return 0.0f;
+    return clamp01(m.voice_score);
+}
+
 AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
                                                 float sibilanceEma) noexcept {
     AdaptiveState s;
@@ -123,6 +134,7 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
     s.exciter_reduction  = computeExciterReduction(m, sibilanceEma);
     s.spatial_width      = computeSpatialWidth(m);
     s.safety_margin      = computeSafetyMargin(m);
+    s.voice_protection_amount = computeVoiceProtection(m);
     s.timestamp          = 0;  // lo asigna AdaptiveStateBus::publish() al secuenciar
     return s;
 }

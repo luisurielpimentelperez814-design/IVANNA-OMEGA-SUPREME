@@ -71,6 +71,10 @@ struct AdaptiveState {
     float exciter_reduction = 0.0f;  // 0..1, cuanto reducir el drive del exciter (0 = sin cambio)
     float spatial_width     = 1.0f;  // 0..1.5, ancho estéreo sugerido (1.0 = sin cambio)
     float safety_margin     = 1.0f;  // 0..1, margen de seguridad restante (1 = sano, 0 = crítico)
+    // GAP cerrado: faltaba en el AdaptiveState pedido por el prompt de
+    // Fase 3. Pass-through directo de m.voice_score (ver comentario en
+    // RawAudioMetrics) — no se computa nada nuevo acá adentro.
+    float voice_protection_amount = 0.0f;  // 0..1, cuánta protección de voz sugerir
     uint64_t timestamp      = 0;     // ms desde epoch de esta decisión
 };
 
@@ -92,6 +96,17 @@ struct RawAudioMetrics {
     // AdaptiveDecisionEngine::gainReductionLinearToDb() ANTES de llamar
     // rawMetrics.publish() — este campo asume que ya llegó convertido.
     float gain_reduction_db = 0.0f;
+    // GAP cerrado (auditoría vs. spec de Fase 3): faltaba una entrada para
+    // voice_protection_amount. Este motor NO tiene forma propia de
+    // detectar voz desde RMS/energía de bandas — eso sería inventar una
+    // métrica falsa, justo el patrón que este proyecto viene corrigiendo
+    // toda la sesión. En cambio, se reutiliza el score REAL que ya calcula
+    // VoiceProtectionController (YamnetClassifier, TFLite real, ver
+    // audio/VoiceProtectionController.kt) — quien publique este struct en
+    // producción (fase futura) debe pasar ese valor tal cual, 0..1.
+    // Default 0.5f (neutral) para que los tests que no lo seteen no
+    // disparen el caso "voz detectada" por accidente.
+    float voice_score        = 0.5f;
     uint64_t seq             = 0;
 };
 
@@ -196,6 +211,9 @@ public:
     static float computeExciterReduction(const RawAudioMetrics& m, float sibilanceEma) noexcept;
     static float computeSpatialWidth(const RawAudioMetrics& m) noexcept;
     static float computeSafetyMargin(const RawAudioMetrics& m) noexcept;
+    // GAP cerrado: pass-through de m.voice_score, clamp 0..1. No inventa
+    // detección de voz — ver comentario de RawAudioMetrics::voice_score.
+    static float computeVoiceProtection(const RawAudioMetrics& m) noexcept;
 
     // FIX (mismatch de unidades — Fase 3→4, detectado antes de wirear a
     // producción): SafetyLimiter::getGainReduction() devuelve peak-ceiling

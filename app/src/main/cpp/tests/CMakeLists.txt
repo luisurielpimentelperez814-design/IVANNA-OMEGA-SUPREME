@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(IVANNA_TEST_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(IVANNA_TEST_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
 FetchContent_Declare(
@@ -66,3 +68,25 @@ endfunction()
 ivanna_add_test(gammatone_numerical_stability)
 ivanna_add_test(no_denormals_low_level)
 ivanna_add_test(dsp_core_stability)
+
+# FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
+# existía desde el merge de feature/safetylimiter pero no estaba
+# enganchado a ningún target de CMake — CI nunca lo compilaba ni corría.
+# Es standalone (su propio main(), sin gtest, sin dependencias del resto
+# del árbol de DSP) por diseño explícito del propio archivo — se agrega
+# como ejecutable aparte, no vía ivanna_add_test() (que asume gtest).
+add_executable(test_adaptive_engine
+  ../experimental/adaptive_engine/tests/test_adaptive_engine.cpp
+  ../experimental/adaptive_engine/adaptive_decision_engine.cpp
+)
+target_include_directories(test_adaptive_engine PRIVATE
+  ../experimental/adaptive_engine
+)
+target_compile_options(test_adaptive_engine PRIVATE -Wall -Wextra)
+target_link_libraries(test_adaptive_engine PRIVATE Threads::Threads)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_adaptive_engine PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_adaptive_engine PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_adaptive_engine COMMAND test_adaptive_engine)
+set_tests_properties(test_adaptive_engine PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
