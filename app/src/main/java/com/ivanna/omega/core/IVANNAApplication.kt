@@ -92,6 +92,27 @@ class IVANNAApplication : Application() {
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)
 
+        // FIX (rehabilitación — Prioridad 1.5 más alta de
+        // IVANNA_ARCHITECTURE_DECISION_REPORT.md): AudioRouteManager nunca
+        // se instanciaba en todo el repo pese a que su destino
+        // (control_set_route_profile() en audio_control_plane.hpp) ya
+        // estaba confirmado vivo y consumido de verdad por
+        // control_apply_frame() (route_bass_boost alimenta f.low,
+        // route_dialog_boost alimenta el EQ combinado, route_widener_mult
+        // el ancho estéreo — verificado línea por línea antes de conectar
+        // esto). Sin el manager arrancado, la compensación por ruta de
+        // salida (Bluetooth SBC/AAC lossy, rolloff de graves en AUX) nunca
+        // se activaba, aunque el motor que la aplica funcionaba bien.
+        //
+        // DEBE ser síncrono en el hilo principal, NO dentro de
+        // appScope.launch (Dispatchers.IO): AudioManager.
+        // registerAudioDeviceCallback(callback, null) usa el Looper del
+        // hilo que llama para entregar los callbacks — un hilo del pool de
+        // IO no tiene Looper preparado, lo que puede fallar en tiempo de
+        // ejecución. Application.onCreate() corre garantizado en el hilo
+        // principal (con Looper), por eso va aquí y no más abajo.
+        com.ivanna.omega.audio.AudioRouteManager.start(this)
+
         // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
         // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()
         // directamente (si evo_enabled) en el hilo principal, sin esperar a
@@ -156,6 +177,7 @@ class IVANNAApplication : Application() {
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()
+        com.ivanna.omega.audio.AudioRouteManager.stop()
         super.onTerminate()
     }
 }
