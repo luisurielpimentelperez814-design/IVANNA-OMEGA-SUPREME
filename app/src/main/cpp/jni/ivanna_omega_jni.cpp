@@ -24,6 +24,7 @@
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../audio_control_plane.hpp"
+#include "../perceptual_loudness.hpp"
 
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -55,6 +56,17 @@ static std::atomic<bool> g_initialized{false};
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
 // dejar que Exciter/Compresor la sobre-procesen.
 static std::atomic<float> g_voice_protect_score{0.f};
+// FEATURE (Perceptual Optimizer): medidor de loudness K-weighted real
+// (ITU-R BS.1770) + trim automático hacia un target. Reemplaza el
+// placeholder muerto de audio_control_plane.hpp (output_lufs nunca se
+// escribía). Un solo lector/escritor (el hilo de audio), sin necesidad
+// de atomic para el objeto en sí.
+static ivanna::LoudnessMeter g_loudnessMeter;
+static std::atomic<bool> g_loudnessMeterInit{false};
+// Target por defecto: -14 LUFS, el estándar de facto de streaming
+// (Spotify/YouTube Music) — volumen percibido consistente entre archivos
+// sin importar el mastering original.
+static std::atomic<float> g_loudness_target{-14.f};
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
@@ -88,6 +100,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_gain.setParams(g_params);
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
+    g_loudnessMeter.init((float)sr);
+    g_loudnessMeterInit.store(true, std::memory_order_release);
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
@@ -256,6 +270,24 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         for (int i = 0; i < n; ++i) {
             pdOutL[i] = pdOutL[i] * wetMix + dryL[i] * dryMix;
             pdOutR[i] = pdOutR[i] * wetMix + dryR[i] * dryMix;
+        }
+    }
+
+    // FEATURE (Perceptual Optimizer): mide LUFS real (K-weighted) sobre la
+    // salida final ya procesada y aplica un trim de ganancia lento hacia
+    // el target (-14 LUFS por defecto) — normalización de volumen
+    // percibido real, no el placeholder muerto que había antes.
+    if (g_loudnessMeterInit.load(std::memory_order_relaxed)) {
+        const float lufs = g_loudnessMeter.measure_block(pdOutL, pdOutR, n);
+        const float target = g_loudness_target.load(std::memory_order_relaxed);
+        const float trim = g_loudnessMeter.update_trim(target);
+        g_control_frame.output_lufs.store(lufs, std::memory_order_relaxed);
+        if (std::fabs(trim) > 0.01f) {
+            const float trimLin = std::pow(10.f, trim / 20.f);
+            for (int i = 0; i < n; ++i) {
+                pdOutL[i] *= trimLin;
+                pdOutR[i] *= trimLin;
+            }
         }
     }
 
