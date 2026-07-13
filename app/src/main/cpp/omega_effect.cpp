@@ -102,6 +102,38 @@ static void unmapSharedMemory(OmegaContext* ctx) {
     if (ctx->shared) { munmap(ctx->shared, sizeof(OmegaSharedState)); ctx->shared=nullptr; }
 }
 
+// FIX (Adaptive Feedback Loop — cierre de la ruta real de Spotify/YouTube):
+// applyAgc() sólo corre si ai_enabled==true, así que ai_rms_level/ai_gain_db
+// nunca reflejan audio real cuando el AGC está apagado (su default). Esta
+// función corre SIEMPRE, sobre el bloque de salida ya procesado por el
+// daemon (ring_out), independiente del estado del AGC — es la fuente real
+// que consume el AdaptiveDecisionEngine del lado de la app (mismo proceso,
+// via el puente en omega_daemon.cpp/ivanna_omega_jni.cpp). Coste: un solo
+// pase sobre 'samples' floats, sin malloc, sin locks — misma forma que el
+// cómputo de RMS que ya existe en applyAgc(), sin envelope/smoothing (eso
+// es específico del AGC, la telemetría cruda quiere el valor instantáneo
+// del bloque, no una versión suavizada).
+static void updateRawTelemetry(OmegaContext* ctx, const float* buf, int samples) {
+    if (!ctx || !ctx->shared || !buf || samples <= 0) return;
+
+    float sumSq = 0.0f;
+    float peak = 0.0f;
+    #pragma unroll 8
+    for (int i = 0; i < samples; ++i) {
+        float s = buf[i];
+        if (!std::isfinite(s)) s = 0.0f;
+        sumSq += s * s;
+        float a = std::fabsf(s);
+        if (a > peak) peak = a;
+    }
+    float rms = sqrtf(sumSq / (float)samples + 1e-12f);
+    if (!std::isfinite(rms)) rms = 0.0f;
+    if (!std::isfinite(peak)) peak = 0.0f;
+
+    ctx->shared->ai_raw_rms.store(rms, std::memory_order_relaxed);
+    ctx->shared->ai_raw_peak.store(peak, std::memory_order_relaxed);
+}
+
 static void applyAgc(OmegaContext* ctx, float* buf, int samples) {
     if (!ctx || !buf || samples <= 0) return;
 
@@ -173,6 +205,10 @@ static int Effect_Process(effect_handle_t self,
     ctx->shared->ring_in.tryPush(in->f32, cap, &ctx->shared->input_buffer[0][0]);
     bool got = ctx->shared->ring_out.tryPop(out->f32, cap, &ctx->shared->output_buffer[0][0]);
     if (!got) ctx->underruns.fetch_add(1, std::memory_order_relaxed);
+
+    // FIX (Adaptive Feedback Loop): telemetría cruda SIEMPRE, sin depender
+    // de ai_enabled (AGC) — es la fuente real para AdaptiveDecisionEngine.
+    if (got) updateRawTelemetry(ctx, out->f32, cap);
 
     if (ctx->shared->ai_enabled.load(std::memory_order_relaxed) && got)
         applyAgc(ctx, out->f32, cap);

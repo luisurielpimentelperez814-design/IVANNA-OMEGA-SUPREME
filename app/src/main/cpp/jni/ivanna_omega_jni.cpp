@@ -13,6 +13,8 @@
 #include <cmath>
 #include <atomic>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
@@ -26,6 +28,20 @@
 #include "../audio_control_plane.hpp"
 #include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "../perceptual_loudness.hpp"
+#include "omega_shared.h"
+
+// FIX (Adaptive Feedback Loop — ruta real de Spotify/YouTube):
+// g_shared vive en omega_daemon.cpp, compilado en el MISMO target
+// (libivanna_omega.so, ver CMakeLists.txt) que este archivo — no hace
+// falta IPC nuevo, sólo enlace C++ normal dentro del mismo .so. omega_
+// daemon.cpp lo crea/mapea en nativeStart() (llamado desde el proceso de
+// la APP), y omega_effect.cpp (un .so DISTINTO, EXCLUDE_FROM_ALL, cargado
+// por audioserver — otro proceso) mapea la MISMA memoria física recibida
+// vía SCM_RIGHTS. Por eso g_shared->ai_raw_rms/ai_raw_peak, escritos por
+// el proceso de audioserver, son visibles aquí sin ningún socket ni
+// cruce de proceso adicional — la memoria compartida YA cruza el límite
+// de proceso, solo faltaba que este lado la leyera.
+extern OmegaSharedState* g_shared;
 
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -92,7 +108,115 @@ static std::atomic<float> g_lastRawPeak{0.0f};
 static std::atomic<float> g_lastRawGrDb{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 
-// ── Helper ───────────────────────────────────────────────────────────────────
+// ═══ Adaptive Feedback Loop — puente ruta B (Spotify/YouTube/apps de
+// terceros vía omega_effect.cpp) ═════════════════════════════════════════
+//
+// Diagnóstico confirmado (auditoría previa): g_adaptiveEngine.rawMetrics
+// sólo recibía datos de la ruta A (IvannaBridgePlayer, DSPBridge_
+// nativeProcess) — la ruta B (omega_effect.cpp, el .so system-wide que
+// realmente procesa Spotify/YouTube/cualquier app externa) es un binario
+// SEPARADO (target CMake `omega_effect`, EXCLUDE_FROM_ALL, cargado por
+// audioserver — otro proceso) que nunca podía llamar directo a
+// g_adaptiveEngine.rawMetrics.publish() porque literalmente no comparte
+// memoria de proceso con libivanna_omega.so.
+//
+// La única vía real entre ambos procesos ya existía: OmegaSharedState,
+// mapeada en ambos procesos vía memfd + SCM_RIGHTS (ver omega_daemon.cpp/
+// omega_effect.cpp). omega_effect.cpp ahora escribe ai_raw_rms/ai_raw_peak
+// de forma INCONDICIONAL en cada bloque (ver updateRawTelemetry() en
+// omega_effect.cpp — antes sólo se actualizaba si el AGC estaba activo,
+// que es false por defecto). Este hilo, en el PROCESO DE LA APP (mismo
+// .so que g_adaptiveEngine), sondea esa memoria compartida y la traduce
+// a RawAudioMetrics.
+//
+// NO es RT — corre en su propio std::thread dedicado, arrancado UNA vez
+// desde nativeInit() (nunca desde un audio callback), cadencia fija de
+// 30ms, sin malloc por iteración, sin locks (solo loads atómicos + el
+// publish() lock-free ya existente del bus).
+//
+// LIMITACIÓN DOCUMENTADA, no oculta: RawMetricsBus fue diseñado SPSC (un
+// solo escritor). Con este hilo, pasa a tener DOS escritores posibles —
+// el audio thread de la ruta A (cuando el reproductor propio está
+// activo) y este hilo puente (cuando lo está omega_effect). El seqlock
+// evita que un lector vea basura (los reintentos de consumeIfNewer()
+// cubren eso), pero si ambos escritores publican en la ventana de
+// nanosegundos exacta en que el otro también escribe, un solo ciclo de
+// telemetría podría quedar con una combinación de campos de ambas
+// fuentes (nunca un crash, nunca memoria corrupta — floats simples). En
+// la práctica ambas rutas casi nunca están activas al mismo tiempo (un
+// usuario escucha el reproductor propio O Spotify, no ambos a la vez), y
+// el próximo ciclo (30-50ms después) se autocorrige. No se resolvió con
+// un bus multi-productor propiamente dicho porque eso es alcance nuevo,
+// no parte de este cierre de integración.
+static std::atomic<bool> g_audioRouteBridgeStarted{false};
+
+static void audioRouteBridgeLoop() {
+    // Última lectura vista, para no republicar/loguear si omega_effect no
+    // está produciendo audio nuevo ahora mismo (evita contaminar el bus
+    // con ceros repetidos cuando Spotify/YouTube no están sonando).
+    float lastRms = -1.0f, lastPeak = -1.0f;
+    uint64_t frameCounter = 0;
+    auto lastLogTime = std::chrono::steady_clock::now();
+
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+        OmegaSharedState* shared = g_shared;  // load único, evita TOCTOU
+        if (!shared) continue;  // daemon aún no arrancó/mapeó memoria en este proceso
+
+        const float rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
+        const float peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+
+        // Silencio absoluto sostenido (o sin cambios desde la última
+        // lectura) → omega_effect probablemente no está procesando audio
+        // real ahora mismo (nadie reproduciendo, o efecto en bypass). No
+        // publicar para no pisar telemetría real de la ruta A con ceros.
+        const bool hasSignal = rms > 1e-6f || peak > 1e-6f;
+        const bool changed    = std::fabs(rms - lastRms) > 1e-6f ||
+                                 std::fabs(peak - lastPeak) > 1e-6f;
+        lastRms = rms; lastPeak = peak;
+        if (!hasSignal && !changed) continue;
+
+        // ai_gain_db sólo es significativo si el AGC del efecto está
+        // activo (ai_enabled) — se usa como proxy de gain_reduction SOLO
+        // en su excursión negativa (AGC reduciendo por señal fuerte); una
+        // excursión positiva (AGC compensando señal débil) no es
+        // "reducción" y se descarta a 0.
+        float grDb = 0.0f;
+        if (shared->ai_enabled.load(std::memory_order_relaxed)) {
+            const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
+            grDb = gainDb < 0.0f ? -gainDb : 0.0f;
+        }
+
+        ivanna::experimental::RawAudioMetrics rawM{};
+        rawM.rms               = rms;
+        rawM.peak              = peak;
+        rawM.band_low_energy   = 0.0f;   // GAP conocido: omega_effect.cpp no
+        rawM.band_mid_energy   = 0.0f;   // separa por bandas todavía (mismo
+        rawM.band_high_energy  = 0.0f;   // gap ya documentado en la ruta A)
+        rawM.gain_reduction_db = grDb;
+        rawM.voice_score       = 0.0f;   // omega_effect no corre VoiceProtectionController
+        g_adaptiveEngine.rawMetrics.publish(rawM);
+
+        g_lastRawRms.store(rms,   std::memory_order_relaxed);
+        g_lastRawPeak.store(peak, std::memory_order_relaxed);
+        g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
+
+        ++frameCounter;
+
+        // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
+        // seguro (a diferencia de dentro de Effect_Process/nativeProcess).
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
+            lastLogTime = now;
+            __android_log_print(ANDROID_LOG_INFO, "IVANNA.AudioRoute",
+                "source=omega_effect frames=%llu rms=%.4f peak=%.4f gr_db=%.2f adaptive_connected=%d",
+                (unsigned long long)frameCounter, rms, peak, grDb,
+                g_adaptiveEngine.running() ? 1 : 0);
+        }
+    }
+}
+
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     if (!src || n <= 0) return false;
     jfloat* p = env->GetFloatArrayElements(src, nullptr);
@@ -137,6 +261,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
         g_adaptiveEngine.start();
         LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
+    }
+
+    // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
+    // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
+    // adaptativo (nativeInit puede re-llamarse por cambio de sample rate).
+    // std::thread se detach() a propósito — vive todo el ciclo de vida del
+    // proceso de la app, igual que el hilo de control del propio
+    // AdaptiveDecisionEngine y el watchdog de omega_daemon.cpp.
+    if (!g_audioRouteBridgeStarted.exchange(true, std::memory_order_acq_rel)) {
+        std::thread(audioRouteBridgeLoop).detach();
+        LOGI("AudioRoute bridge started (omega_effect -> AdaptiveDecisionEngine, @30ms)");
     }
 
     g_initialized.store(true, std::memory_order_release);

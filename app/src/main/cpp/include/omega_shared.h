@@ -80,6 +80,19 @@ struct OmegaSharedState {
     std::atomic<float> ai_rms_level;    // RMS normalizado, read-only desde la APK
     std::atomic<float> ai_gain_db;      // ganancia AGC en dB, read-only desde la APK
 
+    // FIX (Adaptive Feedback Loop — cierre de la ruta real de Spotify/YouTube):
+    // ai_rms_level/ai_gain_db SOLO se actualizan dentro de applyAgc(), que a
+    // su vez SOLO corre si ai_enabled==true (false por defecto, ver
+    // constructor). Un usuario que nunca activó el AGC nunca tendría
+    // telemetría real, aunque estuviera sonando música real por esta ruta.
+    // ai_raw_rms/ai_raw_peak se calculan de forma INCONDICIONAL en cada
+    // bloque de Effect_Process (ver omega_effect.cpp), independientes de si
+    // el AGC está activo — son la fuente real que AdaptiveDecisionEngine
+    // consume vía el puente en el mismo proceso de la app (ver
+    // omega_daemon_get_shared_state() en omega_daemon.cpp).
+    std::atomic<float> ai_raw_rms;
+    std::atomic<float> ai_raw_peak;
+
     // ── Ring buffers ──────────────────────────────────────────────────────────
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
@@ -101,6 +114,7 @@ struct OmegaSharedState {
           pf_param_version(1),
           ai_enabled(false), ai_auto_adapt(false), ai_sensitivity(0.5f),
           ai_rms_level(0.0f), ai_gain_db(0.0f),
+          ai_raw_rms(0.0f), ai_raw_peak(0.0f),
           write_pos(0), read_pos(0) {}
 };
 
