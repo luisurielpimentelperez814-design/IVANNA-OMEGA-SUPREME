@@ -90,3 +90,23 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_adaptive_engine COMMAND test_adaptive_engine)
 set_tests_properties(test_adaptive_engine PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# FIX (mismo gap encontrado en test_adaptive_engine, ahora en
+# test_close_loop.cpp — "aceptación de Fase 4B", agregado en 74e51c4):
+# tampoco estaba enganchado a ningún target de CMake. Verificado
+# localmente antes de este commit (g++ directo): compila limpio y las
+# 5 aserciones pasan. Usa assert() de <cassert> — este CMakeLists no
+# define NDEBUG en ningún lado, así que quedan activos por default.
+add_executable(test_close_loop
+  ../experimental/adaptive_engine/tests/test_close_loop.cpp
+  ../experimental/adaptive_engine/adaptive_decision_engine.cpp
+)
+target_include_directories(test_close_loop PRIVATE
+  ../experimental/adaptive_engine
+)
+target_compile_options(test_close_loop PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_close_loop PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_close_loop PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_close_loop COMMAND test_close_loop)

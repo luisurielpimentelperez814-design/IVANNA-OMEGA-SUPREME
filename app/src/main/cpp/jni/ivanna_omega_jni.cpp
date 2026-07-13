@@ -267,6 +267,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // puro análisis/telemetría (ver su propio comentario de clase sobre el
     // bug de eco que resolvió) — activarlo como salida de audio real es un
     // trabajo aparte, más grande, pendiente.
+    // FIX (colisión real encontrada en auditoría — mismo patrón que el
+    // compresor): esta medición de correlación y la sugerencia de
+    // AdaptiveDecisionEngine (más abajo) son dos señales independientes
+    // que responden la misma pregunta ("¿hay que ensanchar esto?"). Antes
+    // se aplicaban como DOS pasadas M/S separadas y secuenciales sobre el
+    // mismo pdOutL/pdOutR — no rompía nada audible de forma catastrófica
+    // (M/S es lineal, dos pasadas ≈ una con producto de multiplicadores),
+    // pero sí compone sin coordinación y puede sobre-ensanchar. Ahora se
+    // mide acá y se combina en UN solo punto de aplicación, junto al
+    // resto del ciclo adaptativo (ver más abajo, sección FASE 4B).
+    float widenAmountFromCorrelation = 0.f;
     {
         double sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
         for (int i = 0; i < n; ++i) {
@@ -283,16 +294,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // corr alto (≈mono) → ensancha hasta +40%. corr bajo (ya ancho) →
         // no toca (multiplicador 1.0). Zona muerta entre 0.4 y 0.8 para no
         // reaccionar a fluctuaciones normales de una mezcla ya balanceada.
-        const float widenAmount = std::clamp((corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
-        if (widenAmount > 0.005f) {
-            const float sideMul = 1.f + widenAmount;
-            for (int i = 0; i < n; ++i) {
-                const float mid  = (pdOutL[i] + pdOutR[i]) * 0.5f;
-                const float side = (pdOutL[i] - pdOutR[i]) * 0.5f * sideMul;
-                pdOutL[i] = mid + side;
-                pdOutR[i] = mid - side;
-            }
-        }
+        widenAmountFromCorrelation = std::clamp((corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
     }
 
     // FEATURE (Voice Protection): cuando YamnetClassifier detecta voz
@@ -394,17 +396,26 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_lastAdaptiveApplied.fetch_add(1, std::memory_order_relaxed);
         }
 
-        // 6) APLICAR UN parámetro audible: spatial_width sugerido.
-        //    Encoding M/S: pdOut = mid + side*sideMul, donde sideMul
-        //    interpola 1.0 (nominal) ↔ st.spatial_width (0..1.5).
-        //    Se usa un smoothing exponencial (thread_local) para evitar
-        //    clics ante cambios abruptos del motor de control.
+        // 6) APLICAR UN parámetro audible: spatial_width, combinando DOS
+        //    señales en un único punto (fix de colisión, ver comentario
+        //    junto a la medición de correlación L/R más arriba):
+        //      a) widenAmountFromCorrelation — contenido casi-mono real.
+        //      b) sugerencia de AdaptiveDecisionEngine (target_gain/
+        //         safety_margin ya influyen su cálculo, ver
+        //         computeSpatialWidth() en adaptive_decision_engine.cpp).
+        //    Se combina con max(), no con multiplicación ni suma — así
+        //    cualquiera de las dos señales que pida más ancho gana, sin
+        //    componer un sobre-ensanchamiento cuando ambas piden ensanchar
+        //    al mismo tiempo. Encoding M/S: pdOut = mid + side*sideMul.
+        //    Smoothing exponencial (thread_local) para evitar clics.
         static thread_local float s_widthSmooth = 1.0f;
         const float widthTarget = std::clamp(
             g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f);
         s_widthSmooth += 0.02f * (widthTarget - s_widthSmooth);  // ~50 bloques a τ
-        if (std::fabs(s_widthSmooth - 1.0f) > 0.005f) {
-            const float sideMul = s_widthSmooth;
+        const float adaptiveWidenAmount = std::max(0.f, s_widthSmooth - 1.f);
+        const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
+        if (combinedWidenAmount > 0.005f) {
+            const float sideMul = 1.f + combinedWidenAmount;
             for (int i = 0; i < n; ++i) {
                 const float mid  = (pdOutL[i] + pdOutR[i]) * 0.5f;
                 const float side = (pdOutL[i] - pdOutR[i]) * 0.5f * sideMul;
