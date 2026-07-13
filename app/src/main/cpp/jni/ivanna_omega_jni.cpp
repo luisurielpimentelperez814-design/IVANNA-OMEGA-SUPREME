@@ -196,7 +196,8 @@ static void audioRouteBridgeLoop() {
         rawM.band_high_energy  = 0.0f;   // gap ya documentado en la ruta A)
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = 0.0f;   // omega_effect no corre VoiceProtectionController
-        g_adaptiveEngine.rawMetrics.publish(rawM);
+        g_adaptiveEngine.rawMetrics.publish(
+            ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
 
         g_lastRawRms.store(rms,   std::memory_order_relaxed);
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
@@ -509,7 +510,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.band_high_energy  = 0.0f;
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
-        g_adaptiveEngine.rawMetrics.publish(rawM);
+        g_adaptiveEngine.rawMetrics.publish(
+            ivanna::experimental::RawMetricsBus::Source::RouteA_BridgePlayer, rawM);
 
         // Snapshot para telemetría (getters JNI, fuera del audio thread).
         g_lastRawRms.store(rms,     std::memory_order_relaxed);

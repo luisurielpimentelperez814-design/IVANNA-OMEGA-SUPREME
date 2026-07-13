@@ -59,6 +59,7 @@
  */
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <thread>
 
@@ -113,36 +114,94 @@ struct RawAudioMetrics {
 // ── Bus SPSC seqlock — escritor: audio thread. Lector: hilo de control.
 // Idéntico en diseño a ControlFrameBus (control_frame.hpp) — ver ese
 // archivo para la explicación completa del algoritmo. ─────────────────────
+// ── Bus MPSC — un slot dedicado por fuente productora, cada slot es SPSC
+// puro (un solo escritor conocido de antemano, no genérico/dinámico).
+//
+// FIX (colisión documentada en el commit e48f3ab): el diseño anterior era
+// un único slot compartido con DOS escritores reales (el audio thread de
+// la ruta A — IvannaBridgePlayer/DSPBridge_nativeProcess — y el hilo
+// puente de la ruta B — omega_effect.cpp vía OmegaSharedState). El
+// seqlock evitaba lecturas corruptas, pero una colisión de escritura
+// exacta entre ambos productores podía dejar un ciclo de telemetría con
+// campos mezclados de las dos fuentes.
+//
+// Ahora cada fuente tiene su PROPIO slot con su PROPIO guard — cero
+// posibilidad de write-write race, porque cada slot vuelve a ser SPSC de
+// verdad (exactamente un escritor conocido por diseño, no por
+// convención). El lector combina: recorre los slots (cantidad fija,
+// std::array, sin malloc) y se queda con el de mayor 'seq' — el número
+// de secuencia es GLOBAL (un solo std::atomic<uint64_t>, incrementado
+// con fetch_add desde cualquier hilo, seguro por construcción para
+// múltiples escritores concurrentes — para eso están los atomics), así
+// que "mayor seq" siempre significa "publicado más recientemente entre
+// TODAS las fuentes", sin importar cuál slot lo escribió.
+//
+// kMaxSources=4 dejando margen para una futura ruta C (IvannaNativeLib_
+// nativeProcessBlock) sin rediseñar el bus otra vez — slots sin uso
+// quedan en seq=0 y nunca ganan la comparación de "más reciente".
 class RawMetricsBus {
 public:
-    void publish(RawAudioMetrics m) noexcept {
-        const uint64_t s = seqCounter_.fetch_add(1, std::memory_order_relaxed) + 1;
+    enum class Source : uint8_t {
+        RouteA_BridgePlayer = 0,   // IvannaBridgePlayer / DSPBridge_nativeProcess
+        RouteB_OmegaEffect  = 1,   // omega_effect.cpp (Spotify/YouTube/apps externas)
+        kMaxSources         = 4,
+    };
+
+    void publish(Source src, RawAudioMetrics m) noexcept {
+        const auto idx = static_cast<size_t>(src);
+        if (idx >= slots_.size()) return;  // fuente inválida, no debería pasar nunca
+        Slot& slot = slots_[idx];
+
+        const uint64_t s = globalSeq_.fetch_add(1, std::memory_order_relaxed) + 1;
         m.seq = s;
-        guard_.fetch_add(1, std::memory_order_acq_rel);
-        snapshot_ = m;
-        guard_.fetch_add(1, std::memory_order_release);
+
+        // Seqlock POR SLOT — mismo patrón de siempre, pero ahora sin
+        // ningún otro escritor posible tocando este slot en particular.
+        slot.guard.fetch_add(1, std::memory_order_acq_rel);
+        slot.snapshot = m;
+        slot.guard.fetch_add(1, std::memory_order_release);
     }
 
+    // El lector recorre TODOS los slots y se queda con el de 'seq' más
+    // alto (más reciente en términos globales). En uso real, casi
+    // siempre sólo una fuente está publicando datos frescos a la vez
+    // (el usuario escucha el reproductor propio O Spotify, no ambos) —
+    // el resto de los slots quedan con su último valor conocido, con un
+    // 'seq' más viejo, y pierden la comparación automáticamente.
     bool consumeIfNewer(RawAudioMetrics& out, uint64_t& lastSeenSeq) const noexcept {
-        RawAudioMetrics snap;
-        uint32_t g1 = 0, g2 = 0;
-        do {
-            g1 = guard_.load(std::memory_order_acquire);
-            if (g1 & 1u) continue;
-            snap = snapshot_;
-            g2 = guard_.load(std::memory_order_acquire);
-        } while (g1 != g2);
+        RawAudioMetrics best{};
+        bool haveBest = false;
 
-        if (snap.seq == lastSeenSeq) return false;
-        lastSeenSeq = snap.seq;
-        out = snap;
+        for (const Slot& slot : slots_) {
+            RawAudioMetrics snap;
+            uint32_t g1 = 0, g2 = 0;
+            do {
+                g1 = slot.guard.load(std::memory_order_acquire);
+                if (g1 & 1u) continue;  // escritura en curso en ESTE slot, reintentar
+                snap = slot.snapshot;
+                g2 = slot.guard.load(std::memory_order_acquire);
+            } while (g1 != g2);
+
+            if (snap.seq != 0 && (!haveBest || snap.seq > best.seq)) {
+                best = snap;
+                haveBest = true;
+            }
+        }
+
+        if (!haveBest || best.seq == lastSeenSeq) return false;
+        lastSeenSeq = best.seq;
+        out = best;
         return true;
     }
 
 private:
-    alignas(64) RawAudioMetrics snapshot_{};
-    std::atomic<uint32_t>       guard_{0};
-    std::atomic<uint64_t>       seqCounter_{0};
+    struct Slot {
+        alignas(64) RawAudioMetrics snapshot{};
+        std::atomic<uint32_t>       guard{0};
+    };
+
+    std::array<Slot, static_cast<size_t>(Source::kMaxSources)> slots_{};
+    std::atomic<uint64_t> globalSeq_{0};
 };
 
 // ── Bus SPSC seqlock — escritor: hilo de control. Lector: audio thread. ───

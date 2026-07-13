@@ -20,6 +20,7 @@
 #include "../adaptive_decision_engine.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -196,14 +197,14 @@ void testExtremeAndDegenerateInputs() {
 }
 
 void testBusRoundTrip() {
-    std::printf("\n=== RawMetricsBus / AdaptiveStateBus — round-trip sin hilo ===\n");
+    std::printf("\n=== RawMetricsBus (MPSC) / AdaptiveStateBus — round-trip sin hilo ===\n");
     RawMetricsBus rawBus;
     AdaptiveStateBus stateBus;
 
     RawAudioMetrics in{};
     in.rms = 0.33f;
     in.peak = 0.6f;
-    rawBus.publish(in);
+    rawBus.publish(RawMetricsBus::Source::RouteA_BridgePlayer, in);
 
     RawAudioMetrics out{};
     uint64_t lastSeen = 0;
@@ -267,6 +268,118 @@ void testGainReductionConversion() {
     expect(margin < 0.2f, "con 6dB reales de reducción (convertidos), safety_margin sí cae a zona de riesgo (<0.2)");
 }
 
+void testMultiProducerBus() {
+    std::printf("\n=== RawMetricsBus (MPSC) — dos fuentes reales, sin colisión ===\n");
+    RawMetricsBus bus;
+
+    // 1) Cada fuente escribe a su propio slot — no se pisan entre sí.
+    RawAudioMetrics a{};
+    a.rms = 0.1f; a.peak = 0.2f;
+    bus.publish(RawMetricsBus::Source::RouteA_BridgePlayer, a);
+
+    RawAudioMetrics b{};
+    b.rms = 0.9f; b.peak = 0.95f;
+    bus.publish(RawMetricsBus::Source::RouteB_OmegaEffect, b);
+
+    // 2) El lector debe quedarse con la publicación MÁS RECIENTE en
+    //    términos globales (RouteB fue la última en publicar aquí).
+    RawAudioMetrics out{};
+    uint64_t lastSeen = 0;
+    bool got = bus.consumeIfNewer(out, lastSeen);
+    expect(got, "MPSC: detecta dato nuevo tras dos publish() de fuentes distintas");
+    expect(out.rms == 0.9f && out.peak == 0.95f,
+           "MPSC: el lector se queda con la fuente publicada más recientemente (RouteB)");
+
+    // 3) Publicar de nuevo en RouteA — ahora RouteA es la más reciente,
+    //    aunque RouteB siga teniendo un valor "más alto" en rms/peak.
+    //    Esto confirma que el criterio es SEQ (orden de publicación),
+    //    no magnitud de la métrica.
+    RawAudioMetrics a2{};
+    a2.rms = 0.05f; a2.peak = 0.1f;
+    bus.publish(RawMetricsBus::Source::RouteA_BridgePlayer, a2);
+
+    bool got2 = bus.consumeIfNewer(out, lastSeen);
+    expect(got2, "MPSC: detecta la nueva publicación de RouteA");
+    expect(out.rms == 0.05f && out.peak == 0.1f,
+           "MPSC: gana la fuente mas reciente (RouteA) aunque tenga valores menores");
+}
+
+void testMultiProducerBusConcurrentStress() {
+    std::printf("\n=== RawMetricsBus (MPSC) — stress test con hilos reales concurrentes ===\n");
+    // La prueba mas fuerte posible del diseño: dos hilos de verdad
+    // publicando en bucle apretado durante un intervalo fijo, cada uno a
+    // SU slot, mientras un tercer hilo lector consume sin parar. Si el
+    // diseño MPSC tuviera algun agujero de sincronizacion, esto lo
+    // encontraria (valores NaN, campos mezclados entre rms/peak que no
+    // corresponden a ninguna publicacion real de ninguna fuente).
+    RawMetricsBus bus;
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> publishesA{0}, publishesB{0};
+    std::atomic<bool> corruption{false};
+
+    std::thread producerA([&]() {
+        float v = 0.0f;
+        while (!stop.load(std::memory_order_relaxed)) {
+            RawAudioMetrics m{};
+            v += 0.001f; if (v > 1.0f) v = 0.0f;
+            m.rms = v; m.peak = v;  // rms==peak siempre en este productor —
+                                     // permite detectar mezcla de campos.
+            bus.publish(RawMetricsBus::Source::RouteA_BridgePlayer, m);
+            publishesA.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread producerB([&]() {
+        float v = 1.0f;
+        while (!stop.load(std::memory_order_relaxed)) {
+            RawAudioMetrics m{};
+            v -= 0.001f; if (v < 0.0f) v = 1.0f;
+            // Productor B usa un rango DISTINTO y la relación rms==-peak+1
+            // (invertida) para poder detectar si el lector alguna vez ve
+            // una combinación que no corresponde a NINGÚN productor.
+            m.rms = v; m.peak = 1.0f - v;
+            bus.publish(RawMetricsBus::Source::RouteB_OmegaEffect, m);
+            publishesB.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::thread consumer([&]() {
+        RawAudioMetrics out{};
+        uint64_t lastSeen = 0;
+        int reads = 0;
+        while (!stop.load(std::memory_order_relaxed) || reads < 10) {
+            if (bus.consumeIfNewer(out, lastSeen)) {
+                ++reads;
+                if (!std::isfinite(out.rms) || !std::isfinite(out.peak)) {
+                    corruption.store(true, std::memory_order_relaxed);
+                }
+                // Válido SOLO si corresponde a A (rms==peak) o a B
+                // (rms == 1-peak, dentro de tolerancia float). Cualquier
+                // otra combinación es una lectura torn/imposible.
+                const bool matchesA = std::fabs(out.rms - out.peak) < 1e-5f;
+                const bool matchesB = std::fabs(out.rms - (1.0f - out.peak)) < 1e-5f;
+                if (!matchesA && !matchesB) {
+                    corruption.store(true, std::memory_order_relaxed);
+                }
+            }
+        }
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    stop.store(true, std::memory_order_relaxed);
+    producerA.join();
+    producerB.join();
+    consumer.join();
+
+    std::printf("  publishesA=%llu publishesB=%llu\n",
+                (unsigned long long)publishesA.load(), (unsigned long long)publishesB.load());
+
+    expect(publishesA.load() > 1000, "stress: RouteA publicó un volumen real de datos (>1000)");
+    expect(publishesB.load() > 1000, "stress: RouteB publicó un volumen real de datos (>1000)");
+    expect(!corruption.load(),
+           "stress: NUNCA se leyó una combinación inválida/torn tras 200ms de escritura concurrente real");
+}
+
 } // namespace
 
 int main() {
@@ -280,6 +393,8 @@ int main() {
     testVoiceProtectionPassthrough();
     testExtremeAndDegenerateInputs();
     testBusRoundTrip();
+    testMultiProducerBus();
+    testMultiProducerBusConcurrentStress();
     testGainReductionConversion();
 
     std::printf("\n====================================================\n");
