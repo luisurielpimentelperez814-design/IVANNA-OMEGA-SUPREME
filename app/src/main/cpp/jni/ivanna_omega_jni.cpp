@@ -360,7 +360,30 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // sí pertenece al final de la cadena — ahí se queda.
     g_gain.processInput(chL, chR, n);
     g_eq.process(chL, chR, n);
+
+    // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
+    // exciter_reduction ahora se aplican a los módulos DSP REALES
+    // (GainStage/Compressor/HarmonicExciter), no como ajustes paralelos
+    // post-hoc. Suavizado EMA aquí (thread_local, igual patrón que
+    // spatial_width más abajo) antes de pasar el valor a cada setter —
+    // GainStage ya tiene su propio smoothing interno para el multiplicador
+    // final, pero suavizar la SUGERENCIA en sí evita saltos audibles entre
+    // bloques de 50ms cuando consumeIfNewer() trae un valor nuevo del hilo
+    // de control.
+    static thread_local float s_targetGainSmooth = 1.0f;
+    static thread_local float s_compAmountSmooth = 0.0f;
+    static thread_local float s_excReductionSmooth = 0.0f;
+    s_targetGainSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f) - s_targetGainSmooth);
+    s_compAmountSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f) - s_compAmountSmooth);
+    s_excReductionSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f) - s_excReductionSmooth);
+
+    g_gain.setRuntimeGain(s_targetGainSmooth);
+    g_comp.setRuntimeAmount(s_compAmountSmooth);
     g_comp.process(chL, chR, n);
+    g_exciter.setRuntimeReduction(s_excReductionSmooth);
     g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
     g_gain.processOutput(chL, chR, n);

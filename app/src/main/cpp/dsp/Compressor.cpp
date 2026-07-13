@@ -50,8 +50,12 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
 
     const float attackCoef = attackCoef_;
     const float releaseCoef = releaseCoef_;
-    const float threshold = threshold_;
-    const float ratioInv = 1.0f - 1.0f / ratio_;
+    // FASE 4C/P0: threshold/ratio EFECTIVOS incorporan la sugerencia
+    // runtime del AdaptiveDecisionEngine sin mutar los valores base
+    // (threshold_/ratio_ siguen siendo lo que el usuario configuró).
+    const float threshold = threshold_ - runtimeAmount_ * 12.0f;
+    const float effRatio = ratio_ + runtimeAmount_ * 8.0f;
+    const float ratioInv = 1.0f - 1.0f / effRatio;
     const float makeup = makeupGain_;
     float env = env_;
 

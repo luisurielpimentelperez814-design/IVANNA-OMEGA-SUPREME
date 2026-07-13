@@ -35,7 +35,7 @@ void GainStage::processInput(float* __restrict__ left, float* __restrict__ right
 
 void GainStage::processOutput(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
-    const float s = smoothCoeff_, o = oneMinusSmooth_, t = outputGain_;
+    const float s = smoothCoeff_, o = oneMinusSmooth_, t = outputGain_ * runtimeMul_;
     float c = currentOut_;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"

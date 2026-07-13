@@ -74,7 +74,7 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
     const float drive = drive_;
-    const float wet   = wet_;
+    const float wet   = wet_ * runtimeReductionMul_;
     const float dry   = dry_;
 
     // ===== PASO 1: UPSAMPLE 2x (interpolación lineal) =====
