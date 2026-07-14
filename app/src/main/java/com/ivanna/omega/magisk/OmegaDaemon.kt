@@ -63,6 +63,17 @@ object OmegaDaemon {
      */
     fun getPFParams(): FloatArray = if (loaded) nativeGetPFParams() else FloatArray(13)
 
+    // ── Puente inverso (Adaptive Feedback Loop → Ruta B) ─────────────────────
+    /**
+     * Devuelve FloatArray[3]: [target_gain, compressor_amount, exciter_reduction]
+     * — lo último que audioRouteBridgeLoop() (ivanna_omega_jni.cpp) escribió en
+     * OmegaSharedState desde el AdaptiveDecisionEngine, y que este mismo
+     * daemon (processLoop(), Ruta B) ya está consumiendo en su hot-path.
+     * Solo diagnóstico/telemetría — no dispara ninguna escritura.
+     */
+    fun getAdaptiveBridgeState(): FloatArray =
+        if (loaded) nativeGetAdaptiveBridgeState() else floatArrayOf(1.0f, 0.0f, 0.0f)
+
     // ── PF Engine — setters individuales ─────────────────────────────────────
     // Sin recomputación de Biquad (solo escalares en el hot-path)
     fun setPFDrive(v: Float)   { if (loaded) nativeSetPFDrive(v) }
@@ -97,6 +108,7 @@ object OmegaDaemon {
         presence: Float, master: Float
     )
     private external fun nativeGetPFParams(): FloatArray
+    private external fun nativeGetAdaptiveBridgeState(): FloatArray
 
     private external fun nativeSetPFDrive(v: Float)
     private external fun nativeSetPFWet(v: Float)

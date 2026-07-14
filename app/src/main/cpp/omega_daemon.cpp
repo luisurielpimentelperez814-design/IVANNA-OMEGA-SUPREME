@@ -14,6 +14,7 @@
 #include <jni.h>
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -212,9 +213,47 @@ static void enterSafeMode() {
 //   omega_effect  →  ring_in (input_buffer)  →  processLoop()
 //   processLoop() →  ring_out (output_buffer) →  omega_effect
 //
+// ── FIX (puente inverso — Adaptive Feedback Loop llega a la Ruta B) ────────
+//
+// El AdaptiveDecisionEngine vive en el proceso de la app (ivanna_omega_jni.
+// cpp) y ya sugiere target_gain/compressor_amount/exciter_reduction a la
+// Ruta A (GainStage/Compressor/HarmonicExciter reales, ver commit e1286d7).
+// Ese mismo AdaptiveState ahora también llega aquí vía OmegaSharedState
+// (ai_target_gain/ai_compressor_amount/ai_exciter_reduction, escritos por
+// audioRouteBridgeLoop() en ivanna_omega_jni.cpp cada ~30ms — ver ese
+// archivo). Este PF Engine (el que corre en el proceso mediaserver/
+// omega_effect para Spotify/YouTube) NO tiene módulos Compressor/
+// HarmonicExciter separados como la Ruta A — es una sola etapa softClip +
+// EQ de 4 bandas + mezcla wet/dry + master. Por eso los tres valores se
+// mapean a SUS PROPIOS controles runtime existentes, sin inventar ninguna
+// curva o algoritmo nuevo:
+//   • target_gain        → multiplicador directo sobre 'master' (mismo
+//                           significado que en GainStage::setRuntimeGain:
+//                           [0.5,1.0], sólo puede atenuar).
+//   • compressor_amount   → SIN un compresor real disponible en este motor,
+//                           se aproxima de forma conservadora como
+//                           atenuación adicional de 'master' (hasta -6dB en
+//                           amount=1.0) — es una medida de seguridad de
+//                           dinámica, NO una compresión real con
+//                           threshold/ratio. Documentado como aproximación
+//                           deliberada, no como "compresión superior".
+//   • exciter_reduction   → multiplicador sobre 'wet' (idéntico patrón a
+//                           HarmonicExciter::setRuntimeReduction en la Ruta
+//                           A: reduce cuánto de la etapa saturada/excitada
+//                           se mezcla de vuelta, preservando 'drive' — el
+//                           timbre/curva no cambia, sólo su presencia).
+// Suavizado EMA (mismo coeficiente 0.05 que usa nativeProcess en la Ruta A
+// para la misma sugerencia) para no introducir saltos audibles entre
+// bloques de ~30ms cuando llega un valor nuevo. Estado function-local
+// porque processLoop() corre en un único std::thread dedicado (no hay
+// concurrencia que proteger aquí).
 static void processLoop() {
     alignas(64) float work_buf[OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS];
     const int blockSamples = OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS;
+
+    static float s_targetGainSmooth = 1.0f;
+    static float s_compAmountSmooth = 0.0f;
+    static float s_excReductionSmooth = 0.0f;
 
     while (g_running.load(std::memory_order_acquire)) {
         if (!g_shared) {
@@ -242,10 +281,30 @@ static void processLoop() {
             const float tGain  = thermalGain(
                 g_shared->current_temperature.load(std::memory_order_relaxed));
             const float drive  = g_shared->pf_drive.load(std::memory_order_relaxed);
-            const float wet    = g_shared->pf_wet.load(std::memory_order_relaxed);
-            const float dry    = 1.0f - wet;
-            const float master = std::pow(10.0f,
+            const float baseWet = g_shared->pf_wet.load(std::memory_order_relaxed);
+            const float baseMaster = std::pow(10.0f,
                 g_shared->pf_master.load(std::memory_order_relaxed) / 20.0f);
+
+            // ── Puente inverso: consumir target_gain/compressor_amount/
+            // exciter_reduction publicados por audioRouteBridgeLoop() ──────
+            s_targetGainSmooth += 0.05f * (std::clamp(
+                g_shared->ai_target_gain.load(std::memory_order_relaxed), 0.5f, 1.0f) - s_targetGainSmooth);
+            s_compAmountSmooth += 0.05f * (std::clamp(
+                g_shared->ai_compressor_amount.load(std::memory_order_relaxed), 0.f, 1.f) - s_compAmountSmooth);
+            s_excReductionSmooth += 0.05f * (std::clamp(
+                g_shared->ai_exciter_reduction.load(std::memory_order_relaxed), 0.f, 1.f) - s_excReductionSmooth);
+
+            // compressor_amount: sin Compressor real en este motor, se
+            // aproxima como atenuación adicional de master (máx. -6dB ≈
+            // factor 0.5) — ver comentario de cabecera de processLoop().
+            constexpr float kAdaptiveCompMaxAtten = 0.5f;
+            const float master = baseMaster * s_targetGainSmooth *
+                (1.0f - s_compAmountSmooth * kAdaptiveCompMaxAtten);
+
+            // exciter_reduction: reduce 'wet' preservando 'drive' — mismo
+            // patrón que HarmonicExciter::setRuntimeReduction en la Ruta A.
+            const float wet = baseWet * (1.0f - s_excReductionSmooth);
+            const float dry = 1.0f - wet;
 
             // Estereo intercalado: [L0,R0, L1,R1, ...]
             for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
@@ -715,6 +774,24 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeGetPFParams(JNIEnv* env, jobject)
     }
     jfloatArray arr = env->NewFloatArray(13);
     if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+}
+
+// FIX (puente inverso — verificación): expone lo que audioRouteBridgeLoop()
+// (ivanna_omega_jni.cpp) escribió en OmegaSharedState, para diagnosticar
+// desde Kotlin/logcat que el Adaptive Feedback Loop realmente llega hasta
+// el PF Engine de la Ruta B (Spotify/YouTube) sin necesitar leer memoria
+// compartida a mano. Mismo patrón defensivo que nativeGetPFParams.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_magisk_OmegaDaemon_nativeGetAdaptiveBridgeState(JNIEnv* env, jobject) {
+    jfloat out[3] = {1.0f, 0.0f, 0.0f};  // defaults neutros si el daemon no mapeó memoria aún
+    if (g_shared && g_shared != MAP_FAILED) {
+        out[0] = g_shared->ai_target_gain.load(std::memory_order_relaxed);
+        out[1] = g_shared->ai_compressor_amount.load(std::memory_order_relaxed);
+        out[2] = g_shared->ai_exciter_reduction.load(std::memory_order_relaxed);
+    }
+    jfloatArray arr = env->NewFloatArray(3);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 3, out);
     return arr;
 }
 

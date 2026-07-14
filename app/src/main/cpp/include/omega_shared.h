@@ -93,6 +93,33 @@ struct OmegaSharedState {
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
+    // FIX (puente inverso — Ruta B recibe de vuelta la decisión del
+    // AdaptiveDecisionEngine): hasta ahora OmegaSharedState solo viajaba
+    // en un sentido (Ruta B → app: ai_raw_rms/ai_raw_peak). El motor
+    // adaptativo vive en el proceso de la app (mismo .so que
+    // ivanna_omega_jni.cpp) y ya computa AdaptiveState para la Ruta A
+    // (IvannaBridgePlayer) desde el commit e1286d7. Estos tres campos son
+    // el canal de vuelta: el mismo hilo puente (audioRouteBridgeLoop en
+    // ivanna_omega_jni.cpp) que lee ai_raw_rms/ai_raw_peak ahora también
+    // consume el AdaptiveState más reciente y publica aquí su
+    // target_gain/compressor_amount/exciter_reduction — SIN tocar
+    // ai_rms_level/ai_gain_db (que siguen siendo el AGC propio, opcional,
+    // de omega_effect.cpp) ni el resto de la telemetría cruda.
+    //
+    // Escritor: audioRouteBridgeLoop() (hilo dedicado, ~30ms, proceso app).
+    // Lector:   processLoop() en omega_daemon.cpp (hilo dedicado del PF
+    //           Engine de la Ruta B, mismo proceso — ver comentario ahí
+    //           sobre CÓMO se aplican, porque este motor NO tiene
+    //           Compressor/HarmonicExciter como clases separadas).
+    // Rangos ya clampeados por el escritor antes de guardar (mismos límites
+    // que usa la Ruta A en ivanna_omega_jni.cpp): target_gain [0.5,1.0]
+    // (solo puede atenuar), compressor_amount/exciter_reduction [0,1].
+    // Defaults neutros (sin efecto) para que un daemon que arranca antes
+    // que el motor adaptativo no aplique atenuación fantasma.
+    std::atomic<float> ai_target_gain;
+    std::atomic<float> ai_compressor_amount;
+    std::atomic<float> ai_exciter_reduction;
+
     // ── Ring buffers ──────────────────────────────────────────────────────────
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
@@ -115,6 +142,7 @@ struct OmegaSharedState {
           ai_enabled(false), ai_auto_adapt(false), ai_sensitivity(0.5f),
           ai_rms_level(0.0f), ai_gain_db(0.0f),
           ai_raw_rms(0.0f), ai_raw_peak(0.0f),
+          ai_target_gain(1.0f), ai_compressor_amount(0.0f), ai_exciter_reduction(0.0f),
           write_pos(0), read_pos(0) {}
 };
 

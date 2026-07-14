@@ -160,6 +160,13 @@ static void audioRouteBridgeLoop() {
     uint64_t frameCounter = 0;
     auto lastLogTime = std::chrono::steady_clock::now();
 
+    // Puente INVERSO (app → Ruta B): 'seq' visto del AdaptiveState para
+    // sólo escribir en OmegaSharedState cuando el hilo de control del
+    // AdaptiveDecisionEngine publicó una decisión nueva (evita floats
+    // idénticos en cada iteración de 30ms para nada). Vive en este mismo
+    // hilo dedicado — no es RT, mismo hilo que ya lee ai_raw_rms/ai_raw_peak.
+    uint64_t lastAdaptiveSeqOut = 0;
+
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
@@ -205,6 +212,26 @@ static void audioRouteBridgeLoop() {
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
 
+        // ═══ Puente INVERSO: g_adaptiveEngine → OmegaSharedState → PF Engine
+        // de la Ruta B (processLoop() en omega_daemon.cpp) ═══════════════════
+        // Mismo AdaptiveState que la Ruta A ya consume (ver s_lastAdaptiveSeq
+        // más abajo en nativeProcess) — un solo motor, dos consumidores. Se
+        // clampea aquí ANTES de guardar en memoria compartida (mismos rangos
+        // que usa la Ruta A: target_gain sólo puede atenuar [0.5,1.0];
+        // compressor_amount/exciter_reduction en [0,1]) para que
+        // processLoop() pueda usar el valor directo sin repetir validación
+        // en su hot-path. consumeIfNewer() es lock-free y no bloquea si no
+        // hay decisión nueva desde el último ciclo de 30ms.
+        ivanna::experimental::AdaptiveState adaptSt;
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(adaptSt, lastAdaptiveSeqOut)) {
+            shared->ai_target_gain.store(
+                std::clamp(adaptSt.target_gain, 0.5f, 1.0f), std::memory_order_relaxed);
+            shared->ai_compressor_amount.store(
+                std::clamp(adaptSt.compressor_amount, 0.f, 1.f), std::memory_order_relaxed);
+            shared->ai_exciter_reduction.store(
+                std::clamp(adaptSt.exciter_reduction, 0.f, 1.f), std::memory_order_relaxed);
+        }
+
         ++frameCounter;
 
         // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
@@ -213,8 +240,12 @@ static void audioRouteBridgeLoop() {
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count() >= 1000) {
             lastLogTime = now;
             __android_log_print(ANDROID_LOG_INFO, "IVANNA.AudioRoute",
-                "source=omega_effect frames=%llu rms=%.4f peak=%.4f gr_db=%.2f adaptive_connected=%d",
+                "source=omega_effect frames=%llu rms=%.4f peak=%.4f gr_db=%.2f "
+                "target_gain=%.3f comp=%.2f exc_red=%.2f adaptive_connected=%d",
                 (unsigned long long)frameCounter, rms, peak, grDb,
+                shared->ai_target_gain.load(std::memory_order_relaxed),
+                shared->ai_compressor_amount.load(std::memory_order_relaxed),
+                shared->ai_exciter_reduction.load(std::memory_order_relaxed),
                 g_adaptiveEngine.running() ? 1 : 0);
         }
     }
