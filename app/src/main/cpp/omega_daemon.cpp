@@ -788,3 +788,24 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeSetPFPresence(JNIEnv*, jobject, j
     g_shared->pf_presence.store(v, std::memory_order_release);
     g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
 }
+
+// FIX (build roto — ld: undefined symbol: g_shared): g_shared está
+// declarado DENTRO del namespace anónimo de este archivo (líneas 53-514,
+// `namespace { ... OmegaSharedState* g_shared = nullptr; ... }`), lo que
+// le da enlace INTERNO (equivalente a 'static' a nivel de archivo) — sólo
+// visible dentro de este mismo translation unit. Un `extern
+// OmegaSharedState* g_shared;` desde otro .cpp (ivanna_omega_jni.cpp,
+// mismo target `ivanna_omega`, pero OTRA unidad de compilación) nunca
+// podía enlazar contra él, aunque ambos terminen en el mismo .so — de ahí
+// el "undefined symbol" en el linker, no un problema de CMake ni de
+// targets.
+//
+// Esta función SÍ tiene enlace externo real (está fuera del namespace
+// anónimo), y su cuerpo puede leer g_shared sin calificar porque está en
+// la MISMA unidad de compilación que la declaración original — la regla
+// de resolución de nombres de C++ hace visible un namespace anónimo en
+// todo el resto del archivo que lo contiene, sólo restringe la
+// LINKAGE (visibilidad desde otros .cpp), no el lookup dentro del mismo.
+OmegaSharedState* omega_daemon_get_shared_state() {
+    return g_shared;
+}

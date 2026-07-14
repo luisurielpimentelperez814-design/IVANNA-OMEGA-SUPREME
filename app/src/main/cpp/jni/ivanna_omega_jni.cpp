@@ -30,18 +30,20 @@
 #include "../perceptual_loudness.hpp"
 #include "omega_shared.h"
 
-// FIX (Adaptive Feedback Loop — ruta real de Spotify/YouTube):
-// g_shared vive en omega_daemon.cpp, compilado en el MISMO target
-// (libivanna_omega.so, ver CMakeLists.txt) que este archivo — no hace
-// falta IPC nuevo, sólo enlace C++ normal dentro del mismo .so. omega_
-// daemon.cpp lo crea/mapea en nativeStart() (llamado desde el proceso de
-// la APP), y omega_effect.cpp (un .so DISTINTO, EXCLUDE_FROM_ALL, cargado
-// por audioserver — otro proceso) mapea la MISMA memoria física recibida
-// vía SCM_RIGHTS. Por eso g_shared->ai_raw_rms/ai_raw_peak, escritos por
-// el proceso de audioserver, son visibles aquí sin ningún socket ni
-// cruce de proceso adicional — la memoria compartida YA cruza el límite
-// de proceso, solo faltaba que este lado la leyera.
-extern OmegaSharedState* g_shared;
+// FIX (build roto — ld: undefined symbol: g_shared): g_shared vive
+// DENTRO de un namespace anónimo en omega_daemon.cpp (líneas 53-514),
+// lo que le da enlace INTERNO (equivalente a 'static' a nivel de
+// archivo) — sólo visible dentro de ese translation unit. Un `extern
+// OmegaSharedState* g_shared;` directo desde aquí (otro .cpp, mismo
+// target `ivanna_omega`, pero OTRA unidad de compilación) nunca podía
+// enlazar contra él — de ahí el "ld: error: undefined symbol: g_shared"
+// en el build real de la CI, no un problema de CMake ni de targets.
+// Se usa en su lugar un accesor con enlace externo real, definido
+// FUERA del namespace anónimo al final de omega_daemon.cpp — su cuerpo
+// sí puede leer g_shared sin calificar porque comparte translation unit
+// con la declaración original (la regla de C++ sólo restringe la
+// linkage entre archivos, no el lookup dentro del mismo archivo).
+OmegaSharedState* omega_daemon_get_shared_state();
 
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -161,7 +163,7 @@ static void audioRouteBridgeLoop() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
-        OmegaSharedState* shared = g_shared;  // load único, evita TOCTOU
+        OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
         if (!shared) continue;  // daemon aún no arrancó/mapeó memoria en este proceso
 
         const float rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
