@@ -174,13 +174,28 @@ public:
 
         for (const Slot& slot : slots_) {
             RawAudioMetrics snap;
-            uint32_t g1 = 0, g2 = 0;
-            do {
+            uint32_t g1, g2;
+            // FIX (bug real de sincronización — encontrado auditando el 20%
+            // de fallos intermitentes del stress test en CI): 'continue'
+            // dentro de un do-while NO vuelve al inicio del cuerpo del
+            // loop, salta directo a la condición 'while(...)'. Con
+            // 'do { ... if (g1&1u) continue; ... } while (g1!=g2)', cuando
+            // se detectaba escritura en curso (g1 impar) el continue
+            // evaluaba 'g1 != g2' con un g2 VIEJO (de la iteración
+            // anterior, nunca reasignado en la ronda que se abortó) — si
+            // por coincidencia el nuevo g1 (impar, escritura en curso)
+            // igualaba ese g2 viejo, el loop terminaba de forma temprana
+            // sin haber confirmado una lectura consistente. Fix: for(;;)
+            // explícito con 'continue' que sí reinicia el cuerpo completo
+            // (recarga g1 desde cero), y 'break' solo cuando g1==g2 recién
+            // verificado en ESTA iteración — el patrón seqlock correcto.
+            for (;;) {
                 g1 = slot.guard.load(std::memory_order_acquire);
-                if (g1 & 1u) continue;  // escritura en curso en ESTE slot, reintentar
+                if (g1 & 1u) continue;  // escritura en curso, reintentar de verdad
                 snap = slot.snapshot;
                 g2 = slot.guard.load(std::memory_order_acquire);
-            } while (g1 != g2);
+                if (g1 == g2) break;  // lectura consistente confirmada
+            }
 
             if (snap.seq != 0 && (!haveBest || snap.seq > best.seq)) {
                 best = snap;
@@ -217,13 +232,19 @@ public:
 
     bool consumeIfNewer(AdaptiveState& out, uint64_t& lastSeenSeq) const noexcept {
         AdaptiveState snap;
-        uint32_t g1 = 0, g2 = 0;
-        do {
+        uint32_t g1, g2;
+        // FIX: mismo bug real que RawMetricsBus::consumeIfNewer (ver
+        // comentario ahí) — continue en do-while no reinicia el cuerpo,
+        // salta a la condición con un g2 potencialmente viejo. for(;;)
+        // explícito con break solo tras confirmar g1==g2 en la MISMA
+        // iteración.
+        for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
             snap = snapshot_;
             g2 = guard_.load(std::memory_order_acquire);
-        } while (g1 != g2);
+            if (g1 == g2) break;
+        }
 
         if (snap.timestamp == lastSeenSeq) return false;
         lastSeenSeq = snap.timestamp;

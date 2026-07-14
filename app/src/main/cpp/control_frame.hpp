@@ -103,12 +103,26 @@ public:
     bool consumeIfNewer(ControlFrame& out, uint64_t& lastSeenSeq) const noexcept {
         ControlFrame snapshot;
         uint32_t g1, g2;
-        do {
+        // FIX (bug real de sincronización, mismo patrón encontrado en
+        // adaptive_decision_engine.hpp — RawMetricsBus/AdaptiveStateBus):
+        // 'continue' dentro de un do-while NO reinicia el cuerpo del
+        // loop, salta directo a la condición 'while(g1!=g2)' — con g2
+        // potencialmente viejo (de una iteración anterior que se abortó
+        // antes de reasignarlo). Si el nuevo g1 (impar, escritura en
+        // curso) coincidía por azar con ese g2 viejo, el loop terminaba
+        // sin haber confirmado una lectura consistente — una lectura
+        // torn real del frame de control completo (EQ/Comp/Exciter/
+        // Widener/Gain), el bus más crítico de los tres que tenían este
+        // mismo bug, porque se lee en CADA bloque de audio. Fix: for(;;)
+        // explícito, 'continue' reinicia de verdad, 'break' solo tras
+        // confirmar g1==g2 en la misma iteración.
+        for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
             snapshot = frame_;
             g2 = guard_.load(std::memory_order_acquire);
-        } while (g1 != g2);
+            if (g1 == g2) break;
+        }
 
         if (snapshot.seq == lastSeenSeq) return false;
         lastSeenSeq = snapshot.seq;
