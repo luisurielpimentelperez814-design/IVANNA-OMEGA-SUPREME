@@ -1,5 +1,15 @@
 #pragma once
 
+// pthread_setschedparam()/pthread_self() son POSIX y el NDK no garantiza
+// que entren transitivamente desde <sched.h>. El build arm64 de CI fallaba
+// con "use of undeclared identifier 'pthread_self'" al incluir este header
+// desde los JNI de visualización. Incluir los contratos que usamos de forma
+// explícita mantiene el header autocontenido y portable.
+#include <cstdint>
+#if defined(__ANDROID__)
+#include <pthread.h>
+#endif
+
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #define IVANNA_AUDIO_HAS_NEON 1
 #else
