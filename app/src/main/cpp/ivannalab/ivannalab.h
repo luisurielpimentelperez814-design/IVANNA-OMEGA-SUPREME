@@ -25,6 +25,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace ivanna {
 
@@ -69,6 +70,9 @@ public:
     // Mide un buffer completo en una sola llamada (reset + feed + measure).
     // Útil para tests unitarios con buffers sintéticos.
     LabResult measureOnce(const float* interleavedStereo, int frames);
+
+    // Genera un reporte ASCII legible para validación técnica.
+    std::string generateReport() const;
 
     // Devuelve el número de frames acumulados desde el último reset().
     int framesAccumulated() const;
