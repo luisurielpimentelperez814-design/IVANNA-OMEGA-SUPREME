@@ -105,12 +105,16 @@ struct OmegaSharedState {
     // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
     // daemon lo aplica como multiplicador adicional en processLoop(), sin
     // tocar pf_master (que sigue siendo la ganancia base del usuario).
-    // compressor_amount/exciter_reduction NO tienen un análogo limpio en
-    // este PF Engine simple (no hay compresor ni exciter reales acá, solo
-    // drive/softclip + EQ) — forzarlos sobre 'drive' sería una
-    // aproximación falsa. Quedan documentados como gap conocido, no
-    // fabricados.
+    // compressor_amount/exciter_reduction: cerrado en commit de unificación
+    // DSP Ruta B. El daemon ya instancia Compressor e HarmonicExciter reales
+    // (mismo código que Ruta A, misma clase, misma .so — sin dependencia de
+    // símbolo nueva porque omega_daemon.cpp compila dentro de libivanna_omega.so
+    // junto a dsp/Compressor.cpp y dsp/HarmonicExciter.cpp). La app escribe
+    // [0..1] aquí; el daemon los pasa a setRuntimeAmount()/setRuntimeReduction()
+    // en el hot-path. Semántica idéntica a Ruta A.
     std::atomic<float> ai_runtime_gain_mul;
+    std::atomic<float> ai_runtime_comp_amount;    // 0..1 → Compressor::setRuntimeAmount()
+    std::atomic<float> ai_runtime_exciter_red;    // 0..1 → HarmonicExciter::setRuntimeReduction()
 
     // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
     // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
@@ -145,6 +149,7 @@ struct OmegaSharedState {
           ai_rms_level(0.0f), ai_gain_db(0.0f),
           ai_raw_rms(0.0f), ai_raw_peak(0.0f),
           ai_runtime_gain_mul(1.0f),
+          ai_runtime_comp_amount(0.0f), ai_runtime_exciter_red(0.0f),
           ai_band_low(0.0f), ai_band_mid(0.0f), ai_band_high(0.0f),
           write_pos(0), read_pos(0) {}
 };
