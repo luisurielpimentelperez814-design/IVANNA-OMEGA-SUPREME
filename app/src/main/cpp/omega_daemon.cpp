@@ -43,6 +43,11 @@
 #include "HarmonicExciter.h"
 #include "StereoWidener.h"
 #include "SafetyLimiter.h"
+// Fase 6 — Spatial Engine bridge (Ruta B)
+// HRTFConvolver es header-only. Sus dependencias (fft_radix2.hpp,
+// synthetic_hrtf.hpp, audio_thread_priority.h) ya están en la misma .so.
+// El include path "spatial/" está en include_directories del CMakeLists.
+#include "spatial/hrtf_convolver.hpp"
 
 #define LOG_TAG "OmegaDaemon"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -237,6 +242,11 @@ static ivanna::Compressor      g_comp_b;
 static ivanna::HarmonicExciter g_exciter_b;
 static ivanna::StereoWidener   g_widener_b;
 static ivanna::SafetyLimiter   g_limiter_b;
+// Fase 6 — Spatial: instancia global del HRTFConvolver (header-only).
+// No está en el hot-path hasta que ai_spatial_enabled==true.
+// Se inicializa una sola vez en omega_daemon_start(); reset() seguro desde
+// cualquier hilo porque no usa malloc después de init().
+static ivanna::HRTFConvolver   g_hrtf_b;
 static bool                    g_dsp_b_initialized = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -417,7 +427,38 @@ static void processLoop() {
                 }
             }
 
-            // 7. SafetyLimiter — -0.1 dBFS ceiling, RT-safe, sin malloc.
+            // 7. Spatial Engine (HRTFConvolver) — Fase 6, opcional vía ai_spatial_enabled.
+            //    Posición: después de Widener (señal ya ensanchada) y antes de
+            //    SafetyLimiter (protección sigue siendo la última etapa).
+            //    Reglas de seguridad:
+            //      - Solo activa si ai_spatial_enabled == true (false por defecto).
+            //      - set_position() es barato (solo cuantiza y marca crossfade si
+            //        cambió el ángulo) — seguro llamarlo en el hot-path cada bloque.
+            //      - process() no llama malloc tras init(); usa std::vector interno
+            //        pero sus buffers están pre-reservados.
+            //      - No toca SafetyLimiter ni Ruta A.
+            if (g_shared->ai_spatial_enabled.load(std::memory_order_relaxed)) {
+                const float azimuth = g_shared->ai_spatial_azimuth.load(
+                    std::memory_order_relaxed);
+                const float aggr = std::clamp(
+                    g_shared->ai_spatial_aggressiveness.load(std::memory_order_relaxed),
+                    0.0f, 1.0f);
+                g_hrtf_b.set_position(azimuth, aggr);
+
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                alignas(16) float outL[OMEGA_BLOCK_SIZE], outR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_hrtf_b.process(tmpL, tmpR, outL, outR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = outL[i];
+                    work_buf[i * 2 + 1] = outR[i];
+                }
+            }
+
+            // 8. SafetyLimiter — -0.1 dBFS ceiling, RT-safe, sin malloc.
             //    Mismo rol que en Ruta A: última línea de defensa antes de
             //    entregar a AudioFlinger.
             {
@@ -754,8 +795,12 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         g_exciter_b.setParams(p);
         g_widener_b.setParams(p);
         g_limiter_b.setParams();   // SafetyLimiter usa su propia firma sin DSPParams
+        // Fase 6 — inicializar HRTFConvolver con sample rate real.
+        // init() asigna los std::vector internos (único malloc aceptable:
+        // ocurre antes del audio thread, no en el hot-path).
+        g_hrtf_b.init(OMEGA_SAMPLE_RATE);
         g_dsp_b_initialized = true;
-        LOGI("DSP Ruta B inicializado (Compressor/HarmonicExciter/StereoWidener/SafetyLimiter).");
+        LOGI("DSP Ruta B inicializado (Compressor/Exciter/Widener/Limiter/HRTFConvolver).");
     }
 
     // Threads

@@ -126,6 +126,33 @@ struct OmegaSharedState {
     std::atomic<float> ai_band_mid;
     std::atomic<float> ai_band_high;
 
+    // ── Spatial Engine controls (Ruta B — Fase 6) ────────────────────────────
+    // ai_spatial_enabled:    activa/desactiva el HRTFConvolver en processLoop().
+    //                        false por defecto — no cambia comportamiento existente.
+    // ai_spatial_azimuth:    ángulo binaural en grados [-90..+90]. Valor 0 = frente.
+    //                        La app puede leer ai_band_low/mid para decidir si abrir
+    //                        el campo o centrarlo (graves fuertes → centro).
+    // ai_spatial_aggressiveness: [0..1] profundidad HRTF.
+    //                        0 = sutil, 1 = máxima espacialidad.
+    //                        AdaptiveDecisionEngine puede reducirla en voz.
+    std::atomic<bool>  ai_spatial_enabled;
+    std::atomic<float> ai_spatial_azimuth;           // grados [-90..+90], default 0
+    std::atomic<float> ai_spatial_aggressiveness;    // [0..1], default 0.5
+
+    // ── YAMNet clasificación (Ruta B — Fase 6) ────────────────────────────────
+    // Escritos por el hilo de inferencia YAMNet (AdaptiveDecisionEngine o
+    // un thread separado en la app). Leídos en processLoop() y por la UI.
+    // ai_yamnet_class_id: índice de clase YAMNet ganadora (0..520).
+    //                     -1 = sin inferencia todavía.
+    // ai_yamnet_confidence: probabilidad [0..1] de la clase ganadora.
+    // ai_voice_score:     [0..1] probabilidad de que el audio sea voz humana
+    //                     (acumulado de clases Speech/Singing/Narration).
+    // ai_music_score:     [0..1] probabilidad de que el audio sea música.
+    std::atomic<int>   ai_yamnet_class_id;      // -1 = unknown
+    std::atomic<float> ai_yamnet_confidence;    // [0..1]
+    std::atomic<float> ai_voice_score;          // [0..1] — afecta exciter_red
+    std::atomic<float> ai_music_score;          // [0..1] — afecta spatial width
+
     // ── Ring buffers ──────────────────────────────────────────────────────────
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
@@ -151,6 +178,10 @@ struct OmegaSharedState {
           ai_runtime_gain_mul(1.0f),
           ai_runtime_comp_amount(0.0f), ai_runtime_exciter_red(0.0f),
           ai_band_low(0.0f), ai_band_mid(0.0f), ai_band_high(0.0f),
+          ai_spatial_enabled(false), ai_spatial_azimuth(0.0f),
+          ai_spatial_aggressiveness(0.5f),
+          ai_yamnet_class_id(-1), ai_yamnet_confidence(0.0f),
+          ai_voice_score(0.0f), ai_music_score(0.0f),
           write_pos(0), read_pos(0) {}
 };
 
