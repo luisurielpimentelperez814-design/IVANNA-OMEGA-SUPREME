@@ -225,22 +225,7 @@ fun IvannaControlPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        GlassCard(
-            title = "IVANNA OMEGA ENGINE",
-            accent = AuroraCyan,
-            subtitle = "DSP: ${if (metrics.dspActive) "ACTIVE" else "STANDBY"} · ${metrics.sampleRate / 1000}kHz"
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBlock("LATENCY", "%.1f ms".format(metrics.latencyMs), PhosphorGreen, Modifier.weight(1f))
-                StatBlock("CPU", "%.0f%%".format(metrics.cpuPercent), AmberSignal, Modifier.weight(1f))
-                StatBlock("CLIPS", metrics.clipCount.toString(), NeonMagenta, Modifier.weight(1f))
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBlock("AI", metrics.yamnetCategory, NeonMagenta, Modifier.weight(1.4f))
-                StatBlock("CONF", "%.0f%%".format(metrics.yamnetConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
-                StatBlock("HRTF", if (metrics.hrtfActive) "ON" else "OFF", AuroraCyan, Modifier.weight(1f))
-            }
-        }
+        EngineStatusCard(metrics = metrics)
 
         OmniHeroHeader(
             omegaMode = omegaMode,

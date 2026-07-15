@@ -26,6 +26,7 @@ import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaBridgePlayer
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
+import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.audio.PlaybackCaptureService
 import com.ivanna.omega.audio.SpatialAudioEngineV2
 import com.ivanna.omega.core.IVANNAApplication
@@ -364,6 +365,37 @@ class MainActivity : ComponentActivity() {
                             IconButtonClose { showVisualizer = false }
                         }
                     } else {
+                      var omegaMetrics by remember { mutableStateOf(OmegaMetrics()) }
+                      LaunchedEffect(Unit) {
+                          var lastThreadNs = android.os.Debug.threadCpuTimeNanos()
+                          var lastWallNs = System.nanoTime()
+                          while (true) {
+                              val nowThreadNs = android.os.Debug.threadCpuTimeNanos()
+                              val nowWallNs = System.nanoTime()
+                              val cpu = if (nowWallNs > lastWallNs) {
+                                  ((nowThreadNs - lastThreadNs).toFloat() / (nowWallNs - lastWallNs).toFloat() * 100f).coerceIn(0f, 100f)
+                              } else 0f
+                              lastThreadNs = nowThreadNs
+                              lastWallNs = nowWallNs
+
+                              val npeMetrics = IvannaNpeEngine.getMetrics()
+                              val classify = IvannaNpeEngine.getSynthClassify()
+                              omegaMetrics = OmegaMetrics(
+                                  rmsLevel = npeMetrics.getOrElse(1) { 0f },
+                                  peakLevel = npeMetrics.getOrElse(0) { 0f },
+                                  clipCount = omegaMetrics.clipCount,
+                                  cpuPercent = cpu,
+                                  latencyMs = 2.8f,
+                                  sampleRate = 48000,
+                                  yamnetCategory = IvannaNpeEngine.getDetectedGenre(),
+                                  yamnetConfidence = classify.getOrElse(1) { 0f },
+                                  dspActive = IvannaNativeLib.isLoaded && !dspState.bypass,
+                                  hrtfActive = parameterStore.getNpeHrtf() || parameterStore.getOmegaMode() == 3,
+                                  spatialWidth = parameterStore.getSpatialWidth()
+                              )
+                              delay(500L)
+                          }
+                      }
                       // FIX CRASH (df77763): El Column externo tenía .verticalScroll() que
                       // pasaba constraints de altura INFINITA a IvannaControlPanel, que a su
                       // vez tiene .fillMaxSize().verticalScroll() en su raíz.
@@ -640,7 +672,9 @@ class MainActivity : ComponentActivity() {
                                     parameterStore.setSpatialEnabled(false)
                                 }
                             },
-                            onOpenVisualizer = { requestVisualizer() }
+                            onOpenVisualizer = { requestVisualizer() },
+                            metrics = omegaMetrics,
+                            onMetricsUpdate = { omegaMetrics = it }
                         )
                       }
                     }
