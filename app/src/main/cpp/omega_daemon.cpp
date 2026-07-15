@@ -35,6 +35,15 @@
 #include "omega_shared.h"
 #include "dsp_types.h"
 
+// DSP Ruta B — unificación: mismos módulos reales que Ruta A.
+// No hay nueva dependencia de símbolo: omega_daemon.cpp compila dentro de
+// libivanna_omega.so junto a dsp/Compressor.cpp, dsp/HarmonicExciter.cpp,
+// dsp/StereoWidener.cpp y dsp/SafetyLimiter.cpp (ver CMakeLists.txt).
+#include "Compressor.h"
+#include "HarmonicExciter.h"
+#include "StereoWidener.h"
+#include "SafetyLimiter.h"
+
 #define LOG_TAG "OmegaDaemon"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -218,6 +227,18 @@ struct BandEnergyMeter {
 };
 static BandEnergyMeter g_bandMeter;
 
+// ── DSP Ruta B — módulos unificados ──────────────────────────────────────────
+// Instancias estáticas de los mismos módulos que usa Ruta A (DSPBridge).
+// Se inicializan con DSPParams default en omega_daemon_start() y se
+// actualizan con runtime setters desde processLoop() antes de cada bloque.
+// No hay estado compartido con las instancias de Ruta A — cada ruta tiene
+// las suyas. La coherencia de comportamiento viene del código, no del estado.
+static ivanna::Compressor      g_comp_b;
+static ivanna::HarmonicExciter g_exciter_b;
+static ivanna::StereoWidener   g_widener_b;
+static ivanna::SafetyLimiter   g_limiter_b;
+static bool                    g_dsp_b_initialized = false;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 static inline float softClip(float x) {
     if (x > 0.95f) return 0.95f + 0.05f * std::tanh((x - 0.95f) * 20.0f);
@@ -305,14 +326,21 @@ static void processLoop() {
             const float dry    = 1.0f - wet;
             const float master = std::pow(10.0f,
                 g_shared->pf_master.load(std::memory_order_relaxed) / 20.0f);
-            // FIX (Opción A de unificación, ver comentario en omega_shared.h):
-            // target_gain del Adaptive Engine, ya clampeado [0.5,1.0] del
-            // lado de la app antes de escribir acá — solo puede atenuar.
-            // Multiplicador aparte de 'master' (que sigue siendo la
-            // ganancia base del usuario, sin tocar).
+            // target_gain adaptativo — solo atenuación [0.5, 1.0].
             const float adaptiveGain = std::clamp(
                 g_shared->ai_runtime_gain_mul.load(std::memory_order_relaxed),
                 0.5f, 1.0f);
+
+            // Leer runtime setters de unificación DSP (nuevos campos en
+            // omega_shared.h). Cargados una vez por bloque, no por sample.
+            const float compAmt  = std::clamp(
+                g_shared->ai_runtime_comp_amount.load(std::memory_order_relaxed),
+                0.0f, 1.0f);
+            const float excRed   = std::clamp(
+                g_shared->ai_runtime_exciter_red.load(std::memory_order_relaxed),
+                0.0f, 1.0f);
+            g_comp_b.setRuntimeAmount(compAmt);
+            g_exciter_b.setRuntimeReduction(excRed);
 
             // Estereo intercalado: [L0,R0, L1,R1, ...]
             for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
@@ -320,9 +348,8 @@ static void processLoop() {
                 float r = work_buf[i * 2 + 1];
                 const float origL = l, origR = r;
 
-                // FIX (band energy, Ruta B): medir sobre la señal SECA,
-                // antes de softclip/EQ — mismo criterio que Voice
-                // Protection/Spatial adaptativo en la Ruta A.
+                // Medir energía de banda sobre la señal SECA (antes del
+                // procesamiento) — mismo criterio que Ruta A.
                 g_bandMeter.tick(origL, origR);
 
                 // 1. Pre-gain + saturacion tanh
@@ -330,23 +357,84 @@ static void processLoop() {
                 l = softClip(l * dv);
                 r = softClip(r * dv);
 
-                // 2. 4-band PF EQ — Biquads APLICADOS por primera vez
+                // 2. 4-band PF EQ
                 l = g_pf.low[0].process(l);       r = g_pf.low[1].process(r);
                 l = g_pf.mid[0].process(l);       r = g_pf.mid[1].process(r);
                 l = g_pf.high[0].process(l);      r = g_pf.high[1].process(r);
                 l = g_pf.presence[0].process(l);  r = g_pf.presence[1].process(r);
 
-                // 3. Mezcla wet/dry + limitacion termica + ganancia maestra
-                //    + target_gain adaptativo (Ruta B, ver omega_shared.h)
+                // 3. Mezcla wet/dry + limitación térmica + ganancia maestra
+                //    + target_gain adaptativo
                 work_buf[i * 2]     = (wet * l + dry * origL) * tGain * master * adaptiveGain;
                 work_buf[i * 2 + 1] = (wet * r + dry * origR) * tGain * master * adaptiveGain;
             }
 
-            // Publicar band energy del bloque (una vez, no por sample —
+            // 4. Compressor — opera sobre el bloque completo (deinterlaced L/R
+            //    por la API de ivanna::Compressor). Necesita buffers separados.
+            //    Separamos, procesamos, reinterlazamos.
+            {
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_comp_b.process(tmpL, tmpR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = tmpL[i];
+                    work_buf[i * 2 + 1] = tmpR[i];
+                }
+            }
+
+            // 5. HarmonicExciter
+            {
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_exciter_b.process(tmpL, tmpR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = tmpL[i];
+                    work_buf[i * 2 + 1] = tmpR[i];
+                }
+            }
+
+            // 6. StereoWidener — ensanche M/S con crossover mono-safe de graves.
+            //    width controlado por ai_sensitivity repurposado: NO, no tocamos
+            //    campos existentes con significado diferente. El widener corre con
+            //    su default (width=1.0f, configurado en init). Se puede exponer
+            //    vía socket como SET_PF_ALPHA en una iteración posterior.
+            {
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_widener_b.process(tmpL, tmpR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = tmpL[i];
+                    work_buf[i * 2 + 1] = tmpR[i];
+                }
+            }
+
+            // 7. SafetyLimiter — -0.1 dBFS ceiling, RT-safe, sin malloc.
+            //    Mismo rol que en Ruta A: última línea de defensa antes de
+            //    entregar a AudioFlinger.
+            {
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_limiter_b.process(tmpL, tmpR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = tmpL[i];
+                    work_buf[i * 2 + 1] = tmpR[i];
+                }
+            }
+
+            // Publicar band energy del bloque (una vez por bloque —
             // barato, sin malloc/mutex, solo 3 atomic stores).
-            // NOTA (limitación documentada, igual criterio que ai_gain_db
-            // más arriba en este archivo): solo se actualiza cuando
-            // is_processing && !bypass, igual que el resto de esta cadena.
             g_shared->ai_band_low.store(g_bandMeter.envLow,   std::memory_order_relaxed);
             g_shared->ai_band_mid.store(g_bandMeter.envMid,   std::memory_order_relaxed);
             g_shared->ai_band_high.store(g_bandMeter.envHigh, std::memory_order_relaxed);
@@ -649,7 +737,26 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     // cero — silencio total — hasta que el puente de la app escribiera un
     // valor real, lo cual no está garantizado en un arranque en silencio.
     g_shared->ai_runtime_gain_mul.store(1.0f, std::memory_order_relaxed);
+    // Misma lógica que ai_runtime_gain_mul: el constructor nunca corre en mmap,
+    // así que los nuevos campos también quedan en 0.0f por el memset.
+    // 0.0f es seguro para ambos (comp_amount=0 → sin compresión extra,
+    // exciter_red=0 → sin reducción), así que no requieren store explícito.
+    // Se documenta aquí por consistencia, no por necesidad.
+    // g_shared->ai_runtime_comp_amount = 0.0f  ← seguro, memset ya lo hizo
+    // g_shared->ai_runtime_exciter_red = 0.0f  ← idem
     g_bandMeter.init();
+
+    // Inicializar módulos DSP Ruta B con params por defecto.
+    // setParams() aplica DSPParams defaults (calibrados en dsp_types.h v3.3).
+    if (!g_dsp_b_initialized) {
+        ivanna::DSPParams p{};
+        g_comp_b.setParams(p);
+        g_exciter_b.setParams(p);
+        g_widener_b.setParams(p);
+        g_limiter_b.setParams();   // SafetyLimiter usa su propia firma sin DSPParams
+        g_dsp_b_initialized = true;
+        LOGI("DSP Ruta B inicializado (Compressor/HarmonicExciter/StereoWidener/SafetyLimiter).");
+    }
 
     // Threads
     g_process_thread = std::thread(processLoop);
