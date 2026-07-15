@@ -531,6 +531,38 @@ static void handleSocketCommand(const char* cmd, size_t len) {
     else if (strncmp(cmd, "SET_AI_ENABLED:",     15) == 0) g_shared->ai_enabled.store(v != 0.0f,  std::memory_order_release);
     else if (strncmp(cmd, "SET_AI_AUTO_ADAPT:",  18) == 0) g_shared->ai_auto_adapt.store(v != 0.0f, std::memory_order_release);
     else if (strncmp(cmd, "SET_AI_SENSITIVITY:", 19) == 0) g_shared->ai_sensitivity.store(v, std::memory_order_release);
+    // Fase 6 — Adaptive feedback loop: app escribe decisiones de AdaptiveDecisionEngine
+    // + YAMNet scores al shared state. El daemon los aplica en processLoop().
+    // SET_AI_RUNTIME_GAIN:   target_gain [0.5..1.0] → ai_runtime_gain_mul
+    // SET_AI_RUNTIME_COMP:   compressor_amount [0..1] → ai_runtime_comp_amount
+    // SET_AI_RUNTIME_EXCRED: exciter_reduction [0..1] → ai_runtime_exciter_red
+    // SET_AI_VOICE_SCORE:    voice_score [0..1] → ai_voice_score (YAMNet Speech)
+    // SET_AI_MUSIC_SCORE:    music_score [0..1] → ai_music_score (YAMNet Music)
+    // SET_AI_YAMNET_CLASS:   class_id int → ai_yamnet_class_id
+    // SET_AI_YAMNET_CONF:    confidence [0..1] → ai_yamnet_confidence
+    // SET_SPATIAL_ENABLED:   0/1 → ai_spatial_enabled
+    // SET_SPATIAL_AZIMUTH:   grados [-90..90] → ai_spatial_azimuth
+    // SET_SPATIAL_AGGR:      [0..1] → ai_spatial_aggressiveness
+    else if (strncmp(cmd, "SET_AI_RUNTIME_GAIN:",   20) == 0)
+        g_shared->ai_runtime_gain_mul.store(std::clamp(v, 0.5f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_RUNTIME_COMP:",   20) == 0)
+        g_shared->ai_runtime_comp_amount.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_RUNTIME_EXCRED:", 22) == 0)
+        g_shared->ai_runtime_exciter_red.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_VOICE_SCORE:",    19) == 0)
+        g_shared->ai_voice_score.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_MUSIC_SCORE:",    19) == 0)
+        g_shared->ai_music_score.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_YAMNET_CLASS:",   20) == 0)
+        g_shared->ai_yamnet_class_id.store(static_cast<int>(v), std::memory_order_release);
+    else if (strncmp(cmd, "SET_AI_YAMNET_CONF:",    19) == 0)
+        g_shared->ai_yamnet_confidence.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_SPATIAL_ENABLED:",   20) == 0)
+        g_shared->ai_spatial_enabled.store(v != 0.0f, std::memory_order_release);
+    else if (strncmp(cmd, "SET_SPATIAL_AZIMUTH:",   20) == 0)
+        g_shared->ai_spatial_azimuth.store(std::clamp(v, -90.0f, 90.0f), std::memory_order_release);
+    else if (strncmp(cmd, "SET_SPATIAL_AGGR:",      17) == 0)
+        g_shared->ai_spatial_aggressiveness.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
     else LOGW("handleSocketCommand: comando desconocido: %.*s", (int)(colon - cmd), cmd);
 }
 

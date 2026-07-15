@@ -161,6 +161,62 @@ class OmegaEngineBridge {
     fun setAiSensitivity(v: Float) =
         send("SET_AI_SENSITIVITY:${v.coerceIn(0f, 1f)}")
 
+    // ── Fase 6 — Adaptive feedback loop + YAMNet + Spatial ───────────────────
+    // Estos métodos cierra el ciclo YAMNet → AdaptiveDecisionEngine → daemon:
+    // la app corre YAMNet en su propio hilo, calcula AdaptiveState y escribe
+    // los resultados al daemon vía socket. El daemon los aplica en processLoop()
+    // sobre el audio real de streaming (Spotify, YouTube, etc.).
+
+    /** target_gain [0.5..1.0] — resultado de AdaptiveDecisionEngine.computeTargetGain() */
+    fun setAiRuntimeGain(v: Float)        = send("SET_AI_RUNTIME_GAIN:${v.coerceIn(0.5f, 1.0f)}")
+
+    /** compressor_amount [0..1] — resultado de AdaptiveDecisionEngine.computeCompressorAmount() */
+    fun setAiRuntimeComp(v: Float)        = send("SET_AI_RUNTIME_COMP:${v.coerceIn(0f, 1f)}")
+
+    /** exciter_reduction [0..1] — resultado de AdaptiveDecisionEngine.computeExciterReduction() */
+    fun setAiRuntimeExcRed(v: Float)      = send("SET_AI_RUNTIME_EXCRED:${v.coerceIn(0f, 1f)}")
+
+    /** voice_score [0..1] — score YAMNet Speech (de YamnetClassifier.classify().speech) */
+    fun setAiVoiceScore(v: Float)         = send("SET_AI_VOICE_SCORE:${v.coerceIn(0f, 1f)}")
+
+    /** music_score [0..1] — score YAMNet Music */
+    fun setAiMusicScore(v: Float)         = send("SET_AI_MUSIC_SCORE:${v.coerceIn(0f, 1f)}")
+
+    /** Clase YAMNet ganadora (índice 0..520, -1 = desconocido) */
+    fun setAiYamnetClass(classId: Int)    = send("SET_AI_YAMNET_CLASS:${classId.toFloat()}")
+
+    /** Confianza de la clase YAMNet ganadora [0..1] */
+    fun setAiYamnetConf(v: Float)         = send("SET_AI_YAMNET_CONF:${v.coerceIn(0f, 1f)}")
+
+    /** Publica un AdaptiveState completo en un batch de 3 comandos (mínimo de round-trips). */
+    fun pushAdaptiveState(
+        targetGain: Float,
+        compAmount: Float,
+        excRed: Float
+    ) {
+        setAiRuntimeGain(targetGain)
+        setAiRuntimeComp(compAmount)
+        setAiRuntimeExcRed(excRed)
+    }
+
+    /** Publica scores YAMNet completos al daemon. */
+    fun pushYamnetScores(speech: Float, music: Float, classId: Int, confidence: Float) {
+        setAiVoiceScore(speech)
+        setAiMusicScore(music)
+        setAiYamnetClass(classId)
+        setAiYamnetConf(confidence)
+    }
+
+    // ── Spatial Engine (Ruta B) ───────────────────────────────────────────────
+    fun setSpatialEnabled(enabled: Boolean) =
+        send("SET_SPATIAL_ENABLED:${if (enabled) 1 else 0}")
+
+    fun setSpatialAzimuth(degrees: Float) =
+        send("SET_SPATIAL_AZIMUTH:${degrees.coerceIn(-90f, 90f)}")
+
+    fun setSpatialAggressiveness(v: Float) =
+        send("SET_SPATIAL_AGGR:${v.coerceIn(0f, 1f)}")
+
     // ── PF Engine ─────────────────────────────────────────────────────────────
 
     fun setPFDrive(v: Float)      = send("SET_PF_DRIVE:$v")
