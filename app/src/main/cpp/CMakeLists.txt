@@ -108,6 +108,14 @@ add_library(ivanna_omega SHARED
     # AdaptiveState. NO se crea una segunda implementación — único target.
     # ============================================================================
     experimental/adaptive_engine/adaptive_decision_engine.cpp
+
+    # ============================================================================
+    # IvannaLab — suite de medición de calidad (THD/IMD/LUFS/LRA/SNR/TP)
+    # Estado: SKELETON compilable. La implementación real (FFT + K-weighting
+    # + gating BS.1770-4) está pendiente. El skeleton define la API fija y
+    # permite que IvannaLab.kt y los tests de CI usen las firmas sin breakage.
+    # ============================================================================
+    ivannalab/ivannalab.cpp
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
@@ -119,6 +127,7 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/spatial
     ${CMAKE_SOURCE_DIR}/visualizer
     ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
+    ${CMAKE_SOURCE_DIR}/ivannalab
 )
 
 find_library(log-lib log)
