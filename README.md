@@ -1,179 +1,130 @@
 # IVANNA OMEGA SUPREME
 
-**Motor de audio neuromorphic para Android con integración Magisk a nivel de sistema.**
+Motor de procesamiento de audio adaptativo para Android.
 
 Autor: Luis Uriel Pimentel Pérez  
 Licencia: Propietaria y confidencial  
-Plataforma: Android 9+ (arm64-v8a)
+Plataforma: Android 9+ (arm64-v8a), Snapdragon
 
 ---
 
-## Qué es
+## Estado actual del producto
 
-IVANNA no es un ecualizador. Es un sistema de procesamiento de audio de arquitectura propia que combina:
-
-- **DSP clásico** (EQ paramétrico, compresor, exciter armónico, ensanchamiento estéreo)
-- **Motor neuromorphic (NPE)** con modelo coclear de 32 bandas gammatone, inhibición lateral, compresión OHC y AGC adaptativo — inspirado en cómo procesa el oído humano, no en filtros de señal convencionales
-- **Motor armónico NHO** con síntesis Volterra de segundo orden y Kernel Evolutivo (algoritmo genético que modula NHO + Spatial en tiempo real)
-- **HRTF binaural** con síntesis sintética y convolución para audio 3D
-- **Phase Oracle** para coherencia de fase en la cadena DSP
-- **Integración Magisk** que registra `libomega_effect.so` como `AudioEffect` global en el HAL de Android — procesa el audio de cualquier app (Spotify, Tidal, YouTube, juegos, llamadas) sin que esas apps sepan que existe
+Este documento describe el estado real del código a la fecha, verificado por auditoría directa del repositorio. No describe intenciones ni planes futuros.
 
 ---
 
-## Arquitectura real
+## Qué funciona hoy
+
+### Ruta de audio A — Reproductor propio (IvannaBridgePlayer)
+
+Cuando el usuario reproduce un archivo desde el reproductor interno de IVANNA:
 
 ```
-App (Kotlin + Compose)
+Archivo local
+→ MediaExtractor/MediaCodec (PCM)
+→ DSPBridge.process() / nativeProcessBlock()
+→ ParametricEQ (8 bandas)
+→ Compressor (threshold/ratio, con setRuntimeAmount adaptativo)
+→ HarmonicExciter (2x oversampling, HPF 2.4 kHz, con setRuntimeReduction adaptativo)
+→ StereoWidener (M/S crossover mono-safe de graves)
+→ GainStage (input trim + output gain, con setRuntimeGain adaptativo)
+→ PDEngine (NHO armónico + Spatial HRTF + EvolutionaryKernel)
+→ SafetyLimiter (-0.1 dBFS ceiling, lookup table, sin malloc en RT)
+→ AudioTrack → DAC
+```
+
+El AdaptiveDecisionEngine modula en tiempo real `target_gain`, `compressor_amount`, `exciter_reduction` y `spatial_width` sobre esta cadena. Las decisiones del ADE se basan en métricas reales medidas sobre la señal de salida: RMS, Peak, GainReduction del SafetyLimiter, y energía por banda espectral (low 80-200 Hz, mid 500 Hz-2 kHz, high 4-16 kHz) extraída de los envelopes IIR de 8 bandas que PDEngine ya calcula.
+
+### Ruta de audio B — Apps externas con Magisk (Spotify, YouTube, etc.)
+
+Requiere dispositivo con root y módulo Magisk instalado.
+
+```
+Spotify / YouTube / Tidal / juego / navegador
+→ AudioFlinger (HAL Android)
+→ libomega_effect.so (AudioEffect global registrado por Magisk)
+→ applyAgc() — ganancia adaptativa + métricas → shared memory
+→ omega_daemon (processLoop)
+   → PFEngine (4-band EQ vía Biquads, low shelf 200 Hz / mid peak / high shelf 8 kHz / presence 3.5 kHz)
+   → target_gain del AdaptiveDecisionEngine (via ai_runtime_gain_mul en shared memory)
+→ AudioTrack / salida del sistema
+```
+
+El ADE recibe métricas reales de esta ruta (RMS, Peak de applyAgc, band energies de 3 filtros IIR en omega_daemon). Aplica target_gain como multiplicador sobre la ganancia maestra del daemon. `compressor_amount` y `exciter_reduction` no tienen análogo en esta ruta (el PF Engine no tiene compresor ni exciter equivalentes); esto está documentado como gap conocido.
+
+### AdaptiveDecisionEngine
+
+Motor de decisión que corre en hilo de control a 20 Hz. Analiza las métricas de ambas rutas y publica un `AdaptiveState` via seqlock MPSC. El audio thread consume ese estado de forma lock-free.
+
+Detecta:
+- Exceso de energía (clip risk) → reduce target_gain
+- Sibilancia (high-band ratio elevado) → sugiere exciter_reduction
+- Fatiga espectral sostenida → ajusta compressor_amount
+- Señal casi-mono → aumenta spatial_width
+
+No toca SafetyLimiter. No opera dentro del audio thread.
+
+---
+
+## Qué no funciona o está incompleto
+
+| Componente | Estado | Nota |
+|---|---|---|
+| VoiceController (control por voz) | Huérfano | Existe en código, no conectado a flujo principal |
+| CloudSyncManager | Parcial | Requiere setup Firebase externo |
+| USB DAC / AUX Reference Mode | Ausente | No implementado |
+| IvannaLab (suite de medición THD/IMD/LUFS) | Ausente | No implementado |
+| Ruta B: compressor_amount / exciter_reduction | Sin efecto | PF Engine no tiene esos módulos |
+| Magisk: mqa_monitor.sh auto-preset | Sin verificar en vivo | El script existe, no hay evidencia de prueba en dispositivo real |
+| NPE neuromorphic (modelo coclear) | Parcial | El .so existe, se inicializa, su impacto audible no está cuantificado |
+| Hexagon DSP (FastRPC) | Huérfano | Código presente, sin enlace, no compila para producción |
+
+---
+
+## Arquitectura interna
+
+```
+App Android (Kotlin + Compose)
 │
-├── IvannaControlPanel          UI de todos los motores
+├── IvannaControlPanel           UI de sliders y presets
 ├── DSPBridge → libivanna_omega.so
-│     ├── ParametricEQ          8 bandas (low shelf, low-mid, banda libre, mid, high, presence, high shelf)
-│     ├── Compressor            threshold/ratio adaptativo
-│     ├── HarmonicExciter       2x oversampling anti-aliasing
-│     ├── StereoWidener         crossover mono-safe de graves
+│     ├── ParametricEQ           8 bandas
+│     ├── Compressor
+│     ├── HarmonicExciter
+│     ├── StereoWidener
+│     ├── GainStage
+│     ├── SafetyLimiter          -0.1 dBFS, RT-safe
 │     └── PDEngine
-│           ├── NHO             Generador armónico Volterra
-│           ├── Spatial         HRTF binaural 3D
-│           └── EvolutionaryKernel  AG → modula NHO+Spatial en vivo
-├── NPE (Neuromorphic)
-│     ├── NeuroChochlearManifold  32 bandas gammatone + RK4
-│     ├── LIF Neuron Pool       Leaky Integrate-and-Fire
-│     ├── Inhibición lateral
-│     ├── Compresión OHC
-│     └── AGC adaptativo
-├── LearningBias                Aprende correcciones del usuario por contexto
-├── UserProfileManager          Perfiles de usuario persistentes
-├── CloudSyncManager            Sincronización Firebase (requiere setup)
-├── VoiceController             Control por voz — EXISTE, no está cableado en MainActivity (huérfano)
-├── AppMetadataListener         Detecta app activa para auto-preset
-└── IvannaBridgePlayer          Reproductor propio (archivos locales)
+│           ├── NHO              Generador armónico Volterra
+│           ├── Spatial          HRTF sintético
+│           └── EvolutionaryKernel
+├── AdaptiveDecisionEngine       Hilo de control 20 Hz, lock-free
+├── IvannaNativeLib              API de bloque estéreo (nativeProcessBlock)
+├── IvannaGlobalEffectManager    AudioEffect sessions (Spotify/YouTube via Android AudioEffect API, sin Magisk)
+├── LearningBias                 EMA por parámetro/contexto, aprende correcciones del usuario
+├── IvannaBridgePlayer           Reproductor de archivos locales
+└── PlaybackCaptureService       MediaProjection: captura para análisis/visualizador
 
-M�dulo Magisk
-├── libomega_effect.so          Registrado como AudioEffect global en el HAL
-├── omega_daemon                Daemon nativo: recibe comandos de la app
-├── service.sh                  Daemon con SCHED_FIFO 98 + big cores dinámicos
-├── mqa_monitor.sh              Detecta app activa → aplica preset automático
-├── ivanna_control.sh           CLI: status|preset|volume|bypass|concert
-└── post-fs-data.sh             setprop + verificación ELF + anti-bootloop
+Módulo Magisk (requiere root)
+├── libomega_effect.so           AudioEffect global en HAL
+├── omega_daemon                 Daemon RT (SCHED_FIFO 98)
+├── service.sh / post-fs-data.sh Scripts de instalación y watchdog
+└── ivanna_control.sh            CLI de control
 ```
 
 ---
 
-## Cómo funciona con Magisk (root)
-
-Con el módulo instalado, `libomega_effect.so` se inyecta en el HAL de audio de Android como efecto global de tipo `INSERT_LAST` en el stream `music`. Esto significa que **todo el audio de cualquier app pasa por IVANNA antes de llegar al DAC**, sin que el usuario tenga que abrir la app ni dar permisos.
-
-El daemon recibe comandos de la app vía socket Unix (`/dev/socket/ivanna_omega`). El monitor `mqa_monitor.sh` detecta qué app está produciendo audio y aplica el preset óptimo:
-
-| App | Preset automático | Razón |
-|-----|-------------------|-------|
-| Tidal / Qobuz / Amazon HD | `Flat` | No colorear lossless/MQA |
-| Spotify / YouTube Music | `Warm` | Compensar compresión lossy |
-| YouTube / video | `Spatial` | HRTF para contenido de video |
-| Juegos | `Punch` | Impacto + presencia para efectos |
-
----
-
-## Sin root (app sola)
-
-- **Archivos locales**: `IvannaBridgePlayer` decodifica y procesa con la cadena DSP completa
-- **Sistema**: `MediaProjection` + `PlaybackCaptureService` captura el audio del sistema (con permiso del usuario)
-- El DSP completo funciona — lo único que cambia es el punto de intercepción
-
----
-
-## Perfiles de audio
-
-| Perfil | Uso óptimo |
-|--------|-----------|
-| `Flat` | Referencia / mezcla / lossless hi-res |
-| `Warm` | Jazz, acústico, voces, vintage |
-| `Bright` | Pop, electrónica, claridad vocal |
-| `Punch` | Hip-hop, rap, EDM, impacto |
-| `Spatial` | Binaural, cine, VR, ASMR |
-| `Heavy` | Metal, rock pesado, distorsión |
-| `Vocal` | Podcast, audiolibros, speech |
-| `Bass` | Techno, deep house, subwoofer |
-| `Steve Miller Band` | Rock clásico 70s, groove + claridad vocal |
-| `RUSH` | Prog rock, dinámica extrema, técnica |
-| `Budgie` | Hard rock, power, densidad |
-| `Grand Funk Railroad` | Groove pesado, bajo potente |
-
----
-
-## Instalación
-
-### App (sin root)
+## Compilación
 
 ```bash
-git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
-cd IVANNA-OMEGA-SUPREME
+# APK debug
 ./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+
+# Tests DSP nativos (host, sin Android)
+cmake -B build-tests -DIVANNA_BUILD_TESTS=ON
+ctest --test-dir build-tests --output-on-failure
 ```
 
-### Módulo Magisk (requiere root + Magisk ≥ v20.4)
-
-1. Compilar el proyecto (genera los `.so` en `app/build/`)
-2. Copiar `libivanna_omega.so` al módulo como `libomega_effect.so`
-3. Zipar `magisk_module/` e instalar desde Magisk Manager
-
-### Control desde ADB (con módulo)
-
-```bash
-# Estado
-adb shell su -c "/data/adb/modules/ivanna_omega_supreme/ivanna_control.sh status"
-
-# Cambiar preset
-adb shell su -c "/data/adb/modules/ivanna_omega_supreme/ivanna_control.sh preset Spatial"
-
-# Modo Concierto
-adb shell su -c "/data/adb/modules/ivanna_omega_supreme/ivanna_control.sh concert on"
-```
-
----
-
-## Requisitos
-
-- Android 9 (API 28) o superior
-- Arquitectura: arm64-v8a
-- Para módulo Magisk: root + Magisk ≥ v20.4
-
-### Firebase (sincronización en la nube)
-
-Requiere setup manual en Firebase Console (ver `CloudSyncManager.kt` para instrucciones detalladas). La app funciona completamente sin Firebase — la sincronización es opcional.
-
----
-
-## Estado actual
-
-### ✅ Implementado y funcional
-- Cadena DSP completa en C++ (EQ + Comp + Exciter + Widener)
-- Motor PDEngine (NHO + Spatial + HRTF + Evolutionary Kernel)
-- NPE neuromorphic (32 bandas cocleares + LIF + AGC)
-- UI Compose completa con todos los controles y telemetría
-- Módulo Magisk con efecto global registrado en el HAL
-- Daemon con SCHED_FIFO en big cores
-- Monitor automático de app activa → preset
-- Perfiles de usuario con aprendizaje (LearningBias)
-- Reproductor propio (IvannaBridgePlayer)
-- Captura de sistema via MediaProjection
-- Modo Concierto
-- CloudSync (Firebase, requiere setup)
-
-### 🔧 En progreso / pendiente
-- VoiceController: la clase existe y funciona en aislamiento, pero no se instancia en ningún lado de la app (huérfana, sin botón/intent que la active)
-- Slider "MASTER GAIN" del panel controla el motor NPE, no `DSPState.master`/`GainStage` (la ganancia de salida real de la cadena DSPBridge) — gap detectado en el commit `5fdb814`, no corregido todavía
-- Convolución de sala real (carga de IR)
-- Soporte USB DAC dedicado
-- Setup Firebase (requiere acción del autor)
-- Pruebas en dispositivos reales (QA pendiente)
-
----
-
-## Código
-
-~10,300 líneas Kotlin · ~13,500 líneas C++/C · ~24 clases nativas JNI
-
-© 2026 Luis Uriel Pimentel Pérez — IVANNA NPE — Todos los derechos reservados.
+Arquitectura: `arm64-v8a` exclusivamente (APK ~60% más pequeño).  
+NDK: 25.1.8937393 | CMake: 3.22+ | AGP: 8.x | minSdk: 28 | targetSdk: 35

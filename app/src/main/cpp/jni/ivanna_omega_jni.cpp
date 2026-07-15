@@ -675,12 +675,34 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     if (!copyJFloat(env, inR, rBuf, n)) return;
 
     // DSP chain
+    // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
+    // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth
+    // independiente (nativeProcessBlock puede correr en thread distinto o
+    // el mismo; en ambos casos converge a los mismos valores del ADE).
+    // Sin malloc, sin mutex — solo atomic loads + EMA, idéntico patrón al
+    // bloque de P0 en nativeProcess.
+    static thread_local float s_blk_tgSmooth  = 1.0f;
+    static thread_local float s_blk_caSmooth  = 0.0f;
+    static thread_local float s_blk_erSmooth  = 0.0f;
+    s_blk_tgSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f) - s_blk_tgSmooth);
+    s_blk_caSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f) - s_blk_caSmooth);
+    s_blk_erSmooth += 0.05f * (std::clamp(
+        g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f) - s_blk_erSmooth);
+
     g_gain.processInput(lBuf, rBuf, n);
     g_eq.process(lBuf, rBuf, n);
+    g_gain.setRuntimeGain(s_blk_tgSmooth);
+    g_comp.setRuntimeAmount(s_blk_caSmooth);
     g_comp.process(lBuf, rBuf, n);
+    g_exciter.setRuntimeReduction(s_blk_erSmooth);
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
     g_gain.processOutput(lBuf, rBuf, n);
+    // SafetyLimiter: faltaba en esta ruta. nativeProcess lo aplica; sin él
+    // aquí bloques que superen 0 dBFS salían sin protección hacia el DAC.
+    g_safety_limiter.process(lBuf, rBuf, n);
 
     // FIX: Kernel Evolutivo → orquestador central real (antes: el genoma
     // ganador solo llegaba a z[]/harmonic_gain vía apply_evo_genome() interno
