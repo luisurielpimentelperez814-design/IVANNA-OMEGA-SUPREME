@@ -47,11 +47,15 @@ Spotify / YouTube / Tidal / juego / navegador
 → applyAgc() — ganancia adaptativa + métricas → shared memory
 → omega_daemon (processLoop)
    → PFEngine (4-band EQ vía Biquads, low shelf 200 Hz / mid peak / high shelf 8 kHz / presence 3.5 kHz)
+   → Compressor (mismo código que Ruta A, con setRuntimeAmount adaptativo)
+   → HarmonicExciter (2x oversampling, HPF, con setRuntimeReduction adaptativo)
+   → StereoWidener (M/S crossover mono-safe de graves)
+   → SafetyLimiter (-0.1 dBFS ceiling, RT-safe)
    → target_gain del AdaptiveDecisionEngine (via ai_runtime_gain_mul en shared memory)
 → AudioTrack / salida del sistema
 ```
 
-El ADE recibe métricas reales de esta ruta (RMS, Peak de applyAgc, band energies de 3 filtros IIR en omega_daemon). Aplica target_gain como multiplicador sobre la ganancia maestra del daemon. `compressor_amount` y `exciter_reduction` no tienen análogo en esta ruta (el PF Engine no tiene compresor ni exciter equivalentes); esto está documentado como gap conocido.
+El ADE recibe métricas reales de esta ruta (RMS, Peak de applyAgc, band energies de 3 filtros IIR en omega_daemon). Aplica `target_gain`, `compressor_amount` y `exciter_reduction` sobre la cadena completa del daemon. Los tres parámetros viajan por `ai_runtime_gain_mul`, `ai_runtime_comp_amount` y `ai_runtime_exciter_red` en shared memory (campos añadidos junto a este cierre). `spatial_width` no tiene análogo en esta ruta (no hay PDEngine con HRTF en el daemon); sigue siendo gap conocido.
 
 ### AdaptiveDecisionEngine
 
@@ -74,8 +78,8 @@ No toca SafetyLimiter. No opera dentro del audio thread.
 | VoiceController (control por voz) | Huérfano | Existe en código, no conectado a flujo principal |
 | CloudSyncManager | Parcial | Requiere setup Firebase externo |
 | USB DAC / AUX Reference Mode | Ausente | No implementado |
-| IvannaLab (suite de medición THD/IMD/LUFS) | Ausente | No implementado |
-| Ruta B: compressor_amount / exciter_reduction | Sin efecto | PF Engine no tiene esos módulos |
+| IvannaLab (suite de medición THD/IMD/LUFS) | Skeleton | Stubs compilables; medición real pendiente |
+| Ruta B: spatial_width adaptativo | Sin efecto | No hay PDEngine/HRTF en el daemon; gap conocido |
 | Magisk: mqa_monitor.sh auto-preset | Sin verificar en vivo | El script existe, no hay evidencia de prueba en dispositivo real |
 | NPE neuromorphic (modelo coclear) | Parcial | El .so existe, se inicializa, su impacto audible no está cuantificado |
 | Hexagon DSP (FastRPC) | Huérfano | Código presente, sin enlace, no compila para producción |
