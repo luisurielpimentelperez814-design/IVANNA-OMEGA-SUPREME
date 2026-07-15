@@ -253,7 +253,8 @@ struct IvannaLab::Impl {
         if (h1 < 1e-6f) return -1.f;
         const float h2 = (2.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 2.f * f1, (float)sampleRate) : 0.f;
         const float h3 = (3.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 3.f * f1, (float)sampleRate) : 0.f;
-        return 100.f * std::sqrt(h2 * h2 + h3 * h3) / h1;
+        const float h4 = (4.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 4.f * f1, (float)sampleRate) : 0.f;
+        return 100.f * std::sqrt(h2 * h2 + h3 * h3 + h4 * h4) / h1;
     }
 
     float measureIMD() const {

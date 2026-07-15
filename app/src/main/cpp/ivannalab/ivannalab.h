@@ -4,8 +4,8 @@
  *
  * IvannaLab: suite de medición de calidad de audio.
  *
- * Estado: SKELETON — las APIs están definidas y compilables; la lógica
- * de medición real es un stub que devuelve -1.0f (no implementada).
+ * Estado: implementación progresiva — THD, IMD, LUFS base, Peak y True Peak
+ * ya devuelven mediciones reales cuando hay datos suficientes.
  * El objetivo de este skeleton es:
  *   1. Fijar las firmas de función que el resto del código puede llamar
  *      sin breakage cuando llegue la implementación real.
@@ -14,9 +14,9 @@
  *   3. Documentar qué mide cada función y qué rango de valores esperar,
  *      de modo que IvannaLab.kt pueda implementar el puente JNI correcto.
  *
- * Implementación real pendiente:
- *   - THD+N: FFT de ventana Hann + integración de energía armónica vs fundamental
- *   - IMD: doble tono (19/20 kHz o 250 Hz/8 kHz SMPTE) + análisis IM products
+ * Implementación actual:
+ *   - THD: DFT con ventana Hann + energía H2/H3/H4 vs fundamental
+ *   - IMD: doble tono SMPTE 250 Hz/8 kHz + productos laterales
  *   - LUFS: filtrado K-weighting (pre-filter + RLB) + mean square + gating BS.1770
  *   - LURange (LRA): gated loudness high/low percentile (BS.1770-4 Annex 2)
  *   - SNR: relación señal/ruido sobre ventana de silencio de referencia
@@ -62,8 +62,7 @@ public:
 
     // Calcula y devuelve el resultado con las muestras acumuladas hasta ahora.
     // No reinicia el estado — para una nueva sesión, llamar reset() primero.
-    // Mientras la implementación real no esté lista, devuelve LabResult{} con
-    // todos los campos en -1.0f.
+    // Devuelve LabResult{}; los campos no medibles por datos insuficientes quedan en -1.0f.
     LabResult measure() const;
 
     // ── Helpers de conveniencia ─────────────────────────────────────────────

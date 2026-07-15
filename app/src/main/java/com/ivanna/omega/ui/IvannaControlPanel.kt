@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.audio.IvannaEffectProfile
+import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.theme.*
@@ -126,7 +127,9 @@ fun IvannaControlPanel(
     onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onNpeManifoldChange: (Boolean) -> Unit = {},
     onSpatialEnabledChange: (Boolean) -> Unit = {},
-    onOpenVisualizer: () -> Unit = {}
+    onOpenVisualizer: () -> Unit = {},
+    metrics: OmegaMetrics = OmegaMetrics(),
+    onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -222,6 +225,23 @@ fun IvannaControlPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        GlassCard(
+            title = "IVANNA OMEGA ENGINE",
+            accent = AuroraCyan,
+            subtitle = "DSP: ${if (metrics.dspActive) "ACTIVE" else "STANDBY"} · ${metrics.sampleRate / 1000}kHz"
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatBlock("LATENCY", "%.1f ms".format(metrics.latencyMs), PhosphorGreen, Modifier.weight(1f))
+                StatBlock("CPU", "%.0f%%".format(metrics.cpuPercent), AmberSignal, Modifier.weight(1f))
+                StatBlock("CLIPS", metrics.clipCount.toString(), NeonMagenta, Modifier.weight(1f))
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatBlock("AI", metrics.yamnetCategory, NeonMagenta, Modifier.weight(1.4f))
+                StatBlock("CONF", "%.0f%%".format(metrics.yamnetConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
+                StatBlock("HRTF", if (metrics.hrtfActive) "ON" else "OFF", AuroraCyan, Modifier.weight(1f))
+            }
+        }
+
         OmniHeroHeader(
             omegaMode = omegaMode,
             npeActive = !npeBypass,
