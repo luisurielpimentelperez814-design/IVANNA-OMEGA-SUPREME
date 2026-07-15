@@ -193,9 +193,12 @@ static void audioRouteBridgeLoop() {
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peak;
-        rawM.band_low_energy   = 0.0f;   // GAP conocido: omega_effect.cpp no
-        rawM.band_mid_energy   = 0.0f;   // separa por bandas todavía (mismo
-        rawM.band_high_energy  = 0.0f;   // gap ya documentado en la ruta A)
+        // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado.
+        // Ahora viene de BandEnergyMeter (omega_daemon.cpp::processLoop()),
+        // 3 filtros IIR reales sobre la señal seca — ver ese archivo.
+        rawM.band_low_energy   = shared->ai_band_low.load(std::memory_order_relaxed);
+        rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
+        rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = 0.0f;   // omega_effect no corre VoiceProtectionController
         g_adaptiveEngine.rawMetrics.publish(
@@ -204,6 +207,22 @@ static void audioRouteBridgeLoop() {
         g_lastRawRms.store(rms,   std::memory_order_relaxed);
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
+
+        // FIX (Opción A de unificación — paridad de protección Ruta A/Ruta
+        // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
+        // hasta acá solo se publicaban métricas HACIA el motor adaptativo.
+        // Sin este bloque, las decisiones que el motor calcula a partir de
+        // ESTAS MISMAS métricas de Spotify/YouTube nunca volvían a tocar el
+        // audio de Spotify/YouTube — se aplicaban únicamente a g_gain de la
+        // Ruta A (DSPBridge), que no procesa nada en ese momento. Ahora se
+        // lee el AdaptiveState más reciente (el mismo que ya alimenta a la
+        // Ruta A) y se escribe target_gain de vuelta al daemon.
+        static uint64_t s_lastSeenAdaptiveSeq = 0;
+        ivanna::experimental::AdaptiveState st{};
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastSeenAdaptiveSeq)) {
+            shared->ai_runtime_gain_mul.store(
+                std::clamp(st.target_gain, 0.5f, 1.0f), std::memory_order_release);
+        }
 
         ++frameCounter;
 
@@ -527,12 +546,29 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
 
         // 4) Publicar. Es un memcpy de POD atrás de un seqlock, no bloquea.
+        //    Band energy: NO se agrega análisis nuevo — se reutilizan los
+        //    envelopes IIR de 8 bandas (80/200/500/1k/2k/4k/8k/16kHz) que
+        //    BiquadEnvelopeBank YA calcula dentro de g_pd.process_block()
+        //    (arriba, esta misma función) para el Kernel Evolutivo/PhaseOracle.
+        //    Bucketing: low=bandas 0-1 (80-200Hz), mid=2-4 (500Hz-2kHz),
+        //    high=5-7 (4k-16kHz) — convención estándar de ingeniería de audio.
+        //    Antes: hardcodeado en 0.0f — computeExciterReduction() (que
+        //    depende de band_high_energy para detectar sibilancia) operaba
+        //    a ciegas en la Ruta A pese a que el dato ya existía, calculado,
+        //    dos líneas más arriba en el mismo bloque de audio.
+        auto bandEnergy = [&](int lo, int hi) noexcept -> float {
+            float sum = 0.f;
+            for (int b = lo; b <= hi; ++b) {
+                sum += g_pd.cue_bank.envL[b] + g_pd.cue_bank.envR[b];
+            }
+            return sum / (2.f * (hi - lo + 1));
+        };
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peakAbs;
-        rawM.band_low_energy   = 0.0f;   // fase futura: separación por bandas
-        rawM.band_mid_energy   = 0.0f;
-        rawM.band_high_energy  = 0.0f;
+        rawM.band_low_energy   = bandEnergy(0, 1);
+        rawM.band_mid_energy   = bandEnergy(2, 4);
+        rawM.band_high_energy  = bandEnergy(5, 7);
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
         g_adaptiveEngine.rawMetrics.publish(

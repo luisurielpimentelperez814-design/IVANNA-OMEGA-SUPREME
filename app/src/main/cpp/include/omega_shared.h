@@ -93,6 +93,35 @@ struct OmegaSharedState {
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
+    // FIX (Opción A de unificación — paridad de protección entre Ruta A y
+    // Ruta B, sin fusionar los dos motores DSP): AdaptiveDecisionEngine ya
+    // recibe métricas reales de la Ruta B (ai_raw_rms/ai_raw_peak, ver
+    // arriba) y calcula decisiones — pero esas decisiones solo se
+    // aplicaban a g_gain/g_comp/g_exciter de la Ruta A (DSPBridge), que no
+    // procesan nada de lo que suena por Spotify/YouTube. Cero protección
+    // real para streaming pese a que el motor "sabía" qué hacer.
+    // ai_runtime_gain_mul es el canal de vuelta: la app escribe acá el
+    // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
+    // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
+    // daemon lo aplica como multiplicador adicional en processLoop(), sin
+    // tocar pf_master (que sigue siendo la ganancia base del usuario).
+    // compressor_amount/exciter_reduction NO tienen un análogo limpio en
+    // este PF Engine simple (no hay compresor ni exciter reales acá, solo
+    // drive/softclip + EQ) — forzarlos sobre 'drive' sería una
+    // aproximación falsa. Quedan documentados como gap conocido, no
+    // fabricados.
+    std::atomic<float> ai_runtime_gain_mul;
+
+    // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
+    // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
+    // streaming. Calculado dentro de processLoop() (omega_daemon.cpp) con
+    // la MISMA clase BiquadEnvelopeBank que ya usa la Ruta A (pd_engine.hpp)
+    // — no es un análisis nuevo, es la misma herramienta ya probada,
+    // instanciada una vez más para este proceso separado.
+    std::atomic<float> ai_band_low;
+    std::atomic<float> ai_band_mid;
+    std::atomic<float> ai_band_high;
+
     // ── Ring buffers ──────────────────────────────────────────────────────────
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
@@ -115,6 +144,8 @@ struct OmegaSharedState {
           ai_enabled(false), ai_auto_adapt(false), ai_sensitivity(0.5f),
           ai_rms_level(0.0f), ai_gain_db(0.0f),
           ai_raw_rms(0.0f), ai_raw_peak(0.0f),
+          ai_runtime_gain_mul(1.0f),
+          ai_band_low(0.0f), ai_band_mid(0.0f), ai_band_high(0.0f),
           write_pos(0), read_pos(0) {}
 };
 

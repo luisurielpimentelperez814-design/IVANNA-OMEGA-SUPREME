@@ -13,6 +13,7 @@
 #include <aaudio/AAudio.h>
 #include <jni.h>
 #include <cmath>
+#include <algorithm>
 #include <cstring>
 #include <thread>
 #include <atomic>
@@ -125,6 +126,22 @@ static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB) {
     bq.a2 = ((A + 1.0f) - (A - 1.0f) * cosw0 - 2.0f * sqrtf(A) * alpha) / a0;
 }
 
+// FIX (band energy, ver BandEnergyMeter más abajo): calcPeaking con
+// gainDB=0 es identidad (no filtra nada) — hace falta un pasabanda RBJ
+// real para poder separar low/mid/high de verdad.
+static void calcBandpass(Biquad& bq, float freq, float Q) {
+    float w0 = 2.0f * M_PI * freq / 48000.0f;
+    float alpha = sinf(w0) / (2.0f * Q);
+    float cosw0 = cosf(w0);
+
+    float a0 = 1.0f + alpha;
+    bq.b0 = alpha / a0;
+    bq.b1 = 0.0f;
+    bq.b2 = -alpha / a0;
+    bq.a1 = (-2.0f * cosw0) / a0;
+    bq.a2 = (1.0f - alpha) / a0;
+}
+
 // ── PF Engine — estado Biquad por canal ──────────────────────────────────────
 struct PFEngineState {
     Biquad low[2];
@@ -158,6 +175,48 @@ struct PFEngineState {
 };
 
 static PFEngineState g_pf;
+
+// ── Band energy meter (Ruta B) ────────────────────────────────────────────────
+// FIX (cierre de band energy — antes hardcodeado en 0.0f, Adaptive Engine a
+// ciegas en esta ruta): 3 filtros de medición DEDICADOS (no confundir con
+// g_pf.low/mid/high, que son shelves/peak APLICADOS a la señal de salida).
+// Reutilizan Biquad + calcPeaking, ya definidos arriba en este mismo archivo
+// para el PF EQ — no se agrega ninguna dependencia nueva. Deliberadamente NO
+// se reutiliza BiquadEnvelopeBank (pd_engine.hpp/neuromorphic/) porque esa
+// clase llama a phase_oracle_velocity(), símbolo definido en phase_oracle.cpp
+// — parte del .so de la app, no de este binario del daemon. Enlazarlo acá
+// exigiría arrastrar phase_oracle.cpp (y sus propias dependencias) a un
+// proceso de sistema (audioserver) solo para medir energía de banda; el
+// mismo tipo de error de enlace ("undefined symbol") que ya se corrigió una
+// vez esta sesión (ver commit de g_shared). Se mide sobre la señal SECA
+// (antes del softclip/EQ de salida), igual criterio que usa la Ruta A para
+// su ensanchamiento adaptativo/Voice Protection.
+struct BandEnergyMeter {
+    Biquad low[2], mid[2], high[2];
+    float envLow = 0.f, envMid = 0.f, envHigh = 0.f;
+
+    void init() {
+        Biquad tmpL{}, tmpR{};
+        calcBandpass(tmpL,  150.f, 0.9f); low[0]  = tmpL; low[0].reset();
+        calcBandpass(tmpR,  150.f, 0.9f); low[1]  = tmpR; low[1].reset();
+        calcBandpass(tmpL, 1000.f, 0.9f); mid[0]  = tmpL; mid[0].reset();
+        calcBandpass(tmpR, 1000.f, 0.9f); mid[1]  = tmpR; mid[1].reset();
+        calcBandpass(tmpL, 6000.f, 0.9f); high[0] = tmpL; high[0].reset();
+        calcBandpass(tmpR, 6000.f, 0.9f); high[1] = tmpR; high[1].reset();
+    }
+
+    void tick(float l, float r) {
+        const float bl = (low[0].process(l)  + low[1].process(r))  * 0.5f;
+        const float bm = (mid[0].process(l)  + mid[1].process(r))  * 0.5f;
+        const float bh = (high[0].process(l) + high[1].process(r)) * 0.5f;
+        const float el = std::fabs(bl), em = std::fabs(bm), eh = std::fabs(bh);
+        constexpr float ATK = 0.05f, REL = 0.01f;
+        envLow  += ((el > envLow)  ? ATK : REL) * (el - envLow);
+        envMid  += ((em > envMid)  ? ATK : REL) * (em - envMid);
+        envHigh += ((eh > envHigh) ? ATK : REL) * (eh - envHigh);
+    }
+};
+static BandEnergyMeter g_bandMeter;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 static inline float softClip(float x) {
@@ -246,12 +305,25 @@ static void processLoop() {
             const float dry    = 1.0f - wet;
             const float master = std::pow(10.0f,
                 g_shared->pf_master.load(std::memory_order_relaxed) / 20.0f);
+            // FIX (Opción A de unificación, ver comentario en omega_shared.h):
+            // target_gain del Adaptive Engine, ya clampeado [0.5,1.0] del
+            // lado de la app antes de escribir acá — solo puede atenuar.
+            // Multiplicador aparte de 'master' (que sigue siendo la
+            // ganancia base del usuario, sin tocar).
+            const float adaptiveGain = std::clamp(
+                g_shared->ai_runtime_gain_mul.load(std::memory_order_relaxed),
+                0.5f, 1.0f);
 
             // Estereo intercalado: [L0,R0, L1,R1, ...]
             for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
                 float l = work_buf[i * 2];
                 float r = work_buf[i * 2 + 1];
                 const float origL = l, origR = r;
+
+                // FIX (band energy, Ruta B): medir sobre la señal SECA,
+                // antes de softclip/EQ — mismo criterio que Voice
+                // Protection/Spatial adaptativo en la Ruta A.
+                g_bandMeter.tick(origL, origR);
 
                 // 1. Pre-gain + saturacion tanh
                 const float dv = 1.0f + drive * 8.0f;
@@ -265,9 +337,19 @@ static void processLoop() {
                 l = g_pf.presence[0].process(l);  r = g_pf.presence[1].process(r);
 
                 // 3. Mezcla wet/dry + limitacion termica + ganancia maestra
-                work_buf[i * 2]     = (wet * l + dry * origL) * tGain * master;
-                work_buf[i * 2 + 1] = (wet * r + dry * origR) * tGain * master;
+                //    + target_gain adaptativo (Ruta B, ver omega_shared.h)
+                work_buf[i * 2]     = (wet * l + dry * origL) * tGain * master * adaptiveGain;
+                work_buf[i * 2 + 1] = (wet * r + dry * origR) * tGain * master * adaptiveGain;
             }
+
+            // Publicar band energy del bloque (una vez, no por sample —
+            // barato, sin malloc/mutex, solo 3 atomic stores).
+            // NOTA (limitación documentada, igual criterio que ai_gain_db
+            // más arriba en este archivo): solo se actualiza cuando
+            // is_processing && !bypass, igual que el resto de esta cadena.
+            g_shared->ai_band_low.store(g_bandMeter.envLow,   std::memory_order_relaxed);
+            g_shared->ai_band_mid.store(g_bandMeter.envMid,   std::memory_order_relaxed);
+            g_shared->ai_band_high.store(g_bandMeter.envHigh, std::memory_order_relaxed);
         }
 
         // ── Push bloque procesado a ring_out ──────────────────────────────────────
@@ -559,6 +641,15 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     g_shared->pf_resonance.store(0.707f, std::memory_order_relaxed);
     g_shared->pf_mid.store(0.0f, std::memory_order_relaxed);
     g_shared->pf_param_version.store(1, std::memory_order_relaxed);
+    // FIX CRÍTICO (band energy + Opción A de unificación): g_shared vive en
+    // memoria mmap() cruda — el constructor de OmegaSharedState (con sus
+    // defaults como ai_runtime_gain_mul(1.0f)) NUNCA se ejecuta acá, el
+    // memset(0) de arriba deja estos campos en 0.0 real. Sin este fix,
+    // ai_runtime_gain_mul en 0.0 multiplicaría el audio de streaming por
+    // cero — silencio total — hasta que el puente de la app escribiera un
+    // valor real, lo cual no está garantizado en un arranque en silencio.
+    g_shared->ai_runtime_gain_mul.store(1.0f, std::memory_order_relaxed);
+    g_bandMeter.init();
 
     // Threads
     g_process_thread = std::thread(processLoop);
