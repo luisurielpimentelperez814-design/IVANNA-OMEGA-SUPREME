@@ -20,7 +20,7 @@ set(BASE_FLAGS
 
 # ── ABI-specific flags ───────────────────────────────────────────────────────
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    list(APPEND BASE_FLAGS -march=armv8-a+simd)
+    list(APPEND BASE_FLAGS -march=armv8-a+fp+simd -funroll-loops -fno-exceptions -fno-rtti)
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(APPEND BASE_FLAGS -march=armv7-a -mfpu=neon)
 endif()

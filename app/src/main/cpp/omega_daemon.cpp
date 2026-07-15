@@ -48,6 +48,7 @@
 // synthetic_hrtf.hpp, audio_thread_priority.h) ya están en la misma .so.
 // El include path "spatial/" está en include_directories del CMakeLists.
 #include "spatial/hrtf_convolver.hpp"
+#include "include/audio_thread_priority.h"
 
 #define LOG_TAG "OmegaDaemon"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -303,6 +304,7 @@ static void enterSafeMode() {
 //   processLoop() →  ring_out (output_buffer) →  omega_effect
 //
 static void processLoop() {
+    ivanna::audio::enableAudioThreadFastMathOnce();
     alignas(64) float work_buf[OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS];
     const int blockSamples = OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS;
 

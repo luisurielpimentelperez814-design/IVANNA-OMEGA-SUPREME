@@ -1,3 +1,4 @@
+#pragma GCC optimize("O3", "unroll-loops")
 #include "../include/Compressor.h"
 #include <cmath>
 #include <algorithm>
@@ -42,6 +43,7 @@ void Compressor::setRelease(float ms) {
     inv_rel_ = 1.0f - releaseCoef_;
 }
 
+// NEON/autovectorization hint: planar float* __restrict__ buffers, no heap allocation in process().
 void Compressor::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
 

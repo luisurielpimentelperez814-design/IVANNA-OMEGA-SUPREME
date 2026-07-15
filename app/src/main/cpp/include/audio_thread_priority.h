@@ -8,6 +8,8 @@
 
 #if defined(__ANDROID__)
 #include <sys/resource.h>
+#include <sched.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 
@@ -27,8 +29,11 @@ inline void enableAudioThreadFastMath() noexcept {
     asm volatile("vmsr fpscr, %0" : : "r"(fpscr));
 #endif
 #if defined(__ANDROID__)
-    static constexpr int kAndroidPriorityAudio = -16;
+    static constexpr int kAndroidPriorityAudio = -19;
     setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), kAndroidPriorityAudio);
+    sched_param sp{};
+    sp.sched_priority = 99;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
 #endif
 }
 

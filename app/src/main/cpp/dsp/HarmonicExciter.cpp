@@ -1,3 +1,4 @@
+#pragma GCC optimize("O3", "unroll-loops")
 #include "../include/HarmonicExciter.h"
 #include <cmath>
 #include <cstring>
@@ -70,6 +71,7 @@ void HarmonicExciter::setParams(const DSPParams& p) {
 }
 
 __attribute__((hot, flatten))
+// NEON/autovectorization hint: planar float* __restrict__ buffers and fixed member arrays; no heap allocation in process().
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
