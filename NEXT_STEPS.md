@@ -198,7 +198,7 @@ I/VisualizerBridge: Reset complete (watchdog recovered)
 
 ### 4. Testing Checklist
 
-Usa `DEPLOYMENT_INSTRUCTIONS.md` para la lista completa de tests.
+Usa `docs/DEPLOYMENT_INSTRUCTIONS.md` para la lista completa de tests.
 
 ---
 
@@ -225,10 +225,10 @@ Usa `DEPLOYMENT_INSTRUCTIONS.md` para la lista completa de tests.
 | Recurso | Ubicación |
 |---------|-----------|
 | Script de push | `./push_to_github.sh` |
-| Testing checklist | `DEPLOYMENT_INSTRUCTIONS.md` |
-| Fix details | `FIX_SUMMARY_20260705.md` |
-| Completion report | `COMPLETION_REPORT.md` |
-| Push status | `PUSH_STATUS_REPORT.md` |
+| Testing checklist | `docs/DEPLOYMENT_INSTRUCTIONS.md` |
+| Fix details | `docs/FIX_SUMMARY_20260705.md` |
+| Completion report | `docs/COMPLETION_REPORT.md` |
+| Push status | `docs/PUSH_STATUS_REPORT.md` |
 
 ---
 

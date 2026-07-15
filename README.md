@@ -18,6 +18,23 @@ opcional para aplicar la cadena DSP al audio del sistema.
 
 ---
 
+## Estructura del repositorio
+
+- `app/` — código Android/Kotlin y nativo C++/JNI del motor.
+- `magisk_module/` — módulo Magisk vivo (`customize.sh`, `service.sh`,
+  `META-INF/`, `system/etc/*.xml`) — cualquier cambio real al instalador
+  va acá, no a copias sueltas en la raíz.
+- `tools/` — suite de benchmark nativo.
+- `docs/` — documentación técnica viva (reportes de integración, guías,
+  auditorías). Ver `docs/README.md` para el índice completo.
+- `docs/archive/` — material histórico archivado (snapshots viejos,
+  scripts duplicados, código huérfano) — no borrado, ver
+  `docs/archive/README.md` para el inventario y motivo de cada uno.
+- `README.md`, `CHANGELOG.md`, `NEXT_STEPS.md` — fuentes de verdad
+  principales, quedan en la raíz a propósito.
+
+---
+
 ## Qué es el producto hoy
 
 Dos rutas de audio independientes que comparten la mayor parte del DSP

@@ -12,6 +12,15 @@ app/build/
 # Local machine config
 local.properties
 *.keystore
+*.jks
+keystore.properties
+
+# Secretos — nunca deben versionarse
+*.pem
+*.key
+.env
+secrets/
+google-services.json
 
 # Logs / cache
 *.log
@@ -46,3 +55,7 @@ Makefile
 
 # Native test binaries
 app/src/main/cpp/tests/build*/
+
+# Coverage
+**/reports/
+*.lcov
