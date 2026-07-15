@@ -110,3 +110,28 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_close_loop PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 add_test(NAME test_close_loop COMMAND test_close_loop)
+
+# Gap D) del prompt de Fase 1 (cerrar loop adaptativo): existían tests de
+# valores puntuales (test_close_loop) y de concurrencia corta (stress test
+# dentro de test_adaptive_engine), pero ninguno corría el motor real
+# (start() con su std::thread real de controlLoop a 50ms) bajo carga
+# sostenida — el tipo de prueba que revela hangs de stop(), deriva
+# numérica, o fugas de hilos en ciclos start/stop repetidos, que un test
+# de assertions puntuales no puede detectar. Verificado localmente antes
+# de este commit: 8/8 corridas limpias (cada una ~3.5s de motor real
+# corriendo con productor/consumidor concurrentes).
+add_executable(test_stability
+  ../experimental/adaptive_engine/tests/test_stability.cpp
+  ../experimental/adaptive_engine/adaptive_decision_engine.cpp
+)
+target_include_directories(test_stability PRIVATE
+  ../experimental/adaptive_engine
+)
+target_compile_options(test_stability PRIVATE -Wall -Wextra)
+target_link_libraries(test_stability PRIVATE Threads::Threads)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_stability PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_stability PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_stability COMMAND test_stability)
+set_tests_properties(test_stability PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
