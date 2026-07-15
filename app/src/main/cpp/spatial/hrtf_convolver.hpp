@@ -56,6 +56,17 @@ public:
         outQueue_L_.reserve(BLOCK * 4);
         outQueue_R_.reserve(BLOCK * 4);
 
+        // FIX (Fase 8): reserva única de todos los buffers de trabajo del
+        // camino caliente — ver comentario en la sección de miembros.
+        reL_.assign(fftSize_, 0.f);  imL_.assign(fftSize_, 0.f);
+        reR_.assign(fftSize_, 0.f);  imR_.assign(fftSize_, 0.f);
+        monoRe_.assign(fftSize_, 0.f); monoIm_.assign(fftSize_, 0.f);
+        yReL_.assign(fftSize_, 0.f); yImL_.assign(fftSize_, 0.f);
+        yReR_.assign(fftSize_, 0.f); yImR_.assign(fftSize_, 0.f);
+        blockL_.assign(BLOCK, 0.f);  blockR_.assign(BLOCK, 0.f);
+        newL_.assign(BLOCK, 0.f);    newR_.assign(BLOCK, 0.f);
+        oldL_.assign(BLOCK, 0.f);    oldR_.assign(BLOCK, 0.f);
+
         set_position(0.f, 0.5f); // frente, agresividad media por defecto
         // Fuerza a que el primer bloque no haga crossfade (no hay "anterior" real)
         crossfadeActive_ = false;
@@ -150,46 +161,46 @@ private:
 
     // Convoluciona un sub-bloque completo (BLOCK muestras) usando overlap-save
     // con el filtro dado por slot, devuelve BLOCK muestras válidas en outBuf.
+    // FIX (Fase 8): outBufL/outBufR deben ser buffers PRE-RESERVADOS de tamaño
+    // BLOCK (blockL_/blockR_ o newL_/newR_ u oldL_/oldR_) — este método ya no
+    // crea ni redimensiona ningún vector, solo escribe sobre memoria existente.
     void convolve_block(int slot, const std::vector<float>& histL,
                          const std::vector<float>& histR,
                          std::vector<float>& outBufL, std::vector<float>& outBufR) {
-        std::vector<float> reL(histL.begin(), histL.end()), imL(fftSize_, 0.f);
-        std::vector<float> reR(histR.begin(), histR.end()), imR(fftSize_, 0.f);
+        std::copy(histL.begin(), histL.end(), reL_.begin());
+        std::fill(imL_.begin(), imL_.end(), 0.f);
+        std::copy(histR.begin(), histR.end(), reR_.begin());
+        std::fill(imR_.begin(), imR_.end(), 0.f);
 
-        fft_->forward(reL.data(), imL.data());
-        fft_->forward(reR.data(), imR.data());
+        fft_->forward(reL_.data(), imL_.data());
+        fft_->forward(reR_.data(), imR_.data());
 
         // Renderizado binaural: cada oído de salida combina AMBOS canales
         // de entrada (mezcla a mono antes de aplicar cada HRIR) — el
         // objetivo es una imagen espacial única por la posición de la
         // fuente, no preservar el estéreo original independientemente.
-        std::vector<float> monoRe(fftSize_), monoIm(fftSize_);
         for (int i = 0; i < fftSize_; ++i) {
-            monoRe[i] = 0.5f * (reL[i] + reR[i]);
-            monoIm[i] = 0.5f * (imL[i] + imR[i]);
+            monoRe_[i] = 0.5f * (reL_[i] + reR_[i]);
+            monoIm_[i] = 0.5f * (imL_[i] + imR_[i]);
         }
 
         const FilterFD& F = filters_[slot];
-        std::vector<float> yReL(fftSize_), yImL(fftSize_);
-        std::vector<float> yReR(fftSize_), yImR(fftSize_);
         for (int i = 0; i < fftSize_; ++i) {
             // Multiplicación compleja: Y = X * H
-            yReL[i] = monoRe[i] * F.Hre_L[i] - monoIm[i] * F.Him_L[i];
-            yImL[i] = monoRe[i] * F.Him_L[i] + monoIm[i] * F.Hre_L[i];
-            yReR[i] = monoRe[i] * F.Hre_R[i] - monoIm[i] * F.Him_R[i];
-            yImR[i] = monoRe[i] * F.Him_R[i] + monoIm[i] * F.Hre_R[i];
+            yReL_[i] = monoRe_[i] * F.Hre_L[i] - monoIm_[i] * F.Him_L[i];
+            yImL_[i] = monoRe_[i] * F.Him_L[i] + monoIm_[i] * F.Hre_L[i];
+            yReR_[i] = monoRe_[i] * F.Hre_R[i] - monoIm_[i] * F.Him_R[i];
+            yImR_[i] = monoRe_[i] * F.Him_R[i] + monoIm_[i] * F.Hre_R[i];
         }
-        fft_->inverse(yReL.data(), yImL.data());
-        fft_->inverse(yReR.data(), yImR.data());
+        fft_->inverse(yReL_.data(), yImL_.data());
+        fft_->inverse(yReR_.data(), yImR_.data());
 
         // Overlap-save: descarta las primeras (IR_LEN-1) muestras (alias
         // circular), toma las BLOCK finales.
-        outBufL.assign(BLOCK, 0.f);
-        outBufR.assign(BLOCK, 0.f);
         const int validStart = fftSize_ - BLOCK;
         for (int i = 0; i < BLOCK; ++i) {
-            outBufL[i] = yReL[validStart + i];
-            outBufR[i] = yReR[validStart + i];
+            outBufL[i] = yReL_[validStart + i];
+            outBufR[i] = yReR_[validStart + i];
         }
     }
 
@@ -210,31 +221,29 @@ private:
             if (std::abs(histR_[i]) < 1e-15f) histR_[i] = 0.f;
         }
 
-        std::vector<float> blockL, blockR;
-
+        // FIX (Fase 8): blockL_/blockR_/newL_/newR_/oldL_/oldR_ son
+        // miembros pre-reservados (ver init()) — ya no se crea ningún
+        // std::vector local aquí.
         if (!crossfadeActive_) {
-            convolve_block(activeIdx_, histL_, histR_, blockL, blockR);
+            convolve_block(activeIdx_, histL_, histR_, blockL_, blockR_);
         } else {
-            std::vector<float> newL, newR, oldL, oldR;
-            convolve_block(activeIdx_, histL_, histR_, newL, newR);
-            convolve_block(prevIdx_,   histL_, histR_, oldL, oldR);
+            convolve_block(activeIdx_, histL_, histR_, newL_, newR_);
+            convolve_block(prevIdx_,   histL_, histR_, oldL_, oldR_);
 
-            blockL.assign(BLOCK, 0.f);
-            blockR.assign(BLOCK, 0.f);
             // Crossfade lineal a lo largo de este bloque (256 muestras
             // ≈ 5.3ms @ 48kHz) — suficientemente rápido para sentirse
             // responsivo, suficientemente lento para no producir zipper.
             for (int i = 0; i < BLOCK; ++i) {
                 const float t = (float)i / (float)(BLOCK - 1);
-                blockL[i] = oldL[i] * (1.f - t) + newL[i] * t;
-                blockR[i] = oldR[i] * (1.f - t) + newR[i] * t;
+                blockL_[i] = oldL_[i] * (1.f - t) + newL_[i] * t;
+                blockR_[i] = oldR_[i] * (1.f - t) + newR_[i] * t;
             }
             crossfadeActive_ = false; // un solo bloque de crossfade por cambio
         }
 
         for (int i = 0; i < BLOCK; ++i) {
-            outQueue_L_.push_back(blockL[i]);
-            outQueue_R_.push_back(blockR[i]);
+            outQueue_L_.push_back(blockL_[i]);
+            outQueue_R_.push_back(blockR_[i]);
         }
     }
 
@@ -255,6 +264,20 @@ private:
     std::vector<float> histL_, histR_;               // ventana deslizante (fftSize_)
     std::vector<float> pendingIn_L_, pendingIn_R_;    // entrada acumulada < BLOCK
     std::vector<float> outQueue_L_, outQueue_R_;      // salida lista para entregar
+
+    // FIX (Fase 8 — RT hardening): estos 14 buffers ANTES se creaban como
+    // std::vector LOCALES nuevos en CADA llamada a convolve_block()/
+    // process_one_block() — es decir, malloc/free real dentro del audio
+    // thread en cada bloque de 256 muestras (~5.3ms @ 48kHz), pese a que
+    // el comentario de la clase afirmaba "sin malloc tras init()". Ahora
+    // son miembros de tamaño fijo (fftSize_/BLOCK, constantes tras init())
+    // reservados una sola vez en init() y reusados en cada process() —
+    // cero asignaciones dinámicas en el camino caliente.
+    std::vector<float> reL_, imL_, reR_, imR_;         // dominio de frecuencia, entrada
+    std::vector<float> monoRe_, monoIm_;               // downmix a mono en frecuencia
+    std::vector<float> yReL_, yImL_, yReR_, yImR_;      // salida de la multiplicación H*X
+    std::vector<float> blockL_, blockR_;                // resultado sin crossfade
+    std::vector<float> newL_, newR_, oldL_, oldR_;      // resultado con crossfade (2 convoluciones)
 };
 
 } // namespace ivanna
