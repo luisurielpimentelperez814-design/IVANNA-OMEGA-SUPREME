@@ -13,8 +13,10 @@ void SafetyLimiter::setParams(float threshold, float ceiling) {
 
 float SafetyLimiter::limitSample(float x) {
 
-    if (!std::isfinite(x))
+    if (!std::isfinite(x)) {
+        m_clipCount.fetch_add(1, std::memory_order_relaxed);
         return 0.0f;
+    }
 
     float ax = std::fabs(x);
 
@@ -28,10 +30,16 @@ float SafetyLimiter::limitSample(float x) {
     float limited = m_threshold +
                     excess * 0.1f;
 
-    if (limited > m_ceiling)
+    if (limited > m_ceiling) {
         limited = m_ceiling;
+        m_clipCount.fetch_add(1, std::memory_order_relaxed);
+    }
 
-    return sign * limited;
+    const float clipped = std::clamp(sign * limited, -1.0f, 1.0f);
+    if (std::fabs(clipped) >= 1.0f && ax > 1.0f) {
+        m_clipCount.fetch_add(1, std::memory_order_relaxed);
+    }
+    return clipped;
 }
 
 
@@ -85,6 +93,7 @@ void SafetyLimiter::reset() {
         0.0f,
         std::memory_order_relaxed
     );
+    resetClipCount();
 }
 
 
@@ -104,6 +113,16 @@ float SafetyLimiter::getGainReduction() const {
     return m_gainReduction.load(
         std::memory_order_relaxed
     );
+}
+
+
+int SafetyLimiter::getClipCount() const {
+    return m_clipCount.load(std::memory_order_relaxed);
+}
+
+
+void SafetyLimiter::resetClipCount() {
+    m_clipCount.store(0, std::memory_order_relaxed);
 }
 
 

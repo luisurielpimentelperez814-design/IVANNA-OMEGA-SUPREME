@@ -383,7 +383,7 @@ class MainActivity : ComponentActivity() {
                               omegaMetrics = OmegaMetrics(
                                   rmsLevel = npeMetrics.getOrElse(1) { 0f },
                                   peakLevel = npeMetrics.getOrElse(0) { 0f },
-                                  clipCount = omegaMetrics.clipCount,
+                                  clipCount = if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeGetClipCount() else omegaMetrics.clipCount,
                                   cpuPercent = cpu,
                                   latencyMs = 2.8f,
                                   sampleRate = 48000,

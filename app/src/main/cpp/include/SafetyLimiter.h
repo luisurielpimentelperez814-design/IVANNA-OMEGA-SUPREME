@@ -19,6 +19,8 @@ public:
 
     float getPeakBeforeLimit() const;
     float getGainReduction() const;
+    int getClipCount() const;
+    void resetClipCount();
 
 private:
     float limitSample(float x);
@@ -29,6 +31,7 @@ private:
 
     std::atomic<float> m_peakBefore{0.0f};
     std::atomic<float> m_gainReduction{0.0f};
+    std::atomic<int> m_clipCount{0};
 };
 
 }

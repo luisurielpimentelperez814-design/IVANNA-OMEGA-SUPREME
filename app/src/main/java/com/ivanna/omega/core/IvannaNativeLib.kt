@@ -32,6 +32,8 @@ object IvannaNativeLib {
     )
     external fun nativeSetParams(params: FloatArray)
     external fun nativeResetDSP()
+    external fun nativeGetClipCount(): Int
+    external fun nativeResetClipCount()
 
     // ═══════════════════════════════════════════════════════════════════════
     //  PDEngine: NHO + BiquadEnvelopeBank + CueBasedSpatial

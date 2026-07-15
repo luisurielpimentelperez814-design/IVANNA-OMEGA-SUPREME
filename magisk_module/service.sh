@@ -66,6 +66,15 @@ if [ -f "$DAEMON_BIN" ]; then
             && log "ivanna_daemon → ionice RT 0"
 
         echo "$DAEMON_PID" > /data/adb/ivanna_daemon.pid
+
+        # Restauración mínima post-boot: confirmar canal de control y dejar
+        # defaults seguros si no hay configuración persistida del daemon.
+        if [ -x "$MODDIR/ivanna_control.sh" ]; then
+            "$MODDIR/ivanna_control.sh" status >> "$LOG" 2>&1
+            "$MODDIR/ivanna_control.sh" bypass off >> "$LOG" 2>&1
+            "$MODDIR/ivanna_control.sh" volume 0.8 >> "$LOG" 2>&1
+            log "ivanna_control restore aplicado"
+        fi
     else
         log "ERROR: ivanna_daemon no arrancó"
     fi

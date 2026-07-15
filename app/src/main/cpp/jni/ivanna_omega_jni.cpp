@@ -735,6 +735,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     if (pR) { memcpy(pR, oR, n*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
 }
 
+
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetClipCount(JNIEnv*, jobject) {
+    return (jint)g_safety_limiter.getClipCount();
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetClipCount(JNIEnv*, jobject) {
+    g_safety_limiter.resetClipCount();
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     JNIEnv* env, jobject, jfloatArray params) {
