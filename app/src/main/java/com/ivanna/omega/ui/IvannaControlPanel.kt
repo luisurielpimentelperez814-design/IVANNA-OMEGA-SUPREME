@@ -128,6 +128,7 @@ fun IvannaControlPanel(
     onNpeManifoldChange: (Boolean) -> Unit = {},
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
+    onOpenAdaptive: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null
 ) {
@@ -251,7 +252,8 @@ fun IvannaControlPanel(
             onAntiDolbyChange = { enabled -> antiDolbyEnabled = enabled; onAntiDolbyChange(enabled) },
             autoMode = autoMode,
             onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
-            onOpenVisualizer = onOpenVisualizer
+            onOpenVisualizer = onOpenVisualizer,
+            onOpenAdaptive = onOpenAdaptive
         )
 
         GlassCard(

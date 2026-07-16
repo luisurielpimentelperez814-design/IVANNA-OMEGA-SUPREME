@@ -185,29 +185,59 @@ internal fun MasterBar(
     onAntiDolbyChange: (Boolean) -> Unit,
     autoMode: Boolean,
     onAutoModeChange: (Boolean) -> Unit,
-    onOpenVisualizer: () -> Unit
+    onOpenVisualizer: () -> Unit,
+    onOpenAdaptive: () -> Unit = {}
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FlagToggle("ANTI-DOLBY", antiDolbyEnabled, CoralWarn, Modifier.weight(1f), onAntiDolbyChange)
-        FlagToggle("AUTO IA", autoMode, AmberSignal, Modifier.weight(1f), onAutoModeChange)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            FlagToggle("ANTI-DOLBY", antiDolbyEnabled, CoralWarn, Modifier.weight(1f), onAntiDolbyChange)
+            FlagToggle("AUTO IA", autoMode, AmberSignal, Modifier.weight(1f), onAutoModeChange)
+            Surface(
+                onClick = onOpenVisualizer,
+                modifier = Modifier.weight(1f).height(58.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = AuroraCyan.copy(alpha = 0.14f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AuroraCyan)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AuroraCyan)
+                    Spacer(Modifier.width(4.dp))
+                    Text("VISUALIZER", style = MaterialTheme.typography.labelMedium, color = AuroraCyan, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        // Botón ADE — fila separada para no saturar la MasterBar
         Surface(
-            onClick = onOpenVisualizer,
-            modifier = Modifier.weight(1f).height(58.dp),
+            onClick = onOpenAdaptive,
+            modifier = Modifier.fillMaxWidth().height(46.dp),
             shape = RoundedCornerShape(10.dp),
-            color = AuroraCyan.copy(alpha = 0.14f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, AuroraCyan)
+            color = NeonMagenta.copy(alpha = 0.10f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, NeonMagenta.copy(alpha = 0.55f))
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AuroraCyan)
-                Spacer(Modifier.width(4.dp))
-                Text("VISUALIZER", style = MaterialTheme.typography.labelMedium, color = AuroraCyan, fontWeight = FontWeight.Bold)
+                Text("◈", color = NeonMagenta, fontSize = 14.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "ADAPTIVE ENGINE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NeonMagenta,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
             }
         }
     }

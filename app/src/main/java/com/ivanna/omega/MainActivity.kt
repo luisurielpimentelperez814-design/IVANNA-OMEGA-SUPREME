@@ -148,6 +148,8 @@ class MainActivity : ComponentActivity() {
     // si se MUESTRA la UI, no si la captura está activa.
     private var showVisualizer by mutableStateOf(false)
     private var captureServiceRunning by mutableStateOf(false)
+    private var showAdaptive by mutableStateOf(false)
+    private var adaptiveTelemetry by mutableStateOf<FloatArray?>(null)
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -359,7 +361,26 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background // ahora resuelve a ObsidianVoid
                 ) {
-                    if (showVisualizer) {
+                    if (showAdaptive) {
+                        // Pantalla de telemetría real del AdaptiveDecisionEngine.
+                        // Poll a 500 ms — suficiente para visualizar las decisiones
+                        // del ADE (que corre a 20 Hz internamente).
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                adaptiveTelemetry = try {
+                                    IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                                } catch (_: Throwable) { null }
+                                kotlinx.coroutines.delay(500)
+                            }
+                        }
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            com.ivanna.omega.ui.AdaptiveDashboard(
+                                telemetry = adaptiveTelemetry,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            IconButtonClose { showAdaptive = false }
+                        }
+                    } else if (showVisualizer) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VisualizerSurface(modifier = Modifier.fillMaxSize())
                             IconButtonClose { showVisualizer = false }
@@ -673,6 +694,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenVisualizer = { requestVisualizer() },
+                            onOpenAdaptive = { showAdaptive = true },
                             metrics = omegaMetrics,
                             onMetricsUpdate = { omegaMetrics = it }
                         )
