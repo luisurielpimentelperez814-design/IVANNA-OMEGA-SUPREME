@@ -19,6 +19,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <atomic>
 
 namespace ivanna {
 
@@ -52,39 +53,49 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
     H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
     
-    currentAzimuth_ = 0.0f;
-    currentElevation_ = 0.0f;
-    targetAzimuth_ = 0.0f;
+    currentAzimuth_  = 0.0f;
+    currentElevation_= 0.0f;
+    targetAzimuth_   = 0.0f;
     targetElevation_ = 0.0f;
+    newTargetPending_ = false;
     
+    // La primera carga de filtros se hace directamente
     updateFilterResponses(0.0f, 0.0f, true);
     xfadeSamplesRemaining_ = 0;
     filterInitialized_ = true;
 }
 
+// -----------------------------------------------------------------------------
+// Hilo de control: solo almacena la posición deseada de forma atómica.
+// El trabajo pesado (carga y FFT de IR) ocurre en el hilo de audio,
+// protegido por la bandera newTargetPending_.
+// -----------------------------------------------------------------------------
 void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
     while (azimuth < -180.0f) azimuth += 360.0f;
     while (azimuth > 180.0f)  azimuth -= 360.0f;
     elevation = std::clamp(elevation, -45.0f, 90.0f);
     
-    if (std::abs(azimuth - targetAzimuth_) > 0.1f || std::abs(elevation - targetElevation_) > 0.1f) {
-        targetAzimuth_ = azimuth;
-        targetElevation_ = elevation;
-        if (xfadeSamplesRemaining_ == 0 && (currentAzimuth_ == targetAzimuth_) && (currentElevation_ == targetElevation_)) {
-            updateFilterResponses(targetAzimuth_, targetElevation_, true);
-        } else {
-            updateFilterResponses(targetAzimuth_, targetElevation_, false);
-            xfadeSamplesRemaining_ = XFADE_DURATION_SAMPLES;
-        }
+    float oldAz = targetAzimuth_.load(std::memory_order_relaxed);
+    float oldEl = targetElevation_.load(std::memory_order_relaxed);
+    
+    if (std::abs(azimuth - oldAz) > 0.1f || std::abs(elevation - oldEl) > 0.1f) {
+        targetAzimuth_.store(azimuth, std::memory_order_release);
+        targetElevation_.store(elevation, std::memory_order_release);
+        newTargetPending_.store(true, std::memory_order_release);
     }
 }
 
+// -----------------------------------------------------------------------------
+// Esta función se llama únicamente desde el hilo de audio.
+// Carga los IR, aplica FFT y los deja listos en H_*_targ_ o H_*_curr_.
+// -----------------------------------------------------------------------------
 void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool immediate) noexcept {
     std::vector<float> irL(IR_LEN, 0.0f);
     std::vector<float> irR(IR_LEN, 0.0f);
     hrtf_.getIR(azimuth, elevation, irL.data(), irR.data());
     
     if (immediate) {
+        // Sobrescribe el filtro actual (inicialización)
         std::fill(H_ReL_curr_.begin(), H_ReL_curr_.end(), 0.0f);
         std::fill(H_ImL_curr_.begin(), H_ImL_curr_.end(), 0.0f);
         std::fill(H_ReR_curr_.begin(), H_ReR_curr_.end(), 0.0f);
@@ -93,10 +104,12 @@ void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool i
         std::memcpy(H_ReR_curr_.data(), irR.data(), IR_LEN * sizeof(float));
         fft_->forward(H_ReL_curr_.data(), H_ImL_curr_.data());
         fft_->forward(H_ReR_curr_.data(), H_ImR_curr_.data());
-        currentAzimuth_ = azimuth;
-        currentElevation_ = elevation;
+        
+        currentAzimuth_  = azimuth;
+        currentElevation_= elevation;
         xfadeSamplesRemaining_ = 0;
     } else {
+        // Prepara el filtro destino para un futuro crossfade
         std::fill(H_ReL_targ_.begin(), H_ReL_targ_.end(), 0.0f);
         std::fill(H_ImL_targ_.begin(), H_ImL_targ_.end(), 0.0f);
         std::fill(H_ReR_targ_.begin(), H_ReR_targ_.end(), 0.0f);
@@ -108,25 +121,50 @@ void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool i
     }
 }
 
-void HRTFConvolver::process(const float* inputL, const float* inputR, float* outputL, float* outputR, uint32_t numSamples) noexcept {
+// -----------------------------------------------------------------------------
+// Hilo de audio: procesa un bloque de muestras.
+// -----------------------------------------------------------------------------
+void HRTFConvolver::process(const float* inputL, const float* inputR,
+                            float* outputL, float* outputR,
+                            uint32_t numSamples) noexcept {
     if (!filterInitialized_ || !inputL || !inputR || !outputL || !outputR || numSamples == 0) {
         if (outputL != inputL) std::memcpy(outputL, inputL, numSamples * sizeof(float));
         if (outputR != inputR) std::memcpy(outputR, inputR, numSamples * sizeof(float));
         return;
     }
     
-    // 1. Inserción al búfer circular de entrada
+    // 1. Insertar en el búfer circular de entrada
     for (uint32_t i = 0; i < numSamples; ++i) {
         if (inCount_ < RING_BUFFER_SIZE) {
             pendingIn_L_[inWritePtr_] = inputL[i];
             pendingIn_R_[inWritePtr_] = inputR[i];
             inWritePtr_ = (inWritePtr_ + 1) % RING_BUFFER_SIZE;
-            inCount_++;
+            ++inCount_;
         }
     }
     
-    // 2. Procesamiento Overlap-Save espectral en bloques fijos de tamaño BLOCK
+    // 2. Procesar bloques completos (BLOCK muestras) mediante Overlap-Save
     while (inCount_ >= static_cast<uint32_t>(BLOCK)) {
+        // ------------------------------------------------------------------
+        // 2a. Si hay una nueva posición pendiente Y no hay crossfade activo,
+        //     calcular los filtros destino y arrancar el crossfade.
+        // ------------------------------------------------------------------
+        if (newTargetPending_.load(std::memory_order_acquire) &&
+            xfadeSamplesRemaining_ == 0) {
+            float tAz = targetAzimuth_.load(std::memory_order_relaxed);
+            float tEl = targetElevation_.load(std::memory_order_relaxed);
+            // Evitar disparos múltiples mientras cargamos los filtros
+            newTargetPending_.store(false, std::memory_order_relaxed);
+            
+            // Solo lanzar si realmente cambió respecto a la posición actual
+            if (std::abs(tAz - currentAzimuth_) > 0.1f ||
+                std::abs(tEl - currentElevation_) > 0.1f) {
+                updateFilterResponses(tAz, tEl, false);   // prepara H_*_targ_
+                xfadeSamplesRemaining_ = XFADE_DURATION_SAMPLES;
+            }
+        }
+        
+        // 2b. Mover historial y leer nuevo bloque
         int overlapSize = fftSize_ - BLOCK;
         std::memmove(histL_.data(), histL_.data() + BLOCK, overlapSize * sizeof(float));
         std::memmove(histR_.data(), histR_.data() + BLOCK, overlapSize * sizeof(float));
@@ -138,15 +176,15 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         }
         inCount_ -= BLOCK;
         
+        // 2c. Mono real + FFT
         for (int i = 0; i < fftSize_; ++i) {
             monoRe_[i] = (histL_[i] + histR_[i]) * 0.5f;
             monoIm_[i] = 0.0f;
             if (std::abs(monoRe_[i]) < 1e-30f) monoRe_[i] = 0.0f;
         }
-        
         fft_->forward(monoRe_.data(), monoIm_.data());
         
-        // Convolución con el Filtro A (Current)
+        // 2d. Convolución con filtro actual (A)
         for (int i = 0; i < fftSize_; ++i) {
             yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
             yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
@@ -158,8 +196,9 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         
         float scale = 1.0f / static_cast<float>(fftSize_);
         
+        // 2e. Salida con crossfade si está activo
         if (xfadeSamplesRemaining_ > 0) {
-            // Convolución con el Filtro B (Target)
+            // Convolución con filtro destino (B)
             for (int i = 0; i < fftSize_; ++i) {
                 reL_[i] = monoRe_[i] * H_ReL_targ_[i] - monoIm_[i] * H_ImL_targ_[i];
                 imL_[i] = monoRe_[i] * H_ImL_targ_[i] + monoIm_[i] * H_ReL_targ_[i];
@@ -169,59 +208,65 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
             fft_->inverse(reL_.data(), imL_.data());
             fft_->inverse(reR_.data(), imR_.data());
             
-            // Interpolación cruzada lineal libre de zipper-noise
+            // Mezcla con interpolación muestra a muestra (corregido)
             for (int i = 0; i < BLOCK; ++i) {
-                int outIdx = overlapSize + i;
+                // ¡Ahora progress se calcula DENTRO del bucle!
                 float progress = 1.0f - (static_cast<float>(xfadeSamplesRemaining_) / XFADE_DURATION_SAMPLES);
                 progress = std::clamp(progress, 0.0f, 1.0f);
                 
-                float currSampleL = yReL_[outIdx] * scale;
-                float currSampleR = yReR_[outIdx] * scale;
-                float targSampleL = reL_[outIdx] * scale;
-                float targSampleR = reR_[outIdx] * scale;
+                int outIdx = overlapSize + i;
+                float currL = yReL_[outIdx] * scale;
+                float currR = yReR_[outIdx] * scale;
+                float targL = reL_[outIdx] * scale;
+                float targR = reR_[outIdx] * scale;
                 
-                float finalL = (1.0f - progress) * currSampleL + progress * targSampleL;
-                float finalR = (1.0f - progress) * currSampleR + progress * targSampleR;
+                float finalL = (1.0f - progress) * currL + progress * targL;
+                float finalR = (1.0f - progress) * currR + progress * targR;
                 
+                // Insertar en el búfer circular de salida (sin bloqueo, se asume tamaño suficiente)
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = finalL;
                     outQueue_R_[outWritePtr_] = finalR;
                     outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
-                    outCount_++;
+                    ++outCount_;
                 }
-                if (xfadeSamplesRemaining_ > 0) xfadeSamplesRemaining_--;
+                // Decrementar contador de crossfade
+                if (xfadeSamplesRemaining_ > 0) --xfadeSamplesRemaining_;
             }
             
+            // Al terminar el crossfade, los filtros destino pasan a ser los actuales
             if (xfadeSamplesRemaining_ == 0) {
-                H_ReL_curr_ = H_ReL_targ_; H_ImL_curr_ = H_ImL_targ_;
-                H_ReR_curr_ = H_ReR_targ_; H_ImR_curr_ = H_ImR_targ_;
-                currentAzimuth_ = targetAzimuth_;
-                currentElevation_ = targetElevation_;
+                std::swap(H_ReL_curr_, H_ReL_targ_);
+                std::swap(H_ImL_curr_, H_ImL_targ_);
+                std::swap(H_ReR_curr_, H_ReR_targ_);
+                std::swap(H_ImR_curr_, H_ImR_targ_);
+                currentAzimuth_  = targetAzimuth_.load(std::memory_order_relaxed);
+                currentElevation_= targetElevation_.load(std::memory_order_relaxed);
             }
         } else {
-            // Envío directo sin crossfade activo
+            // Sin crossfade: salida directa
             for (int i = 0; i < BLOCK; ++i) {
                 int outIdx = overlapSize + i;
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = yReL_[outIdx] * scale;
                     outQueue_R_[outWritePtr_] = yReR_[outIdx] * scale;
                     outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
-                    outCount_++;
+                    ++outCount_;
                 }
             }
         }
     }
     
-    // 3. Extracción y entrega de muestras al búfer de salida del sistema
-        uint32_t samplesToDeliver = std::min(numSamples, outCount_);
+    // 3. Entregar muestras acumuladas al buffer de salida del sistema
+    uint32_t samplesToDeliver = std::min(numSamples, outCount_);
     for (uint32_t i = 0; i < samplesToDeliver; ++i) {
         outputL[i] = outQueue_L_[outReadPtr_];
         outputR[i] = outQueue_R_[outReadPtr_];
         outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;
-        outCount_--;
+        --outCount_;
     }
     
-    // Relleno preventivo con silencio si hay underrun parcial
+    // Relleno preventivo si se produce un underrun
     if (samplesToDeliver < numSamples) {
         uint32_t missing = numSamples - samplesToDeliver;
         std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
@@ -230,4 +275,3 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
 }
 
 } // namespace ivanna
-
