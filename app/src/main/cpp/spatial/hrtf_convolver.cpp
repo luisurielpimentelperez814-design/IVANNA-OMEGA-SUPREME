@@ -16,6 +16,8 @@
  */
 
 #include "hrtf_convolver.hpp"
+#include "fft_radix2.hpp"
+#include "../include/audio_thread_priority.h"
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -64,38 +66,66 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
     H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
 
-    currentAzimuth_  = 0.0f;
-    currentElevation_= 0.0f;
+    currentAzimuth_       = 0.0f;
+    currentAggressiveness_= 0.5f;
     targetAzimuth_.store(0.0f, std::memory_order_relaxed);
-    targetElevation_.store(0.0f, std::memory_order_relaxed);
+    targetAggressiveness_.store(0.5f, std::memory_order_relaxed);
     newTargetPending_.store(false, std::memory_order_relaxed);
 
-    updateFilterResponses(0.0f, 0.0f, true);
+    updateFilterResponses(0.0f, 0.5f, true);
     xfadeSamplesRemaining_.store(0, std::memory_order_relaxed);
     filterInitialized_ = true;
 }
 
 // -----------------------------------------------------------------------------
-void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
-    while (azimuth < -180.0f) azimuth += 360.0f;
-    while (azimuth > 180.0f)  azimuth -= 360.0f;
-    elevation = std::clamp(elevation, -45.0f, 90.0f);
+// Reinicia el estado dinámico (buffers, historial, crossfade) preservando la
+// configuración ya calculada por init() (sr_, fftSize_, fft_). No reasigna
+// FFTRadix2 ni reinicia SyntheticHRTF (no tienen estado dependiente de la
+// posición). Usado por ObjectRenderer::reset() al soltar un virtual speaker.
+void HRTFConvolver::reset() noexcept {
+    if (!filterInitialized_) return;
 
-    float oldAz = targetAzimuth_.load(std::memory_order_relaxed);
-    float oldEl = targetElevation_.load(std::memory_order_relaxed);
+    std::fill(histL_.begin(), histL_.end(), 0.0f);
+    std::fill(histR_.begin(), histR_.end(), 0.0f);
+    std::fill(pendingIn_L_.begin(), pendingIn_L_.end(), 0.0f);
+    std::fill(pendingIn_R_.begin(), pendingIn_R_.end(), 0.0f);
+    std::fill(outQueue_L_.begin(), outQueue_L_.end(), 0.0f);
+    std::fill(outQueue_R_.begin(), outQueue_R_.end(), 0.0f);
 
-    if (std::abs(azimuth - oldAz) > 0.1f || std::abs(elevation - oldEl) > 0.1f) {
-        targetAzimuth_.store(azimuth, std::memory_order_release);
-        targetElevation_.store(elevation, std::memory_order_release);
+    inReadPtr_ = 0; inWritePtr_ = 0; inCount_ = 0;
+    outReadPtr_ = 0; outWritePtr_ = 0; outCount_ = 0;
+
+    currentAzimuth_        = 0.0f;
+    currentAggressiveness_ = 0.5f;
+    targetAzimuth_.store(0.0f, std::memory_order_relaxed);
+    targetAggressiveness_.store(0.5f, std::memory_order_relaxed);
+    newTargetPending_.store(false, std::memory_order_relaxed);
+    xfadeSamplesRemaining_.store(0, std::memory_order_relaxed);
+
+    updateFilterResponses(0.0f, 0.5f, true);
+}
+
+// -----------------------------------------------------------------------------
+void HRTFConvolver::set_position(float azimuthDeg, float aggressiveness) noexcept {
+    while (azimuthDeg < -180.0f) azimuthDeg += 360.0f;
+    while (azimuthDeg > 180.0f)  azimuthDeg -= 360.0f;
+    aggressiveness = std::clamp(aggressiveness, 0.0f, 1.0f);
+
+    float oldAz  = targetAzimuth_.load(std::memory_order_relaxed);
+    float oldAgg = targetAggressiveness_.load(std::memory_order_relaxed);
+
+    if (std::abs(azimuthDeg - oldAz) > 0.1f || std::abs(aggressiveness - oldAgg) > 0.01f) {
+        targetAzimuth_.store(azimuthDeg, std::memory_order_release);
+        targetAggressiveness_.store(aggressiveness, std::memory_order_release);
         newTargetPending_.store(true, std::memory_order_release);
     }
 }
 
 // -----------------------------------------------------------------------------
-void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool immediate) noexcept {
-    std::vector<float> irL(IR_LEN, 0.0f);
-    std::vector<float> irR(IR_LEN, 0.0f);
-    hrtf_.getIR(azimuth, elevation, irL.data(), irR.data());
+void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept {
+    const HRIRPair hrir = hrtf_.generate(azimuthDeg, aggressiveness);
+    std::vector<float> irL = hrir.L;
+    std::vector<float> irR = hrir.R;
 
     if (immediate) {
         std::fill(H_ReL_curr_.begin(), H_ReL_curr_.end(), 0.0f);
@@ -107,8 +137,8 @@ void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool i
         fft_->forward(H_ReL_curr_.data(), H_ImL_curr_.data());
         fft_->forward(H_ReR_curr_.data(), H_ImR_curr_.data());
 
-        currentAzimuth_  = azimuth;
-        currentElevation_= elevation;
+        currentAzimuth_        = azimuthDeg;
+        currentAggressiveness_ = aggressiveness;
         xfadeSamplesRemaining_.store(0, std::memory_order_relaxed);
     } else {
         std::fill(H_ReL_targ_.begin(), H_ReL_targ_.end(), 0.0f);
@@ -149,12 +179,12 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         int xfadeRemaining = xfadeSamplesRemaining_.load(std::memory_order_relaxed);
         if (pending && xfadeRemaining == 0) {
             float tAz = targetAzimuth_.load(std::memory_order_relaxed);
-            float tEl = targetElevation_.load(std::memory_order_relaxed);
+            float tAgg = targetAggressiveness_.load(std::memory_order_relaxed);
             newTargetPending_.store(false, std::memory_order_relaxed);
 
             if (std::abs(tAz - currentAzimuth_) > 0.1f ||
-                std::abs(tEl - currentElevation_) > 0.1f) {
-                updateFilterResponses(tAz, tEl, false);
+                std::abs(tAgg - currentAggressiveness_) > 0.01f) {
+                updateFilterResponses(tAz, tAgg, false);
                 xfadeSamplesRemaining_.store(XFADE_DURATION_SAMPLES, std::memory_order_relaxed);
             }
         }
@@ -235,7 +265,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
                 std::swap(H_ReR_curr_, H_ReR_targ_);
                 std::swap(H_ImR_curr_, H_ImR_targ_);
                 currentAzimuth_  = targetAzimuth_.load(std::memory_order_relaxed);
-                currentElevation_= targetElevation_.load(std::memory_order_relaxed);
+                currentAggressiveness_ = targetAggressiveness_.load(std::memory_order_relaxed);
             }
             // Si el bucle se rompió por xfadeRemaining==0, las muestras restantes del bloque
             // se procesarán en el siguiente bucle (ya con el filtro actual).

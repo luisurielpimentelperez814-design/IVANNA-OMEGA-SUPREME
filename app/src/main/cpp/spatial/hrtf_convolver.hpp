@@ -21,6 +21,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include "synthetic_hrtf.hpp"
 
 namespace ivanna {
 
@@ -30,8 +31,7 @@ constexpr int IR_LEN                   = 512;
 constexpr int RING_BUFFER_SIZE         = 16384;
 constexpr int XFADE_DURATION_SAMPLES   = 1024;
 
-// Declaraciones adelantadas (ajusta según tu código real)
-class HRTFDataset;
+// Declaraciones adelantadas
 class FFTRadix2;
 
 class HRTFConvolver {
@@ -40,20 +40,24 @@ public:
     ~HRTFConvolver() = default;
 
     void init(uint32_t sampleRate);
-    void setTargetPosition(float azimuth, float elevation) noexcept;
+    void set_position(float azimuthDeg, float aggressiveness) noexcept;
     void process(const float* inputL, const float* inputR,
                  float* outputL, float* outputR,
                  uint32_t numSamples) noexcept;
+    // Reinicia el estado del convolver (buffers, historial, crossfade) sin
+    // reasignar memoria ni recrear FFTRadix2 — usado al soltar/reasignar un
+    // virtual speaker en ObjectRenderer::reset().
+    void reset() noexcept;
 
 private:
-    void updateFilterResponses(float azimuth, float elevation, bool immediate) noexcept;
+    void updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept;
     static uint32_t next_pow2(uint32_t v);
 
     // Configuración
     uint32_t sr_ = 0;
     int fftSize_ = 0;
     std::unique_ptr<FFTRadix2> fft_;
-    HRTFDataset hrtf_;
+    SyntheticHRTF hrtf_;
 
     // Búferes de trabajo (solo usados en el hilo de audio)
     std::vector<float> histL_, histR_;
@@ -75,13 +79,13 @@ private:
 
     // Variables compartidas (atómicas para el hilo de control)
     std::atomic<float> targetAzimuth_{0.0f};
-    std::atomic<float> targetElevation_{0.0f};
+    std::atomic<float> targetAggressiveness_{0.5f};
     std::atomic<bool> newTargetPending_{false};
     std::atomic<int> xfadeSamplesRemaining_{0};
 
     // Variables locales al hilo de audio
     float currentAzimuth_ = 0.0f;
-    float currentElevation_ = 0.0f;
+    float currentAggressiveness_ = 0.5f;
     bool filterInitialized_ = false;
 };
 
