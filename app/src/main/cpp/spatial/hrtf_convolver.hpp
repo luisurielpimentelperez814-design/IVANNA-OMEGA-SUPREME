@@ -1,283 +1,210 @@
-// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
-#pragma once
-
 /*
- * ============================================================
- * IVANNA OMEGA SUPREME — HRTFConvolver
+ * ============================================================================
+ * IVANNA Singularity V3.0 — Motor de Audio Holográfico de Bajo Nivel
+ * ============================================================================
+ * Autoría Exclusiva y Propiedad Absoluta:
+ * Luis Uriel Pimentel Pérez (alias Gore TNS)
  *
- * Convolución binaural en tiempo real vía FFT (overlap-save),
- * con caché de HRIR por ángulo cuantizado y crossfade de bloque
- * completo cuando la posición cambia — evita "zipper noise"
- * (clics/escalones) que aparecerían si se cambiara el filtro a
- * mitad de señal sin transición.
+ * Todos los modelos matemáticos, arquitecturas de sistema e implementaciones
+ * de código contenidos en este archivo son propiedad intelectual exclusiva
+ * del autor citado. Queda estrictamente prohibida la reproducción, distribución,
+ * modificación o uso comercial no autorizado.
  *
- * Bloque de proceso interno: BLOCK muestras. Tamaño FFT: next
- * pow2(BLOCK + IR_LEN - 1). Overlap-save clásico: se descartan
- * las primeras (IR_LEN-1) muestras de cada IFFT (aliasing
- * circular) y se toman las BLOCK muestras finales como válidas.
- *
- * Entrada de tamaño arbitrario (n variable por callback de audio)
- * se acumula en un buffer circular y se procesa en sub-bloques de
- * BLOCK muestras — el resto queda para el siguiente process().
- * ============================================================
+ * Este software NO se distribuye bajo licencia CC0 ni dominio público.
+ * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+ * ============================================================================
  */
 
-#include "fft_radix2.hpp"
-#include "synthetic_hrtf.hpp"
-#include "../include/audio_thread_priority.h"
-#include <vector>
-#include <memory>
+#include "HRTFConvolver.hpp"
+#include <cstring>
 #include <cmath>
 #include <algorithm>
 
 namespace ivanna {
 
-class HRTFConvolver {
-public:
-    static constexpr int BLOCK  = 256;   // muestras procesadas por sub-bloque
-    static constexpr int IR_LEN = 128;   // taps de la HRIR sintética
+void HRTFConvolver::init(uint32_t sampleRate) {
+    sr_ = sampleRate;
+    hrtf_.init(sampleRate, IR_LEN);
 
-    void init(uint32_t sampleRate) {
-        sr_ = sampleRate;
-        hrtf_.init(sampleRate, IR_LEN);
+    // Activar optimizaciones de coma flotante por hardware en el hilo nativo
+    ivanna::audio::enableAudioThreadFastMathOnce();
 
-        // Sin esto, denormals acumulados en histL_/histR_ tras varios minutos
-        // de reproducción provocan que la FFT se vuelva 10-100x más lenta
-        // (modo microcódigo de la CPU), causando underruns y crashes.
-        ivanna::audio::enableAudioThreadFastMathOnce();
+    // Calcular el tamaño óptimo de la FFT: potencia de 2 superior a (BLOCK + IR_LEN - 1) -> 256 + 128 - 1 = 383 -> 512
+    fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
+    fft_ = std::make_unique<FFTRadix2>(fftSize_);
 
-        fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
-        fft_ = std::make_unique<FFTRadix2>(fftSize_);
+    // Inicializar buffers históricos de Overlap-Save
+    histL_.assign(fftSize_, 0.0f);
+    histR_.assign(fftSize_, 0.0f);
+    
+    // Reservas de memoria estáticas para evitar alojamientos dinámicos (malloc) en el hilo de audio
+    pendingIn_L_.reserve(BLOCK * 4);
+    pendingIn_R_.reserve(BLOCK * 4);
+    outQueue_L_.reserve(BLOCK * 8);
+    outQueue_R_.reserve(BLOCK * 8);
 
-        histL_.assign(fftSize_, 0.f);
-        histR_.assign(fftSize_, 0.f);
-        pendingIn_L_.reserve(BLOCK * 2);
-        pendingIn_R_.reserve(BLOCK * 2);
-        outQueue_L_.reserve(BLOCK * 4);
-        outQueue_R_.reserve(BLOCK * 4);
+    // Buffers de trabajo para dominio de frecuencia (Pre-reserva completa)
+    reL_.assign(fftSize_, 0.0f);   imL_.assign(fftSize_, 0.0f);
+    reR_.assign(fftSize_, 0.0f);   imR_.assign(fftSize_, 0.0f);
+    monoRe_.assign(fftSize_, 0.0f); monoIm_.assign(fftSize_, 0.0f);
+    yReL_.assign(fftSize_, 0.0f);  yImL_.assign(fftSize_, 0.0f);
+    yReR_.assign(fftSize_, 0.0f);  yImR_.assign(fftSize_, 0.0f);
 
-        // FIX (Fase 8): reserva única de todos los buffers de trabajo del
-        // camino caliente — ver comentario en la sección de miembros.
-        reL_.assign(fftSize_, 0.f);  imL_.assign(fftSize_, 0.f);
-        reR_.assign(fftSize_, 0.f);  imR_.assign(fftSize_, 0.f);
-        monoRe_.assign(fftSize_, 0.f); monoIm_.assign(fftSize_, 0.f);
-        yReL_.assign(fftSize_, 0.f); yImL_.assign(fftSize_, 0.f);
-        yReR_.assign(fftSize_, 0.f); yImR_.assign(fftSize_, 0.f);
-        blockL_.assign(BLOCK, 0.f);  blockR_.assign(BLOCK, 0.f);
-        newL_.assign(BLOCK, 0.f);    newR_.assign(BLOCK, 0.f);
-        oldL_.assign(BLOCK, 0.f);    oldR_.assign(BLOCK, 0.f);
+    // Buffers para filtros de target y crossfade
+    hrir_L_current_.assign(fftSize_, 0.0f); hrir_R_current_.assign(fftSize_, 0.0f);
+    hrir_L_target_.assign(fftSize_, 0.0f);  hrir_R_target_.assign(fftSize_, 0.0f);
+    
+    H_ReL_curr_.assign(fftSize_, 0.0f);     H_ImL_curr_.assign(fftSize_, 0.0f);
+    H_ReR_curr_.assign(fftSize_, 0.0f);     H_ImR_curr_.assign(fftSize_, 0.0f);
+    H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
+    H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
 
-        set_position(0.f, 0.5f); // frente, agresividad media por defecto
-        // Fuerza a que el primer bloque no haga crossfade (no hay "anterior" real)
-        crossfadeActive_ = false;
-    }
+    // Inicializar coordenadas por defecto (Frente)
+    currentAzimuth_ = 0.0f;
+    currentElevation_ = 0.0f;
+    targetAzimuth_ = 0.0f;
+    targetElevation_ = 0.0f;
+    
+    // Cargar filtros iniciales en dominio temporal y transformarlos a frecuencia
+    updateFilterResponses(0.0f, 0.0f, true);
+    
+    xfadeSamplesRemaining_ = 0;
+    filterInitialized_ = true;
+}
 
-    void reset() {
-        std::fill(histL_.begin(), histL_.end(), 0.f);
-        std::fill(histR_.begin(), histR_.end(), 0.f);
-        pendingIn_L_.clear();
-        pendingIn_R_.clear();
-        outQueue_L_.clear();
-        outQueue_R_.clear();
-        crossfadeActive_ = false;
-    }
+void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
+    // Normalizar ángulos
+    while (azimuth < -180.0f) azimuth += 360.0f;
+    while (azimuth > 180.0f)  azimuth -= 360.0f;
+    elevation = std::clamp(elevation, -45.0f, 90.0f);
 
-    // azimuthDeg: -90(izq)..+90(der). aggressiveness: [0,1], mapeado desde
-    // el control de UI existente (ver integración en PDEngine).
-    void set_position(float azimuthDeg, float aggressiveness) {
-        azimuthDeg = std::clamp(azimuthDeg, -90.f, 90.f);
-        aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
-
-        // Cuantización a pasos de 5° — evita recalcular FFT de la IR en
-        // cada bloque si el ángulo varía por ruido de control mínimo, y
-        // limita cuántas transiciones de crossfade ocurren por segundo.
-        const float quant = std::round(azimuthDeg / 5.f) * 5.f;
-        if (std::fabs(quant - lastAzimuth_) < 0.01f &&
-            std::fabs(aggressiveness - lastAggr_) < 0.01f) {
-            return; // sin cambio real, no dispara recomputo/crossfade
+    if (std::abs(azimuth - targetAzimuth_) > 0.1f || std::abs(elevation - targetElevation_) > 0.1f) {
+        targetAzimuth_ = azimuth;
+        targetElevation_ = elevation;
+        
+        // Si el filtro no se ha inicializado o está en reposo absoluto, forzar actualización inmediata
+        if (xfadeSamplesRemaining_ == 0 && (currentAzimuth_ == targetAzimuth_) && (currentElevation_ == targetElevation_)) {
+            updateFilterResponses(targetAzimuth_, targetElevation_, true);
+        } else {
+            // Disparar proceso de interpolación cruzada (Crossfade de bloque completo)
+            updateFilterResponses(targetAzimuth_, targetElevation_, false);
+            xfadeSamplesRemaining_ = XFADE_DURATION_SAMPLES;
         }
-        lastAzimuth_ = quant;
-        lastAggr_    = aggressiveness;
+    }
+}
 
-        // El filtro activo pasa a "anterior" (para crossfade) y se computa
-        // el nuevo filtro en el slot activo.
-        std::swap(activeIdx_, prevIdx_);
-        compute_filter(quant, aggressiveness, activeIdx_);
-        crossfadeActive_ = true;
-        crossfadeSampleCounter_ = 0;
+void HRTFConvolver::process(const float* inputL, const float* inputR, float* outputL, float* outputR, uint32_t numSamples) noexcept {
+    if (!filterInitialized_ || !inputL || !inputR || !outputL || !outputR || numSamples == 0) {
+        if (outputL != inputL) std::memcpy(outputL, inputL, numSamples * sizeof(float));
+        if (outputR != inputR) std::memcpy(outputR, inputR, numSamples * sizeof(float));
+        return;
     }
 
-    // Procesa n muestras estéreo in-place-friendly (buffers separados).
-    void process(const float* inL, const float* inR,
-                 float* outL, float* outR, int n) {
-        // Acumula entrada pendiente
-        for (int i = 0; i < n; ++i) {
-            pendingIn_L_.push_back(inL[i]);
-            pendingIn_R_.push_back(inR[i]);
-        }
-
-        // Procesa todos los sub-bloques completos disponibles
-        while ((int)pendingIn_L_.size() >= BLOCK) {
-            process_one_block();
-            pendingIn_L_.erase(pendingIn_L_.begin(), pendingIn_L_.begin() + BLOCK);
-            pendingIn_R_.erase(pendingIn_R_.begin(), pendingIn_R_.begin() + BLOCK);
-        }
-
-        // Entrega tantas muestras de salida como se pidieron (n) si ya
-        // hay disponibles en la cola; si no hay suficientes (arranque),
-        // rellena con silencio — se pondrá al día en próximos bloques.
-        int avail = std::min((int)outQueue_L_.size(), n);
-        for (int i = 0; i < avail; ++i) { outL[i] = outQueue_L_[i]; outR[i] = outQueue_R_[i]; }
-        for (int i = avail; i < n; ++i) { outL[i] = 0.f; outR[i] = 0.f; }
-        outQueue_L_.erase(outQueue_L_.begin(), outQueue_L_.begin() + avail);
-        outQueue_R_.erase(outQueue_R_.begin(), outQueue_R_.begin() + avail);
+    // 1. Acumular muestras de entrada en la cola interna de tamaño variable
+    for (uint32_t i = 0; i < numSamples; ++i) {
+        pendingIn_L_.push_back(inputL[i]);
+        pendingIn_R_.push_back(inputR[i]);
     }
 
-private:
-    static int next_pow2(int v) noexcept {
-        int p = 1; while (p < v) p <<= 1; return p;
-    }
+    // 2. Procesar en sub-bloques fijos de tamaño BLOCK (256 muestras) mediante Overlap-Save
+    while (pendingIn_L_.size() >= static_cast<size_t>(BLOCK)) {
+        
+        // Desplazar el historial de entrada para Overlap-Save (Descartar las BLOCK más viejas)
+        int overlapSize = fftSize_ - BLOCK; // 512 - 256 = 256
+        std::memmove(histL_.data(), histL_.data() + BLOCK, overlapSize * sizeof(float));
+        std::memmove(histR_.data(), histR_.data() + BLOCK, overlapSize * sizeof(float));
 
-    struct FilterFD {
-        std::vector<float> Hre_L, Him_L;
-        std::vector<float> Hre_R, Him_R;
-    };
+        // Copiar las nuevas BLOCK muestras al final de la línea de retraso del historial
+        std::memcpy(histL_.data() + overlapSize, pendingIn_L_.data(), BLOCK * sizeof(float));
+        std::memcpy(histR_.data() + overlapSize, pendingIn_R_.data(), BLOCK * sizeof(float));
 
-    void compute_filter(float azimuthDeg, float aggressiveness, int slot) {
-        HRIRPair ir = hrtf_.generate(azimuthDeg, aggressiveness);
+        // Remover las muestras procesadas de la cola de entrada
+        pendingIn_L_.erase(pendingIn_L_.begin(), pendingIn_L_.begin() + BLOCK);
+        pendingIn_R_.erase(pendingIn_R_.begin(), pendingIn_R_.begin() + BLOCK);
 
-        auto toFreqDomain = [&](const std::vector<float>& ir_time,
-                                 std::vector<float>& outRe, std::vector<float>& outIm) {
-            outRe.assign(fftSize_, 0.f);
-            outIm.assign(fftSize_, 0.f);
-            for (size_t i = 0; i < ir_time.size() && (int)i < fftSize_; ++i)
-                outRe[i] = ir_time[i];
-            fft_->forward(outRe.data(), outIm.data());
-        };
-
-        toFreqDomain(ir.L, filters_[slot].Hre_L, filters_[slot].Him_L);
-        toFreqDomain(ir.R, filters_[slot].Hre_R, filters_[slot].Him_R);
-    }
-
-    // Convoluciona un sub-bloque completo (BLOCK muestras) usando overlap-save
-    // con el filtro dado por slot, devuelve BLOCK muestras válidas en outBuf.
-    // FIX (Fase 8): outBufL/outBufR deben ser buffers PRE-RESERVADOS de tamaño
-    // BLOCK (blockL_/blockR_ o newL_/newR_ u oldL_/oldR_) — este método ya no
-    // crea ni redimensiona ningún vector, solo escribe sobre memoria existente.
-    void convolve_block(int slot, const std::vector<float>& histL,
-                         const std::vector<float>& histR,
-                         std::vector<float>& outBufL, std::vector<float>& outBufR) {
-        std::copy(histL.begin(), histL.end(), reL_.begin());
-        std::fill(imL_.begin(), imL_.end(), 0.f);
-        std::copy(histR.begin(), histR.end(), reR_.begin());
-        std::fill(imR_.begin(), imR_.end(), 0.f);
-
-        fft_->forward(reL_.data(), imL_.data());
-        fft_->forward(reR_.data(), imR_.data());
-
-        // Renderizado binaural: cada oído de salida combina AMBOS canales
-        // de entrada (mezcla a mono antes de aplicar cada HRIR) — el
-        // objetivo es una imagen espacial única por la posición de la
-        // fuente, no preservar el estéreo original independientemente.
+        // --- CONVOLUCIÓN EN DOMINIO DE FRECUENCIA VIA FFT ---
+        
+        // Convertir la señal estéreo de entrada a una señal monoaural intermedia de referencia
         for (int i = 0; i < fftSize_; ++i) {
-            monoRe_[i] = 0.5f * (reL_[i] + reR_[i]);
-            monoIm_[i] = 0.5f * (imL_[i] + imR_[i]);
+            monoRe_[i] = (histL_[i] + histR_[i]) * 0.5f;
+            monoIm_[i] = 0.0f; // Audio real puro, imaginario en cero
+            
+            // Protección manual rápida contra denormales residuales que asfixian la FFT
+            if (std::abs(monoRe_[i]) < 1e-30f) monoRe_[i] = 0.0f;
         }
 
-        const FilterFD& F = filters_[slot];
+        // Ejecutar FFT del bloque monoaural
+        fft_->forward(monoRe_.data(), monoIm_.data());
+
+        // Multiplicación compleja en dominio espectral con la HRIR Actual
         for (int i = 0; i < fftSize_; ++i) {
-            // Multiplicación compleja: Y = X * H
-            yReL_[i] = monoRe_[i] * F.Hre_L[i] - monoIm_[i] * F.Him_L[i];
-            yImL_[i] = monoRe_[i] * F.Him_L[i] + monoIm_[i] * F.Hre_L[i];
-            yReR_[i] = monoRe_[i] * F.Hre_R[i] - monoIm_[i] * F.Him_R[i];
-            yImR_[i] = monoRe_[i] * F.Him_R[i] + monoIm_[i] * F.Hre_R[i];
+            yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
+            yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
+
+            yReR_[i] = monoRe_[i] * H_ReR_curr_[i] - monoIm_[i] * H_ImR_curr_[i];
+            yImR_[i] = monoRe_[i] * H_ImR_curr_[i] + monoIm_[i] * H_ReR_curr_[i];
         }
+
+        // Ejecutar IFFT para regresar al dominio del tiempo
         fft_->inverse(yReL_.data(), yImL_.data());
         fft_->inverse(yReR_.data(), yImR_.data());
 
-        // Overlap-save: descarta las primeras (IR_LEN-1) muestras (alias
-        // circular), toma las BLOCK finales.
-        const int validStart = fftSize_ - BLOCK;
-        for (int i = 0; i < BLOCK; ++i) {
-            outBufL[i] = yReL_[validStart + i];
-            outBufR[i] = yReR_[validStart + i];
-        }
-    }
+        // --- LÓGICA DE CROSSFADE PARA CAMBIOS DE ÁNGULO EN TIEMPO REAL ---
+        if (xfadeSamplesRemaining_ > 0) {
+            // Convolución paralela secundaria con la HRIR Target
+            for (int i = 0; i < fftSize_; ++i) {
+                reL_[i] = monoRe_[i] * H_ReL_targ_[i] - monoIm_[i] * H_ImL_targ_[i];
+                imL_[i] = monoRe_[i] * H_ImL_targ_[i] + monoIm_[i] * H_ReL_targ_[i];
 
-    void process_one_block() {
-        // Desplaza historial (fftSize_ muestras) e inserta el nuevo bloque
-        // al final — ventana deslizante para overlap-save.
-        std::rotate(histL_.begin(), histL_.begin() + BLOCK, histL_.end());
-        std::rotate(histR_.begin(), histR_.begin() + BLOCK, histR_.end());
-        for (int i = 0; i < BLOCK; ++i) {
-            histL_[fftSize_ - BLOCK + i] = pendingIn_L_[i];
-            histR_[fftSize_ - BLOCK + i] = pendingIn_R_[i];
-        }
-
-        // Flush explícito de denormals recién insertados (defensa en profundidad,
-        // además del flush-to-zero de la FPU activado en init()).
-        for (int i = fftSize_ - BLOCK; i < fftSize_; ++i) {
-            if (std::abs(histL_[i]) < 1e-15f) histL_[i] = 0.f;
-            if (std::abs(histR_[i]) < 1e-15f) histR_[i] = 0.f;
-        }
-
-        // FIX (Fase 8): blockL_/blockR_/newL_/newR_/oldL_/oldR_ son
-        // miembros pre-reservados (ver init()) — ya no se crea ningún
-        // std::vector local aquí.
-        if (!crossfadeActive_) {
-            convolve_block(activeIdx_, histL_, histR_, blockL_, blockR_);
-        } else {
-            convolve_block(activeIdx_, histL_, histR_, newL_, newR_);
-            convolve_block(prevIdx_,   histL_, histR_, oldL_, oldR_);
-
-            // Crossfade lineal a lo largo de este bloque (256 muestras
-            // ≈ 5.3ms @ 48kHz) — suficientemente rápido para sentirse
-            // responsivo, suficientemente lento para no producir zipper.
-            for (int i = 0; i < BLOCK; ++i) {
-                const float t = (float)i / (float)(BLOCK - 1);
-                blockL_[i] = oldL_[i] * (1.f - t) + newL_[i] * t;
-                blockR_[i] = oldR_[i] * (1.f - t) + newR_[i] * t;
+                reR_[i] = monoRe_[i] * H_ReR_targ_[i] - monoIm_[i] * H_ImR_targ_[i];
+                imR_[i] = monoRe_[i] * H_ImR_targ_[i] + monoIm_[i] * H_ReR_targ_[i];
             }
-            crossfadeActive_ = false; // un solo bloque de crossfade por cambio
-        }
 
-        for (int i = 0; i < BLOCK; ++i) {
-            outQueue_L_.push_back(blockL_[i]);
-            outQueue_R_.push_back(blockR_[i]);
+            fft_->inverse(reL_.data(), imL_.data());
+            fft_->inverse(reR_.data(), imR_.data());
+
+            // Mezcla lineal ponderada a lo largo del sub-bloque para el canal izquierdo y derecho
+            for (int i = 0; i < BLOCK; ++i) {
+                int outIdx = overlapSize + i; // Saltar la zona de aliasing circular (Overlap-Save)
+                
+                // Calcular factor de mezcla dinámico por muestra
+                float progress = 1.0f - (static_cast<float>(xfadeSamplesRemaining_) / XFADE_DURATION_SAMPLES);
+                progress = std::clamp(progress, 0.0f, 1.0f);
+
+                float outSampleL = (1.0f - progress) * yReL_[outIdx] + progress * reL_[outIdx];
+                float outSampleR = (1.0f - progress) * yReR_[outIdx] + progress * reR_[outIdx];
+
+                outQueue_L_.push_back(outSampleL);
+                outQueue_R_.push_back(outSampleR);
+
+                if (xfadeSamplesRemaining_ > 0) {
+                    --xfadeSamplesRemaining_;
+                }
+            }
+
+            // Si el crossfade concluyó, consolidar el filtro target como el actual de forma definitiva
+            if (xfadeSamplesRemaining_ == 0) {
+                currentAzimuth_ = targetAzimuth_;
+                currentElevation_ = targetElevation_;
+                H_ReL_curr_ = H_ReL_targ_; H_ImL_curr_ = H_ImL_targ_;
+                H_ReR_curr_ = H_ReR_targ_; H_ImR_curr_ = H_ImR_targ_;
+            }
+        } else {
+            // Copiar directamente el resultado actual a la cola de salida omitiendo las primeras (IR_LEN - 1) muestras
+            for (int i = 0; i < BLOCK; ++i) {
+                int outIdx = overlapSize + i;
+                outQueue_L_.push_back(yReL_[outIdx]);
+                outQueue_R_.push_back(yReR_[outIdx]);
+            }
         }
     }
 
-    float    sr_ = 48000.f;
-    int      fftSize_ = 512;
-    std::unique_ptr<FFTRadix2> fft_;
+    // 3. Extraer los datos procesados de la cola de salida y depositarlos en los buffers del DAC
+    uint32_t samplesToDeliver = std::min(numSamples, static_cast<uint32_t>(outQueue_L_.size()));
+    
+    std::memcpy(outputL, outQueue_L_.data(), samplesToDeliver * sizeof(float));
+    std::memcpy(outputR, outQueue_R_.data(), samplesToDeliver * sizeof(float));
 
-    SyntheticHRTF hrtf_;
-    FilterFD filters_[2];   // doble buffer: activo + anterior (para crossfade)
-    int      activeIdx_ = 0;
-    int      prevIdx_   = 1;
-    bool     crossfadeActive_ = false;
-    int      crossfadeSampleCounter_ = 0;
-
-    float    lastAzimuth_ = 1e9f;  // fuerza recompute en la primera llamada
-    float    lastAggr_    = -1.f;
-
-    std::vector<float> histL_, histR_;               // ventana deslizante (fftSize_)
-    std::vector<float> pendingIn_L_, pendingIn_R_;    // entrada acumulada < BLOCK
-    std::vector<float> outQueue_L_, outQueue_R_;      // salida lista para entregar
-
-    // FIX (Fase 8 — RT hardening): estos 14 buffers ANTES se creaban como
-    // std::vector LOCALES nuevos en CADA llamada a convolve_block()/
-    // process_one_block() — es decir, malloc/free real dentro del audio
-    // thread en cada bloque de 256 muestras (~5.3ms @ 48kHz), pese a que
-    // el comentario de la clase afirmaba "sin malloc tras init()". Ahora
-    // son miembros de tamaño fijo (fftSize_/BLOCK, constantes tras init())
-    // reservados una sola vez en init() y reusados en cada process() —
-    // cero asignaciones dinámicas en el camino caliente.
-    std::vector<float> reL_, imL_, reR_, imR_;         // dominio de frecuencia, entrada
-    std::vector<float> monoRe_, monoIm_;               // downmix a mono en frecuencia
-    std::vector<float> yReL_, yImL_, yReR_, yImR_;      // salida de la multiplicación H*X
-    std::vector<float> blockL_, blockR_;                // resultado sin crossfade
-    std::vector<float> newL_, newR_, oldL_, oldR_;      // resultado con crossfade (2 convoluciones)
-};
-
-} // namespace ivanna
+    // Remover elementos entregados de la cola
+    outQueue_L_.erase(outQueue_L_.begin(), outQueue_L_.begin() + samplesToDeliver);
+    outQueue_R_.erase(outQueue_R_.begin(), outQueue_R_.begin() + samplesToDeliver);// Fallback de seguridad extrema: Si faltaron muestras por sub-bloques asíncronos, rellenar con silencio limpioif (samplesToDeliver < numSamples) {uint32_t remaining = numSamples - samplesToDeliver;std::memset(outputL + samplesToDeliver, 0, remaining * sizeof(float));std::memset(outputR + samplesToDeliver, 0, remaining * sizeof(float));}}void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool immediate) noexcept {std::vector tempIR_L(IR_LEN, 0.0f);std::vector tempIR_R(IR_LEN, 0.0f);// Obtener los coeficientes sintéticos o muestreados del espacio acústicohrtf_.getHRIR(azimuth, elevation, tempIR_L.data(), tempIR_R.data());if (immediate) {std::fill(H_ReL_curr_.begin(), H_ImL_curr_.end(), 0.0f);std::fill(H_ImL_curr_.begin(), H_ImL_curr_.end(), 0.0f);std::fill(H_ReR_curr_.begin(), H_ReR_curr_.end(), 0.0f);std::fill(H_ImR_curr_.begin(), H_ImR_curr_.end(), 0.0f);std::memcpy(H_ReL_curr_.data(), tempIR_L.data(), IR_LEN * sizeof(float));std::memcpy(H_ReR_curr_.data(), tempIR_R.data(), IR_LEN * sizeof(float));// Transformar la respuesta al impulso temporal al dominio de frecuencia de inmediatofft_->forward(H_ReL_curr_.data(), H_ImL_curr_.data());fft_->forward(H_ReR_curr_.data(), H_ImR_curr_.data());currentAzimuth_ = azimuth;currentElevation_ = elevation;} else {std::fill(H_ReL_targ_.begin(), H_ImL_targ_.end(), 0.0f);std::fill(H_ImL_targ_.begin(), H_ImL_targ_.end(), 0.0f);std::fill(H_ReR_targ_.begin(), H_ReR_targ_.end(), 0.0f);std::fill(H_ImR_targ_.begin(), H_ImR_targ_.end(), 0.0f);std::memcpy(H_ReL_targ_.data(), tempIR_L.data(), IR_LEN * sizeof(float));std::memcpy(H_ReR_targ_.data(), tempIR_R.data(), IR_LEN * sizeof(float));// Cargar el espectro objetivo en los buffers de target para realizar el crossfade progresivofft_->forward(H_ReL_targ_.data(), H_ImL_targ_.data());fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());}}uint32_t HRTFConvolver::next_pow2(uint32_t val) const noexcept {if (val == 0) return 1;val--;val |= val >> 1;  val |= val >> 2;val |= val >> 4;  val |= val >> 8;val |= val >> 16;return val + 1;}} // namespace ivanna
