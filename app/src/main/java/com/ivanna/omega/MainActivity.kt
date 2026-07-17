@@ -151,6 +151,25 @@ class MainActivity : ComponentActivity() {
     private var showAdaptive by mutableStateOf(false)
     private var adaptiveTelemetry by mutableStateOf<FloatArray?>(null)
 
+    // ── Adaptive Control Center (Fase de UI) ────────────────────────────────────
+    // adaptiveTelemetry: espejo Compose-observable de nativeGetAdaptiveTelemetry(),
+    // actualizado cada 500ms desde startAdaptiveTelemetryLoop() (ver abajo) — antes
+    // esa función solo mandaba a Logcat, sin ningún consumidor de UI.
+    private var adaptiveTelemetry by mutableStateOf(com.ivanna.omega.ui.AdaptiveTelemetrySnapshot())
+    // Estados de controles SIN backend real (adaptiveMode, adaptiveIntensity) —
+    // se guardan igual para que el slider/chip no "salte" visualmente, pero no
+    // se propagan a ningún lado del DSP. Ver AdaptiveEngineCard.kt para el
+    // detalle de auditoría de cada control.
+    private var adaptiveMode by mutableStateOf(com.ivanna.omega.ui.AdaptiveMode.NATURAL)
+    private var adaptiveIntensity by mutableStateOf(50f)
+    // Nota: el control "Spatial Control" del Adaptive Center reutiliza el
+    // mismo spatialWidth/onSpatialWidthChange que YA existe en
+    // IvannaControlPanel ("ANCHO ESPACIAL") — no se crea un segundo estado
+    // paralelo para el mismo parámetro real (evita exactamente el tipo de
+    // bug de doble-fuente-de-verdad que se corrigió varias veces en esta
+    // sesión). Ver IvannaControlPanel.kt.
+    private var voiceProtectionEnabled by mutableStateOf(true)
+
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -701,7 +720,22 @@ class MainActivity : ComponentActivity() {
                             onOpenVisualizer = { requestVisualizer() },
                             onOpenAdaptive = { showAdaptive = true },
                             metrics = omegaMetrics,
-                            onMetricsUpdate = { omegaMetrics = it }
+                            onMetricsUpdate = { omegaMetrics = it },
+                            // ── Adaptive Control Center ──────────────────────
+                            adaptiveTelemetry = adaptiveTelemetry,
+                            adaptiveMode = adaptiveMode,
+                            onAdaptiveModeChange = { adaptiveMode = it },
+                            adaptiveIntensity = adaptiveIntensity,
+                            onAdaptiveIntensityChange = { adaptiveIntensity = it },
+                            voiceProtectionEnabled = voiceProtectionEnabled,
+                            onVoiceProtectionChange = { enabled ->
+                                voiceProtectionEnabled = enabled
+                                try {
+                                    bridgePlayer.setVoiceProtectionEnabled(enabled)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error en onVoiceProtectionChange", e)
+                                }
+                            }
                         )
                       }
                     }
@@ -726,14 +760,22 @@ class MainActivity : ComponentActivity() {
             while (true) {
                 if (IvannaNativeLib.isLoaded) {
                     try {
+                        val running = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
                         val t = IvannaNativeLib.nativeGetAdaptiveTelemetry()
                         if (t != null && t.size >= 10) {
+                            // FIX (UI sin consumidor de telemetría — Adaptive
+                            // Control Center): antes esto solo mandaba a
+                            // Logcat. adaptiveTelemetry es mutableStateOf,
+                            // Compose recompone automáticamente donde se lea.
+                            adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(t, running)
                             Log.i("IVANNA.AdaptiveTelemetry",
-                                "running=${IvannaNativeLib.nativeIsAdaptiveEngineRunning()} " +
+                                "running=$running " +
                                 "rms=%.4f peak=%.4f gr_db=%.2f target_gain=%.3f comp=%.3f ".format(
                                     t[0], t[1], t[2], t[3], t[4]) +
                                 "exc_red=%.3f width=%.3f margin=%.3f voice_prot=%.3f applied=%.0f".format(
                                     t[5], t[6], t[7], t[8], t[9]))
+                        } else {
+                            adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(running = running)
                         }
                     } catch (t: Throwable) {
                         Log.w(TAG, "adaptiveTelemetryLoop tick fallo", t)
