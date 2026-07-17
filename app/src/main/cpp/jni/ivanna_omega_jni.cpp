@@ -108,6 +108,12 @@ static std::atomic<float> g_lastAdaptiveVoiceProtect{0.0f};
 static std::atomic<float> g_lastRawRms{0.0f};
 static std::atomic<float> g_lastRawPeak{0.0f};
 static std::atomic<float> g_lastRawGrDb{0.0f};
+// Band energies — escritas por nativeProcess (Ruta A) y audioRouteBridgeLoop (Ruta B).
+// Leídas por nativeGetBandEnergies() para el AdaptiveDashboard.
+// No malloc, no mutex: solo atomic stores en el audio thread y loads en el JNI getter.
+static std::atomic<float> g_lastBandLow{0.0f};
+static std::atomic<float> g_lastBandMid{0.0f};
+static std::atomic<float> g_lastBandHigh{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 
 // ═══ Adaptive Feedback Loop — puente ruta B (Spotify/YouTube/apps de
@@ -201,6 +207,10 @@ static void audioRouteBridgeLoop() {
         rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = 0.0f;   // omega_effect no corre VoiceProtectionController
+        // Exponer band energies Ruta B al JNI getter (AdaptiveDashboard)
+        g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
+        g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
+        g_lastBandHigh.store(rawM.band_high_energy, std::memory_order_relaxed);
         g_adaptiveEngine.rawMetrics.publish(
             ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
 
@@ -571,6 +581,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.band_high_energy  = bandEnergy(5, 7);
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
+        // Exponer band energies al JNI getter (AdaptiveDashboard)
+        g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
+        g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
+        g_lastBandHigh.store(rawM.band_high_energy, std::memory_order_relaxed);
         g_adaptiveEngine.rawMetrics.publish(
             ivanna::experimental::RawMetricsBus::Source::RouteA_BridgePlayer, rawM);
 
@@ -976,6 +990,25 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
     return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
+// FloatArray[3]: [0]=low (sub/bass), [1]=mid (presencia/voz), [2]=high (brillo/sibilancia)
+// Valores en amplitud lineal RMS normalizada. 0.0 = silencio, 1.0 = clip level.
+// Escritas por nativeProcess (Ruta A vía BiquadEnvelopeBank de PDEngine) y
+// audioRouteBridgeLoop (Ruta B vía 3 IIR bandpass en omega_daemon).
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBandEnergies(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(3);
+    if (!arr) return nullptr;
+    const float v[3] = {
+        g_lastBandLow .load(std::memory_order_relaxed),
+        g_lastBandMid .load(std::memory_order_relaxed),
+        g_lastBandHigh.load(std::memory_order_relaxed)
+    };
+    env->SetFloatArrayRegion(arr, 0, 3, v);
+    return arr;
 }
 
 } // extern "C"

@@ -134,4 +134,7 @@ object IvannaNativeLib {
     //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
     external fun nativeGetAdaptiveTelemetry(): FloatArray?
     external fun nativeIsAdaptiveEngineRunning(): Boolean
+    // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
+    // Disponible cuando el ADE está activo y hay señal de audio real.
+    external fun nativeGetBandEnergies(): FloatArray?
 }

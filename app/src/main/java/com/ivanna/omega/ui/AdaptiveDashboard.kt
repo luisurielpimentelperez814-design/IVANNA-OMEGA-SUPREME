@@ -45,6 +45,7 @@ import kotlin.math.max
 @Composable
 fun AdaptiveDashboard(
     telemetry: FloatArray?,        // null = ADE no corriendo o JNI no cargado
+    bandEnergies: FloatArray? = null,  // FloatArray[3]: [low, mid, high] lineal RMS
     modifier: Modifier = Modifier
 ) {
     val t = telemetry
@@ -131,20 +132,32 @@ fun AdaptiveDashboard(
         }
 
         // ── Band energy (read-only, ADE inputs) ───────────────────────────
-        // TODO: cuando IvannaNativeLib exponga getBandEnergies(), conectar aquí.
-        // Por ahora las band energies fluyen internamente ADE→decisiones pero
-        // no hay JNI getter público para ellas. Control fantasma = prohibido.
+        // Band energy — datos reales del ADE (IIR bandpass en PDEngine + omega_daemon)
+        // Ruta A: BiquadEnvelopeBank de PDEngine (bandas 0-1 low, 2-4 mid, 5-7 high)
+        // Ruta B: 3 filtros IIR en omega_daemon::processLoop (ai_band_low/mid/high)
+        // Backend real: nativeGetBandEnergies() → FloatArray[3]
         GlassCard(title = "ENERGÍA ESPECTRAL", accent = ObsidianSoft.copy(alpha = 0.5f)) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("LOW / MID / HIGH — disponible internamente en ADE",
-                     color = Color.White.copy(0.25f), fontFamily = FontFamily.Monospace,
-                     fontSize = 10.sp)
-                Text("// TODO: exponer via nativeGetBandEnergies()",
-                     color = Color.White.copy(0.18f), fontFamily = FontFamily.Monospace,
-                     fontSize = 9.sp)
+                val bandLow  = bandEnergies?.getOrElse(0) { 0f } ?: 0f
+                val bandMid  = bandEnergies?.getOrElse(1) { 0f } ?: 0f
+                val bandHigh = bandEnergies?.getOrElse(2) { 0f } ?: 0f
+                val total    = (bandLow + bandMid + bandHigh).coerceAtLeast(1e-6f)
+
+                MeterRow("LOW",  bandLow,  0f, total.coerceAtLeast(0.01f), AmberSignal,
+                         "${(bandLow/total*100).toInt()}%")
+                MeterRow("MID",  bandMid,  0f, total.coerceAtLeast(0.01f), AuroraCyan,
+                         "${(bandMid/total*100).toInt()}%")
+                MeterRow("HIGH", bandHigh, 0f, total.coerceAtLeast(0.01f), NeonMagenta,
+                         "${(bandHigh/total*100).toInt()}%")
+
+                if (bandEnergies == null) {
+                    Text("Sin señal de audio activa",
+                         color = Color.White.copy(0.3f),
+                         fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                }
             }
         }
 

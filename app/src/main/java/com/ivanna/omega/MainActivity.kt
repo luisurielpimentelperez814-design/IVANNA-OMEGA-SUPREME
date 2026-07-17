@@ -365,18 +365,23 @@ class MainActivity : ComponentActivity() {
                         // Pantalla de telemetría real del AdaptiveDecisionEngine.
                         // Poll a 500 ms — suficiente para visualizar las decisiones
                         // del ADE (que corre a 20 Hz internamente).
+                        var adaptiveBandEnergies by remember { mutableStateOf<FloatArray?>(null) }
                         LaunchedEffect(Unit) {
                             while (true) {
                                 adaptiveTelemetry = try {
                                     IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                                } catch (_: Throwable) { null }
+                                adaptiveBandEnergies = try {
+                                    IvannaNativeLib.nativeGetBandEnergies()
                                 } catch (_: Throwable) { null }
                                 kotlinx.coroutines.delay(500)
                             }
                         }
                         Box(modifier = Modifier.fillMaxSize()) {
                             com.ivanna.omega.ui.AdaptiveDashboard(
-                                telemetry = adaptiveTelemetry,
-                                modifier = Modifier.fillMaxSize()
+                                telemetry    = adaptiveTelemetry,
+                                bandEnergies = adaptiveBandEnergies,
+                                modifier     = Modifier.fillMaxSize()
                             )
                             IconButtonClose { showAdaptive = false }
                         }
