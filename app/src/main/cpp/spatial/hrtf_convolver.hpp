@@ -106,6 +106,8 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         if (outputR != inputR) std::memcpy(outputR, inputR, numSamples * sizeof(float));
         return;
     }
+    
+    // 1. Insertar muestras entrantes al buffer circular pendingIn
     for (uint32_t i = 0; i < numSamples; ++i) {
         if (inCount_ < RING_BUFFER_SIZE) {
             pendingIn_L_[inWritePtr_] = inputL[i];
@@ -114,22 +116,30 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
             inCount_++;
         }
     }
+    
+    // 2. Consumir subbloques estables de tamaño BLOCK mediante Overlap-Save espectral
     while (inCount_ >= static_cast<uint32_t>(BLOCK)) {
         int overlapSize = fftSize_ - BLOCK;
         std::memmove(histL_.data(), histL_.data() + BLOCK, overlapSize * sizeof(float));
         std::memmove(histR_.data(), histR_.data() + BLOCK, overlapSize * sizeof(float));
+        
         for (int i = 0; i < BLOCK; ++i) {
             histL_[overlapSize + i] = pendingIn_L_[inReadPtr_];
             histR_[overlapSize + i] = pendingIn_R_[inReadPtr_];
             inReadPtr_ = (inReadPtr_ + 1) % RING_BUFFER_SIZE;
         }
         inCount_ -= BLOCK;
+        
+        // Conversión a mono e inyección del escudo contra denormales
         for (int i = 0; i < fftSize_; ++i) {
             monoRe_[i] = (histL_[i] + histR_[i]) * 0.5f;
             monoIm_[i] = 0.0f;
             if (std::abs(monoRe_[i]) < 1e-30f) monoRe_[i] = 0.0f;
         }
+        
         fft_->forward(monoRe_.data(), monoIm_.data());
+        
+        // Convolución en frecuencia con la respuesta actual (Filtro A)
         for (int i = 0; i < fftSize_; ++i) {
             yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
             yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
@@ -138,7 +148,11 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         }
         fft_->inverse(yReL_.data(), yImL_.data());
         fft_->inverse(yReR_.data(), yImR_.data());
+        
+        float scale = 1.0f / static_cast<float>(fftSize_);
+        
         if (xfadeSamplesRemaining_ > 0) {
+            // Convolución en frecuencia con la respuesta objetivo (Filtro B)
             for (int i = 0; i < fftSize_; ++i) {
                 reL_[i] = monoRe_[i] * H_ReL_targ_[i] - monoIm_[i] * H_ImL_targ_[i];
                 imL_[i] = monoRe_[i] * H_ImL_targ_[i] + monoIm_[i] * H_ReL_targ_[i];
@@ -147,25 +161,33 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
             }
             fft_->inverse(reL_.data(), imL_.data());
             fft_->inverse(reR_.data(), imR_.data());
-            float scale = 1.0f / static_cast<float>(fftSize_);
+            
+            // Interpolación cruzada lineal muestra por muestra a lo largo del bloque
             for (int i = 0; i < BLOCK; ++i) {
                 int outIdx = overlapSize + i;
                 float progress = 1.0f - (static_cast<float>(xfadeSamplesRemaining_) / XFADE_DURATION_SAMPLES);
                 progress = std::clamp(progress, 0.0f, 1.0f);
+                
                 float currSampleL = yReL_[outIdx] * scale;
                 float currSampleR = yReR_[outIdx] * scale;
                 float targSampleL = reL_[outIdx] * scale;
                 float targSampleR = reR_[outIdx] * scale;
+                
                 float finalL = (1.0f - progress) * currSampleL + progress * targSampleL;
                 float finalR = (1.0f - progress) * currSampleR + progress * targSampleR;
+                
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = finalL;
                     outQueue_R_[outWritePtr_] = finalR;
                     outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
                     outCount_++;
                 }
+                
+                // Decrementar de forma segura por cada muestra procesada
                 if (xfadeSamplesRemaining_ > 0) xfadeSamplesRemaining_--;
             }
+            
+            // Si el crossfade termina en este bloque, conmutar filtros al estado base
             if (xfadeSamplesRemaining_ == 0) {
                 H_ReL_curr_ = H_ReL_targ_; H_ImL_curr_ = H_ImL_targ_;
                 H_ReR_curr_ = H_ReR_targ_; H_ImR_curr_ = H_ImR_targ_;
@@ -173,31 +195,9 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
                 currentElevation_ = targetElevation_;
             }
         } else {
-            float scale = 1.0f / static_cast<float>(fftSize_);
+            // Flujo normal sin crossfade: Aplicar factor de escala IFFT y guardar directo
             for (int i = 0; i < BLOCK; ++i) {
                 int outIdx = overlapSize + i;
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = yReL_[outIdx] * scale;
-                    outQueue_R_[outWritePtr_] = yReR_[outIdx] * scale;
-                    outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
-                    outCount_++;
-                }
-            }
-        }
-    }
-    uint32_t samplesToDeliver = std::min(numSamples, outCount_);
-    for (uint32_t i = 0; i < samplesToDeliver; ++i) {
-        outputL[i] = outQueue_L_[outReadPtr_];
-        outputR[i] = outQueue_R_[outReadPtr_];
-        outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;
-        outCount_--;
-    }
-    if (samplesToDeliver < numSamples) {
-        uint32_t missing = numSamples - samplesToDeliver;
-        std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
-        std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
-    }
-}
-
-} // namespace ivanna
-
+                    outQueue_R_[outWritePtr_] = yReR_[outIdx] * scale;outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;outCount_++;}}}}// 3. Extraer las muestras calculadas desde outQueue y enviarlas a los búfers de salidauint32_t samplesToDeliver = std::min(numSamples, outCount_);for (uint32_t i = 0; i < samplesToDeliver; ++i) {outputL[i] = outQueue_L_[outReadPtr_];outputR[i] = outQueue_R_[outReadPtr_];outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;outCount_--;}// Relleno preventivo con ceros si el hardware pide más datos de los disponiblesif (samplesToDeliver < numSamples) {uint32_t missing = numSamples - samplesToDeliver;std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));}}} // namespace ivanna
