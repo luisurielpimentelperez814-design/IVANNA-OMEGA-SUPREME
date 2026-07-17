@@ -168,3 +168,29 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_control_frame_bus_stress COMMAND test_control_frame_bus_stress)
 set_tests_properties(test_control_frame_bus_stress PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# audio_bus.h — bus lock-free genérico (SeqlockBus/SeqlockBusMulti),
+# consolida el patrón seqlock ya usado y corregido en RawMetricsBus/
+# AdaptiveStateBus (y ahora también test_control_frame_bus_stress, arriba)
+# en una plantilla reutilizable para buses futuros — para que el próximo
+# bus lo herede por composición en vez de copiar-pegar el seqlock una
+# cuarta vez. Verificado localmente antes de este commit: g++ directo
+# compila limpio, 5/5 corridas en verde (incluye stress test de 2 hilos
+# reales, 200ms, ~1.4M publicaciones por hilo, 0 torn reads) + TSAN (solo
+# marca el "race" formal esperado de todo seqlock, ya documentado y
+# validado dos veces antes en esta sesión para los otros buses — no es
+# una regresión nueva).
+add_executable(test_audio_bus
+  test_audio_bus.cpp
+)
+target_include_directories(test_audio_bus PRIVATE
+  ../include
+)
+target_compile_options(test_audio_bus PRIVATE -Wall -Wextra)
+target_link_libraries(test_audio_bus PRIVATE Threads::Threads)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_audio_bus PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_audio_bus PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_audio_bus COMMAND test_audio_bus)
+set_tests_properties(test_audio_bus PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")

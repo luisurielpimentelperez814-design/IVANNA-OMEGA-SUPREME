@@ -12,8 +12,8 @@ android {
         applicationId = "com.ivanna.omega"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1800
-        versionName = "1.8"
+        versionCode = 2000
+        versionName = "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
