@@ -9,6 +9,11 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.firestoreSettings
 import com.google.firebase.firestore.ktx.persistentCacheSettings
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 /**
  * CloudSyncManager — sincronización de UserProfileManager vía Firebase Firestore.
@@ -182,4 +187,92 @@ object CloudSyncManager {
             Log.e(TAG, "syncDown falló — se sigue usando el estado local", t)
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fallback local: export/import JSON en filesDir.
+    // Funciona SIEMPRE (no requiere Firebase configurado). Sirve para:
+    //   - Respaldar manualmente antes de reinstalar la app.
+    //   - Transferir el historial entre dispositivos vía archivo/USB.
+    //   - Tener persistencia adicional a SharedPreferences.
+    // No sustituye a Firestore (no sincroniza en tiempo real entre
+    // dispositivos), pero cubre el hueco cuando el sync remoto no está.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private const val LOCAL_BACKUP_FILENAME = "ivanna_profile_backup.json"
+
+    fun localBackupFile(context: Context): File =
+        File(context.filesDir, LOCAL_BACKUP_FILENAME)
+
+    /**
+     * Serializa el estado actual de [profileManager] a un JSON en filesDir.
+     * Devuelve true si el archivo se escribió correctamente.
+     */
+    suspend fun exportLocalBackup(context: Context, profileManager: UserProfileManager): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val history = JSONArray()
+                profileManager.getHistory().forEach { p ->
+                    history.put(JSONObject().apply {
+                        put("name", p.name)
+                        put("presetName", p.presetName)
+                        put("timestamp", p.timestamp)
+                        put("sourceApp", p.sourceApp ?: JSONObject.NULL)
+                    })
+                }
+                val root = JSONObject().apply {
+                    put("schemaVersion", 1)
+                    put("currentPreset", profileManager.getCurrentPreset())
+                    put("updatedAt", System.currentTimeMillis())
+                    put("history", history)
+                }
+                localBackupFile(context).writeText(root.toString(2))
+                Log.i(TAG, "exportLocalBackup OK (${profileManager.getHistory().size} entradas)")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "exportLocalBackup falló", t)
+                false
+            }
+        }
+
+    /**
+     * Lee el JSON de respaldo y fusiona su historial con el local
+     * (last-write-wins, últimos 50). Devuelve true si se aplicó algo.
+     */
+    suspend fun importLocalBackup(context: Context, profileManager: UserProfileManager): Boolean =
+        withContext(Dispatchers.IO) {
+            val file = localBackupFile(context)
+            if (!file.exists()) {
+                Log.i(TAG, "importLocalBackup: no hay backup local todavía")
+                return@withContext false
+            }
+            try {
+                val root = JSONObject(file.readText())
+                val arr = root.optJSONArray("history") ?: JSONArray()
+                val remoteHistory = buildList {
+                    for (i in 0 until arr.length()) {
+                        val m = arr.getJSONObject(i)
+                        val src = m.opt("sourceApp")
+                        add(
+                            UserProfileManager.UserProfile(
+                                name = m.getString("name"),
+                                presetName = m.getString("presetName"),
+                                timestamp = m.getLong("timestamp"),
+                                sourceApp = if (src == null || src == JSONObject.NULL) null else src.toString()
+                            )
+                        )
+                    }
+                }
+                val localHistory = profileManager.getHistory()
+                val merged = (localHistory + remoteHistory)
+                    .distinctBy { it.timestamp to it.presetName }
+                    .sortedBy { it.timestamp }
+                    .takeLast(50)
+                profileManager.replaceHistory(merged)
+                Log.i(TAG, "importLocalBackup OK: ${localHistory.size} local + ${remoteHistory.size} backup -> ${merged.size}")
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "importLocalBackup falló — archivo corrupto o formato inválido", t)
+                false
+            }
+        }
 }
