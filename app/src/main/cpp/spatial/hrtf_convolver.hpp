@@ -15,69 +15,69 @@
  * ============================================================================
  */
 
-#include "HRTFConvolver.hpp"
-#include <cstring>
-#include <cmath>
-#include <algorithm>
+ #include "HRTFConvolver.hpp"
+ #include <cstring>
+ #include <cmath>
+ #include <algorithm>
 
-namespace ivanna {
+ namespace ivanna {
 
-void HRTFConvolver::init(uint32_t sampleRate) {
-    sr_ = sampleRate;
-    hrtf_.init(sampleRate, IR_LEN);
-    ivanna::audio::enableAudioThreadFastMathOnce();
-    fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
-    fft_ = std::make_unique<FFTRadix2>(fftSize_);
+ void HRTFConvolver::init(uint32_t sampleRate) {
+     sr_ = sampleRate;
+     hrtf_.init(sampleRate, IR_LEN);
+     ivanna::audio::enableAudioThreadFastMathOnce();
+     fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
+     fft_ = std::make_unique<FFTRadix2>(fftSize_);
     
-    histL_.assign(fftSize_, 0.0f);
-    histR_.assign(fftSize_, 0.0f);
-    pendingIn_L_.assign(RING_BUFFER_SIZE, 0.0f);
-    pendingIn_R_.assign(RING_BUFFER_SIZE, 0.0f);
-    outQueue_L_.assign(RING_BUFFER_SIZE, 0.0f);
-    outQueue_R_.assign(RING_BUFFER_SIZE, 0.0f);
+     histL_.assign(fftSize_, 0.0f);
+     histR_.assign(fftSize_, 0.0f);
+     pendingIn_L_.assign(RING_BUFFER_SIZE, 0.0f);
+     pendingIn_R_.assign(RING_BUFFER_SIZE, 0.0f);
+     outQueue_L_.assign(RING_BUFFER_SIZE, 0.0f);
+     outQueue_R_.assign(RING_BUFFER_SIZE, 0.0f);
+     
+     inReadPtr_ = 0; inWritePtr_ = 0; inCount_ = 0;
+     outReadPtr_ = 0; outWritePtr_ = 0; outCount_ = 0;
     
-    inReadPtr_ = 0; inWritePtr_ = 0; inCount_ = 0;
-    outReadPtr_ = 0; outWritePtr_ = 0; outCount_ = 0;
+     reL_.assign(fftSize_, 0.0f);   imL_.assign(fftSize_, 0.0f);
+     reR_.assign(fftSize_, 0.0f);   imR_.assign(fftSize_, 0.0f);
+     monoRe_.assign(fftSize_, 0.0f); monoIm_.assign(fftSize_, 0.0f);
+     yReL_.assign(fftSize_, 0.0f);  yImL_.assign(fftSize_, 0.0f);
+     yReR_.assign(fftSize_, 0.0f);  yImR_.assign(fftSize_, 0.0f);
+     
+     hrir_L_current_.assign(fftSize_, 0.0f); hrir_R_current_.assign(fftSize_, 0.0f);
+     hrir_L_target_.assign(fftSize_, 0.0f);  hrir_R_target_.assign(fftSize_, 0.0f);
+     H_ReL_curr_.assign(fftSize_, 0.0f);     H_ImL_curr_.assign(fftSize_, 0.0f);
+     H_ReR_curr_.assign(fftSize_, 0.0f);     H_ImR_curr_.assign(fftSize_, 0.0f);
+     H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
+     H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
     
-    reL_.assign(fftSize_, 0.0f);   imL_.assign(fftSize_, 0.0f);
-    reR_.assign(fftSize_, 0.0f);   imR_.assign(fftSize_, 0.0f);
-    monoRe_.assign(fftSize_, 0.0f); monoIm_.assign(fftSize_, 0.0f);
-    yReL_.assign(fftSize_, 0.0f);  yImL_.assign(fftSize_, 0.0f);
-    yReR_.assign(fftSize_, 0.0f);  yImR_.assign(fftSize_, 0.0f);
+     currentAzimuth_ = 0.0f;
+     currentElevation_ = 0.0f;
+     targetAzimuth_ = 0.0f;
+     targetElevation_ = 0.0f;
     
-    hrir_L_current_.assign(fftSize_, 0.0f); hrir_R_current_.assign(fftSize_, 0.0f);
-    hrir_L_target_.assign(fftSize_, 0.0f);  hrir_R_target_.assign(fftSize_, 0.0f);
-    H_ReL_curr_.assign(fftSize_, 0.0f);     H_ImL_curr_.assign(fftSize_, 0.0f);
-    H_ReR_curr_.assign(fftSize_, 0.0f);     H_ImR_curr_.assign(fftSize_, 0.0f);
-    H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
-    H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
-    
-    currentAzimuth_ = 0.0f;
-    currentElevation_ = 0.0f;
-    targetAzimuth_ = 0.0f;
-    targetElevation_ = 0.0f;
-    
-    updateFilterResponses(0.0f, 0.0f, true);
-    xfadeSamplesRemaining_ = 0;
-    filterInitialized_ = true;
-}
+     updateFilterResponses(0.0f, 0.0f, true);
+     xfadeSamplesRemaining_ = 0;
+     filterInitialized_ = true;
+  }
 
-void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
-    while (azimuth < -180.0f) azimuth += 360.0f;
-    while (azimuth > 180.0f)  azimuth -= 360.0f;
-    elevation = std::clamp(elevation, -45.0f, 90.0f);
+  void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
+      while (azimuth < -180.0f) azimuth += 360.0f;
+      while (azimuth > 180.0f)  azimuth -= 360.0f;
+      elevation = std::clamp(elevation, -45.0f, 90.0f);
     
-    if (std::abs(azimuth - targetAzimuth_) > 0.1f || std::abs(elevation - targetElevation_) > 0.1f) {
-        targetAzimuth_ = azimuth;
-        targetElevation_ = elevation;
-        if (xfadeSamplesRemaining_ == 0 && (currentAzimuth_ == targetAzimuth_) && (currentElevation_ == targetElevation_)) {
+      if (std::abs(azimuth - targetAzimuth_) > 0.1f || std::abs(elevation - targetElevation_) > 0.1f) {
+         targetAzimuth_ = azimuth;
+         targetElevation_ = elevation;
+      if (xfadeSamplesRemaining_ == 0 && (currentAzimuth_ == targetAzimuth_) && (currentElevation_ == targetElevation_)) {
             updateFilterResponses(targetAzimuth_, targetElevation_, true);
         } else {
             updateFilterResponses(targetAzimuth_, targetElevation_, false);
             xfadeSamplesRemaining_ = XFADE_DURATION_SAMPLES;
         }
     }
-}
+} 
 
 void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool immediate) noexcept {
     std::vector<float> irL(IR_LEN, 0.0f);
