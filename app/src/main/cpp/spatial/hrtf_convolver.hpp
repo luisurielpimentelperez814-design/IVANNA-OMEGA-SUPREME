@@ -15,14 +15,14 @@
  * ============================================================================
  */
 
-   #include "HRTFConvolver.hpp"
-   #include <cstring>
-   #include <cmath>
-   #include <algorithm>
+#include "HRTFConvolver.hpp"
+#include <cstring>
+#include <cmath>
+#include <algorithm>
 
-    namespace ivanna {
+namespace ivanna {
 
-    void HRTFConvolver::init(uint32_t sampleRate) {
+void HRTFConvolver::init(uint32_t sampleRate) {
     sr_ = sampleRate;
     hrtf_.init(sampleRate, IR_LEN);
     ivanna::audio::enableAudioThreadFastMathOnce();
@@ -99,7 +99,7 @@ void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool i
         fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());
     }
 }
-} // namespace ivanna {
+
 void HRTFConvolver::process(const float* inputL, const float* inputR, float* outputL, float* outputR, uint32_t numSamples) noexcept {
     if (!filterInitialized_ || !inputL || !inputR || !outputL || !outputR || numSamples == 0) {
         if (outputL != inputL) std::memcpy(outputL, inputL, numSamples * sizeof(float));
@@ -198,5 +198,6 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
     }
 }
+
 } // namespace ivanna
 
