@@ -70,6 +70,18 @@ class IvannaBridgePlayer(private val context: Context) {
         }
     }
 
+    /**
+     * Control real (no cosmético) de Voice Protection — delega a
+     * VoiceProtectionController.enabled, que ya gatea feed() de verdad
+     * (ver VoiceProtectionController.kt: `if (!enabled) return` al inicio
+     * de feed()). Antes era una propiedad `private`, sin forma de
+     * controlarla desde la UI.
+     */
+    fun setVoiceProtectionEnabled(enabled: Boolean) {
+        voiceProtection?.enabled = enabled
+        if (!enabled) DSPBridge.setVoiceProtectScore(0f)
+    }
+
     /** Reproduce el archivo en [uri]. Cancela cualquier reproducción previa. */
     fun play(uri: Uri) {
         stop()

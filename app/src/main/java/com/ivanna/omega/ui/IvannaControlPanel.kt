@@ -130,7 +130,15 @@ fun IvannaControlPanel(
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
-    onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null
+    onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
+    // ── Adaptive Control Center ──────────────────────────────────────────
+    adaptiveTelemetry: com.ivanna.omega.ui.AdaptiveTelemetrySnapshot = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(),
+    adaptiveMode: com.ivanna.omega.ui.AdaptiveMode = com.ivanna.omega.ui.AdaptiveMode.NATURAL,
+    onAdaptiveModeChange: (com.ivanna.omega.ui.AdaptiveMode) -> Unit = {},
+    adaptiveIntensity: Float = 50f,
+    onAdaptiveIntensityChange: (Float) -> Unit = {},
+    voiceProtectionEnabled: Boolean = true,
+    onVoiceProtectionChange: (Boolean) -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -227,6 +235,27 @@ fun IvannaControlPanel(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         EngineStatusCard(metrics = metrics)
+
+        com.ivanna.omega.ui.AdaptiveEngineStatusCard(telemetry = adaptiveTelemetry)
+
+        com.ivanna.omega.ui.AdaptiveControlsCard(
+            mode = adaptiveMode,
+            onModeChange = onAdaptiveModeChange,
+            intensity = adaptiveIntensity,
+            onIntensityChange = onAdaptiveIntensityChange,
+            // Reutiliza el MISMO spatialWidth/onSpatialWidthChange que ya
+            // controla "ANCHO ESPACIAL" más abajo en este panel — no es un
+            // segundo estado paralelo, es el mismo parámetro real expuesto
+            // también acá porque el prompt de esta fase lo pide en el
+            // Adaptive Control Center.
+            spatialControlPercent = spatialWidth * 100f,
+            onSpatialControlChange = { percent ->
+                spatialWidth = percent / 100f
+                onSpatialWidthChange(percent / 100f)
+            },
+            voiceProtectionEnabled = voiceProtectionEnabled,
+            onVoiceProtectionChange = onVoiceProtectionChange
+        )
 
         OmniHeroHeader(
             omegaMode = omegaMode,
