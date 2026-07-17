@@ -135,3 +135,36 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_stability COMMAND test_stability)
 set_tests_properties(test_stability PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# Stress test SPSC real para ControlFrameBus (control_frame.hpp) — el bus
+# de producción que audio_control_plane.cpp publica y nativeProcess()
+# consume en cada bloque de audio. El seqlock de este archivo ya tuvo un
+# bug real de sincronización (continue-en-do-while, ver comentario en
+# control_frame.hpp) encontrado y corregido — este test queda como
+# barrera de regresión permanente en CI, algo que no existía antes pese
+# a ser el bus más crítico de los tres con ese mismo patrón (se lee en
+# CADA bloque de audio real, no solo en telemetría).
+#
+# Se descartó deliberadamente el enfoque std::atomic<ControlFrame> +
+# static_assert(is_lock_free) que se propuso originalmente: ControlFrame
+# tiene 21+ campos (~90+ bytes), muy por encima del límite práctico de
+# lock-free real en hardware ARM64 existente — ese enfoque habría
+# compilado pero degradado a un mutex interno oculto, o creado una
+# segunda arquitectura de bus paralela y redundante a la que ya existe
+# y ya está probada seleccionada correctamente. Este test ejercita el
+# ControlFrameBus REAL, con seqlock, tal como corre en producción.
+add_executable(test_control_frame_bus_stress
+  test_control_frame_bus_stress.cpp
+)
+target_include_directories(test_control_frame_bus_stress PRIVATE
+  ..
+  ../include
+)
+target_compile_options(test_control_frame_bus_stress PRIVATE -Wall -Wextra)
+target_link_libraries(test_control_frame_bus_stress PRIVATE Threads::Threads)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_control_frame_bus_stress PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_control_frame_bus_stress PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_control_frame_bus_stress COMMAND test_control_frame_bus_stress)
+set_tests_properties(test_control_frame_bus_stress PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
