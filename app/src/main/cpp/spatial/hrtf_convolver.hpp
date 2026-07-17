@@ -28,29 +28,35 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     ivanna::audio::enableAudioThreadFastMathOnce();
     fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
     fft_ = std::make_unique<FFTRadix2>(fftSize_);
+    
     histL_.assign(fftSize_, 0.0f);
     histR_.assign(fftSize_, 0.0f);
     pendingIn_L_.assign(RING_BUFFER_SIZE, 0.0f);
     pendingIn_R_.assign(RING_BUFFER_SIZE, 0.0f);
     outQueue_L_.assign(RING_BUFFER_SIZE, 0.0f);
     outQueue_R_.assign(RING_BUFFER_SIZE, 0.0f);
+    
     inReadPtr_ = 0; inWritePtr_ = 0; inCount_ = 0;
     outReadPtr_ = 0; outWritePtr_ = 0; outCount_ = 0;
+    
     reL_.assign(fftSize_, 0.0f);   imL_.assign(fftSize_, 0.0f);
     reR_.assign(fftSize_, 0.0f);   imR_.assign(fftSize_, 0.0f);
     monoRe_.assign(fftSize_, 0.0f); monoIm_.assign(fftSize_, 0.0f);
     yReL_.assign(fftSize_, 0.0f);  yImL_.assign(fftSize_, 0.0f);
     yReR_.assign(fftSize_, 0.0f);  yImR_.assign(fftSize_, 0.0f);
+    
     hrir_L_current_.assign(fftSize_, 0.0f); hrir_R_current_.assign(fftSize_, 0.0f);
     hrir_L_target_.assign(fftSize_, 0.0f);  hrir_R_target_.assign(fftSize_, 0.0f);
     H_ReL_curr_.assign(fftSize_, 0.0f);     H_ImL_curr_.assign(fftSize_, 0.0f);
     H_ReR_curr_.assign(fftSize_, 0.0f);     H_ImR_curr_.assign(fftSize_, 0.0f);
     H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
     H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
+    
     currentAzimuth_ = 0.0f;
     currentElevation_ = 0.0f;
     targetAzimuth_ = 0.0f;
     targetElevation_ = 0.0f;
+    
     updateFilterResponses(0.0f, 0.0f, true);
     xfadeSamplesRemaining_ = 0;
     filterInitialized_ = true;
@@ -60,6 +66,7 @@ void HRTFConvolver::setTargetPosition(float azimuth, float elevation) noexcept {
     while (azimuth < -180.0f) azimuth += 360.0f;
     while (azimuth > 180.0f)  azimuth -= 360.0f;
     elevation = std::clamp(elevation, -45.0f, 90.0f);
+    
     if (std::abs(azimuth - targetAzimuth_) > 0.1f || std::abs(elevation - targetElevation_) > 0.1f) {
         targetAzimuth_ = azimuth;
         targetElevation_ = elevation;
@@ -76,6 +83,7 @@ void HRTFConvolver::updateFilterResponses(float azimuth, float elevation, bool i
     std::vector<float> irL(IR_LEN, 0.0f);
     std::vector<float> irR(IR_LEN, 0.0f);
     hrtf_.getIR(azimuth, elevation, irL.data(), irR.data());
+    
     if (immediate) {
         std::fill(H_ReL_curr_.begin(), H_ReL_curr_.end(), 0.0f);
         std::fill(H_ImL_curr_.begin(), H_ImL_curr_.end(), 0.0f);
@@ -107,7 +115,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         return;
     }
     
-    // 1. Insertar muestras entrantes al buffer circular pendingIn
+    // 1. Inserción al búfer circular de entrada
     for (uint32_t i = 0; i < numSamples; ++i) {
         if (inCount_ < RING_BUFFER_SIZE) {
             pendingIn_L_[inWritePtr_] = inputL[i];
@@ -117,7 +125,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         }
     }
     
-    // 2. Consumir subbloques estables de tamaño BLOCK mediante Overlap-Save espectral
+    // 2. Procesamiento Overlap-Save espectral en bloques fijos de tamaño BLOCK
     while (inCount_ >= static_cast<uint32_t>(BLOCK)) {
         int overlapSize = fftSize_ - BLOCK;
         std::memmove(histL_.data(), histL_.data() + BLOCK, overlapSize * sizeof(float));
@@ -130,7 +138,6 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         }
         inCount_ -= BLOCK;
         
-        // Conversión a mono e inyección del escudo contra denormales
         for (int i = 0; i < fftSize_; ++i) {
             monoRe_[i] = (histL_[i] + histR_[i]) * 0.5f;
             monoIm_[i] = 0.0f;
@@ -139,7 +146,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         
         fft_->forward(monoRe_.data(), monoIm_.data());
         
-        // Convolución en frecuencia con la respuesta actual (Filtro A)
+        // Convolución con el Filtro A (Current)
         for (int i = 0; i < fftSize_; ++i) {
             yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
             yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
@@ -152,7 +159,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
         float scale = 1.0f / static_cast<float>(fftSize_);
         
         if (xfadeSamplesRemaining_ > 0) {
-            // Convolución en frecuencia con la respuesta objetivo (Filtro B)
+            // Convolución con el Filtro B (Target)
             for (int i = 0; i < fftSize_; ++i) {
                 reL_[i] = monoRe_[i] * H_ReL_targ_[i] - monoIm_[i] * H_ImL_targ_[i];
                 imL_[i] = monoRe_[i] * H_ImL_targ_[i] + monoIm_[i] * H_ReL_targ_[i];
@@ -162,7 +169,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
             fft_->inverse(reL_.data(), imL_.data());
             fft_->inverse(reR_.data(), imR_.data());
             
-            // Interpolación cruzada lineal muestra por muestra a lo largo del bloque
+            // Interpolación cruzada lineal libre de zipper-noise
             for (int i = 0; i < BLOCK; ++i) {
                 int outIdx = overlapSize + i;
                 float progress = 1.0f - (static_cast<float>(xfadeSamplesRemaining_) / XFADE_DURATION_SAMPLES);
@@ -182,12 +189,9 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
                     outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
                     outCount_++;
                 }
-                
-                // Decrementar de forma segura por cada muestra procesada
                 if (xfadeSamplesRemaining_ > 0) xfadeSamplesRemaining_--;
             }
             
-            // Si el crossfade termina en este bloque, conmutar filtros al estado base
             if (xfadeSamplesRemaining_ == 0) {
                 H_ReL_curr_ = H_ReL_targ_; H_ImL_curr_ = H_ImL_targ_;
                 H_ReR_curr_ = H_ReR_targ_; H_ImR_curr_ = H_ImR_targ_;
@@ -195,9 +199,34 @@ void HRTFConvolver::process(const float* inputL, const float* inputR, float* out
                 currentElevation_ = targetElevation_;
             }
         } else {
-            // Flujo normal sin crossfade: Aplicar factor de escala IFFT y guardar directo
+            // Envío directo sin crossfade activo
             for (int i = 0; i < BLOCK; ++i) {
                 int outIdx = overlapSize + i;
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = yReL_[outIdx] * scale;
-                    outQueue_R_[outWritePtr_] = yReR_[outIdx] * scale;outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;outCount_++;}}}}// 3. Extraer las muestras calculadas desde outQueue y enviarlas a los búfers de salidauint32_t samplesToDeliver = std::min(numSamples, outCount_);for (uint32_t i = 0; i < samplesToDeliver; ++i) {outputL[i] = outQueue_L_[outReadPtr_];outputR[i] = outQueue_R_[outReadPtr_];outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;outCount_--;}// Relleno preventivo con ceros si el hardware pide más datos de los disponiblesif (samplesToDeliver < numSamples) {uint32_t missing = numSamples - samplesToDeliver;std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));}}} // namespace ivanna
+                    outQueue_R_[outWritePtr_] = yReR_[outIdx] * scale;
+                    outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
+                    outCount_++;
+                }
+            }
+        }
+    }
+    
+    // 3. Extracción y entrega de muestras al búfer de salida del sistema
+        uint32_t samplesToDeliver = std::min(numSamples, outCount_);
+    for (uint32_t i = 0; i < samplesToDeliver; ++i) {
+        outputL[i] = outQueue_L_[outReadPtr_];
+        outputR[i] = outQueue_R_[outReadPtr_];
+        outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;
+        outCount_--;
+    }
+    
+    // Relleno preventivo con silencio si hay underrun parcial
+    if (samplesToDeliver < numSamples) {
+        uint32_t missing = numSamples - samplesToDeliver;
+        std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
+        std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
+    }
+}
+
+} // namespace ivanna
