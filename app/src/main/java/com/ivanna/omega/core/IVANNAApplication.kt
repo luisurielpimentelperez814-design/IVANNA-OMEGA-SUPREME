@@ -52,6 +52,14 @@ class IVANNAApplication : Application() {
     // AudioSessionReceiver lo acceda via (context.applicationContext as IVANNAApplication)
     val globalEffectManager = IvannaGlobalEffectManager()
 
+    // Expuesto para que la UI o un futuro entry-point de STT puedan invocar
+    // routing por comando/clasificación sin recrear el clasificador YAMNet.
+    // Se inicializa perezosamente porque VoiceController carga YAMNet en
+    // construcción y no queremos pagar ese coste si nadie lo usa.
+    val voiceController: com.ivanna.omega.VoiceController by lazy {
+        com.ivanna.omega.VoiceController(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
