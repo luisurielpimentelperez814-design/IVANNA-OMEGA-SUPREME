@@ -295,15 +295,32 @@ public:
         }
 
         // ── Manifold coclear completo (Volterra H2) — opt-in, paralelo ─────
-        // Corre a nivel de bloque, no altera outL/outR todavía (ver
-        // setManifoldEnabled). Sólo se ejecuta si fue habilitado y el init
-        // perezoso tuvo éxito.
+        // Corre a nivel de bloque. FIX: antes su salida se descartaba
+        // (comentario decía "aún no se mezcla al camino de señal") — el
+        // pipeline hacía trabajo real (HRTF/upsampler/Volterra) sobre
+        // audio real y lo tiraba a un scratch buffer sin efecto audible.
+        // Con el overflow de FIRUpsamplerEngine reparado (ver
+        // fir_upsampler_engine.hpp) es seguro mezclarlo. up_factor de la
+        // inicialización real es 1 (sr_in==sr_out en ensureManifoldInit),
+        // así que manifold_scratch tiene exactamente n frames/canal —
+        // mezcla directa sin resample. Blend conservador (25%) para no
+        // alterar drásticamente el sonido en el primer encendido; MANIFOLD_
+        // MIX es ajustable a oído en el dispositivo real.
         if (manifold_enabled_ && manifold_initialized_ && n > 0) {
             thread_local std::vector<int32_t> manifold_scratch;
             manifold_scratch.resize(static_cast<size_t>(n) * 2);
             ivanna::dsp::SpatialPosition pos{0.f, 0.f, 1.f};
             ivanna::dsp::neuro_cochlear_process_block(
                 inL, inR, manifold_scratch.data(), pos);
+
+            constexpr float MANIFOLD_MIX = 0.25f;
+            constexpr float INV_S32 = 1.0f / 2147483647.0f;
+            for (int i = 0; i < n; ++i) {
+                const float mL = static_cast<float>(manifold_scratch[i * 2])     * INV_S32;
+                const float mR = static_cast<float>(manifold_scratch[i * 2 + 1]) * INV_S32;
+                outL[i] = npe_soft_limit(outL[i] * (1.f - MANIFOLD_MIX) + mL * MANIFOLD_MIX);
+                outR[i] = npe_soft_limit(outR[i] * (1.f - MANIFOLD_MIX) + mR * MANIFOLD_MIX);
+            }
         }
 
         // ── AutonomousBrain: análisis de ventana → género + Synthesizer ────

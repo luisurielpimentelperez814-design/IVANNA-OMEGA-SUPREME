@@ -138,14 +138,18 @@ void neuro_cochlear_process_block(
     }
 
     if (g_manifold.upsampler) {
+        // FIX: antes no se pasaba el factor -> FIRUpsamplerEngine usaba su
+        // FACTOR=4 hardcodeado sin importar up_factor real, desbordando
+        // buffer_post_up (dimensionado con up_factor, hoy =1). Ver
+        // fir_upsampler_engine.hpp.
         g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf, 
             g_manifold.buffer_post_up, 
-            N);
+            N, static_cast<int>(up_factor));
         g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf + N, 
             g_manifold.buffer_post_up + up_N, 
-            N);
+            N, static_cast<int>(up_factor));
     }
 
     if (g_manifold.volterra) {
