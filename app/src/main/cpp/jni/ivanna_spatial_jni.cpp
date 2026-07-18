@@ -12,6 +12,7 @@
 // ============================================================================
 
 #include <jni.h>
+#include "../spatial/fft_radix2.hpp"
 #include "../spatial/ivanna_head_tracker.hpp"
 #include "../spatial/ivanna_object_renderer.hpp"
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
