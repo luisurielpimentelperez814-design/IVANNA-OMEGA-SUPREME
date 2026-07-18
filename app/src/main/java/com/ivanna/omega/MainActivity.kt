@@ -149,7 +149,6 @@ class MainActivity : ComponentActivity() {
     private var showVisualizer by mutableStateOf(false)
     private var captureServiceRunning by mutableStateOf(false)
     private var showAdaptive by mutableStateOf(false)
-    private var adaptiveTelemetry by mutableStateOf<FloatArray?>(null)
 
     // ── Adaptive Control Center (Fase de UI) ────────────────────────────────────
     // adaptiveTelemetry: espejo Compose-observable de nativeGetAdaptiveTelemetry(),
