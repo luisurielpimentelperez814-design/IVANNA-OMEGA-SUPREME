@@ -384,16 +384,17 @@ class MainActivity : ComponentActivity() {
                         // Poll a 500 ms — suficiente para visualizar las decisiones
                         // del ADE (que corre a 20 Hz internamente).
                         var adaptiveBandEnergies by remember { mutableStateOf<FloatArray?>(null) }
+                        var adaptiveTelemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
                         LaunchedEffect(Unit) {
                             while (true) {
-                                adaptiveTelemetry = try {
-                                    com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
-                                        IvannaNativeLib.nativeGetAdaptiveTelemetry(),
-                                        running = true
-                                    )
-                                } catch (_: Throwable) { 
-                                    com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(running = false)
-                                }
+                                val rawArray = try {
+                                    IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                                } catch (_: Throwable) { null }
+                                adaptiveTelemetryRaw = rawArray
+                                adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
+                                    rawArray,
+                                    running = rawArray != null
+                                )
                                 adaptiveBandEnergies = try {
                                     IvannaNativeLib.nativeGetBandEnergies()
                                 } catch (_: Throwable) { null }
@@ -402,7 +403,7 @@ class MainActivity : ComponentActivity() {
                         }
                         Box(modifier = Modifier.fillMaxSize()) {
                             com.ivanna.omega.ui.AdaptiveDashboard(
-                                telemetry    = adaptiveTelemetry,
+                                telemetry    = adaptiveTelemetryRaw,
                                 bandEnergies = adaptiveBandEnergies,
                                 modifier     = Modifier.fillMaxSize()
                             )
