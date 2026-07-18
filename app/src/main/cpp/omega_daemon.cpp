@@ -47,6 +47,7 @@
 // HRTFConvolver es header-only. Sus dependencias (fft_radix2.hpp,
 // synthetic_hrtf.hpp, audio_thread_priority.h) ya están en la misma .so.
 // El include path "spatial/" está en include_directories del CMakeLists.
+#include "spatial/fft_radix2.hpp"
 #include "spatial/hrtf_convolver.hpp"
 #include "include/audio_thread_priority.h"
 
