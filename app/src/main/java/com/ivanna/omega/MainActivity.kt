@@ -387,8 +387,13 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(Unit) {
                             while (true) {
                                 adaptiveTelemetry = try {
-                                    IvannaNativeLib.nativeGetAdaptiveTelemetry()
-                                } catch (_: Throwable) { null }
+                                    com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
+                                        IvannaNativeLib.nativeGetAdaptiveTelemetry(),
+                                        running = true
+                                    )
+                                } catch (_: Throwable) { 
+                                    com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(running = false)
+                                }
                                 adaptiveBandEnergies = try {
                                     IvannaNativeLib.nativeGetBandEnergies()
                                 } catch (_: Throwable) { null }
