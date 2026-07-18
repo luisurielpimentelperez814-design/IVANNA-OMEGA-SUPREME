@@ -41,47 +41,60 @@ class DspStateUpdater {
      * Aplicar actualización (solo parámetros que cambiaron)
      */
     private fun applyUpdate(newState: AudioState) {
-        val lastState = lastState ?: AudioState()
+        // FIX (bb4fa6b): antes "val lastState = lastState ?: AudioState()"
+        // sombreaba la propiedad de la clase con un val local, y la
+        // reasignación "lastState = newState" al final del bloque try
+        // intentaba mutar ese val — error de compilación garantizado
+        // (val cannot be reassigned). snapshot != propiedad de instancia.
+        val previousState = lastState ?: AudioState()
         
         try {
             // Calcular deltas
             val deltas = mutableMapOf<String, Float>()
             
-            if (newState.compressorThreshold != lastState.compressorThreshold) {
+            if (newState.compressorThreshold != previousState.compressorThreshold) {
                 deltas["threshold"] = newState.compressorThreshold
+                // FIX (bb4fa6b): nativeSetCompressorParams pide 4 argumentos
+                // (threshold, ratio, attackMs, releaseMs) — llamaba con 2,
+                // error de compilación (firma real en jni/ivanna_omega_jni.cpp
+                // linea ~822). Se usan attack/release del propio AudioState.
                 IvannaNativeLib.nativeSetCompressorParams(
                     newState.compressorThreshold,
-                    newState.compressorRatio
+                    newState.compressorRatio,
+                    newState.compressorAttack,
+                    newState.compressorRelease
                 )
             }
             
-            if (newState.compressorRatio != lastState.compressorRatio) {
+            if (newState.compressorRatio != previousState.compressorRatio) {
                 deltas["ratio"] = newState.compressorRatio
                 IvannaNativeLib.nativeSetCompressorParams(
                     newState.compressorThreshold,
-                    newState.compressorRatio
+                    newState.compressorRatio,
+                    newState.compressorAttack,
+                    newState.compressorRelease
                 )
             }
             
-            if (newState.exciterAmount != lastState.exciterAmount) {
+            if (newState.exciterAmount != previousState.exciterAmount) {
                 deltas["exciter"] = newState.exciterAmount
                 IvannaNativeLib.nativeSetHarmonicGain(newState.exciterAmount)
             }
             
-            if (newState.spatialWidth != lastState.spatialWidth) {
+            if (newState.spatialWidth != previousState.spatialWidth) {
                 deltas["spatial_width"] = newState.spatialWidth
                 IvannaNativeLib.nativeSetSpatialWidthDirect(newState.spatialWidth)
             }
             
-            if (newState.eqBass != lastState.eqBass ||
-                newState.eqMid != lastState.eqMid ||
-                newState.eqTreble != lastState.eqTreble) {
+            if (newState.eqBass != previousState.eqBass ||
+                newState.eqMid != previousState.eqMid ||
+                newState.eqTreble != previousState.eqTreble) {
                 // Aplicar EQ (si existe método nativo)
                 // IvannaNativeLib.nativeSetEQ(newState.eqBass, newState.eqMid, newState.eqTreble)
                 deltas["eq"] = newState.eqBass + newState.eqMid + newState.eqTreble
             }
             
-            if (newState.voiceProtectionEnabled != lastState.voiceProtectionEnabled) {
+            if (newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
                 deltas["voice_protection"] = if (newState.voiceProtectionEnabled) 1f else 0f
                 // Aplicar voice protection
             }

@@ -92,10 +92,19 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.2.0")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    // FIX (bb4fa6b): AudioStateManager.kt y VoiceProtectionManager.kt usan
+    // androidx.lifecycle.LiveData/MutableLiveData. lifecycle-runtime-ktx NO
+    // trae esas clases (son un artefacto distinto) — faltaba, el build de
+    // esos dos archivos truena con "unresolved reference: LiveData".
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    // FIX (bb4fa6b): com/ivanna/omega/audio/ParameterStore.kt (el nuevo,
+    // NO el de core/) usa com.google.gson.Gson para serializar AudioState —
+    // no estaba declarada, mismo tipo de bug que rompió el resample() antes.
+    implementation("com.google.code.gson:gson:2.10.1")
 
     // Firebase (sync de perfiles en la nube) — inicializado manualmente via
     // FirebaseOptions.Builder en CloudSyncManager.kt, SIN el plugin

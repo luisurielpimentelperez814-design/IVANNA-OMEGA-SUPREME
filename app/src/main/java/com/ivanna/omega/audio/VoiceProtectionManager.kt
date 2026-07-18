@@ -10,7 +10,10 @@ package com.ivanna.omega.audio
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import android.util.Log
-import com.ivanna.omega.audio.bridge.BridgePlayer
+// FIX (bb4fa6b): la clase real es IvannaBridgePlayer, package
+// com.ivanna.omega.audio (mismo paquete que este archivo, sin subpaquete
+// "bridge" — ese paquete no existe). Import inventado, unresolved reference.
+
 
 class VoiceProtectionManager(
     private val parameterStore: ParameterStore
@@ -18,7 +21,7 @@ class VoiceProtectionManager(
     private val _voiceProtectionActive = MutableLiveData(false)
     val voiceProtectionActive: LiveData<Boolean> = _voiceProtectionActive
     
-    private var bridgePlayer: BridgePlayer? = null
+    private var bridgePlayer: IvannaBridgePlayer? = null
     private var pendingApplications = mutableListOf<Boolean>()
     
     companion object {
@@ -76,7 +79,7 @@ class VoiceProtectionManager(
     /**
      * Registrar bridgePlayer y aplicar protección pendiente
      */
-    fun registerBridgePlayer(player: BridgePlayer) {
+    fun registerBridgePlayer(player: IvannaBridgePlayer) {
         bridgePlayer = player
         Log.d(TAG, "✅ BridgePlayer registrado")
         
@@ -115,7 +118,7 @@ class VoiceProtectionManager(
         if (bridgePlayer != null) {
             try {
                 // Aplicar al bridgePlayer
-                bridgePlayer?.setVoiceProtection(enabled)
+                bridgePlayer?.setVoiceProtectionEnabled(enabled)
                 Log.d(TAG, if (enabled) "✅ Voice Protection ACTIVADO en engine" else "❌ Voice Protection DESACTIVADO")
             } catch (e: Exception) {
                 Log.e(TAG, "Error aplicando voice protection", e)
