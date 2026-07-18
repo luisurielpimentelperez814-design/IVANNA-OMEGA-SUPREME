@@ -137,4 +137,45 @@ object IvannaNativeLib {
     // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?
+
+    // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
+    // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
+    // Analiza características de audio en tiempo real y ajusta parámetros
+    
+    /** Crear instancia del Adaptive Engine */
+    external fun nativeCreateAdaptiveEngine(): Long
+    
+    /** Analizar buffer de audio y calcular parámetros óptimos */
+    external fun nativeAnalyzeAudio(audioBuffer: FloatArray)
+    
+    /** Obtener parámetros adaptativos suavizados (12 floats):
+     *  [0] compressor_threshold (dB)
+     *  [1] compressor_ratio
+     *  [2] exciter_amount (0-1)
+     *  [3] stereo_width (0-2)
+     *  [4] eq_bass (dB)
+     *  [5] eq_mid (dB)
+     *  [6] eq_treble (dB)
+     *  [7] overall_gain (master)
+     *  [8] compressor_attack (ms)
+     *  [9] compressor_release (ms)
+     *  [10] spatial_intensity (0-1)
+     *  [11] safety_margin (0-1)
+     */
+    external fun nativeGetAdaptiveParameters(): FloatArray
+    
+    /** Obtener características analizadas del audio (8 floats):
+     *  [0] rms (volumen)
+     *  [1] peak (pico máximo)
+     *  [2] percussiveness (0-1, cuánto ataque)
+     *  [3] tonality (0-1, música vs ruido)
+     *  [4] reverb_amount (0-1)
+     *  [5] dynamic_range (0-1)
+     *  [6] spectral_centroid (Hz)
+     *  [7] spectral_spread (Hz)
+     */
+    external fun nativeGetAudioCharacteristics(): FloatArray
+    
+    /** Destruir instancia del Adaptive Engine */
+    external fun nativeDestroyAdaptiveEngine()
 }

@@ -168,6 +168,12 @@ class MainActivity : ComponentActivity() {
     // bug de doble-fuente-de-verdad que se corrigió varias veces en esta
     // sesión). Ver IvannaControlPanel.kt.
     private var voiceProtectionEnabled by mutableStateOf(true)
+    
+    // ── BACKEND ADAPTATIVO MAGISTRAL ───────────────────────────────────────
+    // Estados para los parámetros adaptativos calculados automáticamente
+    private var adaptiveParams by mutableStateOf<FloatArray>(FloatArray(12))
+    private var audioCharacteristics by mutableStateOf<FloatArray>(FloatArray(8))
+    private var adaptiveEngineReady by mutableStateOf(false)
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -375,6 +381,57 @@ class MainActivity : ComponentActivity() {
             // colores Aurora/Obsidian se usan hardcodeados en los composables,
             // pero toda la tipografía y el fondo del Surface quedaban sin tema.
             IvannaTheme {
+                // ──── INICIALIZAR ADAPTIVE ENGINE ────────────────────────────
+                LaunchedEffect(Unit) {
+                    try {
+                        IvannaNativeLib.nativeCreateAdaptiveEngine()
+                        adaptiveEngineReady = true
+                        Log.i(TAG, "✨ Adaptive Engine inicializado — Modo MAGISTRAL activado")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error iniciando Adaptive Engine", e)
+                    }
+                    
+                    // Loop continuo de análisis (100ms = 10 Hz)
+                    while (adaptiveEngineReady) {
+                        try {
+                            // Obtener parámetros calculados automáticamente
+                            adaptiveParams = IvannaNativeLib.nativeGetAdaptiveParameters()
+                            audioCharacteristics = IvannaNativeLib.nativeGetAudioCharacteristics()
+                            
+                            // Aplicar parámetros al engine real
+                            if (adaptiveParams.isNotEmpty()) {
+                                val threshold = adaptiveParams[0]
+                                val ratio = adaptiveParams[1]
+                                val exciterAmount = adaptiveParams[2]
+                                val stereoWidth = adaptiveParams[3]
+                                val eqBass = adaptiveParams[4]
+                                val eqMid = adaptiveParams[5]
+                                val eqTreble = adaptiveParams[6]
+                                val masterGain = adaptiveParams[7]
+                                
+                                // Aplicar compressor adaptativo
+                                IvannaNativeLib.nativeSetCompressorParams(
+                                    threshold, ratio, 0.005f, 0.1f
+                                )
+                                
+                                // Aplicar exciter adaptativo
+                                IvannaNativeLib.nativeSetHarmonicGain(exciterAmount)
+                                
+                                // Aplicar spatial width adaptativo
+                                IvannaNativeLib.nativeSetSpatialWidthDirect(stereoWidth)
+                                
+                                Log.d(TAG, "🎵 Adaptive: Threshold=$threshold, Ratio=$ratio, " +
+                                    "Exciter=$exciterAmount, Stereo=$stereoWidth, Gain=$masterGain")
+                            }
+                            
+                            kotlinx.coroutines.delay(100)  // 100ms = smooth updates
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error en adaptive loop", e)
+                            break
+                        }
+                    }
+                }
+                
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background // ahora resuelve a ObsidianVoid

@@ -50,6 +50,9 @@
 #include "spatial/fft_radix2.hpp"
 #include "spatial/hrtf_convolver.hpp"
 #include "include/audio_thread_priority.h"
+// Fase 7 — ADAPTIVE ENGINE (Magistral)
+// Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
+#include "adaptive_engine_core.hpp"
 
 #define LOG_TAG "OmegaDaemon"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
