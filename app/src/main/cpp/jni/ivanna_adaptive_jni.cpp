@@ -21,7 +21,7 @@ static std::unique_ptr<AdaptiveEngineCore> gAdaptiveEngine;
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeCreateAdaptiveEngine(JNIEnv *env, jclass clazz) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         gAdaptiveEngine = std::make_unique<AdaptiveEngineCore>();
         LOGI("Adaptive Engine creado");
@@ -30,7 +30,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeCreateAdaptiveEngine(JNIEnv *env, jc
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeAnalyzeAudio(JNIEnv *env, jclass clazz, 
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeAnalyzeAudio(JNIEnv *env, jclass clazz, 
                                                          jfloatArray audioBuffer) {
     if (!gAdaptiveEngine) return;
     
@@ -49,7 +49,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeAnalyzeAudio(JNIEnv *env, jclass cla
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeGetAdaptiveParameters(JNIEnv *env, jclass clazz) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         jfloatArray result = env->NewFloatArray(12);
         return result;
@@ -83,7 +83,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeGetAdaptiveParameters(JNIEnv *env, j
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeGetAudioCharacteristics(JNIEnv *env, jclass clazz) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         jfloatArray result = env->NewFloatArray(8);
         return result;
@@ -112,7 +112,7 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeGetAudioCharacteristics(JNIEnv *env,
 }
 
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_IvannaNativeLib_nativeDestroyAdaptiveEngine(JNIEnv *env, jclass clazz) {
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeDestroyAdaptiveEngine(JNIEnv *env, jclass clazz) {
     if (gAdaptiveEngine) {
         gAdaptiveEngine.reset();
         LOGI("Adaptive Engine destruido");

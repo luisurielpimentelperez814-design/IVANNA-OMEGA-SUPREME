@@ -381,55 +381,99 @@ class MainActivity : ComponentActivity() {
             // colores Aurora/Obsidian se usan hardcodeados en los composables,
             // pero toda la tipografía y el fondo del Surface quedaban sin tema.
             IvannaTheme {
-                // ──── INICIALIZAR ADAPTIVE ENGINE ────────────────────────────
+                // ──── INICIALIZAR ADAPTIVE ENGINE (Motor B — sensor) ─────────
+                //
+                // ARQUITECTURA MAESTRO-SENSOR (fix del bug de doble motor):
+                //
+                //   - Motor A = AdaptiveDecisionEngine (experimental/adaptive_engine/):
+                //     hilo de control real, análisis genuino sobre el audio del
+                //     bloque (RMS/peak/bandas/GR real vía bus lock-free), y su
+                //     AdaptiveState se aplica al DSP dentro de nativeProcess.
+                //     Es lo que alimenta al dashboard (nativeGetAdaptiveTelemetry
+                //     + nativeGetBandEnergies). Es EL MAESTRO. No se toca.
+                //
+                //   - Motor B = AdaptiveEngineCore (adaptive_engine_core.hpp):
+                //     estructura correcta, computeAdaptiveParameters() sólo se
+                //     ejecuta cuando alguien invoca nativeAnalyzeAudio(buffer)
+                //     — cosa que hoy NO ocurre en ningún caller Kotlin (grep
+                //     confirmado). Sin analyze() previo, get() devuelve los
+                //     defaults del struct (threshold=-20dB, ratio=2.0, exciter=
+                //     0.5, width=1.0, gain=1.0), constantes.
+                //
+                // Bug previo: este loop llamaba nativeSetCompressorParams /
+                // nativeSetHarmonicGain / nativeSetSpatialWidthDirect cada 100ms
+                // con esos defaults de Motor B, sobreescribiendo lo que Motor A
+                // ya decidía en base a la señal REAL. Colisión silenciosa (Motor
+                // B pisa a Motor A cada 100 ms; el dashboard sigue mostrando A
+                // porque nadie muestra los valores de B). Diagnóstico auditado
+                // sobre el commit feede3c.
+                //
+                // Fix (esta rama): Motor B se conserva íntegro, se linkea bien
+                // — bug de símbolos JNI corregido en ivanna_adaptive_jni.cpp,
+                // los 5 Java_com_ivanna_omega_* pasaron a Java_com_ivanna_omega
+                // _core_* para coincidir con com.ivanna.omega.core.IvannaNativeLib
+                // —, pero queda como SENSOR: se llama Create + Get para tener
+                // telemetría auditable de sus valores (adaptiveParams /
+                // audioCharacteristics siguen exponiéndose a la UI), pero NO se
+                // aplica al DSP. Motor A queda como único maestro sobre g_comp
+                // /g_exciter/widener.
+                //
+                // Si mañana se decide fusionar B con A: (a) conectar
+                // nativeAnalyzeAudio(bloque) desde IvannaBridgePlayer, y (b)
+                // fusionar B.get() con A.evaluate() en un único punto de
+                // decisión — jamás con dos loops escribiendo al mismo estado.
+                // Regla de oro: no se borra el bloque de nativeSetXxx, se deja
+                // documentado abajo entre marcadores para reactivación futura
+                // supervisada.
                 LaunchedEffect(Unit) {
                     try {
                         IvannaNativeLib.nativeCreateAdaptiveEngine()
                         adaptiveEngineReady = true
-                        Log.i(TAG, "✨ Adaptive Engine inicializado — Modo MAGISTRAL activado")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error iniciando Adaptive Engine", e)
+                        Log.i(TAG, "✨ Adaptive Engine (Motor B / sensor) inicializado — no aplica al DSP")
+                    } catch (t: Throwable) {
+                        // Antes: catch (e: Exception). UnsatisfiedLinkError es
+                        // Error, no Exception — se escapaba silenciosamente.
+                        Log.e(TAG, "Error iniciando Adaptive Engine (Motor B)", t)
                     }
                     
-                    // Loop continuo de análisis (100ms = 10 Hz)
+                    // Loop de LECTURA (100ms = 10 Hz) — sólo telemetría/sensor,
+                    // no aplica nada al DSP. Motor A sigue mandando.
                     while (adaptiveEngineReady) {
                         try {
-                            // Obtener parámetros calculados automáticamente
                             adaptiveParams = IvannaNativeLib.nativeGetAdaptiveParameters()
                             audioCharacteristics = IvannaNativeLib.nativeGetAudioCharacteristics()
                             
-                            // Aplicar parámetros al engine real
-                            if (adaptiveParams.isNotEmpty()) {
-                                val threshold = adaptiveParams[0]
-                                val ratio = adaptiveParams[1]
-                                val exciterAmount = adaptiveParams[2]
-                                val stereoWidth = adaptiveParams[3]
-                                val eqBass = adaptiveParams[4]
-                                val eqMid = adaptiveParams[5]
-                                val eqTreble = adaptiveParams[6]
-                                val masterGain = adaptiveParams[7]
-                                
-                                // Aplicar compressor adaptativo. attack/release
-                                // acá son segundos (5ms/100ms, valores típicos de
-                                // compresor) — Compressor::setAttack/setRelease
-                                // esperan milisegundos, de ahí el *1000.
-                                IvannaNativeLib.nativeSetCompressorParams(
-                                    threshold, ratio, 0.005f * 1000f, 0.1f * 1000f
-                                )
-                                
-                                // Aplicar exciter adaptativo
-                                IvannaNativeLib.nativeSetHarmonicGain(exciterAmount)
-                                
-                                // Aplicar spatial width adaptativo
-                                IvannaNativeLib.nativeSetSpatialWidthDirect(stereoWidth)
-                                
-                                Log.d(TAG, "🎵 Adaptive: Threshold=$threshold, Ratio=$ratio, " +
-                                    "Exciter=$exciterAmount, Stereo=$stereoWidth, Gain=$masterGain")
-                            }
+                            // === BLOQUE DE APLICACIÓN AL DSP — DESHABILITADO ===
+                            // No se borra (regla de oro). Reactivar SÓLO junto
+                            // con la conexión de nativeAnalyzeAudio(buffer) y la
+                            // fusión con AdaptiveDecisionEngine — ver comentario
+                            // maestro-sensor arriba. Mientras nativeAnalyzeAudio
+                            // no se invoque, adaptiveParams son defaults
+                            // constantes y aplicarlos rompe a Motor A.
+                            //
+                            // if (adaptiveParams.isNotEmpty()) {
+                            //     val threshold = adaptiveParams[0]
+                            //     val ratio = adaptiveParams[1]
+                            //     val exciterAmount = adaptiveParams[2]
+                            //     val stereoWidth = adaptiveParams[3]
+                            //     val eqBass = adaptiveParams[4]
+                            //     val eqMid = adaptiveParams[5]
+                            //     val eqTreble = adaptiveParams[6]
+                            //     val masterGain = adaptiveParams[7]
+                            //     IvannaNativeLib.nativeSetCompressorParams(
+                            //         threshold, ratio, 0.005f * 1000f, 0.1f * 1000f
+                            //     )
+                            //     IvannaNativeLib.nativeSetHarmonicGain(exciterAmount)
+                            //     IvannaNativeLib.nativeSetSpatialWidthDirect(stereoWidth)
+                            //     Log.d(TAG, "🎵 Adaptive: Threshold=$threshold, Ratio=$ratio, " +
+                            //         "Exciter=$exciterAmount, Stereo=$stereoWidth, Gain=$masterGain")
+                            // }
+                            // === FIN BLOQUE DESHABILITADO ===
                             
-                            kotlinx.coroutines.delay(100)  // 100ms = smooth updates
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error en adaptive loop", e)
+                            kotlinx.coroutines.delay(100)
+                        } catch (t: Throwable) {
+                            // Idem catch de arriba: Throwable, no Exception.
+                            Log.e(TAG, "Error en adaptive loop (sensor)", t)
                             break
                         }
                     }
