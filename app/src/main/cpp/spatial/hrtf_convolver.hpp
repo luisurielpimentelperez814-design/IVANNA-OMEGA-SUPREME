@@ -36,8 +36,16 @@ class FFTRadix2;
 
 class HRTFConvolver {
 public:
-    HRTFConvolver() = default;
-    ~HRTFConvolver() = default;
+    // FIX (build roto en CI: "invalid application of sizeof to an
+    // incomplete type FFTRadix2"): tanto el constructor como el
+    // destructor deben quedar declarados acá y DEFINIDOS en
+    // hrtf_convolver.cpp (donde fft_radix2.hpp da el tipo completo) —
+    // '= default' inline en CUALQUIERA de los dos, no solo el
+    // destructor, dispara la instanciación de
+    // std::unique_ptr<FFTRadix2>::~unique_ptr() en cada translation
+    // unit que incluya este header. Patrón pimpl completo, no parcial.
+    HRTFConvolver();
+    ~HRTFConvolver();
 
     void init(uint32_t sampleRate);
     void set_position(float azimuthDeg, float aggressiveness) noexcept;

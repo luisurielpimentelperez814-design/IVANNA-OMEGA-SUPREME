@@ -409,9 +409,12 @@ class MainActivity : ComponentActivity() {
                                 val eqTreble = adaptiveParams[6]
                                 val masterGain = adaptiveParams[7]
                                 
-                                // Aplicar compressor adaptativo
+                                // Aplicar compressor adaptativo. attack/release
+                                // acá son segundos (5ms/100ms, valores típicos de
+                                // compresor) — Compressor::setAttack/setRelease
+                                // esperan milisegundos, de ahí el *1000.
                                 IvannaNativeLib.nativeSetCompressorParams(
-                                    threshold, ratio, 0.005f, 0.1f
+                                    threshold, ratio, 0.005f * 1000f, 0.1f * 1000f
                                 )
                                 
                                 // Aplicar exciter adaptativo

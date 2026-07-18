@@ -813,12 +813,18 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILS
 // ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
 // UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
 
-// Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1
+// Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1,
+// attack/release en ms — extendido para el control adaptativo @10Hz que ya
+// los pasaba (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build
+// roto en CI: "Too many arguments"). setAttack()/setRelease() ya existían
+// en Compressor.h, solo faltaba exponerlos acá.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
-    JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio) {
+    JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs) {
     g_comp.setThreshold(thresholdDb);
     g_comp.setRatio(ratio);
+    g_comp.setAttack(attackMs);
+    g_comp.setRelease(releaseMs);
 }
 
 // NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo.

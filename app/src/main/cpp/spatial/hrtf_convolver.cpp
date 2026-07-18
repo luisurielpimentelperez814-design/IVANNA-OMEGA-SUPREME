@@ -24,6 +24,15 @@
 
 namespace ivanna {
 
+// FIX (ver comentario en hrtf_convolver.hpp): definiciones reales de
+// constructor y destructor acá, donde fft_radix2.hpp (incluido arriba)
+// da el tipo completo de FFTRadix2 que std::unique_ptr<FFTRadix2>
+// necesita. '= default' alcanza para los dos — el compilador genera la
+// construcción/destrucción correctas de fft_ automáticamente, solo
+// necesitaban verse desde un lugar con el tipo completo visible.
+HRTFConvolver::HRTFConvolver() = default;
+HRTFConvolver::~HRTFConvolver() = default;
+
 // -----------------------------------------------------------------------------
 uint32_t HRTFConvolver::next_pow2(uint32_t v) {
     v--;
