@@ -102,6 +102,11 @@ object IvannaNativeLib {
     //  FIX v3.0: cableado GlassCard "COMPRESOR" y "NHO / ESPACIAL"
     //  (ivanna_omega_jni.cpp — g_comp.setThreshold/setRatio, g_pd.set_spatial_*)
     // ═══════════════════════════════════════════════════════════════════════
+    // FIX (build roto — Kotlin: 'Too many arguments'): MainActivity.kt ya
+    // llamaba a esta función con 4 argumentos (threshold, ratio, attackMs,
+    // releaseMs) desde el loop del "Adaptive Engine" (nativeCreateAdaptiveEngine/
+    // nativeGetAdaptiveParameters), pero la firma solo declaraba 2 — Compressor.h
+    // SÍ tiene setAttack()/setRelease() reales, solo faltaba la conexión JNI.
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
     external fun nativeSetSpatialWidthDirect(width: Float)

@@ -814,10 +814,17 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILS
 // UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
 
 // Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1,
-// attack/release en ms — extendido para el control adaptativo @10Hz que ya
-// los pasaba (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build
-// roto en CI: "Too many arguments"). setAttack()/setRelease() ya existían
-// en Compressor.h, solo faltaba exponerlos acá.
+// attack/release en ms (Compressor::setAttack/setRelease, ver Compressor.h) —
+// extendido para el control adaptativo @10Hz que ya los pasaba
+// (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build roto en CI:
+// "Too many arguments"). setAttack()/setRelease() ya existían en
+// Compressor.h, solo faltaba exponerlos acá.
+// NOTA sin resolver: el llamador pasa 0.005f/0.1f, que parecen pensados en
+// SEGUNDOS (5ms/100ms, timing típico de compresor rápido) — setAttack(ms)
+// los tomará literalmente como 0.005ms/0.1ms (microsegundos), un ataque
+// virtualmente instantáneo. No se reinterpreta el valor del llamador aquí
+// sin confirmar la intención real — solo se cierra la conexión JNI que
+// bloqueaba el build.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs) {
@@ -996,6 +1003,97 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
     return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ── FIX (build roto — UnsatisfiedLinkError en tiempo real, no solo error de
+// compilación): MainActivity.kt (bloque "Modo MAGISTRAL", LaunchedEffect con
+// loop @10Hz) llama a estas 3 funciones desde hace varios commits, pero
+// NINGUNA tenía implementación JNI — nativeCreateAdaptiveEngine() se llama
+// literalmente al abrir la pantalla, dentro de un try/catch(Exception) que
+// NO la habría atrapado (UnsatisfiedLinkError extiende Error, no Exception)
+// — crash garantizado en el primer frame, incluso después de arreglado el
+// error de compilación de nativeSetCompressorParams.
+//
+// No se crea un cuarto motor "adaptativo" nuevo — eso habría sido duplicar
+// exactamente lo que ya existe, probado y funcionando (g_adaptiveEngine,
+// ver Fase 1-3 de esta sesión). Se conecta este bloque de UI al motor
+// REAL ya en producción.
+JNIEXPORT jlong JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
+    JNIEnv*, jobject) {
+    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
+        g_adaptiveEngine.start();
+        LOGI("AdaptiveDecisionEngine started (via nativeCreateAdaptiveEngine, Modo MAGISTRAL)");
+    }
+    // Kotlin solo comprueba que la llamada no lance excepción — no trata
+    // este valor como un puntero real. 1 = "motor real corriendo".
+    return g_adaptiveEngine.running() ? 1L : 0L;
+}
+
+// FloatArray[8]: [threshold_dB, ratio, exciterAmount, stereoWidth,
+//                 eqBass, eqMid, eqTreble, masterGain_dB]
+// Derivados de los MISMOS campos reales que ya alimentan la telemetría
+// (g_lastAdaptive*, calculados por AdaptiveDecisionEngine sobre RMS/peak/
+// bandas reales — ver Fase 1). threshold/ratio se derivan de
+// compressor_amount con el mismo rango que usa Compressor::setThreshold/
+// setRatio; exciterAmount es 1-exciter_reduction (inverso: reduction=1
+// -> exciter apagado); masterGain_dB convierte el multiplicador lineal
+// target_gain a dB.
+//
+// eqBass/eqMid/eqTreble se dejan en 0.0f (plano, sin cambio) A PROPÓSITO:
+// AdaptiveDecisionEngine no calcula sugerencias de EQ por banda — no
+// existe ese dato. Devolver algo distinto de 0 aquí sería fabricar una
+// cifra sin base real, exactamente el patrón que se ha corregido en
+// otras partes de esta sesión (ver "ASPEREZA", antes "THD" falso).
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
+    JNIEnv* env, jobject) {
+    const float compAmount = g_lastAdaptiveCompAmount.load(std::memory_order_relaxed);
+    const float excReduction = g_lastAdaptiveExcReduction.load(std::memory_order_relaxed);
+    const float spatialWidth = g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed);
+    const float targetGain = g_lastAdaptiveTargetGain.load(std::memory_order_relaxed);
+
+    float v[8];
+    v[0] = -12.0f - compAmount * 12.0f;              // threshold dB [-12..-24]
+    v[1] = 2.0f + compAmount * 6.0f;                  // ratio [2:1..8:1]
+    v[2] = 1.0f - excReduction;                       // exciterAmount [0..1]
+    v[3] = spatialWidth;                              // stereoWidth, ya en su rango real
+    v[4] = 0.0f;                                       // eqBass — sin sugerencia real, ver comentario arriba
+    v[5] = 0.0f;                                       // eqMid  — idem
+    v[6] = 0.0f;                                       // eqTreble — idem
+    v[7] = (targetGain > 1e-6f)
+               ? 20.0f * std::log10(targetGain)         // masterGain dB
+               : -60.0f;                                // piso de seguridad si llega 0/negativo
+
+    jfloatArray arr = env->NewFloatArray(8);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 8, v);
+    return arr;
+}
+
+// FloatArray[8]: [rms, peak, band_low, band_mid, band_high, safety_margin,
+//                 voice_protection_amount, gain_reduction_db]
+// Todos derivados de datos reales ya medidos por el pipeline (mismos
+// atomics que expone nativeGetBandEnergies/la telemetría adaptativa) — el
+// resultado de esta función NO se lee en ningún lugar de la UI todavía
+// (audioCharacteristics se asigna en MainActivity.kt pero nunca se
+// muestra), así que no hay urgencia funcional, pero se devuelven datos
+// reales de todas formas en vez de ceros, dado que ya están disponibles.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
+    JNIEnv* env, jobject) {
+    float v[8];
+    v[0] = g_lastRawRms.load(std::memory_order_relaxed);
+    v[1] = g_lastRawPeak.load(std::memory_order_relaxed);
+    v[2] = g_lastBandLow.load(std::memory_order_relaxed);
+    v[3] = g_lastBandMid.load(std::memory_order_relaxed);
+    v[4] = g_lastBandHigh.load(std::memory_order_relaxed);
+    v[5] = g_lastAdaptiveSafetyMargin.load(std::memory_order_relaxed);
+    v[6] = g_lastAdaptiveVoiceProtect.load(std::memory_order_relaxed);
+    v[7] = g_lastRawGrDb.load(std::memory_order_relaxed);
+
+    jfloatArray arr = env->NewFloatArray(8);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 8, v);
+    return arr;
 }
 
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
