@@ -37,8 +37,7 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.dsp.DSPViewModel
 import com.ivanna.omega.neuromorphic.PiLstmBridge
-import com.ivanna.omega.adaptive.AdaptiveEngineScreen      // ← PUNTO 3: Import AdaptiveEngineScreen
-import com.ivanna.omega.adaptive.AdaptiveViewModel         // ← PUNTO 3: Import AdaptiveViewModel
+import com.ivanna.omega.ui.AdaptiveEngineScreen           // paquete correcto: ui, no adaptive
 import kotlin.math.log10
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
@@ -78,12 +77,30 @@ fun OmegaApp() {
             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
             composable("dashboard") { DashboardScreen(dspVm, nav) }
             composable("adaptive") {
-                // ← PUNTO 3: Pasar AdaptiveViewModel al AdaptiveEngineScreen
-                val adaptiveVm: AdaptiveViewModel = viewModel()
-                AdaptiveEngineScreen(
-                    viewModel = adaptiveVm,
-                    onBack = { nav.popBackStack() }
-                )
+                // AdaptiveEngineScreen (com.ivanna.omega.ui) acepta
+                // voiceProtectionManager — VoiceProtectionManager se instancia
+                // aquí como singleton del composition porque el MainActivity
+                // fue reescrito por otra sesión sin acceso al onCreate original.
+                // TODO: cuando se unifique el MainActivity, pasar la instancia
+                // creada en onCreate para no tener dos instancias vivas.
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val vpm = remember {
+                    com.ivanna.omega.audio.VoiceProtectionManager(
+                        com.ivanna.omega.audio.ParameterStore(context)
+                    )
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AdaptiveEngineScreen(
+                        voiceProtectionManager = vpm,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    androidx.compose.material3.TextButton(
+                        onClick = { nav.popBackStack() },
+                        modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
+                    ) {
+                        Text("← Volver", color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
             }
         }
     }
@@ -179,7 +196,7 @@ fun IntroScreen(onEnter: () -> Unit) {
 @Composable
 fun DashboardScreen(vm: DSPViewModel, nav: androidx.navigation.NavHostController) {
     val dsp = vm.state
-    fun mut(block: DSPState.() -> DSPState) { vm.updateState { it.block() }; vm.state.pushToNative() }
+    fun mut(block: DSPState.(Float) -> DSPState, v: Float) { vm.updateState { it.block(v) }; vm.state.pushToNative() }
     val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
     val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
@@ -216,37 +233,37 @@ fun DashboardScreen(vm: DSPViewModel, nav: androidx.navigation.NavHostController
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación") { mut { copy(drive = it) } }
-                    FaderControl("WET", dsp.wet, "Señal proc.") { mut { copy(wet = it) } }
-                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { mut { copy(mix = it) } }
+                    FaderControl("DRIVE", dsp.drive, "Saturación") { v -> mut({ copy(drive = it) }, v) }
+                    FaderControl("WET", dsp.wet, "Señal proc.") { v -> mut({ copy(wet = it) }, v) }
+                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { v -> mut({ copy(mix = it) }, v) }
                 }
             }
             item {
                 DspSection("DSP ENGINE α·β·γ") {
-                    FaderControl("ALPHA", dsp.alpha, "Compresor") { mut { copy(alpha = it) } }
-                    FaderControl("BETA", dsp.beta, "Ratio") { mut { copy(beta = it) } }
-                    FaderControl("GAMMA", dsp.gamma, "Width") { mut { copy(gamma = it) } }
+                    FaderControl("ALPHA", dsp.alpha, "Compresor") { v -> mut({ copy(alpha = it) }, v) }
+                    FaderControl("BETA", dsp.beta, "Ratio") { v -> mut({ copy(beta = it) }, v) }
+                    FaderControl("GAMMA", dsp.gamma, "Width") { v -> mut({ copy(gamma = it) }, v) }
                     val freqSl = remember(dsp.freq) {
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
-                    FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        mut { copy(freq = DSPState.sliderToFreq(it)) }
+                    FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") { v ->
+                        mut({ copy(freq = DSPState.sliderToFreq(it)) }, v)
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
-                    FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                        mut { copy(resonance = DSPState.sliderToQ(it)) }
+                    FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) { v ->
+                        mut({ copy(resonance = DSPState.sliderToQ(it)) }, v)
                     }
                 }
             }
             item {
                 DspSection("PARAMETRIC EQ") {
-                    EqFader("LOW", dsp.low) { mut { copy(low = it) } }
-                    EqFader("MID", dsp.mid) { mut { copy(mid = it) } }
-                    EqFader("HIGH", dsp.high) { mut { copy(high = it) } }
-                    EqFader("PRESENCE", dsp.presence) { mut { copy(presence = it) } }
-                    EqFader("MASTER", dsp.master) { mut { copy(master = it) } }
+                    EqFader("LOW", dsp.low) { v -> mut({ copy(low = it) }, v) }
+                    EqFader("MID", dsp.mid) { v -> mut({ copy(mid = it) }, v) }
+                    EqFader("HIGH", dsp.high) { v -> mut({ copy(high = it) }, v) }
+                    EqFader("PRESENCE", dsp.presence) { v -> mut({ copy(presence = it) }, v) }
+                    EqFader("MASTER", dsp.master) { v -> mut({ copy(master = it) }, v) }
                 }
             }
             item {
