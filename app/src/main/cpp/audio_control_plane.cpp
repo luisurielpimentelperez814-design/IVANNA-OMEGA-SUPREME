@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <android/log.h>
+#include <jni.h>
 
 #define ALOG(level, tag, fmt, ...) __android_log_print(level, tag, fmt, ##__VA_ARGS__)
 
@@ -222,4 +223,40 @@ int control_apply_frame() noexcept {
     g_control_bus.publish(f);
 
     return updates;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// JNI export — DESPIERTA control_apply_frame() desde Kotlin.
+//
+// Motivación (regla de oro: no borrar, activar):
+//   control_apply_frame() existía compilada desde "Fase 1" pero NINGÚN
+//   JNI la exportaba y ningún callsite Kotlin la invocaba. Toda la
+//   telemetría cross-thread que g_control_frame acumula (YAMNet scores,
+//   perfil de ruta BT/AUX/USB, genoma del kernel evolutivo, coherencia
+//   del PhaseOracle refinado) nunca llegaba al ControlFrameBus del audio,
+//   así que el pipeline vivo NO se re-sintonizaba con ninguna de esas
+//   fuentes — se re-sintonizaba solo con los sliders del panel de UI.
+//
+//   Aquí se expone un único punto de entrada JNI que el hilo de control
+//   (PlaybackCaptureService, tras un tick de clasificación YAMNet o un
+//   cambio de ruta de salida) puede invocar. La función SIGUE viviendo
+//   fuera del audio thread y respeta la disciplina seqlock (solo publica
+//   un ControlFrame nuevo; el hilo de audio lo consumirá en su próximo
+//   bloque vía apply_pending_control_frame()).
+//
+// Devuelve: nº de campos fusionados (para debug/telemetry en Kotlin).
+// ═══════════════════════════════════════════════════════════════════════════════
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeApplyControlFrame(
+    JNIEnv* /*env*/, jclass /*clazz*/) {
+    return (jint)control_apply_frame();
+}
+
+// Alias JNI para el path DSPBridge (mismo nombre lógico, distinto
+// enclosing Kotlin class) — evita UnsatisfiedLinkError si el callsite
+// vive en DSPBridge en vez de AudioEngine.
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeApplyControlFrame(
+    JNIEnv* /*env*/, jclass /*clazz*/) {
+    return (jint)control_apply_frame();
 }

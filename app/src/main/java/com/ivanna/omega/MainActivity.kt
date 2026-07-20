@@ -379,6 +379,26 @@ class MainActivity : ComponentActivity() {
         IvannaNativeLib.nativeSetGamma(parameterStore.getSpatialAngle())
         IvannaNativeLib.nativeSetDelta(parameterStore.getSpatialWidth())
         if (!parameterStore.isEvoEnabled()) IvannaNativeLib.nativeStopEvoThread()
+
+        // ═════════════════════════════════════════════════════════════════
+        // CABLEADO omnipotente v2 — despierta el orquestador central UNA vez
+        // tras restaurar todo el estado persistido. Antes de este fix,
+        // control_apply_frame() existía compilada pero no tenía callsite: los
+        // scores YAMNet, el perfil de ruta y el genoma evolutivo se acumulaban
+        // en g_control_frame sin llegar al ControlFrameBus del hilo de audio.
+        // Con esta llamada, el primer bloque procesado tras onCreate() ya ve
+        // un ControlFrame completo (DSP + NHO + spatial + evo + route + YAMNet)
+        // en vez de arrancar con valores por defecto y re-sintonizarse frame
+        // a frame los siguientes segundos.
+        //
+        // Nota: cada setter individual arriba (Exciter/EqGain/Width/Comp/
+        // HarmonicGain/Gamma/Delta) ya publica su propio ControlFrame vía el
+        // seqlock — esta llamada es un rebroadcast fusionado, no un reemplazo.
+        // No corre en el audio thread (estamos en onCreate del UI thread).
+        // ═════════════════════════════════════════════════════════════════
+        runCatching { AudioEngine.nativeApplyControlFrame() }
+            .onSuccess { updates -> Log.i(TAG, "ControlFrame inicial fusionado: $updates campos") }
+            .onFailure { e -> Log.w(TAG, "nativeApplyControlFrame no disponible: ${e.message}") }
     }
 
     override fun onDestroy() {

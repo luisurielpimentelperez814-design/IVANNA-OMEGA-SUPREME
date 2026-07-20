@@ -35,6 +35,7 @@
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
+#include "../include/audio_thread_priority.h"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 
@@ -166,11 +167,34 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     if (!g_initialized.load(std::memory_order_acquire)) return;
     if (!buf || nFrames <= 0) return;
 
+    // FTZ/DAZ omnipotent: cadena DSP + PDEngine con biquads en cascada +
+    // envelope followers en decay logarítmico expone denormals cuando la
+    // señal cae bajo -120 dBFS o queda silenciada varios cientos de ms
+    // (soft-clipper y BiquadEnvelopeBank son los peores emisores). Sin FTZ,
+    // cada op flotante subnormal cuesta ~50 ciclos en A55/A76 en vez de 1,
+    // suficiente para underrun de audio. Idempotente por thread_local flag.
+    ivanna::audio::enableAudioThreadFastMathOnce();
+
     // Sincronización de control: una sola vez por bloque, antes de procesar
     // ninguna muestra. A partir de aquí el bloque entero es determinista.
     apply_pending_control_frame(t_last_seq_dspbridge);
 
-    const int n = std::min((int)nFrames, 2048);
+    // Guárdia omnipotent: el buffer viene intercalado L,R — debe tener
+    // AL MENOS 2*nFrames floats. Si no, un GetFloatArrayElements+memcpy con
+    // índices 2*i+1 leería fuera del array y el JNI lanzaría
+    // ArrayIndexOutOfBoundsException al liberar (o corrompería memoria si
+    // el impl. usa GetPrimitiveArrayCritical). Se acota nFrames al máximo
+    // seguro según el tamaño real del array — no se lanza excepción, se
+    // procesan las muestras válidas y se registra warning una única vez.
+    const jsize arrLen = env->GetArrayLength(buf);
+    int nSafe = std::min((int)nFrames, arrLen / 2);
+    if (nSafe < (int)nFrames) {
+        static thread_local bool warned = false;
+        if (!warned) { LOGE("nativeProcess: nFrames=%d pero arrLen=%d floats (esperado \u2265%d). Se acota.", (int)nFrames, (int)arrLen, (int)nFrames * 2); warned = true; }
+    }
+    if (nSafe <= 0) return;
+
+    const int n = std::min(nSafe, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
 
@@ -243,6 +267,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray outL, jfloatArray outR,
     jint frames) {
     if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
+
+    // FTZ/DAZ omnipotent (ver comentario en Java_..._DSPBridge_nativeProcess)
+    ivanna::audio::enableAudioThreadFastMathOnce();
 
     apply_pending_control_frame(t_last_seq_nativelib);
 

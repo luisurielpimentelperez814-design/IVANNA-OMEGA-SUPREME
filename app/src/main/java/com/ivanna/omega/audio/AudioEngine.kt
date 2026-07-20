@@ -53,6 +53,22 @@ class AudioEngine {
         @JvmStatic
         external fun nativeSetRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
 
+        // ─────────────────────────────────────────────────────────────────
+        // JNI: DESPIERTA el orquestador central (UnifiedControlFrame → bus seqlock).
+        //
+        // Antes de este fix, control_apply_frame() existía compilada pero
+        // ningún JNI la exportaba y ningún callsite Kotlin la invocaba: los
+        // scores YAMNet, el perfil de ruta y el genoma del kernel evolutivo
+        // se acumulaban en g_control_frame sin llegar nunca al motor de audio.
+        //
+        // Se llama SOLO desde el hilo de control (nunca desde el hilo de
+        // audio) tras publicar nuevos scores/perfil, y devuelve el n° de
+        // campos fusionados (debug/telemetry).
+        // Implementación: audio_control_plane.cpp → control_apply_frame().
+        // ─────────────────────────────────────────────────────────────────
+        @JvmStatic
+        external fun nativeApplyControlFrame(): Int
+
         // ────────────────────────────────────────────────────────────────────
         // JNI: Getters para parámetros de AudioEngine (para fusión en PDEngine)
         // ────────────────────────────────────────────────────────────────────

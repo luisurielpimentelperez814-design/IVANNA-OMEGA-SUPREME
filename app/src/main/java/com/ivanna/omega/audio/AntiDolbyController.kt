@@ -181,7 +181,19 @@ class AntiDolbyController(private val context: Context) {
             AudioEngine.nativeSetAntiDolbyScoresStatic(
                 normSpeech, normMusic, normBass, normSilence
             )
-            
+
+            // ─────────────────────────────────────────────────────────────────
+            // CABLEADO omnipotente: dispara el orquestador central para que
+            // estos scores YAMNet recién publicados fluyan al ControlFrame
+            // del bus seqlock. Antes de este fix, scores llegaban a
+            // g_control_frame pero se quedaban ahí — el audio thread nunca
+            // veía el fusion output porque control_apply_frame() no tenia
+            // llamador. Ahora, cada frame de clasificación (~1s) re-tunea el
+            // pipeline en vivo (widener/EQ mid/exciter). El fields count se
+            // ignora aquí, es solo para telemetry en debug.
+            // ─────────────────────────────────────────────────────────────────
+            runCatching { AudioEngine.nativeApplyControlFrame() }
+
             Log.d(TAG, String.format(
                 "Yamnet: speech=%.3f, music=%.3f, bass=%.3f, silence=%.3f",
                 normSpeech, normMusic, normBass, normSilence

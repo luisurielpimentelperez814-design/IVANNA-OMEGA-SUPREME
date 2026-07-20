@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.AudioTrack
+import android.os.Build
 import android.util.Log
 
 /**
@@ -127,5 +129,75 @@ object AudioRouteManager {
         val p = profileFor(route)
         Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
         AudioEngine.nativeSetRouteProfile(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
+        // CABLEADO omnipotente: fusiona el perfil recién publicado dentro del
+        // ControlFrameBus para que el audio thread lo consuma en el siguiente
+        // bloque. Sin esta línea, route_bass_boost_db/dialog_boost_db se
+        // quedaban en g_control_frame sin llegar nunca a f.low/f.mid/f.nho_wet.
+        runCatching { AudioEngine.nativeApplyControlFrame() }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // FUSIÓN v2 — API absorbida desde AudioRoutingManager (regla de oro:
+    // no borrar; se preserva la superficie y se enriquece contra el resto
+    // del RouteManager). AudioRoutingManager quedaba huérfano (ningún
+    // llamador en Kotlin del proyecto), pero ofrecía forzado de ruta a
+    // USB DAC y restauración por defecto — funcionalidad complementaria
+    // que aquí conviene tener junto a la detección/perfilado ya vivo.
+    //
+    // Beneficio adicional: al forzar salida por USB (DAC dedicado) también
+    // publicamos el perfil OutputRoute.USB de inmediato, así el pipeline
+    // DSP se re-sintoniza sin esperar al AudioDeviceCallback.
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fuerza el enrutado de salida al primer dispositivo USB (DAC) disponible,
+     * si lo hay. Devuelve `true` si se aplicó el ruteo; `false` si no había USB.
+     *
+     * `audioTrack.preferredDevice` requiere API 23+; en anteriores solo se
+     * ajustan los flags globales del AudioManager.
+     */
+    fun forceUsbDacRouting(context: Context, audioTrack: AudioTrack? = null): Boolean {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val usbDevice = devices.firstOrNull { d ->
+            d.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            d.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            d.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+        } ?: return false
+
+        @Suppress("DEPRECATION")
+        am.isSpeakerphoneOn = false
+        @Suppress("DEPRECATION")
+        am.isBluetoothA2dpOn = false
+        audioTrack?.preferredDevice = usbDevice
+
+        // Fusión: publica el perfil USB inmediatamente para que el pipeline
+        // DSP se resintonice ahora, en vez de esperar al próximo callback.
+        applyRoute(OutputRoute.USB)
+        Log.i(TAG, "Ruta forzada a USB DAC: ${usbDevice.productName}")
+        return true
+    }
+
+    /**
+     * Restaura los flags globales del AudioManager a estado "por defecto"
+     * (altavoz y A2DP re-habilitados) y libera cualquier preferredDevice
+     * en el AudioTrack. Devuelve siempre `true` — la operación es best-effort
+     * (no lanza si el permiso MODIFY_AUDIO_SETTINGS falta en runtime).
+     */
+    fun restoreDefaultRouting(context: Context, audioTrack: AudioTrack? = null): Boolean {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        @Suppress("DEPRECATION")
+        am.isSpeakerphoneOn = true
+        @Suppress("DEPRECATION")
+        am.isBluetoothA2dpOn = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioTrack?.preferredDevice = null
+        }
+        // No se llama a applyRoute() aquí: la ruta "real" se re-detectará en
+        // el próximo tick del AudioDeviceCallback, evitando falsos positivos
+        // si el usuario aún tiene un cable físico conectado.
+        Log.i(TAG, "Ruteo restaurado a defaults del sistema")
+        return true
     }
 }
