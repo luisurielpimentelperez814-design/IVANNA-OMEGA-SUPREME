@@ -187,7 +187,8 @@ internal fun MasterBar(
     autoMode: Boolean,
     onAutoModeChange: (Boolean) -> Unit,
     onOpenVisualizer: () -> Unit,
-    onOpenAdaptive: () -> Unit = {}
+    onOpenAdaptive: () -> Unit = {},
+    onOpenAdaptiveEngineManual: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -236,6 +237,32 @@ internal fun MasterBar(
                     "ADAPTIVE ENGINE",
                     style = MaterialTheme.typography.labelMedium,
                     color = NeonMagenta,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+            }
+        }
+        // Botón Modo Manual / Voice Protection — fila propia, mismo patrón
+        // que el botón ADE de arriba (commit MAGISTRAL bb4fa6b, conectado
+        // a la UI: antes compilaba sin ningún punto de entrada).
+        Surface(
+            onClick = onOpenAdaptiveEngineManual,
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            shape = RoundedCornerShape(10.dp),
+            color = PhosphorGreen.copy(alpha = 0.10f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, PhosphorGreen.copy(alpha = 0.55f))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("◇", color = PhosphorGreen, fontSize = 14.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "MODO MANUAL · VOICE PROTECTION",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = PhosphorGreen,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 )

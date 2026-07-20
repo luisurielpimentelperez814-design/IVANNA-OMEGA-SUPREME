@@ -97,6 +97,11 @@ dependencies {
     // trae esas clases (son un artefacto distinto) — faltaba, el build de
     // esos dos archivos truena con "unresolved reference: LiveData".
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+    // FIX: AdaptiveEngineScreen.kt usa LiveData.observeAsState() en Compose
+    // -- eso vive en un artefacto aparte (runtime-livedata), no en
+    // compose.runtime ni en lifecycle-livedata-ktx. Mismo tipo de bug que
+    // los anteriores (dependencia usada pero nunca declarada).
+    implementation("androidx.compose.runtime:runtime-livedata:1.6.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")

@@ -1005,6 +1005,35 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
 }
 
+// ── nativeSetAdaptiveEngineEnabled — mutex de control manual vs automático ──
+// FIX (conexión pantalla "Modo Manual"): AudioStateManager/DspStateUpdater
+// (commit MAGISTRAL, bb4fa6b) escriben directo a nativeSetCompressorParams/
+// nativeSetHarmonicGain/nativeSetSpatialWidthDirect -- los MISMOS parámetros
+// que ya gobierna AdaptiveDecisionEngine (Motor A) automáticamente cada
+// 50ms. Sin coordinación, activar el modo manual pelearía con Motor A
+// (mismo patrón que colisionaba con "Motor B", ya reparado en df68877).
+// Esta función pausa/reanuda el hilo de control de Motor A (stop()/start()
+// -- NUNCA el audio thread, ver AdaptiveDecisionEngine::stop()) para que
+// sólo un sistema escriba el compresor/exciter/ancho a la vez. La UI debe
+// llamar false al abrir la pantalla de modo manual y true al cerrarla.
+// g_adaptiveEngineStarted se mantiene en true (nativeInit no debe volver a
+// arrancar el hilo si nativeInit se re-llama mientras está pausado).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    if (enabled == JNI_TRUE) {
+        if (!g_adaptiveEngine.running()) {
+            g_adaptiveEngine.start();
+            LOGI("AdaptiveDecisionEngine reanudado (modo manual cerrado)");
+        }
+    } else {
+        if (g_adaptiveEngine.running()) {
+            g_adaptiveEngine.stop();
+            LOGI("AdaptiveDecisionEngine pausado (modo manual abierto)");
+        }
+    }
+}
+
 // ── FIX (build roto — UnsatisfiedLinkError en tiempo real, no solo error de
 // compilación): MainActivity.kt (bloque "Modo MAGISTRAL", LaunchedEffect con
 // loop @10Hz) llama a estas 3 funciones desde hace varios commits, pero

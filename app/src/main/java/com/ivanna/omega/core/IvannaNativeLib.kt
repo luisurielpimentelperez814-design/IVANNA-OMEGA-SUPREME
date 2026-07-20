@@ -139,6 +139,13 @@ object IvannaNativeLib {
     //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
     external fun nativeGetAdaptiveTelemetry(): FloatArray?
     external fun nativeIsAdaptiveEngineRunning(): Boolean
+
+    // FIX (conexión pantalla "Modo Manual"): pausa/reanuda el hilo de
+    // control de AdaptiveDecisionEngine (Motor A) para que el modo manual
+    // (AudioStateManager/DspStateUpdater) y el modo automático nunca
+    // escriban compresor/exciter/ancho al mismo tiempo. Llamar false al
+    // abrir la pantalla de modo manual, true al cerrarla.
+    external fun nativeSetAdaptiveEngineEnabled(enabled: Boolean)
     // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?

@@ -129,6 +129,7 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
+    onOpenAdaptiveEngineManual: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
     // ── Adaptive Control Center ──────────────────────────────────────────
@@ -282,7 +283,8 @@ fun IvannaControlPanel(
             autoMode = autoMode,
             onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
             onOpenVisualizer = onOpenVisualizer,
-            onOpenAdaptive = onOpenAdaptive
+            onOpenAdaptive = onOpenAdaptive,
+            onOpenAdaptiveEngineManual = onOpenAdaptiveEngineManual
         )
 
         GlassCard(

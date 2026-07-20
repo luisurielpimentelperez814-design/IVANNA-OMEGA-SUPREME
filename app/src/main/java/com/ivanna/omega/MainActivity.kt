@@ -90,6 +90,8 @@ class MainActivity : ComponentActivity() {
     // FASE 1: reproductor propio (decodifica archivo -> DSPBridge -> AudioTrack).
     // Vive en MainActivity scope, se libera en onDestroy().
     private lateinit var bridgePlayer: IvannaBridgePlayer
+    private lateinit var voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
+    private var showAdaptiveEngineManual by mutableStateOf(false)
     private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
     private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
 
@@ -265,6 +267,18 @@ class MainActivity : ComponentActivity() {
         )
         bridgePlayer = IvannaBridgePlayer(applicationContext)
         learningBias = LearningBias(applicationContext).also { it.load() }
+
+        // FIX (conexión UI, commit MAGISTRAL bb4fa6b): VoiceProtectionManager
+        // llegó al repo compilando pero sin ningún punto de entrada — ni
+        // instancia, ni pantalla, ni registro con bridgePlayer.
+        // com.ivanna.omega.audio.ParameterStore es una clase DISTINTA del
+        // parameterStore (core) usado arriba — persistencia propia (Gson),
+        // solo para el estado de esta arquitectura, sin pisar la existente.
+        voiceProtectionManager = com.ivanna.omega.audio.VoiceProtectionManager(
+            com.ivanna.omega.audio.ParameterStore(applicationContext)
+        )
+        voiceProtectionManager.registerBridgePlayer(bridgePlayer)
+        voiceProtectionManager.loadAndRestore()
 
         // FIX (independencia del mic — pedido explícito de GORE): antes TODO
         // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
@@ -483,7 +497,15 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background // ahora resuelve a ObsidianVoid
                 ) {
-                    if (showAdaptive) {
+                    if (showAdaptiveEngineManual) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            com.ivanna.omega.ui.AdaptiveEngineScreen(
+                                voiceProtectionManager = voiceProtectionManager,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            IconButtonClose { showAdaptiveEngineManual = false }
+                        }
+                    } else if (showAdaptive) {
                         // Pantalla de telemetría real del AdaptiveDecisionEngine.
                         // Poll a 500 ms — suficiente para visualizar las decisiones
                         // del ADE (que corre a 20 Hz internamente).
@@ -828,6 +850,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onOpenVisualizer = { requestVisualizer() },
                             onOpenAdaptive = { showAdaptive = true },
+                            onOpenAdaptiveEngineManual = { showAdaptiveEngineManual = true },
                             metrics = omegaMetrics,
                             onMetricsUpdate = { omegaMetrics = it },
                             // ── Adaptive Control Center ──────────────────────
