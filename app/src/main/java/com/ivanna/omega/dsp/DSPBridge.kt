@@ -49,6 +49,29 @@ object DSPBridge {
         nativeSetVoiceProtectScore(score)
     }
 
+    fun setAdaptiveParams(params: FloatArray) {
+        if (!loaded) return
+
+        fun at(index: Int, default: Float): Float =
+            if (index < params.size) params[index] else default
+
+        setParams(
+            drive = at(0, 0f),
+            wet = at(1, 0f),
+            mix = at(2, 0f),
+            alpha = at(3, 0f),
+            beta = at(4, 0f),
+            gamma = at(5, 0f),
+            freq = at(6, 1000f),
+            resonance = at(7, 0.7f),
+            low = at(8, 0f),
+            mid = at(9, 0f),
+            high = at(10, 0f),
+            presence = at(11, 0f),
+            master = at(12, 0f)
+        )
+    }
+
     fun process(buffer: FloatArray, numFrames: Int) {
         if (loaded) nativeProcess(buffer, numFrames)
     }
