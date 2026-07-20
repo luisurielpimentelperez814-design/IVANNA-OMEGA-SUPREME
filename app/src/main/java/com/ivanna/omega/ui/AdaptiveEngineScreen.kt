@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -16,26 +17,17 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
 
 /**
- * AdaptiveEngineScreen — conecta a la UI la arquitectura "MAGISTRAL"
+ * AdaptiveEngineScreen — conecta a la UI la arquitectura MAGISTRAL
  * (AudioStateManager / DspStateUpdater / VoiceProtectionManager, commit
- * bb4fa6b) que llegó al repo compilando pero sin ningún punto de entrada
- * desde ninguna pantalla.
+ * bb4fa6b) que llegó al repo compilando pero sin ningún punto de entrada.
  *
- * DECISIÓN DE DISEÑO (seguridad de audio en tiempo real):
- * AdaptiveDecisionEngine (Motor A) ya escribe compressor/exciter/ancho
- * automáticamente cada 50ms en el hilo de audio real. DspStateUpdater
- * escribe A LOS MISMOS parámetros nativos. Sin coordinación, esta
- * pantalla pelearía con Motor A (mismo patrón que colisionaba con
- * "Motor B", ya reparado en df68877). Por eso el toggle "Modo Manual"
- * llama nativeSetAdaptiveEngineEnabled(false) al activarse — pausa el
- * hilo de control de Motor A mientras esta pantalla tiene el control — y
- * nativeSetAdaptiveEngineEnabled(true) al desactivarse o al salir de la
- * pantalla (DisposableEffect), para que Motor A siempre quede
- * gobernando salvo que el usuario pida explícitamente lo contrario.
- *
- * Voice Protection es independiente (booleano ortogonal, no toca
- * compressor/exciter/ancho) y se conecta sin ninguna de estas
- * precauciones.
+ * COORDINACIÓN MOTOR A vs MODO MANUAL:
+ * AdaptiveDecisionEngine (Motor A) escribe compressor/exciter/ancho
+ * automáticamente cada 50ms. DspStateUpdater escribe LOS MISMOS params.
+ * El toggle "Modo Manual" pausa Motor A vía nativeSetAdaptiveEngineEnabled(false)
+ * mientras esta pantalla tiene el control, y lo reanuda al salir.
+ * DisposableEffect garantiza que Motor A nunca quede pausado si se sale
+ * de la pantalla sin desactivar el modo manual.
  */
 @Composable
 internal fun AdaptiveEngineScreen(
@@ -46,19 +38,12 @@ internal fun AdaptiveEngineScreen(
     val audioState by AudioStateManager.audioState.collectAsState()
     var manualModeEnabled by remember { mutableStateOf(false) }
 
-    // Al salir de la pantalla por cualquier vía (back, cierre), garantizar
-    // que Motor A quede reanudado — nunca dejar la app en modo manual
-    // "fantasma" sin que nadie lo sepa.
     DisposableEffect(Unit) {
         onDispose {
             if (manualModeEnabled) {
                 try {
                     IvannaNativeLib.nativeSetAdaptiveEngineEnabled(true)
-                } catch (_: Throwable) {
-                    // Motor A puede no estar inicializado todavía (p.ej. sin
-                    // reproducción activa) — no es un error, sólo no hay
-                    // nada que reanudar.
-                }
+                } catch (_: Throwable) { }
             }
         }
     }
@@ -66,7 +51,7 @@ internal fun AdaptiveEngineScreen(
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
@@ -76,13 +61,16 @@ internal fun AdaptiveEngineScreen(
             fontWeight = FontWeight.Bold
         )
 
-        // ── Voice Protection ────────────────────────────────────────────
+        // ── Voice Protection ─────────────────────────────────────────────
         val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
+
         GlassCard(
             title = "Voice Protection",
             accent = NeonMagenta,
-            subtitle = if (voiceActive) "Activo — voces protegidas de la compresión adaptativa"
-                       else "Inactivo",
+            subtitle = if (voiceActive)
+                "Activo — voces protegidas de la compresión adaptativa"
+            else
+                "Inactivo",
             rightSlot = {
                 ToggleSwitch(
                     checked = voiceActive,
@@ -97,14 +85,14 @@ internal fun AdaptiveEngineScreen(
             )
         }
 
-        // ── Modo Manual (pausa Motor A mientras está activo) ────────────
+        // ── Modo Manual ──────────────────────────────────────────────────
         GlassCard(
             title = "Modo Manual",
             accent = PhosphorGreen,
             subtitle = if (manualModeEnabled)
-                "Motor automático (Motor A) pausado — controlas tú"
+                "Motor A pausado — controles manuales activos"
             else
-                "Motor A gobierna automáticamente (recomendado)",
+                "Motor A gobernando automáticamente (recomendado)",
             rightSlot = {
                 ToggleSwitch(
                     checked = manualModeEnabled,
@@ -112,11 +100,8 @@ internal fun AdaptiveEngineScreen(
                         manualModeEnabled = enabled
                         try {
                             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
-                        } catch (_: Throwable) { /* motor no inicializado aún */ }
+                        } catch (_: Throwable) { }
                         if (enabled) {
-                            // Al entrar a manual, envía el estado actual una
-                            // vez para que el DSP no se quede en lo último
-                            // que dejó Motor A sin confirmar el nuevo dueño.
                             dspStateUpdater.forceUpdate(audioState)
                         }
                     },
@@ -135,6 +120,7 @@ internal fun AdaptiveEngineScreen(
                         dspStateUpdater.requestUpdate(AudioStateManager.audioState.value)
                     }
                 )
+                Spacer(Modifier.height(4.dp))
                 AuroraSlider(
                     label = "Exciter",
                     value = audioState.exciterAmount,
@@ -144,6 +130,7 @@ internal fun AdaptiveEngineScreen(
                         dspStateUpdater.requestUpdate(AudioStateManager.audioState.value)
                     }
                 )
+                Spacer(Modifier.height(4.dp))
                 AuroraSlider(
                     label = "Ancho estéreo",
                     value = audioState.spatialWidth,
