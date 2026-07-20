@@ -35,6 +35,7 @@ import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.dsp.DSPViewModel
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.adaptive.AdaptiveEngineScreen      // ← PUNTO 3: Import AdaptiveEngineScreen
 import com.ivanna.omega.adaptive.AdaptiveViewModel         // ← PUNTO 3: Import AdaptiveViewModel
@@ -69,13 +70,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OmegaApp() {
     val nav = rememberNavController()
-    val dsp: DSPState = viewModel()
+    val dspVm: DSPViewModel = viewModel()
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         // ← PUNTO 1: Agregar ruta "adaptive" al NavHost
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
-            composable("dashboard") { DashboardScreen(dsp, nav) }
+            composable("dashboard") { DashboardScreen(dspVm, nav) }
             composable("adaptive") {
                 // ← PUNTO 3: Pasar AdaptiveViewModel al AdaptiveEngineScreen
                 val adaptiveVm: AdaptiveViewModel = viewModel()
@@ -176,7 +177,9 @@ fun IntroScreen(onEnter: () -> Unit) {
 
 // ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
-fun DashboardScreen(dsp: DSPState, nav: androidx.navigation.NavHostController) {
+fun DashboardScreen(vm: DSPViewModel, nav: androidx.navigation.NavHostController) {
+    val dsp = vm.state
+    fun mut(block: DSPState.() -> DSPState) { vm.updateState { it.block() }; vm.state.pushToNative() }
     val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
     val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
@@ -213,37 +216,37 @@ fun DashboardScreen(dsp: DSPState, nav: androidx.navigation.NavHostController) {
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación") { dsp.drive = it; dsp.pushToNative() }
-                    FaderControl("WET", dsp.wet, "Señal proc.") { dsp.wet = it; dsp.pushToNative() }
-                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { dsp.mix = it; dsp.pushToNative() }
+                    FaderControl("DRIVE", dsp.drive, "Saturación") { mut { copy(drive = it) } }
+                    FaderControl("WET", dsp.wet, "Señal proc.") { mut { copy(wet = it) } }
+                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { mut { copy(mix = it) } }
                 }
             }
             item {
                 DspSection("DSP ENGINE α·β·γ") {
-                    FaderControl("ALPHA", dsp.alpha, "Compresor") { dsp.alpha = it; dsp.pushToNative() }
-                    FaderControl("BETA", dsp.beta, "Ratio") { dsp.beta = it; dsp.pushToNative() }
-                    FaderControl("GAMMA", dsp.gamma, "Width") { dsp.gamma = it; dsp.pushToNative() }
+                    FaderControl("ALPHA", dsp.alpha, "Compresor") { mut { copy(alpha = it) } }
+                    FaderControl("BETA", dsp.beta, "Ratio") { mut { copy(beta = it) } }
+                    FaderControl("GAMMA", dsp.gamma, "Width") { mut { copy(gamma = it) } }
                     val freqSl = remember(dsp.freq) {
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        dsp.freq = DSPState.sliderToFreq(it); dsp.pushToNative()
+                        mut { copy(freq = DSPState.sliderToFreq(it)) }
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                        dsp.resonance = DSPState.sliderToQ(it); dsp.pushToNative()
+                        mut { copy(resonance = DSPState.sliderToQ(it)) }
                     }
                 }
             }
             item {
                 DspSection("PARAMETRIC EQ") {
-                    EqFader("LOW", dsp.low) { dsp.low = it; dsp.pushToNative() }
-                    EqFader("MID", dsp.mid) { dsp.mid = it; dsp.pushToNative() }
-                    EqFader("HIGH", dsp.high) { dsp.high = it; dsp.pushToNative() }
-                    EqFader("PRESENCE", dsp.presence) { dsp.presence = it; dsp.pushToNative() }
-                    EqFader("MASTER", dsp.master) { dsp.master = it; dsp.pushToNative() }
+                    EqFader("LOW", dsp.low) { mut { copy(low = it) } }
+                    EqFader("MID", dsp.mid) { mut { copy(mid = it) } }
+                    EqFader("HIGH", dsp.high) { mut { copy(high = it) } }
+                    EqFader("PRESENCE", dsp.presence) { mut { copy(presence = it) } }
+                    EqFader("MASTER", dsp.master) { mut { copy(master = it) } }
                 }
             }
             item {
