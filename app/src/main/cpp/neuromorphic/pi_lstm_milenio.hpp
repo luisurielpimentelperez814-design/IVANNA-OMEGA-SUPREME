@@ -188,6 +188,26 @@ struct HRTFReflectionEngine {
     float gains[N_REFL];
     bool enabled = true;
 
+    // AUDIT FIX (crítico, silencio silencioso): hrtf_L/hrtf_R y gains[] nunca
+    // se llenaban en ningún punto del proyecto (nadie llama a init() ni a un
+    // setter de coeficientes) — en la instancia global (g_piLstmBridge) quedan
+    // en CERO por ser static storage. Con enabled=true por defecto y kernel
+    // nulo, process() calculaba cL=cR=0 y sumaba reflexiones con gains[i]=0:
+    // la etapa entera ponía la señal completa en silencio sin ningún error,
+    // el día que alguien active este motor en el pipeline en vivo. Se añade
+    // `coeffs_ready`, en el mismo espíritu que `m_kernels_ready` en
+    // VolterraH2Symmetric: mientras no se hayan cargado coeficientes reales
+    // vía set_hrtf_coefficients(), process() hace bypass (pass-through)
+    // en vez de fingir estar listo.
+    bool coeffs_ready = false;
+
+    void set_hrtf_coefficients(const float* hL, const float* hR) noexcept {
+        if (!hL || !hR) return;
+        memcpy(hrtf_L, hL, sizeof(hrtf_L));
+        memcpy(hrtf_R, hR, sizeof(hrtf_R));
+        coeffs_ready = true;
+    }
+
     void init(const float ds[N_REFL], const float gs[N_REFL]) noexcept {
         for (int i = 0; i < N_REFL; ++i) {
             delays_smp[i] = (int)(ds[i] * FS_BASE);
@@ -202,7 +222,7 @@ struct HRTFReflectionEngine {
     }
 
     void process(float L, float R, float& oL, float& oR) {
-        if (!enabled) { oL = L; oR = R; return; }
+        if (!enabled || !coeffs_ready) { oL = L; oR = R; return; }
 
         hbufL[hhead] = L;
         hbufR[hhead] = R;
