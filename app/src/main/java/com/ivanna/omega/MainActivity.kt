@@ -536,7 +536,43 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (showProfiles) {
                           ProfileSelectorScreen(
-                              profiles = audioProfileManager.getAllProfiles(),
+                              profiles = audioProfileManager.getAllProfiles().map { profile ->
+    IvannaAudioProfile(
+        id = profile.id,
+        name = profile.name,
+        description = profile.description,
+        category = profile.category,
+        priority = profile.priority,
+        audioEngine = IvannaAudioEngineParams(
+            gain = profile.audioEngine.gain,
+            exciterAmount = profile.audioEngine.exciterAmount,
+            eqGain = profile.audioEngine.eqGain,
+            widthAmount = profile.audioEngine.widthAmount,
+            bypass = profile.audioEngine.bypass
+        ),
+        antiDolby = IvannaAntiDolbyParams(
+            speechThreshold = profile.antiDolby.speechThreshold,
+            bassThreshold = profile.antiDolby.bassThreshold,
+            eqBoost2k4k = profile.antiDolby.eqBoost2k4k,
+            exciterLowOnly = profile.antiDolby.exciterLowOnly,
+            widenerMultiplier = profile.antiDolby.widenerMultiplier
+        ),
+        neuromorphic = IvannaNeuromorphicParams(
+            harmonicGain = profile.neuromorphic.harmonicGain,
+            lateralInhibition = profile.neuromorphic.lateralInhibition,
+            ohcCompression = profile.neuromorphic.ohcCompression,
+            masterGainDb = profile.neuromorphic.masterGainDb,
+            cochlearBandwidth = profile.neuromorphic.cochlearBandwidth
+        ),
+        route = IvannaRouteParams(
+            bassBoostDb = profile.route.bassBoostDb,
+            dialogBoostDb = profile.route.dialogBoostDb,
+            widenerMult = profile.route.widenerMult
+        ),
+        tags = profile.tags,
+        recommendedFor = profile.recommendedFor
+    )
+},
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
