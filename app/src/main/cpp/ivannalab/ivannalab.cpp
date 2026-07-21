@@ -276,6 +276,40 @@ struct IvannaLab::Impl {
         return carrier > 1e-6f ? 100.f * products / carrier : -1.f;
     }
 
+    // FIX (IvannaLab esqueleto — gap real, README "Qué NO está terminado
+    // hoy"): luRange (LRA) estaba declarado en LabResult y documentado en
+    // el header como "ya implementado", pero measure() nunca lo calculaba
+    // — quedaba en -1.0f para siempre. Implementación real BS.1770-4 Annex 2:
+    // gatedBlocks ya tiene el gate absoluto (-70 LUFS, ver feed()); acá se
+    // aplica el gate relativo (-20 LU bajo la loudness media no-gateada) y
+    // se devuelve P95 - P10 de los bloques que sobreviven ambos gates.
+    float measureLRA() const {
+        if (gatedBlocks.size() < 2) return -1.f;
+        std::vector<float> loudness;
+        loudness.reserve(gatedBlocks.size());
+        for (float ms2 : gatedBlocks) {
+            loudness.push_back(static_cast<float>(-0.691 + 10.0 * std::log10((double)ms2 + 1e-30)));
+        }
+        double sum = 0.0;
+        for (float lu : loudness) sum += lu;
+        const float meanLoud = static_cast<float>(sum / loudness.size());
+        const float relGate = meanLoud - 20.f;
+        std::vector<float> gated;
+        gated.reserve(loudness.size());
+        for (float lu : loudness) if (lu >= relGate) gated.push_back(lu);
+        if (gated.size() < 2) return -1.f;
+        std::sort(gated.begin(), gated.end());
+        auto percentile = [&](float p) -> float {
+            const float idx = p * static_cast<float>(gated.size() - 1);
+            const int lo = static_cast<int>(std::floor(idx));
+            const int hi = static_cast<int>(std::ceil(idx));
+            if (lo == hi) return gated[lo];
+            const float frac = idx - lo;
+            return gated[lo] * (1.f - frac) + gated[hi] * frac;
+        };
+        return percentile(0.95f) - percentile(0.10f);
+    }
+
     LabResult measure() const {
         LabResult res{};
         if (framesAcc <= 0) return res;
@@ -283,6 +317,7 @@ struct IvannaLab::Impl {
         const double rmsLinear = std::sqrt((sumSqL + sumSqR) / (2.0 * framesAcc + 1e-30));
         res.snrDB = rmsLinear > 1e-9 ? static_cast<float>(20.0 * std::log10(rmsLinear)) : -144.f;
         if (!gatedBlocks.empty()) res.integratedLUFS = lufsSnapshot;
+        res.luRange = measureLRA();
         res.truepeakDBTP = measureTruePeak();
         res.thdPercent = measureTHD();
         res.imdPercent = measureIMD();

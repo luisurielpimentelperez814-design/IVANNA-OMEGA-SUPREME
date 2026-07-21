@@ -113,9 +113,10 @@ add_library(ivanna_omega SHARED
 
     # ============================================================================
     # IvannaLab — suite de medición de calidad (THD/IMD/LUFS/LRA/SNR/TP)
-    # Estado: SKELETON compilable. La implementación real (FFT + K-weighting
-    # + gating BS.1770-4) está pendiente. El skeleton define la API fija y
-    # permite que IvannaLab.kt y los tests de CI usen las firmas sin breakage.
+    # Estado: mediciones reales (DFT+Hann para THD/IMD, K-weighting+gating
+    # BS.1770-4 para LUFS/LRA). Puente JNI en jni/ivanna_omega_jni.cpp
+    # (nativeLabReset/nativeLabFeed/nativeLabMeasure/nativeLabReport,
+    # expuestos en IvannaNativeLib.kt) — sin UI todavía que los invoque.
     # ============================================================================
     ivannalab/ivannalab.cpp
 )

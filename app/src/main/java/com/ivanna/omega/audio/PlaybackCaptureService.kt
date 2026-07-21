@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
+import com.ivanna.omega.VoiceController
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
@@ -62,6 +63,14 @@ class PlaybackCaptureService : Service() {
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
         const val INPUT_SAMPLES = 128
+
+        // FIX (VoiceController huérfano — cableado real de audio):
+        // VoiceController.processAudio() delega en YamnetClassifier, que
+        // exige un buffer de 15600 muestras @ 16kHz mono (0.975s, ver
+        // YamnetClassifier.INPUT_LENGTH). Este servicio captura @ 48kHz,
+        // así que hace falta decimar 3:1 antes de acumular la ventana.
+        private const val VOICE_DECIMATION = 3          // 48000 / 16000
+        private const val VOICE_WINDOW_SAMPLES = 15600  // = YamnetClassifier.INPUT_LENGTH
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -69,6 +78,18 @@ class PlaybackCaptureService : Service() {
     private var isRunning = false
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
+
+    // FIX (VoiceController huérfano, ver README "Qué NO está terminado
+    // hoy"): la clase ya routeaba comandos/perfiles correctamente, solo
+    // nunca recibía audio real. Se instancia perezosamente (necesita
+    // Context) y se alimenta desde el mismo bloque capturado que ya usa
+    // IvannaNpeEngine/SpatialAudioEngineV2 más abajo — sin permisos ni
+    // AudioRecord nuevos.
+    private var voiceController: VoiceController? = null
+    private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
+    private var voiceWindowFill = 0
+    private var voiceDecimAcc = 0f
+    private var voiceDecimCount = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -182,6 +203,8 @@ class PlaybackCaptureService : Service() {
             val estimatedLatencyMs = (bufferSize.toFloat() / 8f) / sampleRate * 1000f
             IvannaVisualizerBridgeV2.setDeviceLatencyMs(estimatedLatencyMs)
 
+            if (voiceController == null) voiceController = VoiceController(applicationContext)
+
             audioRecord?.startRecording()
             isRunning = true
 
@@ -206,6 +229,17 @@ class PlaybackCaptureService : Service() {
                             for (i in 0 until numFrames) {
                                 mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
                             }
+                            // FIX (VoiceController huérfano): decima 48kHz→16kHz,
+                            // acumula la ventana de 0.975s que pide YamnetClassifier
+                            // y, al llenarse, clasifica y ejecuta el perfil sugerido.
+                            // Envuelto en try/catch — mismo criterio que applyEQ/
+                            // persistState en AdaptiveBackend: un fallo acá (TFLite
+                            // no cargado, etc.) no debe tumbar la captura real.
+                            try {
+                                feedVoiceController(mono, numFrames)
+                            } catch (e: Throwable) {
+                                Log.w("PlaybackCaptureService", "VoiceController: motor no disponible todavía")
+                            }
                             IvannaVisualizerBridgeV2.processBlockFromNPE(mono, numFrames)
                         }
                     }
@@ -224,6 +258,35 @@ class PlaybackCaptureService : Service() {
         }
     }
 
+    // FIX (VoiceController huérfano): decima el mono @48kHz a 16kHz (factor
+    // 3:1, promedio simple de cada grupo de 3 muestras — suficiente para un
+    // clasificador de contexto, no para HiFi) y acumula en voiceWindow hasta
+    // completar VOICE_WINDOW_SAMPLES (0.975s). Al llenarse: clasifica con
+    // YamnetClassifier (vía VoiceController.processAudio) y, si sugiere un
+    // perfil, lo ejecuta (VoiceController.executeCommand) — mismo flujo que
+    // ya usaban los comandos de texto, ahora disparado por audio real en vez
+    // de simulación.
+    private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
+        val vc = voiceController ?: return
+        for (i in 0 until numFrames) {
+            voiceDecimAcc += mono[i]
+            voiceDecimCount++
+            if (voiceDecimCount >= VOICE_DECIMATION) {
+                if (voiceWindowFill < voiceWindow.size) {
+                    voiceWindow[voiceWindowFill] = voiceDecimAcc / voiceDecimCount
+                    voiceWindowFill++
+                }
+                voiceDecimAcc = 0f
+                voiceDecimCount = 0
+            }
+        }
+        if (voiceWindowFill >= voiceWindow.size) {
+            val hint = vc.processAudio(voiceWindow)
+            if (hint != "none") vc.executeCommand(hint)
+            voiceWindowFill = 0
+        }
+    }
+
     private fun stopCapture() {
         if (!isRunning && audioRecord == null && mediaProjection == null) return // idempotente
         isRunning = false
@@ -236,6 +299,12 @@ class PlaybackCaptureService : Service() {
         projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
         projectionCallback = null
         mediaProjection = null
+
+        // Reset del acumulador de VoiceController — evita mezclar audio de
+        // una sesión de captura vieja con la siguiente.
+        voiceWindowFill = 0
+        voiceDecimAcc = 0f
+        voiceDecimCount = 0
     }
 
     private fun createNotificationChannel() {

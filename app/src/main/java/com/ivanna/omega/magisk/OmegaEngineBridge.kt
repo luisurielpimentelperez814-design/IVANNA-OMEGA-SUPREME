@@ -175,6 +175,10 @@ class OmegaEngineBridge {
 
     /** exciter_reduction [0..1] — resultado de AdaptiveDecisionEngine.computeExciterReduction() */
     fun setAiRuntimeExcRed(v: Float)      = send("SET_AI_RUNTIME_EXCRED:${v.coerceIn(0f, 1f)}")
+    // FIX (Ruta B — spatial_width sin efecto): canal de vuelta análogo a
+    // setAiRuntimeGain/Comp/ExcRed — el daemon aplica esto en g_widener_b
+    // (StereoWidener) dentro de processLoop(), ver omega_daemon.cpp.
+    fun setAiRuntimeSpatialWidth(v: Float) = send("SET_AI_RUNTIME_SPATIAL:${v.coerceIn(0f, 2f)}")
 
     /** voice_score [0..1] — score YAMNet Speech (de YamnetClassifier.classify().speech) */
     fun setAiVoiceScore(v: Float)         = send("SET_AI_VOICE_SCORE:${v.coerceIn(0f, 1f)}")

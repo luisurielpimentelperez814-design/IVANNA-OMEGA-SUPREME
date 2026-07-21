@@ -115,6 +115,15 @@ struct OmegaSharedState {
     std::atomic<float> ai_runtime_gain_mul;
     std::atomic<float> ai_runtime_comp_amount;    // 0..1 → Compressor::setRuntimeAmount()
     std::atomic<float> ai_runtime_exciter_red;    // 0..1 → HarmonicExciter::setRuntimeReduction()
+    // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
+    // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
+    // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
+    // g_widener_b (omega_daemon.cpp) corría siempre con su ancho por
+    // defecto (1.0f fijo). Mismo patrón que ai_runtime_gain_mul: default
+    // 1.0 (unity) porque StereoWidener::setWidth(0.0f) = mono forzado, y
+    // el memset(0) de omega_daemon_init() lo dejaría en 0 si no se
+    // restaura explícitamente (ver ese archivo).
+    std::atomic<float> ai_runtime_spatial_width;  // 0..2 → StereoWidener::setWidth()
 
     // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
     // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
@@ -177,6 +186,7 @@ struct OmegaSharedState {
           ai_raw_rms(0.0f), ai_raw_peak(0.0f),
           ai_runtime_gain_mul(1.0f),
           ai_runtime_comp_amount(0.0f), ai_runtime_exciter_red(0.0f),
+          ai_runtime_spatial_width(1.0f),
           ai_band_low(0.0f), ai_band_mid(0.0f), ai_band_high(0.0f),
           ai_spatial_enabled(false), ai_spatial_azimuth(0.0f),
           ai_spatial_aggressiveness(0.5f),
