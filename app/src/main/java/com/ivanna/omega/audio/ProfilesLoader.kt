@@ -100,7 +100,7 @@ object ProfilesLoader {
         val resId = context.resources.getIdentifier(RES_NAME, "raw", context.packageName)
         if (resId == 0) {
             Log.w(TAG, "Recurso raw/$RES_NAME no encontrado")
-            return emptyList()
+            emptyList()
         }
         context.resources.openRawResource(resId).use { stream ->
             val container = json.decodeFromString(

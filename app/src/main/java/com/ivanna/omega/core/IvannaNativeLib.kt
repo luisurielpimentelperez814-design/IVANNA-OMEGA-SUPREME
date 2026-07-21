@@ -143,6 +143,10 @@ object IvannaNativeLib {
     // crear un segundo motor ni una ruta paralela de parámetros.
     external fun nativeSetAdaptiveControls(modeOrdinal: Int, intensityPercent: Float)
 
+    external fun nativeSetAdaptiveEngineEnabled(enabled: Boolean)
+
+    external fun nativeSetEQParams(low: Float, mid: Float, high: Float, master: Float)
+
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
     // Analiza características de audio en tiempo real y ajusta parámetros
