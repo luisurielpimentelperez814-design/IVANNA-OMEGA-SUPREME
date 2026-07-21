@@ -41,6 +41,8 @@ import com.ivanna.omega.audio.AppMetadataListener
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
+import com.ivanna.omega.ui.ProfileSelectorScreen
+import com.ivanna.omega.ui.MagiskStatusPanel
 import com.ivanna.omega.ui.theme.IvannaTheme
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.VisualizerSurface
@@ -151,6 +153,8 @@ class MainActivity : ComponentActivity() {
     private var showVisualizer by mutableStateOf(false)
     private var captureServiceRunning by mutableStateOf(false)
     private var showAdaptive by mutableStateOf(false)
+    private var showProfiles by mutableStateOf(false)
+    private var showMagisk by mutableStateOf(false)
 
     // ── Adaptive Control Center (Fase de UI) ────────────────────────────────────
     // adaptiveTelemetry: espejo Compose-observable de nativeGetAdaptiveTelemetry(),
@@ -522,7 +526,24 @@ class MainActivity : ComponentActivity() {
                             )
                             IconButtonClose { showAdaptive = false }
                         }
-                    } else if (showVisualizer) {
+                    } else if (showProfiles) {
+                          ProfileSelectorScreen(
+                              profiles = profileManager.getProfiles(),
+                              metadata = null,
+                              currentId = parameterStore.getCurrentPreset(),
+                              onApply = { profile ->
+                                  profileManager.applyProfile(profile)
+                                  showProfiles = false
+                              },
+                              onClose = { showProfiles = false },
+                              modifier = Modifier.fillMaxSize()
+                          )
+                      } else if (showMagisk) {
+                          MagiskStatusPanel(
+                              omegaBridge = OmegaEngineBridge(),
+                              modifier = Modifier.fillMaxSize()
+                          )
+                      } else if (showVisualizer) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VisualizerSurface(modifier = Modifier.fillMaxSize())
                             IconButtonClose { showVisualizer = false }
@@ -830,6 +851,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenVisualizer = { requestVisualizer() },
+                              onOpenProfiles = { showProfiles = true },
+                              onOpenMagisk = { showMagisk = true },
                             onOpenAdaptive = { showAdaptive = true },
                             metrics = omegaMetrics,
                             onMetricsUpdate = { omegaMetrics = it },
