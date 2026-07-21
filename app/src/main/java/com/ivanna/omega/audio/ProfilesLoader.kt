@@ -115,6 +115,7 @@ object ProfilesLoader {
         Log.e(TAG, "Error cargando profiles: ${e.message}", e)
         emptyList<IvannaAudioProfile>()
     }
+    }
 
     fun loadMetadata(context: Context): IvannaProfileMetadata? = try {
         val resId = context.resources.getIdentifier(RES_NAME, "raw", context.packageName)
