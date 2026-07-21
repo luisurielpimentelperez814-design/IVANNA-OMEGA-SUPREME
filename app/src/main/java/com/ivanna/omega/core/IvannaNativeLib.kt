@@ -145,6 +145,11 @@ object IvannaNativeLib {
     //   [7] safety_margin             (1 sano → 0 crítico)
     //   [8] voice_protection_amount   (0..1)
     //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
+    external fun nativeSetAdaptiveControls(
+        modeOrdinal: Int,
+        intensityPercent: Float
+    )
+
     external fun nativeGetAdaptiveTelemetry(): FloatArray?
     external fun nativeIsAdaptiveEngineRunning(): Boolean
 
