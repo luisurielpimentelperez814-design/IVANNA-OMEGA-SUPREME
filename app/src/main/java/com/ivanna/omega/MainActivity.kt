@@ -89,7 +89,6 @@ class MainActivity : ComponentActivity() {
     private val spatialEngineV2 = SpatialAudioEngineV2()
     private lateinit var profileManager: UserProfileManager
     private lateinit var audioProfileManager: ProfileManager
-    private lateinit var audioProfileManager: ProfileManager
     private val concertMode = ConcertMode()
     private val metadataListener = AppMetadataListener(this)
 
@@ -230,14 +229,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         profileManager = UserProfileManager(applicationContext)
-        audioProfileManager = ProfileManager(
-            applicationContext,
-            (application as IVANNAApplication).audioEngine
-        )
-        audioProfileManager = ProfileManager(
-            applicationContext,
-            (application as IVANNAApplication).audioEngine
-        )
+        
 
         // DEFENSIVE: Capturar cualquier crash no capturado
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
