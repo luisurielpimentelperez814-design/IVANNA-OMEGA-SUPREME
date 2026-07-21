@@ -57,7 +57,7 @@ import kotlinx.coroutines.*
  * ocurre vía IvannaGlobalEffectManager (AudioEffect en la sesión de la app
  * fuente) o, para IvannaBridgePlayer, vía AudioEngine/DSPBridge.
  */
-class PlaybackCaptureService : Service() {
+companion object {\n        private const val TAG = "PlaybackCaptureService"\n    }\n\n    class PlaybackCaptureService : Service() {
 
     companion object {
         const val CHANNEL_ID = "ivanna_playback_channel"
