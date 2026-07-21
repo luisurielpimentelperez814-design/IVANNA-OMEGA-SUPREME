@@ -539,7 +539,7 @@ class MainActivity : ComponentActivity() {
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
-                                    audioProfileManager.applyProfile(profile)
+                                    audioProfileManager.applyProfile(profile.id)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
