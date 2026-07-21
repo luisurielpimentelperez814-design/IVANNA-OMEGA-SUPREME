@@ -129,7 +129,6 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
-    onOpenAdaptiveEngineManual: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
     // ── Adaptive Control Center ──────────────────────────────────────────
@@ -139,12 +138,7 @@ fun IvannaControlPanel(
     adaptiveIntensity: Float = 50f,
     onAdaptiveIntensityChange: (Float) -> Unit = {},
     voiceProtectionEnabled: Boolean = true,
-    onVoiceProtectionChange: (Boolean) -> Unit = {},
-    // FASE 5: callbacks para abrir las pantallas nuevas (ProfileSelectorScreen
-    // y MagiskStatusPanel). Default a {} = pantalla completa sin abrir;
-    // MainActivity inyecta los handlers reales que cambian su flag mutableStateOf.
-    onOpenProfiles: () -> Unit = {},
-    onOpenMagisk:    () -> Unit = {}
+    onVoiceProtectionChange: (Boolean) -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -288,10 +282,7 @@ fun IvannaControlPanel(
             autoMode = autoMode,
             onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
             onOpenVisualizer = onOpenVisualizer,
-            onOpenAdaptive = onOpenAdaptive,
-            onOpenAdaptiveEngineManual = onOpenAdaptiveEngineManual,
-            onOpenProfiles = onOpenProfiles,
-            onOpenMagisk = onOpenMagisk
+            onOpenAdaptive = onOpenAdaptive
         )
 
         GlassCard(
@@ -457,7 +448,12 @@ fun IvannaControlPanel(
             }
             Spacer(Modifier.height(6.dp))
             FlagToggle("MANIFOLD (Volterra H2)", npeManifold, AuroraCyan, Modifier.fillMaxWidth()) {
-                npeManifold = it; onNpeManifoldChange(it)
+                npeManifold = it
+                if (it && spatialEnabled) {
+                    spatialEnabled = false
+                    onSpatialEnabledChange(false)
+                }
+                onNpeManifoldChange(it)
             }
         }
 
@@ -466,7 +462,14 @@ fun IvannaControlPanel(
             accent = NeonMagenta,
             subtitle = "Upmix neural + VBAP/HRTF + head-tracking 6DoF",
             rightSlot = {
-                ToggleSwitch(spatialEnabled, { spatialEnabled = it; onSpatialEnabledChange(it) }, NeonMagenta)
+                ToggleSwitch(spatialEnabled, {
+                    spatialEnabled = it
+                    if (it && npeManifold) {
+                        npeManifold = false
+                        onNpeManifoldChange(false)
+                    }
+                    onSpatialEnabledChange(it)
+                }, NeonMagenta)
             }
         ) {
             Text(

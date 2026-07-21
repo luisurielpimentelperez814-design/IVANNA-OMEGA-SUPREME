@@ -59,6 +59,11 @@ class ParameterStore(context: Context) {
         // Motor Binaural (32 objetos)
         private const val KEY_SPATIAL_ENABLED = "spatial_enabled"
         private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
+
+        // Adaptive Control Center
+        private const val KEY_ADAPTIVE_MODE = "adaptive_mode"
+        private const val KEY_ADAPTIVE_INTENSITY = "adaptive_intensity"
+        private const val KEY_VOICE_PROTECTION = "voice_protection"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
@@ -143,6 +148,15 @@ class ParameterStore(context: Context) {
 
     fun isSpatialInitPending(): Boolean = prefs.getBoolean(KEY_SPATIAL_INIT_PENDING, false)
     fun setSpatialInitPending(pending: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_INIT_PENDING, pending).apply()
+
+    fun getAdaptiveModeOrdinal(): Int = prefs.getInt(KEY_ADAPTIVE_MODE, 1) // NATURAL por defecto
+    fun setAdaptiveModeOrdinal(value: Int) = prefs.edit().putInt(KEY_ADAPTIVE_MODE, value.coerceIn(0, 3)).apply()
+
+    fun getAdaptiveIntensity(): Float = prefs.getFloat(KEY_ADAPTIVE_INTENSITY, 50f)
+    fun setAdaptiveIntensity(value: Float) = prefs.edit().putFloat(KEY_ADAPTIVE_INTENSITY, value.coerceIn(0f, 100f)).apply()
+
+    fun isVoiceProtectionEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_PROTECTION, true)
+    fun setVoiceProtectionEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_VOICE_PROTECTION, enabled).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()

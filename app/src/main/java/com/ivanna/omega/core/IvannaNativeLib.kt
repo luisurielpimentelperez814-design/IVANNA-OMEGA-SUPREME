@@ -31,14 +31,6 @@ object IvannaNativeLib {
         frames: Int
     )
     external fun nativeSetParams(params: FloatArray)
-    // FIX QUIRÚRGICO: nativeSetParams(FloatArray) sobreescribe TODO g_params
-    // (drive/wet/mix/alpha/beta/gamma/freq/resonance incluidos) y dispara
-    // setParams() en compresor/exciter/widener — si el caller solo llena
-    // low/mid/high/master (como hacía AdaptiveBackend.applyEQ) el resto
-    // llega en 0 y apaga esos motores. Este setter SOLO toca EQ+master y
-    // SOLO reconfigura g_eq/g_gain en el motor nativo (ver ivanna_omega_jni.cpp).
-    // Usar este método para EQ en tiempo real; NO usar nativeSetParams para eso.
-    external fun nativeSetEQParams(low: Float, mid: Float, high: Float, master: Float)
     external fun nativeResetDSP()
     external fun nativeGetClipCount(): Int
     external fun nativeResetClipCount()
@@ -110,11 +102,6 @@ object IvannaNativeLib {
     //  FIX v3.0: cableado GlassCard "COMPRESOR" y "NHO / ESPACIAL"
     //  (ivanna_omega_jni.cpp — g_comp.setThreshold/setRatio, g_pd.set_spatial_*)
     // ═══════════════════════════════════════════════════════════════════════
-    // FIX (build roto — Kotlin: 'Too many arguments'): MainActivity.kt ya
-    // llamaba a esta función con 4 argumentos (threshold, ratio, attackMs,
-    // releaseMs) desde el loop del "Adaptive Engine" (nativeCreateAdaptiveEngine/
-    // nativeGetAdaptiveParameters), pero la firma solo declaraba 2 — Compressor.h
-    // SÍ tiene setAttack()/setRelease() reales, solo faltaba la conexión JNI.
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
     external fun nativeSetSpatialWidthDirect(width: Float)
@@ -147,16 +134,14 @@ object IvannaNativeLib {
     //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
     external fun nativeGetAdaptiveTelemetry(): FloatArray?
     external fun nativeIsAdaptiveEngineRunning(): Boolean
-
-    // FIX (conexión pantalla "Modo Manual"): pausa/reanuda el hilo de
-    // control de AdaptiveDecisionEngine (Motor A) para que el modo manual
-    // (AudioStateManager/DspStateUpdater) y el modo automático nunca
-    // escriban compresor/exciter/ancho al mismo tiempo. Llamar false al
-    // abrir la pantalla de modo manual, true al cerrarla.
-    external fun nativeSetAdaptiveEngineEnabled(enabled: Boolean)
     // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?
+
+    // UI real del Adaptive Control Center: modo + intensidad aplicados
+    // dentro del mismo lazo adaptativo ya productivo (Ruta A/Ruta B), sin
+    // crear un segundo motor ni una ruta paralela de parámetros.
+    external fun nativeSetAdaptiveControls(modeOrdinal: Int, intensityPercent: Float)
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo

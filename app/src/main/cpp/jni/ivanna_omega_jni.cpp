@@ -106,6 +106,9 @@ static std::atomic<float> g_lastAdaptiveSpatialWidth{1.0f};
 static std::atomic<float> g_lastAdaptiveSafetyMargin{1.0f};
 static std::atomic<float> g_lastAdaptiveVoiceProtect{0.0f};
 static std::atomic<float> g_lastRawRms{0.0f};
+// Adaptive Control Center: modula el mismo motor adaptativo productivo.
+static std::atomic<int>   g_adaptiveUiMode{1};      // 0=OFF,1=NATURAL,2=STUDIO,3=EXTREME
+static std::atomic<float> g_adaptiveUiIntensity{50.f};
 static std::atomic<float> g_lastRawPeak{0.0f};
 static std::atomic<float> g_lastRawGrDb{0.0f};
 // Band energies — escritas por nativeProcess (Ruta A) y audioRouteBridgeLoop (Ruta B).
@@ -247,6 +250,27 @@ static void audioRouteBridgeLoop() {
                 g_adaptiveEngine.running() ? 1 : 0);
         }
     }
+}
+
+static inline float adaptive_mode_base_strength(int mode) noexcept {
+    switch (mode) {
+        case 0: return 0.0f;
+        case 1: return 0.35f;
+        case 2: return 0.65f;
+        case 3: return 1.0f;
+        default: return 0.35f;
+    }
+}
+
+static inline float adaptive_ui_strength() noexcept {
+    const float intensity = std::clamp(
+        g_adaptiveUiIntensity.load(std::memory_order_relaxed), 0.f, 100.f) * 0.01f;
+    const int mode = g_adaptiveUiMode.load(std::memory_order_relaxed);
+    return std::clamp(adaptive_mode_base_strength(mode) * intensity, 0.f, 1.f);
+}
+
+static inline float blend_adaptive_from_neutral(float neutral, float suggestion, float strength) noexcept {
+    return neutral + (suggestion - neutral) * strength;
 }
 
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
@@ -404,12 +428,22 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     static thread_local float s_targetGainSmooth = 1.0f;
     static thread_local float s_compAmountSmooth = 0.0f;
     static thread_local float s_excReductionSmooth = 0.0f;
-    s_targetGainSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f) - s_targetGainSmooth);
-    s_compAmountSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f) - s_compAmountSmooth);
-    s_excReductionSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f) - s_excReductionSmooth);
+    const float adaptiveStrength = adaptive_ui_strength();
+    const float targetGainUi = blend_adaptive_from_neutral(
+        1.0f,
+        std::clamp(g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f),
+        adaptiveStrength);
+    const float compAmountUi = blend_adaptive_from_neutral(
+        0.0f,
+        std::clamp(g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f),
+        adaptiveStrength);
+    const float excReductionUi = blend_adaptive_from_neutral(
+        0.0f,
+        std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
+        adaptiveStrength);
+    s_targetGainSmooth += 0.05f * (targetGainUi - s_targetGainSmooth);
+    s_compAmountSmooth += 0.05f * (compAmountUi - s_compAmountSmooth);
+    s_excReductionSmooth += 0.05f * (excReductionUi - s_excReductionSmooth);
 
     g_gain.setRuntimeGain(s_targetGainSmooth);
     g_comp.setRuntimeAmount(s_compAmountSmooth);
@@ -621,8 +655,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         //    al mismo tiempo. Encoding M/S: pdOut = mid + side*sideMul.
         //    Smoothing exponencial (thread_local) para evitar clics.
         static thread_local float s_widthSmooth = 1.0f;
-        const float widthTarget = std::clamp(
-            g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f);
+        const float widthTarget = blend_adaptive_from_neutral(
+            1.0f,
+            std::clamp(g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f),
+            adaptiveStrength);
         s_widthSmooth += 0.02f * (widthTarget - s_widthSmooth);  // ~50 bloques a τ
         const float adaptiveWidenAmount = std::max(0.f, s_widthSmooth - 1.f);
         const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
@@ -698,12 +734,22 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     static thread_local float s_blk_tgSmooth  = 1.0f;
     static thread_local float s_blk_caSmooth  = 0.0f;
     static thread_local float s_blk_erSmooth  = 0.0f;
-    s_blk_tgSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f) - s_blk_tgSmooth);
-    s_blk_caSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f) - s_blk_caSmooth);
-    s_blk_erSmooth += 0.05f * (std::clamp(
-        g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f) - s_blk_erSmooth);
+    const float adaptiveStrength = adaptive_ui_strength();
+    const float blkTargetGain = blend_adaptive_from_neutral(
+        1.0f,
+        std::clamp(g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f),
+        adaptiveStrength);
+    const float blkCompAmount = blend_adaptive_from_neutral(
+        0.0f,
+        std::clamp(g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f),
+        adaptiveStrength);
+    const float blkExcReduction = blend_adaptive_from_neutral(
+        0.0f,
+        std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
+        adaptiveStrength);
+    s_blk_tgSmooth += 0.05f * (blkTargetGain - s_blk_tgSmooth);
+    s_blk_caSmooth += 0.05f * (blkCompAmount - s_blk_caSmooth);
+    s_blk_erSmooth += 0.05f * (blkExcReduction - s_blk_erSmooth);
 
     g_gain.processInput(lBuf, rBuf, n);
     g_eq.process(lBuf, rBuf, n);
@@ -786,33 +832,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     g_gain.setParams(g_params);
 }
 
-// FIX QUIRÚRGICO (bug confirmado): AdaptiveBackend.applyEQ() (Kotlin) armaba
-// un FloatArray(13){0f} y solo llenaba [8]=low [9]=mid [10]=high [12]=master,
-// dejando [0..7] en 0 (drive, wet, mix, alpha, beta, gamma, freq, resonance).
-// nativeSetParams() de arriba sobreescribe TODO g_params con ese array y
-// luego llama setParams() en g_eq + g_comp + g_exciter + g_widener + g_gain
-// — es decir, cada vez que el usuario movía un slider de EQ, se ponían a 0
-// los parámetros de compresor (alpha/beta/gamma), exciter (drive/wet) y el
-// mix de entrada de la etapa de ganancia, apagando esos motores en cada tick.
-//
-// Fix: setter dedicado que SOLO toca los 4 campos de EQ+master y SOLO llama
-// setParams() en los módulos que realmente leen esos campos (g_eq lee
-// low/mid/high/resonance; g_gain lee mix/master). g_comp, g_exciter y
-// g_widener no leen low/mid/high/master (ver Compressor.cpp, HarmonicExciter.cpp,
-// StereoWidener.cpp) así que ni siquiera hace falta tocarlos — y como no
-// tocamos alpha/beta/gamma/drive/wet/mix, sus valores previos quedan intactos.
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
-    JNIEnv*, jobject,
-    jfloat low, jfloat mid, jfloat high, jfloat master) {
-    g_params.low    = low;
-    g_params.mid    = mid;
-    g_params.high   = high;
-    g_params.master = master;
-    g_eq.setParams(g_params);
-    g_gain.setParams(g_params);
-}
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
@@ -841,17 +860,10 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILS
 // UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
 
 // Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1,
-// attack/release en ms (Compressor::setAttack/setRelease, ver Compressor.h) —
-// extendido para el control adaptativo @10Hz que ya los pasaba
-// (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build roto en CI:
-// "Too many arguments"). setAttack()/setRelease() ya existían en
-// Compressor.h, solo faltaba exponerlos acá.
-// NOTA sin resolver: el llamador pasa 0.005f/0.1f, que parecen pensados en
-// SEGUNDOS (5ms/100ms, timing típico de compresor rápido) — setAttack(ms)
-// los tomará literalmente como 0.005ms/0.1ms (microsegundos), un ataque
-// virtualmente instantáneo. No se reinterpreta el valor del llamador aquí
-// sin confirmar la intención real — solo se cierra la conexión JNI que
-// bloqueaba el build.
+// attack/release en ms — extendido para el control adaptativo @10Hz que ya
+// los pasaba (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build
+// roto en CI: "Too many arguments"). setAttack()/setRelease() ya existían
+// en Compressor.h, solo faltaba exponerlos acá.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs) {
@@ -1006,6 +1018,13 @@ extern "C" float learning_bias_get(const char* param_key) {
 // atomics que el audio thread ya actualiza cada bloque. Uso desde Kotlin
 // con throttle (recomendado ≥500 ms) — este getter en sí no throttlea,
 // para que la UI decida la cadencia.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveControls(
+    JNIEnv*, jobject, jint modeOrdinal, jfloat intensityPercent) {
+    g_adaptiveUiMode.store(std::clamp((int)modeOrdinal, 0, 3), std::memory_order_relaxed);
+    g_adaptiveUiIntensity.store(std::clamp((float)intensityPercent, 0.f, 100.f), std::memory_order_relaxed);
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
     JNIEnv* env, jobject) {
@@ -1030,126 +1049,6 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
     return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
-}
-
-// ── nativeSetAdaptiveEngineEnabled — mutex de control manual vs automático ──
-// FIX (conexión pantalla "Modo Manual"): AudioStateManager/DspStateUpdater
-// (commit MAGISTRAL, bb4fa6b) escriben directo a nativeSetCompressorParams/
-// nativeSetHarmonicGain/nativeSetSpatialWidthDirect -- los MISMOS parámetros
-// que ya gobierna AdaptiveDecisionEngine (Motor A) automáticamente cada
-// 50ms. Sin coordinación, activar el modo manual pelearía con Motor A
-// (mismo patrón que colisionaba con "Motor B", ya reparado en df68877).
-// Esta función pausa/reanuda el hilo de control de Motor A (stop()/start()
-// -- NUNCA el audio thread, ver AdaptiveDecisionEngine::stop()) para que
-// sólo un sistema escriba el compresor/exciter/ancho a la vez. La UI debe
-// llamar false al abrir la pantalla de modo manual y true al cerrarla.
-// g_adaptiveEngineStarted se mantiene en true (nativeInit no debe volver a
-// arrancar el hilo si nativeInit se re-llama mientras está pausado).
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
-    JNIEnv*, jobject, jboolean enabled) {
-    if (enabled == JNI_TRUE) {
-        if (!g_adaptiveEngine.running()) {
-            g_adaptiveEngine.start();
-            LOGI("AdaptiveDecisionEngine reanudado (modo manual cerrado)");
-        }
-    } else {
-        if (g_adaptiveEngine.running()) {
-            g_adaptiveEngine.stop();
-            LOGI("AdaptiveDecisionEngine pausado (modo manual abierto)");
-        }
-    }
-}
-
-// ── FIX (build roto — UnsatisfiedLinkError en tiempo real, no solo error de
-// compilación): MainActivity.kt (bloque "Modo MAGISTRAL", LaunchedEffect con
-// loop @10Hz) llama a estas 3 funciones desde hace varios commits, pero
-// NINGUNA tenía implementación JNI — nativeCreateAdaptiveEngine() se llama
-// literalmente al abrir la pantalla, dentro de un try/catch(Exception) que
-// NO la habría atrapado (UnsatisfiedLinkError extiende Error, no Exception)
-// — crash garantizado en el primer frame, incluso después de arreglado el
-// error de compilación de nativeSetCompressorParams.
-//
-// No se crea un cuarto motor "adaptativo" nuevo — eso habría sido duplicar
-// exactamente lo que ya existe, probado y funcionando (g_adaptiveEngine,
-// ver Fase 1-3 de esta sesión). Se conecta este bloque de UI al motor
-// REAL ya en producción.
-JNIEXPORT jlong JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
-    JNIEnv*, jobject) {
-    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.start();
-        LOGI("AdaptiveDecisionEngine started (via nativeCreateAdaptiveEngine, Modo MAGISTRAL)");
-    }
-    // Kotlin solo comprueba que la llamada no lance excepción — no trata
-    // este valor como un puntero real. 1 = "motor real corriendo".
-    return g_adaptiveEngine.running() ? 1L : 0L;
-}
-
-// FloatArray[8]: [threshold_dB, ratio, exciterAmount, stereoWidth,
-//                 eqBass, eqMid, eqTreble, masterGain_dB]
-// Derivados de los MISMOS campos reales que ya alimentan la telemetría
-// (g_lastAdaptive*, calculados por AdaptiveDecisionEngine sobre RMS/peak/
-// bandas reales — ver Fase 1). threshold/ratio se derivan de
-// compressor_amount con el mismo rango que usa Compressor::setThreshold/
-// setRatio; exciterAmount es 1-exciter_reduction (inverso: reduction=1
-// -> exciter apagado); masterGain_dB convierte el multiplicador lineal
-// target_gain a dB.
-//
-// eqBass/eqMid/eqTreble se dejan en 0.0f (plano, sin cambio) A PROPÓSITO:
-// AdaptiveDecisionEngine no calcula sugerencias de EQ por banda — no
-// existe ese dato. Devolver algo distinto de 0 aquí sería fabricar una
-// cifra sin base real, exactamente el patrón que se ha corregido en
-// otras partes de esta sesión (ver "ASPEREZA", antes "THD" falso).
-JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
-    JNIEnv* env, jobject) {
-    const float compAmount = g_lastAdaptiveCompAmount.load(std::memory_order_relaxed);
-    const float excReduction = g_lastAdaptiveExcReduction.load(std::memory_order_relaxed);
-    const float spatialWidth = g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed);
-    const float targetGain = g_lastAdaptiveTargetGain.load(std::memory_order_relaxed);
-
-    float v[8];
-    v[0] = -12.0f - compAmount * 12.0f;              // threshold dB [-12..-24]
-    v[1] = 2.0f + compAmount * 6.0f;                  // ratio [2:1..8:1]
-    v[2] = 1.0f - excReduction;                       // exciterAmount [0..1]
-    v[3] = spatialWidth;                              // stereoWidth, ya en su rango real
-    v[4] = 0.0f;                                       // eqBass — sin sugerencia real, ver comentario arriba
-    v[5] = 0.0f;                                       // eqMid  — idem
-    v[6] = 0.0f;                                       // eqTreble — idem
-    v[7] = (targetGain > 1e-6f)
-               ? 20.0f * std::log10(targetGain)         // masterGain dB
-               : -60.0f;                                // piso de seguridad si llega 0/negativo
-
-    jfloatArray arr = env->NewFloatArray(8);
-    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 8, v);
-    return arr;
-}
-
-// FloatArray[8]: [rms, peak, band_low, band_mid, band_high, safety_margin,
-//                 voice_protection_amount, gain_reduction_db]
-// Todos derivados de datos reales ya medidos por el pipeline (mismos
-// atomics que expone nativeGetBandEnergies/la telemetría adaptativa) — el
-// resultado de esta función NO se lee en ningún lugar de la UI todavía
-// (audioCharacteristics se asigna en MainActivity.kt pero nunca se
-// muestra), así que no hay urgencia funcional, pero se devuelven datos
-// reales de todas formas en vez de ceros, dado que ya están disponibles.
-JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
-    JNIEnv* env, jobject) {
-    float v[8];
-    v[0] = g_lastRawRms.load(std::memory_order_relaxed);
-    v[1] = g_lastRawPeak.load(std::memory_order_relaxed);
-    v[2] = g_lastBandLow.load(std::memory_order_relaxed);
-    v[3] = g_lastBandMid.load(std::memory_order_relaxed);
-    v[4] = g_lastBandHigh.load(std::memory_order_relaxed);
-    v[5] = g_lastAdaptiveSafetyMargin.load(std::memory_order_relaxed);
-    v[6] = g_lastAdaptiveVoiceProtect.load(std::memory_order_relaxed);
-    v[7] = g_lastRawGrDb.load(std::memory_order_relaxed);
-
-    jfloatArray arr = env->NewFloatArray(8);
-    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 8, v);
-    return arr;
 }
 
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────

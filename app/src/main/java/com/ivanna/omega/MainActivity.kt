@@ -21,15 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.ivanna.omega.ai.LearningBias
+import com.ivanna.omega.ai.RealtimeLearningController
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaBridgePlayer
-import com.ivanna.omega.audio.IvannaAudioProfile
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.audio.PlaybackCaptureService
-import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.audio.SpatialAudioEngineV2
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
@@ -40,12 +39,8 @@ import com.ivanna.omega.dsp.ConcertMode
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.audio.AppMetadataListener
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
-import com.ivanna.omega.magisk.MagiskBridge
-import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
-import com.ivanna.omega.ui.MagiskStatusPanel
-import com.ivanna.omega.ui.ProfileSelectorScreen
 import com.ivanna.omega.ui.theme.IvannaTheme
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.VisualizerSurface
@@ -96,18 +91,6 @@ class MainActivity : ComponentActivity() {
     // FASE 1: reproductor propio (decodifica archivo -> DSPBridge -> AudioTrack).
     // Vive en MainActivity scope, se libera en onDestroy().
     private lateinit var bridgePlayer: IvannaBridgePlayer
-    private lateinit var voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
-    private var showAdaptiveEngineManual by mutableStateOf(false)
-
-    // FASE 5: pantallas nuevas cableadas (ProfileSelector + MagiskStatusPanel)
-    private var showProfileSelector by mutableStateOf(false)
-    private var showMagiskStatus     by mutableStateOf(false)
-
-    // Cache de perfiles cargados (lazy — solo se cargan al abrir el selector
-    // por primera vez; res/raw/audio_profiles.json es liviano pero evita parse
-    // en cold-start).
-    private var cachedProfiles: List<IvannaAudioProfile> = emptyList()
-    private var cachedMetadata by mutableStateOf<com.ivanna.omega.audio.IvannaProfileMetadata?>(null)
     private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
     private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
 
@@ -127,6 +110,7 @@ class MainActivity : ComponentActivity() {
 
     // FASE 2: capturador/aplicador de sesgo aprendido por (contexto, param).
     private lateinit var learningBias: LearningBias
+    private lateinit var realtimeLearningController: RealtimeLearningController
 
     // Mapea género detectado por el motor NPE → preset más afín, para Auto IA.
     private val genreToPreset = mapOf(
@@ -173,10 +157,9 @@ class MainActivity : ComponentActivity() {
     // actualizado cada 500ms desde startAdaptiveTelemetryLoop() (ver abajo) — antes
     // esa función solo mandaba a Logcat, sin ningún consumidor de UI.
     private var adaptiveTelemetry by mutableStateOf(com.ivanna.omega.ui.AdaptiveTelemetrySnapshot())
-    // Estados de controles SIN backend real (adaptiveMode, adaptiveIntensity) —
-    // se guardan igual para que el slider/chip no "salte" visualmente, pero no
-    // se propagan a ningún lado del DSP. Ver AdaptiveEngineCard.kt para el
-    // detalle de auditoría de cada control.
+    // Estados UI del Adaptive Control Center. Desde esta fase YA no son
+    // cosméticos: modulan la fuerza del AdaptiveDecisionEngine real vía
+    // IvannaNativeLib.nativeSetAdaptiveControls().
     private var adaptiveMode by mutableStateOf(com.ivanna.omega.ui.AdaptiveMode.NATURAL)
     private var adaptiveIntensity by mutableStateOf(50f)
     // Nota: el control "Spatial Control" del Adaptive Center reutiliza el
@@ -192,6 +175,8 @@ class MainActivity : ComponentActivity() {
     private var adaptiveParams by mutableStateOf<FloatArray>(FloatArray(12))
     private var audioCharacteristics by mutableStateOf<FloatArray>(FloatArray(8))
     private var adaptiveEngineReady by mutableStateOf(false)
+    private var dspPushJob: Job? = null
+    private var metadataHooksStarted = false
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -283,18 +268,14 @@ class MainActivity : ComponentActivity() {
         )
         bridgePlayer = IvannaBridgePlayer(applicationContext)
         learningBias = LearningBias(applicationContext).also { it.load() }
-
-        // FIX (conexión UI, commit MAGISTRAL bb4fa6b): VoiceProtectionManager
-        // llegó al repo compilando pero sin ningún punto de entrada — ni
-        // instancia, ni pantalla, ni registro con bridgePlayer.
-        // com.ivanna.omega.audio.ParameterStore es una clase DISTINTA del
-        // parameterStore (core) usado arriba — persistencia propia (Gson),
-        // solo para el estado de esta arquitectura, sin pisar la existente.
-        voiceProtectionManager = com.ivanna.omega.audio.VoiceProtectionManager(
-            com.ivanna.omega.audio.ParameterStore(applicationContext)
+        realtimeLearningController = RealtimeLearningController(
+            applicationContext,
+            learningBias = learningBias
         )
-        voiceProtectionManager.registerBridgePlayer(bridgePlayer)
-        voiceProtectionManager.loadAndRestore()
+        adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.values()[parameterStore.getAdaptiveModeOrdinal().coerceIn(0, 3)]
+        adaptiveIntensity = parameterStore.getAdaptiveIntensity()
+        voiceProtectionEnabled = parameterStore.isVoiceProtectionEnabled()
+        bridgePlayer.setVoiceProtectionEnabled(voiceProtectionEnabled)
 
         // FIX (independencia del mic — pedido explícito de GORE): antes TODO
         // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
@@ -312,10 +293,7 @@ class MainActivity : ComponentActivity() {
         // motor espacial ya no depende del mic, así que se limpia el flag.
         parameterStore.setSpatialInitPending(false)
         initCoreAudioEngine()
-        // Iniciar escucha de apps (Spotify/YouTube)
-        metadataListener.startListening()
-        // Aplicar perfil inteligente
-        profileManager.applySmartProfile(application as IVANNAApplication)
+        ensureMetadataHooksStarted()
 
         // FIX (retroalimentación acústica): AudioForegroundService arranca
         // AudioPipeline, que es un loopback físico real -- AudioRecord(MIC/
@@ -385,6 +363,7 @@ class MainActivity : ComponentActivity() {
             IvannaNativeLib.nativeSetHarmonicGain(parameterStore.getNhoHarmonic())
             IvannaNativeLib.nativeSetSpatialAngleRad(parameterStore.getSpatialAngle())
             IvannaNativeLib.nativeSetSpatialWidthDirect(parameterStore.getSpatialWidth())
+            applyAdaptiveUiControls()
             if (parameterStore.isEvoEnabled()) {
                 IvannaNativeLib.nativeStartEvoThread()
             } else {
@@ -513,15 +492,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background // ahora resuelve a ObsidianVoid
                 ) {
-                    if (showAdaptiveEngineManual) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            com.ivanna.omega.ui.AdaptiveEngineScreen(
-                                voiceProtectionManager = voiceProtectionManager,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            IconButtonClose { showAdaptiveEngineManual = false }
-                        }
-                    } else if (showAdaptive) {
+                    if (showAdaptive) {
                         // Pantalla de telemetría real del AdaptiveDecisionEngine.
                         // Poll a 500 ms — suficiente para visualizar las decisiones
                         // del ADE (que corre a 20 Hz internamente).
@@ -555,26 +526,6 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VisualizerSurface(modifier = Modifier.fillMaxSize())
                             IconButtonClose { showVisualizer = false }
-                        }
-                    } else if (showProfileSelector) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            ProfileSelectorScreen(
-                                profiles = cachedProfiles,
-                                metadata = cachedMetadata,
-                                currentId = profileManager.getCurrentPreset(),
-                                onApply = { profile -> applyAudioProfile(profile) },
-                                onClose = { showProfileSelector = false },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            IconButtonClose { showProfileSelector = false }
-                        }
-                    } else if (showMagiskStatus) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            MagiskStatusPanel(
-                                omegaBridge = IVANNAApplication.omegaBridge,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            IconButtonClose { showMagiskStatus = false }
                         }
                     } else {
                       var omegaMetrics by remember { mutableStateOf(OmegaMetrics()) }
@@ -681,8 +632,7 @@ class MainActivity : ComponentActivity() {
                                 // daemon Magisk). EXCITER en la UI es 0..1 y
                                 // mapea 1:1 a DSPState.drive (HarmonicExciter lee
                                 // p.drive directamente).
-                                dspState = dspState.copy(drive = value)
-                                dspState.pushToNative()
+                                updateDspState { it.copy(drive = value) }
                             },
                             onEqChange = { value ->
                                 captureCorrection("eq_gain", value)
@@ -692,10 +642,9 @@ class MainActivity : ComponentActivity() {
                                 // de ParametricEQ — no hay 4 sliders separados
                                 // en esta UI, así que este es el control de tono
                                 // global. Documentado acá porque no era obvio.
-                                dspState = dspState.copy(
-                                    low = value, mid = value, high = value, presence = value
-                                )
-                                dspState.pushToNative()
+                                updateDspState {
+                                    it.copy(low = value, mid = value, high = value, presence = value)
+                                }
                             },
                             onWidthChange = { value ->
                                 captureCorrection("width", value)
@@ -704,8 +653,7 @@ class MainActivity : ComponentActivity() {
                                 // DSPState.stereoWidth (StereoWidener acepta
                                 // 0..2, canal dedicado vía nativeSetStereoWidth,
                                 // ya no colisiona con gamma/timing del compresor).
-                                dspState = dspState.copy(stereoWidth = value)
-                                dspState.pushToNative()
+                                updateDspState { it.copy(stereoWidth = value) }
                             },
                             onAntiDolbyChange = { enabled ->
                                 parameterStore.setAntiDolbyEnabled(enabled)
@@ -754,15 +702,13 @@ class MainActivity : ComponentActivity() {
                                 // mismos sliders 0..1 que ya se usaban acá, así
                                 // que se pasan directo a dspState y se elimina
                                 // la llamada directa a nativeSetCompressorParams.
-                                dspState = dspState.copy(alpha = slider, beta = ratioSlider)
-                                dspState.pushToNative()
+                                updateDspState { it.copy(alpha = slider, beta = ratioSlider) }
                             },
                             onCompRatioChange = { slider ->
                                 captureCorrection("comp_ratio", slider)
                                 val threshSlider = parameterStore.getCompThreshold()
                                 parameterStore.setCompParams(threshSlider, slider)
-                                dspState = dspState.copy(alpha = threshSlider, beta = slider)
-                                dspState.pushToNative()
+                                updateDspState { it.copy(alpha = threshSlider, beta = slider) }
                             },
                             onNhoHarmonicChange = { value ->
                                 captureCorrection("nho_harmonic", value)
@@ -827,8 +773,7 @@ class MainActivity : ComponentActivity() {
                                 // en p.master (dB directo, ver dbToLin(p.master) en GainStage.cpp) —
                                 // no hace falta reescalar. No se quita el envío al NPE (sigue siendo
                                 // válido para su propia compensación interna); se agrega el real.
-                                dspState = dspState.copy(master = value)
-                                dspState.pushToNative()
+                                updateDspState { it.copy(master = value) }
                             },
                             onNpeAgcChange = { target, rate ->
                                 parameterStore.setNpeAgc(target, rate)
@@ -885,27 +830,27 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenVisualizer = { requestVisualizer() },
-                            onOpenProfiles = {
-                                if (cachedProfiles.isEmpty()) {
-                                    cachedProfiles = ProfilesLoader.load(this@MainActivity)
-                                    cachedMetadata = ProfilesLoader.loadMetadata(this@MainActivity)
-                                }
-                                showProfileSelector = true
-                            },
-                            onOpenMagisk = { showMagiskStatus = true },
                             onOpenAdaptive = { showAdaptive = true },
-                            onOpenAdaptiveEngineManual = { showAdaptiveEngineManual = true },
                             metrics = omegaMetrics,
                             onMetricsUpdate = { omegaMetrics = it },
                             // ── Adaptive Control Center ──────────────────────
                             adaptiveTelemetry = adaptiveTelemetry,
                             adaptiveMode = adaptiveMode,
-                            onAdaptiveModeChange = { adaptiveMode = it },
+                            onAdaptiveModeChange = {
+                                adaptiveMode = it
+                                parameterStore.setAdaptiveModeOrdinal(it.ordinal)
+                                applyAdaptiveUiControls()
+                            },
                             adaptiveIntensity = adaptiveIntensity,
-                            onAdaptiveIntensityChange = { adaptiveIntensity = it },
+                            onAdaptiveIntensityChange = {
+                                adaptiveIntensity = it
+                                parameterStore.setAdaptiveIntensity(it)
+                                applyAdaptiveUiControls()
+                            },
                             voiceProtectionEnabled = voiceProtectionEnabled,
                             onVoiceProtectionChange = { enabled ->
                                 voiceProtectionEnabled = enabled
+                                parameterStore.setVoiceProtectionEnabled(enabled)
                                 try {
                                     bridgePlayer.setVoiceProtectionEnabled(enabled)
                                 } catch (e: Exception) {
@@ -986,6 +931,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun updateDspState(transform: (DSPState) -> DSPState) {
+        dspState = transform(dspState)
+        dspPushJob?.cancel()
+        dspPushJob = lifecycleScope.launch {
+            delay(24L)
+            dspState.pushToNative()
+        }
+    }
+
+    private fun applyAdaptiveUiControls() {
+        if (!IvannaNativeLib.isLoaded) return
+        try {
+            IvannaNativeLib.nativeSetAdaptiveControls(adaptiveMode.ordinal, adaptiveIntensity)
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyAdaptiveUiControls fallo", t)
+        }
+    }
+
+    private fun ensureMetadataHooksStarted() {
+        if (metadataHooksStarted) return
+        metadataListener.startListening()
+        profileManager.applySmartProfile(application as IVANNAApplication)
+        metadataHooksStarted = true
+    }
+
     // FASE 2: captura la corrección del usuario sobre un parámetro. El valor
     // "autónomo" (Kernel Evo / Auto IA) se lee del ParameterStore justo antes
     // de aplicar el cambio nuevo; el sesgo se persiste y se acumula por
@@ -996,12 +966,30 @@ class MainActivity : ComponentActivity() {
         try {
             val genre = IvannaNpeEngine.getDetectedGenre().lowercase()
             val preset = parameterStore.getCurrentPreset()
-            val ctx = if (genre.isNotBlank() && genre != "unknown") "genre:$genre" else "preset:$preset"
             val autonomous: Float? = readAutonomousValue(paramKey)
-            learningBias.captureCorrection(ctx, paramKey, autonomous, userValue)
+            val parameter = learningParameterForKey(paramKey)
+            if (parameter != null && autonomous != null) {
+                realtimeLearningController.forceAutonomousAnchor(parameter, autonomous)
+                realtimeLearningController.captureUserCorrectionIfNeeded(parameter, userValue, genre, preset)
+            } else {
+                val ctx = if (genre.isNotBlank() && genre != "unknown") "genre:$genre" else "preset:$preset"
+                learningBias.captureCorrection(ctx, paramKey, autonomous, userValue)
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "captureCorrection($paramKey) fallo silencioso", t)
         }
+    }
+
+    private fun learningParameterForKey(paramKey: String): RealtimeLearningController.Parameter? = when (paramKey) {
+        "exciter"        -> RealtimeLearningController.Parameter.EXCITER
+        "eq_gain"        -> RealtimeLearningController.Parameter.EQ
+        "width"          -> RealtimeLearningController.Parameter.WIDTH
+        "comp_threshold" -> RealtimeLearningController.Parameter.COMP_THRESHOLD
+        "comp_ratio"     -> RealtimeLearningController.Parameter.COMP_RATIO
+        "nho_harmonic"   -> RealtimeLearningController.Parameter.NHO_HARMONIC
+        "spatial_angle"  -> RealtimeLearningController.Parameter.SPATIAL_ANGLE
+        "spatial_width"  -> RealtimeLearningController.Parameter.SPATIAL_WIDTH
+        else -> null
     }
 
     private fun readAutonomousValue(paramKey: String): Float? = when (paramKey) {
@@ -1051,10 +1039,7 @@ class MainActivity : ComponentActivity() {
     private fun compRatioSliderToRatio(slider: Float): Float = 1f + slider * 19f
 
     private fun initCoreAudioEngine() {
-        // Iniciar escucha de apps (Spotify/YouTube)
-        metadataListener.startListening()
-        // Aplicar perfil inteligente
-        profileManager.applySmartProfile(application as IVANNAApplication)
+        ensureMetadataHooksStarted()
         try {
             audioEngine.initialize(48000)
             audioEngine.setExciter(parameterStore.getExciter())
@@ -1096,133 +1081,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * FASE 5: aplica los parámetros del AudioProfile seleccionado al pipeline
-     * DSP completo (dspState / DSPBridge / GlobalEffectManager / OmegaEngineBridge
-     * si el daemon Magisk está activo / IvannaNativeLib nativo).
-     *
-     * Es la pieza que CONECTA la UI ProfileSelector con el backend — antes el
-     * selector existía pero el onApply = {} era vacío en MainActivity. Ahora
-     * cada slider queda sincronizado con la realidad.
-     */
-    private fun applyAudioProfile(profile: IvannaAudioProfile) {
-        Log.i(TAG, "═══ applyAudioProfile: ${profile.id} (${profile.name}) ═══")
-        try {
-            // 1) DSPState — 13 parámetros del PF Engine + EQ + ancho
-            dspState = dspState.copy(
-                drive       = (DSPState.sliderToDrive(profile.audioEngine.gain).coerceIn(0f, 4f)),
-                wet         = profile.audioEngine.exciterAmount.coerceIn(0f, 1f),
-                mix         = profile.audioEngine.widthAmount.coerceIn(0f, 1.5f),
-                low         = profile.route.bassBoostDb,
-                mid         = 0f,
-                high        = profile.route.dialogBoostDb,
-                presence    = DSPState.sliderToDb(DSPState.dbToSlider(profile.antiDolby.eqBoost2k4k)),
-                master      = DSPState.sliderToDb(DSPState.dbToSlider(profile.neuromorphic.masterGainDb)),
-                stereoWidth = profile.route.widenerMult.coerceIn(0.5f, 2.0f),
-                bypass      = profile.audioEngine.bypass
-            )
-            dspState.pushToNative()
-
-            // 2) DSPBridge — ruta directa al motor nativo (IvannaNativeLib)
-            DSPBridge.setParams(
-                dspState.drive, dspState.wet, dspState.mix,
-                dspState.alpha, dspState.beta, dspState.gamma,
-                dspState.freq, dspState.resonance,
-                dspState.low, dspState.mid, dspState.high,
-                dspState.presence, dspState.master
-            )
-            DSPBridge.setStereoWidth(dspState.stereoWidth)
-            parameterStore.saveAll(dspState)
-
-            // 3) Native lib — EQ directo (preserva comp/exciter/widener)
-            if (IvannaNativeLib.isLoaded) {
-                try {
-                    IvannaNativeLib.nativeSetEQParams(
-                        dspState.low, dspState.mid, dspState.high, dspState.master
-                    )
-                    IvannaNativeLib.nativeSetCompressorParams(
-                        dspState.compThreshold, dspState.compRatio, 5f, 100f
-                    )
-                    IvannaNativeLib.nativeSetHarmonicGain(profile.audioEngine.exciterAmount)
-                    IvannaNativeLib.nativeSetSpatialWidthDirect(dspState.stereoWidth)
-                } catch (e: Exception) {
-                    Log.w(TAG, "nativeSetEQParams falló (no crítico): ${e.message}")
-                }
-            }
-
-            // 4) GlobalEffectManager (AudioEffect sessions — Spotify, YouTube, etc.)
-            try {
-                val legacy = mapByRouting(profile)
-                IVANNAApplication.globalEffectManager.applyProfile(legacy)
-            } catch (e: Exception) {
-                Log.w(TAG, "globalEffectManager.applyProfile falló: ${e.message}")
-            }
-
-            // 5) Magisk daemon — espeja la cadena DSP al audio de TODO el sistema
-            try {
-                if (com.ivanna.omega.magisk.MagiskBridge.isModuleActive) {
-                    MagiskBridge.setPreset(profile.id)
-                    MagiskBridge.setDrive(profile.audioEngine.gain)
-                    MagiskBridge.setWet(profile.audioEngine.exciterAmount)
-                    MagiskBridge.setMix(profile.audioEngine.widthAmount)
-                    MagiskBridge.setLow(profile.route.bassBoostDb)
-                    MagiskBridge.setHigh(profile.route.dialogBoostDb)
-                    MagiskBridge.setPresence(profile.antiDolby.eqBoost2k4k)
-                    Log.i(TAG, "✓ Perfil espejado al daemon Magisk")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "MagiskBridge falló (no-root, ignorar): ${e.message}")
-            }
-
-            // 6) Persistencia del perfil elegido + historial
-            try {
-                profileManager.saveCurrentProfile(profile.id)
-            } catch (e: Exception) {
-                Log.w(TAG, "saveCurrentProfile falló: ${e.message}")
-            }
-
-            Log.i(TAG, "✓ Perfil ${profile.name} aplicado al pipeline completo")
-        } catch (_: Throwable) {
-            Log.e(TAG, "Error aplicando perfil ${profile.id}", _ as Throwable?)
-        }
-    }
-
-    /**
-     * Mapea el AudioProfile (formato extended-masterful) al IvannaEffectProfile
-     * legacy que usa GlobalEffectManager (EQ 10 bandas + BassBoost + Virtualizer).
-     * Las 10 bandas se interpolan desde los 4 controles tonales del perfil.
-     */
-    private fun mapByRouting(p: IvannaAudioProfile): IvannaEffectProfile {
-        val mb = { db: Float -> (db * 100f).toInt().coerceIn(-1500, 1500) }
-        val bass    = mb(p.route.bassBoostDb)
-        val treble  = mb(p.route.dialogBoostDb)
-        val mids    = mb(p.antiDolby.eqBoost2k4k * 0.5f)
-        val eq      = IntArray(10) { idx ->
-            when (idx) {
-                0, 1 -> bass                              // 31/63 Hz
-                2, 3 -> (bass + mids) / 2                 // 125/250
-                4    -> 0                                 // 500 (neutro)
-                5    -> mids                              // 1k
-                6    -> (mids + treble) / 2               // 2k
-                7    -> treble                            // 4k
-                8, 9 -> (treble * 0.7f).toInt()           // 8k/16k (controlado)
-                else -> 0
-            }
-        }
-        return IvannaEffectProfile(
-            eqBands = eq,
-            bassStrength = (bass.coerceAtLeast(0) / 2).toShort().coerceAtMost(1000),
-            virtualizerStrength = ((p.route.widenerMult - 1f) * 800f).toInt().toShort().coerceAtMost(1000),
-            loudnessGainMb = (-p.neuromorphic.masterGainDb * 50f).toInt().coerceIn(0, 1000),
-            compThresholdDb = p.antiDolby.speechThreshold * -24f,
-            compRatio = 1.5f + p.antiDolby.widenerMultiplier * 2.5f
-        )
-    }
-
     override fun onDestroy() {
+        super.onDestroy()
         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
         try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
-        try { learningBias.release() } catch (e: Exception) { Log.e(TAG, "Error releasing learningBias", e) }
+        try { realtimeLearningController.release() } catch (e: Exception) { Log.e(TAG, "Error releasing realtimeLearningController", e) }
         try { bridgePlayer.stop() } catch (e: Exception) { Log.e(TAG, "Error stopping bridgePlayer", e) }
         try {
             autoPresetJob?.cancel()
