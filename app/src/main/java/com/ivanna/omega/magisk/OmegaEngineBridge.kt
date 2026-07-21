@@ -85,9 +85,14 @@ class OmegaEngineBridge {
         Log.i(TAG, "Desconectado")
     }
 
-    // FIX: isConnected ahora también verifica isClosed
+    // Android 15: LocalSocket.isClosed lanza UnsupportedOperationException
+    // Solo usamos isConnected y manejo de excepción.
     val isConnected: Boolean
-        get() = socket?.let { it.isConnected && !it.isClosed } == true
+        get() = try {
+            socket?.isConnected == true
+        } catch (_: Exception) {
+            false
+        }
 
     // ── Envío de comandos ─────────────────────────────────────────────────────
 
