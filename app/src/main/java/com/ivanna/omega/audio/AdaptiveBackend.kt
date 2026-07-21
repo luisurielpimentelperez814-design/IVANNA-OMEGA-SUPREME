@@ -119,32 +119,24 @@ class AdaptiveBackend(context: Context) {
         persistState(modulated)
     }
 
-    // ── EQ en tiempo real: nativeSetParams índices 8,9,10 = low/mid/high ────
-    // Índices confirmados en jni/ivanna_omega_jni.cpp:778-780.
-    // nativeSetParams aplica todos los motores (g_eq, g_comp, g_exciter,
-    // g_widener, g_gain) de una sola vez — mínima contención de lock.
-    // Pasamos solo los índices que nos interesan (array de 11 elementos,
-    // el resto en 0f = no modifica esos params en el motor, porque los
-    // `if (n>=X)` sí ejecutan pero escriben 0 — mejor enviar los valores
-    // actuales de g_params en vez de ceros para no pisar configuraciones
-    // de otros módulos. Usamos los campos del AudioState para reconstruir
-    // el array completo de forma coherente.
+    // ── EQ en tiempo real: nativeSetEQParams(low, mid, high, master) ────────
+    // FIX QUIRÚRGICO (bug confirmado): la versión anterior armaba un
+    // FloatArray(13){0f} y llamaba a nativeSetParams (que sobreescribe TODO
+    // g_params y dispara setParams() en g_eq + g_comp + g_exciter + g_widener
+    // + g_gain). Como el array solo llenaba los índices 8/9/10/12, el resto
+    // (drive/wet/mix/alpha/beta/gamma/freq/resonance, índices 0..7) llegaba
+    // en 0 — apagando compresor, exciter y el mix de entrada de la ganancia
+    // en cada movimiento de un slider de EQ.
+    // Ahora se usa un setter JNI dedicado que solo toca low/mid/high/master
+    // y solo reconfigura g_eq/g_gain — nunca toca compresor/exciter/widener.
     private fun applyEQ(state: AudioState) {
         try {
-            // Array de 13 posiciones = máximo que acepta nativeSetParams.
-            // [0]=drive [1]=wet [2]=mix [3]=alpha [4]=beta [5]=gamma
-            // [6]=freq  [7]=resonance [8]=low [9]=mid [10]=high
-            // [11]=presence [12]=master
-            // Solo tocar 8,9,10 (EQ), 12 (master gain) — el resto neutro/0
-            // para no interferir con los parámetros que otros módulos ya
-            // configuraron. No existe un getter JNI de los params actuales,
-            // así que el contrato es claro: este array solo controla EQ+gain.
-            val params = FloatArray(13) { 0f }
-            params[8]  = state.eqBass        // low shelf (dB)
-            params[9]  = state.eqMid         // mid peak (dB)
-            params[10] = state.eqTreble      // high shelf (dB)
-            params[12] = state.masterGain    // master gain
-            IvannaNativeLib.nativeSetParams(params)
+            IvannaNativeLib.nativeSetEQParams(
+                state.eqBass,     // low shelf (dB)
+                state.eqMid,      // mid peak (dB)
+                state.eqTreble,   // high shelf (dB)
+                state.masterGain  // master gain
+            )
         } catch (e: Throwable) {
             Log.w(TAG, "applyEQ: motor no disponible todavía")
         }

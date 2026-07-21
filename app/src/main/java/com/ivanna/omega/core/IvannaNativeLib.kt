@@ -31,6 +31,14 @@ object IvannaNativeLib {
         frames: Int
     )
     external fun nativeSetParams(params: FloatArray)
+    // FIX QUIRÚRGICO: nativeSetParams(FloatArray) sobreescribe TODO g_params
+    // (drive/wet/mix/alpha/beta/gamma/freq/resonance incluidos) y dispara
+    // setParams() en compresor/exciter/widener — si el caller solo llena
+    // low/mid/high/master (como hacía AdaptiveBackend.applyEQ) el resto
+    // llega en 0 y apaga esos motores. Este setter SOLO toca EQ+master y
+    // SOLO reconfigura g_eq/g_gain en el motor nativo (ver ivanna_omega_jni.cpp).
+    // Usar este método para EQ en tiempo real; NO usar nativeSetParams para eso.
+    external fun nativeSetEQParams(low: Float, mid: Float, high: Float, master: Float)
     external fun nativeResetDSP()
     external fun nativeGetClipCount(): Int
     external fun nativeResetClipCount()

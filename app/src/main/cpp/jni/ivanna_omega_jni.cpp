@@ -786,6 +786,33 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     g_gain.setParams(g_params);
 }
 
+// FIX QUIRÚRGICO (bug confirmado): AdaptiveBackend.applyEQ() (Kotlin) armaba
+// un FloatArray(13){0f} y solo llenaba [8]=low [9]=mid [10]=high [12]=master,
+// dejando [0..7] en 0 (drive, wet, mix, alpha, beta, gamma, freq, resonance).
+// nativeSetParams() de arriba sobreescribe TODO g_params con ese array y
+// luego llama setParams() en g_eq + g_comp + g_exciter + g_widener + g_gain
+// — es decir, cada vez que el usuario movía un slider de EQ, se ponían a 0
+// los parámetros de compresor (alpha/beta/gamma), exciter (drive/wet) y el
+// mix de entrada de la etapa de ganancia, apagando esos motores en cada tick.
+//
+// Fix: setter dedicado que SOLO toca los 4 campos de EQ+master y SOLO llama
+// setParams() en los módulos que realmente leen esos campos (g_eq lee
+// low/mid/high/resonance; g_gain lee mix/master). g_comp, g_exciter y
+// g_widener no leen low/mid/high/master (ver Compressor.cpp, HarmonicExciter.cpp,
+// StereoWidener.cpp) así que ni siquiera hace falta tocarlos — y como no
+// tocamos alpha/beta/gamma/drive/wet/mix, sus valores previos quedan intactos.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
+    JNIEnv*, jobject,
+    jfloat low, jfloat mid, jfloat high, jfloat master) {
+    g_params.low    = low;
+    g_params.mid    = mid;
+    g_params.high   = high;
+    g_params.master = master;
+    g_eq.setParams(g_params);
+    g_gain.setParams(g_params);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
