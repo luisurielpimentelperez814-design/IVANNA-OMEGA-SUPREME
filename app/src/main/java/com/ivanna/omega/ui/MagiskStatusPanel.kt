@@ -22,7 +22,10 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * MagiskStatusPanel — pantalla de estado del módulo Magisk + cliente daemon.
@@ -42,17 +45,56 @@ fun MagiskStatusPanel(
     omegaBridge: OmegaEngineBridge,
     modifier: Modifier = Modifier
 ) {
-    var moduleActive by remember { mutableStateOf(MagiskBridge.isModuleActive) }
-    var moduleVersion by remember { mutableStateOf(MagiskBridge.moduleVersion) }
-    var daemonRunning by remember { mutableStateOf(MagiskBridge.isDaemonRunning) }
+    // AUDIT FIX (crítico): los valores iniciales NO deben evaluar los
+    // getters bloqueantes de MagiskBridge de forma síncrona durante la
+    // primera composición (hilo principal) — eso disparaba el mismo
+    // problema de exec()/su -c descrito abajo en el instante mismo de
+    // ABRIR la pantalla, antes de que el LaunchedEffect llegara a
+    // correr en Dispatchers.IO. Arranca con valores neutros/seguros;
+    // el LaunchedEffect los puebla con datos reales en el primer tick.
+    var moduleActive by remember { mutableStateOf(false) }
+    var moduleVersion by remember { mutableStateOf("") }
+    var daemonRunning by remember { mutableStateOf(false) }
     var daemonConnected by remember { mutableStateOf(omegaBridge.isConnected) }
     var lastCommandOutput by remember { mutableStateOf("") }
+    // AUDIT FIX (crítico, crash/ANR confirmado al presionar STATUS/TELEMETRY/
+    // RELOAD): MagiskBridge.getStatus()/reloadParams() hacen `su -c` +
+    // lectura bloqueante + waitFor(3000ms) — en un dispositivo sin permiso
+    // root pre-concedido, `su` dispara el diálogo de superusuario de Magisk,
+    // y esa espera ocurría ANTES en el hilo principal directo desde onClick.
+    // Con la UI congelada >5s, Android mata la actividad por ANR — lo que el
+    // usuario percibe como que la app truena. requestTelemetry() (LocalSocket)
+    // tiene el mismo problema. Se mueven las 3 llamadas a Dispatchers.IO.
+    val scope = rememberCoroutineScope()
+    var actionInFlight by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            moduleActive    = MagiskBridge.isModuleActive
-            moduleVersion   = MagiskBridge.moduleVersion
-            daemonRunning   = MagiskBridge.isDaemonRunning
+            // AUDIT FIX (crítico, crash/ANR real desde que se ABRE la
+            // pantalla, no solo al presionar un botón): isModuleActive/
+            // moduleVersion usan getSystemProp() y isDaemonRunning usa
+            // exec("test -S ...") — ambos vía exec() interno, que hace
+            // `su -c ...` + lectura bloqueante + waitFor(3000ms). Este
+            // LaunchedEffect corre en el contexto de composición (hilo
+            // principal) y repetía esas 3 llamadas bloqueantes CADA 2
+            // SEGUNDOS desde el instante en que se abre MagiskStatusPanel —
+            // si el dispositivo no tiene el permiso root pre-concedido,
+            // cada tick puede disparar el diálogo de superusuario de Magisk
+            // y congelar la UI. Con eso, Android puede matar la actividad
+            // por ANR (>5s de hilo principal bloqueado) — indistinguible
+            // de un crash para quien lo usa. Se mueven las 3 lecturas a
+            // Dispatchers.IO; escribir mutableStateOf desde otro hilo es
+            // seguro en Compose (dispara recomposición igual).
+            val (active, version, running) = withContext(Dispatchers.IO) {
+                Triple(
+                    MagiskBridge.isModuleActive,
+                    MagiskBridge.moduleVersion,
+                    MagiskBridge.isDaemonRunning
+                )
+            }
+            moduleActive    = active
+            moduleVersion   = version
+            daemonRunning   = running
             daemonConnected = omegaBridge.isConnected
             delay(2000L)
         }
@@ -135,14 +177,29 @@ fun MagiskStatusPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ActionButton("STATUS", MagiskBridge.isDaemonRunning) {
-                lastCommandOutput = MagiskBridge.getStatus()
+            ActionButton("STATUS", MagiskBridge.isDaemonRunning && !actionInFlight) {
+                actionInFlight = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { MagiskBridge.getStatus() }
+                    lastCommandOutput = result
+                    actionInFlight = false
+                }
             }
-            ActionButton("TELEMETRY", daemonConnected) {
-                lastCommandOutput = omegaBridge.requestTelemetry()
+            ActionButton("TELEMETRY", daemonConnected && !actionInFlight) {
+                actionInFlight = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { omegaBridge.requestTelemetry() }
+                    lastCommandOutput = result
+                    actionInFlight = false
+                }
             }
-            ActionButton("RELOAD", moduleActive) {
-                lastCommandOutput = MagiskBridge.reloadParams()
+            ActionButton("RELOAD", moduleActive && !actionInFlight) {
+                actionInFlight = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { MagiskBridge.reloadParams() }
+                    lastCommandOutput = result
+                    actionInFlight = false
+                }
             }
         }
 
