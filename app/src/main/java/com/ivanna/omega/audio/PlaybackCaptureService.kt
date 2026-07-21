@@ -99,20 +99,40 @@ class PlaybackCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        val mediaProjection = getMediaProjection(intent)
-
-        if (mediaProjection == null) {
-            Log.w(TAG, "MediaProjection no autorizada. Servicio detenido.")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
+        // AUDIT FIX (crítico, crash confirmado justo después de conceder el
+        // permiso de captura de pantalla): en Android 14+ el orden es
+        // OBLIGATORIO y estaba invertido. Documentación oficial
+        // (developer.android.com/about/versions/14/changes/fgs-types-required,
+        // sección "Runtime prerequisites" de FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION):
+        // "Call the createScreenCaptureIntent() method before starting the
+        // foreground service [...]. After you have created the foreground
+        // service, you can call MediaProjectionManager.getMediaProjection()."
+        //
+        // Antes este método llamaba a getMediaProjection() ANTES de
+        // startForeground(). El sistema exige la relación inversa: sin un
+        // foreground service de tipo mediaProjection ya arrancado,
+        // MediaProjectionManager.getMediaProjection() lanza
+        // SecurityException de inmediato — exactamente el crash que
+        // ocurría al instante de conceder el permiso.
+        //
+        // Fix: startForeground() primero (no depende de mediaProjection,
+        // solo del contentIntent/notificación), y getMediaProjection()
+        // después, ya con el foreground service de tipo correcto activo.
         val notification = createNotification()
         startForeground(
                 NOTIFICATION_ID,
                 notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
+
+        val mediaProjection = getMediaProjection(intent)
+
+        if (mediaProjection == null) {
+            Log.w(TAG, "MediaProjection no autorizada. Servicio detenido.")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         startCapture(mediaProjection)
 
