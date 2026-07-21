@@ -97,13 +97,19 @@ class PlaybackCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+
+        val mediaProjection = getMediaProjection(intent)
+
+        if (mediaProjection == null) {
+            Log.w(TAG, "MediaProjection no autorizada. Servicio detenido.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        val mediaProjection = getMediaProjection(intent)
-        if (mediaProjection != null) {
-            startCapture(mediaProjection)
-        }
+        startCapture(mediaProjection)
 
         return START_STICKY
     }
