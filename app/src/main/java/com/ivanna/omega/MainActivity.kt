@@ -35,6 +35,7 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.core.UserProfileManager
+import com.ivanna.omega.audio.ProfileManager
 import com.ivanna.omega.dsp.ConcertMode
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.audio.AppMetadataListener
@@ -87,6 +88,8 @@ class MainActivity : ComponentActivity() {
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
     private lateinit var profileManager: UserProfileManager
+    private lateinit var audioProfileManager: ProfileManager
+    private lateinit var audioProfileManager: ProfileManager
     private val concertMode = ConcertMode()
     private val metadataListener = AppMetadataListener(this)
 
@@ -227,6 +230,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         profileManager = UserProfileManager(applicationContext)
+        audioProfileManager = ProfileManager(
+            applicationContext,
+            (application as IVANNAApplication).audioEngine
+        )
+        audioProfileManager = ProfileManager(
+            applicationContext,
+            (application as IVANNAApplication).audioEngine
+        )
 
         // DEFENSIVE: Capturar cualquier crash no capturado
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -528,11 +539,11 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (showProfiles) {
                           ProfileSelectorScreen(
-                              profiles = profileManager.getAllProfiles(),
+                              profiles = audioProfileManager.getAllProfiles(),
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
-                                    profileManager.applyProfile(profile.id)
+                                    audioProfileManager.applyProfile(profile.id)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
