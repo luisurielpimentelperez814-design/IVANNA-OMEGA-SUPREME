@@ -534,7 +534,13 @@ class MainActivity : ComponentActivity() {
                               onApply = { profile ->
                                   (application as? IVANNAApplication)
                                         ?.globalEffectManager
-                                        ?.applyProfile(profile)
+                                        ?.applyProfile(
+                                            when (profile.id) {
+                                                "spatial" -> IvannaEffectProfile.SPATIAL
+                                                "warm" -> IvannaEffectProfile.WARM
+                                                else -> IvannaEffectProfile.FLAT
+                                            }
+                                        )
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
@@ -542,6 +548,7 @@ class MainActivity : ComponentActivity() {
                           )
                       } else if (showMagisk) {
                           MagiskStatusPanel(
+                              omegaBridge = IVANNAApplication.omegaBridge,
                               modifier = Modifier.fillMaxSize()
                           )
                       } else if (showVisualizer) {
