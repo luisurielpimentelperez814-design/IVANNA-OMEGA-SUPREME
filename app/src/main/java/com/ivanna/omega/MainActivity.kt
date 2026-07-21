@@ -24,10 +24,12 @@ import com.ivanna.omega.ai.LearningBias
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioForegroundService
 import com.ivanna.omega.audio.IvannaBridgePlayer
+import com.ivanna.omega.audio.IvannaAudioProfile
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.NoRootAudioProcessor
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.audio.PlaybackCaptureService
+import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.audio.SpatialAudioEngineV2
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IvannaNativeLib
@@ -38,8 +40,12 @@ import com.ivanna.omega.dsp.ConcertMode
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.audio.AppMetadataListener
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.magisk.MagiskBridge
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.BridgePlayerCard
 import com.ivanna.omega.ui.IvannaControlPanel
+import com.ivanna.omega.ui.MagiskStatusPanel
+import com.ivanna.omega.ui.ProfileSelectorScreen
 import com.ivanna.omega.ui.theme.IvannaTheme
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.VisualizerSurface
@@ -92,6 +98,16 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridgePlayer: IvannaBridgePlayer
     private lateinit var voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
     private var showAdaptiveEngineManual by mutableStateOf(false)
+
+    // FASE 5: pantallas nuevas cableadas (ProfileSelector + MagiskStatusPanel)
+    private var showProfileSelector by mutableStateOf(false)
+    private var showMagiskStatus     by mutableStateOf(false)
+
+    // Cache de perfiles cargados (lazy — solo se cargan al abrir el selector
+    // por primera vez; res/raw/audio_profiles.json es liviano pero evita parse
+    // en cold-start).
+    private var cachedProfiles: List<IvannaAudioProfile> = emptyList()
+    private var cachedMetadata by mutableStateOf<com.ivanna.omega.audio.IvannaProfileMetadata?>(null)
     private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
     private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
 
@@ -540,6 +556,26 @@ class MainActivity : ComponentActivity() {
                             VisualizerSurface(modifier = Modifier.fillMaxSize())
                             IconButtonClose { showVisualizer = false }
                         }
+                    } else if (showProfileSelector) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            ProfileSelectorScreen(
+                                profiles = cachedProfiles,
+                                metadata = cachedMetadata,
+                                currentId = profileManager.getCurrentPreset(),
+                                onApply = { profile -> applyAudioProfile(profile) },
+                                onClose = { showProfileSelector = false },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            IconButtonClose { showProfileSelector = false }
+                        }
+                    } else if (showMagiskStatus) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            MagiskStatusPanel(
+                                omegaBridge = IVANNAApplication.omegaBridge,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            IconButtonClose { showMagiskStatus = false }
+                        }
                     } else {
                       var omegaMetrics by remember { mutableStateOf(OmegaMetrics()) }
                       LaunchedEffect(Unit) {
@@ -849,6 +885,14 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenVisualizer = { requestVisualizer() },
+                            onOpenProfiles = {
+                                if (cachedProfiles.isEmpty()) {
+                                    cachedProfiles = ProfilesLoader.load(this@MainActivity)
+                                    cachedMetadata = ProfilesLoader.loadMetadata(this@MainActivity)
+                                }
+                                showProfileSelector = true
+                            },
+                            onOpenMagisk = { showMagiskStatus = true },
                             onOpenAdaptive = { showAdaptive = true },
                             onOpenAdaptiveEngineManual = { showAdaptiveEngineManual = true },
                             metrics = omegaMetrics,
@@ -1052,8 +1096,130 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * FASE 5: aplica los parámetros del AudioProfile seleccionado al pipeline
+     * DSP completo (dspState / DSPBridge / GlobalEffectManager / OmegaEngineBridge
+     * si el daemon Magisk está activo / IvannaNativeLib nativo).
+     *
+     * Es la pieza que CONECTA la UI ProfileSelector con el backend — antes el
+     * selector existía pero el onApply = {} era vacío en MainActivity. Ahora
+     * cada slider queda sincronizado con la realidad.
+     */
+    private fun applyAudioProfile(profile: IvannaAudioProfile) {
+        Log.i(TAG, "═══ applyAudioProfile: ${profile.id} (${profile.name}) ═══")
+        try {
+            // 1) DSPState — 13 parámetros del PF Engine + EQ + ancho
+            dspState = dspState.copy(
+                drive       = (DSPState.sliderToDrive(profile.audioEngine.gain).coerceIn(0f, 4f)),
+                wet         = profile.audioEngine.exciterAmount.coerceIn(0f, 1f),
+                mix         = profile.audioEngine.widthAmount.coerceIn(0f, 1.5f),
+                low         = profile.route.bassBoostDb,
+                mid         = 0f,
+                high        = profile.route.dialogBoostDb,
+                presence    = DSPState.sliderToDb(DSPState.dbToSlider(profile.antiDolby.eqBoost2k4k)),
+                master      = DSPState.sliderToDb(DSPState.dbToSlider(profile.neuromorphic.masterGainDb)),
+                stereoWidth = profile.route.widenerMult.coerceIn(0.5f, 2.0f),
+                bypass      = profile.audioEngine.bypass
+            )
+            dspState.pushToNative()
+
+            // 2) DSPBridge — ruta directa al motor nativo (IvannaNativeLib)
+            DSPBridge.setParams(
+                dspState.drive, dspState.wet, dspState.mix,
+                dspState.alpha, dspState.beta, dspState.gamma,
+                dspState.freq, dspState.resonance,
+                dspState.low, dspState.mid, dspState.high,
+                dspState.presence, dspState.master
+            )
+            DSPBridge.setStereoWidth(dspState.stereoWidth)
+            parameterStore.saveAll(dspState)
+
+            // 3) Native lib — EQ directo (preserva comp/exciter/widener)
+            if (IvannaNativeLib.isLoaded) {
+                try {
+                    IvannaNativeLib.nativeSetEQParams(
+                        dspState.low, dspState.mid, dspState.high, dspState.master
+                    )
+                    IvannaNativeLib.nativeSetCompressorParams(
+                        dspState.compThreshold, dspState.compRatio, 5f, 100f
+                    )
+                    IvannaNativeLib.nativeSetHarmonicGain(profile.audioEngine.exciterAmount)
+                    IvannaNativeLib.nativeSetSpatialWidthDirect(dspState.stereoWidth)
+                } catch (e: Exception) {
+                    Log.w(TAG, "nativeSetEQParams falló (no crítico): ${e.message}")
+                }
+            }
+
+            // 4) GlobalEffectManager (AudioEffect sessions — Spotify, YouTube, etc.)
+            try {
+                val legacy = mapByRouting(profile)
+                IVANNAApplication.globalEffectManager.applyProfile(legacy)
+            } catch (e: Exception) {
+                Log.w(TAG, "globalEffectManager.applyProfile falló: ${e.message}")
+            }
+
+            // 5) Magisk daemon — espeja la cadena DSP al audio de TODO el sistema
+            try {
+                if (com.ivanna.omega.magisk.MagiskBridge.isModuleActive) {
+                    MagiskBridge.setPreset(profile.id)
+                    MagiskBridge.setDrive(profile.audioEngine.gain)
+                    MagiskBridge.setWet(profile.audioEngine.exciterAmount)
+                    MagiskBridge.setMix(profile.audioEngine.widthAmount)
+                    MagiskBridge.setLow(profile.route.bassBoostDb)
+                    MagiskBridge.setHigh(profile.route.dialogBoostDb)
+                    MagiskBridge.setPresence(profile.antiDolby.eqBoost2k4k)
+                    Log.i(TAG, "✓ Perfil espejado al daemon Magisk")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "MagiskBridge falló (no-root, ignorar): ${e.message}")
+            }
+
+            // 6) Persistencia del perfil elegido + historial
+            try {
+                profileManager.saveCurrentProfile(profile.id)
+            } catch (e: Exception) {
+                Log.w(TAG, "saveCurrentProfile falló: ${e.message}")
+            }
+
+            Log.i(TAG, "✓ Perfil ${profile.name} aplicado al pipeline completo")
+        } catch (_: Throwable) {
+            Log.e(TAG, "Error aplicando perfil ${profile.id}", _ as Throwable?)
+        }
+    }
+
+    /**
+     * Mapea el AudioProfile (formato extended-masterful) al IvannaEffectProfile
+     * legacy que usa GlobalEffectManager (EQ 10 bandas + BassBoost + Virtualizer).
+     * Las 10 bandas se interpolan desde los 4 controles tonales del perfil.
+     */
+    private fun mapByRouting(p: IvannaAudioProfile): IvannaEffectProfile {
+        val mb = { db: Float -> (db * 100f).toInt().coerceIn(-1500, 1500) }
+        val bass    = mb(p.route.bassBoostDb)
+        val treble  = mb(p.route.dialogBoostDb)
+        val mids    = mb(p.antiDolby.eqBoost2k4k * 0.5f)
+        val eq      = IntArray(10) { idx ->
+            when (idx) {
+                0, 1 -> bass                              // 31/63 Hz
+                2, 3 -> (bass + mids) / 2                 // 125/250
+                4    -> 0                                 // 500 (neutro)
+                5    -> mids                              // 1k
+                6    -> (mids + treble) / 2               // 2k
+                7    -> treble                            // 4k
+                8, 9 -> (treble * 0.7f).toInt()           // 8k/16k (controlado)
+                else -> 0
+            }
+        }
+        return IvannaEffectProfile(
+            eqBands = eq,
+            bassStrength = (bass.coerceAtLeast(0) / 2).toShort().coerceAtMost(1000),
+            virtualizerStrength = ((p.route.widenerMult - 1f) * 800f).toInt().toShort().coerceAtMost(1000),
+            loudnessGainMb = (-p.neuromorphic.masterGainDb * 50f).toInt().coerceIn(0, 1000),
+            compThresholdDb = p.antiDolby.speechThreshold * -24f,
+            compRatio = 1.5f + p.antiDolby.widenerMultiplier * 2.5f
+        )
+    }
+
     override fun onDestroy() {
-        super.onDestroy()
         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
         try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
         try { learningBias.release() } catch (e: Exception) { Log.e(TAG, "Error releasing learningBias", e) }

@@ -268,6 +268,60 @@ internal fun MasterBar(
                 )
             }
         }
+        // FASE 5: botones de PROFILES y MAGISK — antes no existían en la
+        // MasterBar (sólo ADE / Modo Manual / Visualizer). ProfileSelector +
+        // MagiskStatusPanel viven ahora como pantallas reales detrás de estos.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                onClick = onOpenProfiles,
+                modifier = Modifier.weight(1f).height(46.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = AmberSignal.copy(alpha = 0.10f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AmberSignal.copy(alpha = 0.55f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("♫", color = AmberSignal, fontSize = 14.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "PROFILES",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = AmberSignal,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
+                    )
+                }
+            }
+            Surface(
+                onClick = onOpenMagisk,
+                modifier = Modifier.weight(1f).height(46.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = AuroraCyan.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AuroraCyan.copy(alpha = 0.50f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("⌬", color = AuroraCyan, fontSize = 14.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "MAGISK",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = AuroraCyan,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
+                    )
+                }
+            }
+        }
     }
 }
 

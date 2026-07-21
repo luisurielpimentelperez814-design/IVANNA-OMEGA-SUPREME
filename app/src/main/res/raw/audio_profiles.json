@@ -1,345 +1,66 @@
 {
+  "version": "1.0.0",
   "audioProfiles": [
     {
-      "id": "flat",
-      "name": "Flat",
-      "description": "Reference monitoring - Reference flat response for mixing/mastering",
-      "category": "reference",
-      "priority": 0,
-      "audioEngine": {
-        "gain": 1.0,
-        "exciterAmount": 0.0,
-        "eqGain": 0.0,
-        "widthAmount": 1.0,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.70,
-        "bassThreshold": 0.60,
-        "eqBoost2k4k": 0.0,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 1.0
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.0,
-        "lateralInhibition": 0.0,
-        "ohcCompression": 0.0,
-        "masterGainDb": 0.0,
-        "cochlearBandwidth": "standard"
-      },
-      "route": {
-        "bassBoostDb": 0.0,
-        "dialogBoostDb": 0.0,
-        "widenerMult": 1.0
-      },
-      "tags": ["reference", "neutral", "monitoring", "professional"],
-      "recommendedFor": "Mixing, mastering, professional monitoring, accuracy testing"
-    },
-    {
-      "id": "warm",
-      "name": "Warm",
-      "description": "Vintage analog warmth - Bass and mids boost for vinyl-like sound",
-      "category": "classic",
+      "id": "steve_miller",
+      "name": "Steve Miller",
+      "description": "American classic rock — punchy mids, soft top-end, tight bass",
+      "category": "classic_rock",
       "priority": 1,
       "audioEngine": {
-        "gain": 0.95,
-        "exciterAmount": 0.35,
+        "gain": 0.82,
+        "exciterAmount": 0.48,
         "eqGain": 2.5,
-        "widthAmount": 0.80,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.65,
-        "bassThreshold": 0.50,
-        "eqBoost2k4k": 2.0,
-        "exciterLowOnly": true,
-        "widenerMultiplier": 0.85
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.40,
-        "lateralInhibition": 0.35,
-        "ohcCompression": 0.45,
-        "masterGainDb": 1.5,
-        "cochlearBandwidth": "compressed"
-      },
-      "route": {
-        "bassBoostDb": 3.0,
-        "dialogBoostDb": 2.0,
-        "widenerMult": 0.85
-      },
-      "tags": ["warm", "vintage", "analog", "smooth", "vocal"],
-      "recommendedFor": "Vintage recordings, jazz, acoustic, vocals, podcasts"
-    },
-    {
-      "id": "bright",
-      "name": "Bright",
-      "description": "Modern crisp sound - Enhanced treble and presence for clarity",
-      "category": "modern",
-      "priority": 2,
-      "audioEngine": {
-        "gain": 1.0,
-        "exciterAmount": 0.60,
-        "eqGain": 4.5,
-        "widthAmount": 0.85,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.55,
-        "bassThreshold": 0.45,
-        "eqBoost2k4k": 4.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 0.90
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.70,
-        "lateralInhibition": 0.60,
-        "ohcCompression": 0.50,
-        "masterGainDb": 2.5,
-        "cochlearBandwidth": "expanded"
-      },
-      "route": {
-        "bassBoostDb": 1.5,
-        "dialogBoostDb": 4.5,
-        "widenerMult": 0.90
-      },
-      "tags": ["bright", "modern", "presence", "clear", "crisp"],
-      "recommendedFor": "Pop, electronic, modern production, clarity-focused, voice clarity"
-    },
-    {
-      "id": "punch",
-      "name": "Punch",
-      "description": "Hip-hop/Electronic emphasis - Compression + exciter for impact",
-      "category": "electronic",
-      "priority": 3,
-      "audioEngine": {
-        "gain": 0.85,
-        "exciterAmount": 0.75,
-        "eqGain": 3.0,
-        "widthAmount": 0.70,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.60,
-        "bassThreshold": 0.70,
-        "eqBoost2k4k": 2.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 0.75
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.80,
-        "lateralInhibition": 0.70,
-        "ohcCompression": 0.75,
-        "masterGainDb": 3.0,
-        "cochlearBandwidth": "compressed"
-      },
-      "route": {
-        "bassBoostDb": 5.0,
-        "dialogBoostDb": 3.5,
-        "widenerMult": 0.70
-      },
-      "tags": ["punch", "hip-hop", "electronic", "edm", "compressed"],
-      "recommendedFor": "Hip-hop, rap, electronic, EDM, dance, punchy mixes"
-    },
-    {
-      "id": "spatial",
-      "name": "Spatial",
-      "description": "Cinema 3D sound - Full spatial binaural with head-tracking",
-      "category": "immersive",
-      "priority": 4,
-      "audioEngine": {
-        "gain": 0.90,
-        "exciterAmount": 0.40,
-        "eqGain": 2.0,
-        "widthAmount": 1.30,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.65,
-        "bassThreshold": 0.55,
-        "eqBoost2k4k": 1.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 1.30
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.50,
-        "lateralInhibition": 0.55,
-        "ohcCompression": 0.55,
-        "masterGainDb": 1.0,
-        "cochlearBandwidth": "adaptive"
-      },
-      "route": {
-        "bassBoostDb": 2.0,
-        "dialogBoostDb": 2.5,
-        "widenerMult": 1.30
-      },
-      "tags": ["spatial", "immersive", "binaural", "3d", "cinema", "headphones"],
-      "recommendedFor": "Spatial audio, VR, cinema, ASMR, immersive podcasts, headphones"
-    },
-    {
-      "id": "heavy",
-      "name": "Heavy",
-      "description": "Metal/Distortion - Max exciter and bass for heavy content",
-      "category": "rock",
-      "priority": 5,
-      "audioEngine": {
-        "gain": 0.70,
-        "exciterAmount": 0.95,
-        "eqGain": 5.0,
-        "widthAmount": 0.60,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.75,
-        "bassThreshold": 0.65,
-        "eqBoost2k4k": 3.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 0.65
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.95,
-        "lateralInhibition": 0.80,
-        "ohcCompression": 0.85,
-        "masterGainDb": 4.0,
-        "cochlearBandwidth": "compressed"
-      },
-      "route": {
-        "bassBoostDb": 6.0,
-        "dialogBoostDb": 4.0,
-        "widenerMult": 0.60
-      },
-      "tags": ["heavy", "metal", "distorted", "power", "aggressive"],
-      "recommendedFor": "Metal, heavy rock, distorted guitars, power vocals, bass-heavy"
-    },
-    {
-      "id": "vocal",
-      "name": "Vocal",
-      "description": "Speech & Podcast - Clarity focus for dialogue and vocals",
-      "category": "speech",
-      "priority": 6,
-      "audioEngine": {
-        "gain": 0.98,
-        "exciterAmount": 0.30,
-        "eqGain": 3.0,
-        "widthAmount": 0.65,
+        "widthAmount": 1.05,
         "bypass": false
       },
       "antiDolby": {
         "speechThreshold": 0.50,
-        "bassThreshold": 0.70,
-        "eqBoost2k4k": 4.0,
+        "bassThreshold": 0.40,
+        "eqBoost2k4k": 2.5,
         "exciterLowOnly": false,
-        "widenerMultiplier": 0.65
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.45,
-        "lateralInhibition": 0.40,
-        "ohcCompression": 0.50,
-        "masterGainDb": 2.0,
-        "cochlearBandwidth": "standard"
-      },
-      "route": {
-        "bassBoostDb": 0.5,
-        "dialogBoostDb": 5.0,
-        "widenerMult": 0.65
-      },
-      "tags": ["vocal", "speech", "podcast", "dialogue", "clarity", "intelligibility"],
-      "recommendedFor": "Podcasts, audiobooks, speech, dialogue, interviews, clarity"
-    },
-    {
-      "id": "bass",
-      "name": "Bass",
-      "description": "Subwoofer Focus - Deep bass emphasis for EDM and dance",
-      "category": "electronic",
-      "priority": 7,
-      "audioEngine": {
-        "gain": 0.80,
-        "exciterAmount": 0.50,
-        "eqGain": -2.0,
-        "widthAmount": 0.85,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.70,
-        "bassThreshold": 0.30,
-        "eqBoost2k4k": 0.0,
-        "exciterLowOnly": true,
-        "widenerMultiplier": 0.90
+        "widenerMultiplier": 1.10
       },
       "neuromorphic": {
         "harmonicGain": 0.60,
-        "lateralInhibition": 0.50,
-        "ohcCompression": 0.70,
-        "masterGainDb": 5.0,
-        "cochlearBandwidth": "compressed"
-      },
-      "route": {
-        "bassBoostDb": 8.0,
-        "dialogBoostDb": 2.0,
-        "widenerMult": 0.85
-      },
-      "tags": ["bass", "edm", "dance", "deep", "subwoofer", "techno"],
-      "recommendedFor": "EDM, techno, dance, trap, deep house, bass-heavy electronic"
-    },
-    {
-      "id": "steve_miller_band",
-      "name": "Steve Miller Band",
-      "description": "Funky rock with clear vocals - Fly Like an Eagle, Jet Airliner",
-      "category": "classic_rock_70s",
-      "priority": 8,
-      "audioEngine": {
-        "gain": 0.95,
-        "exciterAmount": 0.40,
-        "eqGain": 2.5,
-        "widthAmount": 0.85,
-        "bypass": false
-      },
-      "antiDolby": {
-        "speechThreshold": 0.65,
-        "bassThreshold": 0.50,
-        "eqBoost2k4k": 2.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 0.85
-      },
-      "neuromorphic": {
-        "harmonicGain": 0.50,
-        "lateralInhibition": 0.55,
-        "ohcCompression": 0.55,
-        "masterGainDb": 1.5,
+        "lateralInhibition": 0.75,
+        "ohcCompression": 0.50,
+        "masterGainDb": -2.0,
         "cochlearBandwidth": "adaptive"
       },
       "route": {
-        "bassBoostDb": 2.5,
+        "bassBoostDb": 2.0,
         "dialogBoostDb": 3.0,
-        "widenerMult": 0.85
+        "widenerMult": 1.05
       },
-      "tags": ["vocal", "funk", "warm", "clarity", "groove"],
-      "recommendedFor": "Groove-oriented rock, funk-influenced vocals, moderate dynamics"
+      "tags": ["classic_rock", "vocal_forward", "punchy"],
+      "recommendedFor": "Listening sessions, guitar-driven tracks"
     },
     {
       "id": "rush",
       "name": "RUSH",
-      "description": "Progressive rock technical mastery - Tom Sawyer, Limelight, Spirit of Radio",
+      "description": "Progressive rock technical mastery — wide stereo, crisp transients",
       "category": "progressive_rock",
-      "priority": 9,
+      "priority": 2,
       "audioEngine": {
         "gain": 0.80,
-        "exciterAmount": 0.60,
-        "eqGain": 4.0,
+        "exciterAmount": 0.55,
+        "eqGain": 3.5,
         "widthAmount": 1.20,
         "bypass": false
       },
       "antiDolby": {
         "speechThreshold": 0.55,
         "bassThreshold": 0.45,
-        "eqBoost2k4k": 4.0,
+        "eqBoost2k4k": 3.5,
         "exciterLowOnly": false,
         "widenerMultiplier": 1.15
       },
       "neuromorphic": {
-        "harmonicGain": 0.80,
+        "harmonicGain": 0.75,
         "lateralInhibition": 0.85,
-        "ohcCompression": 0.65,
-        "masterGainDb": 2.0,
+        "ohcCompression": 0.60,
+        "masterGainDb": -1.0,
         "cochlearBandwidth": "expanded"
       },
       "route": {
@@ -347,99 +68,86 @@
         "dialogBoostDb": 4.0,
         "widenerMult": 1.20
       },
-      "tags": ["progressive", "technical", "high_dynamics", "spatial", "complex"],
-      "recommendedFor": "Complex arrangements, technical bass/drums, extreme dynamics, high-pitched vocals"
+      "tags": ["progressive", "technical", "high_dynamics"],
+      "recommendedFor": "Complex arrangements, technical bass/drums"
     },
     {
       "id": "budgie",
       "name": "Budgie",
-      "description": "Power-driven hard rock - Breadfan, Rocking Man",
+      "description": "Heavy power trio — thick low end, saturated mids, controlled highs",
       "category": "hard_rock",
-      "priority": 10,
+      "priority": 3,
       "audioEngine": {
-        "gain": 0.75,
-        "exciterAmount": 0.75,
-        "eqGain": 4.5,
-        "widthAmount": 0.65,
+        "gain": 0.85,
+        "exciterAmount": 0.62,
+        "eqGain": 4.0,
+        "widthAmount": 1.10,
         "bypass": false
       },
       "antiDolby": {
-        "speechThreshold": 0.70,
-        "bassThreshold": 0.60,
-        "eqBoost2k4k": 4.5,
-        "exciterLowOnly": false,
-        "widenerMultiplier": 0.68
+        "speechThreshold": 0.60,
+        "bassThreshold": 0.55,
+        "eqBoost2k4k": 2.0,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 1.05
       },
       "neuromorphic": {
-        "harmonicGain": 0.90,
-        "lateralInhibition": 0.75,
-        "ohcCompression": 0.80,
-        "masterGainDb": 3.0,
-        "cochlearBandwidth": "compressed"
+        "harmonicGain": 0.70,
+        "lateralInhibition": 0.70,
+        "ohcCompression": 0.65,
+        "masterGainDb": -0.5,
+        "cochlearBandwidth": "expanded"
       },
       "route": {
-        "bassBoostDb": 4.5,
-        "dialogBoostDb": 4.5,
-        "widenerMult": 0.65
+        "bassBoostDb": 5.0,
+        "dialogBoostDb": 3.5,
+        "widenerMult": 1.10
       },
-      "tags": ["hard_rock", "power", "dense", "heavy_bass", "compressed", "aggressive"],
-      "recommendedFor": "Heavy distorted guitars, powerful screaming vocals, dense arrangement, heavy bass"
+      "tags": ["hard_rock", "heavy", "thick_lows"],
+      "recommendedFor": "Power trio, drop-D tuning, heavy riffs"
     },
     {
-      "id": "grand_funk_railroad",
+      "id": "grand_funk",
       "name": "Grand Funk Railroad",
-      "description": "Groove-heavy rock - We're An American Band, Footstompin' Music",
-      "category": "classic_rock_70s",
-      "priority": 11,
+      "description": "All-American rock — balanced tone, strong low-mid punch, smooth top",
+      "category": "classic_rock",
+      "priority": 4,
       "audioEngine": {
-        "gain": 0.80,
-        "exciterAmount": 0.65,
+        "gain": 0.83,
+        "exciterAmount": 0.50,
         "eqGain": 3.0,
-        "widthAmount": 0.75,
+        "widthAmount": 1.10,
         "bypass": false
       },
       "antiDolby": {
-        "speechThreshold": 0.65,
-        "bassThreshold": 0.55,
-        "eqBoost2k4k": 3.0,
+        "speechThreshold": 0.55,
+        "bassThreshold": 0.50,
+        "eqBoost2k4k": 2.5,
         "exciterLowOnly": false,
-        "widenerMultiplier": 0.78
+        "widenerMultiplier": 1.12
       },
       "neuromorphic": {
         "harmonicGain": 0.65,
-        "lateralInhibition": 0.65,
-        "ohcCompression": 0.70,
-        "masterGainDb": 2.0,
+        "lateralInhibition": 0.78,
+        "ohcCompression": 0.55,
+        "masterGainDb": -1.5,
         "cochlearBandwidth": "adaptive"
       },
       "route": {
-        "bassBoostDb": 3.8,
-        "dialogBoostDb": 3.2,
-        "widenerMult": 0.75
+        "bassBoostDb": 3.0,
+        "dialogBoostDb": 3.5,
+        "widenerMult": 1.15
       },
-      "tags": ["groove", "heavy_bass", "powerful_vocals", "classic_rock", "danceable"],
-      "recommendedFor": "Groove-oriented arrangements, powerful bass, powerful vocals, moderate complexity"
+      "tags": ["classic_rock", "balanced", "low_mid_punch"],
+      "recommendedFor": "Driving music, all-purpose rock"
     }
   ],
   "metadata": {
-    "version": "3.1.0",
-    "createdDate": "2026-07-08",
-    "lastModified": "2026-07-08",
-    "totalProfiles": 12,
-    "trainingSequence": [
-      "flat",
-      "warm",
-      "vocal",
-      "bright",
-      "punch",
-      "bass",
-      "spatial",
-      "heavy",
-      "steve_miller_band",
-      "grand_funk_railroad",
-      "rush",
-      "budgie"
-    ],
-    "trainingNotes": "IVANNA v3.1 training sequence optimized for maximum coverage. Start with Flat (baseline), Warm (analog familiarity), Vocal (speech clarity), then progressively test modern (Bright), electronic (Punch+Bass), immersive (Spatial), power/heavy (Heavy), and finally classic rock bands (Steve Miller → Grand Funk → RUSH → Budgie) for complex harmonic learning. This order ensures: (1) reference baseline, (2) vintage/modern continuum, (3) all frequency ranges, (4) dynamic challenges, (5) genre-specific mastery."
+    "version": "1.0.0",
+    "createdDate": "2026-07-21",
+    "lastModified": "2026-07-21",
+    "totalProfiles": 4,
+    "trainingSequence": ["steve_miller", "grand_funk", "rush", "budgie"],
+    "trainingNotes": "Start with Steve Miller (gentle), progress to Grand Funk (balanced), then RUSH (technical/wide), end with Budgie (heavy/saturated). Each step increases the harmonic exertion and width — the ear adapts across sessions. Recommended cadence: 1 profile per ~20 min of listening."
   }
 }

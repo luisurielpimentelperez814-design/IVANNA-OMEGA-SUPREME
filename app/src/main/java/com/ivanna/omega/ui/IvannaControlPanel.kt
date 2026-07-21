@@ -139,7 +139,12 @@ fun IvannaControlPanel(
     adaptiveIntensity: Float = 50f,
     onAdaptiveIntensityChange: (Float) -> Unit = {},
     voiceProtectionEnabled: Boolean = true,
-    onVoiceProtectionChange: (Boolean) -> Unit = {}
+    onVoiceProtectionChange: (Boolean) -> Unit = {},
+    // FASE 5: callbacks para abrir las pantallas nuevas (ProfileSelectorScreen
+    // y MagiskStatusPanel). Default a {} = pantalla completa sin abrir;
+    // MainActivity inyecta los handlers reales que cambian su flag mutableStateOf.
+    onOpenProfiles: () -> Unit = {},
+    onOpenMagisk:    () -> Unit = {}
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -284,7 +289,9 @@ fun IvannaControlPanel(
             onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
             onOpenVisualizer = onOpenVisualizer,
             onOpenAdaptive = onOpenAdaptive,
-            onOpenAdaptiveEngineManual = onOpenAdaptiveEngineManual
+            onOpenAdaptiveEngineManual = onOpenAdaptiveEngineManual,
+            onOpenProfiles = onOpenProfiles,
+            onOpenMagisk = onOpenMagisk
         )
 
         GlassCard(
