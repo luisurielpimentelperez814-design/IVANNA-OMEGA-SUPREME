@@ -96,13 +96,14 @@ object ProfilesLoader {
     }
 
     /** Carga la lista de perfiles desde res/raw/audio_profiles.json. */
-    fun load(context: Context): List<IvannaAudioProfile> = try {
-        val resId = context.resources.getIdentifier(RES_NAME, "raw", context.packageName)
-        if (resId == 0) {
-            Log.w(TAG, "Recurso raw/$RES_NAME no encontrado")
-            emptyList()
-        }
-        context.resources.openRawResource(resId).use { stream ->
+    fun load(context: Context): List<IvannaAudioProfile> {
+        return try {
+            val resId = context.resources.getIdentifier(RES_NAME, "raw", context.packageName)
+            if (resId == 0) {
+                Log.w(TAG, "Recurso raw/$RES_NAME no encontrado")
+                return emptyList<IvannaAudioProfile>()
+            }
+            context.resources.openRawResource(resId).use { stream ->
             val container = json.decodeFromString(
                 IvannaProfilesContainer.serializer(),
                 InputStreamReader(stream).readText()
@@ -112,7 +113,7 @@ object ProfilesLoader {
         }
     } catch (e: Exception) {
         Log.e(TAG, "Error cargando profiles: ${e.message}", e)
-        emptyList()
+        emptyList<IvannaAudioProfile>()
     }
 
     fun loadMetadata(context: Context): IvannaProfileMetadata? = try {
