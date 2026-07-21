@@ -228,7 +228,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         profileManager = UserProfileManager(applicationContext)
-        audioProfileManager = com.ivanna.omega.audio.ProfileManager(applicationContext)
         
 
         // DEFENSIVE: Capturar cualquier crash no capturado
@@ -540,7 +539,7 @@ class MainActivity : ComponentActivity() {
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
-                                    audioProfileManager.applyProfile(profile.id)
+                                    audioProfileManager.applyProfile(profile)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
