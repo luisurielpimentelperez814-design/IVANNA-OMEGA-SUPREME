@@ -518,14 +518,46 @@ class MainActivity : ComponentActivity() {
                         var adaptiveTelemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
                         LaunchedEffect(Unit) {
                             while (true) {
+                                // AUDIT FIX (crítico, "backend real" falso):
+                                // antes running = rawArray != null — un array
+                                // no-nulo pero con menos de 10 elementos (dato
+                                // inválido/incompleto) igual reportaba
+                                // running=true. fromArray() cae a sus valores
+                                // por defecto cuando t.size < 10 (targetGain=1,
+                                // spatialWidth=1, safetyMargin=1 → 100%;
+                                // compressorAmount/exciterReduction/
+                                // voiceProtectionAmount=0 → 0%) — exactamente
+                                // los números "sospechosamente redondos" que
+                                // se veían en pantalla con el badge en ONLINE
+                                // y "Blocks aplicados: 0", sin que la UI
+                                // distinguiera "motor corriendo de verdad" de
+                                // "no hay dato real todavía". Ahora se exige
+                                // el mismo criterio que ya usaba de forma
+                                // correcta startAdaptiveTelemetryLoop() más
+                                // abajo: nativeIsAdaptiveEngineRunning() como
+                                // fuente de running, y solo se escribe la
+                                // snapshot si el array es válido (size >= 10).
                                 val rawArray = try {
                                     IvannaNativeLib.nativeGetAdaptiveTelemetry()
                                 } catch (_: Throwable) { null }
+                                val engineRunning = try {
+                                    IvannaNativeLib.nativeIsAdaptiveEngineRunning()
+                                } catch (_: Throwable) { false }
                                 adaptiveTelemetryRaw = rawArray
-                                adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
-                                    rawArray,
-                                    running = rawArray != null
-                                )
+                                if (rawArray != null && rawArray.size >= 10) {
+                                    adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
+                                        rawArray,
+                                        running = engineRunning
+                                    )
+                                } else {
+                                    // Dato inválido/insuficiente: reflejar
+                                    // "no corriendo" en vez de fabricar una
+                                    // snapshot con valores por defecto.
+                                    adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
+                                        null,
+                                        running = false
+                                    )
+                                }
                                 adaptiveBandEnergies = try {
                                     IvannaNativeLib.nativeGetBandEnergies()
                                 } catch (_: Throwable) { null }
