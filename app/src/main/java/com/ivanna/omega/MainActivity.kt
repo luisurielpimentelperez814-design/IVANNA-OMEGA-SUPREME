@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var audioEngine: AudioEngine
     private lateinit var dspState: DSPState
     private lateinit var parameterStore: ParameterStore
+    private lateinit var audioProfileManager: ProfileManager
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
     private lateinit var profileManager: UserProfileManager
