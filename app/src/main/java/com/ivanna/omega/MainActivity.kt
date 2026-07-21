@@ -1,5 +1,11 @@
 package com.ivanna.omega
 
+import com.ivanna.omega.audio.IvannaAudioProfile
+import com.ivanna.omega.audio.IvannaAudioEngineParams
+import com.ivanna.omega.audio.IvannaAntiDolbyParams
+import com.ivanna.omega.audio.IvannaNeuromorphicParams
+import com.ivanna.omega.audio.IvannaRouteParams
+
 import android.Manifest
 import android.app.Activity
 import android.content.Context
