@@ -247,6 +247,11 @@ class MainActivity : ComponentActivity() {
 
         parameterStore = ParameterStore(this)
         audioEngine = AudioEngine()
+
+        audioProfileManager = ProfileManager(
+            applicationContext,
+            audioEngine
+        )
         // FIX (recableo a DSP real — ver hallazgo de auditoría): audioEngine
         // (AudioEngine/audio_orchestrator.cpp) es un motor huérfano — su
         // nativeProcessAudio() nunca se invoca con audio real en ningún lado
