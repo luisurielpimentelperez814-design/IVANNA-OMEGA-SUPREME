@@ -182,6 +182,8 @@ private fun Sparkline(
 // ═══════════════════════════════════════════════════════════════════════════
 @Composable
 internal fun MasterBar(
+    onOpenProfiles: () -> Unit = {},
+    onOpenMagisk: () -> Unit = {},
     antiDolbyEnabled: Boolean,
     onAntiDolbyChange: (Boolean) -> Unit,
     autoMode: Boolean,

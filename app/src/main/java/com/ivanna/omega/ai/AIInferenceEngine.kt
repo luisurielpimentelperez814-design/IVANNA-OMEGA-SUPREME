@@ -27,3 +27,5 @@ class AIInferenceEngine(
         _isActive.value = false
     }
 }
+
+fun AIInferenceEngine.engineModeTag(): String = "adaptive"

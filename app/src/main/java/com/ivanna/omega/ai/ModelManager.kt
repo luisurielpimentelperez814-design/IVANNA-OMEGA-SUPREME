@@ -41,3 +41,6 @@ class ModelManager(private val context: Context) {
         }
     }
 }
+
+fun ModelManager.hasUsableFineTuningModel(): Boolean = false
+fun ModelManager.describeCurrentModel(): String = "default"
