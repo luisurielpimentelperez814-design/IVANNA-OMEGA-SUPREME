@@ -119,6 +119,35 @@ static std::atomic<float> g_lastBandMid{0.0f};
 static std::atomic<float> g_lastBandHigh{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 
+// Snapshot persistente AdaptiveState (independiente del audio callback)
+static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};
+static std::atomic<float> g_adaptiveSpatialSnapshot{1.0f};
+static std::atomic<float> g_adaptiveSafetySnapshot{1.0f};
+static std::atomic<bool> g_adaptiveSnapshotStarted{false};
+
+static void adaptiveSnapshotLoop() {
+    uint64_t seq = 0;
+
+    while (true) {
+        ivanna::experimental::AdaptiveState st{};
+
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, seq)) {
+            g_adaptiveTargetGainSnapshot.store(
+                st.target_gain, std::memory_order_release);
+
+            g_adaptiveSpatialSnapshot.store(
+                st.spatial_width, std::memory_order_release);
+
+            g_adaptiveSafetySnapshot.store(
+                st.safety_margin, std::memory_order_release);
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(20));
+    }
+}
+
+
 // ═══ Adaptive Feedback Loop — puente ruta B (Spotify/YouTube/apps de
 // terceros vía omega_effect.cpp) ═════════════════════════════════════════
 //
@@ -316,6 +345,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // idempotencia si el sample rate cambia y nativeInit se re-llama.
     if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
         g_adaptiveEngine.start();
+
+      if (!g_adaptiveSnapshotStarted.exchange(true)) {
+          std::thread(adaptiveSnapshotLoop).detach();
+          LOGI("AdaptiveState snapshot consumer started");
+      }
         LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
     }
 
