@@ -55,6 +55,7 @@
         <!-- Playback capture service (MediaProjection) -->
         <service
             android:name=".audio.PlaybackCaptureService"
+            android:foregroundServiceType="mediaProjection"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback|mediaProjection"/>
 
