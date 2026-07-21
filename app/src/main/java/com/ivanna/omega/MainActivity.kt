@@ -88,7 +88,6 @@ class MainActivity : ComponentActivity() {
     private var noRootProcessor: NoRootAudioProcessor? = null
     private val spatialEngineV2 = SpatialAudioEngineV2()
     private lateinit var profileManager: UserProfileManager
-    private lateinit var audioProfileManager: ProfileManager
     private val concertMode = ConcertMode()
     private val metadataListener = AppMetadataListener(this)
 
@@ -229,6 +228,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         profileManager = UserProfileManager(applicationContext)
+        audioProfileManager = com.ivanna.omega.audio.ProfileManager(applicationContext)
         
 
         // DEFENSIVE: Capturar cualquier crash no capturado
