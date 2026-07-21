@@ -129,6 +129,8 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
+    onOpenProfiles: () -> Unit = {},
+    onOpenMagisk: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
     // ── Adaptive Control Center ──────────────────────────────────────────
