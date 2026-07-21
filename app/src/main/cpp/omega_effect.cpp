@@ -36,6 +36,22 @@ static constexpr float kAgcTargetRms = 0.126f;
 static constexpr float kAgcGainMin = 0.25f;
 static constexpr float kAgcGainMax = 4.0f;
 
+// AUDIT NOTE (crítico, riesgo de hardware): kEffectTypeNull DEBE seguir
+// siendo el EFFECT_UUID_NULL canónico de AOSP (ec7178a0-847d-11e0-...).
+// Es el sentinel estándar para "efecto de tipo no predefinido" — correcto
+// para un insert effect propietario como OMEGA.
+//
+// NO reemplazar por el UUID de "dap" (9d4921da-8225-4f29-aefa-39537a04bcaa)
+// que aparece en vendor/etc/audio_effects.xml y
+// magisk_module/vendor_base/sku_blair_audio_effects.xml — ese es el UUID
+// real de un efecto DAP (Dynamic Audio Processing) del stack del vendor,
+// posiblemente ligado a protección de altavoz / límites térmicos del SoC.
+// Copiarlo aquí haría que OMEGA se anuncie ante AudioPolicyManager con el
+// mismo `type` que un efecto real del sistema — riesgo de colisión en la
+// resolución de la cadena de efectos (enmascarar, ser enmascarado, o ser
+// rechazado por duplicado). Si en algún momento se quiere interceptar el
+// slot de "dap" a propósito, eso requiere entender primero exactamente qué
+// hace ese efecto en este firmware — no es un cambio de una línea.
 static const effect_uuid_t kEffectTypeNull = {
     0xec7178a0,0x847d,0x11e0,0xa3cb,{0x00,0x02,0xa5,0xd5,0xc5,0x1b}};
 static const effect_uuid_t kEffectUuid = {
