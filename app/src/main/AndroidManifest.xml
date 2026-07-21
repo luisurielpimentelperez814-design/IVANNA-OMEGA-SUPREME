@@ -55,9 +55,8 @@
         <!-- Playback capture service (MediaProjection) -->
         <service
             android:name=".audio.PlaybackCaptureService"
-            android:foregroundServiceType="mediaProjection"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback|mediaProjection"/>
+            android:foregroundServiceType="mediaProjection"/>
 
         <!-- FIX: Receptor de sesiones de audio globales (Global Effect Manager) -->
         <!-- Permite capturar el broadcast de Android cuando cualquier app abre audio -->
