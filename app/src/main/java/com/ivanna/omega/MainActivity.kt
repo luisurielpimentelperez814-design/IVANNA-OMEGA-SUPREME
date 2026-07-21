@@ -528,19 +528,11 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (showProfiles) {
                           ProfileSelectorScreen(
-                              profiles = emptyList(),
+                              profiles = profileManager.getAllProfiles(),
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
-                                  (application as? IVANNAApplication)
-                                        ?.globalEffectManager
-                                        ?.applyProfile(
-                                            when (profile.id) {
-                                                "spatial" -> IvannaEffectProfile.SPATIAL
-                                                "warm" -> IvannaEffectProfile.WARM
-                                                else -> IvannaEffectProfile.FLAT
-                                            }
-                                        )
+                                    profileManager.applyProfile(profile.id)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
