@@ -39,7 +39,6 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun MagiskStatusPanel(
-    omegaBridge: OmegaEngineBridge,
     modifier: Modifier = Modifier
 ) {
     var moduleActive by remember { mutableStateOf(MagiskBridge.isModuleActive) }
@@ -53,7 +52,7 @@ fun MagiskStatusPanel(
             moduleActive    = MagiskBridge.isModuleActive
             moduleVersion   = MagiskBridge.moduleVersion
             daemonRunning   = MagiskBridge.isDaemonRunning
-            daemonConnected = omegaBridge.isConnected
+            daemonConnected = com.ivanna.omega.core.OmegaEngine.isConnected
             delay(2000L)
         }
     }
