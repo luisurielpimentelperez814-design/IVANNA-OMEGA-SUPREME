@@ -528,11 +528,13 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (showProfiles) {
                           ProfileSelectorScreen(
-                              profiles = profileManager.getProfiles(),
+                              profiles = emptyList(),
                               metadata = null,
                               currentId = parameterStore.getCurrentPreset(),
                               onApply = { profile ->
-                                  profileManager.applyProfile(profile)
+                                  (application as? IVANNAApplication)
+                                        ?.globalEffectManager
+                                        ?.applyProfile(profile)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
@@ -540,7 +542,6 @@ class MainActivity : ComponentActivity() {
                           )
                       } else if (showMagisk) {
                           MagiskStatusPanel(
-                              omegaBridge = OmegaEngineBridge(),
                               modifier = Modifier.fillMaxSize()
                           )
                       } else if (showVisualizer) {
