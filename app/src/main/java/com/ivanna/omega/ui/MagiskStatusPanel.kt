@@ -53,7 +53,7 @@ fun MagiskStatusPanel(
             moduleActive    = MagiskBridge.isModuleActive
             moduleVersion   = MagiskBridge.moduleVersion
             daemonRunning   = MagiskBridge.isDaemonRunning
-            daemonConnected = com.ivanna.omega.core.OmegaEngine.isConnected
+            daemonConnected = omegaBridge.isConnected
             delay(2000L)
         }
     }
