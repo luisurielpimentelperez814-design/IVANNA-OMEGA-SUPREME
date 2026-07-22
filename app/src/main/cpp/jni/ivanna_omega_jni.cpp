@@ -1378,7 +1378,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
-    return g_adaptiveEngine.running() ? JNI_TRUE : JNI_FALSE;
+
+    const bool active =
+        g_initialized.load(std::memory_order_acquire) &&
+        (
+            g_adaptiveEngineStarted.load(std::memory_order_acquire) ||
+            g_lastAdaptiveApplied.load(std::memory_order_relaxed) > 0
+        );
+
+    return active ? JNI_TRUE : JNI_FALSE;
 }
 
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
