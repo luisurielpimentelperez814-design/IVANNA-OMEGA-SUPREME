@@ -1138,6 +1138,209 @@ extern "C" float learning_bias_get(const char* param_key) {
     return (float) v;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX (Motor B / orphan JNI 2026-07-22): las 4 external fun de Kotlin
+//   IvannaNativeLib.nativeSetAdaptiveEngineEnabled
+//   IvannaNativeLib.nativeCreateAdaptiveEngine
+//   IvannaNativeLib.nativeGetAdaptiveParameters
+//   IvannaNativeLib.nativeGetAudioCharacteristics
+// llegaron al main SIN implementación JNI real. Historial reconstruido:
+//   1. c089b34 las implementó aquí (delegando al Motor A real).
+//   2. fc3346a las renombró a *_unused en ivanna_adaptive_jni.cpp para
+//      resolver la colisión de símbolos.
+//   3. Una reescritura paralela posterior (293b885 menciona regresión)
+//      eliminó las 3 de aquí; los *_unused en ivanna_adaptive_jni.cpp
+//      quedaron como funciones C++ regulares sin JNIEXPORT.
+// Resultado: 4 orphans (los 3 anteriores + nativeSetAdaptiveEngineEnabled
+// que nunca tuvo implementación) — MainActivity.kt y AdaptiveEngineScreen.kt
+// tienen callers reales que fallan silenciosamente vía try/catch
+// UnsatisfiedLinkError → el motor adaptativo B no hace nada aunque el
+// toggle esté encendido.
+//
+// Restauración (regla de oro: no borrar, revivir): se re-cablean los 4
+// exports JNI a la fuente de verdad del Motor A (los mismos atomics
+// g_lastAdaptive* que ya lee nativeGetAdaptiveTelemetry). Cero duplicación
+// de estado. ivanna_adaptive_jni.cpp queda intacto — sus stubs *_unused
+// siguen ahí por si alguien decide revivir AdaptiveEngineCore como
+// sensor independiente en el futuro (ver INTEGRATION_GUIDE.md).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Flag para el toggle Manual/Automático (pausa/reanuda el loop del ADE).
+// El motor A ya expone start()/stop() en g_adaptiveEngine — solo cableamos
+// el switch para que llame al método correcto según el estado.
+static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool want = (enabled == JNI_TRUE);
+    const bool prev = g_adaptiveEngineUiEnabled.exchange(want, std::memory_order_acq_rel);
+    if (prev == want) return;  // idempotente — evita start/stop dobles
+    if (want) {
+        // Reanuda el hilo de control del Motor A. Si ya está corriendo (por
+        // nativeInit), start() debe ser no-op — g_adaptiveEngineStarted lo
+        // garantiza.
+        if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
+            g_adaptiveEngine.start();
+        }
+    } else {
+        // Pausa el loop del ADE para que el modo manual pueda escribir
+        // compresor/exciter/ancho sin colisionar. Se resetea el flag
+        // "started" para que un enable(true) posterior lo re-arranque.
+        if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
+            g_adaptiveEngine.stop();
+        }
+    }
+}
+
+// Crea/asegura la instancia del Adaptive Engine. En la arquitectura actual
+// g_adaptiveEngine es un objeto estático global — no hay handle real que
+// devolver, pero la firma Kotlin exige un Long. Se devuelve la dirección
+// del singleton (opaco al lado Kotlin, solo se usa como "non-zero = OK").
+// Idempotente: llamadas repetidas devuelven el mismo puntero sin re-crear.
+JNIEXPORT jlong JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
+    JNIEnv*, jobject) {
+    // Asegura que el motor esté corriendo (mismo path que nativeInit toma).
+    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
+        g_adaptiveEngine.start();
+    }
+    g_adaptiveEngineUiEnabled.store(true, std::memory_order_release);
+    return reinterpret_cast<jlong>(&g_adaptiveEngine);
+}
+
+// Devuelve los 12 parámetros adaptativos suavizados. En el Motor A los
+// atomics g_lastAdaptive* + los snapshots de AdaptiveState son la fuente
+// de verdad. El AdaptiveEngineCore original devolvía 12 campos (compressor
+// threshold/ratio/attack/release + exciter + width + EQ 3 bandas + gain +
+// spatial + safety); mapeamos los que el Motor A sí calcula y dejamos en
+// valores neutros los que no aplican (EQ per-band no existe como salida
+// adaptativa en el Motor A, se controla desde YAMNet/route en su lugar).
+// Firma Kotlin (IvannaNativeLib.kt) — ORDEN EXACTO:
+//   [0]  compressor_threshold (dB)
+//   [1]  compressor_ratio
+//   [2]  exciter_amount (0..1)
+//   [3]  stereo_width (0..2)
+//   [4]  eq_bass (dB)
+//   [5]  eq_mid (dB)
+//   [6]  eq_treble (dB)
+//   [7]  overall_gain (master, lineal)
+//   [8]  compressor_attack (ms)
+//   [9]  compressor_release (ms)
+//   [10] spatial_intensity (0..1)
+//   [11] safety_margin (0..1)
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(12);
+    if (!arr) return nullptr;
+
+    // Motor A: compAmount está normalizado 0..1. Se re-mapea a threshold/
+    // ratio de referencia para que la UI del Motor B siga leyendo unidades
+    // coherentes (mismo mapeo que usa el DSP interno):
+    //   threshold_db = -6 - compAmount * 18   → [-6..-24] dB
+    //   ratio        = 1 + compAmount * 7     → [1..8]:1
+    const float compAmount    = g_lastAdaptiveCompAmount.load(std::memory_order_relaxed);
+    const float excReduction  = g_lastAdaptiveExcReduction.load(std::memory_order_relaxed);
+    const float targetGain    = g_lastAdaptiveTargetGain.load(std::memory_order_relaxed);
+    const float spatialWidth  = g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed);
+    const float safetyMargin  = g_lastAdaptiveSafetyMargin.load(std::memory_order_relaxed);
+
+    float v[12];
+    v[0]  = -6.0f - compAmount * 18.0f;               // compressor_threshold (dB)
+    v[1]  = 1.0f + compAmount * 7.0f;                 // compressor_ratio
+    // exciter_amount: 1 - excReduction (excReduction=0 → wet completo,
+    // excReduction=1 → exciter apagado)
+    v[2]  = std::clamp(1.0f - excReduction, 0.f, 1.f);
+    v[3]  = std::clamp(spatialWidth, 0.f, 2.f);       // stereo_width
+    v[4]  = 0.0f;                                     // eq_bass — no controlado por Motor A
+    v[5]  = 0.0f;                                     // eq_mid — idem
+    v[6]  = 0.0f;                                     // eq_treble — idem
+    v[7]  = std::clamp(targetGain, 0.f, 4.f);         // overall_gain (lineal)
+    v[8]  = 10.0f;                                    // compressor_attack (ms) — default DSP
+    v[9]  = 100.0f;                                   // compressor_release (ms) — default DSP
+    v[10] = std::clamp(spatialWidth * 0.5f, 0.f, 1.f); // spatial_intensity
+    v[11] = std::clamp(safetyMargin, 0.f, 1.f);       // safety_margin
+    env->SetFloatArrayRegion(arr, 0, 12, v);
+    return arr;
+}
+
+// Devuelve las 8 características analizadas del audio. En el Motor A las
+// métricas primarias las publica el audio thread cada bloque a los atomics
+// g_lastRawRms/Peak/GrDb; percussiveness/tonality/reverb no las calcula el
+// Motor A directamente pero se derivan de la razón peak/rms + banda alta
+// del BiquadEnvelopeBank (fuente ya viva en el DSP).
+// Firma Kotlin — ORDEN EXACTO:
+//   [0] rms
+//   [1] peak
+//   [2] percussiveness (0..1)
+//   [3] tonality (0..1)
+//   [4] reverb_amount (0..1)
+//   [5] dynamic_range (0..1)
+//   [6] spectral_centroid (Hz)
+//   [7] spectral_spread (Hz)
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(8);
+    if (!arr) return nullptr;
+
+    const float rms    = g_lastRawRms.load(std::memory_order_relaxed);
+    const float peak   = g_lastRawPeak.load(std::memory_order_relaxed);
+    const float bandLo = g_lastBandLow.load(std::memory_order_relaxed);
+    const float bandMi = g_lastBandMid.load(std::memory_order_relaxed);
+    const float bandHi = g_lastBandHigh.load(std::memory_order_relaxed);
+
+    // Percussiveness: crest factor normalizado. Ratio peak/rms alto ⇒ ataques
+    // fuertes (batería, transientes); ratio bajo ⇒ señal sostenida (pad, voz).
+    // Se mapea [1..8] crest → [0..1] percussiveness con clamp.
+    const float crest = (rms > 1e-6f) ? (peak / rms) : 1.0f;
+    const float percussiveness = std::clamp((crest - 1.0f) / 7.0f, 0.f, 1.f);
+
+    // Tonality: energía media-alta / energía total. Música tonal tiene
+    // distribución equilibrada; ruido colapsa a plano espectral.
+    const float bandSum = bandLo + bandMi + bandHi;
+    const float tonality = (bandSum > 1e-6f)
+        ? std::clamp((bandMi + bandHi * 0.5f) / bandSum, 0.f, 1.f)
+        : 0.0f;
+
+    // Reverb amount: aproximado por la razón GR (compresión) vs. dinámica
+    // real. Motor A no tiene detector de reverb dedicado — se deja proxy.
+    const float grDb = g_lastRawGrDb.load(std::memory_order_relaxed);
+    const float reverbApprox = std::clamp(std::abs(grDb) / 12.0f, 0.f, 1.f);
+
+    // Dynamic range: inverso normalizado de la compresión aplicada.
+    // Motor A no lo mide de forma independiente, se aproxima igual.
+    const float dynamicRange = 1.0f - std::clamp(std::abs(grDb) / 24.0f, 0.f, 1.f);
+
+    // Spectral centroid/spread: aproximado con las 3 bandas Gammatone que
+    // el Motor A sí publica (low ~120 Hz, mid ~1500 Hz, high ~8000 Hz).
+    // Centroid = Σ(f_i * E_i) / Σ(E_i)
+    const float f_lo = 120.0f, f_mi = 1500.0f, f_hi = 8000.0f;
+    const float centroid = (bandSum > 1e-6f)
+        ? (f_lo * bandLo + f_mi * bandMi + f_hi * bandHi) / bandSum
+        : 0.0f;
+    // Spread ~ desviación de las bandas respecto al centroid
+    float spread = 0.0f;
+    if (bandSum > 1e-6f) {
+        const float dLo = f_lo - centroid, dMi = f_mi - centroid, dHi = f_hi - centroid;
+        const float var = (dLo * dLo * bandLo + dMi * dMi * bandMi + dHi * dHi * bandHi) / bandSum;
+        spread = std::sqrt(std::max(0.f, var));
+    }
+
+    float v[8];
+    v[0] = rms;
+    v[1] = peak;
+    v[2] = percussiveness;
+    v[3] = tonality;
+    v[4] = reverbApprox;
+    v[5] = dynamicRange;
+    v[6] = centroid;
+    v[7] = spread;
+    env->SetFloatArrayRegion(arr, 0, 8, v);
+    return arr;
+}
+
 // ─── FASE 4B: telemetría del ciclo adaptativo real ──────────────────────
 // Devuelve un snapshot POD de 10 floats con: [rms, peak, gr_db, target_gain,
 // comp_amount, exc_reduction, spatial_width, safety_margin, voice_protect,
