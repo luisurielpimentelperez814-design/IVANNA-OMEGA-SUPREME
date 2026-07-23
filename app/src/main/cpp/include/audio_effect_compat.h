@@ -153,7 +153,8 @@ enum effect_command_e {
  * de un símbolo — es un MACRO que se expande al token AELI:
  *
  *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
- *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n// _AS_STR  "AELI"
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
  *
  * Este header de compatibilidad (reemplazo de <hardware/audio_effect.h>,
  * eliminado del NDK r25+) nunca definió ese macro. Consecuencia real: en
@@ -176,7 +177,8 @@ enum effect_command_e {
  * real exportado pasa a llamarse "AELI".
  */
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
-#define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n// _AS_STR  "AELI"
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
 
 typedef struct audio_effect_library_s {
     uint32_t    tag;
