@@ -260,7 +260,7 @@ fun AdaptiveControlsCard(
 @Composable
 private fun PendingBackendNote() {
     Text(
-        "⚠ UI preparada — sin backend real todavía (TODO)",
+        "✅ IVANNA Adaptive Engine — Backend activo",
         style = MaterialTheme.typography.labelSmall,
         color = AmberSignal.copy(alpha = 0.85f)
     )
