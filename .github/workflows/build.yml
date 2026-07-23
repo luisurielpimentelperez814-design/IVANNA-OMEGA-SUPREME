@@ -405,6 +405,8 @@ jobs:
 
           echo "Copiando módulo Magisk desde repo"
 
+          ZIP_ROOT="magisk_build_temp"
+          mkdir -p "$ZIP_ROOT"
           cp -av magisk_module/* "$ZIP_ROOT/"
 
           chmod 755 "$ZIP_ROOT"/*.sh
