@@ -153,7 +153,7 @@ enum effect_command_e {
  * de un símbolo — es un MACRO que se expande al token AELI:
  *
  *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
- *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
  *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
  *
