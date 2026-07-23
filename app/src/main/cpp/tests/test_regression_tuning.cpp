@@ -66,7 +66,7 @@ TEST(SafetyLimiterRegression, GainReductionInDecibels) {
 // Parche 7: Compressor — makeup no debe bajar el volumen al subir runtimeAmount
 // ────────────────────────────────────────────────────────────────────────────
 TEST(CompressorRegression, MakeupCompensatesRuntimeAmount) {
-    DSPParams params;
+    ivanna::DSPParams params;
     params.sampleRate = 48000.0f;
     params.alpha = 0.5f;  // threshold ≈ -12 dBFS
     params.beta  = 0.3f;  // ratio ≈ 7:1
