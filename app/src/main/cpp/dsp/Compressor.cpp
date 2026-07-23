@@ -64,7 +64,9 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
     // GR_adicional ≈ threshold_shift * (1 - 1/effRatio) = 12*rt*(1-1/effRatio)
     // makeup_runtime = pow(10, GR_adicional/2 / 20) — mismo criterio que makeupGain_.
     const float grAdditional = runtimeAmount_ * 12.0f * (1.0f - 1.0f / effRatio);
-    const float makeupRuntime = std::pow(10.0f, grAdditional * 0.5f / 20.0f);
+    // Compensación conservadora: runtimeAmount aumenta compresión,
+    // pero no debe crear ganancia neta excesiva.
+    const float makeupRuntime = std::pow(10.0f, grAdditional * 0.25f / 20.0f);
     const float makeup = makeupGain_ * makeupRuntime;
     float env = env_;
 
