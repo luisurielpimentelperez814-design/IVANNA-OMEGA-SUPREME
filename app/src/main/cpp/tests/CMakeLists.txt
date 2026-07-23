@@ -23,16 +23,13 @@ include(GoogleTest)
 
 add_library(ivanna_dsp_under_test STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/Compressor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/SafetyLimiter.cpp
-    ...
-)
-  ../dsp/ParametricEQ.cpp
-  ../dsp/Compressor.cpp
-  ../dsp/HarmonicExciter.cpp
-  ../dsp/StereoWidener.cpp
-  ../dsp/GainStage.cpp
-  ../anti_dolby.cpp
-  ../neuromorphic/volterra_h2_symmetric.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/SafetyLimiter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/ParametricEQ.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/HarmonicExciter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/StereoWidener.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/GainStage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../anti_dolby.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../neuromorphic/volterra_h2_symmetric.cpp
 )
 
 target_include_directories(ivanna_dsp_under_test PUBLIC
