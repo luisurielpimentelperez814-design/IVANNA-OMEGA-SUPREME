@@ -1,5 +1,6 @@
 #include "../include/SafetyLimiter.h"
-#include <algorithm>  // FIX: std::max — el NDK (libc++) no lo incluye
+#include <algorithm>
+#include <cmath>  // FIX: std::max — el NDK (libc++) no lo incluye
                        // transitivamente vía <cmath>, a diferencia de otros
                        // toolchains. Sin esto, ninja falla en arm64-v8a:
                        // "no member named 'max' in namespace 'std'".
@@ -35,11 +36,10 @@ float SafetyLimiter::limitSample(float x) {
         m_clipCount.fetch_add(1, std::memory_order_relaxed);
     }
 
-    const float clipped = std::clamp(sign * limited, -1.0f, 1.0f);
-    if (std::fabs(clipped) >= 1.0f && ax > 1.0f) {
-        m_clipCount.fetch_add(1, std::memory_order_relaxed);
-    }
-    return clipped;
+    // FIX: eliminado segundo fetch_add redundante.
+    // ceiling=0.989 < 1.0, así que todo clip que activa (limited>ceiling)
+    // también activaría el chequeo siguiente — contaría 2x el mismo evento.
+    return std::clamp(sign * limited, -1.0f, 1.0f);
 }
 
 
@@ -70,13 +70,18 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         std::memory_order_relaxed
     );
 
-    float reduction =
-        peak > m_ceiling ?
-        peak - m_ceiling :
-        0.0f;
+    // FIX: almacenar en dB (no en amplitud lineal).
+    // AdaptiveDecisionEngine::computeTargetGain() interpreta gain_reduction_db
+    // como dB — un valor lineal de 0.06 se leía como 0.06 dB (sin reacción)
+    // cuando el real era ~0.5 dB. 20*log10(peak/ceiling) da el valor correcto.
+    float reduction_db = 0.0f;
+    if (peak > m_ceiling && peak > 1e-9f && m_ceiling > 1e-9f) {
+        reduction_db = 20.0f * std::log10(peak / m_ceiling);
+        if (reduction_db < 0.0f) reduction_db = 0.0f; // seguridad numérica
+    }
 
     m_gainReduction.store(
-        reduction,
+        reduction_db,
         std::memory_order_relaxed
     );
 }
