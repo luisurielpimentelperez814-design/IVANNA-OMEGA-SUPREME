@@ -172,12 +172,30 @@ jobs:
           fi
           test -s "$SO"
           file "$SO" | grep -q "ELF"
-          if command -v strings >/dev/null 2>&1; then
-            strings "$SO" | grep -q "AUDIO_EFFECT_LIBRARY_INFO_SYM"
+          # FIX (causa raíz real del fallo en dispositivo, Android 15):
+          # AUDIO_EFFECT_LIBRARY_INFO_SYM es un MACRO de AOSP que se expande
+          # a AELI (ver audio_effect_compat.h) — el símbolo real que
+          # audioserver busca con dlsym() en el .so es literalmente "AELI",
+          # NUNCA el string "AUDIO_EFFECT_LIBRARY_INFO_SYM". El check viejo
+          # ("strings | grep AUDIO_EFFECT_LIBRARY_INFO_SYM") daba falso
+          # positivo: encontraba comentarios/nombres de macro en el binario,
+          # no el símbolo dinámico real, y dejaba pasar builds rotos que
+          # fallaban con "failed not find symbol AELI" en dispositivo real.
+          # Se valida contra .dynsym (que es lo que dlsym() usa en runtime),
+          # no contra `strings` ni `readelf -s` (tabla estática, irrelevante
+          # para dlopen/dlsym).
+          READELF="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          if [ ! -x "$READELF" ]; then READELF=readelf; fi
+          echo "── .dynsym de $SO ──"
+          "$READELF" --dyn-syms "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true
+          if ! "$READELF" --dyn-syms "$SO" | grep -qE '\bAELI\b'; then
+            echo "ERROR: símbolo dinámico 'AELI' (AUDIO_EFFECT_LIBRARY_INFO_SYM) no encontrado en .dynsym."
+            echo "audioserver hará dlsym(handle, \"AELI\") y fallará igual que en dispositivo real."
+            exit 1
           fi
           cp "$SO" libomega_effect_arm64.so
           ls -lh libomega_effect_arm64.so
-          echo "Extracted and validated: $SO"
+          echo "Extracted and validated: $SO (símbolo AELI confirmado en .dynsym)"
 
       - name: Upload libomega_effect.so
         uses: actions/upload-artifact@v4
