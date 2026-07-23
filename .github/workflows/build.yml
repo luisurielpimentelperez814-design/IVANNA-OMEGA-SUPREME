@@ -171,7 +171,6 @@ jobs:
             exit 1
           fi
 
-          # Verificar con nm -D
           echo "── nm -D AELI ──"
           NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           echo "$NM_SYMS"
@@ -180,13 +179,11 @@ jobs:
             exit 1
           fi
 
-          # Extraer UUID (insensible a mayúsculas)
           UUID_SO=$(strings "$SO" | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1)
           [ -n "$UUID_SO" ] && echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
 
           cp "$SO" libomega_effect_arm64.so
 
-          # Revalidar AELI en la copia
           echo "=== Revalidando AELI en la copia ==="
           COPY_SYMS=$("$READELF" --dyn-syms libomega_effect_arm64.so)
           COPY_AELI=$(echo "$COPY_SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM")
@@ -471,10 +468,10 @@ jobs:
           set -e
           unzip -t ivanna-omega-magisk.zip
           unzip -l ivanna-omega-magisk.zip
-          unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$' || {
+          if ! unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$'; then
             echo "ERROR: module.prop no está en la raíz"
             exit 1
-          }
+          fi
           unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
           file /tmp/test_daemon | grep ELF
           echo "=== MODULE READY ==="
