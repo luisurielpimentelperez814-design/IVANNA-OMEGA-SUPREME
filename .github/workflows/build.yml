@@ -188,8 +188,11 @@ jobs:
           if [ ! -x "$READELF" ]; then READELF=readelf; fi
           echo "── .dynsym de $SO ──"
           "$READELF" --dyn-syms "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true
-          if ! "$READELF" --dyn-syms "$SO" | grep -qE '\bAELI\b'; then
-            echo "ERROR: símbolo dinámico 'AELI' (AUDIO_EFFECT_LIBRARY_INFO_SYM) no encontrado en .dynsym."
+          SYMS=$("$READELF" --dyn-syms "$SO" || true)
+          echo "$SYMS"
+
+          if ! echo "$SYMS" | grep -qE '(^|[[:space:]])AELI([[:space:]]|$)'; then
+            echo "ERROR: símbolo dinámico AELI no encontrado en .dynsym."
             echo "audioserver hará dlsym(handle, \"AELI\") y fallará igual que en dispositivo real."
             exit 1
           fi
