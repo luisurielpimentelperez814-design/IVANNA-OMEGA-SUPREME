@@ -40,8 +40,8 @@ typedef struct effect_descriptor_s {
     effect_uuid_t uuid;
     uint32_t      apiVersion;
     uint32_t      flags;
-    uint16_t      cpuLoad;
-    uint16_t      memoryUsage;
+    uint32_t      cpuLoad;
+    uint32_t      memoryUsage;
     char          name[EFFECT_STRING_LEN_MAX];
     char          implementor[EFFECT_STRING_LEN_MAX];
 } effect_descriptor_t;
