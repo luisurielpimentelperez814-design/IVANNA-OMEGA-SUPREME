@@ -194,3 +194,9 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_audio_bus COMMAND test_audio_bus)
 set_tests_properties(test_audio_bus PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# Test de regresión para los bugs corregidos en Parches de Tuning 6-9:
+# - SafetyLimiter: clipCount no se duplica (Parche 6)
+# - SafetyLimiter: gainReduction se almacena en dB (Parche 6)
+# - Compressor: makeup compensa runtimeAmount_ (Parche 7)
+ivanna_add_test(test_regression_tuning)
