@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read          # mínimo para todos los jobs salvo publicación
+  contents: read
 
 concurrency:
   group: omega-${{ github.ref }}
@@ -26,7 +26,7 @@ env:
 jobs:
 
   # ─────────────────────────────────────────────────────────────────────────
-  # JOB 0 — DSP native unit tests (host-side, sin NDK)
+  # JOB 0 — DSP native unit tests
   # ─────────────────────────────────────────────────────────────────────────
   test-native-dsp:
     name: DSP Native Tests (host, CTest)
@@ -41,7 +41,7 @@ jobs:
         run: ctest --test-dir build-tests --output-on-failure
 
   # ─────────────────────────────────────────────────────────────────────────
-  # JOB 1 — APK (NDK C++ + Kotlin/Compose) + Daemon & Runtime
+  # JOB 1 — APK + Daemon & Runtime
   # ─────────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build APK & Native Binaries
@@ -149,7 +149,6 @@ jobs:
             echo "ERROR: libomega_effect.so no es AArch64"
             exit 1
           fi
-
           if ! "$READELF" -l "$SO" | grep -q "GNU_RELRO"; then
             echo "WARN: libomega_effect.so no tiene RELRO"
           fi
@@ -172,12 +171,11 @@ jobs:
             exit 1
           fi
 
-          # Verificar con nm -D (regex corregido para salida real de llvm-nm)
+          # Verificar con nm -D (regex corregido para aceptar espacios o tabs)
           echo "── nm -D AELI ──"
           NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           echo "$NM_SYMS"
-          # Acepta cualquier línea que termine con " AELI" o " AUDIO_EFFECT_LIBRARY_INFO_SYM"
-          if ! echo "$NM_SYMS" | grep -qE " (AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)$"; then
+          if ! echo "$NM_SYMS" | grep -qE '[[:space:]](AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)$'; then
             echo "ERROR: AUDIO_EFFECT_LIBRARY_INFO_SYM no está definido correctamente"
             exit 1
           fi
@@ -186,7 +184,6 @@ jobs:
           UUID_SO=$(strings "$SO" | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1)
           [ -n "$UUID_SO" ] && echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
 
-          # Copia sin strip
           cp "$SO" libomega_effect_arm64.so
 
           # Revalidar AELI en la copia
@@ -240,15 +237,11 @@ jobs:
             echo "ERROR: ivanna_daemon no es AArch64"
             exit 1
           fi
-
-          # Validar PIE (tipo DYN, no EXEC)
           echo "=== Tipo de binario ==="
           if ! "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN"; then
             echo "ERROR: ivanna_daemon no es PIE (Type no es DYN)"
             exit 1
           fi
-
-          # Validar intérprete ELF
           echo "=== Intérprete ELF ==="
           if ! "$READELF" -l ivanna_daemon | grep -q "interpreter"; then
             echo "ERROR: ivanna_daemon no tiene intérprete dinámico"
@@ -277,10 +270,8 @@ jobs:
             exit 1
           fi
 
-          # Strip seguro
           "$STRIP" --strip-unneeded ivanna_daemon
           ls -lh ivanna_daemon
-
           if ! "$READELF" -h ivanna_daemon | grep -q "AArch64"; then
             echo "ERROR: ivanna_daemon dejó de ser AArch64 tras strip"
             exit 1
@@ -304,7 +295,7 @@ jobs:
           retention-days: 14
 
   # ─────────────────────────────────────────────────────────────────────────
-  # JOB 2 — Magisk Module (estructura final y validaciones)
+  # JOB 2 — Magisk Module
   # ─────────────────────────────────────────────────────────────────────────
   build-magisk:
     name: Build Magisk Module
@@ -342,10 +333,8 @@ jobs:
 
           cp effect-artifacts/libomega_effect_arm64.so "$LIB_DST/libomega_effect.so"
           chmod 644 "$LIB_DST/libomega_effect.so"
-
           cp effect-artifacts/ivanna_daemon "$BIN_DST/ivanna_daemon"
           chmod 755 "$BIN_DST/ivanna_daemon"
-
           cp effect-artifacts/libc++_shared.so "$LIB64_DST/libc++_shared.so"
           cp effect-artifacts/libc++_shared.so "$VENDOR_LIB64_DST/libc++_shared.so"
           chmod 644 "$LIB64_DST/libc++_shared.so" "$VENDOR_LIB64_DST/libc++_shared.so"
@@ -356,9 +345,7 @@ jobs:
           fi
 
           if [ ! -f "$ETC_VENDOR/audio_effects_config.xml" ]; then
-            echo "No se crea audio_effects_config.xml (se usará solo audio_effects.xml)"
-          else
-            echo "audio_effects_config.xml ya existe, se respetará el original"
+            echo "No se crea audio_effects_config.xml"
           fi
 
           sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
@@ -384,6 +371,9 @@ jobs:
 
           cat << 'EOF' > magisk_module/service.sh
 #!/ 
+          find magisk_module/system -type f -exec file {} \;
+          echo "MODULE READY"
+
       - name: Package Magisk zip
         run: |
           cd magisk_module
@@ -401,7 +391,6 @@ jobs:
             echo "ERROR: module.prop no está en la raíz"
             exit 1
           }
-          echo "Estructura raíz correcta."
           unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
           file /tmp/test_daemon | grep ELF
           echo "=== MODULE READY ==="
