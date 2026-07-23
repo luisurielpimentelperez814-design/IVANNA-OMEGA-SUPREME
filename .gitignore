@@ -75,3 +75,9 @@ ivanna_daemon.stripped
 # Shared library copies from CI validation
 libomega_effect_arm64.so
 libc++_shared.so
+
+# ── Binarios generados por CI (no fuente) ──────────────────────────────────
+ivanna_daemon
+ivanna_daemon.stripped
+libomega_effect_arm64.so
+libc++_shared.so
