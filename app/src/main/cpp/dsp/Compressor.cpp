@@ -58,7 +58,14 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
     const float threshold = threshold_ - runtimeAmount_ * 12.0f;
     const float effRatio = ratio_ + runtimeAmount_ * 8.0f;
     const float ratioInv = 1.0f - 1.0f / effRatio;
-    const float makeup = makeupGain_;
+    // FIX: compensar la GR adicional inducida por runtimeAmount_.
+    // makeupGain_ fue calculado para threshold_ base; si runtimeAmount_ baja
+    // el umbral efectivo N dB más y la ratio sube, hay GR adicional no compensada.
+    // GR_adicional ≈ threshold_shift * (1 - 1/effRatio) = 12*rt*(1-1/effRatio)
+    // makeup_runtime = pow(10, GR_adicional/2 / 20) — mismo criterio que makeupGain_.
+    const float grAdditional = runtimeAmount_ * 12.0f * (1.0f - 1.0f / effRatio);
+    const float makeupRuntime = std::pow(10.0f, grAdditional * 0.5f / 20.0f);
+    const float makeup = makeupGain_ * makeupRuntime;
     float env = env_;
 
 #pragma clang diagnostic push
