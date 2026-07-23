@@ -295,7 +295,7 @@ static int QueryNumEffects(uint32_t* n) { if(!n) return -EINVAL; *n=1; return 0;
 static int QueryEffect(uint32_t i, effect_descriptor_t* d) {
     if(!d||i!=0) return -ENOENT; memcpy(d,&kDesc,sizeof(kDesc)); return 0; }
 
-extern "C" __attribute__((visibility("default")))
+extern "C" __attribute__((visibility("default"), used))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     .tag=AUDIO_EFFECT_LIBRARY_TAG,.version=EFFECT_LIBRARY_API_VERSION,
     .name="OMEGA Omega_in Bridge",.implementor="GORE TNS",
@@ -309,4 +309,8 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeRelease(JNIEnv*,j
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetActive(JNIEnv*,jobject,jboolean){}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetIntensity(JNIEnv*,jobject,jfloat){}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetVocoderMix(JNIEnv*,jobject,jfloat){}
+
+// Android Audio Effects legacy loader entry point
+extern "C" __attribute__((visibility("default"), used))
+audio_effect_library_t* AELI = &AUDIO_EFFECT_LIBRARY_INFO_SYM;
 }
