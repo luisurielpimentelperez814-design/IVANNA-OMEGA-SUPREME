@@ -131,7 +131,6 @@ jobs:
       - name: Extract and validate libomega_effect.so for Magisk
         run: |
           set -euo pipefail
-          # Búsqueda más resistente a cambios de Gradle
           SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1)
           [ -n "$SO" ] || { echo "ERROR: libomega_effect.so not found"; exit 1; }
           test -s "$SO"
@@ -173,11 +172,12 @@ jobs:
             exit 1
           fi
 
-          # Verificar con nm -D que el símbolo tiene sección real
+          # Verificar con nm -D (regex corregido para salida real de llvm-nm)
           echo "── nm -D AELI ──"
           NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           echo "$NM_SYMS"
-          if ! echo "$NM_SYMS" | grep -qE "(D|B|T|R) .*(AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)"; then
+          # Acepta cualquier línea que termine con " AELI" o " AUDIO_EFFECT_LIBRARY_INFO_SYM"
+          if ! echo "$NM_SYMS" | grep -qE " (AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)$"; then
             echo "ERROR: AUDIO_EFFECT_LIBRARY_INFO_SYM no está definido correctamente"
             exit 1
           fi
@@ -277,11 +277,10 @@ jobs:
             exit 1
           fi
 
-          # Strip seguro (el daemon no exporta AELI)
+          # Strip seguro
           "$STRIP" --strip-unneeded ivanna_daemon
           ls -lh ivanna_daemon
 
-          # Revalidar arquitectura tras strip
           if ! "$READELF" -h ivanna_daemon | grep -q "AArch64"; then
             echo "ERROR: ivanna_daemon dejó de ser AArch64 tras strip"
             exit 1
@@ -323,7 +322,6 @@ jobs:
       - name: Assemble and validate Magisk module
         run: |
           set -euo pipefail
-          # Limpiar workspace
           rm -rf magisk_module
           mkdir -p magisk_module
 
@@ -342,40 +340,33 @@ jobs:
           file effect-artifacts/libomega_effect_arm64.so | grep -q "ELF"
           file effect-artifacts/ivanna_daemon | grep -q "ELF"
 
-          # Instalar el efecto (solo vendor)
           cp effect-artifacts/libomega_effect_arm64.so "$LIB_DST/libomega_effect.so"
           chmod 644 "$LIB_DST/libomega_effect.so"
 
-          # Instalar daemon
           cp effect-artifacts/ivanna_daemon "$BIN_DST/ivanna_daemon"
           chmod 755 "$BIN_DST/ivanna_daemon"
 
-          # Instalar libc++_shared.so en dos ubicaciones
           cp effect-artifacts/libc++_shared.so "$LIB64_DST/libc++_shared.so"
           cp effect-artifacts/libc++_shared.so "$VENDOR_LIB64_DST/libc++_shared.so"
           chmod 644 "$LIB64_DST/libc++_shared.so" "$VENDOR_LIB64_DST/libc++_shared.so"
 
-          # audio_effects.xml (obligatorio)
           if [ ! -f "$ETC_VENDOR/audio_effects.xml" ]; then
             echo "ERROR: audio_effects.xml no encontrado en $ETC_VENDOR"
             exit 1
           fi
 
-          # No duplicamos a audio_effects_config.xml a menos que ya exista
           if [ ! -f "$ETC_VENDOR/audio_effects_config.xml" ]; then
             echo "No se crea audio_effects_config.xml (se usará solo audio_effects.xml)"
           else
             echo "audio_effects_config.xml ya existe, se respetará el original"
           fi
 
-          # Validación XML
           sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
           xmllint --noout "$ETC_VENDOR/audio_effects.xml" || {
             echo "ERROR: audio_effects.xml no es válido"
             exit 1
           }
 
-          # UUID check (insensible a mayúsculas/minúsculas)
           UUID_SO=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1)
           if [ -n "$UUID_SO" ]; then
             echo "UUID del .so: $UUID_SO"
@@ -391,9 +382,38 @@ jobs:
             echo "WARN: libomega_effect.so no referenciado en audio_effects.xml"
           fi
 
-          # ── service.sh con diagnóstico ──
           cat << 'EOF' > magisk_module/service.sh
- 
+#!/ 
+      - name: Package Magisk zip
+        run: |
+          cd magisk_module
+          zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
+          echo "=== Module contents ==="
+          unzip -l ../ivanna-omega-magisk.zip
+          du -sh ../ivanna-omega-magisk.zip
+
+      - name: Verify final Magisk module
+        run: |
+          set -e
+          unzip -t ivanna-omega-magisk.zip
+          unzip -l ivanna-omega-magisk.zip
+          unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$' || {
+            echo "ERROR: module.prop no está en la raíz"
+            exit 1
+          }
+          echo "Estructura raíz correcta."
+          unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
+          file /tmp/test_daemon | grep ELF
+          echo "=== MODULE READY ==="
+
+      - name: Upload Magisk module
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: ivanna-omega-magisk.zip
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
 
   # ─────────────────────────────────────────────────────────────────────────
   # JOB 3 — Release Bundle
