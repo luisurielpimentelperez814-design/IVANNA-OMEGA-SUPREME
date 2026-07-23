@@ -59,3 +59,11 @@ app/src/main/cpp/tests/build*/
 # Coverage
 **/reports/
 *.lcov
+
+# Daemon binary (compiled by CI, not source)
+ivanna_daemon
+ivanna_daemon.stripped
+
+# Shared library copies from CI validation
+libomega_effect_arm64.so
+libc++_shared.so
