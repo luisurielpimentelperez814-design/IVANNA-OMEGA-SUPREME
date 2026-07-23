@@ -181,7 +181,8 @@ class IvannaBridgePlayer(private val context: Context) {
                     .setSampleRate(sampleRate)
                     .setChannelMask(channelMask).build())
                 .setBufferSizeInBytes(minBuf * 4)
-                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioTrack no inicializó"); state = State.ERROR; return@withContext
