@@ -133,7 +133,8 @@ class IvannaBridgePlayer(private val context: Context) {
             }
             extractor.selectTrack(trackIndex)
 
-            val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            val sampleRate = 96000
             val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             val mime = format.getString(MediaFormat.KEY_MIME)!!
 
@@ -141,6 +142,9 @@ class IvannaBridgePlayer(private val context: Context) {
             // Los filtros (biquads, HRTF, NHO) dependen de fs; usar siempre
             // 96000 fijo desalinearía las frecuencias de corte con archivos
             // a 44100/22050/etc.
+            val resampler = StereoAudioResampler(96000)
+            resampler.setInputSampleRate(inputSampleRate)
+
             DSPBridge.init(sampleRate)
 
             // IvannaNpeEngine, en cambio, se inicializa UNA sola vez en
@@ -307,7 +311,8 @@ class IvannaBridgePlayer(private val context: Context) {
                                     chunk[i * 2 + 1] = spatialOutR[i]
                                 }
                             }
-                            track.write(chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING)
+                            val outputChunk = resampler.process(chunk)
+                            track.write(outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING)
                             offset += chunkFrames
                         }
                     }

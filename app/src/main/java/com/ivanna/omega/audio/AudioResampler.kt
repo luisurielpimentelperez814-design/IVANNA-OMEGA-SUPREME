@@ -9,7 +9,7 @@ import kotlin.math.sin
  * Implementa interpolación sinc con ventana de Kaiser para mínima distorsión
  */
 class AudioResampler(
-    private val targetSampleRate: Int = 192000,
+    private val targetSampleRate: Int = 96000,
     private val targetBitDepth: Int = 32
 ) {
     companion object {
