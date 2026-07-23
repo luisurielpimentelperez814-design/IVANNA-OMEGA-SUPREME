@@ -77,7 +77,7 @@ private:
     void updateVBAPGains(const AudioObject& obj, float gains[kNumVirtualSpeakers]) noexcept;
     void processReverb(float* left, float* right, int frames) noexcept;
 
-    float sampleRate_ = 48000.f;
+    float sampleRate_ = 96000.f;
     int blockSize_ = 512;
     HeadTracker* headTracker_ = nullptr;
     float reverbLevel_ = 0.3f;
@@ -86,7 +86,7 @@ private:
     // dinámicamente a blockSize_ en init(). Antes eran arrays fijos de 512
     // en el stack (virtualSpk[12][512], spkL/R[512], inL/inR[512]) mientras
     // que PlaybackCaptureService llama a init(sampleRate, INPUT_SAMPLES/2)
-    // == init(48000, 1024): con numFrames=1024 > 512 cada escritura se
+    // == init(96000, 1024): con numFrames=1024 > 512 cada escritura se
     // salía del array -> stack buffer overflow -> stack smashing / SIGABRT
     // al encender el motor espacial (upmixer+renderer+head tracking).
     std::vector<std::vector<float>> virtualSpk_;   // [kNumVirtualSpeakers][blockSize_]

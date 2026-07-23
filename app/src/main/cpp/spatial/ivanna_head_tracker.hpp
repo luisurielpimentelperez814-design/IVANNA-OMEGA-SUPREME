@@ -100,7 +100,7 @@ public:
     // Llamado desde hilo de sensor (Java/Kotlin) a ~100Hz
     void update(const float rotationVector[4], float timestampMs) noexcept;
 
-    // Llamado desde hilo de audio a ~48000Hz — interpolación suave
+    // Llamado desde hilo de audio a ~96000Hz — interpolación suave
     HeadPose getPoseForAudioFrame(float audioFrameTimeMs) const noexcept;
 
     // Reset cuando el usuario se quita los auriculares

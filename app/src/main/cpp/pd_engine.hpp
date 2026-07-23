@@ -76,7 +76,7 @@ public:
 
     // ── Parameters ───────────────────────────────────────────────────────────
     std::atomic<int>   mode{0};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
-    float sample_rate = 48000.f;
+    float sample_rate = 96000.f;
 
     // Output mix coefficients (from spec)
     static constexpr float MIX_DRY      = 0.6f;

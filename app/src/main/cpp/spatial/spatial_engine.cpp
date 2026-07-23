@@ -21,7 +21,7 @@ static constexpr float HRTF_DELAY_MS = 0.3f;  // 0.3ms ITD
 alignas(64) static float g_hrtf_left[HRTF_TAPS];
 alignas(64) static float g_hrtf_right[HRTF_TAPS];
 static bool g_hrtf_initialized = false;
-static int g_sample_rate = 48000;
+static int g_sample_rate = 96000;
 
 // Delay lines circulares
 alignas(64) static float g_delay_left[HRTF_TAPS * 2];

@@ -105,7 +105,7 @@ struct Biquad {
 // Funciones helper para calcular coeficientes Biquad
 static void calcLowShelf(Biquad& bq, float freq, float Q, float gainDB) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 48000.0f;
+    float w0 = 2.0f * M_PI * freq / 96000.0f;
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -119,7 +119,7 @@ static void calcLowShelf(Biquad& bq, float freq, float Q, float gainDB) {
 
 static void calcPeaking(Biquad& bq, float freq, float Q, float gainDB) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 48000.0f;
+    float w0 = 2.0f * M_PI * freq / 96000.0f;
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -133,7 +133,7 @@ static void calcPeaking(Biquad& bq, float freq, float Q, float gainDB) {
 
 static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 48000.0f;
+    float w0 = 2.0f * M_PI * freq / 96000.0f;
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -149,7 +149,7 @@ static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB) {
 // gainDB=0 es identidad (no filtra nada) — hace falta un pasabanda RBJ
 // real para poder separar low/mid/high de verdad.
 static void calcBandpass(Biquad& bq, float freq, float Q) {
-    float w0 = 2.0f * M_PI * freq / 48000.0f;
+    float w0 = 2.0f * M_PI * freq / 96000.0f;
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
 
@@ -804,7 +804,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     }
 
     memset(g_shared, 0, sizeof(OmegaSharedState));
-    g_shared->pf_freq.store(48000, std::memory_order_relaxed);
+    g_shared->pf_freq.store(96000, std::memory_order_relaxed);
     g_shared->pf_resonance.store(0.707f, std::memory_order_relaxed);
     g_shared->pf_mid.store(0.0f, std::memory_order_relaxed);
     g_shared->pf_param_version.store(1, std::memory_order_relaxed);

@@ -180,7 +180,7 @@ private:
     static constexpr std::array<float, GTL_BANDS> kCeilDb = detail_v2::makeCeilDb();
 
     GammatoneLattice13 fb_;
-    float fs_ = 48000.f;
+    float fs_ = 96000.f;
     float deviceLatencyMs_ = 0.f;
     std::array<BandSmootherV2, GTL_BANDS> smoothers_;
     std::array<BandPredictorV2, GTL_BANDS> predictors_;

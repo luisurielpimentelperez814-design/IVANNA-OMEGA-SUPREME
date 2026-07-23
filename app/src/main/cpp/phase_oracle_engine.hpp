@@ -39,7 +39,7 @@ public:
     float R = 0.01f;
 
     // dt @ 48kHz
-    float dt     = 1.f / 48000.f;
+    float dt     = 1.f / 96000.f;
     float dt2    = 0.5f * dt * dt;
 
     void init(float sample_rate) noexcept {

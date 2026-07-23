@@ -158,7 +158,7 @@ private:
         buf.swap(tmp);
     }
 
-    float sr_    = 48000.f;
+    float sr_    = 96000.f;
     int   irLen_ = 128;
 };
 

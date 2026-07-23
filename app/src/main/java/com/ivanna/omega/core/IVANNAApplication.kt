@@ -136,8 +136,8 @@ class IVANNAApplication : Application() {
         appScope.launch {
             try {
                 // 1. DSP nativo
-                DSPBridge.init(sampleRate = 48000)
-                Log.d(TAG, "✅ DSPBridge listo — 48000 Hz")
+                DSPBridge.init(sampleRate = 96000)
+                Log.d(TAG, "✅ DSPBridge listo — 96000 Hz")
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal)
                 val daemonOk = OmegaDaemon.start()

@@ -71,7 +71,7 @@ static SafetyLimiter  g_safety_limiter;
 
 // IvannaLab — instancia única, alimentada bajo demanda desde nativeLabFeed().
 // No vive en el hot-path de audio de ninguna ruta.
-static ivanna::IvannaLab g_lab(48000, 4096);
+static ivanna::IvannaLab g_lab(96000, 4096);
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};

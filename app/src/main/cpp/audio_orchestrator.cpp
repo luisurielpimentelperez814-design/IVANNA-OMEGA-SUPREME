@@ -163,7 +163,7 @@ static inline void kalmanInit(KalmanState &k, int sr) {
 
 // ── Estado global del orquestador ───────────────────────────────────────────
 static struct {
-    int sampleRate = 48000;
+    int sampleRate = 96000;
     float gain = 1.0f;
     std::atomic<bool> active{true};
     Hyperplane hyper;

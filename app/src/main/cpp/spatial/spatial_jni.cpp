@@ -18,7 +18,7 @@
 
 static SpatialState g_spatialState;
 static bool g_spatialInitialized = false;
-static int g_spatialSampleRate = 48000;
+static int g_spatialSampleRate = 96000;
 static int g_spatialBufferSize = 1024;
 
 // Local head-shadow filter (isolated from spatial_engine.cpp globals)

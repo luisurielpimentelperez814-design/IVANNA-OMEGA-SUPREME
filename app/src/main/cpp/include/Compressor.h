@@ -30,7 +30,7 @@ public:
     }
 
 private:
-    float sr_ = 48000.0f;
+    float sr_ = 96000.0f;
     float threshold_ = -12.0f;
     float ratio_ = 4.0f;
     float attackCoef_ = 0.99f;

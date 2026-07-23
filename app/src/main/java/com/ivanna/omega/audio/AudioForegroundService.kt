@@ -36,7 +36,7 @@ class AudioForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         // FIX: inicializar DSP al crear el servicio (no solo en la Activity)
-        DSPBridge.init(48000)
+        DSPBridge.init(96000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

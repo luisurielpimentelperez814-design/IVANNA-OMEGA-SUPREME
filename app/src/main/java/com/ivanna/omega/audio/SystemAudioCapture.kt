@@ -58,7 +58,7 @@ class SystemAudioCapture private constructor(private val context: Context) {
 
         // ── Hi-Res cascade de tasas de muestreo ──────────────────────────
         // 768kHz → 384kHz → 192kHz → 96kHz → 48kHz (bit-perfect garantizado)
-        private val CANDIDATE_RATES = intArrayOf(768000, 384000, 192000, 96000, 48000)
+        private val CANDIDATE_RATES = intArrayOf(768000, 384000, 192000, 96000, 96000)
 
         // ── Métricas PCM expuestas (actualizadas en tiempo real) ──────────
         // [FIX-1] Eliminado `; private set` — el setter era privado al companion
@@ -66,7 +66,7 @@ class SystemAudioCapture private constructor(private val context: Context) {
         // → IllegalAccessError encubierto / crash de compilación en AGP reciente.
         @Volatile var lastRmsDb:     Float  = -96f
         @Volatile var lastPeakDb:    Float  = -96f
-        @Volatile var activeRateHz:  Int    = 48000
+        @Volatile var activeRateHz:  Int    = 96000
         @Volatile var lastPcmBase64: String = ""
 
         fun resetMetrics() {
@@ -132,7 +132,7 @@ class SystemAudioCapture private constructor(private val context: Context) {
                 return rate
             }
         }
-        return 48000
+        return 96000
     }
 
     @SuppressLint("MissingPermission")

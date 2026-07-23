@@ -6,7 +6,7 @@ import kotlin.math.*
  * Phase Oracle — Corrección de fase en 10 bandas usando filtros all-pass.
  * Ajusta la coherencia de fase para mejorar la imagen estéreo y la claridad.
  */
-class PhaseOracle(private val sampleRate: Float = 48000f) {
+class PhaseOracle(private val sampleRate: Float = 96000f) {
     private val filters = mutableListOf<AllpassFilter>()
     private val centerFreqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
 

@@ -88,7 +88,7 @@ void AntiDolbyState::updateFromClassification(float speech, float music, float b
 
 void AntiDolbyState::tick(float dt) {
     // Robustez: dt fuera de rango ⇒ paso conservador (1 muestra a 48 kHz).
-    if (!std::isfinite(dt) || dt <= 0.0f) dt = 1.0f / 48000.0f;
+    if (!std::isfinite(dt) || dt <= 0.0f) dt = 1.0f / 96000.0f;
     if (dt > 0.1f)                        dt = 0.1f;   // no permitir >100 ms
 
     float published;

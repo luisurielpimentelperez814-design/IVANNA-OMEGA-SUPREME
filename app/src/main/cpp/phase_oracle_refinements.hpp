@@ -27,7 +27,7 @@ struct KalmanPhasePredictor {
     float P_11 = 1e4f;     // varianza de T_vel
     
     // ── Dynamics & measurement noise (tuning parameters) ───────────────
-    float dt = 1.f / 48000.f;          // tiempo entre muestras
+    float dt = 1.f / 96000.f;          // tiempo entre muestras
     float dt2 = 0.5f * dt * dt;        // dt²/2
     float sigma_process = 0.01f;       // process noise (período cambia lentamente)
     float sigma_meas = 1.f;            // measurement noise (detección imperfecta)

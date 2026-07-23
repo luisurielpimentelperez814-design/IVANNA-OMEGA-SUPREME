@@ -20,7 +20,7 @@ struct DSPParams {
     float high      = 0.0f;
     float presence  = 0.0f;
     float master    = 0.0f;
-    uint32_t sampleRate = 48000;
+    uint32_t sampleRate = 96000;
 };
 
 struct Biquad {

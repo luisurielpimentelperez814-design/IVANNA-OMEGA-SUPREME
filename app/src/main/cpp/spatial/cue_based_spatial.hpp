@@ -68,7 +68,7 @@ public:
     // ── Process one stereo sample ─────────────────────────────────────────
     void process_sample(float xL, float xR,
                         float& yL, float& yR,
-                        float sample_rate = 48000.f) noexcept {
+                        float sample_rate = 96000.f) noexcept {
         // Write into circular buffer
         delayBufL[writeIdx & (ITD_BUF_SIZE-1)] = xL;
         delayBufR[writeIdx & (ITD_BUF_SIZE-1)] = xR;
@@ -112,7 +112,7 @@ public:
     // ── Process block ─────────────────────────────────────────────────────
     void process_block(const float* inL, const float* inR,
                        float* outL, float* outR,
-                       int n, float sample_rate = 48000.f) noexcept {
+                       int n, float sample_rate = 96000.f) noexcept {
         for (int i = 0; i < n; ++i) {
             process_sample(inL[i], inR[i], outL[i], outR[i], sample_rate);
         }

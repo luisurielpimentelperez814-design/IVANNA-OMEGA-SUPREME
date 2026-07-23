@@ -17,7 +17,7 @@ class AudioResampler(
         private const val SINC_TAPS = 64
     }
 
-    private var inputSampleRate: Int = 48000
+    private var inputSampleRate: Int = 96000
     private var ratio: Double = 1.0
     private val sincTable = FloatArray(SINC_TAPS * 256)
 

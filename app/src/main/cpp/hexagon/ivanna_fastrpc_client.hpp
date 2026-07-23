@@ -31,7 +31,7 @@ namespace dsp {
 
 // Configuración de convolución binaural HRTF paramétrico
 struct HrtfConvolutionConfig {
-    uint32_t sample_rate_in;       // Tasa de entrada (ej: 48000)
+    uint32_t sample_rate_in;       // Tasa de entrada (ej: 96000)
     uint32_t sample_rate_out;      // Tasa de salida objetivo (768000)
     uint32_t hrtf_filter_length;   // Longitud del filtro HRTF en taps
     uint32_t block_size;           // Tamaño de bloque para procesamiento

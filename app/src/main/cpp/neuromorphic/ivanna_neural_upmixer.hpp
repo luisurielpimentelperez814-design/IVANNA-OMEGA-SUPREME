@@ -65,7 +65,7 @@ public:
 
 private:
     bool enabled_ = true;
-    float sampleRate_ = 48000.f;
+    float sampleRate_ = 96000.f;
     int blockSize_ = 512;
 
     std::array<StemPosition, 4> customPositions_ = kStemPositions;

@@ -193,7 +193,7 @@ private:
         return (powf(10.f, e / 21.4f) - 1.0f) / 4.37e-3f;
     }
 
-    float fs_ = 48000.f;
+    float fs_ = 96000.f;
     std::array<GammatoneLatticeChannel, GTL_BANDS> channels_;
 };
 

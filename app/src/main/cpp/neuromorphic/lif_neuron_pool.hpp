@@ -29,7 +29,7 @@ struct LIFParams {
     float v_reset    = -0.075f;  // Potencial post-disparo [V] (-75 mV)
     float r_mem      = 10.0f;    // Resistencia de membrana [MΩ → escala normalizada]
     float t_refrac   = 0.002f;   // Periodo refractario [s] (2 ms)
-    float sample_rate= 48000.0f;
+    float sample_rate= 96000.0f;
 };
 
 // ── Estado de una neurona individual ──────────────────────────────────────
@@ -109,7 +109,7 @@ public:
 private:
     alignas(64) std::array<LIFNeuronState, N_NEURONS> states_{};
     LIFParams params_{};
-    float     dt_{ 1.0f / 48000.0f };
+    float     dt_{ 1.0f / 96000.0f };
 };
 
 // Instancias concretas para IVANNA

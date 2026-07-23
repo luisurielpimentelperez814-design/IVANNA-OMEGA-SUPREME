@@ -45,9 +45,9 @@ struct LabResult {
 // ── IvannaLab — clase de medición ─────────────────────────────────────────────
 class IvannaLab {
 public:
-    // sampleRate: frecuencia de muestreo en Hz (típicamente 48000).
+    // sampleRate: frecuencia de muestreo en Hz (típicamente 96000).
     // fftSize: tamaño de ventana FFT para THD/IMD (pot. de 2, mín. 2048).
-    explicit IvannaLab(uint32_t sampleRate = 48000, int fftSize = 4096);
+    explicit IvannaLab(uint32_t sampleRate = 96000, int fftSize = 4096);
     ~IvannaLab();
 
     // Reinicia el estado interno (acumuladores LUFS, historia de gating).

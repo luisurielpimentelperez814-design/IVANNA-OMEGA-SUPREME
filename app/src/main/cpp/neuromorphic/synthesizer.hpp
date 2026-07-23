@@ -42,14 +42,14 @@ struct SynthParams {
 class Synthesizer {
 public:
     /**
-     * @param sampleRate   Frecuencia de muestreo en Hz (típicamente 48000).
+     * @param sampleRate   Frecuencia de muestreo en Hz (típicamente 96000).
      * @param smoothingMs  Constante de tiempo del One-Pole en milisegundos.
      *                     50ms es un valor conservador: suficientemente
      *                     rápido para seguir cambios de género/dinámica de
      *                     AutonomousBrain (~85ms por ventana) sin producir
      *                     saltos audibles.
      */
-    explicit Synthesizer(float sampleRate = 48000.f, float smoothingMs = 50.f) noexcept
+    explicit Synthesizer(float sampleRate = 96000.f, float smoothingMs = 50.f) noexcept
         : sample_rate_(sampleRate)
     {
         setSmoothingTimeMs(smoothingMs);

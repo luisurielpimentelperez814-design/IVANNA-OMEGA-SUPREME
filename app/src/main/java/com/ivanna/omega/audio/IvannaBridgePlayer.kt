@@ -139,7 +139,7 @@ class IvannaBridgePlayer(private val context: Context) {
 
             // Reinicializa el DSP nativo con el sample rate REAL del archivo.
             // Los filtros (biquads, HRTF, NHO) dependen de fs; usar siempre
-            // 48000 fijo desalinearía las frecuencias de corte con archivos
+            // 96000 fijo desalinearía las frecuencias de corte con archivos
             // a 44100/22050/etc.
             DSPBridge.init(sampleRate)
 
@@ -150,7 +150,7 @@ class IvannaBridgePlayer(private val context: Context) {
             // sus filtros internos (calculados para la fs de init) sonarían
             // desafinados. Se salta el procesamiento en ese caso, en vez de
             // procesar mal en silencio — misma fs es el caso común (los
-            // presets de referencia del proyecto son 48000).
+            // presets de referencia del proyecto son 96000).
             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
             if (npeSampleRateMismatch) {
                 Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, archivo es ${sampleRate}Hz — NPE desactivado para esta reproducción")

@@ -147,7 +147,7 @@ public:
     }
 
 private:
-    float sr_ = 48000.f;
+    float sr_ = 96000.f;
     Biquad2 shelfL_, shelfR_, hpL_, hpR_;
     float emaAlpha_ = 0.01f;
     float meanSquare_ = 1e-9f;

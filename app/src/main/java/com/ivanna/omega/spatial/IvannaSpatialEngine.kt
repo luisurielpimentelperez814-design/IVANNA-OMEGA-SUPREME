@@ -26,7 +26,7 @@ import java.nio.FloatBuffer
  * y <25ms en gama media (Snapdragon 7 Gen 2).
  *
  * Uso:
- *   val engine = IvannaSpatialEngine(sampleRate = 48000, blockSize = 512)
+ *   val engine = IvannaSpatialEngine(sampleRate = 96000, blockSize = 512)
  *   engine.init(context)
  *   engine.setHeadTracker(headTracker)
  *   engine.enableUpmixer(true)
@@ -35,7 +35,7 @@ import java.nio.FloatBuffer
  *   engine.processStereoInput(inputLeft, inputRight, outputLeft, outputRight, frames)
  */
 class IvannaSpatialEngine(
-    private val sampleRate: Float = 48000f,
+    private val sampleRate: Float = 96000f,
     private val blockSize: Int = 512
 ) {
     companion object {
@@ -61,7 +61,7 @@ class IvannaSpatialEngine(
         // modelPath=null, así que el "upmixer neural" corre en su fallback
         // heurístico, no con IA real. Documentado para no prometer más de
         // lo que hay.
-        val shared = IvannaSpatialEngine(48000f, 2048)
+        val shared = IvannaSpatialEngine(96000f, 2048)
         @Volatile var enabled: Boolean = false
     }
 

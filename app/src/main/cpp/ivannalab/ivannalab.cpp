@@ -128,7 +128,7 @@ struct IvannaLab::Impl {
     explicit Impl(uint32_t sr, int fft)
         : sampleRate(sr), fftSize(std::max(2048, fft))
     {
-        if (sr == 48000) {
+        if (sr == 96000) {
             kw1L = makeKWeightStage1_48k();  kw2L = makeKWeightStage2_48k();
             kw1R = makeKWeightStage1_48k();  kw2R = makeKWeightStage2_48k();
         } else {

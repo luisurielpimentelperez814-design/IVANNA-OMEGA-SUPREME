@@ -17,7 +17,7 @@ import java.io.File
 class NoRootAudioProcessor(private val context: Context) {
     companion object {
         private const val TAG = "NoRootAudio"
-        private const val SAMPLE_RATE = 48000
+        private const val SAMPLE_RATE = 96000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_FLOAT
         private const val BUFFER_SIZE = 4096

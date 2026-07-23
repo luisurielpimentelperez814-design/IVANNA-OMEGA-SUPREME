@@ -23,7 +23,7 @@ public:
     }
 
 private:
-    float sr_ = 48000.0f;
+    float sr_ = 96000.0f;
     float smoothCoeff_ = 0.99f;
     float oneMinusSmooth_ = 0.01f;
     float inputGain_ = 1.0f;

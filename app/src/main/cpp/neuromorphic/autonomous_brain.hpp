@@ -35,7 +35,7 @@ namespace ivanna::acoustic {
 static constexpr int kWindowSize = 4096;
 
 /// Frecuencia de muestreo (Hz) — usada en el cálculo de coeficientes Biquad.
-static constexpr float kSampleRate = 48000.f;
+static constexpr float kSampleRate = 96000.f;
 
 // Umbrales de Factor de Cresta (CF) en dB para la heurística de género.
 static constexpr float kCfLowThreshold  = 10.f;   // < 10 dB → muy comprimido

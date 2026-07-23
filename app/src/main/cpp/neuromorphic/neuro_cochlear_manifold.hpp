@@ -35,7 +35,7 @@ namespace ivannuri {
 constexpr std::size_t N_CHANNELS      = 32;   // Número de bandas cocleares
 constexpr std::size_t VOLTERRA_TAPS  = 16;   // MUST ser potencia de 2
 constexpr std::size_t BLOCK_SIZE     = 512;  // Máximo tamaño de bloque por llamada
-constexpr double      SAMPLE_RATE    = 48000.0;
+constexpr double      SAMPLE_RATE    = 96000.0;
 constexpr std::size_t RK4_SUBSTEPS   = 4;
 constexpr double      DT_RK4         = 1.0 / (SAMPLE_RATE * static_cast<double>(RK4_SUBSTEPS));
 constexpr double      PI_D           = 3.14159265358979323846;

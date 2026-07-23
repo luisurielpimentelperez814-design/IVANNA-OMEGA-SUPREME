@@ -20,7 +20,7 @@ object OmegaEngine {
 
     fun init(context: Context) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
+        val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 96000
         DSPBridge.init(sr)
         Log.i(TAG, "DSP initialized at ${sr}Hz")
         // NHO+CueBank+Spatial auto-initialize via PDEngine.init()

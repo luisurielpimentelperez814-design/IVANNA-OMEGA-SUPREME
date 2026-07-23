@@ -70,7 +70,7 @@ class PlaybackCaptureService : Service() {
         // exige un buffer de 15600 muestras @ 16kHz mono (0.975s, ver
         // YamnetClassifier.INPUT_LENGTH). Este servicio captura @ 48kHz,
         // así que hace falta decimar 3:1 antes de acumular la ventana.
-        private const val VOICE_DECIMATION = 3          // 48000 / 16000
+        private const val VOICE_DECIMATION = 3          // 96000 / 16000
         private const val VOICE_WINDOW_SAMPLES = 15600  // = YamnetClassifier.INPUT_LENGTH
     }
 
@@ -174,7 +174,7 @@ class PlaybackCaptureService : Service() {
             projectionCallback = callback
             mediaProjection.registerCallback(callback, null)
 
-            val sampleRate = 48000
+            val sampleRate = 96000
 
             // FIX (auto-captura — "el problema del micrófono" que en realidad
             // nunca fue el mic físico): por defecto, AudioPlaybackCaptureConfiguration

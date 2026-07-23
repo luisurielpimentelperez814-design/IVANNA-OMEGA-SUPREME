@@ -22,6 +22,6 @@ private:
     static constexpr int NUM_BANDS = 8;
     Biquad bandsL[NUM_BANDS];
     Biquad bandsR[NUM_BANDS];
-    float sampleRate_ = 48000.0f;
+    float sampleRate_ = 96000.0f;
 };
 }

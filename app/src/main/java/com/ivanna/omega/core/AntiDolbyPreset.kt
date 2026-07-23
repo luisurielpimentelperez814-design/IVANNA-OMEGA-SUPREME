@@ -11,7 +11,7 @@ import android.util.Log
  * - Exciter armónicos pares (solo si no es voz)
  * - Widener reducido al 40%
  * - Reverb solo en cola (post-transitorio)
- * - Activa automáticamente con sampleRate=48000 y decoder EAC3
+ * - Activa automáticamente con sampleRate=96000 y decoder EAC3
  */
 class AntiDolbyPreset {
     companion object {
@@ -38,10 +38,10 @@ class AntiDolbyPreset {
 
         /**
          * Detecta si el formato de audio proviene de decoder EAC3/JOC.
-         * EAC3 típicamente usa sampleRate=48000 con encoding específico.
+         * EAC3 típicamente usa sampleRate=96000 con encoding específico.
          */
         fun isEac3Format(sampleRate: Int, encoding: Int): Boolean {
-            val is48k = sampleRate == 48000
+            val is48k = sampleRate == 96000
             val isEac3 = encoding == AudioFormat.ENCODING_E_AC3 || 
                         encoding == AudioFormat.ENCODING_E_AC3_JOC ||
                         encoding == 18  // ENCODING_E_AC3 en algunos OEMs

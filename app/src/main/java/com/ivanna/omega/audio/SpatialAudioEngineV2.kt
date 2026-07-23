@@ -36,7 +36,7 @@ class SpatialAudioEngineV2 {
 
     @Volatile private var isRunning = false
     private val bufferSize = 16
-    private val sampleRate = 48000
+    private val sampleRate = 96000
 
     // Buffers de trabajo reutilizados entre bloques para no allocar por chunk.
     private val chunkIn = FloatArray(bufferSize)

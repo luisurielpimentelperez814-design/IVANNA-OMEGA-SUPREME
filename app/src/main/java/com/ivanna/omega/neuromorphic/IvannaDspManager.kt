@@ -44,7 +44,7 @@ object IvannaDspManager {
     // ── Configuración ────────────────────────────────────────────────────────
 
     /** Frecuencia de muestreo del motor principal (debe coincidir con AAudio). */
-    var sampleRate : Int = 48_000
+    var sampleRate : Int = 96_000
 
     /** Neuronas LIF en el DSP. Valor recomendado: 64 (balance carga/calidad). */
     var nNeurons   : Int = 64

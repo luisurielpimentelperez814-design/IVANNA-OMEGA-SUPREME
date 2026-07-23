@@ -17,7 +17,7 @@ object DSPBridge {
 
     val isLoaded: Boolean get() = loaded
 
-    fun init(sampleRate: Int = 48000) {
+    fun init(sampleRate: Int = 96000) {
         if (loaded) nativeInit(sampleRate)
     }
 

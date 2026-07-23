@@ -125,7 +125,7 @@ object IvannaNpeNative {
 
     /**
      * Abre el handle FastRPC al cDSP y pre-asigna buffers ION para zero-copy.
-     * @param sampleRate Frecuencia de muestreo en Hz (típicamente 48000)
+     * @param sampleRate Frecuencia de muestreo en Hz (típicamente 96000)
      * @param nNeurons   Número de neuronas LIF en el DSP (≤ 256, pot. de 2)
      * @param blockSize  Frames por bloque (≤ 512, pot. de 2)
      * @return true si el DSP fue abierto exitosamente

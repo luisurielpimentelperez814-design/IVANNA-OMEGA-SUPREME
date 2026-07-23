@@ -6,7 +6,7 @@ import kotlin.math.*
  * Concert Mode — Simulación de reverberación con delay y feedback ajustable.
  * Crea sensación de sala en vivo.
  */
-class ConcertMode(private val sampleRate: Float = 48000f) {
+class ConcertMode(private val sampleRate: Float = 96000f) {
     companion object {
         // FIX (control sin efecto real — hallazgo de auditoría): ni la
         // instancia de MainActivity ni la que creaba VoiceController al

@@ -17,6 +17,6 @@ private:
     // sólo se aplica por encima del corte, y por debajo se limita el boost
     // de forma proporcional a cuánto se está ensanchando (ver .cpp).
     Biquad sideLpf_;
-    uint32_t lastSampleRate_ = 48000;
+    uint32_t lastSampleRate_ = 96000;
 };
 }

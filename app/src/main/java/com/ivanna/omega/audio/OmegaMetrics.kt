@@ -6,7 +6,7 @@ data class OmegaMetrics(
     var clipCount: Int = 0,
     var cpuPercent: Float = 0f,
     var latencyMs: Float = 2.8f,
-    var sampleRate: Int = 48000,
+    var sampleRate: Int = 96000,
     var yamnetCategory: String = "—",
     var yamnetConfidence: Float = 0f,
     var dspActive: Boolean = false,

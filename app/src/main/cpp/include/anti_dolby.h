@@ -26,7 +26,7 @@ struct AntiDolbyState {
 
     // Contador de frames para throttle de clasificación
     std::atomic<int>   frameCounter{0};
-    static constexpr int CLASSIFY_EVERY_N_FRAMES = 48000; // ~1s @ 48kHz
+    static constexpr int CLASSIFY_EVERY_N_FRAMES = 96000; // ~1s @ 48kHz
 
     // Thresholds
     static constexpr float SPEECH_THRESHOLD = 0.6f;

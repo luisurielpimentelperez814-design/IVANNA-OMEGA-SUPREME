@@ -27,12 +27,12 @@ import kotlin.math.sqrt
 class AudioPipeline {
 
     companion object {
-        const val SAMPLE_RATE = 48000
+        const val SAMPLE_RATE = 96000
         const val FRAMES_PER_BLOCK = 256
         const val BUFFER_SIZE = FRAMES_PER_BLOCK * 2   // estéreo intercalado
 
         // Throttle YAMNet: clasificar cada N bloques (~1s @ 48kHz con bloques de 256)
-        private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~48000 frames = 1s
+        private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~96000 frames = 1s
     }
 
     private val tag = "IVANNA.Pipeline"

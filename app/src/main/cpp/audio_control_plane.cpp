@@ -136,7 +136,7 @@ int control_apply_frame() noexcept {
     // (baja P0 = alta confianza = alta coherencia). Puramente aditivo:
     // estos dos campos no tenían ningún lector antes de este cambio.
     if (!g_phase_oracle_refined_init) {
-        g_phase_oracle_refined.init(48000.f);
+        g_phase_oracle_refined.init(96000.f);
         g_phase_oracle_refined_init = true;
     }
     g_phase_oracle_refined.tick(phase_vel);

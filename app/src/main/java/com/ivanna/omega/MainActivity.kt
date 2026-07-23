@@ -346,7 +346,7 @@ class MainActivity : ComponentActivity() {
         // FIX: motor NPE (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain) — sin
         // este init() el handle nativo se queda en 0 y todos los setters de
         // IvannaNpeEngine son no-ops silenciosos.
-        IvannaNpeEngine.init(48000, NPE_BLOCK_FRAMES)
+        IvannaNpeEngine.init(96000, NPE_BLOCK_FRAMES)
         IvannaNpeEngine.setBypass(parameterStore.isNpeBypass())
         // TUNING v3.1: Optimización de motor neuromorphic
         IvannaNpeEngine.setNeuroParams(
@@ -652,7 +652,7 @@ class MainActivity : ComponentActivity() {
                                   clipCount = if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeGetClipCount() else omegaMetrics.clipCount,
                                   cpuPercent = cpu,
                                   latencyMs = 2.8f,
-                                  sampleRate = 48000,
+                                  sampleRate = 96000,
                                   yamnetCategory = IvannaNpeEngine.getDetectedGenre(),
                                   yamnetConfidence = classify.getOrElse(1) { 0f },
                                   dspActive = IvannaNativeLib.isLoaded && !dspState.bypass,
@@ -1146,7 +1146,7 @@ class MainActivity : ComponentActivity() {
     private fun initCoreAudioEngine() {
         ensureMetadataHooksStarted()
         try {
-            audioEngine.initialize(48000)
+            audioEngine.initialize(96000)
             audioEngine.setExciter(parameterStore.getExciter())
             audioEngine.setEqGain(parameterStore.getEqGain())
             audioEngine.setWidth(parameterStore.getWidth())

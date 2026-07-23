@@ -24,7 +24,7 @@
 
 #include "ivanna_dsp.h"
 
-static int g_sample_rate = 48000;
+static int g_sample_rate = 96000;
 static int g_n_neurons = 64;
 static int g_block_size = 256;
 static int g_volterra_taps = 16;

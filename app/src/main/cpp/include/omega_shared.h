@@ -6,7 +6,7 @@
 #include <cstring>
 
 #define OMEGA_BLOCK_SIZE   512
-#define OMEGA_SAMPLE_RATE  48000
+#define OMEGA_SAMPLE_RATE  96000
 #define OMEGA_MAX_CHANNELS 2
 #define OMEGA_BUFFER_SLOTS 16
 

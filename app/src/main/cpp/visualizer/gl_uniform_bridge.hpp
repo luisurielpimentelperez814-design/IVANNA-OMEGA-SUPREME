@@ -154,7 +154,7 @@ private:
     static constexpr float kHighFloorDb = -60.f, kHighCeilDb = -14.f;
 
     GammatoneFilterBank13 fb_;
-    float fs_ = 48000.f;
+    float fs_ = 96000.f;
     float deviceLatencyMs_ = 0.f;
     AsymSmoother bass_, mid_, high_;
     TransientPredictor predBass_, predMid_, predHigh_;
