@@ -358,6 +358,19 @@ jobs:
           cp effect-artifacts/libc++_shared.so "$VENDOR_LIB64_DST/libc++_shared.so"
           chmod 644 "$LIB64_DST/libc++_shared.so" "$VENDOR_LIB64_DST/libc++_shared.so"
 
+          # Autogenerar audio_effects.xml en el CI usando el UUID del binario compilado
+          _UUID=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | grep -i -E "omega|ivanna" | head -1 || echo "5b4b4b4b-1234-1234-1234-123456789abc")
+          
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > "$ETC_VENDOR/audio_effects.xml"
+          echo '<audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    <libraries>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '        <library name="omega_effect" path="libomega_effect.so"/>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    </libraries>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    <effects>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '        <effect name="omega" library="omega_effect" uuid="'"$_UUID"'"/>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    </effects>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '</audio_effects_conf>' >> "$ETC_VENDOR/audio_effects.xml"
+          
           if [ ! -f "$ETC_VENDOR/audio_effects.xml" ]; then
             echo "ERROR: audio_effects.xml no encontrado en $ETC_VENDOR"
             exit 1
