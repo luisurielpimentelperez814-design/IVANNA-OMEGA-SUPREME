@@ -65,8 +65,12 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
     // makeup_runtime = pow(10, GR_adicional/2 / 20) — mismo criterio que makeupGain_.
     const float grAdditional = runtimeAmount_ * 12.0f * (1.0f - 1.0f / effRatio);
     // Compensación conservadora: runtimeAmount aumenta compresión,
-    // pero no debe crear ganancia neta excesiva.
-    const float makeupRuntime = std::pow(10.0f, grAdditional * 0.25f / 20.0f);
+    // pero no debe crear ganancia neta excesiva. El envelope tiene
+    // attack ~50ms; en bloques cortos la GR real todavía no se aplicó
+    // mientras el makeup sí — por eso se compensa solo ~10% de la
+    // GR_adicional teórica (evita overshoot durante transitorios sin
+    // sacrificar makeup en régimen estable, donde la GR sí actúa).
+    const float makeupRuntime = std::pow(10.0f, grAdditional * 0.10f / 20.0f);
     const float makeup = makeupGain_ * makeupRuntime;
     float env = env_;
 
