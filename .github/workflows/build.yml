@@ -296,7 +296,7 @@ jobs:
             exit 1
           fi
 
-          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" -path "*/arm64-v8a/*" | head -1)
+          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1)
           [ -f "$LIBCXX_SRC" ] || { echo "ERROR: libc++_shared.so no encontrado"; exit 1; }
           cp "$LIBCXX_SRC" libc++_shared.so
           ls -lh libc++_shared.so
