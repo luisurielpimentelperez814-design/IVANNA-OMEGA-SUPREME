@@ -309,7 +309,4 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeRelease(JNIEnv*,j
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetActive(JNIEnv*,jobject,jboolean){}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetIntensity(JNIEnv*,jobject,jfloat){}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetVocoderMix(JNIEnv*,jobject,jfloat){}
-
-// Android Audio Effects legacy loader entry point
-extern "C" __attribute__((visibility("default"), used))
 }
