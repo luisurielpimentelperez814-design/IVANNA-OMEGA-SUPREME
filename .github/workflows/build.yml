@@ -262,11 +262,11 @@ jobs:
             exit 1
           fi
           echo "=== Intérprete ELF ==="
-          if ! "$READELF" -l ivanna_daemon | grep -q "interpreter"; then
+          if ! "$READELF" -l ivanna_daemon | grep -qi "interp"; then
             echo "ERROR: ivanna_daemon no tiene intérprete dinámico"
             exit 1
           fi
-          "$READELF" -l ivanna_daemon | grep interpreter
+          "$READELF" -l ivanna_daemon | grep -i "interp"
 
           echo "=== Hardening: daemon ==="
           "$READELF" -h ivanna_daemon | grep "Type:"
