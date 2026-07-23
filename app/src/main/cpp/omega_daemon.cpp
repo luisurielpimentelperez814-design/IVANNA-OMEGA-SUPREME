@@ -103,9 +103,9 @@ struct Biquad {
 };
 
 // Funciones helper para calcular coeficientes Biquad
-static void calcLowShelf(Biquad& bq, float freq, float Q, float gainDB) {
+static void calcLowShelf(Biquad& bq, float freq, float Q, float gainDB, float sr = 96000.0f) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 96000.0f;
+    float w0 = 2.0f * M_PI * freq / sr; // FIX: usar sr dinámica
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -117,9 +117,9 @@ static void calcLowShelf(Biquad& bq, float freq, float Q, float gainDB) {
     bq.a2 = ((A + 1.0f) + (A - 1.0f) * cosw0 - 2.0f * sqrtf(A) * alpha) / a0;
 }
 
-static void calcPeaking(Biquad& bq, float freq, float Q, float gainDB) {
+static void calcPeaking(Biquad& bq, float freq, float Q, float gainDB, float sr = 96000.0f) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 96000.0f;
+    float w0 = 2.0f * M_PI * freq / sr; // FIX: usar sr dinámica
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -131,9 +131,9 @@ static void calcPeaking(Biquad& bq, float freq, float Q, float gainDB) {
     bq.a2 = (1.0f - alpha / A) / a0;
 }
 
-static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB) {
+static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB, float sr = 96000.0f) {
     float A = powf(10.0f, gainDB / 40.0f);
-    float w0 = 2.0f * M_PI * freq / 96000.0f;
+    float w0 = 2.0f * M_PI * freq / sr; // FIX: usar sr dinámica
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
     
@@ -148,8 +148,8 @@ static void calcHighShelf(Biquad& bq, float freq, float Q, float gainDB) {
 // FIX (band energy, ver BandEnergyMeter más abajo): calcPeaking con
 // gainDB=0 es identidad (no filtra nada) — hace falta un pasabanda RBJ
 // real para poder separar low/mid/high de verdad.
-static void calcBandpass(Biquad& bq, float freq, float Q) {
-    float w0 = 2.0f * M_PI * freq / 96000.0f;
+static void calcBandpass(Biquad& bq, float freq, float Q, float sr = 96000.0f) {
+    float w0 = 2.0f * M_PI * freq / sr; // FIX: usar sr dinámica
     float alpha = sinf(w0) / (2.0f * Q);
     float cosw0 = cosf(w0);
 
@@ -823,7 +823,7 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
     // Se documenta aquí por consistencia, no por necesidad.
     // g_shared->ai_runtime_comp_amount = 0.0f  ← seguro, memset ya lo hizo
     // g_shared->ai_runtime_exciter_red = 0.0f  ← idem
-    g_bandMeter.init();
+    g_bandMeter.init(static_cast<float>(OMEGA_SAMPLE_RATE)); // FIX: sr dinámica
 
     // Inicializar módulos DSP Ruta B con params por defecto.
     // setParams() aplica DSPParams defaults (calibrados en dsp_types.h v3.3).
