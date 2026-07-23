@@ -388,91 +388,20 @@ jobs:
             echo "WARN: libomega_effect.so no referenciado en audio_effects.xml"
           fi
 
-          # ─── Creación de archivos (sin heredoc, usando printf) ───
+          # ─── Usar archivos Magisk del repositorio ───
 
-          printf '%s\n' \
-            '#!/system/bin/sh' \
-            'MODDIR=${0%/*}' \
-            'LOG=/data/local/tmp/ivanna_daemon.log' \
-            'DAEMON=$MODDIR/system/bin/ivanna_daemon' \
-            'LIB=$MODDIR/system/lib64' \
-            'VENDOR_LIB=$MODDIR/system/vendor/lib64' \
-            '' \
-            'if pidof ivanna_daemon >/dev/null 2>&1; then' \
-            '    exit 0' \
-            'fi' \
-            '' \
-            'chmod 755 "$DAEMON"' \
-            '' \
-            'until pidof audioserver >/dev/null 2>&1 \' \
-            '   || pidof android.hardware.audio.service >/dev/null 2>&1 \' \
-            '   || pidof android.hardware.audio.service-aidl >/dev/null 2>&1; do' \
-            '    sleep 2' \
-            'done' \
-            '' \
-            '{' \
-            '  echo "=== ENV ==="' \
-            '  getenforce' \
-            '  id' \
-            '  ls -lZ "$DAEMON"' \
-            '  ls -lZ "$LIB"' \
-            '} >> "$LOG"' \
-            '' \
-            'export LD_LIBRARY_PATH="$VENDOR_LIB:$LIB:/system/lib64:/vendor/lib64"' \
-            '' \
-            'echo "Starting IVANNA daemon" >> "$LOG"' \
-            '' \
-            'nohup "$DAEMON" >> "$LOG" 2>&1 &' \
-            '' \
-            'sleep 2' \
-            '' \
-            'if pidof ivanna_daemon >/dev/null 2>&1; then' \
-            '    echo "IVANNA daemon OK" >> "$LOG"' \
-            'else' \
-            '    echo "IVANNA daemon FAILED" >> "$LOG"' \
-            '    echo "=== LOGCAT ===" >> "$LOG"' \
-            '    logcat -d -t 100 | grep -i ivanna >> "$LOG" 2>&1' \
-            '    echo "=== SELINUX ===" >> "$LOG"' \
-            '    dmesg | grep avc >> "$LOG" 2>&1' \
-            'fi' \
-            > magisk_module/service.sh
-          chmod 755 magisk_module/service.sh
+          echo "Copiando módulo Magisk desde repo"
 
-          printf '%s\n' \
-            '#!/system/bin/sh' \
-            'sleep 5' \
-            > magisk_module/post-fs-data.sh
-          chmod 755 magisk_module/post-fs-data.sh
+          cp -av magisk_module/* "$ZIP_ROOT/"
 
-          printf '%s\n' \
-            'SKIPUNZIP=0' \
-            'ui_print "Installing IVANNA OMEGA SUPREME"' \
-            > magisk_module/customize.sh
-          chmod 755 magisk_module/customize.sh
+          chmod 755 "$ZIP_ROOT"/*.sh
 
-          printf '%s\n' \
-            'allow magisk vendor_file dir { search };' \
-            'allow magisk system_file dir { search };' \
-            'allow magisk vendor_file file { read open getattr map };' \
-            'allow magisk system_file file { read open getattr map };' \
-            > magisk_module/sepolicy.rule
+          test -f "$ZIP_ROOT/service.sh"
+          test -f "$ZIP_ROOT/module.prop"
+          test -f "$ZIP_ROOT/customize.sh"
+          test -f "$ZIP_ROOT/post-fs-data.sh"
 
-          printf '%s\n' \
-            'id=ivanna_omega' \
-            'name=IVANNA OMEGA SUPREME' \
-            'version=v1.0' \
-            'versionCode=1' \
-            'author=IVANNA' \
-            'description=Efecto de audio Omega + Daemon de monitoreo' \
-            > magisk_module/module.prop
 
-          echo "=== Final module check ==="
-          test -x "$BIN_DST/ivanna_daemon"
-          test -f "$LIB_DST/libomega_effect.so"
-          test -f "$LIB64_DST/libc++_shared.so"
-          test -f "$VENDOR_LIB64_DST/libc++_shared.so"
-          test -f magisk_module/customize.sh
-          test -f magisk_module/sepolicy.rule
           test -f "$ETC_VENDOR/audio_effects.xml"
           find magisk_module/system -type f -exec file {} \;
           echo "MODULE READY"
