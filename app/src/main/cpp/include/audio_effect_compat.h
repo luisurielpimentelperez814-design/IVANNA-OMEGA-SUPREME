@@ -152,7 +152,8 @@ enum effect_command_e {
  * hardware/audio_effect.h), AUDIO_EFFECT_LIBRARY_INFO_SYM NO es el nombre
  * de un símbolo — es un MACRO que se expande al token AELI:
  *
- *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
  *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
  *
@@ -176,7 +177,8 @@ enum effect_command_e {
  * de preprocesado a `audio_effect_library_t AELI = { ... };` y el símbolo
  * real exportado pasa a llamarse "AELI".
  */
-#define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI\n#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
 
