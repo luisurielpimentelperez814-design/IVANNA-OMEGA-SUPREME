@@ -92,45 +92,63 @@ struct ControlFrame {
 class ControlFrameBus {
 public:
     void publish(ControlFrame f) noexcept {
-        const uint64_t s =
-            seq_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+        f.seq = seq_counter_.fetch_add(1, std::memory_order_relaxed)+1;
 
-        f.seq = s;
+        uint32_t write =
+            writeIndex_.load(std::memory_order_relaxed);
 
-        uint32_t current =
-            active_.load(std::memory_order_relaxed);
-
-        uint32_t next = current ^ 1u;
+        uint32_t next = (write + 1) % 3;
 
         buffers_[next] = f;
 
-        active_.store(next, std::memory_order_release);
+        published_.store(next, std::memory_order_release);
+
+        writeIndex_.store(next, std::memory_order_relaxed);
     }
 
     bool consumeIfNewer(ControlFrame& out,
                         uint64_t& lastSeenSeq) const noexcept {
 
         uint32_t index =
-            active_.load(std::memory_order_acquire);
+            published_.load(std::memory_order_acquire);
 
-        ControlFrame snapshot = buffers_[index];
+        if(index == readIndex_)
+        {
+            const ControlFrame snapshot = buffers_[index];
 
-        if (snapshot.seq == lastSeenSeq)
+            if(snapshot.seq == lastSeenSeq)
+                return false;
+
+            lastSeenSeq=snapshot.seq;
+            out=snapshot;
+            return true;
+        }
+
+        readIndex_=index;
+
+        const ControlFrame snapshot=buffers_[index];
+
+        if(snapshot.seq==lastSeenSeq)
             return false;
 
-        lastSeenSeq = snapshot.seq;
-        out = snapshot;
+        lastSeenSeq=snapshot.seq;
+        out=snapshot;
 
         return true;
     }
 
 private:
-    alignas(64) mutable ControlFrame buffers_[2]{};
+    alignas(64) mutable ControlFrame buffers_[3]{};
 
     alignas(64)
-    mutable std::atomic<uint32_t> active_{0};
+    mutable uint32_t readIndex_{0};
 
-    mutable std::atomic<uint64_t> seq_counter_{0};
+    alignas(64)
+    std::atomic<uint32_t> published_{0};
+
+    std::atomic<uint32_t> writeIndex_{0};
+
+    std::atomic<uint64_t> seq_counter_{0};
 };
 
 } // namespace ivanna
