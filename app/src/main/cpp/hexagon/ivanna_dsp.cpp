@@ -1,2 +1,2 @@
 #include "ivanna_dsp.hpp"
-// Stub implementation — Hexagon offload pending Qualcomm SDK
+// Stub — Hexagon offload pending Qualcomm FastRPC SDK

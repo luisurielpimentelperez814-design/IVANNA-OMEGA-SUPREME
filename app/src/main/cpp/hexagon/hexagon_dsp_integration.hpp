@@ -1,7 +1,6 @@
 #pragma once
 /**
- * hexagon_dsp_integration.hpp
- * Qualcomm Hexagon DSP offload interface — STUB
+ * hexagon_dsp_integration.hpp — Qualcomm Hexagon DSP offload interface STUB
  *
  * Full implementation requires Qualcomm FastRPC SDK (proprietary).
  * See ivanna_fastrpc_client.hpp for the client-side wrapper.

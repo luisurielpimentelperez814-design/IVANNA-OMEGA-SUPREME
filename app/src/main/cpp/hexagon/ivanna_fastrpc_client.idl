@@ -1,0 +1,7 @@
+/* ivanna_fastrpc_client.idl
+ * FastRPC IDL stub — Qualcomm QAIC compiler required for real codegen.
+ * Status: pending proprietary SDK.
+ */
+interface IvannaFastRPC {
+    long process(in sequence<float> input, rout sequence<float> output);
+};
