@@ -55,8 +55,8 @@ static void sig_handler(int /*sig*/) {
 }
 
 static OmegaSharedState* open_shm() {
-    int fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0660);
-    if (fd < 0) { LOGE("shm_open: %s", strerror(errno)); return nullptr; }
+    int fd = open(SHM_NAME, O_CREAT | O_RDWR, 0660);
+    if (fd < 0) { LOGE("open: %s", strerror(errno)); return nullptr; }
     if (ftruncate(fd, static_cast<off_t>(SHM_SIZE)) < 0) {
         LOGE("ftruncate: %s", strerror(errno));
         close(fd); return nullptr;
@@ -101,6 +101,6 @@ int main(int /*argc*/, char** /*argv*/) {
 
     LOGI("IVANNA daemon shutting down gracefully");
     munmap(shm, SHM_SIZE);
-    shm_unlink(SHM_NAME);
+    unlink(SHM_NAME);
     return 0;
 }
