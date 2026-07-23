@@ -157,7 +157,12 @@ jobs:
           SYMS=$("$READELF" --dyn-syms "$SO" || true)
           echo "$SYMS"
 
-          AELI_LINE=$(echo "$SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM")
+          # FIX (silent kill por pipefail): sin "|| true" acá, si por algún
+          # motivo el símbolo faltara, el grep sin match mataría el script
+          # ANTES de llegar al chequeo explícito de abajo -- sin imprimir el
+          # mensaje de error real ("símbolo AELI no encontrado"), solo el
+          # genérico "Process completed with exit code 1" de GitHub.
+          AELI_LINE=$(echo "$SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           if [ -z "$AELI_LINE" ]; then
             echo "ERROR: símbolo AELI no encontrado"
             exit 1
@@ -179,14 +184,31 @@ jobs:
             exit 1
           fi
 
-          UUID_SO=$(strings "$SO" | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1)
-          [ -n "$UUID_SO" ] && echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
+          # FIX CRÍTICO (causa real del fallo en CI): esta era la línea que
+          # mataba el script en silencio. Bajo `set -o pipefail`, si el
+          # segundo grep (filtro "omega|ivanna") no encontraba coincidencia
+          # -- muy posible, es un filtro heurístico opcional sobre strings
+          # del binario -- el pipeline completo devolvía código de error, y
+          # como esta asignación NO estaba protegida con "|| true" ni dentro
+          # de un "if", `set -e` abortaba el script ahí mismo, sin imprimir
+          # ningún mensaje. Encima, la línea siguiente ([ -n ... ] && echo)
+          # también podía matar el script bajo `set -e` si UUID_SO quedaba
+          # vacío, por ser un "&&" a nivel de script y no un "if". Esta
+          # extracción de UUID es solo informativa (para $GITHUB_ENV) y
+          # nunca debería poder abortar la validación real del símbolo AELI.
+          UUID_SO=$(strings "$SO" 2>/dev/null | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1 || true)
+          if [ -n "$UUID_SO" ]; then
+            echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
+          fi
 
           cp "$SO" libomega_effect_arm64.so
 
           echo "=== Revalidando AELI en la copia ==="
           COPY_SYMS=$("$READELF" --dyn-syms libomega_effect_arm64.so)
-          COPY_AELI=$(echo "$COPY_SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM")
+          # Mismo fix de "|| true" que arriba, por consistencia y para que
+          # un símbolo realmente ausente en la copia dé el mensaje real en
+          # vez de un exit silencioso.
+          COPY_AELI=$(echo "$COPY_SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           if [ -z "$COPY_AELI" ]; then
             echo "ERROR: AELI desapareció en la copia"
             exit 1
