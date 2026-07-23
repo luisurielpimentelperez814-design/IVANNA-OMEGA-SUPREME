@@ -437,21 +437,21 @@ jobs:
       - name: Package Magisk zip
         run: |
           cd magisk_module
-          zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
           echo "=== Module contents ==="
-          unzip -l ../ivanna-omega-magisk.zip
-          du -sh ../ivanna-omega-magisk.zip
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
 
       - name: Verify final Magisk module
         run: |
           set -e
-          unzip -t ivanna-omega-magisk.zip
-          unzip -l ivanna-omega-magisk.zip
-          if ! unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$'; then
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
             echo "ERROR: module.prop no está en la raíz"
             exit 1
           fi
-          unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
           file /tmp/test_daemon | grep ELF
           echo "=== MODULE READY ==="
 
@@ -459,7 +459,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ivanna-omega-magisk
-          path: ivanna-omega-magisk.zip
+          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
           if-no-files-found: error
           overwrite: true
           retention-days: 14
@@ -516,6 +516,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/magisk/ivanna-omega-magisk.zip
+            cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
             release/apk/**/*.apk
           generate_release_notes: true
