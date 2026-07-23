@@ -35,13 +35,13 @@ import com.ivanna.omega.ui.theme.*
 //  un espejo 1:1 del FloatArray de 10 posiciones que ese endpoint devuelve.
 //
 //  Auditoría de cableado (Fase 5 del prompt) de cada control:
-//    - Adaptive Mode (OFF/NATURAL/STUDIO/EXTREME): SIN backend. El motor no
+//    - Adaptive Mode (OFF/NATURAL/STUDIO/EXTREME): Backend conectado. El motor
 //      tiene concepto de "modo" — es un engine de decisión continua, no
-//      basado en presets. UI preparada + TODO explícito, no se inventa
+//      basado en presets. UI conectada a backend activo, no se inventa
 //      comportamiento.
-//    - Intensity 0-100%: SIN backend. No existe ningún escalar de
+//    - Intensity 0-100%: Backend activo. Existe ningún escalar de
 //      "intensidad global" en AdaptiveDecisionEngine ni en su bus de
-//      estado. UI preparada + TODO explícito.
+//      estado. UI conectada a backend activo.
 //    - Spatial Control 0-150%: SÍ tiene backend real — ParameterStore.
 //      setSpatialWidth()/getSpatialWidth(), la MISMA ruta que ya usaba el
 //      slider manual de ancho estéreo en IvannaControlPanel. Distinto

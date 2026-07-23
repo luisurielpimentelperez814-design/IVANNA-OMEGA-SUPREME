@@ -531,7 +531,7 @@ class MainActivity : ComponentActivity() {
                                 // se veían en pantalla con el badge en ONLINE
                                 // y "Blocks aplicados: 0", sin que la UI
                                 // distinguiera "motor corriendo de verdad" de
-                                // "no hay dato real todavía". Ahora se exige
+                                // "datos reales activos". Ahora se exige
                                 // el mismo criterio que ya usaba de forma
                                 // correcta startAdaptiveTelemetryLoop() más
                                 // abajo: nativeIsAdaptiveEngineRunning() como
