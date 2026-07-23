@@ -410,20 +410,18 @@ jobs:
           cp -av magisk_module/* "$ZIP_ROOT/"
 
           # Autogenerar archivos Magisk si no existen
-          [ ! -f "$ZIP_ROOT/module.prop" ] && echo -e "id=ivanna_omega_supreme
-name=IVANNA Omega Supreme
-version=v1.0
-versionCode=1
-author=Luis Uriel Pimentel
-description=Motor de audio de alta resolucion y demonio nativo" > "$ZIP_ROOT/module.prop"
-          [ ! -f "$ZIP_ROOT/service.sh" ] && echo -e "#!/system/bin/sh
-# Script de servicio de IVANNA" > "$ZIP_ROOT/service.sh"
-          [ ! -f "$ZIP_ROOT/customize.sh" ] && echo -e "#!/system/bin/sh
-# Script de instalacion" > "$ZIP_ROOT/customize.sh"
-          [ ! -f "$ZIP_ROOT/post-fs-data.sh" ] && echo -e "#!/system/bin/sh
-# Script post-fs-data" > "$ZIP_ROOT/post-fs-data.sh"
+          echo "id=ivanna_omega_supreme" > "$ZIP_ROOT/module.prop"
+          echo "name=IVANNA Omega Supreme" >> "$ZIP_ROOT/module.prop"
+          echo "version=v1.0" >> "$ZIP_ROOT/module.prop"
+          echo "versionCode=1" >> "$ZIP_ROOT/module.prop"
+          echo "author=Luis Uriel Pimentel" >> "$ZIP_ROOT/module.prop"
+          echo "description=Motor de audio de alta resolucion y demonio nativo" >> "$ZIP_ROOT/module.prop"
           
-          # Cambiar permisos de manera segura sin fallar si está vacío
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/service.sh"
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/customize.sh"
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/post-fs-data.sh"
+          
+          # Cambiar permisos de manera segura
           find "$ZIP_ROOT" -maxdepth 1 -type f -name "*.sh" -exec chmod 755 {} \;
 
           test -f "$ZIP_ROOT/service.sh"
