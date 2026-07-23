@@ -171,7 +171,7 @@ jobs:
             exit 1
           fi
 
-          # Verificar con nm -D (regex corregido)
+          # Verificar con nm -D
           echo "── nm -D AELI ──"
           NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
           echo "$NM_SYMS"
@@ -369,15 +369,100 @@ jobs:
             echo "WARN: libomega_effect.so no referenciado en audio_effects.xml"
           fi
 
-          cat << 'EOF' > magisk_module/service.sh
-    needs: [bundle-release]
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download APKs
-        uses: actions/download-artifact@v4
-        with: 
+          # Crear service.sh con heredoc usando tabulaciones y <<-
+          cat <<- 'SCRIPTEOF' > magisk_module/service.sh
+	#!/system/bin/sh
+	MODDIR=${0%/*}
+	LOG=/data/local/tmp/ivanna_daemon.log
+	DAEMON=$MODDIR/system/bin/ivanna_daemon
+	LIB=$MODDIR/system/lib64
+	VENDOR_LIB=$MODDIR/system/vendor/lib64
+
+	if pidof ivanna_daemon >/dev/null 2>&1; then
+	    exit 0
+	fi
+
+	chmod 755 "$DAEMON"
+
+	until pidof audioserver >/dev/null 2>&1 \
+	   || pidof android.hardware.audio.service >/dev/null 2>&1 \
+	   || pidof android.hardware.audio.service-aidl >/dev/null 2>&1; do
+	    sleep 2
+	done
+
+	{
+	  echo "=== ENV ==="
+	  getenforce
+	  id
+	  ls -lZ "$DAEMON"
+	  ls -lZ "$LIB"
+	} >> "$LOG"
+
+	export LD_LIBRARY_PATH="$VENDOR_LIB:$LIB:/system/lib64:/vendor/lib64"
+
+	echo "Starting IVANNA daemon" >> "$LOG"
+
+	nohup "$DAEMON" >> "$LOG" 2>&1 &
+
+	sleep 2
+
+	if pidof ivanna_daemon >/dev/null 2>&1; then
+	    echo "IVANNA daemon OK" >> "$LOG"
+	else
+	    echo "IVANNA daemon FAILED" >> "$LOG"
+	    echo "=== LOGCAT ===" >> "$LOG"
+	    logcat -d -t 100 | grep -i ivanna >> "$LOG" 2>&1
+	    echo "=== SELINUX ===" >> "$LOG"
+	    dmesg | grep avc >> "$LOG" 2>&1
+	fi
+	SCRIPTEOF
+          chmod 755 magisk_module/service.sh
+
+          # Crear post-fs-data.sh
+          cat <<- 'SCRIPTEOF' > magisk_module/post-fs-data.sh
+	#!/system/bin/sh
+	sleep 5
+	SCRIPTEOF
+          chmod 755 magisk_module/post-fs-data.sh
+
+          # Crear customize.sh
+          cat <<- 'SCRIPTEOF' > magisk_module/customize.sh
+	SKIPUNZIP=0
+	ui_print "Installing IVANNA OMEGA SUPREME"
+	SCRIPTEOF
+          chmod 755 magisk_module/customize.sh
+
+          # Crear sepolicy.rule
+          cat <<- 'SCRIPTEOF' > magisk_module/sepolicy.rule
+	allow magisk vendor_file dir { search };
+	allow magisk system_file dir { search };
+	allow magisk vendor_file file { read open getattr map };
+	allow magisk system_file file { read open getattr map };
+	SCRIPTEOF
+
+          # Crear module.prop
+          cat <<- 'SCRIPTEOF' > magisk_module/module.prop
+	id=ivanna_omega
+	name=IVANNA OMEGA SUPREME
+	version=v1.0
+	versionCode=1
+	author=IVANNA
+	description=Efecto de audio Omega + Daemon de monitoreo
+	SCRIPTEOF
+
+          echo "=== Final module check ==="
+          test -x "$BIN_DST/ivanna_daemon"
+          test -f "$LIB_DST/libomega_effect.so"
+          test -f "$LIB64_DST/libc++_shared.so"
+          test -f "$VENDOR_LIB64_DST/libc++_shared.so"
+          test -f magisk_module/customize.sh
+          test -f magisk_module/sepolicy.rule
+          test -f "$ETC_VENDOR/audio_effects.xml"
+          find magisk_module/system -type f -exec file {} \;
+          echo "MODULE READY"
+
+      - name: Package Magisk zip
+        run: |
           cd magisk_module
           zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
           echo "=== Module contents ==="
@@ -439,4 +524,25 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-- 
+    needs: [bundle-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: release/apk
+      - name: Download Magisk module
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: release/magisk
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/magisk/ivanna-omega-magisk.zip
+            release/apk/**/*.apk
+          generate_release_notes: true
