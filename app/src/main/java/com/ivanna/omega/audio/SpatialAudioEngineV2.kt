@@ -36,7 +36,7 @@ class SpatialAudioEngineV2 {
 
     @Volatile private var isRunning = false
     private val bufferSize = 16
-    private val sampleRate = 96000
+    private val sampleRate = 48000
 
     // Buffers de trabajo reutilizados entre bloques para no allocar por chunk.
     private val chunkIn = FloatArray(bufferSize)
@@ -70,7 +70,7 @@ class SpatialAudioEngineV2 {
             isRunning = true
             activeInstance = this
             Log.i(TAG, "Motor nativo inicializado: sr=$sampleRate, bufSize=$bufferSize")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error al iniciar motor binaural", e)
             isRunning = false
         }
@@ -88,11 +88,11 @@ class SpatialAudioEngineV2 {
                 } else {
                     Log.w(TAG, "nativeReleaseSpatialEngine retornó false")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Error liberando motor nativo", e)
             }
             Log.i(TAG, "Motor binaural detenido")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error crítico en stop()", e)
         }
     }
@@ -124,7 +124,7 @@ class SpatialAudioEngineV2 {
                 )
                 offset += count
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error procesando bloque capturado", e)
         }
     }

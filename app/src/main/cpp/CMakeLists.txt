@@ -156,6 +156,8 @@ target_include_directories(omega_effect PRIVATE
 
 target_link_libraries(omega_effect
     ${log-lib}
+    m
+    dl
 )
 
 # Exclude from APK packaging (shipped via Magisk)

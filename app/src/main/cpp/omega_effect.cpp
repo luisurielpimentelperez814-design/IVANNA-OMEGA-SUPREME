@@ -295,7 +295,7 @@ static int QueryNumEffects(uint32_t* n) { if(!n) return -EINVAL; *n=1; return 0;
 static int QueryEffect(uint32_t i, effect_descriptor_t* d) {
     if(!d||i!=0) return -ENOENT; memcpy(d,&kDesc,sizeof(kDesc)); return 0; }
 
-extern "C" __attribute__((visibility("default"), used))
+extern "C" __attribute__((visibility("default")))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     .tag=AUDIO_EFFECT_LIBRARY_TAG,.version=EFFECT_LIBRARY_API_VERSION,
     .name="OMEGA Omega_in Bridge",.implementor="GORE TNS",

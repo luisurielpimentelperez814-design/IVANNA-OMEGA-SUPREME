@@ -1,5 +1,6 @@
 package com.ivanna.omega.ui
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -199,8 +200,23 @@ fun IvannaControlPanel(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1200)
         while (true) {
-            evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
-            evoGeneration = IvannaNativeLib.nativeGetGeneration()
+            // FIX CRÍTICO (crash garantizado al abrir la app, ~1.2s después):
+            // nativeGetBestFitness/nativeGetGeneration estaban atadas a un
+            // nombre de clase JNI que no existía (com.ivanna.omega.core.
+            // AudioEngine — la clase real vive en com.ivanna.omega.audio,
+            // y esta función las llama desde IvannaNativeLib). Sin el fix
+            // en evolutionary_kernel.cpp esto era UnsatisfiedLinkError sin
+            // ningún try/catch alrededor — reventaba la única pantalla
+            // que MainActivity monta, en el 100% de los lanzamientos. Ya
+            // arreglado del lado nativo; este try/catch queda como red de
+            // seguridad para que un futuro símbolo faltante degrade a
+            // "sin datos" en vez de crashear la app entera.
+            try {
+                evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
+                evoGeneration = IvannaNativeLib.nativeGetGeneration()
+            } catch (e: Throwable) {
+                Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
+            }
             kotlinx.coroutines.delay(2000)
         }
     }

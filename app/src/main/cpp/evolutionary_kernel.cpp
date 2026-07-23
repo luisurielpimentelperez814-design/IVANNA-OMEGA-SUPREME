@@ -252,36 +252,6 @@ static void evolveGeneration() {
 
 extern "C" {
 
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeInitializeEvolution(JNIEnv*, jobject) {
-    initializePopulation();
-}
-
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeGetBestFitness(JNIEnv*, jobject) {
-    return g_population.bestFitness;
-}
-
-JNIEXPORT jint JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeGetGeneration(JNIEnv*, jobject) {
-    return static_cast<jint>(g_population.generation);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeEvolveStep(JNIEnv*, jobject) {
-    evolveGeneration();
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
-    if (rate > 0.0f && rate <= 1.0f) g_mutationRate = rate;
-}
-
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativeGetMutationRate(JNIEnv*, jobject) {
-    return g_mutationRate;
-}
-
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
         JNIEnv*, jobject, jint, jint) {

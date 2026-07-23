@@ -144,25 +144,6 @@ static inline void predictSamples(const float* __restrict__ inBuf, float* __rest
     }
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_AudioEngine_nativePredictSamples(
-        JNIEnv* env, jobject, jlong, jfloatArray input, jfloatArray output, jint n) {
-
-    static bool initialized = false;
-    if (!initialized) {
-        kalmanInit();
-        initialized = true;
-    }
-
-    jfloat* inBuf  = env->GetFloatArrayElements(input,  nullptr);
-    jfloat* outBuf = env->GetFloatArrayElements(output, nullptr);
-
-    predictSamples(inBuf, outBuf, n);
-
-    env->ReleaseFloatArrayElements(input,  inBuf,  JNI_ABORT);
-    env->ReleaseFloatArrayElements(output, outBuf, 0);
-}
-
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativePredictSamples(
         JNIEnv* env, jobject, jfloatArray audioBuffer, jint sampleCount) {

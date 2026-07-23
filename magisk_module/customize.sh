@@ -18,19 +18,19 @@ find_so_path() {
 
 append_library_once() {
   in_file="$1"; out_file="$2"
-  if grep -q "<library name="$OMEGA_NAME"" "$in_file" 2>/dev/null; then
+  if grep -q "<library name=\"$OMEGA_NAME\"" "$in_file" 2>/dev/null; then
     cp "$in_file" "$out_file"
   else
-    sed "s#</libraries>#    <library name="$OMEGA_NAME" path="libomega_effect.so"/>\n</libraries>#" "$in_file" > "$out_file"
+    sed "s#</libraries>#    <library name=\"$OMEGA_NAME\" path=\"libomega_effect.so\"/>\\n</libraries>#" "$in_file" > "$out_file"
   fi
 }
 
 append_effect_once() {
   in_file="$1"; out_file="$2"
-  if grep -q "<effect name="$OMEGA_NAME"" "$in_file" 2>/dev/null; then
+  if grep -q "<effect name=\"$OMEGA_NAME\"" "$in_file" 2>/dev/null; then
     cp "$in_file" "$out_file"
   else
-    sed "s#</effects>#    <effect name="$OMEGA_NAME" library="$OMEGA_NAME" uuid="$OMEGA_UUID" priority="1000"/>\n</effects>#" "$in_file" > "$out_file"
+    sed "s#</effects>#    <effect name=\"$OMEGA_NAME\" library=\"$OMEGA_NAME\" uuid=\"$OMEGA_UUID\" priority=\"1000\"/>\\n</effects>#" "$in_file" > "$out_file"
   fi
 }
 
