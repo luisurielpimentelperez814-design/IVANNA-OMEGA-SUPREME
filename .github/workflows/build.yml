@@ -231,7 +231,7 @@ jobs:
         run: |
           set -euo pipefail
           TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          CXX="$TOOLCHAIN/bin/aarch64-linux-android${ANDROID_COMPILE_SDK}-clang++"
+          CXX="$TOOLCHAIN/bin/aarch64-linux-android34-clang++"
           READELF="$TOOLCHAIN/bin/llvm-readelf"
           STRIP="$TOOLCHAIN/bin/llvm-strip"
           DAEMON_SRC="app/src/main/cpp/daemon/ivanna_daemon.cpp"
