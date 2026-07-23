@@ -94,9 +94,15 @@ public:
     void publish(ControlFrame f) noexcept {
         const uint64_t s = seq_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
         f.seq = s;
-        const uint32_t g = guard_.fetch_add(1, std::memory_order_acq_rel);
-        (void)g;
+        // Seqlock writer:
+        // odd guard = write in progress
+        // even guard = stable snapshot
+        guard_.fetch_add(1, std::memory_order_acquire);
+
         frame_ = f;
+
+        std::atomic_thread_fence(std::memory_order_release);
+
         guard_.fetch_add(1, std::memory_order_release);
     }
 
@@ -119,6 +125,7 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
+            std::atomic_thread_fence(std::memory_order_acquire);
             snapshot = frame_;
             g2 = guard_.load(std::memory_order_acquire);
             if (g1 == g2) break;
