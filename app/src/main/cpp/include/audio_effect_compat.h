@@ -144,6 +144,40 @@ enum effect_command_e {
 #define AUDIO_EFFECT_LIBRARY_TAG \
     ((uint32_t)('A') | ((uint32_t)('E') << 8) | ((uint32_t)('L') << 16) | ((uint32_t)('T') << 24))
 
+/* FIX CRÍTICO (causa raíz del fallo real en dispositivo, Android 15):
+ * "EffectsFactoryConfigLoader: failed not find symbol 'AELI' ... undefined
+ * symbol: AELI".
+ *
+ * En el audio_effect.h GENUINO de AOSP (hardware/libhardware/include/
+ * hardware/audio_effect.h), AUDIO_EFFECT_LIBRARY_INFO_SYM NO es el nombre
+ * de un símbolo — es un MACRO que se expande al token AELI:
+ *
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM         AELI
+ *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR  "AELI"
+ *
+ * Este header de compatibilidad (reemplazo de <hardware/audio_effect.h>,
+ * eliminado del NDK r25+) nunca definió ese macro. Consecuencia real: en
+ * omega_effect.cpp, la línea
+ *
+ *     audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = { ... };
+ *
+ * se compilaba usando el identificador LITERAL "AUDIO_EFFECT_LIBRARY_INFO_SYM"
+ * como nombre real del símbolo C exportado (28 caracteres), en vez de "AELI"
+ * (4 caracteres). El .so SÍ exporta un símbolo global — pero se llama mal.
+ * `EffectLoader.cpp` de audioserver hace dlsym(handle, AUDIO_EFFECT_LIBRARY_
+ * INFO_SYM_AS_STR), que en el sistema real se expande a dlsym(handle, "AELI")
+ * — y como "AELI" no existe en .dynsym, dlsym() falla y EffectsFactory
+ * descarta la librería antes de poder usarla.
+ *
+ * `readelf --dyn-syms | grep AUDIO_EFFECT_LIBRARY_INFO_SYM` "confirmaba" el
+ * símbolo — pero es el símbolo MAL NOMBRADO, no el que Android busca. Con
+ * este macro ya definido, la declaración de más abajo se expande en tiempo
+ * de preprocesado a `audio_effect_library_t AELI = { ... };` y el símbolo
+ * real exportado pasa a llamarse "AELI".
+ */
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM         AELI
+#define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR  "AELI"
+
 typedef struct audio_effect_library_s {
     uint32_t    tag;
     uint32_t    version;
