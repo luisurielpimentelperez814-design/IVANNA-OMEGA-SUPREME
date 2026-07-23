@@ -312,5 +312,4 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_OmegaEffect_nativeSetVocoderMix(JNI
 
 // Android Audio Effects legacy loader entry point
 extern "C" __attribute__((visibility("default"), used))
-audio_effect_library_t* AELI = &AUDIO_EFFECT_LIBRARY_INFO_SYM;
 }
