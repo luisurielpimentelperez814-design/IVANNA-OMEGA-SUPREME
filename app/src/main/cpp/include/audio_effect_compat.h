@@ -178,8 +178,6 @@ enum effect_command_e {
  * real exportado pasa a llamarse "AELI".
  */
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
- *     #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"\n//          AELI
-#define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
 
 typedef struct audio_effect_library_s {
