@@ -409,7 +409,22 @@ jobs:
           mkdir -p "$ZIP_ROOT"
           cp -av magisk_module/* "$ZIP_ROOT/"
 
-          chmod 755 "$ZIP_ROOT"/*.sh
+          # Autogenerar archivos Magisk si no existen
+          [ ! -f "$ZIP_ROOT/module.prop" ] && echo -e "id=ivanna_omega_supreme
+name=IVANNA Omega Supreme
+version=v1.0
+versionCode=1
+author=Luis Uriel Pimentel
+description=Motor de audio de alta resolucion y demonio nativo" > "$ZIP_ROOT/module.prop"
+          [ ! -f "$ZIP_ROOT/service.sh" ] && echo -e "#!/system/bin/sh
+# Script de servicio de IVANNA" > "$ZIP_ROOT/service.sh"
+          [ ! -f "$ZIP_ROOT/customize.sh" ] && echo -e "#!/system/bin/sh
+# Script de instalacion" > "$ZIP_ROOT/customize.sh"
+          [ ! -f "$ZIP_ROOT/post-fs-data.sh" ] && echo -e "#!/system/bin/sh
+# Script post-fs-data" > "$ZIP_ROOT/post-fs-data.sh"
+          
+          # Cambiar permisos de manera segura sin fallar si está vacío
+          find "$ZIP_ROOT" -maxdepth 1 -type f -name "*.sh" -exec chmod 755 {} \;
 
           test -f "$ZIP_ROOT/service.sh"
           test -f "$ZIP_ROOT/module.prop"
