@@ -92,55 +92,45 @@ struct ControlFrame {
 class ControlFrameBus {
 public:
     void publish(ControlFrame f) noexcept {
-        const uint64_t s = seq_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+        const uint64_t s =
+            seq_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+
         f.seq = s;
-        // Seqlock writer:
-        // odd guard = write in progress
-        // even guard = stable snapshot
-        guard_.fetch_add(1, std::memory_order_acquire);
 
-        frame_ = f;
+        uint32_t current =
+            active_.load(std::memory_order_relaxed);
 
-        std::atomic_thread_fence(std::memory_order_release);
+        uint32_t next = current ^ 1u;
 
-        guard_.fetch_add(1, std::memory_order_release);
+        buffers_[next] = f;
+
+        active_.store(next, std::memory_order_release);
     }
 
-    bool consumeIfNewer(ControlFrame& out, uint64_t& lastSeenSeq) const noexcept {
-        ControlFrame snapshot;
-        uint32_t g1, g2;
-        // FIX (bug real de sincronización, mismo patrón encontrado en
-        // adaptive_decision_engine.hpp — RawMetricsBus/AdaptiveStateBus):
-        // 'continue' dentro de un do-while NO reinicia el cuerpo del
-        // loop, salta directo a la condición 'while(g1!=g2)' — con g2
-        // potencialmente viejo (de una iteración anterior que se abortó
-        // antes de reasignarlo). Si el nuevo g1 (impar, escritura en
-        // curso) coincidía por azar con ese g2 viejo, el loop terminaba
-        // sin haber confirmado una lectura consistente — una lectura
-        // torn real del frame de control completo (EQ/Comp/Exciter/
-        // Widener/Gain), el bus más crítico de los tres que tenían este
-        // mismo bug, porque se lee en CADA bloque de audio. Fix: for(;;)
-        // explícito, 'continue' reinicia de verdad, 'break' solo tras
-        // confirmar g1==g2 en la misma iteración.
-        for (;;) {
-            g1 = guard_.load(std::memory_order_acquire);
-            if (g1 & 1u) continue;
-            std::atomic_thread_fence(std::memory_order_acquire);
-            snapshot = frame_;
-            g2 = guard_.load(std::memory_order_acquire);
-            if (g1 == g2) break;
-        }
+    bool consumeIfNewer(ControlFrame& out,
+                        uint64_t& lastSeenSeq) const noexcept {
 
-        if (snapshot.seq == lastSeenSeq) return false;
+        uint32_t index =
+            active_.load(std::memory_order_acquire);
+
+        ControlFrame snapshot = buffers_[index];
+
+        if (snapshot.seq == lastSeenSeq)
+            return false;
+
         lastSeenSeq = snapshot.seq;
         out = snapshot;
+
         return true;
     }
 
 private:
-    alignas(64) ControlFrame     frame_{};
-    std::atomic<uint32_t>        guard_{0};
-    std::atomic<uint64_t>        seq_counter_{0};
+    alignas(64) mutable ControlFrame buffers_[2]{};
+
+    alignas(64)
+    mutable std::atomic<uint32_t> active_{0};
+
+    mutable std::atomic<uint64_t> seq_counter_{0};
 };
 
 } // namespace ivanna
