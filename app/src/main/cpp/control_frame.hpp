@@ -91,64 +91,50 @@ struct ControlFrame {
 // ── Bus lock-free SPSC (seqlock) ──────────────────────────────────────────
 class ControlFrameBus {
 public:
+
     void publish(ControlFrame f) noexcept {
-        f.seq = seq_counter_.fetch_add(1, std::memory_order_relaxed)+1;
+        f.seq = seq_.fetch_add(1,std::memory_order_relaxed)+1;
 
-        uint32_t write =
-            writeIndex_.load(std::memory_order_relaxed);
+        while(lock_.test_and_set(std::memory_order_acquire))
+        {}
 
-        uint32_t next = (write + 1) % 3;
+        frame_ = f;
 
-        buffers_[next] = f;
-
-        published_.store(next, std::memory_order_release);
-
-        writeIndex_.store(next, std::memory_order_relaxed);
+        lock_.clear(std::memory_order_release);
     }
+
 
     bool consumeIfNewer(ControlFrame& out,
                         uint64_t& lastSeenSeq) const noexcept {
 
-        uint32_t index =
-            published_.load(std::memory_order_acquire);
+        ControlFrame snapshot;
 
-        if(index == readIndex_)
-        {
-            const ControlFrame snapshot = buffers_[index];
+        while(lock_.test_and_set(std::memory_order_acquire))
+        {}
 
-            if(snapshot.seq == lastSeenSeq)
-                return false;
+        snapshot = frame_;
 
-            lastSeenSeq=snapshot.seq;
-            out=snapshot;
-            return true;
-        }
+        lock_.clear(std::memory_order_release);
 
-        readIndex_=index;
 
-        const ControlFrame snapshot=buffers_[index];
-
-        if(snapshot.seq==lastSeenSeq)
+        if(snapshot.seq == lastSeenSeq)
             return false;
 
-        lastSeenSeq=snapshot.seq;
-        out=snapshot;
+        lastSeenSeq = snapshot.seq;
+        out = snapshot;
 
         return true;
     }
 
+
 private:
-    alignas(64) mutable ControlFrame buffers_[3]{};
 
     alignas(64)
-    mutable uint32_t readIndex_{0};
+    mutable ControlFrame frame_{};
 
-    alignas(64)
-    std::atomic<uint32_t> published_{0};
+    mutable std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
 
-    std::atomic<uint32_t> writeIndex_{0};
-
-    std::atomic<uint64_t> seq_counter_{0};
+    std::atomic<uint64_t> seq_{0};
 };
 
 } // namespace ivanna
