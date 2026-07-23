@@ -436,22 +436,23 @@ jobs:
 
       - name: Package Magisk zip
         run: |
-          cd magisk_module
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          cd "$ZIP_ROOT"
+          zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
+          cd ..
           echo "=== Module contents ==="
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          unzip -l ../ivanna-omega-magisk.zip
+          du -sh ../ivanna-omega-magisk.zip
 
       - name: Verify final Magisk module
         run: |
           set -e
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          unzip -t ivanna-omega-magisk.zip
+          unzip -l ivanna-omega-magisk.zip
+          if ! unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$'; then
             echo "ERROR: module.prop no está en la raíz"
             exit 1
           fi
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
           file /tmp/test_daemon | grep ELF
           echo "=== MODULE READY ==="
 
@@ -459,7 +460,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ivanna-omega-magisk
-          cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+          path: ivanna-omega-magisk.zip
           if-no-files-found: error
           overwrite: true
           retention-days: 14
@@ -516,6 +517,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            cd "$ZIP_ROOT" && zip -r ../ivanna-omega-magisk.zip . && cd -
+            release/magisk/ivanna-omega-magisk.zip
             release/apk/**/*.apk
           generate_release_notes: true
