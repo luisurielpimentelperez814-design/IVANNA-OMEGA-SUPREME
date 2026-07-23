@@ -260,7 +260,7 @@ static int Effect_GetDescriptor(effect_handle_t, effect_descriptor_t* d) {
     if (!d) return -EINVAL; memcpy(d, &kDesc, sizeof(kDesc)); return 0;
 }
 
-static int EffectCreate(const effect_uuid_t* uuid, int32_t sid, int32_t iid,
+int EffectCreate(const effect_uuid_t* uuid, int32_t sid, int32_t iid,
                         effect_handle_t* handle) {
     (void)sid;(void)iid;
     if (!uuid||!handle) return -EINVAL;
@@ -278,25 +278,25 @@ static int EffectCreate(const effect_uuid_t* uuid, int32_t sid, int32_t iid,
     return 0;
 }
 
-static int EffectRelease(effect_handle_t h) {
+int EffectRelease(effect_handle_t h) {
     if (!h) return -EINVAL;
     auto* ctx=(OmegaContext*)h; unmapSharedMemory(ctx); delete ctx;
     ALOG("EffectRelease OK"); return 0;
 }
 
-static int EffectGetDescriptor(const effect_uuid_t* uuid, effect_descriptor_t* d) {
+int EffectGetDescriptor(const effect_uuid_t* uuid, effect_descriptor_t* d) {
     if (!uuid||!d) return -EINVAL;
     if (memcmp(uuid,&kEffectUuid,sizeof(effect_uuid_t))!=0&&
         memcmp(uuid,EFFECT_UUID_NULL,sizeof(effect_uuid_t))!=0) return -ENOENT;
     memcpy(d,&kDesc,sizeof(kDesc)); return 0;
 }
 
-static int QueryNumEffects(uint32_t* n) { if(!n) return -EINVAL; *n=1; return 0; }
-static int QueryEffect(uint32_t i, effect_descriptor_t* d) {
+int QueryNumEffects(uint32_t* n) { if(!n) return -EINVAL; *n=1; return 0; }
+int QueryEffect(uint32_t i, effect_descriptor_t* d) {
     if(!d||i!=0) return -ENOENT; memcpy(d,&kDesc,sizeof(kDesc)); return 0; }
 
 extern "C" __attribute__((visibility("default")))
-audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+audio_effect_library_t AELI = {
     .tag=AUDIO_EFFECT_LIBRARY_TAG,.version=EFFECT_LIBRARY_API_VERSION,
     .name="OMEGA Omega_in Bridge",.implementor="GORE TNS",
     .query_num_effects=QueryNumEffects,.query_effect=QueryEffect,
