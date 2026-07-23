@@ -9,7 +9,7 @@
   </effects>
   <postprocess>
     <stream type="music">
-      <apply effect="ivanna_omega"/>
+      <apply effect="omega_effect"/>
     </stream>
   </postprocess>
 </audio_effects_conf>

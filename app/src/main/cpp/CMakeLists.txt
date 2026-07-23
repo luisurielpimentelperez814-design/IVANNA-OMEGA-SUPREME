@@ -166,3 +166,15 @@ set_target_properties(omega_effect PROPERTIES
     EXCLUDE_FROM_ALL TRUE
 )
 
+
+
+# Auto stage libomega_effect.so for Magisk
+add_custom_command(TARGET omega_effect POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+    "${CMAKE_SOURCE_DIR}/../magisk_module/system/vendor/lib64/soundfx"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:omega_effect>
+    "${CMAKE_SOURCE_DIR}/../magisk_module/system/vendor/lib64/soundfx/libomega_effect.so"
+    VERBATIM
+)
+add_custom_target(stage_omega_effect ALL DEPENDS omega_effect)
