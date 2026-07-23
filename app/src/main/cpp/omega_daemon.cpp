@@ -214,14 +214,14 @@ struct BandEnergyMeter {
     Biquad low[2], mid[2], high[2];
     float envLow = 0.f, envMid = 0.f, envHigh = 0.f;
 
-    void init() {
+    void init(float sr = 96000.0f) {
         Biquad tmpL{}, tmpR{};
-        calcBandpass(tmpL,  150.f, 0.9f); low[0]  = tmpL; low[0].reset();
-        calcBandpass(tmpR,  150.f, 0.9f); low[1]  = tmpR; low[1].reset();
-        calcBandpass(tmpL, 1000.f, 0.9f); mid[0]  = tmpL; mid[0].reset();
-        calcBandpass(tmpR, 1000.f, 0.9f); mid[1]  = tmpR; mid[1].reset();
-        calcBandpass(tmpL, 6000.f, 0.9f); high[0] = tmpL; high[0].reset();
-        calcBandpass(tmpR, 6000.f, 0.9f); high[1] = tmpR; high[1].reset();
+        calcBandpass(tmpL, 150.f, 0.9f, sr); low[0]  = tmpL; low[0].reset();
+        calcBandpass(tmpR, 150.f, 0.9f, sr); low[1]  = tmpR; low[1].reset();
+        calcBandpass(tmpL, 1000.f, 0.9f, sr); mid[0]  = tmpL; mid[0].reset();
+        calcBandpass(tmpR, 1000.f, 0.9f, sr); mid[1]  = tmpR; mid[1].reset();
+        calcBandpass(tmpL, 6000.f, 0.9f, sr); high[0] = tmpL; high[0].reset();
+        calcBandpass(tmpR, 6000.f, 0.9f, sr); high[1] = tmpR; high[1].reset();
     }
 
     void tick(float l, float r) {
