@@ -436,12 +436,28 @@ jobs:
 
       - name: Package Magisk zip
         run: |
-          cd "$ZIP_ROOT"
+          # Crear directorio de staging limpio para el módulo Magisk
+          rm -rf magisk_stage
+          mkdir -p magisk_stage
+
+          # Copiar los archivos base del módulo
+          cp -av magisk_module/* magisk_stage/ 2>/dev/null || true
+
+          # Asegurar que existan los archivos obligatorios en la raíz del módulo
+          [ -f magisk_stage/module.prop ] || echo -e "id=ivanna_omega_supreme\nname=IVANNA Omega Supreme\nversion=v1.0\nversionCode=1\nauthor=Luis Uriel Pimentel\ndescription=Motor de audio de alta resolucion" > magisk_stage/module.prop
+          [ -f magisk_stage/service.sh ] || echo "#!/system/bin/sh" > magisk_stage/service.sh
+          [ -f magisk_stage/customize.sh ] || echo "#!/system/bin/sh" > magisk_stage/customize.sh
+          [ -f magisk_stage/post-fs-data.sh ] || echo "#!/system/bin/sh" > magisk_stage/post-fs-data.sh
+          chmod 755 magisk_stage/*.sh 2>/dev/null || true
+
+          # Comprimir desde magisk_stage para garantizar que module.prop quede en la raíz absoluta del zip
+          cd magisk_stage
           zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
           cd ..
+
           echo "=== Module contents ==="
-          unzip -l ../ivanna-omega-magisk.zip
-          du -sh ../ivanna-omega-magisk.zip
+          unzip -l ivanna-omega-magisk.zip
+          du -sh ivanna-omega-magisk.zip
 
       - name: Verify final Magisk module
         run: |
