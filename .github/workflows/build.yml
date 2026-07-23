@@ -111,7 +111,7 @@ jobs:
       - name: Verify libomega_effect.so NOT in APK
         run: |
           set -e
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          APK=$(find app/build/outputs/apk -name "*.apk" | head -1 || true)
           [ -n "$APK" ] || { echo "ERROR: no APK produced"; exit 1; }
           if unzip -l "$APK" | grep -q "libomega_effect.so"; then
             echo "ERROR: libomega_effect.so leaked into APK"
@@ -131,7 +131,7 @@ jobs:
       - name: Extract and validate libomega_effect.so for Magisk
         run: |
           set -euo pipefail
-          SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1)
+          SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1 || true)
           [ -n "$SO" ] || { echo "ERROR: libomega_effect.so not found"; exit 1; }
           test -s "$SO"
           file "$SO" | grep -q "ELF"
@@ -235,7 +235,7 @@ jobs:
           READELF="$TOOLCHAIN/bin/llvm-readelf"
           STRIP="$TOOLCHAIN/bin/llvm-strip"
           DAEMON_SRC="app/src/main/cpp/daemon/ivanna_daemon.cpp"
-          [ ! -f "$DAEMON_SRC" ] && DAEMON_SRC=$(find app/src/main/cpp -name "ivanna_daemon.cpp" | head -1)
+          [ ! -f "$DAEMON_SRC" ] && DAEMON_SRC=$(find app/src/main/cpp -name "ivanna_daemon.cpp" | head -1 || true)
           echo "Compilando daemon desde: $DAEMON_SRC"
           test -f "$DAEMON_SRC"
 
@@ -296,7 +296,7 @@ jobs:
             exit 1
           fi
 
-          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1)
+          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1 || true)
           [ -f "$LIBCXX_SRC" ] || { echo "ERROR: libc++_shared.so no encontrado"; exit 1; }
           cp "$LIBCXX_SRC" libc++_shared.so
           ls -lh libc++_shared.so
@@ -386,7 +386,7 @@ jobs:
             exit 1
           }
 
-          UUID_SO=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1)
+          UUID_SO=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1 || true)
           if [ -n "$UUID_SO" ]; then
             echo "UUID del .so: $UUID_SO"
             grep -qi "$UUID_SO" "$ETC_VENDOR/audio_effects.xml" || {
