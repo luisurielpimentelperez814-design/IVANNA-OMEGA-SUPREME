@@ -13,6 +13,8 @@ import androidx.core.app.NotificationCompat
 import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.spatial.IvannaHeadTracker
+import com.ivanna.omega.spatial.IvannaSpatialEngine
 
 /**
  * AudioForegroundService — Servicio en primer plano para procesamiento de audio.
@@ -30,28 +32,46 @@ class AudioForegroundService : Service() {
         const val NOTIFICATION_ID = 1
     }
 
-    // FIX: se eliminó AudioPipeline (captura por mic) de este servicio.
-    // Capturaba con MediaRecorder.AudioSource.DEFAULT mientras AudioTrack
-    // reproducía por el altavoz al mismo tiempo -> el mic recapturaba la
-    // salida ya procesada (feedback acústico) = sonido horrible, y además
-    // arrancaba en onCreate() de MainActivity sin checar RECORD_AUDIO ->
-    // AudioRecord lanzaba SecurityException -> crash si no había permiso.
-    // La captura real ahora vive en PlaybackCaptureService (MediaProjection),
-    // que lee el audio interno digitalmente, sin pasar por el micrófono.
+    private var audioPipeline: AudioPipeline? = null
+
+    // FIX (cableado real): nadie instanciaba IvannaHeadTracker en todo el
+    // repo, y aunque lo hicieran, IvannaSpatialEngine.shared nunca recibía
+    // setHeadTracker(). El toggle "MOTOR BINAURAL" de la UI describe head
+    // tracking 6DoF pero corría ciego (rotación siempre neutra).
+    private var headTracker: IvannaHeadTracker? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        DSPBridge.init(48000)
+        // FIX: inicializar DSP al crear el servicio (no solo en la Activity)
+        DSPBridge.init(96000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
+
+        if (audioPipeline == null) {
+            audioPipeline = AudioPipeline().apply { start(applicationContext) }
+        }
+
+        if (headTracker == null) {
+            IvannaSpatialEngine.shared.init()
+            val tracker = IvannaHeadTracker(applicationContext)
+            tracker.init()
+            tracker.start()
+            IvannaSpatialEngine.shared.setHeadTracker(tracker)
+            headTracker = tracker
+        }
+
         return START_STICKY
     }
 
     override fun onDestroy() {
+        audioPipeline?.stop()
+        audioPipeline = null
+        headTracker?.release()
+        headTracker = null
         super.onDestroy()
     }
 
