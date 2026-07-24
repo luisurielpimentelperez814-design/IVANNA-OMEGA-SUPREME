@@ -151,6 +151,34 @@ class UsbAudioProManager private constructor(context: Context) {
         return true
     }
 
+    /** true si el streaming asíncrono directo está activo ahora mismo. */
+    fun isActive(): Boolean = isStreaming.get()
+
+    /**
+     * Escribe un bloque de audio float [-1,1] estéreo intercalado al triple
+     * buffer lock-free, convertido a S32_LE. Debe llamarse desde el mismo
+     * hilo productor (AudioPipeline) en cada bloque procesado; el hilo
+     * nativo async consume el buffer "ready" cuando el DAC lo solicita.
+     *
+     * FIX (cableado real): antes esta clase no tenía ningún método para
+     * recibir audio del pipeline — quedaba huérfana pese a tener el path
+     * USB OTG completo. `nativeStartAsyncEngine` en el lado C++ sigue
+     * siendo un stub de logging (no hace poll() real del endpoint
+     * isochronous todavía) — esto conecta el productor, no inventa el
+     * consumidor nativo que falta.
+     */
+    fun writeAudio(samples: FloatArray, frameCount: Int) {
+        if (!isStreaming.get() || !::ringBuffer.isInitialized) return
+        val n = frameCount.coerceAtMost(samples.size / CHANNELS)
+        val buf = ringBuffer.getWriteBuffer()
+        buf.clear()
+        for (i in 0 until n * CHANNELS) {
+            val s = samples[i].coerceIn(-1f, 1f)
+            buf.putInt((s * Int.MAX_VALUE.toFloat()).toInt())
+        }
+        ringBuffer.commitWrite()
+    }
+
     fun stopStreaming() {
         isStreaming.set(false)
         isAsyncSlave.set(false)
