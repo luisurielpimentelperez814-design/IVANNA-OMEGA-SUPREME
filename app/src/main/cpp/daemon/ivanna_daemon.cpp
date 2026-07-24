@@ -31,7 +31,7 @@
 #define LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 // ── Shared memory config (must match omega_daemon.cpp / omega_effect.cpp) ─────
-static constexpr const char* SHM_NAME      = "/omega_shm";
+static constexpr const char* SHM_NAME      = "/data/adb/ivanna_omega/omega_shm";
 static constexpr size_t      SHM_SIZE      = 4096;
 static constexpr uint32_t    DAEMON_MAGIC  = 0x4F4D4741U; // "OMGA"
 
