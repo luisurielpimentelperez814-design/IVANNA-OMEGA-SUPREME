@@ -156,8 +156,14 @@ int control_apply_frame() noexcept {
     f.mid = std::clamp(combined_eq_gain, -18.f, 18.f);
     updates++;
 
-    // Bass shelf: compensa impedancia/rolloff de graves de la ruta activa (AUX)
-    f.low = std::clamp(f.low + route_bass_boost, -18.f, 18.f);
+    // Bass shelf: compensa impedancia/rolloff de graves de la ruta activa (AUX).
+    // FIX (acumulación): capturar base_low ANTES del boost. g_staging_frame.low
+    // se restaurará al valor base al final de esta función, para que el siguiente
+    // tick de 50ms no sume el boost encima de un valor ya boosteado. Sin este fix,
+    // route_bass_boost=3.5 dB pegaría el low shelf en +18 dB en ~250 ms y se
+    // quedaría ahí, destruyendo el balance tonal en cualquier ruta BT/AUX.
+    const float pre_route_low = g_staging_frame.low;
+    f.low = std::clamp(pre_route_low + route_bass_boost, -18.f, 18.f);
     updates++;
 
     // Exciter: fusiona AudioEngine + control frame → 'wet'
@@ -270,8 +276,9 @@ int control_apply_frame() noexcept {
     // 5. Publish snapshot en el bus seqlock
     //    (el audio thread lo consumirá en el siguiente bloque)
     // ────────────────────────────────────────────────────────────────
-    g_staging_frame = f;             // mantén el staging alineado con lo publicado
-    g_control_bus.publish(f);
+    g_control_bus.publish(f);             // publica con route boost activo
+    g_staging_frame = f;
+    g_staging_frame.low = pre_route_low; // FIX: restaura base sin boost para el próximo tick
 
     return updates;
 }

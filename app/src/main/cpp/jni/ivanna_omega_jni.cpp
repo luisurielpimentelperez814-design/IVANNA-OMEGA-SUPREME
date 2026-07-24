@@ -643,11 +643,25 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
         const float rms = (float)std::sqrt(sumSq / (double)(2 * std::max(n, 1)));
 
-        // 2) Convertir GR lineal → dB con la función pura del motor. Nunca
-        //    enviar valor lineal como dB (mismatch documentado en el hpp).
-        const float grLin = g_safety_limiter.getGainReduction();
-        const float grDb = ivanna::experimental::AdaptiveDecisionEngine
-                            ::gainReductionLinearToDb(grLin);
+        // 2) FIX (gr_db ciego al PDEngine): el SafetyLimiter original corre sobre
+        //    chL/chR, ANTES de g_pd.process_block(). Si PDEngine re-amplifica por
+        //    encima del ceiling, g_safety_limiter.getGainReduction() devuelve 0
+        //    (no vio el pico) mientras el audio real clipa a peak=2.5. El
+        //    AdaptiveDecisionEngine recibe gr_db=0 → comp=0, width=1.0 fijos.
+        //    Calculamos gr_db directamente desde peakAbs (post-PDEngine, pre-limiter
+        //    de salida) para que el motor adaptativo reaccione al clipping real.
+        constexpr float kOutputCeiling = 0.989f;  // mismo default de SafetyLimiter
+        float grDb = 0.0f;
+        if (peakAbs > kOutputCeiling && peakAbs > 1e-9f) {
+            grDb = 20.0f * std::log10(peakAbs / kOutputCeiling);
+        }
+
+        // FIX (output sin limiter): la cadena DSP→Limiter→PDEngine nunca tenía
+        // protección después del PDEngine. pdOutL/pdOutR con peak=2.5 iba directo
+        // al hardware. Aplicar el limiter sobre la salida real DESPUÉS de medir
+        // peakAbs (para que las métricas reflejen el pico que hubiera salido) y
+        // ANTES del M/S ensanchamiento y la copia a data.
+        g_safety_limiter.process(pdOutL, pdOutR, n);
 
         // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
