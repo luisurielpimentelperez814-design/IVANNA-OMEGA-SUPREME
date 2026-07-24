@@ -66,6 +66,28 @@ class IvannaBridgePlayer(private val context: Context) {
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
+    // FIX (reproducción consecutiva): cola real. play() sigue soportando
+    // un solo Uri (comportamiento previo intacto); playQueue() agrega
+    // avance automático real cuando el track termina por EOS natural
+    // (no cuando el usuario para manualmente con stop()).
+    private val queue = mutableListOf<Uri>()
+    private var queueIndex = -1
+    var onQueueAdvance: ((Uri) -> Unit)? = null
+
+    fun playQueue(uris: List<Uri>, startIndex: Int = 0) {
+        queue.clear(); queue.addAll(uris)
+        queueIndex = startIndex.coerceIn(0, queue.lastIndex)
+        if (queue.isNotEmpty()) play(queue[queueIndex])
+    }
+
+    private fun advanceQueueIfAny() {
+        if (queueIndex < 0 || queueIndex >= queue.lastIndex) return
+        queueIndex++
+        val next = queue[queueIndex]
+        onQueueAdvance?.invoke(next)
+        play(next)
+    }
+
     private val voiceProtection: VoiceProtectionController? by lazy {
         try {
             VoiceProtectionController(context).also { it.enabled = voiceProtectionEnabled }
@@ -290,6 +312,9 @@ class IvannaBridgePlayer(private val context: Context) {
                 }
             }
             state = State.STOPPED
+            // FIX: solo avanzar la cola si terminó por EOS natural, no si
+            // el usuario llamó stop() manualmente (stopRequested=true).
+            if (!stopRequested) advanceQueueIfAny()
         } catch (t: Throwable) {
             Log.e(TAG, "Error en decode loop", t)
             state = State.ERROR

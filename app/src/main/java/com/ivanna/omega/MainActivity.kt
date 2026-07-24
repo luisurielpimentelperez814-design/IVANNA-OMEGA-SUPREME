@@ -669,6 +669,9 @@ class MainActivity : ComponentActivity() {
                             onStop   = { bridgePlayer.stop();   bridgePlayerState.value = bridgePlayer.state }
                         )
                         IvannaControlPanel(
+                            modifier = Modifier.weight(1f), // FIX (solape UI): sin weight(), su
+                            // fillMaxSize() interno se medía contra altura infinita del Column
+                            // y desbordaba por encima de BridgePlayerCard, tapando barra/telemetría.
                             initialExciter = parameterStore.getExciter(),
                             initialEq = parameterStore.getEqGain(),
                             initialWidth = parameterStore.getWidth(),
