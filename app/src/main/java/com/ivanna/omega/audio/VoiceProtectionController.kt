@@ -84,7 +84,7 @@ class VoiceProtectionController(context: Context) {
             }
         }
 
-    fun setManualMode(on: Boolean) {
+    fun updateManualMode(on: Boolean) {
         manualMode = on
         store.setVoiceProtectionManual(on)
         if (on && enabled) {
