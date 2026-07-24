@@ -273,4 +273,16 @@ class OmegaEngineBridge {
         send("GET_TELEMETRY")
         return readResponse()
     }
+
+        @JvmStatic
+        fun sendParam(key: String, value: String) {
+            try {
+                val command = "echo '$key=$value' > /dev/socket/omega_control"
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+                process.waitFor()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
 }
