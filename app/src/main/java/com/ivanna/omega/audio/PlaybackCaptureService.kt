@@ -35,7 +35,7 @@ import kotlinx.coroutines.*
  *
  * Pipeline real por bloque capturado:
  *   AudioRecord (MediaProjection, stereo interleaved)
- *     → IvannaNpeEngine.processInterleavedStereo()  (análisis neuromórfico:
+ try { *     → IvannaNpeEngine.processInterleavedStereo()  (análisis neuromórfico: } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
  *       alimenta género/RMS/AGC/confianza que la UI ya lee por polling)
  *     → SpatialAudioEngineV2.feedCapturedBlock()  (motor binaural: actualiza
  *       estado espacial nativo de los 32 objetos con audio REAL de las apps,
@@ -251,7 +251,7 @@ class PlaybackCaptureService : Service() {
                             // Análisis neuromórfico (género/RMS/AGC/confianza) —
                             // in-place, no altera el audio real de salida.
                             if (IvannaNpeEngine.isReady) {
-                                IvannaNpeEngine.processInterleavedStereo(buffer, numFrames)
+                                try { IvannaNpeEngine.processInterleavedStereo(buffer, numFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
                             }
                             // FIX: motor binaural alimentado con audio REAL capturado
                             // (antes nunca recibía nada — capturaba el mic físico).

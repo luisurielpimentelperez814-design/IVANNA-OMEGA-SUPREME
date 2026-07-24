@@ -259,7 +259,7 @@ class IvannaBridgePlayer(private val context: Context) {
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             DSPBridge.process(chunk, chunkFrames)
                             if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
-                                IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames)
+                                try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
                             }
                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {
                                 com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
