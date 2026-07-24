@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA-OMEGA-SUPREME
-version=v2.0.0
-versionCode=2000
+version=v2.1.0
+versionCode=2100
 author=IVANNA Team
-description=Motor DSP neuromorphic global — daemon real-time SCHED_FIFO + monitor MQA + Modo Concierto
+description=Motor DSP neuromorfico global — daemon real-time SCHED_FIFO + monitor MQA + Modo Concierto (patched)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/update.json

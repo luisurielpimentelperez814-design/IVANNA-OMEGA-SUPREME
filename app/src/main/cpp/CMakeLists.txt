@@ -177,3 +177,6 @@ add_custom_command(TARGET omega_effect POST_BUILD
     VERBATIM
 )
 add_custom_target(stage_omega_effect ALL DEPENDS omega_effect)
+
+# IVANNA daemon standalone (Magisk)
+add_subdirectory(daemon)

@@ -2,57 +2,84 @@ package com.ivanna.omega.magisk
 
 import android.util.Log
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 /**
- * MagiskBridge v2.0
+ * MagiskBridge v2.1 (PATCH)
  *
- * Canal entre la app y el módulo/daemon Magisk IVANNA.
- * Socket real:   /dev/socket/ivanna_omega  (daemon nativo)
- * Socket legacy: /data/pf/pf.sock          (compatibilidad)
- * Fallback:      setprop ivanna.pending_cmd (si daemon no está activo)
+ * Cambios clave respecto a v2.0:
+ *  - isModuleActive lee /system prop SIN pasar por `su -c` (usa
+ *    android.os.SystemProperties vía reflection — no requiere root).
+ *  - isDaemonRunning ahora comprueba primero el prop `persist.ivanna.daemon_active`
+ *    que setea service.sh, y solo cae a probe con `su -c test -e` cacheado 2s.
+ *  - Cache de 2 segundos en getters bloqueantes → panel Magisk no dispara
+ *    diálogo de superusuario en cada tick.
+ *  - `exec()` se reduce al mínimo (solo lo que requiere root real).
  */
 object MagiskBridge {
     private const val TAG = "MagiskBridge"
 
-    // Socket del daemon nativo (service.sh lo crea)
     private const val SOCKET_OMEGA   = "/dev/socket/ivanna_omega"
-    // Socket legacy (compatibilidad con versiones anteriores)
     private const val SOCKET_LEGACY  = "/data/pf/pf.sock"
-    // Propiedad seteada por post-fs-data.sh cuando el módulo está montado
     private const val PROP_ACTIVE    = "persist.ivanna.magisk_active"
     private const val PROP_VERSION   = "persist.ivanna.version"
+    private const val PROP_DAEMON    = "persist.ivanna.daemon_active"
     private const val PROP_CONCERT   = "ivanna.concert_mode"
 
     private const val TIMEOUT_MS     = 3000L
+    private const val CACHE_TTL_MS   = 2000L
+
+    // ── Cache ligero para evitar `su` en cada frame de Compose ────────────────
+    private data class Cached(val value: String, val stamp: Long)
+    private val propCache = HashMap<String, Cached>()
+
+    private fun getPropCached(key: String): String {
+        val now = System.currentTimeMillis()
+        val c = propCache[key]
+        if (c != null && now - c.stamp < CACHE_TTL_MS) return c.value
+        val v = readSystemPropNoRoot(key)
+        propCache[key] = Cached(v, now)
+        return v
+    }
+
+    /** Lee un system property sin root usando reflection sobre SystemProperties. */
+    private fun readSystemPropNoRoot(key: String): String = try {
+        val cls = Class.forName("android.os.SystemProperties")
+        val m = cls.getMethod("get", String::class.java, String::class.java)
+        (m.invoke(null, key, "") as? String).orEmpty()
+    } catch (t: Throwable) {
+        Log.w(TAG, "SystemProperties.get($key) falló: ${t.message}")
+        ""
+    }
 
     // ── Detección del módulo ──────────────────────────────────────────────────
 
-    /**
-     * True si el módulo Magisk está instalado y el daemon activo.
-     * Lee la propiedad de sistema seteada por post-fs-data.sh (no requiere su).
-     */
     val isModuleActive: Boolean
-        get() = getSystemProp(PROP_ACTIVE) == "1"
+        get() = getPropCached(PROP_ACTIVE) == "1"
 
     val moduleVersion: String
-        get() = getSystemProp(PROP_VERSION).ifEmpty { "unknown" }
+        get() = getPropCached(PROP_VERSION).ifEmpty { "unknown" }
 
+    /**
+     * True si el daemon nativo está vivo. Primero mira el prop que setea
+     * service.sh (rápido, sin root). Si el prop no está seteado pero el
+     * socket existe, también cuenta como vivo.
+     */
     val isDaemonRunning: Boolean
-        get() = try {
-            val p = exec("test -S $SOCKET_OMEGA && echo yes")
-            p.result.trim() == "yes"
-        } catch (e: Exception) { false }
+        get() {
+            if (getPropCached(PROP_DAEMON) == "1") return true
+            return try { File(SOCKET_OMEGA).exists() } catch (_: Throwable) { false }
+        }
 
     // ── Comunicación con el daemon ────────────────────────────────────────────
 
     fun sendCommand(command: String): String {
         val socket = when {
-            fileExists(SOCKET_OMEGA)  -> SOCKET_OMEGA
-            fileExists(SOCKET_LEGACY) -> SOCKET_LEGACY
+            File(SOCKET_OMEGA).exists()  -> SOCKET_OMEGA
+            File(SOCKET_LEGACY).exists() -> SOCKET_LEGACY
             else -> {
-                // Fallback: setprop para que el daemon lo lea al conectar
                 setSystemProp("ivanna.pending_cmd", command)
                 Log.w(TAG, "Daemon no conectado — cmd encolado via setprop: $command")
                 return "queued"
@@ -76,8 +103,6 @@ object MagiskBridge {
     fun reloadParams()                  = sendCommand("RELOAD_PARAMS")
     fun setBypass(bypass: Boolean)      = sendCommand("SET_BYPASS:${if (bypass) 1 else 0}")
 
-    // ── Parámetros DSP (espeja OmegaEngineBridge via socket directo) ──────────
-
     fun setDrive(v: Float)     = sendCommand("SET_PF_DRIVE:$v")
     fun setWet(v: Float)       = sendCommand("SET_PF_WET:$v")
     fun setMix(v: Float)       = sendCommand("SET_PF_MIX:$v")
@@ -96,24 +121,25 @@ object MagiskBridge {
 
     fun setConcertMode(enabled: Boolean) {
         if (enabled) {
-            setPreset("Spatial")
-            sendCommand("SET_REVERB:0.7")
-            setSystemProp(PROP_CONCERT, "1")
+            setPreset("Spatial"); sendCommand("SET_REVERB:0.7"); setSystemProp(PROP_CONCERT, "1")
         } else {
-            setPreset("Warm")
-            sendCommand("SET_REVERB:0.0")
-            setSystemProp(PROP_CONCERT, "0")
+            setPreset("Warm");    sendCommand("SET_REVERB:0.0"); setSystemProp(PROP_CONCERT, "0")
         }
         Log.i(TAG, "ConcertMode → $enabled")
     }
 
     val isConcertModeActive: Boolean
-        get() = getSystemProp(PROP_CONCERT) == "1"
+        get() = getPropCached(PROP_CONCERT) == "1"
 
     // ── Helpers internos ──────────────────────────────────────────────────────
 
     private data class ProcResult(val result: String, val exitCode: Int)
 
+    /**
+     * Solo se usa cuando de verdad hace falta root (mandar comandos por
+     * `nc -U` al socket que vive en /dev/socket con perms root). Los reads
+     * de estado usan readSystemPropNoRoot() y File.exists() sin `su`.
+     */
     private fun exec(cmd: String): ProcResult {
         val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
         val reader  = BufferedReader(InputStreamReader(process.inputStream))
@@ -122,14 +148,6 @@ object MagiskBridge {
         if (!exited) process.destroyForcibly()
         return ProcResult(output, if (exited) process.exitValue() else -1)
     }
-
-    private fun fileExists(path: String): Boolean = try {
-        exec("test -e $path && echo yes").result == "yes"
-    } catch (e: Exception) { false }
-
-    private fun getSystemProp(key: String): String = try {
-        exec("getprop $key").result
-    } catch (e: Exception) { "" }
 
     private fun setSystemProp(key: String, value: String) {
         try { exec("setprop $key $value") }
