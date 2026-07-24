@@ -1033,6 +1033,17 @@ class MainActivity : ComponentActivity() {
         audioEngine.setWidth(profile.audioEngine.widthAmount)
         audioEngine.setBypass(profile.audioEngine.bypass)
 
+        // FIX CRÍTICO: Forzar sincronización inmediata con el motor nativo y socket de Omega
+        try {
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendParam("profile_id", profile.id)
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendParam("gain", profile.audioEngine.gain.toString())
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendParam("exciter", profile.audioEngine.exciterAmount.toString())
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendParam("eq", profile.audioEngine.eqGain.toString())
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendParam("width", profile.audioEngine.widthAmount.toString())
+        } catch (e: Exception) {
+            android.util.Log.e("IVANNA_FIX", "Error sincronizando perfil con OmegaEngineBridge", e)
+        }
+
         AudioEngine.nativeSetRouteProfileStatic(
             profile.route.bassBoostDb,
             profile.route.dialogBoostDb,
