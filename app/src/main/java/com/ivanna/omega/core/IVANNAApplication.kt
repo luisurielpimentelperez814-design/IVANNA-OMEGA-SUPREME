@@ -41,7 +41,7 @@ class IVANNAApplication : Application() {
          * threads IO bloqueados despues de minutos de uso).
          */
         val pfParamChannel = Channel<FloatArray>(Channel.CONFLATED)
-        val omegaBridge = OmegaEngineBridge()
+        val omegaBridge = OmegaEngineBridge
 
         @Volatile
         var isInitialized = false
