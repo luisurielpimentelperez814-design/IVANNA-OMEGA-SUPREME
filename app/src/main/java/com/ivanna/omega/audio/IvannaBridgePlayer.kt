@@ -117,12 +117,8 @@ class IvannaBridgePlayer(private val context: Context) {
     }
 
     private fun releaseTrack() {
-        runCatching {
-            audioTrack?.audioSessionId?.let { sid ->
-                (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
-                    ?.globalEffectManager?.closeSession(sid)
-            }
-        }
+        // FIX: ya no se abre sesión de efectos stock para el propio track
+        // (ver comentario en runDecodeLoop) — no hay nada que cerrar aquí.
         try { audioTrack?.pause() } catch (_: Throwable) {}
         try { audioTrack?.flush() } catch (_: Throwable) {}
         try { audioTrack?.stop() } catch (_: Throwable) {}
@@ -198,11 +194,16 @@ class IvannaBridgePlayer(private val context: Context) {
                 return@withContext
             }
 
-            runCatching {
-                (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
-                    ?.globalEffectManager
-                    ?.openSession(track.audioSessionId, context.packageName)
-            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: ${it.message}") }
+            // FIX (unificación Vía A / Vía B, distorsión + Peak>1.33): esta
+            // sesión YA pasó por la cadena nativa completa (DSPBridge +
+            // NPE + Spatial) en el bucle de abajo. Antes también se le
+            // enganchaban los efectos STOCK de Android (Equalizer,
+            // BassBoost, Virtualizer, LoudnessEnhancer, DynamicsProcessing)
+            // vía globalEffectManager sobre el MISMO audioSessionId —
+            // doble procesamiento (software + plataforma) sumando ganancia
+            // dos veces. globalEffectManager queda reservado EXCLUSIVAMENTE
+            // para sesiones de apps de terceros (Spotify/YouTube, Ruta B),
+            // que no pasan por DSPBridge y sí necesitan esos efectos.
             audioTrack = track
 
             codec = MediaCodec.createDecoderByType(mime)
