@@ -64,6 +64,11 @@ class ParameterStore(context: Context) {
         private const val KEY_ADAPTIVE_MODE = "adaptive_mode"
         private const val KEY_ADAPTIVE_INTENSITY = "adaptive_intensity"
         private const val KEY_VOICE_PROTECTION = "voice_protection"
+
+        // Voice Protection — perfiles independientes (podcast/call/broadcast/whisper)
+        private const val KEY_VP_PROFILE = "vp_profile"
+        private const val KEY_VP_MANUAL = "vp_manual_mode"
+        private const val KEY_VP_LAST_ACTIVE = "vp_last_active"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
@@ -156,7 +161,23 @@ class ParameterStore(context: Context) {
     fun setAdaptiveIntensity(value: Float) = prefs.edit().putFloat(KEY_ADAPTIVE_INTENSITY, value.coerceIn(0f, 100f)).apply()
 
     fun isVoiceProtectionEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_PROTECTION, true)
-    fun setVoiceProtectionEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_VOICE_PROTECTION, enabled).apply()
+    fun setVoiceProtectionEnabled(enabled: Boolean) = prefs.edit()
+        .putBoolean(KEY_VOICE_PROTECTION, enabled)
+        .putBoolean(KEY_VP_LAST_ACTIVE, enabled)
+        .apply()
+
+    // Voice Protection — perfil activo: podcast|call|broadcast|whisper
+    fun getVoiceProtectionProfile(): String = prefs.getString(KEY_VP_PROFILE, "podcast") ?: "podcast"
+    fun setVoiceProtectionProfile(profile: String) = prefs.edit()
+        .putString(KEY_VP_PROFILE, profile)
+        .apply()
+
+    // Modo manual: cuando true, la app no re-clasifica auto — el perfil elegido manda
+    fun isVoiceProtectionManual(): Boolean = prefs.getBoolean(KEY_VP_MANUAL, false)
+    fun setVoiceProtectionManual(manual: Boolean) = prefs.edit().putBoolean(KEY_VP_MANUAL, manual).apply()
+
+    // Recuperación automática al reiniciar app: último estado real activo
+    fun wasVoiceProtectionActive(): Boolean = prefs.getBoolean(KEY_VP_LAST_ACTIVE, prefs.getBoolean(KEY_VOICE_PROTECTION, true))
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
         prefs.edit()

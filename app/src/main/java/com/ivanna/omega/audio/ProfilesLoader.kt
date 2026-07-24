@@ -89,14 +89,47 @@ data class IvannaProfileMetadata(
 object ProfilesLoader {
     private const val TAG = "ProfilesLoader"
     private const val RES_NAME = "audio_profiles"
+    private const val FILE_NAME = "audio_profiles.json"
+    private const val ASSET_NAME = "audio_profiles.json"
 
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
 
-    /** Carga la lista de perfiles desde res/raw/audio_profiles.json. */
+    private fun parse(text: String): List<IvannaAudioProfile> {
+        val container = json.decodeFromString(IvannaProfilesContainer.serializer(), text)
+        return container.audioProfiles.sortedBy { it.priority }
+    }
+
+    /**
+     * Carga perfiles. Orden de resolución (primer origen que existe gana,
+     * manteniendo compatibilidad con perfiles ya guardados):
+     *   1) filesDir/audio_profiles.json     — override runtime editable por el usuario
+     *   2) assets/audio_profiles.json       — versionado con el APK
+     *   3) res/raw/audio_profiles.json      — fallback histórico (compat original)
+     */
     fun load(context: Context): List<IvannaAudioProfile> {
+        // 1) filesDir override
+        try {
+            val f = java.io.File(context.filesDir, FILE_NAME)
+            if (f.isFile && f.length() > 0) {
+                val list = parse(f.readText(Charsets.UTF_8))
+                Log.i(TAG, "✓ Cargados ${list.size} perfiles (filesDir)")
+                return list
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "filesDir load falló: ${e.message}")
+        }
+        // 2) assets
+        try {
+            context.assets.open(ASSET_NAME).use { stream ->
+                val list = parse(InputStreamReader(stream).readText())
+                Log.i(TAG, "✓ Cargados ${list.size} perfiles (assets)")
+                return list
+            }
+        } catch (_: Exception) { /* asset opcional */ }
+        // 3) res/raw (compat)
         return try {
             val resId = context.resources.getIdentifier(RES_NAME, "raw", context.packageName)
             if (resId == 0) {
@@ -104,17 +137,25 @@ object ProfilesLoader {
                 return emptyList<IvannaAudioProfile>()
             }
             context.resources.openRawResource(resId).use { stream ->
-            val container = json.decodeFromString(
-                IvannaProfilesContainer.serializer(),
-                InputStreamReader(stream).readText()
-            )
-            Log.i(TAG, "✓ Cargados ${container.audioProfiles.size} perfiles")
-            container.audioProfiles.sortedBy { it.priority }
+                val list = parse(InputStreamReader(stream).readText())
+                Log.i(TAG, "✓ Cargados ${list.size} perfiles (res/raw)")
+                list
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cargando profiles: ${e.message}", e)
+            emptyList<IvannaAudioProfile>()
         }
-    } catch (e: Exception) {
-        Log.e(TAG, "Error cargando profiles: ${e.message}", e)
-        emptyList<IvannaAudioProfile>()
     }
+
+    /** Guarda una lista de perfiles como override en filesDir (para editor UI). */
+    fun saveOverride(context: Context, profiles: List<IvannaAudioProfile>, meta: IvannaProfileMetadata) {
+        try {
+            val container = IvannaProfilesContainer(profiles, meta)
+            val text = json.encodeToString(IvannaProfilesContainer.serializer(), container)
+            java.io.File(context.filesDir, FILE_NAME).writeText(text, Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e(TAG, "saveOverride falló: ${e.message}", e)
+        }
     }
 
     fun loadMetadata(context: Context): IvannaProfileMetadata? = try {

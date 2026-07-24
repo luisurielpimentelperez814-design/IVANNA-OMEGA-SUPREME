@@ -8,10 +8,13 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import kotlinx.coroutines.*
+import java.io.File
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -62,6 +65,31 @@ class IvannaBridgePlayer(private val context: Context) {
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
+    // Buffers reutilizables (evitan re-asignación en cada chunk)
+    private val spatialInL = FloatArray(2048)
+    private val spatialInR = FloatArray(2048)
+    private val spatialOutL = FloatArray(2048)
+    private val spatialOutR = FloatArray(2048)
+
+    // Detección de daemon Magisk: property + socket (cache TTL 3s)
+    @Volatile private var daemonActiveCache = false
+    @Volatile private var daemonCheckTs = 0L
+
+    fun isDaemonActive(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - daemonCheckTs < 3_000L) return daemonActiveCache
+        daemonCheckTs = now
+        daemonActiveCache = try {
+            val prop = try {
+                val c = Class.forName("android.os.SystemProperties")
+                val m = c.getMethod("get", String::class.java, String::class.java)
+                m.invoke(null, "persist.ivanna.daemon_active", "0") as String
+            } catch (_: Throwable) { "0" }
+            prop == "1" || File("/data/adb/ivanna_daemon.pid").exists()
+        } catch (_: Throwable) { false }
+        return daemonActiveCache
+    }
+
     // FEATURE (Voice Protection): lazy para no cargar YamnetClassifier
     // (modelo TFLite) hasta la primera reproducción real.
     private val voiceProtection: VoiceProtectionController? by lazy {
@@ -90,16 +118,35 @@ class IvannaBridgePlayer(private val context: Context) {
         job = scope.launch { runDecodeLoop(uri) }
     }
 
-    fun pause() { pauseRequested = true; state = State.PAUSED }
+    fun pause() {
+        pauseRequested = true
+        state = State.PAUSED
+        // Pausa REAL del AudioTrack (no sólo la flag del loop): libera bus
+        // de audio HW mientras está pausado.
+        runCatching { audioTrack?.pause() }
+    }
 
-    fun resume() { pauseRequested = false; state = State.PLAYING }
+    fun resume() {
+        pauseRequested = false
+        state = State.PLAYING
+        runCatching { audioTrack?.play() }
+    }
 
     fun stop() {
         stopRequested = true
         job?.cancel()
         job = null
         releaseTrack()
+        // Liberar VoiceProtection en shutdown — evita que YAMNet quede corriendo
+        // en background tras cerrar la reproducción.
+        runCatching { voiceProtection?.release() }
         state = State.STOPPED
+    }
+
+    /** Shutdown explícito — llamar desde MainActivity.onDestroy(). */
+    fun shutdown() {
+        stop()
+        runCatching { scope.cancel() }
     }
 
     private fun releaseTrack() {
@@ -245,14 +292,10 @@ class IvannaBridgePlayer(private val context: Context) {
                         // salida del decoder respete ese límite en todos los
                         // codecs/dispositivos, así que se trocea aquí para
                         // que nunca se escriba audio sin procesar.
-                        // Buffers reutilizables para IvannaSpatialEngine
-                        // (opera sobre canales separados, no intercalados —
-                        // se declaran una vez fuera del loop para no
-                        // reasignar memoria en cada chunk).
-                        val spatialInL = FloatArray(2048)
-                        val spatialInR = FloatArray(2048)
-                        val spatialOutL = FloatArray(2048)
-                        val spatialOutR = FloatArray(2048)
+                        // Buffers reutilizables: se declaran como campos de la
+                        // clase (spatialIn/OutL/R) para no reasignar memoria en
+                        // cada chunk. Antes se creaban aquí dentro del loop y
+                        // presionaban el GC innecesariamente.
 
                         val totalFrames = stereo.size / 2
                         var offset = 0

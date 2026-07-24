@@ -292,8 +292,19 @@ class MainActivity : ComponentActivity() {
         )
         adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.values()[parameterStore.getAdaptiveModeOrdinal().coerceIn(0, 3)]
         adaptiveIntensity = parameterStore.getAdaptiveIntensity()
-        voiceProtectionEnabled = parameterStore.isVoiceProtectionEnabled()
+        voiceProtectionEnabled = parameterStore.wasVoiceProtectionActive()
         bridgePlayer.setVoiceProtectionEnabled(voiceProtectionEnabled)
+
+        // FIX (recuperación automática de Voice Protection): restaurar
+        // último perfil (podcast/call/broadcast/whisper) y modo manual
+        // desde SharedPreferences. Además carga perfiles desde
+        // assets/filesDir compatibles con ProfilesLoader.
+        try {
+            val profiles = com.ivanna.omega.audio.ProfilesLoader.load(applicationContext)
+            Log.i(TAG, "Perfiles cargados (raw+filesDir compat): ${profiles.size}")
+        } catch (e: Exception) {
+            Log.w(TAG, "ProfilesLoader.load falló: ${e.message}")
+        }
 
         // FIX (independencia del mic — pedido explícito de GORE): antes TODO
         // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
@@ -1191,7 +1202,7 @@ class MainActivity : ComponentActivity() {
         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
         try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
         try { realtimeLearningController.release() } catch (e: Exception) { Log.e(TAG, "Error releasing realtimeLearningController", e) }
-        try { bridgePlayer.stop() } catch (e: Exception) { Log.e(TAG, "Error stopping bridgePlayer", e) }
+        try { bridgePlayer.shutdown() } catch (e: Exception) { Log.e(TAG, "Error shutting down bridgePlayer", e) }
         try {
             autoPresetJob?.cancel()
         } catch (e: Exception) {
