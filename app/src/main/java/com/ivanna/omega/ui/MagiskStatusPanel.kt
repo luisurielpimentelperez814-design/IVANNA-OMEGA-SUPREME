@@ -43,7 +43,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MagiskStatusPanel(
     omegaBridge: OmegaEngineBridge,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit = {}
 ) {
     // AUDIT FIX (crítico): los valores iniciales NO deben evaluar los
     // getters bloqueantes de MagiskBridge de forma síncrona durante la
@@ -94,7 +95,7 @@ fun MagiskStatusPanel(
             }
             moduleActive    = active
             moduleVersion   = version
-            daemonRunning   = running
+            daemonRunning   = running || omegaBridge.isConnected // FIX: Si el socket responde, el daemon VIVE
             daemonConnected = omegaBridge.isConnected
             delay(2000L)
         }
@@ -108,6 +109,25 @@ fun MagiskStatusPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // FIX UX: Botón de Regreso inyectado
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Start
+        ) {
+            Text(
+                text = "◄ VOLVER AL PANEL PRINCIPAL",
+                color = AuroraCyan,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                letterSpacing = 1.sp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onBack() }
+                    .padding(vertical = 8.dp, horizontal = 4.dp)
+            )
+        }
+
         Text(
             "MÓDULO MAGISK",
             color = AuroraCyan,
