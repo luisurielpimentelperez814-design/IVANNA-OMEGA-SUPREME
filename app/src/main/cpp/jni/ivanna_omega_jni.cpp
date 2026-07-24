@@ -243,7 +243,16 @@ static void audioRouteBridgeLoop() {
         rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
         rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
         rawM.gain_reduction_db = grDb;
-        rawM.voice_score       = 0.0f;   // omega_effect no corre VoiceProtectionController
+        // FIX (telemetría Compression/Voice Prot congelada en 0%): omega_effect
+        // corre en el proceso de audioserver y no puede correr
+        // VoiceProtectionController (necesita PCM crudo, no compartido entre
+        // procesos). Se usa como proxy la energía de banda media ya publicada
+        // por BandEnergyMeter (voz humana concentra energía ahí) normalizada
+        // contra el total de banda — el AdaptiveDecisionEngine consume esto
+        // igual que el voice_score real de la Ruta A.
+        const float bandTotal = rawM.band_low_energy + rawM.band_mid_energy +
+                                 rawM.band_high_energy + 1e-6f;
+        rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTotal) * 1.5f, 0.0f, 1.0f);
         // Exponer band energies Ruta B al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
         g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
