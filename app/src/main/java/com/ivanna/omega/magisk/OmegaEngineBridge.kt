@@ -18,7 +18,7 @@ import java.io.OutputStream
  *   3. isConnected: verifica también isClosed (LocalSocket puede reportar
  *      isConnected=true después de que el servidor cierra su extremo).
  */
-class OmegaEngineBridge {
+object OmegaEngineBridge {
 
     private val TAG = "OmegaEngineBridge"
     private val SOCKET_NAME = "omega_daemon_socket"
@@ -274,7 +274,7 @@ class OmegaEngineBridge {
         return readResponse()
     }
 
-        @JvmStatic
+        
         fun sendParam(key: String, value: String) {
             try {
                 val command = "echo '$key=$value' > /dev/socket/omega_control"
