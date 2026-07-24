@@ -27,12 +27,12 @@ import kotlin.math.sqrt
 class AudioPipeline {
 
     companion object {
-        const val SAMPLE_RATE = 48000
+        const val SAMPLE_RATE = 96000
         const val FRAMES_PER_BLOCK = 256
         const val BUFFER_SIZE = FRAMES_PER_BLOCK * 2   // estéreo intercalado
 
         // Throttle YAMNet: clasificar cada N bloques (~1s @ 48kHz con bloques de 256)
-        private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~48000 frames = 1s
+        private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~96000 frames = 1s
     }
 
     private val tag = "IVANNA.Pipeline"
@@ -41,6 +41,11 @@ class AudioPipeline {
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
     private var audioRecord: AudioRecord? = null
+
+    // FIX (cableado real): referencia opcional al gestor USB directo; se
+    // setea desde start(context) si el caller la provee. Sin esto la clase
+    // nunca sabía que UsbAudioProManager existía.
+    private var usbManagerRef: UsbAudioProManager? = null
 
     @Volatile private var dspState = DSPState()
     @Volatile private var lastRms = 0f
@@ -62,6 +67,17 @@ class AudioPipeline {
         DSPBridge.init(SAMPLE_RATE)
         dspState.pushToNative()
         job = scope.launch { runPipeline() }
+    }
+
+    /**
+     * Overload que además engancha el UsbAudioProManager singleton, para que
+     * el loop de audio le escriba bloques cuando haya una sesión USB directa
+     * activa (ver [UsbAudioProManager.isActive]/[UsbAudioProManager.writeAudio]).
+     * Antes no había forma de que AudioPipeline supiera que ese manager existía.
+     */
+    fun start(context: android.content.Context) {
+        usbManagerRef = UsbAudioProManager.getInstance(context)
+        start()
     }
 
     fun stop() {
@@ -148,6 +164,14 @@ class AudioPipeline {
                 }
 
                 for (i in 0 until read) buf[i] = buf[i].coerceIn(-1f, 1f)
+
+                // FIX (cableado real): si hay un DAC USB en modo directo activo,
+                // el audio ya procesado también se manda al path bit-perfect
+                // (bypass del mezclador de Android), además del AudioTrack normal
+                // (que sigue sonando por el mixer mientras el consumidor nativo
+                // async del DAC — hoy stub de logging — no reemplace la salida).
+                usbManagerRef?.let { if (it.isActive()) it.writeAudio(buf, read / 2) }
+
                 track.write(buf, 0, read, AudioTrack.WRITE_BLOCKING)
             }
         } catch (t: Throwable) {
