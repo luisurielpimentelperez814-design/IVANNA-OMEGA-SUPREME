@@ -277,8 +277,8 @@ public:
 
             // AUDIT FIX: limiter final — nunca existía un techo aquí. Este es
             // el causante directo del crujido al subir AGC rate + Master gain.
-            yL = npe_soft_limit(yL);
-            yR = npe_soft_limit(yR);
+            yL = std::tanh(yL); // IVANNA DSP: True Soft Clipping
+            yR = std::tanh(yR); // IVANNA DSP: True Soft Clipping
 
             outL[i] = yL; outR[i] = yR;
 
