@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.ivanna.omega.ai.YamnetClassifier
 import com.ivanna.omega.dsp.DSPBridge
-import com.ivanna.omega.core.ParameterStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,24 +42,11 @@ class VoiceProtectionController(context: Context) {
         private const val YAMNET_INPUT_LENGTH = 15600
         private const val SPEECH_THRESHOLD = 0.15f  // YAMNet da logits bajos por clase; ya es score post-softmax-like
         private const val EMA_ALPHA = 0.25f
-
-        // Perfiles independientes (fuerza fija cuando manualMode = true)
-        //   podcast    — fuerza balanceada, ideal para locución con música de fondo
-        //   call       — fuerza alta, prioriza inteligibilidad total
-        //   broadcast  — fuerza media-alta, para radio/streaming
-        //   whisper    — fuerza máxima, susurros y voz baja
-        val PROFILE_SCORES: Map<String, Float> = mapOf(
-            "podcast"   to 0.65f,
-            "call"      to 0.85f,
-            "broadcast" to 0.75f,
-            "whisper"   to 1.00f
-        )
     }
 
     private val classifier = YamnetClassifier(context)
     private val scope = CoroutineScope(Dispatchers.Default + Job())
     private var classifyJob: Job? = null
-    private val store = ParameterStore(context.applicationContext)
 
     private var resampleAccumulator = 0.0
     private val monoBuffer = FloatArray(YAMNET_INPUT_LENGTH)
@@ -69,44 +55,37 @@ class VoiceProtectionController(context: Context) {
 
     @Volatile var enabled = true
 
-    // FEATURE (perfiles independientes): cuando manualMode = true, se ignora YAMNet
-    // y se empuja directamente PROFILE_SCORES[profile] al nativo. Último perfil
-    // seleccionado se persiste en SharedPreferences (ParameterStore).
-    @Volatile var manualMode: Boolean = store.isVoiceProtectionManual()
-    @Volatile var profile: String = store.getVoiceProtectionProfile()
-        set(value) {
-            field = value
-            store.setVoiceProtectionProfile(value)
-            if (manualMode && enabled) {
-                val s = PROFILE_SCORES[value] ?: 0.65f
-                smoothedScore = s
-                DSPBridge.setVoiceProtectScore(s)
-            }
-        }
+    // ── Modo manual (mejora pedida: activación sin depender de servicios
+    // externos) ─────────────────────────────────────────────────────────────
+    // El modo automático depende de YamnetClassifier (TFLite) detectando
+    // voz en tiempo real — si el usuario simplemente quiere protección de
+    // voz SIEMPRE activa (llamada, grabación, contenido hablado que YAMNet
+    // no reconoce bien), no debería depender de esa clasificación. En modo
+    // manual, feed() ni siquiera acumula/clasifica — el score se aplica
+    // directo y una sola vez al activar, sin gasto de CPU por bloque.
+    @Volatile private var manualModeEnabled = false
 
-    fun updateManualMode(on: Boolean) {
-        manualMode = on
-        store.setVoiceProtectionManual(on)
-        if (on && enabled) {
-            val s = PROFILE_SCORES[profile] ?: 0.65f
-            smoothedScore = s
-            DSPBridge.setVoiceProtectScore(s)
+    /**
+     * Activa o desactiva el modo manual. En manual, [score] (0..1, 1 =
+     * protección máxima) se aplica de inmediato al camino real de audio
+     * sin pasar por YamnetClassifier. Al desactivar, se limpia el score
+     * suavizado para que el modo automático no arranque con un salto.
+     */
+    fun setManualMode(active: Boolean, score: Float = 1.0f) {
+        manualModeEnabled = active
+        if (active) {
+            classifyJob?.cancel()
+            smoothedScore = score.coerceIn(0f, 1f)
+            DSPBridge.setVoiceProtectScore(smoothedScore)
+            Log.i(TAG, "Modo manual activado, score=$smoothedScore")
+        } else {
+            smoothedScore = 0f
+            bufferFill = 0
+            Log.i(TAG, "Modo manual desactivado — vuelve control automático (YAMNet)")
         }
     }
 
-    /** Recuperación automática: restaura el último perfil/estado. */
-    fun restoreFromPrefs() {
-        enabled = store.wasVoiceProtectionActive()
-        manualMode = store.isVoiceProtectionManual()
-        profile = store.getVoiceProtectionProfile()
-        if (enabled && manualMode) {
-            val s = PROFILE_SCORES[profile] ?: 0.65f
-            smoothedScore = s
-            DSPBridge.setVoiceProtectScore(s)
-        } else if (!enabled) {
-            DSPBridge.setVoiceProtectScore(0f)
-        }
-    }
+    val isManualModeActive: Boolean get() = manualModeEnabled
 
     /**
      * Alimenta un bloque estéreo intercalado recién decodificado (mismo
@@ -115,17 +94,8 @@ class VoiceProtectionController(context: Context) {
      */
     fun feed(stereoInterleaved: FloatArray, frames: Int, sourceSampleRate: Int) {
         if (!enabled) return
+        if (manualModeEnabled) return  // score ya aplicado directo en setManualMode()
         if (frames <= 0 || sourceSampleRate <= 0) return
-
-        // Modo manual: perfil fija el score, no se re-clasifica.
-        if (manualMode) {
-            val s = PROFILE_SCORES[profile] ?: 0.65f
-            if (smoothedScore != s) {
-                smoothedScore = s
-                DSPBridge.setVoiceProtectScore(s)
-            }
-            return
-        }
 
         // Downmix a mono + resample simple por decimación con acumulador
         // fraccional (suficiente para clasificación, no para reproducción).
@@ -171,7 +141,4 @@ class VoiceProtectionController(context: Context) {
         classifier.release()
         DSPBridge.setVoiceProtectScore(0f)
     }
-
-    /** Shutdown explícito — llamar desde onDestroy() para liberar Yamnet. */
-    fun shutdown() { release() }
 }

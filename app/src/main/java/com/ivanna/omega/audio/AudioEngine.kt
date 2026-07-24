@@ -1,24 +1,13 @@
 package com.ivanna.omega.audio
 
-import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.util.Log
 import com.ivanna.omega.core.NativeLibraryLoader
 import kotlinx.coroutines.*
-import kotlin.math.*
 
 /**
  * AudioEngine v1.5 — Motor de audio DSP.
- *
- * FIXES DE CONECTIVIDAD:
- *   1. nativeSetAntiDolbyScores() expuesta como companion method estático
- *      para que AudioPipeline pueda llamarla sin instancia.
- *   2. Se añade nativeSetAntiDolbyScores a las declaraciones external
- *      (faltaba — el orquestador C++ la implementa pero Kotlin no la declaraba
- *      en esta clase, solo en el JNI stub).
- *   3. companion init carga la librería UNA sola vez (idempotente).
  */
 class AudioEngine {
     companion object {
@@ -35,10 +24,6 @@ class AudioEngine {
             return (n + mu * omega) / (1.0f + mu)
         }
 
-        /**
-         * FIX: método estático para que AudioPipeline envíe los scores
-         * YAMNet al orquestador nativo sin necesitar una instancia de AudioEngine.
-         */
         fun nativeSetAntiDolbyScoresStatic(speech: Float, music: Float, bass: Float) {
             if (!libLoaded) return
             try {
@@ -51,13 +36,6 @@ class AudioEngine {
         @JvmStatic
         private external fun nativeSetAntiDolbyScoresJni(speech: Float, music: Float, bass: Float)
 
-        /**
-         * FIX: método estático para que AudioRouteManager envíe el perfil de
-         * compensación (BT/AUX/USB) al orquestador nativo.
-         * Nota: se nombra con sufijo Static para no colisionar con el
-         * external fun de instancia `nativeSetRouteProfile` (sin implementación
-         * JNI, declarado más abajo, no usado directamente).
-         */
         fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
             if (!libLoaded) return
             try {
@@ -97,6 +75,10 @@ class AudioEngine {
         if (libLoaded) nativeSetGain(gain)
     }
 
+    fun setMasterGain(gain: Float) {
+        if (libLoaded) nativeSetGain(gain)
+    }
+
     fun setBypass(bypass: Boolean) {
         if (libLoaded) nativeSetBypass(bypass)
     }
@@ -107,7 +89,6 @@ class AudioEngine {
     }
 
     fun setWidth(width: Float) {
-    fun setMasterGain(gain: Float) { if (libLoaded) nativeSetGain(gain) }
         widthAmount = width.coerceIn(0f, 1f)
         if (libLoaded) nativeSetWidth(widthAmount)
     }
@@ -120,7 +101,6 @@ class AudioEngine {
         scope.cancel()
     }
 
-    // ── JNI natives ─────────────────────────────────────────────────────────────
     private external fun nativeInit(sampleRate: Int)
     private external fun nativeSetGain(gain: Float)
     private external fun nativeSetExciter(amount: Float)
@@ -137,7 +117,5 @@ class AudioEngine {
     )
     private external fun nativeGetLufs(): Float
     private external fun nativeGetPeakDbfs(): Float
-
-    // FIX: declarada aquí también para instancias (el JNI la implementa)
     private external fun nativeSetAntiDolbyScores(speech: Float, music: Float, bass: Float)
 }

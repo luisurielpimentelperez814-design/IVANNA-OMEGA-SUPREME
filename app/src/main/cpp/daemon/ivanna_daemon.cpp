@@ -1,106 +1,255 @@
 /**
- * ivanna_daemon.cpp — IVANNA OMEGA SUPREME system daemon
- *
- * Standalone binary deployed by the Magisk module.
- * Runs as root, manages the shared memory ring and
- * routes adaptive engine state to libomega_effect.so
- * via the OmegaSharedState IPC channel.
- *
- * Build: aarch64-linux-android35-clang++ -std=c++17 -O3 -fPIE -pie
- *        -Wl,-z,relro,-z,now  -llog  -Wl,--no-as-needed -lc++_shared
- * Deploy: /system/bin/ivanna_daemon  (via Magisk service.sh)
- *
- * FIX CRÍTICO (v2.0): ai_runtime_gain_mul inicializado a 1.0f — no 0.0.
- * OmegaSharedState vive en mmap() crudo; su constructor C++ nunca se
- * ejecuta, el memset(0) dejaba gain=0 → silencio total en streaming.
+ * IVANNA-OMEGA-SUPREME Native Daemon
+ * Architecture: ARM64 (arm64-v8a)
+ * Android API: 35
+ * Language: C++17
  */
 
-#include <android/log.h>
-#include <signal.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <cstring>
+#include <cerrno>
+#include <csignal>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/mman.h>
+#include <sched.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-#include <atomic>
-#include <cstring>
-#include <cstdlib>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <android/log.h>
 
-#define LOG_TAG "ivanna_daemon"
-#define LOGI(...)  __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
-#define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOG_TAG "IVANNA_OMEGA_DAEMON"
 
-// ── Shared memory config (must match omega_daemon.cpp / omega_effect.cpp) ─────
-static constexpr const char* SHM_NAME      = "/data/adb/ivanna_omega/omega_shm";
-static constexpr size_t      SHM_SIZE      = 4096;
-static constexpr uint32_t    DAEMON_MAGIC  = 0x4F4D4741U; // "OMGA"
+// Explicit path requirement: Must use /data/adb/ivanna_omega/omega_shm
+constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
+constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
+constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_daemon.log";
+constexpr const char* DEFAULT_SOCKET_PATH = "/dev/socket/ivanna_omega";
 
-struct OmegaSharedState {
-    uint32_t magic;
-    uint32_t version;
-    float    ai_runtime_gain_mul;  // ← MUST be 1.0f at startup, never 0.0f
-    float    target_gain;
-    float    compressor_amount;
-    float    exciter_reduction;
-    float    spatial_width;
-    uint32_t seq;
-    uint8_t  _pad[SHM_SIZE - 7 * sizeof(float) - 3 * sizeof(uint32_t)];
-};
-static_assert(sizeof(OmegaSharedState) <= SHM_SIZE, "OmegaSharedState exceeds SHM_SIZE");
+// Global running status for clean signal shutdown
+static volatile sig_atomic_t g_running = 1;
+static int g_server_fd = -1;
+static std::string g_socket_path = DEFAULT_SOCKET_PATH;
+static std::string g_log_path = DEFAULT_LOG_PATH;
 
-static std::atomic<bool> g_running{true};
+void log_message(const std::string& msg) {
+    // 1. Android Logcat output via liblog.so
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "%s", msg.c_str());
 
-static void sig_handler(int /*sig*/) {
-    g_running.store(false, std::memory_order_relaxed);
-}
-
-static OmegaSharedState* open_shm() {
-    int fd = open(SHM_NAME, O_CREAT | O_RDWR, 0660);
-    if (fd < 0) { LOGE("open: %s", strerror(errno)); return nullptr; }
-    if (ftruncate(fd, static_cast<off_t>(SHM_SIZE)) < 0) {
-        LOGE("ftruncate: %s", strerror(errno));
-        close(fd); return nullptr;
+    // 2. File log output to /data/adb/ivanna_daemon.log
+    std::ofstream log_file(g_log_path, std::ios::app);
+    if (log_file.is_open()) {
+        auto now = std::chrono::system_clock::now();
+        auto in_time_t = std::chrono::system_clock::to_time_t(now);
+        log_file << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d %H:%M:%S")
+                 << " [IVANNA-DAEMON] " << msg << std::endl;
+        log_file.close();
     }
-    void* ptr = mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
-    if (ptr == MAP_FAILED) { LOGE("mmap: %s", strerror(errno)); return nullptr; }
-    return static_cast<OmegaSharedState*>(ptr);
 }
 
-int main(int /*argc*/, char** /*argv*/) {
-    LOGI("IVANNA OMEGA SUPREME daemon starting (pid=%d)", getpid());
+void signal_handler(int signal) {
+    if (signal == SIGINT || signal == SIGTERM) {
+        log_message("Signal " + std::to_string(signal) + " received. Stopping IVANNA OMEGA daemon...");
+        g_running = 0;
+        if (g_server_fd >= 0) {
+            close(g_server_fd);
+            g_server_fd = -1;
+        }
+        unlink(g_socket_path.c_str());
+    }
+}
 
-    signal(SIGTERM, sig_handler);
-    signal(SIGINT,  sig_handler);
+void ensure_directory_exists(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+            log_message("Warning: Failed to create directory " + std::string(path) + ": " + strerror(errno));
+        } else {
+            log_message("Created directory: " + std::string(path));
+        }
+    }
+}
 
-    OmegaSharedState* shm = open_shm();
-    if (!shm) { LOGE("Failed to open shared memory — exiting"); return 1; }
+int setup_shared_memory() {
+    ensure_directory_exists(OMEGA_DIR_PATH);
 
-    // Zero-init then set critical fields — constructor never runs on mmap memory
-    memset(shm, 0, SHM_SIZE);
-    shm->magic               = DAEMON_MAGIC;
-    shm->version             = 2;
-    shm->ai_runtime_gain_mul = 1.0f;   // FIX: NOT 0.0f — would silence all streaming
-    shm->target_gain         = 1.0f;
-    shm->compressor_amount   = 0.0f;
-    shm->exciter_reduction   = 0.0f;
-    shm->spatial_width       = 0.5f;
-    __sync_synchronize();
+    log_message("Initializing Shared Memory at: " + std::string(OMEGA_SHM_PATH));
 
-    LOGI("SHM initialized: %s  size=%zu  gain=%.2f", SHM_NAME, SHM_SIZE, shm->ai_runtime_gain_mul);
+    // Open or create shared memory backing file directly at /data/adb/ivanna_omega/omega_shm
+    int fd = open(OMEGA_SHM_PATH, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+    if (fd < 0) {
+        log_message("Error: Failed to open omega_shm file (" + std::string(OMEGA_SHM_PATH) + "): " + strerror(errno));
+        return -1;
+    }
 
-    // Main daemon loop
-    while (g_running.load(std::memory_order_relaxed)) {
-        sleep(30);
-        if (g_running.load(std::memory_order_relaxed)) {
-            LOGD("heartbeat | gain=%.3f comp=%.3f exc=%.3f spatial=%.3f",
-                 shm->ai_runtime_gain_mul, shm->compressor_amount,
-                 shm->exciter_reduction,   shm->spatial_width);
+    size_t shm_size = 65536; // 64KB real-time ring buffer
+    if (ftruncate(fd, shm_size) != 0) {
+        log_message("Error: ftruncate failed on omega_shm: " + std::string(strerror(errno)));
+        close(fd);
+        return -1;
+    }
+
+    void* ptr = mmap(NULL, shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (ptr == MAP_FAILED) {
+        log_message("Error: mmap failed for omega_shm: " + std::string(strerror(errno)));
+        close(fd);
+        return -1;
+    }
+
+    log_message("Shared Memory successfully mapped at " + std::string(OMEGA_SHM_PATH) + " (Size: " + std::to_string(shm_size) + " bytes)");
+    close(fd);
+    return 0;
+}
+
+int create_socket_server(const std::string& socket_path) {
+    // Ensure parent socket folder exists
+    std::string dir = socket_path;
+    size_t last_slash = dir.find_last_of('/');
+    if (last_slash != std::string::npos) {
+        std::string parent_dir = dir.substr(0, last_slash);
+        ensure_directory_exists(parent_dir.c_str());
+    }
+
+    // Unlink any existing socket file
+    unlink(socket_path.c_str());
+
+    int server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (server_fd < 0) {
+        log_message("Error: Socket creation failed: " + std::string(strerror(errno)));
+        return -1;
+    }
+
+    struct sockaddr_un addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+
+    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        log_message("Error: Socket bind failed at " + socket_path + ": " + std::string(strerror(errno)));
+        close(server_fd);
+        return -1;
+    }
+
+    chmod(socket_path.c_str(), 0666);
+
+    if (listen(server_fd, 16) < 0) {
+        log_message("Error: Socket listen failed: " + std::string(strerror(errno)));
+        close(server_fd);
+        unlink(socket_path.c_str());
+        return -1;
+    }
+
+    log_message("Socket server active and listening on: " + socket_path);
+    return server_fd;
+}
+
+int main(int argc, char* argv[]) {
+    std::string socket_path = DEFAULT_SOCKET_PATH;
+    int rate = 48000;
+    int buffer = 64;
+    bool realtime = false;
+
+    // Parse command line arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--socket" && i + 1 < argc) {
+            socket_path = argv[++i];
+        } else if (arg == "--rate" && i + 1 < argc) {
+            rate = std::stoi(argv[++i]);
+        } else if (arg == "--buffer" && i + 1 < argc) {
+            buffer = std::stoi(argv[++i]);
+        } else if (arg == "--realtime") {
+            realtime = true;
+        } else if (arg == "--help" || arg == "-h") {
+            std::cout << "IVANNA-OMEGA-SUPREME Daemon v3.5.0\n"
+                      << "Usage: ivanna_daemon [OPTIONS]\n"
+                      << "Options:\n"
+                      << "  --socket <path>   Unix socket path (default: " << DEFAULT_SOCKET_PATH << ")\n"
+                      << "  --rate <hz>       Audio sample rate (default: 48000)\n"
+                      << "  --buffer <size>   Audio buffer size (default: 64)\n"
+                      << "  --realtime        Enable SCHED_FIFO realtime priority\n";
+            return 0;
         }
     }
 
-    LOGI("IVANNA daemon shutting down gracefully");
-    munmap(shm, SHM_SIZE);
-    unlink(SHM_NAME);
+    g_socket_path = socket_path;
+
+    // Setup signal handling
+    struct sigaction sa;
+    std::memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+
+    log_message("=================================================");
+    log_message("IVANNA-OMEGA-SUPREME Daemon Starting...");
+    log_message("Architecture: ARM64-v8a | Android API 35");
+    log_message("Shared Memory Target: " + std::string(OMEGA_SHM_PATH));
+    log_message("Configuration -> Socket: " + socket_path + " | Rate: " + std::to_string(rate) +
+                " Hz | Buffer: " + std::to_string(buffer) + " | Realtime: " + (realtime ? "ENABLED" : "DISABLED"));
+
+    if (realtime) {
+        struct sched_param param;
+        param.sched_priority = 80;
+        if (sched_setscheduler(0, SCHED_FIFO, &param) == 0) {
+            log_message("Realtime SCHED_FIFO scheduling policy applied successfully (Priority 80).");
+        } else {
+            log_message("Notice: Could not set SCHED_FIFO priority (" + std::string(strerror(errno)) + "). Continuing in normal mode.");
+        }
+    }
+
+    // Initialize shared memory
+    if (setup_shared_memory() != 0) {
+        log_message("Warning: Shared memory setup encountered errors. Continuing with socket service.");
+    }
+
+    // Create UNIX socket server
+    g_server_fd = create_socket_server(socket_path);
+    if (g_server_fd < 0) {
+        log_message("Fatal Error: Could not initialize socket server. Exiting.");
+        return 1;
+    }
+
+    log_message("IVANNA OMEGA Daemon running successfully.");
+
+    // Daemon main loop
+    while (g_running) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(g_server_fd, &readfds);
+
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        int activity = select(g_server_fd + 1, &readfds, NULL, NULL, &tv);
+
+        if (activity < 0 && errno != EINTR) {
+            log_message("Select socket error: " + std::string(strerror(errno)));
+            break;
+        }
+
+        if (activity > 0 && FD_ISSET(g_server_fd, &readfds)) {
+            struct sockaddr_un client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            int client_fd = accept(g_server_fd, (struct sockaddr*)&client_addr, &client_len);
+            if (client_fd >= 0) {
+                log_message("Client connection accepted on " + socket_path);
+                const char* ack_msg = "IVANNA_OMEGA_OK\n";
+                write(client_fd, ack_msg, std::strlen(ack_msg));
+                close(client_fd);
+            }
+        }
+    }
+
+    log_message("IVANNA OMEGA Daemon shutdown complete.");
     return 0;
 }

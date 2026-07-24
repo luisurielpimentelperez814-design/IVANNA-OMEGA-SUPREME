@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME — service.sh v2.2 (PATCH: daemon ELF ARM64 integrado)
+# IVANNA OMEGA SUPREME — service.sh v2.1 (PATCH)
 # Late-start: lanza daemon real-time, monitor MQA y marca boot OK
 # para que post-fs-data no dispare safe_mode.
 
@@ -7,16 +7,9 @@ MODDIR=${0%/*}
 LOG=/data/adb/ivanna_omega.log
 SOCKET=/dev/socket/ivanna_omega
 DAEMON_BIN="$MODDIR/system/bin/ivanna_daemon"
-STATE_DIR=/data/adb/ivanna_omega
 LAST_OK=/data/adb/ivanna_omega_last_boot_ok
 
 log() { echo "[$(date '+%H:%M:%S')] service: $1" >> "$LOG" 2>/dev/null; }
-
-# ── 0. Estado persistente y shared memory ───────────────────────────────────
-mkdir -p "$STATE_DIR" 2>/dev/null
-chmod 0755 "$STATE_DIR" 2>/dev/null
-# Reservar archivo de shm persistente (mmap fallback usado por el daemon)
-[ -f "$STATE_DIR/shm" ] || { : > "$STATE_DIR/shm"; chmod 0644 "$STATE_DIR/shm"; }
 
 # ── 1. Esperar boot ─────────────────────────────────────────────────────────
 until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 2; done
@@ -44,22 +37,15 @@ else
     log "AVISO: audioserver no encontrado"
 fi
 
-# ── 4b. Validación ELF ARM64-v8a del daemon (magic + e_machine=183) ─────────
-validate_daemon_elf() {
-    [ -f "$1" ] || return 1
-    hex=$(head -c4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
-    [ "$hex" = "7f454c46" ] || return 1
-    # bytes 18..19 little-endian = e_machine (0xB7 = 183 = AARCH64)
-    mach=$(dd if="$1" bs=1 skip=18 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
-    [ "$mach" = "b700" ]
-}
-
 # ── 5. Daemon IVANNA ────────────────────────────────────────────────────────
 DAEMON_STARTED=0
-if [ -f "$DAEMON_BIN" ] && validate_daemon_elf "$DAEMON_BIN"; then
-    chmod 0755 "$DAEMON_BIN" 2>/dev/null
-    log "ivanna_daemon ELF ARM64 verificado (magic=7f454c46 e_machine=183)"
-
+# Directorio de memoria compartida — el propio daemon ya lo crea internamente
+# (ensure_directory_exists en ivanna_daemon.cpp), pero se refuerza acá para
+# que exista ANTES del primer intento de bind()/mmap(), con permisos
+# consistentes independientemente de la umask heredada por nohup.
+mkdir -p /data/adb/ivanna_omega
+chmod 755 /data/adb/ivanna_omega
+if [ -f "$DAEMON_BIN" ] && [ -x "$DAEMON_BIN" ]; then
     nohup "$DAEMON_BIN" \
         --socket "$SOCKET" \
         --rate 48000 \
@@ -105,7 +91,7 @@ if [ -f "$DAEMON_BIN" ] && validate_daemon_elf "$DAEMON_BIN"; then
         log "ERROR: ivanna_daemon no arrancó — ver /data/adb/ivanna_daemon.log"
     fi
 else
-    log "ivanna_daemon inválido/no instalado en $DAEMON_BIN — modo app-only (DSP local sigue vía libomega_effect)"
+    log "ivanna_daemon NO instalado en $DAEMON_BIN — modo app-only (DSP local sigue vía libomega_effect)"
 fi
 
 # Propiedad de sistema que refleja estado real del daemon
@@ -123,4 +109,4 @@ if command -v dumpsys >/dev/null 2>&1; then
         | grep -A2 -i "omega\|dolby\|effect" >> "$LOG" 2>&1
 fi
 
-log "service.sh v2.2 completado"
+log "service.sh v2.1 completado"

@@ -15,16 +15,16 @@
         "bypass": false
       },
       "antiDolby": {
-        "speechThreshold": 0.50,
-        "bassThreshold": 0.40,
+        "speechThreshold": 0.5,
+        "bassThreshold": 0.4,
         "eqBoost2k4k": 2.5,
         "exciterLowOnly": false,
-        "widenerMultiplier": 1.10
+        "widenerMultiplier": 1.1
       },
       "neuromorphic": {
-        "harmonicGain": 0.60,
+        "harmonicGain": 0.6,
         "lateralInhibition": 0.75,
-        "ohcCompression": 0.50,
+        "ohcCompression": 0.5,
         "masterGainDb": -2.0,
         "cochlearBandwidth": "adaptive"
       },
@@ -33,7 +33,11 @@
         "dialogBoostDb": 3.0,
         "widenerMult": 1.05
       },
-      "tags": ["classic_rock", "vocal_forward", "punchy"],
+      "tags": [
+        "classic_rock",
+        "vocal_forward",
+        "punchy"
+      ],
       "recommendedFor": "Listening sessions, guitar-driven tracks"
     },
     {
@@ -43,10 +47,10 @@
       "category": "progressive_rock",
       "priority": 2,
       "audioEngine": {
-        "gain": 0.80,
+        "gain": 0.8,
         "exciterAmount": 0.55,
         "eqGain": 3.5,
-        "widthAmount": 1.20,
+        "widthAmount": 1.2,
         "bypass": false
       },
       "antiDolby": {
@@ -59,16 +63,20 @@
       "neuromorphic": {
         "harmonicGain": 0.75,
         "lateralInhibition": 0.85,
-        "ohcCompression": 0.60,
+        "ohcCompression": 0.6,
         "masterGainDb": -1.0,
         "cochlearBandwidth": "expanded"
       },
       "route": {
         "bassBoostDb": 3.5,
         "dialogBoostDb": 4.0,
-        "widenerMult": 1.20
+        "widenerMult": 1.2
       },
-      "tags": ["progressive", "technical", "high_dynamics"],
+      "tags": [
+        "progressive",
+        "technical",
+        "high_dynamics"
+      ],
       "recommendedFor": "Complex arrangements, technical bass/drums"
     },
     {
@@ -81,19 +89,19 @@
         "gain": 0.85,
         "exciterAmount": 0.62,
         "eqGain": 4.0,
-        "widthAmount": 1.10,
+        "widthAmount": 1.1,
         "bypass": false
       },
       "antiDolby": {
-        "speechThreshold": 0.60,
+        "speechThreshold": 0.6,
         "bassThreshold": 0.55,
         "eqBoost2k4k": 2.0,
         "exciterLowOnly": true,
         "widenerMultiplier": 1.05
       },
       "neuromorphic": {
-        "harmonicGain": 0.70,
-        "lateralInhibition": 0.70,
+        "harmonicGain": 0.7,
+        "lateralInhibition": 0.7,
         "ohcCompression": 0.65,
         "masterGainDb": -0.5,
         "cochlearBandwidth": "expanded"
@@ -101,9 +109,13 @@
       "route": {
         "bassBoostDb": 5.0,
         "dialogBoostDb": 3.5,
-        "widenerMult": 1.10
+        "widenerMult": 1.1
       },
-      "tags": ["hard_rock", "heavy", "thick_lows"],
+      "tags": [
+        "hard_rock",
+        "heavy",
+        "thick_lows"
+      ],
       "recommendedFor": "Power trio, drop-D tuning, heavy riffs"
     },
     {
@@ -114,14 +126,14 @@
       "priority": 4,
       "audioEngine": {
         "gain": 0.83,
-        "exciterAmount": 0.50,
+        "exciterAmount": 0.5,
         "eqGain": 3.0,
-        "widthAmount": 1.10,
+        "widthAmount": 1.1,
         "bypass": false
       },
       "antiDolby": {
         "speechThreshold": 0.55,
-        "bassThreshold": 0.50,
+        "bassThreshold": 0.5,
         "eqBoost2k4k": 2.5,
         "exciterLowOnly": false,
         "widenerMultiplier": 1.12
@@ -138,8 +150,211 @@
         "dialogBoostDb": 3.5,
         "widenerMult": 1.15
       },
-      "tags": ["classic_rock", "balanced", "low_mid_punch"],
+      "tags": [
+        "classic_rock",
+        "balanced",
+        "low_mid_punch"
+      ],
       "recommendedFor": "Driving music, all-purpose rock"
+    },
+    {
+      "id": "music",
+      "name": "Music",
+      "description": "Perfil general balanceado para escucha diaria — realce moderado sin coloración excesiva",
+      "category": "general",
+      "priority": 5,
+      "audioEngine": {
+        "gain": 0.85,
+        "exciterAmount": 0.35,
+        "eqGain": 2.0,
+        "widthAmount": 1.15,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.45,
+        "bassThreshold": 0.4,
+        "eqBoost2k4k": 1.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.1
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.45,
+        "lateralInhibition": 0.6,
+        "ohcCompression": 0.4,
+        "masterGainDb": -1.5,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 1.5,
+        "dialogBoostDb": 1.0,
+        "widenerMult": 1.15
+      },
+      "tags": [
+        "general",
+        "balanced",
+        "daily"
+      ],
+      "recommendedFor": "Escucha general de música, uso diario"
+    },
+    {
+      "id": "voice",
+      "name": "Voice",
+      "description": "Podcasts, llamadas y contenido hablado — máxima inteligibilidad, ancho reducido, graves mínimos",
+      "category": "speech",
+      "priority": 6,
+      "audioEngine": {
+        "gain": 0.9,
+        "exciterAmount": 0.1,
+        "eqGain": 1.0,
+        "widthAmount": 0.4,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.2,
+        "bassThreshold": 0.7,
+        "eqBoost2k4k": 4.0,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 0.5
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.15,
+        "lateralInhibition": 0.3,
+        "ohcCompression": 0.65,
+        "masterGainDb": 0.0,
+        "cochlearBandwidth": "narrow"
+      },
+      "route": {
+        "bassBoostDb": -3.0,
+        "dialogBoostDb": 5.0,
+        "widenerMult": 0.4
+      },
+      "tags": [
+        "voice",
+        "podcast",
+        "calls",
+        "intelligibility"
+      ],
+      "recommendedFor": "Podcasts, llamadas, audiolibros, contenido hablado"
+    },
+    {
+      "id": "gaming",
+      "name": "Gaming",
+      "description": "Imagen estéreo amplia para audio posicional — pasos y direccionalidad por encima de calidez tonal",
+      "category": "gaming",
+      "priority": 7,
+      "audioEngine": {
+        "gain": 0.88,
+        "exciterAmount": 0.3,
+        "eqGain": 2.5,
+        "widthAmount": 1.8,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.4,
+        "bassThreshold": 0.35,
+        "eqBoost2k4k": 3.0,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.6
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.5,
+        "lateralInhibition": 0.7,
+        "ohcCompression": 0.35,
+        "masterGainDb": -1.0,
+        "cochlearBandwidth": "wide"
+      },
+      "route": {
+        "bassBoostDb": 1.0,
+        "dialogBoostDb": 2.5,
+        "widenerMult": 1.8
+      },
+      "tags": [
+        "gaming",
+        "positional",
+        "wide",
+        "competitive"
+      ],
+      "recommendedFor": "Shooters competitivos, audio posicional, detección de pasos/direccionalidad"
+    },
+    {
+      "id": "studio",
+      "name": "Studio",
+      "description": "Referencia plana para monitoreo crítico — coloración mínima, fiel a la fuente",
+      "category": "reference",
+      "priority": 8,
+      "audioEngine": {
+        "gain": 0.75,
+        "exciterAmount": 0.0,
+        "eqGain": 0.0,
+        "widthAmount": 1.0,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.5,
+        "bassThreshold": 0.5,
+        "eqBoost2k4k": 0.0,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 1.0
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.0,
+        "lateralInhibition": 0.2,
+        "ohcCompression": 0.15,
+        "masterGainDb": -3.0,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 0.0,
+        "dialogBoostDb": 0.0,
+        "widenerMult": 1.0
+      },
+      "tags": [
+        "reference",
+        "flat",
+        "monitoring",
+        "critical_listening"
+      ],
+      "recommendedFor": "Mezcla, mastering, monitoreo crítico, referencia sin coloración"
+    },
+    {
+      "id": "safe",
+      "name": "Safe",
+      "description": "Perfil conservador orientado a protección auditiva en sesiones largas — ganancia y excursión limitadas",
+      "category": "protection",
+      "priority": 9,
+      "audioEngine": {
+        "gain": 0.6,
+        "exciterAmount": 0.1,
+        "eqGain": 0.5,
+        "widthAmount": 1.0,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.45,
+        "bassThreshold": 0.45,
+        "eqBoost2k4k": 0.5,
+        "exciterLowOnly": true,
+        "widenerMultiplier": 1.0
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.1,
+        "lateralInhibition": 0.4,
+        "ohcCompression": 0.75,
+        "masterGainDb": -6.0,
+        "cochlearBandwidth": "narrow"
+      },
+      "route": {
+        "bassBoostDb": 0.0,
+        "dialogBoostDb": 1.0,
+        "widenerMult": 1.0
+      },
+      "tags": [
+        "safe",
+        "hearing_protection",
+        "long_sessions",
+        "conservative"
+      ],
+      "recommendedFor": "Sesiones largas de escucha, protección auditiva, volumen conservador"
     }
   ],
   "metadata": {
@@ -147,7 +362,12 @@
     "createdDate": "2026-07-21",
     "lastModified": "2026-07-21",
     "totalProfiles": 4,
-    "trainingSequence": ["steve_miller", "grand_funk", "rush", "budgie"],
+    "trainingSequence": [
+      "steve_miller",
+      "grand_funk",
+      "rush",
+      "budgie"
+    ],
     "trainingNotes": "Start with Steve Miller (gentle), progress to Grand Funk (balanced), then RUSH (technical/wide), end with Budgie (heavy/saturated). Each step increases the harmonic exertion and width — the ear adapts across sessions. Recommended cadence: 1 profile per ~20 min of listening."
   }
 }

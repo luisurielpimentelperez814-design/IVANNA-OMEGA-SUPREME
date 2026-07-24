@@ -5,6 +5,8 @@ import com.ivanna.omega.audio.IvannaAudioEngineParams
 import com.ivanna.omega.audio.IvannaAntiDolbyParams
 import com.ivanna.omega.audio.IvannaNeuromorphicParams
 import com.ivanna.omega.audio.IvannaRouteParams
+import com.ivanna.omega.audio.IvannaProfileMetadata
+import com.ivanna.omega.audio.ProfilesLoader
 
 import android.Manifest
 import android.app.Activity
@@ -103,6 +105,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridgePlayer: IvannaBridgePlayer
     private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
     private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
+    private var loadedAudioProfiles: List<IvannaAudioProfile> = emptyList()
+    private var loadedAudioProfileMetadata: IvannaProfileMetadata? = null
 
     // Picker de archivo (ActivityResultContracts.OpenDocument, filtrado a audio/*).
     private val openAudioLauncher = registerForActivityResult(
@@ -285,6 +289,8 @@ class MainActivity : ComponentActivity() {
             compRatio = compRatioSliderToRatio(parameterStore.getCompRatio())
         )
         bridgePlayer = IvannaBridgePlayer(applicationContext)
+        loadedAudioProfiles = ProfilesLoader.load(applicationContext)
+        loadedAudioProfileMetadata = ProfilesLoader.loadMetadata(applicationContext)
         learningBias = LearningBias(applicationContext).also { it.load() }
         realtimeLearningController = RealtimeLearningController(
             applicationContext,
@@ -292,19 +298,8 @@ class MainActivity : ComponentActivity() {
         )
         adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.values()[parameterStore.getAdaptiveModeOrdinal().coerceIn(0, 3)]
         adaptiveIntensity = parameterStore.getAdaptiveIntensity()
-        voiceProtectionEnabled = parameterStore.wasVoiceProtectionActive()
+        voiceProtectionEnabled = parameterStore.isVoiceProtectionEnabled()
         bridgePlayer.setVoiceProtectionEnabled(voiceProtectionEnabled)
-
-        // FIX (recuperación automática de Voice Protection): restaurar
-        // último perfil (podcast/call/broadcast/whisper) y modo manual
-        // desde SharedPreferences. Además carga perfiles desde
-        // assets/filesDir compatibles con ProfilesLoader.
-        try {
-            val profiles = com.ivanna.omega.audio.ProfilesLoader.load(applicationContext)
-            Log.i(TAG, "Perfiles cargados (raw+filesDir compat): ${profiles.size}")
-        } catch (e: Exception) {
-            Log.w(TAG, "ProfilesLoader.load falló: ${e.message}")
-        }
 
         // FIX (independencia del mic — pedido explícito de GORE): antes TODO
         // el núcleo (AudioEngine/Compresor/EQ/Exciter/Widener/SpatialAudioEngineV2/
@@ -407,6 +402,9 @@ class MainActivity : ComponentActivity() {
         metadataListener.startListening()
         // Aplicar perfil inteligente
         profileManager.applySmartProfile(application as IVANNAApplication)
+        parameterStore.getCurrentAudioProfileId()?.let { savedProfileId ->
+            loadedAudioProfiles.firstOrNull { it.id == savedProfileId }?.let { applyIvannaAudioProfile(it) }
+        }
         // sin esperar RECORD_AUDIO (ver comentario ahí).
 
         setContent {
@@ -585,47 +583,11 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (showProfiles) {
                           ProfileSelectorScreen(
-                              profiles = audioProfileManager.getAllProfiles().map { profile ->
-    IvannaAudioProfile(
-        id = profile.id,
-        name = profile.name,
-        description = profile.description,
-        category = profile.category,
-        priority = profile.priority,
-        audioEngine = IvannaAudioEngineParams(
-            gain = profile.audioEngine.gain,
-            exciterAmount = profile.audioEngine.exciterAmount,
-            eqGain = profile.audioEngine.eqGain,
-            widthAmount = profile.audioEngine.widthAmount,
-            bypass = profile.audioEngine.bypass
-        ),
-        antiDolby = IvannaAntiDolbyParams(
-            speechThreshold = profile.antiDolby.speechThreshold,
-            bassThreshold = profile.antiDolby.bassThreshold,
-            eqBoost2k4k = profile.antiDolby.eqBoost2k4k,
-            exciterLowOnly = profile.antiDolby.exciterLowOnly,
-            widenerMultiplier = profile.antiDolby.widenerMultiplier
-        ),
-        neuromorphic = IvannaNeuromorphicParams(
-            harmonicGain = profile.neuromorphic.harmonicGain,
-            lateralInhibition = profile.neuromorphic.lateralInhibition,
-            ohcCompression = profile.neuromorphic.ohcCompression,
-            masterGainDb = profile.neuromorphic.masterGainDb,
-            cochlearBandwidth = profile.neuromorphic.cochlearBandwidth
-        ),
-        route = IvannaRouteParams(
-            bassBoostDb = profile.route.bassBoostDb,
-            dialogBoostDb = profile.route.dialogBoostDb,
-            widenerMult = profile.route.widenerMult
-        ),
-        tags = profile.tags,
-        recommendedFor = profile.recommendedFor
-    )
-},
-                              metadata = null,
-                              currentId = parameterStore.getCurrentPreset(),
+                              profiles = loadedAudioProfiles,
+                              metadata = loadedAudioProfileMetadata,
+                              currentId = parameterStore.getCurrentAudioProfileId(),
                               onApply = { profile ->
-                                    audioProfileManager.applyProfile(profile.id)
+                                  applyIvannaAudioProfile(profile)
                                   showProfiles = false
                               },
                               onClose = { showProfiles = false },
@@ -1047,6 +1009,65 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun mapAudioProfileToEffectProfile(profile: IvannaAudioProfile): Pair<String, IvannaEffectProfile> {
+        return when (profile.category.lowercase()) {
+            "progressive_rock" -> "Spatial" to IvannaEffectProfile.SPATIAL
+            "hard_rock" -> "Punch" to IvannaEffectProfile.PUNCH
+            else -> "Warm" to IvannaEffectProfile.WARM
+        }
+    }
+
+    private fun applyIvannaAudioProfile(profile: IvannaAudioProfile) {
+        parameterStore.setCurrentAudioProfileId(profile.id)
+        parameterStore.setExciter(profile.audioEngine.exciterAmount)
+        parameterStore.setEqGain(profile.audioEngine.eqGain)
+        parameterStore.setWidth(profile.audioEngine.widthAmount)
+
+        val mappedEffect = mapAudioProfileToEffectProfile(profile)
+        parameterStore.setCurrentPreset(mappedEffect.first)
+        (application as? IVANNAApplication)?.globalEffectManager?.applyProfile(mappedEffect.second)
+
+        audioEngine.setGain(profile.audioEngine.gain)
+        audioEngine.setExciter(profile.audioEngine.exciterAmount)
+        audioEngine.setEqGain(profile.audioEngine.eqGain)
+        audioEngine.setWidth(profile.audioEngine.widthAmount)
+        audioEngine.setBypass(profile.audioEngine.bypass)
+
+        AudioEngine.nativeSetRouteProfileStatic(
+            profile.route.bassBoostDb,
+            profile.route.dialogBoostDb,
+            profile.route.widenerMult
+        )
+
+        parameterStore.setNpeNeuroParams(
+            profile.neuromorphic.harmonicGain,
+            profile.neuromorphic.lateralInhibition,
+            profile.neuromorphic.ohcCompression,
+            profile.neuromorphic.masterGainDb
+        )
+        IvannaNpeEngine.setNeuroParams(
+            profile.neuromorphic.harmonicGain,
+            profile.neuromorphic.lateralInhibition,
+            profile.neuromorphic.ohcCompression,
+            profile.neuromorphic.masterGainDb
+        )
+
+        updateDspState { current ->
+            current.copy(
+                drive = profile.audioEngine.exciterAmount.coerceIn(0f, 1f),
+                low = profile.audioEngine.eqGain,
+                mid = profile.audioEngine.eqGain,
+                high = profile.audioEngine.eqGain,
+                presence = profile.audioEngine.eqGain,
+                stereoWidth = profile.audioEngine.widthAmount.coerceIn(0f, 2f),
+                master = profile.audioEngine.gain,
+                bypass = profile.audioEngine.bypass
+            )
+        }
+
+        Log.i(TAG, "Audio profile aplicado: ${profile.id} -> ${profile.name}")
+    }
+
     private fun updateDspState(transform: (DSPState) -> DSPState) {
         dspState = transform(dspState)
         dspPushJob?.cancel()
@@ -1202,7 +1223,7 @@ class MainActivity : ComponentActivity() {
         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
         try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
         try { realtimeLearningController.release() } catch (e: Exception) { Log.e(TAG, "Error releasing realtimeLearningController", e) }
-        try { bridgePlayer.shutdown() } catch (e: Exception) { Log.e(TAG, "Error shutting down bridgePlayer", e) }
+        try { bridgePlayer.release() } catch (e: Exception) { Log.e(TAG, "Error releasing bridgePlayer", e) }
         try {
             autoPresetJob?.cancel()
         } catch (e: Exception) {

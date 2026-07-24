@@ -8,13 +8,10 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
-import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import kotlinx.coroutines.*
-import java.io.File
-import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -41,16 +38,19 @@ import java.nio.ByteOrder
  *   escribe el resultado a un AudioTrack propio. Es la única forma real
  *   de que todo el motor suene con música de verdad, no con el micrófono.
  *
- * ALCANCE DE ESTA PRIMERA VERSIÓN:
- *   Reproducción simple (play/pause/stop) de un archivo local por URI.
- *   Sin seek, sin cola de reproducción, sin notificación media-session
- *   todavía — eso se agrega encima de esta base, no se rediseña.
+ * FIXES v3.6:
+ *   - pausa/reanudación reales en AudioTrack (sin seguir drenando buffer)
+ *   - soporte correcto para salida PCM_FLOAT y PCM_16BIT del decoder
+ *   - buffers reutilizables para evitar allocs por chunk
+ *   - release() explícito del clasificador de Voice Protection
  */
 class IvannaBridgePlayer(private val context: Context) {
 
     companion object {
         private const val TAG = "IVANNA.BridgePlayer"
         private const val TIMEOUT_US = 10_000L
+        private const val TARGET_SAMPLE_RATE = 96_000
+        private const val MAX_CHUNK_FRAMES = 2048
     }
 
     enum class State { IDLE, PLAYING, PAUSED, STOPPED, ERROR }
@@ -61,51 +61,22 @@ class IvannaBridgePlayer(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
+    @Volatile private var voiceProtectionEnabled = true
 
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
-    // Buffers reutilizables (evitan re-asignación en cada chunk)
-    private val spatialInL = FloatArray(2048)
-    private val spatialInR = FloatArray(2048)
-    private val spatialOutL = FloatArray(2048)
-    private val spatialOutR = FloatArray(2048)
-
-    // Detección de daemon Magisk: property + socket (cache TTL 3s)
-    @Volatile private var daemonActiveCache = false
-    @Volatile private var daemonCheckTs = 0L
-
-    fun isDaemonActive(): Boolean {
-        val now = SystemClock.elapsedRealtime()
-        if (now - daemonCheckTs < 3_000L) return daemonActiveCache
-        daemonCheckTs = now
-        daemonActiveCache = try {
-            val prop = try {
-                val c = Class.forName("android.os.SystemProperties")
-                val m = c.getMethod("get", String::class.java, String::class.java)
-                m.invoke(null, "persist.ivanna.daemon_active", "0") as String
-            } catch (_: Throwable) { "0" }
-            prop == "1" || File("/data/adb/ivanna_daemon.pid").exists()
-        } catch (_: Throwable) { false }
-        return daemonActiveCache
-    }
-
-    // FEATURE (Voice Protection): lazy para no cargar YamnetClassifier
-    // (modelo TFLite) hasta la primera reproducción real.
     private val voiceProtection: VoiceProtectionController? by lazy {
-        try { VoiceProtectionController(context) } catch (e: Exception) {
-            Log.w(TAG, "Voice Protection no disponible: ${e.message}"); null
+        try {
+            VoiceProtectionController(context).also { it.enabled = voiceProtectionEnabled }
+        } catch (e: Exception) {
+            Log.w(TAG, "Voice Protection no disponible: ${e.message}")
+            null
         }
     }
 
-    /**
-     * Control real (no cosmético) de Voice Protection — delega a
-     * VoiceProtectionController.enabled, que ya gatea feed() de verdad
-     * (ver VoiceProtectionController.kt: `if (!enabled) return` al inicio
-     * de feed()). Antes era una propiedad `private`, sin forma de
-     * controlarla desde la UI.
-     */
     fun setVoiceProtectionEnabled(enabled: Boolean) {
+        voiceProtectionEnabled = enabled
         voiceProtection?.enabled = enabled
         if (!enabled) DSPBridge.setVoiceProtectScore(0f)
     }
@@ -120,43 +91,40 @@ class IvannaBridgePlayer(private val context: Context) {
 
     fun pause() {
         pauseRequested = true
-        state = State.PAUSED
-        // Pausa REAL del AudioTrack (no sólo la flag del loop): libera bus
-        // de audio HW mientras está pausado.
         runCatching { audioTrack?.pause() }
+        state = State.PAUSED
     }
 
     fun resume() {
         pauseRequested = false
-        state = State.PLAYING
         runCatching { audioTrack?.play() }
+        state = State.PLAYING
     }
 
     fun stop() {
         stopRequested = true
+        pauseRequested = false
         job?.cancel()
         job = null
         releaseTrack()
-        // Liberar VoiceProtection en shutdown — evita que YAMNet quede corriendo
-        // en background tras cerrar la reproducción.
-        runCatching { voiceProtection?.release() }
         state = State.STOPPED
     }
 
-    /** Shutdown explícito — llamar desde MainActivity.onDestroy(). */
-    fun shutdown() {
+    fun release() {
         stop()
-        runCatching { scope.cancel() }
+        runCatching { voiceProtection?.release() }
+        scope.cancel()
     }
 
     private fun releaseTrack() {
-        // Desregistrar la sesion de AudioEffect antes de liberar
         runCatching {
             audioTrack?.audioSessionId?.let { sid ->
                 (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
                     ?.globalEffectManager?.closeSession(sid)
             }
         }
+        try { audioTrack?.pause() } catch (_: Throwable) {}
+        try { audioTrack?.flush() } catch (_: Throwable) {}
         try { audioTrack?.stop() } catch (_: Throwable) {}
         try { audioTrack?.release() } catch (_: Throwable) {}
         audioTrack = null
@@ -176,73 +144,65 @@ class IvannaBridgePlayer(private val context: Context) {
                 if (mime.startsWith("audio/")) { trackIndex = i; format = f; break }
             }
             if (trackIndex < 0 || format == null) {
-                Log.e(TAG, "Sin pista de audio en $uri"); state = State.ERROR; return@withContext
+                Log.e(TAG, "Sin pista de audio en $uri")
+                state = State.ERROR
+                return@withContext
             }
             extractor.selectTrack(trackIndex)
 
             val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            val sampleRate = 96000
+            val sampleRate = TARGET_SAMPLE_RATE
             val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             val mime = format.getString(MediaFormat.KEY_MIME)!!
 
-            // Reinicializa el DSP nativo con el sample rate REAL del archivo.
-            // Los filtros (biquads, HRTF, NHO) dependen de fs; usar siempre
-            // 96000 fijo desalinearía las frecuencias de corte con archivos
-            // a 44100/22050/etc.
-            val resampler = StereoAudioResampler(96000)
+            val resampler = StereoAudioResampler(TARGET_SAMPLE_RATE)
             resampler.setInputSampleRate(inputSampleRate)
-
             DSPBridge.init(sampleRate)
 
-            // IvannaNpeEngine, en cambio, se inicializa UNA sola vez en
-            // MainActivity.onCreate() a un sample rate fijo (no se puede
-            // reinicializar por archivo sin destruir y recrear el handle
-            // nativo — no implementado). Si el archivo actual no coincide,
-            // sus filtros internos (calculados para la fs de init) sonarían
-            // desafinados. Se salta el procesamiento en ese caso, en vez de
-            // procesar mal en silencio — misma fs es el caso común (los
-            // presets de referencia del proyecto son 96000).
             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
             if (npeSampleRateMismatch) {
-                Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, archivo es ${sampleRate}Hz — NPE desactivado para esta reproducción")
+                Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, salida bridge=$sampleRate Hz — NPE desactivado para esta reproducción")
             }
 
-            // FIX: DSPBridge.nativeProcess asume SIEMPRE 2ch intercalado
-            // (L0,R0,L1,R1,...) — no soporta mono. Se fuerza salida estéreo
-            // real y, si la fuente es mono, se upmixea (L=R) antes de
-            // pasar por el DSP. Así no hay dos formatos de buffer
-            // compitiendo con el mismo motor nativo.
             val channelMask = AudioFormat.CHANNEL_OUT_STEREO
             val minBuf = AudioTrack.getMinBufferSize(
-                sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT)
+                sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT
+            )
             if (minBuf <= 0) {
-                Log.e(TAG, "AudioTrack no soporta $sampleRate Hz"); state = State.ERROR; return@withContext
+                Log.e(TAG, "AudioTrack no soporta $sampleRate Hz")
+                state = State.ERROR
+                return@withContext
             }
 
             val track = AudioTrack.Builder()
-                .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                .setAudioFormat(AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(channelMask).build())
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(channelMask)
+                        .build()
+                )
                 .setBufferSizeInBytes(minBuf * 4)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
+                .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             if (track.state != AudioTrack.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioTrack no inicializó"); state = State.ERROR; return@withContext
+                Log.e(TAG, "AudioTrack no inicializó")
+                state = State.ERROR
+                return@withContext
             }
-            // FIX (controles desconectados): registrar la sesion del AudioTrack
-            // en IvannaGlobalEffectManager para que adjustLiveParams() tenga
-            // al menos una sesion real sobre la que aplicar EQ/Virtualizer/Comp.
-            // Sin esto, activeSessions esta vacio y los sliders no afectan nada.
+
             runCatching {
                 (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
                     ?.globalEffectManager
                     ?.openSession(track.audioSessionId, context.packageName)
-            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: \${it.message}") }
+            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: ${it.message}") }
             audioTrack = track
 
             codec = MediaCodec.createDecoderByType(mime)
@@ -255,9 +215,12 @@ class IvannaBridgePlayer(private val context: Context) {
             var sawInputEOS = false
             var sawOutputEOS = false
 
+            val spatialInL = FloatArray(MAX_CHUNK_FRAMES)
+            val spatialInR = FloatArray(MAX_CHUNK_FRAMES)
+            val spatialOutL = FloatArray(MAX_CHUNK_FRAMES)
+            val spatialOutR = FloatArray(MAX_CHUNK_FRAMES)
+
             while (isActive && !sawOutputEOS && !stopRequested) {
-                // Backpressure simple para pausa: no alimentamos ni drenamos
-                // mientras esté en pausa, pero mantenemos el codec vivo.
                 while (pauseRequested && !stopRequested) delay(50)
                 if (stopRequested) break
 
@@ -267,12 +230,10 @@ class IvannaBridgePlayer(private val context: Context) {
                         val inBuf = codec.getInputBuffer(inIndex)!!
                         val sampleSize = extractor.readSampleData(inBuf, 0)
                         if (sampleSize < 0) {
-                            codec.queueInputBuffer(inIndex, 0, 0, 0,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             sawInputEOS = true
                         } else {
-                            codec.queueInputBuffer(inIndex, 0, sampleSize,
-                                extractor.sampleTime, 0)
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
                             extractor.advance()
                         }
                     }
@@ -284,64 +245,25 @@ class IvannaBridgePlayer(private val context: Context) {
                     if (bufferInfo.size > 0) {
                         outBuf.position(bufferInfo.offset)
                         outBuf.limit(bufferInfo.offset + bufferInfo.size)
-                        val floats = pcm16ToFloat(outBuf, bufferInfo.size)
+                        val floats = pcmToFloat(
+                            outBuf,
+                            bufferInfo.size,
+                            codec.outputFormat.getIntegerOrDefault(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+                        )
                         val stereo = if (channelCount == 1) monoToStereo(floats) else floats
-
-                        // El motor nativo clampea internamente a 2048 frames
-                        // por llamada; no hay garantía de que el buffer de
-                        // salida del decoder respete ese límite en todos los
-                        // codecs/dispositivos, así que se trocea aquí para
-                        // que nunca se escriba audio sin procesar.
-                        // Buffers reutilizables: se declaran como campos de la
-                        // clase (spatialIn/OutL/R) para no reasignar memoria en
-                        // cada chunk. Antes se creaban aquí dentro del loop y
-                        // presionaban el GC innecesariamente.
-
                         val totalFrames = stereo.size / 2
                         var offset = 0
                         while (offset < totalFrames) {
-                            val chunkFrames = minOf(2048, totalFrames - offset)
+                            val chunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
-                            // FEATURE (Voice Protection): clasifica el audio
-                            // CRUDO (antes del DSP) — clasificar después
-                            // sería sobre una señal ya coloreada por
-                            // Exciter/EQ, menos fiel a lo que YAMNet espera.
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             DSPBridge.process(chunk, chunkFrames)
-                            // FIX (motor NPE nunca sonaba): IvannaNpeEngine
-                            // (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain,
-                            // el motor detrás de los sliders de Inhibición
-                            // Lateral/Compresión OHC/Master Gain/AGC/HRTF/
-                            // Coclear/Adapt/Manifold en la UI) solo se
-                            // llamaba desde PlaybackCaptureService, cuyo
-                            // resultado se descarta siempre (esa ruta es
-                            // captura+análisis del sistema, sin salida de
-                            // audio real — ver auditoría). Este es el único
-                            // lugar de toda la app que escribe a un
-                            // AudioTrack real, así que es el único lugar
-                            // donde procesar aquí tiene efecto audible.
-                            // isReady evita el costo si el motor no
-                            // inicializó (ver IvannaNpeEngine.init).
                             if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
                                 IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames)
                             }
-                            // FIX (control sin efecto real): "modo concierto"
-                            // por voz encendía parámetros de un motor que
-                            // nadie ejecutaba nunca. Ahora sí se aplica, acá,
-                            // el único lugar con salida de audio audible real.
                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {
                                 com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
                             }
-                            // FIX (toggle conectado al motor equivocado —
-                            // auditoría de cableado): "MOTOR BINAURAL · 32
-                            // OBJETOS" en la UI describe textualmente a
-                            // IvannaSpatialEngine (upmixer+VBAP+HRTF+head-
-                            // tracking) pero estaba wireado a
-                            // SpatialAudioEngineV2, que es solo telemetría
-                            // (se deja para el HUD). Se aplica acá el motor
-                            // real, sobre canales deinterleaved — este sí
-                            // preserva la separación estéreo (dos fuentes
-                            // virtuales L/R, no un downmix a mono).
                             if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
                                 for (i in 0 until chunkFrames) {
                                     spatialInL[i] = chunk[i * 2]
@@ -378,14 +300,22 @@ class IvannaBridgePlayer(private val context: Context) {
         }
     }
 
-    /** Mono intercalado (M0,M1,...) → estéreo intercalado (M0,M0,M1,M1,...). */
     private fun monoToStereo(mono: FloatArray): FloatArray {
         val out = FloatArray(mono.size * 2)
-        for (i in mono.indices) { out[2 * i] = mono[i]; out[2 * i + 1] = mono[i] }
+        for (i in mono.indices) {
+            out[2 * i] = mono[i]
+            out[2 * i + 1] = mono[i]
+        }
         return out
     }
 
-    /** PCM16 little-endian intercalado → Float [-1,1] intercalado (mismo layout que espera DSPBridge). */
+    private fun pcmToFloat(buf: ByteBuffer, byteSize: Int, encoding: Int): FloatArray {
+        return when (encoding) {
+            AudioFormat.ENCODING_PCM_FLOAT -> pcmFloatToFloat(buf, byteSize)
+            else -> pcm16ToFloat(buf, byteSize)
+        }
+    }
+
     private fun pcm16ToFloat(buf: ByteBuffer, byteSize: Int): FloatArray {
         val bb = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val sampleCount = byteSize / 2
@@ -394,5 +324,19 @@ class IvannaBridgePlayer(private val context: Context) {
             out[i] = bb.short.toFloat() / 32768f
         }
         return out
+    }
+
+    private fun pcmFloatToFloat(buf: ByteBuffer, byteSize: Int): FloatArray {
+        val bb = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        val sampleCount = byteSize / 4
+        val out = FloatArray(sampleCount)
+        for (i in 0 until sampleCount) {
+            out[i] = bb.float.coerceIn(-1f, 1f)
+        }
+        return out
+    }
+
+    private fun MediaFormat.getIntegerOrDefault(key: String, defaultValue: Int): Int {
+        return if (containsKey(key)) getInteger(key) else defaultValue
     }
 }

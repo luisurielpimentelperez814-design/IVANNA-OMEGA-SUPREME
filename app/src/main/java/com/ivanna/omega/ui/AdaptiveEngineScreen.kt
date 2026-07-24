@@ -35,21 +35,22 @@ internal fun AdaptiveEngineScreen(
     val backend = remember { AdaptiveBackend(context) }
     val telemetry by backend.telemetry.collectAsState()
     val audioState by AudioStateManager.audioState.collectAsState()
-    var manualModeEnabled by remember { mutableStateOf(false) }
+    var manualModeEnabled by remember { mutableStateOf(audioState.manualModeEnabled) }
 
     // Iniciar/parar telemetría con el ciclo de vida de la pantalla
     DisposableEffect(Unit) {
         backend.startTelemetry()
-        // Restaurar estado persistido
         backend.restoreState()?.let { saved ->
             AudioStateManager.updateState { saved }
+            manualModeEnabled = saved.manualModeEnabled
+            if (saved.manualModeEnabled) {
+                try { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(false) }
+                catch (_: Throwable) { }
+                backend.forceManualState(saved)
+            }
         }
         onDispose {
             backend.stopTelemetry()
-            if (manualModeEnabled) {
-                try { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(true) }
-                catch (_: Throwable) { }
-            }
         }
     }
 
@@ -220,12 +221,14 @@ internal fun AdaptiveEngineScreen(
                     checked = manualModeEnabled,
                     onCheckedChange = { enabled ->
                         manualModeEnabled = enabled
+                        val updatedState = AudioStateManager.audioState.value.copy(manualModeEnabled = enabled)
+                        AudioStateManager.updateState { updatedState }
                         try {
                             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
                         } catch (_: Throwable) { }
                         if (enabled) {
                             backend.resetModulator()
-                            backend.forceManualState(audioState)
+                            backend.forceManualState(updatedState)
                         }
                     },
                     accent = PhosphorGreen
