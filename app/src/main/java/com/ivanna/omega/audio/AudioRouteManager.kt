@@ -128,5 +128,13 @@ object AudioRouteManager {
         Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
         AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
         // (implementado vía AudioEngine.nativeSetRouteProfileJni -> control_set_route_profile)
+
+        // FIX (unificación de rutas): el mismo perfil también se manda a
+        // Ruta B (módulo Magisk / omega_daemon), que antes nunca se
+        // enteraba de la ruta de salida activa — Spotify/YouTube sonaban
+        // sin compensación de BT SBC/AAC ni de rolloff de graves en AUX.
+        com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+            p.bassBoostDb, p.dialogBoostDb, p.widenerMult
+        )
     }
 }

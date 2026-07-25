@@ -192,14 +192,25 @@ struct PFEngineState {
         const float gainHigh = s->pf_high.load(std::memory_order_relaxed);     // dB — was: pf_mid (BUG)
         const float gainPres = s->pf_presence.load(std::memory_order_relaxed); // dB — was: pf_mid*0.5 (BUG)
 
-        calcLowShelf (low[0],       200.0f, Q, gainLow);   // Bass warmth shelf @ 200 Hz
-        calcLowShelf (low[1],       200.0f, Q, gainLow);
+        // FIX (unificación de rutas): compensación de ruta de salida
+        // (BT/AUX/USB, detectada por AudioRouteManager.kt) sumada a la
+        // ganancia de usuario, no en reemplazo — mismo criterio que la
+        // Ruta A (control_apply_frame() en audio_control_plane.cpp).
+        // route_bass_boost_db compensa rolloff de graves en AUX cableado;
+        // route_dialog_boost_db compensa la banda 2-4kHz perdida por
+        // codecs BT lossy (SBC/AAC) — el peak de presence @3.5kHz es la
+        // banda más cercana disponible en este EQ de 4 bandas.
+        const float routeBass   = s->route_bass_boost_db.load(std::memory_order_relaxed);
+        const float routeDialog = s->route_dialog_boost_db.load(std::memory_order_relaxed);
+
+        calcLowShelf (low[0],       200.0f, Q, gainLow + routeBass);   // Bass warmth shelf @ 200 Hz
+        calcLowShelf (low[1],       200.0f, Q, gainLow + routeBass);
         calcPeaking  (mid[0],       freq,   Q, gainMid);   // Mid peak @ pf_freq (default 1kHz)
         calcPeaking  (mid[1],       freq,   Q, gainMid);
         calcHighShelf(high[0],     8000.0f, Q, gainHigh);  // Clarity/air shelf @ 8 kHz
         calcHighShelf(high[1],     8000.0f, Q, gainHigh);
-        calcPeaking  (presence[0], 3500.0f, Q, gainPres);  // Definition peak @ 3.5 kHz
-        calcPeaking  (presence[1], 3500.0f, Q, gainPres);
+        calcPeaking  (presence[0], 3500.0f, Q, gainPres + routeDialog);  // Definition peak @ 3.5 kHz
+        calcPeaking  (presence[1], 3500.0f, Q, gainPres + routeDialog);
 
         coeff_version = s->pf_param_version.load(std::memory_order_relaxed);
     }
@@ -447,6 +458,27 @@ static void processLoop() {
                 }
             }
 
+            // 6.1 Route widener compensation (FIX unificación de rutas):
+            //     BT SBC/AAC colapsa mejor en mono-compat — reduce ancho
+            //     (widenerMult < 1). AUX/USB neutro (1.0, sin costo extra).
+            //     Multiplicador M/S adicional sobre lo que ya entregó
+            //     g_widener_b — mismo álgebra M/S que ya usa AudioRouteManager
+            //     como referencia, aquí conectado a audio real de streaming.
+            {
+                const float routeWidener = g_shared->route_widener_mult.load(
+                    std::memory_order_relaxed);
+                if (routeWidener < 0.999f || routeWidener > 1.001f) {
+                    for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                        const float l = work_buf[i * 2];
+                        const float r = work_buf[i * 2 + 1];
+                        const float mid  = (l + r) * 0.5f;
+                        const float side = (l - r) * 0.5f * routeWidener;
+                        work_buf[i * 2]     = mid + side;
+                        work_buf[i * 2 + 1] = mid - side;
+                    }
+                }
+            }
+
             // 6.5 PDEngine — NHO harmonic shaping (FIX unificación de rutas).
             //    Mismo motor de Ruta A (g_pd en ivanna_omega_jni.cpp), misma
             //    posición relativa: después de EQ/Comp/Exciter/Widener,
@@ -598,6 +630,22 @@ static void handleSocketCommand(const char* cmd, size_t len) {
         g_shared->ai_yamnet_confidence.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_release);
     else if (strncmp(cmd, "SET_SPATIAL_ENABLED:",   20) == 0)
         g_shared->ai_spatial_enabled.store(v != 0.0f, std::memory_order_release);
+    // FIX (unificación de rutas — Ruta B): perfil de ruta de salida
+    // (BT/AUX/USB) enviado por AudioRouteManager.kt vía
+    // OmegaEngineBridge.setRouteProfile(). Bass/dialog bump la versión de
+    // los biquads PF (misma convención que SET_PF_LOW/SET_PF_PRESENCE)
+    // porque se suman dentro de recompute(); widener no necesita
+    // recompute, se lee directo en el hot-path (ver processLoop() paso 6.1).
+    else if (strncmp(cmd, "SET_ROUTE_BASS_BOOST:",   22) == 0) {
+        g_shared->route_bass_boost_db.store(std::clamp(v, 0.0f, 6.0f), std::memory_order_release);
+        g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+    }
+    else if (strncmp(cmd, "SET_ROUTE_DIALOG_BOOST:", 24) == 0) {
+        g_shared->route_dialog_boost_db.store(std::clamp(v, 0.0f, 6.0f), std::memory_order_release);
+        g_shared->pf_param_version.fetch_add(1, std::memory_order_release);
+    }
+    else if (strncmp(cmd, "SET_ROUTE_WIDENER_MULT:", 24) == 0)
+        g_shared->route_widener_mult.store(std::clamp(v, 0.4f, 1.4f), std::memory_order_release);
     else if (strncmp(cmd, "SET_SPATIAL_AZIMUTH:",   20) == 0)
         g_shared->ai_spatial_azimuth.store(std::clamp(v, -90.0f, 90.0f), std::memory_order_release);
     else if (strncmp(cmd, "SET_SPATIAL_AGGR:",      17) == 0)

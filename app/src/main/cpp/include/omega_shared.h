@@ -162,6 +162,20 @@ struct OmegaSharedState {
     std::atomic<float> ai_voice_score;          // [0..1] — afecta exciter_red
     std::atomic<float> ai_music_score;          // [0..1] — afecta spatial width
 
+    // FIX (unificación de rutas — perfil de ruta llega a Ruta B): antes
+    // AudioRouteManager.kt solo alcanzaba g_control_frame (in-process,
+    // audio_control_plane.hpp), consumido exclusivamente por Ruta A
+    // (DSPBridge). El daemon de Ruta B corre en el proceso de audioserver
+    // — no puede leer ese singleton — así que Spotify/YouTube nunca
+    // recibían compensación de BT SBC/AAC ni de rolloff de graves en AUX,
+    // pese a que la detección de ruta ya funcionaba. Mismo espejo que
+    // route_bass_boost_db/route_dialog_boost_db/route_widener_mult en
+    // UnifiedControlFrame, mismos rangos, escritos vía socket
+    // (OmegaEngineBridge.setRouteProfile) y aplicados en processLoop().
+    std::atomic<float> route_bass_boost_db;     // [0..6] dB — AUX rolloff
+    std::atomic<float> route_dialog_boost_db;   // [0..6] dB — BT SBC/AAC 2-4kHz
+    std::atomic<float> route_widener_mult;      // [0.4..1.4] — 1.0 = sin cambio
+
     // ── Ring buffers ──────────────────────────────────────────────────────────
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
@@ -192,6 +206,8 @@ struct OmegaSharedState {
           ai_spatial_aggressiveness(0.5f),
           ai_yamnet_class_id(-1), ai_yamnet_confidence(0.0f),
           ai_voice_score(0.0f), ai_music_score(0.0f),
+          route_bass_boost_db(0.0f), route_dialog_boost_db(0.0f),
+          route_widener_mult(1.0f),
           write_pos(0), read_pos(0) {}
 };
 

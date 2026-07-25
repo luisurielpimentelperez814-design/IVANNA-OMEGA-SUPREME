@@ -226,6 +226,19 @@ object OmegaEngineBridge {
     fun setSpatialAggressiveness(v: Float) =
         send("SET_SPATIAL_AGGR:${v.coerceIn(0f, 1f)}")
 
+    // ── Route Profile (FIX unificación de rutas) ──────────────────────────────
+    // Espejo de AudioEngine.nativeSetRouteProfileStatic (Ruta A). Antes la
+    // compensación de ruta de salida (BT SBC/AAC, rolloff AUX) detectada por
+    // AudioRouteManager.kt solo llegaba al control plane in-process
+    // (g_control_frame), que Ruta B no puede leer por correr en el proceso
+    // de audioserver. Esto cierra ese hueco: mismos valores, mismos rangos,
+    // vía el socket que ya usa el resto de esta clase.
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
+        send("SET_ROUTE_BASS_BOOST:${bassBoostDb.coerceIn(0f, 6f)}")
+        send("SET_ROUTE_DIALOG_BOOST:${dialogBoostDb.coerceIn(0f, 6f)}")
+        send("SET_ROUTE_WIDENER_MULT:${widenerMult.coerceIn(0.4f, 1.4f)}")
+    }
+
     // ── PF Engine ─────────────────────────────────────────────────────────────
 
     fun setPFDrive(v: Float)      = send("SET_PF_DRIVE:$v")
