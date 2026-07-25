@@ -19,11 +19,11 @@ data class DSPState(
     val resonance: Float = 0.707f,
 
     // EQ gains (dB)
-    val low: Float      = 0.0f,
-    val mid: Float      = 0.0f,
-    val high: Float     = 0.0f,
-    val presence: Float = 0.0f,
-    val master: Float   = 0.0f,
+    var low: Float      = 0.0f,
+    var mid: Float      = 0.0f,
+    var high: Float     = 0.0f,
+    var presence: Float = 0.0f,
+    var master: Float   = 0.0f,
 
     // Compressor
     val compThreshold: Float = -18.0f,
