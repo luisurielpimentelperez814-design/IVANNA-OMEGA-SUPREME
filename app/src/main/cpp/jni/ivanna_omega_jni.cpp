@@ -125,6 +125,8 @@ static std::atomic<float> g_lastBandHigh{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 // 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
 static std::atomic<int> g_activeRoute{0};
+// 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
+static std::atomic<int> g_activeRoute{0};
 
 // Snapshot persistente AdaptiveState (independiente del audio callback)
 static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};
@@ -146,7 +148,8 @@ static void adaptiveSnapshotLoop() {
                 st.spatial_width, std::memory_order_release);
 
             g_adaptiveSafetySnapshot.store(
-                st.safety_margin, std::memory_order_release);
+                st.safety_margin,
+                std::memory_order_release);
 
             // FIX (telemetria 0% Ruta B): nativeProcess no corre cuando
             // Spotify/YouTube estan activos. Este loop es la unica fuente
