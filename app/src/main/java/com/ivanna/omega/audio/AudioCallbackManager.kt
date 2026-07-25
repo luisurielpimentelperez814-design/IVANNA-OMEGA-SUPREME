@@ -6,7 +6,10 @@ import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 
-class AudioCallbackManager(private val audioManager: AudioManager) {
+class AudioCallbackManager(
+    private val audioManager: AudioManager,
+    private val onFocusChange: (Int) -> Unit = {}
+) {
     companion object { private const val TAG = "AudioCallbackManager" }
 
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -59,6 +62,8 @@ class AudioCallbackManager(private val audioManager: AudioManager) {
 
     private fun onAudioFocusChange(focusChange: Int) {
         Log.d(TAG, "Focus change: $focusChange")
+        onFocusChange(focusChange) // FIX: antes no propagaba a nadie — Volterra u
+        // otro consumidor de audio focus tumbaba la reproducción sin aviso.
     }
 
     fun muteUnwantedNoise() {

@@ -46,6 +46,36 @@ import java.nio.ByteOrder
  */
 class IvannaBridgePlayer(private val context: Context) {
 
+    // FIX (issue 5 — conflicto de foco con Volterra/switches externos):
+    // antes NO existía gestión de AudioFocus alguna para este reproductor
+    // (AudioCallbackManager estaba definida pero jamás instanciada en todo
+    // el proyecto). Ahora se solicita foco cooperativo al iniciar playback
+    // y se PAUSA (no se destruye el track) en pérdida transitoria,
+    // reanudando solo si el usuario no había pausado manualmente.
+    private val focusManager by lazy {
+        AudioCallbackManager(
+            context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        ) { focusChange ->
+            when (focusChange) {
+                android.media.AudioManager.AUDIOFOCUS_LOSS,
+                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    if (state == State.PLAYING) {
+                        pauseRequested = true
+                        runCatching { audioTrack?.pause() }
+                        state = State.PAUSED
+                    }
+                }
+                android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    runCatching { audioTrack?.setVolume(0.3f) }
+                }
+                android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                    runCatching { audioTrack?.setVolume(1.0f) }
+                    if (state == State.PAUSED && pauseRequested) resume()
+                }
+            }
+        }
+    }
+
     companion object {
         private const val TAG = "IVANNA.BridgePlayer"
         private const val TIMEOUT_US = 10_000L
@@ -108,6 +138,7 @@ class IvannaBridgePlayer(private val context: Context) {
         stop()
         stopRequested = false
         pauseRequested = false
+        focusManager.requestAudioFocus() // FIX: foco cooperativo antes de sonar
         job = scope.launch { runDecodeLoop(uri) }
     }
 
@@ -129,6 +160,7 @@ class IvannaBridgePlayer(private val context: Context) {
         job?.cancel()
         job = null
         releaseTrack()
+        focusManager.abandonAudioFocus() // FIX: libera el foco al parar de verdad
         state = State.STOPPED
     }
 
