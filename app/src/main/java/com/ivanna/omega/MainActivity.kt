@@ -50,6 +50,12 @@ import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.neuromorphic.PiLstmBridge
+import android.app.Activity
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.ivanna.omega.audio.PlaybackCaptureService
 import kotlin.math.PI
 import kotlin.math.log10
 
@@ -84,6 +90,20 @@ fun OmegaApp() {
     val nav = rememberNavController()
     val dsp = remember { mutableStateOf(DSPState()) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
+        // Launcher MediaProjection para PlaybackCaptureService
+        val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
+        val projectionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                val intent = Intent(context, PlaybackCaptureService::class.java).apply {
+                    putExtra("resultCode", result.resultCode)
+                    putExtra("data", result.data)
+                }
+                context.startForegroundService(intent)
+            }
+        }
+
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
@@ -133,7 +153,15 @@ fun OmegaApp() {
             // encontrado). AdaptiveEngineScreen necesita un
             // VoiceProtectionManager; se construye aquí con ParameterStore
             // igual que en el resto de la app (ver ParameterStore.kt).
-            composable("adaptive") {
+            composable("visualizer") {
+                LaunchedEffect(Unit) {
+                    projectionLauncher.launch(
+                        projectionManager.createScreenCaptureIntent()
+                    )
+                }
+                nav.popBackStack()
+            }
+                        composable("adaptive") {
                 val ctx = LocalContext.current
                 val voiceManager = remember(ctx) {
     com.ivanna.omega.audio.VoiceProtectionManager(
@@ -342,6 +370,7 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
                 if (IvannaNativeLib.isLoaded)
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
             },
+            onOpenVisualizer = { nav.navigate("visualizer") },
             onAntiDolbyChange = { enabled ->
                 if (enabled) antiDolbyController.enableAntiDolby()
                 else antiDolbyController.disableAntiDolby()
