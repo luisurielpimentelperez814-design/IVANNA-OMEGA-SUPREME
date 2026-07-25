@@ -218,13 +218,15 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        dsp = dsp.copy(freq = DSPState.sliderToFreq(it)); dsp.pushToNative()
+                        dsp.value = dsp.value.copy(freq = DSPState.sliderToFreq(it))
+                        dsp.value.pushToNative()
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                          dsp = dsp.copy(resonance = DSPState.sliderToQ(it)); dsp.pushToNative()
+                          dsp.value = dsp.value.copy(resonance = DSPState.sliderToQ(it))
+                        dsp.value.pushToNative()
                     }
                 }
             }
