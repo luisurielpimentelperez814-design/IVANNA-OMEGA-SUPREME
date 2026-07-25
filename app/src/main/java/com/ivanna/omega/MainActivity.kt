@@ -103,6 +103,7 @@ fun OmegaApp() {
                 }
                 context.startForegroundService(intent)
             }
+            nav.popBackStack()
         }
 
         val adaptiveBackend = remember { AdaptiveBackend(context) }
@@ -161,7 +162,6 @@ fun OmegaApp() {
                         projectionManager.createScreenCaptureIntent()
                     )
                 }
-                nav.popBackStack()
             }
             composable("adaptive") {
                 val ctx = LocalContext.current
