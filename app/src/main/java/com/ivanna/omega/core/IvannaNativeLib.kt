@@ -168,9 +168,6 @@ object IvannaNativeLib {
 // compAmount,excReduction,spatialWidth,adaptiveActive]
 external fun nativeGetUnifiedPipelineStatus(): FloatArray?
 
-    // FloatArray[8]: [activeRoute(0/1/2), rms, peak, voiceProtect,
-    //                  compAmount, excReduction, spatialWidth, adaptiveActive(0/1)]
-    external fun nativeGetUnifiedPipelineStatus(): FloatArray?
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
