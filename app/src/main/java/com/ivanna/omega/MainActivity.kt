@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OmegaApp() {
     val nav = rememberNavController()
-    var dsp by remember { mutableStateOf(DSPState()) }
+    val dsp = remember { mutableStateOf(DSPState()) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         // ← PUNTO 1: Agregar ruta "adaptive" al NavHost
         NavHost(nav, startDestination = "splash") {
@@ -169,7 +169,7 @@ fun IntroScreen(onEnter: () -> Unit) {
 @Composable
 fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHostController) {
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
-    val fxActive = dsp.wet > 0.01f
+    val fxActive = dsp.value.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
 
     Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
