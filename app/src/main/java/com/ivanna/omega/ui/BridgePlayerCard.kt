@@ -40,6 +40,15 @@ fun BridgePlayerCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    // FIX (reproducción consecutiva): cola opcional. Con queue.size <= 1 la
+    // tarjeta se comporta exactamente igual que antes (compatibilidad hacia
+    // atrás total); con queue.size > 1 aparece la fila de navegación y el
+    // mini-listado, sin agregar altura fija que empuje/solape otras cards.
+    queue: List<Uri> = emptyList(),
+    queueIndex: Int = -1,
+    onPickQueue: () -> Unit = {},
+    onNext: () -> Unit = {},
+    onPrev: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val stateLabel = when (playerState) {
@@ -104,9 +113,35 @@ fun BridgePlayerCard(
                 fontSize = 11.sp
             )
 
+            if (queue.size > 1) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Pista ${(queueIndex + 1).coerceAtLeast(1)} de ${queue.size}",
+                    color = Color(0xFF9AA3AF),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp
+                )
+            }
+
             Spacer(Modifier.height(10.dp))
+            // Fila 1: selección de archivo(s). Ancho fijo por botón +
+            // spacedBy, nunca se solapa porque no hay Box ni offset manual.
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilledTonalButton(onClick = onPickFile) { Text("Archivo…") }
+                FilledTonalButton(onClick = onPickQueue) { Text("Cola…") }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            // Fila 2: transporte. Separada de la fila de selección para que
+            // en pantallas angostas el Row haga wrap por línea en vez de
+            // comprimir/solapar botones (antes todo iba en una sola Row).
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (queue.size > 1) {
+                    OutlinedButton(
+                        onClick = onPrev,
+                        enabled = queueIndex > 0
+                    ) { Text("⏮") }
+                }
                 Button(
                     onClick = onPlay,
                     enabled = currentUri != null &&
@@ -122,6 +157,12 @@ fun BridgePlayerCard(
                     enabled = playerState == IvannaBridgePlayer.State.PLAYING ||
                               playerState == IvannaBridgePlayer.State.PAUSED
                 ) { Text("⏹ Stop") }
+                if (queue.size > 1) {
+                    OutlinedButton(
+                        onClick = onNext,
+                        enabled = queueIndex in 0 until queue.lastIndex
+                    ) { Text("⏭") }
+                }
             }
         }
     }
