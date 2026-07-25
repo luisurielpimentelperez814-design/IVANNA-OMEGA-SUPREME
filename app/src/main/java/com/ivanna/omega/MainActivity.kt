@@ -167,7 +167,7 @@ fun IntroScreen(onEnter: () -> Unit) {
 
 // ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
-fun DashboardScreen(dsp: DSPState, nav: androidx.navigation.NavHostController) {
+fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHostController) {
     val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
     val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
