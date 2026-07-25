@@ -1,4 +1,3 @@
-package com.ivanna.omega
 
 import android.media.AudioManager
 import android.os.Bundle
@@ -88,10 +87,19 @@ fun OmegaApp() {
             // igual que en el resto de la app (ver ParameterStore.kt).
             composable("adaptive") {
                 val ctx = LocalContext.current
-                val voiceProtectionManager = remember {
-                    VoiceProtectionManager(ParameterStore(ctx))
-                }
-                AdaptiveEngineScreen(voiceProtectionManager)
+                val voiceManager = remember(ctx) {
+    com.ivanna.omega.audio.VoiceProtectionManager(
+        com.ivanna.omega.audio.ParameterStore(ctx)
+    )
+}
+
+com.ivanna.omega.ui.AdaptiveEngineScreen(
+    voiceProtectionManager = voiceManager,
+    modifier = Modifier
+        .fillMaxSize()
+        .background(Carbon)
+        .windowInsetsPadding(WindowInsets.systemBars)
+)
             }
         }
     }
