@@ -49,6 +49,7 @@ import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.neuromorphic.PiLstmBridge
+import kotlin.math.PI
 import kotlin.math.log10
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
@@ -317,6 +318,14 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
             onNhoHarmonicChange = {
                 if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
+            },
+            onSpatialAngleChange = {
+                if (IvannaNativeLib.isLoaded)
+                    IvannaNativeLib.nativeSetSpatialAngleRad((it - 0.5f) * 2f * PI.toFloat())
+            },
+            onSpatialWidthChange = {
+                if (IvannaNativeLib.isLoaded)
+                    IvannaNativeLib.nativeSetSpatialWidthDirect(it)
             },
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
