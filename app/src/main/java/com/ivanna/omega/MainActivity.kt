@@ -34,6 +34,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.ivanna.omega.audio.AdaptiveBackend
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.ui.AdaptiveEngineScreen
@@ -200,6 +201,21 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
     val fxActive = dsp.value.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
 
+    // FIX (telemetría 0% en Panel Adaptativo del Dashboard): AdaptiveBackend
+    // ya exponía StateFlow<AdaptiveTelemetry> real (10Hz, motor A), pero
+    // solo se instanciaba dentro de AdaptiveEngineScreen — MainActivity
+    // nunca lo consumía, así que IvannaControlPanel recibía siempre el
+    // default vacío de AdaptiveTelemetrySnapshot(). Instancia local con
+    // ciclo de vida atado a esta pantalla (arranca/para con el composable).
+    val context = LocalContext.current
+    val adaptiveBackend = remember { AdaptiveBackend(context) }
+    DisposableEffect(Unit) {
+        adaptiveBackend.startTelemetry()
+        onDispose { adaptiveBackend.stopTelemetry() }
+    }
+    val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
+    val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
+
     Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
         if (!DSPBridge.isLoaded) {
             Box(Modifier.fillMaxWidth().background(Color(0xFF330000)).padding(8.dp),
@@ -256,6 +272,7 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
             onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
             onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
+            adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
             routeState = routeState

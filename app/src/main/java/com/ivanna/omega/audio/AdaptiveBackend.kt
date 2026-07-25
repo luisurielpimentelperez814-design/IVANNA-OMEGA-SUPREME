@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -167,3 +168,22 @@ class AdaptiveBackend(context: Context) {
 
     fun resetModulator() = modulator.reset()
 }
+
+// FIX: puente entre la telemetría interna del backend (AdaptiveTelemetry)
+// y el snapshot que espera la UI (AdaptiveTelemetrySnapshot). Mismos 9
+// campos de datos con distinto naming; appliedCount no existe en el
+// origen todavía (no hay contador de aplicaciones en AdaptiveBackend),
+// queda en 0 — no se inventa un valor.
+fun AdaptiveTelemetry.toSnapshot(): AdaptiveTelemetrySnapshot = AdaptiveTelemetrySnapshot(
+    running = motorRunning,
+    rms = rms,
+    peak = peakDb,
+    gainReductionDb = grDb,
+    targetGain = targetGain,
+    compressorAmount = compAmount,
+    exciterReduction = excReduction,
+    spatialWidth = spatialWidth,
+    safetyMargin = safetyMargin,
+    voiceProtectionAmount = voiceProtect,
+    appliedCount = 0L
+)
