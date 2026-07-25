@@ -127,6 +127,8 @@ static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 static std::atomic<int> g_activeRoute{0};
 // 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
 static std::atomic<int> g_activeRoute{0};
+// 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
+static std::atomic<int> g_activeRoute{0};
 
 // Snapshot persistente AdaptiveState (independiente del audio callback)
 static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};

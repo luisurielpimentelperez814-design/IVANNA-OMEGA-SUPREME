@@ -52,6 +52,7 @@ object IvannaNativeLib {
     external fun nativeSetGamma(v: Float)
     external fun nativeSetDelta(v: Float)
     external fun nativeSetEta(v: Float)
+    external fun nativeSetSpatialWet(v: Float)
     external fun nativeSetHarmonicGain(v: Float)
     external fun nativeSetHRTFEnabled(en: Boolean)
     external fun nativeSetAdaptEnabled(en: Boolean)
@@ -162,6 +163,10 @@ object IvannaNativeLib {
     // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?
+
+// FloatArray[8]: [activeRoute,rms,peak,voiceProtect,
+// compAmount,excReduction,spatialWidth,adaptiveActive]
+external fun nativeGetUnifiedPipelineStatus(): FloatArray?
 
     // FloatArray[8]: [activeRoute(0/1/2), rms, peak, voiceProtect,
     //                  compAmount, excReduction, spatialWidth, adaptiveActive(0/1)]
