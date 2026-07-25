@@ -204,28 +204,28 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación") { dsp = dsp.copy(drive = it); dsp.pushToNative() }
-                    FaderControl("WET", dsp.wet, "Señal proc.") { dsp = dsp.copy(wet = it); dsp.pushToNative() }
-                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { dsp = dsp.copy(mix = it); dsp.pushToNative() }
+                    FaderControl("DRIVE", dsp.value.drive, "Saturación") { dsp.value = dsp.value.copy(drive = it); dsp.value.pushToNative() }
+                    FaderControl("WET", dsp.value.wet, "Señal proc.") { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() }
+                    FaderControl("MIX", dsp.value.mix, "Seca/Húmeda") { dsp.value = dsp.value.copy(mix = it); dsp.value.pushToNative() }
                 }
             }
             item {
                 DspSection("DSP ENGINE α·β·γ") {
-                    FaderControl("ALPHA", dsp.alpha, "Compresor") { dsp = dsp.copy(alpha = it); dsp.pushToNative() }
-                    FaderControl("BETA", dsp.beta, "Ratio") { dsp = dsp.copy(beta = it); dsp.pushToNative() }
-                    FaderControl("GAMMA", dsp.gamma, "Width") { dsp = dsp.copy(gamma = it); dsp.pushToNative() }
-                    val freqSl = remember(dsp.freq) {
-                        (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
+                    FaderControl("ALPHA", dsp.value.alpha, "Compresor") { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() }
+                    FaderControl("BETA", dsp.value.beta, "Ratio") { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() }
+                    FaderControl("GAMMA", dsp.value.gamma, "Width") { dsp.value = dsp.value.copy(gamma = it); dsp.value.pushToNative() }
+                    val freqSl = remember(dsp.value.freq) {
+                        (log10(dsp.value.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        dsp.value = dsp.value.copy(freq = DSPState.sliderToFreq(it))
+                        dsp.value = dsp.value.copy(freq = DSPState.sliderToFreq(it)); dsp.value.pushToNative()
                         dsp.value.pushToNative()
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                          dsp.value = dsp.value.copy(resonance = DSPState.sliderToQ(it))
+                          dsp.value = dsp.value.copy(resonance = DSPState.sliderToQ(it)); dsp.value.pushToNative()
                         dsp.value.pushToNative()
                     }
                 }
