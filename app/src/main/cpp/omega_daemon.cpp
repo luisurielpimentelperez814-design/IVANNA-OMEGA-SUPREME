@@ -50,6 +50,18 @@
 #include "spatial/fft_radix2.hpp"
 #include "spatial/hrtf_convolver.hpp"
 #include "include/audio_thread_priority.h"
+// FIX (unificación de rutas — motor completo en Ruta B): PDEngine encapsula
+// NHOEngine (harmonic shaping) + EvolutionaryKernel (Kernel Evolutivo). Es
+// header-only y no depende de JNI/Android Context, así que es portable a
+// este daemon igual que Compressor/HarmonicExciter/StereoWidener de arriba.
+// Se usa en mode=1 (DSP+NHO), SIN su spatial interno (mode=2) — la Ruta B
+// ya tiene su propio HRTFConvolver (g_hrtf_b, paso 7 más abajo) más
+// sofisticado que el ITD/ILD simple de PDEngine::spatial; correr ambos
+// duplicaría el espaciado. La Cochlear Manifold (PI-LSTM, Fase 4) NO se
+// incluye aquí: depende de ivanna_fastrpc_client (Hexagon NPU) y de carga
+// de modelo TFLite vía AssetManager del proceso de la app — no es portable
+// a un hilo de daemon sin una reestructuración mayor (ver nota en README).
+#include "pd_engine.hpp"
 // Fase 7 — ADAPTIVE ENGINE (Magistral)
 // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
 #include "adaptive_engine_core.hpp"
@@ -253,6 +265,8 @@ static ivanna::SafetyLimiter   g_limiter_b;
 // cualquier hilo porque no usa malloc después de init().
 static ivanna::HRTFConvolver   g_hrtf_b;
 static bool                    g_dsp_b_initialized = false;
+// FIX (unificación de rutas): NHO + Kernel Evolutivo para Ruta B.
+static ivanna::PDEngine        g_pd_b;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 static inline float softClip(float x) {
@@ -430,6 +444,25 @@ static void processLoop() {
                 for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
                     work_buf[i * 2]     = tmpL[i];
                     work_buf[i * 2 + 1] = tmpR[i];
+                }
+            }
+
+            // 6.5 PDEngine — NHO harmonic shaping (FIX unificación de rutas).
+            //    Mismo motor de Ruta A (g_pd en ivanna_omega_jni.cpp), misma
+            //    posición relativa: después de EQ/Comp/Exciter/Widener,
+            //    antes del spatial final y del limiter. mode=1 (sin el
+            //    spatial interno de PDEngine, ver comentario de init arriba).
+            {
+                alignas(16) float tmpL[OMEGA_BLOCK_SIZE], tmpR[OMEGA_BLOCK_SIZE];
+                alignas(16) float outL[OMEGA_BLOCK_SIZE], outR[OMEGA_BLOCK_SIZE];
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    tmpL[i] = work_buf[i * 2];
+                    tmpR[i] = work_buf[i * 2 + 1];
+                }
+                g_pd_b.process_block(tmpL, tmpR, outL, outR, OMEGA_BLOCK_SIZE);
+                for (int i = 0; i < OMEGA_BLOCK_SIZE; ++i) {
+                    work_buf[i * 2]     = outL[i];
+                    work_buf[i * 2 + 1] = outR[i];
                 }
             }
 
@@ -837,8 +870,27 @@ Java_com_ivanna_omega_magisk_OmegaDaemon_nativeStart(JNIEnv* /*env*/, jobject /*
         // init() asigna los std::vector internos (único malloc aceptable:
         // ocurre antes del audio thread, no en el hot-path).
         g_hrtf_b.init(OMEGA_SAMPLE_RATE);
+        g_pd_b.init(OMEGA_SAMPLE_RATE);
+        g_pd_b.set_mode(1);
+        // FIX (unificación de rutas): mismo motor NHO que Ruta A, ahora
+        // también corriendo sobre Spotify/Tidal/Qobuz/YouTube cuando el
+        // módulo root está activo. mode=1 = DSP+NHO sin el spatial interno
+        // de PDEngine (Ruta B usa g_hrtf_b para eso, ver paso 7).
+        //
+        // NO se llama g_pd_b.start_evo_thread() aquí a propósito:
+        // EvolutionaryKernel (evolutionary_kernel.cpp) usa g_population como
+        // global ÚNICO de todo el proceso, sin mutex en evo_evolve_generation()
+        // (solo g_saveMutex protege persistencia, no la evolución en sí). Route
+        // A (ivanna_omega_jni.cpp) ya llama g_pd.start_evo_thread() — un segundo
+        // hilo evolutivo aquí correría evo_evolve_generation() concurrentemente
+        // sobre el mismo g_population sin sincronización → data race real.
+        // g_pd_b.process_block() sigue llamando apply_evo_genome() internamente
+        // (lock-free, solo lee atomics), así que Ruta B SÍ recibe el mejor
+        // genoma evolucionado por Ruta A cuando esta corre. Si Ruta A nunca
+        // se ejecutó en el proceso, Ruta B simplemente usa NHO con genoma
+        // default — no evoluciona sola, pero tampoco corrompe estado.
         g_dsp_b_initialized = true;
-        LOGI("DSP Ruta B inicializado (Compressor/Exciter/Widener/Limiter/HRTFConvolver).");
+        LOGI("DSP Ruta B inicializado (Compressor/Exciter/Widener/Limiter/HRTFConvolver/PDEngine-NHO).");
     }
 
     // Threads
