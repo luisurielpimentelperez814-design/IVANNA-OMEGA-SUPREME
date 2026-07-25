@@ -1,140 +1,133 @@
 # IVANNA OMEGA SUPREME
 
+
+
 ![IVANNA OMEGA SUPREME](https://img.shields.io/badge/Android-Audio%20Engine-green)
+
+
+
+
 ![Version](https://img.shields.io/github/v/release/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME)
+
+
+
+
 ![License](https://img.shields.io/github/license/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME)
 
-## Neural Audio Engine for Android
 
-IVANNA OMEGA SUPREME is an experimental Android audio processing platform combining:
 
-- Real-time DSP processing
-- Adaptive audio controls
-- Binaural HRTF processing
-- Native C++ audio modules
-- Kotlin Android interface
-- Magisk integration support
+## Motor de Audio Neural para Android — Módulo Magisk
 
-The project explores advanced audio enhancement techniques, perceptual processing and adaptive sound control.
+IVANNA OMEGA SUPREME es una plataforma de procesamiento de audio en tiempo real para dispositivos Android con root (Magisk). Combina DSP nativo en C++, análisis de audio con IA (YAMNet), procesamiento espacial binaural y un daemon de sistema que opera a nivel kernel de audio.
 
 ---
 
-# Features
+## Arquitectura
+Aplicación Android (Kotlin/Compose)
+│
+├── IvannaControlPanel — UI principal (OPE DSP, NPE, Spatial, Perfiles)
+├── AdaptiveEngine — Motor adaptativo en tiempo real (10Hz telemetría)
+├── AntiDolbyController — Clasificador YAMNet + EMA blend v2
+└── PlaybackCaptureService — Captura PCM float32 hi-res (MediaProjection)
+│
+▼
+DSP Nativo C++ (libivanna_omega.so)
+├── OPE DSP — EQ / Compresor / Exciter / Widener
+├── Motor NPE Neuromórfico — NHO + LIF + BiquadEnvelopeBank
+├── Motor Binaural — 32 objetos HRTF
+├── Algoritmo Evolutivo — Optimización genética de parámetros
+└── IvannaUnifiedPipeline — Fuente de verdad telemetría Ruta B
+│
+▼
+ivanna_daemon (proceso root, /dev/socket/ivanna_omega)
+└── omega_effect.so — Plugin AudioEffect system-wide (Magisk)
+---
 
-## Audio Engine
+## Componentes
 
-- Real-time digital signal processing
-- Adaptive audio parameters
-- EQ control pipeline
-- Spatial audio processing
-- HRTF binaural experiments
-- Native DSP components
+### Motor OPE DSP
+EQ paramétrico, compresor multibanda, exciter armónico y widener estéreo. Procesamiento en tiempo real vía `DSPState` → `pushToNative()`.
 
-## Architecture
-Android Application | | Kotlin UI Layer | | Audio Control Layer | | Native C++ DSP Engine | | Real-Time Audio Processing
+### Motor NPE Neuromórfico
+NHO (Non-linear Harmonic Oscillator) + neuronas LIF + BiquadEnvelopeBank + AutonomousBrain. Clasificación de género musical, control de aspereza y compresión OHC.
+
+### Anti-Dolby Adaptativo
+Clasificador YAMNet con doble suavizado EMA (entrada α=0.25, salida α=0.18). Mezcla continua ponderada por tipo de contenido (voz/música/bajos/silencio) sin bucketeo discreto.
+
+### Motor Binaural · 32 Objetos
+HRTF espacial, COCLEAR y ADAPT/LIF. Procesamiento binaural con ángulo y ancho configurables.
+
+### Adaptive Engine
+Motor de decisión en tiempo real. Modos: NATURAL / STUDIO / EXTREME. Telemetría a 10Hz: RMS, Peak, GR dB, compresión, ancho espacial, protección de voz.
+
+### Daemon Magisk (ivanna_daemon)
+Proceso nativo root que crea `/dev/socket/ivanna_omega`. Aplica procesamiento system-wide a todas las apps (Spotify, YouTube, Tidal) vía `libomega_effect.so` como plugin AudioEffect del framework de audio de Android.
 
 ---
 
-# Download
+## Requisitos
 
-Latest release:
-
-https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest
-
-Available packages:
-
-- `app-release.apk`
-  - Android release build
-
-- `app-debug.apk`
-  - Development/testing build
-
-- `ivanna-omega-magisk.zip`
-  - Magisk module package
+- Android 10+ (API 29)
+- Root con Magisk
+- Permiso de captura de audio (MediaProjection)
+- ARM64 (aarch64)
 
 ---
 
-# Installation
+## Instalación
 
-## Android APK
+### 1. Módulo Magisk
+Flashear `ivanna_omega_supreme` desde Magisk Manager. El daemon arranca automáticamente en boot vía `service.sh`.
 
-1. Download `app-release.apk`
-2. Enable installation from unknown sources
-3. Install the application
+### 2. APK
+Instalar desde [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest).
 
----
+Paquetes disponibles:
+- `app-release.apk` — Build de producción
+- `app-debug.apk` — Build de desarrollo
 
-## Magisk Module
-
-Requirements:
-
-- Root access
-- Magisk installed
-
-Install:
-
-1. Open Magisk
-2. Modules
-3. Install from storage
-4. Select:
-ivanna-omega-magisk.zip
-
-5. Reboot device
-
----
-
-# Development
-
-## Requirements
-
-- Android Studio
-- Kotlin
-- C++ NDK
-- Gradle
-
-Clone:
-
+### 3. Verificación post-instalación
 ```bash
-git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
-
-cd IVANNA-OMEGA-SUPREME
+# Desde Termux como root
+getprop persist.ivanna.daemon_active   # debe ser 1
+ls -la /dev/socket/ivanna_omega        # debe existir
+ps -A | grep ivanna_daemon             # debe aparecer
+Desarrollo
+Stack:
+Kotlin + Jetpack Compose (UI)
+C++ NDK (DSP nativo)
+Magisk Module API
+Android AudioEffect framework
+MediaProjection API (captura PCM)
+TFLite (YAMNet)
 Build:
+./gradlew assembleDebug
 ./gradlew assembleRelease
-app/
- ├── src/main/java/
- │     └── com.ivanna.omega
- │
- ├── audio/
- │     Audio processing modules
- │
- ├── dsp/
- │     DSP state and processing logic
- │
- ├── ui/
- │     Android interface
- │
- └── native/
-       C++ DSP components
-Version History
-v1.0.0-alpha
-Initial public alpha release.
-Includes:
-Unified engine integration
-DSP core modules
-HRTF binaural features
-Adaptive audio runtime
-Audio cleanup and hardening
-Status
-This project is under active development.
-Current stage:
-ALPHA
-Testing, optimization and additional audio modules are planned.
-Contributing
-Issues, suggestions and improvements are welcome.
-Open an issue:
-https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues⁠�
-Author
-Created by:
-@luisurielpimentelperez814-design
-GitHub:
-https://github.com/luisurielpimentelperez814-design⁠�
+GitHub Actions compila automáticamente en cada push a main.
+Estado del proyecto
+Componente
+Estado
+DSP Nativo (OPE)
+✅ Activo
+Motor NPE Neuromórfico
+✅ Activo
+Anti-Dolby EMA v2
+✅ Conectado
+Adaptive Engine telemetría
+✅ Conectado
+ivanna_daemon socket
+✅ Persistente en boot
+PlaybackCaptureService
+✅ Conectado (requiere permiso MediaProjection)
+Motor Binaural 32 obj
+✅ Activo
+Algoritmo Evolutivo
+✅ Activo
+Perfiles de sonido
+✅ Activo
+HRTF / COCLEAR / ADAPT-LIF
+✅ Activo
+Autor
+Luis Uriel Pimentel Pérez
+Estado de México, México
+GitHub: @luisurielpimentelperez814-design
