@@ -43,7 +43,8 @@ internal fun OmniHeroHeader(
     npeActive: Boolean,
     spatialActive: Boolean,
     autoMode: Boolean,
-    omniLevel: Float
+    omniLevel: Float,
+    routeState: com.ivanna.omega.audio.PipelineState = com.ivanna.omega.audio.PipelineState()
 ) {
     val infinite = rememberInfiniteTransition(label = "omniPulse")
     val pulse by infinite.animateFloat(
@@ -106,6 +107,14 @@ internal fun OmniHeroHeader(
                 if (npeActive) StatusPill("NPE", NeonMagenta)
                 if (spatialActive) StatusPill("BINAURAL", PhosphorGreen)
                 if (autoMode) StatusPill("AUTO IA", AmberSignal)
+                val routeText = when (routeState.activeRoute) {
+                    com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> "RUTA A"
+                    com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> "RUTA B"
+                    else -> "SIN AUDIO"
+                }
+                val routeAccent = if (routeState.activeRoute == com.ivanna.omega.audio.ActiveRoute.NONE)
+                    TextMuted else PhosphorGreen
+                StatusPill(routeText, routeAccent)
             }
         }
     }

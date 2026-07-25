@@ -39,45 +39,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.ivanna.omega.audio.ActiveRoute
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.audio.PipelineState
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.log10
 
-/**
- * IvannaControlPanel v3.0 — "OMNIPOTENTE"
- *
- * REGLA DE ORO: no borramos, mejoramos y perfeccionamos. Este archivo es un
- * REEMPLAZO DE PRESENTACIÓN drop-in de IvannaControlPanel v2.0: la firma
- * pública de la función — nombre, todos los parámetros, todos los callbacks —
- * es EXACTAMENTE la misma. Cualquier cableado (ViewModel, Activity, etc.) que
- * ya invoque IvannaControlPanel(...) sigue funcionando sin cambiar una línea.
- * Toda la lógica de estado/telemetría es funcionalmente idéntica; sólo cambia
- * radicalmente la presentación:
- *
- *  - Anillo OMNI: un solo indicador circular en el header que fusiona en un
- *    vistazo el estado de TODOS los motores (OPE + NPE + Spatial + Evo +
- *    Anti-Dolby + Auto IA) en vez de repartir esa lectura en 5 chips sueltos.
- *  - Glass cards con doble borde (glow exterior + highlight superior
- *    especular) para dar sensación real de cristal iluminado, no un tinte
- *    plano.
- *  - AuroraSlider con pista de glow detrás del thumb y marca de posición
- *    animada — se "siente" el valor, no sólo se lee.
- *  - HUD de telemetría con mini-sparkline de RMS en vivo en vez de sólo barras
- *    estáticas.
- *  - Jerarquía tipográfica más agresiva (display/headline) para que el
- *    nombre del proyecto y el modo activo dominen visualmente el header.
- *
- * Se conservan absolutamente todas las funciones expuestas del motor:
- * DSP core (Exciter/EQ/Width) · Compresor · Motor OPE (DSP/NHO/Spatial/HRTF)
- * · Presets IvannaEffectProfile · Anti-Dolby · Auto IA · Kernel evolutivo
- * (arranque + fitness/generación) · Motor NPE completo (bypass, harmonic,
- * lateral inhib, OHC, master, AGC target/rate, HRTF/Coclear/Adapt flags,
- * métricas: género, RMS, AGC, confianza, THD) · Motor Binaural (upmix neural
- * + 32 objetos + head-tracking 6DoF) · Visualizador.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IvannaControlPanel(
@@ -130,12 +100,11 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
-    onOpenAdaptiveEngineManual: () -> Unit = {}, // FIX: faltaba el passthrough
+    onOpenAdaptiveEngineManual: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
     onOpenMagisk: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
-    // ── Adaptive Control Center ──────────────────────────────────────────
     adaptiveTelemetry: com.ivanna.omega.ui.AdaptiveTelemetrySnapshot = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(),
     adaptiveMode: com.ivanna.omega.ui.AdaptiveMode = com.ivanna.omega.ui.AdaptiveMode.NATURAL,
     onAdaptiveModeChange: (com.ivanna.omega.ui.AdaptiveMode) -> Unit = {},
@@ -143,6 +112,7 @@ fun IvannaControlPanel(
     onAdaptiveIntensityChange: (Float) -> Unit = {},
     voiceProtectionEnabled: Boolean = true,
     onVoiceProtectionChange: (Boolean) -> Unit = {},
+    routeState: PipelineState = PipelineState(),
     modifier: Modifier = Modifier
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
@@ -178,7 +148,6 @@ fun IvannaControlPanel(
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
 
-    // Historial corto para el mini-sparkline de RMS del HUD (sólo visual).
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
 
     LaunchedEffect(Unit) {
@@ -202,17 +171,6 @@ fun IvannaControlPanel(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1200)
         while (true) {
-            // FIX CRÍTICO (crash garantizado al abrir la app, ~1.2s después):
-            // nativeGetBestFitness/nativeGetGeneration estaban atadas a un
-            // nombre de clase JNI que no existía (com.ivanna.omega.core.
-            // AudioEngine — la clase real vive en com.ivanna.omega.audio,
-            // y esta función las llama desde IvannaNativeLib). Sin el fix
-            // en evolutionary_kernel.cpp esto era UnsatisfiedLinkError sin
-            // ningún try/catch alrededor — reventaba la única pantalla
-            // que MainActivity monta, en el 100% de los lanzamientos. Ya
-            // arreglado del lado nativo; este try/catch queda como red de
-            // seguridad para que un futuro símbolo faltante degrade a
-            // "sin datos" en vez de crashear la app entera.
             try {
                 evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
                 evoGeneration = IvannaNativeLib.nativeGetGeneration()
@@ -223,8 +181,6 @@ fun IvannaControlPanel(
         }
     }
 
-    // Nivel "OMNI" agregado: 0..1, promedio ponderado de motores activos —
-    // sólo alimenta el anillo del header, no toca ningún parámetro real.
     val omniLevel by remember(omegaMode, npeBypass, spatialEnabled, evoEnabled, antiDolbyEnabled, autoMode) {
         mutableFloatStateOf(
             listOf(
@@ -254,36 +210,16 @@ fun IvannaControlPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        EngineStatusCard(metrics = metrics)
-
-        com.ivanna.omega.ui.AdaptiveEngineStatusCard(telemetry = adaptiveTelemetry)
-
-        com.ivanna.omega.ui.AdaptiveControlsCard(
-            mode = adaptiveMode,
-            onModeChange = onAdaptiveModeChange,
-            intensity = adaptiveIntensity,
-            onIntensityChange = onAdaptiveIntensityChange,
-            // Reutiliza el MISMO spatialWidth/onSpatialWidthChange que ya
-            // controla "ANCHO ESPACIAL" más abajo en este panel — no es un
-            // segundo estado paralelo, es el mismo parámetro real expuesto
-            // también acá porque el prompt de esta fase lo pide en el
-            // Adaptive Control Center.
-            spatialControlPercent = spatialWidth * 100f,
-            onSpatialControlChange = { percent ->
-                spatialWidth = percent / 100f
-                onSpatialWidthChange(percent / 100f)
-            },
-            voiceProtectionEnabled = voiceProtectionEnabled,
-            onVoiceProtectionChange = onVoiceProtectionChange
-        )
-
         OmniHeroHeader(
             omegaMode = omegaMode,
             npeActive = !npeBypass,
             spatialActive = spatialEnabled,
             autoMode = autoMode,
-            omniLevel = omniLevel
+            omniLevel = omniLevel,
+            routeState = routeState
         )
+
+        EngineStatusCard(metrics = metrics)
 
         LiveTelemetryHud(
             rmsDb = npeRmsDb,
@@ -294,6 +230,24 @@ fun IvannaControlPanel(
             thd = npeClassifyThd,
             evoFitness = evoFitness,
             evoGeneration = evoGeneration
+        )
+
+        SectionLabel("ADAPTIVE ENGINE", AuroraCyan)
+
+        com.ivanna.omega.ui.AdaptiveEngineStatusCard(telemetry = adaptiveTelemetry)
+
+        com.ivanna.omega.ui.AdaptiveControlsCard(
+            mode = adaptiveMode,
+            onModeChange = onAdaptiveModeChange,
+            intensity = adaptiveIntensity,
+            onIntensityChange = onAdaptiveIntensityChange,
+            spatialControlPercent = spatialWidth * 100f,
+            onSpatialControlChange = { percent ->
+                spatialWidth = percent / 100f
+                onSpatialWidthChange(percent / 100f)
+            },
+            voiceProtectionEnabled = voiceProtectionEnabled,
+            onVoiceProtectionChange = onVoiceProtectionChange
         )
 
         MasterBar(
@@ -307,6 +261,8 @@ fun IvannaControlPanel(
             onOpenProfiles = onOpenProfiles,
             onOpenMagisk = onOpenMagisk
         )
+
+        SectionLabel("CADENA DSP", AuroraCyan)
 
         GlassCard(
             title = "MOTOR OPE",
@@ -384,6 +340,8 @@ fun IvannaControlPanel(
             }
         }
 
+        SectionLabel("ESPACIAL Y NEUROMÓRFICO", NeonMagenta)
+
         GlassCard(
             title = "NHO / ESPACIAL",
             accent = PhosphorGreen,
@@ -401,20 +359,6 @@ fun IvannaControlPanel(
         }
 
         GlassCard(
-            title = "KERNEL EVOLUTIVO",
-            accent = AmberSignal,
-            subtitle = "g_population · hilo de baja prioridad",
-            rightSlot = {
-                ToggleSwitch(evoEnabled, { evoEnabled = it; onEvoEnabledChange(it) }, AmberSignal)
-            }
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatBlock("GENERACIÓN", evoGeneration.toString(), AmberSignal, Modifier.weight(1f))
-                StatBlock("FITNESS", "%.3f".format(evoFitness), PhosphorGreen, Modifier.weight(1f))
-            }
-        }
-
-        GlassCard(
             title = "MOTOR NPE · NEUROMÓRFICO",
             accent = AuroraCyan,
             subtitle = "NHO + LIF + BiquadEnvelopeBank + AutonomousBrain",
@@ -425,17 +369,6 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatBlock("GÉNERO", npeGenre, NeonMagenta, Modifier.weight(1.4f))
                 StatBlock("CONF.", "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
-                // FIX (credibilidad — Prioridad 1.5, item 4 del reporte de
-                // arquitectura): esto nunca fue un THD medido (requeriría
-                // FFT real: detectar fundamental, medir energía en
-                // armónicos 2f/3f/4f/... relativa a la fundamental). Es
-                // npeClassifyThd, una heurística derivada de clarity/warmth
-                // del clasificador — barata y útil como proxy interno, pero
-                // el label "THD" en la UI reclamaba ser una medición física
-                // que no es. Un THD real queda para un futuro módulo de
-                // diagnóstico separado (ver reporte, sección "THD medido
-                // real (futuro, IvannaLab)") — no se toca el cálculo en sí,
-                // solo el nombre que ve el usuario.
                 StatBlock("ASPEREZA", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
             }
             Spacer(Modifier.height(4.dp))
@@ -504,6 +437,22 @@ fun IvannaControlPanel(
             )
         }
 
+        SectionLabel("KERNEL EVOLUTIVO", AmberSignal)
+
+        GlassCard(
+            title = "KERNEL EVOLUTIVO",
+            accent = AmberSignal,
+            subtitle = "g_population · hilo de baja prioridad",
+            rightSlot = {
+                ToggleSwitch(evoEnabled, { evoEnabled = it; onEvoEnabledChange(it) }, AmberSignal)
+            }
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatBlock("GENERACIÓN", evoGeneration.toString(), AmberSignal, Modifier.weight(1f))
+                StatBlock("FITNESS", "%.3f".format(evoFitness), PhosphorGreen, Modifier.weight(1f))
+            }
+        }
+
         Spacer(Modifier.height(4.dp))
         Text(
             "IVANNA-OMEGA-SUPREME · GORE TNS / LUPP-OR9 © 2026",
@@ -513,5 +462,27 @@ fun IvannaControlPanel(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String, accent: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.titleSmall,
+            color = accent,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.5f), Color.Transparent)))
+        )
     }
 }

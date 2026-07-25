@@ -239,6 +239,7 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
         // (NHO/Spatial/NPE/Evo/Anti-Dolby/Adaptive Center) quedan con su
         // default no-op: cablearlos de verdad es un commit aparte, no se
         // improvisa un mapeo a ciegas para motores que aún no se auditaron.
+        val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
         IvannaControlPanel(
             initialExciter = dsp.value.wet,
             initialEq = dsp.value.mid,
@@ -254,7 +255,8 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
             onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
             onOpenAdaptive = { nav.navigate("adaptive") },
-            onOpenAdaptiveEngineManual = { nav.navigate("adaptive") }
+            onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
+            routeState = routeState
         )
     }
 }
