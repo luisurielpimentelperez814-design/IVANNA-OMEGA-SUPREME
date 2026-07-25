@@ -10,7 +10,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.spatial.IvannaHeadTracker
@@ -96,7 +95,7 @@ class AudioForegroundService : Service() {
     private fun createNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, Class.forName("com.ivanna.omega.MainActivity")),
             PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)

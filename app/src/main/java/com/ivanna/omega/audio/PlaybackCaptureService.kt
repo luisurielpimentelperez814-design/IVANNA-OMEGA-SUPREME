@@ -17,7 +17,6 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.ivanna.omega.MainActivity
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
@@ -359,7 +358,7 @@ class PlaybackCaptureService : Service() {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, Class.forName("com.ivanna.omega.MainActivity")),
             PendingIntent.FLAG_IMMUTABLE
         )
 
