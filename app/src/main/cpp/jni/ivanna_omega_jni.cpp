@@ -123,6 +123,8 @@ static std::atomic<float> g_lastBandLow{0.0f};
 static std::atomic<float> g_lastBandMid{0.0f};
 static std::atomic<float> g_lastBandHigh{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
+// 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
+static std::atomic<int> g_activeRoute{0};
 
 // Snapshot persistente AdaptiveState (independiente del audio callback)
 static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};
@@ -145,6 +147,16 @@ static void adaptiveSnapshotLoop() {
 
             g_adaptiveSafetySnapshot.store(
                 st.safety_margin, std::memory_order_release);
+
+            // FIX (telemetria 0% Ruta B): nativeProcess no corre cuando
+            // Spotify/YouTube estan activos. Este loop es la unica fuente
+            // de AdaptiveState independiente de la ruta activa.
+            g_lastAdaptiveTargetGain .store(st.target_gain,              std::memory_order_release);
+            g_lastAdaptiveCompAmount .store(st.compressor_amount,        std::memory_order_release);
+            g_lastAdaptiveExcReduction.store(st.exciter_reduction,       std::memory_order_release);
+            g_lastAdaptiveSpatialWidth.store(st.spatial_width,           std::memory_order_release);
+            g_lastAdaptiveSafetyMargin.store(st.safety_margin,           std::memory_order_release);
+            g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_release);
         }
 
         std::this_thread::sleep_for(
@@ -263,6 +275,7 @@ static void audioRouteBridgeLoop() {
         g_lastRawRms.store(rms,   std::memory_order_relaxed);
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
+        g_activeRoute.store(2, std::memory_order_relaxed);
 
         // FIX (Opción A de unificación — paridad de protección Ruta A/Ruta
         // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
@@ -712,6 +725,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_lastRawRms.store(rms,     std::memory_order_relaxed);
         g_lastRawPeak.store(peakAbs, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb,    std::memory_order_relaxed);
+        g_activeRoute.store(1, std::memory_order_relaxed);
 
         // 5) Consumir el último AdaptiveState publicado por el hilo de
         //    control (lock-free, no bloquea si no hay uno nuevo). El seq
@@ -1428,6 +1442,36 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBandEnergies(
         g_lastBandHigh.load(std::memory_order_relaxed)
     };
     env->SetFloatArrayRegion(arr, 0, 3, v);
+    return arr;
+}
+
+// ── nativeGetUnifiedPipelineStatus — estado consolidado de ambas rutas ──────
+// FloatArray[8]:
+//   [0] activeRoute       (0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect)
+//   [1] rms
+//   [2] peak
+//   [3] voiceProtect      (0..1)
+//   [4] compAmount        (0..1)
+//   [5] excReduction      (0..1)
+//   [6] spatialWidth      (0..1.5)
+//   [7] adaptiveActive    (1.0 si ADE running y applied>0)
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(8);
+    if (!arr) return nullptr;
+    const float v[8] = {
+        (float)g_activeRoute.load(std::memory_order_relaxed),
+        g_lastRawRms.load(std::memory_order_relaxed),
+        g_lastRawPeak.load(std::memory_order_relaxed),
+        g_lastAdaptiveVoiceProtect.load(std::memory_order_relaxed),
+        g_lastAdaptiveCompAmount.load(std::memory_order_relaxed),
+        g_lastAdaptiveExcReduction.load(std::memory_order_relaxed),
+        g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed),
+        (g_adaptiveEngineStarted.load(std::memory_order_acquire) &&
+         g_lastAdaptiveApplied.load(std::memory_order_relaxed) > 0) ? 1.0f : 0.0f
+    };
+    env->SetFloatArrayRegion(arr, 0, 8, v);
     return arr;
 }
 

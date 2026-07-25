@@ -77,17 +77,22 @@ class AdaptiveBackend(context: Context) {
         try {
             val raw = IvannaNativeLib.nativeGetAdaptiveTelemetry() ?: return
             if (raw.size < 10) return
+            val motorActive = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
+            // FIX (telemetria 0% Ruta B): compAmount[4] y voiceProtect[8] en 0
+            // con motor activo = Ruta B sin Ruta A. Usar IvannaUnifiedPipeline.
+            val src = if (motorActive && raw[4] == 0f && raw[8] == 0f)
+                IvannaUnifiedPipeline.toAdaptiveTelemetryArray() else raw
             _telemetry.value = AdaptiveTelemetry(
-                rms          = raw[0],
-                peakDb       = raw[1],
-                grDb         = raw[2],
-                targetGain   = raw[3],
-                compAmount   = raw[4],
-                excReduction = raw[5],
-                spatialWidth = raw[6],
-                safetyMargin = raw[7],
-                voiceProtect = raw[8],
-                motorRunning = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
+                rms          = src[0],
+                peakDb       = src[1],
+                grDb         = src[2],
+                targetGain   = src[3],
+                compAmount   = src[4],
+                excReduction = src[5],
+                spatialWidth = src[6],
+                safetyMargin = src[7],
+                voiceProtect = src[8],
+                motorRunning = motorActive
             )
         } catch (e: Throwable) {
             // Motor no inicializado todavía — no es error

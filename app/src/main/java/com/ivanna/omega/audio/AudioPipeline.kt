@@ -65,6 +65,7 @@ class AudioPipeline {
         if (isRunning) return
         isRunning = true
         DSPBridge.init(SAMPLE_RATE)
+        IvannaUnifiedPipeline.notifyRouteAStarted()
         dspState.pushToNative()
         job = scope.launch { runPipeline() }
     }
@@ -82,6 +83,7 @@ class AudioPipeline {
 
     fun stop() {
         isRunning = false
+        IvannaUnifiedPipeline.notifyRouteAStopped()
         job?.cancel()
         job = null
         releaseAudio()
@@ -103,7 +105,9 @@ class AudioPipeline {
         val minIn  = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, enc)
         val minOut = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, enc)
         if (minIn <= 0 || minOut <= 0) {
-            Log.e(tag, "Hardware no soporta ${SAMPLE_RATE}Hz"); isRunning = false; return
+            Log.e(tag, "Hardware rechazó ${SAMPLE_RATE}Hz — Ruta A no disponible")
+            IvannaUnifiedPipeline.notifyRouteAStopped()
+            isRunning = false; return
         }
 
         val record = try {

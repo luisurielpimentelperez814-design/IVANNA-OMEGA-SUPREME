@@ -120,6 +120,7 @@ class IVANNAApplication : Application() {
         // ejecución. Application.onCreate() corre garantizado en el hilo
         // principal (con Looper), por eso va aquí y no más abajo.
         com.ivanna.omega.audio.AudioRouteManager.start(this)
+        com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
         // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
         // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()

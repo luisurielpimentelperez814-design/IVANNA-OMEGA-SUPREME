@@ -141,7 +141,10 @@ int control_apply_frame() noexcept {
     }
     g_phase_oracle_refined.tick(phase_vel);
     const float T_refined = g_phase_oracle_refined.predict_next();
-    const float coherence = std::clamp(1.f / (1.f + g_phase_oracle_refined.P0 * 4.f), 0.f, 1.f);
+    // FIX (PhaseOracle inflado en silencio): phase_vel==0 converge P0->0
+    // via Kalman -> coherence=1.0 en silencio absoluto. Neutral=0.5.
+    const float coherence = (phase_vel == 0.0f) ? 0.5f :
+        std::clamp(1.f / (1.f + g_phase_oracle_refined.P0 * 4.f), 0.f, 1.f);
     control_set_phase_oracle(T_refined, coherence);
     updates++;
 

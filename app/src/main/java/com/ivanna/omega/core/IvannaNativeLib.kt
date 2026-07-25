@@ -163,6 +163,10 @@ object IvannaNativeLib {
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?
 
+    // FloatArray[8]: [activeRoute(0/1/2), rms, peak, voiceProtect,
+    //                  compAmount, excReduction, spatialWidth, adaptiveActive(0/1)]
+    external fun nativeGetUnifiedPipelineStatus(): FloatArray?
+
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
     // Analiza características de audio en tiempo real y ajusta parámetros
