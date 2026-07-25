@@ -1,40 +1,38 @@
 package com.ivanna.omega.ai
 
 import android.content.Context
-import android.util.Log
-import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
 
 /**
- * YamnetClassifier v1.5 — Clasificación de audio en tiempo real.
+ * YamnetClassifier — SHIM DE COMPATIBILIDAD (v2.1).
  *
- * FIX v1.5:
- * 1. Carga modelo TFLite desde assets sin comprimir
- * 2. Fallo graceful si falta modelo (no crash)
- * 3. Mapea 521 clases YAMNet a: Speech, Music, Bass
- * 4. Buffer de 0.96s @ 16kHz (input requerido por YAMNet)
+ * El modelo real ahora es [AntiDolbyCrnnClassifier] (CRNN entrenado in-house,
+ * 4 clases: Voz/Musica/Bajos/Silencio, features log-mel 32×40 @ 16 kHz).
+ * Esta clase queda como una fina fachada delegando en el nuevo clasificador
+ * para no romper los callers históricos (AntiDolbyController, VoiceController,
+ * VoiceProtectionController, AudioPipeline).
+ *
+ * MIGRACIÓN RECOMENDADA:
+ *   - Nuevos módulos: usar AntiDolbyCrnnClassifier directamente.
+ *   - Antiguos que ya compilan: siguen funcionando sin tocar nada; internamente
+ *     este shim invoca a AntiDolbyCrnnClassifier.
+ *
+ * NOTA sobre INPUT_LENGTH:
+ *   YAMNet requería 15600 samples (~0.975 s @ 16 kHz). El CRNN nuevo requiere
+ *   5472 (~0.342 s). Como el CRNN acepta buffers MÁS LARGOS (usa solo los
+ *   primeros 5472), los callers que sigan enviando 15600 samples siguen
+ *   funcionando sin cambio.
  */
 class YamnetClassifier(context: Context) {
-    companion object {
-        private const val TAG = "YamnetClassifier"
-        private const val MODEL_PATH = "yamnet.tflite"
-        private const val SAMPLE_RATE = 16000
-        private const val INPUT_LENGTH = 15600  // 0.975s @ 16kHz
 
-        // Índices YAMNet para clases relevantes
-        private const val IDX_SPEECH = 0      // "Speech"
-        private const val IDX_MUSIC = 137    // "Music"
-        private const val IDX_MUSICAL_INSTRUMENT = 138
-        private const val IDX_BASS = 54       // "Bass drum"
-        private const val IDX_BASS_GUITAR = 55
-        private const val IDX_ELECTRIC_BASS = 56
+    companion object {
+        // Compatibilidad: los callers antiguos leen INPUT_LENGTH desde acá.
+        // Mantenemos 15600 para que los buffers existentes sigan siendo válidos
+        // (el CRNN acepta cualquier tamaño >= 5472).
+        const val INPUT_LENGTH = 15600
+        const val SAMPLE_RATE  = 16000
     }
 
-    private var interpreter: Interpreter? = null
-    private var isAvailable = false
-
+    // Mismo shape de datos que antes, ahora respaldado por el CRNN.
     data class ClassificationResult(
         val speech: Float,
         val music: Float,
@@ -42,93 +40,23 @@ class YamnetClassifier(context: Context) {
         val isValid: Boolean
     )
 
-    init {
-        try {
-            interpreter = Interpreter(loadModelFile(context))
-            isAvailable = true
-            Log.i(TAG, "YAMNet cargado correctamente")
-        } catch (e: Exception) {
-            Log.w(TAG, "YAMNet no disponible: ${e.message}. Modo fallback activado.")
-            isAvailable = false
-        }
-    }
+    private val impl = AntiDolbyCrnnClassifier(context)
 
-    /**
-     * Clasifica un frame de audio.
-     * @param audioFrame FloatArray de INPUT_LENGTH samples @ 16kHz mono
-     * @return ClassificationResult con scores 0.0-1.0
-     */
     fun classify(audioFrame: FloatArray): ClassificationResult {
-        if (!isAvailable || interpreter == null) {
-            return ClassificationResult(0f, 0f, 0f, false)
-        }
-
-        try {
-            // Validar tamaño
-            if (audioFrame.size < INPUT_LENGTH) {
-                Log.w(TAG, "Frame demasiado corto: ${audioFrame.size} < $INPUT_LENGTH")
-                return ClassificationResult(0f, 0f, 0f, false)
-            }
-
-            // YAMNet input: [1, 15600]
-            val input = Array(1) { FloatArray(INPUT_LENGTH) }
-            System.arraycopy(audioFrame, 0, input[0], 0, INPUT_LENGTH)
-
-            // YAMNet output: [1, 521] scores por clase
-            val output = Array(1) { FloatArray(521) }
-            interpreter!!.run(input, output)
-
-            val scores = output[0]
-            val speechScore = scores[IDX_SPEECH]
-            val musicScore = maxOf(
-                scores[IDX_MUSIC],
-                scores[IDX_MUSICAL_INSTRUMENT]
-            )
-            val bassScore = maxOf(
-                scores[IDX_BASS],
-                scores[IDX_BASS_GUITAR],
-                scores[IDX_ELECTRIC_BASS]
-            )
-
-            return ClassificationResult(
-                speech = speechScore,
-                music = musicScore,
-                bass = bassScore,
-                isValid = true
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error en clasificación: ${e.message}")
-            return ClassificationResult(0f, 0f, 0f, false)
-        }
+        val r = impl.classify(audioFrame)
+        return ClassificationResult(
+            speech  = r.speech,
+            music   = r.music,
+            bass    = r.bass,
+            isValid = r.isValid
+        )
     }
 
-    /**
-     * Clasificación rápida para detección de voz.
-     * Usada por el modo Anti-Dolby para ajustar widener/EQ dinámicamente.
-     */
-    fun isSpeechDominant(audioFrame: FloatArray, threshold: Float = 0.6f): Boolean {
-        val result = classify(audioFrame)
-        return result.isValid && result.speech > threshold
-    }
+    fun isSpeechDominant(audioFrame: FloatArray, threshold: Float = 0.6f): Boolean =
+        impl.isSpeechDominant(audioFrame, threshold)
 
-    fun isBassDominant(audioFrame: FloatArray, threshold: Float = 0.6f): Boolean {
-        val result = classify(audioFrame)
-        return result.isValid && result.bass > threshold
-    }
+    fun isBassDominant(audioFrame: FloatArray, threshold: Float = 0.6f): Boolean =
+        impl.isBassDominant(audioFrame, threshold)
 
-    fun release() {
-        interpreter?.close()
-        interpreter = null
-        isAvailable = false
-    }
-
-    private fun loadModelFile(context: Context): MappedByteBuffer {
-        val fileDescriptor = context.assets.openFd(MODEL_PATH)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-    }
+    fun release() = impl.release()
 }

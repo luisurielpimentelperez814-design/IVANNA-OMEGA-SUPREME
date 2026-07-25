@@ -1,59 +1,68 @@
-IVANNA-FUSION / Ω_in — Modelo de clasificación de audio (YAMNet)
-==================================================================
+IVANNA-OMEGA-SUPREME — Modelo CRNN Anti-Dolby (v2.1)
+======================================================
 
-Este proyecto usa YAMNet (Google/TensorFlow), un clasificador de audio
-real y preentrenado de 521 clases (AudioSet-YouTube corpus). NO es un
-clasificador de género musical específico — distingue categorías
-generales como Música, Habla, Silencio, y cientos de eventos de audio
-más (aplausos, ladridos, etc.).
+CAMBIO IMPORTANTE (v2.1):
+El clasificador de audio pasó de YAMNet (521 clases genéricas de AudioSet)
+a un CRNN Anti-Dolby propio, entrenado in-house, con solo 4 clases
+directamente accionables por el motor:
 
-Por qué no viene incluido en el repo: el archivo .tflite pesa 4.13 MB,
-y los binarios grandes de terceros no deben versionarse en git sin
-verificar explícitamente la licencia de redistribución en ESTE
-repositorio. Descárgalo tú mismo con los comandos exactos de abajo
-(son los mismos publicados en la documentación oficial de
-TensorFlow/tflite-support).
+  0 → Voz        (Speech)
+  1 → Musica     (Music)
+  2 → Bajos      (Bass)
+  3 → Silencio   (Silence)
 
-PASO 1 — Descargar el modelo (4.13 MB, licencia Apache 2.0):
+FEATURES DEL MODELO (fijas, NO cambiar sin actualizar el Kotlin y el
+notebook de entrenamiento a la vez):
+
+  - Sample rate       : 16000 Hz, mono
+  - FFT window        : 512 samples, Hann
+  - Hop length        : 160 samples
+  - Filtros Mel       : 40 triangulares, 0-8000 Hz, 2595·log10(1+f/700)
+  - Frames en tiempo  : 32
+  - Normalización     : log(max(energia, 1e-10))  — sin más norm.
+  - Input tensor      : [1, 32, 40, 1]
+  - Output tensor     : [1, 4]  (softmax)
+  - INPUT_LENGTH audio: (32-1)*160 + 512 = 5472 samples (~0.342 s)
+
+ARCHIVOS EN assets/
 --------------------------------------------------------------
-curl -L 'https://tfhub.dev/google/lite-model/yamnet/classification/tflite/1?lite-format=tflite' \
-     -o app/src/main/assets/yamnet.tflite
+  anti_dolby_crnn.tflite   ← modelo entrenado (colocalo aquí)
+  anti_dolby_labels.txt    ← 4 líneas: Voz / Musica / Bajos / Silencio
+  Untitled0_feature_ref.py ← copia del pipeline de features (referencia)
 
-PASO 2 — Descargar el archivo de etiquetas (class map, ~521 filas):
+Cómo colocar el modelo entrenado:
+  cp path/to/anti_dolby_crnn.tflite app/src/main/assets/
+
+Verificación:
+  ls -lh app/src/main/assets/anti_dolby_crnn.tflite
+
+Sin el .tflite en assets, el clasificador entra en modo fallback
+(devuelve isValid=false) y todos los callers ya lo manejan.
+
+CARGADORES EN EL CÓDIGO
 --------------------------------------------------------------
-curl -L 'https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv' \
-     -o app/src/main/assets/yamnet_class_map.csv
+  app/src/main/java/com/ivanna/omega/ai/AntiDolbyCrnnClassifier.kt
+     → Implementación real (features log-mel + Interpreter TFLite).
 
-PASO 3 — Verificar:
+  app/src/main/java/com/ivanna/omega/ai/YamnetClassifier.kt
+     → Shim de compatibilidad; delega en AntiDolbyCrnnClassifier.
+       Los callers antiguos siguen funcionando sin cambios.
+
+BUILD
 --------------------------------------------------------------
-ls -la app/src/main/assets/yamnet.tflite app/src/main/assets/yamnet_class_map.csv
-# yamnet.tflite debe pesar ~4.1 MB
-# yamnet_class_map.csv debe tener 522 líneas (1 header + 521 clases)
+El archivo .tflite NO se comprime en el APK: ver app/build.gradle.kts
+(`androidResources { noCompress += listOf("tflite") }`). Comprimirlos
+rompe la carga en runtime.
 
-PASO 4 — Confirmar en build.gradle que .tflite no se comprime:
+VALIDACIÓN CROSS-PLATFORM
 --------------------------------------------------------------
-Ya está configurado en este proyecto (ver android { aaptOptions {
-noCompress "tflite" } } en app/build.gradle) — si lo quitaste, los
-modelos TFLite comprimidos fallan al cargar en runtime.
+Antes de entrenar cambios en el pipeline de features, correr el test
+validate_against_kotlin_reference() del notebook contra un CSV generado
+en el dispositivo. Deberían coincidir dentro de 1e-3 de tolerancia.
 
-QUÉ HACE Y QUÉ NO HACE
+REFERENCIAS
 --------------------------------------------------------------
-SÍ hace: clasifica cada bloque de 0.975s de audio en una de 521
-categorías de AudioSet, con foco práctico en distinguir Música /
-Habla / Silencio (ver YamnetClassifier.musicIndex/speechIndex/
-silenceIndex en YamnetClassifier.kt). Esto puede usarse para
-auto-seleccionar presets razonables (ej. "Podcast" si detecta Habla,
-"Electronic"/genérico si detecta Música).
-
-NO hace: no clasifica subgéneros musicales (rock, electrónica, jazz,
-etc.) — esa tarea requeriría un dataset etiquetado por género y
-entrenamiento/fine-tuning específico que no existe en este proyecto.
-NO corre en NPU/ExecuTorch — corre en CPU vía el runtime base de
-TensorFlow Lite (ver ai_inference.h/cpp para el camino de integración
-con ExecuTorch que sigue pendiente de un modelo .pte real).
-
-REFERENCIA
---------------------------------------------------------------
-https://tfhub.dev/google/lite-model/yamnet/classification/tflite/1
-https://github.com/tensorflow/models/tree/master/research/audioset/yamnet
-Licencia del modelo: Apache License 2.0
+  - Notebook de entrenamiento y extracción de features:
+    docs/training/anti_dolby_features.ipynb
+  - Contrato duro entre Python (train) y Kotlin (inference):
+    SAMPLE_RATE / FRAME_LENGTH / HOP_LENGTH / N_MELS / TIME_FRAMES
