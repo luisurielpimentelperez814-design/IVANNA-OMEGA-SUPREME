@@ -32,7 +32,7 @@
 constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
 constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
 constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_daemon.log";
-constexpr const char* DEFAULT_SOCKET_PATH = "/dev/socket/ivanna_omega";
+constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
 
 // Global running status for clean signal shutdown
 static volatile sig_atomic_t g_running = 1;
@@ -130,7 +130,16 @@ int create_socket_server(const std::string& socket_path) {
     struct sockaddr_un addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    std::strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+    if (socket_path[0] == '@') {
+    addr.sun_path[0] = '\0';
+    std::strncpy(addr.sun_path + 1,
+                 socket_path.c_str() + 1,
+                 sizeof(addr.sun_path) - 2);
+} else {
+    std::strncpy(addr.sun_path,
+                 socket_path.c_str(),
+                 sizeof(addr.sun_path) - 1);
+}
 
     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         log_message("Error: Socket bind failed at " + socket_path + ": " + std::string(strerror(errno)));
@@ -243,8 +252,43 @@ int main(int argc, char* argv[]) {
             int client_fd = accept(g_server_fd, (struct sockaddr*)&client_addr, &client_len);
             if (client_fd >= 0) {
                 log_message("Client connection accepted on " + socket_path);
-                const char* ack_msg = "IVANNA_OMEGA_OK\n";
-                write(client_fd, ack_msg, std::strlen(ack_msg));
+
+                int shm_fd = open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
+                if (shm_fd < 0) {
+                    log_message("ERROR opening omega_shm");
+                    close(client_fd);
+                    continue;
+                }
+
+                char data = 0;
+                struct iovec iov;
+                iov.iov_base = &data;
+                iov.iov_len = 1;
+
+                char control[CMSG_SPACE(sizeof(int))];
+                memset(control, 0, sizeof(control));
+
+                struct msghdr msg;
+                memset(&msg, 0, sizeof(msg));
+                msg.msg_iov = &iov;
+                msg.msg_iovlen = 1;
+                msg.msg_control = control;
+                msg.msg_controllen = sizeof(control);
+
+                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                cmsg->cmsg_level = SOL_SOCKET;
+                cmsg->cmsg_type = SCM_RIGHTS;
+                cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+                memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
+
+                if (sendmsg(client_fd, &msg, 0) < 0) {
+                    log_message("ERROR sending SCM_RIGHTS");
+                } else {
+                    log_message("omega_shm FD sent via SCM_RIGHTS");
+                }
+
+                close(shm_fd);
                 close(client_fd);
             }
         }
