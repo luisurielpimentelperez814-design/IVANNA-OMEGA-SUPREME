@@ -130,6 +130,7 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
+    onOpenAdaptiveEngineManual: () -> Unit = {}, // FIX: faltaba el passthrough
     onOpenProfiles: () -> Unit = {},
     onOpenMagisk: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
@@ -301,6 +302,7 @@ fun IvannaControlPanel(
             onAutoModeChange = { enabled -> autoMode = enabled; onAutoModeChange(enabled) },
             onOpenVisualizer = onOpenVisualizer,
             onOpenAdaptive = onOpenAdaptive,
+            onOpenAdaptiveEngineManual = onOpenAdaptiveEngineManual,
             onOpenProfiles = onOpenProfiles,
             onOpenMagisk = onOpenMagisk
         )

@@ -596,8 +596,21 @@ class MainActivity : ComponentActivity() {
                       } else if (showMagisk) {
                           MagiskStatusPanel(
                               omegaBridge = IVANNAApplication.omegaBridge,
-                              modifier = Modifier.fillMaxSize()
+                              modifier = Modifier.fillMaxSize(),
+                              onBack = { showMagisk = false } // FIX: faltaba, botón "VOLVER" no hacía nada
                           )
+                      } else if (showAdaptiveManual) {
+                          // FIX: AdaptiveEngineScreen ("Modo Manual · Voice Protection")
+                          // existía en el código pero nunca se montaba en ningún lado.
+                          Box(modifier = Modifier.fillMaxSize()) {
+                              com.ivanna.omega.ui.AdaptiveEngineScreen(
+                                  voiceProtectionManager = remember {
+                                      com.ivanna.omega.audio.VoiceProtectionManager(parameterStore)
+                                  },
+                                  modifier = Modifier.fillMaxSize()
+                              )
+                              IconButtonClose { showAdaptiveManual = false }
+                          }
                       } else if (showVisualizer) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VisualizerSurface(modifier = Modifier.fillMaxSize())
@@ -911,6 +924,7 @@ class MainActivity : ComponentActivity() {
                             onOpenVisualizer = { requestVisualizer() },
                               onOpenProfiles = { showProfiles = true },
                               onOpenMagisk = { showMagisk = true },
+                            onOpenAdaptiveEngineManual = { showAdaptiveManual = true },
                             onOpenAdaptive = { showAdaptive = true },
                             metrics = omegaMetrics,
                             onMetricsUpdate = { omegaMetrics = it },
