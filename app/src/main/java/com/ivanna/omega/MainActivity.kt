@@ -168,7 +168,7 @@ fun IntroScreen(onEnter: () -> Unit) {
 // ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
 fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHostController) {
-    val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
+    val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
 
@@ -230,11 +230,11 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             }
             item {
                 DspSection("PARAMETRIC EQ") {
-                    EqFader("LOW", dsp.low) { dsp = dsp.copy(low = it); dsp.pushToNative() }
-                    EqFader("MID", dsp.mid) { dsp = dsp.copy(mid = it); dsp.pushToNative() }
-                    EqFader("HIGH", dsp.high) { dsp = dsp.copy(high = it); dsp.pushToNative() }
-                    EqFader("PRESENCE", dsp.presence) { dsp = dsp.copy(presence = it); dsp.pushToNative() }
-                    EqFader("MASTER", dsp.master) { dsp = dsp.copy(master = it); dsp.pushToNative() }
+                    EqFader("LOW", dsp.value.low) { dsp.value = dsp.value.copy(low = it); dsp.value.pushToNative() }
+                    EqFader("MID", dsp.value.mid) { dsp.value = dsp.value.copy(mid = it); dsp.value.pushToNative() }
+                    EqFader("HIGH", dsp.value.high) { dsp.value = dsp.value.copy(high = it); dsp.value.pushToNative() }
+                    EqFader("PRESENCE", dsp.value.presence) { dsp.value = dsp.value.copy(presence = it); dsp.value.pushToNative() }
+                    EqFader("MASTER", dsp.value.master) { dsp.value = dsp.value.copy(master = it); dsp.value.pushToNative() }
                 }
             }
             item {
