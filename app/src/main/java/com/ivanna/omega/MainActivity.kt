@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -203,36 +204,36 @@ fun DashboardScreen(dsp: DSPState, nav: androidx.navigation.NavHostController) {
 
             item {
                 DspSection("GAIN STAGE") {
-                    FaderControl("DRIVE", dsp.drive, "Saturación") { dsp = dsp.copy(drive = it); dsp.pushToNative() }
-                    FaderControl("WET", dsp.wet, "Señal proc.") { dsp = dsp.copy(wet = it); dsp.pushToNative() }
-                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { dsp = dsp.copy(mix = it); dsp.pushToNative() }
+                    FaderControl("DRIVE", dsp.drive, "Saturación") { dsp.drive = it; dsp.pushToNative() }
+                    FaderControl("WET", dsp.wet, "Señal proc.") { dsp.wet = it; dsp.pushToNative() }
+                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { dsp.mix = it; dsp.pushToNative() }
                 }
             }
             item {
                 DspSection("DSP ENGINE α·β·γ") {
-                    FaderControl("ALPHA", dsp.alpha, "Compresor") { dsp = dsp.copy(alpha = it); dsp.pushToNative() }
-                    FaderControl("BETA", dsp.beta, "Ratio") { dsp = dsp.copy(beta = it); dsp.pushToNative() }
-                    FaderControl("GAMMA", dsp.gamma, "Width") { dsp = dsp.copy(gamma = it); dsp.pushToNative() }
+                    FaderControl("ALPHA", dsp.alpha, "Compresor") { dsp.alpha = it; dsp.pushToNative() }
+                    FaderControl("BETA", dsp.beta, "Ratio") { dsp.beta = it; dsp.pushToNative() }
+                    FaderControl("GAMMA", dsp.gamma, "Width") { dsp.gamma = it; dsp.pushToNative() }
                     val freqSl = remember(dsp.freq) {
                         (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
-                        dsp = dsp.copy(freq = DSPState.sliderToFreq(it)); dsp.pushToNative()
+                        dsp.freq = DSPState.sliderToFreq(it); dsp.pushToNative()
                     }
                     val qSl = remember(dsp.resonance) {
                         (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
                     }
                     FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
-                        dsp = dsp.copy(resonance = DSPState.sliderToQ(it)); dsp.pushToNative()
+                        dsp.resonance = DSPState.sliderToQ(it); dsp.pushToNative()
                     }
                 }
             }
             item {
                 DspSection("PARAMETRIC EQ") {
-                    EqFader("LOW", dsp.low) { dsp = dsp.copy(low = it); dsp.pushToNative() }
-                    EqFader("MID", dsp.mid) { dsp = dsp.copy(mid = it); dsp.pushToNative() }
-                    EqFader("HIGH", dsp.high) { dsp = dsp.copy(high = it); dsp.pushToNative() }
-                    EqFader("PRESENCE", dsp.presence) { dsp = dsp.copy(presence = it); dsp.pushToNative() }
+                    EqFader("LOW", dsp.low) { dsp.low = it; dsp.pushToNative() }
+                    EqFader("MID", dsp.mid) { dsp.mid = it; dsp.pushToNative() }
+                    EqFader("HIGH", dsp.high) { dsp.high = it; dsp.pushToNative() }
+                    EqFader("PRESENCE", dsp.presence) { dsp.presence = it; dsp.pushToNative() }
                     EqFader("MASTER", dsp.master) { dsp.master = it; dsp.pushToNative() }
                 }
             }
