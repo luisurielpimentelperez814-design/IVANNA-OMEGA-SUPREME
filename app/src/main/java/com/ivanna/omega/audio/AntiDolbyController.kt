@@ -34,10 +34,18 @@ class AntiDolbyController(private val context: Context) {
         
         // Thread de procesamiento dedicado (cada 100ms = tiempo real práctico)
         private const val CLASSIFICATION_INTERVAL_MS = 100L
+        private const val EMA_IN  = 0.25f
+        private const val EMA_OUT = 0.18f
     }
 
     private var yamnetClassifier: YamnetClassifier? = null
-    private var audioEngine: AudioEngine? = null
+    var onDspUpdate: ((exciter: Float, width: Float, eqGainDb: Float) -> Unit)? = null
+    private var emaSpeech = 0f
+    private var emaMusic  = 0f
+    private var emaBass   = 0f
+    private var smoothExciter = 0.32f
+    private var smoothWidth   = 0.50f
+    private var smoothEq      = 0.00f
     private val antiDolbyPreset = AntiDolbyPreset()
     
     private var classificationJob: Job? = null
@@ -54,7 +62,7 @@ class AntiDolbyController(private val context: Context) {
      * Inicializa YamnetClassifier y AudioEngine.
      * Seguro llamar múltiples veces (solo inicializa una vez).
      */
-    fun initialize(audioEngine: AudioEngine) {
+    fun initialize() {
         if (isInitialized) {
             Log.d(TAG, "Ya inicializado, ignorando reinicialización")
             return
@@ -64,9 +72,6 @@ class AntiDolbyController(private val context: Context) {
             // 1. Instanciar YamnetClassifier con modelo TFLite
             yamnetClassifier = YamnetClassifier(context)
             Log.i(TAG, "YamnetClassifier instanciado correctamente")
-            
-            // 2. Guardar referencia a AudioEngine
-            this.audioEngine = audioEngine
             
             // 3. Inicializar buffer circular
             audioBuffer = FloatArray(YAMNET_INPUT_LENGTH)
@@ -116,7 +121,9 @@ class AntiDolbyController(private val context: Context) {
         
         // Resetear scores a cero (parámetros vuelven a valores por defecto)
         AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f)
-        
+        emaSpeech = 0f; emaMusic = 0f; emaBass = 0f
+        smoothExciter = 0.32f; smoothWidth = 0.50f; smoothEq = 0f
+        onDspUpdate?.invoke(0.32f, 0.50f, 0f)
         Log.i(TAG, "Anti-Dolby adaptativo deshabilitado")
     }
 
@@ -205,38 +212,26 @@ class AntiDolbyController(private val context: Context) {
      * - Si silencio > 60%: resetear a defaults
      */
     private fun adjustParameters(speech: Float, music: Float, bass: Float) {
-        audioEngine ?: return
-        
-        try {
-            when {
-                speech > 0.6f -> {
-                    // Domina voz: preservar claridad, reducir efectos
-                    audioEngine!!.setExciter(0.2f)
-                    audioEngine!!.setWidth(0.3f)
-                    audioEngine!!.setEqGain(0f)
-                }
-                music > 0.6f -> {
-                    // Domina música: enriquecer con exciter y ancho
-                    audioEngine!!.setExciter(0.6f)
-                    audioEngine!!.setWidth(0.7f)
-                    audioEngine!!.setEqGain(3f)
-                }
-                bass > 0.4f -> {
-                    // Bajos presentes: aplicar compresión sin distorsión
-                    audioEngine!!.setExciter(0.3f)
-                    audioEngine!!.setWidth(0.5f)
-                    audioEngine!!.setEqGain(-2f)  // Reducir ligeramente bajos extremos
-                }
-                else -> {
-                    // Modo default / silencio
-                    audioEngine!!.setExciter(0.4f)
-                    audioEngine!!.setWidth(0.5f)
-                    audioEngine!!.setEqGain(0f)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error ajustando parámetros: ${e.message}")
-        }
+        if (onDspUpdate == null) return
+
+        emaSpeech += EMA_IN * (speech - emaSpeech)
+        emaMusic  += EMA_IN * (music  - emaMusic)
+        emaBass   += EMA_IN * (bass   - emaBass)
+        val emaSilence = (1f - emaSpeech - emaMusic - emaBass).coerceIn(0f, 1f)
+
+        val tExciter = emaSpeech * 0.12f + emaMusic * 0.68f + emaBass * 0.26f + emaSilence * 0.32f
+        val tWidth   = emaSpeech * 0.22f + emaMusic * 0.78f + emaBass * 0.42f + emaSilence * 0.50f
+        val tEq      = emaSpeech * (-1.5f) + emaMusic * 3.5f + emaBass * (-3.5f)
+
+        smoothExciter += EMA_OUT * (tExciter - smoothExciter)
+        smoothWidth   += EMA_OUT * (tWidth   - smoothWidth)
+        smoothEq      += EMA_OUT * (tEq      - smoothEq)
+
+        onDspUpdate!!.invoke(smoothExciter, smoothWidth, smoothEq)
+
+        Log.v(TAG, "adj exc=%.3f wid=%.3f eq=%.2fdB [sp=%.2f mu=%.2f ba=%.2f si=%.2f]"
+            .format(smoothExciter, smoothWidth, smoothEq,
+                    emaSpeech, emaMusic, emaBass, emaSilence))
     }
 
     /**

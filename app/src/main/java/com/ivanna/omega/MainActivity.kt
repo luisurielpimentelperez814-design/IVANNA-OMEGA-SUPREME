@@ -44,6 +44,7 @@ import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.ui.AdaptiveEngineScreen
 import com.ivanna.omega.ui.IvannaControlPanel
+import com.ivanna.omega.audio.AntiDolbyController
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
@@ -253,6 +254,19 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
     // ciclo de vida atado a esta pantalla (arranca/para con el composable).
     val context = LocalContext.current
     val adaptiveBackend = remember { AdaptiveBackend(context) }
+    val antiDolbyController = remember {
+        AntiDolbyController(context).also { ctrl ->
+            ctrl.initialize()
+            ctrl.onDspUpdate = { exciter, width, eqGainDb ->
+                dsp.value = dsp.value.copy(wet = exciter, stereoWidth = width)
+                dsp.value.pushToNative()
+                if (IvannaNativeLib.isLoaded)
+                    IvannaNativeLib.nativeSetEQParams(
+                        eqGainDb, eqGainDb, eqGainDb, dsp.value.master
+                    )
+            }
+        }
+    }
     DisposableEffect(Unit) {
         adaptiveBackend.startTelemetry()
         onDispose { adaptiveBackend.stopTelemetry() }
@@ -326,6 +340,10 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onSpatialWidthChange = {
                 if (IvannaNativeLib.isLoaded)
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
+            },
+            onAntiDolbyChange = { enabled ->
+                if (enabled) antiDolbyController.enableAntiDolby()
+                else antiDolbyController.disableAntiDolby()
             },
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
