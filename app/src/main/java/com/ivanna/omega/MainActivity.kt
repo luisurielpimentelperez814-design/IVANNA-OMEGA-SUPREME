@@ -143,6 +143,7 @@ fun OmegaApp() {
 
 com.ivanna.omega.ui.AdaptiveEngineScreen(
     voiceProtectionManager = voiceManager,
+                    backend = adaptiveBackend,
     modifier = Modifier
         .fillMaxSize()
         .background(Carbon)

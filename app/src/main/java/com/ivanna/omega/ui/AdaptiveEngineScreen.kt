@@ -29,10 +29,11 @@ import kotlin.math.abs
 @Composable
 internal fun AdaptiveEngineScreen(
     voiceProtectionManager: VoiceProtectionManager,
+    backend: AdaptiveBackend? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val backend = remember { AdaptiveBackend(context) }
+    val backend = backend ?: remember { AdaptiveBackend(context) }
     val telemetry by backend.telemetry.collectAsState()
     val audioState by AudioStateManager.audioState.collectAsState()
     var manualModeEnabled by remember { mutableStateOf(audioState.manualModeEnabled) }
