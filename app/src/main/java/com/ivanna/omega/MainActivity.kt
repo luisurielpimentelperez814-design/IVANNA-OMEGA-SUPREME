@@ -35,6 +35,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.audio.AdaptiveBackend
+import com.ivanna.omega.audio.ProfilesLoader
+import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.ui.MagiskStatusPanel
+import com.ivanna.omega.ui.ProfileSelectorScreen
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.ui.AdaptiveEngineScreen
@@ -80,6 +84,43 @@ fun OmegaApp() {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
             composable("dashboard") { DashboardScreen(dsp, nav) }
+            composable("magisk") {
+                MagiskStatusPanel(
+                    omegaBridge = OmegaEngineBridge,
+                    onBack = { nav.popBackStack() }
+                )
+            }
+            composable("profiles") {
+                val context = LocalContext.current
+                val profiles = remember { ProfilesLoader.load(context) }
+                val metadata = remember { ProfilesLoader.loadMetadata(context) }
+                var activeProfileId by remember { mutableStateOf<String?>(null) }
+                ProfileSelectorScreen(
+                    profiles = profiles,
+                    metadata = metadata,
+                    currentId = activeProfileId,
+                    onApply = { profile ->
+                        // FIX: sin motor propio auditado (ProfileManager/AudioEngine
+                        // no están conectados a nada real todavía — código huérfano,
+                        // ver auditoría previa). Reusa pushToNative(), el mismo
+                        // camino probado que ya usan los sliders del panel principal.
+                        if (!profile.audioEngine.bypass) {
+                            dsp.value = dsp.value.copy(
+                                master = profile.audioEngine.gain,
+                                wet = profile.audioEngine.exciterAmount,
+                                low = profile.audioEngine.eqGain,
+                                mid = profile.audioEngine.eqGain,
+                                high = profile.audioEngine.eqGain,
+                                presence = profile.audioEngine.eqGain,
+                                stereoWidth = profile.audioEngine.widthAmount
+                            )
+                            dsp.value.pushToNative()
+                        }
+                        activeProfileId = profile.id
+                    },
+                    onClose = { nav.popBackStack() }
+                )
+            }
             // FIX (PUNTO 1 — ruta faltante): el botón "ACTIVAR" de
             // DashboardScreen ya llamaba nav.navigate("adaptive") desde
             // hace tiempo (ver PUNTO 2 abajo), pero esa ruta nunca se
@@ -275,6 +316,8 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
+            onOpenMagisk = { nav.navigate("magisk") },
+            onOpenProfiles = { nav.navigate("profiles") },
             routeState = routeState
         )
     }
