@@ -35,6 +35,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.audio.AdaptiveBackend
+import com.ivanna.omega.audio.toSnapshot
 import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.MagiskStatusPanel
