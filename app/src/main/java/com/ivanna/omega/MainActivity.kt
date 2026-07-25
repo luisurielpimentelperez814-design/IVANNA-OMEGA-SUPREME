@@ -90,6 +90,7 @@ fun OmegaApp() {
     val nav = rememberNavController()
     val dsp = remember { mutableStateOf(DSPState()) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
+        val context = LocalContext.current
         // Launcher MediaProjection para PlaybackCaptureService
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
         val projectionLauncher = rememberLauncherForActivityResult(
@@ -104,6 +105,7 @@ fun OmegaApp() {
             }
         }
 
+        val adaptiveBackend = remember { AdaptiveBackend(context) }
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
@@ -161,22 +163,21 @@ fun OmegaApp() {
                 }
                 nav.popBackStack()
             }
-                        composable("adaptive") {
+            composable("adaptive") {
                 val ctx = LocalContext.current
                 val voiceManager = remember(ctx) {
-    com.ivanna.omega.audio.VoiceProtectionManager(
-        com.ivanna.omega.audio.ParameterStore(ctx)
-    )
-}
-
-com.ivanna.omega.ui.AdaptiveEngineScreen(
-    voiceProtectionManager = voiceManager,
+                    com.ivanna.omega.audio.VoiceProtectionManager(
+                        com.ivanna.omega.audio.ParameterStore(ctx)
+                    )
+                }
+                com.ivanna.omega.ui.AdaptiveEngineScreen(
+                    voiceProtectionManager = voiceManager,
                     backend = adaptiveBackend,
-    modifier = Modifier
-        .fillMaxSize()
-        .background(Carbon)
-        .windowInsetsPadding(WindowInsets.systemBars)
-)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
             }
         }
     }
