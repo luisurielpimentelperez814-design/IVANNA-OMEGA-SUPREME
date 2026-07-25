@@ -44,6 +44,7 @@ import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.ui.AdaptiveEngineScreen
 import com.ivanna.omega.ui.IvannaControlPanel
+import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
@@ -314,6 +315,9 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
             onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
             onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
+            onNhoHarmonicChange = {
+                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
+            },
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
