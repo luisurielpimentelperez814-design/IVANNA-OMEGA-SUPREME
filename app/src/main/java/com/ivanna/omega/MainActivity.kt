@@ -167,6 +167,7 @@ class MainActivity : ComponentActivity() {
     private var showAdaptive by mutableStateOf(false)
     private var showProfiles by mutableStateOf(false)
     private var showMagisk by mutableStateOf(false)
+    private var showAdaptiveManual by mutableStateOf(false)
 
     // ── Adaptive Control Center (Fase de UI) ────────────────────────────────────
     // adaptiveTelemetry: espejo Compose-observable de nativeGetAdaptiveTelemetry(),
@@ -605,7 +606,7 @@ class MainActivity : ComponentActivity() {
                           Box(modifier = Modifier.fillMaxSize()) {
                               com.ivanna.omega.ui.AdaptiveEngineScreen(
                                   voiceProtectionManager = remember {
-                                      com.ivanna.omega.audio.VoiceProtectionManager(parameterStore)
+                                      com.ivanna.omega.audio.VoiceProtectionManager(com.ivanna.omega.audio.ParameterStore(this@MainActivity))
                                   },
                                   modifier = Modifier.fillMaxSize()
                               )

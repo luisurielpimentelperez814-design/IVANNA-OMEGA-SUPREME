@@ -142,7 +142,8 @@ fun IvannaControlPanel(
     adaptiveIntensity: Float = 50f,
     onAdaptiveIntensityChange: (Float) -> Unit = {},
     voiceProtectionEnabled: Boolean = true,
-    onVoiceProtectionChange: (Boolean) -> Unit = {}
+    onVoiceProtectionChange: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
@@ -238,7 +239,7 @@ fun IvannaControlPanel(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.radialGradient(
