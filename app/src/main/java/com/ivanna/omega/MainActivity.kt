@@ -169,27 +169,18 @@ fun OmegaApp() {
                 val context = LocalContext.current
                 val profiles = remember { ProfilesLoader.load(context) }
                 val metadata = remember { ProfilesLoader.loadMetadata(context) }
+                val profileBridge = remember { ProfileManagerBridge(context) }
                 var activeProfileId by remember { mutableStateOf<String?>(null) }
                 ProfileSelectorScreen(
                     profiles = profiles,
                     metadata = metadata,
                     currentId = activeProfileId,
                     onApply = { profile ->
-                        // FIX: sin motor propio auditado (ProfileManager/AudioEngine
-                        // no están conectados a nada real todavía — código huérfano,
-                        // ver auditoría previa). Reusa pushToNative(), el mismo
-                        // camino probado que ya usan los sliders del panel principal.
-                        if (!profile.audioEngine.bypass) {
-                            dsp.value = dsp.value.copy(
-                                master = profile.audioEngine.gain,
-                                wet = profile.audioEngine.exciterAmount,
-                                low = profile.audioEngine.eqGain,
-                                mid = profile.audioEngine.eqGain,
-                                high = profile.audioEngine.eqGain,
-                                presence = profile.audioEngine.eqGain,
-                                stereoWidth = profile.audioEngine.widthAmount
-                            )
-                            dsp.value.pushToNative()
+                        // FIX (PUNTO 1): ProfileManagerBridge.applyProfile() conecta
+                        // pushToNative + neuromorphic (PiLstmBridge) + route + antiDolby,
+                        // en vej del pushToNative() parcial anterior.
+                        profileBridge.applyProfile(profile.id, dsp.value) { updatedDsp ->
+                            dsp.value = updatedDsp
                         }
                         activeProfileId = profile.id
                     },
