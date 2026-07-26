@@ -92,7 +92,7 @@ class IvannaSpatialEngine private constructor() {
         numFrames: Int
     ) {
         // Actualizar estado de fundido
-        val desired = companion.enabled
+        val desired = IvannaSpatialEngine.enabled
         if (desired != targetEnabled) {
             targetEnabled = desired
         }
