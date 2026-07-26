@@ -96,7 +96,6 @@ class MainActivity : ComponentActivity() {
 fun OmegaApp() {
     val nav = rememberNavController()
     val dsp = remember { mutableStateOf(DSPState()) }
-    var npeBypassState by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
         // Launcher MediaProjection para PlaybackCaptureService
@@ -283,6 +282,10 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.value.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
+    // FIX (scope): npeBypassState se declaró antes en OmegaApp() por error —
+    // los callbacks NPE que lo usan viven en DashboardScreen, composable
+    // distinto, sin visibilidad de ese estado. Declarado aquí, donde se usa.
+    var npeBypassState by remember { mutableStateOf(false) }
 
     // FIX (telemetría 0% en Panel Adaptativo del Dashboard): AdaptiveBackend
     // ya exponía StateFlow<AdaptiveTelemetry> real (10Hz, motor A), pero
