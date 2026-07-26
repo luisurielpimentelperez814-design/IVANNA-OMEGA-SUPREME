@@ -2,7 +2,9 @@ package com.ivanna.omega.audio
 
 import android.content.Context
 import android.util.Log
+import com.ivanna.omega.ai.AntiDolbyCrnnClassifier
 import com.ivanna.omega.ai.YamnetClassifier
+import com.ivanna.omega.audio.RealTimeCinematicEngine
 import com.ivanna.omega.core.AntiDolbyPreset
 import kotlinx.coroutines.*
 import kotlin.math.*
@@ -39,6 +41,7 @@ class AntiDolbyController(private val context: Context) {
     }
 
     private var yamnetClassifier: YamnetClassifier? = null
+    private var cinematicEngine: RealTimeCinematicEngine? = null
     var onDspUpdate: ((exciter: Float, width: Float, eqGainDb: Float) -> Unit)? = null
     private var emaSpeech = 0f
     private var emaMusic  = 0f
@@ -104,6 +107,20 @@ class AntiDolbyController(private val context: Context) {
         
         // Iniciar job de clasificación periódica
         startClassificationLoop()
+        // Arrancar engine cinematográfico (clasificación CRNN + DSP Kotlin-side)
+        if (cinematicEngine == null) {
+            cinematicEngine = RealTimeCinematicEngine(
+                AntiDolbyCrnnClassifier(context), sampleRate = 44100
+            ).also { eng ->
+                eng.onModeChanged = { mode, result ->
+                    // Propagar scores al orquestador nativo
+                    AudioEngine.nativeSetAntiDolbyScoresStatic(
+                        result.speech, result.music, result.bass
+                    )
+                }
+                eng.start()
+            }
+        }
     }
 
     /**
@@ -124,6 +141,7 @@ class AntiDolbyController(private val context: Context) {
         emaSpeech = 0f; emaMusic = 0f; emaBass = 0f
         smoothExciter = 0.32f; smoothWidth = 0.50f; smoothEq = 0f
         onDspUpdate?.invoke(0.32f, 0.50f, 0f)
+        cinematicEngine?.stop(); cinematicEngine = null
         Log.i(TAG, "Anti-Dolby adaptativo deshabilitado")
     }
 
@@ -279,6 +297,7 @@ class AntiDolbyController(private val context: Context) {
         audioBuffer = null
         isInitialized = false
         
+        cinematicEngine?.stop(); cinematicEngine = null
         Log.i(TAG, "AntiDolbyController liberado")
     }
 }
