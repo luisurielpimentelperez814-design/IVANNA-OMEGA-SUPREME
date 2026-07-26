@@ -1,8 +1,6 @@
 package com.ivanna.omega
 
-
 import android.media.AudioManager
-import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,7 +8,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -20,10 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -37,34 +32,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.ivanna.omega.audio.AdaptiveBackend
-import com.ivanna.omega.audio.toSnapshot
-import com.ivanna.omega.audio.ProfilesLoader
-import com.ivanna.omega.neuromorphic.PiLstmBridge
-import com.ivanna.omega.magisk.OmegaEngineBridge
-import com.ivanna.omega.ui.MagiskStatusPanel
-import com.ivanna.omega.ui.ProfileSelectorScreen
-import com.ivanna.omega.audio.VoiceProtectionManager
-import com.ivanna.omega.core.ParameterStore
-import com.ivanna.omega.ui.AdaptiveEngineScreen
-import com.ivanna.omega.ui.IvannaControlPanel
-import com.ivanna.omega.audio.AntiDolbyController
-import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
-import android.app.Activity
-import android.content.Intent
-import android.media.projection.MediaProjectionManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.ivanna.omega.audio.PlaybackCaptureService
-import kotlin.math.PI
-import android.net.Uri
-import com.ivanna.omega.audio.IvannaBridgePlayer
-import com.ivanna.omega.ui.BridgePlayerCard
+import com.ivanna.omega.neuromorphic.PiLstmBridge
+import com.ivanna.omega.adaptive.AdaptiveEngineScreen      // ← PUNTO 3: Import AdaptiveEngineScreen
+import com.ivanna.omega.adaptive.AdaptiveViewModel         // ← PUNTO 3: Import AdaptiveViewModel
 import kotlin.math.log10
-import kotlinx.coroutines.delay
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -75,7 +49,6 @@ private val CyanGlow = Color(0xFF00F5FF)
 private val CyanDim = Color(0x3300F5FF)
 private val GoldGlow = Color(0xFFFFD700)
 private val MagentaGlow = Color(0xFFFF00FF)
-private val NeonMagenta  = Color(0xFFFF00FF)
 private val MagentaDim = Color(0x33FF00FF)
 private val TextPri = Color(0xFFFFFFFF)
 private val TextSec = Color(0xFF888888)
@@ -89,12 +62,6 @@ class MainActivity : ComponentActivity() {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
         DSPBridge.init(sr)
-        // FIX: nativeStartEvoThread() existía declarado y documentado
-        // (IVANNAApplication.kt:126 decía que MainActivity.onCreate() debía
-        // llamarlo) pero nunca se invocaba — kernel evolutivo nunca arrancaba,
-        // por eso nativeGetBestFitness()/nativeGetGeneration() (ya leídos en
-        // IvannaControlPanel) siempre devolvían el estado inicial sin avanzar.
-        if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeStartEvoThread()
         setContent { OmegaApp() }
     }
 }
@@ -102,121 +69,19 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OmegaApp() {
     val nav = rememberNavController()
-    val dsp = remember { mutableStateOf(DSPState()) }
+    val dsp: DSPState = viewModel()
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
-        val context = LocalContext.current
-        // Launcher MediaProjection para PlaybackCaptureService
-        val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
-        val projectionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-                val intent = Intent(context, PlaybackCaptureService::class.java).apply {
-                    putExtra("resultCode", result.resultCode)
-                    putExtra("data", result.data)
-                }
-                context.startForegroundService(intent)
-            }
-            nav.popBackStack()
-        }
-
-        val adaptiveBackend = remember { AdaptiveBackend(context) }
-        val voiceProtectionManager = remember {
-            com.ivanna.omega.audio.VoiceProtectionManager(
-                com.ivanna.omega.audio.ParameterStore(context)
-            )
-        }
-        var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
+        // ← PUNTO 1: Agregar ruta "adaptive" al NavHost
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
-            composable("intro") {
-                IntroScreen { profileId ->
-                    pendingBandProfileId = profileId
-                    nav.navigate("dashboard")
-                }
-            }
-            composable("dashboard") {
-                LaunchedEffect(pendingBandProfileId) {
-                    val profileId = pendingBandProfileId ?: return@LaunchedEffect
-                    val profile = ProfilesLoader.load(context).find { it.id == profileId }
-                    if (profile != null && !profile.audioEngine.bypass) {
-                        // Mismo mapeo probado que ProfileSelectorScreen.onApply —
-                        // ver auditoría previa, no usa ProfileManager (legacy roto).
-                        dsp.value = dsp.value.copy(
-                            master = profile.audioEngine.gain,
-                            wet = profile.audioEngine.exciterAmount,
-                            low = profile.audioEngine.eqGain,
-                            mid = profile.audioEngine.eqGain,
-                            high = profile.audioEngine.eqGain,
-                            presence = profile.audioEngine.eqGain,
-                            stereoWidth = profile.audioEngine.widthAmount
-                        )
-                        dsp.value.pushToNative()
-                    }
-                    pendingBandProfileId = null
-                }
-                DashboardScreen(dsp, nav, adaptiveBackend, voiceProtectionManager)
-            }
-            composable("magisk") {
-                MagiskStatusPanel(
-                    omegaBridge = OmegaEngineBridge,
-                    onBack = { nav.popBackStack() }
-                )
-            }
-            composable("profiles") {
-                val context = LocalContext.current
-                val profiles = remember { ProfilesLoader.load(context) }
-                val metadata = remember { ProfilesLoader.loadMetadata(context) }
-                var activeProfileId by remember { mutableStateOf<String?>(null) }
-                ProfileSelectorScreen(
-                    profiles = profiles,
-                    metadata = metadata,
-                    currentId = activeProfileId,
-                    onApply = { profile ->
-                        // FIX: sin motor propio auditado (ProfileManager/AudioEngine
-                        // no están conectados a nada real todavía — código huérfano,
-                        // ver auditoría previa). Reusa pushToNative(), el mismo
-                        // camino probado que ya usan los sliders del panel principal.
-                        if (!profile.audioEngine.bypass) {
-                            dsp.value = dsp.value.copy(
-                                master = profile.audioEngine.gain,
-                                wet = profile.audioEngine.exciterAmount,
-                                low = profile.audioEngine.eqGain,
-                                mid = profile.audioEngine.eqGain,
-                                high = profile.audioEngine.eqGain,
-                                presence = profile.audioEngine.eqGain,
-                                stereoWidth = profile.audioEngine.widthAmount
-                            )
-                            dsp.value.pushToNative()
-                        }
-                        activeProfileId = profile.id
-                    },
-                    onClose = { nav.popBackStack() }
-                )
-            }
-            // FIX (PUNTO 1 — ruta faltante): el botón "ACTIVAR" de
-            // DashboardScreen ya llamaba nav.navigate("adaptive") desde
-            // hace tiempo (ver PUNTO 2 abajo), pero esa ruta nunca se
-            // registró aquí — la navegación fallaba silenciosamente/
-            // crasheaba (IllegalArgumentException: destino "adaptive" no
-            // encontrado). AdaptiveEngineScreen necesita un
-            // VoiceProtectionManager; se construye aquí con ParameterStore
-            // igual que en el resto de la app (ver ParameterStore.kt).
-            composable("visualizer") {
-                LaunchedEffect(Unit) {
-                    projectionLauncher.launch(
-                        projectionManager.createScreenCaptureIntent()
-                    )
-                }
-            }
+            composable("intro") { IntroScreen { nav.navigate("dashboard") } }
+            composable("dashboard") { DashboardScreen(dsp, nav) }
             composable("adaptive") {
-                com.ivanna.omega.ui.AdaptiveEngineScreen(
-                    voiceProtectionManager = voiceProtectionManager,
-                    backend = adaptiveBackend,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars)
+                // ← PUNTO 3: Pasar AdaptiveViewModel al AdaptiveEngineScreen
+                val adaptiveVm: AdaptiveViewModel = viewModel()
+                AdaptiveEngineScreen(
+                    viewModel = adaptiveVm,
+                    onBack = { nav.popBackStack() }
                 )
             }
         }
@@ -269,20 +134,9 @@ fun SplashScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun IntroScreen(onEnter: (String?) -> Unit) {
+fun IntroScreen(onEnter: () -> Unit) {
     val bands = listOf("Grand Funk Railroad", "Led Zeppelin", "Rush",
         "Budgie", "Edgar Winter", "Steve Miller Band", "Bachman-Turner Overdrive")
-    // FIX: 4 de las 7 bandas SÍ tienen perfil real en audio_profiles.json
-    // (steve_miller, rush, budgie, grand_funk) — antes la grilla completa
-    // era decorativa. Las otras 3 no tienen datos detrás, se quedan
-    // solo visuales, no se les inventa un perfil.
-    val bandProfileIds = mapOf(
-        "Grand Funk Railroad" to "grand_funk",
-        "Rush" to "rush",
-        "Budgie" to "budgie",
-        "Steve Miller Band" to "steve_miller"
-    )
-    var selectedBand by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Carbon)
         .windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -296,42 +150,24 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(bands) { band ->
-                val hasProfile = bandProfileIds.containsKey(band)
-                val isSelected = band == selectedBand
                 Box(Modifier.aspectRatio(16f/9f).shadow(6.dp, RoundedCornerShape(8.dp))
                     .background(Surface2, RoundedCornerShape(8.dp))
-                    .border(if (isSelected) 2.dp else 1.dp,
-                        if (isSelected) NeonMagenta else CyanDim, RoundedCornerShape(8.dp))
-                    .then(
-                        if (hasProfile) Modifier.clickable {
-                            selectedBand = if (isSelected) null else band
-                        } else Modifier
-                    ),
+                    .border(1.dp, CyanDim, RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(
-                            when {
-                                isSelected -> NeonMagenta
-                                hasProfile -> CyanGlow
-                                else -> CyanGlow.copy(alpha = 0.5f)
-                            }
-                        ))
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(CyanGlow.copy(alpha = 0.5f)))
                         Spacer(Modifier.height(4.dp))
-                        Text(band, color = if (isSelected) TextPri else TextSec, fontSize = 8.sp,
-                            textAlign = TextAlign.Center,
+                        Text(band, color = TextSec, fontSize = 8.sp, textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 4.dp), lineHeight = 11.sp)
                     }
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { onEnter(selectedBand?.let { bandProfileIds[it] }) },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+        Button(onClick = onEnter, modifier = Modifier.fillMaxWidth().height(56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = CyanDim),
             border = BorderStroke(2.dp, CyanGlow), shape = RoundedCornerShape(12.dp)) {
-            Text(
-                if (selectedBand != null) "ENTRAR CON ${selectedBand!!.uppercase()}" else "ENTRAR AL MOTOR",
-                color = TextPri, fontSize = 16.sp,
+            Text("ENTRAR AL MOTOR", color = TextPri, fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(16.dp))
@@ -340,71 +176,10 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
 
 // ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
-fun DashboardScreen(
-    dsp: MutableState<DSPState>,
-    nav: androidx.navigation.NavHostController,
-    adaptiveBackend: AdaptiveBackend,
-    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
-) {
-    val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
-    val fxActive = dsp.value.wet > 0.01f
+fun DashboardScreen(dsp: DSPState, nav: androidx.navigation.NavHostController) {
+    val eqActive = dsp.low != 0f || dsp.mid != 0f || dsp.high != 0f || dsp.presence != 0f
+    val fxActive = dsp.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
-    // FIX (scope): npeBypassState se declaró antes en OmegaApp() por error —
-    // los callbacks NPE que lo usan viven en DashboardScreen, composable
-    // distinto, sin visibilidad de ese estado. Declarado aquí, donde se usa.
-    var npeBypassState by remember { mutableStateOf(false) }
-    // FIX: AdaptiveControlsCard del panel Dashboard (mode/intensity/voice)
-    // recibía siempre los defaults estáticos de IvannaControlPanel — cero
-    // conexión. Usa la misma fuente real que AdaptiveEngineScreen:
-    // AudioStateManager (StateFlow compartido) + VoiceProtectionManager.
-    val audioState by com.ivanna.omega.audio.AudioStateManager.audioState.collectAsState()
-    val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
-
-    val context = LocalContext.current
-    val antiDolbyController = remember {
-        AntiDolbyController(context).also { ctrl ->
-            ctrl.initialize()
-            ctrl.onDspUpdate = { exciter, width, eqGainDb ->
-                dsp.value = dsp.value.copy(wet = exciter, stereoWidth = width)
-                dsp.value.pushToNative()
-                if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetEQParams(
-                        eqGainDb, eqGainDb, eqGainDb, dsp.value.master
-                    )
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        adaptiveBackend.startTelemetry()
-        onDispose { adaptiveBackend.stopTelemetry() }
-    }
-    val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
-    val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
-
-    // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
-    val player = remember { IvannaBridgePlayer(context) }
-    DisposableEffect(player) { onDispose { player.release() } }
-    var playerState by remember { mutableStateOf(player.state) }
-    var currentUri  by remember { mutableStateOf<Uri?>(null) }
-    var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var queueIdx    by remember { mutableStateOf(-1) }
-    val playerPositionMs by player.currentPositionMs.collectAsState()
-    val playerDurationMs by player.durationMs.collectAsState()
-
-    LaunchedEffect(player) {
-        player.onQueueAdvance = { nextUri ->
-            currentUri = nextUri
-            val idx = queue.indexOf(nextUri)
-            if (idx >= 0) queueIdx = idx
-        }
-        while (true) { playerState = player.state; delay(100L) }
-    }
-    val singlePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) { currentUri = uri; queue = listOf(uri); queueIdx = 0 } }
-    val queuePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
-    ) { uris -> if (uris.isNotEmpty()) { queue = uris; queueIdx = 0; currentUri = uris.first() } }
 
     Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
         if (!DSPBridge.isLoaded) {
@@ -432,154 +207,94 @@ fun DashboardScreen(
             }
         }
 
-        // FIX (esta no era la interfaz): IvannaControlPanel v3.0 existía
-        // completa en ui/IvannaControlPanel.kt — 517 líneas, Anillo OMNI,
-        // AuroraSlider, Compresor/NHO/Spatial/NPE/Evo/Adaptive Control
-        // Center — pero jamás se invocaba desde ningún lado del código
-        // (grep confirmado: cero llamadas). Lo que se veía en pantalla
-        // (bloques DspSection crudos de abajo) era un placeholder viejo
-        // que quedó como única pantalla real por accidente. Se monta acá
-        // en vez de los bloques sueltos; exciter/eq/width/threshold/ratio
-        // se cablean a los campos de DSPState que YA llegan al motor
-        // nativo vía pushToNative() (wet=exciter, low=mid=high=presence=eq
-        // en dB, stereoWidth, alpha=threshold, beta=ratio — mismo mapeo
-        // que ya documentaba pushToNative()). El resto de callbacks
-        // (NHO/Spatial/NPE/Evo/Anti-Dolby/Adaptive Center) quedan con su
-        // default no-op: cablearlos de verdad es un commit aparte, no se
-        // improvisa un mapeo a ciegas para motores que aún no se auditaron.
-        val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
-        IvannaControlPanel(
-            initialExciter = dsp.value.wet,
-            initialEq = dsp.value.mid,
-            initialWidth = dsp.value.stereoWidth,
-            initialCompThreshold = dsp.value.alpha,
-            initialCompRatio = dsp.value.beta,
-            onExciterChange = { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() },
-            onEqChange = {
-                dsp.value = dsp.value.copy(low = it, mid = it, high = it, presence = it)
-                dsp.value.pushToNative()
-            },
-            onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
-            onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
-            onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
-            onNhoHarmonicChange = {
-                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
-            },
-            onEvoEnabledChange = { enabled ->
-                // FIX: nativeStopEvoThread ya estaba declarado en
-                // IvannaNativeLib.kt (línea 97) — solo faltaba llamarlo
-                // desde el toggle. Ahora pausa/reanuda de verdad.
-                if (IvannaNativeLib.isLoaded) {
-                    if (enabled) IvannaNativeLib.nativeStartEvoThread()
-                    else IvannaNativeLib.nativeStopEvoThread()
-                }
-            },
-            onNpeBypassChange = { on -> npeBypassState = on },
-            onNpeHarmonicChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v)
-            },
-            onNpeLateralInhibChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setBeta(v)
-            },
-            onNpeOhcCompressionChange = { v ->
-                // Proxy documentado en PiLstmBridge: no hay nativeSetOhcCompression
-                // en C++, usa nativeSetAlpha (ganancia maestra) como sustituto.
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
-            },
-            onNpeFlagsChange = { hrtf, _, _ ->
-                // Solo HRTF tiene nativo real (nativeSetHrtfEnabled). Cochlear
-                // y Adapt no tienen setter en PiLstmBridge — se ignoran sin
-                // fingir que aplican.
-                if (PiLstmBridge.isReady) PiLstmBridge.setHrtfEnabled(hrtf)
-            },
-            onSpatialAngleChange = {
-                if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetSpatialAngleRad((it - 0.5f) * 2f * PI.toFloat())
-            },
-            onSpatialWidthChange = {
-                if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetSpatialWidthDirect(it)
-            },
-            onOpenVisualizer = { nav.navigate("visualizer") },
-            onAntiDolbyChange = { enabled ->
-                if (enabled) antiDolbyController.enableAntiDolby()
-                else antiDolbyController.disableAntiDolby()
-            },
-            adaptiveTelemetry = adaptiveTelemetry,
-            onOpenAdaptive = { nav.navigate("adaptive") },
-            onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
-            onOpenMagisk = { nav.navigate("magisk") },
-            onOpenProfiles = { nav.navigate("profiles") },
-            adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
-            onAdaptiveModeChange = { uiMode ->
-                val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
-                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
-                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
-                    com.ivanna.omega.audio.AudioStateManager.audioState.value
-                )
-            },
-            adaptiveIntensity = audioState.adaptiveIntensity * 100f,
-            onAdaptiveIntensityChange = { percent ->
-                val v = percent / 100f
-                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
-                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
-                    com.ivanna.omega.audio.AudioStateManager.audioState.value
-                )
-            },
-            voiceProtectionEnabled = voiceActive,
-            onVoiceProtectionChange = { voiceProtectionManager.toggle() },
-            initialSpatialEnabled = com.ivanna.omega.spatial.IvannaSpatialEngine.enabled,
-            onSpatialEnabledChange = { on ->
-                // FIX: pipeline de audio (IvannaBridgePlayer), head tracker
-                // e init() ya existían completos y funcionando (sesión
-                // previa) — solo faltaba este interruptor. enabled es
-                // @Volatile, leída directo desde el hilo de audio en cada
-                // chunk, sin pasar por el motor nativo del DSPBridge.
-                com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
-            },
-            routeState = routeState
-        )
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 10.dp)) {
 
-        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
-        BridgePlayerCard(
-            playerState = playerState,
-            currentUri  = currentUri,
-            onPickFile  = { singlePicker.launch("audio/*") },
-            onPlay = {
-                val uri = currentUri
-                if (uri != null) {
-                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
-                    else player.play(uri)
-                }
-            },
-            onPause  = { player.pause() },
-            onResume = { player.resume() },
-            onStop   = { player.stop() },
-            currentPositionMs = playerPositionMs,
-            durationMs        = playerDurationMs,
-            onSeek = { ms ->
-                player.seekTo(ms)
-                // Si estaba pausado, mantenerlo pausado; el seek ya actualizó el extractor.
-            },
-            queue    = queue,
-            queueIndex = queueIdx,
-            onPickQueue = { queuePicker.launch("audio/*") },
-            onNext = {
-                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
-                if (nextIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
-                }
-            },
-            onPrev = {
-                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
-                if (prevIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
+            item {
+                DspSection("GAIN STAGE") {
+                    FaderControl("DRIVE", dsp.drive, "Saturación") { dsp.drive = it; dsp.pushToNative() }
+                    FaderControl("WET", dsp.wet, "Señal proc.") { dsp.wet = it; dsp.pushToNative() }
+                    FaderControl("MIX", dsp.mix, "Seca/Húmeda") { dsp.mix = it; dsp.pushToNative() }
                 }
             }
-        )
+            item {
+                DspSection("DSP ENGINE α·β·γ") {
+                    FaderControl("ALPHA", dsp.alpha, "Compresor") { dsp.alpha = it; dsp.pushToNative() }
+                    FaderControl("BETA", dsp.beta, "Ratio") { dsp.beta = it; dsp.pushToNative() }
+                    FaderControl("GAMMA", dsp.gamma, "Width") { dsp.gamma = it; dsp.pushToNative() }
+                    val freqSl = remember(dsp.freq) {
+                        (log10(dsp.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
+                    }
+                    FaderControl("FREQ", freqSl, "${dsp.freq.toInt()}Hz") {
+                        dsp.freq = DSPState.sliderToFreq(it); dsp.pushToNative()
+                    }
+                    val qSl = remember(dsp.resonance) {
+                        (log10(dsp.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
+                    }
+                    FaderControl("RES", qSl, "Q=%.2f".format(dsp.resonance)) {
+                        dsp.resonance = DSPState.sliderToQ(it); dsp.pushToNative()
+                    }
+                }
+            }
+            item {
+                DspSection("PARAMETRIC EQ") {
+                    EqFader("LOW", dsp.low) { dsp.low = it; dsp.pushToNative() }
+                    EqFader("MID", dsp.mid) { dsp.mid = it; dsp.pushToNative() }
+                    EqFader("HIGH", dsp.high) { dsp.high = it; dsp.pushToNative() }
+                    EqFader("PRESENCE", dsp.presence) { dsp.presence = it; dsp.pushToNative() }
+                    EqFader("MASTER", dsp.master) { dsp.master = it; dsp.pushToNative() }
+                }
+            }
+            item {
+                // Processing mode selector
+                var mode by remember { mutableStateOf(OmegaEngine.getMode()) }
+                Column(Modifier.fillMaxWidth().border(1.dp, Border1, RoundedCornerShape(10.dp))
+                    .background(Surface1, RoundedCornerShape(10.dp)).padding(10.dp)) {
+                    Text("PROCESSING MODE", color = GoldGlow, fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("DSP", "DSP+LSTM", "FULL").forEachIndexed { idx, label ->
+                            val sel = mode == idx
+                            OutlinedButton(onClick = { mode = idx; OmegaEngine.setMode(idx) },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, if (sel) CyanGlow else Border1),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (sel) CyanDim else Color.Transparent)) {
+                                Text(label, color = if (sel) CyanGlow else TextSec,
+                                    fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            // ← PUNTO 2: Botón de entry point para navegar a AdaptiveEngineScreen
+            item {
+                Column(Modifier.fillMaxWidth().border(2.dp, MagentaGlow, RoundedCornerShape(12.dp))
+                    .background(MagentaDim, RoundedCornerShape(12.dp)).padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            Text("MODO ADAPTATIVO MAGISTRAL", color = MagentaGlow,
+                                fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 1.sp)
+                            Text("Análisis inteligente + Control automático @ 10Hz",
+                                color = TextSec, fontSize = 9.sp)
+                        }
+                        Button(onClick = { nav.navigate("adaptive") },
+                            colors = ButtonDefaults.buttonColors(containerColor = MagentaGlow),
+                            shape = RoundedCornerShape(8.dp)) {
+                            Text("ACTIVAR", color = Carbon, fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp, letterSpacing = 1.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
-
 
 // ── Components ────────────────────────────────────────────────────────────────
 @Composable
