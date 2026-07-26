@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
+import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.neuromorphic.PiLstmBridge
 import java.io.InputStreamReader
 
 /**
@@ -245,5 +248,73 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
                 "│  Para: ${it.recommendedFor}"
             }}
         """.trimIndent()
+    }
+
+
+    /**
+     * applyToDsp — ruta REAL magistral.
+     * Aplica el perfil completo a la cadena DSP activa:
+     *   DSPState → pushToNative (gain/exciter/eq/width/stereo)
+     *   PiLstmBridge (harmonic/lateralInhib/ohc/masterGain)
+     *   nativeSetRouteProfileStatic (bass/dialog/widener)
+     *   nativeSetAntiDolbyScoresStatic (preset scores)
+     *
+     * @param currentDsp estado actual (se usa como base para copy)
+     * @param onDspUpdated callback con el nuevo DSPState listo para
+     *        asignar a dsp.value en el Composable caller.
+     */
+    fun applyToDsp(
+        currentDsp: DSPState,
+        profileId: String,
+        onDspUpdated: (DSPState) -> Unit
+    ): Boolean {
+        val profile = profiles[profileId] ?: run {
+            Log.e(TAG, "applyToDsp: perfil no encontrado: $profileId")
+            return false
+        }
+        return try {
+            // 1. DSPState + pushToNative
+            val newDsp = currentDsp.copy(
+                master       = profile.audioEngine.gain,
+                wet          = profile.audioEngine.exciterAmount,
+                low          = profile.audioEngine.eqGain,
+                mid          = profile.audioEngine.eqGain,
+                high         = profile.audioEngine.eqGain,
+                presence     = profile.audioEngine.eqGain,
+                stereoWidth  = profile.audioEngine.widthAmount
+            )
+            onDspUpdated(newDsp)
+            newDsp.pushToNative()
+
+            // 2. PiLstmBridge — NPE neuromorphic
+            if (PiLstmBridge.isReady) {
+                PiLstmBridge.setHarmonicGain(profile.neuromorphic.harmonicGain)
+                PiLstmBridge.setBeta(profile.neuromorphic.lateralInhibition)
+                PiLstmBridge.setAlpha(profile.neuromorphic.ohcCompression)
+                PiLstmBridge.setMasterGain(profile.neuromorphic.masterGainDb)
+            }
+
+            // 3. Ruta de audio nativa
+            if (IvannaNativeLib.isLoaded) {
+                AudioEngine.nativeSetRouteProfileStatic(
+                    profile.route.bassBoostDb,
+                    profile.route.dialogBoostDb,
+                    profile.route.widenerMult
+                )
+                // Anti-Dolby scores del preset
+                AudioEngine.nativeSetAntiDolbyScoresStatic(
+                    profile.antiDolby.speechThreshold,
+                    1f - profile.antiDolby.speechThreshold - profile.antiDolby.bassThreshold,
+                    profile.antiDolby.bassThreshold
+                )
+            }
+
+            currentProfileId = profileId
+            Log.i(TAG, "applyToDsp OK: ${profile.name}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "applyToDsp error: ${e.message}", e)
+            false
+        }
     }
 }
