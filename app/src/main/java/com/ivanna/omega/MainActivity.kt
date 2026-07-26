@@ -59,7 +59,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.ivanna.omega.audio.PlaybackCaptureService
 import kotlin.math.PI
+import android.net.Uri
+import com.ivanna.omega.audio.IvannaBridgePlayer
+import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
+import kotlinx.coroutines.delay
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -382,6 +386,28 @@ fun DashboardScreen(
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
+    // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
+    val player = remember { IvannaBridgePlayer(LocalContext.current) }
+    DisposableEffect(player) { onDispose { player.release() } }
+    var playerState by remember { mutableStateOf(player.state) }
+    var currentUri  by remember { mutableStateOf<Uri?>(null) }
+    var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var queueIdx    by remember { mutableStateOf(-1) }
+    LaunchedEffect(player) {
+        player.onQueueAdvance = { nextUri ->
+            currentUri = nextUri
+            val idx = queue.indexOf(nextUri)
+            if (idx >= 0) queueIdx = idx
+        }
+        while (true) { playerState = player.state; delay(100L) }
+    }
+    val singlePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) { currentUri = uri; queue = listOf(uri); queueIdx = 0 } }
+    val queuePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris -> if (uris.isNotEmpty()) { queue = uris; queueIdx = 0; currentUri = uris.first() } }
+
     Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
         if (!DSPBridge.isLoaded) {
             Box(Modifier.fillMaxWidth().background(Color(0xFF330000)).padding(8.dp),
@@ -514,6 +540,38 @@ fun DashboardScreen(
                 com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
             },
             routeState = routeState
+        )
+
+        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
+        BridgePlayerCard(
+            playerState = playerState,
+            currentUri  = currentUri,
+            onPickFile  = { singlePicker.launch("audio/*") },
+            onPlay = {
+                val uri = currentUri
+                if (uri != null) {
+                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
+                    else player.play(uri)
+                }
+            },
+            onPause  = { player.pause() },
+            onResume = { player.resume() },
+            onStop   = { player.stop() },
+            queue    = queue,
+            queueIdx = queueIdx,
+            onPickQueue = { queuePicker.launch("audio/*") },
+            onNext = {
+                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
+                if (nextIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
+                }
+            },
+            onPrev = {
+                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
+                if (prevIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
+                }
+            }
         )
     }
 }
