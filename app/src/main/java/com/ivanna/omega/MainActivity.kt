@@ -2,6 +2,7 @@ package com.ivanna.omega
 
 
 import android.media.AudioManager
+import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,6 +38,7 @@ import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.audio.AdaptiveBackend
 import com.ivanna.omega.audio.toSnapshot
 import com.ivanna.omega.audio.ProfilesLoader
+import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.MagiskStatusPanel
 import com.ivanna.omega.ui.ProfileSelectorScreen
@@ -49,7 +51,6 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
-import com.ivanna.omega.neuromorphic.PiLstmBridge
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -81,6 +82,12 @@ class MainActivity : ComponentActivity() {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
         DSPBridge.init(sr)
+        // FIX: nativeStartEvoThread() existía declarado y documentado
+        // (IVANNAApplication.kt:126 decía que MainActivity.onCreate() debía
+        // llamarlo) pero nunca se invocaba — kernel evolutivo nunca arrancaba,
+        // por eso nativeGetBestFitness()/nativeGetGeneration() (ya leídos en
+        // IvannaControlPanel) siempre devolvían el estado inicial sin avanzar.
+        if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeStartEvoThread()
         setContent { OmegaApp() }
     }
 }
@@ -89,6 +96,7 @@ class MainActivity : ComponentActivity() {
 fun OmegaApp() {
     val nav = rememberNavController()
     val dsp = remember { mutableStateOf(DSPState()) }
+    var npeBypassState by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
         // Launcher MediaProjection para PlaybackCaptureService
@@ -362,6 +370,32 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
             onNhoHarmonicChange = {
                 if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
+            },
+            onEvoEnabledChange = { enabled ->
+                // FIX: no existe nativeStopEvoThread/nativePauseEvoThread en
+                // el binding — el hilo evolutivo, una vez arrancado en
+                // onCreate(), no se puede pausar desde Kotlin todavía. El
+                // toggle no tiene efecto real hasta que exista ese nativo;
+                // no se simula un pausado que no ocurre de verdad.
+                Log.w("OmegaApp", "Evo toggle=$enabled — sin nativeStopEvoThread en el binding, sin efecto real todavía")
+            },
+            onNpeBypassChange = { on -> npeBypassState = on },
+            onNpeHarmonicChange = { v ->
+                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v)
+            },
+            onNpeLateralInhibChange = { v ->
+                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setBeta(v)
+            },
+            onNpeOhcCompressionChange = { v ->
+                // Proxy documentado en PiLstmBridge: no hay nativeSetOhcCompression
+                // en C++, usa nativeSetAlpha (ganancia maestra) como sustituto.
+                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
+            },
+            onNpeFlagsChange = { hrtf, _, _ ->
+                // Solo HRTF tiene nativo real (nativeSetHrtfEnabled). Cochlear
+                // y Adapt no tienen setter en PiLstmBridge — se ignoran sin
+                // fingir que aplican.
+                if (PiLstmBridge.isReady) PiLstmBridge.setHrtfEnabled(hrtf)
             },
             onSpatialAngleChange = {
                 if (IvannaNativeLib.isLoaded)
