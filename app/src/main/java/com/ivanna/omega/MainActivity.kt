@@ -499,10 +499,12 @@ fun DashboardScreen(
             onSpatialAngleChange = {
                 if (IvannaNativeLib.isLoaded)
                     IvannaNativeLib.nativeSetSpatialAngleRad((it - 0.5f) * 2f * PI.toFloat())
+                IvannaSpatialEngine.setAzimuth((it - 0.5f) * 2f * PI.toFloat())
             },
             onSpatialWidthChange = {
                 if (IvannaNativeLib.isLoaded)
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
+                IvannaSpatialEngine.setWidth(it)
             },
             onOpenVisualizer = { nav.navigate("visualizer") },
             onAntiDolbyChange = { enabled ->
