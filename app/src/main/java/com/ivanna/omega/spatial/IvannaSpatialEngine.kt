@@ -1,6 +1,7 @@
 package com.ivanna.omega.spatial
 
 import kotlin.math.*
+import com.ivanna.omega.core.IvannaNativeLib
 
 class IvannaSpatialEngine private constructor() {
 
@@ -13,8 +14,19 @@ class IvannaSpatialEngine private constructor() {
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) { shared.distance = v.coerceIn(0.5f, 2.0f) }
 
-        /** Stub para compatibilidad con AudioForegroundService */
-        fun setHeadTracker(yaw: Float, pitch: Float, roll: Float) { }
+        /**
+         * Cablea el HeadTracker al motor nativo.
+         * onOrientationChanged → nativeSetSpatialAngleRad (yaw) en el hilo
+         * del sensor — zero-Compose, latencia mínima (~10 ms).
+         */
+        fun setHeadTracker(tracker: IvannaHeadTracker) {
+            tracker.onOrientationChanged = { pitch, yaw, roll ->
+                if (IvannaNativeLib.isLoaded) {
+                    IvannaNativeLib.nativeSetSpatialAngleRad(yaw)
+                }
+                shared.azimuthRad = yaw
+            }
+        }
     }
 
     private val sampleRate = 44100
