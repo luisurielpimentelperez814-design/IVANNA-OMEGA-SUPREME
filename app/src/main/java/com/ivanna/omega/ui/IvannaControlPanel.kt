@@ -147,6 +147,13 @@ fun IvannaControlPanel(
     var npeClassifyConfidence by remember { mutableFloatStateOf(0f) }
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
+    // ── Telemetría en tiempo real ──────────────────────────────────────
+    var spatialStateStr     by remember { mutableStateOf("—") }
+    var phaseState          by remember { mutableFloatStateOf(0f) }
+    var mutationRate        by remember { mutableFloatStateOf(0f) }
+    var evoBestFitness      by remember { mutableFloatStateOf(0f) }
+    var bandEnergies        by remember { mutableStateOf(FloatArray(0)) }
+    var clipCount           by remember { mutableIntStateOf(0) }
 
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
 
@@ -178,6 +185,21 @@ fun IvannaControlPanel(
                 Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
             }
             kotlinx.coroutines.delay(2000)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(500)
+        while (true) {
+            if (IvannaNativeLib.isLoaded) {
+                try { spatialStateStr = IvannaNativeLib.nativeGetSpatialState() } catch (_: Throwable) {}
+                try { phaseState      = IvannaNativeLib.nativeGetPhaseState()   } catch (_: Throwable) {}
+                try { mutationRate    = IvannaNativeLib.nativeGetMutationRate() } catch (_: Throwable) {}
+                try { evoBestFitness  = IvannaNativeLib.nativeGetEvoBestFitness() } catch (_: Throwable) {}
+                try { bandEnergies    = IvannaNativeLib.nativeGetBandEnergies() ?: FloatArray(0) } catch (_: Throwable) {}
+                try { clipCount       = IvannaNativeLib.nativeGetClipCount()   } catch (_: Throwable) {}
+            }
+            kotlinx.coroutines.delay(500)
         }
     }
 
@@ -356,6 +378,11 @@ fun IvannaControlPanel(
             AuroraSlider("ANCHO ESPACIAL", spatialWidth, 0f..1.5f) {
                 spatialWidth = it; onSpatialWidthChange(it)
             }
+            Spacer(Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatBlock("FASE PDEngine", "%.4f".format(phaseState), PhosphorGreen, Modifier.weight(1f))
+                StatBlock("SPATIAL", spatialStateStr.take(12), AuroraCyan, Modifier.weight(1.4f))
+            }
         }
 
         GlassCard(
@@ -428,6 +455,21 @@ fun IvannaControlPanel(
                 }, NeonMagenta)
             }
         ) {
+            if (bandEnergies.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    val maxE = bandEnergies.maxOrNull()?.coerceAtLeast(1e-6f) ?: 1e-6f
+                    bandEnergies.forEach { e ->
+                        val h = ((e / maxE) * 28f).coerceIn(2f, 28f)
+                        Box(Modifier.weight(1f).height(h.dp).background(NeonMagenta.copy(alpha = 0.7f)))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
             Text(
                 "Activa el renderer de objetos completo: separa hasta 32 stems " +
                 "virtuales, los posiciona en el anillo VBAP y aplica convolución " +
@@ -447,9 +489,15 @@ fun IvannaControlPanel(
                 ToggleSwitch(evoEnabled, { evoEnabled = it; onEvoEnabledChange(it) }, AmberSignal)
             }
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatBlock("GENERACIÓN", evoGeneration.toString(), AmberSignal, Modifier.weight(1f))
-                StatBlock("FITNESS", "%.3f".format(evoFitness), PhosphorGreen, Modifier.weight(1f))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatBlock("GEN",     evoGeneration.toString(),          AmberSignal,   Modifier.weight(1f))
+                StatBlock("FIT·A",  "%.3f".format(evoFitness),         PhosphorGreen, Modifier.weight(1f))
+                StatBlock("FIT·B",  "%.3f".format(evoBestFitness),     AuroraCyan,    Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatBlock("MUTACIÓN", "%.4f".format(mutationRate),      AmberSignal,   Modifier.weight(1f))
+                StatBlock("CLIPS",   clipCount.toString(),               NeonMagenta,   Modifier.weight(1f))
             }
         }
 
