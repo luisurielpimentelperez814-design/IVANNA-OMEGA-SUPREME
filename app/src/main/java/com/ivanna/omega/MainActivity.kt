@@ -62,6 +62,7 @@ import com.ivanna.omega.audio.PlaybackCaptureService
 import kotlin.math.PI
 import android.net.Uri
 import com.ivanna.omega.audio.IvannaBridgePlayer
+import com.ivanna.omega.audio.VolterraSwitch
 import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
 import kotlinx.coroutines.delay
@@ -544,7 +545,7 @@ fun DashboardScreen(
                 com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
             },
             onNpeManifoldChange = { enabled ->
-                com.ivanna.omega.audio.IvannaBridgePlayer.volterraEnabled = enabled
+                com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
             },
             routeState = routeState
         )
