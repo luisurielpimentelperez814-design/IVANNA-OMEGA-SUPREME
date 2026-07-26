@@ -12,6 +12,7 @@ import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.audio.effects.NeuromorphicProcessingEngine
+import com.ivanna.omega.audio.effects.VolterraH2Processor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,7 +115,9 @@ class IvannaBridgePlayer(private val context: Context) {
     // Inicializado lazy para no pagar el coste de la matriz de pesos
     // (O(N²) = 64² floats) hasta que se active por primera vez.
     @Volatile var npeKotlinEnabled: Boolean = false
+    @Volatile var volterraEnabled: Boolean = false
     private val npeKotlin: NeuromorphicProcessingEngine by lazy {
+    private val volterraProcessor: VolterraH2Processor by lazy { VolterraH2Processor() }
         NeuromorphicProcessingEngine(
             neuronCount       = 64,
             spectralRadius    = 0.9f,
@@ -410,6 +413,12 @@ class IvannaBridgePlayer(private val context: Context) {
                                     val npeIn = chunk.copyOf()
                                     val npeOut = npeKotlin.process(npeIn)
                                     npeOut.copyInto(chunk)
+
+                            // Volterra H2 (distorsión armónica)
+                            if (volterraEnabled) {
+                                val volterraOut = volterraProcessor.process(chunk)
+                                volterraOut.copyInto(chunk)
+                            }
                                 } catch (e: Exception) {
                                     android.util.Log.e("IVANNA_DSP", "Crash NPE-Kotlin evitado: ${e.message}")
                                 }
