@@ -543,6 +543,9 @@ fun DashboardScreen(
                 // chunk, sin pasar por el motor nativo del DSPBridge.
                 com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
             },
+            onNpeManifoldChange = { enabled ->
+                com.ivanna.omega.audio.IvannaBridgePlayer.volterraEnabled = enabled
+            },
             routeState = routeState
         )
 
