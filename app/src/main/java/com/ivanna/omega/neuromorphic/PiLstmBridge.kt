@@ -1,6 +1,7 @@
 package com.ivanna.omega.neuromorphic
 
 import android.util.Log
+import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
@@ -46,6 +47,32 @@ object PiLstmBridge {
     private external fun nativeGetError(): Float
 
     // === NUEVOS PARÁMETROS NEURO-COCHLEAR ===
+    // ── NPE completo ────────────────────────────────────────────────
+    fun setMasterGain(db: Float)  { if (ready) nativeSetEta(db / 18f + 0.5f) }  // -18..18 dB → 0..1
+    fun setAgc(targetDb: Float, rate: Float) {
+        if (ready) {
+            nativeSetNPMax(targetDb / -36f)   // -36..0 dB → 0..1
+            nativeSetDelta(rate)
+        }
+    }
+    fun setAdaptEnabled(en: Boolean) {
+        if (ready) IvannaNativeLib.nativeSetAdaptEnabled(en)
+    }
+    fun setCochlearEnabled(en: Boolean) {
+        // Cochlear → spatial wet: on=1.0, off=0.0
+        if (ready) IvannaNativeLib.nativeSetSpatialWet(if (en) 1f else 0f)
+    }
+    fun setBypass(bypass: Boolean) {
+        // Bypass NPE: deshabilita motor adaptativo y fuerza ganancia neutra
+        if (ready) {
+            IvannaNativeLib.nativeSetAdaptEnabled(!bypass)
+            if (bypass) nativeSetHarmonicGain(0f)
+        }
+    }
+
+    private external fun nativeSetEta(v: Float)
+    private external fun nativeSetNPMax(v: Float)
+
     fun setClarity(clarity: Float) {
         // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition
         val harmonicGain = 0.1f + clarity * 0.8f

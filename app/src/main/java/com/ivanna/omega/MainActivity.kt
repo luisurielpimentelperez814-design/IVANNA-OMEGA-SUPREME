@@ -480,7 +480,10 @@ fun DashboardScreen(
                     else IvannaNativeLib.nativeStopEvoThread()
                 }
             },
-            onNpeBypassChange = { on -> npeBypassState = on },
+            onNpeBypassChange = { on ->
+                npeBypassState = on
+                if (PiLstmBridge.isReady) PiLstmBridge.setBypass(on)
+            },
             onNpeHarmonicChange = { v ->
                 if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v)
             },
@@ -492,11 +495,18 @@ fun DashboardScreen(
                 // en C++, usa nativeSetAlpha (ganancia maestra) como sustituto.
                 if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
             },
-            onNpeFlagsChange = { hrtf, _, _ ->
-                // Solo HRTF tiene nativo real (nativeSetHrtfEnabled). Cochlear
-                // y Adapt no tienen setter en PiLstmBridge — se ignoran sin
-                // fingir que aplican.
-                if (PiLstmBridge.isReady) PiLstmBridge.setHrtfEnabled(hrtf)
+            onNpeMasterGainChange = { v ->
+                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setMasterGain(v)
+            },
+            onNpeAgcChange = { targetDb, rate ->
+                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAgc(targetDb, rate)
+            },
+            onNpeFlagsChange = { hrtf, cochlear, adapt ->
+                if (PiLstmBridge.isReady) {
+                    PiLstmBridge.setHrtfEnabled(hrtf)
+                    PiLstmBridge.setCochlearEnabled(cochlear)
+                    PiLstmBridge.setAdaptEnabled(adapt)
+                }
             },
             onSpatialAngleChange = {
                 if (IvannaNativeLib.isLoaded)
