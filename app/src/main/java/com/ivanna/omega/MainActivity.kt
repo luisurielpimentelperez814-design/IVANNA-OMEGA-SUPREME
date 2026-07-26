@@ -504,6 +504,15 @@ fun DashboardScreen(
             },
             voiceProtectionEnabled = voiceActive,
             onVoiceProtectionChange = { voiceProtectionManager.toggle() },
+            initialSpatialEnabled = com.ivanna.omega.spatial.IvannaSpatialEngine.enabled,
+            onSpatialEnabledChange = { on ->
+                // FIX: pipeline de audio (IvannaBridgePlayer), head tracker
+                // e init() ya existían completos y funcionando (sesión
+                // previa) — solo faltaba este interruptor. enabled es
+                // @Volatile, leída directo desde el hilo de audio en cada
+                // chunk, sin pasar por el motor nativo del DSPBridge.
+                com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
+            },
             routeState = routeState
         )
     }
