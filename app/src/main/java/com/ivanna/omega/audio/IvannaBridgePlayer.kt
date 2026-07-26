@@ -11,6 +11,7 @@ import android.net.Uri
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.audio.effects.NeuromorphicProcessingEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -108,6 +109,43 @@ class IvannaBridgePlayer(private val context: Context) {
 
     // seekTarget: -1 = sin seek pendiente. seekTo() escribe aquí; el loop lo consume.
     @Volatile private var seekTargetUs = -1L
+
+    // ── Motor Neuromórfico Kotlin (ESN puro, sin JNI) ────────────────────────
+    // Inicializado lazy para no pagar el coste de la matriz de pesos
+    // (O(N²) = 64² floats) hasta que se active por primera vez.
+    @Volatile var npeKotlinEnabled: Boolean = false
+    private val npeKotlin: NeuromorphicProcessingEngine by lazy {
+        NeuromorphicProcessingEngine(
+            neuronCount       = 64,
+            spectralRadius    = 0.9f,
+            inputScaling      = 0.4f,
+            leakRate          = 0.08f,
+            threshold         = 1.0f,
+            resetPotential    = 0f,
+            outputScaling     = 0.25f,  // conservador — no satura
+            plasticityRate    = 0.003f,
+            homeostasisRate   = 0.001f,
+            resonanceBankSize = 8,
+            seed              = 42L
+        )
+    }
+
+    /** Actualiza parámetros del motor neuromórfico en tiempo real (thread-safe). */
+    fun updateNpeKotlinParams(
+        spectralRadius: Float  = 0.9f,
+        inputScaling:   Float  = 0.4f,
+        outputScaling:  Float  = 0.25f,
+        plasticityRate: Float  = 0.003f
+    ) {
+        if (npeKotlinEnabled) {
+            npeKotlin.updateParameters(
+                spectralRadius = spectralRadius,
+                inputScaling   = inputScaling,
+                outputScaling  = outputScaling,
+                plasticityRate = plasticityRate
+            )
+        }
+    }
 
     // FIX (reproducción consecutiva): cola real. play() sigue soportando
     // un solo Uri (comportamiento previo intacto); playQueue() agrega
@@ -322,6 +360,7 @@ class IvannaBridgePlayer(private val context: Context) {
                     sawInputEOS = false
                     extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                     codec.flush()
+                    if (npeKotlinEnabled) npeKotlin.reset()
                 }
 
                 if (!sawInputEOS) {
@@ -362,6 +401,19 @@ class IvannaBridgePlayer(private val context: Context) {
                             DSPBridge.process(chunk, chunkFrames)
                             if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
                                 try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
+                            }
+                            // ── NPE Kotlin (ESN puro) ────────────────────
+                            // Corre en paralelo con el NPE nativo — añade
+                            // textura armónica no lineal desde el reservorio
+                            // de neuronas LIF/resonador/bursting/adaptativo.
+                            if (npeKotlinEnabled) {
+                                try {
+                                    val npeIn = chunk.copyOf()
+                                    val npeOut = npeKotlin.process(npeIn)
+                                    npeOut.copyInto(chunk)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("IVANNA_DSP", "Crash NPE-Kotlin evitado: ${e.message}")
+                                }
                             }
                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {
                                 com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
