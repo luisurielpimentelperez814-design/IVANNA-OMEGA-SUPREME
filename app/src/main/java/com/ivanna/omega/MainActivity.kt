@@ -395,6 +395,9 @@ fun DashboardScreen(
     var currentUri  by remember { mutableStateOf<Uri?>(null) }
     var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var queueIdx    by remember { mutableStateOf(-1) }
+    val playerPositionMs by player.currentPositionMs.collectAsState()
+    val playerDurationMs by player.durationMs.collectAsState()
+
     LaunchedEffect(player) {
         player.onQueueAdvance = { nextUri ->
             currentUri = nextUri
@@ -559,6 +562,12 @@ fun DashboardScreen(
             onPause  = { player.pause() },
             onResume = { player.resume() },
             onStop   = { player.stop() },
+            currentPositionMs = playerPositionMs,
+            durationMs        = playerDurationMs,
+            onSeek = { ms ->
+                player.seekTo(ms)
+                // Si estaba pausado, mantenerlo pausado; el seek ya actualizó el extractor.
+            },
             queue    = queue,
             queueIndex = queueIdx,
             onPickQueue = { queuePicker.launch("audio/*") },

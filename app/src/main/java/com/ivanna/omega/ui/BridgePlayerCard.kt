@@ -40,6 +40,9 @@ fun BridgePlayerCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    currentPositionMs: Long = 0L,
+    durationMs: Long = 0L,
+    onSeek: (Long) -> Unit = {},
     // FIX (reproducción consecutiva): cola opcional. Con queue.size <= 1 la
     // tarjeta se comporta exactamente igual que antes (compatibilidad hacia
     // atrás total); con queue.size > 1 aparece la fila de navegación y el
@@ -164,6 +167,64 @@ fun BridgePlayerCard(
                     ) { Text("⏭") }
                 }
             }
+
+            // --- Barra de progreso con seeking ---
+            if (durationMs > 0L) {
+                Spacer(Modifier.height(10.dp))
+
+                // Estado local para el drag: mientras el usuario arrastra,
+                // mostramos el valor del thumb sin que _currentPositionMs lo
+                // pise, y ejecutamos el seek solo al soltar.
+                var isDragging by remember { mutableStateOf(false) }
+                var dragValueMs by remember { mutableFloatStateOf(0f) }
+
+                val displayMs = if (isDragging) dragValueMs.toLong() else currentPositionMs
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = formatMmSs(displayMs),
+                        color = Color(0xFFB8C0CC),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                    Slider(
+                        value = displayMs.toFloat(),
+                        onValueChange = { v ->
+                            isDragging = true
+                            dragValueMs = v
+                        },
+                        onValueChangeFinished = {
+                            onSeek(dragValueMs.toLong())
+                            isDragging = false
+                        },
+                        valueRange = 0f..durationMs.toFloat(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = AuroraCyan,
+                            activeTrackColor = AuroraCyan,
+                            inactiveTrackColor = Color(0x44B8C0CC)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    )
+                    Text(
+                        text = formatMmSs(durationMs),
+                        color = Color(0xFFB8C0CC),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    )
+                }
+            }
         }
     }
+}
+
+private fun formatMmSs(ms: Long): String {
+    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
 }
