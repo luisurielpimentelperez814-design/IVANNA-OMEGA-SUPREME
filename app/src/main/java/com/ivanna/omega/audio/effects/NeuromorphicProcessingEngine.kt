@@ -160,7 +160,7 @@ class NeuromorphicProcessingEngine(
 
                 if (membrane[i] >= intrinsicThreshold[i]) {
                     spikes[i] = 1f; spikeCount++
-                    membrane[i] = resetPotential
+                    membrane[i] = 0f
                     if (neuronType[i] == NeuronType.ADAPTIVE) intrinsicThreshold[i] += 0.1f
                     if (neuronType[i] == NeuronType.BURSTING) membrane[i] = intrinsicThreshold[i] * 0.5f
                 } else spikes[i] = 0f
@@ -174,8 +174,8 @@ class NeuromorphicProcessingEngine(
             if (plasticityRate > 0f && spikeCount > 0) updatePlasticity()
 
             // Modos de salida
-            val spikeContrib = (0 until neuronCount).sumOf { readoutWeights[it] * spikes[it].toDouble() }.toFloat()
-            val memContrib = (0 until neuronCount).sumOf { readoutWeights[it] * tanh(membrane[it].toDouble()).toFloat() * 0.1f }.toFloat()
+            val spikeContrib = (0 until neuronCount).fold(0.0) { acc, i -> acc + readoutWeights[i] * spikes[i] }.toFloat()
+            val memContrib = (0 until neuronCount).fold(0.0) { acc, i -> acc + readoutWeights[i] * tanh(membrane[i].toDouble()) * 0.1 }.toFloat()
 
             var out = when (outputMode) {
                 0 -> spikeContrib
@@ -241,7 +241,7 @@ class NeuromorphicProcessingEngine(
 
     private fun scaleSpectralRadius(rng: Random) {
         var v = FloatArray(neuronCount) { rng.nextFloat() * 2f - 1f }
-        var norm = sqrt(v.sumOf { it * it.toDouble() }.toFloat())
+        var norm = sqrt(v.fold(0.0) { acc, x -> acc + x * x }.toFloat())
         v = v.map { it / norm }.toFloatArray()
         repeat(30) {
             val newV = FloatArray(neuronCount)
@@ -250,7 +250,7 @@ class NeuromorphicProcessingEngine(
                 for (j in 0 until neuronCount) sum += recurrentWeights[i][j] * v[j]
                 newV[i] = sum
             }
-            norm = sqrt(newV.sumOf { it * it.toDouble() }.toFloat())
+            norm = sqrt(newV.fold(0.0) { acc, x -> acc + x * x }.toFloat())
             v = newV.map { it / (norm + 1e-8f) }.toFloatArray()
         }
         var lambda = 0f

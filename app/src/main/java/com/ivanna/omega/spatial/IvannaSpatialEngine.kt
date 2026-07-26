@@ -219,3 +219,7 @@ class IvannaSpatialEngineV3 private constructor() {
         }
     }
 }
+
+// Alias de compatibilidad — todo el código que importa IvannaSpatialEngine
+// sigue funcionando sin cambios. V3 es la implementación real.
+typealias IvannaSpatialEngine = IvannaSpatialEngineV3
