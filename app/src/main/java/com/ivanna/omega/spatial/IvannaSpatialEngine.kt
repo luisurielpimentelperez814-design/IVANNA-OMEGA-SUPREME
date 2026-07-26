@@ -19,14 +19,8 @@ class IvannaSpatialEngine private constructor() {
          * onOrientationChanged → nativeSetSpatialAngleRad (yaw) en el hilo
          * del sensor — zero-Compose, latencia mínima (~10 ms).
          */
-        fun setHeadTracker(tracker: IvannaHeadTracker) {
-            tracker.onOrientationChanged = { pitch, yaw, roll ->
-                if (IvannaNativeLib.isLoaded) {
-                    IvannaNativeLib.nativeSetSpatialAngleRad(yaw)
-                }
-                shared.azimuthRad = yaw
-            }
-        }
+        fun setHeadTracker(tracker: IvannaHeadTracker) =
+            shared.attachHeadTracker(tracker)
     }
 
     private val sampleRate = 44100
@@ -55,6 +49,14 @@ class IvannaSpatialEngine private constructor() {
     private var earlyWriteIndices = IntArray(4)
     private var modPhase = 0f
     private var erLowpassState = FloatArray(4)
+
+    fun attachHeadTracker(tracker: IvannaHeadTracker) {
+        tracker.onOrientationChanged = { pitch, yaw, roll ->
+            if (IvannaNativeLib.isLoaded)
+                IvannaNativeLib.nativeSetSpatialAngleRad(yaw)
+            azimuthRad = yaw
+        }
+    }
 
     fun init(modelPath: String? = null) { reset() }
 
