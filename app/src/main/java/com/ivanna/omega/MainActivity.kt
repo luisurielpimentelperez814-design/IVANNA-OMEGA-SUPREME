@@ -114,10 +114,37 @@ fun OmegaApp() {
         }
 
         val adaptiveBackend = remember { AdaptiveBackend(context) }
+        var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
-            composable("intro") { IntroScreen { nav.navigate("dashboard") } }
-            composable("dashboard") { DashboardScreen(dsp, nav) }
+            composable("intro") {
+                IntroScreen { profileId ->
+                    pendingBandProfileId = profileId
+                    nav.navigate("dashboard")
+                }
+            }
+            composable("dashboard") {
+                LaunchedEffect(pendingBandProfileId) {
+                    val profileId = pendingBandProfileId ?: return@LaunchedEffect
+                    val profile = ProfilesLoader.load(context).find { it.id == profileId }
+                    if (profile != null && !profile.audioEngine.bypass) {
+                        // Mismo mapeo probado que ProfileSelectorScreen.onApply —
+                        // ver auditoría previa, no usa ProfileManager (legacy roto).
+                        dsp.value = dsp.value.copy(
+                            master = profile.audioEngine.gain,
+                            wet = profile.audioEngine.exciterAmount,
+                            low = profile.audioEngine.eqGain,
+                            mid = profile.audioEngine.eqGain,
+                            high = profile.audioEngine.eqGain,
+                            presence = profile.audioEngine.eqGain,
+                            stereoWidth = profile.audioEngine.widthAmount
+                        )
+                        dsp.value.pushToNative()
+                    }
+                    pendingBandProfileId = null
+                }
+                DashboardScreen(dsp, nav)
+            }
             composable("magisk") {
                 MagiskStatusPanel(
                     omegaBridge = OmegaEngineBridge,
@@ -236,9 +263,20 @@ fun SplashScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun IntroScreen(onEnter: () -> Unit) {
+fun IntroScreen(onEnter: (String?) -> Unit) {
     val bands = listOf("Grand Funk Railroad", "Led Zeppelin", "Rush",
         "Budgie", "Edgar Winter", "Steve Miller Band", "Bachman-Turner Overdrive")
+    // FIX: 4 de las 7 bandas SÍ tienen perfil real en audio_profiles.json
+    // (steve_miller, rush, budgie, grand_funk) — antes la grilla completa
+    // era decorativa. Las otras 3 no tienen datos detrás, se quedan
+    // solo visuales, no se les inventa un perfil.
+    val bandProfileIds = mapOf(
+        "Grand Funk Railroad" to "grand_funk",
+        "Rush" to "rush",
+        "Budgie" to "budgie",
+        "Steve Miller Band" to "steve_miller"
+    )
+    var selectedBand by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Carbon)
         .windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -252,24 +290,42 @@ fun IntroScreen(onEnter: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(bands) { band ->
+                val hasProfile = bandProfileIds.containsKey(band)
+                val isSelected = band == selectedBand
                 Box(Modifier.aspectRatio(16f/9f).shadow(6.dp, RoundedCornerShape(8.dp))
                     .background(Surface2, RoundedCornerShape(8.dp))
-                    .border(1.dp, CyanDim, RoundedCornerShape(8.dp)),
+                    .border(if (isSelected) 2.dp else 1.dp,
+                        if (isSelected) NeonMagenta else CyanDim, RoundedCornerShape(8.dp))
+                    .then(
+                        if (hasProfile) Modifier.clickable {
+                            selectedBand = if (isSelected) null else band
+                        } else Modifier
+                    ),
                     contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(CyanGlow.copy(alpha = 0.5f)))
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(
+                            when {
+                                isSelected -> NeonMagenta
+                                hasProfile -> CyanGlow
+                                else -> CyanGlow.copy(alpha = 0.5f)
+                            }
+                        ))
                         Spacer(Modifier.height(4.dp))
-                        Text(band, color = TextSec, fontSize = 8.sp, textAlign = TextAlign.Center,
+                        Text(band, color = if (isSelected) TextPri else TextSec, fontSize = 8.sp,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 4.dp), lineHeight = 11.sp)
                     }
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onEnter, modifier = Modifier.fillMaxWidth().height(56.dp),
+        Button(onClick = { onEnter(selectedBand?.let { bandProfileIds[it] }) },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = CyanDim),
             border = BorderStroke(2.dp, CyanGlow), shape = RoundedCornerShape(12.dp)) {
-            Text("ENTRAR AL MOTOR", color = TextPri, fontSize = 16.sp,
+            Text(
+                if (selectedBand != null) "ENTRAR CON ${selectedBand!!.uppercase()}" else "ENTRAR AL MOTOR",
+                color = TextPri, fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(16.dp))
