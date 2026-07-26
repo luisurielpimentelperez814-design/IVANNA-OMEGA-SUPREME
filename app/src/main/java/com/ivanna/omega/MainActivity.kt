@@ -372,12 +372,13 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
                 if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
             },
             onEvoEnabledChange = { enabled ->
-                // FIX: no existe nativeStopEvoThread/nativePauseEvoThread en
-                // el binding — el hilo evolutivo, una vez arrancado en
-                // onCreate(), no se puede pausar desde Kotlin todavía. El
-                // toggle no tiene efecto real hasta que exista ese nativo;
-                // no se simula un pausado que no ocurre de verdad.
-                Log.w("OmegaApp", "Evo toggle=$enabled — sin nativeStopEvoThread en el binding, sin efecto real todavía")
+                // FIX: nativeStopEvoThread ya estaba declarado en
+                // IvannaNativeLib.kt (línea 97) — solo faltaba llamarlo
+                // desde el toggle. Ahora pausa/reanuda de verdad.
+                if (IvannaNativeLib.isLoaded) {
+                    if (enabled) IvannaNativeLib.nativeStartEvoThread()
+                    else IvannaNativeLib.nativeStopEvoThread()
+                }
             },
             onNpeBypassChange = { on -> npeBypassState = on },
             onNpeHarmonicChange = { v ->
