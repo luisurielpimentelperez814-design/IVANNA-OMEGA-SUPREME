@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -74,6 +75,7 @@ private val CyanGlow = Color(0xFF00F5FF)
 private val CyanDim = Color(0x3300F5FF)
 private val GoldGlow = Color(0xFFFFD700)
 private val MagentaGlow = Color(0xFFFF00FF)
+private val NeonMagenta  = Color(0xFFFF00FF)
 private val MagentaDim = Color(0x33FF00FF)
 private val TextPri = Color(0xFFFFFFFF)
 private val TextSec = Color(0xFF888888)
@@ -387,7 +389,7 @@ fun DashboardScreen(
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
-    val player = remember { IvannaBridgePlayer(LocalContext.current) }
+    val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
     var playerState by remember { mutableStateOf(player.state) }
     var currentUri  by remember { mutableStateOf<Uri?>(null) }
@@ -558,7 +560,7 @@ fun DashboardScreen(
             onResume = { player.resume() },
             onStop   = { player.stop() },
             queue    = queue,
-            queueIdx = queueIdx,
+            queueIndex = queueIdx,
             onPickQueue = { queuePicker.launch("audio/*") },
             onNext = {
                 val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
