@@ -12,6 +12,9 @@ import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -96,6 +99,16 @@ class IvannaBridgePlayer(private val context: Context) {
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
 
+    // --- Posición y duración reales para la barra de progreso ---
+    private val _currentPositionMs = MutableStateFlow(0L)
+    val currentPositionMs: StateFlow<Long> = _currentPositionMs.asStateFlow()
+
+    private val _durationMs = MutableStateFlow(0L)
+    val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+
+    // seekTarget: -1 = sin seek pendiente. seekTo() escribe aquí; el loop lo consume.
+    @Volatile private var seekTargetUs = -1L
+
     // FIX (reproducción consecutiva): cola real. play() sigue soportando
     // un solo Uri (comportamiento previo intacto); playQueue() agrega
     // avance automático real cuando el track termina por EOS natural
@@ -154,6 +167,21 @@ class IvannaBridgePlayer(private val context: Context) {
         state = State.PLAYING
     }
 
+    /**
+     * Solicita un salto a [positionMs] milisegundos.
+     * El decode loop lo consume en la próxima iteración:
+     *   - llama extractor.seekTo() en modo SEEK_TO_PREVIOUS_SYNC
+     *   - vacía el codec (flush + restart)
+     *   - actualiza currentPositionMs
+     * Si el reproductor estaba en PAUSED sigue en PAUSED (el caller de UI
+     * puede llamar resume() si lo desea tras el seek).
+     */
+    fun seekTo(positionMs: Long) {
+        val clamped = positionMs.coerceIn(0L, _durationMs.value)
+        _currentPositionMs.value = clamped
+        seekTargetUs = clamped * 1_000L
+    }
+
     fun stop() {
         stopRequested = true
         pauseRequested = false
@@ -199,6 +227,14 @@ class IvannaBridgePlayer(private val context: Context) {
                 return@withContext
             }
             extractor.selectTrack(trackIndex)
+
+            // Duración real del archivo (µs → ms). KEY_DURATION puede no existir en
+            // streams sin cabecera; si es así se deja en 0 (barra indeterminada en UI).
+            val rawDurationUs = if (format.containsKey(MediaFormat.KEY_DURATION))
+                format.getLong(MediaFormat.KEY_DURATION) else 0L
+            _durationMs.value = rawDurationUs / 1_000L
+            _currentPositionMs.value = 0L
+            seekTargetUs = -1L
 
             val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val sampleRate = TARGET_SAMPLE_RATE
@@ -279,6 +315,15 @@ class IvannaBridgePlayer(private val context: Context) {
                 while (pauseRequested && !stopRequested) delay(50)
                 if (stopRequested) break
 
+                // --- Seek pendiente ---
+                val pendingSeekUs = seekTargetUs
+                if (pendingSeekUs >= 0L) {
+                    seekTargetUs = -1L
+                    sawInputEOS = false
+                    extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    codec.flush()
+                }
+
                 if (!sawInputEOS) {
                     val inIndex = codec.dequeueInputBuffer(TIMEOUT_US)
                     if (inIndex >= 0) {
@@ -288,7 +333,9 @@ class IvannaBridgePlayer(private val context: Context) {
                             codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             sawInputEOS = true
                         } else {
-                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
+                            val sampleTimeUs = extractor.sampleTime
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, sampleTimeUs, 0)
+                            _currentPositionMs.value = sampleTimeUs / 1_000L
                             extractor.advance()
                         }
                     }
