@@ -360,14 +360,7 @@ fun DashboardScreen(
     val audioState by com.ivanna.omega.audio.AudioStateManager.audioState.collectAsState()
     val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
 
-    // FIX (telemetría 0% en Panel Adaptativo del Dashboard): AdaptiveBackend
-    // ya exponía StateFlow<AdaptiveTelemetry> real (10Hz, motor A), pero
-    // solo se instanciaba dentro de AdaptiveEngineScreen — MainActivity
-    // nunca lo consumía, así que IvannaControlPanel recibía siempre el
-    // default vacío de AdaptiveTelemetrySnapshot(). Instancia local con
-    // ciclo de vida atado a esta pantalla (arranca/para con el composable).
     val context = LocalContext.current
-    val adaptiveBackend = remember { AdaptiveBackend(context) }
     val antiDolbyController = remember {
         AntiDolbyController(context).also { ctrl ->
             ctrl.initialize()
