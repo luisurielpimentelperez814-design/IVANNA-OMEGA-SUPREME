@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -114,6 +115,11 @@ fun OmegaApp() {
         }
 
         val adaptiveBackend = remember { AdaptiveBackend(context) }
+        val voiceProtectionManager = remember {
+            com.ivanna.omega.audio.VoiceProtectionManager(
+                com.ivanna.omega.audio.ParameterStore(context)
+            )
+        }
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
@@ -143,7 +149,7 @@ fun OmegaApp() {
                     }
                     pendingBandProfileId = null
                 }
-                DashboardScreen(dsp, nav)
+                DashboardScreen(dsp, nav, adaptiveBackend, voiceProtectionManager)
             }
             composable("magisk") {
                 MagiskStatusPanel(
@@ -198,14 +204,8 @@ fun OmegaApp() {
                 }
             }
             composable("adaptive") {
-                val ctx = LocalContext.current
-                val voiceManager = remember(ctx) {
-                    com.ivanna.omega.audio.VoiceProtectionManager(
-                        com.ivanna.omega.audio.ParameterStore(ctx)
-                    )
-                }
                 com.ivanna.omega.ui.AdaptiveEngineScreen(
-                    voiceProtectionManager = voiceManager,
+                    voiceProtectionManager = voiceProtectionManager,
                     backend = adaptiveBackend,
                     modifier = Modifier
                         .fillMaxSize()
@@ -334,7 +334,12 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
 
 // ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
-fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHostController) {
+fun DashboardScreen(
+    dsp: MutableState<DSPState>,
+    nav: androidx.navigation.NavHostController,
+    adaptiveBackend: AdaptiveBackend,
+    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
+) {
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.value.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
@@ -342,6 +347,12 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
     // los callbacks NPE que lo usan viven en DashboardScreen, composable
     // distinto, sin visibilidad de ese estado. Declarado aquí, donde se usa.
     var npeBypassState by remember { mutableStateOf(false) }
+    // FIX: AdaptiveControlsCard del panel Dashboard (mode/intensity/voice)
+    // recibía siempre los defaults estáticos de IvannaControlPanel — cero
+    // conexión. Usa la misma fuente real que AdaptiveEngineScreen:
+    // AudioStateManager (StateFlow compartido) + VoiceProtectionManager.
+    val audioState by com.ivanna.omega.audio.AudioStateManager.audioState.collectAsState()
+    val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
 
     // FIX (telemetría 0% en Panel Adaptativo del Dashboard): AdaptiveBackend
     // ya exponía StateFlow<AdaptiveTelemetry> real (10Hz, motor A), pero
@@ -475,6 +486,24 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
             onOpenMagisk = { nav.navigate("magisk") },
             onOpenProfiles = { nav.navigate("profiles") },
+            adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
+            onAdaptiveModeChange = { uiMode ->
+                val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
+                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
+                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
+                    com.ivanna.omega.audio.AudioStateManager.audioState.value
+                )
+            },
+            adaptiveIntensity = audioState.adaptiveIntensity * 100f,
+            onAdaptiveIntensityChange = { percent ->
+                val v = percent / 100f
+                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
+                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
+                    com.ivanna.omega.audio.AudioStateManager.audioState.value
+                )
+            },
+            voiceProtectionEnabled = voiceActive,
+            onVoiceProtectionChange = { voiceProtectionManager.toggle() },
             routeState = routeState
         )
     }
