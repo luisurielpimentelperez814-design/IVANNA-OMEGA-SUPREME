@@ -121,7 +121,6 @@ class IvannaBridgePlayer(private val context: Context) {
             inputScaling      = 0.4f,
             leakRate          = 0.08f,
             threshold         = 1.0f,
-            resetPotential    = 0f,
             outputScaling     = 0.25f,  // conservador — no satura
             plasticityRate    = 0.003f,
             homeostasisRate   = 0.001f,
