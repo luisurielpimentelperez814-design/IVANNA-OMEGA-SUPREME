@@ -13,6 +13,7 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.audio.effects.NeuromorphicProcessingEngine
 import com.ivanna.omega.audio.effects.VolterraH2Processor
+import com.ivanna.omega.audio.VolterraSwitch
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -117,20 +118,19 @@ class IvannaBridgePlayer(private val context: Context) {
     @Volatile var npeKotlinEnabled: Boolean = false
     @Volatile var volterraEnabled: Boolean = false
     private val npeKotlin: NeuromorphicProcessingEngine by lazy {
-    private val volterraProcessor: VolterraH2Processor by lazy { VolterraH2Processor() }
         NeuromorphicProcessingEngine(
             neuronCount       = 64,
             spectralRadius    = 0.9f,
             inputScaling      = 0.4f,
             leakRate          = 0.08f,
             threshold         = 1.0f,
-            outputScaling     = 0.25f,  // conservador — no satura
+            outputScaling     = 0.25f,
             plasticityRate    = 0.003f,
             homeostasisRate   = 0.001f,
-            resonanceBankSize = 8,
-            seed              = 42L
+            resonanceBankSize = 8
         )
     }
+    private val volterraProcessor: VolterraH2Processor by lazy { VolterraH2Processor() }
 
     /** Actualiza parámetros del motor neuromórfico en tiempo real (thread-safe). */
     fun updateNpeKotlinParams(
@@ -415,7 +415,7 @@ class IvannaBridgePlayer(private val context: Context) {
                                     npeOut.copyInto(chunk)
 
                             // Volterra H2 (distorsión armónica)
-                            if (volterraEnabled) {
+                            if (VolterraSwitch.enabled) {
                                 val volterraOut = volterraProcessor.process(chunk)
                                 volterraOut.copyInto(chunk)
                             }
