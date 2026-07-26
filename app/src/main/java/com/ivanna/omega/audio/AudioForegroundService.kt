@@ -59,7 +59,7 @@ class AudioForegroundService : Service() {
             val tracker = IvannaHeadTracker(applicationContext)
             tracker.init()
             tracker.start()
-            IvannaSpatialEngine.shared.setHeadTracker(tracker)
+            IvannaSpatialEngine.setHeadTracker(tracker)
             headTracker = tracker
         }
 
