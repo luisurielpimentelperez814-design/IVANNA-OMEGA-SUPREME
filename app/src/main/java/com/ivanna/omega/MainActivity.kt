@@ -39,6 +39,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.audio.AdaptiveBackend
+import com.ivanna.omega.neuromorphic.IvannaDspManager
+import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import com.ivanna.omega.audio.toSnapshot
 import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.neuromorphic.PiLstmBridge
@@ -376,10 +378,27 @@ fun DashboardScreen(
     }
     DisposableEffect(Unit) {
         adaptiveBackend.startTelemetry()
-        onDispose { adaptiveBackend.stopTelemetry() }
+        // Parche 6: iniciar cDSP Hexagon si disponible (no-op si no hay hardware)
+        try {
+            if (IvannaDspManager.open()) IvannaDspManager.enable()
+        } catch (_: Throwable) {}
+        onDispose {
+            adaptiveBackend.stopTelemetry()
+            try { IvannaDspManager.close() } catch (_: Throwable) {}
+        }
     }
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
+
+    // Parche 5a: métricas agregadas del BridgePlayer
+    val playerPositionMs by player.currentPositionMs.collectAsState()
+    val playerDurationMs by player.durationMs.collectAsState()
+    val omegaMetrics by player.omegaMetrics.collectAsState()
+
+    // Parche 5c: snapshot tipado para el control panel
+    val telemetrySnapshot = remember(adaptiveTelemetryRaw) {
+        AdaptiveTelemetrySnapshot.fromAdaptiveTelemetry(adaptiveTelemetryRaw)
+    }
 
     val paramStore = remember { ParameterStore(context) }
 

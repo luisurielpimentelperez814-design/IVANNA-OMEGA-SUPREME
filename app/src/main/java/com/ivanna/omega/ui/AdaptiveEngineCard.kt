@@ -79,6 +79,22 @@ data class AdaptiveTelemetrySnapshot(
                 appliedCount = t[9].toLong()
             )
         }
+
+        /** Conversión directa desde AdaptiveTelemetry (datos en vivo del motor). */
+        fun fromAdaptiveTelemetry(t: com.ivanna.omega.audio.AdaptiveTelemetry, appliedCount: Long = 0L) =
+            AdaptiveTelemetrySnapshot(
+                running              = t.motorRunning,
+                rms                  = t.rms,
+                peak                 = t.peakDb,
+                gainReductionDb      = t.grDb,
+                targetGain           = t.targetGain,
+                compressorAmount     = t.compAmount,
+                exciterReduction     = t.excReduction,
+                spatialWidth         = t.spatialWidth,
+                safetyMargin         = t.safetyMargin,
+                voiceProtectionAmount= t.voiceProtect,
+                appliedCount         = appliedCount
+            )
     }
 }
 

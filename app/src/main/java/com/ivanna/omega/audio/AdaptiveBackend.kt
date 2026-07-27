@@ -49,6 +49,10 @@ class AdaptiveBackend(context: Context) {
     private val _telemetry = MutableStateFlow(AdaptiveTelemetry())
     val telemetry: StateFlow<AdaptiveTelemetry> = _telemetry
 
+    // Parche 8: score real de VoiceProtectionController
+    @Volatile private var voiceProtectionScore: Float = 0f
+    fun setVoiceProtectionScore(score: Float) { voiceProtectionScore = score }
+
     private var telemetryRunnable: Runnable? = null
     private var manualModeActive = false
 
@@ -93,7 +97,7 @@ class AdaptiveBackend(context: Context) {
                 excReduction = src[5],
                 spatialWidth = src[6],
                 safetyMargin = src[7],
-                voiceProtect = src[8],
+                voiceProtect = if (src[8] == 0f && voiceProtectionScore > 0f) voiceProtectionScore else src[8],
                 motorRunning = motorActive
             )
         } catch (e: Throwable) {

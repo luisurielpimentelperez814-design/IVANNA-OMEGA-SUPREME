@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * VoiceProtectionController — protege la inteligibilidad de la voz en el
@@ -52,6 +55,10 @@ class VoiceProtectionController(context: Context) {
     private val monoBuffer = FloatArray(YAMNET_INPUT_LENGTH)
     private var bufferFill = 0
     private var smoothedScore = 0f
+
+    // Parche 4: score de voice protection observable desde el exterior
+    private val _voiceScore = MutableStateFlow(0f)
+    val voiceScore: StateFlow<Float> = _voiceScore.asStateFlow()
 
     @Volatile var enabled = true
 
@@ -126,6 +133,7 @@ class VoiceProtectionController(context: Context) {
                             val raw = if (result.speech > SPEECH_THRESHOLD) result.speech else 0f
                             smoothedScore += EMA_ALPHA * (raw - smoothedScore)
                             DSPBridge.setVoiceProtectScore(smoothedScore)
+                            _voiceScore.value = smoothedScore
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Error clasificando: ${e.message}")

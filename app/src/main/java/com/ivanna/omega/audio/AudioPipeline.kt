@@ -10,6 +10,9 @@ import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.sqrt
 
 /**
@@ -50,6 +53,11 @@ class AudioPipeline {
     @Volatile private var dspState = DSPState()
     @Volatile private var lastRms = 0f
     @Volatile private var lastLatencyMs = 0f
+
+    // Parche 3b: resultado de clasificación Yamnet observable desde el exterior
+    data class YamnetResult(val speech: Float = 0f, val music: Float = 0f, val bass: Float = 0f, val valid: Boolean = false)
+    private val _yamnetResult = MutableStateFlow(YamnetResult())
+    val yamnetResult: StateFlow<YamnetResult> = _yamnetResult.asStateFlow()
 
     // FIX: buffer para downsample 48kHz→16kHz para YAMNet
     private val yamnetBuffer = FloatArray(15600)  // 0.975s @ 16kHz
@@ -238,6 +246,7 @@ class AudioPipeline {
             // FIX: enviar scores al orquestador nativo
             try {
                 AudioEngine.nativeSetAntiDolbyScoresStatic(speechScore, musicScore, bassScore)
+                _yamnetResult.value = YamnetResult(speechScore, musicScore, bassScore, true)
             } catch (_: Exception) {}
         }
     }
