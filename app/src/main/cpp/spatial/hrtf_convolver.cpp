@@ -166,8 +166,13 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
                             float* outputL, float* outputR,
                             uint32_t numSamples) noexcept {
     if (!filterInitialized_ || !inputL || !inputR || !outputL || !outputR || numSamples == 0) {
-        if (outputL != inputL) std::memcpy(outputL, inputL, numSamples * sizeof(float));
-        if (outputR != inputR) std::memcpy(outputR, inputR, numSamples * sizeof(float));
+        // FIX defensivo: antes se hacía memcpy incondicional aquí, pero si la
+        // razón de entrar a este bypass era justamente inputL/inputR nulos
+        // (una de las condiciones de arriba), el memcpy siguiente crasheaba
+        // por leer de un puntero nulo. Ahora solo copia si los punteros de
+        // entrada Y salida son válidos.
+        if (inputL && outputL && outputL != inputL) std::memcpy(outputL, inputL, numSamples * sizeof(float));
+        if (inputR && outputR && outputR != inputR) std::memcpy(outputR, inputR, numSamples * sizeof(float));
         return;
     }
 
