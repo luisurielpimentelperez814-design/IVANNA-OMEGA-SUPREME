@@ -135,3 +135,8 @@ dependencies {
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
 }
+
+dependencies {
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-video:2.5.0")
+}
