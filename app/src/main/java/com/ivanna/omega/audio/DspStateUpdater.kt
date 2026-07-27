@@ -105,6 +105,7 @@ class DspStateUpdater {
         }
     }
 
+    /**
      * Forzar actualización sin debounce (para cambios críticos)
      */
     fun forceUpdate(newState: AudioState) {
