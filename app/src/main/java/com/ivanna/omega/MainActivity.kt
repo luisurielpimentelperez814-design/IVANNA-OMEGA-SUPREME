@@ -381,6 +381,8 @@ fun DashboardScreen(
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
+    val paramStore = remember { ParameterStore(context) }
+
     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
@@ -549,7 +551,34 @@ fun DashboardScreen(
             onNpeManifoldChange = { enabled ->
                 com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
             },
-            routeState = routeState
+            routeState = routeState,
+            initialAutoMode  = paramStore.isAutoModeEnabled(),
+            initialOmegaMode = paramStore.getOmegaMode(),
+            onPresetSelected = { presetName ->
+                val profile = ProfilesLoader.load(context)
+                    .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
+                if (profile != null) {
+                    dsp.value = dsp.value.copy(
+                        wet         = profile.audioEngine.exciterAmount,
+                        low         = profile.audioEngine.eqGain,
+                        mid         = profile.audioEngine.eqGain,
+                        high        = profile.audioEngine.eqGain,
+                        presence    = profile.audioEngine.eqGain,
+                        stereoWidth = profile.audioEngine.widthAmount
+                    )
+                    dsp.value.pushToNative()
+                }
+            },
+            onAutoModeChange = { enabled ->
+                paramStore.setAutoModeEnabled(enabled)
+                com.ivanna.omega.audio.AudioStateManager.updateState {
+                    it.copy(manualModeEnabled = !enabled)
+                }
+            },
+            onOmegaModeChange = { mode ->
+                paramStore.setOmegaMode(mode)
+                OmegaEngineBridge.setIntensity(mode / 2f)
+            }
         )
 
         // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
