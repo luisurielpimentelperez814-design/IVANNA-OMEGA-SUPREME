@@ -41,7 +41,7 @@ internal fun AdaptiveEngineScreen(
     // Iniciar/parar telemetría con el ciclo de vida de la pantalla
     DisposableEffect(Unit) {
         backend.startTelemetry()
-        backend.restoreState()?.let { saved ->
+        backend.restoreState()?.let { saved: AudioState ->
             AudioStateManager.updateState { saved }
             manualModeEnabled = saved.manualModeEnabled
             if (saved.manualModeEnabled) {
