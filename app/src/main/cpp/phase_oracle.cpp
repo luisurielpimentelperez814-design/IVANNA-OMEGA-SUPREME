@@ -59,6 +59,34 @@ void kalmanPredict() {
 
     g_kalman.state[0] = s0 + DT * s1 + HALF_DT_SQ * s2;
     g_kalman.state[1] = s1 + DT * s2;
+    // state[2] (aceleración) se mantiene: modelo de aceleración constante.
+
+    // FIX (covarianza nunca se propagaba): faltaba P = F·P·Fᵀ + Q.
+    // Sin este paso, P solo podía encogerse en kalmanUpdate() (nunca
+    // crecer de vuelta), así que con suficientes bloques P→0, la ganancia
+    // de Kalman K→0, y el filtro dejaba de confiar en mediciones nuevas
+    // — quedándose "congelado" extrapolando el último estado. Además,
+    // Q (seteable desde Kotlin via nativeSetPhaseParameters) nunca se
+    // usaba en ningún cálculo: ahora sí entra aquí.
+    const auto& F = g_kalman.F;
+    const auto& Q = g_kalman.Q;
+    float FP[3][3];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            FP[i][j] = F[i][0] * g_kalman.P[0][j]
+                     + F[i][1] * g_kalman.P[1][j]
+                     + F[i][2] * g_kalman.P[2][j];
+        }
+    float Pnew[3][3];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            // (F·P)·Fᵀ : Fᵀ[k][j] = F[j][k]
+            Pnew[i][j] = FP[i][0] * F[j][0]
+                       + FP[i][1] * F[j][1]
+                       + FP[i][2] * F[j][2]
+                       + Q[i][j];
+        }
+    memcpy(g_kalman.P, Pnew, sizeof(Pnew));
 }
 
 __attribute__((hot, flatten))

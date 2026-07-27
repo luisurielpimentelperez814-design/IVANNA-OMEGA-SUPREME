@@ -477,14 +477,22 @@ class IvannaBridgePlayer(private val context: Context) {
                                     val npeIn = chunk.copyOf()
                                     val npeOut = npeKotlin.process(npeIn)
                                     npeOut.copyInto(chunk)
-
-                            // Volterra H2 (distorsión armónica)
-                            if (VolterraSwitch.enabled) {
-                                val volterraOut = volterraProcessor.process(chunk)
-                                volterraOut.copyInto(chunk)
-                            }
                                 } catch (e: Exception) {
                                     android.util.Log.e("IVANNA_DSP", "Crash NPE-Kotlin evitado: ${e.message}")
+                                }
+                            }
+
+                            // Volterra H2 (distorsión armónica) — FIX: antes vivía anidado
+                            // dentro de "if (npeKotlinEnabled)" por una llave mal cerrada,
+                            // así que si el usuario activaba Volterra pero NO el NPE-Kotlin,
+                            // el efecto nunca se ejecutaba a pesar del switch encendido.
+                            // Ahora es independiente, como indica VolterraSwitch.enabled.
+                            if (VolterraSwitch.enabled) {
+                                try {
+                                    val volterraOut = volterraProcessor.process(chunk)
+                                    volterraOut.copyInto(chunk)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("IVANNA_DSP", "Crash Volterra evitado: ${e.message}")
                                 }
                             }
                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {

@@ -267,6 +267,17 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
     const float dt = 1.0f / (float)gState.sampleRate;
 
+    // FIX (Anti-Dolby fantasma): antiDolby.tick() nunca se llamaba en
+    // producción — solo en el test dsp_core_stability.cpp. Sin esta llamada,
+    // updateFromClassification() (alimentada por el clasificador YAMNet vía
+    // JNI) actualizaba targetWidener, pero widenerMultiplier —el atomic que
+    // el hilo de audio SÍ lee más abajo— nunca se movía de su valor inicial
+    // 1.0f. El ensanchado adaptativo por voz/música/graves estaba cableado
+    // de punta a punta pero no producía ningún efecto audible. Se llama una
+    // vez por bloque (no por sample) con dt = duración real del bloque, para
+    // que el suavizado attack/release converja a la cadencia correcta.
+    gState.antiDolby.tick(dt * (float)frames);
+
     // Anti-Dolby v1.5: downmix inteligente si channelCount > 2
     // Layout Android típico: FL(0) FR(1) FC(2) LFE(3) BL(4) BR(5) SL(6) SR(7)
     if (channels > 2) {
