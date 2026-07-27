@@ -45,6 +45,20 @@ class VoiceController(private val context: Context) {
      * más adecuado para el contenido detectado por YAMNet, o "none" si la
      * confianza es baja o el clasificador no está disponible.
      */
+    /** Devuelve (hint, result) para que el llamador pueda empujar
+     *  los scores raw a OmegaEngineBridge sin duplicar la clasificación. */
+    fun processAudioWithScores(
+        audioBuffer: FloatArray
+    ): Pair<String, YamnetClassifier.ClassificationResult> {
+        val result = classifier.classify(audioBuffer)
+        val hint = if (!result.isValid) "none" else when {
+            result.music  > 0.7f -> "music_mode"
+            result.speech > 0.7f -> "flat_mode"
+            else                 -> "none"
+        }
+        return hint to result
+    }
+
     fun processAudio(audioBuffer: FloatArray): String {
         val result = classifier.classify(audioBuffer)
         if (!result.isValid) return "none"

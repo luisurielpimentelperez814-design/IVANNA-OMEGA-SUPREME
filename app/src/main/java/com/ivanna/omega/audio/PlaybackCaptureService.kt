@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
 
@@ -320,7 +321,16 @@ class PlaybackCaptureService : Service() {
             }
         }
         if (voiceWindowFill >= voiceWindow.size) {
-            val hint = vc.processAudio(voiceWindow)
+            val (hint, scores) = vc.processAudioWithScores(voiceWindow)
+            // Empujar scores raw al daemon para que adapte su procesamiento
+            // en tiempo real (SET_AI_VOICE_SCORE/MUSIC_SCORE/YAMNET_CONF).
+            // classId=0: YamnetClassifier no expone ID numérico directamente.
+            OmegaEngineBridge.pushYamnetScores(
+                speech     = scores.speech,
+                music      = scores.music,
+                classId    = 0,
+                confidence = maxOf(scores.speech, scores.music)
+            )
             if (hint != "none") vc.executeCommand(hint)
             voiceWindowFill = 0
         }
