@@ -7,11 +7,9 @@ object ParameterValidator {
     fun validateCompressor(threshold: Float, ratio: Float, attack: Float, release: Float) =
         Triple(
             threshold.safe(-30f, -60f, 0f),
-            ratio.safe(4f, 1f, 20f)
-        ) to Pair(
-            attack.safe(10f, 0.1f, 500f),
-            release.safe(100f, 1f, 2000f)
-        )
+            ratio.safe(4f, 1f, 20f),
+            attack.safe(10f, 0.1f, 500f)
+        ) to release.safe(100f, 1f, 2000f)
 
     fun validateEQ(bass: Float, mid: Float, treble: Float, master: Float) =
         listOf(

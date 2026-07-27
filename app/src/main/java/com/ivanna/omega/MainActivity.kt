@@ -39,6 +39,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.ivanna.omega.audio.AdaptiveBackend
+import com.ivanna.omega.audio.AudioState
+import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.neuromorphic.IvannaDspManager
 import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import com.ivanna.omega.audio.toSnapshot
