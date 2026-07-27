@@ -240,8 +240,9 @@ jobs:
           test -f "$DAEMON_SRC"
 
           "$CXX" -std=c++17 -O3 \
-            -fPIE -fvisibility=hidden \
+            -fPIE \
             -pie \
+            -rtlib=compiler-rt \
             -Wl,-z,relro,-z,now \
             "$DAEMON_SRC" \
             -llog \
