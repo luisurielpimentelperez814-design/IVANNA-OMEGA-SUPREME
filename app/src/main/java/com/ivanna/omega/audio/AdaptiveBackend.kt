@@ -155,12 +155,13 @@ class AdaptiveBackend(context: Context) {
     // Ahora se usa un setter JNI dedicado que solo toca low/mid/high/master
     // y solo reconfigura g_eq/g_gain — nunca toca compresor/exciter/widener.
     private fun applyEQ(state: AudioState) {
+        if (!IvannaNativeLib.isLoaded) return
         try {
             IvannaNativeLib.nativeSetEQParams(
-                state.eqBass,     // low shelf (dB)
-                state.eqMid,      // mid peak (dB)
-                state.eqTreble,   // high shelf (dB)
-                state.masterGain  // master gain
+                state.eqBass.coerceIn(-18f, 18f),
+                state.eqMid.coerceIn(-18f, 18f),
+                state.eqTreble.coerceIn(-18f, 18f),
+                state.masterGain.coerceIn(0.1f, 2f)
             )
         } catch (e: Throwable) {
             Log.w(TAG, "applyEQ: motor no disponible todavía")

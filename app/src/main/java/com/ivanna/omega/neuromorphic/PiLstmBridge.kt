@@ -50,22 +50,23 @@ object PiLstmBridge {
     // ── NPE completo ────────────────────────────────────────────────
     fun setMasterGain(db: Float)  { if (ready) nativeSetEta(db / 18f + 0.5f) }  // -18..18 dB → 0..1
     fun setAgc(targetDb: Float, rate: Float) {
-        // Las llamadas nativas nativeSetNPMax/nativeSetDelta producen SIGSEGV
-        // en dispositivos donde el .so cargó parcialmente. Se sustituyen por
-        // lógica Kotlin pura hasta que el motor nativo esté estabilizado.
-        // El AGC se aplica escalando el outputScaling del NPE Kotlin.
         if (!ready) return
         try {
-            // nativeSetNPMax(targetDb / -36f) ← CRASH — deshabilitado
-            // nativeSetDelta(rate)            ← CRASH — deshabilitado
-            // Alternativa segura: ajustar ganancia del NPE Kotlin
-            val gain = (targetDb / -36f).coerceIn(0f, 1f)
-            com.ivanna.omega.audio.IvannaBridgePlayer.activeInstance
-                ?.updateNpeKotlinParams(outputScaling = gain * 0.5f)
+            val safeTarget = if (targetDb.isFinite()) targetDb.coerceIn(-36f, 0f) else -18f
+            val safeRate   = if (rate.isFinite()) rate.coerceIn(0f, 1f) else 0.5f
+            val gain = (safeTarget / -36f).coerceIn(0f, 1f)
+            val inst = com.ivanna.omega.audio.IvannaBridgePlayer.activeInstance
+            if (inst != null) {
+                runCatching { inst.updateNpeKotlinParams(outputScaling = gain * 0.5f) }
+                    .onFailure {
+                        android.util.Log.w(TAG, "AGC updateNpe: ${it.message}")
+                    }
+            }
         } catch (t: Throwable) {
             android.util.Log.e("IVANNA_OMEGA_LSTM", "setAgc safe fallback error", t)
         }
     }
+
     fun setAdaptEnabled(en: Boolean) {
         if (ready) IvannaNativeLib.nativeSetAdaptEnabled(en)
     }

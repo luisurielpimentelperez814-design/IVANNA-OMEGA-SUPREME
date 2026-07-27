@@ -41,77 +41,70 @@ class DspStateUpdater {
      * Aplicar actualización (solo parámetros que cambiaron)
      */
     private fun applyUpdate(newState: AudioState) {
-        // FIX (bb4fa6b): antes "val lastState = lastState ?: AudioState()"
-        // sombreaba la propiedad de la clase con un val local, y la
-        // reasignación "lastState = newState" al final del bloque try
-        // intentaba mutar ese val — error de compilación garantizado
-        // (val cannot be reassigned). snapshot != propiedad de instancia.
         val previousState = lastState ?: AudioState()
-        
+        if (!IvannaNativeLib.isLoaded) {
+            lastState = newState
+            return
+        }
         try {
-            // Calcular deltas
             val deltas = mutableMapOf<String, Float>()
-            
+
+            fun safeCompressor() = runCatching {
+                IvannaNativeLib.nativeSetCompressorParams(
+                    newState.compressorThreshold.coerceIn(-60f, 0f),
+                    newState.compressorRatio.coerceIn(1f, 20f),
+                    newState.compressorAttack.coerceIn(0.1f, 500f),
+                    newState.compressorRelease.coerceIn(1f, 2000f)
+                )
+            }.onFailure { Log.w(TAG, "comp native: ${it.message}") }
+
             if (newState.compressorThreshold != previousState.compressorThreshold) {
                 deltas["threshold"] = newState.compressorThreshold
-                // FIX (bb4fa6b): nativeSetCompressorParams pide 4 argumentos
-                // (threshold, ratio, attackMs, releaseMs) — llamaba con 2,
-                // error de compilación (firma real en jni/ivanna_omega_jni.cpp
-                // linea ~822). Se usan attack/release del propio AudioState.
-                IvannaNativeLib.nativeSetCompressorParams(
-                    newState.compressorThreshold,
-                    newState.compressorRatio,
-                    newState.compressorAttack,
-                    newState.compressorRelease
-                )
+                safeCompressor()
             }
-            
             if (newState.compressorRatio != previousState.compressorRatio) {
                 deltas["ratio"] = newState.compressorRatio
-                IvannaNativeLib.nativeSetCompressorParams(
-                    newState.compressorThreshold,
-                    newState.compressorRatio,
-                    newState.compressorAttack,
-                    newState.compressorRelease
-                )
+                safeCompressor()
             }
-            
+
             if (newState.exciterAmount != previousState.exciterAmount) {
                 deltas["exciter"] = newState.exciterAmount
-                IvannaNativeLib.nativeSetHarmonicGain(newState.exciterAmount)
+                runCatching {
+                    IvannaNativeLib.nativeSetHarmonicGain(
+                        newState.exciterAmount.coerceIn(0f, 1f)
+                    )
+                }.onFailure { Log.w(TAG, "harmonic native: ${it.message}") }
             }
-            
+
             if (newState.spatialWidth != previousState.spatialWidth) {
                 deltas["spatial_width"] = newState.spatialWidth
-                IvannaNativeLib.nativeSetSpatialWidthDirect(newState.spatialWidth)
+                runCatching {
+                    IvannaNativeLib.nativeSetSpatialWidthDirect(
+                        newState.spatialWidth.coerceIn(0f, 2f)
+                    )
+                }.onFailure { Log.w(TAG, "spatial native: ${it.message}") }
             }
-            
+
             if (newState.eqBass != previousState.eqBass ||
                 newState.eqMid != previousState.eqMid ||
                 newState.eqTreble != previousState.eqTreble) {
-                // Aplicar EQ (si existe método nativo)
-                // IvannaNativeLib.nativeSetEQ(newState.eqBass, newState.eqMid, newState.eqTreble)
                 deltas["eq"] = newState.eqBass + newState.eqMid + newState.eqTreble
             }
-            
+
             if (newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
                 deltas["voice_protection"] = if (newState.voiceProtectionEnabled) 1f else 0f
-                // Aplicar voice protection
             }
-            
-            // Log de delta updates
+
             if (deltas.isNotEmpty()) {
                 Log.d(TAG, "📡 Delta update enviado: ${deltas.keys.joinToString(", ")}")
             }
-            
+
             lastState = newState
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error en applyUpdate", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "❌ Error en applyUpdate", t)
         }
     }
-    
-    /**
+
      * Forzar actualización sin debounce (para cambios críticos)
      */
     fun forceUpdate(newState: AudioState) {
