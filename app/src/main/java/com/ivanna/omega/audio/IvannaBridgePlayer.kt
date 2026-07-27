@@ -87,6 +87,9 @@ class IvannaBridgePlayer(private val context: Context) {
         private const val TIMEOUT_US = 10_000L
         private const val TARGET_SAMPLE_RATE = 96_000
         private const val MAX_CHUNK_FRAMES = 2048
+
+        /** Última instancia activa — usada por PiLstmBridge para AGC seguro. */
+        @Volatile var activeInstance: IvannaBridgePlayer? = null
     }
 
     enum class State { IDLE, PLAYING, PAUSED, STOPPED, ERROR }
@@ -188,6 +191,7 @@ class IvannaBridgePlayer(private val context: Context) {
 
     /** Reproduce el archivo en [uri]. Cancela cualquier reproducción previa. */
     fun play(uri: Uri) {
+        activeInstance = this
         stop()
         stopRequested = false
         pauseRequested = false
@@ -233,6 +237,7 @@ class IvannaBridgePlayer(private val context: Context) {
     }
 
     fun release() {
+        if (activeInstance === this) activeInstance = null
         stop()
         runCatching { voiceProtection?.release() }
         scope.cancel()
