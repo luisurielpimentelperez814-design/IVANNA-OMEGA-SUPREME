@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -110,6 +111,15 @@ class AdaptiveBackend(context: Context) {
         dspUpdater.requestUpdate(modulated)
         applyEQ(modulated)
         persistState(modulated)
+        // Empujar estado al daemon omega_daemon via OmegaEngineBridge:
+        // masterGain   → SET_AI_RUNTIME_GAIN  (rango 0.5..1.0)
+        // compRatio    → SET_AI_RUNTIME_COMP  (normalizado 1..20 → 0..1)
+        // exciterAmount → SET_AI_RUNTIME_EXCRED (reducción = 1 - amount)
+        OmegaEngineBridge.pushAdaptiveState(
+            targetGain = modulated.masterGain.coerceIn(0.5f, 1.0f),
+            compAmount = ((modulated.compressorRatio - 1f) / 19f).coerceIn(0f, 1f),
+            excRed     = (1f - modulated.exciterAmount).coerceIn(0f, 1f)
+        )
         Log.d(TAG, "Manual: ratio=%.2f exciter=%.2f width=%.2f".format(
             modulated.compressorRatio, modulated.exciterAmount, modulated.spatialWidth))
     }
@@ -123,6 +133,11 @@ class AdaptiveBackend(context: Context) {
         dspUpdater.forceUpdate(modulated)
         applyEQ(modulated)
         persistState(modulated)
+        OmegaEngineBridge.pushAdaptiveState(
+            targetGain = modulated.masterGain.coerceIn(0.5f, 1.0f),
+            compAmount = ((modulated.compressorRatio - 1f) / 19f).coerceIn(0f, 1f),
+            excRed     = (1f - modulated.exciterAmount).coerceIn(0f, 1f)
+        )
     }
 
     // ── EQ en tiempo real: nativeSetEQParams(low, mid, high, master) ────────
