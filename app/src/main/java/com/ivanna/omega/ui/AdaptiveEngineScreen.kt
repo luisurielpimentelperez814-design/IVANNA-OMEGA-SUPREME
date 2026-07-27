@@ -332,7 +332,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.2f".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(spatialWidth = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(audioState.copy(spatialWidth = v))
                     }
                 )
                 AuroraSlider(
@@ -342,7 +342,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.2fx".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(masterGain = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(audioState.copy(masterGain = v))
                     }
                 )
             } else {
