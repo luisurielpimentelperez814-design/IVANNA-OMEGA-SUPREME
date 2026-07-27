@@ -390,11 +390,6 @@ fun DashboardScreen(
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
-    // Parche 5a: métricas agregadas del BridgePlayer
-    val playerPositionMs by player.currentPositionMs.collectAsState()
-    val playerDurationMs by player.durationMs.collectAsState()
-    val omegaMetrics by player.omegaMetrics.collectAsState()
-
     // Parche 5c: snapshot tipado para el control panel
     val telemetrySnapshot = remember(adaptiveTelemetryRaw) {
         AdaptiveTelemetrySnapshot.fromAdaptiveTelemetry(adaptiveTelemetryRaw)
@@ -405,6 +400,11 @@ fun DashboardScreen(
     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
+
+    // Parche 5a: métricas agregadas del BridgePlayer (después de player)
+    val playerPositionMs by player.currentPositionMs.collectAsState()
+    val playerDurationMs by player.durationMs.collectAsState()
+    val omegaMetrics by player.omegaMetrics.collectAsState()
     var playerState by remember { mutableStateOf(player.state) }
     var currentUri  by remember { mutableStateOf<Uri?>(null) }
     var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
