@@ -38,11 +38,11 @@ class AudioEngine {
 
         fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
             if (!libLoaded) return
-            try {
-                nativeSetRouteProfileJni(bassBoostDb, dialogBoostDb, widenerMult)
-            } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "nativeSetRouteProfileStatic JNI no disponible")
-            }
+            val b = if (bassBoostDb.isFinite()) bassBoostDb.coerceIn(-18f, 18f) else 0f
+            val d = if (dialogBoostDb.isFinite()) dialogBoostDb.coerceIn(-18f, 18f) else 0f
+            val w = if (widenerMult.isFinite()) widenerMult.coerceIn(0f, 3f) else 1f
+            runCatching { nativeSetRouteProfileJni(b, d, w) }
+                .onFailure { Log.w(TAG, "nativeSetRouteProfileStatic: $it") }
         }
 
         @JvmStatic
@@ -72,11 +72,17 @@ class AudioEngine {
     }
 
     fun setGain(gain: Float) {
-        if (libLoaded) nativeSetGain(gain)
+        if (!libLoaded) return
+        val safe = if (gain.isFinite()) gain.coerceIn(-24f, 24f) else 0f
+        runCatching { nativeSetGain(safe) }
+            .onFailure { Log.e(TAG, "setGain crash-guard: $it") }
     }
 
     fun setMasterGain(gain: Float) {
-        if (libLoaded) nativeSetGain(gain)
+        if (!libLoaded) return
+        val safe = if (gain.isFinite()) gain.coerceIn(-24f, 24f) else 0f
+        runCatching { nativeSetGain(safe) }
+            .onFailure { Log.e(TAG, "setMasterGain crash-guard: $it") }
     }
 
     fun setBypass(bypass: Boolean) {

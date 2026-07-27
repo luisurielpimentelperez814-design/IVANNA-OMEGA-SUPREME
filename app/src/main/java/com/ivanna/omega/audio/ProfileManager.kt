@@ -94,13 +94,16 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
      */
     fun loadProfiles(): Boolean {
         return try {
-            val inputStream = context.resources.openRawResource(
-                context.resources.getIdentifier(
-                    "audio_profiles",
-                    "raw",
-                    context.packageName
-                )
+            val resId = context.resources.getIdentifier(
+                "audio_profiles", "raw", context.packageName
             )
+            if (resId == 0) {
+                Log.e(TAG, "Recurso raw/audio_profiles no encontrado")
+                profiles = emptyMap()
+                metadata = null
+                return false
+            }
+            val inputStream = context.resources.openRawResource(resId)
             val reader = InputStreamReader(inputStream)
             val json = Json {
                 ignoreUnknownKeys = true
@@ -132,11 +135,16 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
         }
 
         return try {
+            // Validar floats del JSON antes de JNI (valores corruptos crashean)
+            val gain    = profile.audioEngine.gain.takeIf { it.isFinite() } ?: 0f
+            val exciter = profile.audioEngine.exciterAmount.takeIf { it.isFinite() } ?: 0.3f
+            val eqGain  = profile.audioEngine.eqGain.takeIf { it.isFinite() } ?: 0f
+            val width   = profile.audioEngine.widthAmount.takeIf { it.isFinite() } ?: 0.5f
             // Aplicar parámetros de AudioEngine
-            audioEngine.setGain(profile.audioEngine.gain)
-            audioEngine.setExciter(profile.audioEngine.exciterAmount)
-            audioEngine.setEqGain(profile.audioEngine.eqGain)
-            audioEngine.setWidth(profile.audioEngine.widthAmount)
+            audioEngine.setGain(gain)
+            audioEngine.setExciter(exciter)
+            audioEngine.setEqGain(eqGain)
+            audioEngine.setWidth(width)
             audioEngine.setBypass(profile.audioEngine.bypass)
 
             // Aplicar ruta de audio
