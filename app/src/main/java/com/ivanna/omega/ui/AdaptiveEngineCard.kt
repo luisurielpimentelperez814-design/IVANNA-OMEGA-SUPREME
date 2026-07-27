@@ -98,9 +98,6 @@ data class AdaptiveTelemetrySnapshot(
     }
 }
 
-enum class AdaptiveMode(val label: String) {
-    OFF("OFF"), NATURAL("NATURAL"), STUDIO("STUDIO"), EXTREME("EXTREME")
-}
 
 // ── Tarjeta de estado + telemetría (Fase 2) ─────────────────────────────────
 

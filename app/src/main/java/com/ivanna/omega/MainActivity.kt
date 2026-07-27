@@ -540,7 +540,7 @@ fun DashboardScreen(
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
             onOpenMagisk = { nav.navigate("magisk") },
             onOpenProfiles = { nav.navigate("profiles") },
-            adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
+            adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
             onAdaptiveModeChange = { uiMode ->
                 val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
