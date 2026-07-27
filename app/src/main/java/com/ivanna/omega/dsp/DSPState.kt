@@ -91,12 +91,34 @@ data class DSPState(
         // Actualizar AudioEffect sessions (Spotify/YouTube/etc) con sliders actuales.
         // mid == EQ global dB (la UI setea low=mid=high=presence al mismo valor).
         // alpha/beta → compressor threshold/ratio con la misma formula que el C++.
-        globalEffectManager?.adjustLiveParams(
-            eqGainDb        = mid,
-            stereoWidth     = stereoWidth,
-            compThresholdDb = -24f + alpha * 24f,
-            compRatio       = 1f + beta * 19f
-        )
+        //
+        // FIX (causa real confirmada del crash/trabazón al mover sliders o
+        // aplicar un perfil): el comentario de arriba decía que esto ya iba
+        // a appScope, pero la llamada seguía siendo síncrona acá mismo, en
+        // el hilo que invoca pushToNative() — que es el hilo principal tanto
+        // para los onValueChange de los sliders (MainActivity) como para
+        // ProfileManagerBridge.applyProfile() (dispara desde el onClick de
+        // seleccionar perfil). adjustLiveParams() itera TODAS las sesiones
+        // de audio activas (Spotify/YouTube/etc.) y por cada una hace varias
+        // llamadas AudioEffect.set*() — cada una es una llamada Binder al
+        // audio HAL del sistema. Con una sesión externa activa y arrastrando
+        // un slider a 60fps, o al aplicar un perfil, esto podía saturar el
+        // hilo principal el tiempo suficiente para que el sistema matara el
+        // proceso (ANR). Ahora se despacha a IVANNAApplication.appScope
+        // (Dispatchers.IO), igual que ya hace LearningBias.captureCorrection()
+        // para su propio I/O.
+        val eqGainDbSnapshot = mid
+        val stereoWidthSnapshot = stereoWidth
+        val compThresholdDbSnapshot = -24f + alpha * 24f
+        val compRatioSnapshot = 1f + beta * 19f
+        IVANNAApplication.appScope.launch {
+            globalEffectManager?.adjustLiveParams(
+                eqGainDb        = eqGainDbSnapshot,
+                stereoWidth     = stereoWidthSnapshot,
+                compThresholdDb = compThresholdDbSnapshot,
+                compRatio       = compRatioSnapshot
+            )
+        }
 
         // FIX (crash): trySend es non-blocking y O(1).
         // Channel(CONFLATED) en IVANNAApplication descarta valores intermedios
