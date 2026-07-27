@@ -105,6 +105,8 @@ class AntiDolbyController(private val context: Context) {
         // Iniciar job de clasificación periódica
         startClassificationLoop()
         CinematicEngineHost.start(context, sampleRate = AudioPipeline.SAMPLE_RATE)
+    }
+    /**
      * Deshabilita el sistema Anti-Dolby adaptativo.
      * Cancela el job de clasificación y resetea parámetros.
      */
