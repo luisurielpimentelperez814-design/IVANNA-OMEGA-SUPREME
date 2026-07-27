@@ -46,7 +46,33 @@ import com.ivanna.omega.audio.PipelineState
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlin.math.log10
+
+private data class NpeTelemetrySnapshot(
+    val genre: String,
+    val rmsDb: Float,
+    val agcGainDb: Float,
+    val classifyConfidence: Float,
+    val classifyThd: Float,
+)
+
+private data class EvoTelemetrySnapshot(
+    val fitness: Float,
+    val generation: Int,
+)
+
+private data class PanelNativeTelemetrySnapshot(
+    val spatialState: String,
+    val phaseState: Float,
+    val mutationRate: Float,
+    val evoBestFitness: Float,
+    val bandEnergies: FloatArray,
+    val clipCount: Int,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,48 +184,79 @@ fun IvannaControlPanel(
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(800)
-        while (true) {
-            npeGenre = IvannaNpeEngine.getDetectedGenre()
-            val m = IvannaNpeEngine.getMetrics()
-            val rmsLin = m.getOrElse(1) { 0f }
-            npeRmsDb = if (rmsLin > 1e-6f) (20f * log10(rmsLin)) else -60f
-            val agcLin = m.getOrElse(2) { 1f }
-            npeAgcGainDb = if (agcLin > 1e-6f) (20f * log10(agcLin)) else 0f
-            val c = IvannaNpeEngine.getSynthClassify()
-            npeClassifyConfidence = c.getOrElse(1) { 0f }
-            npeClassifyThd = c.getOrElse(2) { 0f }
+        delay(800)
+        while (isActive) {
+            val snapshot = withContext(Dispatchers.Default) {
+                val genre = IvannaNpeEngine.getDetectedGenre()
+                val metrics = IvannaNpeEngine.getMetrics()
+                val rmsLin = metrics.getOrElse(1) { 0f }
+                val agcLin = metrics.getOrElse(2) { 1f }
+                val classify = IvannaNpeEngine.getSynthClassify()
+                NpeTelemetrySnapshot(
+                    genre = genre,
+                    rmsDb = if (rmsLin > 1e-6f) (20f * log10(rmsLin)) else -60f,
+                    agcGainDb = if (agcLin > 1e-6f) (20f * log10(agcLin)) else 0f,
+                    classifyConfidence = classify.getOrElse(1) { 0f },
+                    classifyThd = classify.getOrElse(2) { 0f },
+                )
+            }
+            npeGenre = snapshot.genre
+            npeRmsDb = snapshot.rmsDb
+            npeAgcGainDb = snapshot.agcGainDb
+            npeClassifyConfidence = snapshot.classifyConfidence
+            npeClassifyThd = snapshot.classifyThd
             rmsHistory.removeAt(0)
-            rmsHistory.add(npeRmsDb)
-            kotlinx.coroutines.delay(750)
+            rmsHistory.add(snapshot.rmsDb)
+            delay(750)
         }
     }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1200)
-        while (true) {
-            try {
-                evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
-                evoGeneration = IvannaNativeLib.nativeGetGeneration()
-            } catch (e: Throwable) {
-                Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
+        delay(1200)
+        while (isActive) {
+            val snapshot = withContext(Dispatchers.Default) {
+                try {
+                    EvoTelemetrySnapshot(
+                        fitness = IvannaNativeLib.nativeGetBestFitness().toFloat(),
+                        generation = IvannaNativeLib.nativeGetGeneration(),
+                    )
+                } catch (e: Throwable) {
+                    Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
+                    null
+                }
             }
-            kotlinx.coroutines.delay(2000)
+            if (snapshot != null) {
+                evoFitness = snapshot.fitness
+                evoGeneration = snapshot.generation
+            }
+            delay(2000)
         }
     }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(500)
-        while (true) {
+        delay(500)
+        while (isActive) {
             if (IvannaNativeLib.isLoaded) {
-                try { spatialStateStr = IvannaNativeLib.nativeGetSpatialState() } catch (_: Throwable) {}
-                try { phaseState      = IvannaNativeLib.nativeGetPhaseState()   } catch (_: Throwable) {}
-                try { mutationRate    = IvannaNativeLib.nativeGetMutationRate() } catch (_: Throwable) {}
-                try { evoBestFitness  = IvannaNativeLib.nativeGetEvoBestFitness() } catch (_: Throwable) {}
-                try { bandEnergies    = IvannaNativeLib.nativeGetBandEnergies() ?: FloatArray(0) } catch (_: Throwable) {}
-                try { clipCount       = IvannaNativeLib.nativeGetClipCount()   } catch (_: Throwable) {}
+                val snapshot = withContext(Dispatchers.Default) {
+                    PanelNativeTelemetrySnapshot(
+                        spatialState = runCatching { IvannaNativeLib.nativeGetSpatialState() }.getOrDefault("—"),
+                        phaseState = runCatching { IvannaNativeLib.nativeGetPhaseState() }.getOrDefault(0f),
+                        mutationRate = runCatching { IvannaNativeLib.nativeGetMutationRate() }.getOrDefault(0f),
+                        evoBestFitness = runCatching { IvannaNativeLib.nativeGetEvoBestFitness() }.getOrDefault(0f),
+                        bandEnergies = runCatching { IvannaNativeLib.nativeGetBandEnergies() ?: FloatArray(0) }.getOrDefault(FloatArray(0)),
+                        clipCount = runCatching { IvannaNativeLib.nativeGetClipCount() }.getOrDefault(0),
+                    )
+                }
+                spatialStateStr = snapshot.spatialState
+                phaseState = snapshot.phaseState
+                mutationRate = snapshot.mutationRate
+                evoBestFitness = snapshot.evoBestFitness
+                if (!bandEnergies.contentEquals(snapshot.bandEnergies)) {
+                    bandEnergies = snapshot.bandEnergies
+                }
+                clipCount = snapshot.clipCount
             }
-            kotlinx.coroutines.delay(500)
+            delay(500)
         }
     }
 
