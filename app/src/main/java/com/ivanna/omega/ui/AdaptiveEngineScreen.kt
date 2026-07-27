@@ -1,5 +1,8 @@
 package com.ivanna.omega.ui
 
+import com.ivanna.omega.audio.AudioState
+
+
 import android.content.Context
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
