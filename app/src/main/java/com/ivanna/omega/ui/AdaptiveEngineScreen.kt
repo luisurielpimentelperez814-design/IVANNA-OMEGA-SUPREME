@@ -35,7 +35,7 @@ internal fun AdaptiveEngineScreen(
     val context = LocalContext.current
     val backend = backend ?: remember { AdaptiveBackend(context) }
     val telemetry by backend.telemetry.collectAsState()
-    val audioState by AudioStateManager.audioState.collectAsState()
+    val audioState by AudioStateManager.state.collectAsState()
     var manualModeEnabled by remember { mutableStateOf(audioState.manualModeEnabled) }
 
     // Iniciar/parar telemetría con el ciclo de vida de la pantalla
