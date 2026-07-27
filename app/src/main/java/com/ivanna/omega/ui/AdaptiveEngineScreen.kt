@@ -190,7 +190,7 @@ internal fun AdaptiveEngineScreen(
                         onCheckedChange = {
                             AudioStateManager.updateState { it.copy(adaptiveMode = mode) }
                             if (manualModeEnabled)
-                                backend.applyManualState(AudioStateManager.audioState.value)
+                                backend.applyManualState(AudioStateManager.state.value)
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -204,7 +204,7 @@ internal fun AdaptiveEngineScreen(
                 onValueChange = { v ->
                     AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
                     if (manualModeEnabled)
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                 }
             )
         }
@@ -222,7 +222,7 @@ internal fun AdaptiveEngineScreen(
                     checked = manualModeEnabled,
                     onCheckedChange = { enabled ->
                         manualModeEnabled = enabled
-                        val updatedState = AudioStateManager.audioState.value.copy(manualModeEnabled = enabled)
+                        val updatedState = AudioStateManager.state.value.copy(manualModeEnabled = enabled)
                         AudioStateManager.updateState { updatedState }
                         try {
                             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
@@ -245,7 +245,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.0f dB".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(compressorThreshold = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
@@ -255,7 +255,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.1f:1".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(compressorRatio = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
@@ -265,7 +265,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.0f ms".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(compressorAttack = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
@@ -275,7 +275,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.0f ms".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(compressorRelease = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 Spacer(Modifier.height(6.dp))
@@ -290,7 +290,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%+.1f dB".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(eqBass = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
@@ -300,7 +300,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%+.1f dB".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(eqMid = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
@@ -310,7 +310,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%+.1f dB".format(it) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(eqTreble = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 Spacer(Modifier.height(6.dp))
@@ -322,7 +322,7 @@ internal fun AdaptiveEngineScreen(
                     displayValue = { "%.0f%%".format(it * 100f) },
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(exciterAmount = v) }
-                        backend.applyManualState(AudioStateManager.audioState.value)
+                        backend.applyManualState(AudioStateManager.state.value)
                     }
                 )
                 AuroraSlider(
