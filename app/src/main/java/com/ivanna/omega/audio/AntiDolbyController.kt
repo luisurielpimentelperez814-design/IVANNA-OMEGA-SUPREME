@@ -57,6 +57,7 @@ class AntiDolbyController(private val context: Context) {
     // Buffer circular para acumular frames @ 16kHz
     private var audioBuffer: FloatArray? = null
     private var bufferIndex = 0
+    private val bufferLock = Any()
 
     /**
      * Inicializa YamnetClassifier y AudioEngine.
@@ -139,27 +140,29 @@ class AntiDolbyController(private val context: Context) {
             return
         }
 
-        val buffer = audioBuffer ?: return
-        
-        // Escribir frame en buffer circular
-        var src = 0
-        var remaining = audioFrame.size
-        
-        while (remaining > 0) {
-            val canWrite = minOf(remaining, YAMNET_INPUT_LENGTH - bufferIndex)
-            System.arraycopy(audioFrame, src, buffer, bufferIndex, canWrite)
-            
-            bufferIndex += canWrite
-            src += canWrite
-            remaining -= canWrite
-            
-            // Si buffer está lleno, ejecutar clasificación
-            if (bufferIndex >= YAMNET_INPUT_LENGTH) {
-                classifyBuffer(buffer)
-                bufferIndex = 0
+        // FIX (crash HFTR): serializar lecturas/escrituras del buffer
+        synchronized(bufferLock) {
+            val buffer = audioBuffer ?: return
+            var src = 0
+            var remaining = audioFrame.size
+            while (remaining > 0) {
+                val space = YAMNET_INPUT_LENGTH - bufferIndex
+                if (space <= 0) { bufferIndex = 0; continue }
+                val canWrite = minOf(remaining, space, audioFrame.size - src)
+                if (canWrite <= 0) break
+                System.arraycopy(audioFrame, src, buffer, bufferIndex, canWrite)
+                bufferIndex += canWrite
+                src += canWrite
+                remaining -= canWrite
+                if (bufferIndex >= YAMNET_INPUT_LENGTH) {
+                    val snapshot = buffer.copyOf()
+                    bufferIndex = 0
+                    scope.launch { classifyBuffer(snapshot) }
+                }
             }
         }
     }
+
 
     /**
      * Clasifica el buffer actual y actualiza AudioEngine.
@@ -244,12 +247,18 @@ class AntiDolbyController(private val context: Context) {
         classificationJob = scope.launch {
             try {
                 while (isActive && isAntiDolbyEnabled) {
-                    // Cada 100ms, si hay datos en buffer, clasificar
-                    if (bufferIndex > YAMNET_INPUT_LENGTH / 2) {
-                        // Buffer al menos medio lleno: procesar
-                        val buffer = audioBuffer ?: break
-                        classifyBuffer(buffer)
-                        bufferIndex = 0
+                    // FIX (crash HFTR): tomar snapshot bajo lock, procesar fuera
+                    val snapshot: FloatArray? = synchronized(bufferLock) {
+                        val buf = audioBuffer
+                        if (buf != null && bufferIndex > YAMNET_INPUT_LENGTH / 2) {
+                            val copy = buf.copyOf()
+                            bufferIndex = 0
+                            copy
+                        } else null
+                    }
+                    if (snapshot != null) {
+                        runCatching { classifyBuffer(snapshot) }
+                            .onFailure { Log.w(TAG, "classify loop: ${it.message}") }
                     }
                     delay(CLASSIFICATION_INTERVAL_MS)
                 }

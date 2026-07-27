@@ -26,7 +26,10 @@ import com.ivanna.omega.audio.IvannaAudioProfile
 class ProfileManagerBridge(context: Context) {
 
     private val TAG = "ProfileManagerBridge"
-    private val manager = ProfileManager(context, com.ivanna.omega.audio.AudioEngine())
+    private val manager = ProfileManager(
+        context,
+        com.ivanna.omega.audio.AudioEngine().apply { runCatching { initialize() } }
+    )
 
     /** Perfiles en formato IvannaAudioProfile para ProfileSelectorScreen */
     val ivannaProfiles: List<IvannaAudioProfile> = ProfilesLoader.load(context)
