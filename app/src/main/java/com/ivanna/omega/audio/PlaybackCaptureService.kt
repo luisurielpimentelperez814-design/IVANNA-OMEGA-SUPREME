@@ -98,6 +98,15 @@ class PlaybackCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
+        // Sin intent = reinicio START_STICKY tras muerte del proceso.
+        // El token MediaProjection no sobrevive — arrancar sin él crashea en
+        // Android 14+ (startForeground tipo mediaProjection sin sesión viva).
+        // Detener limpiamente; el usuario reabrirá la captura cuando quiera.
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         // AUDIT FIX (crítico, crash confirmado justo después de conceder el
         // permiso de captura de pantalla): en Android 14+ el orden es
         // OBLIGATORIO y estaba invertido. Documentación oficial
@@ -135,7 +144,7 @@ class PlaybackCaptureService : Service() {
 
         startCapture(mediaProjection)
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
