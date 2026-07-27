@@ -8,7 +8,7 @@ import com.ivanna.omega.audio.AudioProfile
 import com.ivanna.omega.audio.ProfileManager
 import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.dsp.DSPState
-import com.ivanna.omega.ui.IvannaAudioProfile
+import com.ivanna.omega.audio.IvannaAudioProfile
 
 /**
  * ProfileManagerBridge — Puente real entre ProfileManager (legacy JSON)
