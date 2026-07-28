@@ -1038,7 +1038,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     g_comp.setRelease(releaseMs);
 }
 
-// NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo.
+// NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo,
+// y mezcla wet del efecto espacial NHO.
 // Se declaran explícitas (no reusar nativeSetGamma/nativeSetDelta, que ya
 // tienen semántica normalizada [0..1]→grados heredada de la UI PI-LSTM v1).
 JNIEXPORT void JNICALL
@@ -1051,6 +1052,20 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
     JNIEnv*, jobject, jfloat width) {
     g_pd.set_spatial_width(width);
+}
+
+// ── nativeSetSpatialWet — nivel wet del efecto NHO/espacial [0..1] ───────────
+// Faltaba: IvannaNativeLib.kt declara este external fun sin símbolo JNI.
+// Controla la mezcla dry/wet del procesamiento espacial NHO dentro del pd_engine.
+// 0.0 = completamente dry (bypass espacial), 1.0 = señal espacializada pura.
+// nativeSetEta ya usaba g_pd.set_nho_wet() con semántica de η de la ODE,
+// pero nativeSetSpatialWet es el control explícito de wet expuesto en la UI
+// GlassCard de espacialización — semánticamente distinto aunque misma función.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
+    JNIEnv*, jobject, jfloat v) {
+    if (!std::isfinite(v)) return;
+    g_pd.set_nho_wet(std::clamp(v, 0.0f, 1.0f));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

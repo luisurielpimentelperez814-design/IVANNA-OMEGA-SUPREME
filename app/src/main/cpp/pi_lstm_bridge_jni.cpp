@@ -70,6 +70,31 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetDelta(JNIEnv*, jobject,
     g_piLstmBridge.set_delta(v);
 }
 
+// ── nativeSetEta — amortiguamiento η de la ODE (rango 0..5) ─────────────────
+// Faltaba: Kotlin declara nativeSetEta() en PiLstmBridge pero no había símbolo.
+// η controla la tasa de disipación del estado oculto entre pasos RK4 — a
+// mayor η, más agresivo el decaimiento; 0 = sin disipación.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetEta(JNIEnv*, jobject, jfloat v) {
+    if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return;
+    g_piLstmBridge.set_eta(v);
+}
+
+// ── nativeSetNPMax — techo neuroplástico NP_max (rango 0.1..10) ─────────────
+// Faltaba: Kotlin declara nativeSetNPMax() en PiLstmBridge pero no había símbolo.
+// NP_max define el rango de saturación del estado oculto h ∈ [-NP_max, NP_max].
+// También es el denominador de la saturación normalizada publicada por nativeGetNpSat.
+// Al cambiarlo se invalida la semilla del estimador de residual (dt grande próxima
+// consulta → guarda automáticamente un nuevo punto de referencia).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
+    if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return;
+    g_piLstmBridge.set_np_max(v);
+    // Invalidar la semilla del estimador de residual: con un NP_max distinto,
+    // la normalización cambia y el h_pred anterior ya no es comparable.
+    g_residual_seed = false;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHarmonicGain(JNIEnv*, jobject, jfloat v) {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return;

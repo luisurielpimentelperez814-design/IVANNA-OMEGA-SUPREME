@@ -182,6 +182,11 @@ static struct {
     float widthAmount = 0.0f;
     bool bypass = false;
     AntiDolbyState antiDolby;
+    // Fase H: flag de habilitación del NeuroCochlear Manifold en la ruta
+    // del orquestador (distinto de la habilitación interna del NPE engine,
+    // que tiene su propio setManifoldEnabled). Este flag controla si la UI
+    // puede activar procesamiento adicional a través del AudioEngine.
+    std::atomic<bool> manifoldEnabled{false};
 } gState;
 
 // ── JNI: inicialización ───────────────────────────────────────────────────────
@@ -479,4 +484,16 @@ extern "C" void ivanna_set_anti_dolby_scores(float speech, float music, float ba
 extern "C" void ivanna_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) {
     if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) return;
     control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+}
+
+// ── Símbolo externo para el stub JNI: habilitación del Manifold ──────────────
+// Llamado desde ivanna_jni_stub.cpp → AudioEngine instance (no @JvmStatic).
+// El flag se almacena en gState.manifoldEnabled (atomic<bool>); el audio
+// thread o el NPE pueden consultarlo via ivanna_manifold_enabled().
+extern "C" void ivanna_set_manifold_enabled(bool enabled) {
+    gState.manifoldEnabled.store(enabled, std::memory_order_release);
+    LOGI("ivanna_set_manifold_enabled: %s", enabled ? "true" : "false");
+}
+extern "C" bool ivanna_manifold_enabled() {
+    return gState.manifoldEnabled.load(std::memory_order_acquire);
 }

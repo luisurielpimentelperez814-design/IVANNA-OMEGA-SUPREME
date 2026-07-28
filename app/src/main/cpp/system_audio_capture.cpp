@@ -89,3 +89,18 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_SystemAudioCapture_nativeGetLastPeakDb(JNIEnv* env, jobject /*thiz*/) {
     return g_last_peak_db.load();
 }
+
+// ── nativeResetMetrics — reinicia métricas de RMS/peak y buffer circular ─────
+// Faltaba en la Fase G: Kotlin declara resetMetrics() pero no había símbolo.
+// Útil al cambiar de sesión de captura o al reiniciar la app entre pistas,
+// para que la UI no muestre lecturas rancias de una sesión anterior.
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_SystemAudioCapture_nativeResetMetrics(JNIEnv* /*env*/, jobject /*thiz*/) {
+    std::lock_guard<std::mutex> lock(g_buffer_mutex);
+    g_last_rms_db.store(0.0f,    std::memory_order_relaxed);
+    g_last_peak_db.store(-120.0f, std::memory_order_relaxed);
+    g_write_pos.store(0, std::memory_order_relaxed);
+    g_read_pos.store(0,  std::memory_order_relaxed);
+    memset(g_audio_buffer, 0, sizeof(g_audio_buffer));
+    LOGI("nativeResetMetrics: RMS/peak y buffer circular reiniciados");
+}

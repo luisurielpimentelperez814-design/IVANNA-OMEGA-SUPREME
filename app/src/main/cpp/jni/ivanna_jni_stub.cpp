@@ -20,12 +20,13 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Símbolo externo definido en audio_orchestrator.cpp
+// Símbolos externos definidos en audio_orchestrator.cpp
 #ifdef __cplusplus
 extern "C" {
 #endif
     void ivanna_set_anti_dolby_scores(float speech, float music, float bass);
     void ivanna_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult);
+    void ivanna_set_manifold_enabled(bool enabled);
 #ifdef __cplusplus
 }
 #endif
@@ -63,6 +64,38 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfileJni(
     ivanna_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
     LOGI("RouteProfile via stub: bass=%.2f dialog=%.2f widener=%.2f",
          bassBoostDb, dialogBoostDb, widenerMult);
+}
+
+// ── nativeSetRouteProfile (instancia AudioEngine, no @JvmStatic) ─────────────
+// La versión @JvmStatic ya existe (nativeSetRouteProfileJni → companion object).
+// Este símbolo cubre el external fun de INSTANCIA declarado en AudioEngine.kt:
+//   private external fun nativeSetRouteProfile(...)
+// Misma semántica: delega a ivanna_set_route_profile() → control plane.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jfloat bassBoostDb, jfloat dialogBoostDb, jfloat widenerMult
+) {
+    if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) {
+        LOGE("nativeSetRouteProfile (instance): valores NaN/Inf — ignorado");
+        return;
+    }
+    ivanna_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+    LOGI("RouteProfile (instance): bass=%.2f dialog=%.2f widener=%.2f",
+         bassBoostDb, dialogBoostDb, widenerMult);
+}
+
+// ── nativeSetManifoldEnabled (instancia AudioEngine) ─────────────────────────
+// Faltaba: AudioEngine.kt declara este external fun sin símbolo JNI.
+// Permite a la UI activar/desactivar el NeuroCochlear Manifold desde el
+// hilo de Kotlin sin tocar el NPE (que tiene su propia bandera interna).
+// El flag vive en gState.manifoldEnabled (atomic<bool>, audio_orchestrator.cpp)
+// y se puede consultar desde cualquier lugar via ivanna_manifold_enabled().
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifoldEnabled(
+    JNIEnv* /*env*/, jobject /*thiz*/, jboolean enabled
+) {
+    ivanna_set_manifold_enabled(enabled == JNI_TRUE);
 }
 
 } // extern "C"
