@@ -137,6 +137,10 @@ fun OmegaApp() {
         val context = LocalContext.current
         // Launcher MediaProjection para PlaybackCaptureService
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
+        // FIX (audit): estado global — visible por DashboardScreen para
+        // renderizar banner STANDBY / botón ACTIVAR y por composable("dashboard")
+        // para auto-lanzar la MediaProjection la primera vez.
+        var captureActive by remember { mutableStateOf(false) }
         val projectionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -146,8 +150,12 @@ fun OmegaApp() {
                     putExtra("data", result.data)
                 }
                 context.startForegroundService(intent)
+                captureActive = true
             }
-            nav.popBackStack()
+            // FIX (audit): eliminado nav.popBackStack() — sacaba al usuario de
+            // la pantalla actual justo al conceder la MediaProjection. El
+            // launcher se dispara desde composable("dashboard") vía
+            // LaunchedEffect, no desde una pantalla temporal.
         }
 
         val adaptiveBackend = remember { AdaptiveBackend(context) }
@@ -166,6 +174,17 @@ fun OmegaApp() {
                 }
             }
             composable("dashboard") {
+                // FIX (audit): en cold-enter al dashboard, si aún no hay
+                // captura activa lanzamos MediaProjection una sola vez. El
+                // callback del projectionLauncher marca captureActive=true
+                // y NO hace popBackStack — el usuario se queda en dashboard.
+                LaunchedEffect(Unit) {
+                    if (!captureActive) {
+                        projectionLauncher.launch(
+                            projectionManager.createScreenCaptureIntent()
+                        )
+                    }
+                }
                 LaunchedEffect(pendingBandProfileId) {
                     val profileId = pendingBandProfileId ?: return@LaunchedEffect
                     val profile = ProfilesLoader.load(context).find { it.id == profileId }
@@ -185,7 +204,15 @@ fun OmegaApp() {
                     }
                     pendingBandProfileId = null
                 }
-                DashboardScreen(dsp, nav, adaptiveBackend, voiceProtectionManager)
+                DashboardScreen(
+                    dsp, nav, adaptiveBackend, voiceProtectionManager,
+                    captureActive = captureActive,
+                    onStartCapture = {
+                        projectionLauncher.launch(
+                            projectionManager.createScreenCaptureIntent()
+                        )
+                    }
+                )
             }
             composable("magisk") {
                 MagiskStatusPanel(
@@ -426,7 +453,12 @@ fun DashboardScreen(
     dsp: MutableState<DSPState>,
     nav: androidx.navigation.NavHostController,
     adaptiveBackend: AdaptiveBackend,
-    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
+    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager,
+    // FIX (audit): estado real de la captura MediaProjection + callback
+    // para relanzarla desde el banner STANDBY. Defaults preservados para
+    // no romper previews / call sites externos.
+    captureActive: Boolean = false,
+    onStartCapture: () -> Unit = {}
 ) {
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.value.wet > 0.01f
@@ -522,6 +554,41 @@ fun DashboardScreen(
                     color = Color(0xFFFF4444), fontSize = 11.sp)
             }
         }
+        // ── Banner STANDBY — visible hasta que PlaybackCaptureService corra ──
+        // FIX (audit): DSP quedaba en STANDBY sin señal porque el
+        // PlaybackCaptureService nunca arrancaba (la MediaProjection sólo
+        // se lanzaba desde composable("visualizer") con popBackStack).
+        // Este banner + botón ACTIVAR asegura reintento visible sin scroll.
+        if (!captureActive) {
+            Card(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0800)),
+                border = BorderStroke(1.dp, Color(0xFFFF6600))
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("DSP · STANDBY",
+                            color = Color(0xFFFF6600), fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Text("Sin captura activa — toca ACTIVAR para iniciar",
+                            color = Color(0xFFAA4400), fontSize = 9.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = onStartCapture,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF6600)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("ACTIVAR", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         // Header
         Row(Modifier.fillMaxWidth().background(Surface2)
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -564,6 +631,42 @@ fun DashboardScreen(
                 ) { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
             }
         }
+
+        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
+        // FIX (audit): re-ubicado como PRIMER hijo del Column funcional
+        // (tras el banner STANDBY y el header). Antes estaba al final y el
+        // usuario tenía que scrollear todo el IvannaControlPanel para verlo,
+        // así que en la práctica nadie lo encontraba.
+        BridgePlayerCard(
+            playerState = playerState,
+            currentUri  = currentUri,
+            onPickFile  = { singlePicker.launch("audio/*") },
+            onPlay = {
+                val uri = currentUri
+                if (uri != null) {
+                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
+                    else player.play(uri)
+                }
+            },
+            onPause  = { player.pause() },
+            onResume = { player.resume() },
+            onStop   = { player.stop() },
+            queue    = queue,
+            queueIndex = queueIdx,
+            onPickQueue = { queuePicker.launch("audio/*") },
+            onNext = {
+                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
+                if (nextIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
+                }
+            },
+            onPrev = {
+                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
+                if (prevIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
+                }
+            }
+        )
 
         // FIX (esta no era la interfaz): IvannaControlPanel v3.0 existía
         // completa en ui/IvannaControlPanel.kt — 517 líneas, Anillo OMNI,
@@ -739,38 +842,6 @@ fun DashboardScreen(
             onOmegaModeChange = { mode ->
                 paramStore.setOmegaMode(mode)
                 OmegaEngineBridge.setIntensity(mode / 2f)
-            }
-        )
-
-        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
-        BridgePlayerCard(
-            playerState = playerState,
-            currentUri  = currentUri,
-            onPickFile  = { singlePicker.launch("audio/*") },
-            onPlay = {
-                val uri = currentUri
-                if (uri != null) {
-                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
-                    else player.play(uri)
-                }
-            },
-            onPause  = { player.pause() },
-            onResume = { player.resume() },
-            onStop   = { player.stop() },
-            queue    = queue,
-            queueIndex = queueIdx,
-            onPickQueue = { queuePicker.launch("audio/*") },
-            onNext = {
-                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
-                if (nextIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
-                }
-            },
-            onPrev = {
-                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
-                if (prevIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
-                }
             }
         )
     }
