@@ -197,7 +197,7 @@ fun MagiskStatusPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ActionButton("STATUS", MagiskBridge.isDaemonRunning && !actionInFlight) {
+            ActionButton("STATUS", daemonRunning && !actionInFlight) {
                 actionInFlight = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { MagiskBridge.getStatus() }
