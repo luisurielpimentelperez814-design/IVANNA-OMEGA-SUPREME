@@ -10,8 +10,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.audio.AdaptiveMode
+import com.ivanna.omega.audio.AntiDolbyController
 import com.ivanna.omega.audio.AudioPipeline
+import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
+import androidx.compose.ui.platform.LocalContext
+import kotlin.math.PI
 import kotlinx.coroutines.delay
 
 // ⚙️ 1. OPE DSP: Ecualizador y Compresor
@@ -33,23 +38,83 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
             delay(2000)
         }
     }
+    // FIX (audit): antes los cuatro Sliders de esta pantalla tenían
+    // onValueChange = { /* TODO: Bind to AudioStateManager */ } y
+    // value fijo. Se cablean al StateFlow real de AudioStateManager y
+    // se empuja el cambio al motor nativo por la misma ruta que ya usa
+    // AdaptiveBackend.applyEQ / applyManualState:
+    //   - eqBass/eqMid/eqTreble  -> nativeSetEQParams(low, mid, high, master)
+    //   - compressorThreshold    -> nativeSetCompressorParams(th, ratio, attack, release)
+    // Rangos: EQ ±12 dB (mismo que AdaptiveEngineScreen.kt:320-345),
+    // threshold -40..0 dB (AdaptiveEngineScreen.kt:275).
+    val audioState by AudioStateManager.state.collectAsState()
+    fun pushEqNative(s: com.ivanna.omega.audio.AudioState) {
+        if (!IvannaNativeLib.isLoaded) return
+        runCatching {
+            IvannaNativeLib.nativeSetEQParams(
+                s.eqBass.coerceIn(-18f, 18f),
+                s.eqMid.coerceIn(-18f, 18f),
+                s.eqTreble.coerceIn(-18f, 18f),
+                s.masterGain.coerceIn(0.1f, 2f)
+            )
+        }
+    }
+    fun pushCompNative(s: com.ivanna.omega.audio.AudioState) {
+        if (!IvannaNativeLib.isLoaded) return
+        runCatching {
+            IvannaNativeLib.nativeSetCompressorParams(
+                s.compressorThreshold.coerceIn(-60f, 0f),
+                s.compressorRatio.coerceIn(1f, 20f),
+                s.compressorAttack.coerceIn(0.1f, 500f),
+                s.compressorRelease.coerceIn(1f, 2000f)
+            )
+        }
+    }
     Column(modifier = modifier.padding(16.dp)) {
         Text("OPE DSP: Ecualizador", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        
-        Text("Ganancia Graves (Low)")
-        Slider(value = 0.5f, onValueChange = { /* TODO: Bind to AudioStateManager.eqLow */ })
-        
-        Text("Ganancia Medios (Mid)")
-        Slider(value = 0.5f, onValueChange = { /* TODO: Bind to AudioStateManager.eqMid */ })
-        
-        Text("Ganancia Agudos (High)")
-        Slider(value = 0.5f, onValueChange = { /* TODO: Bind to AudioStateManager.eqHigh */ })
+
+        Text("Ganancia Graves (Low)  %+.1f dB".format(audioState.eqBass))
+        Slider(
+            value = audioState.eqBass,
+            valueRange = -12f..12f,
+            onValueChange = { v ->
+                AudioStateManager.updateState { it.copy(eqBass = v) }
+                pushEqNative(AudioStateManager.getCurrentState())
+            }
+        )
+
+        Text("Ganancia Medios (Mid)  %+.1f dB".format(audioState.eqMid))
+        Slider(
+            value = audioState.eqMid,
+            valueRange = -12f..12f,
+            onValueChange = { v ->
+                AudioStateManager.updateState { it.copy(eqMid = v) }
+                pushEqNative(AudioStateManager.getCurrentState())
+            }
+        )
+
+        Text("Ganancia Agudos (High)  %+.1f dB".format(audioState.eqTreble))
+        Slider(
+            value = audioState.eqTreble,
+            valueRange = -12f..12f,
+            onValueChange = { v ->
+                AudioStateManager.updateState { it.copy(eqTreble = v) }
+                pushEqNative(AudioStateManager.getCurrentState())
+            }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
         Text("OPE DSP: Compresor", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Umbral (Threshold) dB")
-        Slider(value = 0.8f, onValueChange = { /* TODO: Bind to AudioStateManager.compThreshold */ })
+        Text("Umbral (Threshold)  %.0f dB".format(audioState.compressorThreshold))
+        Slider(
+            value = audioState.compressorThreshold,
+            valueRange = -40f..0f,
+            onValueChange = { v ->
+                AudioStateManager.updateState { it.copy(compressorThreshold = v) }
+                pushCompNative(AudioStateManager.getCurrentState())
+            }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
         Text("Kernel Evolutivo (Motor Ω)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -67,10 +132,15 @@ fun BinauralScreen(modifier: Modifier = Modifier) {
     // (ivanna_omega_jni.cpp:1017) pero el switch de esta pantalla nunca la
     // llamaba — quedaba como puro estado visual sin efecto en el motor.
     var hrtfEnabled by remember { mutableStateOf(true) }
+    // FIX (audit): el slider "Ángulo Espacial" antes era Slider(0.7f, TODO).
+    // Se cablea a nativeSetSpatialAngleRad (IvannaNativeLib.kt:118), con la
+    // misma fórmula que ya usa MainActivity.kt:642 para el mismo control
+    // en el dashboard: rad = (v - 0.5) * 2π, con v ∈ [0,1] (0.5 = frente).
+    var angleNorm by remember { mutableStateOf(0.5f) }
     Column(modifier = modifier.padding(16.dp)) {
         Text("Motor Binaural (HRTF)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Activar HRTF 32-Obj", modifier = Modifier.weight(1f))
             Switch(checked = hrtfEnabled, onCheckedChange = { on ->
@@ -80,30 +150,80 @@ fun BinauralScreen(modifier: Modifier = Modifier) {
                 }
             })
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Ángulo Espacial")
-        Slider(value = 0.7f, onValueChange = { /* TODO: Bind to AudioStateManager.hrtfAngle */ })
+        val degrees = (angleNorm - 0.5f) * 360f
+        Text("Ángulo Espacial  %+.0f°".format(degrees))
+        Slider(
+            value = angleNorm,
+            valueRange = 0f..1f,
+            onValueChange = { v ->
+                angleNorm = v
+                if (IvannaNativeLib.isLoaded && hrtfEnabled) {
+                    val rad = (v - 0.5f) * 2f * PI.toFloat()
+                    runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
+                }
+            }
+        )
     }
 }
 
 // 🧠 3. MOTOR ADAPTATIVO: Anti-Dolby y Perfiles
+//
+// NOTA DE AUDITORÍA: esta pantalla NO está montada en el NavHost de
+// MainActivity.kt (:250-290 sólo monta telemetry/ope/binaural/auditory/
+// lab/adaptive_dash). Es huérfana de ruta — el usuario nunca la ve.
+// Cablearla igual porque los controles ya sólo compilaban como máscara
+// y, si alguien añade la ruta "adaptive_profiles", tiene que operar.
 @Composable
 fun AdaptiveProfilesScreen(modifier: Modifier = Modifier) {
+    // FIX (audit): antes los tres botones eran /* TODO: Set Profile NATURAL/STUDIO/EXTREME */
+    // y el switch de Anti-Dolby idem. Cableado real:
+    //   - Botones -> AudioStateManager.updateState { adaptiveMode = ... }
+    //     + nativeSetAdaptiveControls(ordinal, intensity*100) — misma
+    //     ruta que AdaptiveEngineScreen.kt:200-215.
+    //   - Switch -> AntiDolbyController(context).enable/disableAntiDolby()
+    //     — misma instanciación que MainActivity.kt:454-465. Se guarda
+    //     en remember para conservar el estado interno del controller.
+    val context = LocalContext.current
+    val audioState by AudioStateManager.state.collectAsState()
+    val antiDolbyController = remember {
+        AntiDolbyController(context).also { it.initialize() }
+    }
+    var antiDolbyOn by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.padding(16.dp)) {
         Text("Motor Adaptativo & Perfiles", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        
-        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = { /* TODO: Set Profile NATURAL */ }) { Text("NATURAL") }
-            Button(onClick = { /* TODO: Set Profile STUDIO */ }) { Text("STUDIO") }
-            Button(onClick = { /* TODO: Set Profile EXTREME */ }) { Text("EXTREME") }
+
+        fun selectProfile(mode: AdaptiveMode) {
+            AudioStateManager.updateState { it.copy(adaptiveMode = mode) }
+            if (IvannaNativeLib.isLoaded) {
+                runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveControls(
+                        mode.ordinal,
+                        audioState.adaptiveIntensity * 100f
+                    )
+                }
+            }
         }
+
+        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { selectProfile(AdaptiveMode.NATURAL) }) { Text("NATURAL") }
+            Button(onClick = { selectProfile(AdaptiveMode.STUDIO) })  { Text("STUDIO") }
+            Button(onClick = { selectProfile(AdaptiveMode.EXTREME) }) { Text("EXTREME") }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Modo actual: ${audioState.adaptiveMode.label}", fontSize = 12.sp)
 
         Spacer(modifier = Modifier.height(24.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Anti-Dolby (YAMNet/EMA)", modifier = Modifier.weight(1f))
-            Switch(checked = true, onCheckedChange = { /* TODO: Bind to AntiDolby toggle */ })
+            Switch(checked = antiDolbyOn, onCheckedChange = { on ->
+                antiDolbyOn = on
+                if (on) antiDolbyController.enableAntiDolby()
+                else    antiDolbyController.disableAntiDolby()
+            })
         }
     }
 }
