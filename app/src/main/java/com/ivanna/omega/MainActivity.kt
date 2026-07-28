@@ -98,12 +98,25 @@ class MainActivity : ComponentActivity() {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
         DSPBridge.init(sr)
-        // FIX: nativeStartEvoThread() existía declarado y documentado
-        // (IVANNAApplication.kt:126 decía que MainActivity.onCreate() debía
-        // llamarlo) pero nunca se invocaba — kernel evolutivo nunca arrancaba,
-        // por eso nativeGetBestFitness()/nativeGetGeneration() (ya leídos en
-        // IvannaControlPanel) siempre devolvían el estado inicial sin avanzar.
-        if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeStartEvoThread()
+        if (IvannaNativeLib.isLoaded) {
+            // 3H: nativeInitDSP(sr) inicializa la cadena DSP de IvannaNativeLib
+            // (g_eq / g_comp / g_exciter / g_widener / g_gain) y pone
+            // g_initialized = true — sin esta llamada, nativeProcessBlock()
+            // siempre early-returnaba y el DSP estéreo de IvannaNativeLib
+            // estaba completamente muerto. También llama g_pd.start_evo_thread()
+            // internamente; el siguiente nativeStartEvoThread() es no-op gracias
+            // al guard compare_exchange_strong en start_evo_thread().
+            // nativeInitPILSTM() NO se llama aquí: es g_pd.reset() — destruiría
+            // el estado PI recién inicializado por nativeInitDSP.
+            // nativeLoadEvoState() NO se llama: initializePopulation() ya llama
+            // loadPopulationLocked() internamente antes de randomizar (C++
+            // evolutionary_kernel.cpp:171); llamarlo después de start_evo_thread
+            // sería una race condition sobre g_population.
+            runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+            // nativeStartEvoThread() es seguro aunque nativeInitDSP ya lo haya
+            // lanzado (guard compare_exchange_strong en pd_engine.hpp:216).
+            IvannaNativeLib.nativeStartEvoThread()
+        }
         setContent { OmegaApp() }
     }
 
