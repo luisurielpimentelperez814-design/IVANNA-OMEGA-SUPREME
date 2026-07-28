@@ -685,6 +685,21 @@ fun DashboardScreen(
             onNpeManifoldChange = { enabled ->
                 com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
             },
+            // Phase Oracle: un slider → nativeSetPhaseParameters(α, β, γ)
+            // α = intensidad plena (LF), β = ×0.7 (MF), γ = ×0.5 (HF)
+            initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
+            onPhaseOracleChange = { intensity ->
+                com.ivanna.omega.audio.AudioStateManager.updateState {
+                    it.copy(phaseOracleIntensity = intensity)
+                }
+                if (IvannaNativeLib.isLoaded && intensity > 0f) {
+                    IvannaNativeLib.nativeSetPhaseParameters(
+                        alpha = intensity,
+                        beta  = intensity * 0.7f,
+                        gamma = intensity * 0.5f
+                    )
+                }
+            },
             routeState = routeState,
             initialAutoMode  = paramStore.isAutoModeEnabled(),
             initialOmegaMode = paramStore.getOmegaMode(),
@@ -692,6 +707,7 @@ fun DashboardScreen(
                 val profile = ProfilesLoader.load(context)
                     .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
                 if (profile != null) {
+                    // Actualizar DSPState para los parámetros de bajo nivel
                     dsp.value = dsp.value.copy(
                         wet         = profile.audioEngine.exciterAmount,
                         low         = profile.audioEngine.eqGain,
@@ -700,7 +716,18 @@ fun DashboardScreen(
                         presence    = profile.audioEngine.eqGain,
                         stereoWidth = profile.audioEngine.widthAmount
                     )
-                    dsp.value.pushToNative()
+                    // Construir AudioState destino y aplicar con transición suave (400ms)
+                    // en lugar del pushToNative() directo que producía salto brusco.
+                    val current = com.ivanna.omega.audio.AudioStateManager.getCurrentState()
+                    val targetState = current.copy(
+                        exciterAmount = profile.audioEngine.exciterAmount,
+                        eqBass        = profile.audioEngine.eqGain,
+                        eqMid         = profile.audioEngine.eqGain,
+                        eqTreble      = profile.audioEngine.eqGain,
+                        masterGain    = profile.audioEngine.gain.coerceIn(0.1f, 2f),
+                        spatialWidth  = profile.audioEngine.widthAmount
+                    )
+                    adaptiveBackend.applyPresetWithTransition(targetState)
                 }
             },
             onAutoModeChange = { enabled ->

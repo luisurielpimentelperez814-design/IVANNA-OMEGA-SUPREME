@@ -27,7 +27,10 @@ data class AudioState(
     val safetyMargin: Float = 0.9f,
     val manualModeEnabled: Boolean = false,
     val isDirty: Boolean = false,
-    val isAudioRunning: Boolean = false
+    val isAudioRunning: Boolean = false,
+    // Phase Oracle — intensidad global de coherencia de fase (0=off, 1=max)
+    // Mapea a alpha/beta/gamma en nativeSetPhaseParameters
+    val phaseOracleIntensity: Float = 0f
 )
 
 enum class AdaptiveMode(val label: String) {
@@ -74,6 +77,8 @@ object AudioStateManager {
             deltas["eq_treble"] = current.eqTreble
         if (current.masterGain != previousState.masterGain)
             deltas["master_gain"] = current.masterGain
+        if (current.phaseOracleIntensity != previousState.phaseOracleIntensity)
+            deltas["phase_oracle_intensity"] = current.phaseOracleIntensity
         previousState = current.copy()
         return deltas
     }
@@ -88,7 +93,8 @@ object AudioStateManager {
             spatialWidth = validated.spatialWidth.coerceIn(0f, 2f),
             exciterAmount = validated.exciterAmount.coerceIn(0f, 1f),
             masterGain = validated.masterGain.coerceIn(0.1f, 2f),
-            safetyMargin = validated.safetyMargin.coerceIn(0.5f, 1f)
+            safetyMargin = validated.safetyMargin.coerceIn(0.5f, 1f),
+            phaseOracleIntensity = validated.phaseOracleIntensity.coerceIn(0f, 1f)
         )
         return validated
     }

@@ -56,7 +56,8 @@ class AudioParameterManager {
                     masterGain = lerp(fromState.masterGain, toState.masterGain, progress),
                     binaural = toState.binaural,
                     manifold = toState.manifold,
-                    voiceProtectionEnabled = toState.voiceProtectionEnabled
+                    voiceProtectionEnabled = toState.voiceProtectionEnabled,
+                    phaseOracleIntensity = lerp(fromState.phaseOracleIntensity, toState.phaseOracleIntensity, progress)
                 )
                 
                 onUpdate(interpolatedState)

@@ -45,6 +45,7 @@ class AdaptiveBackend(context: Context) {
     private val dspUpdater = DspStateUpdater()
     private val store = ParameterStore(context)
     private val handler = Handler(Looper.getMainLooper())
+    private val paramManager = AudioParameterManager()
 
     private val _telemetry = MutableStateFlow(AdaptiveTelemetry())
     val telemetry: StateFlow<AdaptiveTelemetry> = _telemetry
@@ -105,6 +106,45 @@ class AdaptiveBackend(context: Context) {
         }
     }
 
+    // ── Phase Oracle: mapeo de intensidad única a alpha/beta/gamma ──────────
+    // Una sola "intensidad de coherencia" (0..1) produce tres valores que
+    // describen una curva espectral: máximo en LF, suavizado en MF, mínimo en HF.
+    private fun applyPhaseOracle(state: AudioState) {
+        if (!IvannaNativeLib.isLoaded) return
+        val i = state.phaseOracleIntensity
+        if (i == 0f) return  // Off completamente: no tocar el oracle nativo
+        try {
+            IvannaNativeLib.nativeSetPhaseParameters(
+                alpha = i.coerceIn(0f, 1f),          // coherencia LF
+                beta  = (i * 0.7f).coerceIn(0f, 1f), // coherencia MF
+                gamma = (i * 0.5f).coerceIn(0f, 1f)  // coherencia HF
+            )
+        } catch (e: Throwable) {
+            Log.w(TAG, "applyPhaseOracle: motor no disponible")
+        }
+    }
+
+    // ── Preset con transición suave (AudioParameterManager) ─────────────────
+    // Usa ValueAnimator para interpolar todos los parámetros continuos en 400ms.
+    // Llamar desde onPresetSelected (en lugar de pushToNative directo) para
+    // evitar el salto brusco en EQ/compresor/exciter/ancho al cambiar preset.
+    fun applyPresetWithTransition(toState: AudioState) {
+        val fromState = AudioStateManager.getCurrentState()
+        paramManager.applyParametersWithTransition(
+            fromState   = fromState,
+            toState     = toState,
+            durationMs  = 400L
+        ) { interpolated ->
+            dspUpdater.forceUpdate(interpolated)
+            applyEQ(interpolated)
+            applyPhaseOracle(interpolated)
+        }
+        // Actualizar AudioStateManager al estado final para que el resto de la
+        // app vea el destino correcto incluso antes de que termine la animación
+        AudioStateManager.updateState { toState }
+        persistState(toState)
+    }
+
     // ── Modo manual: aplicar AudioState con pipeline de modulación real ──────
     fun applyManualState(state: AudioState) {
         val modulated = modulator.modulateAdaptiveOutput(
@@ -114,6 +154,7 @@ class AdaptiveBackend(context: Context) {
         )
         dspUpdater.requestUpdate(modulated)
         applyEQ(modulated)
+        applyPhaseOracle(modulated)
         persistState(modulated)
         // Empujar estado al daemon omega_daemon via OmegaEngineBridge:
         // masterGain   → SET_AI_RUNTIME_GAIN  (rango 0.5..1.0)
@@ -136,6 +177,7 @@ class AdaptiveBackend(context: Context) {
         )
         dspUpdater.forceUpdate(modulated)
         applyEQ(modulated)
+        applyPhaseOracle(modulated)
         persistState(modulated)
         OmegaEngineBridge.pushAdaptiveState(
             targetGain = modulated.masterGain.coerceIn(0.5f, 1.0f),

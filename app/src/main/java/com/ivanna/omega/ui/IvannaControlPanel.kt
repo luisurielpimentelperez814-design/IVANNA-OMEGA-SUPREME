@@ -113,8 +113,12 @@ fun IvannaControlPanel(
     voiceProtectionEnabled: Boolean = true,
     onVoiceProtectionChange: (Boolean) -> Unit = {},
     routeState: PipelineState = PipelineState(),
+    // Phase Oracle — intensidad global de coherencia de fase (0=off, 1=max)
+    initialPhaseOracleIntensity: Float = 0f,
+    onPhaseOracleChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var phaseOracleIntensity by remember { mutableFloatStateOf(initialPhaseOracleIntensity) }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
@@ -337,6 +341,40 @@ fun IvannaControlPanel(
             AuroraSlider("RATIO", compRatio, 0f..1f,
                 displayValue = { "%.1f:1".format(1f + it * 19f) }) {
                 compRatio = it; onCompRatioChange(it)
+            }
+        }
+
+        GlassCard(
+            title = "PHASE ORACLE",
+            accent = PhosphorGreen,
+            subtitle = "Coherencia de fase · all-pass 10 bandas · α/β/γ → nativo"
+        ) {
+            AuroraSlider(
+                "COHERENCIA DE FASE",
+                phaseOracleIntensity,
+                0f..1f,
+                displayValue = {
+                    when {
+                        it < 0.01f -> "OFF"
+                        it < 0.35f -> "SUAVE %.0f%%".format(it * 100f)
+                        it < 0.70f -> "MEDIO %.0f%%".format(it * 100f)
+                        else       -> "MÁXIMO %.0f%%".format(it * 100f)
+                    }
+                }
+            ) {
+                phaseOracleIntensity = it
+                onPhaseOracleChange(it)
+            }
+            if (phaseOracleIntensity > 0.01f) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StatBlock("α LF",  "%.2f".format(phaseOracleIntensity),        PhosphorGreen, Modifier.weight(1f))
+                    StatBlock("β MF",  "%.2f".format(phaseOracleIntensity * 0.7f), AuroraCyan,    Modifier.weight(1f))
+                    StatBlock("γ HF",  "%.2f".format(phaseOracleIntensity * 0.5f), NeonMagenta,   Modifier.weight(1f))
+                }
             }
         }
 
