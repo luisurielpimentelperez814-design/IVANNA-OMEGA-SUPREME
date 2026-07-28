@@ -1,5 +1,7 @@
 package com.ivanna.omega.dsp
 
+import android.util.Log
+import com.ivanna.omega.audio.ParameterValidator.safe
 import com.ivanna.omega.core.IVANNAApplication
 import kotlinx.coroutines.launch
 
@@ -63,13 +65,45 @@ data class DSPState(
      * esta llamada es segura incondicionalmente.
      */
     fun pushToNative() {
+        // FIX (ParameterValidator estaba huérfano — nadie lo llamaba en
+        // todo el repo): estas 13 llamadas cruzan a C++ y luego a un socket
+        // Unix system-wide (ver más abajo); un NaN/Infinity o un valor fuera
+        // de rango aquí llega tal cual al DSP nativo y al daemon del
+        // sistema, que procesa TODAS las apps del sistema. Se sanea con
+        // .safe() (extension ya existente en ParameterValidator, solo que
+        // nunca se invocaba) usando los rangos reales de cada slider de
+        // este mismo archivo (sliderToDrive, sliderToDb, etc. arriba).
+        val safeDrive     = drive.safe(0.45f, 0f, 4f)
+        val safeWet       = wet.safe(0.32f, 0f, 1f)
+        val safeMix       = mix.safe(0.70f, 0f, 1f)
+        val safeAlpha     = alpha.safe(0.375f, 0f, 1f)
+        val safeBeta      = beta.safe(0.105f, 0f, 1f)
+        val safeGamma     = gamma.safe(0.72f, 0f, 1f)
+        val safeFreq      = freq.safe(1000f, 20f, 20000f)
+        val safeResonance = resonance.safe(0.707f, 0.1f, 10f)
+        val safeLow       = low.safe(0f, -18f, 18f)
+        val safeMid       = mid.safe(0f, -18f, 18f)
+        val safeHigh      = high.safe(0f, -18f, 18f)
+        val safePresence  = presence.safe(0f, -18f, 18f)
+        val safeMaster    = master.safe(0f, -18f, 18f)
+        val safeStereoWidth = stereoWidth.safe(1f, 0f, 2f)
+
+        if (safeDrive != drive || safeWet != wet || safeMix != mix ||
+            safeAlpha != alpha || safeBeta != beta || safeGamma != gamma ||
+            safeFreq != freq || safeResonance != resonance ||
+            safeLow != low || safeMid != mid || safeHigh != high ||
+            safePresence != presence || safeMaster != master ||
+            safeStereoWidth != stereoWidth) {
+            Log.w("DSPState", "pushToNative: valor(es) fuera de rango o no finito(s) — clamped antes de enviar al DSP nativo")
+        }
+
         DSPBridge.setParams(
-            drive, wet, mix,
-            alpha, beta, gamma,
-            freq, resonance,
-            low, mid, high, presence, master
+            safeDrive, safeWet, safeMix,
+            safeAlpha, safeBeta, safeGamma,
+            safeFreq, safeResonance,
+            safeLow, safeMid, safeHigh, safePresence, safeMaster
         )
-        DSPBridge.setStereoWidth(stereoWidth)
+        DSPBridge.setStereoWidth(safeStereoWidth)
 
         // FIX CRÍTICO (causa real de trabazón/crash al mover sliders):
         // omegaBridge.setPFParams() hace I/O de socket Unix síncrono (13
@@ -107,10 +141,10 @@ data class DSPState(
         // proceso (ANR). Ahora se despacha a IVANNAApplication.appScope
         // (Dispatchers.IO), igual que ya hace LearningBias.captureCorrection()
         // para su propio I/O.
-        val eqGainDbSnapshot = mid
-        val stereoWidthSnapshot = stereoWidth
-        val compThresholdDbSnapshot = -24f + alpha * 24f
-        val compRatioSnapshot = 1f + beta * 19f
+        val eqGainDbSnapshot = safeMid
+        val stereoWidthSnapshot = safeStereoWidth
+        val compThresholdDbSnapshot = -24f + safeAlpha * 24f
+        val compRatioSnapshot = 1f + safeBeta * 19f
         IVANNAApplication.appScope.launch {
             globalEffectManager?.adjustLiveParams(
                 eqGainDb        = eqGainDbSnapshot,
@@ -125,8 +159,8 @@ data class DSPState(
         // — solo el ultimo llega al socket. Elimina la acumulacion de coroutines
         // bloqueadas (CONNECT_TIMEOUT_MS=2000ms x 60fps = OOM en minutos).
         IVANNAApplication.pfParamChannel.trySend(
-            floatArrayOf(drive, wet, mix, alpha, beta, gamma,
-                         freq, resonance, low, mid, high, presence, master)
+            floatArrayOf(safeDrive, safeWet, safeMix, safeAlpha, safeBeta, safeGamma,
+                         safeFreq, safeResonance, safeLow, safeMid, safeHigh, safePresence, safeMaster)
         )
     }
 
