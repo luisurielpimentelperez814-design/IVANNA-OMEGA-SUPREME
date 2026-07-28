@@ -456,9 +456,12 @@ fun DashboardScreen(
         try {
             if (IvannaDspManager.open()) IvannaDspManager.enable()
         } catch (_: Throwable) {}
+        // FASE 3C: control loop @20Hz (nativeSetLearningContext + nativeApplyControlFrame)
+        com.ivanna.omega.audio.IvannaControlLoop.start()
         onDispose {
             adaptiveBackend.stopTelemetry()
             try { IvannaDspManager.close() } catch (_: Throwable) {}
+            com.ivanna.omega.audio.IvannaControlLoop.stop()
         }
     }
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()

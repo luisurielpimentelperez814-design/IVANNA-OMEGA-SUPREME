@@ -62,13 +62,22 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
 // 🎧 2. MOTOR BINAURAL: HRTF 32 Objetos
 @Composable
 fun BinauralScreen(modifier: Modifier = Modifier) {
+    // FASE 3F: nativeSetHRTFEnabled estaba declarada e implementada
+    // (ivanna_omega_jni.cpp:1017) pero el switch de esta pantalla nunca la
+    // llamaba — quedaba como puro estado visual sin efecto en el motor.
+    var hrtfEnabled by remember { mutableStateOf(true) }
     Column(modifier = modifier.padding(16.dp)) {
         Text("Motor Binaural (HRTF)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
         
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Activar HRTF 32-Obj", modifier = Modifier.weight(1f))
-            Switch(checked = true, onCheckedChange = { /* TODO: Bind to AudioStateManager.hrtfEnabled */ })
+            Switch(checked = hrtfEnabled, onCheckedChange = { on ->
+                hrtfEnabled = on
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetHRTFEnabled(on) }
+                }
+            })
         }
         
         Spacer(modifier = Modifier.height(16.dp))
