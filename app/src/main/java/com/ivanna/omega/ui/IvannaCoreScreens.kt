@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.audio.AudioPipeline
 import com.ivanna.omega.core.IvannaNativeLib
 import kotlinx.coroutines.delay
 
@@ -107,29 +108,60 @@ fun AdaptiveProfilesScreen(modifier: Modifier = Modifier) {
     }
 }
 
-// 📊 4. TELEMETRÍA: Dashboard a 10Hz
+// 📊 4. TELEMETRÍA: Dashboard con YAMNet en tiempo real (3J)
 @Composable
 fun TelemetryDashboard(modifier: Modifier = Modifier) {
-    // TODO: Recolectar flujo a 10Hz del ViewModel
-    // val telemetryState by viewModel.telemetry.collectAsState()
-    
-    val rmsValue = 0.6f // Placeholder
-    val peakValue = 0.8f // Placeholder
-    val grValue = 0.2f // Placeholder
+    // 3J: colectar género en tiempo real desde AudioPipeline.sharedYamnetResult
+    val yamnet by AudioPipeline.sharedYamnetResult.collectAsState()
 
     Column(modifier = modifier.padding(16.dp)) {
-        Text("Telemetría en Tiempo Real (10Hz)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Telemetría en Tiempo Real", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        
-        Text("Nivel RMS")
-        LinearProgressIndicator(progress = { rmsValue }, modifier = Modifier.fillMaxWidth().height(8.dp))
-        
+
+        // ── Clasificación YAMNet ─────────────────────────────────────────────
+        Text("Clasificación YAMNet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6FF3FF))
         Spacer(modifier = Modifier.height(8.dp))
-        Text("Pico (Peak)")
-        LinearProgressIndicator(progress = { peakValue }, modifier = Modifier.fillMaxWidth().height(8.dp), color = Color.Red)
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Reducción de Ganancia (GR dB)")
-        LinearProgressIndicator(progress = { grValue }, modifier = Modifier.fillMaxWidth().height(8.dp), color = Color.Yellow)
+
+        if (!yamnet.valid) {
+            Text("Sin señal de audio activa", fontSize = 12.sp, color = Color(0xFF57708F))
+        } else {
+            Text("Voz / Speech")
+            LinearProgressIndicator(
+                progress = { yamnet.speech.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("%.0f%%".format(yamnet.speech * 100f), fontSize = 11.sp, color = Color(0xFF93A8C6))
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Música / Music")
+            LinearProgressIndicator(
+                progress = { yamnet.music.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = Color(0xFF23F09A)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("%.0f%%".format(yamnet.music * 100f), fontSize = 11.sp, color = Color(0xFF93A8C6))
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Graves / Bass")
+            LinearProgressIndicator(
+                progress = { yamnet.bass.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = Color(0xFFF7B733)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("%.0f%%".format(yamnet.bass * 100f), fontSize = 11.sp, color = Color(0xFF93A8C6))
+
+            Spacer(modifier = Modifier.height(12.dp))
+            val dominant = when {
+                yamnet.speech >= yamnet.music && yamnet.speech >= yamnet.bass -> "VOZ"
+                yamnet.music >= yamnet.bass -> "MÚSICA"
+                else -> "GRAVES"
+            }
+            Text("Género dominante: $dominant",
+                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                color = Color(0xFFF1F8FF))
+        }
     }
 }

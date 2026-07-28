@@ -36,6 +36,26 @@ class AudioPipeline {
 
         // Throttle YAMNet: clasificar cada N bloques (~1s @ 48kHz con bloques de 256)
         private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~96000 frames = 1s
+
+        // 3J: resultado YAMNet global — actualizado por cualquier instancia activa
+        // de AudioPipeline; collectado en TelemetryDashboard sin pasar Context.
+        private val _sharedYamnetResult = MutableStateFlow(
+            object {
+                val speech: Float = 0f; val music: Float = 0f
+                val bass: Float = 0f; val valid: Boolean = false
+            }
+        )
+        // Usamos la data class interna — se declara antes que companion en Kotlin
+        // así que no la podemos referenciar aquí directamente. Exponemos campos
+        // planos en un SimpleResult para evitar la dependencia de orden de init.
+        data class SharedYamnetResult(
+            val speech: Float = 0f,
+            val music: Float = 0f,
+            val bass: Float = 0f,
+            val valid: Boolean = false
+        )
+        private val _sharedYamnet = MutableStateFlow(SharedYamnetResult())
+        val sharedYamnetResult: StateFlow<SharedYamnetResult> = _sharedYamnet.asStateFlow()
     }
 
     private val tag = "IVANNA.Pipeline"
@@ -253,6 +273,8 @@ class AudioPipeline {
             try {
                 AudioEngine.nativeSetAntiDolbyScoresStatic(speechScore, musicScore, bassScore)
                 _yamnetResult.value = YamnetResult(speechScore, musicScore, bassScore, true)
+                // 3J: exponer globalmente para TelemetryDashboard
+                _sharedYamnet.value = SharedYamnetResult(speechScore, musicScore, bassScore, true)
             } catch (_: Exception) {}
         }
     }
