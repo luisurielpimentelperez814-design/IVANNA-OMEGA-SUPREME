@@ -12,6 +12,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -230,6 +232,53 @@ fun OmegaApp() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            // FASE 1 — rutas existentes pero nunca montadas en el NavHost
+            // (auditoría de conectividad). Pantallas ya implementadas en
+            // IvannaCoreScreens.kt / AuditoryExperienceScreen.kt / AdaptiveDashboard.kt
+            // pero sin destino navigate() ni entrada en este grafo.
+            composable("telemetry") {
+                com.ivanna.omega.ui.TelemetryDashboard(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable("ope") {
+                com.ivanna.omega.ui.OpeEngineScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable("binaural") {
+                com.ivanna.omega.ui.BinauralScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable("auditory") {
+                com.ivanna.omega.ui.AuditoryExperienceScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars),
+                    onEnterMotorClick = { nav.navigate("adaptive") }
+                )
+            }
+            composable("adaptive_dash") {
+                // nativeGetAdaptiveTelemetry ya declarada/usada por AdaptiveBackend;
+                // aquí se lee directo para alimentar el dashboard visual.
+                var telemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        if (IvannaNativeLib.isLoaded) {
+                            telemetryRaw = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
+                        }
+                        delay(100)
+                    }
+                }
+                com.ivanna.omega.ui.AdaptiveDashboard(
+                    telemetry = telemetryRaw,
+                    modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
@@ -466,6 +515,30 @@ fun DashboardScreen(
                 StatusDot(eqActive, "EQ")
                 StatusDot(fxActive, "FX")
                 StatusDot(lstmReady, "LSTM")
+            }
+        }
+
+        // FASE 1 — botones de navegación hacia rutas existentes pero nunca
+        // montadas (telemetry/ope/binaural/auditory/adaptive_dash).
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                "TELEMETRÍA" to "telemetry",
+                "OPE" to "ope",
+                "BINAURAL" to "binaural",
+                "AUDITORY" to "auditory",
+                "ADAPTIVE Ω" to "adaptive_dash"
+            ).forEach { (label, route) ->
+                OutlinedButton(
+                    onClick = { nav.navigate(route) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanGlow),
+                    border = BorderStroke(1.dp, Border1),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
             }
         }
 
