@@ -144,7 +144,22 @@ class UsbAudioProManager private constructor(context: Context) {
         isStreaming.set(true)
         isAsyncSlave.set(true)
 
-        // Delega al hilo nativo via JNI; el hilo de audio se bloquea en poll() del FD
+        // Publica la geometría real del endpoint al motor nativo ANTES de
+        // arrancarlo: sin esto el hilo URB no sabe el tamaño de paquete ni el
+        // bInterval y no puede calcular los frames por microtrama.
+        audioEndpoint?.let { ep ->
+            nativeConfigureEndpoint(
+                epAddress     = ep.address,
+                maxPacketSize = ep.maxPacketSize,
+                interval      = ep.interval.coerceAtLeast(1),
+                sampleRate    = SAMPLE_RATE,
+                channels      = CHANNELS,
+                bitDepth      = BIT_DEPTH
+            )
+        }
+
+        // Delega al hilo nativo via JNI; el hilo URB entrega al DAC en modo
+        // asíncrono (el DAC marca el reloj, nosotros seguimos su cadencia).
         nativeStartAsyncEngine(nativeHandle, fileDescriptor?.fd ?: -1)
 
         Log.i(TAG, "Modo USB Asíncrono activado. DAC es master de reloj.")
@@ -177,7 +192,25 @@ class UsbAudioProManager private constructor(context: Context) {
             buf.putInt((s * Int.MAX_VALUE.toFloat()).toInt())
         }
         ringBuffer.commitWrite()
+
+        // CABLEADO REAL: además del triple buffer Java (que conserva la ruta
+        // histórica intacta), se entrega el bloque al anillo SPSC nativo que
+        // consume el hilo de URBs isócronos. Antes el consumidor no existía y
+        // el audio moría en el lado Java.
+        try {
+            nativeWriteFrames(samples, n)
+        } catch (t: Throwable) {
+            Log.w(TAG, "writeAudio: motor nativo no disponible (${t.message})")
+        }
     }
+
+    /** Estadísticas del motor: [submitted, completed, errors, xruns, fill, iso]. */
+    fun engineStats(): IntArray = try {
+        nativeGetEngineStats() ?: IntArray(6)
+    } catch (t: Throwable) { IntArray(6) }
+
+    /** true si el motor está entregando por URBs isócronos reales. */
+    fun isIsochronous(): Boolean = try { nativeIsIsochronous() } catch (t: Throwable) { false }
 
     fun stopStreaming() {
         isStreaming.set(false)
@@ -238,4 +271,13 @@ class UsbAudioProManager private constructor(context: Context) {
     // JNI native methods
     private external fun nativeStartAsyncEngine(handle: Long, fd: Int)
     private external fun nativeStopAsyncEngine(handle: Long)
+
+    // Motor asíncrono REAL (URBs isócronos usbfs) — cableado de punta a punta
+    private external fun nativeConfigureEndpoint(
+        epAddress: Int, maxPacketSize: Int, interval: Int,
+        sampleRate: Int, channels: Int, bitDepth: Int
+    )
+    private external fun nativeWriteFrames(samples: FloatArray, frames: Int): Int
+    private external fun nativeGetEngineStats(): IntArray?
+    private external fun nativeIsIsochronous(): Boolean
 }

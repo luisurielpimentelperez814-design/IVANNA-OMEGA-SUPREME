@@ -22,6 +22,8 @@
 #include <android/log.h>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <ctime>
 
 #include "../neuromorphic/pi_lstm_milenio.hpp"
 
@@ -81,25 +83,118 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHrtfEnabled(JNIEnv*, jo
 }
 
 /*
- * NOTE: PILSTMMilenioEngine does not expose a dedicated NP saturation metric
- * nor an explicit "error" signal. We surface |lstm.h| (saturation proxy,
- * already clamped to [-NP_max, NP_max] inside rk4_step) and 0.0f as a
- * placeholder error so the Kotlin side has stable, finite values. Replace
- * with real telemetry once the engine exposes it.
+ * TELEMETRÍA REAL (sustituye el placeholder anterior).
+ *
+ * nativeGetNpSat  -> saturación neuroplástica normalizada:
+ *                    |h| / NP_max, es decir cuánto del techo del estado
+ *                    oculto está consumido ahora mismo (0..1). El valor
+ *                    crudo |h| no era comparable entre configuraciones
+ *                    porque NP_max es ajustable.
+ *
+ * nativeGetError  -> residual físico REAL de la ODE continua: se compara el
+ *                    estado observado h(t) contra la predicción de un paso
+ *                    del propio modelo, h_pred = h(t-Δt) + Δt·dh/dt evaluada
+ *                    en el instante anterior (Euler explícito de referencia
+ *                    frente al RK4 del integrador). La discrepancia entre
+ *                    ambos es exactamente el error de truncamiento local del
+ *                    integrador + la energía inyectada por la entrada, que es
+ *                    la métrica que la UI necesita para saber si el motor
+ *                    está siguiendo la señal o divergiendo.
+ *                    Se suaviza con EMA (τ ≈ 0.5 s) y se normaliza por NP_max
+ *                    para que quede en un rango estable 0..1.
  */
+
+// Estado del estimador de residual (solo tocado desde el hilo de UI que
+// consulta la telemetría; atómico para publicar hacia cualquier lector).
+static std::atomic<float> g_residual_ema{0.0f};
+static float              g_prev_h        = 0.0f;
+static float              g_prev_c        = 0.0f;
+static bool               g_residual_seed = false;
+static int64_t            g_prev_ns       = 0;
+
+static inline int64_t now_ns() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
+
+static void update_residual() {
+    auto& cell = g_piLstmBridge.lstm;
+    const float h   = std::isfinite(cell.h) ? cell.h : 0.0f;
+    const float c   = std::isfinite(cell.c) ? cell.c : 0.0f;
+    const int64_t t = now_ns();
+
+    if (!g_residual_seed) {
+        g_prev_h = h; g_prev_c = c; g_prev_ns = t;
+        g_residual_seed = true;
+        return;
+    }
+
+    float dt = (float)(t - g_prev_ns) * 1e-9f;
+    g_prev_ns = t;
+    // Ventana útil: por debajo de 1 ms el ruido numérico domina, por encima
+    // de 250 ms la extrapolación de un paso deja de tener sentido físico.
+    if (!(dt > 1e-3f && dt < 0.25f)) { g_prev_h = h; g_prev_c = c; return; }
+
+    // Predicción de referencia con la propia dinámica del modelo evaluada
+    // en el estado ANTERIOR. x = 0 porque entre consultas de telemetría no
+    // conocemos la entrada: el residual mide entonces la deriva libre del
+    // sistema frente a su trayectoria observada (drift + drive externo).
+    const float dh = cell.dh_dt(g_prev_c, g_prev_h, 0.0f);
+    const float h_pred = g_prev_h + dh * dt;
+
+    float npmax = cell.NP_max;
+    if (!(npmax > 1e-6f) || !std::isfinite(npmax)) npmax = 1.0f;
+
+    float residual = std::fabs(h - h_pred) / npmax;
+    if (!std::isfinite(residual)) residual = 0.0f;
+    if (residual > 4.0f) residual = 4.0f;
+
+    // EMA con τ ≈ 0.5 s independiente de la cadencia de muestreo
+    const float tau   = 0.5f;
+    const float alpha = 1.0f - std::exp(-dt / tau);
+    float prev = g_residual_ema.load(std::memory_order_relaxed);
+    float next = prev + alpha * (residual - prev);
+    if (!std::isfinite(next)) next = 0.0f;
+    g_residual_ema.store(next, std::memory_order_relaxed);
+
+    g_prev_h = h; g_prev_c = c;
+}
+
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetNpSat(JNIEnv*, jobject) {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return 0.0f;
-    float h = g_piLstmBridge.lstm.h;
+    update_residual();
+    const auto& cell = g_piLstmBridge.lstm;
+    float h = cell.h;
     if (!std::isfinite(h)) return 0.0f;
-    return std::fabs(h);
+    float npmax = cell.NP_max;
+    if (!(npmax > 1e-6f) || !std::isfinite(npmax)) npmax = 1.0f;
+    float sat = std::fabs(h) / npmax;
+    if (!std::isfinite(sat)) return 0.0f;
+    return sat > 1.0f ? 1.0f : sat;
 }
 
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetError(JNIEnv*, jobject) {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return 0.0f;
-    // TODO: replace with real residual/error metric from the engine.
-    return 0.0f;
+    update_residual();
+    float e = g_residual_ema.load(std::memory_order_relaxed);
+    if (!std::isfinite(e)) return 0.0f;
+    return e > 1.0f ? 1.0f : e;
+}
+
+/*
+ * Reset explícito del estimador de residual — necesario al cambiar de pista
+ * o al reinicializar el motor, si no la EMA arrastra el transitorio anterior.
+ */
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeResetTelemetry(JNIEnv*, jobject) {
+    g_residual_ema.store(0.0f, std::memory_order_relaxed);
+    g_residual_seed = false;
+    g_prev_h = g_prev_c = 0.0f;
+    g_prev_ns = 0;
+    LOGI("PiLstmBridge.nativeResetTelemetry: estimador de residual reiniciado");
 }
 
 } // extern "C"

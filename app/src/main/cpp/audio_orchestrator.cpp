@@ -21,6 +21,13 @@
 #include <algorithm>
 #include "anti_dolby.h"
 #include "audio_control_plane.hpp"
+#include "dsp/loudness_meter.hpp"
+
+// ── Medición real de sonoridad (BS.1770-4) ───────────────────────────────────
+// Sustituye los antiguos placeholders de nativeGetLufs()/nativeGetPeakDbfs().
+// Se alimenta con la SALIDA final de la cadena (post-limiter), que es lo que
+// realmente sale al HAL, y se consulta desde Kotlin a la cadencia que quiera.
+static ivanna::metering::LoudnessMeter g_loudness;
 
 // g_control_frame ya NO se define aquí: desde la integración "Fase 1"
 // (ver CMakeLists.txt) audio_control_plane.cpp se compila como parte del
@@ -267,6 +274,9 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
     const float dt = 1.0f / (float)gState.sampleRate;
 
+    // Reconfigura la cadena K-weighting si cambió la tasa (idempotente)
+    g_loudness.configure((double)gState.sampleRate);
+
     // FIX (Anti-Dolby fantasma): antiDolby.tick() nunca se llamaba en
     // producción — solo en el test dsp_core_stability.cpp. Sin esta llamada,
     // updateFromClassification() (alimentada por el clasificador YAMNet vía
@@ -327,7 +337,11 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
             out[i * 2 + 0] = left;
             out[i * 2 + 1] = right;
+
+            // Medición BS.1770-4 sobre la salida real (post-limiter)
+            g_loudness.feedSample(left, right);
         }
+        g_loudness.flush();
     } else {
         // Procesamiento estéreo normal
         for (int i = 0; i < frames * channels; ++i) {
@@ -361,6 +375,17 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 
             out[i] = x;
         }
+
+        // Medición BS.1770-4 sobre la salida real (post-limiter).
+        // Estéreo intercalado -> par L/R; mono -> se duplica (ganancia
+        // equivalente según BS.1770 con G_L = G_R = 1.0).
+        if (!gState.bypass) {
+            if (channels == 2) {
+                g_loudness.feedInterleavedStereo(out, frames);
+            } else if (channels == 1) {
+                g_loudness.feedMono(out, frames);
+            }
+        }
     }
 
     env->ReleaseFloatArrayElements(inArray, in, JNI_ABORT);
@@ -370,16 +395,52 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeProcessAudio(
 // ── JNI: get LUFS integrado (placeholder para benchmark v1.5) ─────────────────
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeGetLufs(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // TODO: implementar en commit 16 (benchmark)
-    return -23.0f;
+    // IMPLEMENTADO: loudness integrado con doble gating (absoluto -70 LUFS +
+    // relativo -10 LU) sobre bloques solapados de 400 ms, K-weighting
+    // BS.1770-4 re-derivado para la fs activa. Ver dsp/loudness_meter.hpp.
+    float v = g_loudness.integratedLufs();
+    return std::isfinite(v) ? v : -70.0f;
 }
 
 // ── JNI: get pico dBFS (placeholder para benchmark v1.5) ──────────────────────
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDbfs(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // TODO: implementar en commit 16 (benchmark)
-    return -6.0f;
+    // IMPLEMENTADO: sample peak real de la salida post-limiter.
+    float v = g_loudness.peakDbfs();
+    return std::isfinite(v) ? v : -120.0f;
 }
+
+// ── JNI: true peak (dBTP, oversampling 4x) ───────────────────────────────────
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetTruePeakDbtp(JNIEnv* /*env*/, jobject /*thiz*/) {
+    float v = g_loudness.truePeakDbtp();
+    return std::isfinite(v) ? v : -120.0f;
+}
+
+// ── JNI: momentary (400 ms) y short-term (3 s) ───────────────────────────────
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetMomentaryLufs(JNIEnv* /*env*/, jobject /*thiz*/) {
+    float v = g_loudness.momentaryLufs();
+    return std::isfinite(v) ? v : -70.0f;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetShortTermLufs(JNIEnv* /*env*/, jobject /*thiz*/) {
+    float v = g_loudness.shortTermLufs();
+    return std::isfinite(v) ? v : -70.0f;
+}
+
+// ── JNI: reset del medidor (nueva sesión / nuevo track) ──────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeResetLoudness(JNIEnv* /*env*/, jobject /*thiz*/) {
+    g_loudness.reset();
+    LOGI("Loudness meter reset (integrado + picos)");
+}
+
+// ── Símbolos externos para el stub JNI / daemon ──────────────────────────────
+extern "C" float ivanna_get_integrated_lufs() { return g_loudness.integratedLufs(); }
+extern "C" float ivanna_get_true_peak_dbtp()  { return g_loudness.truePeakDbtp(); }
+extern "C" void  ivanna_reset_loudness()      { g_loudness.reset(); }
 
 // ── JNI: set Anti-Dolby classification scores ───────────────────────────────
 extern "C" JNIEXPORT void JNICALL
