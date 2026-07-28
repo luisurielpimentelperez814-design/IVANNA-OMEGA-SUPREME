@@ -140,7 +140,12 @@ fun OmegaApp() {
         // FIX (audit): estado global — visible por DashboardScreen para
         // renderizar banner STANDBY / botón ACTIVAR y por composable("dashboard")
         // para auto-lanzar la MediaProjection la primera vez.
-        var captureActive by remember { mutableStateOf(false) }
+        // captureRequested: evita relanzar el dialogo de MediaProjection en
+        // cada recomposicion / re-entrada al dashboard.
+        // captureActive: estado REAL del servicio (StateFlow) — si el usuario
+        // mata la captura desde la notificacion, el banner STANDBY vuelve solo.
+        var captureRequested by remember { mutableStateOf(false) }
+        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
         val projectionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -150,7 +155,7 @@ fun OmegaApp() {
                     putExtra("data", result.data)
                 }
                 context.startForegroundService(intent)
-                captureActive = true
+                captureRequested = true
             }
             // FIX (audit): eliminado nav.popBackStack() — sacaba al usuario de
             // la pantalla actual justo al conceder la MediaProjection. El
@@ -179,7 +184,7 @@ fun OmegaApp() {
                 // callback del projectionLauncher marca captureActive=true
                 // y NO hace popBackStack — el usuario se queda en dashboard.
                 LaunchedEffect(Unit) {
-                    if (!captureActive) {
+                    if (!captureActive && !captureRequested) {
                         projectionLauncher.launch(
                             projectionManager.createScreenCaptureIntent()
                         )
@@ -208,6 +213,7 @@ fun OmegaApp() {
                     dsp, nav, adaptiveBackend, voiceProtectionManager,
                     captureActive = captureActive,
                     onStartCapture = {
+                        captureRequested = true
                         projectionLauncher.launch(
                             projectionManager.createScreenCaptureIntent()
                         )
@@ -250,13 +256,10 @@ fun OmegaApp() {
             // encontrado). AdaptiveEngineScreen necesita un
             // VoiceProtectionManager; se construye aquí con ParameterStore
             // igual que en el resto de la app (ver ParameterStore.kt).
-            composable("visualizer") {
-                LaunchedEffect(Unit) {
-                    projectionLauncher.launch(
-                        projectionManager.createScreenCaptureIntent()
-                    )
-                }
-            }
+            // FIX: ruta "visualizer" eliminada — ya nadie navega hacia ella
+            // (onOpenVisualizer ahora dispara onStartCapture in-place) y lo
+            // unico que hacia era pintar una pantalla negra tras el dialogo
+            // de MediaProjection.
             composable("adaptive") {
                 DisposableEffect(Unit) {
                     if (IvannaNativeLib.isLoaded)
@@ -481,7 +484,9 @@ fun DashboardScreen(
     // default vacío de AdaptiveTelemetrySnapshot(). Instancia local con
     // ciclo de vida atado a esta pantalla (arranca/para con el composable).
     val context = LocalContext.current
-    val adaptiveBackend = remember { AdaptiveBackend(context) }
+    // FIX: aqui se instanciaba un SEGUNDO AdaptiveBackend que sombreaba el
+    // parametro — dos motores de telemetria compitiendo y el del NavHost
+    // sin consumidor. Se usa el que ya llega por parametro.
     val antiDolbyController = remember {
         AntiDolbyController(context).also { ctrl ->
             ctrl.initialize()
@@ -641,6 +646,11 @@ fun DashboardScreen(
             playerState = playerState,
             currentUri  = currentUri,
             onPickFile  = { singlePicker.launch("audio/*") },
+            // FIX: la card ya tenia barra de progreso + seek, pero MainActivity
+            // recogia los StateFlow y no se los pasaba — barra invisible.
+            currentPositionMs = playerPositionMs,
+            durationMs        = playerDurationMs,
+            onSeek            = { player.seekTo(it) },
             onPlay = {
                 val uri = currentUri
                 if (uri != null) {
@@ -667,6 +677,31 @@ fun DashboardScreen(
                 }
             }
         )
+
+        // ── Tira OMEGA — omegaMetrics ya se recogia y no se pintaba ──────────
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            listOf(
+                "RMS"  to String.format("%.2f", omegaMetrics.rmsLevel),
+                "PEAK" to String.format("%.2f", omegaMetrics.peakLevel),
+                "CLIP" to omegaMetrics.clipCount.toString(),
+                "CPU"  to String.format("%.0f%%", omegaMetrics.cpuPercent),
+                "LAT"  to String.format("%.1fms", omegaMetrics.latencyMs),
+                "SR"   to "${omegaMetrics.sampleRate / 1000}k",
+                "DSP"  to if (omegaMetrics.dspActive) "ON" else "OFF",
+                "HRTF" to if (omegaMetrics.hrtfActive) "ON" else "OFF",
+                "AI"   to omegaMetrics.yamnetCategory
+            ).forEach { (k, v) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(k, color = TextSec, fontSize = 8.sp, letterSpacing = 0.8.sp)
+                    Spacer(Modifier.width(3.dp))
+                    Text(v, color = CyanGlow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
 
         // FIX (esta no era la interfaz): IvannaControlPanel v3.0 existía
         // completa en ui/IvannaControlPanel.kt — 517 líneas, Anillo OMNI,
@@ -748,7 +783,10 @@ fun DashboardScreen(
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
                 IvannaSpatialEngine.setWidth(it)
             },
-            onOpenVisualizer = { nav.navigate("visualizer") },
+            // FIX: la ruta "visualizer" solo lanzaba la MediaProjection y
+            // dejaba una pantalla vacia. Ahora reusa el mismo callback del
+            // banner: pide captura sin sacar al usuario del dashboard.
+            onOpenVisualizer = onStartCapture,
             onAntiDolbyChange = { enabled ->
                 if (enabled) antiDolbyController.enableAntiDolby()
                 else antiDolbyController.disableAntiDolby()

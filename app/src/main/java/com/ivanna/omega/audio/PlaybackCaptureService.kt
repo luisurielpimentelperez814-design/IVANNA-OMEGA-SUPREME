@@ -23,6 +23,9 @@ import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * PlaybackCaptureService — Servicio de captura de audio de reproducción.
@@ -61,6 +64,12 @@ class PlaybackCaptureService : Service() {
 
     companion object {
         private const val TAG = "PlaybackCaptureService"
+        // FIX (conexion real): el dashboard mostraba STANDBY/ACTIVO segun un
+        // boolean local de Compose que nunca sabia si el servicio seguia vivo.
+        // Unica fuente de verdad: la setea startCapture/stopCapture/onDestroy.
+        private val _isCapturing = MutableStateFlow(false)
+        @JvmStatic
+        val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
         const val INPUT_SAMPLES = 128
@@ -150,6 +159,7 @@ class PlaybackCaptureService : Service() {
 
     override fun onDestroy() {
         stopCapture()
+        _isCapturing.value = false
         super.onDestroy()
     }
 
@@ -247,6 +257,7 @@ class PlaybackCaptureService : Service() {
 
             audioRecord?.startRecording()
             isRunning = true
+            _isCapturing.value = true
 
             scope.launch {
                 val buffer = FloatArray(INPUT_SAMPLES)
@@ -343,6 +354,7 @@ class PlaybackCaptureService : Service() {
     private fun stopCapture() {
         if (!isRunning && audioRecord == null && mediaProjection == null) return // idempotente
         isRunning = false
+        _isCapturing.value = false
         scope.cancel()
         audioRecord?.stop()
         audioRecord?.release()
