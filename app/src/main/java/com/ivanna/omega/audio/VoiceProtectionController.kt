@@ -45,6 +45,11 @@ class VoiceProtectionController(context: Context) {
         private const val YAMNET_INPUT_LENGTH = 15600
         private const val SPEECH_THRESHOLD = 0.15f  // YAMNet da logits bajos por clase; ya es score post-softmax-like
         private const val EMA_ALPHA = 0.25f
+
+        // 3I: StateFlow global del score de voz — actualizado por cualquier instancia
+        // activa de VoiceProtectionController; collectado en AdaptiveEngineScreen.
+        private val _sharedVoiceScore = MutableStateFlow(0f)
+        val sharedVoiceScore: StateFlow<Float> = _sharedVoiceScore.asStateFlow()
     }
 
     private val classifier = YamnetClassifier(context)
@@ -134,6 +139,7 @@ class VoiceProtectionController(context: Context) {
                             smoothedScore += EMA_ALPHA * (raw - smoothedScore)
                             DSPBridge.setVoiceProtectScore(smoothedScore)
                             _voiceScore.value = smoothedScore
+                            _sharedVoiceScore.value = smoothedScore  // 3I: exponer globalmente
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Error clasificando: ${e.message}")

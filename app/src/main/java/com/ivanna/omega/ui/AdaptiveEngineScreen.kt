@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.AdaptiveBackend
 import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.audio.VoiceProtectionController
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
@@ -158,6 +159,8 @@ internal fun AdaptiveEngineScreen(
 
         // ── Voice Protection ─────────────────────────────────────────────────
         val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
+        // 3I: score en vivo del clasificador (0..1, EMA suavizado)
+        val voiceScoreLive by VoiceProtectionController.sharedVoiceScore.collectAsState()
         GlassCard(
             title = "Voice Protection",
             accent = NeonMagenta,
@@ -176,6 +179,14 @@ internal fun AdaptiveEngineScreen(
                 text = if (voiceActive) "PROTEGIDO" else "SIN PROTECCIÓN",
                 accent = if (voiceActive) NeonMagenta else TextMuted
             )
+            if (voiceActive && voiceScoreLive > 0f) {
+                Spacer(Modifier.height(6.dp))
+                StatBlock(
+                    label = "Voice Score",
+                    value = "%.0f%%".format(voiceScoreLive * 100f),
+                    accent = if (voiceScoreLive > 0.6f) NeonMagenta else AuroraCyan
+                )
+            }
         }
 
         // ── Modo y intensidad adaptativa ─────────────────────────────────────
@@ -194,6 +205,13 @@ internal fun AdaptiveEngineScreen(
                             AudioStateManager.updateState { it.copy(adaptiveMode = mode) }
                             if (manualModeEnabled)
                                 backend.applyManualState(AudioStateManager.audioState.value)
+                            // 3D: notificar al motor nativo el modo y la intensidad actual
+                            runCatching {
+                                IvannaNativeLib.nativeSetAdaptiveControls(
+                                    mode.ordinal,
+                                    audioState.adaptiveIntensity * 100f
+                                )
+                            }
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -208,6 +226,13 @@ internal fun AdaptiveEngineScreen(
                     AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
                     if (manualModeEnabled)
                         backend.applyManualState(AudioStateManager.audioState.value)
+                    // 3D: notificar al motor nativo la intensidad y el modo actual
+                    runCatching {
+                        IvannaNativeLib.nativeSetAdaptiveControls(
+                            audioState.adaptiveMode.ordinal,
+                            v * 100f
+                        )
+                    }
                 }
             )
         }
