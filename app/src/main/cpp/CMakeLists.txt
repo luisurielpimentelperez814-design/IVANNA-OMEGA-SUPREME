@@ -94,6 +94,11 @@ add_library(ivanna_omega SHARED
     neuromorphic/volterra_h2_symmetric.cpp
     hexagon/ivanna_fastrpc_client.cpp
 
+    # Fase H: Hexagon DSP real loader + NPE engine (Phase H integration)
+    hexagon/ivanna_dsp.cpp
+    hexagon/ivanna_fastrpc_client_load.cpp
+    neuromorphic/ivanna_npe_engine.cpp
+
     # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
     # (header-only, no .cpp necesario)
 
@@ -139,6 +144,7 @@ find_library(aaudio-lib aaudio)
 target_link_libraries(ivanna_omega
     ${log-lib}
     ${aaudio-lib}
+    dl
 )
 
 # ────────────────────────────────────────────────────────────────────────────

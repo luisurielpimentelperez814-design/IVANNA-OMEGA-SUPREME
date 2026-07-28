@@ -71,12 +71,29 @@ namespace dsp {
 static std::atomic<bool> g_fastrpc_loaded{false};
 static std::atomic<int> g_dsp_refcount{0};
 
+namespace phaseh {
+    struct ResolvedSymbols {
+        void* dsp_open; void* dsp_close;
+        void* dsp_hrtf_init; void* dsp_hrtf_convolve;
+        void* dsp_fir_init; void* dsp_fir_upsample;
+        const char* lib_name; bool loaded;
+    };
+    const ResolvedSymbols& resolved_symbols() noexcept;
+}
+
 static bool load_fastrpc_symbols() {
     if (g_fastrpc_loaded.load(std::memory_order_acquire)) {
         return (g_dsp_open != nullptr);
     }
+    const auto& s = ivanna::dsp::phaseh::resolved_symbols();
+    g_dsp_open          = reinterpret_cast<ivanna_dsp_open_t>(s.dsp_open);
+    g_dsp_close         = reinterpret_cast<ivanna_dsp_close_t>(s.dsp_close);
+    g_dsp_hrtf_init     = reinterpret_cast<ivanna_dsp_hrtf_init_t>(s.dsp_hrtf_init);
+    g_dsp_hrtf_convolve = reinterpret_cast<ivanna_dsp_hrtf_convolve_t>(s.dsp_hrtf_convolve);
+    g_dsp_fir_init      = reinterpret_cast<ivanna_dsp_fir_init_t>(s.dsp_fir_init);
+    g_dsp_fir_upsample  = reinterpret_cast<ivanna_dsp_fir_upsample_t>(s.dsp_fir_upsample);
     g_fastrpc_loaded.store(true, std::memory_order_release);
-    return true;
+    return s.loaded;
 }
 
 IvannaFastRpcClient::IvannaFastRpcClient() noexcept
