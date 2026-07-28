@@ -264,6 +264,12 @@ fun OmegaApp() {
                     onEnterMotorClick = { nav.navigate("adaptive") }
                 )
             }
+            composable("lab") {
+                com.ivanna.omega.ui.IvannaLabScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
             composable("adaptive_dash") {
                 // nativeGetAdaptiveTelemetry ya declarada/usada por AdaptiveBackend;
                 // aquí se lee directo para alimentar el dashboard visual.
@@ -530,7 +536,8 @@ fun DashboardScreen(
                 "OPE" to "ope",
                 "BINAURAL" to "binaural",
                 "AUDITORY" to "auditory",
-                "ADAPTIVE Ω" to "adaptive_dash"
+                "ADAPTIVE Ω" to "adaptive_dash",
+                "LAB" to "lab"
             ).forEach { (label, route) ->
                 OutlinedButton(
                     onClick = { nav.navigate(route) },

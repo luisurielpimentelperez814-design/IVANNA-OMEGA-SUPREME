@@ -10,10 +10,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.core.IvannaNativeLib
+import kotlinx.coroutines.delay
 
 // ⚙️ 1. OPE DSP: Ecualizador y Compresor
 @Composable
 fun OpeEngineScreen(modifier: Modifier = Modifier) {
+    // FASE 3E: nativeGetEvoBestFitness() está declarada y viva (el kernel
+    // evolutivo real corre en su propio hilo nativo desde
+    // MainActivity.onCreate -> nativeStartEvoThread) pero nunca se leía en
+    // ninguna UI. nativeEvolveStep() del brief original NO se cablea aquí:
+    // pertenece a un segundo kernel evolutivo legacy (evolutionary_kernel.cpp,
+    // g_population) que nunca se inicializa (nativeInitializeEvolution jamás
+    // se llama) — invocarlo operaría sobre estado no inicializado.
+    var evoBestFitness by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (IvannaNativeLib.isLoaded) {
+                evoBestFitness = runCatching { IvannaNativeLib.nativeGetEvoBestFitness() }.getOrNull()
+            }
+            delay(2000)
+        }
+    }
     Column(modifier = modifier.padding(16.dp)) {
         Text("OPE DSP: Ecualizador", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
@@ -31,6 +49,13 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
         Text("OPE DSP: Compresor", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text("Umbral (Threshold) dB")
         Slider(value = 0.8f, onValueChange = { /* TODO: Bind to AudioStateManager.compThreshold */ })
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Kernel Evolutivo (Motor Ω)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(
+            evoBestFitness?.let { "Best fitness: %.4f".format(it) } ?: "Best fitness: —",
+            fontSize = 14.sp
+        )
     }
 }
 

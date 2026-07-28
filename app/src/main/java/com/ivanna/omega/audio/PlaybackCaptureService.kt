@@ -265,6 +265,10 @@ class PlaybackCaptureService : Service() {
                             // FIX: motor binaural alimentado con audio REAL capturado
                             // (antes nunca recibía nada — capturaba el mic físico).
                             SpatialAudioEngineV2.feedCapturedBlock(buffer, numFrames)
+                            // FASE 3A: IvannaLab estaba declarado en JNI pero nunca
+                            // alimentado — mismo buffer real ya usado arriba, sin
+                            // downmix ni copia extra.
+                            IvannaLabMonitor.feed(buffer, numFrames)
                             // Downmix a mono para el visualizador
                             for (i in 0 until numFrames) {
                                 mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
