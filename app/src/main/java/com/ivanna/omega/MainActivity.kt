@@ -104,6 +104,14 @@ class MainActivity : ComponentActivity() {
         if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeStartEvoThread()
         setContent { OmegaApp() }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (IvannaNativeLib.isLoaded) {
+            runCatching { IvannaNativeLib.nativeSaveEvoState() }
+            runCatching { IvannaNativeLib.nativeDestroyAdaptiveEngine() }
+        }
+    }
 }
 
 @Composable
@@ -208,6 +216,14 @@ fun OmegaApp() {
                 }
             }
             composable("adaptive") {
+                DisposableEffect(Unit) {
+                    if (IvannaNativeLib.isLoaded)
+                        runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(false) }
+                    onDispose {
+                        if (IvannaNativeLib.isLoaded)
+                            runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(true) }
+                    }
+                }
                 com.ivanna.omega.ui.AdaptiveEngineScreen(
                     voiceProtectionManager = voiceProtectionManager,
                     backend = adaptiveBackend,

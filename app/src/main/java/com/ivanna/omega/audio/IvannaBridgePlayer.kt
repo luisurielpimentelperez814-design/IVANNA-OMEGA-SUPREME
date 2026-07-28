@@ -106,6 +106,7 @@ class IvannaBridgePlayer(private val context: Context) {
 
     @Volatile private var pauseRequested = false
     @Volatile private var stopRequested = false
+    private val analyzeTickCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
     // --- Posición y duración reales para la barra de progreso ---
     private val _currentPositionMs = MutableStateFlow(0L)
@@ -465,6 +466,10 @@ class IvannaBridgePlayer(private val context: Context) {
                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             DSPBridge.process(chunk, chunkFrames)
+                            if (com.ivanna.omega.core.IvannaNativeLib.isLoaded &&
+                                analyzeTickCounter.incrementAndGet() % 50 == 0) {
+                                runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeAnalyzeAudio(chunk) }
+                            }
                             if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
                                 try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
                             }
