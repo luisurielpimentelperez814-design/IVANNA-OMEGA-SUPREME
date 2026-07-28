@@ -37,6 +37,15 @@ using ivanna::PILSTMMilenioEngine;
 static PILSTMMilenioEngine     g_piLstmBridge;
 static std::atomic<bool>       g_piLstmBridge_ready{false};
 
+// Estado del estimador de residual — declarado aquí (antes del extern "C")
+// para que nativeSetNPMax (que invalida g_residual_seed) pueda usarlo sin
+// necesidad de forward-declaration.
+static std::atomic<float> g_residual_ema{0.0f};
+static float              g_prev_h        = 0.0f;
+static float              g_prev_c        = 0.0f;
+static bool               g_residual_seed = false;
+static int64_t            g_prev_ns       = 0;
+
 extern "C" {
 
 JNIEXPORT void JNICALL
@@ -131,11 +140,8 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetHrtfEnabled(JNIEnv*, jo
 
 // Estado del estimador de residual (solo tocado desde el hilo de UI que
 // consulta la telemetría; atómico para publicar hacia cualquier lector).
-static std::atomic<float> g_residual_ema{0.0f};
-static float              g_prev_h        = 0.0f;
-static float              g_prev_c        = 0.0f;
-static bool               g_residual_seed = false;
-static int64_t            g_prev_ns       = 0;
+// Declarado al inicio del archivo (antes del extern "C") para evitar uso
+// antes de la declaración en nativeSetNPMax.
 
 static inline int64_t now_ns() {
     struct timespec ts;
