@@ -49,6 +49,11 @@ class DspStateUpdater {
         try {
             val deltas = mutableMapOf<String, Float>()
 
+            // FIX quirúrgico (audit 2026-07-28): antes safeCompressor() sólo se
+            // disparaba cuando cambiaba threshold O ratio — si el usuario movía
+            // Attack o Release en AdaptiveEngineScreen, el delta ni se registraba.
+            // nativeSetCompressorParams SÍ recibe attackMs/releaseMs
+            // (IvannaNativeLib.kt:117, firma de 4 args viva desde v3.0).
             fun safeCompressor() = runCatching {
                 IvannaNativeLib.nativeSetCompressorParams(
                     newState.compressorThreshold.coerceIn(-60f, 0f),
@@ -64,6 +69,14 @@ class DspStateUpdater {
             }
             if (newState.compressorRatio != previousState.compressorRatio) {
                 deltas["ratio"] = newState.compressorRatio
+                safeCompressor()
+            }
+            if (newState.compressorAttack != previousState.compressorAttack) {
+                deltas["attack"] = newState.compressorAttack
+                safeCompressor()
+            }
+            if (newState.compressorRelease != previousState.compressorRelease) {
+                deltas["release"] = newState.compressorRelease
                 safeCompressor()
             }
 
@@ -87,12 +100,30 @@ class DspStateUpdater {
 
             if (newState.eqBass != previousState.eqBass ||
                 newState.eqMid != previousState.eqMid ||
-                newState.eqTreble != previousState.eqTreble) {
+                newState.eqTreble != previousState.eqTreble ||
+                newState.masterGain != previousState.masterGain) {
                 deltas["eq"] = newState.eqBass + newState.eqMid + newState.eqTreble
+                // FIX: antes el delta "eq" se contabilizaba y logueaba pero
+                // NUNCA se enviaba al motor nativo desde esta ruta. La ruta
+                // primaria (AdaptiveBackend.applyEQ) sí lo envía, pero
+                // requestUpdate() debe ser autosuficiente: cualquier caller
+                // que empuje un AudioState nuevo por aquí debe tener EQ real,
+                // no sólo un log. Firma real: IvannaNativeLib.kt:42.
+                // También incluye masterGain, que antes ni disparaba delta.
+                runCatching {
+                    IvannaNativeLib.nativeSetEQParams(
+                        newState.eqBass.coerceIn(-18f, 18f),
+                        newState.eqMid.coerceIn(-18f, 18f),
+                        newState.eqTreble.coerceIn(-18f, 18f),
+                        newState.masterGain.coerceIn(0.1f, 2f)
+                    )
+                }.onFailure { Log.w(TAG, "eq native: ${it.message}") }
             }
 
             if (newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
                 deltas["voice_protection"] = if (newState.voiceProtectionEnabled) 1f else 0f
+                // Nota: la ruta real de voz es VoiceProtectionManager.applyToEngine()
+                // — este delta es sólo informativo para el log, no dispara C++.
             }
 
             if (deltas.isNotEmpty()) {
