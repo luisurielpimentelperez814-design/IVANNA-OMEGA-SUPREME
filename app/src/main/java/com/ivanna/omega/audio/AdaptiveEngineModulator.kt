@@ -118,8 +118,13 @@ class AdaptiveEngineModulator {
             previousModulatedState = it
         }
         
-        val smoothed = AudioState(
-            adaptiveMode = newState.adaptiveMode,  // Discreto
+        // FIX: se usa newState.copy() en lugar del constructor completo.
+        // El constructor explícito omitía safetyMargin, manualModeEnabled,
+        // isDirty e isAudioRunning, que volvían a su default en cada
+        // llamada y se persistían así en ParameterStore.saveParametersNow
+        // (AdaptiveBackend.kt:117 → ParameterStore.kt:61), apagando el
+        // modo manual del usuario al reabrir (AdaptiveEngineScreen.kt:50).
+        val smoothed = newState.copy(
             adaptiveIntensity = newState.adaptiveIntensity,
             
             compressorThreshold = smooth(previous.compressorThreshold, newState.compressorThreshold),
