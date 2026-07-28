@@ -124,4 +124,24 @@ class AudioEngine {
     private external fun nativeGetLufs(): Float
     private external fun nativeGetPeakDbfs(): Float
     private external fun nativeSetAntiDolbyScores(speech: Float, music: Float, bass: Float)
+
+    // ── Benchmark logger (benchmark_logger.cpp) ───────────────────────────────
+    // FASE 2: el brief de auditoría asumía nativeLogBenchmark(tag: String), pero
+    // el símbolo JNI real (Java_com_ivanna_omega_audio_AudioEngine_nativeLogBenchmark)
+    // toma 6 floats/int, no un tag. Firma tomada directo de benchmark_logger.cpp:77-90.
+    private external fun nativeLogBenchmark(
+        lufs: Float, peak: Float, speech: Float, music: Float, bass: Float, dolbyState: Int
+    )
+    private external fun nativeGetBenchmarkPath(): String
+
+    fun logBenchmark(lufs: Float, peak: Float, speech: Float, music: Float, bass: Float, dolbyState: Int) {
+        if (!libLoaded) return
+        runCatching { nativeLogBenchmark(lufs, peak, speech, music, bass, dolbyState) }
+            .onFailure { Log.w(TAG, "logBenchmark: $it") }
+    }
+
+    fun getBenchmarkPath(): String? {
+        if (!libLoaded) return null
+        return runCatching { nativeGetBenchmarkPath() }.getOrNull()
+    }
 }

@@ -209,4 +209,17 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
     
     /** Destruir instancia del Adaptive Engine */
     external fun nativeDestroyAdaptiveEngine()
+
+    // ── IvannaLab — medición THD/IMD/LUFS/SNR/peak/truepeak ──────────────────
+    // Implementadas en ivanna_omega_jni.cpp:917-949, símbolo JNI ya apunta a
+    // esta clase (Java_com_ivanna_omega_core_IvannaNativeLib_nativeLab*),
+    // solo faltaban las declaraciones Kotlin.
+    /** Reinicia el acumulador de medición de IvannaLab. */
+    external fun nativeLabReset()
+    /** Alimenta [frames] frames estéreo intercalados [L0,R0,L1,R1,...]. */
+    external fun nativeLabFeed(interleavedStereo: FloatArray, frames: Int)
+    /** [0]=thd% [1]=imd% [2]=integratedLUFS [3]=luRange [4]=snrDB [5]=peakDBFS [6]=truepeakDBTP */
+    external fun nativeLabMeasure(): FloatArray?
+    /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
+    external fun nativeLabReport(): String
 }
