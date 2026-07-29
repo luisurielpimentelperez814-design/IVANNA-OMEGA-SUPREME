@@ -20,6 +20,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
+import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
@@ -72,6 +73,7 @@ class PlaybackCaptureService : Service() {
     private var voiceWindowFill = 0
     private var voiceDecimAcc = 0f
     private var voiceDecimCount = 0
+    private var audioTrackSessionId = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -177,8 +179,13 @@ class PlaybackCaptureService : Service() {
 
             audioRecord?.startRecording()
             audioTrack?.play()
+            audioTrackSessionId = audioTrack?.audioSessionId ?: 0
+            val app = applicationContext
+            if (app is IVANNAApplication && audioTrackSessionId > 0)
+                app.globalEffectManager.openSession(audioTrackSessionId, packageName)
             isRunning = true
             _isCapturing.value = true
+            CinematicEngineHost.start(applicationContext, SAMPLE_RATE)
             Log.i(TAG, "Pipeline activo @ ${SAMPLE_RATE}Hz")
 
             scope.launch {
@@ -194,6 +201,9 @@ class PlaybackCaptureService : Service() {
 
                     // 1. EQ / Compresor / Exciter / Widener
                     DSPBridge.process(buffer, frames)
+
+                    // 1b. Cinematic engine (Anti-Dolby CRNN + mode adaptation)
+                    CinematicEngineHost.processBlock(buffer).copyInto(buffer)
 
                     // 2. HRTF binaural
                     if (IvannaSpatialEngine.enabled) {
@@ -262,8 +272,14 @@ class PlaybackCaptureService : Service() {
     }
 
     private fun cleanup() {
+        val app = applicationContext
+        if (app is IVANNAApplication && audioTrackSessionId > 0) {
+            app.globalEffectManager.closeSession(audioTrackSessionId)
+            audioTrackSessionId = 0
+        }
         audioTrack?.stop(); audioTrack?.release(); audioTrack = null
         audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+        CinematicEngineHost.stop()
         spatialEngineV2.stop()
         runCatching { voiceProtectionController?.release() }
         voiceProtectionController = null

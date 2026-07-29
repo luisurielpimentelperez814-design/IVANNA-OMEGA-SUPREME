@@ -544,6 +544,11 @@ fun DashboardScreen(
     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
+    // MediaSession — expone el player al sistema (BT, lock screen, wearables)
+    DisposableEffect(player) {
+        com.ivanna.omega.audio.MediaSessionManager.init(context, player)
+        onDispose { com.ivanna.omega.audio.MediaSessionManager.release() }
+    }
 
     // Parche 5a: métricas agregadas del BridgePlayer (después de player)
     val playerPositionMs by player.currentPositionMs.collectAsState()
