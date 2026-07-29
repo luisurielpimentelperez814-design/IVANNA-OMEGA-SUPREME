@@ -21,7 +21,7 @@
  *     evolutivo (V5) para restauración atómica.
  */
 
-#include "omega_effect.h"         // nuestras definiciones puras C
+#include "audio_effect_compat.h"         // nuestras definiciones puras C
 #include "omega_shared.h"         // estructuras compartidas con el daemon
 #include "evolutionary_kernel.h"  // API del motor evolutivo (extern "C")
 #include <jni.h>
@@ -249,7 +249,3 @@ static const struct effect_interface_s sIface = {Effect_Process, Effect_Command,
 
 /* ── Punto de entrada JNI para la librería ─────────────────────────────── */
 extern "C" JNIEXPORT jint JNICALL
-Java_com_ivanna_omega_audio_AudioEffect_nativeCreateEffect(JNIEnv*, jobject) {
-    // Solo una instancia global (simplificado)
-    return 0;
-}
