@@ -87,7 +87,7 @@ struct OmegaContext {
     const struct effect_interface_s *itfe;
     effect_config_t config;
     bool active;
-    OmegaShared* shared;         // memoria compartida con daemon
+    OmegaSharedState* shared;         // memoria compartida con daemon
     int shm_fd;
 
     // Procesamiento
@@ -99,7 +99,7 @@ struct OmegaContext {
 
     // Estado persistente
     uint32_t generation;
-    float best_genome[GENOME_SIZE];  // 256 genes de timbre
+    uint8_t best_genome[GENOME_SIZE];  // 256 genes de timbre
     bool genome_ready;
 };
 
@@ -149,10 +149,10 @@ static bool mapSharedMemory(OmegaContext* ctx) {
     if (ctx->shared) return true;
     int fd = receive_shm_fd();
     if (fd < 0) return false;
-    void* ptr = mmap(nullptr, sizeof(OmegaShared), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    void* ptr = mmap(nullptr, sizeof(OmegaSharedState), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
     if (ptr == MAP_FAILED) return false;
-    ctx->shared = (OmegaShared*)ptr;
+    ctx->shared = (OmegaSharedState*)ptr;
     return true;
 }
 
@@ -189,7 +189,7 @@ static int Effect_Process(effect_handle_t self, audio_buffer_t* in, audio_buffer
     if (in->raw != out->raw)
         memcpy(out->raw, in->raw, samples * sizeof(float));
 
-    float* buffer = out->raw;
+    float* buffer = (float*)out->raw;
     // 1. Multibanda
     ctx->mb.process(buffer, buffer, cap / ch);
 
@@ -202,7 +202,7 @@ static int Effect_Process(effect_handle_t self, audio_buffer_t* in, audio_buffer
     if (ctx->genome_ready) {
         // Aplicar modulación tímbrica sutil (escala 0.15 para no saturar)
         for (int i = 0; i < cap; i += ch) {
-            float envelope = ctx->best_genome[i % GENOME_SIZE] * 0.15f;
+            float envelope = (ctx->best_genome[i % GENOME_SIZE] / 255.0f) * 0.15f;
             for (int c = 0; c < ch; ++c)
                 buffer[i + c] += envelope * buffer[i + c];
         }
