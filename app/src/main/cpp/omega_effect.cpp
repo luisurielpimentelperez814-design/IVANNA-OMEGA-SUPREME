@@ -161,7 +161,7 @@ static bool mapSharedMemory(OmegaContext* ctx) {
  * ------------------------------------------------------------------------- */
 static void update_genome_if_needed(OmegaContext* ctx) {
     if (!ctx->shared) return;
-    uint32_t gen = ctx->shared->generation.load(std::memory_order_acquire);
+    uint32_t gen = evo_get_generation();
     if (gen > ctx->generation) {
         ctx->generation = gen;
         // Obtener el mejor genoma del kernel evolutivo (acceso directo)
