@@ -155,12 +155,7 @@ void AdaptiveDecisionEngine::start() {
     // de forma explícita antes de reutilizar el objeto std::thread.
     if (controlThread_.joinable()) controlThread_.join();
 
-    try {
-        controlThread_ = std::thread([this]() { controlLoop(); });
-    } catch (...) {
-        running_.store(false, std::memory_order_release);
-        throw;
-    }
+    controlThread_ = std::thread([this]() { controlLoop(); });
 }
 
 void AdaptiveDecisionEngine::stop() noexcept {
