@@ -6,8 +6,8 @@
  *   DSP chain → PDEngine (NHO + BiquadEnvelopeBank + CueBasedSpatial)
  *   EvolutionaryKernel movido a modo OFFLINE (no corre en audio thread)
  */
-
 #include <jni.h>
+#include "omega_perceptual_guard.h"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
-
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
@@ -30,7 +29,6 @@
 #include "../perceptual_loudness.hpp"
 #include "../ivannalab/ivannalab.h"
 #include "omega_shared.h"
-
 // FIX (build roto — ld: undefined symbol: g_shared): g_shared vive
 // DENTRO de un namespace anónimo en omega_daemon.cpp (líneas 53-514),
 // lo que le da enlace INTERNO (equivalente a 'static' a nivel de
@@ -45,13 +43,10 @@
 // con la declaración original (la regla de C++ sólo restringe la
 // linkage entre archivos, no el lookup dentro del mismo archivo).
 OmegaSharedState* omega_daemon_get_shared_state();
-
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
 using namespace ivanna;
-
 // ── Bus + staging frame (ver audio_control_plane.cpp) ────────────────────────
 // Definición real de los externs declarados en audio_control_plane.cpp.
 // El hilo JNI/UI publica ControlFrame nuevos aquí; el hilo de audio los
@@ -60,7 +55,6 @@ namespace ivanna {
     ControlFrameBus g_control_bus;
     ControlFrame    g_staging_frame;
 }
-
 // ── Engine singletons (static storage — zero allocations) ────────────────────
 static ParametricEQ   g_eq;
 static Compressor     g_comp;
@@ -68,6 +62,8 @@ static HarmonicExciter g_exciter;
 static StereoWidener  g_widener;
 static GainStage      g_gain;
 static SafetyLimiter  g_safety_limiter;
+// OMEGA PERCEPTUAL GUARD
+static OmegaPerceptualGuard g_perceptualGuard;
 
 // IvannaLab — instancia única, alimentada bajo demanda desde nativeLabFeed().
 // No vive en el hot-path de audio de ninguna ruta.
@@ -91,7 +87,6 @@ static std::atomic<bool> g_loudnessMeterInit{false};
 // (Spotify/YouTube Music) — volumen percibido consistente entre archivos
 // sin importar el mastering original.
 static std::atomic<float> g_loudness_target{-14.f};
-
 // ═══ FASE 4B: AdaptiveDecisionEngine — cierre del lazo adaptativo ════════════
 // Única instancia del motor. Sus buses (rawMetrics, adaptiveState) son
 // SPSC seqlock — el audio thread publica RawAudioMetrics + consume
@@ -100,7 +95,6 @@ static std::atomic<float> g_loudness_target{-14.f};
 // de una vez (p. ej. cambio de sample rate por reproductor de archivo).
 static ivanna::experimental::AdaptiveDecisionEngine g_adaptiveEngine;
 static std::atomic<bool> g_adaptiveEngineStarted{false};
-
 // Snapshot del último AdaptiveState publicado — lo leen los JNI getters de
 // telemetría (fuera del audio thread) para exponer el ciclo a Kotlin/UI.
 // Se actualiza dentro del audio thread justo después de consumeIfNewer().
@@ -125,30 +119,23 @@ static std::atomic<float> g_lastBandHigh{0.0f};
 static std::atomic<uint64_t> g_lastAdaptiveApplied{0};
 // 0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect
 static std::atomic<int> g_activeRoute{0};
-
 // Snapshot persistente AdaptiveState (independiente del audio callback)
 static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};
 static std::atomic<float> g_adaptiveSpatialSnapshot{1.0f};
 static std::atomic<float> g_adaptiveSafetySnapshot{1.0f};
 static std::atomic<bool> g_adaptiveSnapshotStarted{false};
-
 static void adaptiveSnapshotLoop() {
     uint64_t seq = 0;
-
     while (true) {
         ivanna::experimental::AdaptiveState st{};
-
         if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, seq)) {
             g_adaptiveTargetGainSnapshot.store(
                 st.target_gain, std::memory_order_release);
-
             g_adaptiveSpatialSnapshot.store(
                 st.spatial_width, std::memory_order_release);
-
             g_adaptiveSafetySnapshot.store(
                 st.safety_margin,
                 std::memory_order_release);
-
             // FIX (telemetria 0% Ruta B): nativeProcess no corre cuando
             // Spotify/YouTube estan activos. Este loop es la unica fuente
             // de AdaptiveState independiente de la ruta activa.
@@ -159,13 +146,10 @@ static void adaptiveSnapshotLoop() {
             g_lastAdaptiveSafetyMargin.store(st.safety_margin,           std::memory_order_release);
             g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_release);
         }
-
         std::this_thread::sleep_for(
             std::chrono::milliseconds(20));
     }
 }
-
-
 // ═══ Adaptive Feedback Loop — puente ruta B (Spotify/YouTube/apps de
 // terceros vía omega_effect.cpp) ═════════════════════════════════════════
 //
@@ -207,7 +191,6 @@ static void adaptiveSnapshotLoop() {
 // un bus multi-productor propiamente dicho porque eso es alcance nuevo,
 // no parte de este cierre de integración.
 static std::atomic<bool> g_audioRouteBridgeStarted{false};
-
 static void audioRouteBridgeLoop() {
     // Última lectura vista, para no republicar/loguear si omega_effect no
     // está produciendo audio nuevo ahora mismo (evita contaminar el bus
@@ -215,16 +198,12 @@ static void audioRouteBridgeLoop() {
     float lastRms = -1.0f, lastPeak = -1.0f;
     uint64_t frameCounter = 0;
     auto lastLogTime = std::chrono::steady_clock::now();
-
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
-
         OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
         if (!shared) continue;  // daemon aún no arrancó/mapeó memoria en este proceso
-
         const float rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
         const float peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
-
         // Silencio absoluto sostenido (o sin cambios desde la última
         // lectura) → omega_effect probablemente no está procesando audio
         // real ahora mismo (nadie reproduciendo, o efecto en bypass). No
@@ -234,7 +213,6 @@ static void audioRouteBridgeLoop() {
                                  std::fabs(peak - lastPeak) > 1e-6f;
         lastRms = rms; lastPeak = peak;
         if (!hasSignal && !changed) continue;
-
         // ai_gain_db sólo es significativo si el AGC del efecto está
         // activo (ai_enabled) — se usa como proxy de gain_reduction SOLO
         // en su excursión negativa (AGC reduciendo por señal fuerte); una
@@ -245,7 +223,6 @@ static void audioRouteBridgeLoop() {
             const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
             grDb = gainDb < 0.0f ? -gainDb : 0.0f;
         }
-
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peak;
@@ -272,12 +249,10 @@ static void audioRouteBridgeLoop() {
         g_lastBandHigh.store(rawM.band_high_energy, std::memory_order_relaxed);
         g_adaptiveEngine.rawMetrics.publish(
             ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
-
         g_lastRawRms.store(rms,   std::memory_order_relaxed);
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
         g_activeRoute.store(2, std::memory_order_relaxed);
-
         // FIX (Opción A de unificación — paridad de protección Ruta A/Ruta
         // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
         // hasta acá solo se publicaban métricas HACIA el motor adaptativo.
@@ -317,9 +292,7 @@ static void audioRouteBridgeLoop() {
             shared->ai_runtime_exciter_red.store(
                 std::clamp(st.exciter_reduction, 0.0f, 1.0f), std::memory_order_release);
         }
-
         ++frameCounter;
-
         // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
         // seguro (a diferencia de dentro de Effect_Process/nativeProcess).
         auto now = std::chrono::steady_clock::now();
@@ -332,7 +305,6 @@ static void audioRouteBridgeLoop() {
         }
     }
 }
-
 static inline float adaptive_mode_base_strength(int mode) noexcept {
     switch (mode) {
         case 0: return 0.0f;
@@ -342,18 +314,15 @@ static inline float adaptive_mode_base_strength(int mode) noexcept {
         default: return 0.35f;
     }
 }
-
 static inline float adaptive_ui_strength() noexcept {
     const float intensity = std::clamp(
         g_adaptiveUiIntensity.load(std::memory_order_relaxed), 0.f, 100.f) * 0.01f;
     const int mode = g_adaptiveUiMode.load(std::memory_order_relaxed);
     return std::clamp(adaptive_mode_base_strength(mode) * intensity, 0.f, 1.f);
 }
-
 static inline float blend_adaptive_from_neutral(float neutral, float suggestion, float strength) noexcept {
     return neutral + (suggestion - neutral) * strength;
 }
-
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     if (!src || n <= 0) return false;
     jfloat* p = env->GetFloatArrayElements(src, nullptr);
@@ -362,18 +331,14 @@ static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     env->ReleaseFloatArrayElements(src, p, JNI_ABORT);
     return true;
 }
-
 extern "C" {
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // DSPBridge (com.ivanna.omega.dsp.DSPBridge) — called at app startup
 // ═══════════════════════════════════════════════════════════════════════════════
-
 JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
     return env->NewStringUTF("IVANNA OMEGA SUPREME v1.1-OPE | GORE TNS © 2026");
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 192000) { LOGE("Bad SR: %d", sr); return; }
@@ -387,7 +352,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_pd.start_evo_thread();
     g_loudnessMeter.init((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
-
     // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
     // start() crea un std::thread propio (el hilo de control lento) que
     // corre controlLoop() a 50ms. NO se dispara desde el audio thread
@@ -397,14 +361,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // idempotencia si el sample rate cambia y nativeInit se re-llama.
     if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
         g_adaptiveEngine.start();
-
       if (!g_adaptiveSnapshotStarted.exchange(true)) {
           std::thread(adaptiveSnapshotLoop).detach();
           LOGI("AdaptiveState snapshot consumer started");
       }
         LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
     }
-
     // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
     // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
     // adaptativo (nativeInit puede re-llamarse por cambio de sample rate).
@@ -415,11 +377,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         std::thread(audioRouteBridgeLoop).detach();
         LOGI("AudioRoute bridge started (omega_effect -> AdaptiveDecisionEngine, @30ms)");
     }
-
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     JNIEnv*, jobject,
@@ -443,7 +403,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     g_pd.set_nho_beta(beta);
     g_pd.set_nho_wet(wet * 0.5f);
 }
-
 // FIX (tuning magistral): DSPState.stereoWidth (Kotlin) nunca llegaba al
 // motor nativo — pushToNative() no lo incluía en nativeSetParams(), y
 // StereoWidener derivaba el ancho de "gamma" (colisión con el timing del
@@ -452,7 +411,6 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetStereoWidth(JNIEnv*, jobject, jfloat width) {
     g_widener.setWidth(width);
 }
-
 // FEATURE (Voice Protection): recibe el score de voz (0..1) desde
 // VoiceProtectionController (Kotlin, YamnetClassifier real). Canal
 // dedicado, no pasa por setParams() — igual patrón que nativeSetStereoWidth
@@ -462,7 +420,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
@@ -471,7 +428,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
-
     // FIX CRÍTICO: 'data' viene INTERCALADO estéreo [L0,R0,L1,R1,...].
     // El código anterior pasaba el mismo puntero como left y right → mono aliasado.
     // Fix: de-intercalar a buffers L/R reales (thread_local: sin stack overhead),
@@ -481,14 +437,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         chL[i] = data[2 * i];
         chR[i] = data[2 * i + 1];
     }
-
     // FEATURE (Voice Protection): copia seca (pre-DSP) para poder mezclar
     // de vuelta hacia ella si YamnetClassifier detecta voz dominante — ver
     // blend al final de esta función, después de PDEngine.
     static thread_local float dryL[2048], dryR[2048];
     std::memcpy(dryL, chL, n * sizeof(float));
     std::memcpy(dryR, chR, n * sizeof(float));
-
     // FIX (Fase C, pulido de oído absoluto): processInput() (trim de
     // entrada, derivado de p.mix, ±6dB) corría DESPUÉS de EQ/Compressor/
     // Exciter/Widener — violando el orden de una cadena de ganancia
@@ -501,7 +455,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // sí pertenece al final de la cadena — ahí se queda.
     g_gain.processInput(chL, chR, n);
     g_eq.process(chL, chR, n);
-
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
     // (GainStage/Compressor/HarmonicExciter), no como ajustes paralelos
@@ -530,16 +483,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     s_targetGainSmooth += 0.05f * (targetGainUi - s_targetGainSmooth);
     s_compAmountSmooth += 0.05f * (compAmountUi - s_compAmountSmooth);
     s_excReductionSmooth += 0.05f * (excReductionUi - s_excReductionSmooth);
-
     g_gain.setRuntimeGain(s_targetGainSmooth);
     g_comp.setRuntimeAmount(s_compAmountSmooth);
     g_comp.process(chL, chR, n);
     g_exciter.setRuntimeReduction(s_excReductionSmooth);
-    g_exciter.process(chL, chR, n);
+
+g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
     g_gain.processOutput(chL, chR, n);
     g_safety_limiter.process(chL, chR, n);
-
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
     // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
     // PDEngine (NHO + Spatial + HRTF) se inicializa y arranca su hilo
@@ -563,7 +515,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
     static thread_local float pdOutL[2048], pdOutR[2048];
     g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
-
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -597,16 +548,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
         const double denom = std::sqrt(sumLL * sumRR) + 1e-9;
         const float corrRaw = (float)std::clamp(sumLR / denom, -1.0, 1.0);
-
         static thread_local float corrSmooth = 0.7f;  // arranca neutral, no en 1.0
         corrSmooth += 0.08f * (corrRaw - corrSmooth);  // EMA suave, sin saltos por transitorio
-
         // corr alto (≈mono) → ensancha hasta +40%. corr bajo (ya ancho) →
         // no toca (multiplicador 1.0). Zona muerta entre 0.4 y 0.8 para no
         // reaccionar a fluctuaciones normales de una mezcla ya balanceada.
         widenAmountFromCorrelation = std::clamp((corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
     }
-
     // FEATURE (Voice Protection): cuando YamnetClassifier detecta voz
     // dominante en el bloque, mezcla de vuelta hacia la señal seca en vez
     // de dejar que Exciter/Compresor/Widener sobre-procesen la voz. Máximo
@@ -621,7 +569,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             pdOutR[i] = pdOutR[i] * wetMix + dryR[i] * dryMix;
         }
     }
-
     // FEATURE (Perceptual Optimizer): mide LUFS real (K-weighted) sobre la
     // salida final ya procesada y aplica un trim de ganancia lento hacia
     // el target (-14 LUFS por defecto) — normalización de volumen
@@ -629,7 +576,40 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     if (g_loudnessMeterInit.load(std::memory_order_relaxed)) {
         const float lufs = g_loudnessMeter.measure_block(pdOutL, pdOutR, n);
         const float target = g_loudness_target.load(std::memory_order_relaxed);
-        const float trim = g_loudnessMeter.update_trim(target);
+    // OMEGA PERCEPTUAL GUARD FINAL
+    // Proteccion dinamica contra fatiga, clipping y brillo excesivo
+
+
+    // Sensores reales del bloque DSP
+    float perceptualBrightness = 0.60f;
+    if (g_lastBandHigh.is_lock_free()) {
+        perceptualBrightness = std::clamp(
+            g_lastBandHigh.load(std::memory_order_relaxed),
+            0.0f, 1.0f);
+    }
+
+    float perceptualCrest =
+        std::clamp(
+            peak / std::max(rms, 1e-6f),
+            1.0f,
+            8.0f);
+
+    auto limits = g_perceptualGuard.process(       lufs,
+        perceptualBrightness,
+        perceptualCrest
+    );
+
+    // OMEGA PERCEPTUAL GUARD FINAL
+    // Seguridad perceptual: limita extremos sin sustituir AdaptiveEngine
+    s_compAmountSmooth = std::max(s_compAmountSmooth, limits.compressor);
+    s_excReductionSmooth = std::min(
+        s_excReductionSmooth,
+        limits.exciterReduction
+    );
+
+
+
+    const float trim = g_loudnessMeter.update_trim(target);
         g_control_frame.output_lufs.store(lufs, std::memory_order_relaxed);
         if (std::fabs(trim) > 0.01f) {
             const float trimLin = std::pow(10.f, trim / 20.f);
@@ -639,7 +619,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             }
         }
     }
-
     // ═══════════════════════════════════════════════════════════
     // FASE 4B: ciclo adaptativo cerrado. Publicar RawAudioMetrics ANTES
     // del re-intercalado + consumir AdaptiveState y aplicar UN parámetro
@@ -665,7 +644,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             if (ar > peakAbs) peakAbs = ar;
         }
         const float rms = (float)std::sqrt(sumSq / (double)(2 * std::max(n, 1)));
-
         // 2) FIX (gr_db ciego al PDEngine): el SafetyLimiter original corre sobre
         //    chL/chR, ANTES de g_pd.process_block(). Si PDEngine re-amplifica por
         //    encima del ceiling, g_safety_limiter.getGainReduction() devuelve 0
@@ -678,17 +656,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         if (peakAbs > kOutputCeiling && peakAbs > 1e-9f) {
             grDb = 20.0f * std::log10(peakAbs / kOutputCeiling);
         }
-
         // FIX (output sin limiter): la cadena DSP→Limiter→PDEngine nunca tenía
         // protección después del PDEngine. pdOutL/pdOutR con peak=2.5 iba directo
         // al hardware. Aplicar el limiter sobre la salida real DESPUÉS de medir
         // peakAbs (para que las métricas reflejen el pico que hubiera salido) y
         // ANTES del M/S ensanchamiento y la copia a data.
         g_safety_limiter.process(pdOutL, pdOutR, n);
-
         // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
-
         // 4) Publicar. Es un memcpy de POD atrás de un seqlock, no bloquea.
         //    Band energy: NO se agrega análisis nuevo — se reutilizan los
         //    envelopes IIR de 8 bandas (80/200/500/1k/2k/4k/8k/16kHz) que
@@ -721,13 +696,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_lastBandHigh.store(rawM.band_high_energy, std::memory_order_relaxed);
         g_adaptiveEngine.rawMetrics.publish(
             ivanna::experimental::RawMetricsBus::Source::RouteA_BridgePlayer, rawM);
-
         // Snapshot para telemetría (getters JNI, fuera del audio thread).
         g_lastRawRms.store(rms,     std::memory_order_relaxed);
         g_lastRawPeak.store(peakAbs, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb,    std::memory_order_relaxed);
         g_activeRoute.store(1, std::memory_order_relaxed);
-
         // 5) Consumir el último AdaptiveState publicado por el hilo de
         //    control (lock-free, no bloquea si no hay uno nuevo). El seq
         //    local persiste en thread_local (audio thread es único caller).
@@ -742,7 +715,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_relaxed);
             g_lastAdaptiveApplied.fetch_add(1, std::memory_order_relaxed);
         }
-
         // 6) APLICAR UN parámetro audible: spatial_width, combinando DOS
         //    señales en un único punto (fix de colisión, ver comentario
         //    junto a la medición de correlación L/R más arriba):
@@ -773,16 +745,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             }
         }
     }
-
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
         data[2 * i]     = pdOutL[i];
         data[2 * i + 1] = pdOutR[i];
     }
-
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
@@ -791,11 +760,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_safety_limiter.reset(); g_pd.reset();
     LOGI("OPE reset");
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // IvannaNativeLib (com.ivanna.omega.core.IvannaNativeLib) — stereo block API
 // ═══════════════════════════════════════════════════════════════════════════════
-
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 192000) return JNI_FALSE;
@@ -809,7 +776,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
     return JNI_TRUE;
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     JNIEnv* env, jobject,
@@ -817,14 +783,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray outL, jfloatArray outR,
     jint frames) {
     if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
-
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
     const int n = std::min((int)frames, 2048);
-
     if (!copyJFloat(env, inL, lBuf, n)) return;
     if (!copyJFloat(env, inR, rBuf, n)) return;
-
     // DSP chain
     // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
     // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth
@@ -851,20 +814,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     s_blk_tgSmooth += 0.05f * (blkTargetGain - s_blk_tgSmooth);
     s_blk_caSmooth += 0.05f * (blkCompAmount - s_blk_caSmooth);
     s_blk_erSmooth += 0.05f * (blkExcReduction - s_blk_erSmooth);
-
     g_gain.processInput(lBuf, rBuf, n);
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(s_blk_tgSmooth);
     g_comp.setRuntimeAmount(s_blk_caSmooth);
     g_comp.process(lBuf, rBuf, n);
-    g_exciter.setRuntimeReduction(s_blk_erSmooth);
+
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
     g_gain.processOutput(lBuf, rBuf, n);
     // SafetyLimiter: faltaba en esta ruta. nativeProcess lo aplica; sin él
     // aquí bloques que superen 0 dBFS salían sin protección hacia el DAC.
     g_safety_limiter.process(lBuf, rBuf, n);
-
     // FIX: Kernel Evolutivo → orquestador central real (antes: el genoma
     // ganador solo llegaba a z[]/harmonic_gain vía apply_evo_genome() interno
     // de PDEngine; evolutionary_active nunca se activaba y
@@ -886,27 +847,21 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         g_pd.set_spatial_angle(sp_angle);
         g_pd.set_spatial_width(sp_width);
     }
-
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
-
     jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
     if (pR) { memcpy(pR, oR, n*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
 }
-
-
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetClipCount(JNIEnv*, jobject) {
     return (jint)g_safety_limiter.getClipCount();
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetClipCount(JNIEnv*, jobject) {
     g_safety_limiter.resetClipCount();
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // IvannaLab — puente JNI (nativeLabFeed espera [L0,R0,L1,R1,...] intercalado;
 // nativeLabMeasure devuelve 7 floats en el orden de LabResult, ivannalab.h:
@@ -917,7 +872,6 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabReset(JNIEnv*, jobject) {
     g_lab.reset();
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabFeed(
     JNIEnv* env, jobject, jfloatArray interleavedStereo, jint frames) {
@@ -929,7 +883,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabFeed(
     g_lab.feed(p, std::min(static_cast<int>(frames), maxFrames));
     env->ReleaseFloatArrayElements(interleavedStereo, p, JNI_ABORT);
 }
-
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabMeasure(JNIEnv* env, jobject) {
     const ivanna::LabResult r = g_lab.measure();
@@ -942,12 +895,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabMeasure(JNIEnv* env, jobject
     env->SetFloatArrayRegion(out, 0, 7, vals);
     return out;
 }
-
 JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabReport(JNIEnv* env, jobject) {
     return env->NewStringUTF(g_lab.generateReport().c_str());
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     JNIEnv* env, jobject, jfloatArray params) {
@@ -973,7 +924,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
     g_gain.setParams(g_params);
 }
-
 // FIX CRÍTICO DE REGRESIÓN: esta función desapareció de una reescritura en
 // paralelo de este archivo, pero IvannaNativeLib.kt (Kotlin) sigue
 // declarando "external fun nativeSetEQParams(...)" y AdaptiveBackend.kt la
@@ -996,7 +946,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     g_eq.setParams(g_params);
     g_gain.setParams(g_params);
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
@@ -1006,7 +955,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_safety_limiter.reset();
     g_pd.reset();
 }
-
 // PDEngine / NHO setters exposed to Kotlin
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha(JNIEnv*,jobject,jfloat v) { g_pd.set_nho_alpha(v); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(JNIEnv*,jobject,jfloat v)  { g_pd.set_nho_beta(v); }
@@ -1020,10 +968,8 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*,jobject,jint,jfloat) {}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*,jobject,jint,jfloat) {}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*,jobject) { g_pd.reset(); }
-
 // ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
 // UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
-
 // Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1,
 // attack/release en ms — extendido para el control adaptativo @10Hz que ya
 // los pasaba (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build
@@ -1037,7 +983,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     g_comp.setAttack(attackMs);
     g_comp.setRelease(releaseMs);
 }
-
 // NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo,
 // y mezcla wet del efecto espacial NHO.
 // Se declaran explícitas (no reusar nativeSetGamma/nativeSetDelta, que ya
@@ -1047,13 +992,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
     JNIEnv*, jobject, jfloat rad) {
     g_pd.set_spatial_angle(rad * 57.29578f); // rad → deg
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
     JNIEnv*, jobject, jfloat width) {
     g_pd.set_spatial_width(width);
 }
-
 // ── nativeSetSpatialWet — nivel wet del efecto NHO/espacial [0..1] ───────────
 // Faltaba: IvannaNativeLib.kt declara este external fun sin símbolo JNI.
 // Controla la mezcla dry/wet del procesamiento espacial NHO dentro del pd_engine.
@@ -1067,43 +1010,34 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     if (!std::isfinite(v)) return;
     g_pd.set_nho_wet(std::clamp(v, 0.0f, 1.0f));
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // OmegaEngine mode control
 // ═══════════════════════════════════════════════════════════════════════════════
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_OmegaEngine_nativeSetMode(JNIEnv*, jobject, jint mode) {
     g_pd.set_mode(mode);
 }
-
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_OmegaEngine_nativeGetMode(JNIEnv*, jobject) {
     return (jint)g_pd.get_mode();
 }
-
 // ─── EvolutionaryKernel JNI controls ─────────────────────────────────────────
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeStartEvoThread(JNIEnv*, jobject) {
     g_pd.start_evo_thread();
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeStopEvoThread(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();
 }
-
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEvoBestFitness(JNIEnv*, jobject) {
     return evo_best_fitness();
 }
-
 // ─── EvolutionaryKernel: persistencia (save/load population) ────────────────
 // IMPORTANTE: nativeSetEvoSavePath debe llamarse ANTES de nativeInitDSP/
 // DSPBridge.nativeInit, porque start_evo_thread() dispara
 // evo_initialize_population() -> intenta cargar el save-state en ese momento.
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvoSavePath(
     JNIEnv* env, jobject, jstring path) {
@@ -1114,17 +1048,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvoSavePath(
         env->ReleaseStringUTFChars(path, cpath);
     }
 }
-
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSaveEvoState(JNIEnv*, jobject) {
     return evo_save_state() ? JNI_TRUE : JNI_FALSE;
 }
-
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadEvoState(JNIEnv*, jobject) {
     return evo_load_state() ? JNI_TRUE : JNI_FALSE;
 }
-
 // ─── FASE 2: puente JVM ↔ C++ para leer sesgo aprendido ──────────────────
 // Cache de JavaVM + method ID de LearningBias.jniGetBiasForActiveContext(String)F.
 // audio_control_plane.cpp los usa para consultar el sesgo cada vez que
@@ -1132,7 +1063,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadEvoState(JNIEnv*, jobject) 
 JavaVM*   g_jvm = nullptr;
 jclass    g_learningBias_cls = nullptr;
 jmethodID g_learningBias_getBias = nullptr;
-
 static void cache_learning_bindings(JNIEnv* env) {
     if (g_learningBias_cls && g_learningBias_getBias) return;
     if (g_jvm == nullptr) env->GetJavaVM(&g_jvm);
@@ -1144,13 +1074,11 @@ static void cache_learning_bindings(JNIEnv* env) {
         g_learningBias_cls, "jniGetBiasForActiveContext", "(Ljava/lang/String;)F");
     if (!g_learningBias_getBias) env->ExceptionClear();
 }
-
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeApplyControlFrame(JNIEnv* env, jobject) {
     cache_learning_bindings(env);
     return (jint) control_apply_frame();
 }
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLearningContext(
     JNIEnv* env, jobject, jstring ctx) {
@@ -1162,7 +1090,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLearningContext(
     env->CallStaticVoidMethod(g_learningBias_cls, mid, ctx);
     if (env->ExceptionCheck()) env->ExceptionClear();
 }
-
 // Consulta el sesgo aprendido para un paramKey. Devuelve 0 si no hay JVM
 // o el método no está cacheado. Llamada desde audio_control_plane.cpp.
 extern "C" float learning_bias_get(const char* param_key) {
@@ -1190,7 +1117,6 @@ extern "C" float learning_bias_get(const char* param_key) {
     if (attached) g_jvm->DetachCurrentThread();
     return (float) v;
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // FIX (Motor B / orphan JNI 2026-07-22): las 4 external fun de Kotlin
 //   IvannaNativeLib.nativeSetAdaptiveEngineEnabled
@@ -1217,12 +1143,10 @@ extern "C" float learning_bias_get(const char* param_key) {
 // siguen ahí por si alguien decide revivir AdaptiveEngineCore como
 // sensor independiente en el futuro (ver INTEGRATION_GUIDE.md).
 // ═══════════════════════════════════════════════════════════════════════════
-
 // Flag para el toggle Manual/Automático (pausa/reanuda el loop del ADE).
 // El motor A ya expone start()/stop() en g_adaptiveEngine — solo cableamos
 // el switch para que llame al método correcto según el estado.
 static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
     JNIEnv*, jobject, jboolean enabled) {
@@ -1245,7 +1169,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
         }
     }
 }
-
 // Crea/asegura la instancia del Adaptive Engine. En la arquitectura actual
 // g_adaptiveEngine es un objeto estático global — no hay handle real que
 // devolver, pero la firma Kotlin exige un Long. Se devuelve la dirección
@@ -1261,7 +1184,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
     g_adaptiveEngineUiEnabled.store(true, std::memory_order_release);
     return reinterpret_cast<jlong>(&g_adaptiveEngine);
 }
-
 // Devuelve los 12 parámetros adaptativos suavizados. En el Motor A los
 // atomics g_lastAdaptive* + los snapshots de AdaptiveState son la fuente
 // de verdad. El AdaptiveEngineCore original devolvía 12 campos (compressor
@@ -1287,7 +1209,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
     JNIEnv* env, jobject) {
     jfloatArray arr = env->NewFloatArray(12);
     if (!arr) return nullptr;
-
     // Motor A: compAmount está normalizado 0..1. Se re-mapea a threshold/
     // ratio de referencia para que la UI del Motor B siga leyendo unidades
     // coherentes (mismo mapeo que usa el DSP interno):
@@ -1298,7 +1219,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
     const float targetGain    = g_lastAdaptiveTargetGain.load(std::memory_order_relaxed);
     const float spatialWidth  = g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed);
     const float safetyMargin  = g_lastAdaptiveSafetyMargin.load(std::memory_order_relaxed);
-
     float v[12];
     v[0]  = -6.0f - compAmount * 18.0f;               // compressor_threshold (dB)
     v[1]  = 1.0f + compAmount * 7.0f;                 // compressor_ratio
@@ -1317,7 +1237,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(
     env->SetFloatArrayRegion(arr, 0, 12, v);
     return arr;
 }
-
 // Devuelve las 8 características analizadas del audio. En el Motor A las
 // métricas primarias las publica el audio thread cada bloque a los atomics
 // g_lastRawRms/Peak/GrDb; percussiveness/tonality/reverb no las calcula el
@@ -1337,35 +1256,29 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
     JNIEnv* env, jobject) {
     jfloatArray arr = env->NewFloatArray(8);
     if (!arr) return nullptr;
-
     const float rms    = g_lastRawRms.load(std::memory_order_relaxed);
     const float peak   = g_lastRawPeak.load(std::memory_order_relaxed);
     const float bandLo = g_lastBandLow.load(std::memory_order_relaxed);
     const float bandMi = g_lastBandMid.load(std::memory_order_relaxed);
     const float bandHi = g_lastBandHigh.load(std::memory_order_relaxed);
-
     // Percussiveness: crest factor normalizado. Ratio peak/rms alto ⇒ ataques
     // fuertes (batería, transientes); ratio bajo ⇒ señal sostenida (pad, voz).
     // Se mapea [1..8] crest → [0..1] percussiveness con clamp.
     const float crest = (rms > 1e-6f) ? (peak / rms) : 1.0f;
     const float percussiveness = std::clamp((crest - 1.0f) / 7.0f, 0.f, 1.f);
-
     // Tonality: energía media-alta / energía total. Música tonal tiene
     // distribución equilibrada; ruido colapsa a plano espectral.
     const float bandSum = bandLo + bandMi + bandHi;
     const float tonality = (bandSum > 1e-6f)
         ? std::clamp((bandMi + bandHi * 0.5f) / bandSum, 0.f, 1.f)
         : 0.0f;
-
     // Reverb amount: aproximado por la razón GR (compresión) vs. dinámica
     // real. Motor A no tiene detector de reverb dedicado — se deja proxy.
     const float grDb = g_lastRawGrDb.load(std::memory_order_relaxed);
     const float reverbApprox = std::clamp(std::abs(grDb) / 12.0f, 0.f, 1.f);
-
     // Dynamic range: inverso normalizado de la compresión aplicada.
     // Motor A no lo mide de forma independiente, se aproxima igual.
     const float dynamicRange = 1.0f - std::clamp(std::abs(grDb) / 24.0f, 0.f, 1.f);
-
     // Spectral centroid/spread: aproximado con las 3 bandas Gammatone que
     // el Motor A sí publica (low ~120 Hz, mid ~1500 Hz, high ~8000 Hz).
     // Centroid = Σ(f_i * E_i) / Σ(E_i)
@@ -1380,7 +1293,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
         const float var = (dLo * dLo * bandLo + dMi * dMi * bandMi + dHi * dHi * bandHi) / bandSum;
         spread = std::sqrt(std::max(0.f, var));
     }
-
     float v[8];
     v[0] = rms;
     v[1] = peak;
@@ -1393,7 +1305,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(
     env->SetFloatArrayRegion(arr, 0, 8, v);
     return arr;
 }
-
 // ─── FASE 4B: telemetría del ciclo adaptativo real ──────────────────────
 // Devuelve un snapshot POD de 10 floats con: [rms, peak, gr_db, target_gain,
 // comp_amount, exc_reduction, spatial_width, safety_margin, voice_protect,
@@ -1407,7 +1318,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveControls(
     g_adaptiveUiMode.store(std::clamp((int)modeOrdinal, 0, 3), std::memory_order_relaxed);
     g_adaptiveUiIntensity.store(std::clamp((float)intensityPercent, 0.f, 100.f), std::memory_order_relaxed);
 }
-
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
     JNIEnv* env, jobject) {
@@ -1427,21 +1337,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
     env->SetFloatArrayRegion(arr, 0, 10, v);
     return arr;
 }
-
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
-
     const bool active =
         g_initialized.load(std::memory_order_acquire) &&
         (
             g_adaptiveEngineStarted.load(std::memory_order_acquire) ||
             g_lastAdaptiveApplied.load(std::memory_order_relaxed) > 0
         );
-
     return active ? JNI_TRUE : JNI_FALSE;
 }
-
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
 // FloatArray[3]: [0]=low (sub/bass), [1]=mid (presencia/voz), [2]=high (brillo/sibilancia)
 // Valores en amplitud lineal RMS normalizada. 0.0 = silencio, 1.0 = clip level.
@@ -1460,7 +1366,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBandEnergies(
     env->SetFloatArrayRegion(arr, 0, 3, v);
     return arr;
 }
-
 // ── nativeGetUnifiedPipelineStatus — estado consolidado de ambas rutas ──────
 // FloatArray[8]:
 //   [0] activeRoute       (0=NONE 1=RouteA_BridgePlayer 2=RouteB_OmegaEffect)
@@ -1490,5 +1395,4 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
     env->SetFloatArrayRegion(arr, 0, 8, v);
     return arr;
 }
-
 } // extern "C"

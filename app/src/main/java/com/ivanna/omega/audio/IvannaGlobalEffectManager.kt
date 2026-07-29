@@ -203,7 +203,7 @@ class IvannaGlobalEffectManager {
                         val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
                         eq.setBandLevel(
                             band.toShort(),
-                            (baseMb + offsetMb).coerceIn(-1500, 1500).toShort()
+                            (baseMb + offsetMb).coerceIn(-600, 600).toShort()
                         )
                     }
                 }
