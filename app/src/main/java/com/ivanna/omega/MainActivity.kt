@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,14 +176,13 @@ fun OmegaApp() {
                 }
             }
             composable("dashboard") {
-        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
+                        // Iniciar automáticamente la captura si no está activa
         LaunchedEffect(Unit) {
             if (!captureActive) {
                 projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
             }
         }
-    
-                LaunchedEffect(pendingBandProfileId) {
+        LaunchedEffect(pendingBandProfileId) {
                     val profileId = pendingBandProfileId ?: return@LaunchedEffect
                     val profile = ProfilesLoader.load(context).find { it.id == profileId }
                     if (profile != null && !profile.audioEngine.bypass) {
@@ -253,7 +251,12 @@ fun OmegaApp() {
             // encontrado). AdaptiveEngineScreen necesita un
             // VoiceProtectionManager; se construye aquí con ParameterStore
             // igual que en el resto de la app (ver ParameterStore.kt).
-            
+            composable("visualizer") {
+                LaunchedEffect(Unit) {
+                    projectionLauncher.launch(
+                        projectionManager.createScreenCaptureIntent()
+                    )
+                }
             }
             composable("adaptive") {
                 DisposableEffect(Unit) {
