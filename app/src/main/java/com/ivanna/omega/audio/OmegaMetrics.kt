@@ -11,5 +11,6 @@ data class OmegaMetrics(
     var yamnetConfidence: Float = 0f,
     var dspActive: Boolean = false,
     var hrtfActive: Boolean = false,
-    var spatialWidth: Float = 0f
+    var spatialWidth: Float = 0f,
+    var audioRoute: String = "—"  // 4D: ruta de salida detectada por AudioRoutingManager
 )

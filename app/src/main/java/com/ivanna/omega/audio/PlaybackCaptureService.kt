@@ -63,9 +63,25 @@ class PlaybackCaptureService : Service() {
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
 
+<<<<<<< Updated upstream
         // VoiceController: 15600 muestras @ 16kHz mono (0.975s)
         private const val VOICE_DECIMATION    = 3
         private const val VOICE_WINDOW_SAMPLES = 15600
+=======
+        // FIX (conexión real): el dashboard mostraba STANDBY/ACTIVO según un
+        // boolean local de Compose que nunca sabía si el servicio seguía vivo.
+        // Esta es la única fuente de verdad: la setea startCapture/stopCapture.
+        private val _isCapturing = MutableStateFlow(false)
+        val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
+
+        // FIX (VoiceController huérfano — cableado real de audio):
+        // VoiceController.processAudio() delega en YamnetClassifier, que
+        // exige un buffer de 15600 muestras @ 16kHz mono (0.975s, ver
+        // YamnetClassifier.INPUT_LENGTH). Este servicio captura @ 48kHz,
+        // así que hace falta decimar 3:1 antes de acumular la ventana.
+        private const val VOICE_DECIMATION = 3          // 96000 / 16000
+        private const val VOICE_WINDOW_SAMPLES = 15600  // = YamnetClassifier.INPUT_LENGTH
+>>>>>>> Stashed changes
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -210,13 +226,25 @@ class PlaybackCaptureService : Service() {
             scope.launch {
                 val buffer = FloatArray(BLOCK_SAMPLES)
                 val mono   = FloatArray(BLOCK_FRAMES)
+                var consecutiveErrors = 0
 
+                try {
                 while (isRunning && isActive) {
                     val read = audioRecord?.read(
                         buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING
-                    ) ?: 0
+                    ) ?: -1
 
-                    if (read <= 0) continue
+                    if (read < 0) {
+                        // AudioRecord.ERROR / ERROR_INVALID_OPERATION / ERROR_BAD_VALUE
+                        // — si persiste más de 20 bloques (~100 ms) el hardware falló.
+                        if (++consecutiveErrors > 20) {
+                            Log.e(TAG, "AudioRecord read error permanente ($read) — deteniendo captura")
+                            break
+                        }
+                        continue
+                    }
+                    consecutiveErrors = 0
+                    if (read == 0) continue
 
                     val frames = read / CHANNEL_COUNT
 
@@ -275,6 +303,18 @@ class PlaybackCaptureService : Service() {
 
                     IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
                 }
+                // — fin while —
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Loop de captura terminado con excepción: ${t.message}", t)
+                } finally {
+                    // SIEMPRE limpiar el estado — sea salida normal, error o cancel
+                    if (isRunning) {
+                        isRunning = false
+                        _isCapturing.value = false
+                        Log.w(TAG, "isCapturing reseteado desde el finally del loop")
+                        withContext(Dispatchers.Main) { stopSelf() }
+                    }
+                }
             }
 
         } catch (e: SecurityException) {
@@ -332,12 +372,34 @@ class PlaybackCaptureService : Service() {
         }
     }
 
+<<<<<<< Updated upstream
     // ── Notificación ─────────────────────────────────────────────────────────
     private fun getMediaProjection(intent: Intent?): MediaProjection? {
         val code = intent?.getIntExtra("resultCode", -1) ?: return null
         val data = intent.getParcelableExtra<Intent>("data") ?: return null
         return (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager)
             .getMediaProjection(code, data)
+=======
+    private fun stopCapture() {
+        if (!isRunning && audioRecord == null && mediaProjection == null) return // idempotente
+        isRunning = false
+        _isCapturing.value = false
+        scope.cancel()
+        audioRecord?.stop()
+        audioRecord?.release()
+        audioRecord = null
+        IvannaVisualizerBridgeV2.release()
+
+        projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
+        projectionCallback = null
+        mediaProjection = null
+
+        // Reset del acumulador de VoiceController — evita mezclar audio de
+        // una sesión de captura vieja con la siguiente.
+        voiceWindowFill = 0
+        voiceDecimAcc = 0f
+        voiceDecimCount = 0
+>>>>>>> Stashed changes
     }
 
     private fun createNotificationChannel() {

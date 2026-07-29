@@ -84,6 +84,16 @@ fun EngineStatusCard(
             }
             Text("Width: %.0f%%".format(metrics.spatialWidth * 100f), style = MaterialTheme.typography.labelLarge, color = AuroraCyan)
         }
+        // 4D: ruta de salida detectada por AudioRoutingManager
+        if (metrics.audioRoute != "—") {
+            DividerGlow()
+            StatusLine("OUTPUT", metrics.audioRoute, when (metrics.audioRoute) {
+                "USB-DAC"   -> PhosphorGreen
+                "Bluetooth" -> AuroraCyan
+                "Headphone" -> AmberSignal
+                else        -> TextSecondary
+            })
+        }
     }
 }
 

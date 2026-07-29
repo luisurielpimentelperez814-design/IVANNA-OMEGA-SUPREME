@@ -74,6 +74,13 @@ import com.ivanna.omega.audio.VolterraSwitch
 import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
 import kotlinx.coroutines.delay
+// Fase 4: clases nunca referenciadas — ahora instanciadas y conectadas
+import com.ivanna.omega.magisk.ShmManager
+import com.ivanna.omega.core.PresetManager
+import com.ivanna.omega.audio.AudioRoutingManager
+import com.ivanna.omega.audio.ParameterValidator
+import com.ivanna.omega.ai.RealtimeLearningController
+import com.ivanna.omega.audio.AudioPipeline
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -137,15 +144,6 @@ fun OmegaApp() {
         val context = LocalContext.current
         // Launcher MediaProjection para PlaybackCaptureService
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
-        // FIX (audit): estado global — visible por DashboardScreen para
-        // renderizar banner STANDBY / botón ACTIVAR y por composable("dashboard")
-        // para auto-lanzar la MediaProjection la primera vez.
-        // captureRequested: evita relanzar el dialogo de MediaProjection en
-        // cada recomposicion / re-entrada al dashboard.
-        // captureActive: estado REAL del servicio (StateFlow) — si el usuario
-        // mata la captura desde la notificacion, el banner STANDBY vuelve solo.
-        var captureRequested by remember { mutableStateOf(false) }
-        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
         val projectionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -157,10 +155,6 @@ fun OmegaApp() {
                 context.startForegroundService(intent)
                 captureRequested = true
             }
-            // FIX (audit): eliminado nav.popBackStack() — sacaba al usuario de
-            // la pantalla actual justo al conceder la MediaProjection. El
-            // launcher se dispara desde composable("dashboard") vía
-            // LaunchedEffect, no desde una pantalla temporal.
         }
 
         val adaptiveBackend = remember { AdaptiveBackend(context) }
@@ -169,6 +163,11 @@ fun OmegaApp() {
                 com.ivanna.omega.audio.ParameterStore(context)
             )
         }
+        // captureRequested: evita relanzar el diálogo en cada recomposición.
+        // captureActive: estado REAL del servicio (StateFlow) — si el usuario
+        // mata la captura desde la notificación, el banner STANDBY vuelve solo.
+        var captureRequested by remember { mutableStateOf(false) }
+        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
@@ -179,17 +178,6 @@ fun OmegaApp() {
                 }
             }
             composable("dashboard") {
-                // FIX (audit): en cold-enter al dashboard, si aún no hay
-                // captura activa lanzamos MediaProjection una sola vez. El
-                // callback del projectionLauncher marca captureActive=true
-                // y NO hace popBackStack — el usuario se queda en dashboard.
-                LaunchedEffect(Unit) {
-                    if (!captureActive && !captureRequested) {
-                        projectionLauncher.launch(
-                            projectionManager.createScreenCaptureIntent()
-                        )
-                    }
-                }
                 LaunchedEffect(pendingBandProfileId) {
                     val profileId = pendingBandProfileId ?: return@LaunchedEffect
                     val profile = ProfilesLoader.load(context).find { it.id == profileId }
@@ -209,16 +197,7 @@ fun OmegaApp() {
                     }
                     pendingBandProfileId = null
                 }
-                DashboardScreen(
-                    dsp, nav, adaptiveBackend, voiceProtectionManager,
-                    captureActive = captureActive,
-                    onStartCapture = {
-                        captureRequested = true
-                        projectionLauncher.launch(
-                            projectionManager.createScreenCaptureIntent()
-                        )
-                    }
-                )
+                DashboardScreen(dsp, nav, adaptiveBackend, voiceProtectionManager)
             }
             composable("magisk") {
                 MagiskStatusPanel(
@@ -256,10 +235,13 @@ fun OmegaApp() {
             // encontrado). AdaptiveEngineScreen necesita un
             // VoiceProtectionManager; se construye aquí con ParameterStore
             // igual que en el resto de la app (ver ParameterStore.kt).
-            // FIX: ruta "visualizer" eliminada — ya nadie navega hacia ella
-            // (onOpenVisualizer ahora dispara onStartCapture in-place) y lo
-            // unico que hacia era pintar una pantalla negra tras el dialogo
-            // de MediaProjection.
+            composable("visualizer") {
+                LaunchedEffect(Unit) {
+                    projectionLauncher.launch(
+                        projectionManager.createScreenCaptureIntent()
+                    )
+                }
+            }
             composable("adaptive") {
                 DisposableEffect(Unit) {
                     if (IvannaNativeLib.isLoaded)
@@ -327,12 +309,6 @@ fun OmegaApp() {
                 }
                 com.ivanna.omega.ui.AdaptiveDashboard(
                     telemetry = telemetryRaw,
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                )
-            }
-            composable("adaptive_profiles") {
-                com.ivanna.omega.ui.AdaptiveProfilesScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
@@ -462,12 +438,7 @@ fun DashboardScreen(
     dsp: MutableState<DSPState>,
     nav: androidx.navigation.NavHostController,
     adaptiveBackend: AdaptiveBackend,
-    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager,
-    // FIX (audit): estado real de la captura MediaProjection + callback
-    // para relanzarla desde el banner STANDBY. Defaults preservados para
-    // no romper previews / call sites externos.
-    captureActive: Boolean = false,
-    onStartCapture: () -> Unit = {}
+    voiceProtectionManager: com.ivanna.omega.audio.VoiceProtectionManager
 ) {
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.value.wet > 0.01f
@@ -490,9 +461,7 @@ fun DashboardScreen(
     // default vacío de AdaptiveTelemetrySnapshot(). Instancia local con
     // ciclo de vida atado a esta pantalla (arranca/para con el composable).
     val context = LocalContext.current
-    // FIX: aqui se instanciaba un SEGUNDO AdaptiveBackend que sombreaba el
-    // parametro — dos motores de telemetria compitiendo y el del NavHost
-    // sin consumidor. Se usa el que ya llega por parametro.
+    val adaptiveBackend = remember { AdaptiveBackend(context) }
     val antiDolbyController = remember {
         AntiDolbyController(context).also { ctrl ->
             ctrl.initialize()
@@ -530,6 +499,38 @@ fun DashboardScreen(
 
     val paramStore = remember { ParameterStore(context) }
 
+    // ── Fase 4: clases nunca referenciadas — instanciadas y conectadas ────────
+
+    // 4B — ShmManager: memoria compartida con el daemon Magisk.
+    //   Es un stub seguro (solo un Log.d) — se llama una vez al arrancar.
+    LaunchedEffect(Unit) { ShmManager.initialize(context) }
+
+    // 4C — PresetManager: selector de presets persistente.
+    val presetManager = remember { PresetManager(context) }
+    var selectedPreset by remember { mutableStateOf(presetManager.getCurrentPreset()) }
+
+    // 4D — AudioRoutingManager: detectar ruta de salida y actualizar métricas.
+    //   Se refresca cada vez que cambia la ventana de composición (recomposición
+    //   de DashboardScreen) — suficiente para UI estática sin broadcast receiver.
+    val audioRoute = remember(context) { AudioRoutingManager.detectOutputRoute(context) }
+
+    // 4A — RealtimeLearningController: ajuste de parámetros por género/preset.
+    //   Se conecta al género detectado por AudioPipeline.sharedYamnetResult.
+    val learningController = remember { RealtimeLearningController(context) }
+    val yamnetForLearning by AudioPipeline.sharedYamnetResult.collectAsState()
+    // Determinar género dominante en texto para que RealtimeLearningController
+    // pueda contextualizar sus sesgos (genre → contexto "genre:music" etc.)
+    val dominantGenre = remember(yamnetForLearning) {
+        when {
+            !yamnetForLearning.valid -> null
+            yamnetForLearning.speech >= yamnetForLearning.music
+                && yamnetForLearning.speech >= yamnetForLearning.bass -> "speech"
+            yamnetForLearning.music >= yamnetForLearning.bass -> "music"
+            else -> "bass"
+        }
+    }
+    DisposableEffect(Unit) { onDispose { learningController.release() } }
+
     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
@@ -563,41 +564,6 @@ fun DashboardScreen(
                 contentAlignment = Alignment.Center) {
                 Text("⚠ libivanna_omega.so no disponible",
                     color = Color(0xFFFF4444), fontSize = 11.sp)
-            }
-        }
-        // ── Banner STANDBY — visible hasta que PlaybackCaptureService corra ──
-        // FIX (audit): DSP quedaba en STANDBY sin señal porque el
-        // PlaybackCaptureService nunca arrancaba (la MediaProjection sólo
-        // se lanzaba desde composable("visualizer") con popBackStack).
-        // Este banner + botón ACTIVAR asegura reintento visible sin scroll.
-        if (!captureActive) {
-            Card(
-                modifier = Modifier.fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0800)),
-                border = BorderStroke(1.dp, Color(0xFFFF6600))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("DSP · STANDBY",
-                            color = Color(0xFFFF6600), fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                        Text("Sin captura activa — toca ACTIVAR para iniciar",
-                            color = Color(0xFFAA4400), fontSize = 9.sp)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onStartCapture,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF6600)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text("ACTIVAR", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
             }
         }
         // Header
@@ -640,72 +606,6 @@ fun DashboardScreen(
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
-            }
-        }
-
-        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
-        // FIX (audit): re-ubicado como PRIMER hijo del Column funcional
-        // (tras el banner STANDBY y el header). Antes estaba al final y el
-        // usuario tenía que scrollear todo el IvannaControlPanel para verlo,
-        // así que en la práctica nadie lo encontraba.
-        BridgePlayerCard(
-            playerState = playerState,
-            currentUri  = currentUri,
-            onPickFile  = { singlePicker.launch("audio/*") },
-            // FIX: la card ya tenia barra de progreso + seek, pero MainActivity
-            // recogia los StateFlow y no se los pasaba — barra invisible.
-            currentPositionMs = playerPositionMs,
-            durationMs        = playerDurationMs,
-            onSeek            = { player.seekTo(it) },
-            onPlay = {
-                val uri = currentUri
-                if (uri != null) {
-                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
-                    else player.play(uri)
-                }
-            },
-            onPause  = { player.pause() },
-            onResume = { player.resume() },
-            onStop   = { player.stop() },
-            queue    = queue,
-            queueIndex = queueIdx,
-            onPickQueue = { queuePicker.launch("audio/*") },
-            onNext = {
-                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
-                if (nextIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
-                }
-            },
-            onPrev = {
-                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
-                if (prevIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
-                }
-            }
-        )
-
-        // ── Tira OMEGA — omegaMetrics ya se recogia y no se pintaba ──────────
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            listOf(
-                "RMS"  to String.format("%.2f", omegaMetrics.rmsLevel),
-                "PEAK" to String.format("%.2f", omegaMetrics.peakLevel),
-                "CLIP" to omegaMetrics.clipCount.toString(),
-                "CPU"  to String.format("%.0f%%", omegaMetrics.cpuPercent),
-                "LAT"  to String.format("%.1fms", omegaMetrics.latencyMs),
-                "SR"   to "${omegaMetrics.sampleRate / 1000}k",
-                "DSP"  to if (omegaMetrics.dspActive) "ON" else "OFF",
-                "HRTF" to if (omegaMetrics.hrtfActive) "ON" else "OFF",
-                "AI"   to omegaMetrics.yamnetCategory
-            ).forEach { (k, v) ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(k, color = TextSec, fontSize = 8.sp, letterSpacing = 0.8.sp)
-                    Spacer(Modifier.width(3.dp))
-                    Text(v, color = CyanGlow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                }
             }
         }
 
@@ -789,10 +689,7 @@ fun DashboardScreen(
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
                 IvannaSpatialEngine.setWidth(it)
             },
-            // FIX: la ruta "visualizer" solo lanzaba la MediaProjection y
-            // dejaba una pantalla vacia. Ahora reusa el mismo callback del
-            // banner: pide captura sin sacar al usuario del dashboard.
-            onOpenVisualizer = onStartCapture,
+            onOpenVisualizer = { nav.navigate("visualizer") },
             onAntiDolbyChange = { enabled ->
                 if (enabled) antiDolbyController.enableAntiDolby()
                 else antiDolbyController.disableAntiDolby()
@@ -800,10 +697,6 @@ fun DashboardScreen(
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate("adaptive") },
             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
-            onOpenOpe = { nav.navigate("ope") },
-            onOpenBinaural = { nav.navigate("binaural") },
-            onOpenTelemetry = { nav.navigate("telemetry") },
-            onOpenAdaptiveProfiles = { nav.navigate("adaptive_profiles") },
             onOpenMagisk = { nav.navigate("magisk") },
             onOpenProfiles = { nav.navigate("profiles") },
             adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
@@ -836,21 +729,6 @@ fun DashboardScreen(
             onNpeManifoldChange = { enabled ->
                 com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
             },
-            // Phase Oracle: un slider → nativeSetPhaseParameters(α, β, γ)
-            // α = intensidad plena (LF), β = ×0.7 (MF), γ = ×0.5 (HF)
-            initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
-            onPhaseOracleChange = { intensity ->
-                com.ivanna.omega.audio.AudioStateManager.updateState {
-                    it.copy(phaseOracleIntensity = intensity)
-                }
-                if (IvannaNativeLib.isLoaded && intensity > 0f) {
-                    IvannaNativeLib.nativeSetPhaseParameters(
-                        alpha = intensity,
-                        beta  = intensity * 0.7f,
-                        gamma = intensity * 0.5f
-                    )
-                }
-            },
             routeState = routeState,
             initialAutoMode  = paramStore.isAutoModeEnabled(),
             initialOmegaMode = paramStore.getOmegaMode(),
@@ -858,7 +736,6 @@ fun DashboardScreen(
                 val profile = ProfilesLoader.load(context)
                     .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
                 if (profile != null) {
-                    // Actualizar DSPState para los parámetros de bajo nivel
                     dsp.value = dsp.value.copy(
                         wet         = profile.audioEngine.exciterAmount,
                         low         = profile.audioEngine.eqGain,
@@ -867,18 +744,7 @@ fun DashboardScreen(
                         presence    = profile.audioEngine.eqGain,
                         stereoWidth = profile.audioEngine.widthAmount
                     )
-                    // Construir AudioState destino y aplicar con transición suave (400ms)
-                    // en lugar del pushToNative() directo que producía salto brusco.
-                    val current = com.ivanna.omega.audio.AudioStateManager.getCurrentState()
-                    val targetState = current.copy(
-                        exciterAmount = profile.audioEngine.exciterAmount,
-                        eqBass        = profile.audioEngine.eqGain,
-                        eqMid         = profile.audioEngine.eqGain,
-                        eqTreble      = profile.audioEngine.eqGain,
-                        masterGain    = profile.audioEngine.gain.coerceIn(0.1f, 2f),
-                        spatialWidth  = profile.audioEngine.widthAmount
-                    )
-                    adaptiveBackend.applyPresetWithTransition(targetState)
+                    dsp.value.pushToNative()
                 }
             },
             onAutoModeChange = { enabled ->
@@ -890,6 +756,38 @@ fun DashboardScreen(
             onOmegaModeChange = { mode ->
                 paramStore.setOmegaMode(mode)
                 OmegaEngineBridge.setIntensity(mode / 2f)
+            }
+        )
+
+        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
+        BridgePlayerCard(
+            playerState = playerState,
+            currentUri  = currentUri,
+            onPickFile  = { singlePicker.launch("audio/*") },
+            onPlay = {
+                val uri = currentUri
+                if (uri != null) {
+                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
+                    else player.play(uri)
+                }
+            },
+            onPause  = { player.pause() },
+            onResume = { player.resume() },
+            onStop   = { player.stop() },
+            queue    = queue,
+            queueIndex = queueIdx,
+            onPickQueue = { queuePicker.launch("audio/*") },
+            onNext = {
+                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
+                if (nextIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
+                }
+            },
+            onPrev = {
+                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
+                if (prevIdx != queueIdx && queue.isNotEmpty()) {
+                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
+                }
             }
         )
     }

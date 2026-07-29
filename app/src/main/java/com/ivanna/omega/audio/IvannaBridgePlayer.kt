@@ -10,6 +10,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.audio.AudioRoutingManager
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.neuromorphic.IvannaNpeNative
 import com.ivanna.omega.audio.effects.NeuromorphicProcessingEngine

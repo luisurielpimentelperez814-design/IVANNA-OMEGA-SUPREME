@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.ivanna.omega.R
 
 class AudioForegroundService : Service() {
 
