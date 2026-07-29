@@ -265,9 +265,9 @@ internal fun AdaptiveEngineScreen(
                             backend.resetModulator()
                             backend.forceManualState(updatedState)
                         } else {
-                            // Al devolver control al Motor A dejamos el estado
-                            // persistido para que la recuperación sea coherente.
-                            backend.persistState(updatedState)
+                            // AudioStateManager ya mantiene el estado válido.
+                            // No acceder a persistencia interna del backend desde UI.
+                            // El Motor A recupera el control con el estado actual.
                         }
                     },
                     accent = PhosphorGreen
