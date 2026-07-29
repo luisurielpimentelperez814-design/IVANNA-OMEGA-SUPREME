@@ -148,3 +148,88 @@ por `grep`), pero:
    AdaptiveBackend,IvannaOMEGA` que la ruta debounced (`DspStateUpdater
    .applyUpdate`) llega en 24 ms desde el `onValueChange` del slider,
    sin colisión con `AdaptiveBackend.applyEQ` (que es síncrona).
+
+---
+
+# Ronda 2 — 2026-07-29 (sincronización con CI)
+
+**Base:** `origin/main @ 1799891` (HEAD avanzó 30+ commits desde la ronda 1;
+los 3 commits de la ronda 1 — `792fa88`, `145c840`, `0861933` — siguen
+presentes en HEAD, verificado con `git merge-base --is-ancestor`).
+
+**Entrada:** logs del CI run del 2026-07-29.
+- `DSP Native Tests (host, CTest)`: **16/16 PASSED, 0 failed** — C++ sano.
+- `Build APK & Native Binaries`: **BUILD FAILED** en `:app:compileDebugKotlin`,
+  5 errores, todos en `IvannaControlPanel.kt`.
+
+## Hallazgo #7 — IvannaControlPanel rompía el build (CERRADO)
+
+- **Archivo:** `app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt`
+- **Tipo:** BUG real (build-breaking).
+- **Causas raíz (3, produciendo 5 errores):**
+  - **A)** `:87-90` — copy/paste pegado DENTRO del lambda por defecto de
+    `onAntiDolbyChange`, en plena lista de parámetros. `LocalContext.current`
+    y `remember` son `@Composable` — ilegales ahí. Errores `88:32`, `89:22`.
+  - **B)** `:133` — `Unresolved reference: savedState`: `phaseOracleIntensity`
+    se declaraba 6 líneas ANTES que `savedState`.
+  - **C)** `:201-202` — `LocalLifecycleOwner.current` leído dentro del cuerpo
+    de `DisposableEffect` y de `onDispose`. Errores `201:29`, `202:41`.
+    Efecto lateral corregido: `addObserver`/`removeObserver` ahora operan
+    garantizado sobre el MISMO lifecycle.
+- **Estado:** corregido en `2694b50`.
+
+## Hallazgo #8 — Slider PHASE ORACLE huérfano (CERRADO)
+
+- **Archivo:** `app/src/main/java/com/ivanna/omega/MainActivity.kt`
+- **Tipo:** HUÉRFANO — cadena construida entera menos el último cable.
+- **Detalle:** la cadena estaba completa salvo el call site:
+
+  | Tramo | Estado previo |
+  |---|---|
+  | `IvannaControlPanel.kt:437-452` slider → `onPhaseOracleChange(it)` | OK |
+  | `AudioStateManager.kt:40` campo `phaseOracleIntensity` | OK |
+  | `AdaptiveBackend.kt:112-125` `applyPhaseOracle` → nativo | OK |
+  | `phase_oracle.cpp:204` implementación JNI real | OK |
+  | `MainActivity.kt:649-781` call site | **NO pasaba el callback** |
+
+  `applyPhaseOracle()` sólo corre desde `applyManualState`/`forceManualState`
+  (`AdaptiveBackend.kt:157,180`), que en modo automático nunca se disparan.
+  El valor se persistía en prefs y se pintaba en los StatBlocks α/β/γ, pero
+  el motor nunca se enteraba.
+- **Estado:** corregido en `427755b`, con el patrón nativo-directo que ya
+  usan `onSpatialAngleChange` (:703) y `onNhoHarmonicChange` (:663).
+
+## Hallazgos #4 y #5 de la ronda 1 — CERRADOS por commits intermedios
+
+- **#4 `AudioParameterManager`**: ya NO es huérfano. `AdaptiveBackend.kt:48`
+  lo instancia y `applyPresetWithTransition()` (`:131`) lo usa para
+  interpolar presets en 400 ms. Cerrado.
+- **#5 `PhaseOracle`**: la decisión de producto ya se tomó — se expone como
+  "COHERENCIA DE FASE" (intensidad única 0..1 → α/β/γ) y usa la ruta
+  **nativa**, no la Kotlin. `PhaseOracle.kt` (Kotlin) queda como
+  implementación de referencia no usada en runtime. Cerrado.
+
+## Barrido preventivo (mismo patrón de bug en todo el proyecto)
+
+Tras el fix se barrió el árbol completo buscando repeticiones del patrón:
+
+1. `LocalContext.current` / `LocalLifecycleOwner.current` /
+   `LocalConfiguration.current` leídos dentro de `onDispose`,
+   `DisposableEffect{}`, `LaunchedEffect{}` o `Runnable` → **0 casos**.
+2. Lambdas por defecto en firmas con `val ... = LocalContext/remember`
+   en su cuerpo → **0 casos**.
+3. Balance de llaves y paréntesis en **todos** los `.kt` de
+   `app/src/main/java` → **0 archivos con desbalance**.
+
+## Pendiente de verificar (Regla 7)
+
+Sigo sin poder ejecutar Gradle/NDK. Lo que falta confirmar localmente o
+en el próximo run de CI:
+
+1. `./gradlew :app:compileDebugKotlin` — que los 5 errores estén resueltos
+   y no aparezcan nuevos por inferencia de tipos.
+2. En dispositivo: mover el slider COHERENCIA DE FASE y confirmar por
+   `logcat -s IvannaOMEGA,PhaseOracle` que `nativeSetPhaseParameters`
+   recibe α/β/γ y que el efecto es audible.
+3. Confirmar que `nativeSetPhaseParameters` devuelve `true` (retorna
+   `Boolean`; hoy se ignora el valor de retorno en ambas rutas).
