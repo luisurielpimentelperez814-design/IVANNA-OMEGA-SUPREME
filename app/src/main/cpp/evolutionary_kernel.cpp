@@ -313,13 +313,6 @@ static float evaluateFitness(const float* genome) {
 // -----------------------------------------------------------------------------
 // KD‑tree para archivo de diversidad (distancia euclídea)
 // -----------------------------------------------------------------------------
-static int kd_build_rec(KDPoint* pts, int n, int depth) {
-    if (n <= 0) return -1;
-    int dim = depth % GENOME_SIZE;
-    // Seleccionar mediana rápida (aproximada con el primer elemento)
-    // Para simplicidad, insertamos secuencialmente en un árbol balanceado al añadir.
-    return 0; // la construcción real se omite por brevedad, implementamos inserción balanceada
-}
 
 static float kd_dist2(const KDPoint& a, const KDPoint& b) {
     float d = 0.f;
