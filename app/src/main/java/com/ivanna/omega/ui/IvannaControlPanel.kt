@@ -101,6 +101,9 @@ fun IvannaControlPanel(
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
     onOpenAdaptiveEngineManual: () -> Unit = {},
+    onOpenOpe: () -> Unit = {},
+    onOpenBinaural: () -> Unit = {},
+    onOpenTelemetry: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
     onOpenMagisk: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
@@ -294,6 +297,27 @@ fun IvannaControlPanel(
                         )
                     ) { Text(label, fontWeight = FontWeight.SemiBold) }
                 }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedButton(
+                    onClick = onOpenOpe,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("EQ / COMP", fontSize = 11.sp) }
+                OutlinedButton(
+                    onClick = onOpenBinaural,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("BINAURAL", fontSize = 11.sp) }
+                OutlinedButton(
+                    onClick = onOpenTelemetry,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("TELEMETRÍA", fontSize = 11.sp) }
             }
         }
 

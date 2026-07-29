@@ -74,7 +74,7 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
         Text("OPE DSP: Ecualizador", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Ganancia Graves (Low)  %+.1f dB".format(audioState.eqBass))
+        Text("Graves (Low)  ${audioState.eqBass.toInt()} dB")
         Slider(
             value = audioState.eqBass,
             valueRange = -12f..12f,
@@ -84,7 +84,7 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
             }
         )
 
-        Text("Ganancia Medios (Mid)  %+.1f dB".format(audioState.eqMid))
+        Text("Medios (Mid)  ${audioState.eqMid.toInt()} dB")
         Slider(
             value = audioState.eqMid,
             valueRange = -12f..12f,
@@ -94,7 +94,7 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
             }
         )
 
-        Text("Ganancia Agudos (High)  %+.1f dB".format(audioState.eqTreble))
+        Text("Agudos (High)  ${audioState.eqTreble.toInt()} dB")
         Slider(
             value = audioState.eqTreble,
             valueRange = -12f..12f,
@@ -106,7 +106,7 @@ fun OpeEngineScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(24.dp))
         Text("OPE DSP: Compresor", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Umbral (Threshold)  %.0f dB".format(audioState.compressorThreshold))
+        Text("Umbral (Threshold)  ${audioState.compressorThreshold.toInt()} dB")
         Slider(
             value = audioState.compressorThreshold,
             valueRange = -40f..0f,
@@ -152,8 +152,8 @@ fun BinauralScreen(modifier: Modifier = Modifier) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        val degrees = (angleNorm - 0.5f) * 360f
-        Text("Ángulo Espacial  %+.0f°".format(degrees))
+        val degrees = ((angleNorm - 0.5f) * 360f).toInt()
+        Text("Ángulo Espacial  ${degrees}°")
         Slider(
             value = angleNorm,
             valueRange = 0f..1f,
