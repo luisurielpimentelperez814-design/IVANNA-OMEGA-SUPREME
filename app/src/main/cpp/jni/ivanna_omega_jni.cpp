@@ -381,6 +381,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
+// ── FIX: mutex DSP — declarado antes de nativeSetParams y nativeProcess ──────
+static std::mutex g_dspProcessMutex;
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     JNIEnv*, jobject,
@@ -389,6 +392,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     jfloat freq,  jfloat resonance,
     jfloat low,   jfloat mid,  jfloat high,
     jfloat presence, jfloat master) {
+    // FIX (data race → SIGSEGV/freeze en ARM64): nativeProcess sostiene
+    // g_dspProcessMutex durante todo el bloque (~10ms). nativeSetParams
+    // escribía a g_eq/g_comp/g_exciter/g_widener/g_gain sin el mutex →
+    // data race en las estructuras de parámetros → valores corruptos →
+    // crash o congelamiento al pulsar HRTF/DSP desde la UI.
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     g_params.drive = drive; g_params.wet = wet;   g_params.mix = mix;
     g_params.alpha = alpha; g_params.beta = beta; g_params.gamma = gamma_v;
     g_params.freq  = freq;  g_params.resonance = resonance;
@@ -421,7 +430,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
 }
-static std::mutex g_dspProcessMutex;
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(

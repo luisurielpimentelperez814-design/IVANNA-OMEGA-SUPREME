@@ -14,6 +14,7 @@ import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AntiDolbyController
 import com.ivanna.omega.audio.AudioPipeline
 import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.audio.PlaybackCaptureService
 import com.ivanna.omega.core.IvannaNativeLib
 import androidx.compose.ui.platform.LocalContext
 import kotlin.math.PI
@@ -233,6 +234,8 @@ fun AdaptiveProfilesScreen(modifier: Modifier = Modifier) {
 fun TelemetryDashboard(modifier: Modifier = Modifier) {
     // 3J: colectar género en tiempo real desde AudioPipeline.sharedYamnetResult
     val yamnet by AudioPipeline.sharedYamnetResult.collectAsState()
+    // Distinguir "sin señal" (captura inactiva) de "clasificando" (captura activa, aún sin resultado)
+    val isCapturing by PlaybackCaptureService.isCapturing.collectAsState()
 
     Column(modifier = modifier.padding(16.dp)) {
         Text("Telemetría en Tiempo Real", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -243,7 +246,20 @@ fun TelemetryDashboard(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(8.dp))
 
         if (!yamnet.valid) {
-            Text("Sin señal de audio activa", fontSize = 12.sp, color = Color(0xFF57708F))
+            if (isCapturing) {
+                // Pipeline activo pero el buffer YAMNet aún no se llenó
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFF6FF3FF)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Clasificando…", fontSize = 12.sp, color = Color(0xFF6FF3FF))
+                }
+            } else {
+                Text("Sin señal de audio activa", fontSize = 12.sp, color = Color(0xFF57708F))
+            }
         } else {
             Text("Voz / Speech")
             LinearProgressIndicator(

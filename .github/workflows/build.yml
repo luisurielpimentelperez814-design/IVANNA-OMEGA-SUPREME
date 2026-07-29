@@ -229,11 +229,23 @@ jobs:
 
       - name: Compile ivanna_daemon for arm64
         run: |
-          $ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++             -fpie -Wl,-pie -static-libstdc++ -Wl,-z,relro -Wl,-z,now             -o ivanna_daemon src/daemon/*.cpp
-          readelf -l ivanna_daemon | grep -q INTERP || { echo "ERROR: no PT_INTERP"; exit 1; }
-          readelf -l ivanna_daemon | grep -q GNU_RELRO || { echo "ERROR: no GNU_RELRO"; exit 1; }
-          readelf -l ivanna_daemon | grep -q BIND_NOW || { echo "ERROR: no BIND_NOW"; exit 1; }
-          readelf -l ivanna_daemon | grep -q GNU_STACK | grep -q RWE && { echo "ERROR: GNU_STACK ejecutable"; exit 1; }
-          file ivanna_daemon | grep -q "LSB pie executable" || { echo "ERROR: no es PIE"; exit 1; }
-          echo "daemon listo (PIE dinámico, static libstdc++, RELRO+BIND_NOW)."
-          cp $ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .
+          CXX="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"
+          DAEMON_SRCS=$(find app/src/main/cpp/daemon -name "*.cpp" | tr '\n' ' ')
+          if [ -z "$DAEMON_SRCS" ]; then
+            echo "ERROR: no se encontraron fuentes en app/src/main/cpp/daemon/"
+            exit 1
+          fi
+          echo "Compilando daemon desde: $DAEMON_SRCS"
+          $CXX -std=c++17 -O2 \
+            -fpie -pie \
+            -static-libstdc++ \
+            -Wl,-z,relro -Wl,-z,now \
+            -llog \
+            -o ivanna_daemon $DAEMON_SRCS
+          readelf -l ivanna_daemon | grep -q INTERP   || { echo "ERROR: no PT_INTERP";   exit 1; }
+          readelf -l ivanna_daemon | grep -q GNU_RELRO || { echo "ERROR: no GNU_RELRO";  exit 1; }
+          readelf -d ivanna_daemon | grep -q BIND_NOW  || { echo "ERROR: no BIND_NOW";   exit 1; }
+          readelf -l ivanna_daemon | grep GNU_STACK | grep -q RWE && { echo "ERROR: GNU_STACK ejecutable"; exit 1; } || true
+          file ivanna_daemon | grep -q "pie executable" || { echo "ERROR: no es PIE"; exit 1; }
+          echo "daemon listo (PIE, static libstdc++, RELRO+BIND_NOW)."
+          cp "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" . 2>/dev/null || true

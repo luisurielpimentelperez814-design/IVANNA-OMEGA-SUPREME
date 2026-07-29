@@ -7,12 +7,26 @@ import android.media.AudioTrack
 import android.os.Build
 
 object AudioRoutingManager {
-    // FIX (bug real de restoreDefaultRouting): antes forzaba speakerphone=true
-    // y bluetoothA2dp=true incondicionalmente, encendiéndolos aunque el
-    // usuario no los tuviera activos antes de forceUsbDacRouting(). Ahora se
-    // guarda el estado previo real y se restaura ese, no un valor fijo.
-    private var wasSpeakerphoneOn: Boolean = false
-    private var wasBluetoothA2dpOn: Boolean = false
+
+    /** 4D: detecta la salida de audio activa de mayor prioridad.
+     *  Orden: USB-DAC > Bluetooth A2DP > Auriculares con cable > Altavoz. */
+    fun detectOutputRoute(context: Context): String {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            for (device in devices) {
+                when (device.type) {
+                    AudioDeviceInfo.TYPE_USB_DEVICE,
+                    AudioDeviceInfo.TYPE_USB_HEADSET   -> return "USB-DAC"
+                    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> return "Bluetooth"
+                    AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> return "Headphone"
+                    else -> {}
+                }
+            }
+        }
+        return "Speaker"
+    }
 
     fun forceUsbDacRouting(context: Context, audioTrack: AudioTrack? = null): Boolean {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -21,8 +35,6 @@ object AudioRoutingManager {
             for (device in devices) {
                 if (device.type == AudioDeviceInfo.TYPE_USB_DEVICE || 
                     device.type == AudioDeviceInfo.TYPE_USB_HEADSET) {
-                    wasSpeakerphoneOn = audioManager.isSpeakerphoneOn
-                    wasBluetoothA2dpOn = audioManager.isBluetoothA2dpOn
                     audioManager.isSpeakerphoneOn = false
                     audioManager.isBluetoothA2dpOn = false
                     audioTrack?.preferredDevice = device
@@ -35,8 +47,8 @@ object AudioRoutingManager {
 
     fun restoreDefaultRouting(context: Context, audioTrack: AudioTrack? = null): Boolean {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audioManager.isSpeakerphoneOn = wasSpeakerphoneOn
-        audioManager.isBluetoothA2dpOn = wasBluetoothA2dpOn
+        audioManager.isSpeakerphoneOn = true
+        audioManager.isBluetoothA2dpOn = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             audioTrack?.preferredDevice = null
         }
