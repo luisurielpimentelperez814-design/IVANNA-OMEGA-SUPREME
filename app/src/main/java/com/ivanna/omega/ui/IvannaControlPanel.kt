@@ -48,6 +48,10 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.log10
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +84,10 @@ fun IvannaControlPanel(
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
-    onAntiDolbyChange: (Boolean) -> Unit = {},
+    onAntiDolbyChange: (Boolean) -> Unit = {
+    val context = LocalContext.current
+    val savedState = remember { AdaptiveControlsPrefs.load(context) }
+},
     onPresetSelected: (String) -> Unit = {},
     onAutoModeChange: (Boolean) -> Unit = {},
     onOmegaModeChange: (Int) -> Unit = {},
@@ -123,29 +130,29 @@ fun IvannaControlPanel(
     onPhaseOracleChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var phaseOracleIntensity by remember { mutableFloatStateOf(initialPhaseOracleIntensity) }
+    var phaseOracleIntensity by remember { mutableFloatStateOf(savedState.phaseOracleIntensity) }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
     var antiDolbyEnabled by remember { mutableStateOf(initialAntiDolby) }
     var selectedPreset by remember { mutableStateOf(initialPreset) }
     var autoMode by remember { mutableStateOf(initialAutoMode) }
-    var omegaMode by remember { mutableIntStateOf(initialOmegaMode) }
+    var omegaMode by remember { mutableIntStateOf(savedState.omegaMode) }
     var compThreshold by remember { mutableFloatStateOf(initialCompThreshold) }
     var compRatio by remember { mutableFloatStateOf(initialCompRatio) }
-    var nhoHarmonic by remember { mutableFloatStateOf(initialNhoHarmonic) }
-    var spatialAngle by remember { mutableFloatStateOf(initialSpatialAngle) }
-    var spatialWidth by remember { mutableFloatStateOf(initialSpatialWidth) }
+    var nhoHarmonic by remember { mutableFloatStateOf(savedState.nhoHarmonic) }
+    var spatialAngle by remember { mutableFloatStateOf(savedState.spatialAngle) }
+    var spatialWidth by remember { mutableFloatStateOf(savedState.spatialWidth) }
     var evoEnabled by remember { mutableStateOf(initialEvoEnabled) }
     var evoFitness by remember { mutableFloatStateOf(0f) }
     var evoGeneration by remember { mutableIntStateOf(0) }
     var npeBypass by remember { mutableStateOf(initialNpeBypass) }
-    var npeHarmonic by remember { mutableFloatStateOf(initialNpeHarmonic) }
-    var npeLateralInhib by remember { mutableFloatStateOf(initialNpeLateralInhib) }
-    var npeOhcCompression by remember { mutableFloatStateOf(initialNpeOhcCompression) }
-    var npeMasterGain by remember { mutableFloatStateOf(initialNpeMasterGain) }
-    var npeAgcTarget by remember { mutableFloatStateOf(initialNpeAgcTarget) }
-    var npeAgcRate by remember { mutableFloatStateOf(initialNpeAgcRate) }
+    var npeHarmonic by remember { mutableFloatStateOf(savedState.npeHarmonic) }
+    var npeLateralInhib by remember { mutableFloatStateOf(savedState.npeLateralInhib) }
+    var npeOhcCompression by remember { mutableFloatStateOf(savedState.npeOhcCompression) }
+    var npeMasterGain by remember { mutableFloatStateOf(savedState.npeMasterGain) }
+    var npeAgcTarget by remember { mutableFloatStateOf(savedState.npeAgcTarget) }
+    var npeAgcRate by remember { mutableFloatStateOf(savedState.npeAgcRate) }
     var npeHrtf by remember { mutableStateOf(initialNpeHrtf) }
     var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
     var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
