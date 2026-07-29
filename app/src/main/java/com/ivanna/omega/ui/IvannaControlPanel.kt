@@ -134,6 +134,10 @@ fun IvannaControlPanel(
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
+    
+    val context = LocalContext.current
+    val savedState = remember { AdaptiveControlsPrefs.load(context) }
+
     var antiDolbyEnabled by remember { mutableStateOf(initialAntiDolby) }
     var selectedPreset by remember { mutableStateOf(initialPreset) }
     var autoMode by remember { mutableStateOf(initialAutoMode) }
@@ -163,6 +167,40 @@ fun IvannaControlPanel(
     var npeClassifyConfidence by remember { mutableFloatStateOf(0f) }
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
+
+    
+    // ── Persistencia automática al salir de la pantalla ──
+    DisposableEffect(LocalLifecycleOwner.current) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                AdaptiveControlsPrefs.save(context, AdaptiveControlsState(
+                    antiDolbyEnabled = antiDolbyEnabled,
+                    selectedPreset = selectedPreset,
+                    autoMode = autoMode,
+                    omegaMode = omegaMode,
+                    nhoHarmonic = nhoHarmonic,
+                    spatialAngle = spatialAngle,
+                    spatialWidth = spatialWidth,
+                    evoEnabled = evoEnabled,
+                    npeBypass = npeBypass,
+                    npeHarmonic = npeHarmonic,
+                    npeLateralInhib = npeLateralInhib,
+                    npeOhcCompression = npeOhcCompression,
+                    npeMasterGain = npeMasterGain,
+                    npeAgcTarget = npeAgcTarget,
+                    npeAgcRate = npeAgcRate,
+                    npeHrtf = npeHrtf,
+                    npeCochlear = npeCochlear,
+                    npeAdapt = npeAdapt,
+                    npeManifold = npeManifold,
+                    spatialEnabled = spatialEnabled,
+                    phaseOracleIntensity = phaseOracleIntensity
+                ))
+            }
+        }
+        LocalLifecycleOwner.current.lifecycle.addObserver(observer)
+        onDispose { LocalLifecycleOwner.current.lifecycle.removeObserver(observer) }
+    }
 
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
 
