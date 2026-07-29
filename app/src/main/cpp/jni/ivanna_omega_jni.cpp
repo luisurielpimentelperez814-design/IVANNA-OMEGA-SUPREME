@@ -14,6 +14,7 @@
 #include <atomic>
 #include <algorithm>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
@@ -420,9 +421,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
 }
+static std::mutex g_dspProcessMutex;
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     if (!g_initialized.load(std::memory_order_acquire)) return;
     if (!buf || nFrames <= 0) return;
     const int n = std::min((int)nFrames, 2048);
