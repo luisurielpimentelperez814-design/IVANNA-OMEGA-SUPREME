@@ -590,7 +590,8 @@ g_exciter.process(chL, chR, n);
 
     float perceptualCrest =
         std::clamp(
-            peakAbs / std::max(rms, 1e-6f),
+            g_lastRawPeak.load(std::memory_order_relaxed) /
+                        std::max(g_lastRawRms.load(std::memory_order_relaxed), 1e-6f),
             1.0f,
             8.0f);
 
