@@ -64,6 +64,7 @@ class PlaybackCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
     private var voiceController: VoiceController? = null
+    private val vibratoryProcessor = OmegaVibratoryProcessor(drive = 1.2f, limitThreshold = 0.92f)
 
     private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
     private var voiceWindowFill = 0
@@ -211,15 +212,18 @@ class PlaybackCaptureService : Service() {
                         }
                     }
 
-                    // 4. Reinyección
+                    // 4. Saturación armónica + limitador de pico
+                    vibratoryProcessor.process(buffer)
+
+                    // 5. Reinyección
                     audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
 
-                    // 5. Análisis neuromórfico (no altera señal)
+                    // 6. Análisis neuromórfico (no altera señal)
                     if (IvannaNpeEngine.isReady) {
                         runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
                     }
 
-                    // 6. Downmix mono → VoiceController + Visualizador
+                    // 7. Downmix mono → VoiceController + Visualizador
                     for (i in 0 until frames) {
                         mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     }
