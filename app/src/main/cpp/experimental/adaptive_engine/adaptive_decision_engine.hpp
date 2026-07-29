@@ -266,7 +266,7 @@ private:
 class AdaptiveDecisionEngine {
 public:
     AdaptiveDecisionEngine() = default;
-    ~AdaptiveDecisionEngine() { stop(); }
+    ~AdaptiveDecisionEngine() noexcept { stop(); }
 
     AdaptiveDecisionEngine(const AdaptiveDecisionEngine&) = delete;
     AdaptiveDecisionEngine& operator=(const AdaptiveDecisionEngine&) = delete;
@@ -278,7 +278,7 @@ public:
     AdaptiveStateBus adaptiveState;
 
     void start();
-    void stop();
+    void stop() noexcept;
     bool running() const noexcept { return running_.load(std::memory_order_relaxed); }
 
     // ── Funciones de análisis puras (sin estado oculto más allá de lo que

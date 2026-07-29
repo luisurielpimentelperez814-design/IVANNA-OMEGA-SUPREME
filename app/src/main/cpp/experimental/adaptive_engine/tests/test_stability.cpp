@@ -183,6 +183,20 @@ void testStartStopCycles() {
     expect(allFast, "10 ciclos start/start/stop/stop consecutivos, cada stop() < 200ms (sin degradación acumulada)");
 }
 
+// Smoke test específico del bug de proceso: destruir una instancia que aún
+// está corriendo debe implicar stop()+join implícitos, jamás std::terminate().
+// Si este caso falla, el proceso entero aborta y el test ni siquiera alcanza
+// el siguiente printf(), que es precisamente la señal que queremos fijar.
+void testDestructorAutoJoin() {
+    std::printf("\n=== Destructor auto-join (regresión del std::terminate intermitente) ===\n");
+    {
+        AdaptiveDecisionEngine engine;
+        engine.start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    }
+    expect(true, "destruir el motor en caliente retorna al caller sin abortar el proceso");
+}
+
 } // namespace
 
 int main() {
@@ -191,6 +205,7 @@ int main() {
 
     testSustainedLoad();
     testStartStopCycles();
+    testDestructorAutoJoin();
 
     std::printf("\n=================================================================\n");
     if (g_failures == 0) {

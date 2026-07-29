@@ -140,12 +140,39 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
 }
 
 void AdaptiveDecisionEngine::start() {
-    if (running_.exchange(true, std::memory_order_acq_rel)) return;  // ya corriendo
-    controlThread_ = std::thread([this]() { controlLoop(); });
+    bool expected = false;
+    if (!running_.compare_exchange_strong(expected, true,
+                                          std::memory_order_acq_rel,
+                                          std::memory_order_acquire)) {
+        return;  // ya corriendo
+    }
+
+    // Hardening real contra std::terminate(): si por cualquier edge case
+    // externo quedara un std::thread joinable "viejo" (p.ej. running_=false
+    // pero stop() no alcanzó a hacer join todavía), asignar un nuevo hilo
+    // sobre controlThread_ terminaría el proceso inmediatamente. Nunca debería
+    // pasar en el flujo nominal, pero si pasa preferimos drenar ese hilo aquí
+    // de forma explícita antes de reutilizar el objeto std::thread.
+    if (controlThread_.joinable()) controlThread_.join();
+
+    try {
+        controlThread_ = std::thread([this]() { controlLoop(); });
+    } catch (...) {
+        running_.store(false, std::memory_order_release);
+        throw;
+    }
 }
 
-void AdaptiveDecisionEngine::stop() {
-    if (!running_.exchange(false, std::memory_order_acq_rel)) return;  // no corría
+void AdaptiveDecisionEngine::stop() noexcept {
+    // FIX (causa real de std::terminate() intermitente): el guard antiguo
+    // hacía early-return cuando running_ ya estaba en false. Eso dejaba sin
+    // join un controlThread_ todavía joinable en cualquier edge case donde el
+    // flag y el estado real del std::thread se desincronizaran; más tarde,
+    // el destructor de std::thread o una nueva asignación sobre el mismo
+    // objeto disparaban std::terminate(). El contrato correcto es: parar el
+    // loop SI estaba corriendo, pero hacer join SIEMPRE que el thread siga
+    // joinable, independientemente del flag.
+    running_.store(false, std::memory_order_release);
     if (controlThread_.joinable()) controlThread_.join();
 }
 
