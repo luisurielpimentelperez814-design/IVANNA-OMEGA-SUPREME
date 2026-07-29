@@ -381,6 +381,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
+// ── FIX: mutex DSP — declarado antes de nativeSetParams y nativeProcess ──────
+static std::mutex g_dspProcessMutex;
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     JNIEnv*, jobject,
@@ -427,7 +430,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
 }
-static std::mutex g_dspProcessMutex;
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
