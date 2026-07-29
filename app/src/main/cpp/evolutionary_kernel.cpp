@@ -39,8 +39,7 @@ static Population g_population;
 static std::mt19937 g_rng(42);
 static float g_mutationRate = 0.01f;
 
-// ── Persistencia de la población (survive app restarts) ──────────────────────
-static constexpr uint32_t EVO_SAVE_MAGIC   = 0x494F4B31; // "IOK1"
+static constexpr uint32_t EVO_SAVE_MAGIC   = 0x494F4B31;
 static constexpr uint32_t EVO_SAVE_VERSION = 1;
 static constexpr uint32_t EVO_AUTOSAVE_INTERVAL_GENERATIONS = 25;
 
@@ -54,7 +53,6 @@ struct EvoSaveHeader {
 static std::string g_savePath;
 static std::mutex  g_saveMutex;
 
-// FIX: Worker thread persistente para evitar Thread Exhaustion a las 1650 iteraciones
 static std::condition_variable g_saveCv;
 static std::shared_ptr<Population> g_pendingSave = nullptr;
 static bool g_saverThreadStarted = false;
@@ -104,7 +102,6 @@ extern "C" int evo_load_state() {
     return loadPopulationLocked() ? 1 : 0;
 }
 
-// ── Acoplamiento a audio real ──────────────────────────────────────────────
 static std::atomic<float> g_audioLoudness{0.5f};
 static std::atomic<float> g_audioTransient{0.1f};
 static std::atomic<float> g_audioSpatial{0.1f};
@@ -115,7 +112,6 @@ extern "C" void evo_update_audio_cues(float loudness, float transient, float spa
     g_audioSpatial.store(spatial,    std::memory_order_relaxed);
 }
 
-// Constantes precalculadas
 static constexpr float INV_255 = 1.0f / 255.0f;
 static constexpr float SMOOTH_WEIGHT = 0.85f;
 static constexpr float INV_GENOME_SIZE = 1.0f / GENOME_SIZE;
@@ -230,43 +226,36 @@ static void evolveGeneration() {
     g_population.generation++;
     g_population.bestFitness = best;
 
-    // FIX AUDIT: Thread Exhaustion a las 1650 iteraciones (1649 decisiones + base).
-    // Implementación asíncrona mediante Worker persistente. Cero creation cost en bucle.
     if (g_population.generation % EVO_AUTOSAVE_INTERVAL_GENERATIONS == 0) {
         std::unique_lock<std::mutex> lock(g_saveMutex, std::try_to_lock);
         if (lock.owns_lock()) {
             g_pendingSave = std::make_shared<Population>(g_population);
             
             if (!g_saverThreadStarted) {
-                try {
-                    std::thread([]() {
-                        while (true) {
-                            std::shared_ptr<Population> snap;
-                            std::string path;
-                            {
-                                std::unique_lock<std::mutex> lk(g_saveMutex);
-                                g_saveCv.wait(lk, []{ return g_pendingSave != nullptr; });
-                                snap = g_pendingSave;
-                                g_pendingSave = nullptr;
-                                path = g_savePath;
-                            }
-                            if (snap && !path.empty()) {
-                                FILE* f = std::fopen(path.c_str(), "wb");
-                                if (f) {
-                                    EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION,
-                                                      POPULATION_SIZE, GENOME_SIZE};
-                                    std::fwrite(&hdr, sizeof(hdr), 1, f);
-                                    std::fwrite(snap.get(), sizeof(Population), 1, f);
-                                    std::fclose(f);
-                                }
+                std::thread([]() {
+                    while (true) {
+                        std::shared_ptr<Population> snap;
+                        std::string path;
+                        {
+                            std::unique_lock<std::mutex> lk(g_saveMutex);
+                            g_saveCv.wait(lk, []{ return g_pendingSave != nullptr; });
+                            snap = g_pendingSave;
+                            g_pendingSave = nullptr;
+                            path = g_savePath;
+                        }
+                        if (snap && !path.empty()) {
+                            FILE* f = std::fopen(path.c_str(), "wb");
+                            if (f) {
+                                EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION,
+                                                  POPULATION_SIZE, GENOME_SIZE};
+                                std::fwrite(&hdr, sizeof(hdr), 1, f);
+                                std::fwrite(snap.get(), sizeof(Population), 1, f);
+                                std::fclose(f);
                             }
                         }
-                    }).detach();
-                    g_saverThreadStarted = true;
-                } catch (...) {
-                    // Si falla silenciosamente por OS Limits, lo intenta en el siguiente ciclo
-                    // sin derribar el proceso principal con abort()
-                }
+                    }
+                }).detach();
+                g_saverThreadStarted = true;
             } else {
                 g_saveCv.notify_one();
             }
