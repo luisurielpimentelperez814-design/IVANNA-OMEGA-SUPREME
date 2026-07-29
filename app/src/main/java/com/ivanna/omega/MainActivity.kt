@@ -142,6 +142,9 @@ fun OmegaApp() {
     val dsp = remember { mutableStateOf(DSPState()) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
+        // captureRequested declarado antes del launcher que lo usa
+        var captureRequested by remember { mutableStateOf(false) }
+        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
         // Launcher MediaProjection para PlaybackCaptureService
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
         val projectionLauncher = rememberLauncherForActivityResult(
@@ -163,11 +166,6 @@ fun OmegaApp() {
                 com.ivanna.omega.audio.ParameterStore(context)
             )
         }
-        // captureRequested: evita relanzar el diálogo en cada recomposición.
-        // captureActive: estado REAL del servicio (StateFlow) — si el usuario
-        // mata la captura desde la notificación, el banner STANDBY vuelve solo.
-        var captureRequested by remember { mutableStateOf(false) }
-        val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         NavHost(nav, startDestination = "splash") {
             composable("splash") { SplashScreen { nav.navigate("intro") } }
