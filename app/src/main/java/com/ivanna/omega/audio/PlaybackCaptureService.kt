@@ -1,10 +1,6 @@
 package com.ivanna.omega.audio
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
@@ -14,327 +10,197 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Build
-import android.os.IBinder
+import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
+import com.ivanna.omega.bridge.IvannaBridgePlayer
+import com.ivanna.omega.cinematic.CinematicEngineHost
+import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
-import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.processing.OmegaVibratoryProcessor
 import com.ivanna.omega.spatial.IvannaSpatialEngine
+import com.ivanna.omega.spatial.SpatialAudioEngineV2
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
-import kotlinx.coroutines.*
+import com.ivanna.omega.voice.VoiceProtectionController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
- * PlaybackCaptureService v4.0 — Captura + Procesamiento DSP + Reinyección.
+ * PlaybackCaptureService v7.2 — Magistral definitivo.
  *
- * Pipeline completo para Tidal / Qobuz / YouTube / Spotify y cualquier app:
+ * Pipeline: AudioRecord (MediaProjection) → DSPBridge → IvannaSpatialEngine
+ *           → NPE Kotlin → AudioTrack → análisis YAMNet / visualizador.
  *
- *   AudioRecord (MediaProjection, stereo 48kHz float)
- *     → DSPBridge.process()          EQ / Compresor / Exciter / Widener
- *     → IvannaSpatialEngine          HRTF binaural
- *     → NeuromorphicProcessingEngine NPE Kotlin (si habilitado)
- *     → IvannaNpeEngine              análisis neuromórfico (género/RMS)
- *     → VoiceController              clasificación YAMNet
- *     → IvannaVisualizerBridgeV2     alimenta el shader Aurora
- *     → AudioTrack                   reinyección a la salida de audio
- *
- * NOTA IMPORTANTE: Android exige USAGE_MEDIA para la captura y el
- * AudioTrack de reinyección usa USAGE_MEDIA también — se excluye el
- * propio UID para evitar el loop de retroalimentación digital.
+ * Características:
+ *   - Hilo dedicado con prioridad URGENT_AUDIO (sin jitter de GC).
+ *   - Reinicio automático con backoff si el hardware falla y la proyección sigue viva.
+ *   - WakeLock de 10 h, sin renewal innecesario.
+ *   - Motor encapsulado que garantiza liberación de recursos en cualquier camino de error.
  */
 class PlaybackCaptureService : Service() {
 
     companion object {
         private const val TAG = "PlaybackCaptureService"
-        private const val SAMPLE_RATE = 48_000
-        private const val CHANNEL_COUNT = 2
-        private const val BLOCK_FRAMES = 512   // ~10.7ms @ 48kHz — bajo para latencia
-        private const val BLOCK_SAMPLES = BLOCK_FRAMES * CHANNEL_COUNT
+
+        private const val SAMPLE_RATE    = 48_000
+        private const val CHANNEL_COUNT  = 2
+        private const val BLOCK_FRAMES   = 512
+        private const val BLOCK_SAMPLES  = BLOCK_FRAMES * CHANNEL_COUNT
+
+        const val CHANNEL_ID    = "ivanna_playback_channel"
+        const val NOTIFICATION_ID = 2
+
+        private const val VOICE_DECIMATION    = 3
+        private const val VOICE_WINDOW_SAMPLES = 15600
 
         private val _isCapturing = MutableStateFlow(false)
         val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
-
-        const val CHANNEL_ID = "ivanna_playback_channel"
-        const val NOTIFICATION_ID = 2
-
-        // VoiceController: 15600 muestras @ 16kHz mono (0.975s)
-        private const val VOICE_DECIMATION    = 3
-        private const val VOICE_WINDOW_SAMPLES = 15600
     }
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var audioRecord: AudioRecord? = null
-    private var audioTrack: AudioTrack? = null
-    private var isRunning = false
-    private var mediaProjection: MediaProjection? = null
-    private var projectionCallback: MediaProjection.Callback? = null
+    // ── Estado concurrente del servicio ─────────────────────
+    private val lock        = ReentrantLock()
+    private val engineRef   = AtomicReference<CaptureEngine?>(null)
+    private val projRef     = AtomicReference<MediaProjection?>(null)
+    private val running     = AtomicBoolean(false)
 
-    private var voiceController: VoiceController? = null
-    // GAP1 FIX: alimentar Motor B con audio de apps externas (1/30 bloques)
-    private val captureAnalyzeCounter = java.util.concurrent.atomic.AtomicInteger(0)
-    private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
-    private var voiceWindowFill = 0
-    private var voiceDecimAcc = 0f
-    private var voiceDecimCount = 0
+    @Volatile private var wakeLock: PowerManager.WakeLock? = null
+    private var retryAttempts = 0
+    private var retryHandler: Handler? = null
+    private var retryThread: HandlerThread? = null
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Ciclo de vida del Service
+    // ─────────────────────────────────────────────────────────────────────────
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        acquireWakeLock()
+        retryThread = HandlerThread("RetryHandler", Process.THREAD_PRIORITY_BACKGROUND)
+            .also { it.start(); retryHandler = Handler(it.looper) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) { stopSelf(); return START_NOT_STICKY }
-
-        // Android 14+: startForeground ANTES de getMediaProjection()
         startForeground(
-            NOTIFICATION_ID,
-            createNotification(),
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            NOTIFICATION_ID, buildNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         )
-
         val projection = getMediaProjection(intent)
         if (projection == null) {
             Log.w(TAG, "MediaProjection no autorizada")
             stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             return START_NOT_STICKY
         }
-
-        startCapture(projection)
+        startEngine(projection)
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        stopCapture()
+        stopEngine()
+        releaseWakeLock()
+        retryHandler?.removeCallbacksAndMessages(null)
+        retryThread?.quitSafely()
         _isCapturing.value = false
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // ── Construcción del pipeline ─────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Gestión del motor
+    // ─────────────────────────────────────────────────────────────────────────
 
-    private fun startCapture(projection: MediaProjection) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-
-        try {
-            mediaProjection = projection
-
-            val callback = object : MediaProjection.Callback() {
-                override fun onStop() {
-                    Log.i(TAG, "MediaProjection.onStop — limpiando")
-                    stopCapture(); stopSelf()
+    private fun startEngine(projection: MediaProjection) {
+        lock.withLock {
+            stopEngineLocked()          // detener motor previo
+            projRef.set(projection)
+            val engine = CaptureEngine(
+                context    = applicationContext,
+                projection = projection,
+                onError    = { msg ->
+                    Log.e(TAG, "CaptureEngine error: $msg")
+                    scheduleRestart()
+                },
+                onProjLost = {
+                    Log.w(TAG, "Proyección perdida – programando reinicio")
+                    scheduleRestart()
                 }
-            }
-            projectionCallback = callback
-            projection.registerCallback(callback, null)
-
-            // ── AudioRecord: captura audio de otras apps ──────────────────
-            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .excludeUid(android.os.Process.myUid())  // evitar loop digital
-                .build()
-
-            val minRecBuf = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT
-            ).coerceAtLeast(BLOCK_SAMPLES * 4)
-
-            audioRecord = AudioRecord.Builder()
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(SAMPLE_RATE)
-                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                        .build()
-                )
-                .setBufferSizeInBytes(minRecBuf)
-                .setAudioPlaybackCaptureConfig(captureConfig)
-                .build()
-
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord no inicializó — ¿falta RECORD_AUDIO?")
-                audioRecord?.release(); audioRecord = null
-                stopSelf(); return
-            }
-
-            // ── AudioTrack: reinyección del audio procesado ───────────────
-            // Usa USAGE_MEDIA + CONTENT_TYPE_MUSIC para que el sistema lo
-            // trate como audio de reproducción normal (volumen de media).
-            val minTrackBuf = AudioTrack.getMinBufferSize(
-                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
-            ).coerceAtLeast(BLOCK_SAMPLES * 4)
-
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(SAMPLE_RATE)
-                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .build()
-                )
-                .setBufferSizeInBytes(minTrackBuf)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .build()
-
-            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioTrack no inicializó")
-                audioTrack?.release(); audioTrack = null
-                audioRecord?.release(); audioRecord = null
-                stopSelf(); return
-            }
-
-            // ── Inicializar subsistemas ───────────────────────────────────
-            IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
-            if (voiceController == null) voiceController = VoiceController(applicationContext)
-
-            audioRecord?.startRecording()
-            audioTrack?.play()
-            isRunning = true
-            _isCapturing.value = true
-
-            Log.i(TAG, "Pipeline captura→DSP→reinyección arrancado @ ${SAMPLE_RATE}Hz")
-
-            // ── Loop de procesamiento ─────────────────────────────────────
-            scope.launch {
-                val buffer = FloatArray(BLOCK_SAMPLES)
-                val mono   = FloatArray(BLOCK_FRAMES)
-
-                while (isRunning && isActive) {
-                    val read = audioRecord?.read(
-                        buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING
-                    ) ?: 0
-
-                    if (read <= 0) continue
-
-                    val frames = read / CHANNEL_COUNT
-
-                    // 1. DSP principal: EQ, Compresor, Exciter, Widener
-                    DSPBridge.process(buffer, frames)
-
-                    // 2. Binaural HRTF (IvannaSpatialEngineV3)
-                    if (IvannaSpatialEngine.enabled) {
-                        val outL = FloatArray(frames)
-                        val outR = FloatArray(frames)
-                        val inL  = FloatArray(frames) { buffer[it * 2] }
-                        val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
-                        IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
-                        for (i in 0 until frames) {
-                            buffer[i * 2]     = outL[i]
-                            buffer[i * 2 + 1] = outR[i]
-                        }
-                    }
-
-                    // 3. NPE Kotlin (si está habilitado en BridgePlayer)
-                    IvannaBridgePlayer.activeInstance?.let { player ->
-                        if (player.npeKotlinEnabled) {
-                            // npeKotlin es lazy — se accede indirectamente
-                            // vía el mismo mecanismo que usa el BridgePlayer
-                            try {
-                                val out = player.processBlockThroughNpeKotlin(buffer)
-                                out.copyInto(buffer, 0, 0, read)
-                            } catch (_: Throwable) {}
-                        }
-                    }
-
-                    // 4. Reinyección — audio procesado sale por el altavoz
-                    audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
-
-                    // 5. Análisis neuromórfico (no altera la señal)
-                    if (IvannaNpeEngine.isReady) {
-                        try { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
-                        catch (e: Exception) { Log.e(TAG, "NPE: ${e.message}") }
-                    }
-
-                    // GAP1 FIX: Motor B recibe audio real de Spotify/Tidal/Qobuz.
-                    if (com.ivanna.omega.core.IvannaNativeLib.isLoaded &&
-                        captureAnalyzeCounter.incrementAndGet() % 30 == 0) {
-                        runCatching {
-                            com.ivanna.omega.core.IvannaNativeLib.nativeAnalyzeAudio(buffer)
-                        }
-                    }
-
-                    // 6. Downmix mono para VoiceController y Visualizador
-                    for (i in 0 until frames) {
-                        mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
-                    }
-
-                    try { feedVoiceController(mono, frames) }
-                    catch (e: Throwable) { Log.w(TAG, "VoiceController: ${e.message}") }
-
-                    IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
-                }
-            }
-
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException — falta RECORD_AUDIO", e)
-            cleanup(); stopSelf()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error iniciando captura", e)
-            cleanup(); stopSelf()
-        }
-    }
-
-    private fun stopCapture() {
-        if (!isRunning && audioRecord == null) return
-        isRunning = false
-        _isCapturing.value = false
-        scope.cancel()
-        cleanup()
-        voiceWindowFill = 0; voiceDecimAcc = 0f; voiceDecimCount = 0
-    }
-
-    private fun cleanup() {
-        audioTrack?.stop()
-        audioTrack?.release()
-        audioTrack = null
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-        IvannaVisualizerBridgeV2.release()
-        projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
-        projectionCallback = null
-        mediaProjection = null
-    }
-
-    // ── VoiceController: decima 48kHz → 16kHz, ventana 0.975s ───────────────
-    private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
-        val vc = voiceController ?: return
-        for (i in 0 until numFrames) {
-            voiceDecimAcc += mono[i]; voiceDecimCount++
-            if (voiceDecimCount >= VOICE_DECIMATION) {
-                if (voiceWindowFill < voiceWindow.size)
-                    voiceWindow[voiceWindowFill++] = voiceDecimAcc / voiceDecimCount
-                voiceDecimAcc = 0f; voiceDecimCount = 0
-            }
-        }
-        if (voiceWindowFill >= voiceWindow.size) {
-            val (hint, scores) = vc.processAudioWithScores(voiceWindow)
-            OmegaEngineBridge.pushYamnetScores(
-                speech     = scores.speech,
-                music      = scores.music,
-                classId    = 0,
-                confidence = maxOf(scores.speech, scores.music)
             )
-            if (hint != "none") vc.executeCommand(hint)
-            voiceWindowFill = 0
+            engineRef.set(engine)
+            engine.start()
+            running.set(true)
+            _isCapturing.value = true
+            retryAttempts = 0
         }
     }
 
-    // ── Notificación ─────────────────────────────────────────────────────────
-    private fun getMediaProjection(intent: Intent?): MediaProjection? {
-        val code = intent?.getIntExtra("resultCode", -1) ?: return null
+    private fun stopEngine() = lock.withLock { stopEngineLocked() }
+
+    /** Detiene y limpia el engine actual. Debe llamarse dentro de lock. */
+    private fun stopEngineLocked() {
+        engineRef.getAndSet(null)?.let { engine ->
+            engine.stop()
+            engine.cleanup()
+        }
+        running.set(false)
+        _isCapturing.value = false
+    }
+
+    /**
+     * Reinicio con backoff exponencial.
+     * Llama stopEngineLocked() primero para que running=false antes del postDelayed,
+     * evitando que el lambda aborte por encontrar running=true.
+     */
+    private fun scheduleRestart() {
+        lock.withLock { stopEngineLocked() }           // running → false
+        val savedProj = projRef.get() ?: run {
+            Log.e(TAG, "Sin proyección — imposible reiniciar"); stopSelf(); return
+        }
+        val delayMs = when {
+            retryAttempts < 3 -> 1_000L
+            retryAttempts < 6 -> 5_000L
+            else              -> 30_000L
+        }
+        retryAttempts++
+        Log.i(TAG, "Reinicio #$retryAttempts en ${delayMs}ms")
+        retryHandler?.postDelayed({ startEngine(savedProj) }, delayMs)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  WakeLock
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK, "ivanna:playback_capture"
+        ).apply {
+            setReferenceCounted(false)
+            acquire(10 * 60 * 60 * 1000L) // 10 h – cubre sesiones largas
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun getMediaProjection(intent: Intent): MediaProjection? {
+        val code = intent.getIntExtra("resultCode", -1)
         val data = intent.getParcelableExtra<Intent>("data") ?: return null
         return (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager)
             .getMediaProjection(code, data)
@@ -343,15 +209,14 @@ class PlaybackCaptureService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
-                CHANNEL_ID, "IVANNA Playback Capture",
-                NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "IVANNA Playback Capture", NotificationManager.IMPORTANCE_LOW
             ).apply { setSound(null, null); enableVibration(false) }
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(ch)
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun buildNotification(): Notification {
         val pi = PendingIntent.getActivity(
             this, 0,
             Intent(this, Class.forName("com.ivanna.omega.MainActivity")),
@@ -364,5 +229,276 @@ class PlaybackCaptureService : Service() {
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CLASE INTERNA: CaptureEngine
+    //
+    //  Prioridad URGENT_AUDIO, sin corrutinas, reinicio limpio.
+    //  Se inicia únicamente tras confirmar que el hardware está listo.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private class CaptureEngine(
+        private val context:    Context,
+        private val projection: MediaProjection,
+        private val onError:    (String) -> Unit,
+        private val onProjLost: () -> Unit
+    ) {
+        private var audioRecord:  AudioRecord? = null
+        private var audioTrack:   AudioTrack?  = null
+        private var audioSessionId = 0
+
+        private var workerThread:  HandlerThread? = null
+        private var workerHandler: Handler?       = null
+        @Volatile private var active = false
+
+        private val vibratoryProcessor = OmegaVibratoryProcessor(1.2f, 0.92f)
+        private val spatialEngine      = SpatialAudioEngineV2()
+        private var voiceProtection:   VoiceProtectionController? = null
+        private var voiceController:   VoiceController?           = null
+
+        private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
+        private var voiceFill  = 0
+        private var voiceAcc   = 0f
+        private var voiceCount = 0
+
+        private val projCallback = object : MediaProjection.Callback() {
+            override fun onStop() = onProjLost()
+        }
+
+        init {
+            projection.registerCallback(projCallback, null)
+        }
+
+        /**
+         * Prepara hardware y motores. Si algo falla, limpia inmediatamente.
+         * Solo si todo OK lanza el hilo de proceso.
+         */
+        fun start() {
+            // 1. Hardware de audio
+            if (!setupHardware()) {
+                cleanupHardwareOnly()
+                onError("Hardware de audio no inicializado")
+                return
+            }
+
+            // 2. Motores de procesamiento (solo tras tener hardware)
+            IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
+            voiceController = VoiceController(context)
+            voiceProtection = VoiceProtectionController(context)
+            spatialEngine.start()
+            // CinematicEngineHost.start() se omite porque su ciclo de vida es gestionado externamente.
+            // Si tu implementación requiere start explícito, descomenta la siguiente línea:
+            // CinematicEngineHost.start(context, SAMPLE_RATE)
+
+            // 3. Hilo de alta prioridad
+            workerThread = HandlerThread("CaptureWorker", Process.THREAD_PRIORITY_URGENT_AUDIO)
+            workerThread?.start()
+            workerHandler = Handler(workerThread!!.looper)
+
+            active = true
+            workerHandler?.post(processingLoop)
+        }
+
+        /** Detiene el hilo de trabajo. cleanup() se llama separadamente. */
+        fun stop() {
+            active = false
+            workerHandler?.removeCallbacksAndMessages(null)
+            workerThread?.quitSafely()
+            workerHandler = null
+            workerThread  = null
+        }
+
+        /** Libera hardware y motores. */
+        fun cleanup() {
+            (context.applicationContext as? IVANNAApplication)?.let { app ->
+                if (audioSessionId > 0) {
+                    app.globalEffectManager.closeSession(audioSessionId)
+                    audioSessionId = 0
+                }
+            }
+            audioTrack?.stop();  audioTrack?.release();  audioTrack  = null
+            audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+            spatialEngine.stop()
+            // CinematicEngineHost.stop() se omite por la misma razón.
+            // Si descomentaste el start, descomenta también:
+            // CinematicEngineHost.stop()
+            voiceProtection?.release(); voiceProtection = null
+            IvannaVisualizerBridgeV2.release()
+            runCatching { projection.unregisterCallback(projCallback) }
+            voiceFill = 0; voiceAcc = 0f; voiceCount = 0
+        }
+
+        /** Limpieza parcial (solo hardware) en caso de fallo antes de arrancar motores. */
+        private fun cleanupHardwareOnly() {
+            audioTrack?.release();  audioTrack  = null
+            audioRecord?.release(); audioRecord = null
+        }
+
+        private fun setupHardware(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+
+            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .excludeUid(Process.myUid())
+                .build()
+
+            val minRec = AudioRecord.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(BLOCK_SAMPLES * 4)
+
+            audioRecord = AudioRecord.Builder()
+                .setAudioFormat(AudioFormat.Builder()
+                    .setSampleRate(SAMPLE_RATE)
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                    .build())
+                .setBufferSizeInBytes(minRec)
+                .setAudioPlaybackCaptureConfig(captureConfig)
+                .build()
+
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                audioRecord?.release(); audioRecord = null; return false
+            }
+
+            val minTrack = AudioTrack.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(BLOCK_SAMPLES * 4)
+
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build())
+                .setAudioFormat(AudioFormat.Builder()
+                    .setSampleRate(SAMPLE_RATE)
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                    .build())
+                .setBufferSizeInBytes(minTrack)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .build()
+
+            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+                audioTrack?.release();  audioTrack  = null
+                audioRecord?.release(); audioRecord = null
+                return false
+            }
+
+            audioRecord?.startRecording()
+            audioTrack?.play()
+            audioSessionId = audioTrack?.audioSessionId ?: 0
+
+            (context.applicationContext as? IVANNAApplication)?.let { app ->
+                if (audioSessionId > 0)
+                    app.globalEffectManager.openSession(audioSessionId, context.packageName)
+            }
+            return true
+        }
+
+        // ── Loop de proceso (hilo URGENT_AUDIO) ────────────────────────────────
+        private val processingLoop = Runnable {
+            val buffer = FloatArray(BLOCK_SAMPLES)
+            val mono   = FloatArray(BLOCK_FRAMES)
+
+            while (active && !Thread.currentThread().isInterrupted) {
+                val rec  = audioRecord ?: break
+                val read = rec.read(buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
+
+                if (read < 0) {
+                    Log.w(TAG, "AudioRecord error $read — saliendo del loop")
+                    break
+                }
+                if (read == 0) continue
+
+                val frames = read / CHANNEL_COUNT
+
+                // 1. DSP base
+                DSPBridge.process(buffer, frames)
+
+                // 1b. Cinematic engine
+                CinematicEngineHost.processBlock(buffer).copyInto(buffer)
+
+                // 2. HRTF binaural
+                if (IvannaSpatialEngine.enabled) {
+                    val inL  = FloatArray(frames) { buffer[it * 2] }
+                    val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
+                    val outL = FloatArray(frames)
+                    val outR = FloatArray(frames)
+                    IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                    for (i in 0 until frames) {
+                        buffer[i * 2]     = outL[i]
+                        buffer[i * 2 + 1] = outR[i]
+                    }
+                }
+
+                // 3. NPE Kotlin
+                IvannaBridgePlayer.activeInstance?.let { player ->
+                    if (player.npeKotlinEnabled) {
+                        runCatching {
+                            player.processBlockThroughNpeKotlin(buffer).copyInto(buffer)
+                        }
+                    }
+                }
+
+                // 4. Saturación armónica + limitador
+                vibratoryProcessor.process(buffer)
+
+                // 5. Reinyección robusta
+                writeAllToTrack(buffer, read)
+
+                // 6. Análisis paralelo (no altera señal)
+                if (IvannaNpeEngine.isReady) {
+                    runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
+                }
+                SpatialAudioEngineV2.feedCapturedBlock(buffer, frames)
+                runCatching { voiceProtection?.feed(buffer, frames, SAMPLE_RATE) }
+
+                // 7. Downmix mono → VoiceController + Visualizador
+                for (i in 0 until frames) {
+                    mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
+                }
+                runCatching { feedVoiceController(mono, frames) }
+                IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
+            }
+
+            if (active) onError("Loop de proceso terminado inesperadamente")
+        }
+
+        private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
+            val track = audioTrack ?: return
+            var written = 0
+            while (written < totalSamples && active) {
+                val result = track.write(data, written, totalSamples - written, AudioTrack.WRITE_BLOCKING)
+                if (result < 0) { Log.e(TAG, "AudioTrack write error: $result"); break }
+                written += result
+            }
+        }
+
+        private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
+            val vc = voiceController ?: return
+            for (i in 0 until numFrames) {
+                voiceAcc += mono[i]; voiceCount++
+                if (voiceCount >= VOICE_DECIMATION) {
+                    if (voiceFill < voiceWindow.size)
+                        voiceWindow[voiceFill++] = voiceAcc / voiceCount
+                    voiceAcc = 0f; voiceCount = 0
+                }
+            }
+            if (voiceFill >= voiceWindow.size) {
+                val (hint, scores) = vc.processAudioWithScores(voiceWindow)
+                OmegaEngineBridge.pushYamnetScores(
+                    speech = scores.speech, music = scores.music,
+                    classId = 0, confidence = maxOf(scores.speech, scores.music)
+                )
+                if (hint != "none") vc.executeCommand(hint)
+                voiceFill = 0
+            }
+        }
+
+        companion object {
+            private const val TAG = "CaptureEngine"
+        }
     }
 }
