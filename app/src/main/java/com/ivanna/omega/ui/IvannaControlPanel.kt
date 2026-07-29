@@ -104,6 +104,7 @@ fun IvannaControlPanel(
     onOpenOpe: () -> Unit = {},
     onOpenBinaural: () -> Unit = {},
     onOpenTelemetry: () -> Unit = {},
+    onOpenAdaptiveProfiles: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
     onOpenMagisk: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
@@ -318,6 +319,11 @@ fun IvannaControlPanel(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
                 ) { Text("TELEMETRÍA", fontSize = 11.sp) }
+                OutlinedButton(
+                    onClick = onOpenAdaptiveProfiles,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonMagenta)
+                ) { Text("PERFILES", fontSize = 11.sp) }
             }
         }
 

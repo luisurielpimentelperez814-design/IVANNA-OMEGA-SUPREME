@@ -331,6 +331,12 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
+            composable("adaptive_profiles") {
+                com.ivanna.omega.ui.AdaptiveProfilesScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
         }
     }
 }
@@ -797,6 +803,7 @@ fun DashboardScreen(
             onOpenOpe = { nav.navigate("ope") },
             onOpenBinaural = { nav.navigate("binaural") },
             onOpenTelemetry = { nav.navigate("telemetry") },
+            onOpenAdaptiveProfiles = { nav.navigate("adaptive_profiles") },
             onOpenMagisk = { nav.navigate("magisk") },
             onOpenProfiles = { nav.navigate("profiles") },
             adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
