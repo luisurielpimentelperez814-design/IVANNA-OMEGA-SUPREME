@@ -44,7 +44,8 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     // es un parámetro reusado por atajo. Se desacopla: sin ganancia propia
     // dedicada expuesta desde Kotlin, queda plana (igual que banda 2) hasta
     // que se cablee un control real — así el volumen deja de teñir el tono.
-    setBand(3, p.freq, p.resonance, 0.f);
+    // Band 3: body en freq del usuario — p.mid * 0.6 (antes siempre 0dB)
+    setBand(3, p.freq, p.resonance, clampDb(p.mid * 0.6f));
     // Band 4: Peaking   ~2.5 kHz — mid param
     setBand(4, 2500.f, p.resonance, clampDb(p.mid));
     // Band 5: Peaking   ~5 kHz  — high param

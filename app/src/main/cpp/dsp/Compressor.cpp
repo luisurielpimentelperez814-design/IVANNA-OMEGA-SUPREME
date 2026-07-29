@@ -85,8 +85,19 @@ void Compressor::process(float* __restrict__ left, float* __restrict__ right, in
 
         float envDb = k20DivLn10 * std::log(env);
         float gainDb = 0.0f;
-        if (envDb > threshold) {
-            gainDb = (threshold - envDb) * ratioInv;
+        // Soft knee: zona de transición de 6dB alrededor del threshold.
+        // Dentro del knee: ganancia crece cuadráticamente en vez de lineal —
+        // elimina el pumping en material con crest factor alto (Rush/Grand Funk).
+        constexpr float kKneeHalf = 3.0f; // ±3dB = knee de 6dB total
+        float overDb = envDb - threshold;
+        if (overDb <= -kKneeHalf) {
+            gainDb = 0.0f;                     // debajo del knee — sin GR
+        } else if (overDb < kKneeHalf) {
+            // dentro del knee: interpolación cuadrática suave
+            float t = (overDb + kKneeHalf) / (2.0f * kKneeHalf);
+            gainDb = -(ratioInv * kKneeHalf) * t * t;
+        } else {
+            gainDb = overDb * (-ratioInv);     // encima del knee — GR lineal
         }
 
         float lin = makeup * std::exp(gainDb * kLn10Div20);

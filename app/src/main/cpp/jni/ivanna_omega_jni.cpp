@@ -77,6 +77,21 @@ static std::atomic<bool> g_initialized{false};
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
 // dejar que Exciter/Compresor la sobre-procesen.
 static std::atomic<float> g_voice_protect_score{0.f};
+
+// ── FIX nho_wet: 3 escritores competían sobre g_pd.set_nho_wet() ─────────────
+// nativeSetParams pisaba el control HRTF WET y el η del LSTM en cada movimiento
+// de slider. Se separan en 3 atómicos; applyNhoWet() los combina y escribe una
+// sola vez. Valores iniciales: exciter neutro, spatial ON, eta neutro.
+static std::atomic<float> g_nho_wet_exciter{0.16f};
+static std::atomic<float> g_nho_wet_spatial{1.0f};
+static std::atomic<float> g_nho_wet_eta    {0.5f};
+
+static inline void applyNhoWet() noexcept {
+    float v = g_nho_wet_exciter.load(std::memory_order_relaxed)
+            * g_nho_wet_spatial.load(std::memory_order_relaxed)
+            * g_nho_wet_eta    .load(std::memory_order_relaxed);
+    g_pd.set_nho_wet(v < 0.f ? 0.f : v > 1.f ? 1.f : v);
+}
 // FEATURE (Perceptual Optimizer): medidor de loudness K-weighted real
 // (ITU-R BS.1770) + trim automático hacia un target. Reemplaza el
 // placeholder muerto de audio_control_plane.hpp (output_lufs nunca se
@@ -427,7 +442,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // NHO parameters mapped from DSP params
     g_pd.set_nho_alpha(alpha);
     g_pd.set_nho_beta(beta);
-    g_pd.set_nho_wet(wet * 0.5f);
+    g_nho_wet_exciter.store(wet * 0.5f, std::memory_order_relaxed);
+    applyNhoWet();
 }
 // FIX (tuning magistral): DSPState.stereoWidth (Kotlin) nunca llegaba al
 // motor nativo — pushToNative() no lo incluía en nativeSetParams(), y
@@ -989,7 +1005,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(JNIEnv*,jobject,jfloat v)  { g_pd.set_nho_beta(v); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetGamma(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_angle(v * 90.f); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_width(v); }
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_pd.set_nho_wet(v); }
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_nho_wet_eta.store(v<0.f?0.f:v>1.f?1.f:v,std::memory_order_relaxed); applyNhoWet(); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*,jobject,jfloat v) { g_pd.set_nho_harmonic(v); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*,jobject,jboolean en) { g_pd.set_mode(en ? 2 : 0); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*,jobject,jboolean) {}
@@ -1037,7 +1053,8 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     JNIEnv*, jobject, jfloat v) {
     if (!std::isfinite(v)) return;
-    g_pd.set_nho_wet(std::clamp(v, 0.0f, 1.0f));
+    g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
+    applyNhoWet();
 }
 // ═══════════════════════════════════════════════════════════════════════════════
 // OmegaEngine mode control
