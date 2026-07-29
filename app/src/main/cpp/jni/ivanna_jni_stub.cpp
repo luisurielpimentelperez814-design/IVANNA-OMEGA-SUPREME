@@ -34,7 +34,6 @@ extern "C" {
 extern "C" {
 
 // ── Stub para nativeSetAntiDolbyScoresJni (companion @JvmStatic) ─────────────
-JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresJni(
     JNIEnv* /*env*/, jclass /*clazz*/,
     jfloat speech, jfloat music, jfloat bass
@@ -52,14 +51,12 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresJni(
 }
 
 // ── Stub para nativeSetRouteProfileJni (companion @JvmStatic) ───────────────
-JNIEXPORT void JNICALL
 
 // ── nativeSetRouteProfile (instancia AudioEngine, no @JvmStatic) ─────────────
 // La versión @JvmStatic ya existe (nativeSetRouteProfileJni → companion object).
 // Este símbolo cubre el external fun de INSTANCIA declarado en AudioEngine.kt:
 //   private external fun nativeSetRouteProfile(...)
 // Misma semántica: delega a ivanna_set_route_profile() → control plane.
-JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
     JNIEnv* /*env*/, jobject /*thiz*/,
     jfloat bassBoostDb, jfloat dialogBoostDb, jfloat widenerMult
@@ -79,6 +76,4 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
 // hilo de Kotlin sin tocar el NPE (que tiene su propia bandera interna).
 // El flag vive en gState.manifoldEnabled (atomic<bool>, audio_orchestrator.cpp)
 // y se puede consultar desde cualquier lugar via ivanna_manifold_enabled().
-JNIEXPORT void JNICALL
 
-} // extern "C"
