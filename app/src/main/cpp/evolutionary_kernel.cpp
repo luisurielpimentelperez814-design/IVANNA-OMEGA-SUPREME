@@ -16,6 +16,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <condition_variable>
 #include <memory>
 #include <string>
 
@@ -39,9 +40,6 @@ static std::mt19937 g_rng(42);
 static float g_mutationRate = 0.01f;
 
 // ── Persistencia de la población (survive app restarts) ──────────────────────
-// Ruta fijada desde Kotlin (filesDir, antes de start_evo_thread()) vía
-// evo_set_save_path(). Si nunca se fija, la persistencia queda deshabilitada
-// y el comportamiento es idéntico al original (randomize-on-init).
 static constexpr uint32_t EVO_SAVE_MAGIC   = 0x494F4B31; // "IOK1"
 static constexpr uint32_t EVO_SAVE_VERSION = 1;
 static constexpr uint32_t EVO_AUTOSAVE_INTERVAL_GENERATIONS = 25;
@@ -55,9 +53,11 @@ struct EvoSaveHeader {
 
 static std::string g_savePath;
 static std::mutex  g_saveMutex;
-// FIX (audit): guard atómico para evitar dos autosaves concurrentes en
-// paralelo cuando el detach previo aún está escribiendo. Ver evolveGeneration().
-static std::atomic<bool> g_autosaveInFlight{false};
+
+// FIX: Worker thread persistente para evitar Thread Exhaustion a las 1650 iteraciones
+static std::condition_variable g_saveCv;
+static std::shared_ptr<Population> g_pendingSave = nullptr;
+static bool g_saverThreadStarted = false;
 
 static bool savePopulationLocked() {
     if (g_savePath.empty()) return false;
@@ -104,10 +104,7 @@ extern "C" int evo_load_state() {
     return loadPopulationLocked() ? 1 : 0;
 }
 
-// ── Acoplamiento a audio real (FIX: antes el fitness era audio-agnóstico) ─────
-// PDEngine::process_block() actualiza estos atomics cada bloque con los cues
-// perceptuales reales (L=loudness, T=transientes, S=espacial) extraídos por
-// BiquadEnvelopeBank. El hilo evolutivo los lee sin bloquear al audio thread.
+// ── Acoplamiento a audio real ──────────────────────────────────────────────
 static std::atomic<float> g_audioLoudness{0.5f};
 static std::atomic<float> g_audioTransient{0.1f};
 static std::atomic<float> g_audioSpatial{0.1f};
@@ -123,10 +120,6 @@ static constexpr float INV_255 = 1.0f / 255.0f;
 static constexpr float SMOOTH_WEIGHT = 0.85f;
 static constexpr float INV_GENOME_SIZE = 1.0f / GENOME_SIZE;
 static constexpr float INV_GENOME_MINUS1 = 1.0f / (GENOME_SIZE - 1);
-// Peso del término de audio real vs. el término de suavidad original.
-// 0.4 deja que la suavidad siga dominando (estabilidad probada) mientras
-// el audio real empuja la búsqueda hacia genomas que encajan con lo que
-// realmente está sonando, en vez de converger siempre al mismo óptimo fijo.
 static constexpr float AUDIO_COUPLING_WEIGHT = 0.4f;
 
 __attribute__((hot, flatten))
@@ -150,11 +143,6 @@ static float evaluateFitness(const uint8_t* __restrict__ genome) {
     smoothness *= INV_GENOME_MINUS1;
     const float base_fitness = energy * (1.0f - SMOOTH_WEIGHT * smoothness);
 
-    // ── Término de acoplamiento a audio real ──────────────────────────────
-    // Favorece genomas cuya "energía promedio" se acerca al loudness real
-    // de lo que está sonando, y cuya suavidad es proporcional a la
-    // estabilidad de transitorios (T bajo → favorecer genomas más suaves;
-    // T alto/percusivo → permitir más variación/textura).
     const float L = g_audioLoudness.load(std::memory_order_relaxed);
     const float T = g_audioTransient.load(std::memory_order_relaxed);
     const float S = g_audioSpatial.load(std::memory_order_relaxed);
@@ -172,9 +160,6 @@ static float evaluateFitness(const uint8_t* __restrict__ genome) {
 
 __attribute__((hot))
 static void initializePopulation() {
-    // FIX: intentar recuperar la población guardada antes de randomizar.
-    // Si hay un save-state válido (mismo layout), continúa la evolución
-    // donde se quedó en vez de perder todo el progreso al reabrir la app.
     {
         std::lock_guard<std::mutex> lock(g_saveMutex);
         if (loadPopulationLocked()) return;
@@ -207,7 +192,6 @@ static inline void crossover(const uint8_t* __restrict__ p1,
 __attribute__((hot, flatten))
 static void mutate(uint8_t* __restrict__ genome, float rate) {
     const uint32_t threshold = static_cast<uint32_t>(rate * static_cast<float>(g_rng.max()));
-    // NOTE: loop contains stateful RNG call — cannot be auto-vectorized.
     for (int i = 0; i < GENOME_SIZE; ++i) {
         if (g_rng() < threshold) {
             genome[i] = static_cast<uint8_t>(g_rng() & 0xFF);
@@ -246,45 +230,45 @@ static void evolveGeneration() {
     g_population.generation++;
     g_population.bestFitness = best;
 
-    // Autosave periódico ASÍNCRONO (FIX audit — muerte a ~1697 ecuaciones).
-    //
-    // Antes: lock_guard + savePopulationLocked() síncrono dentro del hilo evo.
-    //   savePopulationLocked() hace fopen("wb") + fwrite(POBLACIÓN entera) +
-    //   fclose sobre filesDir con la app en background. En Android en
-    //   background el I/O disk puede tardar cientos de ms; el mutex bloquea
-    //   el hilo evo, y como evolveGeneration() corre cada ~50 ms desde
-    //   start_evo_thread(), a los 67 autosaves (25 × 67 ≈ 1675 generaciones)
-    //   el planificador ya no despacha el hilo evo con suficiente frecuencia:
-    //   se ve como si el motor "muriese" a las ~1697 ecuaciones.
-    //
-    // Ahora:
-    //   1) try_lock: si otro autosave sigue en curso, saltamos ESTE ciclo
-    //      (habrá otro dentro de 25 generaciones — ~1.25 s de reloj evo).
-    //   2) Copia la población a heap fuera del lock, libera lock, y hace
-    //      fwrite en un std::thread detach — el hilo evo vuelve al bucle
-    //      inmediatamente, sin bloquear el reloj de generaciones.
-    //   3) g_autosaveInFlight garantiza que jamás haya dos escrituras
-    //      concurrentes a filesDir/evo_population.bin (integridad del binario).
+    // FIX AUDIT: Thread Exhaustion a las 1650 iteraciones (1649 decisiones + base).
+    // Implementación asíncrona mediante Worker persistente. Cero creation cost en bucle.
     if (g_population.generation % EVO_AUTOSAVE_INTERVAL_GENERATIONS == 0) {
         std::unique_lock<std::mutex> lock(g_saveMutex, std::try_to_lock);
-        if (lock.owns_lock() && !g_autosaveInFlight.exchange(true)) {
-            const std::string path = g_savePath;
-            if (!path.empty()) {
-                auto snap = std::make_shared<Population>(g_population);
-                lock.unlock();
-                std::thread([path, snap]() {
-                    FILE* f = std::fopen(path.c_str(), "wb");
-                    if (f) {
-                        EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION,
-                                          POPULATION_SIZE, GENOME_SIZE};
-                        std::fwrite(&hdr, sizeof(hdr), 1, f);
-                        std::fwrite(snap.get(), sizeof(Population), 1, f);
-                        std::fclose(f);
-                    }
-                    g_autosaveInFlight.store(false);
-                }).detach();
+        if (lock.owns_lock()) {
+            g_pendingSave = std::make_shared<Population>(g_population);
+            
+            if (!g_saverThreadStarted) {
+                try {
+                    std::thread([]() {
+                        while (true) {
+                            std::shared_ptr<Population> snap;
+                            std::string path;
+                            {
+                                std::unique_lock<std::mutex> lk(g_saveMutex);
+                                g_saveCv.wait(lk, []{ return g_pendingSave != nullptr; });
+                                snap = g_pendingSave;
+                                g_pendingSave = nullptr;
+                                path = g_savePath;
+                            }
+                            if (snap && !path.empty()) {
+                                FILE* f = std::fopen(path.c_str(), "wb");
+                                if (f) {
+                                    EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION,
+                                                      POPULATION_SIZE, GENOME_SIZE};
+                                    std::fwrite(&hdr, sizeof(hdr), 1, f);
+                                    std::fwrite(snap.get(), sizeof(Population), 1, f);
+                                    std::fclose(f);
+                                }
+                            }
+                        }
+                    }).detach();
+                    g_saverThreadStarted = true;
+                } catch (...) {
+                    // Si falla silenciosamente por OS Limits, lo intenta en el siguiente ciclo
+                    // sin derribar el proceso principal con abort()
+                }
             } else {
-                g_autosaveInFlight.store(false);
+                g_saveCv.notify_one();
             }
         }
     }
@@ -315,7 +299,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
     return JNI_TRUE;
 }
 
-
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(
     JNIEnv*, jobject, jfloat rate) {
@@ -330,9 +313,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(
 
 } // extern "C"
 
-// ── C exports for PDEngine background integration ────────────────────────────
-// Called from pd_engine.hpp evo_thread_ — no JNIEnv needed.
-
 extern "C" void evo_initialize_population() {
     initializePopulation();
 }
@@ -346,13 +326,11 @@ extern "C" float evo_best_fitness() {
 }
 
 extern "C" void evo_get_best_genome(uint8_t* out_genome, int len) {
-    // Find the individual with highest fitness
     const Individual* best = &g_population.individuals[0];
     for (int i = 1; i < POPULATION_SIZE; ++i) {
         if (g_population.individuals[i].fitness > best->fitness)
             best = &g_population.individuals[i];
     }
-    // Copy up to len bytes: [0..31] = state prior, [32] = harmonic_gain
     const int copy_n = len < GENOME_SIZE ? len : GENOME_SIZE;
     for (int i = 0; i < copy_n; ++i) out_genome[i] = best->genome[i];
 }
