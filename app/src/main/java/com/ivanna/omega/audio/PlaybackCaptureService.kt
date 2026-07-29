@@ -11,6 +11,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -19,8 +20,10 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
+import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,80 +31,50 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * PlaybackCaptureService — Servicio de captura de audio de reproducción.
+ * PlaybackCaptureService v4.0 — Captura + Procesamiento DSP + Reinyección.
  *
- * FIX v3.0: conecta el visualizador al loop de audio REAL. Antes el buffer
- * capturado se descartaba por completo ("// Procesar buffer capturado" sin
- * cuerpo) — el handle nativo del visualizador (IvannaVisualizerBridgeV2)
- * nunca se creaba ni se alimentaba, así que VisualizerRendererV2 siempre
- * leía ceros: la UI del visualizer se abría pero mostraba silencio.
+ * Pipeline completo para Tidal / Qobuz / YouTube / Spotify y cualquier app:
  *
- * Pipeline real por bloque capturado:
- *   AudioRecord (MediaProjection, stereo interleaved)
- try { *     → IvannaNpeEngine.processInterleavedStereo()  (análisis neuromórfico: } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
- *       alimenta género/RMS/AGC/confianza que la UI ya lee por polling)
- *     → SpatialAudioEngineV2.feedCapturedBlock()  (motor binaural: actualiza
- *       estado espacial nativo de los 32 objetos con audio REAL de las apps,
- *       no con el micrófono — ver fix en SpatialAudioEngineV2)
- *     → downmix a mono
- *     → IvannaVisualizerBridgeV2.processBlockFromNPE() (bandas espectrales
- *       para el shader GLSL del fondo Aurora)
+ *   AudioRecord (MediaProjection, stereo 48kHz float)
+ *     → DSPBridge.process()          EQ / Compresor / Exciter / Widener
+ *     → IvannaSpatialEngine          HRTF binaural
+ *     → NeuromorphicProcessingEngine NPE Kotlin (si habilitado)
+ *     → IvannaNpeEngine              análisis neuromórfico (género/RMS)
+ *     → VoiceController              clasificación YAMNet
+ *     → IvannaVisualizerBridgeV2     alimenta el shader Aurora
+ *     → AudioTrack                   reinyección a la salida de audio
  *
- * FIX (telemetría desconectada / captura solo-visualizer): este servicio
- * antes sólo se arrancaba al abrir la UI del visualizer, así que NPE y el
- * motor espacial nunca recibían audio real salvo que el usuario abriera esa
- * pantalla. Ahora MainActivity lo arranca al iniciar la app (junto al
- * permiso RECORD_AUDIO), independientemente de si el visualizer está
- * visible, para que NPE y el motor espacial siempre tengan señal real que
- * analizar.
- *
- * Nota: esta captura es sólo de LECTURA/ANÁLISIS — no se reinyecta a la
- * salida de audio (evitaría eco/duplicado). El procesamiento audible real
- * ocurre vía IvannaGlobalEffectManager (AudioEffect en la sesión de la app
- * fuente) o, para IvannaBridgePlayer, vía AudioEngine/DSPBridge.
+ * NOTA IMPORTANTE: Android exige USAGE_MEDIA para la captura y el
+ * AudioTrack de reinyección usa USAGE_MEDIA también — se excluye el
+ * propio UID para evitar el loop de retroalimentación digital.
  */
 class PlaybackCaptureService : Service() {
 
     companion object {
         private const val TAG = "PlaybackCaptureService"
-<<<<<<< Updated upstream
-        // FIX (conexion real): el dashboard mostraba STANDBY/ACTIVO segun un
-        // boolean local de Compose que nunca sabia si el servicio seguia vivo.
-        // Unica fuente de verdad: la setea startCapture/stopCapture/onDestroy.
+        private const val SAMPLE_RATE = 48_000
+        private const val CHANNEL_COUNT = 2
+        private const val BLOCK_FRAMES = 512   // ~10.7ms @ 48kHz — bajo para latencia
+        private const val BLOCK_SAMPLES = BLOCK_FRAMES * CHANNEL_COUNT
+
         private val _isCapturing = MutableStateFlow(false)
-        @JvmStatic
-=======
-        // FIX (conexión real): el dashboard mostraba STANDBY/ACTIVO segun un
-        // boolean local de Compose que nunca sabia si el servicio seguia vivo.
-        // Esta es la unica fuente de verdad: la setea startCapture/stopCapture.
-        private val _isCapturing = MutableStateFlow(false)
->>>>>>> Stashed changes
         val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
+
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
-        const val INPUT_SAMPLES = 128
 
-        // FIX (VoiceController huérfano — cableado real de audio):
-        // VoiceController.processAudio() delega en YamnetClassifier, que
-        // exige un buffer de 15600 muestras @ 16kHz mono (0.975s, ver
-        // YamnetClassifier.INPUT_LENGTH). Este servicio captura @ 48kHz,
-        // así que hace falta decimar 3:1 antes de acumular la ventana.
-        private const val VOICE_DECIMATION = 3          // 96000 / 16000
-        private const val VOICE_WINDOW_SAMPLES = 15600  // = YamnetClassifier.INPUT_LENGTH
+        // VoiceController: 15600 muestras @ 16kHz mono (0.975s)
+        private const val VOICE_DECIMATION    = 3
+        private const val VOICE_WINDOW_SAMPLES = 15600
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null
     private var isRunning = false
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
 
-    // FIX (VoiceController huérfano, ver README "Qué NO está terminado
-    // hoy"): la clase ya routeaba comandos/perfiles correctamente, solo
-    // nunca recibía audio real. Se instancia perezosamente (necesita
-    // Context) y se alimenta desde el mismo bloque capturado que ya usa
-    // IvannaNpeEngine/SpatialAudioEngineV2 más abajo — sin permisos ni
-    // AudioRecord nuevos.
     private var voiceController: VoiceController? = null
     private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
     private var voiceWindowFill = 0
@@ -114,53 +87,23 @@ class PlaybackCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null) { stopSelf(); return START_NOT_STICKY }
 
-        // Sin intent = reinicio START_STICKY tras muerte del proceso.
-        // El token MediaProjection no sobrevive — arrancar sin él crashea en
-        // Android 14+ (startForeground tipo mediaProjection sin sesión viva).
-        // Detener limpiamente; el usuario reabrirá la captura cuando quiera.
-        if (intent == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        // AUDIT FIX (crítico, crash confirmado justo después de conceder el
-        // permiso de captura de pantalla): en Android 14+ el orden es
-        // OBLIGATORIO y estaba invertido. Documentación oficial
-        // (developer.android.com/about/versions/14/changes/fgs-types-required,
-        // sección "Runtime prerequisites" de FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION):
-        // "Call the createScreenCaptureIntent() method before starting the
-        // foreground service [...]. After you have created the foreground
-        // service, you can call MediaProjectionManager.getMediaProjection()."
-        //
-        // Antes este método llamaba a getMediaProjection() ANTES de
-        // startForeground(). El sistema exige la relación inversa: sin un
-        // foreground service de tipo mediaProjection ya arrancado,
-        // MediaProjectionManager.getMediaProjection() lanza
-        // SecurityException de inmediato — exactamente el crash que
-        // ocurría al instante de conceder el permiso.
-        //
-        // Fix: startForeground() primero (no depende de mediaProjection,
-        // solo del contentIntent/notificación), y getMediaProjection()
-        // después, ya con el foreground service de tipo correcto activo.
-        val notification = createNotification()
+        // Android 14+: startForeground ANTES de getMediaProjection()
         startForeground(
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
+            NOTIFICATION_ID,
+            createNotification(),
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        )
 
-        val mediaProjection = getMediaProjection(intent)
-
-        if (mediaProjection == null) {
-            Log.w(TAG, "MediaProjection no autorizada. Servicio detenido.")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+        val projection = getMediaProjection(intent)
+        if (projection == null) {
+            Log.w(TAG, "MediaProjection no autorizada")
+            stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             return START_NOT_STICKY
         }
 
-        startCapture(mediaProjection)
-
+        startCapture(projection)
         return START_NOT_STICKY
     }
 
@@ -172,181 +115,202 @@ class PlaybackCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun getMediaProjection(intent: Intent?): MediaProjection? {
-        val resultCode = intent?.getIntExtra("resultCode", -1) ?: return null
-        val data = intent.getParcelableExtra<Intent>("data") ?: return null
-        val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        return projectionManager.getMediaProjection(resultCode, data)
-    }
+    // ── Construcción del pipeline ─────────────────────────────────────────────
 
-    private fun startCapture(mediaProjection: MediaProjection) {
+    private fun startCapture(projection: MediaProjection) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
 
         try {
-            this.mediaProjection = mediaProjection
+            mediaProjection = projection
 
-            // FIX (sesión de MediaProjection sin callback — obligatorio desde
-            // Android 14): sin esto la app no se entera cuando el usuario
-            // corta la captura desde el chip del sistema, o el sistema la
-            // revoca por otro motivo — el AudioRecord se queda leyendo sobre
-            // una sesión muerta en vez de limpiar.
             val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
-                    Log.i("PlaybackCaptureService", "MediaProjection.onStop: sesión terminada — limpiando captura")
-                    stopCapture()
-                    stopSelf()
+                    Log.i(TAG, "MediaProjection.onStop — limpiando")
+                    stopCapture(); stopSelf()
                 }
             }
             projectionCallback = callback
-            mediaProjection.registerCallback(callback, null)
+            projection.registerCallback(callback, null)
 
-            val sampleRate = 96000
-
-            // FIX (auto-captura — "el problema del micrófono" que en realidad
-            // nunca fue el mic físico): por defecto, AudioPlaybackCaptureConfiguration
-            // captura audio de OTRAS apps *y de la propia* (documentado por
-            // Android: "capturing audio signals played by other apps (and
-            // yours)"). NoRootAudioProcessor/IvannaBridgePlayer sacan el
-            // audio ya procesado con USAGE_MEDIA — el mismo usage que este
-            // servicio está capturando. Sin excludeUid(), la app se
-            // recaptura a sí misma: salida procesada → recapturada →
-            // reprocesada → vuelta a sacar, un loop 100% digital que suena
-            // igual que feedback acústico de mic pero no depende de él en
-            // absoluto. Excluir el propio UID rompe el ciclo.
-            val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
+            // ── AudioRecord: captura audio de otras apps ──────────────────
+            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .excludeUid(android.os.Process.myUid())
+                .excludeUid(android.os.Process.myUid())  // evitar loop digital
                 .build()
 
-            val bufferSize = AudioRecord.getMinBufferSize(
-                sampleRate,
-                AudioFormat.CHANNEL_IN_STEREO,
-                AudioFormat.ENCODING_PCM_FLOAT
-            )
+            val minRecBuf = AudioRecord.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(BLOCK_SAMPLES * 4)
 
             audioRecord = AudioRecord.Builder()
                 .setAudioFormat(
                     AudioFormat.Builder()
-                        .setSampleRate(sampleRate)
+                        .setSampleRate(SAMPLE_RATE)
                         .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                         .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                         .build()
                 )
-                .setBufferSizeInBytes(bufferSize)
-                .setAudioPlaybackCaptureConfig(config)
+                .setBufferSizeInBytes(minRecBuf)
+                .setAudioPlaybackCaptureConfig(captureConfig)
                 .build()
 
-            // FIX (telemetría muerta en silencio): antes no se verificaba el
-            // estado de AudioRecord tras construirlo. Si RECORD_AUDIO no estaba
-            // concedido (u otra falla de plataforma), build() dejaba el
-            // AudioRecord en STATE_UNINITIALIZED y startRecording() lanzaba
-            // IllegalStateException sin log claro — o, peor, el loop de lectura
-            // corría igual leyendo siempre 0 muestras: NPE/motor espacial/
-            // visualizer nunca recibían nada y no había ningún indicio del porqué.
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e("PlaybackCaptureService", "AudioRecord de captura no inicializó (state=${audioRecord?.state}) — " +
-                    "¿falta permiso RECORD_AUDIO? Cancelando captura.")
-                audioRecord?.release()
-                audioRecord = null
-                stopSelf()
-                return
+                Log.e(TAG, "AudioRecord no inicializó — ¿falta RECORD_AUDIO?")
+                audioRecord?.release(); audioRecord = null
+                stopSelf(); return
             }
 
-            // FIX: handle nativo del visualizador — maxBlockFrames en FRAMES por
-            // canal (INPUT_SAMPLES es el tamaño del array intercalado L,R,L,R,
-            // así que el máximo de frames por canal es la mitad).
-            IvannaVisualizerBridgeV2.init(sampleRate, INPUT_SAMPLES / 2)
-            // bufferSize está en bytes; frame estéreo float = 2 canales * 4 bytes
-            val estimatedLatencyMs = (bufferSize.toFloat() / 8f) / sampleRate * 1000f
-            IvannaVisualizerBridgeV2.setDeviceLatencyMs(estimatedLatencyMs)
+            // ── AudioTrack: reinyección del audio procesado ───────────────
+            // Usa USAGE_MEDIA + CONTENT_TYPE_MUSIC para que el sistema lo
+            // trate como audio de reproducción normal (volumen de media).
+            val minTrackBuf = AudioTrack.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(BLOCK_SAMPLES * 4)
 
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(SAMPLE_RATE)
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                        .build()
+                )
+                .setBufferSizeInBytes(minTrackBuf)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .build()
+
+            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioTrack no inicializó")
+                audioTrack?.release(); audioTrack = null
+                audioRecord?.release(); audioRecord = null
+                stopSelf(); return
+            }
+
+            // ── Inicializar subsistemas ───────────────────────────────────
+            IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
             if (voiceController == null) voiceController = VoiceController(applicationContext)
 
             audioRecord?.startRecording()
+            audioTrack?.play()
             isRunning = true
             _isCapturing.value = true
 
+            Log.i(TAG, "Pipeline captura→DSP→reinyección arrancado @ ${SAMPLE_RATE}Hz")
+
+            // ── Loop de procesamiento ─────────────────────────────────────
             scope.launch {
-                val buffer = FloatArray(INPUT_SAMPLES)
-                val mono = FloatArray(INPUT_SAMPLES / 2)
+                val buffer = FloatArray(BLOCK_SAMPLES)
+                val mono   = FloatArray(BLOCK_FRAMES)
+
                 while (isRunning && isActive) {
-                    val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
-                    if (read > 0) {
-                        // read son muestras intercaladas L,R; frames por canal = read/2
-                        val numFrames = read / 2
-                        if (numFrames > 0) {
-                            // Análisis neuromórfico (género/RMS/AGC/confianza) —
-                            // in-place, no altera el audio real de salida.
-                            if (IvannaNpeEngine.isReady) {
-                                try { IvannaNpeEngine.processInterleavedStereo(buffer, numFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
-                            }
-                            // FIX: motor binaural alimentado con audio REAL capturado
-                            // (antes nunca recibía nada — capturaba el mic físico).
-                            SpatialAudioEngineV2.feedCapturedBlock(buffer, numFrames)
-                            // FASE 3A: IvannaLab estaba declarado en JNI pero nunca
-                            // alimentado — mismo buffer real ya usado arriba, sin
-                            // downmix ni copia extra.
-                            IvannaLabMonitor.feed(buffer, numFrames)
-                            // Downmix a mono para el visualizador
-                            for (i in 0 until numFrames) {
-                                mono[i] = 0.5f * (buffer[i * 2] + buffer[i * 2 + 1])
-                            }
-                            // FIX (VoiceController huérfano): decima 48kHz→16kHz,
-                            // acumula la ventana de 0.975s que pide YamnetClassifier
-                            // y, al llenarse, clasifica y ejecuta el perfil sugerido.
-                            // Envuelto en try/catch — mismo criterio que applyEQ/
-                            // persistState en AdaptiveBackend: un fallo acá (TFLite
-                            // no cargado, etc.) no debe tumbar la captura real.
-                            try {
-                                feedVoiceController(mono, numFrames)
-                            } catch (e: Throwable) {
-                                Log.w("PlaybackCaptureService", "VoiceController: motor no disponible todavía")
-                            }
-                            IvannaVisualizerBridgeV2.processBlockFromNPE(mono, numFrames)
+                    val read = audioRecord?.read(
+                        buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING
+                    ) ?: 0
+
+                    if (read <= 0) continue
+
+                    val frames = read / CHANNEL_COUNT
+
+                    // 1. DSP principal: EQ, Compresor, Exciter, Widener
+                    DSPBridge.process(buffer, frames)
+
+                    // 2. Binaural HRTF (IvannaSpatialEngineV3)
+                    if (IvannaSpatialEngine.enabled) {
+                        val outL = FloatArray(frames)
+                        val outR = FloatArray(frames)
+                        val inL  = FloatArray(frames) { buffer[it * 2] }
+                        val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
+                        IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                        for (i in 0 until frames) {
+                            buffer[i * 2]     = outL[i]
+                            buffer[i * 2 + 1] = outR[i]
                         }
                     }
+
+                    // 3. NPE Kotlin (si está habilitado en BridgePlayer)
+                    IvannaBridgePlayer.activeInstance?.let { player ->
+                        if (player.npeKotlinEnabled) {
+                            // npeKotlin es lazy — se accede indirectamente
+                            // vía el mismo mecanismo que usa el BridgePlayer
+                            try {
+                                val out = player.processBlockThroughNpeKotlin(buffer)
+                                out.copyInto(buffer, 0, 0, read)
+                            } catch (_: Throwable) {}
+                        }
+                    }
+
+                    // 4. Reinyección — audio procesado sale por el altavoz
+                    audioTrack?.write(buffer, 0, read, AudioTrack.WRITE_BLOCKING)
+
+                    // 5. Análisis neuromórfico (no altera la señal)
+                    if (IvannaNpeEngine.isReady) {
+                        try { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
+                        catch (e: Exception) { Log.e(TAG, "NPE: ${e.message}") }
+                    }
+
+                    // 6. Downmix mono para VoiceController y Visualizador
+                    for (i in 0 until frames) {
+                        mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
+                    }
+
+                    try { feedVoiceController(mono, frames) }
+                    catch (e: Throwable) { Log.w(TAG, "VoiceController: ${e.message}") }
+
+                    IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
                 }
             }
+
         } catch (e: SecurityException) {
-            Log.e("PlaybackCaptureService", "SecurityException al iniciar captura — falta RECORD_AUDIO", e)
-            audioRecord?.release()
-            audioRecord = null
-            stopSelf()
+            Log.e(TAG, "SecurityException — falta RECORD_AUDIO", e)
+            cleanup(); stopSelf()
         } catch (e: Exception) {
-            Log.e("PlaybackCaptureService", "Error iniciando captura de reproducción", e)
-            audioRecord?.release()
-            audioRecord = null
-            stopSelf()
+            Log.e(TAG, "Error iniciando captura", e)
+            cleanup(); stopSelf()
         }
     }
 
-    // FIX (VoiceController huérfano): decima el mono @48kHz a 16kHz (factor
-    // 3:1, promedio simple de cada grupo de 3 muestras — suficiente para un
-    // clasificador de contexto, no para HiFi) y acumula en voiceWindow hasta
-    // completar VOICE_WINDOW_SAMPLES (0.975s). Al llenarse: clasifica con
-    // YamnetClassifier (vía VoiceController.processAudio) y, si sugiere un
-    // perfil, lo ejecuta (VoiceController.executeCommand) — mismo flujo que
-    // ya usaban los comandos de texto, ahora disparado por audio real en vez
-    // de simulación.
+    private fun stopCapture() {
+        if (!isRunning && audioRecord == null) return
+        isRunning = false
+        _isCapturing.value = false
+        scope.cancel()
+        cleanup()
+        voiceWindowFill = 0; voiceDecimAcc = 0f; voiceDecimCount = 0
+    }
+
+    private fun cleanup() {
+        audioTrack?.stop()
+        audioTrack?.release()
+        audioTrack = null
+        audioRecord?.stop()
+        audioRecord?.release()
+        audioRecord = null
+        IvannaVisualizerBridgeV2.release()
+        projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
+        projectionCallback = null
+        mediaProjection = null
+    }
+
+    // ── VoiceController: decima 48kHz → 16kHz, ventana 0.975s ───────────────
     private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
         val vc = voiceController ?: return
         for (i in 0 until numFrames) {
-            voiceDecimAcc += mono[i]
-            voiceDecimCount++
+            voiceDecimAcc += mono[i]; voiceDecimCount++
             if (voiceDecimCount >= VOICE_DECIMATION) {
-                if (voiceWindowFill < voiceWindow.size) {
-                    voiceWindow[voiceWindowFill] = voiceDecimAcc / voiceDecimCount
-                    voiceWindowFill++
-                }
-                voiceDecimAcc = 0f
-                voiceDecimCount = 0
+                if (voiceWindowFill < voiceWindow.size)
+                    voiceWindow[voiceWindowFill++] = voiceDecimAcc / voiceDecimCount
+                voiceDecimAcc = 0f; voiceDecimCount = 0
             }
         }
         if (voiceWindowFill >= voiceWindow.size) {
             val (hint, scores) = vc.processAudioWithScores(voiceWindow)
-            // Empujar scores raw al daemon para que adapte su procesamiento
-            // en tiempo real (SET_AI_VOICE_SCORE/MUSIC_SCORE/YAMNET_CONF).
-            // classId=0: YamnetClassifier no expone ID numérico directamente.
             OmegaEngineBridge.pushYamnetScores(
                 speech     = scores.speech,
                 music      = scores.music,
@@ -358,57 +322,36 @@ class PlaybackCaptureService : Service() {
         }
     }
 
-    private fun stopCapture() {
-        if (!isRunning && audioRecord == null && mediaProjection == null) return // idempotente
-        isRunning = false
-        _isCapturing.value = false
-        scope.cancel()
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-        IvannaVisualizerBridgeV2.release()
-
-        projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
-        projectionCallback = null
-        mediaProjection = null
-
-        // Reset del acumulador de VoiceController — evita mezclar audio de
-        // una sesión de captura vieja con la siguiente.
-        voiceWindowFill = 0
-        voiceDecimAcc = 0f
-        voiceDecimCount = 0
+    // ── Notificación ─────────────────────────────────────────────────────────
+    private fun getMediaProjection(intent: Intent?): MediaProjection? {
+        val code = intent?.getIntExtra("resultCode", -1) ?: return null
+        val data = intent.getParcelableExtra<Intent>("data") ?: return null
+        return (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager)
+            .getMediaProjection(code, data)
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "IVANNA Playback Capture",
+            val ch = NotificationChannel(
+                CHANNEL_ID, "IVANNA Playback Capture",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Canal para captura de audio de reproducción"
-                setSound(null, null)
-                enableVibration(false)
-            }
-
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            ).apply { setSound(null, null); enableVibration(false) }
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(ch)
         }
     }
 
     private fun createNotification(): Notification {
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
+        val pi = PendingIntent.getActivity(
+            this, 0,
             Intent(this, Class.forName("com.ivanna.omega.MainActivity")),
             PendingIntent.FLAG_IMMUTABLE
         )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("IVANNA OMEGA SUPREME")
-            .setContentText("Captura de audio activa")
+            .setContentText("DSP activo — Tidal / Qobuz / YouTube procesados")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(pi)
             .setOngoing(true)
             .build()
     }

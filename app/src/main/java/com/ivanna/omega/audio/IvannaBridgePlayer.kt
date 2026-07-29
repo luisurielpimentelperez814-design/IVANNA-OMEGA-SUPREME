@@ -193,7 +193,11 @@ class IvannaBridgePlayer(private val context: Context) {
     }
     private val volterraProcessor: VolterraH2Processor by lazy { VolterraH2Processor() }
 
-    /** Actualiza parámetros del motor neuromórfico en tiempo real (thread-safe). */
+    /** Procesa un bloque PCM estéreo intercalado a través del NPE Kotlin.
+     *  Llamado desde PlaybackCaptureService para aplicar el mismo motor
+     *  neuromórfico al audio capturado de apps externas. */
+    fun processBlockThroughNpeKotlin(buffer: FloatArray): FloatArray =
+        npeKotlin.process(buffer)
     fun updateNpeKotlinParams(
         spectralRadius: Float  = 0.9f,
         inputScaling:   Float  = 0.4f,
