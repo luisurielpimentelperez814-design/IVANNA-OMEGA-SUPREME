@@ -162,7 +162,12 @@ class PlaybackCaptureService : Service() {
 
     private fun getMediaProjection(intent: Intent): MediaProjection? {
         val code = intent.getIntExtra("resultCode", -1)
-        val data = intent.getParcelableExtra<Intent>("data") ?: return null
+        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra("data", Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra("data")
+        } ?: return null
         return (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager)
             .getMediaProjection(code, data)
     }
