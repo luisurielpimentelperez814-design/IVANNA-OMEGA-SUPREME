@@ -84,10 +84,7 @@ fun IvannaControlPanel(
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
-    onAntiDolbyChange: (Boolean) -> Unit = {
-    val context = LocalContext.current
-    val savedState = remember { AdaptiveControlsPrefs.load(context) }
-},
+    onAntiDolbyChange: (Boolean) -> Unit = {},
     onPresetSelected: (String) -> Unit = {},
     onAutoModeChange: (Boolean) -> Unit = {},
     onOmegaModeChange: (Int) -> Unit = {},
@@ -130,13 +127,19 @@ fun IvannaControlPanel(
     onPhaseOracleChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // FIX (build): 'context' y 'savedState' estaban duplicados — una copia
+    // quedó pegada DENTRO del lambda por defecto de onAntiDolbyChange (línea
+    // 87-90), donde LocalContext.current/remember son ilegales por no ser
+    // contexto @Composable. Se elimina esa copia y se deja una sola aquí.
+    // Además phaseOracleIntensity se declaraba ANTES que savedState
+    // (Unresolved reference: savedState) — ahora va después.
+    val context = LocalContext.current
+    val savedState = remember { AdaptiveControlsPrefs.load(context) }
+
     var phaseOracleIntensity by remember { mutableFloatStateOf(savedState.phaseOracleIntensity) }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
-    
-    val context = LocalContext.current
-    val savedState = remember { AdaptiveControlsPrefs.load(context) }
 
     var antiDolbyEnabled by remember { mutableStateOf(initialAntiDolby) }
     var selectedPreset by remember { mutableStateOf(initialPreset) }
@@ -170,7 +173,13 @@ fun IvannaControlPanel(
 
     
     // ── Persistencia automática al salir de la pantalla ──
-    DisposableEffect(LocalLifecycleOwner.current) {
+    // FIX (build): LocalLifecycleOwner.current se leía DENTRO del cuerpo de
+    // DisposableEffect y del onDispose — ninguno es contexto @Composable.
+    // Se captura una sola vez aquí (sí composable) y se usa el lifecycle
+    // capturado dentro del efecto; así addObserver/removeObserver operan
+    // sobre el MISMO lifecycle (antes podían resolver a owners distintos).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 AdaptiveControlsPrefs.save(context, AdaptiveControlsState(
@@ -198,8 +207,8 @@ fun IvannaControlPanel(
                 ))
             }
         }
-        LocalLifecycleOwner.current.lifecycle.addObserver(observer)
-        onDispose { LocalLifecycleOwner.current.lifecycle.removeObserver(observer) }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
