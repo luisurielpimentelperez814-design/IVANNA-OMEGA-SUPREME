@@ -114,7 +114,6 @@ static void update_anti_dolby(float speech, float music, float bass) {
 /* ----------------------------------------------------------------------------
  * JNI: set Anti-Dolby
  * ------------------------------------------------------------------------- */
-extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
     JNIEnv*, jobject, jfloat speech, jfloat music, jfloat bass) {
     std::lock_guard<std::mutex> lock(g_orch_mutex);
@@ -124,12 +123,10 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
 /* ----------------------------------------------------------------------------
  * JNI: set route profile (bass, dialog, widener)
  * ------------------------------------------------------------------------- */
-extern "C" JNIEXPORT void JNICALL
 
 /* ----------------------------------------------------------------------------
  * JNI: habilitar/deshabilitar el manifold evolutivo
  * ------------------------------------------------------------------------- */
-extern "C" JNIEXPORT void JNICALL
 
 /* ----------------------------------------------------------------------------
  * Procesamiento por bloque (llamado desde el efecto de audio)
