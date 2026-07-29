@@ -1,4 +1,5 @@
 package com.ivanna.omega.core
+import com.ivanna.omega.audio.AudioStateManager
 
 import android.app.Application
 import android.util.Log
@@ -62,6 +63,7 @@ class IVANNAApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AudioStateManager.attachPersistence(this)
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
 
         // FIX (crash): consumer unico del canal DSP.

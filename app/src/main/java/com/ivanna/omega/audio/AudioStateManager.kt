@@ -4,6 +4,13 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collect
+import android.content.Context
 import android.util.Log
 
 data class AudioState(
@@ -111,4 +118,26 @@ object AudioStateManager {
     // Alias para compatibilidad con código que usa .state en lugar de .audioState
     val state: StateFlow<AudioState> get() = _audioState
     fun getCurrentState(): AudioState = _audioState.value
+
+    // ────────────────────────────────────────────────────────────
+    // FIX v3.7 — Persistencia automática de sliders/switches
+    // Cualquier cambio en audioState se guarda a disco con debounce.
+    // Llamar attachPersistence(ctx) UNA vez desde IVANNAApplication.
+    // ────────────────────────────────────────────────────────────
+    @Volatile private var persistenceAttached = false
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun attachPersistence(context: Context) {
+        if (persistenceAttached) return
+        persistenceAttached = true
+        val store = ParameterStore(context.applicationContext)
+        // Cargar estado previo al arranque
+        val restored = store.loadParameters()
+        _audioState.value = restored
+        _audioStateLive.postValue(restored)
+        // Guardar en cada cambio (debounced dentro de ParameterStore)
+        persistScope.launch {
+            _audioState.drop(1).collect { store.saveParametersDebounced(it) }
+        }
+    }
 }
