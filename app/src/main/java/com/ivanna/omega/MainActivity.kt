@@ -777,6 +777,33 @@ fun DashboardScreen(
             onOmegaModeChange = { mode ->
                 paramStore.setOmegaMode(mode)
                 OmegaEngineBridge.setIntensity(mode / 2f)
+            },
+            // FIX (huérfano): el slider PHASE ORACLE de IvannaControlPanel
+            // ("COHERENCIA DE FASE") ya existía completo, y AdaptiveBackend
+            // .applyPhaseOracle() (AdaptiveBackend.kt:112) ya sabe mapear la
+            // intensidad a alpha/beta/gamma — pero este call site nunca pasaba
+            // onPhaseOracleChange, así que el valor sólo se guardaba en prefs y
+            // nunca llegaba al motor. applyPhaseOracle sólo corre vía
+            // applyManualState/forceManualState, que en modo automático no se
+            // dispara. Se cablea con el mismo patrón que onSpatialAngleChange
+            // (línea 703) y onNhoHarmonicChange (línea 663): nativo directo.
+            // Mapeo idéntico al de AdaptiveBackend.kt:118-121 y al que la UI
+            // ya muestra en los StatBlocks (IvannaControlPanel.kt:450-452):
+            //   alpha = i  (LF) | beta = i*0.7 (MF) | gamma = i*0.5 (HF)
+            onPhaseOracleChange = { intensity ->
+                val i = intensity.coerceIn(0f, 1f)
+                com.ivanna.omega.audio.AudioStateManager.updateState {
+                    it.copy(phaseOracleIntensity = i)
+                }
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching {
+                        IvannaNativeLib.nativeSetPhaseParameters(
+                            i,
+                            i * 0.7f,
+                            i * 0.5f
+                        )
+                    }
+                }
             }
         )
 
