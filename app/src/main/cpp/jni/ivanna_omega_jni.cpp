@@ -8,6 +8,7 @@
  */
 #include <jni.h>
 #include "omega_perceptual_guard.h"
+#include "../include/audio_thread_priority.h"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -467,6 +468,12 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    // FTZ+DAZ una sola vez por hilo de audio: elimina el costo 10-100x de
+    // operar sobre números subnormales IEEE 754 (endémicos en filtros IIR
+    // cuyos estados decaen hacia cero). thread_local → cero overhead en
+    // llamadas sucesivas. FIZ (bit 0) añade DAZ para AArch64 (FEAT_AFP,
+    // Cortex-A715+A510, Snapdragon 7s Gen 2). Ver audio_thread_priority.h.
+    ivanna::audio::enableAudioThreadFastMathOnce();
     if (!g_initialized.load(std::memory_order_acquire)) return;
     if (!buf || nFrames <= 0) return;
     const int n = std::min((int)nFrames, 2048);

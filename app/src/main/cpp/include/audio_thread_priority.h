@@ -29,7 +29,12 @@ inline void enableAudioThreadFastMath() noexcept {
 #if IVANNA_AUDIO_HAS_NEON && defined(__aarch64__)
     uint64_t fpcr;
     asm volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= (1ULL << 24); // FZ (Flush-to-Zero)
+    fpcr |= (1ULL << 24); // FZ  — Flush-to-Zero: flush subnormal OUTPUTS (scalar FP)
+    // FIZ (bit 0) — Flush Inputs to Zero (FEAT_AFP, mandatory ARMv9.0-A).
+    // Cortex-A715 + A510 (Snapdragon 7s Gen 2, Moto G85) = ARMv9.0-A → guaranteed.
+    // Pre-FEAT_AFP cores: bit 0 is RES0/RAZ-WI — write 1 is silently ignored, no SIGILL.
+    // FZ+FIZ = full FTZ+DAZ for scalar FP. NEON in AArch64 is always FTZ (ARM spec A1.4.2).
+    fpcr |= (1ULL << 0);  // FIZ — Flush Inputs to Zero (DAZ equivalent, AArch64)
     asm volatile("msr fpcr, %0" : : "r"(fpcr));
 #elif IVANNA_AUDIO_HAS_NEON
     uint32_t fpscr;

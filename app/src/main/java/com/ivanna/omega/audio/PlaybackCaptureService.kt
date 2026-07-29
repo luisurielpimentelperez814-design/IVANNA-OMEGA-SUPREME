@@ -329,44 +329,59 @@ class PlaybackCaptureService : Service() {
         }
 
         private val processingLoop = Runnable {
-            val buffer = FloatArray(BLOCK_SAMPLES)
-            val mono   = FloatArray(BLOCK_FRAMES)
-            while (active && !Thread.currentThread().isInterrupted) {
-                val rec  = audioRecord ?: break
-                val read = rec.read(buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
-                if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
-                if (read == 0) continue
-                val frames = read / CHANNEL_COUNT
-                DSPBridge.process(buffer, frames)
-                CinematicEngineHost.processBlock(buffer).copyInto(buffer)
-                if (IvannaSpatialEngine.enabled) {
-                    val inL  = FloatArray(frames) { buffer[it * 2] }
-                    val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
-                    val outL = FloatArray(frames)
-                    val outR = FloatArray(frames)
-                    IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
-                    for (i in 0 until frames) {
-                        buffer[i * 2]     = outL[i]
-                        buffer[i * 2 + 1] = outR[i]
+            // try/finally garantiza que onError() se llame incluso si una excepción
+            // no capturada salta desde cualquier paso del loop — sin esto la JVM
+            // termina el HandlerThread por UncaughtExceptionHandler y el service
+            // queda con active=true/_isCapturing=true para siempre (logo encendido,
+            // efectos muertos, sin reinicio automático).
+            try {
+                val buffer = FloatArray(BLOCK_SAMPLES)
+                val mono   = FloatArray(BLOCK_FRAMES)
+                while (active && !Thread.currentThread().isInterrupted) {
+                    val rec  = audioRecord ?: break
+                    val read = rec.read(buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
+                    if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
+                    if (read == 0) continue
+                    val frames = read / CHANNEL_COUNT
+                    DSPBridge.process(buffer, frames)
+                    // runCatching: si CinematicEngineHost lanza (efecto CRNN en modo
+                    // no-NONE con chain defectuosa), el loop sigue — no muere.
+                    runCatching { CinematicEngineHost.processBlock(buffer).copyInto(buffer) }
+                    if (IvannaSpatialEngine.enabled) {
+                        val inL  = FloatArray(frames) { buffer[it * 2] }
+                        val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
+                        val outL = FloatArray(frames)
+                        val outR = FloatArray(frames)
+                        runCatching {
+                            IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                            for (i in 0 until frames) {
+                                buffer[i * 2]     = outL[i]
+                                buffer[i * 2 + 1] = outR[i]
+                            }
+                        }
                     }
-                }
-                IvannaBridgePlayer.activeInstance?.let { player ->
-                    if (player.npeKotlinEnabled) {
-                        runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+                    IvannaBridgePlayer.activeInstance?.let { player ->
+                        if (player.npeKotlinEnabled) {
+                            runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+                        }
                     }
+                    vibratoryProcessor.process(buffer)
+                    writeAllToTrack(buffer, read)
+                    if (IvannaNpeEngine.isReady) {
+                        runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
+                    }
+                    runCatching { SpatialAudioEngineV2.feedCapturedBlock(buffer, frames) }
+                    runCatching { voiceProtection?.feed(buffer, frames, SAMPLE_RATE) }
+                    for (i in 0 until frames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
+                    runCatching { feedVoiceController(mono, frames) }
+                    runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames) }
                 }
-                vibratoryProcessor.process(buffer)
-                writeAllToTrack(buffer, read)
-                if (IvannaNpeEngine.isReady) {
-                    runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
-                }
-                SpatialAudioEngineV2.feedCapturedBlock(buffer, frames)
-                runCatching { voiceProtection?.feed(buffer, frames, SAMPLE_RATE) }
-                for (i in 0 until frames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
-                runCatching { feedVoiceController(mono, frames) }
-                IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Excepción fatal en loop de audio: ${t.message}", t)
+            } finally {
+                // Siempre corre: loop normal (active=false→no-op) o loop muerto (active=true→reinicio)
+                if (active) onError("Loop de proceso terminado inesperadamente")
             }
-            if (active) onError("Loop de proceso terminado inesperadamente")
         }
 
         private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
