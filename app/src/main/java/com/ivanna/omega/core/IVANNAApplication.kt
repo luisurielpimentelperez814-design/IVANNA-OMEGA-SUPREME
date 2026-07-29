@@ -102,6 +102,37 @@ class IVANNAApplication : Application() {
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)
 
+        // FIX (audit): SR real del hardware + inicialización del motor NPE.
+        // Sin esto:
+        //   - OmegaMetrics.sampleRate quedaba en el default (48 kHz) aunque
+        //     el hardware reporte 96 kHz o distinto.
+        //   - IvannaNpeEngine.handle == 0L → getMetrics() devolvía FloatArray(8)
+        //     de ceros → RMS=-60 dB / AGC=0 dB / clasificación=— 0%.
+        //   Ni IvannaBridgePlayer ni PlaybackCaptureService lo inicializan
+        //   — sólo lo consumen. El único sitio garantizado a correr una vez
+        //   antes que la UI es Application.onCreate.
+        //
+        // maxBlockFrames = 2048: mismo tope usado por PlaybackCaptureService y
+        // BridgePlayer (MAX_CHUNK_FRAMES). Mayor de lo estrictamente necesario
+        // no cuesta memoria significativa y evita re-init si el bloque crece.
+        val realSampleRate = try {
+            val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            am.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+                ?.toIntOrNull() ?: 48000
+        } catch (_: Throwable) { 48000 }
+        com.ivanna.omega.audio.OmegaMetrics.updateSampleRate(realSampleRate)
+        Log.i(TAG, "HW sample rate detectado = ${realSampleRate}Hz")
+
+        runCatching {
+            com.ivanna.omega.neuromorphic.IvannaNpeEngine.init(realSampleRate, 2048)
+            if (com.ivanna.omega.neuromorphic.IvannaNpeEngine.isReady)
+                Log.i(TAG, "✅ IvannaNpeEngine inicializado — telemetría viva")
+            else
+                Log.w(TAG, "⚠️ IvannaNpeEngine no listo (libivanna_omega.so ausente)")
+        }.onFailure {
+            Log.e(TAG, "IvannaNpeEngine.init falló: ${it.message}", it)
+        }
+
         // FIX (rehabilitación — Prioridad 1.5 más alta de
         // IVANNA_ARCHITECTURE_DECISION_REPORT.md): AudioRouteManager nunca
         // se instanciaba en todo el repo pese a que su destino
@@ -172,6 +203,34 @@ class IVANNAApplication : Application() {
                 Log.w(TAG, "syncDown en arranque falló (no crítico): ${e.message}")
             }
         }
+
+        // FIX (audit): puente YAMNet global → OmegaMetrics.
+        // pollOmegaMetrics() sólo corre cuando el BridgePlayer está
+        // reproduciendo — en captura del sistema o standby nadie refresca
+        // la categoría, así que la UI mostraba "—  0%" para siempre. Este
+        // collector reenvía AudioPipeline.sharedYamnetResult (que sí se
+        // actualiza en classifyAndRoute()) al StateFlow compartido de
+        // OmegaMetrics. Confidence = mejor de los 3 scores; la etiqueta
+        // legible viene del NPE si está listo (nativeGetDetectedGenre()),
+        // con fallback a la categoría dominante speech/music/bass.
+        appScope.launch {
+            com.ivanna.omega.audio.AudioPipeline.sharedYamnetResult.collect { r ->
+                if (!r.valid) return@collect
+                val dominant = when {
+                    r.speech >= r.music && r.speech >= r.bass -> "speech"
+                    r.music  >= r.bass                        -> "music"
+                    else                                       -> "bass"
+                }
+                val label = try {
+                    if (com.ivanna.omega.neuromorphic.IvannaNpeEngine.isReady)
+                        com.ivanna.omega.neuromorphic.IvannaNpeEngine.getDetectedGenre()
+                            .ifBlank { dominant }
+                    else dominant
+                } catch (_: Throwable) { dominant }
+                val conf = maxOf(r.speech, r.music, r.bass)
+                com.ivanna.omega.audio.OmegaMetrics.updateSharedYamnet(label, conf)
+            }
+        }
     }
 
     override fun onTerminate() {
@@ -189,6 +248,7 @@ class IVANNAApplication : Application() {
         omegaBridge.disconnect()
         OmegaDaemon.stop()
         com.ivanna.omega.audio.AudioRouteManager.stop()
+        runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.release() }
         super.onTerminate()
     }
 }

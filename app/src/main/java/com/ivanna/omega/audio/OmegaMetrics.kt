@@ -22,4 +22,28 @@ data class OmegaMetrics(
     var hrtfActive: Boolean = false,
     var spatialWidth: Float = 0f,
     var audioRoute: String = "—"  // 4D: ruta de salida detectada por AudioRoutingManager
-)
+) {
+    companion object {
+        // FIX (audit): puente global observable.
+        // Antes OmegaMetrics vivía en dos sitios:
+        //   - IvannaBridgePlayer._omegaMetrics (solo se rellena reproduciendo)
+        //   - default hardcoded (96 kHz falso, telemetría vacía)
+        // Ahora hay un StateFlow compartido que MainActivity / AudioPipeline /
+        // NpeEngine actualizan aunque no haya bridge activo. IvannaBridgePlayer
+        // sigue publicando su propio flow local para no romper el resto.
+        private val _shared = kotlinx.coroutines.flow.MutableStateFlow(OmegaMetrics())
+        val shared: kotlinx.coroutines.flow.StateFlow<OmegaMetrics> = _shared
+
+        fun updateSampleRate(sr: Int) {
+            if (sr <= 0) return
+            _shared.value = _shared.value.copy(sampleRate = sr)
+        }
+
+        fun updateSharedYamnet(category: String, confidence: Float) {
+            _shared.value = _shared.value.copy(
+                yamnetCategory = category,
+                yamnetConfidence = confidence.coerceIn(0f, 1f)
+            )
+        }
+    }
+}

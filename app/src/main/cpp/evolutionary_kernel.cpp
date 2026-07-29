@@ -15,6 +15,8 @@
 #include <limits>
 #include <atomic>
 #include <mutex>
+#include <thread>
+#include <memory>
 #include <string>
 
 #define POPULATION_SIZE 128
@@ -53,6 +55,9 @@ struct EvoSaveHeader {
 
 static std::string g_savePath;
 static std::mutex  g_saveMutex;
+// FIX (audit): guard atómico para evitar dos autosaves concurrentes en
+// paralelo cuando el detach previo aún está escribiendo. Ver evolveGeneration().
+static std::atomic<bool> g_autosaveInFlight{false};
 
 static bool savePopulationLocked() {
     if (g_savePath.empty()) return false;
@@ -241,12 +246,47 @@ static void evolveGeneration() {
     g_population.generation++;
     g_population.bestFitness = best;
 
-    // Autosave periódico: no depende de que stop_evo_thread()/onTerminate()
-    // se llamen limpiamente (el hilo evo puede morir con la app en cualquier
-    // momento — proceso matado por el sistema, crash, force-stop, etc).
+    // Autosave periódico ASÍNCRONO (FIX audit — muerte a ~1697 ecuaciones).
+    //
+    // Antes: lock_guard + savePopulationLocked() síncrono dentro del hilo evo.
+    //   savePopulationLocked() hace fopen("wb") + fwrite(POBLACIÓN entera) +
+    //   fclose sobre filesDir con la app en background. En Android en
+    //   background el I/O disk puede tardar cientos de ms; el mutex bloquea
+    //   el hilo evo, y como evolveGeneration() corre cada ~50 ms desde
+    //   start_evo_thread(), a los 67 autosaves (25 × 67 ≈ 1675 generaciones)
+    //   el planificador ya no despacha el hilo evo con suficiente frecuencia:
+    //   se ve como si el motor "muriese" a las ~1697 ecuaciones.
+    //
+    // Ahora:
+    //   1) try_lock: si otro autosave sigue en curso, saltamos ESTE ciclo
+    //      (habrá otro dentro de 25 generaciones — ~1.25 s de reloj evo).
+    //   2) Copia la población a heap fuera del lock, libera lock, y hace
+    //      fwrite en un std::thread detach — el hilo evo vuelve al bucle
+    //      inmediatamente, sin bloquear el reloj de generaciones.
+    //   3) g_autosaveInFlight garantiza que jamás haya dos escrituras
+    //      concurrentes a filesDir/evo_population.bin (integridad del binario).
     if (g_population.generation % EVO_AUTOSAVE_INTERVAL_GENERATIONS == 0) {
-        std::lock_guard<std::mutex> lock(g_saveMutex);
-        savePopulationLocked();
+        std::unique_lock<std::mutex> lock(g_saveMutex, std::try_to_lock);
+        if (lock.owns_lock() && !g_autosaveInFlight.exchange(true)) {
+            const std::string path = g_savePath;
+            if (!path.empty()) {
+                auto snap = std::make_shared<Population>(g_population);
+                lock.unlock();
+                std::thread([path, snap]() {
+                    FILE* f = std::fopen(path.c_str(), "wb");
+                    if (f) {
+                        EvoSaveHeader hdr{EVO_SAVE_MAGIC, EVO_SAVE_VERSION,
+                                          POPULATION_SIZE, GENOME_SIZE};
+                        std::fwrite(&hdr, sizeof(hdr), 1, f);
+                        std::fwrite(snap.get(), sizeof(Population), 1, f);
+                        std::fclose(f);
+                    }
+                    g_autosaveInFlight.store(false);
+                }).detach();
+            } else {
+                g_autosaveInFlight.store(false);
+            }
+        }
     }
 }
 
