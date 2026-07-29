@@ -247,5 +247,3 @@ static int Effect_GetDescriptor(effect_handle_t self, effect_descriptor_t* pDesc
 
 static const struct effect_interface_s sIface = {Effect_Process, Effect_Command, Effect_GetDescriptor, nullptr};
 
-/* ── Punto de entrada JNI para la librería ─────────────────────────────── */
-extern "C" JNIEXPORT jint JNICALL
