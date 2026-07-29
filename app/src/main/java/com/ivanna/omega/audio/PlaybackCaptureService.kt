@@ -76,6 +76,8 @@ class PlaybackCaptureService : Service() {
     private var projectionCallback: MediaProjection.Callback? = null
 
     private var voiceController: VoiceController? = null
+    // GAP1 FIX: alimentar Motor B con audio de apps externas (1/30 bloques)
+    private val captureAnalyzeCounter = java.util.concurrent.atomic.AtomicInteger(0)
     private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
     private var voiceWindowFill = 0
     private var voiceDecimAcc = 0f
