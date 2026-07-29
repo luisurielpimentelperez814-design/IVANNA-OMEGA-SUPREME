@@ -64,11 +64,18 @@ class PlaybackCaptureService : Service() {
 
     companion object {
         private const val TAG = "PlaybackCaptureService"
+<<<<<<< Updated upstream
         // FIX (conexion real): el dashboard mostraba STANDBY/ACTIVO segun un
         // boolean local de Compose que nunca sabia si el servicio seguia vivo.
         // Unica fuente de verdad: la setea startCapture/stopCapture/onDestroy.
         private val _isCapturing = MutableStateFlow(false)
         @JvmStatic
+=======
+        // FIX (conexión real): el dashboard mostraba STANDBY/ACTIVO segun un
+        // boolean local de Compose que nunca sabia si el servicio seguia vivo.
+        // Esta es la unica fuente de verdad: la setea startCapture/stopCapture.
+        private val _isCapturing = MutableStateFlow(false)
+>>>>>>> Stashed changes
         val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
         const val CHANNEL_ID = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
