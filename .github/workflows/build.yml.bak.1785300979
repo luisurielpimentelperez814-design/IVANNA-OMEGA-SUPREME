@@ -1,0 +1,590 @@
+name: IVANNA-OMEGA-SUPREME CI
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omega-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_COMPILE_SDK: "35"
+  ANDROID_BUILD_TOOLS: "35.0.0"
+  ANDROID_NDK_VERSION: "26.1.10909125"
+  ANDROID_CMAKE_VERSION: "3.22.1"
+  CMDLINE_TOOLS_VERSION: "11076708"
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 0 — DSP native unit tests
+  # ─────────────────────────────────────────────────────────────────────────
+  test-native-dsp:
+    name: DSP Native Tests (host, CTest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure (Release)
+        run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-tests -j
+      - name: Run tests
+        run: ctest --test-dir build-tests --output-on-failure
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 1 — APK + Daemon & Runtime
+  # ─────────────────────────────────────────────────────────────────────────
+  build-apk:
+    name: Build APK & Native Binaries
+    runs-on: ubuntu-latest
+    needs: [test-native-dsp]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK (manual)
+        run: |
+          set -euo pipefail
+          export ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          cd "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fsSL -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
+          unzip -q tools.zip
+          rm tools.zip
+          mv cmdline-tools latest
+          SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}" "ndk;${ANDROID_NDK_VERSION}" "cmake;${ANDROID_CMAKE_VERSION}"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"    >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
+
+      - name: Generate local.properties
+        run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Create debug keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -noprompt \
+              -keystore ~/.android/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace --info
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace --info
+
+      - name: List generated APKs
+        run: find app/build/outputs/apk -name "*.apk" | sort
+
+      - name: Verify libomega_effect.so NOT in APK
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk -name "*.apk" | head -1 || true)
+          [ -n "$APK" ] || { echo "ERROR: no APK produced"; exit 1; }
+          if unzip -l "$APK" | grep -q "libomega_effect.so"; then
+            echo "ERROR: libomega_effect.so leaked into APK"
+            exit 1
+          fi
+          echo "OK: libomega_effect.so correctly excluded"
+
+      - name: Upload Release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Extract and validate libomega_effect.so for Magisk
+        run: |
+          set -euo pipefail
+          SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1 || true)
+          [ -n "$SO" ] || { echo "ERROR: libomega_effect.so not found"; exit 1; }
+          test -s "$SO"
+          file "$SO" | grep -q "ELF"
+
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          READELF="$NDK_BIN/llvm-readelf"
+          NM="$NDK_BIN/llvm-nm"
+
+          echo "=== ELF Hardening: libomega_effect.so ==="
+          "$READELF" -h "$SO" | grep "Machine:"
+          "$READELF" -l "$SO" | grep "GNU_RELRO"
+          "$READELF" -W -l "$SO" | grep "GNU_STACK"
+
+          if ! "$READELF" -h "$SO" | grep -q "AArch64"; then
+            echo "ERROR: libomega_effect.so no es AArch64"
+            exit 1
+          fi
+          if ! "$READELF" -l "$SO" | grep -q "GNU_RELRO"; then
+            echo "WARN: libomega_effect.so no tiene RELRO"
+          fi
+
+          echo "── .dynsym de $SO ──"
+          SYMS=$("$READELF" --dyn-syms "$SO" || true)
+          echo "$SYMS"
+
+          # FIX (silent kill por pipefail): sin "|| true" acá, si por algún
+          # motivo el símbolo faltara, el grep sin match mataría el script
+          # ANTES de llegar al chequeo explícito de abajo -- sin imprimir el
+          # mensaje de error real ("símbolo AELI no encontrado"), solo el
+          # genérico "Process completed with exit code 1" de GitHub.
+          AELI_LINE=$(echo "$SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
+          if [ -z "$AELI_LINE" ]; then
+            echo "ERROR: símbolo AELI no encontrado"
+            exit 1
+          fi
+          if ! echo "$AELI_LINE" | grep -q "GLOBAL"; then
+            echo "ERROR: AELI no es GLOBAL"
+            exit 1
+          fi
+          if ! echo "$AELI_LINE" | grep -q "DEFAULT"; then
+            echo "ERROR: AELI no es DEFAULT"
+            exit 1
+          fi
+
+          echo "── nm -D AELI ──"
+          NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
+          echo "$NM_SYMS"
+          if ! echo "$NM_SYMS" | grep -qE "(AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)"; then
+            echo "ERROR: AUDIO_EFFECT_LIBRARY_INFO_SYM no está definido correctamente"
+            exit 1
+          fi
+
+          # FIX CRÍTICO (causa real del fallo en CI): esta era la línea que
+          # mataba el script en silencio. Bajo `set -o pipefail`, si el
+          # segundo grep (filtro "omega|ivanna") no encontraba coincidencia
+          # -- muy posible, es un filtro heurístico opcional sobre strings
+          # del binario -- el pipeline completo devolvía código de error, y
+          # como esta asignación NO estaba protegida con "|| true" ni dentro
+          # de un "if", `set -e` abortaba el script ahí mismo, sin imprimir
+          # ningún mensaje. Encima, la línea siguiente ([ -n ... ] && echo)
+          # también podía matar el script bajo `set -e` si UUID_SO quedaba
+          # vacío, por ser un "&&" a nivel de script y no un "if". Esta
+          # extracción de UUID es solo informativa (para $GITHUB_ENV) y
+          # nunca debería poder abortar la validación real del símbolo AELI.
+          UUID_SO=$(strings "$SO" 2>/dev/null | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1 || true)
+          if [ -n "$UUID_SO" ]; then
+            echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
+          fi
+
+          cp "$SO" libomega_effect_arm64.so
+
+          echo "=== Revalidando AELI en la copia ==="
+          COPY_SYMS=$("$READELF" --dyn-syms libomega_effect_arm64.so)
+          # Mismo fix de "|| true" que arriba, por consistencia y para que
+          # un símbolo realmente ausente en la copia dé el mensaje real en
+          # vez de un exit silencioso.
+          COPY_AELI=$(echo "$COPY_SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
+          if [ -z "$COPY_AELI" ]; then
+            echo "ERROR: AELI desapareció en la copia"
+            exit 1
+          fi
+          if ! echo "$COPY_AELI" | grep -q "GLOBAL"; then
+            echo "ERROR: AELI no es GLOBAL en la copia"
+            exit 1
+          fi
+          if ! echo "$COPY_AELI" | grep -q "DEFAULT"; then
+            echo "ERROR: AELI no es DEFAULT en la copia"
+            exit 1
+          fi
+
+          file libomega_effect_arm64.so | grep -q "ELF"
+          "$READELF" -h libomega_effect_arm64.so | grep -q "AArch64" || { echo "ERROR: copia corrupta"; exit 1; }
+          ls -lh libomega_effect_arm64.so
+          echo "libomega_effect.so copiada y validada."
+
+      - name: Compile ivanna_daemon for arm64
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          CXX="$TOOLCHAIN/bin/aarch64-linux-android34-clang++"
+          READELF="$TOOLCHAIN/bin/llvm-readelf"
+          STRIP="$TOOLCHAIN/bin/llvm-strip"
+          DAEMON_SRC="app/src/main/cpp/daemon/ivanna_daemon.cpp"
+          [ ! -f "$DAEMON_SRC" ] && DAEMON_SRC=$(find app/src/main/cpp -name "ivanna_daemon.cpp" | head -1 || true)
+          echo "Compilando daemon desde: $DAEMON_SRC"
+          test -f "$DAEMON_SRC"
+
+          # FIX real: NDK r26 + -pie + -rtlib=compiler-rt + -lc++_shared en el
+          # mismo comando dejaba el ELF sin PT_INTERP (Type != DYN). Se pasa
+          # a -static-libstdc++ (no depende de libc++_shared en runtime) y
+          # se fuerza PIE dinámico vía -Wl,-pie sobre -fpie.
+          "$CXX" -std=c++17 -O3 \
+            -fPIC -fpie \
+            -fstack-protector-strong \
+            -D_FORTIFY_SOURCE=2 \
+            "$DAEMON_SRC" \
+            -static-libstdc++ \
+            -Wl,-pie \
+            -Wl,-z,relro,-z,now \
+            -Wl,-z,noexecstack \
+            -Wl,--build-id=sha1 \
+            -llog \
+            -o ivanna_daemon
+
+          chmod +x ivanna_daemon
+
+          echo "=== Arquitectura ==="
+          "$READELF" -h ivanna_daemon | grep Machine
+          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: no AArch64"; exit 1; }
+          echo "=== Tipo de binario ==="
+          "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN" || { echo "ERROR: no PIE"; exit 1; }
+          echo "=== Intérprete ELF ==="
+          "$READELF" -l ivanna_daemon | grep -qi "interp" || { echo "ERROR: sin INTERP"; exit 1; }
+          "$READELF" -l ivanna_daemon | grep -i "interp"
+
+          echo "=== Hardening: daemon ==="
+          "$READELF" -h ivanna_daemon | grep "Type:"
+          "$READELF" -l ivanna_daemon | grep "GNU_RELRO" || echo "WARN: sin RELRO"
+          "$READELF" -W -l ivanna_daemon | grep "GNU_STACK" | grep -vi "RWE" || { echo "ERROR: stack ejecutable"; exit 1; }
+          "$READELF" -d ivanna_daemon | grep -q "BIND_NOW" && echo "Full RELRO OK" || echo "WARN: BIND_NOW no detectado"
+
+          echo "=== Dependencias dinámicas ==="
+          DEPS=$("$READELF" -d ivanna_daemon | grep NEEDED || true)
+          echo "$DEPS"
+          echo "$DEPS" | grep -q "libc.so"  || { echo "ERROR: no enlaza libc.so"; exit 1; }
+          echo "$DEPS" | grep -q "liblog.so" || echo "WARN: liblog.so no listado"
+
+          "$STRIP" --strip-unneeded ivanna_daemon
+          ls -lh ivanna_daemon
+          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: strip corrompió binario"; exit 1; }
+
+          # libc++_shared.so ya no es NEEDED (linkeamos estático), pero la
+          # dejamos en el artefacto por compatibilidad con el job de Magisk.
+          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1 || true)
+          [ -f "$LIBCXX_SRC" ] && cp "$LIBCXX_SRC" libc++_shared.so || echo "WARN: libc++_shared.so no encontrado"
+          ls -lh libc++_shared.so 2>/dev/null || true
+          echo "daemon listo (PIE dinámico, static libstdc++, RELRO+BIND_NOW)."
+
+          "$CXX" -std=c++17 -O3 \
+            -fPIE \
+            -pie \
+            -rtlib=compiler-rt \
+            -Wl,-z,relro,-z,now \
+            "$DAEMON_SRC" \
+            -llog \
+            -Wl,--no-as-needed -lc++_shared \
+            -o ivanna_daemon
+
+          chmod +x ivanna_daemon
+
+          echo "=== Arquitectura ==="
+          "$READELF" -h ivanna_daemon | grep Machine
+          if ! "$READELF" -h ivanna_daemon | grep -q "AArch64"; then
+            echo "ERROR: ivanna_daemon no es AArch64"
+            exit 1
+          fi
+          echo "=== Tipo de binario ==="
+          if ! "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN"; then
+            echo "ERROR: ivanna_daemon no es PIE (Type no es DYN)"
+            exit 1
+          fi
+          echo "=== Intérprete ELF ==="
+          if ! "$READELF" -l ivanna_daemon | grep -qi "interp"; then
+            echo "ERROR: ivanna_daemon no tiene intérprete dinámico"
+            exit 1
+          fi
+          "$READELF" -l ivanna_daemon | grep -i "interp"
+
+          echo "=== Hardening: daemon ==="
+          "$READELF" -h ivanna_daemon | grep "Type:"
+          "$READELF" -l ivanna_daemon | grep "GNU_RELRO"
+          "$READELF" -W -l ivanna_daemon | grep "GNU_STACK"
+          if ! "$READELF" -l ivanna_daemon | grep -q "GNU_RELRO"; then
+            echo "WARN: daemon sin RELRO"
+          fi
+          if "$READELF" -d ivanna_daemon | grep -q "BIND_NOW"; then
+            echo "Full RELRO (BIND_NOW) habilitado"
+          else
+            echo "WARN: BIND_NOW no detectado"
+          fi
+
+          echo "=== Dependencias dinámicas ==="
+          DEPS=$("$READELF" -d ivanna_daemon | grep NEEDED)
+          echo "$DEPS"
+          if ! echo "$DEPS" | grep -q "libc++_shared.so"; then
+            echo "ERROR: ivanna_daemon no enlaza libc++_shared.so"
+            exit 1
+          fi
+
+          "$STRIP" --strip-unneeded ivanna_daemon
+          ls -lh ivanna_daemon
+          if ! "$READELF" -h ivanna_daemon | grep -q "AArch64"; then
+            echo "ERROR: ivanna_daemon dejó de ser AArch64 tras strip"
+            exit 1
+          fi
+
+          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1 || true)
+          [ -f "$LIBCXX_SRC" ] || { echo "ERROR: libc++_shared.so no encontrado"; exit 1; }
+          cp "$LIBCXX_SRC" libc++_shared.so
+          ls -lh libc++_shared.so
+          echo "libc++_shared.so empaquetada."
+
+      - name: Upload native binaries artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: omega-native-binaries
+          path: |
+            libomega_effect_arm64.so
+            ivanna_daemon
+            libc++_shared.so
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Magisk Module
+  # ─────────────────────────────────────────────────────────────────────────
+  build-magisk:
+    name: Build Magisk Module
+    runs-on: ubuntu-latest
+    needs: [build-apk]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: omega-native-binaries
+          path: effect-artifacts/
+
+      - name: Assemble and validate Magisk module
+        run: |
+          set -euo pipefail
+          rm -rf magisk_module
+          mkdir -p magisk_module
+
+          LIB_DST="magisk_module/system/vendor/lib64/soundfx"
+          BIN_DST="magisk_module/system/bin"
+          LIB64_DST="magisk_module/system/lib64"
+          VENDOR_LIB64_DST="magisk_module/system/vendor/lib64"
+          ETC_VENDOR="magisk_module/system/vendor/etc"
+
+          mkdir -p "$LIB_DST" "$BIN_DST" "$LIB64_DST" "$VENDOR_LIB64_DST" "$ETC_VENDOR"
+
+          test -s effect-artifacts/libomega_effect_arm64.so
+          test -s effect-artifacts/ivanna_daemon
+          test -s effect-artifacts/libc++_shared.so
+
+          file effect-artifacts/libomega_effect_arm64.so | grep -q "ELF"
+          file effect-artifacts/ivanna_daemon | grep -q "ELF"
+
+          cp effect-artifacts/libomega_effect_arm64.so "$LIB_DST/libomega_effect.so"
+          chmod 644 "$LIB_DST/libomega_effect.so"
+          cp effect-artifacts/ivanna_daemon "$BIN_DST/ivanna_daemon"
+          chmod 755 "$BIN_DST/ivanna_daemon"
+          cp effect-artifacts/libc++_shared.so "$LIB64_DST/libc++_shared.so"
+          cp effect-artifacts/libc++_shared.so "$VENDOR_LIB64_DST/libc++_shared.so"
+          chmod 644 "$LIB64_DST/libc++_shared.so" "$VENDOR_LIB64_DST/libc++_shared.so"
+
+          # Autogenerar audio_effects.xml en el CI usando el UUID del binario compilado
+          _UUID=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | grep -i -E "omega|ivanna" | head -1 || echo "5b4b4b4b-1234-1234-1234-123456789abc")
+          
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > "$ETC_VENDOR/audio_effects.xml"
+          echo '<audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    <libraries>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '        <library name="omega_effect" path="libomega_effect.so"/>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    </libraries>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    <effects>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '        <effect name="omega" library="omega_effect" uuid="'"$_UUID"'"/>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '    </effects>' >> "$ETC_VENDOR/audio_effects.xml"
+          echo '</audio_effects_conf>' >> "$ETC_VENDOR/audio_effects.xml"
+          
+          if [ ! -f "$ETC_VENDOR/audio_effects.xml" ]; then
+            echo "ERROR: audio_effects.xml no encontrado en $ETC_VENDOR"
+            exit 1
+          fi
+
+          if [ ! -f "$ETC_VENDOR/audio_effects_config.xml" ]; then
+            echo "No se crea audio_effects_config.xml"
+          fi
+
+          sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
+          xmllint --noout "$ETC_VENDOR/audio_effects.xml" || {
+            echo "ERROR: audio_effects.xml no es válido"
+            exit 1
+          }
+
+          UUID_SO=$(strings effect-artifacts/libomega_effect_arm64.so | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1 || true)
+          if [ -n "$UUID_SO" ]; then
+            echo "UUID del .so: $UUID_SO"
+            grep -qi "$UUID_SO" "$ETC_VENDOR/audio_effects.xml" || {
+              echo "ERROR: UUID del .so ($UUID_SO) no aparece en audio_effects.xml"
+              exit 1
+            }
+          else
+            echo "WARN: No se pudo extraer UUID del .so"
+          fi
+
+          if ! grep -q 'libomega_effect.so' "$ETC_VENDOR/audio_effects.xml"; then
+            echo "WARN: libomega_effect.so no referenciado en audio_effects.xml"
+          fi
+
+          # ─── Usar archivos Magisk del repositorio ───
+
+          echo "Copiando módulo Magisk desde repo"
+
+          ZIP_ROOT="magisk_build_temp"
+          mkdir -p "$ZIP_ROOT"
+          cp -av magisk_module/* "$ZIP_ROOT/"
+
+          # Autogenerar archivos Magisk si no existen
+          echo "id=ivanna_omega_supreme" > "$ZIP_ROOT/module.prop"
+          echo "name=IVANNA Omega Supreme" >> "$ZIP_ROOT/module.prop"
+          echo "version=v1.0" >> "$ZIP_ROOT/module.prop"
+          echo "versionCode=1" >> "$ZIP_ROOT/module.prop"
+          echo "author=Luis Uriel Pimentel" >> "$ZIP_ROOT/module.prop"
+          echo "description=Motor de audio de alta resolucion y demonio nativo" >> "$ZIP_ROOT/module.prop"
+          
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/service.sh"
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/customize.sh"
+          echo "#!/system/bin/sh" > "$ZIP_ROOT/post-fs-data.sh"
+          
+          # Cambiar permisos de manera segura
+          find "$ZIP_ROOT" -maxdepth 1 -type f -name "*.sh" -exec chmod 755 {} \;
+
+          test -f "$ZIP_ROOT/service.sh"
+          test -f "$ZIP_ROOT/module.prop"
+          test -f "$ZIP_ROOT/customize.sh"
+          test -f "$ZIP_ROOT/post-fs-data.sh"
+
+
+          test -f "$ETC_VENDOR/audio_effects.xml"
+          find magisk_module/system -type f -exec file {} \;
+          echo "MODULE READY"
+
+      - name: Package Magisk zip
+        run: |
+          # Crear directorio de staging limpio para el módulo Magisk
+          rm -rf magisk_stage
+          mkdir -p magisk_stage
+
+          # Copiar los archivos base del módulo
+          cp -av magisk_module/* magisk_stage/ 2>/dev/null || true
+
+          # Asegurar que existan los archivos obligatorios en la raíz del módulo
+          [ -f magisk_stage/module.prop ] || echo -e "id=ivanna_omega_supreme\nname=IVANNA Omega Supreme\nversion=v1.0\nversionCode=1\nauthor=Luis Uriel Pimentel\ndescription=Motor de audio de alta resolucion" > magisk_stage/module.prop
+          [ -f magisk_stage/service.sh ] || echo "#!/system/bin/sh" > magisk_stage/service.sh
+          [ -f magisk_stage/customize.sh ] || echo "#!/system/bin/sh" > magisk_stage/customize.sh
+          [ -f magisk_stage/post-fs-data.sh ] || echo "#!/system/bin/sh" > magisk_stage/post-fs-data.sh
+          chmod 755 magisk_stage/*.sh 2>/dev/null || true
+
+          # Comprimir desde magisk_stage para garantizar que module.prop quede en la raíz absoluta del zip
+          cd magisk_stage
+          zip -r ../ivanna-omega-magisk.zip . --exclude "*.git*" --exclude "*.DS_Store"
+          cd ..
+
+          echo "=== Module contents ==="
+          unzip -l ivanna-omega-magisk.zip
+          du -sh ivanna-omega-magisk.zip
+
+      - name: Verify final Magisk module
+        run: |
+          set -e
+          unzip -t ivanna-omega-magisk.zip
+          unzip -l ivanna-omega-magisk.zip
+          if ! unzip -l ivanna-omega-magisk.zip | awk '{print $4}' | grep -q '^module.prop$'; then
+            echo "ERROR: module.prop no está en la raíz"
+            exit 1
+          fi
+          unzip -p ivanna-omega-magisk.zip system/bin/ivanna_daemon > /tmp/test_daemon
+          file /tmp/test_daemon | grep ELF
+          echo "=== MODULE READY ==="
+
+      - name: Upload Magisk module
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: ivanna-omega-magisk.zip
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 3 — Release Bundle
+  # ─────────────────────────────────────────────────────────────────────────
+  bundle-release:
+    name: Bundle Release
+    runs-on: ubuntu-latest
+    needs: [build-apk, build-magisk]
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: release/apk
+      - name: Download Magisk module
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: release/magisk
+      - name: Release inventory
+        run: |
+          echo "=== APKs ===" && find release/apk -name "*.apk" -exec ls -lh {} \;
+          echo "=== Magisk ===" && ls -lh release/magisk/
+      - name: Upload complete release
+        uses: actions/upload-artifact@v4
+        with:
+          name: IVANNA-OMEGA-SUPREME-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [bundle-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: release/apk
+      - name: Download Magisk module
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-magisk
+          path: release/magisk
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/magisk/ivanna-omega-magisk.zip
+            release/apk/**/*.apk
+          generate_release_notes: true

@@ -11,93 +11,48 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.ivanna.omega.R
-import com.ivanna.omega.dsp.DSPBridge
-import com.ivanna.omega.spatial.IvannaHeadTracker
-import com.ivanna.omega.spatial.IvannaSpatialEngine
 
-/**
- * AudioForegroundService — foreground service resistente a cambio de ventana.
- *
- * FIX v3.7:
- *   - PARTIAL_WAKE_LOCK con renovación periódica (evita muerte en background)
- *   - START_STICKY + rearranque idempotente
- *   - Persistencia forzada de sliders vía ParameterStore al detenerse
- */
 class AudioForegroundService : Service() {
 
     companion object {
         const val CHANNEL_ID = "ivanna_audio_channel"
         const val NOTIFICATION_ID = 1
-        private const val WAKELOCK_TAG = "ivanna:audio_fg"
-        private const val WAKELOCK_TIMEOUT_MS = 10L * 60L * 1000L
     }
 
-    private var audioPipeline: AudioPipeline? = null
-    private var headTracker: IvannaHeadTracker? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var paramStore: ParameterStore? = null
+    private lateinit var wakeLock: PowerManager.WakeLock
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        DSPBridge.init(96000)
-        paramStore = ParameterStore(applicationContext)
-        // Restaurar último estado ANTES de arrancar la pipeline
-        AudioStateManager.updateState { paramStore!!.loadParameters() }
-        acquireWakeLock()
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "ivanna:audio_processing"
+        )
+        wakeLock.setReferenceCounted(false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!wakeLock.isHeld) {
+            wakeLock.acquire()
+        }
         startForeground(NOTIFICATION_ID, createNotification())
-
-        if (audioPipeline == null) {
-            audioPipeline = AudioPipeline().apply { start(applicationContext) }
-        }
-        if (headTracker == null) {
-            IvannaSpatialEngine.shared.init()
-            val tracker = IvannaHeadTracker(applicationContext)
-            tracker.init(); tracker.start()
-            IvannaSpatialEngine.setHeadTracker(tracker)
-            headTracker = tracker
-        }
-        // Renovar wakelock cada onStartCommand (redundancia útil)
-        acquireWakeLock()
+        // Reinicio automático si el sistema mata el servicio
         return START_STICKY
     }
 
-    override fun onDestroy() {
-        // Persistir SIEMPRE antes de morir
-        runCatching { paramStore?.saveParametersNow(AudioStateManager.audioState.value) }
-        audioPipeline?.stop(); audioPipeline = null
-        headTracker?.release(); headTracker = null
-        releaseWakeLock()
-        super.onDestroy()
-    }
-
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Usuario cerró la app desde recientes: NO matar el servicio,
-        // solo persistir y reprogramar el foreground.
-        runCatching { paramStore?.saveParametersNow(AudioStateManager.audioState.value) }
-        val restart = Intent(applicationContext, AudioForegroundService::class.java)
-        startForegroundService(restart)
         super.onTaskRemoved(rootIntent)
+        // Rearrancar si se desliza la app de recientes
+        val restartIntent = Intent(this, this::class.java)
+        startService(restartIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG).apply {
-            setReferenceCounted(false)
-            acquire(WAKELOCK_TIMEOUT_MS)
-        }
-    }
-
-    private fun releaseWakeLock() {
-        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
-        wakeLock = null
+    override fun onDestroy() {
+        if (wakeLock.isHeld) wakeLock.release()
+        super.onDestroy()
     }
 
     private fun createNotificationChannel() {
@@ -108,10 +63,11 @@ class AudioForegroundService : Service() {
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Canal para procesamiento de audio en tiempo real"
-                setSound(null, null); enableVibration(false)
+                setSound(null, null)
+                enableVibration(false)
             }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
         }
     }
 
@@ -124,6 +80,7 @@ class AudioForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("IVANNA OMEGA SUPREME")
             .setContentText("Procesamiento de audio activo")
+            // Ajusta el icono si tu proyecto no usa el foreground estándar
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
