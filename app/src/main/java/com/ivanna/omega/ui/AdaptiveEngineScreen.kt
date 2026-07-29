@@ -253,11 +253,21 @@ internal fun AdaptiveEngineScreen(
                         val updatedState = AudioStateManager.audioState.value.copy(manualModeEnabled = enabled)
                         AudioStateManager.updateState { updatedState }
                         try {
+                            // Motor A y Motor B nunca escriben al mismo tiempo.
+                            // enabled=true  -> manual toma control.
+                            // enabled=false -> motor adaptativo recupera control.
                             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
                         } catch (_: Throwable) { }
+
                         if (enabled) {
+                            // Limpiar memoria de transición del modulador antes
+                            // de entregar el pipeline al usuario.
                             backend.resetModulator()
                             backend.forceManualState(updatedState)
+                        } else {
+                            // Al devolver control al Motor A dejamos el estado
+                            // persistido para que la recuperación sea coherente.
+                            backend.persistState(updatedState)
                         }
                     },
                     accent = PhosphorGreen
