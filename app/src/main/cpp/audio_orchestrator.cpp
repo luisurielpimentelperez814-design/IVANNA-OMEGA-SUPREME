@@ -114,7 +114,7 @@ static void update_anti_dolby(float speech, float music, float bass) {
 /* ----------------------------------------------------------------------------
  * JNI: set Anti-Dolby
  * ------------------------------------------------------------------------- */
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
+extern "C" JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
     JNIEnv*, jobject, jfloat speech, jfloat music, jfloat bass) {
     std::lock_guard<std::mutex> lock(g_orch_mutex);
     update_anti_dolby(speech, music, bass);

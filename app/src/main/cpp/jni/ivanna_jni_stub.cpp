@@ -53,18 +53,6 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScoresJni(
 
 // ── Stub para nativeSetRouteProfileJni (companion @JvmStatic) ───────────────
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfileJni(
-    JNIEnv* /*env*/, jclass /*clazz*/,
-    jfloat bassBoostDb, jfloat dialogBoostDb, jfloat widenerMult
-) {
-    if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) {
-        LOGE("nativeSetRouteProfileJni: valores NaN/Inf — ignorado");
-        return;
-    }
-    ivanna_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
-    LOGI("RouteProfile via stub: bass=%.2f dialog=%.2f widener=%.2f",
-         bassBoostDb, dialogBoostDb, widenerMult);
-}
 
 // ── nativeSetRouteProfile (instancia AudioEngine, no @JvmStatic) ─────────────
 // La versión @JvmStatic ya existe (nativeSetRouteProfileJni → companion object).
@@ -92,10 +80,5 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
 // El flag vive en gState.manifoldEnabled (atomic<bool>, audio_orchestrator.cpp)
 // y se puede consultar desde cualquier lugar via ivanna_manifold_enabled().
 JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifoldEnabled(
-    JNIEnv* /*env*/, jobject /*thiz*/, jboolean enabled
-) {
-    ivanna_set_manifold_enabled(enabled == JNI_TRUE);
-}
 
 } // extern "C"
