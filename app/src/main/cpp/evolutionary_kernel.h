@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define GENOME_SIZE 256   // <-- definición necesaria para el orquestador
+
 #ifdef __cplusplus
 extern "C" {
 #endif
