@@ -124,10 +124,23 @@ static std::atomic<int> g_activeRoute{0};
 static std::atomic<float> g_adaptiveTargetGainSnapshot{1.0f};
 static std::atomic<float> g_adaptiveSpatialSnapshot{1.0f};
 static std::atomic<float> g_adaptiveSafetySnapshot{1.0f};
-static std::atomic<bool> g_adaptiveSnapshotStarted{false};
+static std::atomic<bool>  g_adaptiveSnapshotStarted{false};
+
+// FIX (causa real de std::terminate() intermitente — confirmed):
+// El hilo anterior era std::thread(...).detach() con while(true) puro.
+// Cuando Android descarga el .so o el proceso termina, el destructor de
+// g_adaptiveEngine (objeto estático global) corre en el hilo principal.
+// El hilo detached sigue vivo y accede a g_adaptiveEngine.adaptiveState
+// ya destruido → undefined behavior → std::terminate() / SIGSEGV.
+// Fix: hilo joinable con flag de parada explícito. JNI_OnUnload señala
+// el flag, hace join(), y SOLO ENTONCES se permite que los destructores
+// estáticos destruyan g_adaptiveEngine.
+static std::atomic<bool>  g_snapshotRunning{false};
+static std::thread        g_snapshotThread;
+
 static void adaptiveSnapshotLoop() {
     uint64_t seq = 0;
-    while (true) {
+    while (g_snapshotRunning.load(std::memory_order_relaxed)) {
         ivanna::experimental::AdaptiveState st{};
         if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, seq)) {
             g_adaptiveTargetGainSnapshot.store(
@@ -363,7 +376,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
         g_adaptiveEngine.start();
       if (!g_adaptiveSnapshotStarted.exchange(true)) {
-          std::thread(adaptiveSnapshotLoop).detach();
+          g_snapshotRunning.store(true, std::memory_order_release);
+          g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+          // NO detach() — el hilo se une en JNI_OnUnload antes de que
+          // los destructores estáticos destruyan g_adaptiveEngine.
           LOGI("AdaptiveState snapshot consumer started");
       }
         LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
@@ -1409,3 +1425,24 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
     return arr;
 }
 } // extern "C"
+
+// ── Limpieza ordenada antes de que los destructores estáticos corran ─────
+// JNI_OnUnload corre cuando el ClassLoader que cargó el .so es GC'd,
+// ANTES de que dlclose() destruya los objetos estáticos. Es el único
+// lugar garantizado para parar los hilos que acceden a globals estáticos.
+//
+// Sin esto: g_snapshotThread (antes detached con while(true)) accedía a
+// g_adaptiveEngine.adaptiveState después de que su destructor corriera →
+// UB → std::terminate(). El std::terminate() se reproducía 2/3 corridas
+// en el stress-test de estabilidad.
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
+    // 1. Parar el hilo snapshot — debe ocurrir ANTES del destructor de
+    //    g_adaptiveEngine (que destruye adaptiveState que el loop usa).
+    g_snapshotRunning.store(false, std::memory_order_release);
+    if (g_snapshotThread.joinable()) g_snapshotThread.join();
+
+    // 2. Parar el hilo de control del AdaptiveDecisionEngine.
+    if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
+        g_adaptiveEngine.stop();
+    }
+}
