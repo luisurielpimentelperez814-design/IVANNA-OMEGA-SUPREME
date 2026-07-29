@@ -125,24 +125,11 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
  * JNI: set route profile (bass, dialog, widener)
  * ------------------------------------------------------------------------- */
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfile(
-    JNIEnv*, jobject, jfloat bassDb, jfloat dialogDb, jfloat widenerMult) {
-    if (!std::isfinite(bassDb) || !std::isfinite(dialogDb) || !std::isfinite(widenerMult)) return;
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-    g_orch.bassGain = bassDb;
-    g_orch.dialogGain = dialogDb;
-    g_orch.widenerWet = widenerMult;
-}
 
 /* ----------------------------------------------------------------------------
  * JNI: habilitar/deshabilitar el manifold evolutivo
  * ------------------------------------------------------------------------- */
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifoldEnabled(
-    JNIEnv*, jobject, jboolean enabled) {
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-    g_orch.manifoldEnabled = enabled;
-}
 
 /* ----------------------------------------------------------------------------
  * Procesamiento por bloque (llamado desde el efecto de audio)
