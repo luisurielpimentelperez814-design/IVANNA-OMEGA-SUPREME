@@ -66,6 +66,7 @@ class PlaybackCaptureService : Service() {
     private var voiceController: VoiceController? = null
     private val vibratoryProcessor = OmegaVibratoryProcessor(drive = 1.2f, limitThreshold = 0.92f)
     private val spatialEngineV2 = SpatialAudioEngineV2()
+    private var voiceProtectionController: VoiceProtectionController? = null
 
     private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
     private var voiceWindowFill = 0
@@ -170,6 +171,8 @@ class PlaybackCaptureService : Service() {
 
             IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
             if (voiceController == null) voiceController = VoiceController(applicationContext)
+            if (voiceProtectionController == null)
+                voiceProtectionController = VoiceProtectionController(applicationContext)
             spatialEngineV2.start()
 
             audioRecord?.startRecording()
@@ -228,6 +231,11 @@ class PlaybackCaptureService : Service() {
                     // 6b. Análisis espacial V2 — actualiza estado 32 objetos
                     SpatialAudioEngineV2.feedCapturedBlock(buffer, frames)
 
+                    // 6c. Voice protection — clasifica voz y ajusta score en DSPBridge
+                    runCatching {
+                        voiceProtectionController?.feed(buffer, frames, SAMPLE_RATE)
+                    }
+
                     // 7. Downmix mono → VoiceController + Visualizador
                     for (i in 0 until frames) {
                         mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
@@ -257,6 +265,8 @@ class PlaybackCaptureService : Service() {
         audioTrack?.stop(); audioTrack?.release(); audioTrack = null
         audioRecord?.stop(); audioRecord?.release(); audioRecord = null
         spatialEngineV2.stop()
+        runCatching { voiceProtectionController?.release() }
+        voiceProtectionController = null
         IvannaVisualizerBridgeV2.release()
         projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
         projectionCallback = null; mediaProjection = null
