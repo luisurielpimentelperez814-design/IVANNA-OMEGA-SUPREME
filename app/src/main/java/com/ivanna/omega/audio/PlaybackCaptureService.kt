@@ -91,6 +91,15 @@ class PlaybackCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
 
+    // FIX (freeze al pulsar HRTF/DSP): el loop asignaba 4 FloatArrays×512
+    // en cada bloque (93×/seg → ~750 KB/seg de GC). La pausa GC mientras el
+    // audio thread sostenía el bloque excedía el período de 10.7ms → WRITE_BLOCKING
+    // se acumulaba → hilo saturado → ANR. Buffers pre-asignados: cero GC en el loop.
+    private val hrtfInL  = FloatArray(BLOCK_FRAMES)
+    private val hrtfInR  = FloatArray(BLOCK_FRAMES)
+    private val hrtfOutL = FloatArray(BLOCK_FRAMES)
+    private val hrtfOutR = FloatArray(BLOCK_FRAMES)
+
     private var voiceController: VoiceController? = null
     // GAP1 FIX: alimentar Motor B con audio de apps externas (1/30 bloques)
     private val captureAnalyzeCounter = java.util.concurrent.atomic.AtomicInteger(0)
@@ -251,16 +260,18 @@ class PlaybackCaptureService : Service() {
                     // 1. DSP principal: EQ, Compresor, Exciter, Widener
                     DSPBridge.process(buffer, frames)
 
-                    // 2. Binaural HRTF (IvannaSpatialEngineV3)
+                    // 2. Binaural HRTF — usa buffers pre-asignados (cero GC)
                     if (IvannaSpatialEngine.enabled) {
-                        val outL = FloatArray(frames)
-                        val outR = FloatArray(frames)
-                        val inL  = FloatArray(frames) { buffer[it * 2] }
-                        val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
-                        IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
                         for (i in 0 until frames) {
-                            buffer[i * 2]     = outL[i]
-                            buffer[i * 2 + 1] = outR[i]
+                            hrtfInL[i] = buffer[i * 2]
+                            hrtfInR[i] = buffer[i * 2 + 1]
+                        }
+                        IvannaSpatialEngine.shared.processStereoInput(
+                            hrtfInL, hrtfInR, hrtfOutL, hrtfOutR, frames
+                        )
+                        for (i in 0 until frames) {
+                            buffer[i * 2]     = hrtfOutL[i]
+                            buffer[i * 2 + 1] = hrtfOutR[i]
                         }
                     }
 

@@ -210,19 +210,31 @@ fun OmegaApp() {
                 val profiles = remember { ProfilesLoader.load(context) }
                 val metadata = remember { ProfilesLoader.loadMetadata(context) }
                 val profileBridge = remember { ProfileManagerBridge(context) }
-                var activeProfileId by remember { mutableStateOf<String?>(null) }
+                // FIX: activeProfileId era mutableStateOf(null) local → se perdía
+                // al salir de la pantalla. Ahora se carga del ParameterStore al
+                // montar y se guarda cada vez que el usuario aplica un perfil.
+                val profileStore = remember { com.ivanna.omega.core.ParameterStore(context) }
+                var activeProfileId by remember {
+                    mutableStateOf(profileStore.getCurrentAudioProfileId())
+                }
+                // Aplicar al montar si había un perfil guardado y el DSP está en default
+                LaunchedEffect(Unit) {
+                    val saved = profileStore.getCurrentAudioProfileId() ?: return@LaunchedEffect
+                    val profile = profiles.find { it.id == saved } ?: return@LaunchedEffect
+                    profileBridge.applyProfile(profile.id, dsp.value) { updatedDsp ->
+                        dsp.value = updatedDsp
+                    }
+                }
                 ProfileSelectorScreen(
                     profiles = profiles,
                     metadata = metadata,
                     currentId = activeProfileId,
                     onApply = { profile ->
-                        // FIX (PUNTO 1): ProfileManagerBridge.applyProfile() conecta
-                        // pushToNative + neuromorphic (PiLstmBridge) + route + antiDolby,
-                        // en vej del pushToNative() parcial anterior.
                         profileBridge.applyProfile(profile.id, dsp.value) { updatedDsp ->
                             dsp.value = updatedDsp
                         }
                         activeProfileId = profile.id
+                        profileStore.setCurrentAudioProfileId(profile.id)
                     },
                     onClose = { nav.popBackStack() }
                 )
