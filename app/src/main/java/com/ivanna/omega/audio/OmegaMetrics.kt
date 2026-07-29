@@ -6,7 +6,16 @@ data class OmegaMetrics(
     var clipCount: Int = 0,
     var cpuPercent: Float = 0f,
     var latencyMs: Float = 2.8f,
-    var sampleRate: Int = 96000,
+    // FIX (UI mostraba 96 kHz aún con hardware a 48 kHz): el default estaba
+    // hardcodeado a 96000 y OmegaMetrics sólo se actualiza dentro de
+    // IvannaBridgePlayer.pollOmegaMetrics(), que sólo corre reproduciendo por
+    // el bridge. En captura del sistema o standby nadie sobreescribe el
+    // default → EngineStatusCard imprime "${sampleRate / 1000}kHz" = 96kHz
+    // falso. El SR real del dispositivo se obtiene en MainActivity.onCreate
+    // (PROPERTY_OUTPUT_SAMPLE_RATE con fallback 48000). Bajar a 48000 alinea
+    // el default con el fallback real; MainActivity actualiza el valor
+    // efectivo si el hardware reporta otro.
+    var sampleRate: Int = 48000,
     var yamnetCategory: String = "—",
     var yamnetConfidence: Float = 0f,
     var dspActive: Boolean = false,
