@@ -590,7 +590,7 @@ g_exciter.process(chL, chR, n);
 
     float perceptualCrest =
         std::clamp(
-            peak / std::max(rms, 1e-6f),
+            peakAbs / std::max(rms, 1e-6f),
             1.0f,
             8.0f);
 
