@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.ActiveRoute
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.OmegaMetrics

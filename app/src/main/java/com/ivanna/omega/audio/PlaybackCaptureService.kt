@@ -257,6 +257,14 @@ class PlaybackCaptureService : Service() {
                         catch (e: Exception) { Log.e(TAG, "NPE: ${e.message}") }
                     }
 
+                    // GAP1 FIX: Motor B recibe audio real de Spotify/Tidal/Qobuz.
+                    if (com.ivanna.omega.core.IvannaNativeLib.isLoaded &&
+                        captureAnalyzeCounter.incrementAndGet() % 30 == 0) {
+                        runCatching {
+                            com.ivanna.omega.core.IvannaNativeLib.nativeAnalyzeAudio(buffer)
+                        }
+                    }
+
                     // 6. Downmix mono para VoiceController y Visualizador
                     for (i in 0 until frames) {
                         mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
