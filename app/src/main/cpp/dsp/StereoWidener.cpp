@@ -17,6 +17,10 @@ void StereoWidener::setParams(const DSPParams& p) {
         // Corte a 150Hz, Q=0.707 (Butterworth) — protege el "punch" de bajo
         // (kick/bajo eléctrico) de cancelación de fase al sumar en mono.
         sideLpf_.setLowpass(150.0, 0.70710678, static_cast<double>(p.sampleRate));
+        // DC blocker fc~5Hz
+        float fc5 = 2.0f * 3.14159265f * 5.0f / static_cast<float>(p.sampleRate);
+        dcCoef_ = 1.0f - fc5;
+        if (dcCoef_ < 0.99f) dcCoef_ = 0.99f;
     }
 }
 
@@ -52,13 +56,26 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
 
         const float sideOut = sideHigh * w + sideLow * bassFactor;
 
-        left[i]  = mid + sideOut;
-        right[i] = mid - sideOut;
+        float outL = mid + sideOut;
+        float outR = mid - sideOut;
+
+        // DC blocking primer orden — elimina drift acumulado
+        float newxL = outL;
+        outL = outL - dcxL_ + dcCoef_ * dcyL_;
+        dcxL_ = newxL; dcyL_ = outL;
+
+        float newxR = outR;
+        outR = outR - dcxR_ + dcCoef_ * dcyR_;
+        dcxR_ = newxR; dcyR_ = outR;
+
+        left[i]  = outL;
+        right[i] = outR;
     }
 }
 
 void StereoWidener::reset() {
     sideLpf_.reset();
+    dcxL_ = dcyL_ = dcxR_ = dcyR_ = 0.f;
 }
 
 } // namespace ivanna

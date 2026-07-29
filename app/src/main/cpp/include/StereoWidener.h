@@ -18,5 +18,10 @@ private:
     // de forma proporcional a cuánto se está ensanchando (ver .cpp).
     Biquad sideLpf_;
     uint32_t lastSampleRate_ = 96000;
+
+    // DC blockers en canales L y R — HPF primer orden ~5Hz
+    float dcxL_ = 0.f, dcyL_ = 0.f;
+    float dcxR_ = 0.f, dcyR_ = 0.f;
+    float dcCoef_ = 0.99985f; // fc≈5Hz @ 96kHz
 };
 }

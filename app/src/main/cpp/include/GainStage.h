@@ -1,5 +1,6 @@
 #pragma once
 #include "dsp_types.h"
+#include <cmath>
 namespace ivanna {
 class GainStage {
 public:
@@ -8,16 +9,6 @@ public:
     void processOutput(float* left, float* right, int frames);
     void reset();
 
-    // FASE 4C/P0 (cierre del Adaptive Feedback Loop): multiplicador
-    // adicional sugerido por AdaptiveDecisionEngine::computeTargetGain(),
-    // que por diseño está clampeado a [0.5, 1.0] — solo puede atenuar,
-    // nunca subir por encima de la ganancia ya configurada por el usuario.
-    // Se aplica DENTRO de processOutput() (multiplicando el target antes
-    // del smoothing existente, currentOut_ -> outputGain_*runtimeMul_) —
-    // se beneficia del mismo suavizado exponencial que ya tiene la clase
-    // (~15ms), sin necesitar un smoothing propio en el JNI. No se toca
-    // setParams()/outputGain_ (el valor base que controla el usuario) —
-    // esto es una atenuación adicional temporal, no un reemplazo.
     void setRuntimeGain(float mul) noexcept {
         runtimeMul_ = mul < 0.1f ? 0.1f : (mul > 1.5f ? 1.5f : mul);
     }
@@ -31,5 +22,10 @@ private:
     float currentIn_ = 1.0f;
     float currentOut_ = 1.0f;
     float runtimeMul_ = 1.0f;
+
+    // Limitador true-peak brick-wall — 1 muestra de ataque, release ~50ms
+    float limGain_    = 1.0f;   // ganancia actual del limitador
+    float limRelCoef_ = 0.999f; // release coefficient (recalculado en setParams)
+    static constexpr float LIM_THRESHOLD = 0.9886f; // −0.1 dBFS true-peak
 };
 }

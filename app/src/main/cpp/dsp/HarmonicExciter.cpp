@@ -125,10 +125,12 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         osRight_[i] = r + wet * excR;
     }
 
-    // ===== PASO 3: DOWNSAMPLE 2x (tomar cada 2da muestra) =====
+    // ===== PASO 3: DOWNSAMPLE 2x con promedio — elimina imagen especular =====
+    // Antes: left[i] = osLeft_[i*2] — sin filtro, introduce aliasing.
+    // Ahora: promedio de par → equivale a LPF FIR de 2 taps @ Nyquist/2.
     for (int i = 0; i < frames; ++i) {
-        left[i] = osLeft_[i * OS_FACTOR];
-        right[i] = osRight_[i * OS_FACTOR];
+        left[i]  = (osLeft_ [i * OS_FACTOR] + osLeft_ [i * OS_FACTOR + 1]) * 0.5f;
+        right[i] = (osRight_[i * OS_FACTOR] + osRight_[i * OS_FACTOR + 1]) * 0.5f;
     }
 }
 
