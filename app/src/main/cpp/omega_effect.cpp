@@ -111,8 +111,143 @@ static const effect_uuid_t kEffectTypeNull = {
 static const effect_uuid_t kEffectUuid = {
     0x8d7d5e0a,0xa6eb,0x4fde,0xa0ff,{0xcb,0x1b,0x2d,0xd7,0x27,0x5e}};
 static const effect_descriptor_t kDesc = {
+    kEffectTypeNull,kEffectUuid,
+    .apiVersion= EFFECT_CONTROL_API_VERSION,
+    .flags= EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad=0,.memoryUsage=0,
+    "Omega Insert","IVANNA-FUSION"
+};
 
-// Símbolo obligatorio para que Android reconozca el efecto
+/* ----------------------------------------------------------------------------
+ * Shared memory mapping (recibe fd vía Unix socket)
+ * ------------------------------------------------------------------------- */
+static int receive_shm_fd() {
+    int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) return -1;
+    struct timeval tv{0, 200000};
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    addr.sun_path[0] = '\0';
+    strncpy(addr.sun_path+1, kSocketName, sizeof(addr.sun_path)-2);
+    socklen_t alen = (socklen_t)(sizeof(addr.sun_family)+1+strlen(kSocketName));
+    if (connect(sock, (sockaddr*)&addr, alen) < 0) { close(sock); return -1; }
+    char buf = 0;
+    struct iovec iov{&buf,1};
+    char cmsg[CMSG_SPACE(sizeof(int))];
+    struct msghdr msg{};
+    msg.msg_iov=&iov; msg.msg_iovlen=1;
+    msg.msg_control=cmsg; msg.msg_controllen=sizeof(cmsg);
+    if (recvmsg(sock, &msg, 0) < 0) { close(sock); return -1; }
+    close(sock);
+    struct cmsghdr* c = CMSG_FIRSTHDR(&msg);
+    if (!c||c->cmsg_level!=SOL_SOCKET||c->cmsg_type!=SCM_RIGHTS) return -1;
+    int fd=-1; memcpy(&fd, CMSG_DATA(c), sizeof(int)); return fd;
+}
+
+static bool mapSharedMemory(OmegaContext* ctx) {
+    if (ctx->shared) return true;
+    int fd = receive_shm_fd();
+    if (fd < 0) return false;
+    void* ptr = mmap(nullptr, sizeof(OmegaSharedState), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if (ptr == MAP_FAILED) return false;
+    ctx->shared = (OmegaSharedState*)ptr;
+    return true;
+}
+
+/* ----------------------------------------------------------------------------
+ * Procesamiento magistral 500×
+ * ------------------------------------------------------------------------- */
+static void update_genome_if_needed(OmegaContext* ctx) {
+    if (!ctx->shared) return;
+    uint32_t gen = evo_get_generation();
+    if (gen > ctx->generation) {
+        ctx->generation = gen;
+        // Obtener el mejor genoma del kernel evolutivo (acceso directo)
+        evo_get_best_genome(ctx->best_genome, GENOME_SIZE);
+        ctx->genome_ready = true;
+    }
+}
+
+static int Effect_Process(effect_handle_t self, audio_buffer_t* in, audio_buffer_t* out) {
+    OmegaContext* ctx = (OmegaContext*)self;
+    if (!ctx || !in || !out) return -EINVAL;
+    int n = (int)in->frameCount; if (n <= 0) return 0;
+    int ch = audio_channel_count_from_out_mask(ctx->config.inputCfg.channels);
+    int samples = n * (ch > 0 ? ch : 2);
+
+    bool ok = ctx->active && (ctx->shared || mapSharedMemory(ctx));
+    if (!ok || (ctx->shared && ctx->shared->bypass_enabled.load(std::memory_order_relaxed))) {
+        if (in->raw != out->raw)
+            memcpy(out->raw, in->raw, samples * sizeof(float));
+        return 0;
+    }
+
+    // Asegurar bloque estándar
+    int cap = std::min(samples, OMEGA_BLOCK_SIZE * OMEGA_MAX_CHANNELS);
+    if (in->raw != out->raw)
+        memcpy(out->raw, in->raw, samples * sizeof(float));
+
+    float* buffer = (float*)out->raw;
+    // 1. Multibanda
+    ctx->mb.process(buffer, buffer, cap / ch);
+
+    // 2. Anti-Dolby (si clasificador activo)
+    if (ctx->anti_dolby.is_active())
+        ctx->anti_dolby.applyGain(buffer, cap, ch);
+
+    // 3. Síntesis aditiva con genoma evolutivo
+    update_genome_if_needed(ctx);
+    if (ctx->genome_ready) {
+        // Aplicar modulación tímbrica sutil (escala 0.15 para no saturar)
+        for (int i = 0; i < cap; i += ch) {
+            float envelope = (ctx->best_genome[i % GENOME_SIZE] / 255.0f) * 0.15f;
+            for (int c = 0; c < ch; ++c)
+                buffer[i + c] += envelope * buffer[i + c];
+        }
+    }
+
+    // 4. AGC con lookahead
+    float rms = 0.0f;
+    for (int i = 0; i < cap; ++i)
+        rms += buffer[i] * buffer[i];
+    rms = std::sqrt(rms / cap);
+    float target_gain = kAgcTargetRms / (rms + 1e-9f);
+    target_gain = std::fmaxf(kAgcGainMin, std::fminf(kAgcGainMax, target_gain));
+    const float alpha = 0.1f;
+    ctx->agc_gain += alpha * (target_gain - ctx->agc_gain);
+    if (!std::isfinite(ctx->agc_gain)) ctx->agc_gain = 1.0f;
+    for (int i = 0; i < cap; ++i) buffer[i] *= ctx->agc_gain;
+
+    return 0;
+}
+
+/* ── Resto de implementaciones de la interfaz ──────────────────────────── */
+static int Effect_Command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
+                          void* pCmdData, uint32_t* replySize, void* pReplyData) {
+    OmegaContext* ctx = (OmegaContext*)self;
+    if (!ctx) return -EINVAL;
+    switch (cmdCode) {
+        case EFFECT_CMD_INIT:
+        case EFFECT_CMD_SET_CONFIG:
+        case EFFECT_CMD_RESET:
+        case EFFECT_CMD_ENABLE:
+        case EFFECT_CMD_DISABLE:
+            return 0;
+        default: return -EINVAL;
+    }
+}
+
+static int Effect_GetDescriptor(effect_handle_t self, effect_descriptor_t* pDesc) {
+    if (!pDesc) return -EINVAL;
+    memcpy(pDesc, &kDesc, sizeof(kDesc));
+    return 0;
+}
+
+static const struct effect_interface_s sIface = {Effect_Process, Effect_Command, Effect_GetDescriptor, nullptr};
+
+
 __attribute__((visibility("default"))) extern "C" const effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     kEffectTypeNull,
     kEffectUuid,
