@@ -1,12 +1,17 @@
-#!/usr/bin/env bash
-set -e
+#!/system/bin/sh
+# IVANNA OMEGA SUPREME v8.0 Magisk Installer
 
-echo "Installing IVANNA OMEGA SUPREME v6.0..."
+MODDIR=${0%/*}
+
+echo "Installing IVANNA OMEGA SUPREME v8.0 Kernel Daemon..."
+
+mkdir -p /data/adb/ivanna_omega/bin
+mkdir -p /data/adb/ivanna_omega/logs
 mkdir -p /data/adb/ivanna_omega/profile
-mkdir -p /data/adb/modules/ivanna_omega_supreme
 
-cp magisk_module/service.sh /data/adb/modules/ivanna_omega_supreme/service.sh
-chmod +x /data/adb/modules/ivanna_omega_supreme/service.sh
-chmod +x install.sh
+# Grant socket creation permissions
+chmod 755 /data/adb/ivanna_omega/bin
+chmod 777 /data/adb/ivanna_omega/logs
+chmod 777 /data/adb/ivanna_omega/profile
 
-echo "Installation complete!"
+echo "IVANNA OMEGA SUPREME v8.0 Installation Complete."
