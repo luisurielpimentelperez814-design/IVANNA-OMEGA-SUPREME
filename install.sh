@@ -1,17 +1,21 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME v8.0 Magisk Installer
+# IVANNA UNIVERSAL IMMERSIVE RENDERER v9.0 Installation Script for Magisk / Termux
 
-MODDIR=${0%/*}
+echo "[+] Installing IVANNA OMEGA SUPREME v9.0..."
 
-echo "Installing IVANNA OMEGA SUPREME v8.0 Kernel Daemon..."
+DAEMON_DIR="/data/adb/ivanna_omega"
+mkdir -p "$DAEMON_DIR/bin"
+mkdir -p "$DAEMON_DIR/logs"
+mkdir -p "$DAEMON_DIR/profile"
 
-mkdir -p /data/adb/ivanna_omega/bin
-mkdir -p /data/adb/ivanna_omega/logs
-mkdir -p /data/adb/ivanna_omega/profile
+chmod 755 "$DAEMON_DIR"
+chmod 755 "$DAEMON_DIR/bin"
 
-# Grant socket creation permissions
-chmod 755 /data/adb/ivanna_omega/bin
-chmod 777 /data/adb/ivanna_omega/logs
-chmod 777 /data/adb/ivanna_omega/profile
+if [ -f "./omega_daemon" ]; then
+    cp ./omega_daemon "$DAEMON_DIR/bin/omega_daemon"
+    chmod 755 "$DAEMON_DIR/bin/omega_daemon"
+    chown root:root "$DAEMON_DIR/bin/omega_daemon"
+    echo "[+] Daemon binary installed at $DAEMON_DIR/bin/omega_daemon"
+fi
 
-echo "IVANNA OMEGA SUPREME v8.0 Installation Complete."
+echo "[+] IVANNA OMEGA SUPREME v9.0 Installation complete!"
