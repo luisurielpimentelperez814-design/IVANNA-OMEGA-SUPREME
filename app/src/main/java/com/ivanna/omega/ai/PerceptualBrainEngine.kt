@@ -4,6 +4,7 @@ import com.ivanna.omega.core.IvannaNativeLib
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,9 +16,7 @@ import kotlin.math.log10
 import kotlin.math.max
 
 /**
- * PerceptualBrainEngine - IVANNA OMEGA SUPREME v3.0
- * Psychoacoustic modeling, human auditory perception analysis,
- * ConvNeXt INT8 TinyML inference telemetry, and real-time perceptual DSP control.
+ * AudioFeaturesInput - Raw psychoacoustic and spectral features fed into the Perceptual Brain.
  */
 data class AudioFeaturesInput(
     val rms: Float = 0.05f,
@@ -57,6 +56,9 @@ data class AudioFeaturesInput(
     }
 }
 
+/**
+ * PerceptualSnapshot - Real-time state vector of the human auditory perception model and TinyML core.
+ */
 data class PerceptualSnapshot(
     val immersion: Float = 0.92f,
     val fatigue: Float = 0.12f,
@@ -65,7 +67,7 @@ data class PerceptualSnapshot(
     val confidence: Float = 0.97f,
     val perceptionOnline: Boolean = true,
 
-    // Human Auditory Metrics
+    // Human Auditory Metrics (Psychoacoustics)
     val iso226LoudnessDb: Float = 84.5f,
     val barkBandsCount: Int = 24,
     val melBandsCount: Int = 64,
@@ -74,7 +76,7 @@ data class PerceptualSnapshot(
     val spectralBalanceRatio: Float = 0.89f,
     val dynamicRangeDb: Float = 18.2f,
 
-    // TinyML Metrics
+    // TinyML Metrics (ConvNeXt INT8)
     val convNextLatencyUs: Long = 185L,
     val convNextConfidence: Float = 0.96f,
     val ringBufferOccupancy: Float = 0.32f,
@@ -98,9 +100,15 @@ data class PerceptualSnapshot(
     val humanLoudnessCompensation: Float = 0.82f
 )
 
+/**
+ * PerceptualBrainEngine - IVANNA OMEGA SUPREME v4.0
+ * Manages human auditory perception modeling, ISO 226 equal loudness curves,
+ * Bark/Mel critical bands, temporal/spectral masking, fatigue estimation,
+ * ConvNeXt INT8 TinyML inference telemetry, and real-time DSP control.
+ */
 class PerceptualBrainEngine {
 
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var pollingJob: Job? = null
 
     private val _snapshot = MutableStateFlow(PerceptualSnapshot())
@@ -114,12 +122,8 @@ class PerceptualBrainEngine {
     private var antiDolbyBlend = 1.00f
     private var humanLoudnessComp = 0.82f
 
-    init {
-        startTelemetryLoop()
-    }
-
-    fun startTelemetryLoop() {
-        pollingJob?.cancel()
+    fun start() {
+        if (pollingJob?.isActive == true) return
         pollingJob = scope.launch {
             while (isActive) {
                 updatePerceptualState()
@@ -128,8 +132,13 @@ class PerceptualBrainEngine {
         }
     }
 
-    fun stopTelemetryLoop() {
+    fun stop() {
         pollingJob?.cancel()
+        pollingJob = null
+    }
+
+    fun release() {
+        stop()
     }
 
     fun processAudioFeatures(features: AudioFeaturesInput) {

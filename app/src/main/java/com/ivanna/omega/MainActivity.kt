@@ -81,6 +81,8 @@ import com.ivanna.omega.audio.AudioRoutingManager
 import com.ivanna.omega.audio.ParameterValidator
 import com.ivanna.omega.ai.RealtimeLearningController
 import com.ivanna.omega.audio.AudioPipeline
+import com.ivanna.omega.ai.PerceptualBrainEngine
+import com.ivanna.omega.ui.PerceptualBrainDashboard
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -106,22 +108,7 @@ class MainActivity : ComponentActivity() {
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
         DSPBridge.init(sr)
         if (IvannaNativeLib.isLoaded) {
-            // 3H: nativeInitDSP(sr) inicializa la cadena DSP de IvannaNativeLib
-            // (g_eq / g_comp / g_exciter / g_widener / g_gain) y pone
-            // g_initialized = true — sin esta llamada, nativeProcessBlock()
-            // siempre early-returnaba y el DSP estéreo de IvannaNativeLib
-            // estaba completamente muerto. También llama g_pd.start_evo_thread()
-            // internamente; el siguiente nativeStartEvoThread() es no-op gracias
-            // al guard compare_exchange_strong en start_evo_thread().
-            // nativeInitPILSTM() NO se llama aquí: es g_pd.reset() — destruiría
-            // el estado PI recién inicializado por nativeInitDSP.
-            // nativeLoadEvoState() NO se llama: initializePopulation() ya llama
-            // loadPopulationLocked() internamente antes de randomizar (C++
-            // evolutionary_kernel.cpp:171); llamarlo después de start_evo_thread
-            // sería una race condition sobre g_population.
             runCatching { IvannaNativeLib.nativeInitDSP(sr) }
-            // nativeStartEvoThread() es seguro aunque nativeInitDSP ya lo haya
-            // lanzado (guard compare_exchange_strong en pd_engine.hpp:216).
             IvannaNativeLib.nativeStartEvoThread()
         }
         setContent { OmegaApp() }
@@ -142,10 +129,8 @@ fun OmegaApp() {
     val dsp = remember { mutableStateOf(DSPState()) }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
-        // captureRequested declarado antes del launcher que lo usa
         var captureRequested by remember { mutableStateOf(false) }
         val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
-        // Launcher MediaProjection para PlaybackCaptureService
         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
         val projectionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.StartActivityForResult()
@@ -176,18 +161,15 @@ fun OmegaApp() {
                 }
             }
             composable("dashboard") {
-                        // Iniciar automáticamente la captura si no está activa
-        LaunchedEffect(Unit) {
-            if (!captureActive) {
-                projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-            }
-        }
-        LaunchedEffect(pendingBandProfileId) {
+                LaunchedEffect(Unit) {
+                    if (!captureActive) {
+                        projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                    }
+                }
+                LaunchedEffect(pendingBandProfileId) {
                     val profileId = pendingBandProfileId ?: return@LaunchedEffect
                     val profile = ProfilesLoader.load(context).find { it.id == profileId }
                     if (profile != null && !profile.audioEngine.bypass) {
-                        // Mismo mapeo probado que ProfileSelectorScreen.onApply —
-                        // ver auditoría previa, no usa ProfileManager (legacy roto).
                         dsp.value = dsp.value.copy(
                             master = profile.audioEngine.gain,
                             wet = profile.audioEngine.exciterAmount,
@@ -214,14 +196,10 @@ fun OmegaApp() {
                 val profiles = remember { ProfilesLoader.load(context) }
                 val metadata = remember { ProfilesLoader.loadMetadata(context) }
                 val profileBridge = remember { ProfileManagerBridge(context) }
-                // FIX: activeProfileId era mutableStateOf(null) local → se perdía
-                // al salir de la pantalla. Ahora se carga del ParameterStore al
-                // montar y se guarda cada vez que el usuario aplica un perfil.
                 val profileStore = remember { com.ivanna.omega.core.ParameterStore(context) }
                 var activeProfileId by remember {
                     mutableStateOf(profileStore.getCurrentAudioProfileId())
                 }
-                // Aplicar al montar si había un perfil guardado y el DSP está en default
                 LaunchedEffect(Unit) {
                     val saved = profileStore.getCurrentAudioProfileId() ?: return@LaunchedEffect
                     val profile = profiles.find { it.id == saved } ?: return@LaunchedEffect
@@ -243,14 +221,6 @@ fun OmegaApp() {
                     onClose = { nav.popBackStack() }
                 )
             }
-            // FIX (PUNTO 1 — ruta faltante): el botón "ACTIVAR" de
-            // DashboardScreen ya llamaba nav.navigate("adaptive") desde
-            // hace tiempo (ver PUNTO 2 abajo), pero esa ruta nunca se
-            // registró aquí — la navegación fallaba silenciosamente/
-            // crasheaba (IllegalArgumentException: destino "adaptive" no
-            // encontrado). AdaptiveEngineScreen necesita un
-            // VoiceProtectionManager; se construye aquí con ParameterStore
-            // igual que en el resto de la app (ver ParameterStore.kt).
             composable("visualizer") {
                 LaunchedEffect(Unit) {
                     projectionLauncher.launch(
@@ -276,10 +246,6 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            // FASE 1 — rutas existentes pero nunca montadas en el NavHost
-            // (auditoría de conectividad). Pantallas ya implementadas en
-            // IvannaCoreScreens.kt / AuditoryExperienceScreen.kt / AdaptiveDashboard.kt
-            // pero sin destino navigate() ni entrada en este grafo.
             composable("telemetry") {
                 com.ivanna.omega.ui.TelemetryDashboard(
                     modifier = Modifier.fillMaxSize().background(Carbon)
@@ -311,9 +277,16 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
+            composable("perceptual_brain") {
+                val perceptualEngine = remember { com.ivanna.omega.ai.PerceptualBrainEngine() }
+                com.ivanna.omega.ui.PerceptualBrainDashboard(
+                    engine = perceptualEngine,
+                    onBack = { nav.popBackStack() },
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
             composable("adaptive_dash") {
-                // nativeGetAdaptiveTelemetry ya declarada/usada por AdaptiveBackend;
-                // aquí se lee directo para alimentar el dashboard visual.
                 var telemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
                 LaunchedEffect(Unit) {
                     while (true) {
@@ -382,10 +355,6 @@ fun SplashScreen(onAccept: () -> Unit) {
 fun IntroScreen(onEnter: (String?) -> Unit) {
     val bands = listOf("Grand Funk Railroad", "Led Zeppelin", "Rush",
         "Budgie", "Edgar Winter", "Steve Miller Band", "Bachman-Turner Overdrive")
-    // FIX: 4 de las 7 bandas SÍ tienen perfil real en audio_profiles.json
-    // (steve_miller, rush, budgie, grand_funk) — antes la grilla completa
-    // era decorativa. Las otras 3 no tienen datos detrás, se quedan
-    // solo visuales, no se les inventa un perfil.
     val bandProfileIds = mapOf(
         "Grand Funk Railroad" to "grand_funk",
         "Rush" to "rush",
@@ -448,7 +417,6 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
     }
 }
 
-// ← PUNTO 2: Agregar parámetro nav al DashboardScreen para poder navegar
 @Composable
 fun DashboardScreen(
     dsp: MutableState<DSPState>,
@@ -459,23 +427,10 @@ fun DashboardScreen(
     val eqActive = dsp.value.low != 0f || dsp.value.mid != 0f || dsp.value.high != 0f || dsp.value.presence != 0f
     val fxActive = dsp.value.wet > 0.01f
     val lstmReady = PiLstmBridge.isReady
-    // FIX (scope): npeBypassState se declaró antes en OmegaApp() por error —
-    // los callbacks NPE que lo usan viven en DashboardScreen, composable
-    // distinto, sin visibilidad de ese estado. Declarado aquí, donde se usa.
     var npeBypassState by remember { mutableStateOf(false) }
-    // FIX: AdaptiveControlsCard del panel Dashboard (mode/intensity/voice)
-    // recibía siempre los defaults estáticos de IvannaControlPanel — cero
-    // conexión. Usa la misma fuente real que AdaptiveEngineScreen:
-    // AudioStateManager (StateFlow compartido) + VoiceProtectionManager.
     val audioState by com.ivanna.omega.audio.AudioStateManager.audioState.collectAsState()
     val voiceActive by voiceProtectionManager.voiceProtectionActive.observeAsState(false)
 
-    // FIX (telemetría 0% en Panel Adaptativo del Dashboard): AdaptiveBackend
-    // ya exponía StateFlow<AdaptiveTelemetry> real (10Hz, motor A), pero
-    // solo se instanciaba dentro de AdaptiveEngineScreen — MainActivity
-    // nunca lo consumía, así que IvannaControlPanel recibía siempre el
-    // default vacío de AdaptiveTelemetrySnapshot(). Instancia local con
-    // ciclo de vida atado a esta pantalla (arranca/para con el composable).
     val context = LocalContext.current
     val adaptiveBackend = remember { AdaptiveBackend(context) }
     val antiDolbyController = remember {
@@ -493,11 +448,9 @@ fun DashboardScreen(
     }
     DisposableEffect(Unit) {
         adaptiveBackend.startTelemetry()
-        // Parche 6: iniciar cDSP Hexagon si disponible (no-op si no hay hardware)
         try {
             if (IvannaDspManager.open()) IvannaDspManager.enable()
         } catch (_: Throwable) {}
-        // FASE 3C: control loop @20Hz (nativeSetLearningContext + nativeApplyControlFrame)
         com.ivanna.omega.audio.IvannaControlLoop.start()
         onDispose {
             adaptiveBackend.stopTelemetry()
@@ -508,34 +461,21 @@ fun DashboardScreen(
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
-    // Parche 5c: snapshot tipado para el control panel
     val telemetrySnapshot = remember(adaptiveTelemetryRaw) {
         AdaptiveTelemetrySnapshot.fromAdaptiveTelemetry(adaptiveTelemetryRaw)
     }
 
     val paramStore = remember { ParameterStore(context) }
 
-    // ── Fase 4: clases nunca referenciadas — instanciadas y conectadas ────────
-
-    // 4B — ShmManager: memoria compartida con el daemon Magisk.
-    //   Es un stub seguro (solo un Log.d) — se llama una vez al arrancar.
     LaunchedEffect(Unit) { ShmManager.initialize(context) }
 
-    // 4C — PresetManager: selector de presets persistente.
     val presetManager = remember { PresetManager(context) }
     var selectedPreset by remember { mutableStateOf(presetManager.getCurrentPreset()) }
 
-    // 4D — AudioRoutingManager: detectar ruta de salida y actualizar métricas.
-    //   Se refresca cada vez que cambia la ventana de composición (recomposición
-    //   de DashboardScreen) — suficiente para UI estática sin broadcast receiver.
     val audioRoute = remember(context) { AudioRoutingManager.detectOutputRoute(context) }
 
-    // 4A — RealtimeLearningController: ajuste de parámetros por género/preset.
-    //   Se conecta al género detectado por AudioPipeline.sharedYamnetResult.
     val learningController = remember { RealtimeLearningController(context) }
     val yamnetForLearning by AudioPipeline.sharedYamnetResult.collectAsState()
-    // Determinar género dominante en texto para que RealtimeLearningController
-    // pueda contextualizar sus sesgos (genre → contexto "genre:music" etc.)
     val dominantGenre = remember(yamnetForLearning) {
         when {
             !yamnetForLearning.valid -> null
@@ -547,16 +487,13 @@ fun DashboardScreen(
     }
     DisposableEffect(Unit) { onDispose { learningController.release() } }
 
-    // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
-    // MediaSession — expone el player al sistema (BT, lock screen, wearables)
     DisposableEffect(player) {
         com.ivanna.omega.audio.MediaSessionManager.init(context, player)
         onDispose { com.ivanna.omega.audio.MediaSessionManager.release() }
     }
 
-    // Parche 5a: métricas agregadas del BridgePlayer (después de player)
     val playerPositionMs by player.currentPositionMs.collectAsState()
     val playerDurationMs by player.durationMs.collectAsState()
     val omegaMetrics by player.omegaMetrics.collectAsState()
@@ -605,14 +542,13 @@ fun DashboardScreen(
             }
         }
 
-        // FASE 1 — botones de navegación hacia rutas existentes pero nunca
-        // montadas (telemetry/ope/binaural/auditory/adaptive_dash).
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf(
+                "CEREBRO PERCEPTUAL" to "perceptual_brain",
                 "TELEMETRÍA" to "telemetry",
                 "OPE" to "ope",
                 "BINAURAL" to "binaural",
@@ -630,21 +566,6 @@ fun DashboardScreen(
             }
         }
 
-        // FIX (esta no era la interfaz): IvannaControlPanel v3.0 existía
-        // completa en ui/IvannaControlPanel.kt — 517 líneas, Anillo OMNI,
-        // AuroraSlider, Compresor/NHO/Spatial/NPE/Evo/Adaptive Control
-        // Center — pero jamás se invocaba desde ningún lado del código
-        // (grep confirmado: cero llamadas). Lo que se veía en pantalla
-        // (bloques DspSection crudos de abajo) era un placeholder viejo
-        // que quedó como única pantalla real por accidente. Se monta acá
-        // en vez de los bloques sueltos; exciter/eq/width/threshold/ratio
-        // se cablean a los campos de DSPState que YA llegan al motor
-        // nativo vía pushToNative() (wet=exciter, low=mid=high=presence=eq
-        // en dB, stereoWidth, alpha=threshold, beta=ratio — mismo mapeo
-        // que ya documentaba pushToNative()). El resto de callbacks
-        // (NHO/Spatial/NPE/Evo/Anti-Dolby/Adaptive Center) quedan con su
-        // default no-op: cablearlos de verdad es un commit aparte, no se
-        // improvisa un mapeo a ciegas para motores que aún no se auditaron.
         val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
         IvannaControlPanel(
             initialExciter = dsp.value.wet,
@@ -664,9 +585,6 @@ fun DashboardScreen(
                 if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
             },
             onEvoEnabledChange = { enabled ->
-                // FIX: nativeStopEvoThread ya estaba declarado en
-                // IvannaNativeLib.kt (línea 97) — solo faltaba llamarlo
-                // desde el toggle. Ahora pausa/reanuda de verdad.
                 if (IvannaNativeLib.isLoaded) {
                     if (enabled) IvannaNativeLib.nativeStartEvoThread()
                     else IvannaNativeLib.nativeStopEvoThread()
@@ -683,8 +601,6 @@ fun DashboardScreen(
                 if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setBeta(v)
             },
             onNpeOhcCompressionChange = { v ->
-                // Proxy documentado en PiLstmBridge: no hay nativeSetOhcCompression
-                // en C++, usa nativeSetAlpha (ganancia maestra) como sustituto.
                 if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
             },
             onNpeMasterGainChange = { v ->
@@ -740,11 +656,6 @@ fun DashboardScreen(
             onVoiceProtectionChange = { voiceProtectionManager.toggle() },
             initialSpatialEnabled = com.ivanna.omega.spatial.IvannaSpatialEngine.enabled,
             onSpatialEnabledChange = { on ->
-                // FIX: pipeline de audio (IvannaBridgePlayer), head tracker
-                // e init() ya existían completos y funcionando (sesión
-                // previa) — solo faltaba este interruptor. enabled es
-                // @Volatile, leída directo desde el hilo de audio en cada
-                // chunk, sin pasar por el motor nativo del DSPBridge.
                 com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
             },
             onNpeManifoldChange = { enabled ->
@@ -778,18 +689,6 @@ fun DashboardScreen(
                 paramStore.setOmegaMode(mode)
                 OmegaEngineBridge.setIntensity(mode / 2f)
             },
-            // FIX (huérfano): el slider PHASE ORACLE de IvannaControlPanel
-            // ("COHERENCIA DE FASE") ya existía completo, y AdaptiveBackend
-            // .applyPhaseOracle() (AdaptiveBackend.kt:112) ya sabe mapear la
-            // intensidad a alpha/beta/gamma — pero este call site nunca pasaba
-            // onPhaseOracleChange, así que el valor sólo se guardaba en prefs y
-            // nunca llegaba al motor. applyPhaseOracle sólo corre vía
-            // applyManualState/forceManualState, que en modo automático no se
-            // dispara. Se cablea con el mismo patrón que onSpatialAngleChange
-            // (línea 703) y onNhoHarmonicChange (línea 663): nativo directo.
-            // Mapeo idéntico al de AdaptiveBackend.kt:118-121 y al que la UI
-            // ya muestra en los StatBlocks (IvannaControlPanel.kt:450-452):
-            //   alpha = i  (LF) | beta = i*0.7 (MF) | gamma = i*0.5 (HF)
             onPhaseOracleChange = { intensity ->
                 val i = intensity.coerceIn(0f, 1f)
                 com.ivanna.omega.audio.AudioStateManager.updateState {
@@ -807,7 +706,6 @@ fun DashboardScreen(
             }
         )
 
-        // ── IVANNA BRIDGE PLAYER — motor completo con archivo real ───────────
         BridgePlayerCard(
             playerState = playerState,
             currentUri  = currentUri,
@@ -840,7 +738,6 @@ fun DashboardScreen(
         )
     }
 }
-
 
 // ── Components ────────────────────────────────────────────────────────────────
 @Composable

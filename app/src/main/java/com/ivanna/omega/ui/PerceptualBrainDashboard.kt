@@ -42,6 +42,13 @@ fun PerceptualBrainDashboard(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    DisposableEffect(engine) {
+        engine.start()
+        onDispose {
+            engine.stop()
+        }
+    }
+
     val snapshot by engine.snapshot.collectAsState()
     val scrollState = rememberScrollState()
 
@@ -62,7 +69,7 @@ fun PerceptualBrainDashboard(
         ) {
             Column {
                 Text(
-                    text = "PERCEPTUAL BRAIN CORTEX v3.0",
+                    text = "PERCEPTUAL BRAIN CORTEX v4.0",
                     color = TextPri,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.ExtraBold,
