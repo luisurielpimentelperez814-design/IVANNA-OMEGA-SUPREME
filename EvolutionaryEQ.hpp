@@ -1,30 +1,23 @@
 #pragma once
 
-#include <cstddef>
 #include "IvannaFusionCore.hpp"
 
 namespace Ivanna {
 
-class EvolutionaryEQ {
+class EvolutionaryEQ : public IvannaFusionCore {
 public:
     EvolutionaryEQ();
-    ~EvolutionaryEQ() = default;
-
+    void calibrateTargetRoom();
     void processNEON(AudioBuffer* buffer);
-    void updateLM_CMA_ES();
+    void updateLM_CMA_ES(); // Evolution step
+
+    void processBlock(AudioBuffer* buffer) override { processNEON(buffer); }
+    void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
 
 private:
-    alignas(16) float m_firCoeffsL[FIR_TAPS];
-    alignas(16) float m_firCoeffsR[FIR_TAPS];
-
-    alignas(16) float m_histL[BLOCK_SIZE + FIR_TAPS];
-    alignas(16) float m_histR[BLOCK_SIZE + FIR_TAPS];
-
-    float m_meanGenome[BANDS_512];
-    float m_evolutionPath[BANDS_512];
-    float m_stepSize{0.1f};
-
-    float calculateFitness(const float* genome);
+    ALIGN_NEON float m_firCoeffsL[FIR_TAPS];
+    ALIGN_NEON float m_firCoeffsR[FIR_TAPS];
+    float m_fitnessScore = 0.0f;
 };
 
 } // namespace Ivanna

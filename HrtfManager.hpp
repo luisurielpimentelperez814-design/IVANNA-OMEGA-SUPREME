@@ -4,21 +4,18 @@
 
 namespace Ivanna {
 
-constexpr size_t HRTF_TAPS = 128;
-
 class HrtfManager {
 public:
     HrtfManager();
-    void processBinauralScene(AudioBuffer* buffer);
+    void processSpatialHrtf(AudioBuffer* buffer, float azimuth, float elevation);
 
 private:
-    ALIGN_NEON float m_hrtfLL[HRTF_TAPS]; // Left to Left Ear
-    ALIGN_NEON float m_hrtfLR[HRTF_TAPS]; // Left to Right Ear (Crosstalk)
-    ALIGN_NEON float m_hrtfRR[HRTF_TAPS]; // Right to Right Ear
-    ALIGN_NEON float m_hrtfRL[HRTF_TAPS]; // Right to Left Ear (Crosstalk)
-
-    ALIGN_NEON float m_histL[BLOCK_SIZE + HRTF_TAPS];
-    ALIGN_NEON float m_histR[BLOCK_SIZE + HRTF_TAPS];
+    ALIGN_NEON float m_hrtfLL[FIR_TAPS];
+    ALIGN_NEON float m_hrtfRL[FIR_TAPS];
+    ALIGN_NEON float m_hrtfRR[FIR_TAPS];
+    ALIGN_NEON float m_hrtfLR[FIR_TAPS];
+    ALIGN_NEON float m_histL[BLOCK_SIZE + FIR_TAPS];
+    ALIGN_NEON float m_histR[BLOCK_SIZE + FIR_TAPS];
 };
 
 } // namespace Ivanna

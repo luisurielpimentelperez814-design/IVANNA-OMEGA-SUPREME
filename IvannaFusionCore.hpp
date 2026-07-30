@@ -2,21 +2,18 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <array>
-#include <memory>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
-#else
-#include <cmath>
-#include <algorithm>
 #endif
 
+#ifndef ALIGN_NEON
 #define ALIGN_NEON alignas(16)
+#endif
 
 namespace Ivanna {
 
-constexpr size_t BLOCK_SIZE = 1024;
+constexpr size_t BLOCK_SIZE = 128;
 constexpr size_t BANDS_512 = 512;
 constexpr size_t FIR_TAPS = 256;
 constexpr float SAMPLE_RATE = 48000.0f;
@@ -27,45 +24,37 @@ struct ALIGN_NEON AudioBuffer {
     float right[BLOCK_SIZE];
 };
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-inline float32x4_t fast_tanh_neon(float32x4_t x) {
-    float32x4_t x2 = vmulq_f32(x, x);
-    float32x4_t num = vmulq_f32(x, vaddq_f32(vdupq_n_f32(27.0f), x2));
-    float32x4_t den = vaddq_f32(vdupq_n_f32(27.0f), vmulq_n_f32(x2, 9.0f));
-    float32x4_t rec = vrecpeq_f32(den);
-    rec = vmulq_f32(vrecpsq_f32(den, rec), rec);
-    return vmulq_f32(num, rec);
-}
-#else
-inline float fast_tanh_scalar(float x) {
-    float x2 = x * x;
-    return (x * (27.0f + x2)) / (27.0f + 9.0f * x2);
-}
-#endif
+class IvannaFusionCore {
+public:
+    IvannaFusionCore() = default;
+    virtual ~IvannaFusionCore() = default;
+
+    virtual void processBlock(AudioBuffer* buffer) { (void)buffer; }
+    virtual void setParameter(uint32_t paramId, float value) { (void)paramId; (void)value; }
+};
 
 class HrtfManager;
-class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
 
-class IvannaFusionEngine {
+class IvannaFusionEngine : public IvannaFusionCore {
 public:
     IvannaFusionEngine();
-    ~IvannaFusionEngine();
+    virtual ~IvannaFusionEngine();
 
     void runAcousticProfiling();
     void process(AudioBuffer* buffer);
-    void setGoldenEarMode(bool enable);
+
     IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
+
+    void processBlock(AudioBuffer* buffer) override { process(buffer); }
+    void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
 
 private:
     bool m_goldenEarActive = false;
     HrtfManager* m_hrtf = nullptr;
-    EvolutionaryEQ* m_evoEq = nullptr;
     Psychoacoustics* m_psycho = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
-
-    void applyGoldenEarGAN(AudioBuffer* buffer);
 };
 
 } // namespace Ivanna
