@@ -1,125 +1,207 @@
 import React from 'react';
-import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers } from 'lucide-react';
+import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw } from 'lucide-react';
+import { DspParameters } from '../types';
 
 interface HeaderProps {
-  activeTab: 'pipeline' | 'visualizer' | 'benchmarks' | 'code' | 'termux';
-  setActiveTab: (tab: 'pipeline' | 'visualizer' | 'benchmarks' | 'code' | 'termux') => void;
-  goldenEarEnabled: boolean;
-  onToggleGoldenEar: () => void;
+  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code';
+  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code') => void;
+  params: DspParameters;
+  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onApplyPreset: (presetName: DspParameters['activePreset']) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
-  goldenEarEnabled,
-  onToggleGoldenEar,
+  params,
+  onParamChange,
+  onApplyPreset,
 }) => {
   return (
-    <header id="header-container" className="border-b border-[#2A2D35] bg-[#12141A] sticky top-0 z-50 text-[#E0E0E0]">
-      {/* Top macOS-style Status Bar */}
-      <div className="flex flex-col md:flex-row items-center justify-between px-4 sm:px-6 py-2.5 bg-[#0F1116] border-b border-[#1E2128] gap-3">
-        <div className="flex items-center space-x-3 w-full md:w-auto justify-between md:justify-start">
+    <header id="header-container" className="border-b border-[#2A2D35] bg-[#101217] sticky top-0 z-50 text-[#E0E0E0] shadow-2xl">
+      {/* Top Engineering Status Bar */}
+      <div className="flex flex-col lg:flex-row items-center justify-between px-4 sm:px-6 py-2 bg-[#0A0C10] border-b border-[#1A1D24] gap-2 text-xs font-mono">
+        
+        {/* macOS Window Control & System Status */}
+        <div className="flex items-center space-x-3 w-full lg:w-auto justify-between lg:justify-start">
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 rounded-full bg-[#FF5F56] shadow-sm shadow-[#FF5F56]/50"></div>
             <div className="w-3 h-3 rounded-full bg-[#FFBD2E] shadow-sm shadow-[#FFBD2E]/50"></div>
             <div className="w-3 h-3 rounded-full bg-[#27C93F] shadow-sm shadow-[#27C93F]/50"></div>
-            <span className="ml-3 text-[11px] font-mono text-[#888] tracking-widest uppercase font-semibold">
-              IVANNA-FUSION v2.0 // DSP_ARCHITECT_MODE
+            <span className="ml-2 text-[10px] text-[#7E8B9B] tracking-widest uppercase font-semibold">
+              IVANNA-OMEGA-SUPREME // ANTI-DOLBY_NEURAL_KERNEL
             </span>
           </div>
 
-          {/* Golden Ear Quick Toggle */}
+          {/* Master Bypass Toggle Button */}
           <button
-            id="golden-ear-toggle-btn"
-            onClick={onToggleGoldenEar}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-[11px] font-mono font-bold transition-all border ${
-              goldenEarEnabled
-                ? 'bg-[#1E2229] border-[#FB923C] text-[#FB923C]'
-                : 'bg-[#161920] border-[#2A2D35] text-[#888] hover:text-[#CCC]'
+            onClick={() => onParamChange('masterBypass', !params.masterBypass)}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded text-[11px] font-mono font-bold transition-all border ${
+              !params.masterBypass
+                ? 'bg-[#18261E] border-[#4ADE80] text-[#4ADE80] shadow-sm shadow-[#4ADE80]/20'
+                : 'bg-[#2A181A] border-[#FF6188] text-[#FF6188] animate-pulse'
             }`}
           >
-            <Zap className={`w-3 h-3 ${goldenEarEnabled ? 'text-[#FB923C] animate-pulse' : ''}`} />
-            <span>GAN: {goldenEarEnabled ? 'ACTIVE' : 'BYPASS'}</span>
+            <Power className="w-3 h-3" />
+            <span>DSP KERNEL: {!params.masterBypass ? 'ACTIVE' : 'BYPASS'}</span>
           </button>
         </div>
 
-        <div className="flex items-center space-x-6 text-xs font-mono">
-          <div className="flex flex-col items-end hidden sm:flex">
-            <span className="text-[9px] text-[#555] uppercase tracking-wider font-bold">Target Architecture</span>
-            <span className="text-[11px] text-[#4ADE80] font-mono font-semibold">aarch64-v8a (NEON Enabled)</span>
+        {/* Preset Selector Badges */}
+        <div className="flex items-center space-x-1.5 overflow-x-auto py-1 lg:py-0 text-[11px]">
+          <span className="text-[#64748B] font-bold text-[10px] uppercase mr-1">Preset:</span>
+          {(
+            [
+              { id: 'anti_dolby_extreme', label: 'Anti-Dolby Max', color: 'border-[#38BDF8] text-[#38BDF8]' },
+              { id: 'audiophile', label: 'Audiophile 3D', color: 'border-[#A855F7] text-[#A855F7]' },
+              { id: 'bass_head', label: 'Bass Harmonic', color: 'border-[#F97316] text-[#F97316]' },
+              { id: 'vocal_protect', label: 'Vocal Protect', color: 'border-[#4ADE80] text-[#4ADE80]' },
+              { id: 'gaming_spatial', label: 'Gaming 3D', color: 'border-[#F59E0B] text-[#F59E0B]' },
+              { id: 'evo_cma_es', label: 'Evolutive CMA', color: 'border-[#EC4899] text-[#EC4899]' },
+              { id: 'custom', label: 'Custom', color: 'border-[#64748B] text-[#94A3B8]' },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onApplyPreset(p.id)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border shrink-0 ${
+                params.activePreset === p.id
+                  ? 'bg-[#1E2330] font-black underline shadow-sm'
+                  : 'bg-[#12151C] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1]'
+              } ${params.activePreset === p.id ? p.color : ''}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Target Specs & Heap Zero Monitor */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-1.5 text-[11px] text-[#A0AEC0]">
+            <span className="text-[#64748B]">ARCH:</span>
+            <span className="text-[#38BDF8] font-bold">aarch64-v8a</span>
           </div>
 
-          <div className="flex items-center space-x-2 px-3 py-1 bg-[#1A1D23] border border-[#2A2D35] rounded text-[11px]">
+          <div className="flex items-center space-x-1.5 px-2.5 py-0.5 bg-[#141822] border border-[#232936] rounded text-[11px]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#4ADE80]" />
-            <span className="text-[#888]">Heap:</span>
-            <span className="text-[#4ADE80] font-bold">0.00 B</span>
+            <span className="text-[#64748B]">Heap Alloc:</span>
+            <span className="text-[#4ADE80] font-bold">0.0 B</span>
           </div>
 
           <button
-            onClick={() => setActiveTab('termux')}
-            className="px-3 py-1 bg-[#1E2229] border border-[#3A3F4B] text-[#CCC] hover:text-white text-[11px] font-mono font-bold rounded hover:bg-[#2A2F3A] transition-colors"
+            onClick={() => setActiveTab('code')}
+            className="px-2.5 py-1 bg-[#1A202C] border border-[#2D3748] text-[#E2E8F0] hover:text-white text-[10px] font-bold rounded hover:bg-[#2D3748] transition-colors uppercase tracking-wider"
           >
-            BUILD & RELEASE
+            Termux Patch
           </button>
         </div>
+
       </div>
 
-      {/* Main Header Brand & Navigation */}
+      {/* Main Header Brand Title & Navigation Tabs */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        
+        {/* Brand & Kernel Badge */}
         <div className="flex items-center space-x-3">
-          <div className="p-2 rounded-lg bg-[#161920] border border-[#2A2D35] text-[#4ADE80]">
+          <div className="p-2 rounded-lg bg-[#141A24] border border-[#232D3F] text-[#38BDF8]">
             <Cpu className="w-5 h-5 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-base font-bold text-white font-mono tracking-wide">
-                IVANNA-OMEGA-SUPREME <span className="text-[#4ADE80] text-xs">v2.0</span>
+              <h1 className="text-base font-bold text-white font-mono tracking-wide flex items-center gap-2">
+                IVANNA-OMEGA-SUPREME <span className="text-[#38BDF8] text-xs">v2.0</span>
               </h1>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-[#1A1D23] text-[#4ADE80] border border-[#2A2D35] font-mono font-bold">
-                C++17 Kernel
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#182230] text-[#38BDF8] border border-[#243346] font-mono font-bold">
+                Lock-Free SPSC DSP Kernel
               </span>
             </div>
-            <p className="text-[11px] text-[#888] font-mono">
-              TinyML Anti-Dolby Neural DSP • Magisk Android Daemon
+            <p className="text-[11px] text-[#64748B] font-mono">
+              TinyML ConvNeXt Audio Classifier • 512-Band CMA-ES FIR EQ • 3D HRTF Stage
             </p>
           </div>
         </div>
 
-        {/* Workspace Navigation Tabs */}
-        <nav id="header-nav-tabs" className="flex space-x-1 overflow-x-auto font-mono text-xs pb-1 md:pb-0">
+        {/* Primary Tab Navigation */}
+        <nav id="header-nav-tabs" className="flex items-center space-x-1 overflow-x-auto font-mono text-xs pb-1 md:pb-0 scrollbar-none">
+          
           <button
-            id="tab-pipeline-btn"
-            onClick={() => setActiveTab('pipeline')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-medium transition-all border ${
-              activeTab === 'pipeline'
-                ? 'bg-[#1A1D23] border-[#4ADE80] text-[#4ADE80] font-bold'
-                : 'bg-[#12141A] border-[#1E2128] text-[#888] hover:text-[#CCC] hover:bg-[#161920]'
+            onClick={() => setActiveTab('master')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'master'
+                ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Topology Pipeline</span>
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Master Control</span>
           </button>
 
           <button
-            id="tab-visualizer-btn"
+            onClick={() => setActiveTab('tinyml')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'tinyml'
+                ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-[#38BDF8]" />
+            <span>TinyML ConvNeXt</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('evo_eq')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'evo_eq'
+                ? 'bg-[#182230] border-[#4ADE80] text-[#4ADE80] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Waves className="w-3.5 h-3.5 text-[#4ADE80]" />
+            <span>512-Band CMA-ES</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('spatial')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'spatial'
+                ? 'bg-[#182230] border-[#A855F7] text-[#A855F7] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-[#A855F7]" />
+            <span>3D HRTF Stage</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('golden_ear')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'golden_ear'
+                ? 'bg-[#182230] border-[#F97316] text-[#F97316] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#F97316]" />
+            <span>Golden Ear GAN</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('visualizer')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-medium transition-all border ${
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'visualizer'
-                ? 'bg-[#1A1D23] border-[#4ADE80] text-[#4ADE80] font-bold'
-                : 'bg-[#12141A] border-[#1E2128] text-[#888] hover:text-[#CCC] hover:bg-[#161920]'
+                ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Audio & FFT Spectrum</span>
+            <Radio className="w-3.5 h-3.5" />
+            <span>FFT & Oscilloscope</span>
           </button>
 
           <button
-            id="tab-benchmarks-btn"
             onClick={() => setActiveTab('benchmarks')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-medium transition-all border ${
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'benchmarks'
-                ? 'bg-[#1A1D23] border-[#4ADE80] text-[#4ADE80] font-bold'
-                : 'bg-[#12141A] border-[#1E2128] text-[#888] hover:text-[#CCC] hover:bg-[#161920]'
+                ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
@@ -127,33 +209,20 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <button
-            id="tab-code-btn"
             onClick={() => setActiveTab('code')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-medium transition-all border ${
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'code'
-                ? 'bg-[#1A1D23] border-[#4ADE80] text-[#4ADE80] font-bold'
-                : 'bg-[#12141A] border-[#1E2128] text-[#888] hover:text-[#CCC] hover:bg-[#161920]'
+                ? 'bg-[#182230] border-[#F59E0B] text-[#F59E0B] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>C++ & Magisk Code</span>
+            <Terminal className="w-3.5 h-3.5 text-[#F59E0B]" />
+            <span>C++ Code & Termux</span>
           </button>
 
-          <button
-            id="tab-termux-btn"
-            onClick={() => setActiveTab('termux')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-medium transition-all border ${
-              activeTab === 'termux'
-                ? 'bg-[#1A1D23] border-[#FB923C] text-[#FB923C] font-bold'
-                : 'bg-[#12141A] border-[#1E2128] text-[#888] hover:text-[#CCC] hover:bg-[#161920]'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5 text-[#FB923C]" />
-            <span>Termux Installer</span>
-          </button>
         </nav>
+
       </div>
     </header>
   );
 };
-

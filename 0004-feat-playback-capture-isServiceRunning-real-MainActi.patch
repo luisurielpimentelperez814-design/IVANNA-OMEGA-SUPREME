@@ -1,0 +1,86 @@
+From 1394030bba407e9d1b2925860e5b390ecbbd823b Mon Sep 17 00:00:00 2001
+From: "Gore TNS (audit session)" <gore-tns@ivanna-omega.local>
+Date: Wed, 22 Jul 2026 22:45:24 +0000
+Subject: [PATCH 4/5] =?UTF-8?q?feat(playback-capture):=20isServiceRunning?=
+ =?UTF-8?q?=20real=20=E2=80=94=20MainActivity=20ya=20no=20asume=20"detenid?=
+ =?UTF-8?q?o"=20a=20ciegas?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Rescatado de un archivo que Luis pego encima por error (version vieja que
+revertia el fix del crash de MediaProjection + el wiring de VoiceController
+— eso se descarto). Esta pieza si era trabajo nuevo legitimo, reaplicada
+limpia sobre la version buena:
+
+- PlaybackCaptureService.isServiceRunning: bandera estatica @Volatile,
+  true mientras la captura corre de verdad (tras startCapture()), false
+  en onDestroy().
+- MainActivity.captureServiceRunning ahora arranca con ese valor real en
+  vez de hardcodear false — si la Activity se recrea (rotacion, proceso
+  restaurado) con el servicio ya vivo de antes, la UI ya no miente
+  "detenido".
+
+No toca nada del fix de startForeground()/getMediaProjection() ni del
+wiring de VoiceController — ambos verificados intactos antes de comitear.
+---
+ app/src/main/java/com/ivanna/omega/MainActivity.kt  |  6 +++++-
+ .../ivanna/omega/audio/PlaybackCaptureService.kt    | 13 +++++++++++++
+ 2 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index 7912336..44bfb0d 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -159,7 +159,11 @@ class MainActivity : ComponentActivity() {
+     // captura corre siempre en segundo plano; el visualizer sólo controla
+     // si se MUESTRA la UI, no si la captura está activa.
+     private var showVisualizer by mutableStateOf(false)
+-    private var captureServiceRunning by mutableStateOf(false)
++    // FIX: antes asumía siempre false — si la Activity se recrea (rotación,
++    // proceso restaurado en segundo plano) mientras PlaybackCaptureService
++    // sigue vivo de una sesión previa, la UI mentía "detenido" con el
++    // servicio realmente corriendo. Ahora arranca con el estado real.
++    private var captureServiceRunning by mutableStateOf(PlaybackCaptureService.isServiceRunning)
+     private var showAdaptive by mutableStateOf(false)
+     private var showProfiles by mutableStateOf(false)
+     private var showMagisk by mutableStateOf(false)
+diff --git a/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt b/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt
+index 16882b2..9b3cbc8 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt
+@@ -72,6 +72,17 @@ class PlaybackCaptureService : Service() {
+         // así que hace falta decimar 3:1 antes de acumular la ventana.
+         private const val VOICE_DECIMATION = 3          // 48000 / 16000
+         private const val VOICE_WINDOW_SAMPLES = 15600  // = YamnetClassifier.INPUT_LENGTH
++
++        // FIX: MainActivity necesita saber si el servicio YA está corriendo
++        // al recrearse la Activity (rotación, proceso recreado en segundo
++        // plano, etc.) — antes asumía siempre false, así que un
++        // captureServiceRunning=false en la UI podía mentir mientras el
++        // servicio seguía vivo de una sesión previa. @Volatile porque se
++        // lee desde el hilo principal (MainActivity) y se escribe desde
++        // el ciclo de vida del Service (que puede correr en otro hilo).
++        @Volatile
++        var isServiceRunning: Boolean = false
++            private set
+     }
+ 
+     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+@@ -135,11 +146,13 @@ class PlaybackCaptureService : Service() {
+         }
+ 
+         startCapture(mediaProjection)
++        isServiceRunning = true
+ 
+         return START_STICKY
+     }
+ 
+     override fun onDestroy() {
++        isServiceRunning = false
+         stopCapture()
+         super.onDestroy()
+     }
+-- 
+2.43.0
+

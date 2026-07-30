@@ -1,0 +1,36 @@
+From 954aa24f0df7beb219e20ecaacf64a64fdc3fb63 Mon Sep 17 00:00:00 2001
+From: Gore TNS <gore-tns@local>
+Date: Mon, 27 Jul 2026 00:17:19 +0000
+Subject: [PATCH] fix(imports): corregir paquete de IvannaAudioProfile en
+ ProfileManagerIntegrationExample.kt
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- import com.ivanna.omega.ui.IvannaAudioProfile -> com.ivanna.omega.audio.IvannaAudioProfile
+- La clase está definida en audio/ProfilesLoader.kt:25, no en ui/.
+- Bug preexistente, no relacionado al fix del Punto 1, pero bloqueaba
+  compileDebugKotlin (2 unresolved reference) según CI run tras el push
+  del Punto 1.
+
+Fix de compilación / Punto 1 (seguimiento).
+---
+ .../java/com/ivanna/omega/ProfileManagerIntegrationExample.kt   | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/ProfileManagerIntegrationExample.kt b/app/src/main/java/com/ivanna/omega/ProfileManagerIntegrationExample.kt
+index 2f28132..45ef641 100644
+--- a/app/src/main/java/com/ivanna/omega/ProfileManagerIntegrationExample.kt
++++ b/app/src/main/java/com/ivanna/omega/ProfileManagerIntegrationExample.kt
+@@ -8,7 +8,7 @@ import com.ivanna.omega.audio.AudioProfile
+ import com.ivanna.omega.audio.ProfileManager
+ import com.ivanna.omega.audio.ProfilesLoader
+ import com.ivanna.omega.dsp.DSPState
+-import com.ivanna.omega.ui.IvannaAudioProfile
++import com.ivanna.omega.audio.IvannaAudioProfile
+ 
+ /**
+  * ProfileManagerBridge — Puente real entre ProfileManager (legacy JSON)
+-- 
+2.43.0
+

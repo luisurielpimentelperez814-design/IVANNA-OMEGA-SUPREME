@@ -1,0 +1,5 @@
+if(EXISTS "/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/no_denormals_low_level[1]_tests.cmake")
+  include("/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/no_denormals_low_level[1]_tests.cmake")
+else()
+  add_test(no_denormals_low_level_NOT_BUILT no_denormals_low_level_NOT_BUILT)
+endif()

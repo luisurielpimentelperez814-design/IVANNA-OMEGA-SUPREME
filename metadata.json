@@ -1,0 +1,6 @@
+{
+  "name": "IVANNA-OMEGA-SUPREME v2.0 Control Dashboard",
+  "description": "Master Control Station for IVANNA-OMEGA-SUPREME Android Magisk Anti-Dolby Neural DSP Kernel & TinyML ConvNeXt Audio Classifier.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

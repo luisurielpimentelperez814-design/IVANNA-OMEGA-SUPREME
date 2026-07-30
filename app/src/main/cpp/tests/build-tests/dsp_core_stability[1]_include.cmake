@@ -1,0 +1,5 @@
+if(EXISTS "/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/dsp_core_stability[1]_tests.cmake")
+  include("/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/dsp_core_stability[1]_tests.cmake")
+else()
+  add_test(dsp_core_stability_NOT_BUILT dsp_core_stability_NOT_BUILT)
+endif()

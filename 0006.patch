@@ -1,0 +1,219 @@
+From d8088e8f145bbf0dfe8ae9abb022d5e8be81f60e Mon Sep 17 00:00:00 2001
+From: Gore TNS <gore-tns@local>
+Date: Wed, 29 Jul 2026 03:45:27 +0000
+Subject: [PATCH] =?UTF-8?q?fix(lifecycle):=20persistencia=20de=20sliders?=
+ =?UTF-8?q?=20+=20exenci=C3=B3n=20de=20bater=C3=ADa?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Diagnóstico de 3 síntomas reportados: 'adaptativo se detiene', 'bridge
+se detiene al cambiar de ventana', 'no persisten los sliders'.
+
+Causa raíz (2 problemas independientes que se potencian):
+
+1. Cero persistencia: dsp = remember { mutableStateOf(DSPState()) } en
+   MainActivity vivía solo en memoria de Compose. No había
+   SharedPreferences/DataStore en ningún lado del proyecto para el estado
+   de sliders. Si el proceso moría en background, todo volvía a defaults.
+
+2. Cero exención de batería: la app nunca pedía
+   IGNORE_BATTERY_OPTIMIZATIONS. En Motorola, la gestión de batería
+   adaptativa mata procesos en background agresivamente pese a tener un
+   foreground service activo, salvo que la app esté en lista blanca.
+
+Fix:
+- DSPStatePrefs.kt (nuevo): load()/save() sobre SharedPreferences. save()
+  se llama UNA vez en ON_STOP (DisposableEffect + LifecycleEventObserver
+  en OmegaApp()), no en cada tick de slider — mismo motivo que el fix
+  previo de pushToNative() (SharedPreferences.apply() ya es async, pero
+  evita I/O repetido innecesario de todos modos).
+- MainActivity.kt: dsp ahora carga DSPStatePrefs.load(context) en vez de
+  DSPState() default. onCreate() pide ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+  una sola vez (flag persistido, no insiste en cada apertura si el
+  usuario la rechaza).
+- AndroidManifest.xml: permiso REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
+
+Nota: el desfase de volumen / retraso / clipping digital entre Ivanna y
+apps externas (Tidal, etc.) reportado en el mismo mensaje es un problema
+de dominio distinto (buffers/gain staging del pipeline de audio, no
+ciclo de vida) — queda pendiente de auditoría separada.
+---
+ app/src/main/AndroidManifest.xml              |  4 +
+ .../java/com/ivanna/omega/MainActivity.kt     | 41 +++++++++-
+ .../com/ivanna/omega/dsp/DSPStatePrefs.kt     | 74 +++++++++++++++++++
+ 3 files changed, 117 insertions(+), 2 deletions(-)
+ create mode 100644 app/src/main/java/com/ivanna/omega/dsp/DSPStatePrefs.kt
+
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 40a05ca..e8350ef 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -11,6 +11,10 @@
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
++    <!-- FIX (crash reportado: "adaptativo se detiene / bridge se detiene al
++         cambiar de ventana"): sin esto, Motorola mata el proceso en background
++         pese al foreground service. Pide exención al usuario (ver MainActivity). -->
++    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+ 
+     <!-- Módulo Magisk: leer metadata de sesiones de audio activas (Spotify, Tidal, etc.) -->
+     <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"/>
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index c0854c3..85654e7 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -37,6 +37,9 @@ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import androidx.lifecycle.viewmodel.compose.viewModel
++import androidx.lifecycle.Lifecycle
++import androidx.lifecycle.LifecycleEventObserver
++import androidx.compose.ui.platform.LocalLifecycleOwner
+ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
+ import androidx.navigation.compose.rememberNavController
+@@ -61,6 +64,7 @@ import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.OmegaEngine
+import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.dsp.DSPState
++import com.ivanna.omega.dsp.DSPStatePrefs
+import android.app.Activity
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
+@@ -117,6 +121,25 @@ class MainActivity : ComponentActivity() {
+             // lanzado (guard compare_exchange_strong en pd_engine.hpp:216).
+             IvannaNativeLib.nativeStartEvoThread()
+         }
++        // FIX (crash reportado: "adaptativo se detiene / bridge se detiene
++        // al cambiar de ventana"): sin exención de batería, Motorola mata
++        // el proceso en background pese al foreground service. Se pide una
++        // sola vez (flag en SharedPreferences) para no ser invasivo en cada
++        // apertura — si el usuario la rechaza, no se vuelve a insistir salvo
++        // que reinstale la app.
++        val prefs = getSharedPreferences("ivanna_app_prefs", MODE_PRIVATE)
++        if (!prefs.getBoolean("battery_exemption_asked", false)) {
++            val pm = getSystemService(android.os.PowerManager::class.java)
++            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
++                runCatching {
++                    startActivity(Intent(
++                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
++                        Uri.parse("package:$packageName")
++                    ))
++                }
++            }
++            prefs.edit().putBoolean("battery_exemption_asked", true).apply()
++        }
+         setContent { OmegaApp() }
+     }
+ 
+@@ -132,9 +155,23 @@ class MainActivity : ComponentActivity() {
+ @Composable
+ fun OmegaApp() {
+     val nav = rememberNavController()
+-    val dsp = remember { mutableStateOf(DSPState()) }
++    val context = LocalContext.current
++    // FIX (crash reportado: sliders no persisten): antes DSPState() siempre
++    // arrancaba en sus defaults. Ahora carga el último valor guardado — ver
++    // DSPStatePrefs. El guardado ocurre en ON_STOP más abajo, no en cada
++    // tick de slider (mismo motivo que el fix de pushToNative()).
++    val dsp = remember { mutableStateOf(DSPStatePrefs.load(context)) }
++    val lifecycleOwner = LocalLifecycleOwner.current
++    DisposableEffect(lifecycleOwner, dsp) {
++        val observer = LifecycleEventObserver { _, event ->
++            if (event == Lifecycle.Event.ON_STOP) {
++                DSPStatePrefs.save(context, dsp.value)
++            }
++        }
++        lifecycleOwner.lifecycle.addObserver(observer)
++        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
++    }
+     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
+-        val context = LocalContext.current
+         // Launcher MediaProjection para PlaybackCaptureService
+         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
+         // FIX (audit): estado global — visible por DashboardScreen para
+diff --git a/app/src/main/java/com/ivanna/omega/dsp/DSPStatePrefs.kt b/app/src/main/java/com/ivanna/omega/dsp/DSPStatePrefs.kt
+new file mode 100644
+index 0000000..37365fa
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/dsp/DSPStatePrefs.kt
+@@ -0,0 +1,74 @@
++package com.ivanna.omega.dsp
++
++import android.content.Context
++
++/**
++ * Persistencia de DSPState (sliders del panel principal) entre sesiones.
++ *
++ * FIX (crash reportado: "no persisten los cambios en los sliders ni ningún
++ * cambio"): dsp = remember { mutableStateOf(DSPState()) } en MainActivity
++ * vivía solo en memoria de Compose — sin ningún SharedPreferences/DataStore
++ * en todo el proyecto. Si el proceso moría en segundo plano (ver también el
++ * fix de battery optimization exemption) o la Activity se recreaba, todos
++ * los sliders volvían a los valores por defecto de DSPState().
++ *
++ * save() se llama UNA vez al pasar a segundo plano (ON_STOP del lifecycle
++ * de la composable, ver OmegaApp() en MainActivity.kt) — nunca en cada tick
++ * de slider, para no repetir el mismo error de I/O síncrono en el hilo
++ * principal que ya se corrigió en DSPState.pushToNative().
++ */
++object DSPStatePrefs {
++    private const val PREFS_NAME = "ivanna_dsp_state"
++
++    fun load(context: Context): DSPState {
++        val p = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
++        val default = DSPState()
++        return DSPState(
++            drive          = p.getFloat("drive", default.drive),
++            wet            = p.getFloat("wet", default.wet),
++            mix            = p.getFloat("mix", default.mix),
+             alpha          = p.getFloat("alpha", default.alpha),
+             beta           = p.getFloat("beta", default.beta),
+             gamma          = p.getFloat("gamma", default.gamma),
+             freq           = p.getFloat("freq", default.freq),
+             resonance      = p.getFloat("resonance", default.resonance),
+             low            = p.getFloat("low", default.low),
+             mid            = p.getFloat("mid", default.mid),
+             high           = p.getFloat("high", default.high),
+             presence       = p.getFloat("presence", default.presence),
+             master         = p.getFloat("master", default.master),
+             compThreshold  = p.getFloat("compThreshold", default.compThreshold),
+             compRatio      = p.getFloat("compRatio", default.compRatio),
+             exciterDrive   = p.getFloat("exciterDrive", default.exciterDrive),
+             stereoWidth    = p.getFloat("stereoWidth", default.stereoWidth),
+             makeupGain     = p.getFloat("makeupGain", default.makeupGain),
+             bypass         = p.getBoolean("bypass", default.bypass)
+         )
+     }
+
+     /** Debe llamarse desde un hilo de background (IVANNAApplication.appScope, Dispatchers.IO). */
+     fun save(context: Context, state: DSPState) {
+         val p = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+         p.edit()
+             .putFloat("drive", state.drive)
+             .putFloat("wt", state.wet)
+             .putFloat("mix", state.mix)
+             .putFloat("alpha", state.alpha)
+             .putFloat("beta", state.beta)
+             .putFloat("gamma", state.gamma)
+             .putFloat("freq", state.freq)
+             .putFloat("resonance", state.resonance)
+             .putFloat("low", state.low)
+             .putFloat("mid", state.mid)
+             .putFloat("high", state.high)
+             .putFloat("presence", state.presence)
+             .putFloat("master", state.master)
+             .putFloat("compThreshold", state.compThreshold)
+             .putFloat("compRatio", state.compRatio)
+             .putFloat("exciterDrive", state.exciterDrive)
+             .putFloat("stereoWidth", state.stereoWidth)
+             .putFloat("makeupGain", state.makeupGain)
+             .putBoolean("bypass", state.bypass)
+             .apply()
+     }
+}
+-- 
+2.43.0
+

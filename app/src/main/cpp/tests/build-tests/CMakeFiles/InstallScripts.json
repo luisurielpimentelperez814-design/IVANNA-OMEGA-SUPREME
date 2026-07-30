@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/cmake_install.cmake",
+		"/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/_deps/googletest-build/cmake_install.cmake",
+		"/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/_deps/googletest-build/googlemock/cmake_install.cmake",
+		"/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/_deps/googletest-build/googletest/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

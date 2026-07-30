@@ -1,0 +1,3 @@
+add_test([=[NoDenormalsLowLevel.TinySignalStaysFiniteAndNotSubnormal]=]  /data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/no_denormals_low_level [==[--gtest_filter=NoDenormalsLowLevel.TinySignalStaysFiniteAndNotSubnormal]==] --gtest_also_run_disabled_tests)
+set_tests_properties([=[NoDenormalsLowLevel.TinySignalStaysFiniteAndNotSubnormal]=]  PROPERTIES DEF_SOURCE_LINE /data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/no_denormals_low_level.cpp:18 WORKING_DIRECTORY /data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests SKIP_REGULAR_EXPRESSION [==[\[  SKIPPED \]]==])
+set(  no_denormals_low_level_TESTS NoDenormalsLowLevel.TinySignalStaysFiniteAndNotSubnormal)

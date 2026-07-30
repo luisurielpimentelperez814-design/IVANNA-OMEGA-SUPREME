@@ -1,0 +1,63 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/data/data/com.termux/files/usr/share/cmake-4.3/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:16 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/data/data/com.termux/files/home/jdk-17.0.9+9/bin/"
+      - "/data/data/com.termux/files/home/Android/Sdk/cmdline-tools/latest/bin/"
+      - "/data/data/com.termux/files/usr/bin/"
+      - "/product/bin/"
+      - "/apex/com.android.runtime/bin/"
+      - "/apex/com.android.art/bin/"
+      - "/system_ext/bin/"
+      - "/system/bin/"
+      - "/system/xbin/"
+      - "/odm/bin/"
+      - "/vendor/bin/"
+      - "/vendor/xbin/"
+      - "/bin/"
+      - "/usr/bin/"
+      - "/usr/local/bin/"
+    searched_directories:
+      - "/data/data/com.termux/files/home/jdk-17.0.9+9/bin/uname"
+      - "/data/data/com.termux/files/home/Android/Sdk/cmdline-tools/latest/bin/uname"
+    found: "/data/data/com.termux/files/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/data/data/com.termux/files/home/jdk-17.0.9+9/bin"
+        - "/data/data/com.termux/files/home/Android/Sdk/cmdline-tools/latest/bin"
+        - "/data/data/com.termux/files/usr/bin"
+        - "/product/bin"
+        - "/apex/com.android.runtime/bin"
+        - "/apex/com.android.art/bin"
+        - "/system_ext/bin"
+        - "/system/bin"
+        - "/system/xbin"
+        - "/odm/bin"
+        - "/vendor/bin"
+        - "/vendor/xbin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/data/data/com.termux/files/usr/share/cmake-4.3/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:16 (project)"
+    message: |
+      The system is: Android - 35 - aarch64
+...

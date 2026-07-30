@@ -1,0 +1,72 @@
+From 7e339175627a2678616b31645653460fe1b80f1c Mon Sep 17 00:00:00 2001
+From: "Gore TNS (audit session)" <gore-tns@ivanna-omega.local>
+Date: Tue, 21 Jul 2026 05:49:57 +0000
+Subject: [PATCH 1/3] fix(pi-lstm): bypass seguro en HRTFReflectionEngine
+ cuando no hay coeficientes reales
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+hrtf_L[]/hrtf_R[]/gains[] nunca se llenaban en ningún punto del proyecto —
+ni init() con datos reales, ni un setter de coeficientes. En la instancia
+global (g_piLstmBridge) quedan en CERO por ser static storage. Con
+enabled=true por defecto, process() calculaba cL=cR=0 (convolución con
+kernel nulo) y sumaba reflexiones con gains[i]=0: la etapa entera ponía
+la señal completa en silencio sin ningún error — una mina lista para
+detonar el día que alguien conecte PILSTMMilenioEngine al pipeline en vivo
+(hoy process_block() no se llama desde ningún lado; motor real pero
+100% desconectado, confirmado por auditoría).
+
+Fix: bandera coeffs_ready (mismo patrón que m_kernels_ready en
+VolterraH2Symmetric) + set_hrtf_coefficients(). process() hace bypass
+(pass-through fiel) mientras no haya coeficientes reales cargados, en vez
+de fingir estar listo. Validado con test standalone: bypass preserva la
+señal (oL/oR != 0 con DC de entrada tras el transitorio del FIR), y con
+coeficientes reales la salida cambia de forma consistente.
+---
+ .../main/cpp/neuromorphic/pi_lstm_milenio.hpp | 22 ++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/main/cpp/neuromorphic/pi_lstm_milenio.hpp b/app/src/main/cpp/neuromorphic/pi_lstm_milenio.hpp
+index bd5273a..e56a797 100644
+--- a/app/src/main/cpp/neuromorphic/pi_lstm_milenio.hpp
++++ b/app/src/main/cpp/neuromorphic/pi_lstm_milenio.hpp
+@@ -188,6 +188,26 @@ struct HRTFReflectionEngine {
+     float gains[N_REFL];
+     bool enabled = true;
+ 
++    // AUDIT FIX (crítico, silencio silencioso): hrtf_L/hrtf_R y gains[] nunca
++    // se llenaban en ningún punto del proyecto (nadie llama a init() ni a un
++    // setter de coeficientes) — en la instancia global (g_piLstmBridge) quedan
++    // en CERO por ser static storage. Con enabled=true por defecto y kernel
++    // nulo, process() calculaba cL=cR=0 y sumaba reflexiones con gains[i]=0:
++    // la etapa entera ponía la señal completa en silencio sin ningún error,
++    // el día que alguien active este motor en el pipeline en vivo. Se añade
++    // `coeffs_ready`, en el mismo espíritu que `m_kernels_ready` en
++    // VolterraH2Symmetric: mientras no se hayan cargado coeficientes reales
++    // vía set_hrtf_coefficients(), process() hace bypass (pass-through)
++    // en vez de fingir estar listo.
++    bool coeffs_ready = false;
++
++    void set_hrtf_coefficients(const float* hL, const float* hR) noexcept {
++        if (!hL || !hR) return;
++        memcpy(hrtf_L, hL, sizeof(hrtf_L));
++        memcpy(hrtf_R, hR, sizeof(hrtf_R));
++        coeffs_ready = true;
++    }
++
+     void init(const float ds[N_REFL], const float gs[N_REFL]) noexcept {
+         for (int i = 0; i < N_REFL; ++i) {
+             delays_smp[i] = (int)(ds[i] * FS_BASE);
+@@ -202,7 +222,7 @@ struct HRTFReflectionEngine {
+     }
+ 
+     void process(float L, float R, float& oL, float& oR) {
+-        if (!enabled) { oL = L; oR = R; return; }
++        if (!enabled || !coeffs_ready) { oL = L; oR = R; return; }
+ 
+         hbufL[hhead] = L;
+         hbufR[hhead] = R;
+-- 
+2.43.0
+

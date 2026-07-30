@@ -1,0 +1,209 @@
+From ae826c275a5de318cc46c0c312081fd50da81e12 Mon Sep 17 00:00:00 2001
+From: Gore TNS <luis@gore-tns.dev>
+Date: Sat, 25 Jul 2026 06:51:03 +0000
+Subject: [PATCH] =?UTF-8?q?fix(ui):=20montar=20la=20interfaz=20real=20(Iva?=
+ =?UTF-8?q?nnaControlPanel=20v3.0)=20=E2=80=94=20la=20pantalla=20vieja=20e?=
+ =?UTF-8?q?ra=20un=20placeholder=20hu=C3=A9rfano?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- IvannaControlPanel.kt (517 líneas, v3.0 completo) nunca se invocaba desde
+  ningún lado del código (confirmado por grep) — DashboardScreen mostraba
+  bloques DspSection crudos residuales que quedaron como única pantalla
+  real por accidente.
+- MainActivity.kt: DashboardScreen ahora monta IvannaControlPanel.
+  exciter/eq/width/threshold/ratio cableados a los campos de DSPState que
+  YA llegan al motor nativo vía pushToNative() (mismo mapeo documentado
+  ahí: wet=exciter, low=mid=high=presence=eq en dB, stereoWidth,
+  alpha=threshold, beta=ratio).
+- Ruta "adaptive" registrada en el NavHost (faltaba — PUNTO 1/PUNTO 2 en
+  comentarios viejos del archivo): el botón ACTIVAR llamaba
+  nav.navigate("adaptive") desde hace tiempo pero esa ruta no existía,
+  así que crasheaba/no hacía nada. Ahora monta AdaptiveEngineScreen con
+  un VoiceProtectionManager(ParameterStore(context)).
+- Bloques DspSection/FaderControl/EqFader viejos quedan sin uso (no se
+  borran — son la referencia de mapeo si falta cablear NHO/Spatial/NPE/Evo
+  en un commit aparte).
+
+NOTA: onOpenVisualizer/onOpenProfiles/onOpenMagisk/NHO/Spatial/NPE/Evo/
+Anti-Dolby/Adaptive Control Center quedan con su default no-op — cablearlos
+de verdad requiere auditar cada motor por separado, no se improvisa.
+---
+ .../java/com/ivanna/omega/MainActivity.kt     | 140 +++++++-----------
+ 1 file changed, 52 insertions(+), 88 deletions(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index 0e934ae..2f4d0a9 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -33,6 +33,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
+ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
+ import androidx.navigation.compose.rememberNavController
++import com.ivanna.omega.audio.VoiceProtectionManager
++import com.ivanna.omega.core.ParameterStore
++import com.ivanna.omega.ui.AdaptiveEngineScreen
++import com.ivanna.omega.ui.IvannaControlPanel
+ import com.ivanna.omega.core.OmegaEngine
+ import com.ivanna.omega.dsp.DSPBridge
+ import com.ivanna.omega.dsp.DSPState
+@@ -70,11 +74,25 @@ fun OmegaApp() {
+     val nav = rememberNavController()
+     val dsp = remember { mutableStateOf(DSPState()) }
+     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
+-        // ← PUNTO 1: Agregar ruta "adaptive" al NavHost
+         NavHost(nav, startDestination = "splash") {
+             composable("splash") { SplashScreen { nav.navigate("intro") } }
+             composable("intro") { IntroScreen { nav.navigate("dashboard") } }
+             composable("dashboard") { DashboardScreen(dsp, nav) }
++            // FIX (PUNTO 1 — ruta faltante): el botón "ACTIVAR" de
++            // DashboardScreen ya llamaba nav.navigate("adaptive") desde
++            // hace tiempo (ver PUNTO 2 abajo), pero esa ruta nunca se
++            // registró aquí — la navegación fallaba silenciosamente/
++            // crasheaba (IllegalArgumentException: destino "adaptive" no
++            // encontrado). AdaptiveEngineScreen necesita un
++            // VoiceProtectionManager; se construye aquí con ParameterStore
++            // igual que en el resto de la app (ver ParameterStore.kt).
++            composable("adaptive") {
++                val ctx = LocalContext.current
++                val voiceProtectionManager = remember {
++                    VoiceProtectionManager(ParameterStore(ctx))
++                }
++                AdaptiveEngineScreen(voiceProtectionManager)
++            }
+         }
+     }
+ }
+@@ -198,96 +216,42 @@ fun DashboardScreen(dsp: MutableState<DSPState>, nav: androidx.navigation.NavHos
+             }
+         }
+ 
+-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp),
+-            verticalArrangement = Arrangement.spacedBy(8.dp),
+-            contentPadding = PaddingValues(vertical = 10.dp)) {
+-
+-            item {
+-                DspSection("GAIN STAGE") {
+-                    FaderControl("DRIVE", dsp.value.drive, "Saturación") { dsp.value = dsp.value.copy(drive = it); dsp.value.pushToNative() }
+-                    FaderControl("WET", dsp.value.wet, "Señal proc.") { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() }
+-                    FaderControl("MIX", dsp.value.mix, "Seca/Húmeda") { dsp.value = dsp.value.copy(mix = it); dsp.value.pushToNative() }
+-                }
+-            }
+-            item {
+-                DspSection("DSP ENGINE α·β·γ") {
+-                    FaderControl("ALPHA", dsp.value.alpha, "Compresor") { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() }
+-                    FaderControl("BETA", dsp.value.beta, "Ratio") { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() }
+-                    FaderControl("GAMMA", dsp.value.gamma, "Width") { dsp.value = dsp.value.copy(gamma = it); dsp.value.pushToNative() }
+-                    val freqSl = remember(dsp.value.freq) {
+-                        (log10(dsp.value.freq.toDouble() / 20.0) / log10(1000.0)).toFloat().coerceIn(0f, 1f)
+-                    }
+-                    FaderControl("FREQ", freqSl, "${dsp.value.freq.toInt()}Hz") {
+-                        dsp.value = dsp.value.copy(freq = DSPState.sliderToFreq(it)); dsp.value.pushToNative()
+-                        dsp.value.pushToNative()
+-                    }
+-                      val qSl = remember(dsp.value.resonance) {
+-                          (log10(dsp.value.resonance.toDouble() / 0.1) / log10(100.0)).toFloat().coerceIn(0f, 1f)
+-                      }
+-                      FaderControl("RES", qSl, "Q=%.2f".format(dsp.value.resonance)) {
+-                          dsp.value = dsp.value.copy(resonance = DSPState.sliderToQ(it)); dsp.value.pushToNative()
+-                      }
+-                }
+-            }
+-            item {
+-                DspSection("PARAMETRIC EQ") {
+-                    EqFader("LOW", dsp.value.low) { dsp.value = dsp.value.copy(low = it); dsp.value.pushToNative() }
+-                    EqFader("MID", dsp.value.mid) { dsp.value = dsp.value.copy(mid = it); dsp.value.pushToNative() }
+-                    EqFader("HIGH", dsp.value.high) { dsp.value = dsp.value.copy(high = it); dsp.value.pushToNative() }
+-                    EqFader("PRESENCE", dsp.value.presence) { dsp.value = dsp.value.copy(presence = it); dsp.value.pushToNative() }
+-                    EqFader("MASTER", dsp.value.master) { dsp.value = dsp.value.copy(master = it); dsp.value.pushToNative() }
+-                }
+-            }
+-            item {
+-                // Processing mode selector
+-                var mode by remember { mutableStateOf(OmegaEngine.getMode()) }
+-                Column(Modifier.fillMaxWidth().border(1.dp, Border1, RoundedCornerShape(10.dp))
+-                    .background(Surface1, RoundedCornerShape(10.dp)).padding(10.dp)) {
+-                    Text("PROCESSING MODE", color = GoldGlow, fontSize = 10.sp,
+-                        fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+-                    Spacer(Modifier.height(8.dp))
+-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-                        listOf("DSP", "DSP+LSTM", "FULL").forEachIndexed { idx, label ->
+-                            val sel = mode == idx
+-                            OutlinedButton(onClick = { mode = idx; OmegaEngine.setMode(idx) },
+-                                modifier = Modifier.weight(1f),
+-                                border = BorderStroke(1.dp, if (sel) CyanGlow else Border1),
+-                                colors = ButtonDefaults.outlinedButtonColors(
+-                                    containerColor = if (sel) CyanDim else Color.Transparent)) {
+-                                Text(label, color = if (sel) CyanGlow else TextSec,
+-                                    fontSize = 9.sp, fontWeight = FontWeight.Bold)
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-            // ← PUNTO 2: Botón de entry point para navegar a AdaptiveEngineScreen
+-            item {
+-                Column(Modifier.fillMaxWidth().border(2.dp, MagentaGlow, RoundedCornerShape(12.dp))
+-                    .background(MagentaDim, RoundedCornerShape(12.dp)).padding(14.dp)) {
+-                    Row(verticalAlignment = Alignment.CenterVertically,
+-                        horizontalArrangement = Arrangement.SpaceBetween,
+-                        modifier = Modifier.fillMaxWidth()) {
+-                        Column {
+-                            Text("MODO ADAPTATIVO MAGISTRAL", color = MagentaGlow,
+-                                fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
+-                                letterSpacing = 1.sp)
+-                            Text("Análisis inteligente + Control automático @ 10Hz",
+-                                color = TextSec, fontSize = 9.sp)
+-                        }
+-                        Button(onClick = { nav.navigate("adaptive") },
+-                            colors = ButtonDefaults.buttonColors(containerColor = MagentaGlow),
+-                            shape = RoundedCornerShape(8.dp)) {
+-                            Text("ACTIVAR", color = Carbon, fontWeight = FontWeight.Bold,
+-                                fontSize = 11.sp, letterSpacing = 1.sp)
+-                        }
+-                    }
+-                }
+-            }
+-        }
++        // FIX (esta no era la interfaz): IvannaControlPanel v3.0 existía
++        // completa en ui/IvannaControlPanel.kt — 517 líneas, Anillo OMNI,
++        // AuroraSlider, Compresor/NHO/Spatial/NPE/Evo/Adaptive Control
++        // Center — pero jamás se invocaba desde ningún lado del código
++        // (grep confirmado: cero llamadas). Lo que se veía en pantalla
++        // (bloques DspSection crudos de abajo) era un placeholder viejo
++        // que quedó como única pantalla real por accidente. Se monta acá
++        // en vez de los bloques sueltos; exciter/eq/width/threshold/ratio
++        // se cablean a los campos de DSPState que YA llegan al motor
++        // nativo vía pushToNative() (wet=exciter, low=mid=high=presence=eq
++        // en dB, stereoWidth, alpha=threshold, beta=ratio — mismo mapeo
++        // que ya documentaba pushToNative()). El resto de callbacks
++        // (NHO/Spatial/NPE/Evo/Anti-Dolby/Adaptive Center) quedan con su
++        // default no-op: cablearlos de verdad es un commit aparte, no se
++        // improvisa un mapeo a ciegas para motores que aún no se auditaron.
++        IvannaControlPanel(
++            initialExciter = dsp.value.wet,
++            initialEq = dsp.value.mid,
++            initialWidth = dsp.value.stereoWidth,
++            initialCompThreshold = dsp.value.alpha,
++            initialCompRatio = dsp.value.beta,
++            onExciterChange = { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() },
++            onEqChange = {
++                dsp.value = dsp.value.copy(low = it, mid = it, high = it, presence = it)
++                dsp.value.pushToNative()
++            },
++            onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
++            onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
++            onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
++            onOpenAdaptive = { nav.navigate("adaptive") },
++            onOpenAdaptiveEngineManual = { nav.navigate("adaptive") }
++        )
+     }
+ }
+ 
++
+ // ── Components ────────────────────────────────────────────────────────────────
+ @Composable
+ fun StatusDot(active: Boolean, label: String) {
+-- 
+2.43.0

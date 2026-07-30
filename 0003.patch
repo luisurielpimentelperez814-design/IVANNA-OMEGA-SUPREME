@@ -1,0 +1,193 @@
+From ae3faafe019b3daca7a5e3e88cabe9e21b497657 Mon Sep 17 00:00:00 2001
+From: Gore TNS <gore-tns@local>
+Date: Mon, 27 Jul 2026 18:26:50 +0000
+Subject: [PATCH] fix(cinematic): conectar RealTimeCinematicEngine al hot-path
+ de audio
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+PUNTO 2/4 de gaps UI-motor.
+
+Problema: RealTimeCinematicEngine.processBlock() existía y clasificaba
+con CRNN, pero nadie lo llamaba desde el hilo de audio. AntiDolbyController
+ya instanciaba y arrancaba el engine (enableAntiDolby -> eng.start()),
+pero como esa instancia era un campo privado, local a un composable de
+UI (DashboardScreen), AudioPipeline (el hot-path real, corriendo en
+AudioForegroundService) nunca pudo alcanzarla. latestBuf nunca se
+actualizaba -> el hilo clasificador interno dormía 50ms por siempre sin
+clasificar audio real.
+
+Fix:
+- CinematicEngineHost.kt (nuevo): singleton dueño del ciclo de vida del
+  engine. start()/stop() los sigue controlando AntiDolbyController (atado
+  al toggle 'Anti-Dolby adaptativo' de la UI). processBlock() es identidad
+  (no-op) cuando está inactivo.
+- AntiDolbyController.kt: usa CinematicEngineHost en vez de una instancia
+  privada. Corrige sampleRate hardcodeado (44100 -> AudioPipeline.SAMPLE_RATE
+  = 96000, la tasa real del pipeline).
+- AudioPipeline.kt: en runPipeline(), después de DSPBridge.process() y
+  antes del clamp final, llama CinematicEngineHost.processBlock(buf).
+
+Rebaseado sobre 8e9c3ba (fix hrtf_convolver/neuro_cochlear_manifold) tras
+detectar que el push anterior de este mismo patch nunca llegó a main por
+un paste corrupto en Termux.
+---
+ ../ivanna/omega/audio/AntiDolbyController.kt | 27 +++------
+ .../com/ivanna/omega/audio/AudioPipeline.kt   |  6 ++
+ .../ivanna/omega/audio/CinematicEngineHost.kt | 59 +++++++++++++++++++
+ 3 files changed, 73 insertions(+), 19 deletions(-)
+ create mode 100644 app/src/main/java/com/ivanna/omega/audio/CinematicEngineHost.kt
+
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AntiDolbyController.kt b/app/src/main/java/com/ivanna/omega/audio/AntiDolbyController.kt
+index d13dbb3..4c47ce3 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/AntiDolbyController.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/AntiDolbyController.kt
+@@ -2,9 +2,7 @@ package com.ivanna.omega.audio
+
+ import android.content.Context
+ import android.util.Log
+-import com.ivanna.omega.ai.AntiDolbyCrnnClassifier
+ import com.ivanna.omega.ai.YamnetClassifier
+-import com.ivanna.omega.audio.RealTimeCinematicEngine
+ import com.ivanna.omega.core.AntiDolbyPreset
+ import kotlinx.coroutines.*
+ import kotlin.math.*
+@@ -41,7 +39,6 @@ class AntiDolbyController(private val context: Context) {
+     }
+
+     private var yamnetClassifier: YamnetClassifier? = null
+-    private var cinematicEngine: RealTimeCinematicEngine? = null
+     var onDspUpdate: ((exciter: Float, width: Float, eqGainDb: Float) -> Unit)? = null
+     private var emaSpeech = 0f
+     private var emaMusic  = 0f
+@@ -107,20 +104,12 @@ class AntiDolbyController(private val context: Context) {
+
+         // Iniciar job de clasificación periódica
+         startClassificationLoop()
+-        // Arrancar engine cinematográfico (clasificación CRNN + DSP Kotlin-side)
+-        if (cinematicEngine == null) {
+-            cinematicEngine = RealTimeCinematicEngine(
+-                AntiDolbyCrnnClassifier(context), sampleRate = 44100
+-            ).also { eng ->
+-                eng.onModeChanged = { mode, result ->
+-                    // Propagar scores al orquestador nativo
+-                    AudioEngine.nativeSetAntiDolbyScoresStatic(
+-                        result.speech, result.music, result.bass
+-                    )
+-                }
+-                eng.start()
+-            }
+-        }
++        // FIX (PUNTO 2): el engine ya no vive acá — CinematicEngineHost es el
++        // dueño compartido, para que AudioPipeline (hot-path real) también
++        // pueda llamar processBlock() sobre la misma instancia. sampleRate
++        // corregido a AudioPipeline.SAMPLE_RATE (96000): antes decía 44100,
++        // que no coincidía con la tasa real del pipeline.
++        CinematicEngineHost.start(context, sampleRate = AudioPipeline.SAMPLE_RATE)
+     }
+
+     /**
+@@ -141,7 +130,7 @@ class AntiDolbyController(private val context: Context) {
+         emaSpeech = 0f; emaMusic = 0f; emaBass = 0f
+         smoothExciter = 0.32f; smoothWidth = 0.50f; smoothEq = 0f
+         onDspUpdate?.invoke(0.32f, 0.50f, 0f)
+-        cinematicEngine?.stop(); cinematicEngine = null
++        CinematicEngineHost.stop()
+         Log.i(TAG, "Anti-Dolby adaptativo deshabilitado")
+     }
+
+@@ -297,7 +286,7 @@ class AntiDolbyController(private val context: Context) {
+         audioBuffer = null
+         isInitialized = false
+
+-        cinematicEngine?.stop(); cinematicEngine = null
++        CinematicEngineHost.stop()
+         Log.i(TAG, "AntiDolbyController liberado")
+     }
+ }
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt b/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
+index 659c264..e31394c 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
+@@ -169,6 +169,12 @@ class AudioPipeline {
+                 DSPBridge.process(buf, read / 2)
+                 lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+
++                // FIX (PUNTO 2): alimenta RealTimeCinematicEngine con audio real
++                // del hot-path. Identidad (no-op) si el toggle "Anti-Dolby
++                // adaptativo" está apagado — ver CinematicEngineHost.
++                val cinematic = CinematicEngineHost.processBlock(buf)
++                if (cinematic !== buf) System.arraycopy(cinematic, 0, buf, 0, minOf(cinematic.size, buf.size))
++
+                 // FIX: acumular muestras para YAMNet (downsample 48kHz→16kHz, ratio 3:1)
+                 blockCounter++
+                 if (blockCounter % YAMNET_CLASSIFY_EVERY_N == 0) {
+diff --git a/app/src/main/java/com/ivanna/omega/audio/CinematicEngineHost.kt b/app/src/main/java/com/ivanna/omega/audio/CinematicEngineHost.kt
+new file mode 100644
+index 0000000..a015839
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/audio/CinematicEngineHost.kt
+@@ -0,0 +1,59 @@
++package com.ivanna.omega.audio
++
++import android.content.Context
++import android.util.Log
++import com.ivanna.omega.ai.AntiDolbyCrnnClassifier
++
++/**
++ * CinematicEngineHost — dueño único del ciclo de vida de RealTimeCinematicEngine.
++ *
++ * PUNTO 2 (gap de conexión): RealTimeCinematicEngine.processBlock() clasificaba
++ * con CRNN pero nadie lo llamaba desde el hilo de audio — AntiDolbyController
++ * arrancaba el engine (enableAntiDolby → eng.start()) pero como owner era una
++ * instancia local de un composable (DashboardScreen), y AudioPipeline (el
++ * hot-path real de audio, en AudioForegroundService) no tenía forma de
++ * alcanzarla. latestBuf nunca se actualizaba → el hilo clasificador dormía
++ * cada 50ms sin clasificar nada real.
++ *
++ * Este singleton resuelve el mismatch de owners: AntiDolbyController controla
++ * start()/stop() (ligado al toggle "Anti-Dolby adaptativo" de la UI) y
++ * AudioPipeline llama processBlock() en cada bloque de audio real. Cuando
++ * está inactivo, processBlock() es una identidad (no-op), preservando el
++ * comportamiento previo del pipeline mientras el toggle esté apagado.
++ */
++object CinematicEngineHost {
++    private const val TAG = "CinematicEngineHost"
++
++    private var engine: RealTimeCinematicEngine? = null
++    @Volatile private var active = false
++
++    /** Idempotente: si ya hay un engine corriendo, no lo recrea. */
++    fun start(context: Context, sampleRate: Int) {
++        if (engine == null) {
++            engine = RealTimeCinematicEngine(
++                AntiDolbyCrnnClassifier(context.applicationContext),
++                sampleRate = sampleRate
++            ).also { eng ->
++                eng.onModeChanged = { mode, result ->
++                    AudioEngine.nativeSetAntiDolbyScoresStatic(
++                        result.speech, result.music, result.bass
++                    )
++                }
++            }
++            Log.i(TAG, "Engine creado @ ${sampleRate}Hz")
++        }
++        engine?.start()
++        active = true
++    }
++
++    fun stop() {
++        active = false
++        engine?.stop()
++    }
++
++    /** Identidad si el engine no está activo — no altera el audio. */
++    fun processBlock(buf: FloatArray): FloatArray {
++        val eng = engine
++        return if (active && eng != null) eng.processBlock(buf) else buf
++    }
++}
+--
+2.43.0
+

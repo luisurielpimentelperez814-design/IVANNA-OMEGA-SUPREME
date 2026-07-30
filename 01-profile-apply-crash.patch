@@ -1,0 +1,116 @@
+diff --git a/app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt b/app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt
+index 1234567..abcdefg 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt
+@@ -6,6 +6,7 @@ import kotlinx.serialization.*
+ import kotlinx.serialization.json.Json
+ import com.ivanna.omega.core.IvannaNativeLib
+ import com.ivanna.omega.dsp.DSPState
++import com.ivanna.omega.core.ParameterStore
+ import com.ivanna.omega.neuromorphic.PiLstmBridge
+ import java.io.InputStreamReader
+ 
+@@ -280,42 +281,73 @@ class ProfileManager(private val context: Context, private val audioEngine: Aud
+             Log.e(TAG, "applyToDsp: perfil no encontrado: $profileId")
+             return false
+         }
+-        return try {
+-            // 1. DSPState + pushToNative
+-            val newDsp = currentDsp.copy(
+-                master       = profile.audioEngine.gain,
+-                wet          = profile.audioEngine.exciterAmount,
+-                low          = profile.audioEngine.eqGain,
+-                mid          = profile.audioEngine.eqGain,
+-                high         = profile.audioEngine.eqGain,
+-                presence     = profile.audioEngine.eqGain,
+-                stereoWidth  = profile.audioEngine.widthAmount
+-            )
+-            onDspUpdated(newDsp)
+-            newDsp.pushToNative()
+-
+-            // 2. PiLstmBridge — NPE neuromorphic
+-            if (PiLstmBridge.isReady) {
+-                PiLstmBridge.setHarmonicGain(profile.neuromorphic.harmonicGain)
+-                PiLstmBridge.setBeta(profile.neuromorphic.lateralInhibition)
+-                PiLstmBridge.setAlpha(profile.neuromorphic.ohcCompression)
+-                PiLstmBridge.setMasterGain(profile.neuromorphic.masterGainDb)
+-            }
+-
+-            // 3. Ruta de audio nativa
+-            if (IvannaNativeLib.isLoaded) {
+-                AudioEngine.nativeSetRouteProfileStatic(
+-                    profile.route.bassBoostDb,
+-                    profile.route.dialogBoostDb,
+-                    profile.route.widenerMult
+-                )
+-                // Anti-Dolby scores del preset
+-                AudioEngine.nativeSetAntiDolbyScoresStatic(
+-                    profile.antiDolby.speechThreshold,
+-                    1f - profile.antiDolby.speechThreshold - profile.antiDolby.bassThreshold,
+-                    profile.antiDolby.bassThreshold
+-                )
+-            }
+-
+-            currentProfileId = profileId
+-            Log.i(TAG, "applyToDsp OK: ${profile.name}")
+-            true
+-        } catch (e: Exception) {
+-            Log.e(TAG, "applyToDsp error: ${e.message}", e)
+-            false
+-        }
++        fun Float.safe(default: Float, min: Float, max: Float): Float =
++            if (isFinite()) coerceIn(min, max) else default
++        return try {
++            val gainSafe    = profile.audioEngine.gain.safe(0f,  -24f, 24f)
++            val exciterSafe = profile.audioEngine.exciterAmount.safe(0.3f, 0f, 1f)
++            val eqSafe      = profile.audioEngine.eqGain.safe(0f,  -18f, 18f)
++            val widthSafe   = profile.audioEngine.widthAmount.safe(1f, 0f, 2f)
++            val newDsp = currentDsp.copy(
++                master       = gainSafe,
++                wet          = exciterSafe,
++                low          = eqSafe,
++                mid          = eqSafe,
++                high         = eqSafe,
++                presence     = eqSafe,
++                stereoWidth  = widthSafe
++            )
++            onDspUpdated(newDsp)
++            runCatching { newDsp.pushToNative() }
++                .onFailure { Log.e(TAG, "pushToNative: $it") }
++            if (PiLstmBridge.isReady && IvannaNativeLib.isLoaded) {
++                runCatching {
++                    PiLstmBridge.setHarmonicGain(profile.neuromorphic.harmonicGain.safe(0.3f, 0f, 1f))
++                    PiLstmBridge.setBeta(profile.neuromorphic.lateralInhibition.safe(0.5f, 0f, 1f))
++                    PiLstmBridge.setAlpha(profile.neuromorphic.ohcCompression.safe(0.4f, 0f, 1f))
++                    PiLstmBridge.setMasterGain(profile.neuromorphic.masterGainDb.safe(0f, -18f, 18f))
++                }.onFailure { Log.e(TAG, "PiLstm neuro: $it") }
++            }
++            if (IvannaNativeLib.isLoaded) {
++                runCatching {
++                    AudioEngine.nativeSetRouteProfileStatic(
++                        profile.route.bassBoostDb.safe(0f, -18f, 18f),
++                        profile.route.dialogBoostDb.safe(0f, -18f, 18f),
++                        profile.route.widenerMult.safe(1f, 0f, 3f)
++                    )
++                }.onFailure { Log.e(TAG, "route: $it") }
++                val sp = profile.antiDolby.speechThreshold.safe(0.33f, 0f, 1f)
++                val ba = profile.antiDolby.bassThreshold.safe(0.33f, 0f, 1f)
++                val mu = (1f - sp - ba).coerceIn(0f, 1f)
++                val total = sp + ba + mu
++                val nSp = if (total > 0f) sp / total else 0.34f
++                val nBa = if (total > 0f) ba / total else 0.33f
++                val nMu = if (total > 0f) mu / total else 0.33f
++                runCatching {
++                    AudioEngine.nativeSetAntiDolbyScoresStatic(nSp, nMu, nBa)
++                }.onFailure { Log.e(TAG, "antiDolby scores: $it") }
++            }
++            currentProfileId = profileId
++            runCatching { ParameterStore(context).setCurrentAudioProfileId(profileId) }
++            Log.i(TAG, "applyToDsp OK: ${profile.name}")
++            true
++        } catch (t: Throwable) {
++            Log.e(TAG, "applyToDsp fatal: ${t.message}", t)
++            false
++        }
+     }
+ }

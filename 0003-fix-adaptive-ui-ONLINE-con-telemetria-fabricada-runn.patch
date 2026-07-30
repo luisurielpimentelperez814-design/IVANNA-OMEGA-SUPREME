@@ -1,0 +1,89 @@
+From 8f19bcd120c9b5a534a74ea0fade2b03c9b1f13a Mon Sep 17 00:00:00 2001
+From: "Gore TNS (audit session)" <gore-tns@ivanna-omega.local>
+Date: Tue, 21 Jul 2026 19:01:07 +0000
+Subject: [PATCH 3/3] =?UTF-8?q?fix(adaptive-ui):=20ONLINE=20con=20telemetr?=
+ =?UTF-8?q?ia=20fabricada=20=E2=80=94=20running=20no=20validaba=20tamano?=
+ =?UTF-8?q?=20del=20array?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+BUG CONFIRMADO POR CAPTURA DE PANTALLA: la tarjeta "IVANNA ADAPTIVE ENGINE"
+mostraba badge ONLINE con DYNAMIC GAIN/SPATIAL INTEL/SAFETY MARGIN en 100%
+y COMPRESSION/EXCITER PROT/VOICE PROT en 0% — exactamente los valores por
+defecto de AdaptiveTelemetrySnapshot() cuando fromArray() recibe un array
+invalido (size < 10). Blocks aplicados: 0 y RMS/PEAK 0.00 confirmaban que
+nunca hubo dato real, pese al badge verde.
+
+Causa: dentro del bloque showAdaptive, el LaunchedEffect de polling hacia
+running = rawArray != null — un array no-nulo pero corto/invalido igual
+reportaba running=true, y fromArray() rellenaba silenciosamente con sus
+defaults sin que la UI distinguiera "motor corriendo de verdad" de "no hay
+dato real todavia".
+
+Existe un SEGUNDO loop (startAdaptiveTelemetryLoop(), mas abajo en el mismo
+archivo) que ya hacia esto bien: usa nativeIsAdaptiveEngineRunning() como
+fuente de running y solo escribe si t != null && t.size >= 10. Se iguala el
+loop de showAdaptive a ese mismo criterio correcto.
+---
+ .../java/com/ivanna/omega/MainActivity.kt     | 40 +++++++++++++++++--
+ 1 file changed, 36 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index df54ab7..7912336 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -518,14 +518,46 @@ class MainActivity : ComponentActivity() {
+                         var adaptiveTelemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
+                         LaunchedEffect(Unit) {
+                             while (true) {
++                                // AUDIT FIX (crítico, "backend real" falso):
++                                // antes running = rawArray != null — un array
++                                // no-nulo pero con menos de 10 elementos (dato
++                                // inválido/incompleto) igual reportaba
++                                // running=true. fromArray() cae a sus valores
++                                // por defecto cuando t.size < 10 (targetGain=1,
++                                // spatialWidth=1, safetyMargin=1 → 100%;
++                                // compressorAmount/exciterReduction/
++                                // voiceProtectionAmount=0 → 0%) — exactamente
++                                // los números "sospechosamente redondos" que
++                                // se veían en pantalla con el badge en ONLINE
++                                // y "Blocks aplicados: 0", sin que la UI
++                                // distinguiera "motor corriendo de verdad" de
++                                // "no hay dato real todavía". Ahora se exige
++                                // el mismo criterio que ya usaba de forma
++                                // correcta startAdaptiveTelemetryLoop() más
++                                // abajo: nativeIsAdaptiveEngineRunning() como
++                                // fuente de running, y solo se escribe la
++                                // snapshot si el array es válido (size >= 10).
+                                 val rawArray = try {
+                                     IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                                 } catch (_: Throwable) { null }
++                                val engineRunning = try {
++                                    IvannaNativeLib.nativeIsAdaptiveEngineRunning()
++                                } catch (_: Throwable) { false }
+                                 adaptiveTelemetryRaw = rawArray
+-                                adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
+-                                    rawArray,
+-                                    running = rawArray != null
+-                                )
++                                if (rawArray != null && rawArray.size >= 10) {
++                                    adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
++                                        rawArray,
++                                        running = engineRunning
++                                    )
++                                } else {
++                                    // Dato inválido/insuficiente: reflejar
++                                    // "no corriendo" en vez de fabricar una
++                                    // snapshot con valores por defecto.
++                                    adaptiveTelemetry = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot.fromArray(
++                                        null,
++                                        running = false
++                                    )
++                                }
+                                 adaptiveBandEnergies = try {
+                                     IvannaNativeLib.nativeGetBandEnergies()
+                                 } catch (_: Throwable) { null }
+-- 
+2.43.0
+

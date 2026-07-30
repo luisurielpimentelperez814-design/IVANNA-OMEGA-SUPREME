@@ -1,0 +1,22 @@
+{
+  "tests": 2,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "GammatoneNumericalStability",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "LowLevelNoiseNoNaN",
+          "file": "\/data\/data\/com.termux\/files\/home\/IVANNA-OMEGA-SUPREME\/app\/src\/main\/cpp\/tests\/gammatone_numerical_stability.cpp",
+          "line": 17
+        },
+        {
+          "name": "ImpulseResponseRemainsBounded",
+          "file": "\/data\/data\/com.termux\/files\/home\/IVANNA-OMEGA-SUPREME\/app\/src\/main\/cpp\/tests\/gammatone_numerical_stability.cpp",
+          "line": 36
+        }
+      ]
+    }
+  ]
+}
