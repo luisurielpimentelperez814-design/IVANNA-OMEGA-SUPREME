@@ -7,7 +7,6 @@
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
 #else
-// Fallback type stubs if compiled on non-ARM target (e.g. x86_64 host lint)
 #include <cmath>
 #include <algorithm>
 #endif
@@ -27,12 +26,10 @@ struct ALIGN_NEON AudioBuffer {
 };
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
-// Ultra-fast polynomial tanh approximation using NEON: x * (27 + x^2) / (27 + 9x^2)
 inline float32x4_t fast_tanh_neon(float32x4_t x) {
     float32x4_t x2 = vmulq_f32(x, x);
     float32x4_t num = vmulq_f32(x, vaddq_f32(vdupq_n_f32(27.0f), x2));
     float32x4_t den = vaddq_f32(vdupq_n_f32(27.0f), vmulq_n_f32(x2, 9.0f));
-    // Fast reciprocal estimation with 1 Newton-Raphson iteration
     float32x4_t rec = vrecpeq_f32(den);
     rec = vmulq_f32(vrecpsq_f32(den, rec), rec);
     return vmulq_f32(num, rec);

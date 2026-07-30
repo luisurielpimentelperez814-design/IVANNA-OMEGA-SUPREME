@@ -16,7 +16,6 @@ int main() {
 
     alignas(16) AudioBuffer block = {0};
 
-    // Impulsive Unit Pulse test for Impulse Response verification
     block.left[0] = 1.0f;
     block.right[0] = 1.0f;
 

@@ -4,15 +4,11 @@
 namespace Ivanna {
 
 HrtfManager::HrtfManager() {
-    // Mathematical synthesis of Rayleigh spherical head model HRTF
-    // Models Interaural Time Delay (ITD) and Interaural Level Difference (ILD)
     for (size_t i = 0; i < HRTF_TAPS; ++i) {
         float t = static_cast<float>(i) / HRTF_TAPS;
-        // Direct Path
         m_hrtfLL[i] = std::exp(-t * 10.0f) * std::cos(t * 30.0f);
         m_hrtfRR[i] = m_hrtfLL[i];
 
-        // Crosstalk Path (Delayed and attenuated head shadow effect)
         float t_cross = t - 0.1f;
         m_hrtfLR[i] = (t_cross > 0.0f) ? (0.3f * std::exp(-t_cross * 15.0f)) : 0.0f;
         m_hrtfRL[i] = m_hrtfLR[i];
@@ -25,7 +21,6 @@ HrtfManager::HrtfManager() {
 }
 
 void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
-    // 2x2 HRTF matrix convolution for full 3D stereo crosstalk cancellation and spatialization
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         m_histL[HRTF_TAPS - 1 + i] = buffer->left[i];
         m_histR[HRTF_TAPS - 1 + i] = buffer->right[i];
@@ -61,7 +56,6 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
         buffer->right[i] = sum_vec(outRR) + sum_vec(outLR);
     }
 #else
-    // Scalar 2x2 convolution fallback
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         float outL = 0.0f;
         float outR = 0.0f;
@@ -77,7 +71,6 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
     }
 #endif
 
-    // Shift history
     for (size_t i = 0; i < HRTF_TAPS - 1; ++i) {
         m_histL[i] = m_histL[BLOCK_SIZE + i];
         m_histR[i] = m_histR[BLOCK_SIZE + i];
