@@ -213,6 +213,9 @@ void ivanna_set_anti_dolby_scores(float speech, float music, float bass) {
 }
 
 void ivanna_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) {
-    control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    g_orch.bassGain = bassBoostDb;
+    g_orch.dialogGain = dialogBoostDb;
+    g_orch.widenerWet = widenerMult;
 }
 }
