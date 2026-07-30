@@ -1393,13 +1393,32 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
-    const bool active =
-        g_initialized.load(std::memory_order_acquire) &&
-        (
-            g_adaptiveEngineStarted.load(std::memory_order_acquire) ||
-            g_lastAdaptiveApplied.load(std::memory_order_relaxed) > 0
-        );
-    return active ? JNI_TRUE : JNI_FALSE;
+    if (!g_initialized.load(std::memory_order_acquire)) return JNI_FALSE;
+    if (!g_adaptiveEngineStarted.load(std::memory_order_acquire)) return JNI_FALSE;
+
+    // Detectar congelamiento real: comparar applied_count ahora vs hace ~1s.
+    // Si no ha cambiado en 1s pero el engine está "started", es un freeze.
+    static std::atomic<uint64_t> s_lastAppliedSnapshot{0};
+    static std::atomic<int64_t>  s_lastCheckMs{0};
+
+    const auto nowMs = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count()
+    );
+
+    const int64_t lastCheck = s_lastCheckMs.load(std::memory_order_relaxed);
+    const uint64_t currentApplied = g_lastAdaptiveApplied.load(std::memory_order_relaxed);
+
+    if (nowMs - lastCheck >= 1000) {
+        const uint64_t snap = s_lastAppliedSnapshot.exchange(
+            currentApplied, std::memory_order_relaxed);
+        s_lastCheckMs.store(nowMs, std::memory_order_relaxed);
+        // Si el count no cambió en 1s Y ya habíamos recibido datos antes → freeze
+        if (snap > 0 && snap == currentApplied) return JNI_FALSE;
+    }
+
+    return currentApplied > 0 ? JNI_TRUE : JNI_FALSE;
 }
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
 // FloatArray[3]: [0]=low (sub/bass), [1]=mid (presencia/voz), [2]=high (brillo/sibilancia)

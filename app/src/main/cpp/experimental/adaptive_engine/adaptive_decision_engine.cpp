@@ -176,24 +176,45 @@ void AdaptiveDecisionEngine::controlLoop() {
     // sin malloc (RawAudioMetrics/AdaptiveState son POD en stack).
     uint64_t lastSeenSeq = 0;
     RawAudioMetrics metrics;
+    RawAudioMetrics lastKnownMetrics;   // último snapshot válido
+    bool hasEverReceived = false;
+    int staleCount = 0;
+    constexpr int kMaxStale = 10;       // 10 × 50ms = 500ms sin datos → usar stale
 
     while (running_.load(std::memory_order_relaxed)) {
-        if (rawMetrics.consumeIfNewer(metrics, lastSeenSeq)) {
+        const bool gotNew = rawMetrics.consumeIfNewer(metrics, lastSeenSeq);
+        if (gotNew) {
+            lastKnownMetrics = metrics;
+            hasEverReceived  = true;
+            staleCount       = 0;
+        } else if (hasEverReceived) {
+            // Sin datos nuevos — usar las últimas métricas conocidas para
+            // seguir publicando AdaptiveState. Previene que el bus se congele
+            // cuando el audio thread está en pausa o silencio prolongado.
+            ++staleCount;
+            if (staleCount <= kMaxStale) {
+                metrics = lastKnownMetrics;
+            } else {
+                // Silencio genuino: métricas a cero para que el engine
+                // sugiera configuración neutra (safety first).
+                metrics = RawAudioMetrics{};
+                metrics.gain_reduction_db = 0.f;
+            }
+        } else {
+            // Todavía no hay ningún dato — esperar sin publicar.
+            std::this_thread::sleep_for(std::chrono::milliseconds(kControlIntervalMs));
+            continue;
+        }
+
+        {
             const float total = std::max(0.0f, metrics.band_low_energy) +
                                  std::max(0.0f, metrics.band_mid_energy) +
                                  std::max(0.0f, metrics.band_high_energy) + kEps;
             const float highRatio = std::max(0.0f, metrics.band_high_energy) / total;
 
-            // Sibilancia: EMA rápida (constante de tiempo ~200ms a 50ms/tick
-            // → alpha≈0.25 con la aproximación de primer orden estándar).
             constexpr float kSibilanceAlpha = 0.25f;
             sibilanceEma_ += kSibilanceAlpha * (highRatio - sibilanceEma_);
 
-            // Fatiga espectral: EMA lenta (constante de tiempo ~10s a
-            // 50ms/tick → alpha≈0.005), detecta exposición sostenida, no
-            // picos puntuales. No se usa todavía en ninguna de las
-            // funciones de decisión — publicada implícitamente para que
-            // una fase futura la incorpore sin tener que rediseñar el bus.
             constexpr float kFatigueAlpha = 0.005f;
             fatigueEma_ += kFatigueAlpha * (highRatio - fatigueEma_);
 
