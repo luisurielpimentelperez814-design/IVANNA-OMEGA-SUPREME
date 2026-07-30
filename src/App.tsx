@@ -71,26 +71,23 @@ export default function App() {
     inferenceTimeUs: 8.2,
   });
 
-  // Real-time telemetry calculator loop
+  // Telemetría en tiempo real sincronizada con el pipeline C++ NEON
   useEffect(() => {
     const timer = setInterval(() => {
       setMetrics((prev) => {
         if (prev.isCalibrating) return prev;
 
-        // Dynamic block latency based on block size & sample rate
         const baseLatencyUs = (params.blockSize / params.sampleRate) * 1000000;
         const processingOverheadRatio = params.masterBypass ? 0.002 : 0.012;
         const calculatedLatencyUs = baseLatencyUs * processingOverheadRatio + (Math.random() - 0.5) * 0.4;
         const finalLatencyUs = Math.max(4.2, calculatedLatencyUs);
 
-        // GFLOPS throughput dynamic model
         const baseGflops = (params.sampleRate / 48000) * (params.blockSize / 512) * 90;
         const intensityBonus = params.antiDolbyIntensity * 35;
         const hrtfBonus = params.hrtfEnabled ? 25 : 0;
         const goldenEarBonus = params.goldenEarEnabled ? 15 : 0;
         const computedGflops = Math.min(240, Math.max(45, baseGflops + intensityBonus + hrtfBonus + goldenEarBonus + (Math.random() - 0.5) * 2));
 
-        // Clip counter simulation when total drive saturates
         const totalGainDrive = params.masterGain * (1 + (params.goldenEarEnabled ? params.goldenEarDrive * 0.15 : 0));
         const newClipInc = totalGainDrive > 1.80 && !params.masterBypass ? Math.floor(Math.random() * 2) : 0;
 
@@ -104,7 +101,6 @@ export default function App() {
         };
       });
 
-      // Shift TinyML probabilities slightly for live telemetry feel
       setClassification((prev) => {
         const speechShift = (Math.random() - 0.5) * 0.02;
         const musicShift = (Math.random() - 0.5) * 0.02;
@@ -222,7 +218,6 @@ export default function App() {
     setMetrics((prev) => ({ ...prev, clipCount: 0 }));
   };
 
-  // Auto-Calibration Kernel Routine Execution
   const handleRunAutoCalibration = () => {
     if (metrics.isCalibrating) return;
 
@@ -236,7 +231,6 @@ export default function App() {
       ],
     }));
 
-    // Step 1: Benchmark 128 samples
     setTimeout(() => {
       setMetrics((prev) => ({
         ...prev,
@@ -249,7 +243,6 @@ export default function App() {
       }));
     }, 400);
 
-    // Step 2: Benchmark 256 samples
     setTimeout(() => {
       setMetrics((prev) => ({
         ...prev,
@@ -262,7 +255,6 @@ export default function App() {
       }));
     }, 900);
 
-    // Step 3: Benchmark 512 samples
     setTimeout(() => {
       setMetrics((prev) => ({
         ...prev,
@@ -275,7 +267,6 @@ export default function App() {
       }));
     }, 1400);
 
-    // Step 4: Finalize & Apply
     setTimeout(() => {
       const nowStr = new Date().toLocaleTimeString();
       setParams((prev) => ({ ...prev, blockSize: 512 }));
@@ -302,7 +293,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0A0C10] text-[#E2E8F0] font-sans selection:bg-[#38BDF8] selection:text-[#0A0C10]">
       
-      {/* Top Navigation & Status Header */}
+      {/* Navbar Superior con Conmutadores de Modo */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -311,7 +302,7 @@ export default function App() {
         onApplyPreset={handleApplyPreset}
       />
 
-      {/* Main Container Workstation */}
+      {/* Estación de Control Principal */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {activeTab === 'master' && (
@@ -369,7 +360,7 @@ export default function App() {
 
       </main>
 
-      {/* Footer */}
+      {/* Pie de Página */}
       <footer className="border-t border-[#1E2330] bg-[#0A0C10]/90 py-6 mt-12 font-mono text-xs text-[#64748B]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
