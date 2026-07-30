@@ -1,7 +1,18 @@
 #include <cmath>
 #include <algorithm>
-#include <arm_neon.h>
 #include <cstring>
+#include <cstddef>
+
+// FIX (build host/CI): <arm_neon.h> se incluía sin guarda, así que el job
+// "DSP Native Tests (host, CTest)" — que compila para x86_64 con GCC —
+// abortaba con "fatal error: arm_neon.h: No such file or directory".
+// Este .cpp NO usa ningún intrínseco NEON (verificado: cero float32x4/
+// vld1/vst1/vmul/vadd en todo el archivo), así que la guarda basta y no
+// hace falta ninguna ruta escalar alternativa. Se replica el mismo patrón
+// que ya usa IvannaFusionCore.hpp:6-11, para no divergir del header.
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
 
 class IvannaFusionCore {
 private:
