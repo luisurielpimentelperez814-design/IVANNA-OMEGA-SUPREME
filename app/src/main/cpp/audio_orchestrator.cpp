@@ -205,3 +205,14 @@ static void init_orchestrator() {
     g_orch.kalman_loud = {0.001f, 0.1f, 0.0f, 1.0f};
     g_orch.kalman_trans = {0.005f, 0.2f, 0.0f, 1.0f};
 }
+
+extern "C" {
+void ivanna_set_anti_dolby_scores(float speech, float music, float bass) {
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    update_anti_dolby(speech, music, bass);
+}
+
+void ivanna_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) {
+    control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+}
+}

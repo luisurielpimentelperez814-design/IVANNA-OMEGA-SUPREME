@@ -762,3 +762,13 @@ extern "C" void evo_get_best_genome(uint8_t* out, int len) {
         out[i] = (uint8_t)(v*255.f + 0.5f);
     }
 }
+
+extern "C" int evo_get_generation(void) {
+    return (int)g_state.pop.generation;
+}
+
+extern "C" void evo_update_audio_cues(float loudness, float transient, float spatial) {
+    g_audioLoudness.store(loudness, std::memory_order_relaxed);
+    g_audioTransient.store(transient, std::memory_order_relaxed);
+    g_audioSpatial.store(spatial, std::memory_order_relaxed);
+}
