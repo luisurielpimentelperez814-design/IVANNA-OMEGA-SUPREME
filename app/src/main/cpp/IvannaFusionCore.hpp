@@ -1,48 +1,27 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <array>
+#include <memory>
 #include <cmath>
-#include <algorithm>
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
-#endif
 
 namespace Ivanna {
 
-constexpr size_t BLOCK_SIZE = 512;
-constexpr float SAMPLE_RATE = 48000.0f;
+constexpr size_t BLOCK_SIZE = 128;
+constexpr size_t FIR_TAPS = 256;
+constexpr size_t BANDS_512 = 512;
 
-struct alignas(16) AudioBuffer {
-    float left[BLOCK_SIZE];
-    float right[BLOCK_SIZE];
+struct AudioBuffer {
+    alignas(16) float left[BLOCK_SIZE];
+    alignas(16) float right[BLOCK_SIZE];
 };
 
-class IvannaFusionCore {
-public:
-    IvannaFusionCore();
-    ~IvannaFusionCore() = default;
-
-    void setParameters(float targetGainDb, float compThreshDb, float compRatio, 
-                       float exciteEven, float exciteOdd, float lowPassCutoff) noexcept;
-
-    void processBlock(AudioBuffer* buffer) noexcept;
-
-private:
-    float m_targetGainLinear = 1.0f;
-    float m_compThreshLinear = 0.125f;
-    float m_compRatio = 2.0f;
-    float m_exciteEven = 0.1f;
-    float m_exciteOdd = 0.05f;
-    float m_lowPassAlpha = 0.95f;
-
-    // Filter states
-    float m_lpStateL = 0.0f;
-    float m_lpStateR = 0.0f;
-
-    // Peak Limiter state
-    float m_limiterEnvL = 0.0f;
-    float m_limiterEnvR = 0.0f;
-};
+inline float fast_tanh_neon(float x) {
+    float x2 = x * x;
+    float a = x * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
+    float b = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));
+    return a / b;
+}
 
 } // namespace Ivanna

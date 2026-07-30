@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include "IvannaFusionCore.hpp"
 
 namespace Ivanna {
@@ -7,13 +8,23 @@ namespace Ivanna {
 class EvolutionaryEQ {
 public:
     EvolutionaryEQ();
-    void calibrateTargetRoom();
+    ~EvolutionaryEQ() = default;
+
     void processNEON(AudioBuffer* buffer);
+    void updateLM_CMA_ES();
 
 private:
-    ALIGN_NEON float m_firCoeffs[FIR_TAPS];
-    ALIGN_NEON float m_historyL[BLOCK_SIZE + FIR_TAPS];
-    ALIGN_NEON float m_historyR[BLOCK_SIZE + FIR_TAPS];
+    alignas(16) float m_firCoeffsL[FIR_TAPS];
+    alignas(16) float m_firCoeffsR[FIR_TAPS];
+
+    alignas(16) float m_histL[BLOCK_SIZE + FIR_TAPS];
+    alignas(16) float m_histR[BLOCK_SIZE + FIR_TAPS];
+
+    float m_meanGenome[BANDS_512];
+    float m_evolutionPath[BANDS_512];
+    float m_stepSize{0.1f};
+
+    float calculateFitness(const float* genome);
 };
 
 } // namespace Ivanna
