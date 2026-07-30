@@ -44,7 +44,21 @@
 // sí puede leer g_shared sin calificar porque comparte translation unit
 // con la declaración original (la regla de C++ sólo restringe la
 // linkage entre archivos, no el lookup dentro del mismo archivo).
-OmegaSharedState* omega_daemon_get_shared_state();
+// FIX (build, undefined symbol al linkear libivanna_omega.so):
+// omega_daemon_bridge_stub.cpp DEFINE este simbolo como `extern "C"`,
+// pero aqui se declaraba con enlace C++ por defecto. Son dos simbolos
+// distintos: el declarado se mangla como
+//   _Z30omega_daemon_get_shared_statev
+// mientras el definido exporta el nombre plano
+//   omega_daemon_get_shared_state
+// El linker resolvia el mangled, no lo encontraba, y lo dijo textual:
+//   "did you mean: extern \"C\" omega_daemon_get_shared_state".
+// El .so nunca llegaba a enlazarse (-Wl,--no-undefined), asi que ni el
+// APK ni las tareas de Kotlin se ejecutaban. La declaracion debe
+// coincidir con la definicion: enlace C, mismo nombre exacto —
+// exactamente el contrato que el propio stub documenta ("NO cambiar la
+// firma ni la ubicacion del simbolo").
+extern "C" OmegaSharedState* omega_daemon_get_shared_state();
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
