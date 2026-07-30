@@ -70,7 +70,7 @@ private:
  * @brief YAMNet Replacement: TinyML 1D Depthwise-Separable ConvNeXt Model
  * Quantized INT8 / NEON FP16 execution engine for Android Anti-Dolby Daemon.
  */
-class ALIGN_NEON IvannaAudioClassifier {
+class alignas(64) IvannaAudioClassifier {
 public:
     IvannaAudioClassifier();
     ~IvannaAudioClassifier() = default;
