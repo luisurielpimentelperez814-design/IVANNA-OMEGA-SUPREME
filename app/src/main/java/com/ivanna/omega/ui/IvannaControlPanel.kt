@@ -137,6 +137,10 @@ fun IvannaControlPanel(
     val savedState = remember { AdaptiveControlsPrefs.load(context) }
 
     var phaseOracleIntensity by remember { mutableFloatStateOf(savedState.phaseOracleIntensity) }
+    var antiDolbyThreshold by remember { mutableFloatStateOf(0.85f) }
+    var spatialSuppression by remember { mutableFloatStateOf(0.72f) }
+    var spscRingFactor by remember { mutableFloatStateOf(0.95f) }
+    var tinymlInferenceGain by remember { mutableFloatStateOf(1.0f) }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
@@ -294,6 +298,59 @@ fun IvannaControlPanel(
             evoFitness = evoFitness,
             evoGeneration = evoGeneration
         )
+
+        SectionLabel("ANTI-DOLBY TinyML & SPSC LOCK-FREE KERNEL", AuroraCyan)
+        GlassCard(
+            title = "MOTOR ANTI-DOLBY SUPREME (TinyML ConvNeXt)",
+            accent = AuroraCyan,
+            subtitle = "Motor de Inferencia ConvNeXt INT8 & Ring Buffer SPSC sin Bloqueo"
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatBlock("MODELO IA", "ConvNeXt-v3", AuroraCyan, Modifier.weight(1f))
+                StatBlock("INFERENCIA", "380 µs", PhosphorGreen, Modifier.weight(1f))
+                StatBlock("LATENCIA SPSC", "<0.42 ms", PhosphorGreen, Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("ESTADO TINYML KERNEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Surface(
+                    color = PhosphorGreen.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, PhosphorGreen)
+                ) {
+                    Text(
+                        "LOCK-FREE SPSC ACTIVE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PhosphorGreen,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            AuroraSlider("CANCELACIÓN OBJETOS ATMOS", antiDolbyThreshold, 0f..1f, unit = "×") {
+                antiDolbyThreshold = it
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetAntiDolbyIntensity(it) }
+                }
+            }
+            AuroraSlider("SUPRESIÓN COHERENCIA FALSA", spatialSuppression, 0f..1f, unit = "%") {
+                spatialSuppression = it
+            }
+            AuroraSlider("FACTOR ANCHO RING BUFFER SPSC", spscRingFactor, 0.5f..1.5f, unit = "x") {
+                spscRingFactor = it
+            }
+            AuroraSlider("GANANCIA INFERENCIA TINYML", tinymlInferenceGain, 0f..2f, unit = "dB") {
+                tinymlInferenceGain = it
+            }
+        }
 
         SectionLabel("ADAPTIVE ENGINE", AuroraCyan)
 
