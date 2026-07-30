@@ -9,7 +9,7 @@ public:
     EvolutionaryEQ();
     void calibrateTargetRoom();
     void processNEON(AudioBuffer* buffer);
-    void updateLM_CMA_ES(); // Evolution step
+    void updateLM_CMA_ES(); // Pasos evolutivos CMA-ES
 
     void processBlock(AudioBuffer* buffer) override { processNEON(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
