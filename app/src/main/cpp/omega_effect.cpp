@@ -111,12 +111,110 @@ static const effect_uuid_t kEffectTypeNull = {
 static const effect_uuid_t kEffectUuid = {
     0x8d7d5e0a,0xa6eb,0x4fde,0xa0ff,{0xcb,0x1b,0x2d,0xd7,0x27,0x5e}};
 static const effect_descriptor_t kDesc = {
-    kEffectTypeNull,kEffectUuid,
-    .apiVersion= EFFECT_CONTROL_API_VERSION,
-    .flags= EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
-    .cpuLoad=0,.memoryUsage=0,
-    "Omega Insert","IVANNA-FUSION"
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
 };
+
+    kEffectTypeNull,kEffectUuid,
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
+    .apiVersion= EFFECT_CONTROL_API_VERSION,
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
+    .flags= EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
+    .cpuLoad=0,.memoryUsage=0,
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
+    "Omega Insert","IVANNA-FUSION"
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
+};
+
+// Símbolo obligatorio para que Android reconozca el efecto
+__attribute__ ((visibility ("default")))
+extern "C" effect_descriptor_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
+    .type = kEffectTypeNull,
+    .uuid = kEffectUuid,
+    .apiVersion = EFFECT_CONTROL_API_VERSION,
+    .flags = EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_EXCLUSIVE,
+    .cpuLoad = 0,
+    .memoryUsage = 0,
+    "Omega Insert",
+    "IVANNA-FUSION"
+};
+
 
 /* ----------------------------------------------------------------------------
  * Shared memory mapping (recibe fd vía Unix socket)
