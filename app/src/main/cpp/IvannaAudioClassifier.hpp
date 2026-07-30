@@ -16,17 +16,24 @@
 
 namespace Ivanna {
 
+#ifndef SAMPLE_RATE
+constexpr float SAMPLE_RATE = 48000.0f;
+#endif
+#ifndef SAMPLING_RATE
+constexpr float SAMPLING_RATE = SAMPLE_RATE;
+#endif
+
 constexpr size_t MEL_BANDS = 64;
 constexpr size_t CLASSIFIER_FRAME_SIZE = 512;
 constexpr size_t FFT_SPECTRUM_SIZE = (CLASSIFIER_FRAME_SIZE / 2) + 1; // 257 bins
 constexpr size_t CONV_CHANNELS = 32;
-constexpr size_t NUM_CLASSES = 4; // 0: Speech, 1: Music, 2: Transient, 3: Noise
+constexpr size_t NUM_CLASSES = 4; // 0: Speech/Vocal, 1: Music/Spatial, 2: Transient/Impact, 3: Noise/Ambient
 constexpr size_t RING_BUFFER_CAPACITY = 16384;
 constexpr float PI_F = 3.14159265358979323846f;
 
 template <typename T, size_t Capacity>
 class alignas(64) LockFreeAudioRingBuffer {
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of two");
+    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two for bitwise wrapping");
 public:
     LockFreeAudioRingBuffer() : m_head(0), m_tail(0) {}
 
@@ -114,10 +121,6 @@ private:
     void initFilterbankAndWindow() noexcept;
     void computeSTFT(const float* frame) noexcept;
     void extractLogMelFilterbank() noexcept;
-    void extractLogMelFilterbank(const float* frame) noexcept {
-        computeSTFT(frame);
-        extractLogMelFilterbank();
-    }
 };
 
 } // namespace Ivanna
