@@ -1,6 +1,13 @@
 #include "HrtfManager.hpp"
 #include <cmath>
 #include <algorithm>
+// FIX (build): std::begin/std::end sobre arrays crudos viven en <iterator>.
+// <algorithm> no garantiza arrastrarlo, y GCC 13 del runner no lo hizo:
+// 12 errores "no matching function for call to begin(float [256])" /
+// "end(float [128])" en el constructor. Se anade el header que falta en
+// lugar de reescribir los std::fill, para no tocar la implementacion nueva.
+#include <iterator>
+#include <cstddef>
 
 namespace Ivanna {
 
@@ -14,6 +21,19 @@ HrtfManager::HrtfManager() {
 
     m_hrtfLL[0] = 1.0f;
     m_hrtfRR[0] = 1.0f;
+}
+
+// Los dos metodos que el header ya declaraba quedaban sin definir: si algun
+// consumidor los llamaba, el enlazado fallaba. Se implementan como envoltura
+// fina sobre la ruta nueva (processSpatialHrtf), asi la API publica declarada
+// y la implementacion real convergen en un solo camino de codigo.
+void HrtfManager::updateListenerPosition(float azimuth, float elevation) {
+    m_azimuth = azimuth;
+    m_elevation = elevation;
+}
+
+void HrtfManager::processSpatialization(AudioBuffer* buffer) {
+    processSpatialHrtf(buffer, m_azimuth, m_elevation);
 }
 
 void HrtfManager::processSpatialHrtf(AudioBuffer* buffer, float azimuth, float elevation) {
