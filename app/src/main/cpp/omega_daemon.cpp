@@ -552,10 +552,18 @@ static void processLoop() {
             g_shared->ai_band_high.store(g_bandMeter.envHigh, std::memory_order_relaxed);
         }
 
-        // ── Push bloque procesado a ring_out ──────────────────────────────────────
-//        g_shared->ring_out.tryPush(work_buf, blockSamples,
-//                                    &g_shared->output_buffer[0][0]);
-//    }
+        // FIX (revierte commit anterior d5aac37): tryPush() es no-bloqueante
+        // por diseno -- si el ring esta lleno, hace return false de inmediato
+        // (ver LockFreeRing::tryPush en omega_shared.h), nunca bloquea. El
+        // diagnostico de bloqueo del motor adaptativo era incorrecto.
+        // Ademas omega_effect.cpp:222 SI consume ring_out via tryPop() --
+        // deshabilitar el push corta la salida real de audio de Ruta B
+        // (coincide con telemetria muerta reportado). El comentado tambien
+        // se llevo la llave de cierre del while() de arriba, rompiendo la
+        // compilacion del archivo completo.
+        g_shared->ring_out.tryPush(work_buf, blockSamples,
+                                    &g_shared->output_buffer[0][0]);
+    }
 }
 
 // ── Parseo de comandos del socket (OmegaEngineBridge) ────────────────────────
