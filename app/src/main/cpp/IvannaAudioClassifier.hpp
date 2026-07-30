@@ -3,36 +3,39 @@
 #include "IvannaFusionCore.hpp"
 #include <atomic>
 #include <cstdint>
+#include <array>
+#include <cmath>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
 #endif
 
+#ifndef ALIGN_NEON
+#define ALIGN_NEON alignas(16)
+#endif
+
 namespace Ivanna {
 
-// 32-band log-mel filterbank resolution over 512-sample frame (~10.6ms @ 48kHz)
-constexpr size_t MEL_BANDS = 32;
+constexpr size_t MEL_BANDS = 64;
 constexpr size_t CLASSIFIER_FRAME_SIZE = 512;
-constexpr size_t CONV_CHANNELS = 16;
-constexpr size_t NUM_CLASSES = 4; // 0: Speech/Vocal, 1: Music/Spatial, 2: Transient/Impact, 3: Noise/Ambient
+constexpr size_t FFT_SPECTRUM_SIZE = (CLASSIFIER_FRAME_SIZE / 2) + 1; // 257 bins
+constexpr size_t CONV_CHANNELS = 32;
+constexpr size_t NUM_CLASSES = 4; // 0: Speech, 1: Music, 2: Transient, 3: Noise
+constexpr size_t RING_BUFFER_CAPACITY = 16384;
+constexpr float PI_F = 3.14159265358979323846f;
 
-/**
- * @brief Lock-Free Single-Producer Single-Consumer (SPSC) Ring Buffer.
- * Eliminates mutex contention between the real-time audio thread and the TinyML inference worker thread.
- * Alignas(64) prevents cache line false sharing across CPU core clusters.
- */
 template <typename T, size_t Capacity>
 class alignas(64) LockFreeAudioRingBuffer {
+    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of two");
 public:
     LockFreeAudioRingBuffer() : m_head(0), m_tail(0) {}
 
-    // Pushes 1 frame from audio callback (Lock-Free)
-    bool inline push(const T* src, size_t count) noexcept {
+    inline bool push(const T* src, size_t count) noexcept {
         const size_t current_head = m_head.load(std::memory_order_relaxed);
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
 
         if ((current_head + count - current_tail) > Capacity) {
-            return false; // Buffer overflow prevention
+            return false;
         }
 
         for (size_t i = 0; i < count; ++i) {
@@ -43,13 +46,12 @@ public:
         return true;
     }
 
-    // Pops 1 frame for background TinyML inference thread (Lock-Free)
-    bool inline pop(T* dst, size_t count) noexcept {
+    inline bool pop(T* dst, size_t count) noexcept {
         const size_t current_tail = m_tail.load(std::memory_order_relaxed);
         const size_t current_head = m_head.load(std::memory_order_acquire);
 
         if (current_head - current_tail < count) {
-            return false; // Insufficient samples
+            return false;
         }
 
         for (size_t i = 0; i < count; ++i) {
@@ -60,51 +62,62 @@ public:
         return true;
     }
 
+    size_t available() const noexcept {
+        const size_t current_head = m_head.load(std::memory_order_relaxed);
+        const size_t current_tail = m_tail.load(std::memory_order_relaxed);
+        return current_head - current_tail;
+    }
+
 private:
     T m_buffer[Capacity];
     alignas(64) std::atomic<size_t> m_head;
     alignas(64) std::atomic<size_t> m_tail;
 };
 
-/**
- * @brief YAMNet Replacement: TinyML 1D Depthwise-Separable ConvNeXt Model
- * Quantized INT8 / NEON FP16 execution engine for Android Anti-Dolby Daemon.
- */
 class alignas(64) IvannaAudioClassifier {
 public:
     IvannaAudioClassifier();
     ~IvannaAudioClassifier() = default;
 
-    // Real-time audio callback hook: zero allocation, lock-free sample push
     void ingestAudioFrame(const float* inputLeft, const float* inputRight, size_t numSamples) noexcept;
-
-    // Executes 1D Depthwise-Separable Convolution & Softmax Inferences (<8.2 µs latency)
     void processInference() noexcept;
 
-    // Returns softmax probability vector for [Speech, Music, Transient, Ambient]
     const float* getClassProbabilities() const noexcept { return m_probabilities; }
-
+    const float* getProbabilities() const noexcept { return m_probabilities; }
     uint8_t getDominantClass() const noexcept { return m_dominantClass; }
 
 private:
-    // Lock-free input queue (2048 samples capacity)
-    LockFreeAudioRingBuffer<float, 2048> m_audioRingBuffer;
+    LockFreeAudioRingBuffer<float, RING_BUFFER_CAPACITY> m_audioRingBuffer;
 
-    // Static scratchpads (Zero Heap Allocation)
     ALIGN_NEON float m_frameBuffer[CLASSIFIER_FRAME_SIZE];
+    ALIGN_NEON float m_windowedFrame[CLASSIFIER_FRAME_SIZE];
+    ALIGN_NEON float m_powerSpectrum[FFT_SPECTRUM_SIZE];
     ALIGN_NEON float m_melLogEnergies[MEL_BANDS];
-    ALIGN_NEON int8_t m_quantizedMel[MEL_BANDS];
 
-    // Model weights (INT8 Quantized 1D Depthwise Conv + Pointwise Conv + Linear)
-    ALIGN_NEON int8_t m_convDepthwiseWeights[MEL_BANDS];
-    ALIGN_NEON int8_t m_convPointwiseWeights[CONV_CHANNELS][MEL_BANDS];
-    ALIGN_NEON int8_t m_denseWeights[NUM_CLASSES][CONV_CHANNELS];
+    ALIGN_NEON float m_hanningWindow[CLASSIFIER_FRAME_SIZE];
+    ALIGN_NEON float m_fftTwiddleReal[CLASSIFIER_FRAME_SIZE / 2];
+    ALIGN_NEON float m_fftTwiddleImag[CLASSIFIER_FRAME_SIZE / 2];
+    uint16_t m_bitRevTable[CLASSIFIER_FRAME_SIZE];
+    ALIGN_NEON float m_melFilterbank[MEL_BANDS][FFT_SPECTRUM_SIZE];
+
+    ALIGN_NEON float m_depthwiseKernel[MEL_BANDS];
+    ALIGN_NEON float m_convDepthwiseWeights[MEL_BANDS];
+    ALIGN_NEON float m_pointwiseWeights[CONV_CHANNELS][MEL_BANDS];
+    ALIGN_NEON float m_convPointwiseWeights[CONV_CHANNELS][MEL_BANDS];
+    ALIGN_NEON float m_pointwiseBiases[CONV_CHANNELS];
+    ALIGN_NEON float m_denseWeights[NUM_CLASSES][CONV_CHANNELS];
+    ALIGN_NEON float m_denseBiases[NUM_CLASSES];
 
     ALIGN_NEON float m_probabilities[NUM_CLASSES];
     uint8_t m_dominantClass = 1;
 
-    // Fast SIMD 32-band Mel Log Filterbank calculation
-    void extractLogMelFilterbank(const float* frame) noexcept;
+    void initFilterbankAndWindow() noexcept;
+    void computeSTFT(const float* frame) noexcept;
+    void extractLogMelFilterbank() noexcept;
+    void extractLogMelFilterbank(const float* frame) noexcept {
+        computeSTFT(frame);
+        extractLogMelFilterbank();
+    }
 };
 
 } // namespace Ivanna
