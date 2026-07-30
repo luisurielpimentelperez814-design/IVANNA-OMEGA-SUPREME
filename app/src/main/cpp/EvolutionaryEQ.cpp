@@ -6,14 +6,13 @@
 
 namespace Ivanna {
 
-static thread_local std::mt19937 g_rng(1337);
-
-static inline float fast_rand() {
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-    return dist(g_rng);
+static float fast_rand() {
+    static std::mt19937 gen(42);
+    static std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    return dis(gen);
 }
 
-EvolutionaryEQ::EvolutionaryEQ() {
+EvolutionaryEQ::EvolutionaryEQ() : m_stepSize(0.1f) {
     for (size_t i = 0; i < FIR_TAPS; ++i) {
         m_firCoeffsL[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
         m_firCoeffsR[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
@@ -31,16 +30,16 @@ EvolutionaryEQ::EvolutionaryEQ() {
 }
 
 float EvolutionaryEQ::calculateFitness(const float* genome) {
-    float smoothnessPenalty = 0.0f;
+    float smoothness = 0.0f;
     for (size_t i = 1; i < BANDS_512; ++i) {
         float diff = genome[i] - genome[i - 1];
-        smoothnessPenalty += diff * diff;
+        smoothness += diff * diff;
     }
-    return -smoothnessPenalty;
+    return -smoothness; 
 }
 
 void EvolutionaryEQ::updateLM_CMA_ES() {
-    constexpr size_t lambda = 8;
+    constexpr size_t lambda = 10;
     float population[lambda][BANDS_512];
     float fitness[lambda];
 
@@ -60,7 +59,7 @@ void EvolutionaryEQ::updateLM_CMA_ES() {
         }
     }
 
-    constexpr float cc = 0.2f;
+    constexpr float cc = 0.1f;
     for (size_t i = 0; i < BANDS_512; ++i) {
         m_meanGenome[i] += 0.5f * (population[best_idx][i] - m_meanGenome[i]);
         m_evolutionPath[i] = (1.0f - cc) * m_evolutionPath[i] + cc * m_meanGenome[i];
@@ -68,6 +67,8 @@ void EvolutionaryEQ::updateLM_CMA_ES() {
 }
 
 void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
+    updateLM_CMA_ES();
+
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         m_histL[FIR_TAPS - 1 + i] = buffer->left[i];
         m_histR[FIR_TAPS - 1 + i] = buffer->right[i];
@@ -82,13 +83,19 @@ void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
             r_out += m_firCoeffsR[t] * m_histR[i + t];
         }
 
-        buffer->left[i] = fast_tanh_neon(l_out);
-        buffer->right[i] = fast_tanh_neon(r_out);
+        buffer->left[i] = l_out;
+        buffer->right[i] = r_out;
     }
 
     for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
         m_histL[i] = m_histL[BLOCK_SIZE + i];
         m_histR[i] = m_histR[BLOCK_SIZE + i];
+    }
+}
+
+void EvolutionaryEQ::setParameter(uint32_t paramId, float value) {
+    if (paramId == 0) {
+        m_stepSize = value;
     }
 }
 

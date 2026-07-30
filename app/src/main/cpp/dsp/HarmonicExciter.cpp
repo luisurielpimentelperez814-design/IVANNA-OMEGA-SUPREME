@@ -1,74 +1,93 @@
-#include "dsp/HarmonicExciter.h"
+#include "HarmonicExciter.h"
 #include <cmath>
 #include <algorithm>
 
 namespace ivanna {
 
-HarmonicExciter::HarmonicExciter() {
+HarmonicExciter::HarmonicExciter(float sampleRate)
+    : sampleRate_(sampleRate)
+{
     reset();
 }
 
+void HarmonicExciter::setDrive(float drive) {
+    drive_ = std::clamp(drive, 0.0f, 10.0f);
+}
+
+void HarmonicExciter::setHarmonicsMix(float evenHarmonics, float oddHarmonics) {
+    evenHarmonics_ = std::clamp(evenHarmonics, 0.0f, 1.0f);
+    oddHarmonics_  = std::clamp(oddHarmonics, 0.0f, 1.0f);
+}
+
+void HarmonicExciter::setMix(float wet, float dry) {
+    wet_ = std::clamp(wet, 0.0f, 1.0f);
+    dry_ = std::clamp(dry, 0.0f, 1.0f);
+}
+
+void HarmonicExciter::setHighpassCutoff(float fc) {
+    hpCutoff_ = std::clamp(fc, 500.0f, 10000.0f);
+    updateHighpassCoeffs();
+}
+
+void HarmonicExciter::setRuntimeReduction(float factor) {
+    runtimeReductionMul_ = std::clamp(factor, 0.1f, 1.0f);
+}
+
 void HarmonicExciter::reset() {
-    stateL_ = 0.0f;
-    stateR_ = 0.0f;
-    lpStateL_ = 0.0f;
-    lpStateR_ = 0.0f;
-    dcStateL_ = 0.0f;
-    dcStateR_ = 0.0f;
-    osBufferL_.fill(0.0f);
-    osBufferR_.fill(0.0f);
+    hpX1_L = hpX2_L = hpY1_L = hpY2_L = 0.0f;
+    hpX1_R = hpX2_R = hpY1_R = hpY2_R = 0.0f;
+    lpStateL_ = lpStateR_ = 0.0f;
+    updateHighpassCoeffs();
 }
 
-void HarmonicExciter::setHarmonics(float h2, float h3, float h4) {
-    h2_ = std::clamp(h2, 0.0f, 2.0f);
-    h3_ = std::clamp(h3, 0.0f, 2.0f);
-    h4_ = std::clamp(h4, 0.0f, 2.0f);
-}
+void HarmonicExciter::updateHighpassCoeffs() {
+    float w0 = 2.0f * 3.14159265358979323846f * hpCutoff_ / sampleRate_;
+    float cosw0 = std::cos(w0);
+    float alpha = std::sin(w0) / (2.0f * 0.70710678118654752440f);
 
-void HarmonicExciter::setMix(float drive, float wet, float dry) {
-    drive_ = std::clamp(drive, 0.0f, 4.0f);
-    wet_   = std::clamp(wet,   0.0f, 1.0f);
-    dry_   = std::clamp(dry,   0.0f, 1.0f);
-}
+    float b0 = (1.0f + cosw0) / 2.0f;
+    float b1 = -(1.0f + cosw0);
+    float b2 = (1.0f + cosw0) / 2.0f;
+    float a0 = 1.0f + alpha;
+    float a1 = -2.0f * cosw0;
+    float a2 = 1.0f - alpha;
 
-void HarmonicExciter::setSafetyGuard(float currentFatigueIndex, float acousticPressure) {
-    if (currentFatigueIndex > 0.8f || acousticPressure > 0.9f) {
-        runtimeReductionMul_ = 0.3f;
-    } else if (currentFatigueIndex > 0.5f) {
-        runtimeReductionMul_ = 0.6f;
-    } else {
-        runtimeReductionMul_ = 1.0f;
-    }
+    hpB0_ = b0 / a0;
+    hpB1_ = b1 / a0;
+    hpB2_ = b2 / a0;
+    hpA1_ = a1 / a0;
+    hpA2_ = a2 / a0;
 }
 
 void HarmonicExciter::process(float* left, float* right, int numSamples) {
+    if (!left || !right || numSamples <= 0) return;
+
     const float drive = drive_;
     const float wet   = wet_ * runtimeReductionMul_;
     const float dry   = dry_;
     (void)dry;
 
+    int osIdx = 0;
     for (int i = 0; i < numSamples; ++i) {
         float inL = left[i];
         float inR = right[i];
 
-        float hpL = inL - lpStateL_;
-        float hpR = inR - lpStateR_;
-        lpStateL_ += 0.15f * (inL - lpStateL_);
-        lpStateR_ += 0.15f * (inR - lpStateR_);
+        float hpL = hpB0_ * inL + hpB1_ * hpX1_L + hpB2_ * hpX2_L - hpA1_ * hpY1_L - hpA2_ * hpY2_L;
+        hpX2_L = hpX1_L; hpX1_L = inL;
+        hpY2_L = hpY1_L; hpY1_L = hpL;
 
-        float xL = hpL * (1.0f + drive);
-        float xR = hpR * (1.0f + drive);
+        float hpR = hpB0_ * inR + hpB1_ * hpX1_R + hpB2_ * hpX2_R - hpA1_ * hpY1_R - hpA2_ * hpY2_R;
+        hpX2_R = hpX1_R; hpX1_R = inR;
+        hpY2_R = hpY1_R; hpY1_R = hpR;
 
-        float harmL = h2_ * (xL * xL) + h3_ * (xL * xL * xL) + h4_ * (xL * xL * xL * xL);
-        float harmR = h2_ * (xR * xR) + h3_ * (xR * xR * xR) + h4_ * (xR * xR * xR * xR);
+        float exL = (hpL * drive) - (evenHarmonics_ * hpL * hpL) + (oddHarmonics_ * hpL * hpL * hpL);
+        float exR = (hpR * drive) - (evenHarmonics_ * hpR * hpR) + (oddHarmonics_ * hpR * hpR * hpR);
 
-        harmL -= dcStateL_;
-        harmR -= dcStateR_;
-        dcStateL_ += 0.01f * harmL;
-        dcStateR_ += 0.01f * harmR;
+        lpStateL_ += 0.5f * (exL - lpStateL_);
+        lpStateR_ += 0.5f * (exR - lpStateR_);
 
-        left[i]  = inL + harmL * wet;
-        right[i] = inR + harmR * wet;
+        left[i]  += wet * lpStateL_;
+        right[i] += wet * lpStateR_;
     }
 }
 
