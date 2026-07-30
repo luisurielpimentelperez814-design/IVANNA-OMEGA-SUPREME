@@ -553,9 +553,9 @@ static void processLoop() {
         }
 
         // ── Push bloque procesado a ring_out ──────────────────────────────────────
-        g_shared->ring_out.tryPush(work_buf, blockSamples,
-                                    &g_shared->output_buffer[0][0]);
-    }
+//        g_shared->ring_out.tryPush(work_buf, blockSamples,
+//                                    &g_shared->output_buffer[0][0]);
+//    }
 }
 
 // ── Parseo de comandos del socket (OmegaEngineBridge) ────────────────────────
