@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+*.zip
+app/.cxx/
+app/build/
+app/src/main/cpp/tests/build-tests/
+*.apk
+*.aab
