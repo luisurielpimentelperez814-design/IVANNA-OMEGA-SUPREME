@@ -30,6 +30,11 @@ add_library(ivanna_dsp_under_test STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/GainStage.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../anti_dolby.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../neuromorphic/volterra_h2_symmetric.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaAudioClassifier.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaFusionCore.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../EvolutionaryEQ.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../HrtfManager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Psychoacoustics.cpp
 )
 
 target_include_directories(ivanna_dsp_under_test PUBLIC

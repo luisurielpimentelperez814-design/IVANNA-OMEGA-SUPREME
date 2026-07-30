@@ -124,6 +124,11 @@ add_library(ivanna_omega SHARED
     # expuestos en IvannaNativeLib.kt) — sin UI todavía que los invoque.
     # ============================================================================
     ivannalab/ivannalab.cpp
+    IvannaAudioClassifier.cpp
+    IvannaFusionCore.cpp
+    EvolutionaryEQ.cpp
+    HrtfManager.cpp
+    Psychoacoustics.cpp
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
