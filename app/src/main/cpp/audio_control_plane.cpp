@@ -234,7 +234,8 @@ int control_apply_frame() noexcept {
 
         // Spatial
         f.spatial_angle_deg = std::clamp(evo_spatial[0] * 120.f, 0.f, 120.f);
-        f.spatial_width     = std::clamp(evo_spatial[1] * 1.5f,  0.f, 1.5f);
+        // FIX(sp[w=0.00]): floor 0.3 evita colapso a mono
+        f.spatial_width = 0.3f + std::clamp(evo_spatial[1] * 1.2f, 0.f, 1.2f);
 
         updates += 8;
 

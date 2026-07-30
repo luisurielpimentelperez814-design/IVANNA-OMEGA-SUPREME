@@ -231,7 +231,8 @@ public:
             while (evo_running_.load(std::memory_order_acquire)) {
                 evo_evolve_generation();
                 const float fit = evo_best_fitness();
-                if (fit > prev_fitness * (1.f + EVO_IMPROVEMENT_THRESHOLD)) {
+                // FIX: always publish — gate del 1% congelaba el frame al converger
+                {
                     uint8_t genome[33];
                     evo_get_best_genome(genome, 33);
                     // Write to staging buffer, then signal audio thread

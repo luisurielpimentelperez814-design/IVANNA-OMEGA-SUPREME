@@ -296,7 +296,13 @@ static float rawFitness(const float* g) {
     float tts = 1.f - std::min(1.f, T*4.f);
     float sm = 1.f - std::fabs((1.f - smoothness) - tts);
     float sb = 1.f + 0.15f * std::min(1.f, S*4.f);
-    float audio = lm * sm * sb;
+    // FIX(sp[w=0.00]): fitness era ciega al gene de ancho espacial (g[9]).
+    // Converger a g[9]=0 es igualmente válido que g[9]=0.8 para el score.
+    // +8% proporcional a g[9] empuja la selección lejos de width=0 sin
+    // dominar el resto del score. El floor de 0.3 en audio_control_plane
+    // garantiza el mínimo estéreo perceptible independientemente.
+    float wb = (GENOME_SIZE >= 10) ? (1.f + 0.08f * g[9]) : 1.f;
+    float audio = lm * sm * sb * wb;
     return base*(1.f-AUDIO_COUPLING_WEIGHT) + audio*AUDIO_COUPLING_WEIGHT;
 }
 
