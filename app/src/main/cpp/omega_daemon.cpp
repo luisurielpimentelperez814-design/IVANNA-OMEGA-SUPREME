@@ -8,6 +8,9 @@
 #include <cmath>
 #include <cstring>
 #include <csignal>
+#include <cstdlib>
+#include <cerrno>
+#include <string>
 #include <sys/stat.h>
 
 #define SOCKET_PATH "/dev/socket/ivanna_omega"
@@ -41,14 +44,30 @@ void set_realtime_priority() {
     }
 }
 
+// FIX build APK arm64-v8a (log 2026-07-30, workflow #82935170368):
+//   app:buildCMakeDebug[arm64-v8a] FAILED
+//   omega_daemon.cpp:49:13: error: cannot use 'try' with exceptions disabled
+// El toolchain del NDK compila con -fno-exceptions (regla global del
+// proyecto: cero excepciones en C++). std::stof lanza std::invalid_argument
+// / std::out_of_range, así que su uso obligaba a un try/catch que aquí no
+// puede existir. Sustituido por std::strtof, que reporta el fallo por
+// errno + endptr sin lanzar — semántica idéntica (parse best-effort, si
+// falla se conserva outVal). Cero cambio de comportamiento observable en
+// el daemon; sólo desaparece la excepción.
 void parse_json_field(const std::string& json, const std::string& key, float& outVal) {
     size_t pos = json.find("\"" + key + "\"");
     if (pos != std::string::npos) {
         size_t colon = json.find(":", pos);
         if (colon != std::string::npos) {
-            try {
-                outVal = std::stof(json.substr(colon + 1));
-            } catch (...) {}
+            const std::string tail = json.substr(colon + 1);
+            const char* c_str = tail.c_str();
+            char* endptr = nullptr;
+            errno = 0;
+            const float parsed = std::strtof(c_str, &endptr);
+            // Aceptar sólo si strtof consumió ≥1 carácter y no hubo overflow.
+            if (endptr != c_str && errno == 0) {
+                outVal = parsed;
+            }
         }
     }
 }
