@@ -1,10 +1,20 @@
-# IVANNA OMEGA SUPREME v6.0 — Cognitive Audio Engine
+# IVANNA OMEGA SUPREME v6.0 - Cognitive Audio Cortex
 
-The world's first perceptual cognitive audio ecosystem for Android with Magisk kernel integration.
+IVANNA OMEGA SUPREME is a cognitive audio framework for Android AOSP, running via Magisk kernel integration with a zero-latency native DSP daemon.
 
-## Architecture & Data Flow
-1. **PerceptualBrain (Kotlin)**: Process 12-dimensional psychoacoustic snapshot.
-2. **DecisionEngine**: Combines analytical rules + TinyML MLP Q-learning.
-3. **OmegaBridge**: High-speed Unix domain socket client (`/dev/socket/ivanna_omega`).
-4. **MagiskDaemon (C++)**: Real-time daemon running at `SCHED_FIFO` priority.
-5. **NativeDSP (C++)**: ARM NEON accelerated multiband compression, harmonic exciter, binaural HRTF, dynamic EQ.
+## Architecture Pipeline
+Audio Pipeline
+↓
+PerceptualBrainEngine (ISO 226 + ITU-R BS.1770 + Bark Spectrum)
+↓
+PerceptualDecisionEngine (TinyML + Psychoacoustic Rules)
+↓
+OmegaEngineBridge (Unix Domain Socket /dev/socket/ivanna_omega)
+↓
+Realtime C++ Daemon (SCHED_FIFO 80 + Atomic Smooth Parameters)
+↓
+Native DSP Core (ARM64 NEON Multiband Compressor + Spatial Widener)
+↓
+Android Audio HAL Output
+code
+Code

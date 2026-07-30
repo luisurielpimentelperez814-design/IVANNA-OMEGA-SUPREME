@@ -1,36 +1,35 @@
-#include "IvannaFusionCore.hpp"
+#include <jni.h>
+#include <android/log.h>
+#include "IvannaFusionCore.cpp"
+
+#define LOG_TAG "IvannaOmegaEffect"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+static IvannaFusionCore* g_fusionCore = nullptr;
 
 extern "C" {
 
-static Ivanna::IvannaFusionCore g_coreEngine;
-static Ivanna::AudioBuffer g_scratchBuffer;
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv* env, jclass clazz, jint sampleRate) {
+    if (g_fusionCore != nullptr) {
+        delete g_fusionCore;
+    }
+    g_fusionCore = new IvannaFusionCore(static_cast<float>(sampleRate));
+    LOGI("IvannaFusionCore initialized at %d Hz", sampleRate);
+}
 
-void IvannaOmega_ProcessAudio(float* leftChannel, float* rightChannel, int frameCount) {
-    if (!leftChannel || !rightChannel || frameCount <= 0) return;
-
-    int processed = 0;
-    while (processed < frameCount) {
-        int chunkSize = std::min(frameCount - processed, static_cast<int>(Ivanna::BLOCK_SIZE));
-
-        for (int i = 0; i < chunkSize; ++i) {
-            g_scratchBuffer.left[i] = leftChannel[processed + i];
-            g_scratchBuffer.right[i] = rightChannel[processed + i];
-        }
-
-        g_coreEngine.processBlock(&g_scratchBuffer);
-
-        for (int i = 0; i < chunkSize; ++i) {
-            leftChannel[processed + i] = g_scratchBuffer.left[i];
-            rightChannel[processed + i] = g_scratchBuffer.right[i];
-        }
-
-        processed += chunkSize;
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(JNIEnv* env, jclass clazz, jfloat width) {
+    if (g_fusionCore) {
+        g_fusionCore->setSpatialWidth(width);
     }
 }
 
-void IvannaOmega_UpdateParams(float gainDb, float compThresh, float compRatio, 
-                              float exciteEven, float exciteOdd, float lowPassCutoff) {
-    g_coreEngine.setParameters(gainDb, compThresh, compRatio, exciteEven, exciteOdd, lowPassCutoff);
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv* env, jclass clazz, jfloat gain) {
+    if (g_fusionCore) {
+        g_fusionCore->setHarmonicGain(gain);
+    }
 }
 
 }

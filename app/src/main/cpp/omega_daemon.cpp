@@ -1,49 +1,88 @@
 #include <iostream>
-#include <fstream>
-#include <string>
-#include <thread>
-#include <chrono>
-#include <csignal>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <sched.h>
-#include "IvannaFusionCore.hpp"
+#include <cmath>
+#include <cstring>
+#include <csignal>
+#include <sys/stat.h>
 
 #define SOCKET_PATH "/dev/socket/ivanna_omega"
-#define LOG_FILE "/data/adb/ivanna_omega/daemon.log"
+#define BUFFER_SIZE 2048
 
-static bool g_running = true;
+struct DSPParameters {
+    float compressorAmount = 0.35f;
+    float exciterReduction = 0.15f;
+    float highCutHz = 18000.0f;
+    float spatialWidth = 1.20f;
+    float loudnessTargetLuFS = -14.0f;
+    float harmonicGain = 0.85f;
+    float antiDolbyIntensity = 0.40f;
+    
+    // Smoothed parameters
+    float currentCompressor = 0.35f;
+    float currentSpatialWidth = 1.20f;
+    float currentHarmonicGain = 0.85f;
+};
 
-void signalHandler(int signum) {
-    g_running = false;
-}
+static DSPParameters g_dspParams;
+static pthread_mutex_t g_paramMutex = PTHREAD_MUTEX_INITIALIZER;
 
-void logMessage(const std::string& msg) {
-    std::ofstream log(LOG_FILE, std::ios::app);
-    if (log.is_open()) {
-        log << "[DAEMON] " << msg << std::endl;
-    }
-}
-
-int main() {
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
-
-    logMessage("IVANNA OMEGA SUPREME v6.0 Daemon starting...");
-
-    // Set Real-Time Thread Priority
+void set_realtime_priority() {
     struct sched_param param;
     param.sched_priority = 80;
     if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
-        logMessage("Warning: Could not set SCHED_FIFO real-time priority.");
+        std::cerr << "[IvannaDaemon] Warning: Could not set SCHED_FIFO priority." << std::endl;
+    } else {
+        std::cout << "[IvannaDaemon] Realtime SCHED_FIFO priority set successfully." << std::endl;
     }
+}
+
+void parse_json_field(const std::string& json, const std::string& key, float& outVal) {
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos != std::string::npos) {
+        size_t colon = json.find(":", pos);
+        if (colon != std::string::npos) {
+            try {
+                outVal = std::stof(json.substr(colon + 1));
+            } catch (...) {}
+        }
+    }
+}
+
+void update_parameters_smooth(const std::string& jsonStr) {
+    pthread_mutex_lock(&g_paramMutex);
+    parse_json_field(jsonStr, "compressor", g_dspParams.compressorAmount);
+    parse_json_field(jsonStr, "exciterReduction", g_dspParams.exciterReduction);
+    parse_json_field(jsonStr, "highCutHz", g_dspParams.highCutHz);
+    parse_json_field(jsonStr, "spatialWidth", g_dspParams.spatialWidth);
+    parse_json_field(jsonStr, "loudnessTargetLuFS", g_dspParams.loudnessTargetLuFS);
+    parse_json_field(jsonStr, "harmonicGain", g_dspParams.harmonicGain);
+    parse_json_field(jsonStr, "antiDolbyIntensity", g_dspParams.antiDolbyIntensity);
+
+    // Bounds & NaN validation
+    if (std::isnan(g_dspParams.compressorAmount)) g_dspParams.compressorAmount = 0.35f;
+    if (std::isnan(g_dspParams.spatialWidth)) g_dspParams.spatialWidth = 1.0f;
+    if (std::isnan(g_dspParams.harmonicGain)) g_dspParams.harmonicGain = 1.0f;
+
+    g_dspParams.compressorAmount = std::max(0.0f, std::min(1.0f, g_dspParams.compressorAmount));
+    g_dspParams.spatialWidth = std::max(0.1f, std::min(3.0f, g_dspParams.spatialWidth));
+    g_dspParams.harmonicGain = std::max(0.0f, std::min(2.0f, g_dspParams.harmonicGain));
+
+    pthread_mutex_unlock(&g_paramMutex);
+}
+
+int main() {
+    signal(SIGPIPE, SIG_IGN);
+    set_realtime_priority();
 
     unlink(SOCKET_PATH);
-
     int serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (serverFd < 0) {
-        logMessage("Error creating socket.");
+        perror("[IvannaDaemon] Socket creation failed");
         return 1;
     }
 
@@ -53,32 +92,42 @@ int main() {
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
 
     if (bind(serverFd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        logMessage("Error binding socket.");
+        perror("[IvannaDaemon] Bind failed");
         close(serverFd);
         return 1;
     }
 
-    chmod(SOCKET_PATH, 0777);
-    listen(serverFd, 5);
+    chmod(SOCKET_PATH, 0666);
+    if (listen(serverFd, 10) < 0) {
+        perror("[IvannaDaemon] Listen failed");
+        close(serverFd);
+        return 1;
+    }
 
-    logMessage("Daemon socket bound to " SOCKET_PATH ". Listening for client IPC...");
+    std::cout << "[IvannaDaemon] Running Realtime Daemon on " << SOCKET_PATH << std::endl;
 
-    while (g_running) {
-        int clientFd = accept(serverFd, NULL, NULL);
-        if (clientFd >= 0) {
-            logMessage("Client connected.");
-            char buffer[1024] = {0};
-            ssize_t bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
-            if (bytesRead > 0) {
-                logMessage(std::string("Received IPC: ") + buffer);
+    char buffer[BUFFER_SIZE];
+    while (true) {
+        int clientFd = accept(serverFd, nullptr, nullptr);
+        if (clientFd < 0) continue;
+
+        ssize_t bytesRead = read(clientFd, buffer, BUFFER_SIZE - 1);
+        if (bytesRead > 0) {
+            buffer[bytesRead] = '\0';
+            std::string req(buffer);
+            if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
+                update_parameters_smooth(req);
+                const char* ack = "{\"status\":\"OK\",\"message\":\"PERCEPTUAL_STATE_APPLIED\"}\n";
+                write(clientFd, ack, strlen(ack));
+            } else {
+                const char* ack = "{\"status\":\"OK\",\"message\":\"COMMAND_PROCESSED\"}\n";
+                write(clientFd, ack, strlen(ack));
             }
-            close(clientFd);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        close(clientFd);
     }
 
     close(serverFd);
     unlink(SOCKET_PATH);
-    logMessage("Daemon terminated safely.");
     return 0;
 }

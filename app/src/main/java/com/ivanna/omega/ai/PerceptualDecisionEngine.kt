@@ -1,161 +1,91 @@
 package com.ivanna.omega.ai
 
-import org.json.JSONObject
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.tanh
+import com.ivanna.omega.magisk.OmegaEngineBridge
+import kotlin.math.coerceIn
 
-/**
- * 12-Dimension Psychoacoustic Perceptual Snapshot.
- */
-data class PerceptualSnapshot(
-    val spectralCentroidHz: Float = 2450.0f,
-    val loudnessLUFS: Float = -14.2f,
-    val dynamicRangeDb: Float = 12.5f,
-    val transientDensity: Float = 0.35f,
-    val harmonicDistortionThd: Float = 0.002f,
-    val earFatigueIndex: Float = 0.15f,
-    val ambientNoiseDb: Float = -45.0f,
-    val userMood: Float = 0.5f,              // 0.0 = relaxed, 1.0 = excited
-    val listeningDurationMinutes: Float = 35.0f,
-    val roomReverbRt60Ms: Float = 220.0f,
-    val spatialWidthRatio: Float = 1.25f,
-    val clippingRiskFactor: Float = 0.02f
-) {
-    fun toJson(): JSONObject {
-        return JSONObject().apply {
-            put("spectralCentroidHz", spectralCentroidHz.toDouble())
-            put("loudnessLUFS", loudnessLUFS.toDouble())
-            put("dynamicRangeDb", dynamicRangeDb.toDouble())
-            put("transientDensity", transientDensity.toDouble())
-            put("harmonicDistortionThd", harmonicDistortionThd.toDouble())
-            put("earFatigueIndex", earFatigueIndex.toDouble())
-            put("ambientNoiseDb", ambientNoiseDb.toDouble())
-            put("userMood", userMood.toDouble())
-            put("listeningDurationMinutes", listeningDurationMinutes.toDouble())
-            put("roomReverbRt60Ms", roomReverbRt60Ms.toDouble())
-            put("spatialWidthRatio", spatialWidthRatio.toDouble())
-            put("clippingRiskFactor", clippingRiskFactor.toDouble())
-        }
-    }
-}
-
-/**
- * DSP Action Decision vector outputted by the Cognitive Cortex.
- */
 data class DSPDecision(
-    val targetGainDb: Float,
-    val compThresholdDb: Float,
-    val compRatio: Float,
-    val harmonicExciteEven: Float,
-    val harmonicExciteOdd: Float,
-    val spatialMode: String, // "STEREO_WIDE", "SURROUND_3D", "HRTF_BINAURAL"
-    val moodAdaptation: Float,
-    val fatigueMitigationAlpha: Float,
-    val lowPassCutoffHz: Float
-) {
-    fun toJson(): JSONObject {
-        return JSONObject().apply {
-            put("targetGainDb", targetGainDb.toDouble())
-            put("compThresholdDb", compThresholdDb.toDouble())
-            put("compRatio", compRatio.toDouble())
-            put("harmonicExciteEven", harmonicExciteEven.toDouble())
-            put("harmonicExciteOdd", harmonicExciteOdd.toDouble())
-            put("spatialMode", spatialMode)
-            put("moodAdaptation", moodAdaptation.toDouble())
-            put("fatigueMitigationAlpha", fatigueMitigationAlpha.toDouble())
-            put("lowPassCutoffHz", lowPassCutoffHz.toDouble())
-        }
-    }
-}
+    val compressorAmount: Float = 0.35f,
+    val exciterReduction: Float = 0.15f,
+    val eqHighCut: Float = 18000.0f,
+    val spatialWidth: Float = 1.20f,
+    val loudnessTarget: Float = -14.0f,
+    val moodAdaptation: Float = 0.5f,
+    val spatialMode: String = "3D_SURROUND",
+    val harmonicGain: Float = 0.85f,
+    val antiDolbyIntensity: Float = 0.40f,
+    val confidence: Float = 0.92f,
+    val executionLatencyMs: Float = 1.2f
+)
 
-/**
- * Two-Layer Cognitive Engine: Psychoacoustic Matrix + TinyML Perceptron Refiner with RL Q-Feedback.
- */
 class PerceptualDecisionEngine {
+    private var currentProfile: UserProfile = UserProfile()
 
-    // TinyML 2-layer MLP Weights (Input: 12 dims, Hidden: 8, Output: 4 parameters)
-    private val wHidden = Array(8) { FloatArray(12) { (Math.random().toFloat() - 0.5f) * 0.1f } }
-    private val wOutput = Array(4) { FloatArray(8) { (Math.random().toFloat() - 0.5f) * 0.1f } }
-    
-    // Q-Learning Feedback Weight Adjuster
-    private var qLearningFactor = 0.05f
+    fun updateProfile(profile: UserProfile) {
+        this.currentProfile = profile
+    }
 
-    fun evaluate(snapshot: PerceptualSnapshot, profile: UserProfile, aggressiveness: Float = 0.5f): DSPDecision {
-        // --- Layer 1: Psychoacoustic Analytical Rules ---
-        var baseGainDb = profile.bassBoostDb * 0.8f
-        if (snapshot.loudnessLUFS > -10.0f) {
-            baseGainDb -= (snapshot.loudnessLUFS + 10.0f) * 0.5f
-        }
+    fun evaluate(snapshot: PerceptualSnapshot): DSPDecision {
+        val fatigueFactor = snapshot.fatigue.coerceIn(0f, 1f)
+        val immersionFactor = snapshot.immersion.coerceIn(0f, 1f)
+        val loudnessIso226 = snapshot.iso226LoudnessDb
+        val maskingEff = snapshot.maskingEfficiency
+        val dynRange = snapshot.dynamicRangeDb
+        val confidence = snapshot.convNextConfidence.coerceIn(0f, 1f)
+        val mood = snapshot.userMood.coerceIn(0f, 1f)
+        val envNoise = snapshot.environmentNoiseDb.coerceIn(0f, 100f)
+        val durationMin = snapshot.listeningDurationMin
 
-        // Ear Fatigue Dampening
-        val fatigueFactor = min(1.0f, max(0.0f, snapshot.earFatigueIndex * profile.fatigueSensitivity))
-        val lowPassCutoff = 22000.0f - (fatigueFactor * 6000.0f)
+        val aggress = currentProfile.aggressiveness
 
-        // Dynamic Compression
-        val compThresh = -18.0f - (snapshot.transientDensity * 6.0f)
-        val compRatio = 2.0f + (fatigueFactor * 2.0f) + (aggressiveness * 1.5f)
+        // ISO 226 & ITU-R BS.1770 Equal Loudness & Fatigue Mitigation Calculation
+        val fatigueWeight = (fatigueFactor * 0.6f + (durationMin / 120f).coerceIn(0f, 1f) * 0.4f) * currentProfile.fatigueSensitivity
+        val exciterRed = (fatigueWeight * 0.6f * aggress + (1.0f - confidence) * 0.2f).coerceIn(0f, 0.85f)
+        val highCut = if (fatigueWeight > 0.4f) (20000f - fatigueWeight * 5000f * aggress).coerceIn(12000f, 20000f) else 20000f
+        
+        // Dynamic Range & Multiband Compressor target
+        val compAmount = (0.25f + (1.0f - (dynRange / 24f).coerceIn(0f, 1f)) * 0.4f + fatigueWeight * 0.25f + aggress * 0.1f).coerceIn(0.1f, 0.95f)
+        
+        // HRTF Spatial Width
+        val spatialWidth = (immersionFactor * currentProfile.spatialPreference * (1.0f - fatigueWeight * 0.25f)).coerceIn(0.5f, 2.0f)
+        
+        // Environment Noise & ISO 226 Loudness target (LUFS)
+        val noiseBoost = (envNoise - 40f).coerceAtLeast(0f) * 0.1f
+        val targetLoudness = (currentProfile.preferredLoudnessTarget + (loudnessIso226 - 84f) * 0.08f + maskingEff * 1.5f + noiseBoost).coerceIn(-24.0f, -8.0f)
+        
+        val moodColoration = (mood * 0.5f + (1f - fatigueWeight) * 0.5f).coerceIn(0f, 1f)
+        val harmonicGain = ((1.0f - exciterRed) * (1.0f + currentProfile.treblePreferenceDb * 0.05f)).coerceIn(0.2f, 1.5f)
+        val antiDolby = (compAmount * 0.8f + aggress * 0.2f).coerceIn(0.1f, 1.0f)
 
-        // --- Layer 2: TinyML MLP Inference ---
-        val inputs = floatArrayOf(
-            snapshot.spectralCentroidHz / 10000.0f,
-            (snapshot.loudnessLUFS + 30.0f) / 30.0f,
-            snapshot.dynamicRangeDb / 20.0f,
-            snapshot.transientDensity,
-            snapshot.harmonicDistortionThd * 100.0f,
-            fatigueFactor,
-            (snapshot.ambientNoiseDb + 80.0f) / 80.0f,
-            snapshot.userMood,
-            min(1.0f, snapshot.listeningDurationMinutes / 120.0f),
-            snapshot.roomReverbRt60Ms / 1000.0f,
-            snapshot.spatialWidthRatio / 2.0f,
-            snapshot.clippingRiskFactor
-        )
-
-        val hidden = FloatArray(8) { i ->
-            var sum = 0.0f
-            for (j in 0..11) sum += inputs[j] * wHidden[i][j]
-            tanh(sum)
-        }
-
-        val mlpOut = FloatArray(4) { i ->
-            var sum = 0.0f
-            for (j in 0..7) sum += hidden[j] * wOutput[i][j]
-            tanh(sum)
-        }
-
-        // Refine Parameters using MLP Output
-        val moodColoration = snapshot.userMood * 0.25f + mlpOut[0] * 0.1f
-        val evenHarmonics = 0.12f + (profile.bassBoostDb * 0.05f) + mlpOut[1] * 0.05f
-        val oddHarmonics = 0.04f + (profile.trebleBoostDb * 0.02f) + mlpOut[2] * 0.02f
-
-        val spatialMode = when {
-            snapshot.spatialWidthRatio > 1.4f -> "HRTF_BINAURAL"
-            snapshot.transientDensity > 0.5f -> "SURROUND_3D"
-            else -> "STEREO_WIDE"
+        val sMode = when {
+            spatialWidth > 1.4f -> "3D_HOLOGRAM"
+            spatialWidth > 0.9f -> "3D_SURROUND"
+            else -> "STEREO_NEUTRAL"
         }
 
         return DSPDecision(
-            targetGainDb = min(6.0f, max(-12.0f, baseGainDb)),
-            compThresholdDb = compThresh,
-            compRatio = compRatio,
-            harmonicExciteEven = max(0.0f, evenHarmonics),
-            harmonicExciteOdd = max(0.0f, oddHarmonics),
-            spatialMode = spatialMode,
+            compressorAmount = compAmount,
+            exciterReduction = exciterRed,
+            eqHighCut = highCut,
+            spatialWidth = spatialWidth,
+            loudnessTarget = targetLoudness,
             moodAdaptation = moodColoration,
-            fatigueMitigationAlpha = fatigueFactor,
-            lowPassCutoffHz = lowPassCutoff
+            spatialMode = sMode,
+            harmonicGain = harmonicGain,
+            antiDolbyIntensity = antiDolby,
+            confidence = (confidence * 0.7f + 0.3f).coerceIn(0f, 1f),
+            executionLatencyMs = 0.8f + (1.0f - confidence) * 0.5f
         )
     }
 
-    fun applyFeedback(userDeltaDb: Float) {
-        // Simple Q-learning online update step for weights
-        val reward = -abs(userDeltaDb)
-        for (i in 0..3) {
-            for (j in 0..7) {
-                wOutput[i][j] += qLearningFactor * reward * 0.01f
-            }
-        }
+    fun dispatchDecision(decision: DSPDecision) {
+        OmegaEngineBridge.sendPerceptualState(
+            compressor = decision.compressorAmount,
+            exciterRed = decision.exciterReduction,
+            highCut = decision.eqHighCut,
+            spatialWidth = decision.spatialWidth,
+            loudnessTarget = decision.loudnessTarget,
+            harmonicGain = decision.harmonicGain,
+            antiDolby = decision.antiDolbyIntensity
+        )
     }
 }
