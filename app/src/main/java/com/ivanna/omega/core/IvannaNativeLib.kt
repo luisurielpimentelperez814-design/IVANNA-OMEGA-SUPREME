@@ -119,6 +119,7 @@ object IvannaNativeLib {
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
     external fun nativeSetSpatialWidthDirect(width: Float)
+    external fun nativeSetAntiDolbyIntensity(intensity: Float)
 
     // ═══ FASE 2: aplicación del ControlFrame desde el hilo de control ═══
     // Llama a control_apply_frame() en C++, que fusiona:

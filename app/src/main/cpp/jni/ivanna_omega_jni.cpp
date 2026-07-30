@@ -1063,6 +1063,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
     applyNhoWet();
 }
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
+    JNIEnv*, jobject, jfloat v) {
+    if (!std::isfinite(v)) return;
+    g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
+    applyNhoWet();
+}
 // ═══════════════════════════════════════════════════════════════════════════════
 // OmegaEngine mode control
 // ═══════════════════════════════════════════════════════════════════════════════
