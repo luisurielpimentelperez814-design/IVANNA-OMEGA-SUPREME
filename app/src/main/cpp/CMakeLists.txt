@@ -66,6 +66,14 @@ add_library(ivanna_omega SHARED
     shm_hyperplane.cpp
     omega_daemon.cpp
 
+    # FIX (build): stub del puente omega_daemon → app process.
+    # Define omega_daemon_get_shared_state() referenciado por
+    # jni/ivanna_omega_jni.cpp:233 (audioRouteBridgeLoop). Devuelve
+    # nullptr; el caller ya maneja ese caso con `if (!shared) continue;`
+    # → el hilo puente se duerme silenciosamente. Ver el .cpp para el
+    # plan de sustitución cuando se restaure el puente memfd real.
+    omega_daemon_bridge_stub.cpp
+
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
     anti_dolby.cpp
