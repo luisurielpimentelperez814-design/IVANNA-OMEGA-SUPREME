@@ -29,7 +29,8 @@ void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
         }
 
         if (buffer->left[i] > 0.001f && m_envLeft > 0.1f) {
-            float comp = 1.0f + (0.5f * (m_envLeft - absL));
+            float comp = 1.0f + (0.15f * (m_envLeft - absL));
+            comp = std::min(comp, 1.3f);
             buffer->left[i] *= comp;
         }
 
@@ -41,7 +42,8 @@ void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
         }
 
         if (buffer->right[i] > 0.001f && m_envRight > 0.1f) {
-            float comp = 1.0f + (0.5f * (m_envRight - absR));
+            float comp = 1.0f + (0.15f * (m_envRight - absR));
+            comp = std::min(comp, 1.3f);
             buffer->right[i] *= comp;
         }
     }
@@ -54,24 +56,10 @@ void Psychoacoustics::predictAndMitigateFatigue(AudioBuffer* buffer) {
     }
     rms = std::sqrt(rms / BLOCK_SIZE);
 
-    int16_t x_t = static_cast<int16_t>(rms * 256.0f);
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    int16x8_t c_prev = vld1q_s16(m_c_state);
-    int16x8_t f_t = vdupq_n_s16(x_t);
-    int16x8_t c_new = vmulq_s16(c_prev, f_t);
-    vst1q_s16(m_c_state, c_new);
-
-    int32_t cell_sum = vgetq_lane_s16(c_new, 0);
-    m_fatigueIndex = std::abs(static_cast<float>(cell_sum)) / 32768.0f;
-#else
-    m_c_state[0] = static_cast<int16_t>((m_c_state[0] * x_t) >> 8);
-    m_fatigueIndex = std::abs(static_cast<float>(m_c_state[0])) / 32768.0f;
-#endif
-
-    if (m_fatigueIndex > 1.0f) {
-        m_fatigueIndex = 1.0f;
-    }
+    // leaky integrator float: reemplaza int16 que desbordaba y corrompía alpha
+    constexpr float kTau = 0.9995f;
+    m_fatigueIndex = kTau * m_fatigueIndex + (1.0f - kTau) * rms;
+    if (m_fatigueIndex > 1.0f) m_fatigueIndex = 1.0f;
 
     float alpha = 1.0f - (m_fatigueIndex * 0.4f);
     float stateL = 0.0f;

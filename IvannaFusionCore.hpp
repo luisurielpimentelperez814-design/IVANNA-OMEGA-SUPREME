@@ -34,6 +34,7 @@ public:
 };
 
 class HrtfManager;
+class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
 
@@ -53,6 +54,7 @@ public:
 private:
     bool m_goldenEarActive = false;
     HrtfManager* m_hrtf = nullptr;
+    EvolutionaryEQ* m_evoEq = nullptr;
     Psychoacoustics* m_psycho = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
 };
