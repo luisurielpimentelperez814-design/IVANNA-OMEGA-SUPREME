@@ -122,6 +122,10 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (sr == 0) sr = 48000;
                 if (!g_fusionCore) g_fusionCore = new IvannaFusionCore((float)sr);
                 g_fusionCore->initSpatial((float)sr, 4096);
+                // Dataset HRTF personalizado (si existe). Fallback: sintético.
+                if (g_fusionCore->loadCustomHrtf("/data/adb/ivanna_omega/hrtf_dataset.ihr1")) {
+                    LOGI("Custom HRTF dataset loaded from /data/adb/ivanna_omega/");
+                }
             }
             break;
         case EFFECT_CMD_ENABLE:
