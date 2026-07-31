@@ -128,7 +128,7 @@ object CloudSyncManager {
      * cualquier fallo (sin red, sin configurar, etc.) se loguea y no propaga
      * excepción — nunca debe romper el flujo de guardado local.
      */
-    suspend fun syncUp(context: Context, profileManager: com.ivanna.omega.ai.UserProfileManager) {
+    suspend fun syncUp(context: Context, profileManager: UserProfileManager) {
         if (!ensureInit(context)) return
         val uid = ensureSignedIn() ?: return
         try {
@@ -157,7 +157,7 @@ object CloudSyncManager {
      * tenga updatedAt/timestamp mas reciente por entrada (last-write-wins),
      * no pisa el historial local a ciegas. Best-effort igual que syncUp.
      */
-    suspend fun syncDown(context: Context, profileManager: com.ivanna.omega.ai.UserProfileManager) {
+    suspend fun syncDown(context: Context, profileManager: UserProfileManager) {
         if (!ensureInit(context)) return
         val uid = ensureSignedIn() ?: return
         try {
@@ -172,7 +172,7 @@ object CloudSyncManager {
                 val presetName = m["presetName"] as? String ?: return@mapNotNull null
                 val timestamp = (m["timestamp"] as? Number)?.toLong() ?: return@mapNotNull null
                 val sourceApp = m["sourceApp"] as? String
-                com.ivanna.omega.ai.UserProfileManager.UserProfile(name, presetName, timestamp, sourceApp)
+                ProfileHistoryEntry(name, presetName, timestamp, sourceApp)
             } ?: emptyList()
 
             // Merge: union por timestamp, sin duplicar, ultimos 50, orden cronologico.
@@ -207,7 +207,7 @@ object CloudSyncManager {
      * Serializa el estado actual de [profileManager] a un JSON en filesDir.
      * Devuelve true si el archivo se escribió correctamente.
      */
-    suspend fun exportLocalBackup(context: Context, profileManager: com.ivanna.omega.ai.UserProfileManager): Boolean =
+    suspend fun exportLocalBackup(context: Context, profileManager: UserProfileManager): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 val history = JSONArray()
@@ -238,7 +238,7 @@ object CloudSyncManager {
      * Lee el JSON de respaldo y fusiona su historial con el local
      * (last-write-wins, últimos 50). Devuelve true si se aplicó algo.
      */
-    suspend fun importLocalBackup(context: Context, profileManager: com.ivanna.omega.ai.UserProfileManager): Boolean =
+    suspend fun importLocalBackup(context: Context, profileManager: UserProfileManager): Boolean =
         withContext(Dispatchers.IO) {
             val file = localBackupFile(context)
             if (!file.exists()) {
@@ -253,7 +253,7 @@ object CloudSyncManager {
                         val m = arr.getJSONObject(i)
                         val src = m.opt("sourceApp")
                         add(
-                            com.ivanna.omega.ai.UserProfileManager.UserProfile(
+                            ProfileHistoryEntry(
                                 name = m.getString("name"),
                                 presetName = m.getString("presetName"),
                                 timestamp = m.getLong("timestamp"),

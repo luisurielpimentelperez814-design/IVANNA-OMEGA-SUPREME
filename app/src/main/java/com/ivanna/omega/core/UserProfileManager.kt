@@ -3,6 +3,13 @@ package com.ivanna.omega.core
 import org.json.JSONObject
 import java.io.File
 
+data class ProfileHistoryEntry(
+    val name: String,
+    val presetName: String,
+    val timestamp: Long,
+    val sourceApp: String? = null
+)
+
 data class UserProfile(
     var preferredEqStyle: String = "Cognitive Balanced",
     var bassPreference: Float = 0.0f,   // -1.0 to +1.0
@@ -66,5 +73,16 @@ class UserProfileManager(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private val history = mutableListOf<ProfileHistoryEntry>()
+
+    fun getHistory(): List<ProfileHistoryEntry> {
+        return history.toList()
+    }
+
+    fun replaceHistory(newHistory: List<ProfileHistoryEntry>) {
+        history.clear()
+        history.addAll(newHistory)
     }
 }
