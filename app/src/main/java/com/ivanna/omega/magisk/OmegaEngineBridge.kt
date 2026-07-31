@@ -95,12 +95,7 @@ object OmegaEngineBridge {
             false
         }
     }
-
-    fun disconnect() {
-        isConnected = false
-    }
-
-    fun setPFParams(
+fun setPFParams(
         vararg params: Float
     ): Boolean {
         val payload = JSONObject().apply {
