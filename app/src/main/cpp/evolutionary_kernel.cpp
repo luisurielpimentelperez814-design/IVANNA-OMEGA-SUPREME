@@ -316,3 +316,7 @@ extern "C" void evo_get_best_genome(uint8_t* out_genome, int len) {
     const int copy_n = len < GENOME_SIZE ? len : GENOME_SIZE;
     for (int i = 0; i < copy_n; ++i) out_genome[i] = best->genome[i];
 }
+
+extern "C" int evo_get_generation(void) {
+    return static_cast<int>(g_population.generation);
+}
