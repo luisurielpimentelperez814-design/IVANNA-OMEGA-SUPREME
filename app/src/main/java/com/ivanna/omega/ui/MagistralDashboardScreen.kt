@@ -98,7 +98,7 @@ fun MagistralDashboardScreen(
 
         // 3. 3D Spatial Scene Map
         Text(
-            text = "3D SPATIAL SCENE (${currentDecision.spatialMode.name})",
+            text = "3D SPATIAL SCENE (${currentDecision.spatialMode})",
             color = Color.LightGray,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold

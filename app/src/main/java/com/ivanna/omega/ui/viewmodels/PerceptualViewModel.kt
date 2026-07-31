@@ -21,6 +21,17 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
     private val _userProfile = MutableStateFlow(profileManager.loadProfile())
     val userProfile: StateFlow<UserProfile> = _userProfile.asStateFlow()
 
+
+    data class UiState(
+        val fatigueHistory: List<Float> = listOf(0.2f),
+        val immersionHistory: List<Float> = listOf(0.5f),
+        val neuralConfidencePercent: Int = 0,
+        val isBridgeConnected: Boolean = false
+    )
+
+    private val _uiState = MutableStateFlow(UiState())
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
     private val _dspDecision = MutableStateFlow(DSPDecision())
     val dspDecision: StateFlow<DSPDecision> = _dspDecision.asStateFlow()
 

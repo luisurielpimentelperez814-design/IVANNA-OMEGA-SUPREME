@@ -76,14 +76,4 @@ object OmegaEngineBridge {
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
 
-
-    fun setAggressiveness(value: Float) {
-        _uiState.value = _uiState.value.copy(
-            aggressiveness = value.coerceIn(0f, 1f)
-        )
-    }
-
-    fun resetToNeutralProfile() {
-        _uiState.value = EngineUiState()
-    }
 }
