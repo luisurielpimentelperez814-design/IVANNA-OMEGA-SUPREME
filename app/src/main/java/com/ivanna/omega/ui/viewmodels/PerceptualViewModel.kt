@@ -48,4 +48,17 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
         profileManager.saveProfile(neutral)
         decisionEngine.updateProfile(neutral)
     }
+
+
+    fun setAggressiveness(value: Float) {
+        _dspDecision.value = _dspDecision.value.copy(
+            confidence = value.coerceIn(0f, 1f)
+        )
+    }
+
+    fun resetToNeutralProfile() {
+        _dspDecision.value = DSPDecision()
+    }
 }
+
+
