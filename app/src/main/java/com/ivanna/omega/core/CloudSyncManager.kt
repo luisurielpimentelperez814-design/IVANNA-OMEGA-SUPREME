@@ -264,8 +264,12 @@ object CloudSyncManager {
                 }
                 val localHistory = profileManager.getHistory()
                 val merged = (localHistory + remoteHistory)
-                    .distinctBy { it.timestamp to it.presetName }
-                    .sortedBy { it.timestamp }
+                    .distinctBy { profile ->
+                        profile.timestamp to profile.presetName
+                    }
+                    .sortedBy { profile ->
+                        profile.timestamp
+                    }
                     .takeLast(50)
                 profileManager.replaceHistory(merged)
                 Log.i(TAG, "importLocalBackup OK: ${localHistory.size} local + ${remoteHistory.size} backup -> ${merged.size}")

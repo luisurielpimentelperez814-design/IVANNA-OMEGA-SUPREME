@@ -198,7 +198,10 @@ class IVANNAApplication : Application() {
         // arranque del motor DSP si falla o tarda (red lenta, etc.).
         appScope.launch {
             try {
-                CloudSyncManager.syncDown(this@IVANNAApplication, UserProfileManager(this@IVANNAApplication))
+                CloudSyncManager.syncDown(
+                      this@IVANNAApplication,
+                      UserProfileManager(this@IVANNAApplication)
+                  )
             } catch (e: Exception) {
                 Log.w(TAG, "syncDown en arranque falló (no crítico): ${e.message}")
             }
