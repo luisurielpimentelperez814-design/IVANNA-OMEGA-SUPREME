@@ -29,9 +29,7 @@ class AtmosParser : ObjectExtractor {
             
             val obj = AudioObject(
                 id = 100 + i,
-                positionX = x,
-                positionY = y,
-                positionZ = z,
+                position = com.ivanna.omega.audio.objects.Vector3D(x, y, z),
                 gain = 0.9f,
                 priority = 10
             )

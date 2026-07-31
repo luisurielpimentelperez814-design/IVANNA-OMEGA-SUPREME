@@ -105,8 +105,32 @@ object OmegaEngineBridge {
         return sendCommand(payload)
     }
 
+    fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",     "SET_ADAPTIVE_STATE")
+            put("targetGain", targetGain.toDouble())
+            put("compAmount", compAmount.toDouble())
+            put("excRed",     excRed.toDouble())
+            put("timestamp",  System.currentTimeMillis())
+        })
+
+    fun pushYamnetScores(speech: Float, music: Float, classId: Int, confidence: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",     "SET_YAMNET_SCORES")
+            put("speech",     speech.toDouble())
+            put("music",      music.toDouble())
+            put("classId",    classId)
+            put("confidence", confidence.toDouble())
+            put("timestamp",  System.currentTimeMillis())
+        })
+
+    fun setRouteProfile(routeProfile: Any): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",       "SET_ROUTE_PROFILE")
+            put("routeProfile", routeProfile.toString())
+            put("timestamp",    System.currentTimeMillis())
+        })
+
     fun getStatus(): Boolean = isConnected
-
     fun getLastLatencyMs(): Float = lastLatencyMs
-
 }

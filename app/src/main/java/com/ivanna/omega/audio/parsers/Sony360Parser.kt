@@ -3,6 +3,7 @@ package com.ivanna.omega.audio.parsers
 import com.ivanna.omega.audio.objects.AudioObject
 import com.ivanna.omega.audio.objects.AudioScene
 import com.ivanna.omega.audio.objects.ObjectExtractor
+import com.ivanna.omega.audio.objects.Vector3D
 import java.nio.ByteBuffer
 
 /**
@@ -27,9 +28,7 @@ class Sony360Parser : ObjectExtractor {
 
             val obj = AudioObject(
                 id = 200 + i,
-                positionX = x,
-                positionY = y,
-                positionZ = z,
+                position = Vector3D(x, y, z),
                 gain = 0.95f,
                 priority = 8
             )

@@ -100,7 +100,19 @@ data class PerceptualSnapshot(
     val harmonicReconstruction: Float = 0.75f,
     val antiDolbyBlend: Float = 1.00f,
     val humanLoudnessCompensation: Float = 0.82f
-)
+) {
+    fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("immersion",           immersion.toDouble())
+        put("fatigue",             fatigue.toDouble())
+        put("confidence",          confidence.toDouble())
+        put("iso226LoudnessDb",    iso226LoudnessDb.toDouble())
+        put("dynamicRangeDb",      dynamicRangeDb.toDouble())
+        put("convNextConfidence",  convNextConfidence.toDouble())
+        put("dominantClassLabel",  dominantClassLabel)
+        put("phaseCoherence",      phaseCoherence.toDouble())
+        put("adaptiveEngineState", adaptiveEngineState)
+    }
+}
 
 /**
  * PerceptualBrainEngine - IVANNA OMEGA SUPREME v4.0
@@ -262,12 +274,16 @@ class PerceptualBrainEngine {
         }
     }
     
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("timestamp", timestamp)
-        put("rms", rms)
-        put("peak", peak)
-        put("spectralCentroid", spectralCentroid)
-        put("energy", energy)
+    fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        val snap = _snapshot.value
+        put("immersion",           snap.immersion.toDouble())
+        put("fatigue",             snap.fatigue.toDouble())
+        put("confidence",          snap.confidence.toDouble())
+        put("iso226LoudnessDb",    snap.iso226LoudnessDb.toDouble())
+        put("dynamicRangeDb",      snap.dynamicRangeDb.toDouble())
+        put("convNextConfidence",  snap.convNextConfidence.toDouble())
+        put("dominantClassLabel",  snap.dominantClassLabel)
+        put("adaptiveEngineState", snap.adaptiveEngineState)
     }
 
 }

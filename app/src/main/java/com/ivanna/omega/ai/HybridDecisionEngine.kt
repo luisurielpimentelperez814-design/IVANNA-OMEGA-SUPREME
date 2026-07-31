@@ -1,6 +1,6 @@
 package com.ivanna.omega.ai
 
-import kotlin.math.coerceIn
+// coerceIn is stdlib — no import needed
 
 enum class SpatialMode {
     STEREO,
@@ -105,7 +105,7 @@ class HybridDecisionEngine {
             loudnessTargetLUFS = -14.0f,
             fatigueProtectionDb = fatigue.hfProtectionAttenuationDb,
             moodAdaptation = 0.2f * emotion.ordinal,
-            spatialMode = mode,
+            spatialMode = mode.name,
             roomSize = room,
             headTrackingEnabled = (mode == SpatialMode.BINAURAL_3D || mode == SpatialMode.ATMOS_OBJECTS),
             confidenceScore = confidence

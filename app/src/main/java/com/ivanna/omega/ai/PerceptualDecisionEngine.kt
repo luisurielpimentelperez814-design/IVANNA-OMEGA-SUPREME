@@ -1,7 +1,7 @@
 package com.ivanna.omega.ai
 
 import com.ivanna.omega.magisk.OmegaEngineBridge
-import kotlin.math.coerceIn)
+// coerceIn is stdlib — no import needed
 
 class PerceptualDecisionEngine {
     private var currentProfile: UserProfile = UserProfile()
@@ -17,9 +17,9 @@ class PerceptualDecisionEngine {
         val maskingEff = snapshot.maskingEfficiency
         val dynRange = snapshot.dynamicRangeDb
         val confidence = snapshot.convNextConfidence.coerceIn(0f, 1f)
-        val mood = snapshot.userMood.coerceIn(0f, 1f)
-        val envNoise = snapshot.environmentNoiseDb.coerceIn(0f, 100f)
-        val durationMin = snapshot.listeningDurationMin
+        val mood = snapshot.emotion.coerceIn(0f, 1f)             // emotion proxies userMood
+        val envNoise = snapshot.iso226LoudnessDb.coerceIn(0f, 100f) // iso226 proxies environmentNoiseDb
+        val durationMin = 0f                                      // not tracked in PerceptualSnapshot
 
         val aggress = currentProfile.aggressiveness
 

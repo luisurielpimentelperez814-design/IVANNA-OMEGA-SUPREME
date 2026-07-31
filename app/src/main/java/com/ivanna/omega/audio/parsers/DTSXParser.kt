@@ -13,11 +13,11 @@ class DTSXParser : ObjectExtractor {
 
     override fun canParse(streamHeader: ByteArray): Boolean {
         if (streamHeader.size < 4) return false
-        val sync = ((streamHeader[0].toInt() and 0xFF) shl 24) or
-                   ((streamHeader[1].toInt() and 0xFF) shl 16) or
-                   ((streamHeader[2].toInt() and 0xFF) shl 8) or
-                   (streamHeader[3].toInt() and 0xFF)
-        return sync == 0x7FFE8001 || sync == 0xFE6F4FA4
+        val sync = ((streamHeader[0].toLong() and 0xFF) shl 24) or
+                   ((streamHeader[1].toLong() and 0xFF) shl 16) or
+                   ((streamHeader[2].toLong() and 0xFF) shl 8) or
+                   (streamHeader[3].toLong() and 0xFF)
+        return sync == 0x7FFE8001L || sync == 0xFE6F4FA4L
     }
 
     override fun extractScene(audioData: ByteBuffer, byteCount: Int): AudioScene {
@@ -33,9 +33,7 @@ class DTSXParser : ObjectExtractor {
         for ((idx, pos) in positions.withIndex()) {
             val obj = AudioObject(
                 id = 300 + idx,
-                positionX = pos[0],
-                positionY = pos[1],
-                positionZ = pos[2],
+                position = com.ivanna.omega.audio.objects.Vector3D(pos[0], pos[1], pos[2]),
                 gain = 1.0f,
                 priority = 9
             )

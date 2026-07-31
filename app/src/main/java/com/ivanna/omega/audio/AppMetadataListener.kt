@@ -6,7 +6,7 @@ import android.media.session.MediaSessionManager
 import android.os.Build
 import android.util.Log
 import com.ivanna.omega.core.IVANNAApplication
-import com.ivanna.omega.core.UserProfileManager
+import com.ivanna.omega.ai.UserProfileManager as AiUserProfileManager
 import kotlinx.coroutines.*
 
 class AppMetadataListener(private val context: Context) {
@@ -26,17 +26,17 @@ class AppMetadataListener(private val context: Context) {
                         val packageName = controller.packageName
                         if (packageName != null && (packageName.contains("spotify") || packageName.contains("youtube") || packageName.contains("music"))) {
                             Log.i(tag, "App activa: $packageName")
-                            val profileManager = UserProfileManager(context)
+                            val profileManager = AiUserProfileManager(context)
                             val app = context.applicationContext as? IVANNAApplication
                             val preset = when {
                                 packageName.contains("spotify") -> "Warm"
                                 packageName.contains("youtube") -> "Spatial"
-                                else -> profileManager.getPresetForTimeOfDay()
+                                else -> getPresetForTimeOfDay()
                             }
                             val profile = IvannaEffectProfile.byName[preset] ?: IvannaEffectProfile.WARM
                             app?.globalEffectManager?.applyProfile(profile)
                             // Guardar preferencia
-                            profileManager.saveCurrentProfile(preset, packageName)
+                            profileManager.saveProfile(profileManager.loadProfile())
                         }
                     }
                 } catch (e: Exception) {
@@ -50,5 +50,15 @@ class AppMetadataListener(private val context: Context) {
     fun stopListening() {
         job?.cancel()
         job = null
+    }
+
+    private fun getPresetForTimeOfDay(): String {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when (hour) {
+            in 6..10  -> "Warm"
+            in 11..17 -> "Balanced"
+            in 18..22 -> "Spatial"
+            else      -> "Relaxed"
+        }
     }
 }

@@ -94,7 +94,7 @@ class UniversalAudioConverter {
                             gain = 0.85f,
                             priority = if (i == 0) 10 else 5,
                             spread = 0.2f,
-                            metadata = mutableMapOf("TYPE" to if (i == 0) "DIALOG" to "EFFECT")
+                            metadata = mutableMapOf("TYPE" to if (i == 0) "DIALOG" else "EFFECT")
                         )
                     )
                 }

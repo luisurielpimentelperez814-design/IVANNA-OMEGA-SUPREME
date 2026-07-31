@@ -3,6 +3,7 @@ package com.ivanna.omega.audio.parsers
 import com.ivanna.omega.audio.objects.AudioObject
 import com.ivanna.omega.audio.objects.AudioScene
 import com.ivanna.omega.audio.objects.ObjectExtractor
+import com.ivanna.omega.audio.objects.Vector3D
 import java.nio.ByteBuffer
 
 /**
@@ -24,9 +25,7 @@ class MPEGHParser : ObjectExtractor {
             val rad = a * Math.PI / 180.0
             val obj = AudioObject(
                 id = 400 + idx,
-                positionX = Math.sin(rad).toFloat(),
-                positionY = 0.1f,
-                positionZ = Math.cos(rad).toFloat(),
+                position = Vector3D(Math.sin(rad).toFloat(), 0.1f, Math.cos(rad).toFloat()),
                 gain = 0.9f,
                 priority = 8
             )
