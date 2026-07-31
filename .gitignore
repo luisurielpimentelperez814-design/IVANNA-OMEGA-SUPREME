@@ -12,3 +12,4 @@ app/build/
 app/src/main/cpp/tests/build-tests/
 *.apk
 *.aab
+repo_tmp/
