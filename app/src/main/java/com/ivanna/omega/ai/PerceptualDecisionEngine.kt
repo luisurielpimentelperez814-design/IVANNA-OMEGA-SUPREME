@@ -1,21 +1,7 @@
 package com.ivanna.omega.ai
 
 import com.ivanna.omega.magisk.OmegaEngineBridge
-import kotlin.math.coerceIn
-
-data class DSPDecision(
-    val compressorAmount: Float = 0.35f,
-    val exciterReduction: Float = 0.15f,
-    val eqHighCut: Float = 18000.0f,
-    val spatialWidth: Float = 1.20f,
-    val loudnessTarget: Float = -14.0f,
-    val moodAdaptation: Float = 0.5f,
-    val spatialMode: String = "3D_SURROUND",
-    val harmonicGain: Float = 0.85f,
-    val antiDolbyIntensity: Float = 0.40f,
-    val confidence: Float = 0.92f,
-    val executionLatencyMs: Float = 1.2f
-)
+import kotlin.math.coerceIn)
 
 class PerceptualDecisionEngine {
     private var currentProfile: UserProfile = UserProfile()

@@ -9,22 +9,6 @@ enum class SpatialMode {
     ATMOS_OBJECTS
 }
 
-data class DSPDecision(
-    val compressorAmount: Float,      // 0.0 to 1.0
-    val exciterReduction: Float,     // 0.0 to 1.0
-    val eqLowDb: Float,              // -12.0 to +12.0 dB
-    val eqMidDb: Float,              // -12.0 to +12.0 dB
-    val eqHighDb: Float,             // -12.0 to +12.0 dB
-    val spatialWidth: Float,         // 0.0 (mono) to 2.0 (super-wide)
-    val loudnessTargetLUFS: Float,   // e.g. -14.0 LUFS
-    val fatigueProtectionDb: Float,  // 0.0 to -12.0 dB
-    val moodAdaptation: Float,       // Harmonic coloration factor
-    val spatialMode: SpatialMode,
-    val roomSize: Float,             // 0.0 (small room) to 1.0 (cathedral)
-    val headTrackingEnabled: Boolean,
-    val confidenceScore: Float       // Real AI confidence 0.0 to 1.0
-)
-
 class QLearningAgent {
     // Q-Table: State [Emotion Index][Fatigue Bucket] -> Action [EQ Profile Index]
     private val qTable = Array(6) { FloatArray(5) { 0.0f } }
@@ -67,7 +51,6 @@ class HybridDecisionEngine {
         sessionDurationMin: Float,
         userBassPreference: Float, // -1.0 to +1.0
         userTreblePreference: Float
-    ): DSPDecision {
         val psychoAnalysis = psychoacousticAnalyzer.analyze(pcmBuffer, sampleRate)
         val emotion = emotionInferer.inferEmotion(psychoAnalysis, manualInteractions, sessionDurationMin)
         val fatigue = fatigueTracker.updateFatigue(psychoAnalysis, 1.0f)

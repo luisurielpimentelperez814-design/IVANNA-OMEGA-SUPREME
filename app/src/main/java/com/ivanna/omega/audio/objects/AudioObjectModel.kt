@@ -11,12 +11,34 @@ data class Vector3D(
 
 data class AudioObject(
     val id: Int,
-    var position: Vector3D,
+
+    var position: Vector3D = Vector3D(),
+
     var gain: Float = 1.0f,
-    var priority: Int = 1, // 1 (low) to 10 (critical dialog/lead)
-    var spread: Float = 0.0f, // 0.0 (point source) to 1.0 (diffuse)
+    var priority: Int = 1,
+    var spread: Float = 0.0f,
+
     val metadata: MutableMap<String, String> = mutableMapOf()
-)
+) {
+
+    var positionX: Float
+        get() = position.x
+        set(value) {
+            position.x = value
+        }
+
+    var positionY: Float
+        get() = position.y
+        set(value) {
+            position.y = value
+        }
+
+    var positionZ: Float
+        get() = position.z
+        set(value) {
+            position.z = value
+        }
+}
 
 data class ChannelBed(
     val channelLayout: String, // "2.0", "5.1", "7.1.4"
