@@ -54,6 +54,10 @@ class UserProfileManager(
         return currentProfile
     }
 
+    fun getCurrentPreset(): String {
+        return currentProfile.preferredEqStyle
+    }
+
     fun saveProfile(profile: UserProfile) {
         try {
             val dir = File(profileDirectoryPath)
