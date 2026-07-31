@@ -253,3 +253,33 @@ jobs:
           file ivanna_daemon | grep -q "pie executable" || { echo "ERROR: no es PIE"; exit 1; }
           echo "daemon listo (PIE, static libstdc++, RELRO+BIND_NOW)."
           cp "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" . 2>/dev/null || true
+
+      - name: Package Magisk module with new binaries
+        run: |
+          set -euo pipefail
+          test -f libomega_effect_arm64.so
+          mkdir -p magisk_module/system/vendor/lib64/soundfx
+          cp libomega_effect_arm64.so magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          if [ -f libc++_shared.so ]; then
+            cp libc++_shared.so magisk_module/system/vendor/lib64/libc++_shared.so
+          fi
+          if [ -f ivanna_daemon ]; then
+            mkdir -p magisk_module/system/bin
+            cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
+            chmod 755 magisk_module/system/bin/ivanna_daemon
+          fi
+          cd magisk_module
+          zip -r "$GITHUB_WORKSPACE/ivanna_omega_supreme.zip" . -x "*.git*" || true
+          cd "$GITHUB_WORKSPACE"
+          ls -lh ivanna_omega_supreme.zip || true
+
+      - name: Upload Magisk module + binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-magisk-module
+          path: |
+            ivanna_omega_supreme.zip
+            libomega_effect_arm64.so
+            ivanna_daemon
+          if-no-files-found: warn
+          overwrite: true
