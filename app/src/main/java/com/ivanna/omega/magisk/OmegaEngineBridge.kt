@@ -86,7 +86,32 @@ object OmegaEngineBridge {
         isConnected = false
     }
 
+    
+    fun connect(): Boolean {
+        return try {
+            isConnected = true
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun disconnect() {
+        isConnected = false
+    }
+
+    fun setPFParams(
+        vararg params: Float
+    ): Boolean {
+        val payload = JSONObject().apply {
+            put("action", "SET_PF_PARAMS")
+            put("params", params.toList())
+        }
+        return sendCommand(payload)
+    }
+
     fun getStatus(): Boolean = isConnected
+
     fun getLastLatencyMs(): Float = lastLatencyMs
 
 }
