@@ -73,6 +73,15 @@ public:
 
     void reset() noexcept;
 
+    // Propaga un dataset HRTF personalizado a los 12 virtual speakers.
+    bool loadHrtfDatasetFromFile(const char* path) {
+        bool ok = true;
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            if (!hrtfConvolvers_[i].loadHrtfDatasetFromFile(path)) ok = false;
+        }
+        return ok;
+    }
+
 private:
     void updateVBAPGains(const AudioObject& obj, float gains[kNumVirtualSpeakers]) noexcept;
     void processReverb(float* left, float* right, int frames) noexcept;

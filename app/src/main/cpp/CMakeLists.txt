@@ -165,16 +165,22 @@ target_link_libraries(ivanna_omega
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
+    spatial/ivanna_object_renderer.cpp
+    spatial/hrtf_convolver.cpp
+    spatial/ivanna_head_tracker.cpp
 )
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})
 
 target_include_directories(omega_effect PRIVATE
+    ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/spatial
 )
 
 target_link_libraries(omega_effect
     ${log-lib}
+    android
     m
     dl
 )

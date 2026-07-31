@@ -1,41 +1,12 @@
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 #pragma once
 
-/*
- * ============================================================
- * IVANNA OMEGA SUPREME — Synthetic HRTF generator
- *
- * Genera respuestas al impulso binaurales (HRIR) por MODELO
- * MATEMÁTICO genérico — no son datos medidos de ningún dataset
- * ni de ningún fabricante. Componentes:
- *
- *   1) ITD (Interaural Time Difference) — fórmula de Woodworth
- *      para cabeza esférica: τ(θ) = (r/c)·(θ + sin θ)   [θ≥0]
- *      r ≈ 0.0875 m (radio de cabeza promedio), c = 343 m/s.
- *
- *   2) Head shadowing — filtro paso-bajo de primer orden en el
- *      oído contralateral, con frecuencia de corte que baja
- *      conforme el ángulo crece (aproximación al difraction
- *      shadowing real de una esfera rígida).
- *
- *   3) Pinna notch aproximado — un notch espectral simple
- *      (resonador biquad tipo notch) en 7-9kHz, cuya profundidad
- *      escala con |sin θ| — aproxima el notch de pabellón que da
- *      la sensación de "delante/detrás" y externalización, sin
- *      pretender ser anatómicamente exacto.
- *
- * Esto NO sustituye datasets HRTF medidos (p.ej. KEMAR/CIPIC) —
- * es un modelo perceptual barato para dar sensación de
- * espacialidad real vía convolución, calibrable con 'aggressiveness'.
- * Si en el futuro se dispone de un dataset propio medido/licenciado,
- * esta clase es reemplazable sin tocar HRTFConvolver (misma interfaz:
- * generate(azimuthDeg) -> IR L/R).
- * ============================================================
- */
-
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <cstdint>
 
 namespace ivanna {
 
@@ -46,31 +17,85 @@ struct HRIRPair {
 
 class SyntheticHRTF {
 public:
-    // irLen: longitud de la respuesta al impulso (taps). 128 @ 48kHz ≈ 2.7ms
-    // de "cola" — suficiente para el notch de pinna sin ser costoso.
     void init(uint32_t sampleRate, int irLen) {
         sr_ = (float)sampleRate;
         irLen_ = irLen;
     }
 
-    // Genera el par de HRIR para un azimut dado (grados, -90..+90,
-    // + = derecha) y una "agresividad" [0,1] que escala la profundidad
-    // del shadowing/notch (mapeada desde el control de UI existente).
+    // ── Dataset HRTF personalizado ─────────────────────────────────────
+    // Carga HRIRs medidos indexados por azimut. Si hay dataset, generate()
+    // interpola de aquí; si no, usa el modelo sintético (fallback).
+    bool loadDataset(const float* azimuthsDeg, const float* irL, const float* irR,
+                     int numDirs, int irLen) {
+        if (numDirs <= 0 || irLen <= 0 || !azimuthsDeg || !irL || !irR) return false;
+        std::vector<int> idx(numDirs);
+        for (int i = 0; i < numDirs; ++i) idx[i] = i;
+        std::vector<float> az(azimuthsDeg, azimuthsDeg + numDirs);
+        std::sort(idx.begin(), idx.end(),
+                  [&](int a, int b) { return az[a] < az[b]; });
+
+        dsAz_.resize(numDirs);
+        dsL_.resize(numDirs);
+        dsR_.resize(numDirs);
+        for (int i = 0; i < numDirs; ++i) {
+            int s = idx[i];
+            dsAz_[i] = az[s];
+            dsL_[i].assign(irL + (size_t)s * irLen, irL + (size_t)(s + 1) * irLen);
+            dsR_[i].assign(irR + (size_t)s * irLen, irR + (size_t)(s + 1) * irLen);
+        }
+        dsIrLen_ = irLen;
+        hasDataset_ = true;
+        return true;
+    }
+
+    // Formato binario "IHR1":
+    //   [4B magic "IHR1"][int32 numDirs][int32 irLen][int32 sampleRate]
+    //   por dirección: [float azimuthDeg][irLen floats L][irLen floats R]
+    bool loadDatasetFromFile(const char* path) {
+        if (!path) return false;
+        FILE* f = std::fopen(path, "rb");
+        if (!f) return false;
+        char magic[4];
+        if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IHR1", 4) != 0) {
+            std::fclose(f); return false;
+        }
+        int32_t numDirs = 0, irLen = 0, sr = 0;
+        if (std::fread(&numDirs, 4, 1, f) != 1 ||
+            std::fread(&irLen, 4, 1, f) != 1 ||
+            std::fread(&sr, 4, 1, f) != 1) { std::fclose(f); return false; }
+        if (numDirs <= 0 || irLen <= 0 || numDirs > 1024 || irLen > 8192) {
+            std::fclose(f); return false;
+        }
+        std::vector<float> az(numDirs);
+        std::vector<float> L((size_t)numDirs * irLen);
+        std::vector<float> R((size_t)numDirs * irLen);
+        for (int d = 0; d < numDirs; ++d) {
+            if (std::fread(&az[d], 4, 1, f) != 1) { std::fclose(f); return false; }
+            if (std::fread(&L[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
+            if (std::fread(&R[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
+        }
+        std::fclose(f);
+        return loadDataset(az.data(), L.data(), R.data(), numDirs, irLen);
+    }
+
+    bool hasCustomDataset() const { return hasDataset_; }
+
     HRIRPair generate(float azimuthDeg, float aggressiveness) const {
-        // Guarda contra NaN/inf de entrada (p.ej. propagados desde un
-        // head-tracker con timestamps duplicados): sin esto, theta se vuelve
-        // NaN y contamina toda la IR -> convolución con NaN -> silencio/distorsión.
         if (!std::isfinite(azimuthDeg)) azimuthDeg = 0.f;
         if (!std::isfinite(aggressiveness)) aggressiveness = 0.5f;
-
         aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
+
+        // Prioridad: dataset medido > modelo sintético
+        if (hasDataset_ && !dsAz_.empty()) {
+            return generateFromDataset(azimuthDeg);
+        }
+
         const float theta = azimuthDeg * (float)M_PI / 180.f;
         const float absTheta = std::fabs(theta);
 
-        // ── 1) ITD (Woodworth) ──────────────────────────────────────────
-        constexpr float HEAD_R = 0.0875f;   // m
-        constexpr float SPEED  = 343.f;     // m/s
-        const float tau = (HEAD_R / SPEED) * (absTheta + std::sin(absTheta)); // s
+        constexpr float HEAD_R = 0.0875f;
+        constexpr float SPEED  = 343.f;
+        const float tau = (HEAD_R / SPEED) * (absTheta + std::sin(absTheta));
         const float itdSamples = tau * sr_;
         const int   delaySamp  = std::clamp((int)std::round(itdSamples), 0, irLen_ / 2);
 
@@ -78,33 +103,19 @@ public:
         out.L.assign(irLen_, 0.f);
         out.R.assign(irLen_, 0.f);
 
-        // Oído "cercano" (ipsilateral) sin retardo; "lejano" (contralateral)
-        // retardado + atenuado (shadowing) + notch de pinna.
         const bool sourceRight = theta >= 0.f;
         std::vector<float>& nearEar = sourceRight ? out.R : out.L;
         std::vector<float>& farEar  = sourceRight ? out.L : out.R;
 
-        // Impulso directo en oído cercano (ganancia unidad, sin retardo)
         nearEar[0] = 1.f;
 
-        // ── 2) Head shadowing (paso-bajo IIR de 1er orden, aplicado como
-        //      respuesta al impulso truncada) en el oído lejano ─────────
-        // FIX: Shadowing menos agresivo para sonido más natural
-        // Antes: bajaba de 16kHz a 1.5kHz (demasiado brusco)
-        // Ahora: baja de 14kHz a 3.5kHz (más natural, preserva más riqueza)
         const float shadowAmount = (absTheta / (float)(M_PI * 0.5)) * aggressiveness;
-        const float fc = 14000.f - shadowAmount * 10500.f;  // FIX: rango menos agresivo
+        const float fc = 14000.f - shadowAmount * 10500.f;
         const float rc = 1.f / (2.f * (float)M_PI * fc);
         const float dt = 1.f / sr_;
-        const float alpha = dt / (rc + dt);   // coeficiente paso-bajo
-
-        // FIX: Ganancia DC más suave (no atenúa tanto)
-        // Antes: hasta -50% ganancia
-        // Ahora: hasta -30% ganancia (mejor balance)
+        const float alpha = dt / (rc + dt);
         const float shadowGain = 1.f - 0.3f * shadowAmount;
 
-        // Generamos la IR del paso-bajo de 1er orden truncada a irLen_ taps,
-        // desplazada por el retardo ITD.
         float lpState = 0.f;
         for (int n = 0; n < irLen_; ++n) {
             const float impulse = (n == 0) ? 1.f : 0.f;
@@ -113,41 +124,55 @@ public:
             if (idx < irLen_) farEar[idx] += lpState * shadowGain;
         }
 
-        // ── 3) Pinna notch aproximado — biquad notch aplicado como
-        //      convolución corta (3 taps) centrada en ~7.5kHz, profundidad
-        //      escalada por |sin theta| * aggressiveness ────────────────
         const float notchDepth = std::fabs(std::sin(theta)) * aggressiveness * 0.6f;
         if (notchDepth > 0.001f) {
             apply_notch_fir(nearEar, 7500.f, notchDepth);
             apply_notch_fir(farEar,  7500.f, notchDepth * 0.7f);
         }
-
         return out;
     }
 
 private:
-    // FIX: Notch FIR mejorado con mejor balance
-    // El notch anterior causaba artefactos audibles (cambios bruscos de ganancia)
-    // Ahora usa kernel normalizado + notch más suave
+    HRIRPair generateFromDataset(float azimuthDeg) const {
+        HRIRPair out;
+        out.L.assign(irLen_, 0.f);
+        out.R.assign(irLen_, 0.f);
+        const int n = (int)dsAz_.size();
+        if (n == 0) return out;
+        if (n == 1) {
+            for (int k = 0; k < irLen_ && k < dsIrLen_; ++k) {
+                out.L[k] = dsL_[0][k];
+                out.R[k] = dsR_[0][k];
+            }
+            return out;
+        }
+        int lo = 0;
+        while (lo < n - 1 && dsAz_[lo + 1] < azimuthDeg) ++lo;
+        int hi = std::min(lo + 1, n - 1);
+        float a0 = dsAz_[lo], a1 = dsAz_[hi];
+        float t = (a1 > a0) ? std::clamp((azimuthDeg - a0) / (a1 - a0), 0.f, 1.f) : 0.f;
+        for (int k = 0; k < irLen_; ++k) {
+            float l0 = (k < dsIrLen_) ? dsL_[lo][k] : 0.f;
+            float l1 = (k < dsIrLen_) ? dsL_[hi][k] : 0.f;
+            float r0 = (k < dsIrLen_) ? dsR_[lo][k] : 0.f;
+            float r1 = (k < dsIrLen_) ? dsR_[hi][k] : 0.f;
+            out.L[k] = (1.f - t) * l0 + t * l1;
+            out.R[k] = (1.f - t) * r0 + t * r1;
+        }
+        return out;
+    }
+
     void apply_notch_fir(std::vector<float>& buf, float freqHz, float depth) const {
-        depth = std::clamp(depth, 0.f, 0.6f);  // Limitar profundidad para evitar notch excesivo
-        
+        depth = std::clamp(depth, 0.f, 0.6f);
         const float w0 = 2.f * (float)M_PI * freqHz / sr_;
         const float cosw0 = std::cos(w0);
-        
-        // FIX: Kernel notch mejorado (simétrico, mejor comportamiento en fase)
-        // [a, b, a] donde: a controla profundidad, b = 2*(1-a)
-        const float a = depth * 0.2f;  // Reducir sensibilidad a depth
+        const float a = depth * 0.2f;
         const float b = 2.f * (1.f - a * cosw0);
-        
-        // Normalización para mantener DC gain = 1
-        const float norm = a + b + a;  // = 2a + 2(1-a*cosw0) = 2(1 - a*cosw0 + a) 
+        const float norm = a + b + a;
         const float normFactor = (norm > 0.001f) ? 1.f / norm : 1.f;
-        
         const float k0 = a * normFactor;
         const float k1 = b * normFactor;
         const float k2 = a * normFactor;
-
         std::vector<float> tmp(buf.size(), 0.f);
         for (size_t n = 0; n < buf.size(); ++n) {
             float acc = k1 * buf[n];
@@ -160,6 +185,12 @@ private:
 
     float sr_    = 96000.f;
     int   irLen_ = 128;
+
+    // Dataset personalizado
+    bool  hasDataset_ = false;
+    int   dsIrLen_ = 0;
+    std::vector<float> dsAz_;
+    std::vector<std::vector<float>> dsL_, dsR_;
 };
 
 } // namespace ivanna

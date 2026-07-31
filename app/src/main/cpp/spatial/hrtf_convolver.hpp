@@ -57,6 +57,11 @@ public:
     // virtual speaker en ObjectRenderer::reset().
     void reset() noexcept;
 
+    // Carga un dataset HRTF personalizado (formato binario "IHR1").
+    bool loadHrtfDatasetFromFile(const char* path) {
+        return hrtf_.loadDatasetFromFile(path);
+    }
+
 private:
     void updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept;
     static uint32_t next_pow2(uint32_t v);

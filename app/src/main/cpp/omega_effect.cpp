@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include "IvannaFusionCore.cpp"
+#include <vector>
 #include "audio_effect_compat.h"
 #include <string.h>
 #include <stdlib.h>
@@ -19,7 +20,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv* env, jclass cla
         delete g_fusionCore;
     }
     g_fusionCore = new IvannaFusionCore(static_cast<float>(sampleRate));
-    LOGI("IvannaFusionCore initialized at %d Hz", sampleRate);
+    g_fusionCore->initSpatial(static_cast<float>(sampleRate), 4096);
+    LOGI("IvannaFusionCore initialized at %d Hz (spatial renderer active)", sampleRate);
 }
 
 JNIEXPORT void JNICALL
@@ -74,10 +76,33 @@ static int32_t omega_process(effect_handle_t self,
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
     if (!ctx || !ctx->enabled || !inBuf || !outBuf) return 0;
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
-    /* Passthrough estéreo float (8 bytes/frame).
-     * TODO: conectar aquí g_fusionCore->process(...) para DSP real. */
-    const size_t bytes = inBuf->frameCount * 2u * sizeof(float);
-    memmove(outBuf->raw, inBuf->raw, bytes);
+
+    const int frames = (int)inBuf->frameCount;
+    const float* in = inBuf->f32;
+    float* out = outBuf->f32;
+
+    // Motor aún no configurado: passthrough seguro.
+    if (!g_fusionCore) {
+        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        return 0;
+    }
+
+    // Deinterleave estéreo -> L/R (buffers thread-local, sin alloc por bloque)
+    static thread_local std::vector<float> L, R;
+    L.resize(frames); R.resize(frames);
+    for (int n = 0; n < frames; ++n) {
+        L[n] = in[2 * n];
+        R[n] = in[2 * n + 1];
+    }
+
+    // Render binaural de objetos (VBAP + HRTF) + DSP de salida
+    g_fusionCore->processStereo(L.data(), R.data(), (size_t)frames);
+
+    // Interleave -> salida
+    for (int n = 0; n < frames; ++n) {
+        out[2 * n]     = L[n];
+        out[2 * n + 1] = R[n];
+    }
     return 0;
 }
 
@@ -90,8 +115,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
         case EFFECT_CMD_RESET:
             break;
         case EFFECT_CMD_SET_CONFIG:
-            if (pCmdData && cmdSize == sizeof(effect_config_t))
+            if (pCmdData && cmdSize == sizeof(effect_config_t)) {
                 ctx->config = *reinterpret_cast<effect_config_t *>(pCmdData);
+                uint32_t sr = ctx->config.outputCfg.samplingRate;
+                if (sr == 0) sr = ctx->config.inputCfg.samplingRate;
+                if (sr == 0) sr = 48000;
+                if (!g_fusionCore) g_fusionCore = new IvannaFusionCore((float)sr);
+                g_fusionCore->initSpatial((float)sr, 4096);
+            }
             break;
         case EFFECT_CMD_ENABLE:
             ctx->enabled = true;
