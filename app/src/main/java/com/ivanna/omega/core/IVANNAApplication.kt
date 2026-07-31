@@ -200,7 +200,7 @@ class IVANNAApplication : Application() {
             try {
                 CloudSyncManager.syncDown(
                       this@IVANNAApplication,
-                      UserProfileManager(this@IVANNAApplication)
+                      com.ivanna.omega.ai.UserProfileManager(this@IVANNAApplication)
                   )
             } catch (e: Exception) {
                 Log.w(TAG, "syncDown en arranque falló (no crítico): ${e.message}")
