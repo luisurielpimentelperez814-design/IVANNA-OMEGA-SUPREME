@@ -105,7 +105,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
                     // Draw Fatigue Line (Red)
                     val fatiguePath = Path()
-                    state.fatigueHistory.forEachIndexed { i, valNorm ->
+                    state.fatigueHistory.forEachIndexed { i: Int, valNorm: Float ->
                         val x = (i.toFloat() / (state.fatigueHistory.size - 1)) * width
                         val y = height - (valNorm * height)
                         if (i == 0) fatiguePath.moveTo(x, y) else fatiguePath.lineTo(x, y)
@@ -114,7 +114,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
                     // Draw Immersion Line (Cyan)
                     val immersionPath = Path()
-                    state.immersionHistory.forEachIndexed { i, valNorm ->
+                    state.immersionHistory.forEachIndexed { i: Int, valNorm: Float ->
                         val x = (i.toFloat() / (state.immersionHistory.size - 1)) * width
                         val y = height - (valNorm * height)
                         if (i == 0) immersionPath.moveTo(x, y) else immersionPath.lineTo(x, y)
