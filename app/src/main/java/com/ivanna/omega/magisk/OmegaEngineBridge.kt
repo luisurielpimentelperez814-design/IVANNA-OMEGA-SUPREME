@@ -133,11 +133,7 @@ object OmegaEngineBridge {
             put("timestamp", System.currentTimeMillis())
         }
         return sendCommand(payload)
-    }.apply {
-            put("action",       "SET_ROUTE_PROFILE")
-            put("routeProfile", routeProfile.toString())
-            put("timestamp",    System.currentTimeMillis())
-        })
+    }
 
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
