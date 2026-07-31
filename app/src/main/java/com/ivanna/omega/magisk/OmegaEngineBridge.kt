@@ -82,6 +82,10 @@ object OmegaEngineBridge {
         }
     }
 
+    fun disconnect() {
+        isConnected = false
+    }
+
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
 
