@@ -1,5 +1,7 @@
 package com.ivanna.omega.ai
 
+import org.json.JSONObject
+
 data class DSPDecision(
     val compressorAmount: Float = 0f,
     val exciterReduction: Float = 0f,
@@ -28,4 +30,24 @@ data class DSPDecision(
     val confidenceScore: Float = 0f,
 
     val executionLatencyMs: Float = 0f
-)
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("compressorAmount", compressorAmount)
+        put("exciterReduction", exciterReduction)
+        put("eqLowDb", eqLowDb)
+        put("eqMidDb", eqMidDb)
+        put("eqHighDb", eqHighDb)
+        put("eqHighCut", eqHighCut)
+        put("spatialWidth", spatialWidth)
+        put("spatialMode", spatialMode)
+        put("loudnessTargetLUFS", loudnessTargetLUFS)
+        put("fatigueProtectionDb", fatigueProtectionDb)
+        put("moodAdaptation", moodAdaptation)
+        put("harmonicGain", harmonicGain)
+        put("antiDolbyIntensity", antiDolbyIntensity)
+        put("roomSize", roomSize)
+        put("headTrackingEnabled", headTrackingEnabled)
+        put("confidence", confidence)
+        put("executionLatencyMs", executionLatencyMs)
+    }
+}

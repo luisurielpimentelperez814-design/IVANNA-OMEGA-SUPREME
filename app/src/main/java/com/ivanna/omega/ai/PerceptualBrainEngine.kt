@@ -1,5 +1,7 @@
 package com.ivanna.omega.ai
 
+import org.json.JSONObject
+
 import com.ivanna.omega.core.IvannaNativeLib
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -259,4 +261,13 @@ class PerceptualBrainEngine {
             )
         }
     }
+    
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("timestamp", timestamp)
+        put("rms", rms)
+        put("peak", peak)
+        put("spectralCentroid", spectralCentroid)
+        put("energy", energy)
+    }
+
 }
