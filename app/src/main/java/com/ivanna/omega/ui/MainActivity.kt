@@ -141,11 +141,11 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                 }
                 Column {
                     Text("Inference Latency", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("${state.inferenceLatencyUs} µs", color = Color(0xFF38BDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("${state.dspDecision.executionLatencyMs} µs", color = Color(0xFF38BDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Column {
                     Text("Spatial Mode", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text(state.decision?.spatialMode ?: "STEREO", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text(state.dspDecision?.spatialMode ?: "STEREO", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
             }
         }
@@ -161,10 +161,10 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Cortex Aggressiveness Level", color = Color(0xFFE2E8F0), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text("${(state.aggressiveness * 100).toInt()}%", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("${(state.userProfile.aggressiveness * 100).toInt()}%", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Slider(
-                    value = state.aggressiveness,
+                    value = state.userProfile.aggressiveness,
                     onValueChange = { vm.setAggressiveness(it) },
                     valueRange = 0.0f..1.0f,
                     colors = SliderDefaults.colors(thumbColor = Color(0xFF38BDF8), activeTrackColor = Color(0xFF38BDF8))

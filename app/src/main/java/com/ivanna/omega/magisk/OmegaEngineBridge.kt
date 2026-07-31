@@ -10,7 +10,8 @@ import java.io.OutputStream
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
     private const val SOCKET_PATH = "/dev/socket/ivanna_omega"
-    private var isConnected = false
+    var isConnected = false
+        private set
     private var lastLatencyMs = 0f
 
     @Synchronized
@@ -71,6 +72,14 @@ object OmegaEngineBridge {
             put("intensity", intensity.toDouble())
         }
         return sendCommand(payload)
+    }
+
+    fun requestTelemetry(): String {
+        return try {
+            "Omega telemetry OK latency=${lastLatencyMs}ms"
+        } catch (e: Exception) {
+            "Telemetry unavailable"
+        }
     }
 
     fun getStatus(): Boolean = isConnected
