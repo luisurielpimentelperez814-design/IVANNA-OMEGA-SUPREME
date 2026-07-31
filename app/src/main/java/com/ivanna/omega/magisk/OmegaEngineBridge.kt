@@ -124,8 +124,16 @@ object OmegaEngineBridge {
             put("timestamp",  System.currentTimeMillis())
         })
 
-    fun setRouteProfile(routeProfile: Any): Boolean =
-        sendCommand(JSONObject().apply {
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean {
+        val payload = JSONObject().apply {
+            put("action", "SET_ROUTE_PROFILE")
+            put("bassBoostDb", bassBoostDb.toDouble())
+            put("dialogBoostDb", dialogBoostDb.toDouble())
+            put("widenerMult", widenerMult.toDouble())
+            put("timestamp", System.currentTimeMillis())
+        }
+        return sendCommand(payload)
+    }.apply {
             put("action",       "SET_ROUTE_PROFILE")
             put("routeProfile", routeProfile.toString())
             put("timestamp",    System.currentTimeMillis())
