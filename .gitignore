@@ -13,3 +13,20 @@ app/src/main/cpp/tests/build-tests/
 *.apk
 *.aab
 repo_tmp/
+
+# Build artifacts
+app/build/
+app/.cxx/
+.gradle/
+*.apk
+*.aab
+*.zip
+*.patch
+
+# Privacidad
+Chat\ de\ WhatsApp*/
+Meta\ AI
+
+# Duplicados numerados
+*\ (1)/
+*\ (2)/
