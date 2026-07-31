@@ -51,6 +51,7 @@ class HybridDecisionEngine {
         sessionDurationMin: Float,
         userBassPreference: Float, // -1.0 to +1.0
         userTreblePreference: Float
+    ): DSPDecision {
         val psychoAnalysis = psychoacousticAnalyzer.analyze(pcmBuffer, sampleRate)
         val emotion = emotionInferer.inferEmotion(psychoAnalysis, manualInteractions, sessionDurationMin)
         val fatigue = fatigueTracker.updateFatigue(psychoAnalysis, 1.0f)
