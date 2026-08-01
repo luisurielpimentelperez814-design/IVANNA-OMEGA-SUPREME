@@ -9,6 +9,12 @@
 
 #define LOG_TAG "IvannaOmegaEffect"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+// FIX (trazabilidad HRTF): sin este canal no habia forma de saber, en un
+// dispositivo real, si el motor estaba usando el dataset MEDIDO o habia
+// caido al sintetico — el fallback era completamente silencioso.
+#ifndef LOGW
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#endif
 
 static IvannaFusionCore* g_fusionCore = nullptr;
 
@@ -123,8 +129,26 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!g_fusionCore) g_fusionCore = new IvannaFusionCore((float)sr);
                 g_fusionCore->initSpatial((float)sr, 4096);
                 // Dataset HRTF personalizado (si existe). Fallback: sintético.
-                if (g_fusionCore->loadCustomHrtf("/data/adb/ivanna_omega/hrtf_dataset.ihr1")) {
-                    LOGI("Custom HRTF dataset loaded from /data/adb/ivanna_omega/");
+                // El resultado se logea SIEMPRE: es el unico punto del sistema
+                // donde se decide entre HRTF medido y HRTF sintetico, y esa
+                // decision cambia por completo la calidad de la espacializacion.
+                static const char* kHrtfPath =
+                    "/data/adb/ivanna_omega/hrtf_dataset.ihr1";
+                errno = 0;
+                if (g_fusionCore->loadCustomHrtf(kHrtfPath)) {
+                    LOGI("Custom HRTF dataset loaded from %s (measured path ACTIVE)",
+                         kHrtfPath);
+                } else {
+                    // errno solo es significativo si el fallo vino del open();
+                    // si el archivo existe pero la cabecera IHR1 es invalida,
+                    // errno queda en 0 y hay que decirlo en vez de imprimir
+                    // "Success", que seria peor que no logear nada.
+                    const int err = errno;
+                    LOGW("Failed to load custom HRTF dataset from %s (errno=%d, %s). "
+                         "Falling back to SYNTHETIC HRTF.",
+                         kHrtfPath, err,
+                         err != 0 ? strerror(err)
+                                  : "file readable but not a valid IHR1 dataset");
                 }
             }
             break;
