@@ -1,5 +1,31 @@
 # Pipeline del dataset HRTF medido
 
+## 0. Dataset por defecto (KEMAR / CIPIC subject_165)
+
+Desde esta revisión el módulo embarca por defecto un dataset **medido real**
+del maniquí KEMAR (`subject_165` de CIPIC), convertido a `IHR1` y
+resampleado a **48 kHz** para evitar el corrimiento espectral que produciría
+usar directamente un SOFA a 44.1 kHz.
+
+Importante: el cargador actual del motor espacial es **azimutal**. Por eso el
+dataset embebido no vuelca las 1250 direcciones completas del SOFA; se toma la
+rebanada horizontal (|elevación| <= 5°), se deduplica a **54 azimuts** útiles y
+se preserva el HRIR medido por oído en formato `IHR1` (`IR_LEN=512`,
+`SR=48000`). Esto sustituye al dataset sintético anterior de 13 direcciones.
+
+Artefactos embarcados en el repo:
+
+- `tools/hrtf/hrtf_KEMAR_subject165.ihr1`
+- `magisk_module/system/etc/ivanna_omega/hrtf_dataset.ihr1`
+
+Conversión usada:
+
+```bash
+python3 tools/hrtf/sofa_to_ihr1.py subject_165.sofa \
+  -o tools/hrtf/hrtf_KEMAR_subject165.ihr1 \
+  --target-sr 48000 --ir-len 512 --max-elev 5
+```
+
 Este documento describe cómo se genera, se instala y se **verifica** el dataset
 HRTF que usa el motor espacial de Ivanna Omega.
 
