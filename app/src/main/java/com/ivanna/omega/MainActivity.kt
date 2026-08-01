@@ -86,6 +86,7 @@ import com.ivanna.omega.audio.AudioPipeline
 import com.ivanna.omega.ai.PerceptualBrainEngine
 import com.ivanna.omega.ai.PerceptualSnapshot
 import com.ivanna.omega.ui.PerceptualBrainDashboard
+import com.ivanna.omega.ui.MainScaffold
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -237,7 +238,12 @@ fun OmegaApp() {
                     }
                     pendingBandProfileId = null
                 }
-                DashboardScreen(dsp, nav, adaptiveBackend, voiceProtectionManager)
+                MainScaffold(
+                    outerNav     = nav,
+                    dsp          = dsp,
+                    adaptiveBack = adaptiveBackend,
+                    voiceMgr     = voiceProtectionManager
+                )
             }
             composable("magisk") {
                 MagiskStatusPanel(
