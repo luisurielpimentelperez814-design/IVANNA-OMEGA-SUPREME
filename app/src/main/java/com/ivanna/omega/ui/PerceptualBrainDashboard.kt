@@ -21,20 +21,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.ai.PerceptualBrainEngine
+import com.ivanna.omega.ui.theme.*
 import com.ivanna.omega.ai.PerceptualSnapshot
 
-private val Carbon = Color(0xFF0A0A0A)
-private val Surface1 = Color(0xFF121212)
-private val Surface2 = Color(0xFF1A1A1A)
-private val Border1 = Color(0xFF262626)
-private val CyanGlow = Color(0xFF00F5FF)
-private val CyanDim = Color(0x3300F5FF)
-private val GoldGlow = Color(0xFFFFD700)
-private val MagentaGlow = Color(0xFFFF00FF)
-private val EmeraldGlow = Color(0xFF00FF88)
-private val TextPri = Color(0xFFFFFFFF)
-private val TextSec = Color(0xFF888888)
-private val TextMid = Color(0xFFCCCCCC)
 
 @Composable
 fun PerceptualBrainDashboard(
@@ -55,7 +44,7 @@ fun PerceptualBrainDashboard(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Carbon)
+            .background(ObsidianVoid)
             .padding(horizontal = 16.dp)
             .verticalScroll(scrollState)
     ) {
@@ -70,22 +59,22 @@ fun PerceptualBrainDashboard(
             Column {
                 Text(
                     text = "PERCEPTUAL BRAIN CORTEX v4.0",
-                    color = TextPri,
+                    color = TextPrimary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.2.sp
                 )
                 Text(
                     text = "IVANNA OMEGA SUPREME · NEURO-ACOUSTIC BRAIN",
-                    color = CyanGlow,
+                    color = AuroraCyan,
                     fontSize = 9.sp,
                     letterSpacing = 1.sp
                 )
             }
             OutlinedButton(
                 onClick = onBack,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldGlow),
-                border = BorderStroke(1.dp, GoldGlow),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberSignal),
+                border = BorderStroke(1.dp, AmberSignal),
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             ) {
@@ -127,8 +116,8 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface1),
-        border = BorderStroke(1.dp, Border1)
+        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
+        border = BorderStroke(1.dp, ObsidianEdge)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -138,7 +127,7 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
             ) {
                 Text(
                     text = "ESTADO DEL CEREBRO PERCEPTUAL",
-                    color = GoldGlow,
+                    color = AmberSignal,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.sp
@@ -148,12 +137,12 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(if (snapshot.perceptionOnline) EmeraldGlow else Color.Red)
+                            .background(if (snapshot.perceptionOnline) PhosphorGreen else Color.Red)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = if (snapshot.perceptionOnline) "ENGINE ONLINE" else "OFFLINE",
-                        color = if (snapshot.perceptionOnline) EmeraldGlow else Color.Red,
+                        color = if (snapshot.perceptionOnline) PhosphorGreen else Color.Red,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -166,21 +155,21 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                 MetricProgressBlock(
                     label = "CONFIDENCE",
                     value = snapshot.confidence,
-                    color = CyanGlow,
+                    color = AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
                 MetricProgressBlock(
                     label = "IMMERSION",
                     value = snapshot.immersion,
-                    color = MagentaGlow,
+                    color = NeonMagenta,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
                 MetricProgressBlock(
                     label = "ATTENTION",
                     value = snapshot.attention,
-                    color = GoldGlow,
+                    color = AmberSignal,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -191,14 +180,14 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                 MetricProgressBlock(
                     label = "FATIGUE INDEX",
                     value = snapshot.fatigue,
-                    color = if (snapshot.fatigue > 0.4f) Color(0xFFFF5555) else EmeraldGlow,
+                    color = if (snapshot.fatigue > 0.4f) Color(0xFFFF5555) else PhosphorGreen,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
                 MetricProgressBlock(
                     label = "EMOTION EST.",
                     value = snapshot.emotion,
-                    color = CyanGlow,
+                    color = AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -211,13 +200,13 @@ private fun HumanAuditoryPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface1),
-        border = BorderStroke(1.dp, Border1)
+        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
+        border = BorderStroke(1.dp, ObsidianEdge)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "PANEL HUMANO AUDITIVO (PSYCHOACOUSTICS)",
-                color = CyanGlow,
+                color = AuroraCyan,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.sp
@@ -243,7 +232,7 @@ private fun HumanAuditoryPanel(snapshot: PerceptualSnapshot) {
             TextValueItem(
                 label = "Dynamic Range Perception",
                 value = "%.1f dB".format(snapshot.dynamicRangeDb),
-                color = GoldGlow
+                color = AmberSignal
             )
         }
     }
@@ -254,13 +243,13 @@ private fun TinyMlClassifierPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface1),
-        border = BorderStroke(1.dp, Border1)
+        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
+        border = BorderStroke(1.dp, ObsidianEdge)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "PANEL TINYML (CONVNEXT INT8 CLASSIFIER)",
-                color = MagentaGlow,
+                color = NeonMagenta,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.sp
@@ -275,15 +264,15 @@ private fun TinyMlClassifierPanel(snapshot: PerceptualSnapshot) {
             Spacer(Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextValueItem(label = "Inference Latency", value = "${snapshot.convNextLatencyUs} µs", color = EmeraldGlow)
+                TextValueItem(label = "Inference Latency", value = "${snapshot.convNextLatencyUs} µs", color = PhosphorGreen)
                 TextValueItem(label = "SPSC Ring Buffer", value = "%.0f%% Occ".format(snapshot.ringBufferOccupancy * 100f))
             }
 
             Spacer(Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextValueItem(label = "Dominant Class", value = snapshot.dominantClassLabel, color = TextPri)
-                TextValueItem(label = "Class Confidence", value = "%.1f%%".format(snapshot.convNextConfidence * 100f), color = GoldGlow)
+                TextValueItem(label = "Dominant Class", value = snapshot.dominantClassLabel, color = TextPrimary)
+                TextValueItem(label = "Class Confidence", value = "%.1f%%".format(snapshot.convNextConfidence * 100f), color = AmberSignal)
             }
         }
     }
@@ -294,13 +283,13 @@ private fun DspCortexPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface1),
-        border = BorderStroke(1.dp, Border1)
+        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
+        border = BorderStroke(1.dp, ObsidianEdge)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "PANEL DSP CORTEX & FIELD SPATIAL",
-                color = GoldGlow,
+                color = AmberSignal,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.sp
@@ -316,14 +305,14 @@ private fun DspCortexPanel(snapshot: PerceptualSnapshot) {
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextValueItem(label = "Volterra Harmonic", value = "%.1f%% H2".format(snapshot.volterraH2Ratio * 100f))
-                TextValueItem(label = "NPE Engine", value = if (snapshot.npeStateActive) "ACTIVE" else "BYPASS", color = EmeraldGlow)
+                TextValueItem(label = "NPE Engine", value = if (snapshot.npeStateActive) "ACTIVE" else "BYPASS", color = PhosphorGreen)
             }
 
             Spacer(Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextValueItem(label = "Safety Limiter", value = "%.1f dB Margin".format(snapshot.safetyLimiterMarginDb))
-                TextValueItem(label = "Adaptive Engine", value = snapshot.adaptiveEngineState, color = CyanGlow)
+                TextValueItem(label = "Adaptive Engine", value = snapshot.adaptiveEngineState, color = AuroraCyan)
             }
         }
     }
@@ -334,13 +323,13 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface1),
-        border = BorderStroke(1.dp, Border1)
+        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
+        border = BorderStroke(1.dp, ObsidianEdge)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "CONTROLES DE INTELIGENCIA PERCEPTUAL",
-                color = TextPri,
+                color = TextPrimary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.sp
@@ -350,7 +339,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Perceptual Intelligence",
                 value = snapshot.perceptualIntelligence,
-                color = CyanGlow,
+                color = AuroraCyan,
                 onValueChange = { engine.setPerceptualIntelligence(it) }
             )
 
@@ -359,7 +348,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Neural Adaptation",
                 value = snapshot.neuralAdaptation,
-                color = EmeraldGlow,
+                color = PhosphorGreen,
                 onValueChange = { engine.setNeuralAdaptation(it) }
             )
 
@@ -368,7 +357,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Spatial Immersion",
                 value = snapshot.spatialImmersion,
-                color = MagentaGlow,
+                color = NeonMagenta,
                 onValueChange = { engine.setSpatialImmersion(it) }
             )
 
@@ -377,7 +366,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Harmonic Reconstruction",
                 value = snapshot.harmonicReconstruction,
-                color = GoldGlow,
+                color = AmberSignal,
                 onValueChange = { engine.setHarmonicReconstruction(it) }
             )
 
@@ -386,7 +375,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Anti-Dolby Blend",
                 value = snapshot.antiDolbyBlend,
-                color = CyanGlow,
+                color = AuroraCyan,
                 onValueChange = { engine.setAntiDolbyBlend(it) }
             )
 
@@ -395,7 +384,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Human Loudness Comp.",
                 value = snapshot.humanLoudnessCompensation,
-                color = EmeraldGlow,
+                color = PhosphorGreen,
                 onValueChange = { engine.setHumanLoudnessCompensation(it) }
             )
         }
@@ -411,14 +400,14 @@ private fun MetricProgressBlock(
 ) {
     Column(
         modifier = modifier
-            .background(Surface2, RoundedCornerShape(8.dp))
+            .background(ObsidianGlass, RoundedCornerShape(8.dp))
             .padding(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, color = TextSec, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            Text(label, color = TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             Text("%.0f%%".format(value * 100f), color = color, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
         }
         Spacer(Modifier.height(4.dp))
@@ -435,9 +424,9 @@ private fun MetricProgressBlock(
 }
 
 @Composable
-private fun TextValueItem(label: String, value: String, color: Color = TextPri) {
+private fun TextValueItem(label: String, value: String, color: Color = TextPrimary) {
     Column {
-        Text(label, color = TextSec, fontSize = 8.sp)
+        Text(label, color = TextSecondary, fontSize = 8.sp)
         Text(value, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -455,7 +444,7 @@ private fun PerceptualSliderRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, color = TextMid, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             Text("%.0f%%".format(value * 100f), color = color, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
         }
         Slider(
