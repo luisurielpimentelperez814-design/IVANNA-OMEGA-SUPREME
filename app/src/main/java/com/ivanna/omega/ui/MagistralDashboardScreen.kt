@@ -1,5 +1,6 @@
 package com.ivanna.omega.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -10,28 +11,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.ivanna.omega.ai.DSPDecision
-import com.ivanna.omega.ai.SpatialMode
+import com.ivanna.omega.ui.theme.*
 
+/**
+ * MagistralDashboardScreen — tab BRAIN.
+ *
+ * bandData: FloatArray[N] energía lineal [0..1] por banda (del VisualizerBridge).
+ *           Si null → muestra baseline plano; sin animación fake de sin().
+ * onOpenPerceptualBrain → push a "perceptual_brain" desde el BRAIN tab.
+ */
 @Composable
 fun MagistralDashboardScreen(
-    currentDecision: DSPDecision,
-    latencyMs: Float,
-    isDaemonActive: Boolean,
-    onResetToNeutral: () -> Unit,
-    onCalibrateHrtf: () -> Unit
+    latencyMs             : Float         = 0f,
+    isDaemonActive        : Boolean       = false,
+    onResetToNeutral      : () -> Unit    = {},
+    onCalibrateHrtf       : () -> Unit    = {},
+    onOpenPerceptualBrain : () -> Unit    = {},
+    bandData              : FloatArray?   = null,
+    modifier              : Modifier      = Modifier
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0F12))
+            .background(ObsidianVoid)
             .padding(16.dp)
     ) {
-        // 1. Header & System Status
+        // ── Header ───────────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -39,121 +46,113 @@ fun MagistralDashboardScreen(
         ) {
             Column {
                 Text(
-                    text = "IVANNA OMEGA SUPREME v8.0",
-                    color = Color(0xFF00E5FF),
-                    fontSize = 18.sp,
+                    "IVANNA OMEGA SUPREME",
+                    color = AuroraCyan,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Cognitive Realtime Audio Engine",
-                    color = Color.Gray,
-                    fontSize = 12.sp
+                    "Cognitive Realtime Audio Engine",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.labelSmall
                 )
             }
-
             Surface(
-                color = if (isDaemonActive) Color(0xFF102E23) else Color(0xFF331414),
-                shape = RoundedCornerShape(12.dp)
+                color  = if (isDaemonActive) PhosphorGreen.copy(0.10f) else CoralWarn.copy(0.10f),
+                shape  = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (isDaemonActive) PhosphorGreen else CoralWarn)
             ) {
                 Text(
-                    text = if (isDaemonActive) "DAEMON RT ACTIVE (${latencyMs}ms)" else "DAEMON OFF",
-                    color = if (isDaemonActive) Color(0xFF00FF88) else Color(0xFFFF4444),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    if (isDaemonActive) "RT ${latencyMs.toInt()} ms" else "DAEMON OFF",
+                    color  = if (isDaemonActive) PhosphorGreen else CoralWarn,
+                    style  = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier   = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // 2. Realtime 64-Band FFT Spectrum Canvas
-        Text(
-            text = "PERCEPTUAL BARK SPECTRUM & MASKING",
-            color = Color.LightGray,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp)
-                .background(Color(0xFF13171F), shape = RoundedCornerShape(8.dp))
-        ) {
-            val barWidth = size.width / 32.0f
-            for (i in 0 until 32) {
-                val heightFactor = ((0.2f + 0.7f * Math.sin(i * 0.3 + System.currentTimeMillis() * 0.005)).toFloat()).coerceIn(0.1f, 1.0f)
-                val barHeight = size.height * heightFactor
-                drawRect(
-                    color = Color(0xFF00E5FF),
-                    topLeft = Offset(i * barWidth, size.height - barHeight),
-                    size = Size(barWidth - 2f, barHeight)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 3. 3D Spatial Scene Map
-        Text(
-            text = "3D SPATIAL SCENE (${currentDecision.spatialMode})",
-            color = Color.LightGray,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-
+        // ── Bark Spectrum — datos reales, sin sin() fake ──────────────
+        Text("BARK SPECTRUM", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(6.dp))
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp)
-                .background(Color(0xFF13171F), shape = RoundedCornerShape(8.dp))
+                .background(ObsidianSoft, RoundedCornerShape(8.dp))
         ) {
-            val centerX = size.width / 2.0f
-            val centerY = size.height / 2.0f
-
-            // Head Center
-            drawCircle(color = Color.White, radius = 8f, center = Offset(centerX, centerY))
-
-            // 3D Objects Panned Coordinates
-            drawCircle(color = Color(0xFF00FF88), radius = 12f, center = Offset(centerX - 80f, centerY - 20f))
-            drawCircle(color = Color(0xFFFF007F), radius = 10f, center = Offset(centerX + 90f, centerY - 30f))
-            drawCircle(color = Color(0xFFFFD700), radius = 14f, center = Offset(centerX, centerY - 40f))
+            val count    = (bandData?.size ?: 32).coerceIn(8, 64)
+            val barWidth = size.width / count
+            for (i in 0 until count) {
+                val energy = if (bandData != null && i < bandData.size)
+                    bandData[i].coerceIn(0f, 1f)
+                else 0.04f                               // baseline plano, no fake
+                val barH = size.height * energy
+                drawRect(
+                    color     = AuroraCyan.copy(alpha = 0.25f + energy * 0.75f),
+                    topLeft   = Offset(i * barWidth + 1f, size.height - barH),
+                    size      = Size(barWidth - 2f, barH)
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // 4. Cognitive DSP Parameters Summary
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("AI Confidence: ${(currentDecision.confidenceScore * 100).toInt()}%", color = Color.Gray, fontSize = 12.sp)
-            Text("Room Size: ${(currentDecision.roomSize * 100).toInt()}%", color = Color.Gray, fontSize = 12.sp)
-            Text("Fatigue Prot: ${currentDecision.fatigueProtectionDb}dB", color = Color.Gray, fontSize = 12.sp)
+        // ── Spatial Scene ─────────────────────────────────────────────
+        Text("ESCENA ESPACIAL 3D", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(6.dp))
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(90.dp)
+                .background(ObsidianSoft, RoundedCornerShape(8.dp))
+        ) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            drawCircle(color = TextPrimary.copy(0.9f),    radius = 8f,  center = Offset(cx, cy))
+            drawCircle(color = PhosphorGreen.copy(0.85f), radius = 10f, center = Offset(cx - 80f, cy - 18f))
+            drawCircle(color = NeonMagenta.copy(0.85f),   radius = 9f,  center = Offset(cx + 85f, cy - 25f))
+            drawCircle(color = AmberSignal.copy(0.85f),   radius = 11f, center = Offset(cx, cy - 38f))
         }
 
-        Spacer(modifier = Modifier.weight(1.0f))
+        Spacer(Modifier.height(16.dp))
 
-        // 5. Actions
+        // ── Perceptual Brain CTA ───────────────────────────────────────
+        OutlinedButton(
+            onClick  = onOpenPerceptualBrain,
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.outlinedButtonColors(contentColor = NeonMagenta),
+            border   = BorderStroke(1.dp, NeonMagenta.copy(0.45f))
+        ) {
+            Text(
+                "PERCEPTUAL BRAIN CORTEX  ↗",
+                style      = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // ── Actions ───────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(
-                onClick = onCalibrateHrtf,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2638)),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Calibrar HRTF", color = Color.White, fontSize = 12.sp)
-            }
+            OutlinedButton(
+                onClick  = onCalibrateHrtf,
+                modifier = Modifier.weight(1f),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan),
+                border   = BorderStroke(1.dp, AuroraCyan.copy(0.45f))
+            ) { Text("CALIBRAR HRTF", style = MaterialTheme.typography.labelSmall) }
 
-            Button(
-                onClick = onResetToNeutral,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E26)),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Perfil Neutral", color = Color.White, fontSize = 12.sp)
-            }
+            OutlinedButton(
+                onClick  = onResetToNeutral,
+                modifier = Modifier.weight(1f),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = AmberSignal),
+                border   = BorderStroke(1.dp, AmberSignal.copy(0.45f))
+            ) { Text("NEUTRAL", style = MaterialTheme.typography.labelSmall) }
         }
     }
 }
