@@ -13,5 +13,12 @@ rm -f /data/adb/ivanna_omega.log \
       /data/adb/ivanna_mqa.log \
       /data/adb/ivanna_concert.log \
       /data/adb/ivanna_control.log
+# HRTF dataset desplegado por customize.sh — limpieza total al desinstalar.
+# El directorio se elimina sólo si queda vacío (rmdir), para no borrar
+# archivos del usuario que pudieran haber sido colocados manualmente.
+rm -f /data/adb/ivanna_omega/hrtf_dataset.ihr1 \
+      /data/adb/ivanna_omega/daemon.log \
+      /data/adb/ivanna_omega/daemon.log.old
+rmdir /data/adb/ivanna_omega 2>/dev/null
 setprop persist.ivanna.magisk_active 0
 setprop persist.ivanna.daemon_active 0

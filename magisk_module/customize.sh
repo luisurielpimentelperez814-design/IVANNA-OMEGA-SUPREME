@@ -137,6 +137,39 @@ if [ -f "$MODPATH/.safe_mode" ]; then
   ui_print "- MODO SEGURO: audio_effects.xml no montado (proteger audioserver)"
 fi
 
+# ── HRTF dataset (impacto audio real) ─────────────────────────────────────
+# omega_effect.cpp:126 hace loadCustomHrtf("/data/adb/ivanna_omega/hrtf_dataset.ihr1").
+# Antes de este parche NADIE colocaba el archivo ahí → el motor siempre caía al
+# HRTF sintético. Ahora el módulo embarca su propio dataset determinista
+# (13 azimuts, IR_LEN=512, SR=48000, Woodworth ITD + head-shadow) en
+# system/etc/ivanna_omega/. En instalación lo copiamos al path que espera el
+# loader, con permisos 0644 root:root.
+#
+# REGLA ANTI-SOBRESCRITURA: si el usuario ya puso su propio .ihr1 (por
+# ejemplo generado con tools/hrtf/sofa_to_ihr1.py sobre una medida SOFA
+# real), NO se pisa — se conserva el custom del usuario. El check `-s`
+# también evita restaurar un archivo vacío (0 bytes) que el loader
+# rechazaría igualmente.
+HRTF_SRC="$MODPATH/system/etc/ivanna_omega/hrtf_dataset.ihr1"
+HRTF_DIR="/data/adb/ivanna_omega"
+HRTF_DST="$HRTF_DIR/hrtf_dataset.ihr1"
+if [ -f "$HRTF_SRC" ]; then
+  mkdir -p "$HRTF_DIR"
+  chmod 0755 "$HRTF_DIR" 2>/dev/null
+  chown 0:0 "$HRTF_DIR" 2>/dev/null
+  if [ -s "$HRTF_DST" ]; then
+    ui_print "- HRTF dataset ya presente en $HRTF_DST — preservando custom del usuario"
+  else
+    cp "$HRTF_SRC" "$HRTF_DST" && \
+      chmod 0644 "$HRTF_DST" 2>/dev/null && \
+      chown 0:0 "$HRTF_DST" 2>/dev/null
+    HRTF_SIZE=$(stat -c%s "$HRTF_DST" 2>/dev/null || wc -c < "$HRTF_DST")
+    ui_print "  HRTF dataset desplegado en $HRTF_DST ($HRTF_SIZE bytes)"
+  fi
+else
+  ui_print "! HRTF dataset embarcado no encontrado en $HRTF_SRC — motor caerá a sintético"
+fi
+
 # ── Permisos ──────────────────────────────────────────────────────────────
 set_perm_recursive "$MODPATH/system" 0 0 0755 0644
 set_perm "$SO_PATH" 0 0 0644
