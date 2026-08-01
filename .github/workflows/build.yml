@@ -84,6 +84,20 @@ jobs:
       - name: Generate local.properties
         run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
 
+      - name: Remove Termux aapt2 override from Gradle cache
+        run: |
+          # Elimina la propiedad aapt2FromMavenOverride que Termux deja en
+          # ~/.gradle/gradle.properties y rompe el build en CI (la ruta
+          # /data/data/com.termux/ no existe en el runner de GitHub Actions).
+          GRADLE_PROPS="$HOME/.gradle/gradle.properties"
+          if [ -f "$GRADLE_PROPS" ]; then
+            sed -i '/aapt2FromMavenOverride/d' "$GRADLE_PROPS"
+            echo "Cleaned aapt2FromMavenOverride from $GRADLE_PROPS"
+          fi
+          # También limpiar del gradle.properties del proyecto por si acaso
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
+          sed -i '/aapt2FromMavenOverride/d' app/gradle.properties 2>/dev/null || true
+
       - name: Create debug keystore
         run: |
           mkdir -p ~/.android
