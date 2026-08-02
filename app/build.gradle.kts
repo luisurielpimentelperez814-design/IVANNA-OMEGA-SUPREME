@@ -91,6 +91,15 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.compose.ui:ui:1.6.0")
     implementation("androidx.compose.material3:material3:1.2.0")
+    // FIX (build): IvannaAppShell usa Icons.Filled.{RadioButtonChecked, Tune,
+    // BlurOn, Psychology, PlayCircle}. Ninguno de los cinco vive en
+    // material-icons-core (el set minimo que arrastra material3): son todos
+    // del set extendido, que no estaba declarado -> "Unresolved reference".
+    // Se anade la dependencia en vez de sustituir los glifos: cambiarlos por
+    // iconos de core degrada la semantica de la barra de navegacion, y los
+    // reemplazos "obvios" (GraphicEq, Memory) tampoco estan en core, con lo
+    // que el build seguiria roto. R8 descarta los iconos no usados en release.
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     // FIX (bb4fa6b): AudioStateManager.kt y VoiceProtectionManager.kt usan
