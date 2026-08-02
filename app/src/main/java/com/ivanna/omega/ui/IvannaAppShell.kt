@@ -589,7 +589,10 @@ private fun BrainTab(
         while (true) {
             if (IvannaNativeLib.isLoaded) {
                 evoBestFitness = runCatching { IvannaNativeLib.nativeGetEvoBestFitness() }.getOrNull()
-                evoGeneration  = runCatching { IvannaNativeLib.nativeGetEvoGeneration() }.getOrNull()
+                // FIX (build): nativeGetEvoGeneration no existe — el nombre real
+                // en IvannaNativeLib es nativeGetGeneration (ver línea 68 del
+                // JNI wrapper). Devuelve Int; getOrNull() lo mantiene Int?.
+                evoGeneration  = runCatching { IvannaNativeLib.nativeGetGeneration() }.getOrNull()
             }
             delay(2000)
         }
@@ -629,8 +632,11 @@ private fun BrainTab(
                     val telSnap = adaptiveTelemetryRaw.toSnapshot()
                     listOf(
                         "Ganancia objetivo" to "%.2f".format(telSnap.targetGain),
-                        "Comp aplicado"     to "%.2f".format(telSnap.compAmount),
-                        "RMS entrada"       to "%.1f dB".format(telSnap.inputRms)
+                        // FIX (build): AdaptiveTelemetrySnapshot expone
+                        // compressorAmount y rms (no compAmount/inputRms) —
+                        // ver data class en AdaptiveEngineCard.kt:58.
+                        "Comp aplicado"     to "%.2f".format(telSnap.compressorAmount),
+                        "RMS entrada"       to "%.1f dB".format(telSnap.rms)
                     ).forEach { (label, value) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(label, fontSize = 11.sp, color = TextSecondary)
