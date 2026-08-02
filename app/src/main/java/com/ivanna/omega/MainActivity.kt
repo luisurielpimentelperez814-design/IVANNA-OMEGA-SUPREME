@@ -70,6 +70,10 @@ import kotlin.math.PI
 import android.net.Uri
 import com.ivanna.omega.audio.IvannaBridgePlayer
 import com.ivanna.omega.audio.VolterraSwitch
+import com.ivanna.omega.ui.IvannaRoute
+import com.ivanna.omega.ui.SoundScreen
+import com.ivanna.omega.ui.BrainScreen
+import com.ivanna.omega.ui.SystemScreen
 import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
 import kotlinx.coroutines.delay
@@ -327,40 +331,53 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("perceptual_brain") {
-                val perceptualEngine = remember { PerceptualBrainEngine() }
-                val decisionEngine = remember { PerceptualDecisionEngine() }
+            composable("perceptual_brain") { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            composable("adaptive_dash")    { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
 
-                LaunchedEffect(perceptualEngine) {
-                    perceptualEngine.snapshot.collect { snapshot ->
-                        val recs = decisionEngine.evaluate(snapshot)
-                        decisionEngine.dispatchRecommendations(recs)
-                    }
-                }
-
-                PerceptualBrainDashboard(
-                    engine = perceptualEngine,
-                    onBack = { nav.popBackStack() },
+            // ── Sección SONIDO ────────────────────────────────────────────
+            composable(IvannaRoute.SOUND) {
+                SoundScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("adaptive_dash") {
-                var telemetryRaw by remember { mutableStateOf<FloatArray?>(null) }
-                LaunchedEffect(Unit) {
-                    while (true) {
-                        if (IvannaNativeLib.isLoaded) {
-                            telemetryRaw = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
-                        }
-                        delay(100)
-                    }
-                }
-                com.ivanna.omega.ui.AdaptiveDashboard(
-                    telemetry = telemetryRaw,
+            // Alias legacy
+            composable("ope")      { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } }
+            composable("binaural") { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } }
+
+            // ── Sección CEREBRO ───────────────────────────────────────────
+            composable(IvannaRoute.BRAIN) {
+                BrainScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
+            composable(IvannaRoute.ADAPTIVE) { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            composable(IvannaRoute.PERCEPTUAL){ nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            composable(IvannaRoute.LAB)       { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+
+            // ── Sección ESPACIO ───────────────────────────────────────────
+            composable(IvannaRoute.SPACE) {
+                AuditoryExperienceScreen(
+                    onEnterMotorClick = { nav.navigate(IvannaRoute.BRAIN) },
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable("auditory")   { nav.navigate(IvannaRoute.SPACE) { popUpTo("dashboard") } }
+
+            // ── Sección SISTEMA ───────────────────────────────────────────
+            composable(IvannaRoute.SYSTEM) {
+                SystemScreen(
+                    onOpenMagisk   = { nav.navigate(IvannaRoute.MAGISK) },
+                    onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable(IvannaRoute.TELEMETRY) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
+            composable("telemetry")           { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
+            composable("adaptive_profiles")   { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
         }
     }
 }
@@ -690,10 +707,10 @@ fun DashboardScreen(
                 else antiDolbyController.disableAntiDolby()
             },
             adaptiveTelemetry = adaptiveTelemetry,
-            onOpenAdaptive = { nav.navigate("adaptive") },
-            onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
-            onOpenMagisk = { nav.navigate("magisk") },
-            onOpenProfiles = { nav.navigate("profiles") },
+            onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
+            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.BRAIN) },
+            onOpenMagisk = { nav.navigate(IvannaRoute.MAGISK) },
+            onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
             adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
             onAdaptiveModeChange = { uiMode ->
                 val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
