@@ -340,11 +340,19 @@ private fun EngineStatusRow(dsp: DSPState) {
 
 @Composable
 private fun RouteRow(route: PipelineState) {
+    // FIX build (compileDebugKotlin): route.activeRoute es enum ActiveRoute,
+    // no String — .ifBlank { "Desconocida" } no aplica. Se mapea el enum
+    // al mismo texto humano ya establecido en IvannaOmniComponents.kt para
+    // mantener consistencia visual entre HUD y este panel.
+    val routeText = when (route.activeRoute) {
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> "RUTA A"
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> "RUTA B"
+        com.ivanna.omega.audio.ActiveRoute.NONE   -> "Desconocida"
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically) {
         Text("Ruta de audio", fontSize = 11.sp, color = TextSecondary)
-        Text(route.activeRoute.ifBlank { "Desconocida" },
-            fontSize = 11.sp, color = AuroraCyan, fontFamily = Mono)
+        Text(routeText, fontSize = 11.sp, color = AuroraCyan, fontFamily = Mono)
     }
 }
 
