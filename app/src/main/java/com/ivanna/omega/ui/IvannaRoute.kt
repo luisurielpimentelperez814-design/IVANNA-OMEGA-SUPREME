@@ -1,33 +1,40 @@
 package com.ivanna.omega.ui
 
 /**
- * IvannaRoute — centralized route name constants for navigation between
- * Compose destinations. This restores the symbol missing in recent refactors
- * and prevents "Unresolved reference: IvannaRoute" compiler errors in
- * MainActivity and other UI modules.
+ * IvannaRoute — centraliza las rutas usadas por la navegación para evitar
+ * literales esparcidas que provocan errores y dificultan refactors.
  */
 object IvannaRoute {
+
     const val SPLASH = "splash"
     const val INTRO = "intro"
     const val DASHBOARD = "dashboard"
 
-    const val MAGISK = "magisk"
-    const val PROFILES = "profiles"
-    const val VISUALIZER = "visualizer"
-
-    const val ADAPTIVE = "adaptive"
-    const val ADAPTIVE_DASH = "adaptive_dash"
-    const val PERCEPTUAL = "perceptual_brain"
-
+    // Sonido
+    const val SOUND = "sound"
     const val OPE = "ope"
     const val BINAURAL = "binaural"
-    const val AUDITORY = "auditory"
+
+    // Cerebro / Perceptual
+    const val BRAIN = "perceptual_brain"
+    const val PERCEPTUAL = "perceptual_brain"
+    const val ADAPTIVE = "adaptive"
+    const val ADAPTIVE_DASH = "adaptive_dash"
+    const val ADAPTIVE_PROFILES = "adaptive_profiles"
     const val LAB = "lab"
 
-    const val SOUND = "sound"
-    const val BRAIN = "brain"
+    // Espacio / Auditory
     const val SPACE = "space"
+    const val AUDITORY = "auditory"
+    const val VISUALIZER = "visualizer"
 
+    // Sistema
     const val SYSTEM = "system"
+    const val MAGISK = "magisk"
+    const val PROFILES = "profiles"
     const val TELEMETRY = "telemetry"
+
+    // Legacy / aliases
+    const val OPE_ALIAS = "ope"
+    const val BINAURAL_ALIAS = "binaural"
 }
