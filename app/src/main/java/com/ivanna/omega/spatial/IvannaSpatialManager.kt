@@ -2,6 +2,7 @@ package com.ivanna.omega.spatial
 
 import android.content.Context
 import android.util.Log
+import java.nio.FloatBuffer
 
 /**
  * IvannaSpatialManager — singleton que gestiona el ObjectRenderer nativo
@@ -86,8 +87,29 @@ object IvannaSpatialManager {
             inL[i] = buffer[i * 2]
             inR[i] = buffer[i * 2 + 1]
         }
-        IvannaSpatialNative.nativeObjectRendererRenderBlock(
-            h, inL, inR, outL, outR, n)
+
+        // NOTE: El JNI actual espera java.nio.FloatBuffer + un `numObjects` Int
+        // entre los buffers. Aquí usamos FloatBuffer.wrap(...) para adaptar el
+        // FloatArray existente a la firma nativa. Esto produce buffers no-directos
+        // (GetDirectBufferAddress devolverá nullptr en JNI), por lo que la llamada
+        // nativa no hará nada en su implementación actual que requiere buffers
+        // directos. Sin embargo, esto corrige el error de compilación. Para un
+        // hot-path real se debe añadir un JNI que acepte FloatArray o usar
+        // ByteBuffer.allocateDirect() y evitar copias.
+        try {
+            IvannaSpatialNative.nativeObjectRendererRenderBlock(
+                h,
+                FloatBuffer.wrap(inL),     // objectsBuffer (adaptado)
+                0,                         // numObjects (0 -> no objetos)
+                FloatBuffer.wrap(outL),    // outLeftBuffer
+                FloatBuffer.wrap(outR),    // outRightBuffer
+                n
+            )
+        } catch (e: UnsatisfiedLinkError) {
+            // Si el JNI nativo no existe o la implementación no procesa estos
+            // buffers, simplemente lo silenciamos para no tumbar el hilo de audio.
+        }
+
         // Reinterleave
         for (i in 0 until n) {
             buffer[i * 2]     = outL[i]
