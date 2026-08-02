@@ -46,7 +46,7 @@ object IvannaRoute {
     val LEGACY_ALIASES = mapOf(
         "ope"             to SOUND,
         "adaptive_dash"   to ADAPTIVE,
-        "perceptual_brain"to PERCEPTUAL,
+        "perceptual_brain" to PERCEPTUAL,
         "adaptive_profiles" to PROFILES
     )
 }

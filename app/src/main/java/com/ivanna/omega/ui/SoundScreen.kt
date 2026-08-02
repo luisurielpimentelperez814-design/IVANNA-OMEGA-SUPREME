@@ -246,12 +246,12 @@ private fun NHOTab() {
             var lateralInhib by remember { mutableFloatStateOf(0.3f) }
             IvannaSliderRow("INHIBICIÓN LATERAL", lateralInhib, 0f, 1f, "") { v ->
                 lateralInhib = v
-                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetLateralInhib(v) }
+                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetBeta(v) }
             }
             var ohcGain by remember { mutableFloatStateOf(0.5f) }
             IvannaSliderRow("GAIN OHC", ohcGain, 0f, 1f, "") { v ->
                 ohcGain = v
-                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetOhcGain(v) }
+                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAlpha(v) }
             }
         }
     }

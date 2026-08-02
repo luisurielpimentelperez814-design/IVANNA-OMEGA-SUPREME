@@ -358,7 +358,7 @@ fun OmegaApp() {
 
             // ── Sección ESPACIO ───────────────────────────────────────────
             composable(IvannaRoute.SPACE) {
-                AuditoryExperienceScreen(
+                com.ivanna.omega.ui.AuditoryExperienceScreen(
                     onEnterMotorClick = { nav.navigate(IvannaRoute.BRAIN) },
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
