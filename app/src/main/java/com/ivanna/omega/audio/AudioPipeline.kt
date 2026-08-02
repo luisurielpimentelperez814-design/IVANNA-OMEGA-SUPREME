@@ -29,6 +29,13 @@ import kotlin.math.sqrt
  */
 class AudioPipeline {
 
+    data class SharedYamnetResult(
+        val speech: Float = 0f,
+        val music: Float = 0f,
+        val bass: Float = 0f,
+        val valid: Boolean = false
+    )
+
     companion object {
         const val SAMPLE_RATE = 96000
         const val FRAMES_PER_BLOCK = 256
@@ -48,12 +55,6 @@ class AudioPipeline {
         // Usamos la data class interna — se declara antes que companion en Kotlin
         // así que no la podemos referenciar aquí directamente. Exponemos campos
         // planos en un SimpleResult para evitar la dependencia de orden de init.
-        data class SharedYamnetResult(
-            val speech: Float = 0f,
-            val music: Float = 0f,
-            val bass: Float = 0f,
-            val valid: Boolean = false
-        )
         private val _sharedYamnet = MutableStateFlow(SharedYamnetResult())
         val sharedYamnetResult: StateFlow<SharedYamnetResult> = _sharedYamnet.asStateFlow()
     }
