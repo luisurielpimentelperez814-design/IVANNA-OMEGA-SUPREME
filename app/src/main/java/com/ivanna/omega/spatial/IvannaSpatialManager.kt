@@ -2,6 +2,8 @@ package com.ivanna.omega.spatial
 
 import android.content.Context
 import android.util.Log
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
@@ -30,10 +32,28 @@ object IvannaSpatialManager {
     @Volatile var activeSubject: String = "none"
         private set
 
-    private val inL  = FloatArray(BLOCK_SIZE)
-    private val inR  = FloatArray(BLOCK_SIZE)
+    // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
+    private val inLBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+    private val inRBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+    private val outLBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+    private val outRBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+
+    // Arrays auxiliares para reinterleaving (evitan acceder a FloatBuffer por índice)
     private val outL = FloatArray(BLOCK_SIZE)
     private val outR = FloatArray(BLOCK_SIZE)
+
     private val lock = Any()
 
     // ── Inicialización ────────────────────────────────────────────────────────
@@ -82,38 +102,51 @@ object IvannaSpatialManager {
         val h = rendererHandle
         if (!ready || h == 0L || frames <= 0) return
         val n = minOf(frames, BLOCK_SIZE)
-        // Deinterleave stereo
-        for (i in 0 until n) {
-            inL[i] = buffer[i * 2]
-            inR[i] = buffer[i * 2 + 1]
-        }
 
-        // NOTE: El JNI actual espera java.nio.FloatBuffer + un `numObjects` Int
-        // entre los buffers. Aquí usamos FloatBuffer.wrap(...) para adaptar el
-        // FloatArray existente a la firma nativa. Esto produce buffers no-directos
-        // (GetDirectBufferAddress devolverá nullptr en JNI), por lo que la llamada
-        // nativa no hará nada en su implementación actual que requiere buffers
-        // directos. Sin embargo, esto corrige el error de compilación. Para un
-        // hot-path real se debe añadir un JNI que acepte FloatArray o usar
-        // ByteBuffer.allocateDirect() y evitar copias.
+        // Deinterleave directo hacia FloatBuffers directos (sin arrays temporales)
+        inLBuf.clear()
+        inRBuf.clear()
+        var i = 0
+        while (i < n) {
+            inLBuf.put(buffer[i * 2])
+            inRBuf.put(buffer[i * 2 + 1])
+            i++
+        }
+        inLBuf.position(0)
+        inRBuf.position(0)
+
+        // Llamada nativa: buffers directos permiten GetDirectBufferAddress en JNI
+        // Nota: la firma nativa actual interpreta el primer buffer como "objects" —
+        // si la semántica cambia, ajustar aquí. Por ahora usamos numObjects=0
+        // (sin objetos) y pasamos los buffers out directos para que el renderer
+        // pueda escribir la salida binaural directamente.
         try {
+            outLBuf.clear()
+            outRBuf.clear()
             IvannaSpatialNative.nativeObjectRendererRenderBlock(
                 h,
-                FloatBuffer.wrap(inL),     // objectsBuffer (adaptado)
-                0,                         // numObjects (0 -> no objetos)
-                FloatBuffer.wrap(outL),    // outLeftBuffer
-                FloatBuffer.wrap(outR),    // outRightBuffer
+                inLBuf,   // objectsBuffer / entrada direct
+                0,        // numObjects
+                outLBuf,  // outLeftBuffer (direct)
+                outRBuf,  // outRightBuffer (direct)
                 n
             )
         } catch (e: UnsatisfiedLinkError) {
-            // Si el JNI nativo no existe o la implementación no procesa estos
-            // buffers, simplemente lo silenciamos para no tumbar el hilo de audio.
+            // Si la función nativa no está disponible con esta firma, no rompa el hilo
+            return
         }
 
-        // Reinterleave
-        for (i in 0 until n) {
+        // Extraer salida desde FloatBuffers directos a arrays y reinterleaving
+        outLBuf.position(0)
+        outRBuf.position(0)
+        outLBuf.get(outL, 0, n)
+        outRBuf.get(outR, 0, n)
+
+        i = 0
+        while (i < n) {
             buffer[i * 2]     = outL[i]
             buffer[i * 2 + 1] = outR[i]
+            i++
         }
     }
 
