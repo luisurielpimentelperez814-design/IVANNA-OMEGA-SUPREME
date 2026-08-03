@@ -37,7 +37,7 @@ inline float projectionPiS(float x)
 
 
 
-inline float SAFUpdate(
+inline float SAFFullUpdate(
         float current,
         float target)
 {

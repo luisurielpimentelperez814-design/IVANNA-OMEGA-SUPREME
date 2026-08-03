@@ -4,28 +4,9 @@
 #include <algorithm>
 #include <atomic>
 
-struct SAFState {
+// SAFState defined in saf_runtime.h
+#include "saf_runtime.h"
 
-    std::atomic<float> gain;
-
-    double deltaE;
-    double metricNorm;
-    double memory;
-
-    double Gt;
-    double lambda;
-    double epsilon;
-
-    SAFState()
-        : gain(1.0f),
-          deltaE(0.0),
-          metricNorm(0.0),
-          memory(0.0),
-          Gt(1.0),
-          lambda(0.05),
-          epsilon(0.000001)
-    {}
-};
 
 
 inline double SAFProjection(double x)
@@ -34,7 +15,7 @@ inline double SAFProjection(double x)
 }
 
 
-inline double SAFUpdate(
+inline double SAFMathUpdate(
         SAFState& s,
         double p,
         double target)
