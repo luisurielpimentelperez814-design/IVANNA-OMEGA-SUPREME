@@ -7,19 +7,29 @@
 namespace Ivanna {
 
 struct HRTFDatabaseHeader {
-    uint32_t magic;
-    uint32_t sampleRate;
+
+    char magic[8];
+
+    float sampleRate;
+
     uint32_t positions;
+    uint32_t channels;
     uint32_t taps;
 };
 
+
 struct HRTFEntry {
+
     std::vector<float> left;
     std::vector<float> right;
+
 };
 
+
 class HRTFBinLoader {
+
 public:
+
     bool load(const char* path);
 
     size_t size() const {
@@ -34,9 +44,13 @@ public:
         return m_header;
     }
 
+
 private:
+
     HRTFDatabaseHeader m_header{};
+
     std::vector<HRTFEntry> m_entries;
+
 };
 
 }

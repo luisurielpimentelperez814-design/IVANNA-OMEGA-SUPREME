@@ -22,6 +22,7 @@
 #include <memory>
 #include <atomic>
 #include "synthetic_hrtf.hpp"
+#include "../SafHRTFDatasetBridge.hpp"
 
 namespace ivanna {
 

@@ -7,30 +7,44 @@ from pathlib import Path
 
 
 INPUT = Path(
-    "app/src/main/assets/saf/sofa_elite/MIT_KEMAR_normal_pinna.sofa"
+"app/src/main/assets/saf/sofa_elite/MIT_KEMAR_normal_pinna.sofa"
 )
 
 OUTPUT = Path(
-    "app/src/main/assets/saf/processed/hrtf_database.bin"
+"app/src/main/assets/saf/processed/hrtf_database.bin"
 )
 
 
-with h5py.File(INPUT, "r") as f:
+with h5py.File(INPUT,"r") as f:
 
-    ir = np.array(f["Data.IR"])
-    sr = np.array(f["Data.SamplingRate"])[0]
+    ir = np.array(f["Data.IR"], dtype=np.float32)
 
-    print("SOFA Data.IR shape:", ir.shape)
-    print("Sample rate:", sr)
+    sr = int(np.array(
+        f["Data.SamplingRate"]
+    )[0])
 
-    ir = ir.astype(np.float32)
+    positions = np.array(
+        f["SourcePosition"]
+    )
+
+    azimuth = positions[:,0].astype(np.float32)
 
 
-# Normalización segura
-peak = np.max(np.abs(ir))
+# normalización segura
+peak=np.max(np.abs(ir))
 
 if peak > 1.0:
     ir /= peak
+
+
+# SOFA:
+# (direcciones, canales, taps)
+
+L = ir[:,0,:]
+R = ir[:,1,:]
+
+dirs = L.shape[0]
+taps = L.shape[1]
 
 
 OUTPUT.parent.mkdir(
@@ -39,28 +53,31 @@ OUTPUT.parent.mkdir(
 )
 
 
-with open(OUTPUT, "wb") as out:
+with open(OUTPUT,"wb") as out:
 
-    # magic
     out.write(b"IVHRTF01")
 
-    # sample rate
     out.write(struct.pack(
-        "<f",
-        float(sr)
+        "<fIII",
+        float(sr),
+        dirs,
+        2,
+        taps
     ))
 
-    # dimensiones
-    out.write(struct.pack(
-        "<3I",
-        *ir.shape
-    ))
+    for i in range(dirs):
 
-    # datos FIR
-    out.write(
-        ir.tobytes()
-    )
+        out.write(
+            L[i].astype(np.float32).tobytes()
+        )
+
+        out.write(
+            R[i].astype(np.float32).tobytes()
+        )
 
 
-print("Written:", OUTPUT)
-print("Bytes:", OUTPUT.stat().st_size)
+print("Written:",OUTPUT)
+print("Rate:",sr)
+print("Dirs:",dirs)
+print("Taps:",taps)
+print("Bytes:",OUTPUT.stat().st_size)

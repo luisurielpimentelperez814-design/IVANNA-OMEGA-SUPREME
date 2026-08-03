@@ -64,6 +64,7 @@ add_library(ivanna_omega SHARED
     SofaHRTFLoader.cpp
     SafHRTFBridge.cpp
     HRTFBinLoader.cpp
+    SafHRTFDatasetBridge.cpp
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp
@@ -175,6 +176,8 @@ add_library(omega_effect SHARED
     spatial/ivanna_object_renderer.cpp
     spatial/hrtf_convolver.cpp
     spatial/ivanna_head_tracker.cpp
+    HRTFBinLoader.cpp
+    SafHRTFDatasetBridge.cpp
 )
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})

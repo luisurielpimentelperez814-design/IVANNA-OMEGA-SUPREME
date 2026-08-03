@@ -18,9 +18,13 @@
 #include "hrtf_convolver.hpp"
 #include "fft_radix2.hpp"
 #include "../include/audio_thread_priority.h"
+#include "../SafHRTFDatasetBridge.hpp"
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <android/log.h>
+
+#define HRTF_LOG_TAG "IVANNA-HRTF"
 
 namespace ivanna {
 
@@ -48,6 +52,33 @@ uint32_t HRTFConvolver::next_pow2(uint32_t v) {
 void HRTFConvolver::init(uint32_t sampleRate) {
     sr_ = sampleRate;
     hrtf_.init(sampleRate, IR_LEN);
+
+    // Carga HRTF medido MIT KEMAR desde dataset binario.
+    // Si no existe, SyntheticHRTF mantiene el fallback sintético.
+    const char* hrtfPath =
+        "/data/adb/ivanna_omega/hrtf_database.bin";
+
+    bool hrtfLoaded =
+        Ivanna::SafHRTFDatasetBridge::load(
+            hrtf_,
+            hrtfPath,
+            sampleRate
+        );
+
+    if (hrtfLoaded) {
+        __android_log_print(
+                ANDROID_LOG_INFO,
+                "IVANNA_HRTF",
+                "HRTF: custom dataset loaded"
+            );
+    } else {
+        __android_log_print(
+                ANDROID_LOG_WARN,
+                "IVANNA_HRTF",
+                "HRTF: synthetic fallback"
+            );
+    }
+
     ivanna::audio::enableAudioThreadFastMathOnce();   // Si existe en tu código
     fftSize_ = next_pow2(BLOCK + IR_LEN - 1);
     fft_ = std::make_unique<FFTRadix2>(fftSize_);
