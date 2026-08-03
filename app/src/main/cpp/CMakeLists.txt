@@ -63,6 +63,7 @@ add_library(ivanna_omega SHARED
     SafModelLoader.cpp
     SofaHRTFLoader.cpp
     SafHRTFBridge.cpp
+    HRTFBinLoader.cpp
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp
