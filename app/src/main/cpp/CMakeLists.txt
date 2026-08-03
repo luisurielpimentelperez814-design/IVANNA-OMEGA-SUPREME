@@ -58,6 +58,12 @@ add_library(ivanna_omega SHARED
     dsp/GainStage.cpp
     dsp/SafetyLimiter.cpp
 
+    # SAF Phi_SAF_infinity HRTF adaptive bridge
+    SaFOptimizer.cpp
+    SafModelLoader.cpp
+    SofaHRTFLoader.cpp
+    SafHRTFBridge.cpp
+
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
