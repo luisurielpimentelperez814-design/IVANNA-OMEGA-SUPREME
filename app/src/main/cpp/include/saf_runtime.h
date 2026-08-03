@@ -5,7 +5,7 @@
 
 struct SAFState {
 
-    double gain = 1.0;
+    std::atomic<float> gain{1.0f};
 
     double deltaE = 0.0;
 
