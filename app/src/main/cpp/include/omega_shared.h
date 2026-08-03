@@ -122,7 +122,9 @@ struct OmegaSharedState {
     // 1.0 (unity) porque StereoWidener::setWidth(0.0f) = mono forzado, y
     // el memset(0) de omega_daemon_init() lo dejaría en 0 si no se
     // restaura explícitamente (ver ese archivo).
-    std::atomic<float> ai_runtime_spatial_width;  // 0..2 → StereoWidener::setWidth()
+    std::atomic<float> ai_runtime_spatial_width;
+    std::atomic<float> ai_runtime_comp_amount;
+    std::atomic<float> ai_runtime_exciter_red;  // 0..2 → StereoWidener::setWidth()
 
     // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
     // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
