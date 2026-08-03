@@ -86,6 +86,15 @@ class PerceptualDecisionEngine {
             )
         )
 
+        val safTelemetry = SAFCore.getState()
+
+        OmegaEngineBridge.pushSAFState(
+            safTelemetry[0].toFloat(),
+            safTelemetry[1].toFloat(),
+            safTelemetry[2].toFloat(),
+            safTelemetry[3].toFloat()
+        )
+
         OmegaEngineBridge.sendPerceptualState(
             compressor = safState[0].toFloat(),
             exciterRed = safState[1].toFloat(),

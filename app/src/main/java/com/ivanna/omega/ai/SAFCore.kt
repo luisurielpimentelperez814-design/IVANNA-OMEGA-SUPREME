@@ -15,6 +15,10 @@ object SAFCore {
 
     private var memory = 0.0
 
+    private var lastDeltaEnergy = 0.0
+    private var lastMetricNorm = 0.0
+    private var lastGain = 0.0
+
     private const val LAMBDA = 0.05
     private const val EPSILON = 0.00001
 
@@ -44,6 +48,9 @@ object SAFCore {
             0.95 * memory +
             0.05 * sqrt(normGt)
 
+        lastDeltaEnergy = deltaEnergy
+        lastMetricNorm = normGt
+
         val gain =
             deltaEnergy /
             (
@@ -52,6 +59,8 @@ object SAFCore {
                 LAMBDA * memory +
                 EPSILON
             )
+
+        lastGain = gain
 
         return DoubleArray(current.size){
 
@@ -81,4 +90,14 @@ object SAFCore {
             else -> value
         }
     }
+
+    fun getState(): DoubleArray {
+        return doubleArrayOf(
+            lastDeltaEnergy,
+            lastMetricNorm,
+            memory,
+            lastGain
+        )
+    }
+
 }
