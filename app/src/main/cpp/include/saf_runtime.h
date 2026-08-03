@@ -4,6 +4,12 @@
 #include <atomic>
 
 struct SAFState {
+    // Phi_SAF_infinity metric state
+    double Gt = 1.0;
+    double lambda = 0.05;
+    double epsilon = 1e-8;
+
+
 
     std::atomic<float> gain{1.0f};
 
