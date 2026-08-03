@@ -1,4 +1,5 @@
 package com.ivanna.omega.ai
+import com.ivanna.omega.ai.SAFCore
 
 import com.ivanna.omega.magisk.OmegaEngineBridge
 // coerceIn is stdlib — no import needed
