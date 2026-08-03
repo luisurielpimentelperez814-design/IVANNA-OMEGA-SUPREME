@@ -2,6 +2,10 @@
 #define OMEGA_SHARED_H
 
 #include <atomic>
+
+
+#include "saf_runtime.h"
+
 #include <cstdint>
 #include <cstring>
 
@@ -103,7 +107,14 @@ struct OmegaSharedState {
     // ai_runtime_gain_mul es el canal de vuelta: la app escribe acá el
     // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
     // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
-    // daemon lo aplica como multiplicador adicional en processLoop(), sin
+    // daemon lo aplica como multiplicador adicional en 
+
+inline float applySAFGain(float sample)
+{
+    return sample * g_saf_state.gain.load();
+}
+
+processLoop(), sin
     // tocar pf_master (que sigue siendo la ganancia base del usuario).
     // compressor_amount/exciter_reduction: cerrado en commit de unificación
     // DSP Ruta B. El daemon ya instancia Compressor e HarmonicExciter reales
