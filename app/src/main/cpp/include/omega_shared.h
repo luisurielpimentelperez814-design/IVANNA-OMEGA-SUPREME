@@ -5,6 +5,7 @@
 
 
 #include "saf_runtime.h"
+#include "saf_full_math.h"
 
 #include <cstdint>
 #include <cstring>
@@ -113,6 +114,29 @@ inline float applySAFGain(float sample)
 {
     return sample * g_saf_state.gain.load();
 }
+
+
+
+// SAF FULL MATHEMATICS
+// Φ_SAF = ΠS(p + factor * G^-1 * Δ)
+
+float safCurrent =
+    g_saf_state.gain.load();
+
+
+float safTarget = 1.0f;
+
+
+float safGain =
+    SAFUpdate(
+        safCurrent,
+        safTarget
+    );
+
+
+g_saf_state.gain.store(
+    safGain
+);
 
 processLoop(), sin
     // tocar pf_master (que sigue siendo la ganancia base del usuario).
