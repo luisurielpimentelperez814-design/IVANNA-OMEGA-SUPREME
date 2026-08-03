@@ -1,3 +1,4 @@
+#include "include/saf_math_engine.h"
 #ifndef OMEGA_SHARED_H
 #define OMEGA_SHARED_H
 
@@ -256,4 +257,9 @@ struct SAFState {
     float memory;
     float gain;
 };
+
+
+
+SAFState g_saf_state;
+
 
