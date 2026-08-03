@@ -146,7 +146,26 @@ int main() {
         if (bytesRead > 0) {
             buffer[bytesRead] = '\0';
             std::string req(buffer);
-            if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
+            if (req.find("
+
+// SAF realtime update
+// recibe estado desde OmegaEngineBridge
+try {
+    float safGain = json["gain"];
+    float safComp = json["compressor"];
+    float safExc = json["exciterReduction"];
+    float safSpatial = json["spatialWidth"];
+
+    updateSAFFromJson(
+        safGain,
+        safComp,
+        safExc,
+        safSpatial
+    );
+
+} catch (...) {}
+
+SET_PERCEPTUAL_STATE") != std::string::npos) {
                 update_parameters_smooth(req);
                 const char* ack = "{\"status\":\"OK\",\"message\":\"PERCEPTUAL_STATE_APPLIED\"}\n";
                 write(clientFd, ack, strlen(ack));
