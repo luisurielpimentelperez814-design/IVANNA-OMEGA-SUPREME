@@ -63,7 +63,9 @@ extern "C" OmegaSharedState* omega_daemon_get_shared_state();
 #define LOG_TAG "IVANNA-JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-using namespace ivanna;
+using static SAFState g_saf_state;
+
+namespace ivanna;
 // ── Bus + staging frame (ver audio_control_plane.cpp) ────────────────────────
 // Definición real de los externs declarados en audio_control_plane.cpp.
 // El hilo JNI/UI publica ControlFrame nuevos aquí; el hilo de audio los
@@ -72,7 +74,7 @@ namespace ivanna {
 
         // SAF FULL ADAPTIVE UPDATE
         // Phi_SAF infinity
-        g_saf_state.gain.store((float)SAFUpdate(g_saf_state, g_saf_state.gain.load(), 1.0));
+        
 
     ControlFrameBus g_control_bus;
     ControlFrame    g_staging_frame;

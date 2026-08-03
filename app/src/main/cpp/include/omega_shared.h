@@ -1,5 +1,4 @@
 #include "saf_math_engine.h"
-#include "include/saf_math_engine.h"
 #ifndef OMEGA_SHARED_H
 #define OMEGA_SHARED_H
 
