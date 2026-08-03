@@ -114,7 +114,7 @@ struct OmegaSharedState {
 
 inline float applySAFGain(float sample)
 {
-    return sample * g_saf_state.gain.load();
+    return sample * g_saf_state.gain.load(std::memory_order_relaxed);
 }
 
 
@@ -123,7 +123,7 @@ inline float applySAFGain(float sample)
 // Φ_SAF = ΠS(p + factor * G^-1 * Δ)
 
 float safCurrent =
-    g_saf_state.gain.load();
+    g_saf_state.gain.load(std::memory_order_relaxed);
 
 
 float safTarget = 1.0f;
@@ -138,7 +138,7 @@ float safGain =
 
 
 
- el daemon los pasa a setRuntimeAmount()/setRuntimeReduction()
+ 
     // en el hot-path. Semántica idéntica a Ruta A.
     std::atomic<float> ai_runtime_gain_mul;
     std::atomic<float> ai_runtime_comp_amount;    // 0..1 → Compressor::setRuntimeAmount()
