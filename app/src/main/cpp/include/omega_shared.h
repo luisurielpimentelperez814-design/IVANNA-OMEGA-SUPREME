@@ -212,3 +212,13 @@ struct OmegaSharedState {
 };
 
 #endif // OMEGA_SHARED_H
+
+
+// SAF adaptive field state
+struct SAFState {
+    float deltaEnergy;
+    float metricNorm;
+    float memory;
+    float gain;
+};
+

@@ -1,8 +1,22 @@
 package com.ivanna.omega.ai
 
+import kotlin.math.sqrt
+import kotlin.math.max
+import kotlin.math.min
+
+/**
+ * SAF Φ∞
+ *
+ * Φ = ΠS^Gt(
+ * p + ΔE/(ΔE+||Δ||Gt²+λM+ε) Gt^-1Δ
+ * )
+ */
 object SAFCore {
 
     private var memory = 0.0
+
+    private const val LAMBDA = 0.05
+    private const val EPSILON = 0.00001
 
     fun update(
         current: DoubleArray,
@@ -10,41 +24,61 @@ object SAFCore {
         metric: DoubleArray
     ): DoubleArray {
 
-        val delta =
-            DoubleArray(current.size) {
-                target[it]-current[it]
-            }
+        val delta = DoubleArray(current.size)
 
-        var energy = 0.0
+        var deltaEnergy = 0.0
+        var normGt = 0.0
 
         for(i in delta.indices){
-            energy +=
+            delta[i] = target[i] - current[i]
+
+            deltaEnergy += kotlin.math.abs(delta[i])
+
+            normGt +=
                 delta[i] *
                 metric[i] *
                 delta[i]
         }
 
         memory =
-            0.9 * memory +
-            0.1 * kotlin.math.sqrt(energy)
+            0.95 * memory +
+            0.05 * sqrt(normGt)
 
         val gain =
-            energy /
+            deltaEnergy /
             (
-              energy +
-              energy +
-              0.05*memory +
-              0.00001
+                deltaEnergy +
+                normGt +
+                LAMBDA * memory +
+                EPSILON
             )
-
 
         return DoubleArray(current.size){
 
-            current[it] +
-            gain *
-            delta[it] /
-            metric[it]
+            val corrected =
+                current[it] +
+                gain *
+                delta[it] /
+                max(metric[it], EPSILON)
 
+            project(corrected, it)
+        }
+    }
+
+
+    private fun project(
+        value: Double,
+        index: Int
+    ): Double {
+
+        return when(index){
+
+            0 -> min(max(value,0.0),1.0)
+            1 -> min(max(value,0.0),1.0)
+            2 -> min(max(value,2000.0),20000.0)
+            3 -> min(max(value,0.0),2.0)
+
+            else -> value
         }
     }
 }
