@@ -9,7 +9,7 @@ import java.io.OutputStream
 
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
-    private const val SOCKET_PATH = "/dev/socket/ivanna_omega"
+    private const val SOCKET_PATH = "omega_daemon_socket"
     var isConnected = false
         private set
     private var lastLatencyMs = 0f
@@ -20,7 +20,7 @@ object OmegaEngineBridge {
         return try {
             val startTime = System.nanoTime()
             socket = LocalSocket()
-            socket.connect(LocalSocketAddress(SOCKET_PATH, LocalSocketAddress.Namespace.FILESYSTEM))
+            socket.connect(LocalSocketAddress(SOCKET_PATH, LocalSocketAddress.Namespace.ABSTRACT))
             val output: OutputStream = socket.outputStream
             val jsonBytes = payload.toString().toByteArray(Charsets.UTF_8)
             output.write(jsonBytes)
