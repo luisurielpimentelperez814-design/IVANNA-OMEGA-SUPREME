@@ -136,18 +136,9 @@ float safGain =
     );
 
 
-g_saf_state.gain.store(
-    safGain
-);
 
-processLoop(), sin
-    // tocar pf_master (que sigue siendo la ganancia base del usuario).
-    // compressor_amount/exciter_reduction: cerrado en commit de unificación
-    // DSP Ruta B. El daemon ya instancia Compressor e HarmonicExciter reales
-    // (mismo código que Ruta A, misma clase, misma .so — sin dependencia de
-    // símbolo nueva porque omega_daemon.cpp compila dentro de libivanna_omega.so
-    // junto a dsp/Compressor.cpp y dsp/HarmonicExciter.cpp). La app escribe
-    // [0..1] aquí; el daemon los pasa a setRuntimeAmount()/setRuntimeReduction()
+
+ el daemon los pasa a setRuntimeAmount()/setRuntimeReduction()
     // en el hot-path. Semántica idéntica a Ruta A.
     std::atomic<float> ai_runtime_gain_mul;
     std::atomic<float> ai_runtime_comp_amount;    // 0..1 → Compressor::setRuntimeAmount()
@@ -252,12 +243,7 @@ processLoop(), sin
 
 
 // SAF adaptive field state
-struct SAFState {
-    float deltaEnergy;
-    float metricNorm;
-    float memory;
-    float gain;
-};
+
 
 
 

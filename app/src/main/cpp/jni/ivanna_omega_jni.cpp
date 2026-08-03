@@ -72,7 +72,7 @@ namespace ivanna {
 
         // SAF FULL ADAPTIVE UPDATE
         // Phi_SAF infinity
-        g_saf_state.gain = SAFUpdate(g_saf_state, g_saf_state.gain, 1.0);
+        g_saf_state.gain.store((float)SAFUpdate(g_saf_state, g_saf_state.gain.load(), 1.0));
 
     ControlFrameBus g_control_bus;
     ControlFrame    g_staging_frame;

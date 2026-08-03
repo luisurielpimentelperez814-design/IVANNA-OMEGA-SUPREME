@@ -4,7 +4,7 @@
 #include <algorithm>
 
 
-struct SAFState {
+struct SAFMathState {
 
     double gain;
     double deltaE;
@@ -35,7 +35,7 @@ inline double SAFProjection(double x)
 
 
 inline double SAFUpdate(
-        SAFState &s,
+        SAFMathState &s,
         double p,
         double target)
 {
