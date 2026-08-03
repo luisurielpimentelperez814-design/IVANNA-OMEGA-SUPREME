@@ -32,6 +32,7 @@ add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 # Target: libivanna_omega.so (APK NDK library)
 # ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
+    saf_optimizer.cpp
     saf_runtime.cpp
     # JNI bridge consolidado (libivanna_omega.so único)
     jni/ivanna_omega_jni.cpp
