@@ -4,25 +4,22 @@
 #include <atomic>
 
 struct SAFState {
-    std::atomic<float> gain{1.0f};
 
-    // Campos añadidos para casar con saf_socket_update.h y helpers que hacen .store()
-    // Estos son atómicos y no colisionan con el trabajo SAF/HRTF/JNI reciente.
+    // Runtime SAF atomic controls
+    std::atomic<float> gain{1.0f};
     std::atomic<float> compressor{0.0f};
     std::atomic<float> exciter{0.0f};
     std::atomic<float> spatial{0.0f};
 
+    // Phi_SAF_infinity metric state
     double deltaE = 0.0;
-
     double metricNorm = 0.0;
-
     double memory = 0.0;
 
-    // Phi_SAF_infinity metric parameters (added to match saf_math_engine.h expectations)
-    double Gt = 1.0;        // metric / scale used when computing norm and corrections
-    double lambda = 0.05;   // regularization weight
-    double epsilon = 1e-8;  // small constant to avoid division by zero
-
+    // Metric parameters
+    double Gt = 1.0;
+    double epsilon = 1e-8;
+    double lambda = 0.0;
 };
 
 
@@ -31,42 +28,28 @@ inline double SAFUpdate(
         double currentGain,
         double targetGain)
 {
+    double delta = targetGain - currentGain;
 
-    double delta =
-        targetGain - currentGain;
+    state.deltaE = delta * delta;
+    state.metricNorm = delta * delta;
 
-
-    state.deltaE =
-        delta * delta;
-
-
-    state.metricNorm =
-        delta * delta;
-
-
-    double lambda = 0.05;
-    double eps = 0.00001;
-
+    double eps = state.epsilon;
 
     double denominator =
         state.deltaE +
         state.metricNorm +
-        lambda * state.memory +
+        state.lambda * state.memory +
         eps;
-
 
     double step =
         state.deltaE /
         denominator;
 
-
     state.memory =
         0.9 * state.memory +
         0.1 * std::abs(delta);
 
-
     return currentGain + step * delta;
-
 }
 
 
