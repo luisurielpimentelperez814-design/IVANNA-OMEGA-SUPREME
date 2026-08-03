@@ -65,11 +65,32 @@ class PerceptualDecisionEngine {
     }
 
     fun dispatchDecision(decision: DSPDecision) {
+        val safState = SAFCore.update(
+            doubleArrayOf(
+                decision.compressorAmount.toDouble(),
+                decision.exciterReduction.toDouble(),
+                decision.eqHighCut.toDouble(),
+                decision.spatialWidth.toDouble()
+            ),
+            doubleArrayOf(
+                0.5,
+                0.0,
+                16000.0,
+                1.0
+            ),
+            doubleArrayOf(
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            )
+        )
+
         OmegaEngineBridge.sendPerceptualState(
-            compressor = decision.compressorAmount,
-            exciterRed = decision.exciterReduction,
-            highCut = decision.eqHighCut,
-            spatialWidth = decision.spatialWidth,
+            compressor = safState[0].toFloat(),
+            exciterRed = safState[1].toFloat(),
+            highCut = safState[2].toFloat(),
+            spatialWidth = safState[3].toFloat(),
             loudnessTarget = decision.loudnessTarget,
             harmonicGain = decision.harmonicGain,
             antiDolby = decision.antiDolbyIntensity
