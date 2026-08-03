@@ -137,4 +137,20 @@ object OmegaEngineBridge {
 
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
+
+
+    fun pushSAFState(
+        deltaEnergy: Float,
+        metricNorm: Float,
+        memory: Float,
+        gain: Float
+    ): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_SAF_STATE")
+            put("deltaEnergy", deltaEnergy.toDouble())
+            put("metricNorm", metricNorm.toDouble())
+            put("memory", memory.toDouble())
+            put("gain", gain.toDouble())
+            put("timestamp", System.currentTimeMillis())
+        })
 }
