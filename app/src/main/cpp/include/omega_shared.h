@@ -53,7 +53,6 @@ struct OmegaSharedState {
 
     // ── PF Engine parameters ──────────────────────────────────────────────────
     // Mirroran DSPParams de dsp_types.h; escritos desde la APK vía JNI,
-    // leídos en el hot-path del daemon para el procesamiento real de audio.
     std::atomic<float>    pf_drive;       // 0..1 → pre-gain antes del tanh
     std::atomic<float>    pf_wet;         // 0..1 → cuánto efecto se aplica
     std::atomic<float>    pf_mix;         // 0..1 → mezcla salida
@@ -75,7 +74,6 @@ struct OmegaSharedState {
     // ai_enabled:   activa el AGC (Auto Gain Control) en el hot path del efecto.
     //               El efecto mide el RMS del input y aplica ganancia inversa
     //               para mantener un nivel objetivo de -18 dBFS.
-    // ai_auto_adapt:el daemon monitorea temperatura y latencia; si superan
     //               umbrales reduce automáticamente intensity o activa bypass.
     // ai_sensitivity:controla el time-constant del seguidor de envolvente AGC
     //               y la agresividad del auto-adapt (0 = lento/suave, 1 = rápido).
@@ -141,8 +139,6 @@ float safGain =
  
     // en el hot-path. Semántica idéntica a Ruta A.
     std::atomic<float> ai_runtime_gain_mul;
-    std::atomic<float> ai_runtime_comp_amount;    // 0..1 → Compressor::setRuntimeAmount()
-    std::atomic<float> ai_runtime_exciter_red;    // 0..1 → HarmonicExciter::setRuntimeReduction()
     // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
     // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
     // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
@@ -248,5 +244,4 @@ float safGain =
 
 
 SAFState g_saf_state;
-
 
