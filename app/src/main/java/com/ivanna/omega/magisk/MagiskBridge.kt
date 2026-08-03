@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 object MagiskBridge {
     private const val TAG = "MagiskBridge"
 
-    private const val SOCKET_OMEGA   = "/dev/socket/ivanna_omega"
+    private const val SOCKET_OMEGA   = "omega_daemon_socket"
     private const val SOCKET_LEGACY  = "/data/pf/pf.sock"
     private const val PROP_ACTIVE    = "persist.ivanna.magisk_active"
     private const val PROP_VERSION   = "persist.ivanna.version"
@@ -70,14 +70,14 @@ object MagiskBridge {
     val isDaemonRunning: Boolean
         get() {
             if (getPropCached(PROP_DAEMON) == "1") return true
-            return try { File(SOCKET_OMEGA).exists() } catch (_: Throwable) { false }
+            return try { isOmegaSocketAvailable() } catch (_: Throwable) { false }
         }
 
     // ── Comunicación con el daemon ────────────────────────────────────────────
 
     fun sendCommand(command: String): String {
         val socket = when {
-            File(SOCKET_OMEGA).exists()  -> SOCKET_OMEGA
+            isOmegaSocketAvailable()  -> SOCKET_OMEGA
             File(SOCKET_LEGACY).exists() -> SOCKET_LEGACY
             else -> {
                 setSystemProp("ivanna.pending_cmd", command)

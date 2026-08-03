@@ -13,7 +13,7 @@
 #include <string>
 #include <sys/stat.h>
 
-#define SOCKET_PATH "/dev/socket/ivanna_omega"
+#define SOCKET_PATH "omega_daemon_socket"
 #define BUFFER_SIZE 2048
 
 struct DSPParameters {

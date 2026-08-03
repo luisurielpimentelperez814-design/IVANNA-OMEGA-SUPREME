@@ -112,6 +112,6 @@ private:
 int main() {
     RealtimeOmegaDaemon daemon;
     daemon.setRealtimePriority();
-    daemon.startSocketListener("/dev/socket/ivanna_omega");
+    daemon.startSocketListener("omega_daemon_socket");
     return 0;
 }

@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
  *
  * Fuentes reales de datos (sin inventar nada):
  *   - MagiskBridge.isModuleActive / moduleVersion / isDaemonRunning
- *     → leen setprop del sistema y `test -S /dev/socket/ivanna_omega`
+ *     → leen setprop del sistema y `test -S @omega_daemon_socket`
  *   - OmegaEngineBridge.isConnected / requestTelemetry()
  *     → LocalSocket contra omega_daemon_socket (system-wide)
  *
@@ -174,7 +174,7 @@ fun MagiskStatusPanel(
             inactiveText = "DESCONECTADO"
         )
         Text(
-            text = "Socket principal: /dev/socket/ivanna_omega\n" +
+            text = "Socket principal: @omega_daemon_socket\n" +
                     "Fallback legacy:   /data/pf/pf.sock",
             color = TextSecondary,
             fontFamily = FontFamily.Monospace,

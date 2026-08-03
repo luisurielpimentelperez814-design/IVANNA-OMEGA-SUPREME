@@ -14,7 +14,7 @@
 
 #include "../spatial/HybridRenderer.hpp"
 
-#define SOCKET_PATH "/dev/socket/ivanna_omega"
+#define SOCKET_PATH "omega_daemon_socket"
 
 static volatile bool g_running = true;
 

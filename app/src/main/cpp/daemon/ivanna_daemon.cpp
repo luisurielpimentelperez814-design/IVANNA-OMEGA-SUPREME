@@ -32,7 +32,7 @@
 constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
 constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
 constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_daemon.log";
-constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
+constexpr const char* DEFAULT_SOCKET_PATH = "omega_daemon_socket";
 
 // Global running status for clean signal shutdown
 static volatile sig_atomic_t g_running = 1;
