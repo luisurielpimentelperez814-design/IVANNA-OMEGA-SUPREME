@@ -164,7 +164,7 @@ try {
 
 } catch (...) {}
 
-SET_PERCEPTUAL_STATE") != std::string::npos) {
+if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
                 update_parameters_smooth(req);
                 const char* ack = "{\"status\":\"OK\",\"message\":\"PERCEPTUAL_STATE_APPLIED\"}\n";
                 write(clientFd, ack, strlen(ack));
