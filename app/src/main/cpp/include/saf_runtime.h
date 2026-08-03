@@ -1,25 +1,63 @@
 #pragma once
 
+#include <cmath>
 #include <atomic>
 
-struct SAFRuntimeState {
+struct SAFState {
 
-    std::atomic<float> gain {
-        1.0f
-    };
+    double gain = 1.0;
 
-    std::atomic<float> compressor {
-        0.0f
-    };
+    double deltaE = 0.0;
 
-    std::atomic<float> exciter {
-        0.0f
-    };
+    double metricNorm = 0.0;
 
-    std::atomic<float> spatial {
-        1.0f
-    };
+    double memory = 0.0;
+
 };
 
 
-extern SAFRuntimeState g_saf_state;
+inline double SAFUpdate(
+        SAFState& state,
+        double currentGain,
+        double targetGain)
+{
+
+    double delta =
+        targetGain - currentGain;
+
+
+    state.deltaE =
+        delta * delta;
+
+
+    state.metricNorm =
+        delta * delta;
+
+
+    double lambda = 0.05;
+    double eps = 0.00001;
+
+
+    double denominator =
+        state.deltaE +
+        state.metricNorm +
+        lambda * state.memory +
+        eps;
+
+
+    double step =
+        state.deltaE /
+        denominator;
+
+
+    state.memory =
+        0.9 * state.memory +
+        0.1 * std::abs(delta);
+
+
+    return currentGain + step * delta;
+
+}
+
+
+extern SAFState g_saf_state;

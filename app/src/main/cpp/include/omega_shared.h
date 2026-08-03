@@ -40,6 +40,7 @@ private:
 };
 
 struct OmegaSharedState {
+    std::atomic<float> ai_runtime_gain_mul{1.0f};
     // ── Control básico ────────────────────────────────────────────────────────
     std::atomic<float> intensity;
     std::atomic<bool>  is_processing;

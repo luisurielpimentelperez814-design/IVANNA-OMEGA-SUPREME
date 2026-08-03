@@ -1,3 +1,4 @@
+#include "saf_runtime.h"
 /*
  * ivanna_omega_jni.cpp — IVANNA OMEGA SUPREME
  * © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
