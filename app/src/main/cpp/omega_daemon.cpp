@@ -13,6 +13,18 @@
 #include <string>
 #include <sys/stat.h>
 
+// SAF realtime adaptive state
+struct SAFRuntimeState {
+    float deltaEnergy = 0.0f;
+    float metricNorm = 0.0f;
+    float memory = 0.0f;
+    float gain = 1.0f;
+};
+
+static SAFRuntimeState g_saf_state;
+
+
+
 #define SOCKET_PATH "omega_daemon_socket"
 #define BUFFER_SIZE 2048
 
