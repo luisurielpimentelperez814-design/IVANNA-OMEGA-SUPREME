@@ -1,3 +1,4 @@
+#include "saf_math_engine.h"
 #include "include/saf_math_engine.h"
 #ifndef OMEGA_SHARED_H
 #define OMEGA_SHARED_H
@@ -105,45 +106,20 @@ struct OmegaSharedState {
     // aplicaban a g_gain/g_comp/g_exciter de la Ruta A (DSPBridge), que no
     // procesan nada de lo que suena por Spotify/YouTube. Cero protección
     // real para streaming pese a que el motor "sabía" qué hacer.
-    // ai_runtime_gain_mul es el canal de vuelta: la app escribe acá el
     // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
     // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
     // daemon lo aplica como multiplicador adicional en 
-
-inline float applySAFGain(float sample)
-{
-    return sample * g_saf_state.gain.load(std::memory_order_relaxed);
-}
 
 
 
 // SAF FULL MATHEMATICS
 // Φ_SAF = ΠS(p + factor * G^-1 * Δ)
 
-float safCurrent =
-    g_saf_state.gain.load(std::memory_order_relaxed);
-
-
-float safTarget = 1.0f;
-
-
-float safGain =
-    SAFUpdate(
-        safCurrent,
-        safTarget
-    );
-
-
-
-
- 
-    // en el hot-path. Semántica idéntica a Ruta A.
-    std::atomic<float> ai_runtime_gain_mul;
+// en el hot-path. Semántica idéntica a Ruta A.
     // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
     // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
     // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
     // g_widener_b (omega_daemon.cpp) corría siempre con su ancho por
-    // defecto (1.0f fijo). Mismo patrón que ai_runtime_gain_mul: default
     // 1.0 (unity) porque StereoWidener::setWidth(0.0f) = mono forzado, y
     // el memset(0) de omega_daemon_init() lo dejaría en 0 si no se
     // restaura explícitamente (ver ese archivo).
@@ -222,7 +198,6 @@ float safGain =
           ai_enabled(false), ai_auto_adapt(false), ai_sensitivity(0.5f),
           ai_rms_level(0.0f), ai_gain_db(0.0f),
           ai_raw_rms(0.0f), ai_raw_peak(0.0f),
-          ai_runtime_gain_mul(1.0f),
           ai_runtime_comp_amount(0.0f), ai_runtime_exciter_red(0.0f),
           ai_runtime_spatial_width(1.0f),
           ai_band_low(0.0f), ai_band_mid(0.0f), ai_band_high(0.0f),
@@ -242,6 +217,4 @@ float safGain =
 
 
 
-
-SAFState g_saf_state;
 

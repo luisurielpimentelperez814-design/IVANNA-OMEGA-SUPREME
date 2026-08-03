@@ -21,7 +21,6 @@ struct SAFRuntimeState {
     float gain = 1.0f;
 };
 
-static SAFRuntimeState g_saf_state;
 
 
 
