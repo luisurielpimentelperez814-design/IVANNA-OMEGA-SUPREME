@@ -13,6 +13,11 @@ struct SAFState {
 
     double memory = 0.0;
 
+    // Phi_SAF_infinity metric parameters (added to match saf_math_engine.h expectations)
+    double Gt = 1.0;        // metric / scale used when computing norm and corrections
+    double lambda = 0.05;   // regularization weight
+    double epsilon = 1e-8;  // small constant to avoid division by zero
+
 };
 
 
