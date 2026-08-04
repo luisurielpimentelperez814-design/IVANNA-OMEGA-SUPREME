@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <string>
 #include <sys/stat.h>
+#include "include/saf_socket_update.h"
 
 // SAF realtime adaptive state
 struct SAFRuntimeState {
@@ -145,26 +146,29 @@ int main() {
         if (bytesRead > 0) {
             buffer[bytesRead] = '\0';
             std::string req(buffer);
-            if (req.find("
+            // SAF realtime update
+            // recibe estado desde OmegaEngineBridge
+            if (req.find("SAF_UPDATE") != std::string::npos) {
 
-// SAF realtime update
-// recibe estado desde OmegaEngineBridge
-try {
-    float safGain = json["gain"];
-    float safComp = json["compressor"];
-    float safExc = json["exciterReduction"];
-    float safSpatial = json["spatialWidth"];
+                float safGain = 1.0f;
+                float safComp = g_dspParams.compressorAmount;
+                float safExc = g_dspParams.exciterReduction;
+                float safSpatial = g_dspParams.spatialWidth;
 
-    updateSAFFromJson(
-        safGain,
-        safComp,
-        safExc,
-        safSpatial
-    );
+                parse_json_field(req, "gain", safGain);
+                parse_json_field(req, "compressor", safComp);
+                parse_json_field(req, "exciterReduction", safExc);
+                parse_json_field(req, "spatialWidth", safSpatial);
 
-} catch (...) {}
+                updateSAFFromJson(
+                    safGain,
+                    safComp,
+                    safExc,
+                    safSpatial
+                );
+            }
 
-if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
+            if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
                 update_parameters_smooth(req);
                 const char* ack = "{\"status\":\"OK\",\"message\":\"PERCEPTUAL_STATE_APPLIED\"}\n";
                 write(clientFd, ack, strlen(ack));
