@@ -653,6 +653,14 @@ private fun BrainTab(
     var evoBestFitness by remember { mutableStateOf<Float?>(null) }
     var evoGeneration  by remember { mutableStateOf<Int?>(null) }
 
+    // FIX (diagnóstico exacto): la sección ENERGÍA ESPECTRAL existía en el
+    // nav viejo (IvannaNavigation.kt) pero nunca se trasladó al BrainTab del
+    // shell nuevo. Los atomics g_lastBandLow/Mid/High se escriben en
+    // nativeProcess (JNI vivo), simplemente nadie los leía desde el tab
+    // activo. Aquí se restablece el polling a 5 Hz (el mismo ritmo que usaba
+    // AdaptiveDashboard antes) y se alimenta la card nueva de abajo.
+    var bandEnergies by remember { mutableStateOf<FloatArray?>(null) }
+
     // Arrancar el motor perceptual (polling 10 Hz) y limpiarlo al salir
     DisposableEffect(perceptualEngine) {
         perceptualEngine.start()
@@ -669,6 +677,19 @@ private fun BrainTab(
                 evoGeneration  = runCatching { IvannaNativeLib.nativeGetGeneration() }.getOrNull()
             }
             delay(2000)
+        }
+    }
+
+    // Polling dedicado de energía espectral (5 Hz) — separado del ciclo
+    // evolutivo (2 s) para que las barras LOW/MID/HIGH se sientan vivas
+    // sin bloquear el sondeo del kernel. Lee los atomics g_lastBandLow/
+    // Mid/High vía nativeGetBandEnergies() → FloatArray[3].
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (IvannaNativeLib.isLoaded) {
+                bandEnergies = runCatching { IvannaNativeLib.nativeGetBandEnergies() }.getOrNull()
+            }
+            delay(200)
         }
     }
 
@@ -694,7 +715,44 @@ private fun BrainTab(
                 }
             }
         }
-        // ── Adaptive engine ────────────────────────────────────────────
+        // ── Band energy (read-only, ADE inputs) ────────────────────────
+        // Band energy — datos reales del ADE (IIR bandpass en PDEngine + omega_daemon)
+        //   Ruta A: BiquadEnvelopeBank de PDEngine (bandas 0-1 low, 2-4 mid, 5-7 high)
+        //   Ruta B: 3 filtros IIR en omega_daemon::processLoop (ai_band_low/mid/high)
+        // Backend real: nativeGetBandEnergies() → FloatArray[3] alimentado por
+        // los atomics g_lastBandLow/Mid/High que se escriben en nativeProcess.
+        item {
+            SectionCard("ENERGÍA ESPECTRAL") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val bandLow  = bandEnergies?.getOrElse(0) { 0f } ?: 0f
+                    val bandMid  = bandEnergies?.getOrElse(1) { 0f } ?: 0f
+                    val bandHigh = bandEnergies?.getOrElse(2) { 0f } ?: 0f
+                    val total    = (bandLow + bandMid + bandHigh).coerceAtLeast(1e-6f)
+                    val lowPct   = if (bandEnergies != null) (bandLow  / total * 100).roundToInt() else 0
+                    val midPct   = if (bandEnergies != null) (bandMid  / total * 100).roundToInt() else 0
+                    val highPct  = if (bandEnergies != null) (bandHigh / total * 100).roundToInt() else 0
+
+                    // Normalizamos cada barra respecto al total (no al máx
+                    // absoluto): así la card muestra el reparto espectral
+                    // real y no depende del volumen.
+                    PerceptualBar("LOW  \u2264 250 Hz",     bandLow  / total, AmberSignal)
+                    PerceptualBar("MID  250\u20134 kHz",     bandMid  / total, AuroraCyan)
+                    PerceptualBar("HIGH \u2265 4 kHz",        bandHigh / total, NeonMagenta)
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Reparto", fontSize = 11.sp, color = TextSecondary)
+                        Text("L $lowPct%  \u2022  M $midPct%  \u2022  H $highPct%",
+                            fontSize = 11.sp, color = TextPrimary, fontFamily = Mono)
+                    }
+
+                    if (bandEnergies == null) {
+                        Text("Sin señal de audio activa",
+                            fontSize = 10.sp, color = TextMuted, fontFamily = Mono)
+                    }
+                }
+            }
+        }
+        // ── Adaptive engine ───────────────────────────────────
         item {
             SectionCard("MOTOR ADAPTATIVO") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
