@@ -1,5 +1,6 @@
 package com.ivanna.omega.spatial
 
+import android.content.Context
 import android.util.Log
 import com.ivanna.omega.ai.SAFCore
 import kotlinx.coroutines.CoroutineScope
@@ -27,15 +28,9 @@ data class SaFOptimizerState(
 /**
  * SaFOptimizer — optimizador Riemanniano de sujeto HRTF.
  *
- * Expone `state` como StateFlow para que la UI lo observe.
- * La UI llama a runCalibrationStep() para cada dirección de calibración;
- * el optimizador actualiza el estado vía SAFCore y selecciona el sujeto HRTF
- * con menor energía de error acumulada.
- *
- * Diseño deliberadamente minimalista: la lógica de búsqueda real
- * (matching antropométrico sobre la tabla CIPIC) queda para fases futuras.
- * Lo que ya funciona aquí: el estado se expone de forma correcta y
- * compile-safe para que IvannaAppShell.kt pueda observarlo.
+ * IVANNAApplication.onCreate() llama a init(context) en el arranque.
+ * IvannaAppShell.SpatialTab observa state como StateFlow.
+ * SaFCalibrationScreen llama a runCalibrationStep() al completar la calibración.
  */
 object SaFOptimizer {
 
@@ -55,11 +50,23 @@ object SaFOptimizer {
     )
 
     /**
+     * Inicializar el optimizador.
+     * Llamado desde IVANNAApplication.onCreate() — carga el estado persistido
+     * si existe, o deja el estado por defecto (iteration=0, sin calibrar).
+     */
+    fun init(context: Context) {
+        // FIX: IVANNAApplication llama a SaFOptimizer.init(this) en onCreate().
+        // Por ahora no hay persistencia; el estado se restablece a default en
+        // cada arranque. Fase futura: cargar desde SharedPreferences o archivo.
+        Log.d(TAG, "SaFOptimizer inicializado (iteration=${_state.value.iteration})")
+    }
+
+    /**
      * Ejecuta un paso de calibración dado un array de energía de error
      * medido por dirección [energy_front, energy_rear, energy_left, energy_right, energy_top].
      *
      * @param directionEnergies FloatArray[5] — error percibido por el usuario
-     *                          en cada dirección de calibración (0=correcto, 1=máximo error).
+     *                          en cada dirección (0=correcto, 1=máximo error).
      */
     fun runCalibrationStep(directionEnergies: FloatArray) {
         scope.launch {
@@ -78,12 +85,11 @@ object SaFOptimizer {
             SAFCore.update(currentParams, targetParams, metric)
             val safState = SAFCore.getState()  // [deltaEnergy, metricNorm, memory, gain]
 
-            val newIteration = current.iteration + 1
+            val newIteration   = current.iteration + 1
             val newErrorEnergy = directionEnergies.average().toFloat()
             val newParamNorm   = safState[1].toFloat()
 
-            // Seleccionar sujeto: round-robin en calibración inicial,
-            // en fases futuras se usará matching por head-width/depth.
+            // Seleccionar sujeto: round-robin en calibración inicial.
             val subjectIdx = newIteration % KNOWN_SUBJECTS.size
             val subject    = KNOWN_SUBJECTS[subjectIdx]
 
@@ -101,7 +107,6 @@ object SaFOptimizer {
 
     /** Reinicia el optimizador al estado inicial. */
     fun reset() {
-        SAFCore
         _state.value = SaFOptimizerState()
         Log.d(TAG, "Optimizer reset")
     }
