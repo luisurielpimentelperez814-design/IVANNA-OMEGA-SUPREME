@@ -32,7 +32,7 @@
 constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
 constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
 constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_daemon.log";
-constexpr const char* DEFAULT_SOCKET_PATH = "omega_daemon_socket";
+constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
 
 // Global running status for clean signal shutdown
 static volatile sig_atomic_t g_running = 1;
@@ -131,7 +131,7 @@ int create_socket_server(const std::string& socket_path) {
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     if (socket_path[0] == '@') {
-    addr.sun_path[0] = '\0';
+    addr.sun_path[0] = '';
     std::strncpy(addr.sun_path + 1,
                  socket_path.c_str() + 1,
                  sizeof(addr.sun_path) - 2);
@@ -178,13 +178,20 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--realtime") {
             realtime = true;
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "IVANNA-OMEGA-SUPREME Daemon v3.5.0\n"
-                      << "Usage: ivanna_daemon [OPTIONS]\n"
-                      << "Options:\n"
-                      << "  --socket <path>   Unix socket path (default: " << DEFAULT_SOCKET_PATH << ")\n"
-                      << "  --rate <hz>       Audio sample rate (default: 48000)\n"
-                      << "  --buffer <size>   Audio buffer size (default: 64)\n"
-                      << "  --realtime        Enable SCHED_FIFO realtime priority\n";
+            std::cout << "IVANNA-OMEGA-SUPREME Daemon v3.5.0
+"
+                      << "Usage: ivanna_daemon [OPTIONS]
+"
+                      << "Options:
+"
+                      << "  --socket <path>   Unix socket path (default: " << DEFAULT_SOCKET_PATH << ")
+"
+                      << "  --rate <hz>       Audio sample rate (default: 48000)
+"
+                      << "  --buffer <size>   Audio buffer size (default: 64)
+"
+                      << "  --realtime        Enable SCHED_FIFO realtime priority
+";
             return 0;
         }
     }
