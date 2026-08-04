@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.ai.SAFCore
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -101,6 +102,38 @@ class AdaptiveBackend(context: Context) {
                 voiceProtect = if (src[8] == 0f && voiceProtectionScore > 0f) voiceProtectionScore else src[8],
                 motorRunning = motorActive
             )
+            // FIX: cerrar el loop adaptive → SAF. El AdaptiveDecisionEngine
+            // publica en AdaptiveStateBus (seqlock C++); nativeGetAdaptiveTelemetry
+            // ya expone esos valores en src[3..6]. Los convertimos en una
+            // actualización SAF y la enviamos al daemon en cada tick de 10Hz.
+            // Sin este bloque, OmegaEngineBridge.pushSAFState() nunca se llama
+            // desde el hilo de telemetría automática — el SAF del daemon quedaba
+            // desconectado del motor adaptativo.
+            if (motorActive) {
+                try {
+                    val safCurrent = doubleArrayOf(
+                        src[3].toDouble(), // targetGain actual
+                        src[4].toDouble(), // compAmount actual
+                        src[5].toDouble(), // excReduction actual
+                        src[6].toDouble()  // spatialWidth actual
+                    )
+                    // target: estado ideal que el SAF persigue (unity gain,
+                    // sin compresión adicional, sin reducción de exciter, ancho normal)
+                    val safTarget = doubleArrayOf(1.0, 0.0, 0.0, 1.0)
+                    // métrica uniforme: todas las dimensiones pesan igual
+                    val safMetric = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
+                    SAFCore.update(safCurrent, safTarget, safMetric)
+                    val safState = SAFCore.getState()  // [deltaEnergy, metricNorm, memory, gain]
+                    OmegaEngineBridge.pushSAFState(
+                        deltaEnergy = safState[0].toFloat(),
+                        metricNorm  = safState[1].toFloat(),
+                        memory      = safState[2].toFloat(),
+                        gain        = safState[3].toFloat()
+                    )
+                } catch (_: Throwable) {
+                    // SAF feed falla silenciosamente: no bloquear la telemetría UI
+                }
+            }
         } catch (e: Throwable) {
             // Motor no inicializado todavía — no es error
         }
