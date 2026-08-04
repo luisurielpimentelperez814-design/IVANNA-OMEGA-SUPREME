@@ -183,10 +183,8 @@ int main(int argc, char* argv[]) {
                       << "Options:\n"
                       << "  --socket <path>   Unix socket path (default: " << DEFAULT_SOCKET_PATH << ")\n"
                       << "  --rate <hz>       Audio sample rate (default: 48000)\n"
-                      << "  --buffer <size>   Audio buffer size (default: 64)
-"
-                      << "  --realtime        Enable SCHED_FIFO realtime priority
-";
+                      << "  --buffer <size>   Audio buffer size (default: 64)\n"
+                      << "  --realtime        Enable SCHED_FIFO realtime priority\n";
             return 0;
         }
     }
