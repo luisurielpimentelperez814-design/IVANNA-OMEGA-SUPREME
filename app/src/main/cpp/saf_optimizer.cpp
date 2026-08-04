@@ -20,14 +20,14 @@ double PhiSAFInfinity(
         alpha * (delta / G);
 
     double p =
-        state.gain + update;
+        state.gain.load() + update;
 
     p = std::max(0.0, std::min(2.0, p));
 
     state.deltaE = deltaE;
     state.metricNorm = norm;
     state.memory = memory;
-    state.gain = p;
+    state.gain.store(p);
 
     return p;
 }

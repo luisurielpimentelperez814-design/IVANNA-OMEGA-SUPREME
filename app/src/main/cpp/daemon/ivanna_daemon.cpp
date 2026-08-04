@@ -294,6 +294,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Graceful shutdown cleanup
+    if (g_server_fd >= 0) {
+        close(g_server_fd);
+        g_server_fd = -1;
+    }
+
+    if (socket_path[0] != '@') {
+        unlink(socket_path.c_str());
+    }
+
+    log_message("Socket resources released.");
     log_message("IVANNA OMEGA Daemon shutdown complete.");
     return 0;
 }
