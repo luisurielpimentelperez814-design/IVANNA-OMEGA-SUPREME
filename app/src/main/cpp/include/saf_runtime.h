@@ -6,6 +6,12 @@
 struct SAFState {
     std::atomic<float> gain{1.0f};
 
+    // Campos añadidos para casar con saf_socket_update.h y helpers que hacen .store()
+    // Estos son atómicos y no colisionan con el trabajo SAF/HRTF/JNI reciente.
+    std::atomic<float> compressor{0.0f};
+    std::atomic<float> exciter{0.0f};
+    std::atomic<float> spatial{0.0f};
+
     double deltaE = 0.0;
 
     double metricNorm = 0.0;
