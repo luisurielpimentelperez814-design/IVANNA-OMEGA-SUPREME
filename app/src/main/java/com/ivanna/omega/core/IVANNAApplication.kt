@@ -86,6 +86,10 @@ class IVANNAApplication : Application() {
         // de EQ/Width/Exciter/Comp no afectan Spotify/YouTube/ninguna app externa.
         com.ivanna.omega.dsp.DSPState.globalEffectManager = globalEffectManager
 
+        // Inicializar el optimizador Riemanniano SAF y el gestor de HRTF en background
+        com.ivanna.omega.spatial.SaFOptimizer.init(this)
+        com.ivanna.omega.spatial.IvannaSpatialManager.init(this)
+
         // FIX (controles Android 13+): registrar AudioSessionReceiver dinámicamente
         // con RECEIVER_NOT_EXPORTED ademas del Manifest, ya que en API33+
         // el sistema puede no enviar broadcasts implícitos a receivers solo de Manifest.

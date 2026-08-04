@@ -26,7 +26,7 @@ object IvannaSpatialManager {
     private const val SAMPLE_RATE = 48000
     private const val BLOCK_SIZE  = 512   // debe coincidir con BLOCK en hrtf_convolver.hpp
 
-    @Volatile private var rendererHandle: Long = 0L
+    @Volatile internal var rendererHandle: Long = 0L
     @Volatile var ready: Boolean = false
         private set
     @Volatile var activeSubject: String = "none"

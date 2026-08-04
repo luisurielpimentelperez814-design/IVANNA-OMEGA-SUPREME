@@ -39,6 +39,8 @@ import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.spatial.IvannaSpatialManager
+import com.ivanna.omega.spatial.SaFOptimizer
+import com.ivanna.omega.spatial.HrtfSubjectSelector
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.PI
 import kotlin.math.roundToInt
@@ -492,6 +494,19 @@ private fun SpatialTab(
     antiDolbyEnabled: Boolean,
     onAntiDolbyChange: (Boolean) -> Unit
 ) {
+    var showSaFCalib by remember { mutableStateOf(false) }
+    val safState by com.ivanna.omega.spatial.SaFOptimizer.state.collectAsState()
+    val rendererHandle = com.ivanna.omega.spatial.IvannaSpatialManager.rendererHandle
+
+    // Overlay fullscreen de calibración — se superpone sobre el tab cuando está activo
+    if (showSaFCalib) {
+        SaFCalibrationScreen(
+            rendererHandle = rendererHandle,
+            onDismiss = { showSaFCalib = false }
+        )
+        return
+    }
+
     var azimuthNorm by remember { mutableStateOf(0.5f) }  // 0=izq, 0.5=centro, 1=der
     var spatialWidth by remember { mutableStateOf(1.0f) }
     var spatialEnabled by remember { mutableStateOf(IvannaSpatialEngine.enabled) }
@@ -556,6 +571,50 @@ private fun SpatialTab(
                 }
             }
         }
+        // ── Φ_SAF^∞ Calibración HRTF ────────────────────────────────────
+        item {
+            SectionCard("CALIBRACIÓN Φ_SAF^∞ · RIEMANNIANO") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column {
+                            Text("Optimizador Riemanniano", fontSize = 12.sp, color = TextPrimary)
+                            Text("214 sujetos CIPIC · MIT · ARI · TU-Berlin",
+                                fontSize = 9.sp, color = TextMuted)
+                        }
+                        Text(if (safState.iteration > 0)
+                                 "It.${safState.iteration} · ${safState.selectedSubject}"
+                             else "No calibrado",
+                            fontSize = 9.sp, color = AuroraCyan, fontFamily = Mono)
+                    }
+                    if (safState.iteration > 0) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("‖p_t‖ ${"%.2f".format(safState.paramNorm)}",
+                                fontSize = 9.sp, color = TextMuted, fontFamily = Mono)
+                            Text("E ${"%.3f".format(safState.errorEnergy)}",
+                                fontSize = 9.sp, color = TextMuted, fontFamily = Mono)
+                        }
+                    }
+                    Button(
+                        onClick = { showSaFCalib = true },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonMagenta.copy(alpha = 0.12f),
+                            contentColor   = NeonMagenta),
+                        border = BorderStroke(1.dp, NeonMagenta),
+                        shape  = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            if (safState.iteration == 0) "CALIBRAR HRTF (5 DIR.)"
+                            else "RE-CALIBRAR",
+                            fontFamily = Mono, fontSize = 11.sp, letterSpacing = 1.5.sp
+                        )
+                    }
+                }
+            }
+        }
+
         // ── Anti-Dolby / Cinematic ───────────────────────────────────────
         item {
             SectionCard("MOTOR CINEMÁTICO (ANTI-DOLBY)") {
@@ -593,6 +652,13 @@ private fun BrainTab(
     val snapshot by perceptualEngine.snapshot.collectAsState()
     var evoBestFitness by remember { mutableStateOf<Float?>(null) }
     var evoGeneration  by remember { mutableStateOf<Int?>(null) }
+
+    // Arrancar el motor perceptual (polling 10 Hz) y limpiarlo al salir
+    DisposableEffect(perceptualEngine) {
+        perceptualEngine.start()
+        onDispose { perceptualEngine.stop() }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             if (IvannaNativeLib.isLoaded) {
