@@ -166,6 +166,32 @@ int main() {
                     safExc,
                     safSpatial
                 );
+
+            }
+
+            // SAF Phi infinity state from SET_SAF_STATE
+            if (req.find("SET_SAF_STATE") != std::string::npos) {
+
+                float safGain = 1.0f;
+
+                parse_json_field(req, "gain", safGain);
+
+                g_saf_state.gain.store(
+                    safGain,
+                    std::memory_order_release
+                );
+
+                float safDelta = 0.0f;
+                float safMetric = 0.0f;
+                float safMemory = 0.0f;
+
+                parse_json_field(req, "deltaEnergy", safDelta);
+                parse_json_field(req, "metricNorm", safMetric);
+                parse_json_field(req, "memory", safMemory);
+
+                g_saf_state.deltaE = safDelta;
+                g_saf_state.metricNorm = safMetric;
+                g_saf_state.memory = safMemory;
             }
 
             if (req.find("SET_PERCEPTUAL_STATE") != std::string::npos) {
