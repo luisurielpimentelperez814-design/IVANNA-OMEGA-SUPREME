@@ -36,6 +36,16 @@ object PiLstmBridge {
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f
     fun getError(): Float = if (ready) nativeGetError() else 0f
 
+    // FIX (huérfano JNI): pi_lstm_bridge_jni.cpp:223 implementa
+    // Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeResetTelemetry
+    // (reset de g_residual_ema + g_prev_h/g_prev_c/g_prev_ns) pero ningún
+    // external fun lo exponía — 0 callers posibles desde Kotlin. El propio
+    // comentario C++ (líneas 218-221) documenta el caso de uso: al cambiar
+    // de pista o reinicializar el motor, la EMA del residual arrastra el
+    // transitorio anterior y contamina getError(). Se expone como wrapper
+    // público con guard de ready, idéntico patrón al resto del objeto.
+    fun resetTelemetry() { if (ready) nativeResetTelemetry() }
+
     private external fun nativeInit()
     private external fun nativeSetAlpha(v: Float)
     private external fun nativeSetBeta(v: Float)
@@ -45,6 +55,7 @@ object PiLstmBridge {
     private external fun nativeSetHrtfEnabled(en: Boolean)
     private external fun nativeGetNpSat(): Float
     private external fun nativeGetError(): Float
+    private external fun nativeResetTelemetry()
 
     // === NUEVOS PARÁMETROS NEURO-COCHLEAR ===
     // ── NPE completo ────────────────────────────────────────────────
