@@ -182,10 +182,28 @@ class IVANNAApplication : Application() {
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
                            else          "⚠️ OmegaDaemon no disponible (modo no-root activo)")
 
-                // 3. Socket bridge al daemon (esperar 300ms a que inicie)
-                delay(300)
+                // 3. FIX CRÍTICO: probe real al socket + loop de reconexión.
+                // connect() anterior era fake (isConnected=true sin tocar socket).
+                // Ahora hace un LocalSocket probe real; si falla en esta primera
+                // pasada (daemon Magisk aún arrancando), el loop de 5s reintenta.
+                delay(500)
                 omegaBridge.connect()
-                Log.d(TAG, "✅ OmegaEngineBridge conectando en background")
+                Log.d(TAG, if (omegaBridge.isConnected)
+                    "✅ OmegaEngineBridge conectado al daemon system-wide"
+                else
+                    "⚪ OmegaEngineBridge: daemon no disponible (modo no-root)"
+                )
+                // Loop de reconexión: reintenta cada 5s si el daemon sube tarde
+                // (e.g. Magisk late_start_service). Solo dispara probes ligeros.
+                launch {
+                    while (true) {
+                        delay(5_000L)
+                        if (!omegaBridge.isConnected) {
+                            val ok = omegaBridge.connect()
+                            if (ok) Log.i(TAG, "✅ OmegaEngineBridge reconectado al daemon")
+                        }
+                    }
+                }
 
                 isInitialized = true
                 Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista")

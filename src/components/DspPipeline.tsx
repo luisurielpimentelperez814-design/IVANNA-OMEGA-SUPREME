@@ -26,11 +26,11 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
           <div className="flex items-center gap-3 font-mono text-xs">
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
               <span className="text-[#555] block text-[9px] font-bold uppercase">SAMPLE RATE</span>
-              <span className="text-white font-bold">48,000 Hz</span>
+              <span className="text-white font-bold">{params.sampleRate.toLocaleString()} Hz</span>
             </div>
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
               <span className="text-[#555] block text-[9px] font-bold uppercase">BLOCK SIZE</span>
-              <span className="text-[#4ADE80] font-bold">1024 frames</span>
+              <span className="text-[#4ADE80] font-bold">{params.blockSize} frames</span>
             </div>
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
               <span className="text-[#555] block text-[9px] font-bold uppercase">ALIGNMENT</span>

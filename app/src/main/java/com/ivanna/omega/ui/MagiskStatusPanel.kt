@@ -30,15 +30,13 @@ import kotlinx.coroutines.withContext
 /**
  * MagiskStatusPanel — pantalla de estado del módulo Magisk + cliente daemon.
  *
- * Fuentes reales de datos (sin inventar nada):
- *   - MagiskBridge.isModuleActive / moduleVersion / isDaemonRunning
- *     → leen setprop del sistema y `test -S @omega_daemon_socket`
- *   - OmegaEngineBridge.isConnected / requestTelemetry()
- *     → LocalSocket contra omega_daemon_socket (system-wide)
- *
- * Polling cada 2 s. Si el módulo no está activo, muestra instrucciones
- * de instalación (sin el módulo el audio de TODO el sistema no se procesa;
- * el DSP local de la app sí sigue activo vía DSPBridge).
+ * FIX CRÍTICO (socket siempre DESCONECTADO):
+ *   - daemonConnected ahora refleja omegaBridge.isConnected que se actualiza
+ *     con un probe real en OmegaEngineBridge.connect().
+ *   - Se agregó botón RECONECTAR para disparar connect() manualmente desde IO.
+ *   - El polling cada 2s también dispara connect() si no está conectado
+ *     (descarga extra ligera: solo un probe de socket, no un comando completo).
+ *   - Estado SOCKET: muestra N/A cuando Magisk no está instalado (no error).
  */
 @Composable
 fun MagiskStatusPanel(
@@ -46,46 +44,17 @@ fun MagiskStatusPanel(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {}
 ) {
-    // AUDIT FIX (crítico): los valores iniciales NO deben evaluar los
-    // getters bloqueantes de MagiskBridge de forma síncrona durante la
-    // primera composición (hilo principal) — eso disparaba el mismo
-    // problema de exec()/su -c descrito abajo en el instante mismo de
-    // ABRIR la pantalla, antes de que el LaunchedEffect llegara a
-    // correr en Dispatchers.IO. Arranca con valores neutros/seguros;
-    // el LaunchedEffect los puebla con datos reales en el primer tick.
-    var moduleActive by remember { mutableStateOf(false) }
-    var moduleVersion by remember { mutableStateOf("") }
-    var daemonRunning by remember { mutableStateOf(false) }
-    var daemonConnected by remember { mutableStateOf(omegaBridge.isConnected) }
+    var moduleActive    by remember { mutableStateOf(false) }
+    var moduleVersion   by remember { mutableStateOf("") }
+    var daemonRunning   by remember { mutableStateOf(false) }
+    var daemonConnected by remember { mutableStateOf(false) }
     var lastCommandOutput by remember { mutableStateOf("") }
-    // AUDIT FIX (crítico, crash/ANR confirmado al presionar STATUS/TELEMETRY/
-    // RELOAD): MagiskBridge.getStatus()/reloadParams() hacen `su -c` +
-    // lectura bloqueante + waitFor(3000ms) — en un dispositivo sin permiso
-    // root pre-concedido, `su` dispara el diálogo de superusuario de Magisk,
-    // y esa espera ocurría ANTES en el hilo principal directo desde onClick.
-    // Con la UI congelada >5s, Android mata la actividad por ANR — lo que el
-    // usuario percibe como que la app truena. requestTelemetry() (LocalSocket)
-    // tiene el mismo problema. Se mueven las 3 llamadas a Dispatchers.IO.
     val scope = rememberCoroutineScope()
     var actionInFlight by remember { mutableStateOf(false) }
 
+    // ── Polling + auto-reconexión ────────────────────────────────────────
     LaunchedEffect(Unit) {
         while (true) {
-            // AUDIT FIX (crítico, crash/ANR real desde que se ABRE la
-            // pantalla, no solo al presionar un botón): isModuleActive/
-            // moduleVersion usan getSystemProp() y isDaemonRunning usa
-            // exec("test -S ...") — ambos vía exec() interno, que hace
-            // `su -c ...` + lectura bloqueante + waitFor(3000ms). Este
-            // LaunchedEffect corre en el contexto de composición (hilo
-            // principal) y repetía esas 3 llamadas bloqueantes CADA 2
-            // SEGUNDOS desde el instante en que se abre MagiskStatusPanel —
-            // si el dispositivo no tiene el permiso root pre-concedido,
-            // cada tick puede disparar el diálogo de superusuario de Magisk
-            // y congelar la UI. Con eso, Android puede matar la actividad
-            // por ANR (>5s de hilo principal bloqueado) — indistinguible
-            // de un crash para quien lo usa. Se mueven las 3 lecturas a
-            // Dispatchers.IO; escribir mutableStateOf desde otro hilo es
-            // seguro en Compose (dispara recomposición igual).
             val (active, version, running) = withContext(Dispatchers.IO) {
                 Triple(
                     MagiskBridge.isModuleActive,
@@ -93,10 +62,20 @@ fun MagiskStatusPanel(
                     MagiskBridge.isDaemonRunning
                 )
             }
+
+            // FIX: si el daemon está corriendo pero el bridge no está conectado,
+            // intentar reconexión desde IO (probe real, no fake).
+            val connected = withContext(Dispatchers.IO) {
+                if (!omegaBridge.isConnected && (running || active)) {
+                    omegaBridge.connect()
+                }
+                omegaBridge.isConnected
+            }
+
             moduleActive    = active
             moduleVersion   = version
-            daemonRunning   = running || omegaBridge.isConnected // FIX: Si el socket responde, el daemon VIVE
-            daemonConnected = omegaBridge.isConnected
+            daemonRunning   = running || connected
+            daemonConnected = connected
             delay(2000L)
         }
     }
@@ -109,7 +88,7 @@ fun MagiskStatusPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // FIX UX: Botón de Regreso inyectado
+        // Botón de Regreso
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.Start
@@ -137,24 +116,11 @@ fun MagiskStatusPanel(
             letterSpacing = 2.sp
         )
 
-        StatusRow(
-            label = "MÓDULO",
-            active = moduleActive,
-            activeText = "ACTIVO",
-            inactiveText = "NO INSTALADO"
-        )
-        StatusRow(
-            label = "VERSIÓN",
-            active = moduleVersion.isNotEmpty() && moduleVersion != "unknown",
-            activeText = moduleVersion,
-            inactiveText = "—"
-        )
-        StatusRow(
-            label = "DAEMON",
-            active = daemonRunning,
-            activeText = "CORRIENDO",
-            inactiveText = "DETENIDO"
-        )
+        StatusRow("MÓDULO",  moduleActive, "ACTIVO", "NO INSTALADO")
+        StatusRow("VERSIÓN",
+            moduleVersion.isNotEmpty() && moduleVersion != "unknown",
+            moduleVersion, "—")
+        StatusRow("DAEMON",  daemonRunning, "CORRIENDO", "DETENIDO")
 
         Spacer(Modifier.height(6.dp))
         DividerGlow()
@@ -167,12 +133,26 @@ fun MagiskStatusPanel(
             fontSize = 14.sp,
             letterSpacing = 2.sp
         )
-        StatusRow(
-            label = "SOCKET",
-            active = daemonConnected,
-            activeText = "CONECTADO",
-            inactiveText = "DESCONECTADO"
-        )
+
+        // FIX: cuando no hay módulo Magisk, mostrar N/A (no error) para el socket
+        if (!moduleActive && !daemonConnected) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("SOCKET", color = Color.White.copy(alpha = 0.5f),
+                    fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                    modifier = Modifier.width(82.dp))
+                Box(Modifier.size(8.dp).clip(CircleShape).background(TextMuted))
+                Text("N/A (sin módulo Magisk)", color = TextMuted,
+                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold)
+            }
+        } else {
+            StatusRow("SOCKET", daemonConnected, "CONECTADO", "DESCONECTADO")
+        }
+
         Text(
             text = "Socket principal: @omega_daemon_socket\n" +
                     "Fallback legacy:   /data/pf/pf.sock",
@@ -184,19 +164,10 @@ fun MagiskStatusPanel(
         Spacer(Modifier.height(6.dp))
         DividerGlow()
 
-        Text(
-            "ACCIONES",
-            color = AuroraCyan,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            letterSpacing = 2.sp
-        )
+        Text("ACCIONES", color = AuroraCyan, fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 2.sp)
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionButton("STATUS", daemonRunning && !actionInFlight) {
                 actionInFlight = true
                 scope.launch {
@@ -221,16 +192,27 @@ fun MagiskStatusPanel(
                     actionInFlight = false
                 }
             }
+            // FIX: botón RECONECTAR para forzar probe manual
+            ActionButton("RECONECTAR", !actionInFlight) {
+                actionInFlight = true
+                scope.launch {
+                    lastCommandOutput = "Probando socket..."
+                    val ok = withContext(Dispatchers.IO) { omegaBridge.connect() }
+                    daemonConnected  = ok
+                    daemonRunning    = ok || daemonRunning
+                    lastCommandOutput = if (ok)
+                        "✅ Socket conectado. Latencia: ${omegaBridge.getLastLatencyMs()}ms"
+                    else
+                        "⚪ Socket no disponible (daemon offline o módulo no instalado)"
+                    actionInFlight = false
+                }
+            }
         }
 
         if (lastCommandOutput.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Última respuesta del daemon:",
-                color = TextSecondary,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp
-            )
+            Text("Última respuesta del daemon:", color = TextSecondary,
+                fontFamily = FontFamily.Monospace, fontSize = 10.sp)
             Text(
                 text = lastCommandOutput.take(400),
                 color = PhosphorGreen,
@@ -260,37 +242,16 @@ fun MagiskStatusPanel(
 }
 
 @Composable
-private fun StatusRow(
-    label: String,
-    active: Boolean,
-    activeText: String,
-    inactiveText: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            label,
-            color = Color.White.copy(alpha = 0.5f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            modifier = Modifier.width(82.dp)
-        )
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(if (active) PhosphorGreen else CoralWarn)
-        )
-        Text(
-            if (active) activeText else inactiveText,
+private fun StatusRow(label: String, active: Boolean, activeText: String, inactiveText: String) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(label, color = Color.White.copy(alpha = 0.5f), fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp, modifier = Modifier.width(82.dp))
+        Box(Modifier.size(8.dp).clip(CircleShape)
+            .background(if (active) PhosphorGreen else CoralWarn))
+        Text(if (active) activeText else inactiveText,
             color = if (active) PhosphorGreen else CoralWarn,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
+            fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -305,55 +266,37 @@ private fun ActionButton(label: String, enabled: Boolean, onClick: () -> Unit) {
             .background(containerColor)
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text(
-            label,
-            color = textColor,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(label, color = textColor, fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun InstallHelp() {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = Modifier.fillMaxWidth()
             .background(ObsidianSoft.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
             .border(1.dp, AmberSignal.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(
-            "MÓDULO NO DETECTADO",
-            color = AmberSignal,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            "Para procesar el audio de TODAS las apps del sistema:",
-            color = TextSecondary,
-            fontSize = 11.sp
-        )
+        Text("MÓDULO NO DETECTADO", color = AmberSignal, fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("Para procesar el audio de TODAS las apps del sistema:",
+            color = TextSecondary, fontSize = 11.sp)
         Text(
             "1. Flashea magisk_module/ desde Magisk Manager\n" +
                     "2. Reinicia el dispositivo\n" +
                     "3. Verifica persist.ivanna.magisk_active=1\n" +
                     "   desde Termux: getprop persist.ivanna.magisk_active",
-            color = Color.White.copy(alpha = 0.8f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 10.sp
+            color = Color.White.copy(alpha = 0.8f), fontFamily = FontFamily.Monospace, fontSize = 10.sp
         )
         Text(
-            "Sin el módulo, la app sigue procesando su propia salida local " +
-                    "(BridgePlayer + AudioEffect sessions); el núcleo DSP nativo " +
-                    "sigue activo, simplemente no se aplica system-wide.",
-            color = TextSecondary,
-            fontSize = 10.sp
+            "⚠ Sin el módulo el socket muestra N/A — esto es normal.\n" +
+                    "El DSP local de la app sigue activo vía DSPBridge (AudioEffect sessions).",
+            color = TextSecondary, fontSize = 10.sp
         )
     }
 }
@@ -361,13 +304,9 @@ private fun InstallHelp() {
 @Composable
 private fun DividerGlow() {
     Spacer(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(
-                Brush.horizontalGradient(
-                    listOf(Color.Transparent, ObsidianEdge, Color.Transparent)
-                )
-            )
+        Modifier.fillMaxWidth().height(1.dp)
+            .background(Brush.horizontalGradient(
+                listOf(Color.Transparent, ObsidianEdge, Color.Transparent)
+            ))
     )
 }
