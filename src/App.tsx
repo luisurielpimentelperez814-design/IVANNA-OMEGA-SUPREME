@@ -9,10 +9,11 @@ import { AudioVisualizer } from './components/AudioVisualizer';
 import { NeonProfiler } from './components/NeonProfiler';
 import { CodeExporter } from './components/CodeExporter';
 import { DspParameters, BenchmarkMetrics, TinyMlClassification } from './types';
+import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code'
+    'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226'
   >('master');
 
   const [params, setParams] = useState<DspParameters>({
@@ -356,6 +357,13 @@ export default function App() {
 
         {activeTab === 'code' && (
           <CodeExporter />
+        )}
+
+        {activeTab === 'iso226' && (
+          <Iso226CalibrationPanel
+            params={params}
+            onParamChange={handleParamChange}
+          />
         )}
 
       </main>
