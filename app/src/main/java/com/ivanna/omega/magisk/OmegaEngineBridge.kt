@@ -6,104 +6,159 @@ import android.util.Log
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * OmegaEngineBridge — cliente LocalSocket hacia omega_daemon_socket.
+ *
+ * FIX CRÍTICO (socket siempre DESCONECTADO):
+ *   El connect() original era un fake: ponía isConnected=true sin
+ *   intentar ningún socket real. La primera sendCommand() fallaba
+ *   y lo dejaba en false permanentemente.
+ *
+ *   connect() ahora hace un probe real (connect/close) al socket.
+ *   isConnected es @Volatile y se actualiza en cada send/probe.
+ *   El reconnecting flag evita probes concurrentes.
+ */
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
-    private const val SOCKET_PATH = "omega_daemon_socket"
-    var isConnected = false
-        private set
-    private var lastLatencyMs = 0f
+    private const val SOCKET_PRIMARY  = "omega_daemon_socket"
+    private const val SOCKET_LEGACY   = "/data/pf/pf.sock"
+    private const val CONNECT_TIMEOUT = 2000 // ms
 
+    @Volatile var isConnected = false
+        private set
+
+    @Volatile private var lastLatencyMs = 0f
+
+    // Evita probes concurrentes desde el reconnect loop y sendCommand
+    private val reconnecting = AtomicBoolean(false)
+
+    // ── Probe real al socket ─────────────────────────────────────────────
+    /**
+     * Intenta abrir y cerrar el socket abstract @omega_daemon_socket.
+     * Devuelve true si el daemon responde; actualiza isConnected.
+     */
+    fun connect(): Boolean {
+        if (reconnecting.compareAndSet(false, true)) {
+            try {
+                return probeSocket()
+            } finally {
+                reconnecting.set(false)
+            }
+        }
+        return isConnected
+    }
+
+    private fun probeSocket(): Boolean {
+        // Primero intentar socket abstracto principal
+        val probedPrimary = runCatching {
+            val sock = LocalSocket()
+            sock.connect(
+                LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
+            )
+            sock.close()
+            true
+        }.getOrDefault(false)
+
+        if (probedPrimary) {
+            if (!isConnected) Log.i(TAG, "✅ Socket @$SOCKET_PRIMARY conectado")
+            isConnected = true
+            return true
+        }
+
+        // Fallback socket legacy /data/pf/pf.sock
+        val probedLegacy = runCatching {
+            val sock = LocalSocket()
+            sock.connect(
+                LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
+            )
+            sock.close()
+            true
+        }.getOrDefault(false)
+
+        isConnected = probedLegacy
+        if (probedLegacy) Log.i(TAG, "✅ Socket legacy $SOCKET_LEGACY conectado")
+        else              Log.d(TAG, "⚪ Daemon no disponible (no-root o módulo no instalado)")
+        return probedLegacy
+    }
+
+    // ── Envío de comandos ────────────────────────────────────────────────
     @Synchronized
     fun sendCommand(payload: JSONObject): Boolean {
         var socket: LocalSocket? = null
         return try {
-            val startTime = System.nanoTime()
+            val t0 = System.nanoTime()
             socket = LocalSocket()
-            socket.connect(LocalSocketAddress(SOCKET_PATH, LocalSocketAddress.Namespace.ABSTRACT))
+
+            // Intentar primero socket abstracto, luego legacy
+            val connected = runCatching {
+                socket.connect(
+                    LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
+                )
+                true
+            }.getOrElse {
+                runCatching {
+                    socket.connect(
+                        LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
+                    )
+                    true
+                }.getOrDefault(false)
+            }
+
+            if (!connected) {
+                isConnected = false
+                return false
+            }
+
             val output: OutputStream = socket.outputStream
             val jsonBytes = payload.toString().toByteArray(Charsets.UTF_8)
             output.write(jsonBytes)
             output.flush()
-            
-            // Read response
+
             val input: InputStream = socket.inputStream
             val buffer = ByteArray(256)
             val bytesRead = input.read(buffer)
-            val endTime = System.nanoTime()
-            lastLatencyMs = (endTime - startTime) / 1000000f
-            isConnected = true
-            bytesRead > 0
+            val t1 = System.nanoTime()
+            lastLatencyMs = (t1 - t0) / 1_000_000f
+
+            isConnected = bytesRead > 0
+            isConnected
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to communicate with Magisk socket: ${e.message}")
+            Log.w(TAG, "sendCommand error: ${e.message}")
             isConnected = false
             false
         } finally {
-            try { socket?.close() } catch (_: Exception) {}
+            runCatching { socket?.close() }
         }
     }
 
+    // ── Comandos de alto nivel ───────────────────────────────────────────
     fun sendPerceptualState(
-        compressor: Float,
-        exciterRed: Float,
-        highCut: Float,
-        spatialWidth: Float,
-        loudnessTarget: Float,
-        harmonicGain: Float,
-        antiDolby: Float
-    ): Boolean {
-        val payload = JSONObject().apply {
-            put("action", "SET_PERCEPTUAL_STATE")
-            put("compressor", compressor.toDouble())
-            put("exciterReduction", exciterRed.toDouble())
-            put("highCutHz", highCut.toDouble())
-            put("spatialWidth", spatialWidth.toDouble())
-            put("loudnessTargetLuFS", loudnessTarget.toDouble())
-            put("harmonicGain", harmonicGain.toDouble())
-            put("antiDolbyIntensity", antiDolby.toDouble())
-            put("timestamp", System.currentTimeMillis())
-        }
-        return sendCommand(payload)
-    }
+        compressor: Float, exciterRed: Float, highCut: Float,
+        spatialWidth: Float, loudnessTarget: Float,
+        harmonicGain: Float, antiDolby: Float
+    ): Boolean = sendCommand(JSONObject().apply {
+        put("action", "SET_PERCEPTUAL_STATE")
+        put("compressor",           compressor.toDouble())
+        put("exciterReduction",     exciterRed.toDouble())
+        put("highCutHz",            highCut.toDouble())
+        put("spatialWidth",         spatialWidth.toDouble())
+        put("loudnessTargetLuFS",   loudnessTarget.toDouble())
+        put("harmonicGain",         harmonicGain.toDouble())
+        put("antiDolbyIntensity",   antiDolby.toDouble())
+        put("timestamp",            System.currentTimeMillis())
+    })
 
-    fun setIntensity(intensity: Float): Boolean {
-        val payload = JSONObject().apply {
-            put("action", "SET_INTENSITY")
-            put("intensity", intensity.toDouble())
-        }
-        return sendCommand(payload)
-    }
+    fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply {
+        put("action",    "SET_INTENSITY")
+        put("intensity", intensity.toDouble())
+    })
 
-    fun requestTelemetry(): String {
-        return try {
-            "Omega telemetry OK latency=${lastLatencyMs}ms"
-        } catch (e: Exception) {
-            "Telemetry unavailable"
-        }
-    }
-
-    fun disconnect() {
-        isConnected = false
-    }
-
-    
-    fun connect(): Boolean {
-        return try {
-            isConnected = true
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-    fun setPFParams(
-        vararg params: Float
-    ): Boolean {
-        val payload = JSONObject().apply {
-            put("action", "SET_PF_PARAMS")
-            put("params", params.toList())
-        }
-        return sendCommand(payload)
-    }
+    fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply {
+        put("action", "SET_PF_PARAMS")
+        put("params", params.toList())
+    })
 
     fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean =
         sendCommand(JSONObject().apply {
@@ -124,33 +179,29 @@ object OmegaEngineBridge {
             put("timestamp",  System.currentTimeMillis())
         })
 
-    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean {
-        val payload = JSONObject().apply {
-            put("action", "SET_ROUTE_PROFILE")
-            put("bassBoostDb", bassBoostDb.toDouble())
-            put("dialogBoostDb", dialogBoostDb.toDouble())
-            put("widenerMult", widenerMult.toDouble())
-            put("timestamp", System.currentTimeMillis())
-        }
-        return sendCommand(payload)
-    }
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",         "SET_ROUTE_PROFILE")
+            put("bassBoostDb",    bassBoostDb.toDouble())
+            put("dialogBoostDb",  dialogBoostDb.toDouble())
+            put("widenerMult",    widenerMult.toDouble())
+            put("timestamp",      System.currentTimeMillis())
+        })
+
+    fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",      "SET_SAF_STATE")
+            put("deltaEnergy", deltaEnergy.toDouble())
+            put("metricNorm",  metricNorm.toDouble())
+            put("memory",      memory.toDouble())
+            put("gain",        gain.toDouble())
+            put("timestamp",   System.currentTimeMillis())
+        })
+
+    fun requestTelemetry(): String = "Omega telemetry OK latency=${lastLatencyMs}ms"
+
+    fun disconnect() { isConnected = false }
 
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
-
-
-    fun pushSAFState(
-        deltaEnergy: Float,
-        metricNorm: Float,
-        memory: Float,
-        gain: Float
-    ): Boolean =
-        sendCommand(JSONObject().apply {
-            put("action", "SET_SAF_STATE")
-            put("deltaEnergy", deltaEnergy.toDouble())
-            put("metricNorm", metricNorm.toDouble())
-            put("memory", memory.toDouble())
-            put("gain", gain.toDouble())
-            put("timestamp", System.currentTimeMillis())
-        })
 }
