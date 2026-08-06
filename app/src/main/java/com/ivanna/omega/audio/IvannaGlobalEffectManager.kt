@@ -118,6 +118,7 @@ data class IvannaEffectProfile(
 
 class IvannaGlobalEffectManager {
 
+
     private val tag = "IvannaNPE.GlobalFX"
 
     // Mapa sessionId → lista de efectos activos en esa sesión
@@ -134,6 +135,37 @@ class IvannaGlobalEffectManager {
         val loudness:          LoudnessEnhancer?,
         val dynamics:          DynamicsProcessing?
     ) {
+    
+    // ── ISO 226 Calibración ──────────────────────────────────────────────────
+
+    /**
+     * Devuelve el perfil activo actual (para que Iso226Calibrator pueda
+     * hacer .copy(eqBands = ...) sin romper el preset activo).
+     */
+    fun currentProfile(): IvannaEffectProfile = activeProfile
+
+    /**
+     * Aplica la curva de compensación ISO 226 al Equalizer de todas las
+     * sesiones abiertas, preservando los parámetros de BassBoost/Virtualizer
+     * del preset activo.
+     *
+     * @param gainsDb FloatArray[10] — compensación en dB por banda EQ
+     *                Bandas: 31/63/125/250/500/1k/2k/4k/8k/16k Hz
+     */
+    fun applyIso226Compensation(gainsDb: FloatArray) {
+        val clamped = IntArray(10) { i ->
+            (gainsDb.getOrElse(i) { 0f }.coerceIn(-12f, 12f) * 100f).toInt()
+        }
+        // Mezclar con el preset base: ISO 226 se suma al preset existente
+        val baseEq   = activeProfile.eqBands
+        val mergedEq = IntArray(10) { i ->
+            (baseEq.getOrElse(i) { 0 } + clamped[i]).coerceIn(-1500, 1500)
+        }
+        val isoProfile = activeProfile.copy(eqBands = mergedEq)
+        applyProfile(isoProfile)
+        android.util.Log.i("IvannaGlobalFX", "ISO 226 EQ aplicado: ${clamped.map { "${it/100f}dB" }}")
+    }
+
         fun releaseAll() {
             runCatching { equalizer?.release() }
             runCatching { bassBoost?.release() }
@@ -224,7 +256,14 @@ class IvannaGlobalEffectManager {
     }
 
     // ── Cierra todas las sesiones ─────────────────────────────────────────────
-    fun releaseAll() {
+
+    // ── ISO 226 Calibración ──────────────────────────────────────────────────
+
+    /**
+     * Devuelve el perfil activo actual (para que Iso226Calibrator pueda
+     * hacer .copy(eqBands = ...) sin romper el preset activo).
+     */
+        fun releaseAll() {
         activeSessions.values.forEach { it.releaseAll() }
         activeSessions.clear()
     }
