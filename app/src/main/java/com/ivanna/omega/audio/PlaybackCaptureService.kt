@@ -21,6 +21,7 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.spatial.IvannaSpatialEngine
+import com.ivanna.omega.audio.IvannaLabMonitor
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -236,6 +237,8 @@ class PlaybackCaptureService : Service() {
                 return
             }
             IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
+            // FIX: arrancar medición automática Lab (THD/LUFS/SNR cada 30s)
+            IvannaLabMonitor.startAutoMeasure()
             voiceController = VoiceController(context)
             voiceProtection = VoiceProtectionController(context)
             spatialEngine.start()
@@ -266,6 +269,7 @@ class PlaybackCaptureService : Service() {
             spatialEngine.stop()
             voiceProtection?.release(); voiceProtection = null
             IvannaVisualizerBridgeV2.release()
+            IvannaLabMonitor.stopAutoMeasure()
             runCatching { projection.unregisterCallback(projCallback) }
             voiceFill = 0; voiceAcc = 0f; voiceCount = 0
         }
@@ -375,6 +379,13 @@ class PlaybackCaptureService : Service() {
                     for (i in 0 until frames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, frames) }
                     runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames) }
+                    // FIX: IvannaLabMonitor.feed() nunca se llamaba.
+                    // El analizador THD/IMD/LUFS/SNR declara feed() pero ningún
+                    // caller lo invocaba — acumulaba 0 frames, measure() devolvía
+                    // ceros para siempre. El buffer aquí es estéreo intercalado
+                    // (exacto formato de nativeLabFeed), capturado por
+                    // MediaProjection — fuente de datos real, no sintética.
+                    runCatching { IvannaLabMonitor.feed(buffer, frames) }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Excepción fatal en loop de audio: ${t.message}", t)
