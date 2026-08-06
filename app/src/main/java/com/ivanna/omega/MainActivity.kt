@@ -340,7 +340,7 @@ fun OmegaApp() {
             }
             composable("perceptual_brain") { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
             composable("calibracion_saf") {
-                SaFCalibrationScreen(onBack = { nav.popBackStack() })
+                SaFCalibrationScreen(onDismiss = { nav.popBackStack() })
             }
             composable("adaptive_dash")    { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
 
