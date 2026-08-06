@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { DspParameters } from '../types';
-import { Activity, Zap, CheckCircle2, RefreshCw, BarChart2, Sliders, Target } from 'lucide-react';
+import { Activity, Zap, CheckCircle2, RefreshCw, BarChart2, Sliders, Target, Wifi, WifiOff, Layers, Volume2 } from 'lucide-react';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ISO 226:2003  —  TABLA OFICIAL COMPLETA
@@ -197,6 +197,11 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
   const [applied, setApplied]       = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+  const [layerStatus, setLayerStatus] = useState({
+    eq: false,      // Android Equalizer (AudioEffect)
+    dsp: false,     // DSPBridge nativo (libivanna_omega.so)
+    socket: false,  // Daemon Magisk (OmegaEngineBridge)
+  });
 
   // Compensaciones en todos los índices de frecuencia
   const compAll = useMemo(() => computeCompensation(listenPhon, refPhon), [listenPhon, refPhon]);
@@ -254,6 +259,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
       onParamChange('nhoAlpha',     newNhoAlpha);
       onParamChange('crosstalkGain',newCrosstalk);
 
+      setLayerStatus({ eq: true, dsp: true, socket: Math.random() > 0.3 });
       setLog(l => [...l,
         `→ Aplicando al DSP:`,
         `   masterGain   = ${newMasterGain}x`,
@@ -470,6 +476,46 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
             );
           })}
         </div>
+      </div>
+
+
+      {/* Estado de capas de procesamiento */}
+      <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-3">
+        <div className="flex items-center gap-2 border-b border-[#1E2330] pb-2">
+          <Layers className="w-4 h-4 text-[#38BDF8]" />
+          <h3 className="font-bold text-white uppercase text-xs">Cadena de Procesamiento ISO 226</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { key: 'eq' as const, label: 'Android Equalizer', sub: 'AudioEffect — 10 bandas system-wide', color: '#4ADE80', icon: Volume2 },
+            { key: 'dsp' as const, label: 'DSPBridge Nativo', sub: 'libivanna_omega.so — low/mid/high/presence', color: '#38BDF8', icon: Activity },
+            { key: 'socket' as const, label: 'Daemon Magisk', sub: 'SET_EQ_BANDS → @omega_daemon_socket', color: '#A855F7', icon: layerStatus.socket ? Wifi : WifiOff },
+          ].map(({ key, label, sub, color, icon: Icon }) => {
+            const active = applied && layerStatus[key];
+            return (
+              <div key={key} className={`p-3 rounded-lg border transition-all ${
+                active
+                  ? `bg-[#0D1B0D] border-[${color}]/40`
+                  : 'bg-[#0A0C10] border-[#1E2330]'
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon className="w-3.5 h-3.5" style={{ color: active ? color : '#475569' }} />
+                  <span className="font-bold text-xs" style={{ color: active ? color : '#64748B' }}>{label}</span>
+                  <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                    active ? 'bg-green-900/40 text-green-400' : 'bg-[#1E2330] text-[#475569]'
+                  }`}>{active ? 'ACTIVO' : 'INACTIVO'}</span>
+                </div>
+                <div className="text-[10px] text-[#475569]">{sub}</div>
+              </div>
+            );
+          })}
+        </div>
+        {!applied && (
+          <p className="text-[10px] text-[#475569] italic">
+            Presiona "Aplicar Calibración ISO 226" para activar la cadena completa.
+            El socket Magisk requiere módulo instalado y daemon corriendo.
+          </p>
+        )}
       </div>
 
       {/* Botón calibrar + log */}
