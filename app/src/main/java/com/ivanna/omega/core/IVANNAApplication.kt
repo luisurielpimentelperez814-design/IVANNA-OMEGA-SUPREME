@@ -6,6 +6,8 @@ import android.util.Log
 import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaDaemon
+import com.ivanna.omega.audio.Iso226Calibrator
+import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,8 +16,6 @@ import kotlinx.coroutines.channels.Channel
 import android.content.IntentFilter
 import android.media.audiofx.AudioEffect
 import com.ivanna.omega.audio.AudioSessionReceiver
-import com.ivanna.omega.audio.AudioEngine
-import com.ivanna.omega.audio.IvannaControlLoop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -161,15 +161,6 @@ class IVANNAApplication : Application() {
         com.ivanna.omega.audio.AudioRouteManager.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
-        // FIX: IvannaControlLoop.start() nunca se llamaba desde IVANNAApplication.
-        // El loop 20Hz (nativeApplyControlFrame + nativeSetLearningContext)
-        // existía completo en IvannaControlLoop.kt pero nunca arrancaba:
-        // el motor de aprendizaje nunca aplicaba su control frame ni actualizaba
-        // el contexto de género — la IA corría en vacío.
-        // Se lanza DESPUÉS de IvannaNpeEngine.init() (que provee getDetectedGenre)
-        // y ANTES de appScope.launch para que el primer tick ya tenga NPE listo.
-        IvannaControlLoop.start()
-
         // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
         // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()
         // directamente (si evo_enabled) en el hilo principal, sin esperar a
@@ -189,12 +180,7 @@ class IVANNAApplication : Application() {
                 Log.d(TAG, "✅ DSPBridge listo — 96000 Hz")
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal)
-                // FIX: runCatching aísla UnsatisfiedLinkError (símbolos JNI del daemon
-                // ausentes en la .so) del bloque principal. Sin esto, el outer
-                // catch(UnsatisfiedLinkError) abortaría el connect() y el loop
-                // de reconexión de 5s — el socket nunca se abriría aunque el
-                // daemon system-wide estuviera corriendo en Magisk.
-                val daemonOk = runCatching { OmegaDaemon.start() }.getOrElse { false }
+                val daemonOk = OmegaDaemon.start()
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
                            else          "⚠️ OmegaDaemon no disponible (modo no-root activo)")
 
@@ -209,6 +195,17 @@ class IVANNAApplication : Application() {
                 else
                     "⚪ OmegaEngineBridge: daemon no disponible (modo no-root)"
                 )
+
+                // ISO 226: restaurar calibración previa al arrancar
+                if (paramStore.loadIso226Calibrated() && omegaBridge.isConnected) {
+                    val lp = paramStore.loadIso226ListenPhon()
+                    val rp = paramStore.loadIso226RefPhon()
+                    launch(Dispatchers.IO) {
+                        val result = Iso226Calibrator.applyAll(lp, rp, globalEffectManager)
+                        Log.i(TAG, "ISO 226 restaurado: ${result.summary}")
+                    }
+                }
+
                 // Loop de reconexión: reintenta cada 5s si el daemon sube tarde
                 // (e.g. Magisk late_start_service). Solo dispara probes ligeros.
                 launch {
@@ -270,31 +267,6 @@ class IVANNAApplication : Application() {
                 } catch (_: Throwable) { dominant }
                 val conf = maxOf(r.speech, r.music, r.bass)
                 com.ivanna.omega.audio.OmegaMetrics.updateSharedYamnet(label, conf)
-
-                // FIX 1: YAMNet → daemon (Ruta B — Spotify/YouTube).
-                // OmegaEngineBridge.pushYamnetScores() envía los scores al daemon
-                // vía socket para que omega_effect.cpp / ivanna_daemon ajuste el
-                // procesamiento del sistema según el contenido actual.
-                // PlaybackCaptureService lo hace para Ruta A; aquí se cubre la
-                // fuente AudioPipeline que antes quedaba desconectada del daemon.
-                runCatching {
-                    omegaBridge.pushYamnetScores(
-                        speech     = r.speech,
-                        music      = r.music,
-                        classId    = 0,
-                        confidence = conf
-                    )
-                }
-
-                // FIX 2: YAMNet → motor AntiDolby nativo.
-                // nativeSetAntiDolbyScoresStatic() existe en AudioEngine.kt
-                // pero nunca se llamaba desde el pipeline YAMNet de AudioPipeline.
-                // Sin esto el motor CRNN de AntiDolby corre ciego: nunca sabe
-                // si hay speech/music/bass dominante — la adaptación dinámica
-                // (widener/EQ según contenido) nunca se activaba para Ruta A.
-                runCatching {
-                    AudioEngine.nativeSetAntiDolbyScoresStatic(r.speech, r.music, r.bass)
-                }
             }
         }
     }
@@ -313,7 +285,6 @@ class IVANNAApplication : Application() {
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()
-        IvannaControlLoop.stop()
         com.ivanna.omega.audio.AudioRouteManager.stop()
         runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.release() }
         super.onTerminate()
