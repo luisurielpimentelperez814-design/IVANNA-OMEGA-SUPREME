@@ -248,7 +248,11 @@ jobs:
       - name: Compile ivanna_daemon for arm64
         run: |
           CXX="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"
-          DAEMON_SRCS="app/src/main/cpp/daemon/ivanna_daemon.cpp"
+          DAEMON_SRCS="
+app/src/main/cpp/daemon/ivanna_daemon.cpp
+app/src/main/cpp/daemon/control/command_server.cpp
+app/src/main/cpp/daemon/core/shm_manager.cpp
+"
           if [ -z "$DAEMON_SRCS" ]; then
             echo "ERROR: no se encontraron fuentes en app/src/main/cpp/daemon/"
             exit 1
