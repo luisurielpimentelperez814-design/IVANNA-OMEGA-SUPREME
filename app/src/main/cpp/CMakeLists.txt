@@ -38,6 +38,8 @@ add_library(ivanna_omega SHARED
     jni/ivanna_omega_jni.cpp
     jni/ivanna_visualizer_jni.cpp
     jni/ivanna_adaptive_jni.cpp
+        # Φ_SAF-Room^∞ JNI bridge
+        jni/saf_room_jni.cpp
     jni/ivanna_visualizer_v2_jni.cpp
     jni/ivanna_npe_jni.cpp
     jni/ivanna_jni_stub.cpp
@@ -152,6 +154,7 @@ add_library(ivanna_omega SHARED
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
 
 target_include_directories(ivanna_omega PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/neuromorphic
