@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import android.content.IntentFilter
 import android.media.audiofx.AudioEffect
 import com.ivanna.omega.audio.AudioSessionReceiver
+import com.ivanna.omega.audio.IvannaControlLoop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -159,6 +160,15 @@ class IVANNAApplication : Application() {
         com.ivanna.omega.audio.AudioRouteManager.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
+        // FIX: IvannaControlLoop.start() nunca se llamaba desde IVANNAApplication.
+        // El loop 20Hz (nativeApplyControlFrame + nativeSetLearningContext)
+        // existía completo en IvannaControlLoop.kt pero nunca arrancaba:
+        // el motor de aprendizaje nunca aplicaba su control frame ni actualizaba
+        // el contexto de género — la IA corría en vacío.
+        // Se lanza DESPUÉS de IvannaNpeEngine.init() (que provee getDetectedGenre)
+        // y ANTES de appScope.launch para que el primer tick ya tenga NPE listo.
+        IvannaControlLoop.start()
+
         // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
         // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()
         // directamente (si evo_enabled) en el hilo principal, sin esperar a
@@ -277,6 +287,7 @@ class IVANNAApplication : Application() {
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()
+        IvannaControlLoop.stop()
         com.ivanna.omega.audio.AudioRouteManager.stop()
         runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.release() }
         super.onTerminate()
