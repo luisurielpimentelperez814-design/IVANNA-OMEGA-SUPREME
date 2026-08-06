@@ -7,7 +7,6 @@ import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaDaemon
 import com.ivanna.omega.audio.Iso226Calibrator
-import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +30,9 @@ import kotlinx.coroutines.launch
  *   4. onTerminate() libera globalEffectManager correctamente.
  */
 class IVANNAApplication : Application() {
+    
+    private lateinit var paramStore: ParameterStore
+
 
     companion object {
         private const val TAG = "IVANNAApplication"
@@ -64,6 +66,8 @@ class IVANNAApplication : Application() {
     }
 
     override fun onCreate() {
+        paramStore = ParameterStore(this)
+
         super.onCreate()
         AudioStateManager.attachPersistence(this)
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
