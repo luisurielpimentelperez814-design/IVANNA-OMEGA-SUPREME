@@ -58,6 +58,11 @@ class ParameterStore(context: Context) {
 
         // Motor Binaural (32 objetos)
         private const val KEY_SPATIAL_ENABLED = "spatial_enabled"
+        // ISO 226 Calibración
+        private const val KEY_ISO226_LISTEN_PHON  = "iso226_listen_phon"
+        private const val KEY_ISO226_REF_PHON      = "iso226_ref_phon"
+        private const val KEY_ISO226_CALIBRATED    = "iso226_calibrated"
+        private const val KEY_ISO226_GAINS         = "iso226_gains"
         private const val KEY_SPATIAL_INIT_PENDING = "spatial_init_pending"
 
         // Adaptive Control Center
@@ -181,4 +186,34 @@ class ParameterStore(context: Context) {
             prefs.getFloat("${name}_width", 0.5f)
         )
     }
+
+    // ── ISO 226 Calibración ──────────────────────────────────────────────────
+
+    fun saveIso226(listenPhon: Float, refPhon: Float, gains: FloatArray) {
+        prefs.edit()
+            .putFloat(KEY_ISO226_LISTEN_PHON, listenPhon)
+            .putFloat(KEY_ISO226_REF_PHON,    refPhon)
+            .putBoolean(KEY_ISO226_CALIBRATED, true)
+            .putString(KEY_ISO226_GAINS, gains.joinToString(","))
+            .apply()
+    }
+
+    fun loadIso226ListenPhon(): Float  = prefs.getFloat(KEY_ISO226_LISTEN_PHON,  60f)
+    fun loadIso226RefPhon(): Float     = prefs.getFloat(KEY_ISO226_REF_PHON,     80f)
+    fun loadIso226Calibrated(): Boolean = prefs.getBoolean(KEY_ISO226_CALIBRATED, false)
+    fun loadIso226Gains(): FloatArray {
+        val s = prefs.getString(KEY_ISO226_GAINS, "") ?: return FloatArray(10)
+        return if (s.isBlank()) FloatArray(10)
+        else s.split(",").mapNotNull { it.trim().toFloatOrNull() }.toFloatArray()
+    }
+
+    fun clearIso226() {
+        prefs.edit()
+            .remove(KEY_ISO226_LISTEN_PHON)
+            .remove(KEY_ISO226_REF_PHON)
+            .remove(KEY_ISO226_CALIBRATED)
+            .remove(KEY_ISO226_GAINS)
+            .apply()
+    }
+
 }
