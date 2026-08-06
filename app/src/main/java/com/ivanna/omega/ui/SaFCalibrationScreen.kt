@@ -40,7 +40,11 @@ import kotlin.math.sin
  * @param onBack navigation callback to parent screen
  */
 @Composable
-fun SaFCalibrationScreen(onBack: () -> Unit = {}) {
+fun SaFCalibrationScreen(
+    rendererHandle: Long = 0L,
+    onDismiss: () -> Unit = {}
+) {
+    val onBack = onDismiss
     val context = LocalContext.current
     val engine  = remember { SaFEngine(context).also { it.initialize() } }
     val state   by engine.state.collectAsState()
