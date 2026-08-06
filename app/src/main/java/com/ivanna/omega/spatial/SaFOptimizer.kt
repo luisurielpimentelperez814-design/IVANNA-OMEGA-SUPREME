@@ -3,6 +3,7 @@ package com.ivanna.omega.spatial
 import android.content.Context
 import android.util.Log
 import com.ivanna.omega.ai.SAFCore
+import com.ivanna.omega.saf.SaFRoomBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -102,12 +103,42 @@ object SaFOptimizer {
 
             Log.d(TAG, "Step $newIteration: subject=$subject " +
                        "paramNorm=%.3f errorEnergy=%.3f".format(newParamNorm, newErrorEnergy))
+
+            // FIX: sincronizar estado actualizado con SaFRoomBridge → M_t refleja H_t real
+            syncToRoomBridge(rt60 = 0.3f)  // RT60 por defecto; RoomSimulator lo sobreescribirá
         }
     }
 
     /** Reinicia el optimizador al estado inicial. */
     fun reset() {
         _state.value = SaFOptimizerState()
+        SaFRoomBridge.reset()
         Log.d(TAG, "Optimizer reset")
+    }
+
+    /**
+     * Alimenta SaFRoomBridge con el estado actual del optimizador HRTF.
+     *
+     * Debe llamarse en cada iteración de calibración para que M_t en C++
+     * refleje el mismatch H_t real (y no el valor por defecto 0).
+     *
+     * @param rt60  Tiempo de reverberación del entorno de escucha [0, 5] s
+     *              (puede venir de RoomSimulator.estimateRT60())
+     */
+    fun syncToRoomBridge(rt60: Float = 0.3f) {
+        val st = _state.value
+        // H_t: mismatch normalizado — errorEnergy ya está en [0,1] por diseño
+        SaFRoomBridge.setHrtfState(
+            mismatchEnergy  = st.errorEnergy,
+            convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
+        )
+        // R_t: sala actual
+        SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
+        // Target en el espacio latente SAF-Room: dirección de menor error
+        // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
+        SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
+        // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
+        val alpha = SaFRoomBridge.step()
+        Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60")
     }
 }
