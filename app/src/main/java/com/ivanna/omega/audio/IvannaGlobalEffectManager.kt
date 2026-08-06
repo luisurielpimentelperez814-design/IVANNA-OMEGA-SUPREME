@@ -134,7 +134,7 @@ class IvannaGlobalEffectManager {
         val virtualizer:       Virtualizer?,
         val loudness:          LoudnessEnhancer?,
         val dynamics:          DynamicsProcessing?
-    ) {
+    )
     
     // ── ISO 226 Calibración ──────────────────────────────────────────────────
 
