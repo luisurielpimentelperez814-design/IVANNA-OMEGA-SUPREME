@@ -10,6 +10,9 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <cmath>
+#include <cstring>
+#include <cerrno>
+#include <cstddef>
 #include <algorithm>
 
 struct ControlState {
@@ -45,21 +48,58 @@ public:
             return;
         }
 
-        unlink(socketPath.c_str());
-
+        // FIX (socket no aparece encendido, end-to-end):
+        // El bridge Kotlin (OmegaEngineBridge / MagiskBridge) conecta con
+        // LocalSocketAddress.Namespace.ABSTRACT contra "omega_daemon_socket".
+        // Este daemon hacia bind() SIEMPRE en el filesystem (path relativo
+        // al cwd), asi que Kotlin conectaba en el namespace abstracto de
+        // Linux (sun_path[0] == '\0') mientras el daemon publicaba en el
+        // filesystem — nunca se encontraban y el panel Magisk siempre
+        // reportaba OFFLINE.
+        //
+        // Se soporta ahora el prefijo '@' como convencion estandar
+        // (netcat/systemd/android): '@omega_daemon_socket' -> abstract
+        // (compatible con Namespace.ABSTRACT del bridge Kotlin);
+        // "/path/al/socket" -> filesystem (compatible con
+        // Namespace.FILESYSTEM). service.sh puede seguir apuntando a
+        // /dev/socket/ivanna_omega si quiere, pero por defecto el binary
+        // publica en abstract, que es lo que la app espera hoy.
         struct sockaddr_un addr;
         std::memset(&addr, 0, sizeof(addr));
         addr.sun_family = AF_UNIX;
-        std::strncpy(addr.sun_path, socketPath.c_str(), sizeof(addr.sun_path) - 1);
+        socklen_t addrLen;
+        const bool abstractNs =
+            !socketPath.empty() && socketPath[0] == '@';
+        if (abstractNs) {
+            // Abstract namespace: sun_path[0] == '\0'. La longitud del
+            // sockaddr define el tamano del nombre — NO se puede usar
+            // strncpy con NUL terminator implicito, hay que calcular
+            // addrLen a mano (offsetof + 1 byte de leading NUL + nombre).
+            const std::string name = socketPath.substr(1);
+            addr.sun_path[0] = '\0';
+            std::memcpy(addr.sun_path + 1, name.data(),
+                        std::min(name.size(), sizeof(addr.sun_path) - 1));
+            addrLen = static_cast<socklen_t>(
+                offsetof(struct sockaddr_un, sun_path) + 1 + name.size());
+        } else {
+            unlink(socketPath.c_str());
+            std::strncpy(addr.sun_path, socketPath.c_str(),
+                         sizeof(addr.sun_path) - 1);
+            addrLen = sizeof(addr);
+        }
 
-        if (bind(serverFd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-            std::cerr << "[OMEGA_DAEMON] Error binding socket to path: " << socketPath << std::endl;
+        if (bind(serverFd, (struct sockaddr*)&addr, addrLen) < 0) {
+            std::cerr << "[OMEGA_DAEMON] Error binding socket to path: "
+                      << socketPath << " (" << std::strerror(errno) << ")"
+                      << std::endl;
             close(serverFd);
             return;
         }
 
         listen(serverFd, 5);
-        std::cout << "[OMEGA_DAEMON] Socket listening on " << socketPath << std::endl;
+        std::cout << "[OMEGA_DAEMON] Socket listening on " << socketPath
+                  << (abstractNs ? " (abstract)" : " (filesystem)")
+                  << std::endl;
 
         while (m_running) {
             int clientFd = accept(serverFd, nullptr, nullptr);
@@ -70,7 +110,7 @@ public:
         }
 
         close(serverFd);
-        unlink(socketPath.c_str());
+        if (!abstractNs) unlink(socketPath.c_str());
     }
 
 private:
@@ -109,9 +149,19 @@ private:
     }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
     RealtimeOmegaDaemon daemon;
     daemon.setRealtimePriority();
-    daemon.startSocketListener("omega_daemon_socket");
+
+    // FIX (socket no aparece encendido): default cambiado de
+    // "omega_daemon_socket" (path concreto en el cwd del daemon) a
+    // "@omega_daemon_socket" (namespace abstracto de Linux), que es donde
+    // el bridge Kotlin de la app ya conecta hoy via
+    // LocalSocketAddress.Namespace.ABSTRACT. Se sigue permitiendo
+    // override por argv[1] para service.sh (que puede pasar un path del
+    // filesystem si prefiere ese esquema).
+    std::string socketPath = "@omega_daemon_socket";
+    if (argc > 1) socketPath = argv[1];
+    daemon.startSocketListener(socketPath);
     return 0;
 }
