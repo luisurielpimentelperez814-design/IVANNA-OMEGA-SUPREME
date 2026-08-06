@@ -159,6 +159,7 @@ fun MainScaffold(
             // ── SPATIAL ──────────────────────────────────────────────────
             composable(TABS[3].route) {
                 SpatialHubScreen(
+                    onOpenSaF        = { outerNav.navigate("calibracion_saf") },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
@@ -181,6 +182,7 @@ fun MainScaffold(
 // ── SpatialHubScreen ─────────────────────────────────────────────────────────
 @Composable
 fun SpatialHubScreen(
+    onOpenSaF        : () -> Unit = {},
     onOpenVisualizer : () -> Unit,
     onOpenOpe        : () -> Unit,
     onOpenBinaural   : () -> Unit,
@@ -192,6 +194,7 @@ fun SpatialHubScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         HubHeader("SPATIAL ENGINE", "Binaural · HRTF · Object Renderer · Head Tracking", NeonMagenta)
+        HubCard("CALIBRACIÓN Φ_SAF^∞",    "HRTF personalizado · 7-D Riemanniano · 214 HRTFs", AuroraCyan,   onOpenSaF)
         HubCard("VISUALIZADOR DE ESPECTRO",  "FFT 64-Band · Bark Perceptual",       AuroraCyan,   onOpenVisualizer)
         HubCard("EQ / COMPRESOR · OPE",      "IIR 10-Band · Brickwall Limiter",      AuroraCyan,   onOpenOpe)
         HubCard("MOTOR BINAURAL",            "HRTF + VBAP + 32 Objetos + 6DoF",     NeonMagenta,  onOpenBinaural)

@@ -86,6 +86,7 @@ import com.ivanna.omega.audio.AudioPipeline
 import com.ivanna.omega.ai.PerceptualBrainEngine
 import com.ivanna.omega.ai.PerceptualSnapshot
 import com.ivanna.omega.ui.PerceptualBrainDashboard
+import com.ivanna.omega.ui.SaFCalibrationScreen
 import com.ivanna.omega.ui.MainScaffold
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
@@ -338,6 +339,9 @@ fun OmegaApp() {
                 )
             }
             composable("perceptual_brain") { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            composable("calibracion_saf") {
+                SaFCalibrationScreen(onBack = { nav.popBackStack() })
+            }
             composable("adaptive_dash")    { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
 
             // ── Sección SONIDO ────────────────────────────────────────────
