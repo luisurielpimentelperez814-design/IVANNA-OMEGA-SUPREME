@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 add_executable(ivanna_daemon
     ivanna_daemon.cpp
+    control/command_server.cpp
 )
 
 target_compile_options(ivanna_daemon PRIVATE

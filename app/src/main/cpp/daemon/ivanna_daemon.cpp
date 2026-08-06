@@ -1,3 +1,4 @@
+#include "control/command_server.h"
 /**
  * IVANNA-OMEGA-SUPREME Native Daemon
  * Architecture: ARM64 (arm64-v8a)
@@ -227,7 +228,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    log_message("IVANNA OMEGA Daemon running successfully.");
+    
+log_message("IVANNA OMEGA Daemon running successfully.");
+
+CommandServer commandServer;
+
+if(commandServer.start("@omega_command_socket"))
+{
+    log_message("CONTROL socket ready: @omega_command_socket");
+}
+else
+{
+    log_message("ERROR starting CONTROL socket");
+}
+
 
     // Daemon main loop
     while (g_running) {
