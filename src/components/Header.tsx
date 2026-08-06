@@ -1,10 +1,10 @@
 import React from 'react';
-import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw } from 'lucide-react';
+import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw, BarChart2 } from 'lucide-react';
 import { DspParameters } from '../types';
 
 interface HeaderProps {
-  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code';
-  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code') => void;
+  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226';
+  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226') => void;
   params: DspParameters;
   onParamChange: (key: keyof DspParameters, value: any) => void;
   onApplyPreset: (presetName: DspParameters['activePreset']) => void;
@@ -218,6 +218,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Terminal className="w-3.5 h-3.5 text-[#F59E0B]" />
             <span>C++ Code & Termux</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('iso226')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'iso226'
+                ? 'bg-[#1A1230] border-[#A855F7] text-[#A855F7] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-[#A855F7]" />
+            <span>ISO 226 Calibr.</span>
           </button>
 
         </nav>
