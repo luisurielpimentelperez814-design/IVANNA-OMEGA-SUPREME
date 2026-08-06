@@ -177,24 +177,10 @@ class IVANNAApplication : Application() {
                 DSPBridge.init(sampleRate = 96000)
                 Log.d(TAG, "✅ DSPBridge listo — 96000 Hz")
 
-                // 2. Daemon Magisk (puede fallar sin root — no es fatal).
-                // FIX (arranque roto): OmegaDaemon.kt declara 18 external fun
-                // (nativeStart/nativeStop/nativeSetPFParams/...) sin NINGUNA
-                // implementación JNI en C++ (verificado: 0 símbolos
-                // magisk_OmegaDaemon_* en app/src/main/cpp/). Por tanto
-                // nativeStart() lanza UnsatisfiedLinkError en CADA arranque,
-                // y al estar dentro del try principal la excepción saltaba por
-                // encima de omegaBridge.connect() (más abajo) y del loop de
-                // reconexión — el puente por socket al daemon system-wide
-                // nunca se conectaba desde el arranque, y el log engañoso
-                // "Librería nativa no disponible" apuntaba al diagnóstico
-                // equivocado (la .so sí carga; lo que no existe es el JNI del
-                // daemon PF). La vía real vigente es OmegaEngineBridge por
-                // socket (sendPerceptualState / setPFParams / pushSAFState).
-                // Se aísla en runCatching para que el arranque continúe.
-                val daemonOk = runCatching { OmegaDaemon.start() }.getOrElse { false }
+                // 2. Daemon Magisk (puede fallar sin root — no es fatal)
+                val daemonOk = OmegaDaemon.start()
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
-                           else          "⚠️ OmegaDaemon no disponible (modo no-root / JNI ausente)")
+                           else          "⚠️ OmegaDaemon no disponible (modo no-root activo)")
 
                 // 3. FIX CRÍTICO: probe real al socket + loop de reconexión.
                 // connect() anterior era fake (isConnected=true sin tocar socket).
