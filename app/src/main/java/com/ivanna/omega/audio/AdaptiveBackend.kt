@@ -122,13 +122,23 @@ class AdaptiveBackend(context: Context) {
                     val safTarget = doubleArrayOf(1.0, 0.0, 0.0, 1.0)
                     // métrica uniforme: todas las dimensiones pesan igual
                     val safMetric = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
-                    SAFCore.update(safCurrent, safTarget, safMetric)
+                    // FIX: usar stepRoom — Φ_SAF-Room^∞ con M_t = G_t + λ_t·I.
+                    // RT60 estimado desde safetyMargin (proxy: señal limitada → sala
+                    // reverberante); mismatch desde el exciter (proxy de distorsión).
+                    // En el futuro: RoomSimulator proveerá RT60 real.
+                    val rt60Est  = (1.0f - src[7]).coerceIn(0f, 3f)  // safetyMargin → RT60
+                    val hMismatch= src[5].coerceIn(0f, 1f)           // excReduction → H_mismatch
+                    val (_, alphaRoom) = SAFCore.stepRoom(
+                        safCurrent, safTarget, safMetric,
+                        rt60 = rt60Est, hMismatch = hMismatch,
+                        diffuseness = src[6].coerceIn(0f, 1f)        // spatialWidth → difusividad
+                    )
                     val safState = SAFCore.getState()  // [deltaEnergy, metricNorm, memory, gain]
                     OmegaEngineBridge.pushSAFState(
                         deltaEnergy = safState[0].toFloat(),
                         metricNorm  = safState[1].toFloat(),
                         memory      = safState[2].toFloat(),
-                        gain        = safState[3].toFloat()
+                        gain        = (safState[3] * alphaRoom.coerceIn(0f, 1f)).toFloat()
                     )
                 } catch (_: Throwable) {
                     // SAF feed falla silenciosamente: no bloquear la telemetría UI
