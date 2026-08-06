@@ -166,15 +166,6 @@ class IvannaGlobalEffectManager {
         android.util.Log.i("IvannaGlobalFX", "ISO 226 EQ aplicado: ${clamped.map { "${it/100f}dB" }}")
     }
 
-        fun releaseAll() {
-            runCatching { equalizer?.release() }
-            runCatching { bassBoost?.release() }
-            runCatching { virtualizer?.release() }
-            runCatching { loudness?.release() }
-            runCatching { dynamics?.release() }
-        }
-    }
-
     // ── Abre efectos para una nueva sesión de audio ───────────────────────────
     fun openSession(audioSession: Int, sourcePackage: String?) {
         if (audioSession <= 0) return
