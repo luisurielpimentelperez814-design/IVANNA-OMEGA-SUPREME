@@ -3,7 +3,6 @@ import com.ivanna.omega.audio.AudioStateManager
 
 import android.app.Application
 import android.util.Log
-import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaDaemon
 import com.ivanna.omega.audio.Iso226Calibrator
