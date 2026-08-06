@@ -198,7 +198,28 @@ object OmegaEngineBridge {
             put("timestamp",   System.currentTimeMillis())
         })
 
-    fun requestTelemetry(): String = "Omega telemetry OK latency=${lastLatencyMs}ms"
+
+    fun setEqBands(gainsDb: FloatArray, listenPhon: Float = 60f, refPhon: Float = 80f): Boolean {
+        val arr = org.json.JSONArray()
+        gainsDb.forEach { arr.put(it.toDouble()) }
+        return sendCommand(JSONObject().apply {
+            put("action",     "SET_EQ_BANDS")
+            put("gains",      arr)
+            put("listenPhon", listenPhon.toDouble())
+            put("refPhon",    refPhon.toDouble())
+            put("timestamp",  System.currentTimeMillis())
+        })
+    }
+
+    fun getCalibrationStatus(): JSONObject = JSONObject().apply {
+        put("connected",   isConnected)
+        put("calibrated",  com.ivanna.omega.audio.Iso226Calibrator.isCalibrated)
+        put("listenPhon",  com.ivanna.omega.audio.Iso226Calibrator.listenPhon.toDouble())
+        put("refPhon",     com.ivanna.omega.audio.Iso226Calibrator.refPhon.toDouble())
+        put("latencyMs",   lastLatencyMs.toDouble())
+    }
+
+        fun requestTelemetry(): String = "Omega telemetry OK latency=${lastLatencyMs}ms | ISO226=${com.ivanna.omega.audio.Iso226Calibrator.describe()}"
 
     fun disconnect() { isConnected = false }
 
