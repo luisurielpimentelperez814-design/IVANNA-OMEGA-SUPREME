@@ -130,6 +130,9 @@ add_executable(test_stability
   ../experimental/adaptive_engine/tests/test_stability.cpp
   ../experimental/adaptive_engine/adaptive_decision_engine.cpp
 )
+if(DEFINED ENV{IVANNA_CI_FAST})
+  target_compile_definitions(test_stability PRIVATE IVANNA_CI_FAST=1)
+endif()
 target_include_directories(test_stability PRIVATE
   ../experimental/adaptive_engine
 )
