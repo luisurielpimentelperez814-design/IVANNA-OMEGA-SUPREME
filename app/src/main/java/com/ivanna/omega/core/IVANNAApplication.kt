@@ -178,7 +178,12 @@ class IVANNAApplication : Application() {
                 Log.d(TAG, "✅ DSPBridge listo — 96000 Hz")
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal)
-                val daemonOk = OmegaDaemon.start()
+                // FIX: runCatching aísla UnsatisfiedLinkError (símbolos JNI del daemon
+                // ausentes en la .so) del bloque principal. Sin esto, el outer
+                // catch(UnsatisfiedLinkError) abortaría el connect() y el loop
+                // de reconexión de 5s — el socket nunca se abriría aunque el
+                // daemon system-wide estuviera corriendo en Magisk.
+                val daemonOk = runCatching { OmegaDaemon.start() }.getOrElse { false }
                 Log.d(TAG, if (daemonOk) "✅ OmegaDaemon iniciado"
                            else          "⚠️ OmegaDaemon no disponible (modo no-root activo)")
 
