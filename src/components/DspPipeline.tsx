@@ -269,4 +269,3 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
     </div>
   );
 };
-
