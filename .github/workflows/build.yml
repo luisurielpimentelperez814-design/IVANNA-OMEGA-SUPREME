@@ -30,8 +30,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   test-native-dsp:
     name: DSP Native Tests (host, CTest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 8     # test_stability: 10×1.5s + overhead; 8m es holgado
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -41,16 +40,14 @@ jobs:
       - name: Build
         run: cmake --build build-tests -j
       - name: Run tests
-        env:
-          IVANNA_CI_FAST: "1"
-        run: ctest --test-dir build-tests --output-on-failure --timeout 60
+        run: ctest --test-dir build-tests --output-on-failure
 
   # ─────────────────────────────────────────────────────────────────────────
   # JOB 1 — APK + Daemon & Runtime
   # ─────────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build APK & Native Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [test-native-dsp]
     steps:
       - uses: actions/checkout@v5
