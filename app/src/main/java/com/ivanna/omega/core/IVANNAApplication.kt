@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import android.content.IntentFilter
 import android.media.audiofx.AudioEffect
 import com.ivanna.omega.audio.AudioSessionReceiver
+import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.IvannaControlLoop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -269,6 +270,31 @@ class IVANNAApplication : Application() {
                 } catch (_: Throwable) { dominant }
                 val conf = maxOf(r.speech, r.music, r.bass)
                 com.ivanna.omega.audio.OmegaMetrics.updateSharedYamnet(label, conf)
+
+                // FIX 1: YAMNet → daemon (Ruta B — Spotify/YouTube).
+                // OmegaEngineBridge.pushYamnetScores() envía los scores al daemon
+                // vía socket para que omega_effect.cpp / ivanna_daemon ajuste el
+                // procesamiento del sistema según el contenido actual.
+                // PlaybackCaptureService lo hace para Ruta A; aquí se cubre la
+                // fuente AudioPipeline que antes quedaba desconectada del daemon.
+                runCatching {
+                    omegaBridge.pushYamnetScores(
+                        speech     = r.speech,
+                        music      = r.music,
+                        classId    = 0,
+                        confidence = conf
+                    )
+                }
+
+                // FIX 2: YAMNet → motor AntiDolby nativo.
+                // nativeSetAntiDolbyScoresStatic() existe en AudioEngine.kt
+                // pero nunca se llamaba desde el pipeline YAMNet de AudioPipeline.
+                // Sin esto el motor CRNN de AntiDolby corre ciego: nunca sabe
+                // si hay speech/music/bass dominante — la adaptación dinámica
+                // (widener/EQ según contenido) nunca se activaba para Ruta A.
+                runCatching {
+                    AudioEngine.nativeSetAntiDolbyScoresStatic(r.speech, r.music, r.bass)
+                }
             }
         }
     }
