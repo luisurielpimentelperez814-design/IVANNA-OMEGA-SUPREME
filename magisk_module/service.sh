@@ -1,65 +1,57 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME v6.0 - Magisk Realtime Daemon Service
+# IVANNA OMEGA SUPREME v6.1 - Magisk Realtime Daemon Service
 MODDIR=${0%/*}
-DAEMON_BIN="$MODDIR/omega_daemon"
+
+# FIX: el binario compilado por CI es ivanna_daemon, no omega_daemon
+DAEMON_BIN="$MODDIR/system/bin/ivanna_daemon"
 LOGFILE="/data/adb/ivanna_omega/daemon.log"
-SOCKET_PATH="/dev/socket/ivanna_omega"
+
+# FIX: ivanna_daemon usa socket abstracto @omega_daemon_socket.
+# Los sockets abstractos NO crean archivos en el filesystem, así que
+# no hay ruta que comprobar. Se elimina wait_for_socket() que esperaba
+# /dev/socket/ivanna_omega (filesystem) y nunca encontraba nada.
+# Se sustituye por sleep 1 + kill -0 $DAEMON_PID para comprobar que
+# el proceso sigue vivo.
 
 mkdir -p /data/adb/ivanna_omega
 
-echo "[$(date)] Starting IVANNA OMEGA Daemon Service..." >> "$LOGFILE"
+echo "[$(date)] Starting IVANNA OMEGA Daemon (ivanna_daemon)" >> "$LOGFILE"
 
 # Log rotation > 10MB
 if [ -f "$LOGFILE" ] && [ $(stat -c%s "$LOGFILE") -gt 10485760 ]; then
     mv "$LOGFILE" "${LOGFILE}.old"
 fi
 
-# Función para limpiar socket antiguo
-cleanup_socket() {
-    if [ -e "$SOCKET_PATH" ]; then
-        rm -f "$SOCKET_PATH" 2>/dev/null
-    fi
-}
-
-# Función para esperar a que el socket esté listo
-wait_for_socket() {
-    local max_wait=10
-    local waited=0
-    while [ $waited -lt $max_wait ]; do
-        if [ -e "$SOCKET_PATH" ]; then
-            chmod 0666 "$SOCKET_PATH" 2>/dev/null
-            return 0
-        fi
-        sleep 0.1
-        waited=$((waited + 1))
-    done
-    echo "[$(date)] ERROR: Socket no apareció después de ${max_wait}s" >> "$LOGFILE"
-    return 1
-}
-
-if [ -f "$DAEMON_BIN" ]; then
-    chmod 755 "$DAEMON_BIN"
-    while true; do
-        cleanup_socket
-        echo "[$(date)] Launching $DAEMON_BIN" >> "$LOGFILE"
-        "$DAEMON_BIN" >> "$LOGFILE" 2>&1 &
-        DAEMON_PID=$!
-        
-        # Esperar a que el socket esté listo
-        if wait_for_socket; then
-            echo "[$(date)] Socket $SOCKET_PATH ready with perms 0666" >> "$LOGFILE"
-            setprop persist.ivanna.daemon_active 1
-        else
-            echo "[$(date)] Failed to start socket — daemon may not be running" >> "$LOGFILE"
-            setprop persist.ivanna.daemon_active 0
-        fi
-        
-        wait $DAEMON_PID
-        DAEMON_EXIT=$?
-        echo "[$(date)] Daemon crashed or exited (code=$DAEMON_EXIT). Restarting in 1s..." >> "$LOGFILE"
-        setprop persist.ivanna.daemon_active 0
-        sleep 1
-    done
-else
-    echo "[$(date)] ERROR: $DAEMON_BIN not found!" >> "$LOGFILE"
+if [ ! -f "$DAEMON_BIN" ]; then
+    echo "[$(date)] ERROR: $DAEMON_BIN not found — módulo no instalado correctamente" >> "$LOGFILE"
+    exit 1
 fi
+
+chmod 755 "$DAEMON_BIN"
+
+while true; do
+    echo "[$(date)] Launching $DAEMON_BIN" >> "$LOGFILE"
+    # FIX: abstract socket @omega_daemon_socket — pasar explícitamente para
+    # que coincida con OmegaEngineBridge.SOCKET_PRIMARY en Kotlin.
+    "$DAEMON_BIN" --socket "@omega_daemon_socket" >> "$LOGFILE" 2>&1 &
+    DAEMON_PID=$!
+
+    # Esperar 1s a que el daemon arranque y abra el socket abstracto
+    sleep 1
+
+    if kill -0 "$DAEMON_PID" 2>/dev/null; then
+        echo "[$(date)] Daemon PID=$DAEMON_PID activo — @omega_daemon_socket listo" >> "$LOGFILE"
+        setprop persist.ivanna.daemon_active 1
+    else
+        echo "[$(date)] ERROR: daemon terminó inmediatamente (código=$(wait $DAEMON_PID; echo $?))" >> "$LOGFILE"
+        setprop persist.ivanna.daemon_active 0
+        sleep 2
+        continue
+    fi
+
+    wait "$DAEMON_PID"
+    EXIT_CODE=$?
+    echo "[$(date)] Daemon PID=$DAEMON_PID terminó (código=$EXIT_CODE). Reiniciando en 2s..." >> "$LOGFILE"
+    setprop persist.ivanna.daemon_active 0
+    sleep 2
+done
