@@ -119,15 +119,24 @@ void testSustainedLoad() {
     engine.start();
 
     std::atomic<bool> stopFlag{false};
+    #ifdef IVANNA_CI_FAST
+    std::thread producer(producerThread, std::ref(engine), 700, std::ref(stopFlag));
+#else
     std::thread producer(producerThread, std::ref(engine), 3000, std::ref(stopFlag));
+#endif
 
     uint64_t lastSeenSeq = 0;
     uint64_t lastSeqValue = 0;
     int reads = 0, unhealthyReads = 0, seqRegressions = 0;
     const auto testStart = std::chrono::steady_clock::now();
 
+#ifdef IVANNA_CI_FAST
+    constexpr int kReadWindowMs = 900;
+#else
+    constexpr int kReadWindowMs = 3500;
+#endif
     while (std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::steady_clock::now() - testStart).count() < 3500) {
+               std::chrono::steady_clock::now() - testStart).count() < kReadWindowMs) {
         AdaptiveState st{};
         if (engine.adaptiveState.consumeIfNewer(st, lastSeenSeq)) {
             ++reads;
@@ -167,8 +176,13 @@ void testStartStopCycles() {
     std::printf("\n=== Ciclos start/stop repetidos (idempotencia, sin fugas de hilos) ===\n");
     AdaptiveDecisionEngine engine;
 
+#ifdef IVANNA_CI_FAST
+    constexpr int kCycles = 3;
+#else
+    constexpr int kCycles = 10;
+#endif
     bool allFast = true;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < kCycles; ++i) {
         engine.start();
         engine.start();  // doble start — debe ser no-op, no crear un segundo hilo
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -180,7 +194,7 @@ void testStartStopCycles() {
             std::chrono::steady_clock::now() - t0).count();
         if (ms >= 200) allFast = false;
     }
-    expect(allFast, "10 ciclos start/start/stop/stop consecutivos, cada stop() < 200ms (sin degradación acumulada)");
+    expect(allFast, "ciclos start/start/stop/stop consecutivos, cada stop() < 200ms (sin degradación acumulada)");
 }
 
 // Smoke test específico del bug de proceso: destruir una instancia que aún
