@@ -54,7 +54,7 @@ class IVANNAApplication : Application() {
 
     // FIX: expuesto como propiedad de instancia (no companion) para que
     // AudioSessionReceiver lo acceda via (context.applicationContext as IVANNAApplication)
-    val globalEffectManager = IvannaGlobalEffectManager()
+    val globalEffectManager = IvannaGlobalEffectManager(this)
 
     // Expuesto para que la UI o un futuro entry-point de STT puedan invocar
     // routing por comando/clasificación sin recrear el clasificador YAMNet.
