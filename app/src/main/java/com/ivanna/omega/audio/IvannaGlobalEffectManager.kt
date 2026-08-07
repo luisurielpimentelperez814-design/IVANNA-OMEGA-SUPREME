@@ -314,9 +314,17 @@ class IvannaGlobalEffectManager(
      * Devuelve el perfil activo actual (para que Iso226Calibrator pueda
      * hacer .copy(eqBands = ...) sin romper el preset activo).
      */
-        fun releaseAll() {
-        activeSessions.values.forEach { it.releaseAll() }
+    fun releaseAll() {
+        activeSessions.values.forEach {
+            releaseEffects(it)
+        }
+
         activeSessions.clear()
+
+        Log.i(
+            TAG,
+            "Todas las sesiones liberadas"
+        )
     }
 
     // ─────────────────────────────────────────────────────────────────────────
