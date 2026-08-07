@@ -1,4 +1,5 @@
 package com.ivanna.omega.core
+import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.audio.AudioStateManager
 
 import android.app.Application
