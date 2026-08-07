@@ -144,7 +144,7 @@ object ShmManager {
         } catch (_: Exception) { false }
     }
 
-}null
+    fun close() {
         initialized.set(false)
     }
 }
