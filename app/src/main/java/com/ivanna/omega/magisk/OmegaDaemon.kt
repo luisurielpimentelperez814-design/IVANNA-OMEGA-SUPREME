@@ -1,49 +1,108 @@
 package com.ivanna.omega.magisk
 
 import android.util.Log
-import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
- * IVANNA-OMEGA-SUPREME — OmegaDaemon JNI Bridge
+ * IVANNA-OMEGA-SUPREME — OmegaDaemon (facade compatible sobre puente socket).
  *
- * Ciclo de vida:
- *   OmegaDaemon.start()  → lanza process_audio_thread + socket_server_thread en C++
- *   OmegaDaemon.stop()   → join limpio de ambos hilos + libera SHM
+ * HISTORIA:
+ *   La versión anterior de este archivo declaraba 17 `external fun` (nativeStart,
+ *   nativeStop, nativeSetIntensity, nativeSetPFParams, nativeGetPFParams,
+ *   nativeSetPFDrive/Wet/Mix/Alpha/Beta/Gamma/Master/Freq/Resonance/Low/Mid/High/
+ *   Presence, nativeGetTemperature, nativeGetLatency) sin NINGUNA implementación
+ *   JNI en `app/src/main/cpp/` — 0 símbolos `..._OmegaDaemon_*` en la .so.
+ *   Cualquier acceso a la clase venenaba el arranque con UnsatisfiedLinkError.
  *
- * PF Engine (tanh drive → Biquad 4-band EQ → mix):
- *   setPFParams(...)  → bulk setter, un solo bump de coeff_version
- *   setPFDrive(...)   → individual (no recomputa coeficientes Biquad)
- *   setPFFreq(...)    → sí recomputa coeficientes (bump de versión)
- *   getPFParams()     → FloatArray[13] para sincronizar la UI
+ * DECISIÓN MAGISTRAL:
+ *   El PF Engine ya está cableado por otra vía que SÍ funciona en producción:
+ *   el daemon Magisk (`omega_daemon`) escuchando en `/dev/socket/ivanna_omega`
+ *   con protocolo de texto SET_PF_DRIVE/WET/.../MASTER y SET_INTENSITY, más el
+ *   contrato JSON `SET_PF_PARAMS` de `OmegaEngineBridge`. Ese puente es el
+ *   único que procesa audio system-wide (todo lo que suena en el dispositivo),
+ *   mientras el JNI in-process solo tocaría el audio de la app misma.
  *
- * Telemetría:
- *   getTemperature()  → °C desde /sys/class/power_supply/battery/temp
- *   getLatency()      → ms del último bloque procesado
+ *   Redirigimos todos los wrappers PF al puente socket real. Start/Stop pasan a
+ *   no-op seguros: el daemon lo lanza `service.sh` de Magisk en boot; la app
+ *   no lo arranca. `getTemperature/getLatency` se derivan del payload de
+ *   `MagiskBridge.getTelemetry()` cuando el daemon está vivo, con fallback 0f.
+ *
+ *   La API pública (fun/firma) NO cambia — cualquier caller (UI de PF Engine,
+ *   IVANNAApplication) sigue compilando y funcionando; internamente TODO viaja
+ *   por socket. Esto elimina los 17 símbolos fantasma sin regresión de UX.
  */
 object OmegaDaemon {
 
     private const val TAG = "OmegaDaemon"
-    private val loaded = NativeLibraryLoader.ensureLoaded()
 
-    val isLoaded: Boolean get() = loaded
+    // El "loaded" ahora refleja disponibilidad del PUENTE SOCKET real,
+    // no de una .so JNI que no existía. Es lo que la UI necesita saber:
+    // "¿puedo enviar setPFParams y esperar que algo suene distinto?".
+    val isLoaded: Boolean
+        get() = MagiskBridge.isDaemonRunning
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
-    fun start(): Boolean = if (loaded) nativeStart() else false
-    fun stop() { if (loaded) nativeStop() }
+    // No-op seguros. El daemon system-wide lo arranca Magisk en boot vía
+    // `service.sh`; la app nunca fue la responsable de lanzarlo en producción.
+    // Devolvemos true si el socket ya responde, para que IVANNAApplication
+    // logee correctamente el estado real en vez del "JNI ausente" viejo.
+    fun start(): Boolean {
+        val running = MagiskBridge.isDaemonRunning
+        if (running) Log.d(TAG, "daemon ya vivo (socket-managed por Magisk)")
+        return running
+    }
+
+    fun stop() {
+        // No matamos el daemon system-wide desde la app; otras superficies
+        // (visualizador, capture service) pueden estar usándolo. Es cosa de
+        // Magisk/`service.sh`. Mantenemos la firma para compatibilidad.
+    }
 
     // ── Control básico ────────────────────────────────────────────────────────
-    fun setProcessing(enabled: Boolean) { if (loaded) nativeSetProcessing(enabled) }
-    fun setIntensity(v: Float)          { if (loaded) nativeSetIntensity(v) }
+    fun setProcessing(enabled: Boolean) {
+        MagiskBridge.sendCommand("SET_BYPASS:${if (enabled) 0 else 1}")
+    }
+
+    fun setIntensity(v: Float) {
+        // Ruta JSON del OmegaEngineBridge (misma que usa el motor perceptual).
+        OmegaEngineBridge.setIntensity(v.coerceIn(0f, 1f))
+    }
 
     // ── Telemetría ────────────────────────────────────────────────────────────
-    fun getTemperature(): Float = if (loaded) nativeGetTemperature() else 0f
-    fun getLatency(): Float     = if (loaded) nativeGetLatency()     else 0f
+    // Se derivan del payload de texto que devuelve GET_TELEMETRY del daemon.
+    // Cache local para que la UI pueda leer a 10-30 Hz sin martillar el socket:
+    // cada llamada refresca a lo sumo cada 250 ms.
+    @Volatile private var lastTelemetryAtMs: Long = 0L
+    @Volatile private var lastTempC: Float = 0f
+    @Volatile private var lastLatencyMs: Float = 0f
 
-    // ── PF Engine — bulk setter (ruta preferida desde la UI) ─────────────────
+    fun getTemperature(): Float { refreshTelemetryIfStale(); return lastTempC }
+    fun getLatency(): Float     { refreshTelemetryIfStale(); return lastLatencyMs }
+
+    private fun refreshTelemetryIfStale() {
+        val now = System.currentTimeMillis()
+        if (now - lastTelemetryAtMs < 250L) return
+        val raw = runCatching { MagiskBridge.getTelemetry() }.getOrNull().orEmpty()
+        if (raw.isNotBlank()) {
+            lastTempC     = parseField(raw, "temp")    ?: lastTempC
+            lastLatencyMs = parseField(raw, "latency") ?: lastLatencyMs
+        }
+        lastTelemetryAtMs = now
+    }
+
+    private fun parseField(raw: String, key: String): Float? {
+        // Acepta "temp=41.2", "temp:41.2", "\"temp\":41.2" — cualquiera de
+        // los formatos que ha usado el daemon; regex tolerante.
+        val re = Regex("""(?:"?${Regex.escape(key)}"?\s*[:=]\s*)(-?\d+(?:\.\d+)?)""",
+                       RegexOption.IGNORE_CASE)
+        return re.find(raw)?.groupValues?.get(1)?.toFloatOrNull()
+    }
+
+    // ── PF Engine — bulk setter ──────────────────────────────────────────────
     /**
-     * Aplica los 13 parámetros del PF Engine en una sola llamada JNI.
-     * El daemon hace un único bump de pf_param_version → recomputación Biquad
-     * en el siguiente bloque de audio.
+     * Aplica los 13 parámetros del PF Engine en una sola llamada. Prefiere la
+     * ruta JSON (OmegaEngineBridge.setPFParams) porque el daemon la resuelve
+     * con un único bump de coeff_version. Si esa capa está caída, cae al
+     * fanout individual por comandos SET_PF_* (MagiskBridge).
      */
     fun setPFParams(
         drive: Float, wet: Float, mix: Float,
@@ -52,63 +111,55 @@ object OmegaDaemon {
         low: Float, mid: Float, high: Float,
         presence: Float, master: Float
     ) {
-        if (!loaded) return
-        nativeSetPFParams(drive, wet, mix, alpha, beta, gamma, freq, resonance,
-                          low, mid, high, presence, master)
+        val ok = runCatching {
+            OmegaEngineBridge.setPFParams(
+                drive, wet, mix, alpha, beta, gamma,
+                freq, resonance, low, mid, high, presence, master
+            )
+        }.getOrElse { false }
+        if (!ok) {
+            // Fanout individual — funciona incluso si el daemon no acepta el
+            // JSON compuesto (versiones viejas del omega_daemon).
+            MagiskBridge.setDrive(drive)
+            MagiskBridge.setWet(wet)
+            MagiskBridge.setMix(mix)
+            MagiskBridge.setAlpha(alpha)
+            MagiskBridge.setBeta(beta)
+            MagiskBridge.setGamma(gamma)
+            MagiskBridge.setFreq(freq)
+            MagiskBridge.setResonance(resonance)
+            MagiskBridge.setLow(low)
+            MagiskBridge.setMid(mid)
+            MagiskBridge.setHigh(high)
+            MagiskBridge.setPresence(presence)
+            MagiskBridge.setMaster(master)
+        }
     }
 
     /**
-     * Devuelve FloatArray[13]:
-     * [drive, wet, mix, alpha, beta, gamma, freq, resonance, low, mid, high, presence, master]
+     * Devuelve FloatArray[13] con el estado local (lo último que enviamos).
+     * El daemon no expone hoy un GET_PF_PARAMS canónico por socket; el path
+     * JNI viejo era el que teóricamente lo hacía y nunca existió.
+     *
+     * Devolvemos el snapshot local — es lo que la UI necesita para sincronizar
+     * sus sliders tras rotación / navegación (no hace round-trip al daemon).
      */
-    fun getPFParams(): FloatArray = if (loaded) nativeGetPFParams() else FloatArray(13)
+    fun getPFParams(): FloatArray = pfSnapshot.copyOf()
+
+    private val pfSnapshot = FloatArray(13)  // [drive, wet, mix, alpha, beta, gamma, freq, resonance, low, mid, high, presence, master]
 
     // ── PF Engine — setters individuales ─────────────────────────────────────
-    // Sin recomputación de Biquad (solo escalares en el hot-path)
-    fun setPFDrive(v: Float)   { if (loaded) nativeSetPFDrive(v) }
-    fun setPFWet(v: Float)     { if (loaded) nativeSetPFWet(v) }
-    fun setPFMix(v: Float)     { if (loaded) nativeSetPFMix(v) }
-    fun setPFAlpha(v: Float)   { if (loaded) nativeSetPFAlpha(v) }
-    fun setPFBeta(v: Float)    { if (loaded) nativeSetPFBeta(v) }
-    fun setPFGamma(v: Float)   { if (loaded) nativeSetPFGamma(v) }
-    fun setPFMaster(v: Float)  { if (loaded) nativeSetPFMaster(v) }
-
-    // Con recomputación de coeficientes Biquad (bump de pf_param_version)
-    fun setPFFreq(v: Float)      { if (loaded) nativeSetPFFreq(v) }
-    fun setPFResonance(v: Float) { if (loaded) nativeSetPFResonance(v) }
-    fun setPFLow(v: Float)       { if (loaded) nativeSetPFLow(v) }
-    fun setPFMid(v: Float)       { if (loaded) nativeSetPFMid(v) }
-    fun setPFHigh(v: Float)      { if (loaded) nativeSetPFHigh(v) }
-    fun setPFPresence(v: Float)  { if (loaded) nativeSetPFPresence(v) }
-
-    // ── Declaraciones JNI ─────────────────────────────────────────────────────
-    private external fun nativeStart(): Boolean
-    private external fun nativeStop()
-    private external fun nativeSetProcessing(v: Boolean)
-    private external fun nativeSetIntensity(v: Float)
-    private external fun nativeGetTemperature(): Float
-    private external fun nativeGetLatency(): Float
-
-    private external fun nativeSetPFParams(
-        drive: Float, wet: Float, mix: Float,
-        alpha: Float, beta: Float, gamma: Float,
-        freq: Float, resonance: Float,
-        low: Float, mid: Float, high: Float,
-        presence: Float, master: Float
-    )
-    private external fun nativeGetPFParams(): FloatArray
-
-    private external fun nativeSetPFDrive(v: Float)
-    private external fun nativeSetPFWet(v: Float)
-    private external fun nativeSetPFMix(v: Float)
-    private external fun nativeSetPFAlpha(v: Float)
-    private external fun nativeSetPFBeta(v: Float)
-    private external fun nativeSetPFGamma(v: Float)
-    private external fun nativeSetPFMaster(v: Float)
-    private external fun nativeSetPFFreq(v: Float)
-    private external fun nativeSetPFResonance(v: Float)
-    private external fun nativeSetPFLow(v: Float)
-    private external fun nativeSetPFMid(v: Float)
-    private external fun nativeSetPFHigh(v: Float)
-    private external fun nativeSetPFPresence(v: Float)
+    fun setPFDrive(v: Float)     { pfSnapshot[0]  = v; MagiskBridge.setDrive(v) }
+    fun setPFWet(v: Float)       { pfSnapshot[1]  = v; MagiskBridge.setWet(v) }
+    fun setPFMix(v: Float)       { pfSnapshot[2]  = v; MagiskBridge.setMix(v) }
+    fun setPFAlpha(v: Float)     { pfSnapshot[3]  = v; MagiskBridge.setAlpha(v) }
+    fun setPFBeta(v: Float)      { pfSnapshot[4]  = v; MagiskBridge.setBeta(v) }
+    fun setPFGamma(v: Float)     { pfSnapshot[5]  = v; MagiskBridge.setGamma(v) }
+    fun setPFFreq(v: Float)      { pfSnapshot[6]  = v; MagiskBridge.setFreq(v) }
+    fun setPFResonance(v: Float) { pfSnapshot[7]  = v; MagiskBridge.setResonance(v) }
+    fun setPFLow(v: Float)       { pfSnapshot[8]  = v; MagiskBridge.setLow(v) }
+    fun setPFMid(v: Float)       { pfSnapshot[9]  = v; MagiskBridge.setMid(v) }
+    fun setPFHigh(v: Float)      { pfSnapshot[10] = v; MagiskBridge.setHigh(v) }
+    fun setPFPresence(v: Float)  { pfSnapshot[11] = v; MagiskBridge.setPresence(v) }
+    fun setPFMaster(v: Float)    { pfSnapshot[12] = v; MagiskBridge.setMaster(v) }
 }
