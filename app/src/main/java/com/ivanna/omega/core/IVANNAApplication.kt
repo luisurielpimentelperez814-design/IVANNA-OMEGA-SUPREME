@@ -96,6 +96,15 @@ class IVANNAApplication : Application() {
         com.ivanna.omega.spatial.SaFOptimizer.init(this)
         com.ivanna.omega.spatial.IvannaSpatialManager.init(this)
 
+        // FIX: restaurar calibración ISO 226 al arrancar.
+        // Sin esto la curva de compensación perceptual (equal-loudness)
+        // se perdía en cada reinicio — los efectos globales de Spotify/YouTube
+        // volvían a flat aunque el usuario ya hubiera calibrado su escucha.
+        runCatching {
+            val restored = Iso226Calibrator.restoreIfSaved(this, globalEffectManager)
+            Log.d(TAG, if (restored) "✅ ISO 226 restaurado" else "⚪ ISO 226 sin calibración previa")
+        }.onFailure { Log.w(TAG, "ISO 226 restore falló (no crítico): ${it.message}") }
+
         // FIX (controles Android 13+): registrar AudioSessionReceiver dinámicamente
         // con RECEIVER_NOT_EXPORTED ademas del Manifest, ya que en API33+
         // el sistema puede no enviar broadcasts implícitos a receivers solo de Manifest.
