@@ -57,7 +57,15 @@ class IVANNAApplication : Application() {
     // AudioSessionReceiver lo acceda via (context.applicationContext as IVANNAApplication)
     val globalEffectManager = IvannaGlobalEffectManager(this)
 
-    private val paramStore by lazy { com.ivanna.omega.audio.ParameterStore(this) }
+    // FIX (build, log CI 84498918857): había DOS declaraciones de paramStore
+    // en conflicto — la lateinit de la línea 34 (core.ParameterStore, mismo
+    // paquete, inicializada en onCreate:77) y esta lazy delegada a
+    // audio.ParameterStore. Kotlin no permite dos miembros con el mismo
+    // nombre → 'Conflicting declarations'. Los únicos usos reales de
+    // paramStore (líneas 235-237: loadIso226Calibrated/ListenPhon/RefPhon)
+    // existen SOLO en core.ParameterStore (verificado: audio.ParameterStore
+    // solo tiene saveParameters/loadParameters). Se conserva la lateinit
+    // de core y se elimina esta duplicada.
 
     // ── Cerebro perceptual — singleton de aplicación ──────────────────────
     // PerceptualCortex procesa PCM → ISO 226 → Bark → EQ → DSP en tiempo real
