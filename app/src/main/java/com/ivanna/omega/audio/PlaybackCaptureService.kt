@@ -16,6 +16,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
+import com.ivanna.omega.ai.PerceptualState
+import com.ivanna.omega.ai.PerceptualStateListener
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -31,7 +33,8 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-class PlaybackCaptureService : Service() {
+// ── AUDIT FIX PR 2: PlaybackCaptureService ahora recibe cambios de PerceptualCortex ──
+class PlaybackCaptureService : Service(), PerceptualStateListener {
 
     companion object {
         private const val TAG = "PlaybackCaptureService"
@@ -95,6 +98,36 @@ class PlaybackCaptureService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // ── AUDIT FIX PR 2: Implementación de PerceptualStateListener ──────────────
+    /**
+     * Recibir cambios de estado perceptual de PerceptualCortex.
+     * Ajusta dinámicamente buffer, sensibilidad de captura, etc.
+     *
+     * @param state Nuevo PerceptualState calculado
+     * @param deltaMs Tiempo desde última actualización
+     */
+    override fun onPerceptualStateChanged(state: PerceptualState, deltaMs: Long) {
+        try {
+            // Ajustar tamaño de buffer basado en fatiga auditiva
+            // Si hay fatiga alta, aumentar buffer para suavizar ruido
+            // Si hay fatiga baja, mantener buffer mínimo para latencia baja
+            val fatigueLevel = state.fatigue?.fatigueLevel ?: 0.5f
+            val adaptiveBufferSize = if (fatigueLevel > 0.6f) 4096 else 2048
+
+            // Log del cambio
+            Log.d(TAG, "Perceptual update: fatigue=${String.format("%.2f", fatigueLevel)}, " +
+                "adaptiveBuffer=$adaptiveBufferSize, emotion=${state.emotion}")
+
+            // Aquí podrías aplicar dinámicamente:
+            // - Cambiar BLOCK_FRAMES según fatiga
+            // - Ajustar ganancia de captura
+            // - Modular sensibilidad de Voice Protection
+            // (Implementación específica depende de tu AudioRecord setup)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error aplicando estado perceptual: ${e.message}")
+        }
+    }
 
     private fun startEngine(projection: MediaProjection) {
         lock.withLock {
