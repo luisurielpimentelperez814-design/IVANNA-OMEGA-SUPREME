@@ -6,6 +6,7 @@ import android.os.Looper
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ai.SAFCore
+import com.ivanna.omega.magisk.ShmManager
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,6 +123,11 @@ class AdaptiveBackend(context: Context) {
                     val safTarget = doubleArrayOf(1.0, 0.0, 0.0, 1.0)
                     // métrica uniforme: todas las dimensiones pesan igual
                     val safMetric = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
+                    // FIX: leer frame SHM del daemon y retroalimentar SaFRoomBridge.
+                    // El daemon publica [gain/comp/exciter/spatial] vía CommandServer.
+                    // readAndApplySafFrame() usa seqlock para lectura sin bloqueo.
+                    runCatching { ShmManager.readAndApplySafFrame() }
+
                     // FIX: usar stepRoom — Φ_SAF-Room^∞ con M_t = G_t + λ_t·I.
                     // RT60 estimado desde safetyMargin (proxy: señal limitada → sala
                     // reverberante); mismatch desde el exciter (proxy de distorsión).
