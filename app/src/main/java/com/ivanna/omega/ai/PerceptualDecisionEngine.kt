@@ -2,6 +2,7 @@ package com.ivanna.omega.ai
 import com.ivanna.omega.ai.SAFCore
 
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.saf.SaFRoomBridge
 // coerceIn is stdlib — no import needed
 
 class PerceptualDecisionEngine {
@@ -64,26 +65,26 @@ class PerceptualDecisionEngine {
         )
     }
 
-    fun dispatchDecision(decision: DSPDecision) {
-        val safState = SAFCore.update(
-            doubleArrayOf(
+    fun dispatchDecision(decision: DSPDecision, rt60: Float = 0.3f) {
+        // FIX: usar SAFCore.stepRoom() — Φ_SAF-Room^∞ con M_t = G_t + λ_t·I.
+        // dispatchDecision usaba SAFCore.update() directamente (sin acoplamiento
+        // de sala). Ahora M_t se regula según rt60 (T60 de la sala), hMismatch
+        // (exciterReduction proxea distorsión HRTF) y diffuseness (spatialWidth).
+        val hMismatch   = decision.exciterReduction.coerceIn(0f, 1f)
+        val diffuseness = ((decision.spatialWidth - 0.5f) / 1.5f).coerceIn(0f, 1f)
+
+        val (safState, alphaRoom) = SAFCore.stepRoom(
+            current = doubleArrayOf(
                 decision.compressorAmount.toDouble(),
                 decision.exciterReduction.toDouble(),
                 decision.eqHighCut.toDouble(),
                 decision.spatialWidth.toDouble()
             ),
-            doubleArrayOf(
-                0.5,
-                0.0,
-                16000.0,
-                1.0
-            ),
-            doubleArrayOf(
-                1.0,
-                1.0,
-                1.0,
-                1.0
-            )
+            target = doubleArrayOf(0.5, 0.0, 16000.0, 1.0),
+            metric = doubleArrayOf(1.0, 1.0, 1.0, 1.0),
+            rt60        = rt60,
+            hMismatch   = hMismatch,
+            diffuseness = diffuseness
         )
 
         val safTelemetry = SAFCore.getState()
@@ -92,17 +93,25 @@ class PerceptualDecisionEngine {
             safTelemetry[0].toFloat(),
             safTelemetry[1].toFloat(),
             safTelemetry[2].toFloat(),
-            safTelemetry[3].toFloat()
+            // gain modulado por α*(R,H,S) — conservador en sala incierta
+            (safTelemetry[3] * alphaRoom.coerceIn(0f, 1f)).toFloat()
         )
 
         OmegaEngineBridge.sendPerceptualState(
-            compressor = safState[0].toFloat(),
-            exciterRed = safState[1].toFloat(),
-            highCut = safState[2].toFloat(),
-            spatialWidth = safState[3].toFloat(),
+            compressor     = safState[0].toFloat(),
+            exciterRed     = safState[1].toFloat(),
+            highCut        = safState[2].toFloat(),
+            spatialWidth   = safState[3].toFloat(),
             loudnessTarget = decision.loudnessTarget,
-            harmonicGain = decision.harmonicGain,
-            antiDolby = decision.antiDolbyIntensity
+            harmonicGain   = decision.harmonicGain,
+            antiDolby      = decision.antiDolbyIntensity
         )
+
+        // Actualizar SaFRoomBridge con el resultado de la decisión perceptual
+        runCatching {
+            SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
+            SaFRoomBridge.setHrtfState(mismatchEnergy = hMismatch)
+            SaFRoomBridge.setSoundFieldState(diffuseness = diffuseness)
+        }
     }
 }
