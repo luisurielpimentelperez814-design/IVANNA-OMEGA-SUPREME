@@ -15,11 +15,20 @@ import android.util.Log
  *
  * DECISIÓN MAGISTRAL:
  *   El PF Engine ya está cableado por otra vía que SÍ funciona en producción:
- *   el daemon Magisk (`omega_daemon`) escuchando en `/dev/socket/ivanna_omega`
- *   con protocolo de texto SET_PF_DRIVE/WET/.../MASTER y SET_INTENSITY, más el
- *   contrato JSON `SET_PF_PARAMS` de `OmegaEngineBridge`. Ese puente es el
- *   único que procesa audio system-wide (todo lo que suena en el dispositivo),
+ *   el daemon Magisk (`ivanna_daemon`) escuchando en el abstract namespace
+ *   `@omega_daemon_socket` (ver app/src/main/cpp/daemon/ivanna_daemon.cpp:36
+ *   y magisk_module/service.sh:36) con protocolo de texto
+ *   SET_PF_DRIVE/WET/.../MASTER y SET_INTENSITY, más el contrato JSON
+ *   `SET_PF_PARAMS` de `OmegaEngineBridge`. Ese puente es el único que
+ *   procesa audio system-wide (todo lo que suena en el dispositivo),
  *   mientras el JNI in-process solo tocaría el audio de la app misma.
+ *
+ *   NOTA: la versión previa de este comentario decía "omega_daemon escuchando
+ *   en /dev/socket/ivanna_omega". Esa descripción era obsoleta desde la
+ *   migración a abstract namespace — el binario se renombró a ivanna_daemon
+ *   y el socket dejó de vivir en el filesystem. El puente Kotlin real
+ *   (MagiskBridge/OmegaEngineBridge) siempre usó Namespace.ABSTRACT; solo
+ *   el docstring quedó desactualizado.
  *
  *   Redirigimos todos los wrappers PF al puente socket real. Start/Stop pasan a
  *   no-op seguros: el daemon lo lanza `service.sh` de Magisk en boot; la app
