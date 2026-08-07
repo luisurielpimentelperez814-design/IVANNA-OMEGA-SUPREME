@@ -222,7 +222,7 @@ object Iso226Calibrator {
     fun describe(): String = if (!isCalibrated) "No calibrado"
     else "${listenPhon.toInt()}→${refPhon.toInt()} Phon | " +
             EQ_BAND_FREQS.zip(lastGainsDsp.toList())
-                .joinToString(" ") { (f, g) -> "${if (f >= 1
+                .joinToString(" ") { (f, g) -> "${if (f >= 1000) "${(f/1000).toInt()}k" else "${f.toInt()}"}:${"%+.1f".format(g)}" }
 
     // ── Persistencia de calibración ISO 226 ──────────────────────────────────
     private const val PREFS_NAME   = "ivanna_iso226"
@@ -265,5 +265,4 @@ object Iso226Calibrator {
         return result.anyApplied
     }
 
-}0) "${(f/1000).toInt()}k" else "${f.toInt()}"}:${"%+.1f".format(g)}" }
 }
