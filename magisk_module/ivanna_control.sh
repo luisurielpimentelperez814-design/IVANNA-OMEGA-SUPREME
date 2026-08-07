@@ -1,38 +1,76 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME — ivanna_control.sh v1.1 (PATCH)
-# - Chequeo previo de nc (evita crash si no está)
-# - Timeout duro con kill; fallback setprop siempre disponible
+# IVANNA OMEGA SUPREME — ivanna_control.sh v2.0 (FIX cableado socket)
+#
+# CAMBIO CLAVE respecto v1.1:
+#   v1.1 usaba SOCKET=/dev/socket/ivanna_omega — una ruta del filesystem
+#   que NUNCA existe: ivanna_daemon publica en abstract namespace
+#   (@omega_daemon_socket, ver app/src/main/cpp/daemon/ivanna_daemon.cpp:36
+#   y service.sh:36 "--socket @omega_daemon_socket"). Consecuencia:
+#   TODO comando caía en el primer `[ -e $SOCKET ]` y terminaba en el
+#   fallback setprop ivanna.pending_cmd que ningún consumidor lee →
+#   ningún comando llegaba al daemon.
+#
+#   v2.0:
+#     - Probe real via /proc/net/unix (tabla de sockets del kernel).
+#       Ahí sí aparece el abstract socket como "@omega_daemon_socket".
+#     - Send via `nc -U` en abstract SI busybox nc lo soporta; se
+#       detecta por probe corto contra el propio socket. Si nc no soporta
+#       abstract o no existe, se marca claramente "no_transport" en vez
+#       de fingir OK con setprop fantasma.
+#     - Sin dependencia de `su`.
 
-SOCKET=/dev/socket/ivanna_omega
+SOCKET_NAME="omega_daemon_socket"        # sin @, para grep en /proc/net/unix
+SOCKET_ABS="@${SOCKET_NAME}"             # forma que acepta nc -U compatible
 TIMEOUT=2
 LOG=/data/adb/ivanna_control.log
 log() { echo "[$(date '+%H:%M:%S')] ctrl: $1" >> "$LOG" 2>/dev/null; }
 
+# Devuelve 0 si el socket abstract está listo (kernel lo tiene bindeado).
+# Lee /proc/net/unix; los abstract aparecen con prefijo "@" en la
+# columna Path.
+socket_alive() {
+    [ -r /proc/net/unix ] || return 1
+    grep -q " @${SOCKET_NAME}$" /proc/net/unix 2>/dev/null
+}
+
 have_nc() { command -v nc >/dev/null 2>&1; }
+
+# Detecta si el nc disponible soporta AF_UNIX abstract. Toybox nc y el
+# busybox nc antiguo NO. Se hace un probe rápido con timeout duro para
+# no colgar el CLI si falla.
+nc_supports_abstract() {
+    have_nc || return 1
+    # -U es AF_UNIX; -N cierra en EOF (busybox moderno). Se prueba sobre
+    # el socket real ya conocido vivo; si nc no acepta el argumento
+    # abstract, timeout expira o retorna != 0 inmediato.
+    timeout 1 sh -c "echo PING | nc -U '$SOCKET_ABS'" >/dev/null 2>&1
+}
 
 send_command() {
     CMD="$1"
-    if [ ! -e "$SOCKET" ]; then
-        log "ERROR: socket $SOCKET no existe — daemon no activo"
-        setprop ivanna.pending_cmd "$CMD"
-        echo "queued (no socket)"
+
+    if ! socket_alive; then
+        log "ERROR: @$SOCKET_NAME no publicado — daemon no arrancó (ver service.sh log)"
+        echo "no_daemon"
         return 1
     fi
-    if ! have_nc; then
-        log "AVISO: nc no disponible — usando setprop fallback"
-        setprop ivanna.pending_cmd "$CMD"
-        echo "queued (no nc)"
-        return 0
+
+    if ! nc_supports_abstract; then
+        log "AVISO: nc no soporta AF_UNIX abstract en este device — CLI shell no puede escribir. Use la app o adb-forward + LocalSocket."
+        echo "no_transport"
+        return 2
     fi
-    RESP=$(echo "$CMD" | timeout "$TIMEOUT" nc -U "$SOCKET" 2>/dev/null)
+
+    RESP=$(echo "$CMD" | timeout "$TIMEOUT" nc -U "$SOCKET_ABS" 2>/dev/null)
     RC=$?
     if [ $RC -eq 0 ] && [ -n "$RESP" ]; then
         log "CMD=$CMD → RESP=$RESP"
         echo "$RESP"
+        return 0
     else
-        setprop ivanna.pending_cmd "$CMD"
-        log "CMD=$CMD → setprop fallback (rc=$RC)"
-        echo "OK (queued)"
+        log "CMD=$CMD → sin respuesta (rc=$RC)"
+        echo "no_response"
+        return 3
     fi
 }
 
@@ -49,16 +87,21 @@ case "$COMMAND" in
                 esac ;;
     telemetry)  send_command "GET_TELEMETRY" ;;
     reload)     send_command "RELOAD_PARAMS" ;;
-    probe)      # Ping barato — devuelve "alive" solo si daemon responde
-                if [ -e "$SOCKET" ] && have_nc; then
-                    R=$(echo "PING" | timeout 1 nc -U "$SOCKET" 2>/dev/null)
-                    [ -n "$R" ] && echo "alive" || echo "socket_open_no_response"
+    probe)      # Estado del transport, sin efecto lateral
+                if socket_alive; then
+                    if nc_supports_abstract; then
+                        R=$(echo "PING" | timeout 1 nc -U "$SOCKET_ABS" 2>/dev/null)
+                        [ -n "$R" ] && echo "alive" || echo "socket_open_no_response"
+                    else
+                        echo "socket_open_no_nc"
+                    fi
                 else
                     echo "no_daemon"
                 fi ;;
     *)
-        cat <<EOF
-IVANNA OMEGA SUPREME — Control CLI v1.1
+        cat <<HELP
+IVANNA OMEGA SUPREME — Control CLI v2.0
+Socket: @${SOCKET_NAME} (abstract namespace)
 Uso:
   $0 status               Estado del daemon
   $0 preset <nombre>      Flat|Warm|Bright|Punch|Spatial|Heavy|Vocal|Bass
@@ -67,7 +110,7 @@ Uso:
   $0 concert on|off       Modo Concierto (Spatial + reverb)
   $0 telemetry            Métricas
   $0 reload               Releer parámetros
-  $0 probe                Ping daemon (alive|no_daemon)
-EOF
+  $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)
+HELP
         exit 0 ;;
 esac
