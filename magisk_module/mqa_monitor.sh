@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME — mqa_monitor.sh v1.2 (PATCH)
+# IVANNA OMEGA SUPREME — mqa_monitor.sh v1.3 (FIX cableado socket)
 # - No arranca si el daemon no está vivo (evita loop inútil)
 # - dumpsys opcional; sale limpio si no está
 
@@ -26,18 +26,32 @@ log() { echo "[$(date '+%H:%M:%S')] mqa: $1" >> "$LOG" 2>/dev/null; }
 command -v dumpsys >/dev/null 2>&1 || { log "dumpsys ausente — saliendo"; exit 1; }
 [ "$DRY_RUN" -eq 0 ] && [ "$SELFTEST" -eq 0 ] && [ ! -x "$CONTROL" ] && { log "ctrl no ejecutable — saliendo"; exit 1; }
 
-# Espera daemon vivo hasta 30s; si nunca aparece, no arranca loop
+# Espera daemon vivo hasta 30s; si nunca aparece, no arranca loop.
+# FIX v1.3: el gate anterior probaba [ -e /dev/socket/ivanna_omega ] —
+# un path del filesystem que NUNCA existe porque ivanna_daemon publica
+# en abstract namespace (@omega_daemon_socket, ver ivanna_daemon.cpp:36
+# y service.sh:36). Consecuencia: mqa_monitor.sh SIEMPRE salía tras 30s
+# con "modo app-only" aunque el daemon estuviera perfectamente vivo, y
+# la selección automática de preset por app (Tidal/Spotify/YouTube/juegos)
+# NUNCA se ejecutaba. Sustituido por probe real vía /proc/net/unix,
+# igual que ivanna_control.sh v2.0.
+DAEMON_SOCKET_NAME="omega_daemon_socket"
+socket_alive() {
+    [ -r /proc/net/unix ] || return 1
+    grep -q " @${DAEMON_SOCKET_NAME}$" /proc/net/unix 2>/dev/null
+}
 if [ "$SELFTEST" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
     tries=0
     while [ $tries -lt 15 ]; do
-        [ -e /dev/socket/ivanna_omega ] && break
+        socket_alive && break
         sleep 2
         tries=$((tries+1))
     done
-    if [ ! -e /dev/socket/ivanna_omega ]; then
-        log "socket nunca apareció — modo app-only, saliendo"
+    if ! socket_alive; then
+        log "@$DAEMON_SOCKET_NAME nunca apareció — modo app-only, saliendo"
         exit 0
     fi
+    log "@$DAEMON_SOCKET_NAME detectado — arrancando loop de auto-preset"
 fi
 
 send_preset() {
