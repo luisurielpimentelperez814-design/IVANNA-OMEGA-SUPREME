@@ -1,5 +1,7 @@
 package com.ivanna.omega.ai
 
+import android.util.Log
+
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -31,6 +33,7 @@ import kotlin.math.min
  */
 class PerceptualCortex {
 
+    private val decisionEngine = PerceptualDecisionEngine()
     private val psychoacousticAnalyzer =
         PsychoacousticAnalyzer()
 
@@ -159,7 +162,7 @@ class PerceptualCortex {
 
 
 
-        return DSPPerceptualControl(
+        val ctrl = DSPPerceptualControl(
 
             gain =
                 (1f - protection * 0.2f)
@@ -177,6 +180,36 @@ class PerceptualCortex {
                 (0.5f + abs(brightness) * 0.2f)
                     .coerceIn(0f,1f)
         )
+
+        // FIX: PerceptualCortex calculaba DSPPerceptualControl pero nunca
+        // lo entregaba a PerceptualDecisionEngine. El loop perceptual estaba
+        // abierto — PDE.evaluate() y PDE.dispatchDecision() nunca corrían
+        // desde el proceso de audio, solo desde PerceptualBrainEngine (10Hz).
+        //
+        // Ahora PerceptualCortex cierra el loop: convierte DSPPerceptualControl
+        // en un PerceptualSnapshot y lo entrega a PDE en el mismo bloque PCM.
+        // Esto da latencia de decisión < 10ms (un bloque de audio) en vez de
+        // 100ms (el timer de PerceptualBrainEngine).
+        runCatching {
+            val snapshot = PerceptualSnapshot(
+                fatigue              = lastFatigue?.fatigueScore   ?: 0f,
+                immersion            = ctrl.spatial,
+                iso226LoudnessDb     = analysis.loudnessDb,
+                maskingEfficiency    = analysis.maskingEfficiency,
+                dynamicRangeDb       = analysis.dynamicRangeDb,
+                convNextConfidence   = analysis.confidence,
+                emotion              = when (lastEmotion) {
+                    EmotionalState.EXCITED -> 1.0f
+                    EmotionalState.CALM    -> 0.3f
+                    EmotionalState.TENSE   -> 0.7f
+                    else                   -> 0.5f
+                }
+            )
+            val decision = decisionEngine.evaluate(snapshot)
+            decisionEngine.dispatchDecision(decision)
+        }.onFailure { Log.w("PerceptualCortex", "dispatch error: ${it.message}") }
+
+        return ctrl
     }
 
 
@@ -216,4 +249,15 @@ data class PerceptualState(
 
     val dsp:
         DSPPerceptualControl
+)
+
+
+data class PerceptualSnapshot(
+    val fatigue:            Float,
+    val immersion:          Float,
+    val iso226LoudnessDb:   Float,
+    val maskingEfficiency:  Float,
+    val dynamicRangeDb:     Float,
+    val convNextConfidence: Float,
+    val emotion:            Float
 )
