@@ -191,18 +191,45 @@ class PerceptualCortex {
         // Esto da latencia de decisión < 10ms (un bloque de audio) en vez de
         // 100ms (el timer de PerceptualBrainEngine).
         runCatching {
+            // FIX (build, log CI 84498918857): el bloque original referenciaba
+            // miembros inexistentes — verificado contra las declaraciones reales:
+            //   lastFatigue.fatigueScore → HearingFatigueState solo expone
+            //     cumulativeSessionFatigueScore (PerceptualBrainCortex.kt:23)
+            //   analysis.loudnessDb → el campo real es loudnessLUFS
+            //   analysis.maskingEfficiency / analysis.confidence → NO existen en
+            //     PsychoacousticAnalysis (PerceptualBrainCortex.kt:14); la
+            //     eficiencia de enmascaramiento se deriva honestamente como la
+            //     fracción de bandas Bark cuya energía supera su umbral de
+            //     enmascaramiento, y convNextConfidence queda en 0f (este path
+            //     no corre el clasificador TinyML — 0 = "sin dato", no mentira)
+            //   EmotionalState.EXCITED/TENSE → el enum real es
+            //     CALM/EUPHORIA/FOCUS/ENERGETIC/NEUTRAL/INTIMATE
+            //   Además la data class local PerceptualSnapshot (línea ~255) se
+            //   elimina: duplicaba la de PerceptualBrainEngine.kt:64 (mismo
+            //   paquete). La rica tiene defaults en todos los campos, así que
+            //   basta pasar los named args que este path realmente conoce.
+            val maskedBands = run {
+                var above = 0
+                val n = minOf(analysis.barkSpectrum.size, analysis.maskingThresholds.size)
+                for (b in 0 until n) {
+                    if (analysis.barkSpectrum[b] > analysis.maskingThresholds[b]) above++
+                }
+                if (n > 0) above.toFloat() / n.toFloat() else 0f
+            }
             val snapshot = PerceptualSnapshot(
-                fatigue              = lastFatigue?.fatigueScore   ?: 0f,
+                fatigue              = lastFatigue?.cumulativeSessionFatigueScore ?: 0f,
                 immersion            = ctrl.spatial,
-                iso226LoudnessDb     = analysis.loudnessDb,
-                maskingEfficiency    = analysis.maskingEfficiency,
+                iso226LoudnessDb     = analysis.loudnessLUFS,
+                maskingEfficiency    = maskedBands,
                 dynamicRangeDb       = analysis.dynamicRangeDb,
-                convNextConfidence   = analysis.confidence,
+                convNextConfidence   = 0f,
                 emotion              = when (lastEmotion) {
-                    EmotionalState.EXCITED -> 1.0f
-                    EmotionalState.CALM    -> 0.3f
-                    EmotionalState.TENSE   -> 0.7f
-                    else                   -> 0.5f
+                    EmotionalState.EUPHORIA  -> 1.0f
+                    EmotionalState.ENERGETIC -> 0.85f
+                    EmotionalState.FOCUS     -> 0.7f
+                    EmotionalState.NEUTRAL   -> 0.5f
+                    EmotionalState.INTIMATE  -> 0.4f
+                    EmotionalState.CALM      -> 0.3f
                 }
             )
             val decision = decisionEngine.evaluate(snapshot)
@@ -252,12 +279,5 @@ data class PerceptualState(
 )
 
 
-data class PerceptualSnapshot(
-    val fatigue:            Float,
-    val immersion:          Float,
-    val iso226LoudnessDb:   Float,
-    val maskingEfficiency:  Float,
-    val dynamicRangeDb:     Float,
-    val convNextConfidence: Float,
-    val emotion:            Float
-)
+// (PerceptualSnapshot local eliminada — duplicaba la de PerceptualBrainEngine.kt:64;
+//  mismo paquete com.ivanna.omega.ai → Redeclaration. Ver fix arriba.)
