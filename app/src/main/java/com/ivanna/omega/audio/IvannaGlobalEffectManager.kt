@@ -177,6 +177,17 @@ class IvannaGlobalEffectManager(
         val loudness:          LoudnessEnhancer?,
         val dynamics:          DynamicsProcessing?
     )
+
+
+    private fun releaseEffects(
+        fx: SessionEffects
+    ) {
+        runCatching { fx.equalizer?.release() }
+        runCatching { fx.bassBoost?.release() }
+        runCatching { fx.virtualizer?.release() }
+        runCatching { fx.loudness?.release() }
+        runCatching { fx.dynamics?.release() }
+    }
     
     // ── ISO 226 Calibración ──────────────────────────────────────────────────
 
@@ -220,7 +231,7 @@ class IvannaGlobalEffectManager(
         if (audioSession <= 0) return
         if (activeSessions.containsKey(audioSession)) return
 
-        Log.i(tag, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"})")
+        Log.i(TAG, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"})")
 
         val eq   = createEqualizer(audioSession)
         val bb   = createBassBoost(audioSession)
@@ -231,14 +242,14 @@ class IvannaGlobalEffectManager(
         activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn)
         applyProfileToSession(audioSession, activeProfile)
 
-        Log.i(tag, "Sesión $audioSession activa: EQ=${eq != null} BB=${bb != null} " +
+        Log.i(TAG, "Sesión $audioSession activa: EQ=${eq != null} BB=${bb != null} " +
                    "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null}")
     }
 
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
     fun closeSession(audioSession: Int) {
         activeSessions.remove(audioSession)?.let { releaseEffects(it) }
-        Log.i(tag, "Sesión $audioSession cerrada")
+        Log.i(TAG, "Sesión $audioSession cerrada")
     }
 
     // ── Aplica un perfil a todas las sesiones activas ─────────────────────────
