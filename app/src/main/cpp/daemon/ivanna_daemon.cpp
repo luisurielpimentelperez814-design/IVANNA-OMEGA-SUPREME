@@ -27,6 +27,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <android/log.h>
+#include <thread>
 
 #define LOG_TAG "IVANNA_OMEGA_DAEMON"
 
@@ -229,6 +230,12 @@ CommandServer commandServer;
 if(commandServer.start("@omega_command_socket"))
 {
     log_message("CONTROL socket ready: @omega_command_socket");
+    // FIX: lanzar acceptLoop en hilo separado.
+    // Sin esto, @omega_command_socket aceptaba el bind pero nunca
+    // atendía conexiones — la app conectaba y quedaba bloqueada.
+    std::thread([&commandServer]() {
+        commandServer.acceptLoop();
+    }).detach();
 }
 else
 {
