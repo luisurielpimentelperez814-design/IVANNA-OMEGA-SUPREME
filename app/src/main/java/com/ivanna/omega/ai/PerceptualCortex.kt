@@ -43,6 +43,9 @@ class PerceptualCortex {
     private val fatigueTracker =
         FatigueTracker()
 
+    // ── AUDIT FIX PR 1: Listeners para notificar cambios de estado ──────────
+    private val listeners = mutableListOf<PerceptualStateListener>()
+    private var lastTimestampMs = System.currentTimeMillis()
 
     private var lastAnalysis:
             PsychoacousticAnalysis? = null
@@ -96,13 +99,23 @@ class PerceptualCortex {
                 fatigue
             )
 
-
-        return PerceptualState(
+        // ── AUDIT FIX PR 1: Crear estado y notificar listeners ──────────────
+        val state = PerceptualState(
             analysis,
             emotion,
             fatigue,
             dsp
         )
+
+        // Calcular delta desde última llamada
+        val nowMs = System.currentTimeMillis()
+        val deltaMs = nowMs - lastTimestampMs
+        lastTimestampMs = nowMs
+
+        // Notificar a todos los listeners (IvannaBridgePlayer, DSPBridge, etc.)
+        notifyListeners(state, deltaMs)
+
+        return state
     }
 
 
@@ -239,6 +252,46 @@ class PerceptualCortex {
         return ctrl
     }
 
+    // ── AUDIT FIX PR 1: Listener management methods ─────────────────────────
+    /**
+     * Agregar un listener para recibir notificaciones de cambios de estado.
+     * Se usa para conectar componentes como IvannaBridgePlayer, DSPBridge, etc.
+     *
+     * @param listener que implementa PerceptualStateListener
+     */
+    fun addStateListener(listener: PerceptualStateListener) {
+        if (!listeners.contains(listener)) {
+            listeners.add(listener)
+            Log.d("PerceptualCortex", "Listener agregado: ${listener.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Remover un listener.
+     *
+     * @param listener a remover
+     */
+    fun removeStateListener(listener: PerceptualStateListener) {
+        listeners.remove(listener)
+        Log.d("PerceptualCortex", "Listener removido: ${listener.javaClass.simpleName}")
+    }
+
+    /**
+     * Notificar a todos los listeners de un cambio de estado.
+     * Llamado automáticamente dentro de process().
+     *
+     * @param state nuevo PerceptualState calculado
+     * @param deltaMs tiempo desde última llamada
+     */
+    private fun notifyListeners(state: PerceptualState, deltaMs: Long) {
+        listeners.forEach { listener ->
+            try {
+                listener.onPerceptualStateChanged(state, deltaMs)
+            } catch (e: Exception) {
+                Log.e("PerceptualCortex", "Error notificando listener: ${e.message}")
+            }
+        }
+    }
 
     fun reset(){
         fatigueTracker.resetSession()

@@ -9,6 +9,8 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
+import com.ivanna.omega.ai.PerceptualState
+import com.ivanna.omega.ai.PerceptualStateListener
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.audio.AudioRoutingManager
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
@@ -53,7 +55,8 @@ import java.nio.ByteOrder
  *   - buffers reutilizables para evitar allocs por chunk
  *   - release() explícito del clasificador de Voice Protection
  */
-class IvannaBridgePlayer(private val context: Context) {
+// ── AUDIT FIX PR 1: IvannaBridgePlayer ahora recibe cambios de PerceptualCortex ──
+class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener {
 
     // FIX (issue 5 — conflicto de foco con Volterra/switches externos):
     // antes NO existía gestión de AudioFocus alguna para este reproductor
@@ -305,6 +308,46 @@ class IvannaBridgePlayer(private val context: Context) {
         runCatching { voiceProtection?.release() }
         scope.cancel()
     }
+
+    // ── AUDIT FIX PR 1: Implementación de PerceptualStateListener ──────────────
+    /**
+     * Recibir cambios de estado perceptual de PerceptualCortex.
+     * Se aplican dinámicamente durante la reproducción.
+     *
+     * @param state Nuevo PerceptualState calculado por la corteza perceptual
+     * @param deltaMs Tiempo desde última actualización
+     */
+    override fun onPerceptualStateChanged(state: PerceptualState, deltaMs: Long) {
+        // Aplicar dinámicamente los parámetros DSP calculados
+        // El DSPBridge ya recibe estos parámetros via el pipeline normal,
+        // pero aquí podemos hacer ajustes específicos al bridge player:
+        //
+        // 1. Ajustar volumen basado en adaptación perceptual
+        // 2. Cambiar buffering si hay fatiga auditiva
+        // 3. Modular la ganancia del exciter
+        // 4. Aplicar EQ dinámico
+
+        try {
+            val dspControl = state.dsp
+            Log.d("IvannaBridgePlayer", 
+                "Perceptual update: gain=${dspControl.gain}, " +
+                "compressor=${dspControl.compressor}, " +
+                "exciter=${dspControl.exciter}, " +
+                "spatial=${dspControl.spatial}")
+
+            // Enviar parámetros al DSPBridge para que se apliquen al stream en vivo
+            if (isPlaying()) {
+                DSPBridge.applyPerceptualGain(dspControl.gain)
+                DSPBridge.applyCompressorAmount(dspControl.compressor)
+                DSPBridge.applyExciterReduction(dspControl.exciter)
+                DSPBridge.applySpatialWidth(dspControl.spatial)
+            }
+        } catch (e: Exception) {
+            Log.e("IvannaBridgePlayer", "Error aplicando estado perceptual: ${e.message}")
+        }
+    }
+
+    private fun isPlaying(): Boolean = state == State.PLAYING
 
     private fun releaseTrack() {
         // FIX: ya no se abre sesión de efectos stock para el propio track
