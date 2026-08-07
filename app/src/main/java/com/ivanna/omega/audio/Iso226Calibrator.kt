@@ -1,5 +1,7 @@
 package com.ivanna.omega.audio
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -220,5 +222,48 @@ object Iso226Calibrator {
     fun describe(): String = if (!isCalibrated) "No calibrado"
     else "${listenPhon.toInt()}→${refPhon.toInt()} Phon | " +
             EQ_BAND_FREQS.zip(lastGainsDsp.toList())
-                .joinToString(" ") { (f, g) -> "${if (f >= 1000) "${(f/1000).toInt()}k" else "${f.toInt()}"}:${"%+.1f".format(g)}" }
+                .joinToString(" ") { (f, g) -> "${if (f >= 1
+
+    // ── Persistencia de calibración ISO 226 ──────────────────────────────────
+    private const val PREFS_NAME   = "ivanna_iso226"
+    private const val KEY_LISTEN   = "listen_phon"
+    private const val KEY_REF      = "ref_phon"
+    private const val KEY_CALIBRATED = "calibrated"
+
+    /**
+     * Persiste la calibración actual en SharedPreferences.
+     * Llamar después de applyAll() para que sobreviva reinicios.
+     */
+    fun persist(context: Context) {
+        if (!isCalibrated) return
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_LISTEN, listenPhon)
+            .putFloat(KEY_REF, refPhon)
+            .putBoolean(KEY_CALIBRATED, true)
+            .apply()
+        Log.d(TAG, "ISO 226 calibración persistida: ${listenPhon}→${refPhon} Phon")
+    }
+
+    /**
+     * Restaura la calibración desde SharedPreferences y la aplica.
+     * Llamar desde IVANNAApplication.onCreate() DESPUÉS de que
+     * IvannaGlobalEffectManager esté listo.
+     *
+     * FIX: Sin esto la calibración ISO 226 se perdía en cada reinicio de app.
+     * El usuario calibraba una vez y al cerrar/abrir perdía el ajuste.
+     *
+     * @return true si había calibración guardada y se aplicó correctamente.
+     */
+    fun restoreIfSaved(context: Context, effectManager: IvannaGlobalEffectManager): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_CALIBRATED, false)) return false
+        val savedListen = prefs.getFloat(KEY_LISTEN, 60f)
+        val savedRef    = prefs.getFloat(KEY_REF, 80f)
+        Log.i(TAG, "Restaurando calibración ISO 226: ${savedListen}→${savedRef} Phon")
+        val result = applyAll(savedListen, savedRef, effectManager)
+        return result.anyApplied
+    }
+
+}0) "${(f/1000).toInt()}k" else "${f.toInt()}"}:${"%+.1f".format(g)}" }
 }
