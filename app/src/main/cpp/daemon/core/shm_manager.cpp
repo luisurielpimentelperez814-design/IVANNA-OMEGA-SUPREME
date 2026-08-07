@@ -85,8 +85,10 @@ bool OmegaShmManager::init(const std::string& path) {
     hdr->frame_len  = 0;
     hdr->reserved   = 0;
 
-    SHM_LOG("SHM listo: %s (%" PRIu64 " bytes, mapeado en %p)",
-            path.c_str(), static_cast<uint64_t>(SHM_SIZE), ptr);
+      SHM_LOG("SHM listo: %s (%llu bytes, mapeado en %p)",
+              path.c_str(),
+              static_cast<unsigned long long>(SHM_SIZE),
+              ptr);
     return true;
 }
 
