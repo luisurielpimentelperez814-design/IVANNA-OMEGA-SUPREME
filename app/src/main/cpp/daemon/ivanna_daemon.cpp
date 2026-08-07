@@ -1,4 +1,5 @@
 #include "control/command_server.h"
+#include "core/shm_manager.h"
 /**
  * IVANNA-OMEGA-SUPREME Native Daemon
  * Architecture: ARM64 (arm64-v8a)
@@ -80,34 +81,26 @@ void ensure_directory_exists(const char* path) {
 }
 
 int setup_shared_memory() {
+    // FIX: usar OmegaShmManager (core/shm_manager.cpp) en vez de código
+    // SHM inline. La lógica de mmap/mlock/seqlock queda encapsulada en
+    // shmManager() y disponible para command_server.cpp y futuras extensiones
+    // del daemon sin duplicar el boilerplate.
     ensure_directory_exists(OMEGA_DIR_PATH);
+    log_message("Initializing Shared Memory via OmegaShmManager at: " +
+                std::string(OMEGA_SHM_PATH));
 
-    log_message("Initializing Shared Memory at: " + std::string(OMEGA_SHM_PATH));
-
-    // Open or create shared memory backing file directly at /data/adb/ivanna_omega/omega_shm
-    int fd = open(OMEGA_SHM_PATH, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
-    if (fd < 0) {
-        log_message("Error: Failed to open omega_shm file (" + std::string(OMEGA_SHM_PATH) + "): " + strerror(errno));
+    if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
+        log_message("Error: OmegaShmManager::init() falló en " +
+                    std::string(OMEGA_SHM_PATH));
         return -1;
     }
 
-    size_t shm_size = 65536; // 64KB real-time ring buffer
-    if (ftruncate(fd, shm_size) != 0) {
-        log_message("Error: ftruncate failed on omega_shm: " + std::string(strerror(errno)));
-        close(fd);
-        return -1;
-    }
-
-    void* ptr = mmap(NULL, shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (ptr == MAP_FAILED) {
-        log_message("Error: mmap failed for omega_shm: " + std::string(strerror(errno)));
-        close(fd);
-        return -1;
-    }
-
-    log_message("Shared Memory successfully mapped at " + std::string(OMEGA_SHM_PATH) + " (Size: " + std::to_string(shm_size) + " bytes)");
-    close(fd);
-    return 0;
+    log_message("Shared Memory listo (OmegaShmManager): fd=" +
+                std::to_string(ivanna::shmManager().fd()) +
+                " base=" + std::to_string(
+                    reinterpret_cast<uintptr_t>(ivanna::shmManager().base())) +
+                " size=" + std::to_string(ivanna::shmManager().size()));
+    return ivanna::shmManager().fd();
 }
 
 int create_socket_server(const std::string& socket_path) {
@@ -267,9 +260,12 @@ else
             if (client_fd >= 0) {
                 log_message("Client connection accepted on " + socket_path);
 
-                int shm_fd = open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
+                // FIX: usar el fd del shmManager en vez de re-abrir
+                int shm_fd = ivanna::shmManager().isReady()
+                    ? dup(ivanna::shmManager().fd())
+                    : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
                 if (shm_fd < 0) {
-                    log_message("ERROR opening omega_shm");
+                    log_message("ERROR: shm_fd no disponible");
                     close(client_fd);
                     continue;
                 }
