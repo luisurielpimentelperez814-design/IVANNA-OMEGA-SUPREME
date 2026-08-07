@@ -209,13 +209,16 @@ class IvannaGlobalEffectManager(
         val clamped = IntArray(10) { i ->
             (gainsDb.getOrElse(i) { 0f }.coerceIn(-12f, 12f) * 100f).toInt()
         }
-        // Mezclar con el preset base: ISO 226 se suma al preset existente
         val baseEq   = activeProfile.eqBands
         val mergedEq = IntArray(10) { i ->
             (baseEq.getOrElse(i) { 0 } + clamped[i]).coerceIn(-1500, 1500)
         }
         val isoProfile = activeProfile.copy(eqBands = mergedEq)
         applyProfile(isoProfile)
+        // FIX: persistir automáticamente para que la calibración sobreviva reinicios.
+        // Iso226Calibrator.persist() guarda listenPhon+refPhon en SharedPreferences;
+        // IVANNAApplication.restoreIfSaved() la recupera al arrancar.
+        runCatching { com.ivanna.omega.audio.Iso226Calibrator.persist(context) }
         android.util.Log.i("IvannaGlobalFX", "ISO 226 EQ aplicado: ${clamped.map { "${it/100f}dB" }}")
     }
 
@@ -308,12 +311,7 @@ class IvannaGlobalEffectManager(
 
     // ── Cierra todas las sesiones ─────────────────────────────────────────────
 
-    // ── ISO 226 Calibración ──────────────────────────────────────────────────
-
-    /**
-     * Devuelve el perfil activo actual (para que Iso226Calibrator pueda
-     * hacer .copy(eqBands = ...) sin romper el preset activo).
-     */
+    /** Libera todos los AudioEffect activos. Llamar en onTerminate(). */
     fun releaseAll() {
         activeSessions.values.forEach {
             releaseEffects(it)
