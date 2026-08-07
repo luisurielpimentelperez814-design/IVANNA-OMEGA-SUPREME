@@ -76,7 +76,20 @@ add_library(ivanna_omega SHARED
 
     # System audio integration
     shm_hyperplane.cpp
-    omega_daemon.cpp
+    # FIX (auditoria 2026-08-07): omega_daemon.cpp SACADO de la libreria.
+    # El archivo define un `int main()` completo (socket AF_UNIX, listen,
+    # accept loop) — no es codigo de biblioteca, es el binario de un
+    # daemon standalone. Estaba entrando en libivanna_omega.so pegando su
+    # main() al .so de la app, junto con 3 helpers (set_realtime_priority,
+    # parse_json_field, update_parameters_smooth) que ninguna otra TU del
+    # arbol referencia (grep -rn confirma 0 callers cruzados). El binario
+    # real que corre en Magisk es daemon/ivanna_daemon.cpp, compilado por
+    # daemon/CMakeLists.txt como add_executable(ivanna_daemon) y stageado
+    # a magisk_module/system/bin/. Sacar este .cpp del target NO afecta el
+    # daemon en produccion — solo deja de arrastrar dead-code + un main()
+    # dentro de la shared library. Los otros dos daemons duplicados
+    # (daemon/omega_daemon.cpp, sin CMakeLists que lo enlace) se atacan en
+    # commits siguientes.
 
     # FIX (build): stub del puente omega_daemon → app process.
     # Define omega_daemon_get_shared_state() referenciado por
