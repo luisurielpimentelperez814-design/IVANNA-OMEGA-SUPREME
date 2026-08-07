@@ -1,5 +1,8 @@
 package com.ivanna.omega.spatial
 
+import com.ivanna.omega.saf.SaFRoomBridge
+import kotlin.math.abs
+
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -96,6 +99,24 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
         val timestampMs = event.timestamp / 1_000_000f  // ns → ms
 
         IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs)
+
+        // FIX: alimentar SaFRoomBridge con el estado del campo sonoro S_t.
+        // SaFRoomBridge.setSoundFieldState() usaba diffuseness=0 (constante)
+        // porque nadie lo actualizaba desde el sensor de cabeza.
+        //
+        // Difusividad del campo ≈ velocidad angular normalizada:
+        //   · Cabeza inmóvil (movimiento < 2°/s) → campo casi plano (D≈0)
+        //   · Cabeza girando rápido (> 30°/s)   → campo más difuso (D→1)
+        // Esto hace que α*(R,H,S) se amortigüe durante movimiento rápido
+        // (incertidumbre espacial alta) — paso más conservador en M_t.
+        val angularSpeedNorm = (abs(x) + abs(y) + abs(z))  // magnitud quaternion imaginaria
+        val diffuseness = (angularSpeedNorm * 5f).coerceIn(0f, 1f)
+        runCatching {
+            SaFRoomBridge.setSoundFieldState(
+                diffuseness = diffuseness,
+                complexity  = diffuseness * 0.5f   // complejidad espectral aproximada
+            )
+        }
 
         // [FIX-CRASH] getRotationMatrixFromVector puede lanzar IllegalArgumentException
         // en algunos HALs cuando event.values tiene formato inesperado. La UI se
