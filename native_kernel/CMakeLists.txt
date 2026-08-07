@@ -4,7 +4,7 @@ project(IvannaFusion VERSION 2.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fno-rtti -fno-exceptions -ffast-math -ftree-vectorize -fomit-frame-pointer -flto -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fno-rtti -fno-exceptions -fno-fast-math -fno-associative-math -ffp-contract=off -ftree-vectorize -fomit-frame-pointer -flto -Wall -Wextra")
 
 set(IVANNA_SOURCES
     IvannaFusionCore.cpp
