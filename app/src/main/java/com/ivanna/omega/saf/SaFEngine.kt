@@ -3,6 +3,7 @@ package com.ivanna.omega.saf
 import android.content.Context
 import android.content.res.AssetManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.spatial.SaFOptimizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,6 +77,18 @@ class SaFEngine(private val context: Context) {
         scope.launch {
             if (IvannaNativeLib.isLoaded) {
                 runCatching { SaFBridge.nativeSaFFeedback(direction.ordinal, correct) }
+            }
+
+            // FIX: sincronizar con SaFRoomBridge — H_t real tras feedback.
+            // Sin esto M_t en C++ usaba hMismatch=0 siempre; λ_t no
+            // crecía aunque el usuario reportara dirección incorrecta.
+            val feedbackError = if (correct) 0.2f else 1.0f
+            runCatching {
+                val dirErrors = FloatArray(5) { i ->
+                    if (i == direction.ordinal) feedbackError else 0f
+                }
+                SaFOptimizer.runCalibrationStep(dirErrors)
+                // syncToRoomBridge() corre dentro de runCalibrationStep() → λ_t real
             }
 
             val iter     = snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0
