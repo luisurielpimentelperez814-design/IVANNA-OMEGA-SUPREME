@@ -1,5 +1,7 @@
 package com.ivanna.omega.magisk
 
+import com.ivanna.omega.saf.SaFRoomBridge
+
 import android.content.Context
 import android.os.Build
 import android.os.SharedMemory
@@ -89,7 +91,60 @@ object ShmManager {
     fun release() {
         mappedBuffer = null
         sharedMemory?.close()
-        sharedMemory = null
+        sharedMemory 
+
+    // ── FIX: Leer SAF frame del SHM y alimentar SaFRoomBridge ─────────────────
+    // El daemon publica un SAF frame (4×float: gain/compressor/exciter/spatial)
+    // en el SHM después de cada SAF_UPDATE. Nadie en Kotlin lo leía — la app
+    // nunca veía los valores que el daemon había procesado.
+    //
+    // readAndApplySafFrame() lee los 16 bytes desde (base + 16) del SHM
+    // (los primeros 16 bytes son el ShmHeader seqlock) y los pasa a
+    // SaFRoomBridge.setHrtfState() + setRoomState() para mantener el
+    // optimizador Kotlin en sync con el daemon C++.
+    //
+    // Llamar periódicamente desde AdaptiveBackend.pollTelemetry() (10 Hz).
+    fun readAndApplySafFrame(): Boolean {
+        val buf = buffer ?: return false
+        if (!isReady) return false
+        return try {
+            // Leer epoch (seqlock: verificar antes y después)
+            val HEADER_BYTES = 16
+            if (buf.capacity() < HEADER_BYTES + 16) return false
+
+            // epoch está en bytes 0..7 (ShmHeader::epoch, std::atomic<uint64_t>)
+            val epochBefore = buf.getLong(0)
+            if (epochBefore % 2L != 0L) return false   // escritura en curso
+
+            // SAF frame: [gain:f][compressor:f][exciter:f][spatial:f]
+            val gain       = buf.getFloat(HEADER_BYTES + 0)
+            val compressor = buf.getFloat(HEADER_BYTES + 4)
+            val exciter    = buf.getFloat(HEADER_BYTES + 8)
+            val spatial    = buf.getFloat(HEADER_BYTES + 12)
+
+            val epochAfter = buf.getLong(0)
+            if (epochAfter != epochBefore) return false  // torn read — reintentar después
+
+            // Validar rango (datos plausibles)
+            if (gain !in 0.1f..4.0f) return false
+
+            // Propagar al optimizador Riemanniano Kotlin
+            SaFRoomBridge.setHrtfState(
+                mismatchEnergy  = exciter.coerceIn(0f, 1f),
+                convergenceRate = (1f - spatial.coerceIn(0f, 1f))
+            )
+            // gain del daemon → contexto de sala: gain > 1.0 implica señal reforzada
+            // (sala poco reverberante); gain < 1.0 implica atenuación (sala activa)
+            SaFRoomBridge.setRoomState(
+                rt60    = (1.5f * (1f - gain.coerceIn(0.5f, 1.5f) / 1.5f)).coerceIn(0f, 3f),
+                drr     = gain * 6f,
+                roomMode = compressor.coerceIn(0f, 1f)
+            )
+            true
+        } catch (_: Exception) { false }
+    }
+
+}null
         initialized.set(false)
     }
 }
