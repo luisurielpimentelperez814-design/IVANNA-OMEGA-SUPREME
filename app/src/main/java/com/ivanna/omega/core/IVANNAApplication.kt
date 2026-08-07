@@ -57,6 +57,14 @@ class IVANNAApplication : Application() {
     // AudioSessionReceiver lo acceda via (context.applicationContext as IVANNAApplication)
     val globalEffectManager = IvannaGlobalEffectManager(this)
 
+    private val paramStore by lazy { com.ivanna.omega.audio.ParameterStore(this) }
+
+    // ── Cerebro perceptual — singleton de aplicación ──────────────────────
+    // PerceptualCortex procesa PCM → ISO 226 → Bark → EQ → DSP en tiempo real
+    // PerceptualBrainEngine hace polling de telemetría nativa cada 100ms
+    val perceptualCortex by lazy { com.ivanna.omega.ai.PerceptualCortex() }
+    val perceptualBrainEngine by lazy { com.ivanna.omega.ai.PerceptualBrainEngine() }
+
     // Expuesto para que la UI o un futuro entry-point de STT puedan invocar
     // routing por comando/clasificación sin recrear el clasificador YAMNet.
     // Se inicializa perezosamente porque VoiceController carga YAMNet en
@@ -173,6 +181,20 @@ class IVANNAApplication : Application() {
         // principal (con Looper), por eso va aquí y no más abajo.
         com.ivanna.omega.audio.AudioRouteManager.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
+
+        // ── Arrancar cerebro perceptual ───────────────────────────────────
+        // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
+        appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                perceptualBrainEngine.start()
+                Log.i(TAG, "✅ PerceptualBrainEngine activo — polling 10Hz")
+            }.onFailure { Log.w(TAG, "PerceptualBrainEngine: ${it.message}") }
+            runCatching {
+                // Forzar init lazy del cortex
+                perceptualCortex.toString()
+                Log.i(TAG, "✅ PerceptualCortex listo")
+            }.onFailure { Log.w(TAG, "PerceptualCortex: ${it.message}") }
+        }
 
         // FIX (carrera): esto DEBE ser síncrono, no ir dentro de appScope.launch.
         // MainActivity.onCreate() llama a IvannaNativeLib.nativeStartEvoThread()
