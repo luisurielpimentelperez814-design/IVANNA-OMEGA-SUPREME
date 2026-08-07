@@ -28,6 +28,11 @@
  */
 package com.ivanna.omega.audio
 
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
@@ -116,10 +121,47 @@ data class IvannaEffectProfile(
     }
 }
 
-class IvannaGlobalEffectManager {
+class IvannaGlobalEffectManager(
+    private val context: android.content.Context
+) {
 
 
-    private val tag = "IvannaNPE.GlobalFX"
+    private val TAG = "IvannaNPE.GlobalFX"
+
+    private fun writeToLogFile(message: String) {
+        try {
+            val logFile = File(context.filesDir, "ivanna_audio_debug.txt")
+            val timestamp =
+                SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss.SSS",
+                    Locale.US
+                ).format(Date())
+
+            logFile.appendText("[$timestamp] $message\n")
+
+        } catch (_: Exception) {
+        }
+    }
+
+    fun clearDebugLog() {
+        try {
+            val logFile = File(context.filesDir, "ivanna_audio_debug.txt")
+            if (logFile.exists()) {
+                logFile.delete()
+            }
+            writeToLogFile("=== IVANNA DEBUG START ===")
+
+        } catch (_: Exception) {
+        }
+    }
+
+    fun getDebugLogPath(): String {
+        return File(
+            context.filesDir,
+            "ivanna_audio_debug.txt"
+        ).absolutePath
+    }
+
 
     // Mapa sessionId → lista de efectos activos en esa sesión
     private val activeSessions = ConcurrentHashMap<Int, SessionEffects>()
@@ -167,7 +209,14 @@ class IvannaGlobalEffectManager {
     }
 
     // ── Abre efectos para una nueva sesión de audio ───────────────────────────
-    fun openSession(audioSession: Int, sourcePackage: String?) {
+    fun openSession(
+        audioSession: Int,
+        sourcePackage: String?
+    ) {
+
+        writeToLogFile(
+            "openSession $audioSession source=$sourcePackage"
+        )
         if (audioSession <= 0) return
         if (activeSessions.containsKey(audioSession)) return
 
@@ -188,7 +237,7 @@ class IvannaGlobalEffectManager {
 
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
     fun closeSession(audioSession: Int) {
-        activeSessions.remove(audioSession)?.releaseAll()
+        activeSessions.remove(audioSession)?.let { releaseEffects(it) }
         Log.i(tag, "Sesión $audioSession cerrada")
     }
 
@@ -242,7 +291,7 @@ class IvannaGlobalEffectManager {
                     fx.dynamics,
                     prof.copy(compThresholdDb = compThresholdDb, compRatio = compRatio)
                 )
-            }.onFailure { Log.w(tag, "adjustLiveParams sesion $sessionId: ${it.message}") }
+            }.onFailure { Log.w(TAG, "adjustLiveParams sesion $sessionId: ${it.message}") }
         }
     }
 
@@ -279,7 +328,7 @@ class IvannaGlobalEffectManager {
             }
             fx.loudness?.setTargetGain(profile.loudnessGainMb)
             applyDynamicsProfile(fx.dynamics, profile)
-        }.onFailure { Log.w(tag, "Error aplicando perfil a sesión $sessionId", it) }
+        }.onFailure { Log.w(TAG, "Error aplicando perfil a sesión $sessionId", it) }
     }
 
     private fun applyDynamicsProfile(dyn: DynamicsProcessing?, profile: IvannaEffectProfile) {
@@ -298,7 +347,7 @@ class IvannaGlobalEffectManager {
             
             dyn.setChannelTo(0, ch0)
             dyn.setEnabled(true)
-        }.onFailure { Log.w(tag, "Error aplicando Dynamics a la sesión", it) }
+        }.onFailure { Log.w(TAG, "Error aplicando Dynamics a la sesión", it) }
     }
 
     // ─── Creadores con manejo de error (muchos dispositivos no soportan todos) ─
