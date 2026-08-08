@@ -227,49 +227,42 @@ int main(int argc, char* argv[]) {
     
 log_message("IVANNA OMEGA Daemon running successfully.");
 
+// FIX (socket queued/offline intermitente — causa raíz encontrada):
+//   g_server_fd (create_socket_server() arriba) YA está bind()eado en
+//   @omega_daemon_socket y el select-loop de abajo YA despacha JSON/texto
+//   sobre él a través de commandServer.handleJsonCommand/handleTextCommand.
+//
+//   El código anterior aquí intentaba ADEMÁS levantar un CommandServer
+//   independiente con su propio bind() en el MISMO nombre abstracto
+//   "@omega_daemon_socket". Un abstract socket solo admite un listener
+//   por nombre: ese segundo bind() fallaba siempre con EADDRINUSE,
+//   dejaba "ERROR starting @omega_daemon_socket" en el log en CADA
+//   arranque del daemon, y era indistinguible en logcat de un fallo real
+//   — exactamente el tipo de ruido que hace ver el socket como
+//   queued/offline aunque el daemon esté sirviendo bien por el otro
+//   camino.
+//
+//   commandServer se mantiene como el ÚNICO objeto de estado DSP
+//   (m_state) que usa el select-loop de abajo — solo se quitó el bind()
+//   duplicado y destinado a fallar. Su primera línea (m_state =
+//   kDefaultState) sigue corriendo aquí mismo, así que el estado DSP
+//   arranca con los defaults correctos.
 CommandServer commandServer;
+commandServer.resetState();
 
-/*
- * OMEGA SOCKET ROUTING FIX
- *
- * EngineBridge Kotlin conecta a:
- *   @omega_daemon_socket
- *
- * Magisk/control legacy usa:
- *   @omega_command_socket
- *
- * Ambos deben tener servidor real y acceptLoop.
- */
-
-if(commandServer.start("@omega_daemon_socket"))
-{
-    log_message("DAEMON socket ready: @omega_daemon_socket");
-
-    std::thread([&commandServer]() {
-        commandServer.acceptLoop();
-    }).detach();
-}
-else
-{
-    log_message("ERROR starting @omega_daemon_socket");
-}
-
-
+// @omega_command_socket sí es un nombre distinto — no compite con el
+// anterior — y queda disponible para futuros clientes de control/admin
+// que no sea OmegaEngineBridge (que hardcodea @omega_daemon_socket).
 CommandServer controlServer;
 
-if(controlServer.start("@omega_command_socket"))
-{
+if (controlServer.start("@omega_command_socket")) {
     log_message("CONTROL socket ready: @omega_command_socket");
-
     std::thread([&controlServer]() {
         controlServer.acceptLoop();
     }).detach();
-}
-else
-{
+} else {
     log_message("ERROR starting @omega_command_socket");
 }
-
 
     // Daemon main loop
     while (g_running) {

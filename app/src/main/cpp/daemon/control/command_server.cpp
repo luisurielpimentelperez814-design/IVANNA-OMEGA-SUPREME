@@ -274,10 +274,16 @@ static bool sendall(int fd, const void* data, size_t len)
 
 
 
+void CommandServer::resetState() {
+    pthread_mutex_lock(&m_mutex);
+    m_state = kDefaultState;
+    pthread_mutex_unlock(&m_mutex);
+}
+
 bool CommandServer::start(const std::string& socketName)
 {
     // Inicializar estado DSP con defaults
-    m_state = kDefaultState;
+    resetState();
 
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (serverFd < 0) return false;

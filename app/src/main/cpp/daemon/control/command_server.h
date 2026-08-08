@@ -82,6 +82,16 @@ public:
     /** Cierra el serverFd. Idempotente. */
     void stop();
 
+    /**
+     * Reinicia el estado DSP a kDefaultState sin necesidad de bind()/listen().
+     * FIX: extraído de start() para permitir que ivanna_daemon.cpp use un
+     * CommandServer puramente como "dueño" del estado DSP (m_state) que
+     * despacha el select-loop de main(), sin que ese CommandServer intente
+     * además bind()ear su propio socket en @omega_daemon_socket (nombre ya
+     * tomado por el socket raw de create_socket_server(), ver ivanna_daemon.cpp).
+     */
+    void resetState();
+
     // ── SHM dispatch ─────────────────────────────────────────────────────────
 
     /**
