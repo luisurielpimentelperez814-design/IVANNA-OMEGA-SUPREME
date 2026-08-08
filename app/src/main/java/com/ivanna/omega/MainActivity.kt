@@ -372,7 +372,8 @@ fun OmegaApp() {
             // su pantalla real (AdaptiveEngineScreen). Este redirect duplicado nunca se
             // ejecutaba —NavHost conserva un solo destino por ruta— y ponía en riesgo la
             // pantalla real. Se conserva la pantalla real.
-            composable(IvannaRoute.LAB)       { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            // FIX B: IvannaRoute.LAB == "lab" ya está registrada arriba con IvannaLabScreen.
+            // Mismo duplicado bloqueante que en A. Se conserva la pantalla real.
 
             // ── Sección ESPACIO ───────────────────────────────────────────
             composable(IvannaRoute.SPACE) {
