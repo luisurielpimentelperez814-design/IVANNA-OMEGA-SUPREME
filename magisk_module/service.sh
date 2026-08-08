@@ -55,3 +55,26 @@ while true; do
     setprop persist.ivanna.daemon_active 0
     sleep 2
 done
+
+
+# SAF MODEL DEPLOY
+
+mkdir -p /data/adb/ivanna_omega
+
+
+if [ -f \
+"$MODPATH/system/etc/ivanna_omega/SAF_model_total.json" \
+]
+then
+
+cp \
+"$MODPATH/system/etc/ivanna_omega/SAF_model_total.json" \
+/data/adb/ivanna_omega/
+
+
+chmod 644 \
+/data/adb/ivanna_omega/SAF_model_total.json
+
+
+fi
+
