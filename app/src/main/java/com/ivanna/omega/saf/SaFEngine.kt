@@ -57,14 +57,37 @@ class SaFEngine(private val context: Context) {
         scope.launch {
             val jsonPath = resolveJsonPath()
             val loaded   = IvannaNativeLib.isLoaded
-            if (loaded) runCatching { SaFBridge.nativeSaFInit(jsonPath) }
-            _state.value = SaFState(jniLoaded = loaded)
+            if (loaded) {
+                runCatching { SaFBridge.nativeSaFInit(jsonPath) }
+                // FIX (persistencia): restaurar calibración previa si existe.
+                // Sin esto, initFromJson() siempre deja q=0 (HRTF promedio)
+                // aunque el usuario ya hubiera calibrado en una sesión anterior.
+                val restored = runCatching { SaFBridge.nativeSaFLoadState(statePath()) }
+                    .getOrDefault(false)
+                val iter   = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
+                val params = if (restored) snapshot { SaFBridge.nativeSaFGetParams() } ?: FloatArray(7) else FloatArray(7)
+                val conv   = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
+                _state.value = SaFState(
+                    jniLoaded   = loaded,
+                    iteration   = iter,
+                    params      = params,
+                    converged   = conv,
+                    phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
+                )
+            } else {
+                _state.value = SaFState(jniLoaded = loaded)
+            }
         }
     }
 
     // ── Start / reset calibration session ────────────────────────────────
     fun startCalibration() {
-        if (IvannaNativeLib.isLoaded) runCatching { SaFBridge.nativeSaFReset() }
+        if (IvannaNativeLib.isLoaded) {
+            runCatching { SaFBridge.nativeSaFReset() }
+            // Reset también borra la calibración guardada — arrancamos limpio
+            // a propósito, no queremos que loadState() la reviva en el próximo init().
+            runCatching { SaFBridge.nativeSaFSaveState(statePath()) }
+        }
         _state.value = SaFState(
             phase      = SaFPhase.CALIBRATING,
             currentDir = SaFDirection.ordered[0],
@@ -95,6 +118,12 @@ class SaFEngine(private val context: Context) {
             val params   = snapshot { SaFBridge.nativeSaFGetParams() }    ?: FloatArray(7)
             val energy   = snapshot { SaFBridge.nativeSaFGetError() }     ?: 0f
             val conv     = snapshot { SaFBridge.nativeSaFIsConverged() }  ?: false
+
+            // FIX (persistencia): guardar tras cada paso, no solo al terminar.
+            // Si el usuario cierra la app a mitad de calibración (5 direcciones),
+            // el próximo arranque retoma desde el último paso guardado en vez
+            // de perder todo el progreso y volver a q=0.
+            runCatching { SaFBridge.nativeSaFSaveState(statePath()) }
 
             // Advance to next direction (round-robin) or finish
             val nextIdx  = (direction.ordinal + 1) % SaFDirection.ordered.size
@@ -138,5 +167,17 @@ class SaFEngine(private val context: Context) {
             }
         }
         return internalFile.absolutePath
+    }
+
+    /**
+     * Ruta del archivo de estado de calibración personal (q[7] + iteración).
+     * Siempre en almacenamiento interno de la app — a diferencia de
+     * SAF_model.json (modelo de referencia, puede vivir en /data/adb/...),
+     * esto es estado privado por usuario y no tiene motivo para salir de ahí.
+     */
+    private fun statePath(): String {
+        val dir = File(context.filesDir, "saf")
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, "saf_calibration_state.txt").absolutePath
     }
 }

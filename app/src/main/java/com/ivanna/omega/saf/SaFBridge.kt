@@ -12,4 +12,13 @@ object SaFBridge {
     @JvmStatic external fun nativeSaFReset()
     @JvmStatic external fun nativeSaFIsConverged(): Boolean
     @JvmStatic external fun nativeSaFGetError(): Float
+
+    // FIX (persistencia calibración SAF): antes m_q vivía solo en RAM del
+    // proceso nativo — cada reinicio de la app volvía a HRTF promedio (q=0)
+    // sin importar cuántas veces el usuario hubiera calibrado. Estas dos
+    // funciones guardan/cargan el vector q[7] + iteración en un archivo
+    // propio (IVANNA_SAF_STATE_V1), separado de SAF_model.json (que es el
+    // modelo de referencia de 214 sujetos, no el resultado personal).
+    @JvmStatic external fun nativeSaFSaveState(path: String): Boolean
+    @JvmStatic external fun nativeSaFLoadState(path: String): Boolean
 }

@@ -192,4 +192,57 @@ bool SaFOptimizer::isConverged() const {
     return normG < kEpsilon;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Persistence — plain text "IVANNA_SAF_STATE_V1\n<iter>\n<q0> <q1> ... <q6>\n".
+// Deliberately not JSON: this is an internal state snapshot, not the
+// SAF_model.json reference model, and needs zero parsing dependencies.
+bool SaFOptimizer::saveState(const char* path) const {
+    std::lock_guard<std::mutex> lk(m_mtx);
+    std::ofstream f(path, std::ios::trunc);
+    if (!f.good()) {
+        LOGE("saveState: cannot open %s for write", path);
+        return false;
+    }
+    f << "IVANNA_SAF_STATE_V1\n";
+    f << m_iter.load() << "\n";
+    for (int i = 0; i < SAF_K; ++i) {
+        f << m_q[i];
+        f << (i + 1 < SAF_K ? ' ' : '\n');
+    }
+    const bool ok = f.good();
+    if (ok) LOGI("saveState: q saved at iter=%d -> %s", m_iter.load(), path);
+    else    LOGE("saveState: write failed -> %s", path);
+    return ok;
+}
+
+bool SaFOptimizer::loadState(const char* path) {
+    std::ifstream f(path);
+    if (!f.good()) {
+        LOGI("loadState: no saved state at %s (fresh install or first calibration)", path);
+        return false;
+    }
+
+    std::string header;
+    std::getline(f, header);
+    if (header != "IVANNA_SAF_STATE_V1") {
+        LOGE("loadState: bad header '%s' in %s — ignoring stale/corrupt file", header.c_str(), path);
+        return false;
+    }
+
+    int iter = 0;
+    float q[SAF_K];
+    f >> iter;
+    for (int i = 0; i < SAF_K; ++i) f >> q[i];
+    if (!f.good() && !f.eof()) {
+        LOGE("loadState: malformed data in %s — keeping mean HRTF", path);
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(m_mtx);
+    m_iter.store(iter);
+    std::memcpy(m_q, q, sizeof(m_q));
+    LOGI("loadState: restored q at iter=%d from %s", iter, path);
+    return true;
+}
+
 } // namespace Ivanna

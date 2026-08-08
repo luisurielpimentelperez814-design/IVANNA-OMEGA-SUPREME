@@ -62,4 +62,22 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetError(JNIEnv*, jobject) {
     return g_saf.getErrorEnergy();
 }
 
+// boolean nativeSaFSaveState(String path)
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_saf_SaFBridge_nativeSaFSaveState(JNIEnv* env, jobject, jstring jPath) {
+    const char* path = env->GetStringUTFChars(jPath, nullptr);
+    const bool  ok   = g_saf.saveState(path);
+    env->ReleaseStringUTFChars(jPath, path);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+// boolean nativeSaFLoadState(String path)
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_saf_SaFBridge_nativeSaFLoadState(JNIEnv* env, jobject, jstring jPath) {
+    const char* path = env->GetStringUTFChars(jPath, nullptr);
+    const bool  ok   = g_saf.loadState(path);
+    env->ReleaseStringUTFChars(jPath, path);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"

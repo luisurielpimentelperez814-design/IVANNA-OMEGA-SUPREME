@@ -53,6 +53,14 @@ public:
 
     void reset();
 
+    // ── Persistence of user calibration (q_t + iteration) ───────────────
+    // NOTE: distinct from initFromJson(), which only validates the
+    // reference SAF_model.json (baked Fisher metric G0 / 214 subjects).
+    // This saves/loads the *personal* calibration result so it survives
+    // process death instead of resetting to mean HRTF on every launch.
+    bool saveState(const char* path) const;
+    bool loadState(const char* path);
+
 private:
     void initConstants();
     void initTargets();
