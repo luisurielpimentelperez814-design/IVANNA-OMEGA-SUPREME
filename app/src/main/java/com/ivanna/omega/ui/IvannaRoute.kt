@@ -19,6 +19,9 @@ object IvannaRoute {
     const val BRAIN = "perceptual_brain"
     const val PERCEPTUAL = "perceptual_brain"
     const val ADAPTIVE = "adaptive"
+    // MAGISTRAL — dashboard cognitivo (MagistralDashboardScreen). Ruta propia:
+    // BRAIN ("perceptual_brain") ya la ocupa BrainScreen y no se toca.
+    const val MAGISTRAL = "magistral"
     const val ADAPTIVE_DASH = "adaptive_dash"
     const val ADAPTIVE_PROFILES = "adaptive_profiles"
     const val LAB = "lab"

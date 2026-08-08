@@ -368,7 +368,38 @@ fun OmegaApp() {
             composable("calibracion_saf") {
                 SaFCalibrationScreen(onDismiss = { nav.popBackStack() })
             }
-            composable("adaptive_dash")    { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            // ── MAGISTRAL DASHBOARD ───────────────────────────────────────
+            // FIX (pantalla huérfana): MagistralDashboardScreen estaba
+            // implementada pero sin destino en el NavHost — el usuario nunca
+            // la veía. Se le da ruta propia ("magistral"); BRAIN sigue siendo
+            // BrainScreen y se alcanza desde el CTA "PERCEPTUAL BRAIN CORTEX".
+            composable(IvannaRoute.MAGISTRAL) {
+                // Telemetría real del daemon, con caché de 250ms dentro de
+                // OmegaDaemon — polling a 4 Hz, nunca en el audio thread.
+                val daemonTelemetry by produceState(initialValue = false to 0f) {
+                    while (true) {
+                        val alive = runCatching { com.ivanna.omega.magisk.OmegaDaemon.isLoaded }.getOrDefault(false)
+                        val lat = if (alive) runCatching { com.ivanna.omega.magisk.OmegaDaemon.getLatency() }.getOrDefault(0f) else 0f
+                        value = alive to lat
+                        kotlinx.coroutines.delay(250L)
+                    }
+                }
+                com.ivanna.omega.ui.MagistralDashboardScreen(
+                    latencyMs             = daemonTelemetry.second,
+                    isDaemonActive        = daemonTelemetry.first,
+                    onResetToNeutral      = {
+                        if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeResetDSP() }
+                    },
+                    onCalibrateHrtf       = { nav.navigate("calibracion_saf") },
+                    onOpenPerceptualBrain = { nav.navigate(IvannaRoute.BRAIN) },
+                    bandData              = null,
+                    modifier              = Modifier.fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            // Alias legacy: antes redirigía a BRAIN (duplicado de onOpenAdaptive);
+            // ahora resuelve al dashboard magistral, que es lo que su nombre dice.
+            composable("adaptive_dash")    { nav.navigate(IvannaRoute.MAGISTRAL) { popUpTo("dashboard") } }
 
             // ── Sección SONIDO ────────────────────────────────────────────
             composable(IvannaRoute.SOUND) {
@@ -755,7 +786,9 @@ fun DashboardScreen(
             },
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
-            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.BRAIN) },
+            // Antes duplicaba onOpenAdaptive (ambos → BRAIN). Ahora abre el
+            // dashboard magistral; BRAIN sigue accesible por onOpenAdaptive.
+            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.MAGISTRAL) },
             onOpenMagisk = { nav.navigate(IvannaRoute.MAGISK) },
             onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
             adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
