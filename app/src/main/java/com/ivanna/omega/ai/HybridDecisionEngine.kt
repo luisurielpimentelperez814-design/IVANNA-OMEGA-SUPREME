@@ -1,5 +1,8 @@
 package com.ivanna.omega.ai
 
+import android.util.Log
+import com.ivanna.omega.core.IvannaNativeLib
+
 // No duplicate DSPDecision here — use the single DSPDecision in DSPDecision.kt
 
 enum class SpatialMode {
@@ -157,15 +160,22 @@ class HybridDecisionEngine {
                     (1.0f - fatigue.cumulativeSessionFatigueScore))
                 .coerceIn(0.5f, 0.99f)
 
+        val eqLowDb = eqLow.coerceIn(-12f, 12f)
+        val eqMidDb = eqMid.coerceIn(-12f, 12f)
+        val eqHighDb = eqHigh.coerceIn(-12f, 12f)
+
+        // ── AUDIT FIX PR 5: Enviar parámetros EQ al nativo ──────────────────
+        applyEQToNative(eqLowDb, eqMidDb, eqHighDb)
+
         return DSPDecision(
             compressorAmount = compression,
             exciterReduction =
                 (fatigue.cumulativeSessionFatigueScore * 0.5f)
                     .coerceIn(0.0f, 0.8f),
 
-            eqLowDb = eqLow.coerceIn(-12f, 12f),
-            eqMidDb = eqMid.coerceIn(-12f, 12f),
-            eqHighDb = eqHigh.coerceIn(-12f, 12f),
+            eqLowDb = eqLowDb,
+            eqMidDb = eqMidDb,
+            eqHighDb = eqHighDb,
 
             spatialWidth = spatialWidth,
             loudnessTargetLUFS = -14.0f,
@@ -199,5 +209,30 @@ class HybridDecisionEngine {
             action,
             reward
         )
+    }
+
+    // ── AUDIT FIX PR 5: Método para aplicar EQ calculado a la librería nativa ──
+    /**
+     * Enviar parámetros de EQ calculados por HybridDecisionEngine al nativo.
+     * Estos parámetros se aplican dinámicamente durante el procesamiento DSP.
+     *
+     * @param lowDb ganancia en bajos (-12..+12 dB)
+     * @param midDb ganancia en medios (-12..+12 dB)
+     * @param highDb ganancia en altos (-12..+12 dB)
+     */
+    private fun applyEQToNative(lowDb: Float, midDb: Float, highDb: Float) {
+        try {
+            if (IvannaNativeLib.isLoaded) {
+                Log.d("HybridDecisionEngine", "applyEQToNative: low=$lowDb, mid=$midDb, high=$highDb")
+                IvannaNativeLib.nativeSetEQParams(
+                    lowDb.coerceIn(-12f, 12f),
+                    midDb.coerceIn(-12f, 12f),
+                    highDb.coerceIn(-12f, 12f),
+                    master = 0f
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("HybridDecisionEngine", "Error aplicando EQ al nativo: ${e.message}")
+        }
     }
 }
