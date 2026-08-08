@@ -97,7 +97,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
     override fun onDestroy() {
         // FIX PR-2: desregistrarse del listener
-        runCatching { PerceptualCortex.removeStateListener(this) }
+        runCatching { perceptualCortex.removeStateListener(this) }
         stopEngine()
         releaseWakeLock()
         retryHandler?.removeCallbacksAndMessages(null)

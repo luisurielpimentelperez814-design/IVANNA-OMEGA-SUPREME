@@ -306,12 +306,11 @@ class PerceptualCortex {
 
             // Aplicar λ_t como factor de modulación
             // Valores altos de λ_t reducen la fatiga, valores bajos la aumentan
-            val adjustedLevel = (baseFatigue.fatigueLevel * (1f - lambdaT * 0.3f))
+            val adjustedLevel = (baseFatigue.cumulativeSessionFatigueScore * (1f - lambdaT * 0.3f))
                 .coerceIn(0f, 1f)
 
             return baseFatigue.copy(
-                fatigueLevel = adjustedLevel,
-                cumulativeSessionFatigueScore = baseFatigue.cumulativeSessionFatigueScore * (1f - lambdaT * 0.1f)
+                cumulativeSessionFatigueScore = adjustedLevel
             )
         } catch (e: Exception) {
             Log.e("PerceptualCortex", "Error aplicando λ_t: ${e.message}")
