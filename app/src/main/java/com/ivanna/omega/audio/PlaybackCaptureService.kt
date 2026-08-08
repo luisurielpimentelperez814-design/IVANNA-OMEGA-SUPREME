@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import com.ivanna.omega.R
 import com.ivanna.omega.VoiceController
 import com.ivanna.omega.ai.PerceptualState
+import com.ivanna.omega.ai.PerceptualCortex
 import com.ivanna.omega.ai.PerceptualStateListener
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
@@ -89,6 +90,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     }
 
     override fun onDestroy() {
+        // FIX PR-2: desregistrarse del listener
+        runCatching { PerceptualCortex.removeStateListener(this) }
         stopEngine()
         releaseWakeLock()
         retryHandler?.removeCallbacksAndMessages(null)
