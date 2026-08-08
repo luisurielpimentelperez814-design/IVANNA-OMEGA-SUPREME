@@ -78,6 +78,73 @@ object DSPBridge {
 
     fun reset() { if (loaded) nativeReset() }
 
+    // ── AUDIT FIX PR 4: Métodos para que PerceptualCortex envíe parámetros DSP ──────
+    /**
+     * Aplicar ganancia calculada por PerceptualCortex.
+     * Rango: 0.0..2.0 (0 = mute, 1 = unity, 2 = 6dB boost)
+     *
+     * @param gain ganancia perceptual calculada
+     */
+    fun applyPerceptualGain(gain: Float) {
+        if (!loaded) return
+        Log.d(TAG, "applyPerceptualGain: $gain")
+        nativeSetPerceptualGain(gain.coerceIn(0f, 2f))
+    }
+
+    /**
+     * Aplicar compresión calculada por PerceptualCortex.
+     * Rango: 0.0..1.0 (0 = no compression, 1 = máxima compresión)
+     *
+     * @param amount compresión calculada
+     */
+    fun applyCompressorAmount(amount: Float) {
+        if (!loaded) return
+        Log.d(TAG, "applyCompressorAmount: $amount")
+        nativeSetCompressorAmount(amount.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Aplicar reducción de exciter calculada por PerceptualCortex.
+     * Rango: 0.0..1.0 (0 = máximo exciter, 1 = sin exciter)
+     *
+     * @param amount reducción de exciter
+     */
+    fun applyExciterReduction(amount: Float) {
+        if (!loaded) return
+        Log.d(TAG, "applyExciterReduction: $amount")
+        nativeSetExciterReduction(amount.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Aplicar ancho espacial calculado por PerceptualCortex.
+     * Rango: 0.0..2.0 (0.5 = mono, 1.0 = stereo normal, 2.0 = extra wide)
+     *
+     * @param width ancho espacial calculado
+     */
+    fun applySpatialWidth(width: Float) {
+        if (!loaded) return
+        Log.d(TAG, "applySpatialWidth: $width")
+        nativeSetSpatialWidth(width.coerceIn(0.5f, 2f))
+    }
+
+    /**
+     * Aplicar EQ calculado por PerceptualCortex.
+     * Rango: ±12 dB en 3 bandas (low, mid, high)
+     *
+     * @param lowDb ganancia en bajos
+     * @param midDb ganancia en medios
+     * @param highDb ganancia en altos
+     */
+    fun applyPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float) {
+        if (!loaded) return
+        Log.d(TAG, "applyPerceptualEQ: low=$lowDb, mid=$midDb, high=$highDb")
+        nativeSetPerceptualEQ(
+            lowDb.coerceIn(-12f, 12f),
+            midDb.coerceIn(-12f, 12f),
+            highDb.coerceIn(-12f, 12f)
+        )
+    }
+
     fun version(): String = if (loaded) nativeVersion() else "native unavailable"
 
     private external fun nativeInit(sampleRate: Int)
@@ -90,6 +157,14 @@ object DSPBridge {
     )
     private external fun nativeSetStereoWidth(width: Float)
     private external fun nativeSetVoiceProtectScore(score: Float)
+    
+    // ── AUDIT FIX PR 4: JNI para métodos perceptuales ───────────────────────
+    private external fun nativeSetPerceptualGain(gain: Float)
+    private external fun nativeSetCompressorAmount(amount: Float)
+    private external fun nativeSetExciterReduction(amount: Float)
+    private external fun nativeSetSpatialWidth(width: Float)
+    private external fun nativeSetPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float)
+    
     private external fun nativeProcess(buf: FloatArray, numFrames: Int)
     private external fun nativeReset()
     private external fun nativeVersion(): String
