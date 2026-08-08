@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
@@ -30,9 +31,17 @@ import com.ivanna.omega.ui.theme.*
  */
 @Composable
 fun SoundScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("EQ", "DINÁMICA", "BINAURAL", "NHO")
+
+    // Estado persistente levantado (bugs C/D/E) — cargado una vez, guardado en cada cambio
+    var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
+    fun updatePrefs(update: (AdaptiveControlsState) -> AdaptiveControlsState) {
+        prefs = update(prefs)
+        AdaptiveControlsPrefs.save(context, prefs)
+    }
 
     Column(modifier = modifier.background(ObsidianDeep)) {
 
@@ -81,9 +90,9 @@ fun SoundScreen(modifier: Modifier = Modifier) {
         ) {
             when (selectedTab) {
                 0 -> EQTab()
-                1 -> DynamicsTab()
-                2 -> BinauralTab()
-                3 -> NHOTab()
+                1 -> DynamicsTab(prefs, ::updatePrefs)
+                2 -> BinauralTab(prefs, ::updatePrefs)
+                3 -> NHOTab(prefs, ::updatePrefs)
             }
         }
     }
@@ -124,7 +133,10 @@ private fun EQTab() {
 
 // ── Tab DINÁMICA ─────────────────────────────────────────────────────────────
 @Composable
-private fun DynamicsTab() {
+private fun DynamicsTab(
+    prefs: AdaptiveControlsState,
+    updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
+) {
     val audioState by AudioStateManager.audioState.collectAsState()
 
     GlassCard("COMPRESOR", NeonMagenta, "Soft knee 6dB · Look-ahead 64ms") {
@@ -154,19 +166,16 @@ private fun DynamicsTab() {
 
     Spacer(Modifier.height(4.dp))
 
+    // Bug C fix — estado levantado a prefs en lugar de remember local
     GlassCard("AGC — Control Automático de Ganancia", AuroraCyan, "Motor A · PDEngine") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // nativeSetNPMax — target del AGC (antes sin UI)
-            var agcTarget by remember { mutableFloatStateOf(-18f) }
-            IvannaSliderRow("TARGET AGC", agcTarget, -36f, 0f, "dB") { v ->
-                agcTarget = v
+            IvannaSliderRow("TARGET AGC", prefs.agcTarget, -36f, 0f, "dB") { v ->
+                updatePrefs { it.copy(agcTarget = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetNPMax(v / -36f) }
             }
-            // nativeSetDelta — velocidad de respuesta del AGC (antes sin UI)
-            var agcRate by remember { mutableFloatStateOf(0.35f) }
-            IvannaSliderRow("VELOCIDAD", agcRate, 0f, 1f, "") { v ->
-                agcRate = v
+            IvannaSliderRow("VELOCIDAD", prefs.agcRate, 0f, 1f, "") { v ->
+                updatePrefs { it.copy(agcRate = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetDelta(v) }
             }
@@ -176,12 +185,14 @@ private fun DynamicsTab() {
 
 // ── Tab BINAURAL ──────────────────────────────────────────────────────────────
 @Composable
-private fun BinauralTab() {
+private fun BinauralTab(
+    prefs: AdaptiveControlsState,
+    updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
+) {
     val audioState by AudioStateManager.audioState.collectAsState()
-    var hrtfEnabled by remember { mutableStateOf(audioState.binaural) }
-    var adaptEnabled by remember { mutableStateOf(true) }
-    var azimuth by remember { mutableFloatStateOf(0f) }
-    var elevation by remember { mutableFloatStateOf(0f) }
+    // Bug B fix — hrtfEnabled derivado del audioState para que re-sincronice
+    // si la fuente cambia externamente (no val plana ni remember sin key)
+    val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
 
     GlassCard("HRTF BINAURAL", AuroraCyan, "KEMAR subject_165 · 24 azimuts · 7 elevaciones") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -190,33 +201,31 @@ private fun BinauralTab() {
                 Switch(
                     checked = hrtfEnabled,
                     onCheckedChange = { en ->
-                        hrtfEnabled = en
                         AudioStateManager.updateState { it.copy(binaural = en) }
-                        // nativeSetHRTFEnabled — antes sin UI
                         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
                         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = en
                     }
                 )
             }
+            // Bug D fix — adaptEnabled/azimuth/elevation levantados a prefs
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("MOTOR ADAPTATIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
-                    checked = adaptEnabled,
+                    checked = prefs.binauralAdaptEnabled,
                     onCheckedChange = { en ->
-                        adaptEnabled = en
-                        // nativeSetAdaptEnabled — antes sin UI
+                        updatePrefs { it.copy(binauralAdaptEnabled = en) }
                         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(en) }
                     }
                 )
             }
-            IvannaSliderRow("AZIMUT", azimuth, -180f, 180f, "°") { v ->
-                azimuth = v
+            IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
+                updatePrefs { it.copy(binauralAzimuth = v) }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
             }
-            IvannaSliderRow("ELEVACIÓN", elevation, -45f, 45f, "°") { v ->
-                elevation = v
+            IvannaSliderRow("ELEVACIÓN", prefs.binauralElevation, -45f, 45f, "°") { v ->
+                updatePrefs { it.copy(binauralElevation = v) }
             }
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
@@ -228,29 +237,28 @@ private fun BinauralTab() {
 }
 
 // ── Tab NHO ───────────────────────────────────────────────────────────────────
+// Bug E fix — los 4 sliders levantados a prefs; antes cada switch de tab los reseteaba
 @Composable
-private fun NHOTab() {
+private fun NHOTab(
+    prefs: AdaptiveControlsState,
+    updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
+) {
     GlassCard("MOTOR NHO · PDEngine", NeonMagenta, "Oscilador Neuroharmónico · Drive no lineal") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // nativeSetEta — wet del NHO (antes sin UI directa)
-            var eta by remember { mutableFloatStateOf(0.5f) }
-            IvannaSliderRow("WET NHO (η)", eta, 0f, 1f, "") { v ->
-                eta = v
+            IvannaSliderRow("WET NHO (η)", prefs.nhoEta, 0f, 1f, "") { v ->
+                updatePrefs { it.copy(nhoEta = v) }
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetEta(v) }
             }
-            var harmonicGain by remember { mutableFloatStateOf(0.5f) }
-            IvannaSliderRow("GANANCIA ARMÓNICA", harmonicGain, 0f, 1f, "") { v ->
-                harmonicGain = v
+            IvannaSliderRow("GANANCIA ARMÓNICA", prefs.nhoHarmonicGain, 0f, 1f, "") { v ->
+                updatePrefs { it.copy(nhoHarmonicGain = v) }
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHarmonicGain(v) }
             }
-            var lateralInhib by remember { mutableFloatStateOf(0.3f) }
-            IvannaSliderRow("INHIBICIÓN LATERAL", lateralInhib, 0f, 1f, "") { v ->
-                lateralInhib = v
+            IvannaSliderRow("INHIBICIÓN LATERAL", prefs.nhoLateralInhib, 0f, 1f, "") { v ->
+                updatePrefs { it.copy(nhoLateralInhib = v) }
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetBeta(v) }
             }
-            var ohcGain by remember { mutableFloatStateOf(0.5f) }
-            IvannaSliderRow("GAIN OHC", ohcGain, 0f, 1f, "") { v ->
-                ohcGain = v
+            IvannaSliderRow("GAIN OHC", prefs.nhoOhcGain, 0f, 1f, "") { v ->
+                updatePrefs { it.copy(nhoOhcGain = v) }
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAlpha(v) }
             }
         }
