@@ -251,11 +251,6 @@ OmegaDspState CommandServer::snapshotState() {
 
 // ── start / stop ──────────────────────────────────────────────────────────────
 
-bool CommandServer::start(const std::string& socketName) {
-    // Inicializar estado DSP con defaults
-    m_state = kDefaultState;
-
-=======
 static bool sendall(int fd, const void* data, size_t len)
 {
     const uint8_t* ptr = static_cast<const uint8_t*>(data);
@@ -281,6 +276,8 @@ static bool sendall(int fd, const void* data, size_t len)
 
 bool CommandServer::start(const std::string& socketName)
 {
+    // Inicializar estado DSP con defaults
+    m_state = kDefaultState;
 
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (serverFd < 0) return false;
