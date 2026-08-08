@@ -80,7 +80,16 @@ fun SystemScreen(
 private fun MagiskTab(onOpenMagisk: () -> Unit) {
     GlassCard("MÓDULO MAGISK", PhosphorGreen, "ivanna_omega · libomega_effect.so · daemon") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val loaded by remember { derivedStateOf { IvannaNativeLib.isLoaded } }
+            // Bug A fix real: isLoaded es Boolean plano, no StateFlow.
+            // derivedStateOf no disparaba recomposición porque la fuente
+            // no es estado Compose. produceState con polling 200ms garantiza
+            // que el LED refleje cambios reales en isLoaded.
+            val loaded by produceState(initialValue = IvannaNativeLib.isLoaded) {
+                while (true) {
+                    value = IvannaNativeLib.isLoaded
+                    kotlinx.coroutines.delay(200)
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(8.dp)
