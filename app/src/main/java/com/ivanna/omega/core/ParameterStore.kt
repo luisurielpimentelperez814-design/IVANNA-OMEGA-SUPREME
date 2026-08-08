@@ -216,4 +216,13 @@ class ParameterStore(context: Context) {
             .apply()
     }
 
+    // ── SSOT (Single Source Of Truth) ────────────────────────────────────────
+    // core.ParameterStore es la fuente única de verdad del estado adaptativo.
+    // audio.ParameterStore (blob JSON de AudioState) espeja estos 4 campos y
+    // necesita saber si el usuario YA tocó estos controles para no sobreescribir
+    // su configuración con defaults durante la reconciliación v1→v2.
+    fun hasAdaptiveMode(): Boolean = prefs.contains(KEY_ADAPTIVE_MODE)
+    fun hasAdaptiveIntensity(): Boolean = prefs.contains(KEY_ADAPTIVE_INTENSITY)
+    fun hasVoiceProtection(): Boolean = prefs.contains(KEY_VOICE_PROTECTION)
+    fun hasAdaptiveManualMode(): Boolean = prefs.contains(KEY_ADAPTIVE_MANUAL_MODE)
 }

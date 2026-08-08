@@ -13,11 +13,25 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.google.gson.Gson
+import com.ivanna.omega.core.ParameterStore as CoreParameterStore
 
+/**
+ * Store del blob AudioState (Gson) — NO es la fuente de verdad del estado
+ * adaptativo. La SSOT es [com.ivanna.omega.core.ParameterStore]: la UI real
+ * (MainActivity / ControlTabScreen / VoiceController) lee y escribe ahí.
+ *
+ * Esta clase persiste el resto de AudioState (compresor, exciter, EQ, spatial,
+ * flags de runtime) en su propio fichero de prefs — se conserva tal cual para
+ * NO perder configuración ya guardada por usuarios — y espeja hacia la SSOT los
+ * 4 campos que ambos almacenes compartían (split-brain resuelto):
+ *   adaptiveMode, adaptiveIntensity, voiceProtectionEnabled, manualModeEnabled.
+ */
 class ParameterStore(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences(
+    private val appContext = context.applicationContext
+    private val prefs: SharedPreferences = appContext.getSharedPreferences(
         "ivanna_audio_params", Context.MODE_PRIVATE
     )
+    private val core = CoreParameterStore(appContext)
     private val gson = Gson()
     private val handler = Handler(Looper.getMainLooper())
     private var debounceRunnable: Runnable? = null
@@ -26,7 +40,7 @@ class ParameterStore(context: Context) {
         private const val TAG = "ParameterStore"
         private const val SCHEMA_VERSION_KEY = "schema_version"
         private const val AUDIO_STATE_KEY = "audio_state"
-        private const val CURRENT_SCHEMA_VERSION = 1
+        private const val CURRENT_SCHEMA_VERSION = 2
         private const val DEBOUNCE_DELAY_MS = 500L
     }
     
@@ -65,6 +79,7 @@ class ParameterStore(context: Context) {
                 .putString(AUDIO_STATE_KEY, json)
                 .putLong("last_save", System.currentTimeMillis())
                 .apply()
+            mirrorToCore(state)
             Log.d(TAG, "✅ Parámetros guardados: mode=${state.adaptiveMode}, intensity=${state.adaptiveIntensity}")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error guardando parámetros", e)
@@ -78,12 +93,12 @@ class ParameterStore(context: Context) {
         return try {
             val json = prefs.getString(AUDIO_STATE_KEY, null)
             if (json != null) {
-                val state = gson.fromJson(json, AudioState::class.java)
+                val state = reconcileWithCore(gson.fromJson(json, AudioState::class.java))
                 Log.d(TAG, "📂 Parámetros cargados: mode=${state.adaptiveMode}")
                 state
             } else {
-                Log.d(TAG, "ℹ️ Sin parámetros guardados, usando defaults")
-                AudioState()
+                Log.d(TAG, "ℹ️ Sin blob guardado, sembrando desde la SSOT (core)")
+                reconcileWithCore(AudioState())
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error cargando parámetros", e)
@@ -111,6 +126,55 @@ class ParameterStore(context: Context) {
                 saveParametersNow(currentState)
                 Log.d(TAG, "✓ Migración v0→v1 completada")
             }
+        }
+        if (from < 2 && to >= 2) {
+            // v1 → v2: reconciliación de split-brain. Antes de este cambio la UI
+            // escribía el estado adaptativo SOLO en core.ParameterStore, así que
+            // el blob puede tener valores viejos. Se toma core como autoridad
+            // para los 4 campos compartidos y se reescribe el blob.
+            saveParametersNow(reconcileWithCore(loadRawBlob()))
+            Log.d(TAG, "✓ Migración v1→v2 completada (SSOT = core.ParameterStore)")
+        }
+    }
+
+    private fun loadRawBlob(): AudioState = try {
+        prefs.getString(AUDIO_STATE_KEY, null)
+            ?.let { gson.fromJson(it, AudioState::class.java) }
+            ?: AudioState()
+    } catch (e: Exception) {
+        Log.e(TAG, "❌ Blob corrupto, usando defaults", e)
+        AudioState()
+    }
+
+    /** Toma de core.ParameterStore (SSOT) los campos que el usuario ya tocó. */
+    private fun reconcileWithCore(state: AudioState): AudioState {
+        var out = state
+        if (core.hasAdaptiveMode()) {
+            val ordinal = core.getAdaptiveModeOrdinal().coerceIn(0, AdaptiveMode.values().size - 1)
+            out = out.copy(adaptiveMode = AdaptiveMode.values()[ordinal])
+        }
+        if (core.hasAdaptiveIntensity()) {
+            // core guarda 0..100 (slider de UI); AudioState usa 0..1
+            out = out.copy(adaptiveIntensity = (core.getAdaptiveIntensity() / 100f).coerceIn(0f, 1f))
+        }
+        if (core.hasVoiceProtection()) {
+            out = out.copy(voiceProtectionEnabled = core.isVoiceProtectionEnabled())
+        }
+        if (core.hasAdaptiveManualMode()) {
+            out = out.copy(manualModeEnabled = core.isAdaptiveManualModeEnabled())
+        }
+        return out
+    }
+
+    /** Espeja hacia la SSOT los campos compartidos, para que no divergan. */
+    private fun mirrorToCore(state: AudioState) {
+        try {
+            core.setAdaptiveModeOrdinal(state.adaptiveMode.ordinal)
+            core.setAdaptiveIntensity((state.adaptiveIntensity * 100f).coerceIn(0f, 100f))
+            core.setVoiceProtectionEnabled(state.voiceProtectionEnabled)
+            core.setAdaptiveManualModeEnabled(state.manualModeEnabled)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error espejando a core.ParameterStore", e)
         }
     }
     
