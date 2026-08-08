@@ -19,6 +19,8 @@ import com.ivanna.omega.VoiceController
 import com.ivanna.omega.ai.PerceptualState
 import com.ivanna.omega.ai.PerceptualCortex
 import com.ivanna.omega.ai.PerceptualStateListener
+import com.ivanna.omega.ai.PerceptualCortex
+import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -65,8 +67,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     private var retryHandler: Handler? = null
     private var retryThread: HandlerThread? = null
 
+    private val perceptualCortex: PerceptualCortex
+        get() = (application as IVANNAApplication).perceptualCortex
+
+
     override fun onCreate() {
         super.onCreate()
+
+        perceptualCortex.addStateListener(this)
         createNotificationChannel()
         acquireWakeLock()
         retryThread = HandlerThread("RetryHandler", Process.THREAD_PRIORITY_BACKGROUND)
@@ -97,6 +105,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         retryHandler?.removeCallbacksAndMessages(null)
         retryThread?.quitSafely()
         _isCapturing.value = false
+
+        perceptualCortex.removeStateListener(this)
+
         super.onDestroy()
     }
 
@@ -115,7 +126,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // Ajustar tamaño de buffer basado en fatiga auditiva
             // Si hay fatiga alta, aumentar buffer para suavizar ruido
             // Si hay fatiga baja, mantener buffer mínimo para latencia baja
-            val fatigueLevel = state.fatigue?.fatigueLevel ?: 0.5f
+            val fatigueLevel = state.fatigue?.cumulativeSessionFatigueScore ?: 0.5f
             val adaptiveBufferSize = if (fatigueLevel > 0.6f) 4096 else 2048
 
             // Log del cambio
