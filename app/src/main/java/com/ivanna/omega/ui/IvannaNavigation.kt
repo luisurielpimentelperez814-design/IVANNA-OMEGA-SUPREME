@@ -129,12 +129,8 @@ fun MainScaffold(
 
             // ── BRAIN ────────────────────────────────────────────────────
             composable(TABS[1].route) {
-                MagistralDashboardScreen(
-                    latencyMs            = 0f,
-                    isDaemonActive       = false,
-                    onResetToNeutral     = { dsp.value = DSPState(); dsp.value.pushToNative() },
-                    onCalibrateHrtf      = {},
-                    onOpenPerceptualBrain = { outerNav.navigate("perceptual_brain") }
+                BrainScreen(
+                    modifier = androidx.compose.ui.Modifier.fillMaxSize()
                 )
             }
 
