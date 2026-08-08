@@ -91,7 +91,14 @@ object ShmManager {
     fun release() {
         mappedBuffer = null
         sharedMemory?.close()
-        sharedMemory 
+        // FIX (parser roto): la linea aqui era `sharedMemory` (identificador
+        // suelto sin operador). Ademas el cierre `}` de release() se habia
+        // perdido en algun rebase, dejando readAndApplySafFrame() anidado
+        // dentro de release() y el archivo entero desbalanceado en +1 llave
+        // (compileDebugKotlin: "Missing '}'" en L150). Se completa la
+        // asignacion a null y se cierra release() antes del siguiente fun.
+        sharedMemory = null
+    }
 
     // ── FIX: Leer SAF frame del SHM y alimentar SaFRoomBridge ─────────────────
     // El daemon publica un SAF frame (4×float: gain/compressor/exciter/spatial)
