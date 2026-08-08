@@ -23,7 +23,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ivanna.omega.ui.viewmodels.PerceptualViewModel
 
-class MainActivity : ComponentActivity() {
+/**
+ * FIX D: este archivo declaraba `class MainActivity` en com.ivanna.omega.ui,
+ * homónimo del launcher real com.ivanna.omega.MainActivity (el único en el
+ * AndroidManifest). Código muerto y fuente de ambigüedad en imports/Gradle.
+ * No se borra: se renombra a CognitiveDashboardActivity, íntegro con su
+ * CognitiveDashboardScreen.
+ */
+class CognitiveDashboardActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
