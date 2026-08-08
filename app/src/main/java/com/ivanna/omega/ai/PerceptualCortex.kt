@@ -1,6 +1,7 @@
 package com.ivanna.omega.ai
 
 import android.util.Log
+import com.ivanna.omega.core.IvannaNativeLib
 
 import kotlin.math.abs
 import kotlin.math.max
@@ -87,16 +88,18 @@ class PerceptualCortex {
                 deltaSeconds
             )
 
+        // ── AUDIT FIX PR 7: Aplicar λ_t adaptativo a la fatiga ────────────────
+        val adjustedFatigue = applyAdaptiveLambdaT(fatigue)
 
         lastAnalysis = analysis
         lastEmotion = emotion
-        lastFatigue = fatigue
+        lastFatigue = adjustedFatigue
 
 
         val dsp =
             barkToDSP(
                 analysis,
-                fatigue
+                adjustedFatigue
             )
 
         // ── AUDIT FIX PR 1: Crear estado y notificar listeners ──────────────
@@ -283,6 +286,39 @@ class PerceptualCortex {
      * @param state nuevo PerceptualState calculado
      * @param deltaMs tiempo desde última llamada
      */
+    // ── AUDIT FIX PR 7: Aplicar λ_t adaptativo a la fatiga ───────────────────
+    /**
+     * Ajustar fatiga basándose en λ_t calculado por AdaptiveDecisionEngine.
+     * λ_t modula cuán rápido se acumula/recupera la fatiga.
+     * Rango: 0.0 (no hay adaptación) a 1.0 (máxima adaptación).
+     *
+     * @param baseFatigue fatiga base calculada por FatigueTracker
+     * @return fatiga ajustada por λ_t
+     */
+    private fun applyAdaptiveLambdaT(baseFatigue: HearingFatigueState): HearingFatigueState {
+        try {
+            if (!IvannaNativeLib.isLoaded) return baseFatigue
+
+            val lambdaT = IvannaNativeLib.nativeGetAdaptiveLambdaT()
+            if (lambdaT < 0) return baseFatigue  // No disponible
+
+            Log.d("PerceptualCortex", "applyAdaptiveLambdaT: λ_t=$lambdaT")
+
+            // Aplicar λ_t como factor de modulación
+            // Valores altos de λ_t reducen la fatiga, valores bajos la aumentan
+            val adjustedLevel = (baseFatigue.fatigueLevel * (1f - lambdaT * 0.3f))
+                .coerceIn(0f, 1f)
+
+            return baseFatigue.copy(
+                fatigueLevel = adjustedLevel,
+                cumulativeSessionFatigueScore = baseFatigue.cumulativeSessionFatigueScore * (1f - lambdaT * 0.1f)
+            )
+        } catch (e: Exception) {
+            Log.e("PerceptualCortex", "Error aplicando λ_t: ${e.message}")
+            return baseFatigue
+        }
+    }
+
     private fun notifyListeners(state: PerceptualState, deltaMs: Long) {
         listeners.forEach { listener ->
             try {

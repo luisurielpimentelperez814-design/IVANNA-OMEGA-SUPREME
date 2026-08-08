@@ -223,4 +223,14 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
     external fun nativeLabMeasure(): FloatArray?
     /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
     external fun nativeLabReport(): String
+
+    // ── AUDIT FIX PR 7: Exportar λ_t adaptativo desde C++ ──────────────────
+    /**
+     * Obtener el factor de adaptación λ_t calculado por AdaptiveDecisionEngine.
+     * Se usa para ajustar dinámicamente fatiga y feedback en PerceptualCortex.
+     * Rango típico: 0.0 (sin adaptación) a 1.0 (máxima adaptación).
+     *
+     * @return λ_t calculado, o -1 si no está disponible
+     */
+    external fun nativeGetAdaptiveLambdaT(): Float
 }
