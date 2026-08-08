@@ -244,4 +244,15 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
      * @param rt60 RT60 acústico del entorno (segundos)
      */
     external fun nativeSetAdaptiveEnvironmentRT60(rt60: Float)
-}
+
+        // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
+        // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
+        // pero nunca estaban declarados en IvannaNativeLib — falta de sincronización
+        // entre .kt declarations y .cpp implementation.
+        external fun nativeSetPerceptualGain(gain: Float)
+        external fun nativeSetCompressorAmount(amount: Float)
+        external fun nativeSetExciterReduction(amount: Float)
+        external fun nativeSetSpatialWidth(width: Float)
+        external fun nativeSetPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float)
+
+    }
