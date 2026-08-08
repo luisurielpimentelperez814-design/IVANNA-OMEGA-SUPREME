@@ -359,7 +359,12 @@ fun OmegaApp() {
                 )
             }
             composable(IvannaRoute.TELEMETRY) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
-            composable("adaptive_profiles")   { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
+            composable("adaptive_profiles") {
+                com.ivanna.omega.ui.AdaptiveProfilesScreen(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
         }
     }
 }

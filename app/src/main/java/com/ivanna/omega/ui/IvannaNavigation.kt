@@ -121,7 +121,7 @@ fun MainScaffold(
                     onOpenOpe                 = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
                     onOpenBinaural            = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
                     onOpenTelemetry           = { tabNav.navigate(TABS[2].route) { launchSingleTop = true } },
-                    onOpenAdaptiveProfiles    = { tabNav.navigate(TABS[4].route) { launchSingleTop = true } },
+                    onOpenAdaptiveProfiles    = { outerNav.navigate("adaptive_profiles") },
                     onOpenProfiles            = { outerNav.navigate("profiles") },
                     onOpenMagisk              = { outerNav.navigate("magisk") }
                 )
