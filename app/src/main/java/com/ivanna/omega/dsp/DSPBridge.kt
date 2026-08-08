@@ -158,12 +158,7 @@ object DSPBridge {
     private external fun nativeSetStereoWidth(width: Float)
     private external fun nativeSetVoiceProtectScore(score: Float)
     
-    // ── AUDIT FIX PR 4: JNI para métodos perceptuales ───────────────────────
-    private external fun nativeSetPerceptualGain(gain: Float)
-    private external fun nativeSetCompressorAmount(amount: Float)
-    private external fun nativeSetExciterReduction(amount: Float)
-    private external fun nativeSetSpatialWidth(width: Float)
-    private external fun nativeSetPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float)
+
     
     private external fun nativeProcess(buf: FloatArray, numFrames: Int)
     private external fun nativeReset()
