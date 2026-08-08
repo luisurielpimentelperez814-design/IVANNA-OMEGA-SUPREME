@@ -255,6 +255,33 @@ bool CommandServer::start(const std::string& socketName) {
     // Inicializar estado DSP con defaults
     m_state = kDefaultState;
 
+=======
+static bool sendall(int fd, const void* data, size_t len)
+{
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+
+    while (len > 0) {
+        ssize_t sent = send(fd, ptr, len, MSG_NOSIGNAL);
+
+        if (sent < 0) {
+            if (errno == EINTR)
+                continue;
+
+            return false;
+        }
+
+        ptr += sent;
+        len -= static_cast<size_t>(sent);
+    }
+
+    return true;
+}
+
+
+
+bool CommandServer::start(const std::string& socketName)
+{
+
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (serverFd < 0) return false;
 
@@ -433,7 +460,6 @@ void CommandServer::acceptLoop() {
             if (errno == EINTR || errno == EAGAIN) continue;
             break;  // serverFd cerrado → stop()
         }
-
         // Esperar datos entrantes: timeout muy corto (5ms) para no bloquear
         struct timeval tv { .tv_sec = 0, .tv_usec = 5000 };
         setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO,
@@ -476,7 +502,7 @@ void CommandServer::acceptLoop() {
                 uint64_t epoch = hdr->epoch.load(std::memory_order_acquire);
                 memcpy(notify,     &flen,  4);
                 memcpy(notify + 4, &epoch, 8);
-                send(clientFd, notify, sizeof(notify), MSG_NOSIGNAL);
+                sendall(clientFd, notify, sizeof(notify));
             }
         }
 

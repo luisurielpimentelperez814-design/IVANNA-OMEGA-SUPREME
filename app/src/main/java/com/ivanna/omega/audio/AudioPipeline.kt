@@ -73,7 +73,8 @@ class AudioPipeline {
 
     @Volatile private var dspState = DSPState()
     @Volatile private var lastRms = 0f
-    @Volatile private var lastLatencyMs = 0f
+    @Volatile private var dspLatencyMs = 0f
+    @Volatile private var hardwareLatencyMs = 0f
 
     // Parche 3b: resultado de clasificación Yamnet observable desde el exterior
     data class YamnetResult(val speech: Float = 0f, val music: Float = 0f, val bass: Float = 0f, val valid: Boolean = false)
@@ -188,7 +189,7 @@ class AudioPipeline {
 
                 val t0 = System.nanoTime()
                 DSPBridge.process(buf, read / 2)
-                lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+                dspLatencyMs = (System.nanoTime() - t0) / 1_000_000f
 
                 // FIX (PUNTO 2): alimenta RealTimeCinematicEngine con audio real
                 // del hot-path. Identidad (no-op) si el toggle "Anti-Dolby
@@ -285,8 +286,10 @@ class AudioPipeline {
     fun setBypass(bypass: Boolean) { setState(dspState.copy(bypass = bypass)) }
 
     fun getMetrics(): Map<String, Float> = mapOf(
-        "rms"     to lastRms,
-        "latency" to lastLatencyMs,
-        "correlation" to 1f
+        "rms"                to lastRms,
+        "dspLatencyMs"       to dspLatencyMs,
+        "hardwareLatencyMs"  to hardwareLatencyMs,
+        "totalLatencyMs"     to (dspLatencyMs + hardwareLatencyMs),
+        "correlation"        to 1f
     )
 }
