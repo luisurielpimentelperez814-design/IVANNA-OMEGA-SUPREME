@@ -26,6 +26,7 @@
 //   handleJsonCommand() → protegido por m_mutex
 
 #include "command_server.h"
+#include <cstddef>
 #include "../core/shm_manager.h"
 
 #include <sys/socket.h>
@@ -289,17 +290,31 @@ bool CommandServer::start(const std::string& socketName)
     if (serverFd < 0) return false;
 
     sockaddr_un addr{};
+    socklen_t addrLen = 0;
     addr.sun_family = AF_UNIX;
 
     if (!socketName.empty() && socketName[0] == '@') {
+        // Mismo fix que en ivanna_daemon.cpp: en el abstract namespace el
+        // nombre es todo el rango [sun_path, addrLen). Pasar sizeof(addr)
+        // registra el nombre con 88 bytes NUL de padding y ningun cliente
+        // Android (LocalSocket ABSTRACT) puede conectarse jamas.
+        const std::string name = socketName.substr(1);
+        if (name.size() > sizeof(addr.sun_path) - 2) {
+            CS_LOG("abstract socket name demasiado largo: %s", name.c_str());
+            close(serverFd);
+            serverFd = -1;
+            return false;
+        }
         addr.sun_path[0] = '\0';
-        strncpy(addr.sun_path + 1, socketName.c_str() + 1,
-                sizeof(addr.sun_path) - 2);
+        memcpy(addr.sun_path + 1, name.c_str(), name.size());
+        addrLen = static_cast<socklen_t>(offsetof(sockaddr_un, sun_path)
+                                         + 1 + name.size());
     } else {
         strncpy(addr.sun_path, socketName.c_str(), sizeof(addr.sun_path) - 1);
+        addrLen = static_cast<socklen_t>(sizeof(addr));
     }
 
-    if (bind(serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    if (bind(serverFd, reinterpret_cast<sockaddr*>(&addr), addrLen) < 0) {
         CS_LOG("bind(%s) error: %s", socketName.c_str(), strerror(errno));
         close(serverFd);
         serverFd = -1;

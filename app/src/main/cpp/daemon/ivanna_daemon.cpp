@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <cstddef>
 #include <cerrno>
 #include <csignal>
 #include <chrono>
@@ -66,7 +67,9 @@ void signal_handler(int signal) {
             close(g_server_fd);
             g_server_fd = -1;
         }
-        unlink(g_socket_path.c_str());
+        if (!g_socket_path.empty() && g_socket_path[0] != '@') {
+            unlink(g_socket_path.c_str());
+        }
     }
 }
 
@@ -107,14 +110,18 @@ int setup_shared_memory() {
 int create_socket_server(const std::string& socket_path) {
     // Ensure parent socket folder exists
     std::string dir = socket_path;
-    size_t last_slash = dir.find_last_of('/');
+    size_t last_slash = (socket_path[0] == '@') ? std::string::npos
+                                                : dir.find_last_of('/');
     if (last_slash != std::string::npos) {
         std::string parent_dir = dir.substr(0, last_slash);
         ensure_directory_exists(parent_dir.c_str());
     }
 
-    // Unlink any existing socket file
-    unlink(socket_path.c_str());
+    // Unlink any existing socket file (solo filesystem: los abstract no existen
+    // en el arbol de ficheros y unlink() aqui solo generaba ruido ENOENT).
+    if (socket_path[0] != '@') {
+        unlink(socket_path.c_str());
+    }
 
     int server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (server_fd < 0) {
@@ -123,28 +130,51 @@ int create_socket_server(const std::string& socket_path) {
     }
 
     struct sockaddr_un addr;
+    socklen_t addr_len = 0;
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     if (socket_path[0] == '@') {
-        // Abstract socket: null byte prefix + name (no filesystem path)
+        // Abstract socket: null byte prefix + name (no filesystem path).
+        //
+        // FIX CRITICO (causa raiz de "socket OFFLINE / queued" permanente):
+        //   antes se pasaba sizeof(addr) como addrlen. En Linux, para el
+        //   abstract namespace el NOMBRE es TODO el rango [sun_path, addrlen),
+        //   asi que el kernel registraba "omega_daemon_socket" seguido de 88
+        //   bytes NUL. Android LocalSocket (Namespace.ABSTRACT) conecta con
+        //   addrlen = offsetof(sun_path) + 1 + strlen(name), es decir el
+        //   nombre SIN padding: los dos nombres no coinciden y todo connect()
+        //   desde la app moria con ECONNREFUSED. El daemon parecia sano en el
+        //   log y la UI marcaba OFFLINE. Aqui se calcula el addrlen exacto.
+        const std::string name = socket_path.substr(1);
+        if (name.size() > sizeof(addr.sun_path) - 2) {
+            log_message("Error: abstract socket name demasiado largo: " + name);
+            close(server_fd);
+            return -1;
+        }
         addr.sun_path[0] = '\0';
-        std::strncpy(addr.sun_path + 1,
-                     socket_path.c_str() + 1,
-                     sizeof(addr.sun_path) - 2);
+        std::memcpy(addr.sun_path + 1, name.c_str(), name.size());
+        addr_len = static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path)
+                                          + 1 + name.size());
     } else {
         // Filesystem socket
         std::strncpy(addr.sun_path,
                      socket_path.c_str(),
                      sizeof(addr.sun_path) - 1);
+        addr_len = static_cast<socklen_t>(sizeof(addr));
     }
 
-    if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (bind(server_fd, (struct sockaddr*)&addr, addr_len) < 0) {
         log_message("Error: Socket bind failed at " + socket_path + ": " + std::string(strerror(errno)));
         close(server_fd);
         return -1;
     }
 
-    chmod(socket_path.c_str(), 0666);
+    // chmod/unlink solo tienen sentido en sockets de filesystem: con un nombre
+    // abstracto creaban/tocaban un fichero literal "@omega_daemon_socket" en el
+    // CWD del daemon y devolvian ENOENT en cada arranque.
+    if (socket_path[0] != '@') {
+        chmod(socket_path.c_str(), 0666);
+    }
 
     if (listen(server_fd, 16) < 0) {
         log_message("Error: Socket listen failed: " + std::string(strerror(errno)));
@@ -213,7 +243,10 @@ int main(int argc, char* argv[]) {
     }
 
     // Initialize shared memory
-    if (setup_shared_memory() != 0) {
+    // FIX: setup_shared_memory() devuelve el FD del SHM (positivo) en exito y
+    // -1 en error; el chequeo "!= 0" daba SIEMPRE verdadero y escupia el
+    // warning de fallo incluso con la memoria compartida perfectamente lista.
+    if (setup_shared_memory() < 0) {
         log_message("Warning: Shared memory setup encountered errors. Continuing with socket service.");
     }
 
@@ -303,12 +336,54 @@ if (controlServer.start("@omega_command_socket")) {
                 //   OmegaEngineBridge.kt hardcodea SOCKET_PRIMARY = "omega_daemon_socket".
                 //   Redirigir el JSON aquí evita tocar el Kotlin y mantiene compatibilidad.
 
-                struct timeval rcv_tv { .tv_sec = 0, .tv_usec = 5000 };  // 5ms
+                // FIX (comandos perdidos / clasificados como modo B por error):
+                //   el codigo anterior hacia UN solo recv() con SO_RCVTIMEO de
+                //   5 ms. Dos fallos reales:
+                //     1. 5 ms no alcanzan cuando la app esta bajo GC o el
+                //        scheduler no la corre de inmediato: el timeout expiraba,
+                //        el daemon creia "cliente SHM" (modo B) y mandaba un FD
+                //        por SCM_RIGHTS a un cliente que en realidad esperaba
+                //        una respuesta de texto -> "queued"/basura en la UI.
+                //     2. un unico recv() no garantiza el mensaje completo:
+                //        "SET_PF_DRIVE:0.5\n" podia llegar partido y el parser
+                //        veia un comando truncado.
+                //   Ahora: espera hasta 150 ms al PRIMER byte y luego drena
+                //   hasta el delimitador ('\n' para texto, llaves balanceadas
+                //   para JSON) o hasta agotar el buffer.
+                struct timeval rcv_tv { .tv_sec = 0, .tv_usec = 150000 };  // 150ms
                 setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
                            &rcv_tv, sizeof(rcv_tv));
+                struct timeval snd_tv { .tv_sec = 0, .tv_usec = 300000 };  // 300ms
+                setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO,
+                           &snd_tv, sizeof(snd_tv));
 
                 char json_buf[4096] = {};
                 ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf) - 1, 0);
+
+                if (nbytes > 0) {
+                    // Drenar el resto del mensaje con un timeout corto: el
+                    // primer byte ya llego, el resto viene detras de inmediato.
+                    struct timeval cont_tv { .tv_sec = 0, .tv_usec = 20000 };  // 20ms
+                    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+                               &cont_tv, sizeof(cont_tv));
+                    const bool is_json = (json_buf[strspn(json_buf, " \t\r\n")] == '{');
+                    while (nbytes < (ssize_t)sizeof(json_buf) - 1) {
+                        json_buf[nbytes] = '\0';
+                        if (!is_json && memchr(json_buf, '\n', (size_t)nbytes)) break;
+                        if (is_json) {
+                            int depth = 0; bool closed = false;
+                            for (ssize_t i = 0; i < nbytes; ++i) {
+                                if (json_buf[i] == '{') depth++;
+                                else if (json_buf[i] == '}' && --depth == 0) { closed = true; break; }
+                            }
+                            if (closed) break;
+                        }
+                        ssize_t more = recv(client_fd, json_buf + nbytes,
+                                            sizeof(json_buf) - 1 - (size_t)nbytes, 0);
+                        if (more <= 0) break;
+                        nbytes += more;
+                    }
+                }
 
                 if (nbytes > 0) {
                     json_buf[nbytes] = '\0';
