@@ -338,7 +338,6 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("perceptual_brain") { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
             composable("calibracion_saf") {
                 SaFCalibrationScreen(onDismiss = { nav.popBackStack() })
             }
@@ -363,7 +362,6 @@ fun OmegaApp() {
                 )
             }
             composable(IvannaRoute.ADAPTIVE) { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
-            composable(IvannaRoute.PERCEPTUAL){ nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
             composable(IvannaRoute.LAB)       { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
 
             // ── Sección ESPACIO ───────────────────────────────────────────
