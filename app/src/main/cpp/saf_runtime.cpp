@@ -9,6 +9,7 @@ SAFState g_saf_state;
 
 #include <fstream>
 #include <string>
+#include "SafModelLoader.hpp"
 
 
 static bool g_saf_model_loaded=false;
@@ -21,14 +22,12 @@ bool SAF_LoadModel()
     "/data/adb/ivanna_omega/SAF_model_total.json";
 
 
-    std::ifstream file(path);
+    Ivanna::SafModelLoader loader;
 
 
-    if(!file.good())
+    if(!loader.load(path))
     {
-
         return false;
-
     }
 
 
