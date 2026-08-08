@@ -57,24 +57,12 @@ while true; do
 done
 
 
-# SAF MODEL DEPLOY
+# SAF MODEL DEPLOY — copy from assets if present
+SAF_ASSET="$MODDIR/system/etc/ivanna_omega/SAF_model_total.json"
+SAF_DEST="/data/adb/ivanna_omega/SAF_model_total.json"
 
-mkdir -p /data/adb/ivanna_omega
-
-
-if [ -f \
-"$MODPATH/system/etc/ivanna_omega/SAF_model_total.json" \
-]
-then
-
-cp \
-"$MODPATH/system/etc/ivanna_omega/SAF_model_total.json" \
-/data/adb/ivanna_omega/
-
-
-chmod 644 \
-/data/adb/ivanna_omega/SAF_model_total.json
-
-
+if [ -f "$SAF_ASSET" ]; then
+    cp "$SAF_ASSET" "$SAF_DEST"
+    chmod 644 "$SAF_DEST"
+    echo "[$(date)] SAF_model_total.json deployed" >> "$LOGFILE"
 fi
-
