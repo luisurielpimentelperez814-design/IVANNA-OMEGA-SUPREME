@@ -67,14 +67,9 @@ fun EngineStatusCard(
         DividerGlow()
         Text("AI ANALYSIS", style = MaterialTheme.typography.labelMedium, color = NeonMagenta, fontWeight = FontWeight.Bold)
         Text(
-            "Music · Bass +12% · Voice protection",
+            "${metrics.yamnetCategory}  ·  %.0f%% confidence".format(metrics.yamnetConfidence * 100f),
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary
-        )
-        Text(
-            "Category: ${metrics.yamnetCategory}  %.0f%%".format(metrics.yamnetConfidence * 100f),
-            style = MaterialTheme.typography.labelMedium,
-            color = TextPrimary
         )
         DividerGlow()
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
