@@ -98,32 +98,20 @@ fun MainScaffold(
 
             // ── CONTROL ─────────────────────────────────────────────────
             composable(TABS[0].route) {
-                val d = dsp.value
-                IvannaControlPanel(
-                    initialExciter            = d.wet,
-                    initialEq                 = d.mid,
-                    initialWidth              = d.stereoWidth,
-                    metrics                   = metrics,
-                    adaptiveMode              = adaptiveMode,
-                    onAdaptiveModeChange      = onAdaptiveModeChange,
-                    adaptiveIntensity         = adaptiveIntensity,
-                    onAdaptiveIntensityChange = onAdaptiveIntensityChange,
-                    voiceProtectionEnabled    = voiceProtEnabled,
-                    onVoiceProtectionChange   = { voiceProtEnabled = it },
-                    routeState                = routeState,
-                    onExciterChange = { v -> dsp.value = dsp.value.copy(wet = v); dsp.value.pushToNative() },
-                    onEqChange      = { v -> dsp.value = dsp.value.copy(low = v, mid = v, high = v); dsp.value.pushToNative() },
-                    onWidthChange   = { v -> dsp.value = dsp.value.copy(stereoWidth = v); dsp.value.pushToNative() },
-                    // Navegación → tabs en lugar de push de rutas
-                    onOpenVisualizer          = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
-                    onOpenAdaptive            = { tabNav.navigate(TABS[2].route) { launchSingleTop = true } },
-                    onOpenAdaptiveEngineManual= { tabNav.navigate(TABS[2].route) { launchSingleTop = true } },
-                    onOpenOpe                 = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
-                    onOpenBinaural            = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
-                    onOpenTelemetry           = { tabNav.navigate(TABS[2].route) { launchSingleTop = true } },
-                    onOpenAdaptiveProfiles    = { outerNav.navigate("adaptive_profiles") },
-                    onOpenProfiles            = { outerNav.navigate("profiles") },
-                    onOpenMagisk              = { outerNav.navigate("magisk") }
+                // FIX C (crítico): antes se pasaban sólo 9 parámetros al panel y los
+                // otros 19 callbacks quedaban en su default `{}` → todos los knobs DSP
+                // (anti-Dolby, presets, compresor, NHO, spatial, EVO, NPE, Phase Oracle,
+                // omega/auto mode) no producían audio alguno. ControlTabScreen concentra
+                // el cableado real de punta a punta.
+                ControlTabScreen(
+                    outerNav          = outerNav,
+                    dsp               = dsp,
+                    adaptiveBack      = adaptiveBack,
+                    voiceMgr          = voiceMgr,
+                    metrics           = metrics,
+                    onOpenAdaptiveTab = { tabNav.navigate(TABS[2].route) { launchSingleTop = true } },
+                    onOpenSpatialTab  = { tabNav.navigate(TABS[3].route) { launchSingleTop = true } },
+                    onOpenBrainTab    = { tabNav.navigate(TABS[1].route) { launchSingleTop = true } }
                 )
             }
 
