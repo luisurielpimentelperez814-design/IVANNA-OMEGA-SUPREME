@@ -80,7 +80,7 @@ fun SystemScreen(
 private fun MagiskTab(onOpenMagisk: () -> Unit) {
     GlassCard("MÓDULO MAGISK", PhosphorGreen, "ivanna_omega · libomega_effect.so · daemon") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val loaded = IvannaNativeLib.isLoaded
+            val loaded by remember { derivedStateOf { IvannaNativeLib.isLoaded } }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(8.dp)
