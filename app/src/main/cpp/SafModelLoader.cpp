@@ -1,84 +1,96 @@
 #include "SafModelLoader.hpp"
 
 #include <fstream>
-#include <string>
 #include <vector>
-#include <sstream>
+#include <string>
+
+#include "json.hpp"
+
+using json = nlohmann::json;
+
 
 namespace Ivanna {
-
-static bool readValue(
-        const std::string& text,
-        const std::string& key,
-        float& out)
-{
-    auto pos = text.find("\"" + key + "\"");
-
-    if (pos == std::string::npos)
-        return false;
-
-    pos = text.find(":", pos);
-
-    if (pos == std::string::npos)
-        return false;
-
-    std::stringstream ss(
-        text.substr(pos + 1)
-    );
-
-    ss >> out;
-
-    return !ss.fail();
-}
 
 
 bool SafModelLoader::load(const std::string& path)
 {
-
     std::ifstream file(path);
 
-    if (!file.good())
+    if(!file.good())
     {
         return false;
     }
 
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
+    json model;
 
-    std::string json = buffer.str();
-
-
-    float lambda = 0.01f;
-    float epsilon = 1.0e-8f;
-
-
-    readValue(
-        json,
-        "lambda",
-        lambda
-    );
+    try
+    {
+        file >> model;
+    }
+    catch(...)
+    {
+        return false;
+    }
 
 
-    readValue(
-        json,
-        "epsilon",
-        epsilon
-    );
+    try
+    {
+
+        m_model.lambda =
+            model.value("lambda",0.01f);
+
+        m_model.epsilon =
+            model.value("epsilon",1e-8f);
 
 
-    m_model.lambda = lambda;
-    m_model.epsilon = epsilon;
+
+        if(model.contains("p0"))
+        {
+            m_model.p0 =
+                model["p0"].get<std::vector<float>>();
+        }
 
 
-    /*
-       PCA vector base.
-       Se mantiene tamaño seguro.
-       V/G0/M se conectan en fase siguiente
-       para evitar romper ABI.
-    */
+        if(model.contains("V"))
+        {
+            m_model.V.clear();
 
-    m_model.p0.fill(0.0f);
+            for(auto& row : model["V"])
+                m_model.V.push_back(
+                    row.get<std::vector<float>>()
+                );
+        }
+
+
+        if(model.contains("G0"))
+        {
+            m_model.G0.clear();
+
+            for(auto& row : model["G0"])
+                m_model.G0.push_back(
+                    row.get<std::vector<float>>()
+                );
+        }
+
+
+        if(model.contains("M"))
+        {
+            m_model.M.clear();
+
+            for(auto& row : model["M"])
+                m_model.M.push_back(
+                    row.get<std::vector<float>>()
+                );
+        }
+
+
+    }
+    catch(...)
+    {
+        return false;
+    }
+
 
 
     return true;
@@ -86,3 +98,4 @@ bool SafModelLoader::load(const std::string& path)
 
 
 }
+
