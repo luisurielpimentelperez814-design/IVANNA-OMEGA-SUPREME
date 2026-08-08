@@ -233,4 +233,15 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
      * @return λ_t calculado, o -1 si no está disponible
      */
     external fun nativeGetAdaptiveLambdaT(): Float
+
+    // ── AUDIT FIX PR 8: Setear RT60 dinámico en AdaptiveDecisionEngine ──────
+    /**
+     * Establecer el RT60 acústico medido por RoomSimulator en el
+     * AdaptiveDecisionEngine nativo. Esto permite que λ_t se calcule
+     * con información real del environment acústico.
+     * Rango: 0.1 (sala muy seca) a 3.0 (sala muy reverberante, segundos).
+     *
+     * @param rt60 RT60 acústico del entorno (segundos)
+     */
+    external fun nativeSetAdaptiveEnvironmentRT60(rt60: Float)
 }
