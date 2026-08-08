@@ -306,6 +306,106 @@ bool CommandServer::dispatchFrame(const void* data, size_t len) {
     return ok;
 }
 
+// ── handleTextCommand — comandos de texto plano de MagiskBridge ──────────────
+//
+// MagiskBridge.sendCommand() no envía JSON: envía strings como
+//   "STATUS\n", "SET_PF_DRIVE:0.75\n", "GET_TELEMETRY\n"
+// El acceptLoop los detecta por ausencia de '{' y los desvía aquí.
+//
+// Los SET_PF_* mapean en orden al array pf_params[13]:
+//   [0]=drive [1]=wet [2]=mix [3]=alpha [4]=beta [5]=gamma
+//   [6]=freq  [7]=resonance [8]=low [9]=mid [10]=high [11]=presence [12]=master
+//
+int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz) {
+    if (!text || !reply || reply_sz < 4) return 0;
+
+    // Trim leading whitespace / trailing newline
+    while (*text == ' ' || *text == '\t') text++;
+    char verb[64] = {};
+    char valstr[32] = {};
+
+    // Split "VERB:value" or "VERB\n"
+    const char* colon = strchr(text, ':');
+    if (colon) {
+        int vlen = (int)(colon - text);
+        if (vlen > 63) vlen = 63;
+        strncpy(verb, text, (size_t)vlen);
+        strncpy(valstr, colon + 1, sizeof(valstr) - 1);
+        // strip trailing \n/\r
+        char* nl = strpbrk(valstr, "\r\n");
+        if (nl) *nl = '\0';
+    } else {
+        strncpy(verb, text, sizeof(verb) - 1);
+        char* nl = strpbrk(verb, "\r\n");
+        if (nl) *nl = '\0';
+    }
+
+    pthread_mutex_lock(&m_mutex);
+    m_state.last_update_ms = _nowMs();
+
+    int n = 0;
+
+    if (strcmp(verb, "STATUS") == 0) {
+        n = snprintf(reply, reply_sz,
+            "IVANNA-OMEGA OK intensity=%.3f bypass=0 daemon=active",
+            m_state.intensity);
+
+    } else if (strcmp(verb, "GET_TELEMETRY") == 0) {
+        // temp=0.0 (daemon no mide temperatura; latency se aproxima por uptime)
+        n = snprintf(reply, reply_sz,
+            "temp=0.0 latency=%.1f uptime_ms=%llu intensity=%.3f",
+            0.0f,
+            (unsigned long long)m_state.last_update_ms,
+            m_state.intensity);
+
+    } else if (strcmp(verb, "RELOAD_PARAMS") == 0) {
+        n = snprintf(reply, reply_sz, "ACK RELOAD_PARAMS");
+
+    } else if (strcmp(verb, "SET_BYPASS") == 0) {
+        // 0 = processing on, 1 = bypass. No DSP state change needed —
+        // el campo no existe en OmegaDspState; solo ACK.
+        n = snprintf(reply, reply_sz, "ACK SET_BYPASS:%s", valstr);
+
+    } else if (strcmp(verb, "SET_PRESET") == 0) {
+        n = snprintf(reply, reply_sz, "ACK SET_PRESET:%s", valstr);
+
+    } else if (strcmp(verb, "SET_REVERB") == 0) {
+        // spatial_width como proxy de reverb level
+        float v = (float)strtod(valstr, nullptr);
+        m_state.spatial_width = _clamp(v, 0.f, 1.f);
+        n = snprintf(reply, reply_sz, "ACK SET_REVERB:%.3f", m_state.spatial_width);
+
+    } else {
+        // SET_PF_* family — map to pf_params indices
+        struct { const char* name; int idx; } pf_map[] = {
+            {"SET_PF_DRIVE",      0}, {"SET_PF_WET",       1},
+            {"SET_PF_MIX",        2}, {"SET_PF_ALPHA",     3},
+            {"SET_PF_BETA",       4}, {"SET_PF_GAMMA",     5},
+            {"SET_PF_FREQ",       6}, {"SET_PF_RESONANCE", 7},
+            {"SET_PF_LOW",        8}, {"SET_PF_MID",       9},
+            {"SET_PF_HIGH",      10}, {"SET_PF_PRESENCE", 11},
+            {"SET_PF_MASTER",    12},
+        };
+        bool matched = false;
+        for (auto& e : pf_map) {
+            if (strcmp(verb, e.name) == 0) {
+                float v = (float)strtod(valstr, nullptr);
+                m_state.pf_params[e.idx] = v;
+                n = snprintf(reply, reply_sz, "ACK %s:%.4f", verb, v);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            CS_LOG("Comando de texto no reconocido: '%s'", verb);
+            n = snprintf(reply, reply_sz, "ERR unknown:%s", verb);
+        }
+    }
+
+    pthread_mutex_unlock(&m_mutex);
+    return (n > 0 && n < reply_sz) ? n : 0;
+}
+
 // ── acceptLoop — FIX: lee JSON antes de decidir qué enviar ───────────────────
 //
 // Protocolo de demux (mismo socket, dos modos):
@@ -342,13 +442,26 @@ void CommandServer::acceptLoop() {
         ssize_t nbytes = recv(clientFd, recvBuf, sizeof(recvBuf) - 1, 0);
 
         if (nbytes > 0) {
-            // ── Modo A: comando JSON ─────────────────────────────────────────
             recvBuf[nbytes] = '\0';
 
-            int replyLen = handleJsonCommand(recvBuf, replyBuf, sizeof(replyBuf));
+            // ── Detección de protocolo: JSON ('{') vs texto plano ────────────
+            // MagiskBridge envía texto plano ("SET_PF_DRIVE:0.5\n").
+            // OmegaEngineBridge envía JSON ({"action":"SET_INTENSITY",...}).
+            // Se discrimina por el primer carácter no-espacio.
+            const char* p = recvBuf;
+            while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+            int replyLen;
+            if (*p == '{') {
+                // ── Modo A: comando JSON (OmegaEngineBridge) ─────────────────
+                replyLen = handleJsonCommand(recvBuf, replyBuf, sizeof(replyBuf));
+                CS_LOG("JSON cmd dispatch (%zd→%d bytes): %.60s", nbytes, replyLen, recvBuf);
+            } else {
+                // ── Modo A2: comando texto plano (MagiskBridge) ──────────────
+                replyLen = handleTextCommand(recvBuf, replyBuf, sizeof(replyBuf));
+                CS_LOG("TEXT cmd dispatch (%zd→%d bytes): %.60s", nbytes, replyLen, recvBuf);
+            }
             if (replyLen > 0) {
                 send(clientFd, replyBuf, (size_t)replyLen, MSG_NOSIGNAL);
-                CS_LOG("CMD dispatch OK (%zd bytes in, %d bytes out)", nbytes, replyLen);
             } else {
                 CS_LOG("CMD dispatch sin respuesta (payload: %.80s)", recvBuf);
             }

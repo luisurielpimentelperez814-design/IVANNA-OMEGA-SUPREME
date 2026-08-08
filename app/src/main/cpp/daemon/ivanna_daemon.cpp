@@ -292,14 +292,27 @@ else
                 ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf) - 1, 0);
 
                 if (nbytes > 0) {
-                    // ── Modo A: JSON command ─────────────────────────────────
                     json_buf[nbytes] = '\0';
                     char reply[1024] = {};
-                    int rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
+
+                    // Detección de protocolo por primer carácter no-espacio:
+                    //   '{' → JSON (OmegaEngineBridge)
+                    //   otro → texto plano (MagiskBridge: "SET_PF_DRIVE:0.5\n")
+                    const char* p = json_buf;
+                    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+                    int rlen;
+                    if (*p == '{') {
+                        // ── Modo A: JSON command (OmegaEngineBridge) ─────────
+                        rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
+                        log_message("JSON cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
+                    } else {
+                        // ── Modo A2: texto plano (MagiskBridge) ─────────────
+                        rlen = commandServer.handleTextCommand(json_buf, reply, sizeof(reply));
+                        log_message("TEXT cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
+                    }
                     if (rlen > 0) {
                         send(client_fd, reply, (size_t)rlen, 0);
                     }
-                    log_message("JSON cmd dispatch: " + std::string(json_buf, std::min((ssize_t)80, nbytes)));
 
                 } else {
                     // ── Modo B: SCM_RIGHTS SHM fd delivery ──────────────────

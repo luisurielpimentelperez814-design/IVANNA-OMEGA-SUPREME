@@ -1,4 +1,4 @@
-# IVANNA OMEGA SUPREME v9.1
+# IVANNA OMEGA SUPREME v9.2
 
 **Universal Audio Immersive Renderer — Android (Magisk/Root & Non-Root)**
 
@@ -15,6 +15,7 @@ protocolo seqlock.
 │                     App Kotlin (UI + JNI)                   │
 │                                                             │
 │  OmegaEngineBridge ──JSON──► @omega_daemon_socket          │
+│  MagiskBridge      ──TEXT──► @omega_daemon_socket          │
 │  ShmManager.kt    ◄──fd────  SCM_RIGHTS                    │
 │  MagiskBridge     ──prop──►  SystemProperties               │
 └───────────────────────────────┬─────────────────────────────┘
@@ -26,19 +27,23 @@ protocolo seqlock.
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │   @omega_daemon_socket  — socket principal           │  │
 │  │                                                      │  │
-│  │   Modo A — JSON command (OmegaEngineBridge):         │  │
-│  │     recv(5ms timeout) → CommandServer::              │  │
-│  │       handleJsonCommand() → respuesta JSON           │  │
+│  │   Demux por primer carácter no-espacio del payload:  │  │
 │  │                                                      │  │
-│  │   Modo B — SHM fd delivery (ShmManager.kt):          │  │
-│  │     timeout expira sin datos → sendmsg(SCM_RIGHTS)   │  │
-│  │     entrega el fd del SHM mapeado                    │  │
+│  │   Modo A  — JSON '{' (OmegaEngineBridge):            │  │
+│  │     handleJsonCommand() → respuesta JSON             │  │
+│  │                                                      │  │
+│  │   Modo A2 — Texto plano (MagiskBridge):              │  │
+│  │     handleTextCommand() → respuesta texto            │  │
+│  │     SET_PF_*, STATUS, GET_TELEMETRY, SET_BYPASS...   │  │
+│  │                                                      │  │
+│  │   Modo B  — Sin datos en 5ms (ShmManager.kt):        │  │
+│  │     sendmsg(SCM_RIGHTS) — entrega fd del SHM         │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │   @omega_command_socket  — control loop              │  │
 │  │   CommandServer::acceptLoop() en hilo separado       │  │
-│  │   Mismo dispatch JSON + notificación SHM 12 bytes    │  │
+│  │   Mismo demux JSON/TEXT + notificación SHM 12 bytes  │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -56,8 +61,8 @@ protocolo seqlock.
 
 | Socket | Namespace | Propósito |
 |--------|-----------|-----------|
-| `@omega_daemon_socket` | Abstract | Socket principal. Demux automático: JSON command si el cliente envía datos en ≤5ms; SCM_RIGHTS (fd SHM) si no hay datos. |
-| `@omega_command_socket` | Abstract | Loop de control paralelo. Mismo protocolo JSON + notificación SHM. |
+| `@omega_daemon_socket` | Abstract | Socket principal. Demux automático: JSON command (OmegaEngineBridge), texto plano (MagiskBridge), o SCM_RIGHTS (fd SHM) si no hay datos en 5ms. |
+| `@omega_command_socket` | Abstract | Loop de control paralelo (hilo separado). Mismo protocolo demux. |
 
 Los sockets **abstract** de Linux no crean archivos en el filesystem —
 no hay ruta `/dev/socket/` ni `/data/` que comprobar. El daemon se detecta
@@ -66,9 +71,10 @@ de prueba a `@omega_daemon_socket`.
 
 ---
 
-## Protocolo JSON
+## Protocolo — JSON (OmegaEngineBridge)
 
 Todos los comandos son UTF-8, sin longitud prefijada, sobre `SOCK_STREAM`.
+El demux detecta JSON por primer carácter `{`.
 
 ### Comandos soportados
 
@@ -94,6 +100,43 @@ Todos los comandos son UTF-8, sin longitud prefijada, sobre `SOCK_STREAM`.
 // Response
 {"ok":true,"intensity":0.850}
 ```
+
+---
+
+## Protocolo — Texto plano (MagiskBridge)
+
+`MagiskBridge.sendCommand()` envía comandos de texto plano con formato
+`VERB:value\n` o `VERB\n`. El demux detecta el protocolo por ausencia de `{`.
+
+| Comando | Formato | Respuesta |
+|---------|---------|-----------|
+| `STATUS` | `STATUS\n` | `IVANNA-OMEGA OK intensity=0.850 bypass=0 daemon=active` |
+| `GET_TELEMETRY` | `GET_TELEMETRY\n` | `temp=0.0 latency=<ms> uptime_ms=<ms> intensity=<v>` |
+| `RELOAD_PARAMS` | `RELOAD_PARAMS\n` | `ACK RELOAD_PARAMS` |
+| `SET_BYPASS` | `SET_BYPASS:0\n` | `ACK SET_BYPASS:0` |
+| `SET_PRESET` | `SET_PRESET:Spatial\n` | `ACK SET_PRESET:Spatial` |
+| `SET_REVERB` | `SET_REVERB:0.7\n` | `ACK SET_REVERB:0.700` |
+| `SET_PF_DRIVE` | `SET_PF_DRIVE:0.5\n` | `ACK SET_PF_DRIVE:0.5000` |
+| `SET_PF_WET` | `SET_PF_WET:0.8\n` | `ACK SET_PF_WET:0.8000` |
+| `SET_PF_*` | `SET_PF_<PARAM>:<v>\n` | `ACK SET_PF_<PARAM>:<v>` |
+
+**Índices PF Engine en `pf_params[13]`:**
+
+| Idx | Nombre | Comando |
+|-----|--------|---------|
+| 0 | drive | `SET_PF_DRIVE` |
+| 1 | wet | `SET_PF_WET` |
+| 2 | mix | `SET_PF_MIX` |
+| 3 | alpha | `SET_PF_ALPHA` |
+| 4 | beta | `SET_PF_BETA` |
+| 5 | gamma | `SET_PF_GAMMA` |
+| 6 | freq | `SET_PF_FREQ` |
+| 7 | resonance | `SET_PF_RESONANCE` |
+| 8 | low | `SET_PF_LOW` |
+| 9 | mid | `SET_PF_MID` |
+| 10 | high | `SET_PF_HIGH` |
+| 11 | presence | `SET_PF_PRESENCE` |
+| 12 | master | `SET_PF_MASTER` |
 
 ---
 
@@ -130,7 +173,7 @@ ivanna_daemon --socket "@omega_daemon_socket" [--rate 48000] [--buffer 64] [--re
 
 Para ver logs en tiempo real:
 ```sh
-adb shell tail -f /data/adb/ivanna_omega/daemon.log
+adb shell tail -f /data/adb/ivanna_daemon.log
 adb logcat -s IVANNA_OMEGA_DAEMON IVANNA_CMD IVANNA_SHM
 ```
 
@@ -184,11 +227,19 @@ magisk_module/
 
 Consulta [CHANGELOG.md](CHANGELOG.md) para el historial completo.
 
+**v9.2** — Demux texto plano + fix "queued"
+- `handleTextCommand()` agregado a `CommandServer`: maneja los comandos de texto plano
+  enviados por `MagiskBridge.sendCommand()` (`STATUS`, `GET_TELEMETRY`, `SET_PF_*`,
+  `SET_BYPASS`, `SET_PRESET`, `SET_REVERB`, `RELOAD_PARAMS`).
+- Demux automático en `@omega_daemon_socket` y `@omega_command_socket` por primer
+  carácter del payload: `{` → JSON dispatch, otro → texto plano dispatch.
+- Fix root: cuando el daemon estaba activo pero `MagiskBridge` enviaba comandos
+  de texto plano, el daemon respondía `{"ok":false,"error":"no action field"}` y
+  `sendCommand()` registraba `"queued"` en logcat. Con `handleTextCommand()` los
+  comandos se procesan y responden correctamente.
+
 **v9.1** — Fix crítico daemon/socket
-- `CommandServer::acceptLoop()` ahora lee el payload JSON antes de responder
-  (fix: antes enviaba 12 bytes SHM sin nunca leer el comando del cliente).
-- `@omega_daemon_socket` implementa demux automático: JSON command o SCM_RIGHTS.
-- `OmegaDspState` y `handleJsonCommand()` integrados en `command_server.cpp`
-  (antes vivían en `OmegaDaemonV8.cpp`, archivo sin CMakeLists — código muerto).
-- `OmegaShmManager::init()` unificado: `ivanna_daemon.cpp` usa el mismo fd
-  que `CommandServer`, sin re-abrir el archivo backing.
+- `CommandServer::acceptLoop()` ahora lee el payload antes de responder.
+- `@omega_daemon_socket` implementa demux automático JSON/SCM_RIGHTS.
+- `OmegaDspState` y `handleJsonCommand()` integrados en `command_server.cpp`.
+- `OmegaShmManager::init()` unificado.

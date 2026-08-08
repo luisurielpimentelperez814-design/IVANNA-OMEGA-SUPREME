@@ -105,6 +105,33 @@ public:
      */
     int handleJsonCommand(const char* json, char* reply, int reply_sz);
 
+    // ── Texto plano dispatch (MagiskBridge) ──────────────────────────────────
+
+    /**
+     * Maneja comandos de texto plano enviados por MagiskBridge.sendCommand().
+     * Formato: "VERB:value\n" o "VERB\n"
+     *
+     * Comandos soportados:
+     *   STATUS              → texto de estado del daemon
+     *   GET_TELEMETRY       → "temp=0.0 latency=<ms>"
+     *   RELOAD_PARAMS       → ACK
+     *   SET_BYPASS:0|1      → ACK
+     *   SET_PRESET:name     → ACK
+     *   SET_REVERB:value    → ACK
+     *   SET_PF_DRIVE:v, SET_PF_WET:v, SET_PF_MIX:v, SET_PF_ALPHA:v,
+     *   SET_PF_BETA:v,  SET_PF_GAMMA:v, SET_PF_FREQ:v, SET_PF_RESONANCE:v,
+     *   SET_PF_LOW:v,   SET_PF_MID:v,  SET_PF_HIGH:v, SET_PF_PRESENCE:v,
+     *   SET_PF_MASTER:v → ACK + actualiza pf_params en OmegaDspState
+     *
+     * @return bytes escritos en reply, o 0 si el payload era vacío/irrelevante.
+     *
+     * FIX: MagiskBridge.sendCommand() envía texto plano ("SET_PF_DRIVE:0.5\n")
+     * no JSON. El acceptLoop() detecta la ausencia de '{' y desvía aquí en vez
+     * de llamar handleJsonCommand(), evitando el reply {"ok":false,"error":"no
+     * action field"} que causaba el "queued" permanente en logcat.
+     */
+    int handleTextCommand(const char* text, char* reply, int reply_sz);
+
     /** Acceso de sólo lectura al estado DSP actual (thread-safe con mutex). */
     OmegaDspState snapshotState();
 
