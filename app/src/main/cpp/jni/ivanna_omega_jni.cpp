@@ -1019,6 +1019,81 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     g_eq.setParams(g_params);
     g_gain.setParams(g_params);
 }
+// ═══════════════════════════════════════════════════════════════════════════════
+// Canal PERCEPTUAL (DSPBridge.applyPerceptualGain / applyCompressorAmount /
+// applyExciterReduction / applySpatialWidth / applyPerceptualEQ)
+//
+// FIX (UnsatisfiedLinkError en producción): IvannaNativeLib.kt declaraba estos
+// 5 `external fun` y IvannaBridgePlayer.kt:368-372 los llama en CADA update
+// perceptual del player, pero NO existía ningún símbolo JNI correspondiente en
+// la .so — el primer update perceptual tiraba UnsatisfiedLinkError y mataba el
+// loop de reproducción. Se implementan REALES sobre el mismo control plane que
+// ya usa nativeSetEQParams / nativeSetCompressorParams (g_params + g_eq/g_comp/
+// g_exciter/g_gain/g_pd), sin tocar nativeSetParams (que reescribe TODO g_params).
+//
+// Semántica de entrada (fijada por DSPBridge, que ya hace el clamp):
+//   gain        [0..2]    lineal   → g_params.master en dB
+//   amount      [0..1]    0=sin compresión … 1=compresión máxima
+//   reduction   [0..1]    0=exciter al default … 1=exciter apagado
+//   width       [0.5..2]  ancho estéreo directo (misma unidad que
+//                         nativeSetSpatialWidthDirect)
+//   low/mid/high  dB      idéntico a nativeSetEQParams (master intacto)
+namespace {
+// Wet del exciter por defecto — DSPParams::wet en include/dsp_types.h.
+// La reducción es relativa a esta base, no acumulativa sobre g_params.wet,
+// para que llamadas repetidas con el mismo valor sean idempotentes.
+constexpr float kExciterWetBase = 0.32f;
+} // namespace
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
+    JNIEnv*, jobject, jfloat gain) {
+    if (!std::isfinite(gain)) return;
+    const float lin = std::clamp(gain, 0.0f, 2.0f);
+    // 0 lineal → piso de -60 dB (silencio práctico), evita log10(0) = -inf.
+    const float db  = (lin <= 0.001f) ? -60.0f
+                                      : std::clamp(20.0f * std::log10(lin), -60.0f, 6.0f);
+    g_params.master = db;
+    g_gain.setParams(g_params);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorAmount(
+    JNIEnv*, jobject, jfloat amount) {
+    if (!std::isfinite(amount)) return;
+    const float a = std::clamp(amount, 0.0f, 1.0f);
+    // Mapeo monótono sobre el rango que ya usa nativeSetCompressorParams:
+    // threshold -6 dB → -30 dB, ratio 1:1 → 8:1. attack/release intactos.
+    g_comp.setThreshold(-6.0f - 24.0f * a);
+    g_comp.setRatio(1.0f + 7.0f * a);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetExciterReduction(
+    JNIEnv*, jobject, jfloat reduction) {
+    if (!std::isfinite(reduction)) return;
+    const float r = std::clamp(reduction, 0.0f, 1.0f);
+    g_params.wet = kExciterWetBase * (1.0f - r);
+    g_exciter.setParams(g_params);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidth(
+    JNIEnv*, jobject, jfloat width) {
+    if (!std::isfinite(width)) return;
+    g_pd.set_spatial_width(std::clamp(width, 0.0f, 2.0f));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualEQ(
+    JNIEnv*, jobject, jfloat lowDb, jfloat midDb, jfloat highDb) {
+    if (!std::isfinite(lowDb) || !std::isfinite(midDb) || !std::isfinite(highDb)) return;
+    g_params.low  = std::clamp(lowDb,  -24.0f, 24.0f);
+    g_params.mid  = std::clamp(midDb,  -24.0f, 24.0f);
+    g_params.high = std::clamp(highDb, -24.0f, 24.0f);
+    g_eq.setParams(g_params);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();

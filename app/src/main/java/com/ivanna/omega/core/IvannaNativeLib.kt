@@ -224,26 +224,19 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
     /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
     external fun nativeLabReport(): String
 
-    // ── AUDIT FIX PR 7: Exportar λ_t adaptativo desde C++ ──────────────────
-    /**
-     * Obtener el factor de adaptación λ_t calculado por AdaptiveDecisionEngine.
-     * Se usa para ajustar dinámicamente fatiga y feedback en PerceptualCortex.
-     * Rango típico: 0.0 (sin adaptación) a 1.0 (máxima adaptación).
-     *
-     * @return λ_t calculado, o -1 si no está disponible
-     */
-    external fun nativeGetAdaptiveLambdaT(): Float
-
-    // ── AUDIT FIX PR 8: Setear RT60 dinámico en AdaptiveDecisionEngine ──────
-    /**
-     * Establecer el RT60 acústico medido por RoomSimulator en el
-     * AdaptiveDecisionEngine nativo. Esto permite que λ_t se calcule
-     * con información real del environment acústico.
-     * Rango: 0.1 (sala muy seca) a 3.0 (sala muy reverberante, segundos).
-     *
-     * @param rt60 RT60 acústico del entorno (segundos)
-     */
-    external fun nativeSetAdaptiveEnvironmentRT60(rt60: Float)
+    // ── API RETIRADA (λ_t / RT60 adaptativo) ───────────────────────────────
+    // `nativeGetAdaptiveLambdaT()` y `nativeSetAdaptiveEnvironmentRT60()` estaban
+    // declaradas como `external fun` sin NINGÚN símbolo JNI en la .so, y además
+    // AdaptiveDecisionEngine (app/src/main/cpp/experimental/adaptive_engine/
+    // adaptive_decision_engine.hpp:266) no tiene concepto de λ_t ni de RT60: su
+    // API pública es computeTargetGain/CompressorAmount/ExciterReduction/
+    // SpatialWidth/SafetyMargin/VoiceProtection. No hay motor real detrás.
+    //
+    // DECISIÓN: se retira la API fantasma en vez de inventar DSP. Los dos
+    // callers (PerceptualCortex.applyAdaptiveLambdaT y
+    // AdaptiveEnvironmentBridge.updateEnvironmentRT60) quedan en la misma
+    // semántica que ya tenían cuando λ_t no estaba disponible (< 0 → no-op),
+    // pero sin riesgo de UnsatisfiedLinkError.
 
         // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,

@@ -1,8 +1,6 @@
 package com.ivanna.omega.spatial
 
 import android.util.Log
-import com.ivanna.omega.core.IvannaNativeLib
-
 /**
  * AdaptiveEnvironmentBridge
  *
@@ -32,14 +30,11 @@ object AdaptiveEnvironmentBridge {
         }
         lastRT60 = clampedRT60
         
-        try {
-            if (IvannaNativeLib.isLoaded) {
-                Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 segundos")
-                IvannaNativeLib.nativeSetAdaptiveEnvironmentRT60(clampedRT60)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error actualizando RT60 en native: ${e.message}")
-        }
+        // El puente nativo de RT60 era API fantasma (external fun sin símbolo JNI
+        // y sin RT60 en AdaptiveDecisionEngine) — ver IvannaNativeLib. El RT60 se
+        // conserva en memoria para los consumidores Kotlin (getCurrentRT60), sin
+        // llamada nativa que pueda tirar UnsatisfiedLinkError.
+        Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 s (cacheado, sin puente nativo)")
     }
 
     /**

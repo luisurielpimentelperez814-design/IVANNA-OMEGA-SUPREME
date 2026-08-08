@@ -7,6 +7,10 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+// λ_t adaptativo: API nativa retirada (ver IvannaNativeLib). Sentinela negativa
+// = "no disponible", exactamente el contrato que devolvía el external fun.
+private const val ADAPTIVE_LAMBDA_T_UNAVAILABLE = -1f
+
 /**
  * PerceptualCortex
  *
@@ -299,7 +303,9 @@ class PerceptualCortex {
         try {
             if (!IvannaNativeLib.isLoaded) return baseFatigue
 
-            val lambdaT = IvannaNativeLib.nativeGetAdaptiveLambdaT()
+            // API retirada (ver IvannaNativeLib): el motor nativo no expone λ_t.
+            // Mismo comportamiento que el camino "λ_t no disponible" de antes.
+            val lambdaT = ADAPTIVE_LAMBDA_T_UNAVAILABLE
             if (lambdaT < 0) return baseFatigue  // No disponible
 
             Log.d("PerceptualCortex", "applyAdaptiveLambdaT: λ_t=$lambdaT")
