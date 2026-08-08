@@ -229,19 +229,45 @@ log_message("IVANNA OMEGA Daemon running successfully.");
 
 CommandServer commandServer;
 
-if(commandServer.start("@omega_command_socket"))
+/*
+ * OMEGA SOCKET ROUTING FIX
+ *
+ * EngineBridge Kotlin conecta a:
+ *   @omega_daemon_socket
+ *
+ * Magisk/control legacy usa:
+ *   @omega_command_socket
+ *
+ * Ambos deben tener servidor real y acceptLoop.
+ */
+
+if(commandServer.start("@omega_daemon_socket"))
 {
-    log_message("CONTROL socket ready: @omega_command_socket");
-    // FIX: lanzar acceptLoop en hilo separado.
-    // Sin esto, @omega_command_socket aceptaba el bind pero nunca
-    // atendía conexiones — la app conectaba y quedaba bloqueada.
+    log_message("DAEMON socket ready: @omega_daemon_socket");
+
     std::thread([&commandServer]() {
         commandServer.acceptLoop();
     }).detach();
 }
 else
 {
-    log_message("ERROR starting CONTROL socket");
+    log_message("ERROR starting @omega_daemon_socket");
+}
+
+
+CommandServer controlServer;
+
+if(controlServer.start("@omega_command_socket"))
+{
+    log_message("CONTROL socket ready: @omega_command_socket");
+
+    std::thread([&controlServer]() {
+        controlServer.acceptLoop();
+    }).detach();
+}
+else
+{
+    log_message("ERROR starting @omega_command_socket");
 }
 
 
