@@ -1,6 +1,7 @@
 package com.ivanna.omega.dsp
 
 import android.util.Log
+import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeLibraryLoader
 
 /**
@@ -88,7 +89,7 @@ object DSPBridge {
     fun applyPerceptualGain(gain: Float) {
         if (!loaded) return
         Log.d(TAG, "applyPerceptualGain: $gain")
-        nativeSetPerceptualGain(gain.coerceIn(0f, 2f))
+        IvannaNativeLib.nativeSetPerceptualGain(gain.coerceIn(0f, 2f))
     }
 
     /**
@@ -100,7 +101,7 @@ object DSPBridge {
     fun applyCompressorAmount(amount: Float) {
         if (!loaded) return
         Log.d(TAG, "applyCompressorAmount: $amount")
-        nativeSetCompressorAmount(amount.coerceIn(0f, 1f))
+        IvannaNativeLib.nativeSetCompressorAmount(amount.coerceIn(0f, 1f))
     }
 
     /**
@@ -112,7 +113,7 @@ object DSPBridge {
     fun applyExciterReduction(amount: Float) {
         if (!loaded) return
         Log.d(TAG, "applyExciterReduction: $amount")
-        nativeSetExciterReduction(amount.coerceIn(0f, 1f))
+        IvannaNativeLib.nativeSetExciterReduction(amount.coerceIn(0f, 1f))
     }
 
     /**
@@ -124,7 +125,7 @@ object DSPBridge {
     fun applySpatialWidth(width: Float) {
         if (!loaded) return
         Log.d(TAG, "applySpatialWidth: $width")
-        nativeSetSpatialWidth(width.coerceIn(0.5f, 2f))
+        IvannaNativeLib.nativeSetSpatialWidth(width.coerceIn(0.5f, 2f))
     }
 
     /**
@@ -138,7 +139,7 @@ object DSPBridge {
     fun applyPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float) {
         if (!loaded) return
         Log.d(TAG, "applyPerceptualEQ: low=$lowDb, mid=$midDb, high=$highDb")
-        nativeSetPerceptualEQ(
+        IvannaNativeLib.nativeSetPerceptualEQ(
             lowDb.coerceIn(-12f, 12f),
             midDb.coerceIn(-12f, 12f),
             highDb.coerceIn(-12f, 12f)
