@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
@@ -35,9 +36,17 @@ import com.ivanna.omega.ui.theme.*
  */
 @Composable
 fun BrainScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("ADAPTATIVO", "PERCEPTUAL", "EVOLUTIVO", "LAB")
+
+    // Bug F fix — estado evolutivo levantado para sobrevivir cambios de tab
+    var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
+    fun updatePrefs(update: (AdaptiveControlsState) -> AdaptiveControlsState) {
+        prefs = update(prefs)
+        AdaptiveControlsPrefs.save(context, prefs)
+    }
 
     Column(modifier = modifier.background(ObsidianDeep)) {
         Text(
@@ -80,7 +89,7 @@ fun BrainScreen(modifier: Modifier = Modifier) {
             when (selectedTab) {
                 0 -> AdaptiveTab()
                 1 -> PerceptualTab()
-                2 -> EvolutionTab()
+                2 -> EvolutionTab(prefs, ::updatePrefs)
                 3 -> LabTab()
             }
         }
@@ -194,20 +203,21 @@ private fun PerceptualTab() {
 }
 
 // ── Tab EVOLUTIVO ─────────────────────────────────────────────────────────────
+// Bug F fix — popSize/generations/mutationRate levantados a prefs; isRunning/statusText
+// son estado de sesión y pueden permanecer locales.
 @Composable
-private fun EvolutionTab() {
-    var popSize by remember { mutableIntStateOf(50) }
-    var generations by remember { mutableIntStateOf(100) }
-    var mutationRate by remember { mutableFloatStateOf(0.05f) }
+private fun EvolutionTab(
+    prefs: AdaptiveControlsState,
+    updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
+) {
     var isRunning by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("Listo") }
 
     GlassCard("KERNEL EVOLUTIVO", AuroraCyan, "LM-CMA-ES · 512 bandas · Genoma DSP") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
 
-            // nativeSetMutationRate — antes sin UI
-            IvannaSliderRowBrain("TASA MUTACIÓN", mutationRate, 0.001f, 0.3f, "") { v ->
-                mutationRate = v
+            IvannaSliderRowBrain("TASA MUTACIÓN", prefs.evoMutationRate, 0.001f, 0.3f, "") { v ->
+                updatePrefs { it.copy(evoMutationRate = v) }
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetMutationRate(v) }
             }
 
@@ -215,23 +225,23 @@ private fun EvolutionTab() {
                 Column(Modifier.weight(1f)) {
                     Text("POBLACIÓN", color = TextSecondary, fontSize = 10.sp)
                     Slider(
-                        value = popSize.toFloat(),
-                        onValueChange = { popSize = it.toInt() },
+                        value = prefs.evoPopSize.toFloat(),
+                        onValueChange = { updatePrefs { s -> s.copy(evoPopSize = it.toInt()) } },
                         valueRange = 10f..200f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
                     )
-                    Text("$popSize", color = AuroraCyan, fontSize = 10.sp,
+                    Text("${prefs.evoPopSize}", color = AuroraCyan, fontSize = 10.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
                 Column(Modifier.weight(1f)) {
                     Text("GENERACIONES", color = TextSecondary, fontSize = 10.sp)
                     Slider(
-                        value = generations.toFloat(),
-                        onValueChange = { generations = it.toInt() },
+                        value = prefs.evoGenerations.toFloat(),
+                        onValueChange = { updatePrefs { s -> s.copy(evoGenerations = it.toInt()) } },
                         valueRange = 10f..500f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
                     )
-                    Text("$generations", color = AuroraCyan, fontSize = 10.sp,
+                    Text("${prefs.evoGenerations}", color = AuroraCyan, fontSize = 10.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
             }
@@ -244,8 +254,7 @@ private fun EvolutionTab() {
                     onClick = {
                         if (IvannaNativeLib.isLoaded) {
                             runCatching {
-                                // nativeInitializeEvolution — antes sin UI
-                                val ok = IvannaNativeLib.nativeInitializeEvolution(popSize, generations)
+                                val ok = IvannaNativeLib.nativeInitializeEvolution(prefs.evoPopSize, prefs.evoGenerations)
                                 statusText = if (ok) "Evolución inicializada" else "Error al inicializar"
                                 isRunning = ok
                             }.onFailure { statusText = "Error: ${it.message}" }
@@ -259,7 +268,6 @@ private fun EvolutionTab() {
                     onClick = {
                         if (IvannaNativeLib.isLoaded && isRunning) {
                             runCatching {
-                                // nativeEvolveStep — antes sin UI
                                 val cont = IvannaNativeLib.nativeEvolveStep()
                                 statusText = if (cont) "Evolucionando..." else "Convergido"
                                 isRunning = cont
