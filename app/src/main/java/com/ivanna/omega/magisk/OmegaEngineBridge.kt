@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
-    private const val SOCKET_PRIMARY  = "omega_daemon_socket"
+    private const val SOCKET_PRIMARY  = "omega_command_socket"
     private const val SOCKET_LEGACY   = "/data/pf/pf.sock"
     private const val CONNECT_TIMEOUT = 2000 // ms
 
