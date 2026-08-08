@@ -24,18 +24,9 @@ bool SafModelLoader::load(const std::string& path)
 
     json model;
 
-    try
-    {
-        file >> model;
-    }
-    catch(...)
-    {
-        return false;
-    }
+    file >> model;
 
 
-    try
-    {
 
         m_model.lambda =
             model.value("lambda",0.01f);
