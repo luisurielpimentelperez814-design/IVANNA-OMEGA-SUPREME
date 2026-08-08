@@ -126,15 +126,17 @@ int create_socket_server(const std::string& socket_path) {
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     if (socket_path[0] == '@') {
-    addr.sun_path[0] = '\0';
-    std::strncpy(addr.sun_path + 1,
-                 socket_path.c_str() + 1,
-                 sizeof(addr.sun_path) - 2);
-} else {
-    std::strncpy(addr.sun_path,
-                 socket_path.c_str(),
-                 sizeof(addr.sun_path) - 1);
-}
+        // Abstract socket: null byte prefix + name (no filesystem path)
+        addr.sun_path[0] = '\0';
+        std::strncpy(addr.sun_path + 1,
+                     socket_path.c_str() + 1,
+                     sizeof(addr.sun_path) - 2);
+    } else {
+        // Filesystem socket
+        std::strncpy(addr.sun_path,
+                     socket_path.c_str(),
+                     sizeof(addr.sun_path) - 1);
+    }
 
     if (bind(server_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         log_message("Error: Socket bind failed at " + socket_path + ": " + std::string(strerror(errno)));
