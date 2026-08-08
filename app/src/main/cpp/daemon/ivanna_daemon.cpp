@@ -269,45 +269,81 @@ else
             if (client_fd >= 0) {
                 log_message("Client connection accepted on " + socket_path);
 
-                // FIX: usar el fd del shmManager en vez de re-abrir
-                int shm_fd = ivanna::shmManager().isReady()
-                    ? dup(ivanna::shmManager().fd())
-                    : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
-                if (shm_fd < 0) {
-                    log_message("ERROR: shm_fd no disponible");
-                    close(client_fd);
-                    continue;
-                }
+                // FIX: demux socket — el mismo @omega_daemon_socket sirve dos propósitos:
+                //
+                //   Modo A — JSON command (OmegaEngineBridge Kotlin):
+                //     El cliente envía {"action":"...",...} de inmediato.
+                //     Leemos con timeout 5ms. Si llega JSON → commandServer.handleJsonCommand()
+                //     → respuesta JSON. No se entrega ningún FD.
+                //
+                //   Modo B — SHM fd delivery (ShmManager.kt / cliente legacy):
+                //     El cliente conecta sin enviar datos. Timeout expira → entregamos
+                //     el fd del SHM vía SCM_RIGHTS como siempre.
+                //
+                // Por qué este socket y no solo @omega_command_socket:
+                //   OmegaEngineBridge.kt hardcodea SOCKET_PRIMARY = "omega_daemon_socket".
+                //   Redirigir el JSON aquí evita tocar el Kotlin y mantiene compatibilidad.
 
-                char data = 0;
-                struct iovec iov;
-                iov.iov_base = &data;
-                iov.iov_len = 1;
+                struct timeval rcv_tv { .tv_sec = 0, .tv_usec = 5000 };  // 5ms
+                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+                           &rcv_tv, sizeof(rcv_tv));
 
-                char control[CMSG_SPACE(sizeof(int))];
-                memset(control, 0, sizeof(control));
+                char json_buf[4096] = {};
+                ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf) - 1, 0);
 
-                struct msghdr msg;
-                memset(&msg, 0, sizeof(msg));
-                msg.msg_iov = &iov;
-                msg.msg_iovlen = 1;
-                msg.msg_control = control;
-                msg.msg_controllen = sizeof(control);
+                if (nbytes > 0) {
+                    // ── Modo A: JSON command ─────────────────────────────────
+                    json_buf[nbytes] = '\0';
+                    char reply[1024] = {};
+                    int rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
+                    if (rlen > 0) {
+                        send(client_fd, reply, (size_t)rlen, 0);
+                    }
+                    log_message("JSON cmd dispatch: " + std::string(json_buf, std::min((ssize_t)80, nbytes)));
 
-                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-                cmsg->cmsg_level = SOL_SOCKET;
-                cmsg->cmsg_type = SCM_RIGHTS;
-                cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
-                memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
-
-                if (sendmsg(client_fd, &msg, 0) < 0) {
-                    log_message("ERROR sending SCM_RIGHTS");
                 } else {
-                    log_message("omega_shm FD sent via SCM_RIGHTS");
+                    // ── Modo B: SCM_RIGHTS SHM fd delivery ──────────────────
+                    // FIX: usar el fd del shmManager en vez de re-abrir
+                    int shm_fd = ivanna::shmManager().isReady()
+                        ? dup(ivanna::shmManager().fd())
+                        : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
+                    if (shm_fd < 0) {
+                        log_message("ERROR: shm_fd no disponible");
+                        close(client_fd);
+                        continue;
+                    }
+
+                    char data = 0;
+                    struct iovec iov;
+                    iov.iov_base = &data;
+                    iov.iov_len = 1;
+
+                    char control[CMSG_SPACE(sizeof(int))];
+                    memset(control, 0, sizeof(control));
+
+                    struct msghdr msg;
+                    memset(&msg, 0, sizeof(msg));
+                    msg.msg_iov = &iov;
+                    msg.msg_iovlen = 1;
+                    msg.msg_control = control;
+                    msg.msg_controllen = sizeof(control);
+
+                    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                    cmsg->cmsg_level = SOL_SOCKET;
+                    cmsg->cmsg_type = SCM_RIGHTS;
+                    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+                    memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
+
+                    if (sendmsg(client_fd, &msg, 0) < 0) {
+                        log_message("ERROR sending SCM_RIGHTS");
+                    } else {
+                        log_message("omega_shm FD sent via SCM_RIGHTS");
+                    }
+
+                    close(shm_fd);
                 }
 
-                close(shm_fd);
                 close(client_fd);
             }
         }
