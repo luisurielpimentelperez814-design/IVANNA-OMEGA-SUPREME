@@ -24,6 +24,29 @@
 #define CS_LOG(fmt, ...) \
     __android_log_print(ANDROID_LOG_INFO, CS_TAG, fmt, ##__VA_ARGS__)
 
+static bool sendall(int fd, const void* data, size_t len)
+{
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+
+    while (len > 0) {
+        ssize_t sent = send(fd, ptr, len, MSG_NOSIGNAL);
+
+        if (sent < 0) {
+            if (errno == EINTR)
+                continue;
+
+            return false;
+        }
+
+        ptr += sent;
+        len -= static_cast<size_t>(sent);
+    }
+
+    return true;
+}
+
+
+
 bool CommandServer::start(const std::string& socketName)
 {
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -101,7 +124,9 @@ void CommandServer::acceptLoop()
             uint64_t epoch = hdr->epoch.load(std::memory_order_acquire);
             memcpy(notify,     &flen,  4);
             memcpy(notify + 4, &epoch, 8);
-            send(clientFd, notify, sizeof(notify), MSG_NOSIGNAL);
+            if (!sendall(clientFd, notify, sizeof(notify))) {
+                CS_LOG("sendall notify fallo");
+            }
         }
         close(clientFd);
     }

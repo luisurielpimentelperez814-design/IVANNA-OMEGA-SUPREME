@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.AudioTimestamp
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -126,6 +127,33 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private val _omegaMetrics = MutableStateFlow(OmegaMetrics())
     val omegaMetrics: StateFlow<OmegaMetrics> = _omegaMetrics.asStateFlow()
 
+
+    private fun estimateHardwareLatencyMs(): Float {
+        return try {
+            val track = audioTrack ?: return 0f
+
+            val timestamp = AudioTimestamp()
+
+            if (track.getTimestamp(timestamp)) {
+                val nowNs = System.nanoTime()
+
+                val writtenFrames =
+                    timestamp.framePosition
+
+                val frameTimeNs =
+                    (writtenFrames * 1_000_000_000L) /
+                    AudioPipeline.SAMPLE_RATE
+
+                ((nowNs - frameTimeNs) / 1_000_000f)
+                    .coerceAtLeast(0f)
+            } else {
+                0f
+            }
+        } catch (_: Throwable) {
+            0f
+        }
+    }
+
     private fun pollOmegaMetrics() {
         try {
             val pipelineState = IvannaUnifiedPipeline.state.value
@@ -163,7 +191,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 peakLevel        = pipelineState.peak,
                 clipCount        = clipCount,
                 cpuPercent       = cpuPercent,
-                latencyMs        = 2.8f,
+                latencyMs        = estimateHardwareLatencyMs(),
                 sampleRate       = AudioPipeline.SAMPLE_RATE,
                 yamnetCategory   = yamnetCategory,
                 yamnetConfidence = yamnetConfidence,
