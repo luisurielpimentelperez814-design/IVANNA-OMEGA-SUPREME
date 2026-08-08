@@ -28,7 +28,23 @@ data class AdaptiveControlsState(
     val npeAdapt: Boolean = true,
     val npeManifold: Boolean = false,
     val spatialEnabled: Boolean = false,
-    val phaseOracleIntensity: Float = 0f
+    val phaseOracleIntensity: Float = 0f,
+    // Bug C — DynamicsTab AGC
+    val agcTarget: Float = -18f,
+    val agcRate: Float = 0.35f,
+    // Bug D — BinauralTab
+    val binauralAdaptEnabled: Boolean = true,
+    val binauralAzimuth: Float = 0f,
+    val binauralElevation: Float = 0f,
+    // Bug E — NHOTab
+    val nhoEta: Float = 0.5f,
+    val nhoHarmonicGain: Float = 0.5f,
+    val nhoLateralInhib: Float = 0.3f,
+    val nhoOhcGain: Float = 0.5f,
+    // Bug F — EvolutionTab
+    val evoPopSize: Int = 50,
+    val evoGenerations: Int = 100,
+    val evoMutationRate: Float = 0.05f
 )
 
 object AdaptiveControlsPrefs {
@@ -64,7 +80,19 @@ object AdaptiveControlsPrefs {
                 npeAdapt             = p.getBoolean("npeAdapt", d.npeAdapt),
                 npeManifold          = p.getBoolean("npeManifold", d.npeManifold),
                 spatialEnabled       = p.getBoolean("spatialEnabled", d.spatialEnabled),
-                phaseOracleIntensity = p.getFloat("phaseOracleIntensity", d.phaseOracleIntensity)
+                phaseOracleIntensity = p.getFloat("phaseOracleIntensity", d.phaseOracleIntensity),
+                agcTarget            = p.getFloat("agcTarget", d.agcTarget),
+                agcRate              = p.getFloat("agcRate", d.agcRate),
+                binauralAdaptEnabled = p.getBoolean("binauralAdaptEnabled", d.binauralAdaptEnabled),
+                binauralAzimuth      = p.getFloat("binauralAzimuth", d.binauralAzimuth),
+                binauralElevation    = p.getFloat("binauralElevation", d.binauralElevation),
+                nhoEta               = p.getFloat("nhoEta", d.nhoEta),
+                nhoHarmonicGain      = p.getFloat("nhoHarmonicGain", d.nhoHarmonicGain),
+                nhoLateralInhib      = p.getFloat("nhoLateralInhib", d.nhoLateralInhib),
+                nhoOhcGain           = p.getFloat("nhoOhcGain", d.nhoOhcGain),
+                evoPopSize           = p.getInt("evoPopSize", d.evoPopSize),
+                evoGenerations       = p.getInt("evoGenerations", d.evoGenerations),
+                evoMutationRate      = p.getFloat("evoMutationRate", d.evoMutationRate)
             )
         } catch (e: Exception) {
             AdaptiveControlsState()
@@ -101,6 +129,18 @@ object AdaptiveControlsPrefs {
                 .putBoolean("npeManifold", s.npeManifold)
                 .putBoolean("spatialEnabled", s.spatialEnabled)
                 .putFloat("phaseOracleIntensity", s.phaseOracleIntensity)
+                .putFloat("agcTarget", s.agcTarget)
+                .putFloat("agcRate", s.agcRate)
+                .putBoolean("binauralAdaptEnabled", s.binauralAdaptEnabled)
+                .putFloat("binauralAzimuth", s.binauralAzimuth)
+                .putFloat("binauralElevation", s.binauralElevation)
+                .putFloat("nhoEta", s.nhoEta)
+                .putFloat("nhoHarmonicGain", s.nhoHarmonicGain)
+                .putFloat("nhoLateralInhib", s.nhoLateralInhib)
+                .putFloat("nhoOhcGain", s.nhoOhcGain)
+                .putInt("evoPopSize", s.evoPopSize)
+                .putInt("evoGenerations", s.evoGenerations)
+                .putFloat("evoMutationRate", s.evoMutationRate)
                 .apply()
         } catch (e: Exception) {
             // no romper la UI
