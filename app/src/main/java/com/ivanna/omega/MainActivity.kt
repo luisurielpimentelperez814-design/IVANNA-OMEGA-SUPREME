@@ -683,7 +683,11 @@ fun DashboardScreen(
                     IvannaNativeLib.nativeSetSpatialWidthDirect(it)
                 IvannaSpatialEngine.setWidth(it)
             },
-            onOpenVisualizer = { nav.navigate("visualizer") },
+            onOpenVisualizer        = { nav.navigate("visualizer") },
+            onOpenOpe               = { nav.navigate(IvannaRoute.SOUND) },
+            onOpenBinaural          = { nav.navigate(IvannaRoute.SOUND) },
+            onOpenTelemetry         = { nav.navigate(IvannaRoute.SYSTEM) },
+            onOpenAdaptiveProfiles  = { nav.navigate("adaptive_profiles") },
             onAntiDolbyChange = { enabled ->
                 if (enabled) antiDolbyController.enableAntiDolby()
                 else antiDolbyController.disableAntiDolby()
