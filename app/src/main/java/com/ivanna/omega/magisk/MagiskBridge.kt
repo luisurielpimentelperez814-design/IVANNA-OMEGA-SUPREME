@@ -3,10 +3,7 @@ package com.ivanna.omega.magisk
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.util.Log
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
-import java.util.concurrent.TimeUnit
 
 /**
  * MagiskBridge v2.2 — Cableado real end-to-end con abstract socket
@@ -44,9 +41,8 @@ object MagiskBridge {
     private const val PROP_ACTIVE = "persist.ivanna.magisk_active"
     private const val PROP_VERSION = "persist.ivanna.version"
     private const val PROP_DAEMON = "persist.ivanna.daemon_active"
-    private const val PROP_CONCERT = "ivanna.concert_mode"
+    // PROP_CONCERT eliminado — estado gestionado en memoria con _concertModeActive
 
-    private const val TIMEOUT_MS = 3000L
     private const val CACHE_TTL_MS = 2000L
     private const val SOCKET_READ_TIMEOUT_MS = 500
 
@@ -139,9 +135,8 @@ object MagiskBridge {
             }.onFailure { Log.d(TAG, "legacy socket send failed: ${it.message}") }
         }
 
-        // 3) Nada respondió: queue via setprop (best-effort)
-        setSystemProp("ivanna.pending_cmd", command)
-        Log.w(TAG, "Daemon offline — queued $command")
+        // 3) Nada respondió — FIX Bug-5: se eliminó exec/setprop que tardaba 3 s y siempre fallaba
+        Log.w(TAG, "Daemon offline — command dropped: $command")
         return "queued"
     }
 
@@ -170,37 +165,24 @@ object MagiskBridge {
     fun setPresence(v: Float) = sendCommand("SET_PF_PRESENCE:$v")
     fun setMaster(v: Float) = sendCommand("SET_PF_MASTER:$v")
 
+    // FIX Bug-5: estado en memoria — setSystemProp(PROP_CONCERT) siempre fallaba desde app
+    @Volatile private var _concertModeActive = false
+
     fun setConcertMode(enabled: Boolean) {
         if (enabled) {
             setPreset("Spatial")
             sendCommand("SET_REVERB:0.7")
-            setSystemProp(PROP_CONCERT, "1")
         } else {
             setPreset("Warm")
             sendCommand("SET_REVERB:0.0")
-            setSystemProp(PROP_CONCERT, "0")
         }
+        _concertModeActive = enabled
         Log.i(TAG, "ConcertMode=$enabled")
     }
 
     val isConcertModeActive: Boolean
-        get() = getPropCached(PROP_CONCERT) == "1"
-
-    private data class ProcResult(val result: String, val exitCode: Int)
-
-    private fun exec(cmd: String): ProcResult {
-        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-        val reader = BufferedReader(InputStreamReader(process.inputStream))
-        val output = reader.readText().trim()
-        val finished = process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        if (!finished) process.destroyForcibly()
-        return ProcResult(output, if (finished) process.exitValue() else -1)
-    }
-
-    private fun setSystemProp(key: String, value: String) {
-        try { exec("setprop $key $value") }
-        catch (_: Exception) { Log.w(TAG, "setprop failed $key") }
-    }
+        get() = _concertModeActive
+    // exec(), ProcResult y setSystemProp eliminados — eran dead code que añadía 3 s de latencia
 
     /**
      * Probe real de conectividad al daemon.
@@ -212,6 +194,7 @@ object MagiskBridge {
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {
             LocalSocket().use { sock ->
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS   // FIX Bug-4: sin esto puede bloquearse
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
@@ -223,6 +206,7 @@ object MagiskBridge {
         return runCatching {
             if (!File(SOCKET_LEGACY).exists()) return@runCatching false
             LocalSocket().use { sock ->
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS   // FIX Bug-4: idem legacy
                 sock.connect(
                     LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
                 )

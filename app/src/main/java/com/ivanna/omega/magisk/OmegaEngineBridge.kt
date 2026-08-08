@@ -55,6 +55,7 @@ object OmegaEngineBridge {
         // Primero intentar socket abstracto principal
         val probedPrimary = runCatching {
             val sock = LocalSocket()
+            sock.soTimeout = CONNECT_TIMEOUT          // FIX Bug-1: evita bloqueo en backlog
             sock.connect(
                 LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
             )
@@ -71,6 +72,7 @@ object OmegaEngineBridge {
         // Fallback socket legacy /data/pf/pf.sock
         val probedLegacy = runCatching {
             val sock = LocalSocket()
+            sock.soTimeout = CONNECT_TIMEOUT          // FIX Bug-1: idem para legacy
             sock.connect(
                 LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
             )
@@ -91,6 +93,7 @@ object OmegaEngineBridge {
         return try {
             val t0 = System.nanoTime()
             socket = LocalSocket()
+            socket.soTimeout = CONNECT_TIMEOUT        // FIX Bug-2: timeout en connect + read
 
             // Intentar primero socket abstracto, luego legacy
             val connected = runCatching {
@@ -118,7 +121,7 @@ object OmegaEngineBridge {
             output.flush()
 
             val input: InputStream = socket.inputStream
-            val buffer = ByteArray(256)
+            val buffer = ByteArray(1024)              // FIX Bug-2: buffer 256→1024
             val bytesRead = input.read(buffer)
             val t1 = System.nanoTime()
             lastLatencyMs = (t1 - t0) / 1_000_000f
@@ -220,7 +223,13 @@ object OmegaEngineBridge {
         put("latencyMs",   lastLatencyMs.toDouble())
     }
 
-        fun requestTelemetry(): String = "Omega telemetry OK latency=${lastLatencyMs}ms | ISO226=${com.ivanna.omega.audio.Iso226Calibrator.describe()}"
+    fun requestTelemetry(): String {                   // FIX Bug-3: probe real antes de leer lastLatencyMs
+        val ok = sendCommand(JSONObject().apply { put("action", "GET_STATUS") })
+        return if (ok)
+            "Omega telemetry OK latency=${"%.1f".format(lastLatencyMs)}ms | ISO226=${com.ivanna.omega.audio.Iso226Calibrator.describe()}"
+        else
+            "Omega telemetry OFFLINE | Daemon no responde"
+    }
 
     fun disconnect() { isConnected = false }
 

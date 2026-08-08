@@ -44,7 +44,9 @@ import com.ivanna.omega.spatial.HrtfSubjectSelector
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.PI
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 // ─── Tokens ────────────────────────────────────────────────────────────────
 private val SectionBg   = Color(0xFF0C1220)
@@ -360,7 +362,15 @@ private fun RouteRow(route: PipelineState) {
 
 @Composable
 private fun MagiskRow() {
-    val connected by remember { mutableStateOf(OmegaEngineBridge.isConnected) }
+    // FIX Bug-6: remember{} capturaba isConnected UNA vez (siempre false en cold-start)
+    // LaunchedEffect + IO polling actualiza el LED cada 3 s
+    var connected by remember { mutableStateOf(OmegaEngineBridge.isConnected) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            connected = withContext(Dispatchers.IO) { OmegaEngineBridge.connect() }
+            delay(3_000L)
+        }
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically) {
         Text("Daemon Magisk", fontSize = 11.sp, color = TextSecondary)
