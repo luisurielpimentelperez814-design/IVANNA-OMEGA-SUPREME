@@ -368,7 +368,10 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable(IvannaRoute.ADAPTIVE) { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
+            // FIX A: IvannaRoute.ADAPTIVE == "adaptive" ya está registrada arriba con
+            // su pantalla real (AdaptiveEngineScreen). Este redirect duplicado nunca se
+            // ejecutaba —NavHost conserva un solo destino por ruta— y ponía en riesgo la
+            // pantalla real. Se conserva la pantalla real.
             composable(IvannaRoute.LAB)       { nav.navigate(IvannaRoute.BRAIN) { popUpTo("dashboard") } }
 
             // ── Sección ESPACIO ───────────────────────────────────────────
