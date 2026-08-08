@@ -71,6 +71,28 @@
             </intent-filter>
         </receiver>
 
+        <!-- FIX (persistencia): el manifest pedia RECEIVE_BOOT_COMPLETED pero
+             no habia receiver para ese broadcast: el permiso no hacia nada y
+             los ajustes del usuario no volvian tras reiniciar. -->
+        <receiver
+            android:name=".audio.BootRestoreReceiver"
+            android:exported="false"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- FIX (sub-entorno desconectado): CognitiveDashboardActivity existia
+             como ComponentActivity completa pero no estaba en el manifest ni la
+             lanzaba nadie -> pantalla inalcanzable. Se registra como actividad
+             interna (exported=false) para poder abrirla desde la app. -->
+        <activity
+            android:name=".ui.CognitiveDashboardActivity"
+            android:exported="false"
+            android:label="IVANNA Cognitive"/>
+
     </application>
 
 </manifest>

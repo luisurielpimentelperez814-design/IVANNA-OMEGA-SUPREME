@@ -190,6 +190,13 @@ class IVANNAApplication : Application() {
         com.ivanna.omega.audio.AudioRouteManager.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
+        // FIX (root vs sin root): hasta ahora la app asumia siempre el camino
+        // con root (daemon Magisk por socket). Sin root, MagiskBridge devolvia
+        // "queued" y OmegaEngineBridge no conectaba: nada procesaba el audio.
+        // AudioBackendSelector hace el probe real de `su` en background y
+        // levanta el fallback AudioEffect/DynamicsProcessing cuando toca.
+        com.ivanna.omega.audio.AudioBackendSelector.start(this)
+
         // ── Arrancar cerebro perceptual ───────────────────────────────────
         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
@@ -336,6 +343,7 @@ class IVANNAApplication : Application() {
                 Log.e(TAG, "⚠️ No se pudo guardar evo state en onTerminate: ${e.message}")
             }
         }
+        runCatching { com.ivanna.omega.audio.AudioBackendSelector.stop() }
         globalEffectManager.releaseAll()
         omegaBridge.disconnect()
         OmegaDaemon.stop()

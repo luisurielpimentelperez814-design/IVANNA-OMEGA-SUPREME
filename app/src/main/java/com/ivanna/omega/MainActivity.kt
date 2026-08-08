@@ -60,6 +60,7 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.OmegaEngine
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
+import com.ivanna.omega.dsp.DSPStatePrefs
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -77,6 +78,7 @@ import com.ivanna.omega.ui.SystemScreen
 import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import com.ivanna.omega.magisk.ShmManager
 import com.ivanna.omega.core.PresetManager
 import com.ivanna.omega.audio.AudioRoutingManager
@@ -167,6 +169,10 @@ class MainActivity : ComponentActivity() {
             runCatching { IvannaNativeLib.nativeInitDSP(sr) }
             IvannaNativeLib.nativeStartEvoThread()
         }
+        // FIX (root / sin root): elige el backend real de procesado. En
+        // dispositivos sin root arranca el camino AudioEffect +
+        // DynamicsProcessing en vez de escribir a un daemon inexistente.
+        com.ivanna.omega.audio.AudioBackendSelector.start(applicationContext)
         setContent { OmegaApp() }
     }
 
@@ -182,7 +188,21 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OmegaApp() {
     val nav = rememberNavController()
-    val dsp = remember { mutableStateOf(DSPState()) }
+    val appContext = LocalContext.current.applicationContext
+    // FIX (persistencia): DSPStatePrefs.load/save existian pero NADIE los
+    // llamaba en todo el repo (grep DSPStatePrefs = 0 hits fuera de su
+    // archivo). El estado arrancaba SIEMPRE en DSPState() por defecto y todo
+    // lo que el usuario ajustaba se perdia al cerrar la app. Ahora se carga
+    // al entrar y se guarda con debounce en cada cambio.
+    val dsp = remember { mutableStateOf(DSPStatePrefs.load(appContext)) }
+    LaunchedEffect(Unit) {
+        // Re-aplicar al DSP nativo/daemon lo que se acaba de restaurar.
+        runCatching { dsp.value.pushToNative() }
+        snapshotFlow { dsp.value }.collectLatest { state ->
+            delay(400)  // debounce: los sliders emiten decenas de valores/seg
+            runCatching { DSPStatePrefs.save(appContext, state) }
+        }
+    }
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
         var captureRequested by remember { mutableStateOf(false) }

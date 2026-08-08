@@ -7,7 +7,7 @@ import android.media.AudioTrack
 import android.media.audiofx.DynamicsProcessing
 import android.os.Build
 import android.util.Log
-import java.io.File
+import com.ivanna.omega.core.RootAccess
 
 /**
  * NoRootAudioProcessor — Fallback cuando no hay Magisk/root.
@@ -28,23 +28,25 @@ class NoRootAudioProcessor(private val context: Context) {
     private var isRunning = false
 
     /**
-     * Verifica si el dispositivo tiene root/Magisk activo.
+     * FIX: la version anterior hacia File("/data/adb/magisk").exists() y
+     * File("/sbin/magisk").exists(). Una app sin privilegios NO puede
+     * stat() esas rutas (EACCES) -> exists() devolvia false SIEMPRE, tambien
+     * en dispositivos rooteados. Ahora delega en RootAccess, que hace probe
+     * real de `su`. Se conserva el nombre por compatibilidad.
      */
-    fun hasMagisk(): Boolean {
-        return File("/data/adb/magisk").exists() ||
-               File("/sbin/magisk").exists() ||
-               File("/system/bin/magisk").exists()
-    }
+    @Deprecated("Usa RootAccess.probeSu()/AudioBackendSelector", ReplaceWith("RootAccess.probeSu()"))
+    fun hasMagisk(): Boolean = RootAccess.cachedRoot
 
     /**
      * Inicia el procesamiento en modo no-root.
      * Usa DynamicsProcessing si está disponible (API 28+).
      */
     fun start(): Boolean {
-        if (hasMagisk()) {
-            Log.i(TAG, "Magisk detectado — modo no-root no necesario")
-            return false
-        }
+        // FIX: antes esto retornaba false si "detectaba Magisk", con una
+        // deteccion que nunca funcionaba, y ademas nadie llamaba a start()
+        // en todo el repo. Quien decide el modo es AudioBackendSelector;
+        // aqui solo se comprueba idempotencia y soporte de API.
+        if (isRunning) return true
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             Log.w(TAG, "DynamicsProcessing requiere API 28+ (Android 9+)")
@@ -74,8 +76,11 @@ class NoRootAudioProcessor(private val context: Context) {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            // Configurar DynamicsProcessing como fallback
-            setupDynamicsProcessing()
+            // Configurar DynamicsProcessing sobre la sesion del propio
+            // AudioTrack (antes se creaba con sessionId=0, una sesion que
+            // este AudioTrack no usa: el efecto quedaba colgado sin ruta de
+            // audio y el fallback no tocaba ni una muestra).
+            setupDynamicsProcessing(audioTrack?.audioSessionId ?: 0)
 
             audioTrack?.play()
             isRunning = true
@@ -87,7 +92,7 @@ class NoRootAudioProcessor(private val context: Context) {
         }
     }
 
-    private fun setupDynamicsProcessing() {
+    private fun setupDynamicsProcessing(sessionId: Int) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
 
         try {
@@ -105,7 +110,7 @@ class NoRootAudioProcessor(private val context: Context) {
             ).build()
 
             // Crear DynamicsProcessing con la configuración
-            val dp = DynamicsProcessing(0, 2, config)
+            val dp = DynamicsProcessing(0, sessionId, config)
 
             // Configurar bandas PostEQ para preset Anti-Dolby básico
             // EqBand(enabled, frequency, gain) - SIN parámetro Q
@@ -117,7 +122,7 @@ class NoRootAudioProcessor(private val context: Context) {
             dp.enabled = true
             dynamicsProcessing = dp
 
-            Log.i(TAG, "DynamicsProcessing configurado con preset Anti-Dolby básico")
+            Log.i(TAG, "DynamicsProcessing configurado en sesion $sessionId (preset Anti-Dolby basico)")
         } catch (e: Exception) {
             Log.w(TAG, "DynamicsProcessing no disponible: ${e.message}")
         }
