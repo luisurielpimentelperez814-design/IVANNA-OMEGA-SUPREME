@@ -284,9 +284,41 @@ fun OmegaApp() {
             }
             composable("visualizer") {
                 LaunchedEffect(Unit) {
-                    projectionLauncher.launch(
-                        projectionManager.createScreenCaptureIntent()
-                    )
+                    if (!captureActive) {
+                        projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                    }
+                }
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    androidx.compose.foundation.layout.Column(
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+                    ) {
+                        androidx.compose.material3.Text(
+                            "VISUALIZADOR DE ESPECTRO",
+                            color = CyanGlow,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                            letterSpacing = 2.sp
+                        )
+                        androidx.compose.material3.Text(
+                            if (captureActive) "CAPTURA ACTIVA · FFT 64-Band" else "Aguardando permiso MediaProjection…",
+                            color = if (captureActive) CyanGlow else TextSec,
+                            fontSize = 11.sp
+                        )
+                        if (!captureActive) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = {
+                                    projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                                },
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CyanGlow)
+                            ) {
+                                androidx.compose.material3.Text("ACTIVAR CAPTURA", color = CyanGlow)
+                            }
+                        }
+                    }
                 }
             }
             composable("adaptive") {
