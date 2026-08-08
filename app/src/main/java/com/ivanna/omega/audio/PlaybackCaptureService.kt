@@ -19,8 +19,6 @@ import com.ivanna.omega.VoiceController
 import com.ivanna.omega.ai.PerceptualState
 import com.ivanna.omega.ai.PerceptualCortex
 import com.ivanna.omega.ai.PerceptualStateListener
-import com.ivanna.omega.ai.PerceptualCortex
-import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
