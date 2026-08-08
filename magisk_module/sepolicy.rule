@@ -1,0 +1,20 @@
+# IVANNA OMEGA SUPREME — SELinux policy rules
+# Permite que la app (untrusted_app) se conecte al socket abstracto Unix
+# del daemon (que corre como root: u:r:su:s0 o u:r:magisk:s0).
+#
+# Sin estas reglas Android 8+ bloquea connect() silenciosamente:
+# avc: denied { connectto } scontext=u:r:untrusted_app:s0 tcontext=u:r:su:s0
+#
+# Aplicado en boot por Magisk si SKIPUNZIP=0 y el módulo sigue la estructura
+# estándar, o manualmente desde service.sh con magiskpolicy --live.
+
+# untrusted_app → su socket (daemon lanzado por Magisk root shell)
+allow untrusted_app su:unix_stream_socket connectto;
+allow untrusted_app magisk:unix_stream_socket connectto;
+
+# La app necesita también crear su extremo del socket
+allow untrusted_app untrusted_app:unix_stream_socket { create connect read write };
+
+# isolated_app (WebView workers, etc.) también puede necesitar conectarse
+allow isolated_app su:unix_stream_socket connectto;
+allow isolated_app magisk:unix_stream_socket connectto;
