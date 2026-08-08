@@ -307,31 +307,6 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("telemetry") {
-                com.ivanna.omega.ui.TelemetryDashboard(
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                )
-            }
-            composable("ope") {
-                com.ivanna.omega.ui.OpeEngineScreen(
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                )
-            }
-            composable("binaural") {
-                com.ivanna.omega.ui.BinauralScreen(
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                )
-            }
-            composable("auditory") {
-                com.ivanna.omega.ui.AuditoryExperienceScreen(
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars),
-                    onEnterMotorClick = { nav.navigate("adaptive") }
-                )
-            }
             composable("lab") {
                 com.ivanna.omega.ui.IvannaLabScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
@@ -384,7 +359,6 @@ fun OmegaApp() {
                 )
             }
             composable(IvannaRoute.TELEMETRY) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
-            composable("telemetry")           { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
             composable("adaptive_profiles")   { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
         }
     }
