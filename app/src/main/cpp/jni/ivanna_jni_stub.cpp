@@ -71,10 +71,18 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetRoutePro
 }
 
 // ── nativeSetManifoldEnabled (instancia AudioEngine) ─────────────────────────
-// Faltaba: AudioEngine.kt declara este external fun sin símbolo JNI.
-// Permite a la UI activar/desactivar el NeuroCochlear Manifold desde el
-// hilo de Kotlin sin tocar el NPE (que tiene su propia bandera interna).
-// El flag vive en gState.manifoldEnabled (atomic<bool>, audio_orchestrator.cpp)
-// y se puede consultar desde cualquier lugar via ivanna_manifold_enabled().
+// AUDIT FIX (JNI symbol missing): AudioEngine.kt declara este external fun
+// sin símbolo JNI correspondiente → UnsatisfiedLinkError al invocarse desde
+// el hilo de Kotlin. Se implementa el puente delegando en el símbolo
+// externo ivanna_set_manifold_enabled() ya definido en audio_orchestrator.cpp
+// (gState.manifoldEnabled). No cambia la firma pública ni la semántica.
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifoldEnabled(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jboolean enabled
+) {
+    const bool en = (enabled == JNI_TRUE);
+    ivanna_set_manifold_enabled(en);
+    LOGI("ManifoldEnabled (instance): %s", en ? "true" : "false");
+}
 
 }
