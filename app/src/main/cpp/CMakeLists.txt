@@ -159,7 +159,8 @@ add_library(ivanna_omega SHARED
     ivannalab/ivannalab.cpp
     #     IvannaAudioClassifier.cpp
     #     IvannaFusionCore.cpp
-    #     EvolutionaryEQ.cpp
+    #     EvolutionaryEQ.cpp   # AVISO 2026-08-08: 3 copias en el repo divergieron entre si;
+    #                          # el kernel evolutivo real es evolutionary_kernel.cpp (API en C, distinta)
     #     HrtfManager.cpp
     #     Psychoacoustics.cpp
 )
