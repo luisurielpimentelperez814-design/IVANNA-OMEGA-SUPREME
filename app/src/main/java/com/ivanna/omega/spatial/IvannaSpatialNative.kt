@@ -11,26 +11,34 @@ import com.ivanna.omega.core.NativeLibraryLoader
  *   - Neural Upmixer (separación AI de stems + spatialización)
  *
  * Todo el procesamiento ocurre en C++ con zero-allocation y lock-free.
+ *
+ * AUDIT FIX (JNI signature binding): sin @JvmStatic un `external fun` dentro
+ * de un `object` Kotlin se compila como método de INSTANCIA en el bytecode
+ * (recibe `jobject thiz` en el JNI). Todo ivanna_spatial_jni.cpp exporta las
+ * funciones con la firma estática (JNIEnv*, jclass, ...) — el mismatch causa
+ * UnsatisfiedLinkError en runtime al invocar cualquier método spatial. Se
+ * anota cada external con @JvmStatic para generar el thunk estático que
+ * enlaza con la firma JNI ya existente, sin cambiar APIs externas ni el .cpp.
  */
 object IvannaSpatialNative {
     val isLoaded: Boolean = NativeLibraryLoader.ensureLoaded()
 
     // HeadTracker
-    external fun nativeHeadTrackerCreate(): Long
-    external fun nativeHeadTrackerDestroy(handle: Long)
-    external fun nativeHeadTrackerUpdate(handle: Long, x: Float, y: Float, z: Float, w: Float, timestampMs: Float)
-    external fun nativeHeadTrackerReset(handle: Long)
+    @JvmStatic external fun nativeHeadTrackerCreate(): Long
+    @JvmStatic external fun nativeHeadTrackerDestroy(handle: Long)
+    @JvmStatic external fun nativeHeadTrackerUpdate(handle: Long, x: Float, y: Float, z: Float, w: Float, timestampMs: Float)
+    @JvmStatic external fun nativeHeadTrackerReset(handle: Long)
 
     // ObjectRenderer
-    external fun nativeObjectRendererCreate(sampleRate: Float, blockSize: Int): Long
-    external fun nativeObjectRendererDestroy(handle: Long)
-    external fun nativeObjectRendererSetHeadTracker(rendererHandle: Long, trackerHandle: Long)
-    external fun nativeObjectRendererSetReverb(handle: Long, level: Float)
-    external fun nativeObjectRendererRenderBlock(
+    @JvmStatic external fun nativeObjectRendererCreate(sampleRate: Float, blockSize: Int): Long
+    @JvmStatic external fun nativeObjectRendererDestroy(handle: Long)
+    @JvmStatic external fun nativeObjectRendererSetHeadTracker(rendererHandle: Long, trackerHandle: Long)
+    @JvmStatic external fun nativeObjectRendererSetReverb(handle: Long, level: Float)
+    @JvmStatic external fun nativeObjectRendererRenderBlock(
         handle: Long, objectsBuffer: java.nio.FloatBuffer, numObjects: Int,
         outLeftBuffer: java.nio.FloatBuffer, outRightBuffer: java.nio.FloatBuffer, numFrames: Int
     )
-    external fun nativeObjectRendererReset(handle: Long)
+    @JvmStatic external fun nativeObjectRendererReset(handle: Long)
     // [FIX-SILENCE] El renderer solo produce audio para objetos activos en
     // su lista interna (setObjects()/objectsA_/objectsB_), que ANTES nunca
     // se poblaba: el motor corría (upmixer + renderer + HRTF) pero
@@ -38,13 +46,13 @@ object IvannaSpatialNative {
     // silenciosa. Este puente sincroniza las 4 posiciones de stem del
     // upmixer (defaults o custom vía setStemPosition) hacia la lista de
     // objetos activos del renderer.
-    external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
+    @JvmStatic external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
 
     // NeuralUpmixer
-    external fun nativeUpmixerCreate(modelPath: String, sampleRate: Float, blockSize: Int): Long
-    external fun nativeUpmixerDestroy(handle: Long)
-    external fun nativeUpmixerProcess(handle: Long, inBuffer: java.nio.FloatBuffer, outBuffer: java.nio.FloatBuffer, numFrames: Int)
-    external fun nativeUpmixerSetEnabled(handle: Long, enabled: Boolean)
-    external fun nativeUpmixerSetStemPosition(handle: Long, stemType: Int, x: Float, y: Float, z: Float, width: Float)
-    external fun nativeUpmixerReset(handle: Long)
+    @JvmStatic external fun nativeUpmixerCreate(modelPath: String, sampleRate: Float, blockSize: Int): Long
+    @JvmStatic external fun nativeUpmixerDestroy(handle: Long)
+    @JvmStatic external fun nativeUpmixerProcess(handle: Long, inBuffer: java.nio.FloatBuffer, outBuffer: java.nio.FloatBuffer, numFrames: Int)
+    @JvmStatic external fun nativeUpmixerSetEnabled(handle: Long, enabled: Boolean)
+    @JvmStatic external fun nativeUpmixerSetStemPosition(handle: Long, stemType: Int, x: Float, y: Float, z: Float, width: Float)
+    @JvmStatic external fun nativeUpmixerReset(handle: Long)
 }
