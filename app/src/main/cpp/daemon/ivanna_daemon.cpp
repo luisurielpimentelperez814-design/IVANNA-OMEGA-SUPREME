@@ -129,6 +129,32 @@ int create_socket_server(const std::string& socket_path) {
         return -1;
     }
 
+    // ── SO_REUSEADDR (Foco #5, auditoría 2026-08-09) ─────────────────────────
+    // Sin este flag, si el daemon crashea rápido (SEGV en init de SHM, panic
+    // por SELinux, kill -9 externo) antes de llegar al close(g_server_fd) del
+    // signal handler, el kernel Linux mantiene el nombre @omega_daemon_socket
+    // en TIME_WAIT interno del abstract namespace durante varios segundos.
+    // El watchdog de service.sh reintenta el bind() ~0.5s después y recibe
+    // EADDRINUSE → entra en backoff exponencial (2→4→8→…→60s) sin razón real,
+    // dejando al usuario sin daemon durante minutos tras un solo crash.
+    //
+    // SO_REUSEADDR le dice al kernel: si el nombre está en cooldown pero no
+    // hay ningún proceso vivo bindeando, entrégalo. NO permite double-bind
+    // simultáneo (eso sería SO_REUSEPORT), sólo acelera la recuperación.
+    //
+    // Aplica igual a sockets de filesystem: si el daemon crashea sin unlink,
+    // el archivo persiste y el próximo bind() falla; SO_REUSEADDR + el unlink
+    // condicional del código ya existente cierran el ciclo.
+    {
+        int one = 1;
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+                       &one, sizeof(one)) < 0) {
+            // No es fatal: log y seguir. Sólo alarga el TTR tras crashes.
+            log_message("Warning: setsockopt SO_REUSEADDR failed: " +
+                        std::string(strerror(errno)));
+        }
+    }
+
     struct sockaddr_un addr;
     socklen_t addr_len = 0;
     std::memset(&addr, 0, sizeof(addr));

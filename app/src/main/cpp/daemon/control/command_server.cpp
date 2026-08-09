@@ -289,6 +289,19 @@ bool CommandServer::start(const std::string& socketName)
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (serverFd < 0) return false;
 
+    // ── SO_REUSEADDR (Foco #5, auditoría 2026-08-09) ─────────────────────────
+    // Mismo motivo que en ivanna_daemon.cpp create_socket_server(): sin este
+    // flag el nombre @omega_command_socket queda en cooldown del kernel tras
+    // un crash y el watchdog no puede rebindear hasta que el TTL interno
+    // expira. Con SO_REUSEADDR el rebind es inmediato.
+    {
+        int one = 1;
+        if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR,
+                       &one, sizeof(one)) < 0) {
+            CS_LOG("Warning: setsockopt SO_REUSEADDR failed: %s", strerror(errno));
+        }
+    }
+
     sockaddr_un addr{};
     socklen_t addrLen = 0;
     addr.sun_family = AF_UNIX;
