@@ -267,6 +267,18 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var voiceAcc   = 0f
         private var voiceCount = 0
 
+        // AUDIT FIX (realtime allocation): buffers deinterleaved L/R
+        // preasignados una vez para el bloque spatial. Antes se creaban 4
+        // FloatArray(frames) por iteracion del loop (~93 iteraciones/seg
+        // a 48 kHz / 512 frames) -> presion continua sobre el GC en el
+        // hilo THREAD_PRIORITY_URGENT_AUDIO -> jitter y XRun.
+        // Tamanyo fijo BLOCK_FRAMES: AudioRecord nunca entrega mas de
+        // BLOCK_SAMPLES bytes por read() por como esta configurado.
+        private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
+        private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
+        private val rtSpatialOutL = FloatArray(BLOCK_FRAMES)
+        private val rtSpatialOutR = FloatArray(BLOCK_FRAMES)
+
         private val projCallback = object : MediaProjection.Callback() {
             override fun onStop() = onProjLost()
         }
@@ -384,6 +396,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // queda con active=true/_isCapturing=true para siempre (logo encendido,
             // efectos muertos, sin reinicio automático).
             try {
+                // AUDIT FIX (realtime allocation): estos dos ya se creaban
+                // una sola vez fuera del while — se conservan tal cual.
                 val buffer = FloatArray(BLOCK_SAMPLES)
                 val mono   = FloatArray(BLOCK_FRAMES)
                 while (active && !Thread.currentThread().isInterrupted) {
@@ -397,15 +411,29 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // no-NONE con chain defectuosa), el loop sigue — no muere.
                     runCatching { CinematicEngineHost.processBlock(buffer).copyInto(buffer) }
                     if (IvannaSpatialEngine.enabled) {
-                        val inL  = FloatArray(frames) { buffer[it * 2] }
-                        val inR  = FloatArray(frames) { buffer[it * 2 + 1] }
-                        val outL = FloatArray(frames)
-                        val outR = FloatArray(frames)
-                        runCatching {
-                            IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                        // AUDIT FIX (realtime allocation): reutilizar buffers
+                        // rtSpatialInL/R/OutL/R (miembros de la clase). Antes
+                        // se creaban 4 FloatArray(frames) por bloque —
+                        // aprox 93 blocks/seg -> ~372 arrays/seg descartados
+                        // en el hilo de audio. Si por cualquier razon el
+                        // driver entregara un bloque mayor que el buffer
+                        // preasignado (BLOCK_FRAMES), se salta la etapa
+                        // spatial en vez de allocar en el hilo caliente.
+                        if (frames <= rtSpatialInL.size) {
+                            val inL  = rtSpatialInL
+                            val inR  = rtSpatialInR
+                            val outL = rtSpatialOutL
+                            val outR = rtSpatialOutR
                             for (i in 0 until frames) {
-                                buffer[i * 2]     = outL[i]
-                                buffer[i * 2 + 1] = outR[i]
+                                inL[i] = buffer[i * 2]
+                                inR[i] = buffer[i * 2 + 1]
+                            }
+                            runCatching {
+                                IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                                for (i in 0 until frames) {
+                                    buffer[i * 2]     = outL[i]
+                                    buffer[i * 2 + 1] = outR[i]
+                                }
                             }
                         }
                     }
