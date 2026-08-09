@@ -238,7 +238,21 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
 }
 
 static int32_t omega_release_effect(effect_handle_t handle) {
-    if (handle) free(handle);
+    // AUDIT FIX (lifecycle leak): antes sólo se hacía free(handle), dejando
+    // fugado el IvannaFusionCore alojado en ctx->fusionCore. En sesiones
+    // largas de AudioFlinger (crear/destruir efectos por cada foco de
+    // audio) esto acumulaba megas de estado DSP (buffers HRTF, spatial
+    // renderer, smoothers) hasta OOM del audioserver. Se libera
+    // explícitamente el DSP antes de liberar el contexto.
+    if (handle) {
+        omega_effect_context_t *ctx =
+            reinterpret_cast<omega_effect_context_t *>(handle);
+        if (ctx->fusionCore) {
+            delete ctx->fusionCore;
+            ctx->fusionCore = nullptr;
+        }
+        free(ctx);
+    }
     return 0;
 }
 
