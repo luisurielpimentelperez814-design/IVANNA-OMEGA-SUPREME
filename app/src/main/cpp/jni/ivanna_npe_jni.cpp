@@ -450,8 +450,27 @@ private:
 };
 
 // ── Registro de instancias (handle = puntero) ──────────────────────────────
+// AUDIT FIX (lifecycle race): antes g_active era un std::atomic<Engine*> raw
+// pointer. nativeDestroy borraba el puntero y liberaba el objeto mientras
+// nativeGetDetectedGenre/nativeGetSynthSignature/nativeGetSynthClassify
+// podían estar leyendo el mismo puntero en otro hilo (UI thread vs audio),
+// causando Use-After-Free y una ventana TOCTOU entre load() y la
+// desreferencia. Se pasa a shared_ptr con acceso atómico (std::atomic_load/
+// atomic_store — API C++17 sobre shared_ptr), que mantiene la vida del
+// objeto hasta que TODAS las referencias en vuelo lo liberan. No cambia
+// la API JNI ni el handle: el handle sigue siendo el Engine* crudo (para
+// nativeReset/nativeProcess/etc.), y sólo las queries "sin handle" pasan
+// por el shared_ptr global.
 static std::mutex g_registry_mtx;
-static std::atomic<Engine*> g_active{nullptr};  // última creada — para queries sin handle
+static std::shared_ptr<Engine> g_active_sp; // guarded por atomic_load/store
+
+static inline std::shared_ptr<Engine> get_active_engine() noexcept {
+    return std::atomic_load_explicit(&g_active_sp, std::memory_order_acquire);
+}
+
+static inline void set_active_engine(std::shared_ptr<Engine> sp) noexcept {
+    std::atomic_store_explicit(&g_active_sp, std::move(sp), std::memory_order_release);
+}
 
 static inline Engine* handle_to_engine(jlong h) noexcept {
     return reinterpret_cast<Engine*>(static_cast<intptr_t>(h));
@@ -464,11 +483,22 @@ using namespace ivanna_npe;
 extern "C" {
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
+// Handle -> shared_ptr registry (only for global-query lifecycle safety;
+// per-handle JNI methods siguen usando el puntero crudo, sólo se protegen
+// las llamadas que leen g_active_sp).
+static std::mutex g_handles_mtx;
+static std::vector<std::shared_ptr<Engine>> g_handles;
+
 JNIEXPORT jlong JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeCreate(
     JNIEnv*, jclass, jfloat sr, jint maxBlk) {
-    auto* eng = new Engine(sr, maxBlk);
-    g_active.store(eng, std::memory_order_release);
+    auto sp = std::make_shared<Engine>(sr, maxBlk);
+    Engine* eng = sp.get();
+    {
+        std::lock_guard<std::mutex> lk(g_handles_mtx);
+        g_handles.push_back(sp);
+    }
+    set_active_engine(sp);
     LOGI("nativeCreate: engine=%p sr=%.0f maxBlk=%d", (void*)eng, sr, maxBlk);
     return static_cast<jlong>(reinterpret_cast<intptr_t>(eng));
 }
@@ -477,10 +507,27 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDestroy(
     JNIEnv*, jclass, jlong handle) {
     Engine* eng = handle_to_engine(handle);
-    if (g_active.load(std::memory_order_acquire) == eng) {
-        g_active.store(nullptr, std::memory_order_release);
+    if (!eng) return;
+
+    // Si esta instancia es la activa global, drop la referencia atómicamente.
+    // Los readers que ya hicieron atomic_load antes de este store seguirán
+    // usando su propia copia del shared_ptr → el Engine sobrevive hasta que
+    // ellos también lo suelten (elimina UAF y TOCTOU).
+    auto cur = get_active_engine();
+    if (cur && cur.get() == eng) {
+        set_active_engine(nullptr);
     }
-    delete eng;
+
+    // Sacar la referencia de posesión del registry. Si nadie más la retiene,
+    // el shared_ptr destruye el Engine aquí; si algún reader la retiene, se
+    // destruye cuando ese reader la suelte.
+    std::lock_guard<std::mutex> lk(g_handles_mtx);
+    for (auto it = g_handles.begin(); it != g_handles.end(); ++it) {
+        if (it->get() == eng) {
+            g_handles.erase(it);
+            break;
+        }
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -596,11 +643,14 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeSetNeuroParams(
 }
 
 // ── Synth / genre analysis (global — sin handle) ──────────────────────────────
+// AUDIT FIX (lifecycle race): estas queries toman una COPIA local del
+// shared_ptr (atomic_load) — mientras esta copia esté viva, el Engine
+// no puede ser liberado por nativeDestroy en otro hilo.
 JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeGetDetectedGenre(
     JNIEnv* env, jclass) {
-    Engine* eng = g_active.load(std::memory_order_acquire);
-    return env->NewStringUTF(eng ? eng->getDetectedGenre() : "\xe2\x80\x94");
+    auto sp = get_active_engine();
+    return env->NewStringUTF(sp ? sp->getDetectedGenre() : "\xe2\x80\x94");
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -608,9 +658,9 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeGetSynthSignature(
     JNIEnv* env, jclass) {
     jfloatArray arr = env->NewFloatArray(5);
     if (!arr) return arr;
-    Engine* eng = g_active.load(std::memory_order_acquire);
+    auto sp = get_active_engine();
     float sig[5] = {0.f, 0.f, 0.f, 0.f, 0.f};
-    if (eng) eng->getSynthSignature(sig);
+    if (sp) sp->getSynthSignature(sig);
     env->SetFloatArrayRegion(arr, 0, 5, sig);
     return arr;
 }
@@ -620,9 +670,9 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeGetSynthClassify(
     JNIEnv* env, jclass) {
     jfloatArray arr = env->NewFloatArray(7);
     if (!arr) return arr;
-    Engine* eng = g_active.load(std::memory_order_acquire);
+    auto sp = get_active_engine();
     float cls[7] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
-    if (eng) eng->getSynthClassify(cls);
+    if (sp) sp->getSynthClassify(cls);
     env->SetFloatArrayRegion(arr, 0, 7, cls);
     return arr;
 }
