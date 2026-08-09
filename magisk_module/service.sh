@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# IVANNA OMEGA SUPREME v6.2 - Magisk Realtime Daemon Service
+# IVANNA OMEGA SUPREME v6.3 - Magisk Realtime Daemon Service
 MODDIR=${0%/*}
 
 DAEMON_BIN="$MODDIR/system/bin/ivanna_daemon"
@@ -13,7 +13,7 @@ if [ -f "$LOGFILE" ] && [ "$(stat -c%s "$LOGFILE" 2>/dev/null || echo 0)" -gt 10
     mv "$LOGFILE" "${LOGFILE}.old"
 fi
 
-echo "[$(date)] service.sh v6.2 iniciado" >> "$LOGFILE"
+echo "[$(date)] service.sh v6.3 iniciado" >> "$LOGFILE"
 
 # ── SELinux: cargar reglas del módulo en tiempo real ─────────────────────────
 # Sin esto, untrusted_app (la app) no puede connect() al socket abstracto del
@@ -76,15 +76,51 @@ chmod 755 "$DAEMON_BIN"
 BACKOFF=2
 BACKOFF_MAX=60
 PID_FILE=/data/adb/ivanna_daemon.pid
+# FIX Foco #2 (auditoría 2026-08-09): rastrear MQA_PID vía PID file en disco
+# en lugar de la variable de shell. Antes MQA_PID se limpiaba con MQA_PID=""
+# después del wait del daemon; si mqa_monitor.sh sobrevivía a un crash del
+# daemon (fue background, PID quedó desalineado tras `wait`), la siguiente
+# iteración lanzaba un SEGUNDO mqa_monitor y el primero quedaba huérfano
+# tocando dumpsys cada 5s → bateria + wakelocks + presets estampando en
+# ráfaga. Con archivo persistente cualquier iteración puede matar al
+# monitor previo sin depender del estado de la variable en RAM.
+MQA_PID_FILE=/data/adb/ivanna_mqa.pid
 MQA_PID=""
+
+# ── mqa_kill_previous ─────────────────────────────────────────────────────────
+# Mata cualquier mqa_monitor.sh residual, sea de esta ejecución (variable
+# MQA_PID) o de una ejecución anterior de service.sh que sobrevivió (via
+# MQA_PID_FILE). Idempotente y seguro contra PID reciclado: `kill -0` valida
+# que el PID exista antes de mandar SIGTERM, y `ps` filtra por nombre por si
+# el kernel ya reasignó el PID a otro proceso ajeno.
+mqa_kill_previous() {
+    if [ -f "$MQA_PID_FILE" ]; then
+        OLD_MQA=$(cat "$MQA_PID_FILE" 2>/dev/null)
+        if [ -n "$OLD_MQA" ] && kill -0 "$OLD_MQA" 2>/dev/null; then
+            # Verifica que el PID sea realmente un mqa_monitor.sh, no un
+            # proceso ajeno con el mismo PID tras un ciclo del kernel.
+            if ps -p "$OLD_MQA" -o comm= 2>/dev/null | grep -q "mqa_monitor\|sh"; then
+                kill "$OLD_MQA" 2>/dev/null
+                echo "[$(date)] mqa_monitor previo PID=$OLD_MQA matado (via $MQA_PID_FILE)" >> "$LOGFILE"
+            fi
+        fi
+        rm -f "$MQA_PID_FILE"
+    fi
+    # También matar el de esta sesión si sigue en la variable
+    if [ -n "$MQA_PID" ] && kill -0 "$MQA_PID" 2>/dev/null; then
+        kill "$MQA_PID" 2>/dev/null
+    fi
+    MQA_PID=""
+}
 
 cleanup() {
     setprop persist.ivanna.daemon_active 0
     [ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null
-    # FIX: matar mqa_monitor si estaba corriendo
-    [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null
-    # FIX: limpiar PID file en cualquier salida
-    rm -f "$PID_FILE"
+    # FIX Foco #2: matar mqa_monitor via PID file (cubre residuales de
+    # ejecuciones previas de service.sh además del de esta sesión).
+    mqa_kill_previous
+    # FIX: limpiar PID files en cualquier salida
+    rm -f "$PID_FILE" "$MQA_PID_FILE"
     echo "[$(date)] service.sh saliendo — daemon_active=0" >> "$LOGFILE"
 }
 trap cleanup EXIT HUP INT TERM
@@ -129,11 +165,14 @@ while true; do
         # Spotify→Warm, YouTube→Spatial) nunca corría aunque el código
         # estaba completo en mqa_monitor.sh.
         if [ -f "$MODDIR/mqa_monitor.sh" ] && [ -x "$MODDIR/mqa_monitor.sh" ]; then
-            # Matar monitor anterior si estaba corriendo de una iteración previa
-            [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null
+            # FIX Foco #2: matar cualquier mqa_monitor residual (sesión
+            # actual o previa) ANTES de lanzar el nuevo. mqa_kill_previous
+            # cubre el PID file en disco, no sólo la variable en RAM.
+            mqa_kill_previous
             "$MODDIR/mqa_monitor.sh" "$MODDIR" >> "$LOGFILE" 2>&1 &
             MQA_PID=$!
-            echo "[$(date)] mqa_monitor.sh PID=$MQA_PID iniciado" >> "$LOGFILE"
+            echo "$MQA_PID" > "$MQA_PID_FILE"
+            echo "[$(date)] mqa_monitor.sh PID=$MQA_PID iniciado (registrado en $MQA_PID_FILE)" >> "$LOGFILE"
         fi
     else
         echo "[$(date)] ERROR: daemon terminó inmediatamente — reintento en ${BACKOFF}s" >> "$LOGFILE"
@@ -149,8 +188,11 @@ while true; do
     UPTIME=$(( $(date +%s) - START_TS ))
     setprop persist.ivanna.daemon_active 0
     rm -f "$PID_FILE"
-    # Matar monitor cuando el daemon muere — ya no tiene a quién enviar comandos
-    [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null; MQA_PID=""
+    # FIX Foco #2: matar monitor via helper — el daemon murió, el monitor
+    # ya no tiene a quién enviar comandos. Usar mqa_kill_previous en vez
+    # de kill "$MQA_PID" directo garantiza que también se atrape a un
+    # monitor previo que hubiera quedado huérfano en la iteración anterior.
+    mqa_kill_previous
     if [ "$UPTIME" -ge 30 ]; then
         BACKOFF=2
     else
