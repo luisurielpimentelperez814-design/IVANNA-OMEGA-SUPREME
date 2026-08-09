@@ -31,13 +31,29 @@ else
 fi
 
 # ── SAF MODEL DEPLOY ──────────────────────────────────────────────────────────
-# FIX: estaba después del `done` del while loop — código muerto. Movido antes.
-SAF_ASSET="$MODDIR/system/etc/ivanna_omega/SAF_model_total.json"
-SAF_DEST="/data/adb/ivanna_omega/SAF_model_total.json"
+# FIX (auditoría 2026-08-09):
+#   Antes SAF_ASSET apuntaba a "system/etc/ivanna_omega/SAF_model_total.json"
+#   y SAF_DEST a "/data/adb/ivanna_omega/SAF_model_total.json". Pero:
+#     * customize.sh:12 despliega el modelo REAL desde "$MODPATH/saf/SAF_model.json".
+#     * app/src/main/java/.../SaFEngine.kt:155 busca en
+#       "/data/adb/ivanna_omega/SAF_model.json" (path canónico app).
+#     * SaFOptimizer.cpp x8 referencias, SaFBridge.kt, todos usan "SAF_model.json".
+#   Resultado: en la instalación real el `cp` fallaba en silencio (el `if [ -f ]`
+#   no tenía `else`), /data/adb/ivanna_omega/SAF_model_total.json nunca aparecía,
+#   y el motor Φ_SAF caía a constantes horneadas SIN AVISAR. La personalización
+#   HRTF (214 subjects, 7-PCA) quedaba muerta para todos los usuarios.
+#
+#   v6.2 → usar el mismo asset que customize.sh y el mismo path que la app.
+#   Se añade `else` explícito para que el fallo aparezca en el log de boot,
+#   no como silencio.
+SAF_ASSET="$MODDIR/saf/SAF_model.json"
+SAF_DEST="/data/adb/ivanna_omega/SAF_model.json"
 if [ -f "$SAF_ASSET" ]; then
     cp -f "$SAF_ASSET" "$SAF_DEST"
     chmod 644 "$SAF_DEST"
-    echo "[$(date)] SAF_model_total.json deployed → $SAF_DEST" >> "$LOGFILE"
+    echo "[$(date)] SAF_model.json deployed → $SAF_DEST ($(stat -c%s "$SAF_ASSET" 2>/dev/null || echo ?) bytes)" >> "$LOGFILE"
+else
+    echo "[$(date)] WARN: SAF_model.json NO encontrado en $SAF_ASSET — motor Φ_SAF usará constantes horneadas (214 subjects baked in SaFOptimizer.cpp)" >> "$LOGFILE"
 fi
 
 # ── Verificar binario ─────────────────────────────────────────────────────────

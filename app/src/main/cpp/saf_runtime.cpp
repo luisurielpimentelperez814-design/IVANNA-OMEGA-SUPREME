@@ -19,7 +19,7 @@ bool SAF_LoadModel()
 {
 
     const char* path =
-    "/data/adb/ivanna_omega/SAF_model_total.json";
+    "/data/adb/ivanna_omega/SAF_model.json";  // FIX 2026-08-09: unificar con customize.sh y SaFEngine.kt (path canónico app)
 
 
     Ivanna::SafModelLoader loader;
