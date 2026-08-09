@@ -85,14 +85,4 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifold
     LOGI("ManifoldEnabled (instance): %s", en ? "true" : "false");
 }
 
-
-JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetManifoldEnabled(
-    JNIEnv* /*env*/,
-    jobject /*thiz*/,
-    jboolean enabled
-) {
-    ivanna_set_manifold_enabled(enabled == JNI_TRUE);
-    LOGI("Manifold enabled=%s", enabled ? "true" : "false");
-}
-
 }
