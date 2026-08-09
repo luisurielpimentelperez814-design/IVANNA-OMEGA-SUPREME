@@ -20,6 +20,11 @@ static IvannaFusionCore* g_fusionCore = nullptr;
 
 extern "C" {
 
+// NOTA (audit fix): g_fusionCore se mantiene sólo para el canal legacy JNI
+// (IvannaNativeLib.nativeInitDSP/nativeSetSpatialWidth/nativeSetHarmonicGain)
+// que la UI usa como "controlador global" fuera del pipeline AudioFlinger.
+// El pipeline AudioFlinger real (omega_process) YA NO lo toca — cada
+// instancia usa ctx->fusionCore.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv* env, jclass clazz, jint sampleRate) {
     if (g_fusionCore != nullptr) {
@@ -69,11 +74,20 @@ static const effect_descriptor_t OMEGA_DESCRIPTOR = {
     "IVANNA OMEGA SUPREME"
 };
 
-/* Contexto por instancia. El PRIMER campo debe ser el puntero a la vtable. */
+/* Contexto por instancia. El PRIMER campo debe ser el puntero a la vtable.
+ *
+ * AUDIT FIX (session isolation): antes el estado DSP vivía en el global
+ * g_fusionCore compartido entre TODAS las sesiones de AudioFlinger. Dos
+ * pistas simultáneas (p.ej. música + navegación) pisaban el mismo estado
+ * interno (spatial renderer, HRTF, smoothers) -> glitches, saltos de
+ * ganancia y cross-talk entre sesiones. Se mueve el IvannaFusionCore a
+ * este contexto para que cada instancia tenga el suyo aislado.
+ */
 struct omega_effect_context_t {
     const struct effect_interface_s *itfe;
     effect_config_t config;
     bool enabled;
+    IvannaFusionCore* fusionCore;   // AUDIT FIX: DSP per-instance (era global)
 };
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
@@ -87,8 +101,10 @@ static int32_t omega_process(effect_handle_t self,
     const float* in = inBuf->f32;
     float* out = outBuf->f32;
 
-    // Motor aún no configurado: passthrough seguro.
-    if (!g_fusionCore) {
+    // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
+    // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
+    IvannaFusionCore* fc = ctx->fusionCore;
+    if (!fc) {
         memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
         return 0;
     }
@@ -102,7 +118,7 @@ static int32_t omega_process(effect_handle_t self,
     }
 
     // Render binaural de objetos (VBAP + HRTF) + DSP de salida
-    g_fusionCore->processStereo(L.data(), R.data(), (size_t)frames);
+    fc->processStereo(L.data(), R.data(), (size_t)frames);
 
     // Interleave -> salida
     for (int n = 0; n < frames; ++n) {
@@ -126,8 +142,13 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 uint32_t sr = ctx->config.outputCfg.samplingRate;
                 if (sr == 0) sr = ctx->config.inputCfg.samplingRate;
                 if (sr == 0) sr = 48000;
-                if (!g_fusionCore) g_fusionCore = new IvannaFusionCore((float)sr);
-                g_fusionCore->initSpatial((float)sr, 4096);
+                // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
+                // Cada sesión AudioFlinger llega aquí y crea su propio
+                // IvannaFusionCore; ya no se pisa el global entre sesiones.
+                if (!ctx->fusionCore) {
+                    ctx->fusionCore = new IvannaFusionCore((float)sr);
+                }
+                ctx->fusionCore->initSpatial((float)sr, 4096);
                 // Dataset HRTF personalizado (si existe). Fallback: sintético.
                 // El resultado se logea SIEMPRE: es el unico punto del sistema
                 // donde se decide entre HRTF medido y HRTF sintetico, y esa
@@ -135,7 +156,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 static const char* kHrtfPath =
                     "/data/adb/ivanna_omega/hrtf_dataset.ihr1";
                 errno = 0;
-                if (g_fusionCore->loadCustomHrtf(kHrtfPath)) {
+                if (ctx->fusionCore->loadCustomHrtf(kHrtfPath)) {
                     LOGI("Custom HRTF dataset loaded from %s (measured path ACTIVE)",
                          kHrtfPath);
                 } else {
@@ -211,6 +232,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     if (!ctx) return -ENOMEM;
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
+    ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
 }
