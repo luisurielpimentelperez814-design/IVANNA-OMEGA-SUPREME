@@ -15,6 +15,7 @@
 #include <numeric>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 namespace ivanna {
 
@@ -125,6 +126,18 @@ struct IvannaLab::Impl {
     std::vector<float> monoHistory;
     float lufsSnapshot = -144.f;
 
+    // FIX (SIGSEGV en measure(), tombstone 2026-08-08 17:24, proceso
+    // com.ivanna.omega, hilo "DefaultDispatch"): feed() corre en el hilo
+    // de captura de audio (PlaybackCaptureService.kt) y hace push_back()
+    // sobre monoHistory/gatedBlocks — puede reallocar el buffer interno
+    // del vector en cualquier momento. measure() (const) corre en un
+    // coroutine de UI (IvannaLabMonitor$measureNow$1) y lee esos mismos
+    // vectores sin ninguna sincronizacion previa. Carrera clasica:
+    // measure() itera sobre un puntero que feed() ya movio/libero →
+    // SEGV_MAPERR con direccion basura, exactamente lo que muestra el
+    // tombstone. mutable porque measure() es const pero necesita bloquear.
+    mutable std::mutex mtx;
+
     explicit Impl(uint32_t sr, int fft)
         : sampleRate(sr), fftSize(std::max(2048, fft))
     {
@@ -146,6 +159,7 @@ struct IvannaLab::Impl {
     }
 
     void reset() noexcept {
+        std::lock_guard<std::mutex> lock(mtx);
         peakAbs = 0.f;
         sumSqL = sumSqR = 0.0;
         framesAcc = 0;
@@ -162,6 +176,7 @@ struct IvannaLab::Impl {
     }
 
     void feed(const float* buf, int frames) {
+        std::lock_guard<std::mutex> lock(mtx);
         monoHistory.reserve(monoHistory.size() + static_cast<size_t>(frames));
         for (int i = 0; i < frames; ++i) {
             const float l = buf[i * 2];
@@ -311,6 +326,7 @@ struct IvannaLab::Impl {
     }
 
     LabResult measure() const {
+        std::lock_guard<std::mutex> lock(mtx);
         LabResult res{};
         if (framesAcc <= 0) return res;
         res.peakDBFS = ampToDb(peakAbs);
