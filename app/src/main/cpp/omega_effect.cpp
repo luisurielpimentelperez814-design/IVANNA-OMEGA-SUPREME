@@ -82,13 +82,28 @@ static const effect_descriptor_t OMEGA_DESCRIPTOR = {
  * interno (spatial renderer, HRTF, smoothers) -> glitches, saltos de
  * ganancia y cross-talk entre sesiones. Se mueve el IvannaFusionCore a
  * este contexto para que cada instancia tenga el suyo aislado.
+ *
+ * AUDIT FIX (realtime allocation): buffers L/R deinterleaved preasignados
+ * en el contexto (una vez, en SET_CONFIG) para evitar
+ * `static thread_local std::vector<float>::resize()` dentro del callback
+ * realtime de AudioFlinger. La rama de resize() de std::vector puede
+ * llamar a malloc bajo el hilo de audio -> jitter, XRun y en casos
+ * extremos deadlock si el allocator toca un mutex compartido.
  */
 struct omega_effect_context_t {
     const struct effect_interface_s *itfe;
     effect_config_t config;
     bool enabled;
     IvannaFusionCore* fusionCore;   // AUDIT FIX: DSP per-instance (era global)
+    float* rtL;                     // AUDIT FIX: buffer L preasignado (realtime)
+    float* rtR;                     // AUDIT FIX: buffer R preasignado (realtime)
+    int    rtCapacity;              // frames que caben en rtL/rtR
 };
+
+// Capacidad máxima esperada por bloque. AudioFlinger normalmente pasa
+// bloques entre 128 y 2048 frames; se reserva un margen holgado para no
+// necesitar reasignar nunca en la ruta caliente.
+static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
 static int32_t omega_process(effect_handle_t self,
@@ -109,16 +124,23 @@ static int32_t omega_process(effect_handle_t self,
         return 0;
     }
 
-    // Deinterleave estéreo -> L/R (buffers thread-local, sin alloc por bloque)
-    static thread_local std::vector<float> L, R;
-    L.resize(frames); R.resize(frames);
+    // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
+    // (SET_CONFIG). Si por cualquier razón vinieran sin reservar o el
+    // bloque excede la capacidad reservada, se cae a passthrough en vez
+    // de asignar en el hilo de audio.
+    if (!ctx->rtL || !ctx->rtR || frames > ctx->rtCapacity) {
+        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        return 0;
+    }
+    float* L = ctx->rtL;
+    float* R = ctx->rtR;
     for (int n = 0; n < frames; ++n) {
         L[n] = in[2 * n];
         R[n] = in[2 * n + 1];
     }
 
     // Render binaural de objetos (VBAP + HRTF) + DSP de salida
-    fc->processStereo(L.data(), R.data(), (size_t)frames);
+    fc->processStereo(L, R, (size_t)frames);
 
     // Interleave -> salida
     for (int n = 0; n < frames; ++n) {
@@ -149,6 +171,19 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     ctx->fusionCore = new IvannaFusionCore((float)sr);
                 }
                 ctx->fusionCore->initSpatial((float)sr, 4096);
+                // AUDIT FIX (realtime allocation): preasignar buffers L/R
+                // AQUÍ (fuera de la ruta caliente) para que omega_process
+                // no tenga que llamar a malloc/resize en el callback.
+                if (!ctx->rtL) {
+                    ctx->rtL = reinterpret_cast<float*>(
+                        calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+                }
+                if (!ctx->rtR) {
+                    ctx->rtR = reinterpret_cast<float*>(
+                        calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+                }
+                ctx->rtCapacity =
+                    (ctx->rtL && ctx->rtR) ? OMEGA_RT_MAX_FRAMES : 0;
                 // Dataset HRTF personalizado (si existe). Fallback: sintético.
                 // El resultado se logea SIEMPRE: es el unico punto del sistema
                 // donde se decide entre HRTF medido y HRTF sintetico, y esa
@@ -233,6 +268,9 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
+    ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
+    ctx->rtR = nullptr;
+    ctx->rtCapacity = 0;
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
 }
@@ -251,6 +289,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             delete ctx->fusionCore;
             ctx->fusionCore = nullptr;
         }
+        // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
+        if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }
+        if (ctx->rtR) { free(ctx->rtR); ctx->rtR = nullptr; }
+        ctx->rtCapacity = 0;
         free(ctx);
     }
     return 0;
