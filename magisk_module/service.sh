@@ -59,10 +59,16 @@ chmod 755 "$DAEMON_BIN"
 #        aguanta encendido mas de 30 s.
 BACKOFF=2
 BACKOFF_MAX=60
+PID_FILE=/data/adb/ivanna_daemon.pid
+MQA_PID=""
 
 cleanup() {
     setprop persist.ivanna.daemon_active 0
     [ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null
+    # FIX: matar mqa_monitor si estaba corriendo
+    [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null
+    # FIX: limpiar PID file en cualquier salida
+    rm -f "$PID_FILE"
     echo "[$(date)] service.sh saliendo — daemon_active=0" >> "$LOGFILE"
 }
 trap cleanup EXIT HUP INT TERM
@@ -73,17 +79,50 @@ while true; do
     "$DAEMON_BIN" --socket "@omega_daemon_socket" --realtime >> "$LOGFILE" 2>&1 &
     DAEMON_PID=$!
 
-    # Esperar 1s a que el daemon arranque y abra el socket abstracto
-    sleep 1
+    # FIX: escribir PID file para que uninstall.sh pueda matar el daemon.
+    # Antes service.sh guardaba DAEMON_PID solo en variable de shell y
+    # uninstall.sh leía /data/adb/ivanna_daemon.pid que NUNCA existía,
+    # dejando al daemon corriendo tras la desinstalación hasta el reboot.
+    echo "$DAEMON_PID" > "$PID_FILE"
+
+    # Esperar hasta 3s a que el daemon arranque Y publique el socket abstracto.
+    # FIX: antes solo se comprobaba kill -0 (proceso vivo). El proceso puede
+    # estar vivo pero el socket aún no bindeado (SHM init lento, SELinux, etc.)
+    # — la app leía daemon_active=1 e intentaba connect() con ECONNREFUSED.
+    # Ahora se espera que @omega_daemon_socket aparezca en /proc/net/unix.
+    SOCK_READY=0
+    SOCK_TRIES=0
+    while [ $SOCK_TRIES -lt 6 ]; do
+        sleep 0.5
+        kill -0 "$DAEMON_PID" 2>/dev/null || break
+        grep -q " @omega_daemon_socket$" /proc/net/unix 2>/dev/null && { SOCK_READY=1; break; }
+        SOCK_TRIES=$((SOCK_TRIES + 1))
+    done
 
     if kill -0 "$DAEMON_PID" 2>/dev/null; then
-        echo "[$(date)] Daemon PID=$DAEMON_PID activo — @omega_daemon_socket listo" >> "$LOGFILE"
+        if [ "$SOCK_READY" -eq 1 ]; then
+            echo "[$(date)] Daemon PID=$DAEMON_PID activo — @omega_daemon_socket listo" >> "$LOGFILE"
+        else
+            echo "[$(date)] WARN: Daemon PID=$DAEMON_PID vivo pero socket no detectado en /proc/net/unix tras 3s" >> "$LOGFILE"
+        fi
         setprop persist.ivanna.daemon_active 1
-        # Marcar boot exitoso para el anti-bootloop de post-fs-data.sh
         touch "$LAST_OK"
+
+        # FIX: lanzar mqa_monitor.sh como background daemon.
+        # Antes nunca se iniciaba — el auto-preset por app (Tidal→Flat,
+        # Spotify→Warm, YouTube→Spatial) nunca corría aunque el código
+        # estaba completo en mqa_monitor.sh.
+        if [ -f "$MODDIR/mqa_monitor.sh" ] && [ -x "$MODDIR/mqa_monitor.sh" ]; then
+            # Matar monitor anterior si estaba corriendo de una iteración previa
+            [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null
+            "$MODDIR/mqa_monitor.sh" "$MODDIR" >> "$LOGFILE" 2>&1 &
+            MQA_PID=$!
+            echo "[$(date)] mqa_monitor.sh PID=$MQA_PID iniciado" >> "$LOGFILE"
+        fi
     else
         echo "[$(date)] ERROR: daemon terminó inmediatamente — reintento en ${BACKOFF}s" >> "$LOGFILE"
         setprop persist.ivanna.daemon_active 0
+        rm -f "$PID_FILE"
         sleep "$BACKOFF"
         BACKOFF=$(( BACKOFF * 2 )); [ "$BACKOFF" -gt "$BACKOFF_MAX" ] && BACKOFF=$BACKOFF_MAX
         continue
@@ -93,6 +132,9 @@ while true; do
     EXIT_CODE=$?
     UPTIME=$(( $(date +%s) - START_TS ))
     setprop persist.ivanna.daemon_active 0
+    rm -f "$PID_FILE"
+    # Matar monitor cuando el daemon muere — ya no tiene a quién enviar comandos
+    [ -n "$MQA_PID" ] && kill "$MQA_PID" 2>/dev/null; MQA_PID=""
     if [ "$UPTIME" -ge 30 ]; then
         BACKOFF=2
     else

@@ -32,6 +32,10 @@
 <!-- SPDX-License-Identifier: BSD-3-Clause-Clear                                          -->
 <audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">
     <libraries>
+        <!-- FIX: omega_effect faltaba en sku_holi — dispositivos Holi (Moto G52/G82/
+             Edge 20 Lite, Snapdragon 480/778G) nunca cargaban el efecto IVANNA.
+             sku_blair sí lo tenía. Paridad restaurada. -->
+        <library name="omega_effect" path="libomega_effect.so"/>
         <library name="bundle" path="libbundlewrapper.so"/>
         <library name="reverb" path="libreverbwrapper.so"/>
         <library name="visualizer_sw" path="libvisualizer.so"/>
@@ -91,9 +95,11 @@
         <effect name="voice_helper" library="volume_listener" uuid="0ace5c08-0590-11e5-ae9e-0025b32654a0"/>
         <effect name="notification_helper" library="volume_listener" uuid="0b776dde-0590-11e5-81ba-0025b32654a0"/>
         <effect name="audiosphere" library="audiosphere" uuid="184e62ab-2d19-4364-9d1b-c0a40733866c"/>
+        <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
     </effects>
     <postprocess>
         <stream type="music">
+            <apply effect="omega_effect"/>
             <apply effect="music_helper"/>
         </stream>
         <stream type="ring">
