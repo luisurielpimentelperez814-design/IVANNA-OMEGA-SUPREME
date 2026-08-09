@@ -222,8 +222,17 @@ int main(int argc, char* argv[]) {
     struct sigaction sa;
     std::memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;
-    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGINT,  &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
+    // FIX CRÍTICO: ignorar SIGPIPE.
+    // send() / sendmsg() sin MSG_NOSIGNAL entregan SIGPIPE si el cliente
+    // Kotlin cierra la conexión antes del send del daemon (race normal entre
+    // el timeout de soTimeout en OmegaEngineBridge y el dispatch del daemon).
+    // La acción por defecto de SIGPIPE es TERMINAR el proceso — el daemon
+    // moría silenciosamente, el watchdog lo reiniciaba con backoff exponencial
+    // y la UI mostraba OFFLINE por hasta 60 s. SIG_IGN hace que send()
+    // devuelva -1/EPIPE en vez de matar el proceso.
+    signal(SIGPIPE, SIG_IGN);
 
     log_message("=================================================");
     log_message("IVANNA-OMEGA-SUPREME Daemon Starting...");
@@ -405,7 +414,9 @@ if (controlServer.start("@omega_command_socket")) {
                         log_message("TEXT cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
                     }
                     if (rlen > 0) {
-                        send(client_fd, reply, (size_t)rlen, 0);
+                        // MSG_NOSIGNAL: si el cliente ya cerró, devuelve EPIPE
+                        // en vez de entregar SIGPIPE al proceso.
+                        send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
                     }
 
                 } else {
@@ -442,7 +453,7 @@ if (controlServer.start("@omega_command_socket")) {
 
                     memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
 
-                    if (sendmsg(client_fd, &msg, 0) < 0) {
+                    if (sendmsg(client_fd, &msg, MSG_NOSIGNAL) < 0) {
                         log_message("ERROR sending SCM_RIGHTS");
                     } else {
                         log_message("omega_shm FD sent via SCM_RIGHTS");

@@ -16,6 +16,9 @@
 //     primeros 8 bytes; el lector verifica epoch antes y después de copiar.
 // ─────────────────────────────────────────────────────────────────────────────
 
+#include <atomic>    // FIX: std::atomic<uint64_t> en ShmHeader lo requiere;
+                     // sin este include cualquier TU que incluya shm_manager.h
+                     // directamente fallaba con "std::atomic no declarado".
 #include <cstddef>
 #include <cstdint>
 #include <string>

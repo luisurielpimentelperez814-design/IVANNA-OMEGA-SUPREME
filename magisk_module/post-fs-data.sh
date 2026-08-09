@@ -13,8 +13,17 @@ LAST_OK=/data/adb/ivanna_omega_last_boot_ok
 log() { echo "[$(date '+%H:%M:%S')] post-fs: $1" >> "$LOG" 2>/dev/null; }
 
 # ── 1. Anti-bootloop robusto ─────────────────────────────────────────────────
+# FIX: si el boot anterior fue exitoso (LAST_OK existe), resetear el contador.
+# Sin este reset, después de 3+ boots normales COUNT≥3, y si LAST_OK se borra
+# (desinstalación, reset de datos) el próximo crash dispara safe_mode en 1 boot
+# en vez de los 3 consecutivos que se pretenden guardar como umbral.
 COUNT=0
-[ -f "$COUNTER_FILE" ] && COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
+if [ -f "$LAST_OK" ]; then
+    echo 0 > "$COUNTER_FILE"
+    COUNT=0
+elif [ -f "$COUNTER_FILE" ]; then
+    COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
+fi
 COUNT=$((COUNT + 1))
 echo "$COUNT" > "$COUNTER_FILE"
 log "boot #$COUNT (last_ok=$( [ -f $LAST_OK ] && echo yes || echo no ))"

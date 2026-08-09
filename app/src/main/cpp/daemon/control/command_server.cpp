@@ -478,8 +478,11 @@ void CommandServer::acceptLoop() {
             if (errno == EINTR || errno == EAGAIN) continue;
             break;  // serverFd cerrado → stop()
         }
-        // Esperar datos entrantes: timeout muy corto (5ms) para no bloquear
-        struct timeval tv { .tv_sec = 0, .tv_usec = 5000 };
+        // FIX: 5ms → 150ms. Las GC pauses de Android pueden superar 50–100 ms;
+        // con 5ms el recv() expiraba antes de que Kotlin enviara el payload
+        // y el comando se clasificaba como Modo B (SHM notify) en vez de
+        // procesarse como JSON/texto — comandos silenciosamente descartados.
+        struct timeval tv { .tv_sec = 0, .tv_usec = 150000 };
         setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO,
                    reinterpret_cast<const char*>(&tv), sizeof(tv));
 
