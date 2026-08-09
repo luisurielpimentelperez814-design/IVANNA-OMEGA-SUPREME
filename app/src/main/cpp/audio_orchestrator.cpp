@@ -104,6 +104,11 @@ extern "C" void ivanna_set_route_profile(float bassBoostDb,
     g_orch.widenerWet = widenerMult;
 }
 
+extern "C" void ivanna_set_manifold_enabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    g_orch.manifoldEnabled = enabled;
+}
+
 extern "C" void ivanna_orchestrate(float* buffer, int samples,
                                     int channels, int /*sampleRate*/) {
     std::lock_guard<std::mutex> lock(g_orch_mutex);
