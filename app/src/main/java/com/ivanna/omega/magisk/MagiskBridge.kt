@@ -206,6 +206,10 @@ object MagiskBridge {
      *   1) Abstract namespace @omega_daemon_socket (daemon actual).
      *   2) Filesystem legacy /data/pf/pf.sock (compatibilidad hacia atrás).
      * NO comprueba /dev/socket/... (los abstract sockets no viven ahí).
+     *
+     * FIX: soTimeout = SOCKET_READ_TIMEOUT_MS en ambas ramas para evitar que
+     * connect() se bloquee cuando el backlog del daemon está al límite o el
+     * kernel tarda en responder ECONNREFUSED.
      */
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {

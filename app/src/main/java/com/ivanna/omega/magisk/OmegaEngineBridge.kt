@@ -52,7 +52,9 @@ object OmegaEngineBridge {
     }
 
     private fun probeSocket(): Boolean {
-        // Primero intentar socket abstracto principal
+        // FIX: soTimeout = CONNECT_TIMEOUT en probe — el CONNECT_TIMEOUT estaba
+        // definido pero nunca usado. Sin timeout, connect() podía bloquearse varios
+        // segundos en ciertos kernels cuando el backlog del daemon está lleno.
         val probedPrimary = runCatching {
             val sock = LocalSocket()
             sock.soTimeout = CONNECT_TIMEOUT          // FIX Bug-1: evita bloqueo en backlog
