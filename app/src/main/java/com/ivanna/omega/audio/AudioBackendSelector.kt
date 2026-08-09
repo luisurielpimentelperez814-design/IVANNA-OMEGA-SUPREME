@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
  *   archivo del repo (grep NoRootAudioProcessor = 0 hits fuera de su propio
  *   archivo). Es decir: en un dispositivo SIN root la app cargaba, la UI se
  *   pintaba y los sliders escribian a un daemon que no existe
- *   (MagiskBridge.sendCommand -> "queued", OmegaEngineBridge no conectado),
+ *   (MagiskBridge.sendCommand -> "" offline sentinel, OmegaEngineBridge no conectado),
  *   sin ningun camino de procesado alternativo. La app "funcionaba" en
  *   pantalla y no hacia absolutamente nada al audio.
  *

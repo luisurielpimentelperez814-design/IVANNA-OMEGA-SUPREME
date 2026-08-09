@@ -151,9 +151,13 @@ object MagiskBridge {
             }.onFailure { Log.d(TAG, "legacy socket send failed: ${it.message}") }
         }
 
-        // 3) Nada respondió — FIX Bug-5: se eliminó exec/setprop que tardaba 3 s y siempre fallaba
-        Log.w(TAG, "Daemon offline — command dropped: $command")
-        return "queued"
+        // 3) Nada respondió. Retorna "" (sentinel de fallo) para que cualquier
+        //    caller pueda distinguir offline de respuesta real con isEmpty().
+        //    "queued" era semánticamente incorrecto: implica que el comando fue
+        //    aceptado y procesado, cuando en realidad fue descartado.
+        //    everConnected NO se modifica aquí — solo se marca en isDaemonRunning.
+        Log.w(TAG, "Daemon offline — command NOT delivered: $command")
+        return ""
     }
 
     // Helpers extension for use{} (LocalSocket no es Closeable en API antiguo)
