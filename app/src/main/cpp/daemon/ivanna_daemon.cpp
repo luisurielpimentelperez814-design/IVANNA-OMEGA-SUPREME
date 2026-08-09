@@ -64,6 +64,13 @@ void signal_handler(int signal) {
         log_message("Signal " + std::to_string(signal) + " received. Stopping IVANNA OMEGA daemon...");
         g_running = 0;
         if (g_server_fd >= 0) {
+            // FIX Foco #6: shutdown(SHUT_RDWR) antes de close() para que
+            // select() retorne INMEDIATAMENTE con EBADF/EINTR en kernels 4.9
+            // donde el fd cerrado no interrumpe un select() en vuelo.
+            // Sin shutdown(), el loop principal puede quedar bloqueado en
+            // select(g_server_fd+1,...) hasta que llegue una conexión o
+            // venza el timeval de 1s, retrasando el apagado del daemon.
+            shutdown(g_server_fd, SHUT_RDWR);
             close(g_server_fd);
             g_server_fd = -1;
         }
@@ -498,6 +505,13 @@ if (controlServer.start("@omega_command_socket")) {
         close(g_server_fd);
         g_server_fd = -1;
     }
+
+    // FIX Foco #7: stop() llama shutdown()+close() en serverFd del control socket.
+    // Sin esto, el std::thread detach que corre controlServer.acceptLoop() queda
+    // bloqueado en accept4(@omega_command_socket) indefinidamente después de que
+    // main() retorna — el proceso no puede hacer exit limpio y el watchdog de
+    // service.sh ve un zombie hasta el siguiente ciclo de recolección del kernel.
+    controlServer.stop();
 
     if (socket_path[0] != '@') {
         unlink(socket_path.c_str());

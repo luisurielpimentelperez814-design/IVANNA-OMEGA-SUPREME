@@ -347,6 +347,14 @@ bool CommandServer::start(const std::string& socketName)
 
 void CommandServer::stop() {
     if (serverFd >= 0) {
+        // FIX Foco #7: shutdown() desbloquea accept4() en el hilo acceptLoop
+        // que está esperando conexiones. Sin shutdown(), close() solo libera
+        // el descriptor del hilo que llama a stop() — el hilo separado puede
+        // seguir bloqueado en accept4() hasta que llegue una conexión o el
+        // kernel note el cierre (comportamiento no determinístico según kernel).
+        // Con SHUT_RDWR el kernel envía EBADF/EINVAL al accept4() en vuelo
+        // y el hilo sale del loop en la misma iteración.
+        shutdown(serverFd, SHUT_RDWR);
         close(serverFd);
         serverFd = -1;
     }
