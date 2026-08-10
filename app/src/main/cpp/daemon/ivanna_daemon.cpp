@@ -434,22 +434,52 @@ if (controlServer.start("@omega_command_socket")) {
                     // Detección de protocolo por primer carácter no-espacio:
                     //   '{' → JSON (OmegaEngineBridge)
                     //   otro → texto plano (MagiskBridge: "SET_PF_DRIVE:0.5\n")
+                    //
+                    // AUDIT FIX (demux race / socket contaminado): un cliente
+                    // que ENVIÓ datos nunca es el cliente SHM (Modo B) — el
+                    // cliente SHM legacy conecta en silencio. Antes, si el GC
+                    // de la app retrasaba el payload más allá del timeout, el
+                    // daemon clasificaba la conexión como Modo B y disparaba
+                    // un FD binario por SCM_RIGHTS a un socket que esperaba
+                    // texto -> "queued"/basura en la UI y congelamiento.
+                    // Guardas añadidas:
+                    //   1. Con datos recibidos, jamás se entra a Modo B.
+                    //   2. El modo texto solo se despacha si el payload es
+                    //      ASCII imprimible (descarta basura binaria en el
+                    //      socket en vez de pasársela al parser).
+                    //   3. Payload no-JSON y no-texto -> se descarta y se
+                    //      cierra limpio. El protocolo legacy (timeout sin
+                    //      bytes -> Modo B) queda intacto.
                     const char* p = json_buf;
                     while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-                    int rlen;
+                    bool printable = true;
+                    for (ssize_t i = 0; i < nbytes; ++i) {
+                        const unsigned char c = (unsigned char)json_buf[i];
+                        if (c < 0x09 || (c > 0x0D && c < 0x20) || c == 0x7F) {
+                            printable = false;
+                            break;
+                        }
+                    }
                     if (*p == '{') {
                         // ── Modo A: JSON command (OmegaEngineBridge) ─────────
-                        rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
+                        int rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
                         log_message("JSON cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
-                    } else {
+                        if (rlen > 0) {
+                            send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
+                        }
+                    } else if (printable && nbytes > 1) {
                         // ── Modo A2: texto plano (MagiskBridge) ─────────────
-                        rlen = commandServer.handleTextCommand(json_buf, reply, sizeof(reply));
+                        int rlen = commandServer.handleTextCommand(json_buf, reply, sizeof(reply));
                         log_message("TEXT cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
-                    }
-                    if (rlen > 0) {
-                        // MSG_NOSIGNAL: si el cliente ya cerró, devuelve EPIPE
-                        // en vez de entregar SIGPIPE al proceso.
-                        send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
+                        if (rlen > 0) {
+                            // MSG_NOSIGNAL: si el cliente ya cerró, devuelve EPIPE
+                            // en vez de entregar SIGPIPE al proceso.
+                            send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
+                        }
+                    } else {
+                        // ── Basura en el socket: ni JSON ni texto válido ──────
+                        log_message("Demux: payload no-JSON/no-texto descartado (" +
+                                    std::to_string(nbytes) + " bytes) — nunca se envía FD a un cliente que habló");
                     }
 
                 } else {
