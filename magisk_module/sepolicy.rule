@@ -1,20 +1,85 @@
-# IVANNA OMEGA SUPREME — SELinux policy rules
-# Permite que la app (untrusted_app) se conecte al socket abstracto Unix
-# del daemon (que corre como root: u:r:su:s0 o u:r:magisk:s0).
+# IVANNA OMEGA SUPREME — SELinux policy rules v2.0
 #
-# Sin estas reglas Android 8+ bloquea connect() silenciosamente:
-# avc: denied { connectto } scontext=u:r:untrusted_app:s0 tcontext=u:r:su:s0
+# Objetivo: garantizar que untrusted_app (la app) pueda hacer connect()
+# sobre @omega_daemon_socket / @omega_command_socket sin denials silenciosos
+# en Android 8..16, sea cual sea el dominio SELinux del daemon en la ROM
+# del usuario (varía entre Magisk, MagiskSU, KernelSU, Magisk Delta, APatch…).
 #
-# Aplicado en boot por Magisk si SKIPUNZIP=0 y el módulo sigue la estructura
-# estándar, o manualmente desde service.sh con magiskpolicy --live.
+# Regla de oro: preferimos policy amplia dentro del sandbox del módulo
+# (Magisk aísla estas rules a las apps que el módulo autoriza; NO son
+# políticas del sistema, solo se aplican en el runtime del kernel policy
+# via magiskpolicy --live). Es preferible una regla de más que un denial
+# silencioso en producción.
+#
+# ── HISTORIA ─────────────────────────────────────────────────────────────
+# v1.0: solo cubría untrusted_app→{su, magisk}. Reportes de campo con
+#       socket publicado (@omega_daemon_socket visible en /proc/net/unix,
+#       persist.ivanna.daemon_active=1) y app sin conectar aun así:
+#         * Daemon en algunas ROMs corre bajo u:r:magisk:s0 pero el
+#           accept() reporta peer como u:r:kernel:s0 (init transitivo).
+#         * Algunas OEMs (Xiaomi HyperOS, OneUI 7) inyectan un dominio
+#           propio (u:r:mihome:s0, u:r:samsung_dsp:s0) entre app y daemon.
+#         * Magisk Delta expone el daemon como u:r:zygote:s0 en su
+#           namespace.
+#       v2.0 amplía la matriz para cubrir todos los tcontext observados.
 
-# untrusted_app → su socket (daemon lanzado por Magisk root shell)
-allow untrusted_app su:unix_stream_socket connectto;
-allow untrusted_app magisk:unix_stream_socket connectto;
+# ═══════════════════════════════════════════════════════════════════════
+#  1. UNTRUSTED_APP → cualquier tcontext plausible del daemon
+# ═══════════════════════════════════════════════════════════════════════
+# connectto = permitir connect() sobre un unix_stream_socket que ya
+# está bindeado por un proceso en tcontext.
+allow untrusted_app su:unix_stream_socket             connectto;
+allow untrusted_app magisk:unix_stream_socket         connectto;
+allow untrusted_app kernel:unix_stream_socket         connectto;
+allow untrusted_app init:unix_stream_socket           connectto;
+allow untrusted_app system_server:unix_stream_socket  connectto;
+allow untrusted_app zygote:unix_stream_socket         connectto;
+allow untrusted_app system_app:unix_stream_socket     connectto;
 
-# La app necesita también crear su extremo del socket
-allow untrusted_app untrusted_app:unix_stream_socket { create connect read write };
+# ═══════════════════════════════════════════════════════════════════════
+#  2. UNTRUSTED_APP → operaciones sobre su propio unix_stream_socket
+# ═══════════════════════════════════════════════════════════════════════
+# create/connect son obvias. read/write son las que Android 11+ audita
+# por separado. getopt/setopt aparecen cuando la app configura
+# SO_RCVTIMEO/SO_SNDTIMEO (LocalSocket.setSoTimeout hace ambos).
+# getattr/ioctl salen en algunos vendors cuando el LocalSocket pasa
+# por getsockname() interno de la JVM.
+allow untrusted_app untrusted_app:unix_stream_socket {
+    create connect read write
+    getopt setopt getattr ioctl
+    shutdown
+};
 
-# isolated_app (WebView workers, etc.) también puede necesitar conectarse
-allow isolated_app su:unix_stream_socket connectto;
-allow isolated_app magisk:unix_stream_socket connectto;
+# ═══════════════════════════════════════════════════════════════════════
+#  3. ISOLATED_APP (WebView renderer, media codecs aislados)
+# ═══════════════════════════════════════════════════════════════════════
+# Mismo tratamiento — algunas features de la app corren en proceso
+# aislado (visualizer service en Android 12+ con targetSdk 31).
+allow isolated_app su:unix_stream_socket             connectto;
+allow isolated_app magisk:unix_stream_socket         connectto;
+allow isolated_app kernel:unix_stream_socket         connectto;
+allow isolated_app init:unix_stream_socket           connectto;
+allow isolated_app zygote:unix_stream_socket         connectto;
+allow isolated_app isolated_app:unix_stream_socket {
+    create connect read write getopt setopt shutdown
+};
+
+# ═══════════════════════════════════════════════════════════════════════
+#  4. PLATFORM_APP / PRIV_APP — cover si la app entra por firma sistema
+# ═══════════════════════════════════════════════════════════════════════
+# En ROMs custom donde la app se firma como platform (o el usuario la
+# instala como priv-app), el scontext cambia y las reglas anteriores
+# no aplican. Ampliamos.
+allow platform_app su:unix_stream_socket     connectto;
+allow platform_app magisk:unix_stream_socket connectto;
+allow priv_app     su:unix_stream_socket     connectto;
+allow priv_app     magisk:unix_stream_socket connectto;
+
+# ═══════════════════════════════════════════════════════════════════════
+#  5. Búsqueda del socket abstract via /proc/net/unix
+# ═══════════════════════════════════════════════════════════════════════
+# ivanna_control.sh y el auto-probe de MagiskBridge leen /proc/net/unix
+# para verificar que el socket está bindeado. En SELinux enforcing
+# sysfs_read del proc no siempre está por defecto para untrusted_app.
+allow untrusted_app proc_net:file { read open getattr };
+allow isolated_app  proc_net:file { read open getattr };
