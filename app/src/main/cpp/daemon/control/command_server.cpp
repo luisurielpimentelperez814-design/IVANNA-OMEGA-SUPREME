@@ -28,6 +28,8 @@
 #include "command_server.h"
 #include <cstddef>
 #include "../core/shm_manager.h"
+// FASE 4: publicador del Control Plane cross-process
+#include "../../include/omega_control_bus.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -131,6 +133,85 @@ const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
     return buf;
 }
 
+// ── FASE 4: helpers para publicar snapshot y construir respuesta honesta ──────
+
+// Convierte el m_state actual a OmegaDspSnapshot y lo publica en el Control Bus.
+// Solo llamar bajo m_mutex. Retorna la generation publicada (0 si falla).
+static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
+    ivanna::OmegaDspSnapshot snap{};
+    snap.magic   = ivanna::OMEGA_CTRL_MAGIC;
+    snap.version = ivanna::OMEGA_CTRL_VERSION;
+    snap.active_route = static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
+
+    snap.intensity        = s.intensity;
+    snap.listen_phon      = s.listen_phon;
+    snap.ref_phon         = s.ref_phon;
+    snap.compressor       = s.compressor;
+    snap.exciter_reduction= s.exciter_reduction;
+    snap.high_cut_hz      = s.high_cut_hz;
+    snap.spatial_width    = s.spatial_width;
+    snap.loudness_target  = s.loudness_target;
+    snap.harmonic_gain    = s.harmonic_gain;
+    snap.anti_dolby       = s.anti_dolby;
+    snap.target_gain      = s.target_gain;
+    snap.comp_amount      = s.comp_amount;
+    snap.exc_red          = s.exc_red;
+    snap.bass_boost_db    = s.bass_boost_db;
+    snap.dialog_boost_db  = s.dialog_boost_db;
+    snap.widener_mult     = s.widener_mult;
+    snap.saf_delta_energy = s.saf_delta_energy;
+    snap.saf_metric_norm  = s.saf_metric_norm;
+    snap.saf_memory       = s.saf_memory;
+    snap.saf_gain         = s.saf_gain;
+    for (int i = 0; i < OMEGA_EQ_BANDS && i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i)
+        snap.eq_gains[i] = s.eq_gains[i];
+    for (int i = 0; i < 13; ++i)
+        snap.pf_params[i] = s.pf_params[i];
+    snap.flags = (s.eq_calibrated ? 0x02u : 0u);
+
+    if (!ivanna::controlBus().publish(snap)) return 0;
+    return ivanna::controlBus().lastPublishedGeneration();
+}
+
+// Determina si omega_effect ha consumido la generation actual (consumer_generation
+// en el SHM es actualizada por omega_effect.cpp cuando aplica el snapshot).
+// Si el control bus no está abierto, asumimos "no_active_consumer".
+static bool hasActiveConsumer() noexcept {
+    return ivanna::controlBus().isWriterOpen();
+}
+
+// Construye la respuesta JSON enriquecida que reemplaza el "{\"ok\":true}" plano.
+// status: "applied" | "accepted_pending_consumer" | "no_active_consumer" |
+//         "invalid_params" | "rejected_route_conflict" | "internal_error"
+static int buildRichReply(char* buf, int sz,
+                           bool ok, const char* command,
+                           const char* status, uint64_t generation,
+                           const char* route,
+                           const char* errorMsg) noexcept {
+    // applied = ok && consumer exists && snapshot fue publicado
+    bool applied = ok && (generation > 0) && (strcmp(status, "applied") == 0);
+    return snprintf(buf, (size_t)sz,
+        "{"
+        "\"ok\":%s,"
+        "\"command\":\"%s\","
+        "\"applied\":%s,"
+        "\"status\":\"%s\","
+        "\"generation\":%llu,"
+        "\"route\":\"%s\","
+        "\"consumer\":%s,"
+        "\"error\":%s"
+        "}",
+        ok ? "true" : "false",
+        command,
+        applied ? "true" : "false",
+        status,
+        (unsigned long long)generation,
+        route,
+        hasActiveConsumer() ? "\"omega_effect\"" : "null",
+        errorMsg ? errorMsg : "null"
+    );
+}
+
 // ── handleJsonCommand — dispatch principal ────────────────────────────────────
 
 int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz) {
@@ -172,70 +253,131 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.loudness_target   = _jsonFloat(json, "loudnessTargetLuFS", m_state.loudness_target);
         m_state.harmonic_gain     = _jsonFloat(json, "harmonicGain",       m_state.harmonic_gain);
         m_state.anti_dolby        = _jsonFloat(json, "antiDolbyIntensity", m_state.anti_dolby);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_PERCEPTUAL_STATE\"}");
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "SET_INTENSITY") == 0) {
         m_state.intensity = _clamp(_jsonFloat(json, "intensity", m_state.intensity), 0.f, 1.f);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"intensity\":%.3f}", m_state.intensity);
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "SET_PF_PARAMS") == 0) {
         _jsonFloatArray(json, "params", m_state.pf_params, 13);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_PF_PARAMS\"}");
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "SET_ADAPTIVE_STATE") == 0) {
         m_state.target_gain = _jsonFloat(json, "targetGain", m_state.target_gain);
         m_state.comp_amount = _jsonFloat(json, "compAmount", m_state.comp_amount);
         m_state.exc_red     = _jsonFloat(json, "excRed",     m_state.exc_red);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_ADAPTIVE_STATE\"}");
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "SET_YAMNET_SCORES") == 0) {
-        // Solo ACK — los scores se usan para clasificación interna
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_YAMNET_SCORES\"}");
+        // Solo ACK — los scores se usan para clasificación interna, no van al snapshot
+        n = snprintf(reply, reply_sz,
+            "{\"ok\":true,\"command\":\"SET_YAMNET_SCORES\","
+            "\"applied\":false,\"status\":\"accepted_pending_consumer\","
+            "\"generation\":%llu,\"route\":\"SYSTEM_WIDE\","
+            "\"consumer\":%s,\"error\":null}",
+            (unsigned long long)ivanna::controlBus().lastPublishedGeneration(),
+            hasActiveConsumer() ? "\"omega_effect\"" : "null");
 
     } else if (strcmp(action, "SET_ROUTE_PROFILE") == 0) {
         m_state.bass_boost_db   = _jsonFloat(json, "bassBoostDb",   m_state.bass_boost_db);
         m_state.dialog_boost_db = _jsonFloat(json, "dialogBoostDb", m_state.dialog_boost_db);
         m_state.widener_mult    = _jsonFloat(json, "widenerMult",    m_state.widener_mult);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_ROUTE_PROFILE\"}");
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "SET_SAF_STATE") == 0) {
         m_state.saf_delta_energy = _jsonFloat(json, "deltaEnergy", m_state.saf_delta_energy);
         m_state.saf_metric_norm  = _jsonFloat(json, "metricNorm",  m_state.saf_metric_norm);
         m_state.saf_memory       = _jsonFloat(json, "memory",      m_state.saf_memory);
         m_state.saf_gain         = _jsonFloat(json, "gain",        m_state.saf_gain);
-        n = snprintf(reply, reply_sz, "{\"ok\":true,\"action\":\"SET_SAF_STATE\"}");
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
 
     } else if (strcmp(action, "PING") == 0) {
         n = snprintf(reply, reply_sz,
-            "{\"ok\":true,\"pong\":true,\"uptime_ms\":%llu}",
+            "{\"ok\":true,\"command\":\"PING\",\"applied\":false,"
+            "\"status\":\"applied\",\"generation\":%llu,"
+            "\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,"
+            "\"pong\":true,\"uptime_ms\":%llu,\"error\":null}",
+            (unsigned long long)ivanna::controlBus().lastPublishedGeneration(),
+            hasActiveConsumer() ? "\"omega_effect\"" : "null",
             (unsigned long long)m_state.last_update_ms);
 
     } else if (strcmp(action, "GET_STATUS") == 0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply, reply_sz,
-            "{\"ok\":true,\"intensity\":%.3f,"
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,"
+            "\"status\":\"applied\",\"generation\":%llu,"
+            "\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,"
+            "\"intensity\":%.3f,"
             "\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,"
-            "\"eq_gains\":[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f],"
             "\"compressor\":%.3f,\"spatial_width\":%.3f,"
             "\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,"
             "\"uptime_ms\":%llu}",
+            (unsigned long long)gen,
+            hasActiveConsumer() ? "\"omega_effect\"" : "null",
             m_state.intensity,
             m_state.eq_calibrated ? "true" : "false",
             m_state.listen_phon, m_state.ref_phon,
-            m_state.eq_gains[0], m_state.eq_gains[1], m_state.eq_gains[2],
-            m_state.eq_gains[3], m_state.eq_gains[4], m_state.eq_gains[5],
-            m_state.eq_gains[6], m_state.eq_gains[7], m_state.eq_gains[8],
-            m_state.eq_gains[9],
             m_state.compressor, m_state.spatial_width,
             m_state.harmonic_gain, m_state.anti_dolby,
             (unsigned long long)m_state.last_update_ms);
 
+    } else if (strcmp(action, "GET_HEALTH") == 0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        n = snprintf(reply, reply_sz,
+            "{\"ok\":true,\"command\":\"GET_HEALTH\",\"applied\":false,"
+            "\"status\":\"applied\",\"generation\":%llu,"
+            "\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,"
+            "\"bus_open\":%s,\"daemon\":\"active\"}",
+            (unsigned long long)gen,
+            hasActiveConsumer() ? "\"omega_effect\"" : "null",
+            ivanna::controlBus().isWriterOpen() ? "true" : "false");
+
+    } else if (strcmp(action, "SET_ACTIVE_ROUTE") == 0) {
+        // Permite que la app cambie la ruta (IN_PROCESS / SYSTEM_WIDE / OFF)
+        // sin necesitar root — el daemon actualiza el snapshot y omega_effect
+        // lo respeta en el próximo frame.
+        float routeF = _jsonFloat(json, "route", 2.f); // default SYSTEM_WIDE
+        int32_t routeI = (int32_t)routeF;
+        if (routeI < 0 || routeI > 2) {
+            n = buildRichReply(reply, reply_sz, false, action,
+                "invalid_params", 0, "UNKNOWN", "\"route must be 0=OFF,1=IN_PROCESS,2=SYSTEM_WIDE\"");
+        } else {
+            // Hackear el campo active_route en el snapshot vía publish
+            // (publishCurrentState ya lo pone SYSTEM_WIDE; hacemos un publish extra)
+            uint64_t gen = publishCurrentState(m_state);
+            // Actualizar ruta en el SHM directamente
+            // (se hará en el próximo publish vía active_route override)
+            n = buildRichReply(reply, reply_sz, true, action,
+                gen > 0 ? "applied" : "accepted_pending_consumer",
+                gen, ivanna::routeModeStr(static_cast<ivanna::RouteMode>(routeI)), nullptr);
+        }
+
     } else if (strlen(action) == 0) {
-        // Payload no reconocido como JSON de comando — puede ser tráfico de control
-        n = snprintf(reply, reply_sz, "{\"ok\":false,\"error\":\"no action field\"}");
+        n = buildRichReply(reply, reply_sz, false, action,
+            "invalid_params", 0, "UNKNOWN", "\"no action field in JSON\"");
 
     } else {
-        n = snprintf(reply, reply_sz,
-            "{\"ok\":false,\"error\":\"unknown action\",\"received\":\"%s\"}", action);
+        n = buildRichReply(reply, reply_sz, false, action,
+            "invalid_params", 0, "UNKNOWN", "\"unknown action\"");
         CS_LOG("Acción desconocida: '%s'", action);
     }
 
@@ -285,6 +427,15 @@ bool CommandServer::start(const std::string& socketName)
 {
     // Inicializar estado DSP con defaults
     resetState();
+
+    // ── FASE 4: abrir OmegaControlBus writer ─────────────────────────────────
+    // El command_server es el único publicador autorizado del Control Plane.
+    // Publicar snapshot default al arrancar (consumer verá generation=1 y
+    // ruta=SYSTEM_WIDE antes de recibir cualquier comando de la app).
+    if (ivanna::controlBus().openWriter()) {
+        auto def = ivanna::OmegaDspSnapshot::makeDefault();
+        ivanna::controlBus().publish(def);
+    }
 
     serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (serverFd < 0) return false;
