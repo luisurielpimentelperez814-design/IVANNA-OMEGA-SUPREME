@@ -33,6 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
@@ -40,6 +41,7 @@ import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.os.Build
 import android.util.Log
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 data class IvannaEffectProfile(
@@ -128,6 +130,17 @@ class IvannaGlobalEffectManager(
 
     private val TAG = "IvannaNPE.GlobalFX"
 
+    companion object {
+        // AUDIT FIX (no-root omite el motor Omega): UUID real del efecto
+        // compilado en omega_effect.cpp (effect_uuid_t layout AOSP:
+        // timeLow=0x4956414e "IVAN", timeMid=0x4e41 "NA",
+        // timeHiAndVersion=0x4f4d "OM", clockSeq=0x4547 "EG",
+        // node={41,53,55,50,52,45} "ASUPRE"). NO usar el UUID citado en
+        // auditorías externas (8d7d5e0a-...) — no coincide con el binario.
+        private val OMEGA_EFFECT_UUID: UUID =
+            UUID.fromString("4956414e-4e41-4f4d-4547-415355505245")
+    }
+
     private fun writeToLogFile(message: String) {
         try {
             val logFile = File(context.filesDir, "ivanna_audio_debug.txt")
@@ -175,7 +188,12 @@ class IvannaGlobalEffectManager(
         val bassBoost:         BassBoost?,
         val virtualizer:       Virtualizer?,
         val loudness:          LoudnessEnhancer?,
-        val dynamics:          DynamicsProcessing?
+        val dynamics:          DynamicsProcessing?,
+        // AUDIT FIX: instancia del efecto Omega custom (libomega_effect.so).
+        // Solo no-null cuando el módulo Magisk está instalado y AudioFlinger
+        // tiene la librería registrada en soundfx; en no-root el constructor
+        // lanza y se queda en null (fallback silencioso a los efectos stock).
+        val omega:             AudioEffect? = null
     )
 
 
@@ -187,6 +205,7 @@ class IvannaGlobalEffectManager(
         runCatching { fx.virtualizer?.release() }
         runCatching { fx.loudness?.release() }
         runCatching { fx.dynamics?.release() }
+        runCatching { fx.omega?.release() }
     }
     
     // ── ISO 226 Calibración ──────────────────────────────────────────────────
@@ -236,16 +255,26 @@ class IvannaGlobalEffectManager(
 
         Log.i(TAG, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"})")
 
+        // AUDIT FIX (Omega DSP nunca se adjuntaba por sesión): se intenta
+        // primero el efecto custom por UUID. Si el módulo Magisk está
+        // instalado, cada sesión queda enrutada por el IvannaFusionCore real
+        // (DSP por instancia, aislado entre sesiones) y el control llega vía
+        // OmegaControlBus/SHM — el efecto no implementa EFFECT_CMD_SET_PARAM
+        // por diseño, el canal de parámetros es el bus, no setParameter().
+        // En dispositivos sin el módulo el constructor lanza
+        // (IllegalArgumentException/RuntimeException) y omega queda en null:
+        // comportamiento idéntico al anterior (solo efectos stock).
+        val omega = createOmegaEffect(audioSession)
         val eq   = createEqualizer(audioSession)
         val bb   = createBassBoost(audioSession)
         val virt = createVirtualizer(audioSession)
         val loud = createLoudness(audioSession)
         val dyn  = createDynamics(audioSession)
 
-        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn)
+        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, omega)
         applyProfileToSession(audioSession, activeProfile)
 
-        Log.i(TAG, "Sesión $audioSession activa: EQ=${eq != null} BB=${bb != null} " +
+        Log.i(TAG, "Sesión $audioSession activa: Omega=${omega != null} EQ=${eq != null} BB=${bb != null} " +
                    "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null}")
     }
 
@@ -368,6 +397,24 @@ class IvannaGlobalEffectManager(
     }
 
     // ─── Creadores con manejo de error (muchos dispositivos no soportan todos) ─
+
+    /**
+     * AUDIT FIX: instancia el efecto IVANNA Omega por UUID sobre la sesión.
+     * EFFECT_TYPE_NULL + uuid propio es el patrón estándar para efectos
+     * custom registrados vía audio_effects.conf/xml (módulo Magisk soundfx).
+     * Devuelve null —sin ruido— si la librería no está instalada (no-root).
+     */
+    private fun createOmegaEffect(session: Int): AudioEffect? = runCatching {
+        AudioEffect(
+            AudioEffect.EFFECT_TYPE_NULL,
+            OMEGA_EFFECT_UUID,
+            0,          // prioridad: el control de parámetros va por el bus SHM
+            session
+        ).also { it.enabled = true }
+    }.onFailure {
+        Log.d(TAG, "Omega effect no disponible en sesión $session (módulo no instalado): ${it.message}")
+    }.getOrNull()
+
     private fun createEqualizer(session: Int): Equalizer? = runCatching {
         Equalizer(Int.MAX_VALUE, session).also { it.enabled = true }
     }.getOrNull()
