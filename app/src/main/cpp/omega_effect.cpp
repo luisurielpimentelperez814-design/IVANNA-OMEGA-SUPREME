@@ -111,6 +111,7 @@ struct omega_effect_context_t {
     int    rtCapacity;              // frames que caben en rtL/rtR
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
+    bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
 };
 
 // Capacidad máxima esperada por bloque. AudioFlinger normalmente pasa
@@ -182,27 +183,49 @@ static int32_t omega_process(effect_handle_t self,
     }
 
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
-    // (SET_CONFIG). Si por cualquier razón vinieran sin reservar o el
-    // bloque excede la capacidad reservada, se cae a passthrough en vez
-    // de asignar en el hilo de audio.
-    if (!ctx->rtL || !ctx->rtR || frames > ctx->rtCapacity) {
+    // (SET_CONFIG). Si vinieran sin reservar (calloc falló en SET_CONFIG)
+    // se cae a passthrough — jamás asignar en el hilo de audio.
+    if (!ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
         memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
         return 0;
     }
     float* L = ctx->rtL;
     float* R = ctx->rtR;
-    for (int n = 0; n < frames; ++n) {
-        L[n] = in[2 * n];
-        R[n] = in[2 * n + 1];
+
+    // AUDIT FIX (rigid buffer / silent bypass): si el bloque entrante excede
+    // la capacidad preasignada (p.ej. AudioFlinger con LDAC/LHDC puede lanzar
+    // bloques grandes), ya NO se hace bypass silencioso a plano. Se procesa
+    // el bloque completo en chunks de a lo sumo rtCapacity frames, reutilizando
+    // los mismos buffers L/R — sin malloc, sin locks, mismo coste de memoria.
+    // Solo se logea UNA vez por instancia (flag en el ctx, no en el hot path)
+    // para no inundar logcat desde el callback de audio.
+    if (frames > ctx->rtCapacity && !ctx->chunkedWarned) {
+        ctx->chunkedWarned = true;
+        LOGW("omega_process: frameCount=%d > rtCapacity=%d — procesando en chunks (sin bypass)",
+             frames, ctx->rtCapacity);
     }
 
-    // Render binaural de objetos (VBAP + HRTF) + DSP de salida
-    fc->processStereo(L, R, (size_t)frames);
+    int offset = 0;
+    while (offset < frames) {
+        const int chunk = ((frames - offset) < ctx->rtCapacity)
+                          ? (frames - offset) : ctx->rtCapacity;
+        const float* inChunk  = in  + (size_t)offset * 2u;
+        float*       outChunk = out + (size_t)offset * 2u;
 
-    // Interleave -> salida
-    for (int n = 0; n < frames; ++n) {
-        out[2 * n]     = L[n];
-        out[2 * n + 1] = R[n];
+        for (int n = 0; n < chunk; ++n) {
+            L[n] = inChunk[2 * n];
+            R[n] = inChunk[2 * n + 1];
+        }
+
+        // Render binaural de objetos (VBAP + HRTF) + DSP de salida
+        fc->processStereo(L, R, (size_t)chunk);
+
+        // Interleave -> salida
+        for (int n = 0; n < chunk; ++n) {
+            outChunk[2 * n]     = L[n];
+            outChunk[2 * n + 1] = R[n];
+        }
+        offset += chunk;
     }
     return 0;
 }
