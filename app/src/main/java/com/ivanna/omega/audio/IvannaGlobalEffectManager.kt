@@ -415,7 +415,18 @@ class IvannaGlobalEffectManager(
      * Devuelve null —sin ruido— si la librería no está instalada (no-root).
      */
     private fun createOmegaEffect(session: Int): android.media.audiofx.AudioEffect? = runCatching {
-        android.media.audiofx.AudioEffect(
+        // FIX (build 2026-08-10): el constructor AudioEffect(UUID, UUID, Int, Int)
+        // existe en el framework en runtime pero es package-private en los SDK
+        // stubs de compileSdk 35 → "Cannot access '<init>': it is package-private".
+        // Patrón estándar de la industria para efectos custom (ViPER4Android,
+        // JamesDSP): invocarlo por reflection sobre la clase real del runtime.
+        val ctor = android.media.audiofx.AudioEffect::class.java.getConstructor(
+            java.util.UUID::class.java,
+            java.util.UUID::class.java,
+            Int::class.javaPrimitiveType!!,
+            Int::class.javaPrimitiveType!!
+        )
+        ctor.newInstance(
             EFFECT_TYPE_NULL_UUID,
             OMEGA_EFFECT_UUID,
             0,          // prioridad: el control de parámetros va por el bus SHM
