@@ -33,7 +33,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
@@ -139,6 +138,12 @@ class IvannaGlobalEffectManager(
         // auditorías externas (8d7d5e0a-...) — no coincide con el binario.
         private val OMEGA_EFFECT_UUID: UUID =
             UUID.fromString("4956414e-4e41-4f4d-4547-415355505245")
+
+        // EFFECT_TYPE_NULL no existe en la API pública del SDK (es constante
+        // interna de AOSP); el patrón para efectos custom es pasar el UUID
+        // de tipo nulo explícito como primer argumento del constructor.
+        private val EFFECT_TYPE_NULL_UUID: UUID =
+            UUID.fromString("00000000-0000-0000-0000-000000000000")
     }
 
     private fun writeToLogFile(message: String) {
@@ -193,7 +198,10 @@ class IvannaGlobalEffectManager(
         // Solo no-null cuando el módulo Magisk está instalado y AudioFlinger
         // tiene la librería registrada en soundfx; en no-root el constructor
         // lanza y se queda en null (fallback silencioso a los efectos stock).
-        val omega:             AudioEffect? = null
+        // Se referencia con nombre completo porque com.ivanna.omega.audio.effects
+        // .AudioEffect (interface propia) ensombrece a android.media.audiofx
+        // .AudioEffect en el resolver de Kotlin -> error package-private.
+        val omega:             android.media.audiofx.AudioEffect? = null
     )
 
 
@@ -400,13 +408,15 @@ class IvannaGlobalEffectManager(
 
     /**
      * AUDIT FIX: instancia el efecto IVANNA Omega por UUID sobre la sesión.
-     * EFFECT_TYPE_NULL + uuid propio es el patrón estándar para efectos
+     * Tipo nulo (UUID 0) + uuid propio es el patrón estándar para efectos
      * custom registrados vía audio_effects.conf/xml (módulo Magisk soundfx).
+     * Nombre de clase completo: la interface com.ivanna.omega.audio.effects
+     * .AudioEffect ensombrece la clase del SDK en este paquete de imports.
      * Devuelve null —sin ruido— si la librería no está instalada (no-root).
      */
-    private fun createOmegaEffect(session: Int): AudioEffect? = runCatching {
-        AudioEffect(
-            AudioEffect.EFFECT_TYPE_NULL,
+    private fun createOmegaEffect(session: Int): android.media.audiofx.AudioEffect? = runCatching {
+        android.media.audiofx.AudioEffect(
+            EFFECT_TYPE_NULL_UUID,
             OMEGA_EFFECT_UUID,
             0,          // prioridad: el control de parámetros va por el bus SHM
             session

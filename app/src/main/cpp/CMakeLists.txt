@@ -197,6 +197,7 @@ add_library(omega_effect SHARED
     spatial/ivanna_head_tracker.cpp
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
+    daemon/core/omega_control_bus.cpp
 )
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})
