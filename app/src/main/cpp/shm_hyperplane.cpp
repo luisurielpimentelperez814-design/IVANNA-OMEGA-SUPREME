@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <errno.h>
 
 #define LOG_TAG "IVANNA-SHM-NATIVE"
@@ -53,6 +54,39 @@ Java_com_ivanna_omega_magisk_ShmManager_nativeMlockBuffer(JNIEnv* env, jobject, 
         return -1;
     }
     return mlockAddr(addr, len);
+}
+
+// ── NUEVO (fix "SHM nunca conecta"): mapear el fd que el daemon entrega por
+// SCM_RIGHTS. Antes ShmManager.kt creaba su PROPIA region con
+// android.os.SharedMemory: dos regiones distintas, cero memoria compartida con
+// el daemon. android.os.SharedMemory no puede envolver un fd ajeno, asi que el
+// mmap() tiene que hacerse aqui y devolverse como DirectByteBuffer.
+JNIEXPORT jobject JNICALL
+Java_com_ivanna_omega_magisk_ShmManager_nativeMapSharedFd(JNIEnv* env, jobject, jint fd, jint size) {
+    if (fd < 0 || size <= 0) {
+        LOGE("mapSharedFd: parametros invalidos fd=%d size=%d", fd, size);
+        return nullptr;
+    }
+    void* addr = mmap(nullptr, static_cast<size_t>(size), PROT_READ | PROT_WRITE,
+                      MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
+        LOGE("mapSharedFd: mmap fallo fd=%d errno=%d", fd, errno);
+        return nullptr;
+    }
+    // El fd ya no hace falta: el mapeo mantiene viva la referencia al inode.
+    close(fd);
+    mlockAddr(addr, size);
+    return env->NewDirectByteBuffer(addr, size);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_magisk_ShmManager_nativeUnmapSharedFd(JNIEnv* env, jobject, jobject buffer) {
+    if (!buffer) return -1;
+    void* addr = env->GetDirectBufferAddress(buffer);
+    jlong len = env->GetDirectBufferCapacity(buffer);
+    if (!addr || len <= 0) return -1;
+    munlock(addr, static_cast<size_t>(len));
+    return munmap(addr, static_cast<size_t>(len));
 }
 
 } // extern "C"

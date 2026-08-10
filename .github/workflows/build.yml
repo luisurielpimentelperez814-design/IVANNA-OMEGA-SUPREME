@@ -277,15 +277,45 @@ jobs:
           if [ -f libc++_shared.so ]; then
             cp libc++_shared.so magisk_module/system/vendor/lib64/libc++_shared.so
           fi
-          if [ -f ivanna_daemon ]; then
-            mkdir -p magisk_module/system/bin
-            cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
-            chmod 755 magisk_module/system/bin/ivanna_daemon
+          # FIX (artefactos viejos): `if [ -f ivanna_daemon ]` hacia que, si la
+          # compilacion del daemon fallaba, el zip se empaquetara igual con el
+          # binario COMMITEADO en magisk_module/system/bin/ivanna_daemon — un
+          # daemon viejo, sin los fixes del commit, y sin un solo warning en el
+          # log. Ahora es un error duro y se borra el binario versionado antes
+          # de copiar el recien compilado.
+          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon no compilado — no se empaqueta un binario viejo"; exit 1; }
+          mkdir -p magisk_module/system/bin
+          rm -f magisk_module/system/bin/ivanna_daemon
+          cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
+          chmod 755 magisk_module/system/bin/ivanna_daemon
+
+          # Sello de build verificable en el dispositivo:
+          #   su -c 'cat /data/adb/modules/ivanna_omega_supreme/BUILD_INFO'
+          {
+            echo "commit=${GITHUB_SHA:-local}"
+            echo "run=${GITHUB_RUN_NUMBER:-0}"
+            echo "built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "daemon_sha256=$(sha256sum ivanna_daemon | cut -d' ' -f1)"
+            echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | cut -d' ' -f1)"
+          } > magisk_module/BUILD_INFO
+          cat magisk_module/BUILD_INFO
+
+          # Guardia de sintaxis magiskpolicy: los dos puntos / punto y coma de
+          # la sintaxis .te hacen que magiskpolicy rechace TODO el archivo y la
+          # app pierda `connectto` sobre el socket del daemon.
+          test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
+          if grep -vE '^[[:space:]]*(#|$)' magisk_module/sepolicy.rule | grep -qE '[:;]'; then
+            echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;) — magiskpolicy la rechaza"
+            grep -nE '[:;]' magisk_module/sepolicy.rule
+            exit 1
           fi
+
           cd magisk_module
-          zip -r "$GITHUB_WORKSPACE/ivanna_omega_supreme.zip" . -x "*.git*" || true
+          zip -r "$GITHUB_WORKSPACE/ivanna_omega_supreme.zip" . -x "*.git*"
           cd "$GITHUB_WORKSPACE"
-          ls -lh ivanna_omega_supreme.zip || true
+          unzip -l ivanna_omega_supreme.zip | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
+          unzip -l ivanna_omega_supreme.zip | grep -q "sepolicy.rule" || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
+          ls -lh ivanna_omega_supreme.zip
 
       - name: Upload Magisk module + binaries
         uses: actions/upload-artifact@v4

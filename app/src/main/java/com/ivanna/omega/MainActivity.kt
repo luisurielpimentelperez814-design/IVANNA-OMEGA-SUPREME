@@ -77,8 +77,10 @@ import com.ivanna.omega.ui.BrainScreen
 import com.ivanna.omega.ui.SystemScreen
 import com.ivanna.omega.ui.BridgePlayerCard
 import kotlin.math.log10
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withContext
 import com.ivanna.omega.magisk.ShmManager
 import com.ivanna.omega.core.PresetManager
 import com.ivanna.omega.audio.AudioRoutingManager
@@ -617,7 +619,12 @@ fun DashboardScreen(
 
     val paramStore = remember { ParameterStore(context) }
 
-    LaunchedEffect(Unit) { ShmManager.initialize(context) }
+    // FIX: initialize() ahora hace un handshake por LocalSocket con el daemon
+    // (hasta 1.5 s de timeout). En el hilo principal eso era un ANR potencial
+    // en el primer frame; va en Dispatchers.IO.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { ShmManager.initialize(context) }
+    }
 
     val presetManager = remember { PresetManager(context) }
     var selectedPreset by remember { mutableStateOf(presetManager.getCurrentPreset()) }

@@ -21,14 +21,36 @@ echo "[$(date)] service.sh v6.3 iniciado" >> "$LOGFILE"
 SEPOLICY_RULE="$MODDIR/sepolicy.rule"
 if [ -f "$SEPOLICY_RULE" ]; then
     if command -v magiskpolicy >/dev/null 2>&1; then
-        magiskpolicy --live --apply "$SEPOLICY_RULE" >> "$LOGFILE" 2>&1
-        echo "[$(date)] SELinux rules aplicadas desde $SEPOLICY_RULE" >> "$LOGFILE"
+        # FIX: `--apply <file>` aborta al primer error de parseo y devuelve
+        # distinto de 0 sin decir QUE linea fallo. Se aplica primero el archivo
+        # completo y, si falla, se cae a aplicacion linea por linea para que una
+        # regla invalida (o un dominio inexistente en esta version de Android)
+        # no tumbe TODAS las demas — que es lo que dejaba a la app sin
+        # `connectto` y con el socket del daemon inalcanzable.
+        if magiskpolicy --live --apply "$SEPOLICY_RULE" >> "$LOGFILE" 2>&1; then
+            echo "[$(date)] SELinux: sepolicy.rule aplicado completo" >> "$LOGFILE"
+        else
+            echo "[$(date)] WARN: --apply fallo; aplicando regla por regla" >> "$LOGFILE"
+            SE_OK=0; SE_FAIL=0
+            while IFS= read -r RULE; do
+                case "$RULE" in ''|'#'*) continue ;; esac
+                if magiskpolicy --live "$RULE" >> "$LOGFILE" 2>&1; then
+                    SE_OK=$((SE_OK + 1))
+                else
+                    SE_FAIL=$((SE_FAIL + 1))
+                    echo "[$(date)] SELinux regla RECHAZADA: $RULE" >> "$LOGFILE"
+                fi
+            done < "$SEPOLICY_RULE"
+            echo "[$(date)] SELinux: $SE_OK reglas aplicadas, $SE_FAIL rechazadas" >> "$LOGFILE"
+        fi
+        echo "[$(date)] SELinux modo actual: $(getenforce 2>/dev/null || echo desconocido)" >> "$LOGFILE"
     else
         echo "[$(date)] WARN: magiskpolicy no encontrado — SELinux rules NO aplicadas" >> "$LOGFILE"
     fi
 else
     echo "[$(date)] WARN: sepolicy.rule no encontrado — conexiones desde la app pueden fallar" >> "$LOGFILE"
 fi
+
 
 # ── SAF MODEL DEPLOY ──────────────────────────────────────────────────────────
 # FIX (auditoría 2026-08-09):
