@@ -199,13 +199,21 @@ adb logcat -s IVANNA_OMEGA_DAEMON IVANNA_CMD IVANNA_SHM
 ```
 magisk_module/
 ├── META-INF/com/google/android/update-binary
-├── module.prop           — id, version, author
-├── service.sh            — lanza ivanna_daemon en boot (watchdog loop)
-├── customize.sh          — instalador
+├── module.prop           — id, version, author, updateJson (Foco #8: apunta a
+│                           magisk_module/update.json, no a la raíz)
+├── update.json           — fuente real del update-checker (Foco #8)
+├── service.sh            — lanza ivanna_daemon en boot (watchdog loop, MQA_PID
+│                           vía PID file — Foco #2)
+├── customize.sh          — instalador; aplica magisk_module/sepolicy.rule live
+├── sepolicy.rule         — reglas SELinux reales para el socket abstracto
+│                           (untrusted_app/isolated_app → su/magisk connectto).
+│                           NO confundir con /sepolicy/sepolicy.rule en la raíz
+│                           del repo — ese es legado de una arquitectura anterior
+│                           (efecto AudioFlinger INSERT, dominio omega_daemon
+│                           propio) y no lo lee nada en el árbol actual.
 ├── system/bin/
 │   └── ivanna_daemon     — binario PIE ARM64 (build desde daemon/CMakeLists.txt)
-├── vendor_base/          — HAL hooks
-└── sepolicy/             — reglas SELinux para el socket abstracto
+└── vendor_base/          — HAL hooks
 ```
 
 ---
