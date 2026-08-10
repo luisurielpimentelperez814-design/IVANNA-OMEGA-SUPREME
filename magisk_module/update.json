@@ -1,4 +1,6 @@
 {
+  "_canonical": true,
+  "_note": "Fuente de verdad real — module.prop:updateJson apunta aquí desde el fix de Foco #8 (2026-08-09). Vive junto a module.prop para que ambos se versionen y se flasheen juntos como una sola unidad.",
   "version": "v2.1.0",
   "versionCode": 2100,
   "zipUrl": "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest/download/ivanna-omega-magisk.zip",

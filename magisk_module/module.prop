@@ -4,4 +4,4 @@ version=v2.1.0
 versionCode=2100
 author=IVANNA Team
 description=Motor DSP neuromorfico global — daemon real-time SCHED_FIFO + monitor MQA + Modo Concierto (patched)
-updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/update.json
+updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
