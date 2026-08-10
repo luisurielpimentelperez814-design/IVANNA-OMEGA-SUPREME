@@ -3,9 +3,11 @@
 #include "IvannaFusionCore.cpp"
 #include <vector>
 #include "audio_effect_compat.h"
+#include "include/omega_control_bus.h"
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <atomic>
 
 #define LOG_TAG "IvannaOmegaEffect"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -89,6 +91,15 @@ static const effect_descriptor_t OMEGA_DESCRIPTOR = {
  * realtime de AudioFlinger. La rama de resize() de std::vector puede
  * llamar a malloc bajo el hilo de audio -> jitter, XRun y en casos
  * extremos deadlock si el allocator toca un mutex compartido.
+ *
+ * AUDIT FIX (control plane reconnect): campo lastAppliedGen guarda la
+ * última generation del OmegaControlBus (SHM) aplicada por esta instancia.
+ * Antes, omega_process ignoraba TOTALMENTE el snapshot publicado por el
+ * daemon (command_server publica pero el efecto no consumía): la UI
+ * movía sliders pero AudioFlinger corría con los defaults inmutables.
+ * Ahora cada instancia lee readLatest() al principio del callback y
+ * aplica los parámetros a su ctx->fusionCore, restaurando el puente
+ * cross-process UI -> daemon -> audioserver.
  */
 struct omega_effect_context_t {
     const struct effect_interface_s *itfe;
@@ -98,12 +109,46 @@ struct omega_effect_context_t {
     float* rtL;                     // AUDIT FIX: buffer L preasignado (realtime)
     float* rtR;                     // AUDIT FIX: buffer R preasignado (realtime)
     int    rtCapacity;              // frames que caben en rtL/rtR
+    uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
+    bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
 };
 
 // Capacidad máxima esperada por bloque. AudioFlinger normalmente pasa
 // bloques entre 128 y 2048 frames; se reserva un margen holgado para no
 // necesitar reasignar nunca en la ruta caliente.
 static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
+
+// AUDIT FIX (control plane reconnect): aplica un OmegaDspSnapshot recibido
+// vía SHM al IvannaFusionCore local. Se llama fuera del hot-path (una vez
+// por generation nueva). No hace malloc, no bloquea, no logea en cada
+// llamada. Los parámetros que el core actual no expone (EQ, dialónboost,
+// SAF, etc.) se ignoran hasta que se añadan setters en fases posteriores
+// — lo que importa aquí es que los sliders visibles de la UI (spatial
+// width, harmonic gain, compresor) SI lleguen al audio real.
+static inline void omega_apply_snapshot(IvannaFusionCore* fc,
+                                        const ivanna::OmegaDspSnapshot& s) noexcept {
+    if (!fc) return;
+    // El route arbiter marca quién aplica DSP. Si no somos SYSTEM_WIDE,
+    // ni intensity ni el resto tocan; el efecto queda enabled pero pasa.
+    if (static_cast<ivanna::RouteMode>(s.active_route) != ivanna::RouteMode::SYSTEM_WIDE) {
+        return;
+    }
+    // Spatial width (slider UI "Ancho espacial")
+    if (std::isfinite(s.spatial_width) && s.spatial_width > 0.f) {
+        fc->setSpatialWidth(s.spatial_width);
+    }
+    // Harmonic gain (slider UI "Ganancia armónica")
+    if (std::isfinite(s.harmonic_gain) && s.harmonic_gain >= 0.f) {
+        fc->setHarmonicGain(s.harmonic_gain);
+    }
+    // Compresor (threshold / ratio)
+    if (std::isfinite(s.compressor) && s.compressor < 0.f) {
+        // s.compressor viene en dB negativos (threshold), ratio derivada del
+        // campo comp_amount [0..1] mapeado a [1..8]:1 (compat con el driver).
+        const float ratio = 1.0f + 7.0f * std::clamp(s.comp_amount, 0.f, 1.f);
+        fc->setCompressorParams(s.compressor, ratio);
+    }
+}
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
 static int32_t omega_process(effect_handle_t self,
@@ -122,6 +167,18 @@ static int32_t omega_process(effect_handle_t self,
     if (!fc) {
         memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
         return 0;
+    }
+
+    // AUDIT FIX (control plane reconnect): drena a lo más UN snapshot nuevo
+    // por callback. readLatest() es lock-free (seqlock en SHM), no bloquea,
+    // no malloc, y solo retorna true si hay una generation posterior a la
+    // ya aplicada. Esto conecta finalmente los sliders de la UI -> daemon
+    // -> SHM -> omega_process, cerrando el ciclo que estaba roto.
+    if (ctx->ctrlBusOpen) {
+        ivanna::OmegaDspSnapshot snap;
+        if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
+            omega_apply_snapshot(fc, snap);
+        }
     }
 
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
@@ -184,6 +241,32 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 ctx->rtCapacity =
                     (ctx->rtL && ctx->rtR) ? OMEGA_RT_MAX_FRAMES : 0;
+                // AUDIT FIX (control plane reconnect): abrir el reader del
+                // OmegaControlBus (SHM cross-process). Si el daemon todavía
+                // no creó el SHM (arranque en frío del audioserver), la
+                // apertura simplemente falla y el efecto sigue como
+                // passthrough respecto al control plane; en el próximo
+                // SET_CONFIG (cada apertura de sesión) se reintenta.
+                if (!ctx->ctrlBusOpen) {
+                    ctx->ctrlBusOpen = ivanna::effectControlBus().openReader();
+                    if (ctx->ctrlBusOpen) {
+                        // Sembrar el estado inicial con el snapshot más reciente
+                        // ya publicado por el daemon — sin esto, el primer
+                        // bloque de audio corre con los defaults del core hasta
+                        // que llegue el siguiente publish() de la UI.
+                        ivanna::OmegaDspSnapshot seed;
+                        uint64_t seen = 0;
+                        if (ivanna::effectControlBus().readLatest(seed, seen)) {
+                            omega_apply_snapshot(ctx->fusionCore, seed);
+                            ctx->lastAppliedGen = seen;
+                            LOGI("OmegaControlBus attached (seed gen=%llu route=%d)",
+                                 (unsigned long long)seen,
+                                 (int)seed.active_route);
+                        } else {
+                            LOGI("OmegaControlBus attached (no snapshot yet)");
+                        }
+                    }
+                }
                 // Dataset HRTF personalizado (si existe). Fallback: sintético.
                 // El resultado se logea SIEMPRE: es el unico punto del sistema
                 // donde se decide entre HRTF medido y HRTF sintetico, y esa
@@ -271,6 +354,8 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
+    ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
+    ctx->ctrlBusOpen    = false;
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
 }
