@@ -10,6 +10,11 @@
 // ── Singleton optimizer instance ─────────────────────────────────────────────
 static Ivanna::SaFOptimizer g_saf;
 
+// Cable SAF → FusionCore (definida en omega_effect.cpp).
+// Propaga q_t al ObjectRenderer activo tras cada paso de calibración.
+// Si el engine no está inicializado es no-op.
+extern "C" void ivanna_saf_apply_latent(const float q[7]);
+
 extern "C" {
 
 // bool nativeSaFInit(String jsonPath)
@@ -26,6 +31,12 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_saf_SaFBridge_nativeSaFFeedback(
         JNIEnv*, jobject, jint dir, jboolean correct) {
     g_saf.feedFeedback(static_cast<int>(dir), correct == JNI_TRUE);
+
+    // Cable SAF → convolver: leer q_t actualizado y propagarlo al ObjectRenderer.
+    // Sin esto, el optimizador convergía pero el audio nunca cambiaba.
+    float q[Ivanna::SAF_K];
+    g_saf.getParams(q);
+    ivanna_saf_apply_latent(q);
 }
 
 // FloatArray? nativeSaFGetParams()  — 7 floats [q0..q6]

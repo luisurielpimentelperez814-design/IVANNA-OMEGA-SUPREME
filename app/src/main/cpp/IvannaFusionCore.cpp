@@ -70,6 +70,16 @@ public:
         return mRenderer.loadHrtfDatasetFromFile(path);
     }
 
+    // Propaga el vector latente q_t del optimizador Φ_SAF^∞ al renderer.
+    // Llamar desde el hilo de control (SaFJniBridge) tras cada feedFeedback().
+    void setSafLatentParams(const float q[7]) noexcept {
+        mRenderer.setLatentParams(q);
+    }
+
+    void clearSafLatentParams() noexcept {
+        mRenderer.clearLatentParams();
+    }
+
     void processStereo(float* bufferLeft, float* bufferRight, size_t numFrames) {
         if (mSpatialActive && numFrames > 0 && numFrames <= (size_t)mBlockSize) {
             renderSpatial(bufferLeft, bufferRight, numFrames);

@@ -413,6 +413,15 @@ static int32_t omega_get_descriptor_lib(const effect_uuid_t *uuid,
     return 0;
 }
 
+// ── Cable SAF → FusionCore ────────────────────────────────────────────────────
+// Llamada desde SaFJniBridge.cpp tras cada feedFeedback() para propagar
+// el vector latente q_t del optimizador Φ_SAF^∞ al ObjectRenderer activo.
+// No es static para que SaFJniBridge pueda declararla extern.
+// Si el engine aún no fue inicializado (g_fusionCore == nullptr), es no-op.
+extern "C" void ivanna_saf_apply_latent(const float q[7]) {
+    if (g_fusionCore) g_fusionCore->setSafLatentParams(q);
+}
+
 /* ── SÍMBOLO "AELI" — el que audioserver busca con dlsym() ───────────────── */
 extern "C" __attribute__((visibility("default"), used))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
