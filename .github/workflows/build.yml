@@ -252,11 +252,7 @@ jobs:
           CXX="$TOOLCHAIN/bin/aarch64-linux-android34-clang++"
           READELF="$TOOLCHAIN/bin/llvm-readelf"
           STRIP="$TOOLCHAIN/bin/llvm-strip"
-          DAEMON_SRCS="
-app/src/main/cpp/daemon/ivanna_daemon.cpp
-app/src/main/cpp/daemon/control/command_server.cpp
-app/src/main/cpp/daemon/core/shm_manager.cpp
-"
+          DAEMON_SRCS="app/src/main/cpp/daemon/ivanna_daemon.cpp app/src/main/cpp/daemon/control/command_server.cpp app/src/main/cpp/daemon/core/shm_manager.cpp"
 
 echo "=== Fuentes daemon ==="
 echo "$DAEMON_SRCS"
