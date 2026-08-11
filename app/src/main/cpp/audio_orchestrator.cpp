@@ -25,6 +25,18 @@ struct OrchestratorState {
     float anti_dolby_speech = 0.f;
     float anti_dolby_music  = 0.f;
     float anti_dolby_bass   = 0.f;
+    // AUDIT FIX (símbolos JNI huérfanos): AudioEngine.kt declara
+    // nativeSetGain / nativeSetEqGain / nativeSetWidth como external fun y
+    // las llama en runtime (setGain, setEqGain, setWidth) — sin símbolo C++
+    // ni campo de estado, el runCatching de Kotlin tragaba el
+    // UnsatisfiedLinkError y el slider quedaba silenciosamente inoperante.
+    float masterGainDb = 0.f;   // slider "Gain" / "Master Gain" (dB)
+    float eqGainDb     = 0.f;   // slider "EQ Gain" (dB, se suma al master)
+    float stereoWidth  = 0.f;   // slider "Width" [0..1] — se suma a widenerWet
+    // Métricas para nativeGetLufs / nativeGetPeakDbfs (se actualizan en
+    // ivanna_orchestrate tras el cálculo de rms/peak ya existente).
+    float lastLufs     = -70.f;
+    float lastPeakDbfs = -70.f;
     float loudness_curve[256]{};
     struct KalmanScalar { float q, r, x, p; };
     KalmanScalar kalman_loud  {0.001f, 0.1f,  0.0f, 1.0f};
@@ -109,6 +121,36 @@ extern "C" void ivanna_set_manifold_enabled(bool enabled) {
     g_orch.manifoldEnabled = enabled;
 }
 
+// AUDIT FIX (símbolos JNI huérfanos): setters/getters para los sliders de
+// AudioEngine.kt que no tenían destino en el estado del orchestrator.
+extern "C" void ivanna_set_master_gain(float db) {
+    if (!std::isfinite(db)) return;
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    g_orch.masterGainDb = std::clamp(db, -24.f, 24.f);
+}
+
+extern "C" void ivanna_set_eq_gain(float db) {
+    if (!std::isfinite(db)) return;
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    g_orch.eqGainDb = std::clamp(db, -12.f, 12.f);
+}
+
+extern "C" void ivanna_set_stereo_width(float width) {
+    if (!std::isfinite(width)) return;
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    g_orch.stereoWidth = std::clamp(width, 0.f, 1.f);
+}
+
+extern "C" float ivanna_get_lufs() {
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    return g_orch.lastLufs;
+}
+
+extern "C" float ivanna_get_peak_dbfs() {
+    std::lock_guard<std::mutex> lock(g_orch_mutex);
+    return g_orch.lastPeakDbfs;
+}
+
 extern "C" void ivanna_orchestrate(float* buffer, int samples,
                                     int channels, int /*sampleRate*/) {
     std::lock_guard<std::mutex> lock(g_orch_mutex);
@@ -127,15 +169,27 @@ extern "C" void ivanna_orchestrate(float* buffer, int samples,
     kalman_update(&g_orch.kalman_trans.x, &g_orch.kalman_trans.p,
                   0.005f, 0.2f, peak/(rms+1e-9f));
 
+    // AUDIT FIX: persistir métricas para nativeGetLufs / nativeGetPeakDbfs.
+    // Aproximación deliberada: LUFS ≈ RMS en dBFS (sin K-weighting); es la
+    // misma escala que el UI ya mostraba con los getters huérfanos.
+    g_orch.lastLufs     = 20.f * std::log10(rms  + 1e-9f);
+    g_orch.lastPeakDbfs = 20.f * std::log10(peak + 1e-9f);
+
     // Ganancias (aplicadas a todos los canales uniformemente)
+    // AUDIT FIX: masterGainDb + eqGainDb (sliders UI) se suman al bus de
+    // ganancia existente — sin cambiar el comportamiento de dialog/bass.
     float dialogLin = std::pow(10.f, g_orch.dialogGain / 20.f);
     float bassLin   = std::pow(10.f, g_orch.bassGain   / 20.f);
-    float combined  = dialogLin * bassLin;
+    float masterLin = std::pow(10.f, (g_orch.masterGainDb + g_orch.eqGainDb) / 20.f);
+    float combined  = dialogLin * bassLin * masterLin;
     for (int i = 0; i < samples; ++i) buffer[i] *= combined;
 
     // Stereo widener (M/S)
-    if (channels == 2 && g_orch.widenerWet > 0.01f) {
-        float wet = g_orch.widenerWet;
+    // AUDIT FIX: stereoWidth (slider UI [0..1]) se suma a widenerWet (route
+    // profile) — el canal de la app y el del perfil conviven sin pisarse.
+    const float wetTotal = g_orch.widenerWet + g_orch.stereoWidth;
+    if (channels == 2 && wetTotal > 0.01f) {
+        float wet = wetTotal;
         for (int i = 0; i < samples; i += 2) {
             float mid  = (buffer[i] + buffer[i+1]) * 0.5f;
             float side = (buffer[i] - buffer[i+1]) * 0.5f * (1.f + wet);
