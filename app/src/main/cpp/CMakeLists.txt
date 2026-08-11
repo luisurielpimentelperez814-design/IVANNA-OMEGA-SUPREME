@@ -68,7 +68,8 @@ add_library(ivanna_omega SHARED
     SafModelLoader.cpp
     SafPcaDecoder.cpp
     SafSpatialModifier.cpp
-    SafSpatialRuntime.cpp
+    # SAF Spatial Runtime (solo si existe en el checkout)
+    $<$<BOOL:${EXISTS_SAF_SPATIAL_RUNTIME}>:SafSpatialRuntime.cpp>
     SofaHRTFLoader.cpp
     SafHRTFBridge.cpp
     HRTFBinLoader.cpp
