@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstddef>
-#include <vector>
+#include <vector>\n#include <array>
 
 #include "spatial/ivanna_object_renderer.hpp"
 
@@ -65,6 +65,12 @@ public:
 
     void setSpatialActive(bool active) { mSpatialActive = active; }
     bool isSpatialActive() const { return mSpatialActive; }
+
+    // SAF adaptive spatial latent field [q0..q6]
+    void setSafLatent(const std::array<float,7>& q)
+    {
+        mRenderer.setSafLatent(q);
+    }
 
     // Carga un dataset HRTF personalizado (formato binario "IHR1").
     bool loadCustomHrtf(const char* path) {
