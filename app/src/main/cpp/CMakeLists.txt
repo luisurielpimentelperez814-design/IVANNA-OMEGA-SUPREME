@@ -88,10 +88,16 @@ add_library(ivanna_omega SHARED
     # FIX (build): undefined symbol ivanna_saf_apply_latent al linkear
     # libivanna_omega.so. SaFJniBridge.cpp:40 la referencia extern pero la
     # definición real vive en omega_effect.cpp (target libomega_effect.so —
+    saf_optimizer.cpp
+    saf_runtime.cpp
+    SafModelLoader.cpp
     # proceso audioserver), inaccesible desde este target. Este stub define
     # el símbolo en el proceso app y publica el vector latente en un
     # snapshot seqlock (ivanna_saf_get_latent_snapshot) sin duplicar el
     # efecto. La definición de omega_effect.cpp queda intacta.
+    saf_optimizer.cpp
+    saf_runtime.cpp
+    SafModelLoader.cpp
     saf_latent_bridge.cpp
 
     # Evolutionary (OFFLINE ONLY)
@@ -216,6 +222,9 @@ target_link_libraries(ivanna_omega
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
+    saf_optimizer.cpp
+    saf_runtime.cpp
+    SafModelLoader.cpp
     spatial/ivanna_object_renderer.cpp
     spatial/hrtf_convolver.cpp
     spatial/ivanna_head_tracker.cpp
