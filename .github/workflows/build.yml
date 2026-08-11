@@ -283,25 +283,28 @@ jobs:
             -llog \
             -o ivanna_daemon
 
-        
-  chmod +x ivanna_daemon
+          chmod +x ivanna_daemon
 
-  echo "=== DEBUG ELF CI ==="
-
-  ls -lh ivanna_daemon
-
-  echo "=== FILE ==="
-  file ivanna_daemon
-
-  echo "=== HEADER ==="
-  "$READELF" -h ivanna_daemon
-
-  echo "=== PROGRAM HEADERS ==="
-  "$READELF" -l ivanna_daemon
-
-  echo "=== DYNAMIC ==="
-  "$READELF" -d ivanna_daemon || true
-
+          # ─── DEBUG ELF CI ─────────────────────────────────────────────
+          # Volcado detallado del binario recién compilado. Ayuda a
+          # diagnosticar por qué falló el gate de "PIE dinámico" cuando el
+          # linker de NDK r26 produce un ELF con Type=EXEC en vez de DYN.
+          # Este bloque tenía indentación corrupta (2 espacios en lugar de
+          # 10), lo que sacaba el `chmod +x` y los 8 comandos siguientes
+          # FUERA del bloque `run: |` del paso YAML — el shell del step
+          # nunca los ejecutaba, y en algunos parsers YAML el step entero
+          # fallaba con "found character that cannot start any token".
+          # Restaurada la indentación al mismo nivel que el resto del run.
+          echo "=== DEBUG ELF CI ==="
+          ls -lh ivanna_daemon
+          echo "=== FILE ==="
+          file ivanna_daemon
+          echo "=== HEADER ==="
+          "$READELF" -h ivanna_daemon
+          echo "=== PROGRAM HEADERS ==="
+          "$READELF" -l ivanna_daemon
+          echo "=== DYNAMIC ==="
+          "$READELF" -d ivanna_daemon || true
 
           echo "=== Arquitectura ==="
           "$READELF" -h ivanna_daemon | grep Machine
