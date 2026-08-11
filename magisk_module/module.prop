@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
-name=IVANNA-OMEGA-SUPREME
+name=IVANNA OMEGA SUPREME
 version=v2.1.0
 versionCode=2100
-author=IVANNA Team
-description=Motor DSP neuromorfico global — daemon real-time SCHED_FIFO + monitor MQA + Modo Concierto (patched)
+author=Luis Uriel Pimentel Pérez (Gore TNS)
+description=Motor DSP neuromorfico system-wide · Φ_SAF∞ HRTF Riemanniano (214 sujetos) · PI-LSTM · Volterra H2 · SCHED_FIFO daemon · TinyML INT8 Anti-Dolby
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
