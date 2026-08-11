@@ -63,6 +63,20 @@ public:
         return hrtf_.loadDatasetFromFile(path);
     }
 
+    // Propaga el vector latente q_t del SAF al SyntheticHRTF subyacente
+    // y fuerza un reload de los filtros de frecuencia en el próximo bloque.
+    // Llamar desde el hilo de control (no durante process()).
+    void setLatentParams(const float q[7]) noexcept {
+        hrtf_.setLatentParams(q);
+        // Marcar como pendiente de recalcular filtros en la próxima llamada a process()
+        newTargetPending_.store(true, std::memory_order_release);
+    }
+
+    void clearLatentParams() noexcept {
+        hrtf_.clearLatentParams();
+        newTargetPending_.store(true, std::memory_order_release);
+    }
+
 private:
     void updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept;
     static uint32_t next_pow2(uint32_t v);
