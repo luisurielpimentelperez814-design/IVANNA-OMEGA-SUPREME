@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    ⚠ LEGADO / SUPERSEDIDO (auditoría 2026-08-11) — NO borrado por regla del
+    proyecto, pero contradice la filosofía actual del efecto.
+
+    Este archivo (v1.5) declara priority="1000" para "desplazar a Dolby" en
+    music+movie+game. El XML canónico que audioserver realmente carga en
+    dispositivos Treble — magisk_module/system/vendor/etc/audio_effects.xml —
+    declara explícitamente LO CONTRARIO: sin priority, el efecto vive por su
+    UUID propio y coexiste con cualquier post-proc OEM (Dolby/Dirac/etc), sin
+    competir por el slot de mayor prioridad. Ver el comentario de ese archivo.
+
+    Además, la app (IvannaGlobalEffectManager.kt::createOmegaEffect) ya
+    engancha el efecto explícitamente por UUID en cada sesión de audio vía
+    AudioEffect(UUID, UUID, Int, Int) — el mecanismo real de activación NO
+    depende de que ningún <postprocess> aquí se lea. Ni Android moderno
+    (Treble) escanea /system/etc/ buscando nombres de archivo arbitrarios
+    como este, así que en la práctica es inerte en la mayoría de dispositivos.
+
+    El archivo vigente para el canal legacy /system/etc es
+    audio_effects_ivanna_omega.xml (mismo directorio), sin priority forzada,
+    consistente con la filosofía actual. Este archivo se conserva solo por
+    si algún dispositivo muy antiguo aún lo descubriera por convención propia
+    del OEM — pero no debe tomarse como la configuración activa del proyecto.
+============================================================ -->
 <!-- IVANNA-OMEGA-SUPREME v1.5 — audio_effects.xml -->
 <!-- FIX v1.5: prioridad 1000 para desplazar Dolby a prioridad 50 -->
 <audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf">

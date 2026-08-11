@@ -36,8 +36,15 @@ log "boot #$COUNT (last_ok=$( [ -f $LAST_OK ] && echo yes || echo no ))"
 if [ "$COUNT" -ge 3 ] && [ ! -f "$LAST_OK" ] && [ ! -f "$MODDIR/.safe_mode" ]; then
     log "SAFE MODE activado (3 boots consecutivos sin service.sh OK)"
     touch "$MODDIR/.safe_mode"
+    # FIX (nombres reales, auditoría 2026-08-11): el archivo vendor es
+    # audio_effects.xml (correcto), pero bajo system/etc/ los archivos
+    # reales se llaman audio_effects_ivanna.xml y audio_effects_ivanna_omega.xml
+    # — "audio_effects.xml" a secas en system/etc/ nunca existió en este
+    # módulo, así que ese rm era un no-op silencioso que dejaba viva la
+    # config de system/etc/ real en safe mode.
     rm -f "$MODDIR/system/vendor/etc/audio_effects.xml" \
-          "$MODDIR/system/etc/audio_effects.xml"
+          "$MODDIR/system/etc/audio_effects_ivanna.xml" \
+          "$MODDIR/system/etc/audio_effects_ivanna_omega.xml"
 fi
 
 # ── 2. Propiedades de sistema (leídas por la app) ────────────────────────────
