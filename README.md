@@ -45,88 +45,76 @@ IVANNA OMEGA operates directly within the Android `audioserver` execution path. 
 ```mermaid
 flowchart TB
 
-%% =====================================================
-%% IVANNA OMEGA SUPREME
-%% PERCEPTUAL AUDIO COMPUTING ARCHITECTURE
-%% =====================================================
+A["Android Applications<br/>Qobuz • Players • Media APIs"]
 
-USER["Android User Space<br/>Kotlin UI + Control Panels"]
+B["Android Audio Framework<br/>AudioFlinger / Audio HAL Execution Path"]
 
-MEDIA["Audio Sources<br/>Qobuz • Media Players • Android Audio APIs"]
+C["IVANNA Native Bridge<br/>JNI Kotlin ↔ C++"]
 
-JNI["JNI Native Bridge<br/>Kotlin ↔ C++"]
+D["Omega Control Plane<br/>Runtime State Management"]
 
-CONTROL["Omega Control Plane<br/>Runtime State + DSP Commands"]
+E["OmegaDaemon V8<br/>C++17 Real-Time Service"]
 
-DAEMON["OmegaDaemon V8<br/>C++17 Real-Time Service"]
+F["AF_UNIX Abstract IPC<br/>@omega_daemon_socket"]
 
-SOCKET["AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
+G["OmegaControlBus<br/>Shared Memory + Seqlock"]
 
-SHM["OmegaControlBus<br/>Shared Memory + Seqlock"]
+H["IVANNA DSP Core<br/>Low Latency Perceptual Engine"]
 
-DSP["IVANNA DSP Core<br/>Low Latency Perceptual Engine"]
+I["TinyML Perception Engine<br/>Real-Time Audio Intelligence"]
 
-AI["TinyML Perception Engine<br/>Real-Time Audio Intelligence"]
+J["PI-LSTM Predictive Engine<br/>Temporal Energy Modeling"]
 
-PILSTM["PI-LSTM Predictive Engine<br/>Temporal Energy Modeling"]
+K["SAF Spatial Engine<br/>Synthetic Acoustic Field"]
 
-SAF["SAF Spatial Engine<br/>Synthetic Acoustic Field"]
+L["HRTF / SOFA Renderer<br/>Personalized Binaural Processing"]
 
-HRTF["HRTF / SOFA Renderer<br/>Personalized Binaural Processing"]
+M["Volterra Spatial Model<br/>Nonlinear Acoustic Reconstruction"]
 
-VOLTERRA["Volterra Model<br/>Nonlinear Spatial Reconstruction"]
+N["ISO 226 + ITU Loudness Engine<br/>Human Hearing Calibration"]
 
-LOUD["ISO 226 + ITU Loudness Engine<br/>Human Hearing Calibration"]
+O["Adaptive Dynamics Engine<br/>Compression + Excitation Control"]
 
-DYNAMIC["Adaptive Dynamics Engine<br/>Compression + Excitation Control"]
+P["ARM64 NEON Acceleration<br/>SIMD Optimized Processing"]
 
-NEON["ARM64 NEON Acceleration<br/>SIMD Optimized Processing"]
+Q["Final Audio Renderer<br/>Low Latency Output"]
 
-OUTPUT["Final Audio Renderer<br/>Low Latency Audio Stream"]
+R["Magisk Runtime Layer<br/>System Integration"]
 
-MAGISK["Magisk Runtime Layer<br/>System Integration"]
-
-FALLBACK["Android DynamicsProcessing<br/>No Root Fallback"]
+S["Android DynamicsProcessing<br/>No Root Fallback"]
 
 
-USER --> JNI
-MEDIA --> JNI
+A --> B
+B --> C
 
-JNI --> CONTROL
-CONTROL --> DAEMON
+C --> D
+D --> E
 
-DAEMON --> SOCKET
-DAEMON --> SHM
+E --> F
+E --> G
 
-SHM --> DSP
+G --> H
 
-DSP --> AI
-DSP --> PILSTM
-DSP --> SAF
-DSP --> LOUD
-DSP --> DYNAMIC
+H --> I
+H --> J
+H --> K
+H --> N
+H --> O
 
-SAF --> HRTF
-HRTF --> VOLTERRA
+K --> L
+L --> M
 
-AI --> NEON
-PILSTM --> NEON
-VOLTERRA --> NEON
-LOUD --> NEON
-DYNAMIC --> NEON
+I --> P
+J --> P
+M --> P
+N --> P
+O --> P
 
-NEON --> OUTPUT
+P --> Q
 
-MAGISK --> DAEMON
+R --> E
 
-FALLBACK -.-> DSP
-
-
-bash
-cd native_kernel
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a
-cmake --build build --config Release
-```
+S -.-> H
 
 ---
 
