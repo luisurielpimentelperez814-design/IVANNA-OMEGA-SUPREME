@@ -34,6 +34,10 @@ add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 add_library(ivanna_omega SHARED
     saf_optimizer.cpp
     saf_runtime.cpp
+    SaFOptimizer.cpp
+    SafGlobalBridge.cpp
+    SafPcaDecoder.cpp
+    SafSpatialModifier.cpp
     # JNI bridge consolidado (libivanna_omega.so único)
     jni/ivanna_omega_jni.cpp
     jni/ivanna_visualizer_jni.cpp
@@ -90,6 +94,10 @@ add_library(ivanna_omega SHARED
     # definición real vive en omega_effect.cpp (target libomega_effect.so —
     saf_optimizer.cpp
     saf_runtime.cpp
+    SaFOptimizer.cpp
+    SafGlobalBridge.cpp
+    SafPcaDecoder.cpp
+    SafSpatialModifier.cpp
     SafModelLoader.cpp
     # proceso audioserver), inaccesible desde este target. Este stub define
     # el símbolo en el proceso app y publica el vector latente en un
@@ -97,6 +105,10 @@ add_library(ivanna_omega SHARED
     # efecto. La definición de omega_effect.cpp queda intacta.
     saf_optimizer.cpp
     saf_runtime.cpp
+    SaFOptimizer.cpp
+    SafGlobalBridge.cpp
+    SafPcaDecoder.cpp
+    SafSpatialModifier.cpp
     SafModelLoader.cpp
     saf_latent_bridge.cpp
 
@@ -224,6 +236,10 @@ add_library(omega_effect SHARED
     omega_effect.cpp
     saf_optimizer.cpp
     saf_runtime.cpp
+    SaFOptimizer.cpp
+    SafGlobalBridge.cpp
+    SafPcaDecoder.cpp
+    SafSpatialModifier.cpp
     SafModelLoader.cpp
     spatial/ivanna_object_renderer.cpp
     spatial/hrtf_convolver.cpp
