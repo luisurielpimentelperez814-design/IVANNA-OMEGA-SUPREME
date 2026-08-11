@@ -66,6 +66,7 @@ add_library(ivanna_omega SHARED
     SaFOptimizer.cpp
     SafModelLoader.cpp
     SafPcaDecoder.cpp
+    SafSpatialModifier.cpp
     SofaHRTFLoader.cpp
     SafHRTFBridge.cpp
     HRTFBinLoader.cpp
