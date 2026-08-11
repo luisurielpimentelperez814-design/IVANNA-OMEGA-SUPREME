@@ -78,6 +78,23 @@ else
     echo "[$(date)] WARN: SAF_model.json NO encontrado en $SAF_ASSET — motor Φ_SAF usará constantes horneadas (214 subjects baked in SaFOptimizer.cpp)" >> "$LOGFILE"
 fi
 
+# ── HRTF dataset deploy (FIX: faltaba en service.sh) ─────────────────────────
+# customize.sh deploya hrtf_dataset.ihr1 en instalación, pero si el archivo
+# se borra de /data/adb/ivanna_omega/ (limpieza manual, reset de datos parcial,
+# fallo de storage) el HRTF engine cae al fallback sintético sin aviso.
+# service.sh lo restaura en cada boot, igual que hace con SAF_model.json.
+HRTF_ASSET="$MODDIR/system/etc/ivanna_omega/hrtf_dataset.ihr1"
+HRTF_DEST="/data/adb/ivanna_omega/hrtf_dataset.ihr1"
+if [ -f "$HRTF_ASSET" ]; then
+    if [ ! -f "$HRTF_DEST" ]; then
+        cp -f "$HRTF_ASSET" "$HRTF_DEST"
+        chmod 644 "$HRTF_DEST"
+        echo "[$(date)] hrtf_dataset.ihr1 restaurado → $HRTF_DEST ($(stat -c%s "$HRTF_ASSET" 2>/dev/null || echo ?) bytes)" >> "$LOGFILE"
+    fi
+else
+    echo "[$(date)] WARN: hrtf_dataset.ihr1 NO encontrado en $HRTF_ASSET — HRTF usará fallback sintético" >> "$LOGFILE"
+fi
+
 # ── Verificar binario ─────────────────────────────────────────────────────────
 if [ ! -f "$DAEMON_BIN" ]; then
     echo "[$(date)] ERROR: $DAEMON_BIN not found — módulo no instalado correctamente" >> "$LOGFILE"
