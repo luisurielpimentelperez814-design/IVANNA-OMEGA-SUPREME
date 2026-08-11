@@ -254,8 +254,8 @@ jobs:
           STRIP="$TOOLCHAIN/bin/llvm-strip"
           DAEMON_SRCS="app/src/main/cpp/daemon/ivanna_daemon.cpp app/src/main/cpp/daemon/control/command_server.cpp app/src/main/cpp/daemon/core/shm_manager.cpp"
 
-echo "=== Fuentes daemon ==="
-echo "$DAEMON_SRCS"
+          echo "=== Fuentes daemon ==="
+          echo "$DAEMON_SRCS"
           echo "Compilando daemon desde:"
           echo "$DAEMON_SRCS"
 
