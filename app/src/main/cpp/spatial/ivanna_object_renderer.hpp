@@ -60,7 +60,11 @@ inline const std::array<VirtualSpeaker, kNumVirtualSpeakers> kVirtualSpeakers = 
     return spk;
 }();
 
+
 class ObjectRenderer {
+public:
+    void setSafLatent(const float* q, int size);
+
 public:
     void init(float sampleRate, int blockSize) noexcept;
     void setObjects(const std::vector<AudioObject>& objects) noexcept;

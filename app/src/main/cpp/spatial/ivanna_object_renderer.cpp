@@ -202,7 +202,7 @@ void ObjectRenderer::reset() noexcept {
 } // namespace ivanna::spatial
 
 
-void ObjectRenderer::setSafLatent(
+void ivanna::spatial::ObjectRenderer::setSafLatent(
     const std::array<float,7>& q
 )
 {
