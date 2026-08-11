@@ -82,7 +82,6 @@ Q["Final Audio Renderer<br/>Low Latency Output"]
 R["Magisk Runtime Layer<br/>System Integration"]
 
 S["Android DynamicsProcessing<br/>No Root Fallback"]
-<<<<<<< HEAD
 
 
 A --> B
@@ -116,7 +115,6 @@ P --> Q
 R --> E
 
 S -.-> H
-=======
 
 A --> B
 B --> C
