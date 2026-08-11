@@ -47,30 +47,45 @@
     __android_log_print(ANDROID_LOG_INFO, CS_TAG, fmt, ##__VA_ARGS__)
 
 // ── Defaults del estado DSP ───────────────────────────────────────────────────
+// ── kDefaultState — Parámetros de entrada MAGISTRALES ────────────────────────
+// Calibrados para una experiencia inmersiva de primer lanzamiento:
+//   • spatial_width = 1.55  → campo estéreo amplio, 55% más de espacio que
+//                              la reproducción normal sin distorsión de imagen
+//   • harmonic_gain = 0.78  → riqueza armónica que añade presencia y cuerpo
+//                              sin artificio — el oído lo percibe como "real"
+//   • anti_dolby    = 0.85  → neutralización de compresión comercial moderada,
+//                              recupera dinámica sin sobre-procesar
+//   • bass_boost    = 2.5   → sub-graves presentes y controlados
+//   • dialog_boost  = 1.5   → vocales y presencia de media, claridad sin pico
+//   • widener_mult  = 1.38  → ensanchamiento estéreo suave sobre el DSP
+//   • loudness_tgt  = -16.0 → headroom generoso para masters comprimidos
+//   • listen_phon   = 65.0  → curva ISO 226 para escucha a volumen medio-alto
+//   • compressor    = -5.5  → threshold que captura transientes sin aplastarlo
+//   • intensity     = 0.92  → intensidad general alta pero con headroom
 static const OmegaDspState kDefaultState = {
     /* eq_gains      */ {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f},
-    /* listen_phon   */ 60.f,
+    /* listen_phon   */ 65.f,
     /* ref_phon      */ 80.f,
     /* eq_calibrated */ false,
-    /* compressor    */ 0.5f,
-    /* exciter_red   */ 0.f,
-    /* high_cut_hz   */ 18000.f,
-    /* spatial_width */ 1.0f,
-    /* loudness_tgt  */ -14.f,
-    /* harmonic_gain */ 0.5f,
-    /* anti_dolby    */ 1.0f,
+    /* compressor    */ -5.5f,
+    /* exciter_red   */ 0.15f,
+    /* high_cut_hz   */ 19500.f,
+    /* spatial_width */ 1.55f,
+    /* loudness_tgt  */ -16.f,
+    /* harmonic_gain */ 0.78f,
+    /* anti_dolby    */ 0.85f,
     /* target_gain   */ 1.0f,
-    /* comp_amount   */ 0.f,
-    /* exc_red       */ 0.f,
-    /* pf_params     */ {},
-    /* bass_boost    */ 0.f,
-    /* dialog_boost  */ 0.f,
-    /* widener_mult  */ 1.0f,
+    /* comp_amount   */ 0.22f,
+    /* exc_red       */ 0.15f,
+    /* pf_params     */ {0.92f, 0.78f, 0.55f, 1.38f, 0.85f, 65.f, 80.f, 19500.f, -16.f, 0.22f, 0.15f, 2.5f, 1.5f},
+    /* bass_boost    */ 2.5f,
+    /* dialog_boost  */ 1.5f,
+    /* widener_mult  */ 1.38f,
     /* saf_delta_e   */ 0.f,
     /* saf_metric    */ 0.f,
     /* saf_memory    */ 0.f,
     /* saf_gain      */ 1.0f,
-    /* intensity     */ 0.85f,
+    /* intensity     */ 0.92f,
     /* last_update   */ 0ULL,
 };
 
