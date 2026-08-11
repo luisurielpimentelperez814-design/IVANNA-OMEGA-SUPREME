@@ -90,7 +90,7 @@ private:
     int fftSize_ = 0;
     std::unique_ptr<FFTRadix2> fft_;
     SyntheticHRTF hrtf_;
-    SafSpatialModifier safModifier_;
+    Ivanna::SafSpatialModifier safModifier_;
 
     // Búferes de trabajo (solo usados en el hilo de audio)
     std::vector<float> histL_, histR_;

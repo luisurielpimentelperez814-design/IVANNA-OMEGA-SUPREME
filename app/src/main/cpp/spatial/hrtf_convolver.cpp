@@ -347,7 +347,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
 } // namespace ivanna
 
 
-void HRTFConvolver::updateSafField(
+void Ivanna::HRTFConvolver::updateSafField(
     const std::array<float,7>& q,
     float azimuth
 )
