@@ -16,8 +16,7 @@
 //       └── Si sin datos (cliente SHM legacy) → send 12 bytes (frame_len+epoch)
 //
 //   handleJsonCommand() absorbe toda la lógica de dispatch que estaba en
-//   OmegaDaemonV8.cpp (archivo muerto — no hay CMakeLists que lo enlace).
-//   OmegaDaemonV8.cpp se conserva como referencia pero ya no aporta código
+//   toda la lógica reside en ivanna_daemon.cpp + command_server.cpp.
 //   al binario.
 //
 // Thread model:

@@ -15,7 +15,7 @@
 //   Si no llega nada (cliente legacy que solo quiere el SHM fd) → notificación SHM
 //   de 12 bytes como antes.
 //
-//   OmegaDspState y la lógica de handle_command() se mueven desde OmegaDaemonV8.cpp
+//   OmegaDspState y la lógica de handle_command() consolidadas en ivanna_daemon.cpp.
 //   (archivo huérfano sin CMakeLists que lo enlazara) a este módulo, que SÍ forma
 //   parte del target ivanna_daemon en daemon/CMakeLists.txt.
 
@@ -26,7 +26,7 @@
 
 // ── Estado DSP compartido ─────────────────────────────────────────────────────
 // Actualizado por los comandos JSON del socket; leído por el engine de audio.
-// Movido desde OmegaDaemonV8.cpp, que era un archivo muerto (sin CMakeLists).
+// Declaración consolidada en ivanna_daemon.cpp.
 #define OMEGA_EQ_BANDS 10
 
 struct OmegaDspState {

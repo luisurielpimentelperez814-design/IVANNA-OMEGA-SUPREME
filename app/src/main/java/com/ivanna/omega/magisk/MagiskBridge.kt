@@ -12,7 +12,7 @@ import java.io.File
  *   La versión anterior detectaba el daemon con
  *   File("/dev/socket/omega_daemon_socket").exists() — ese path es del
  *   filesystem y NUNCA existe porque el daemon (ivanna_daemon /
- *   OmegaDaemonV8) publica ahora en el abstract namespace de Linux
+ *   ivanna_daemon publica en el abstract namespace de Linux
  *   ("@omega_daemon_socket"), donde no hay archivo. Por eso
  *   isDaemonRunning devolvía false y el panel Magisk siempre marcaba
  *   OFFLINE, aunque persist.ivanna.daemon_active=1.
@@ -113,7 +113,7 @@ object MagiskBridge {
      * Sin dependencia de `nc` ni de `su`.
      */
     fun sendCommand(command: String): String {
-        // 1) Abstract namespace — donde publica ivanna_daemon / OmegaDaemonV8
+        // 1) Abstract namespace — donde publica ivanna_daemon
         runCatching {
             LocalSocket().use { sock ->
                 sock.soTimeout = SOCKET_READ_TIMEOUT_MS
