@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -152,7 +153,18 @@ class PerceptualBrainEngine {
     }
 
     fun release() {
-        stop()
+        // FIX (lifecycle): release() solo llamaba stop() (cancela pollingJob),
+        // pero nunca cancelaba `scope` (el SupervisorJob). Hoy nada llama
+        // release() en el árbol, así que no hay fuga activa de coroutines en
+        // ejecución — el único cleanup real (IvannaAppShell.kt BrainTab,
+        // DisposableEffect.onDispose) usa stop(), que sí cancela pollingJob
+        // correctamente. Pero release() rompía el contrato: start() llamado
+        // después de release() revivía silenciosamente sobre un scope nunca
+        // invalidado. scope.cancel() cierra todo el árbol de corrutinas hijas
+        // de una vez (incluye pollingJob, ya no hace falta cancelarlo aparte)
+        // y deja la instancia genuinamente inutilizable tras release().
+        scope.cancel()
+        pollingJob = null
     }
 
     fun processAudioFeatures(features: AudioFeaturesInput) {
