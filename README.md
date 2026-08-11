@@ -82,6 +82,7 @@ Q["Final Audio Renderer<br/>Low Latency Output"]
 R["Magisk Runtime Layer<br/>System Integration"]
 
 S["Android DynamicsProcessing<br/>No Root Fallback"]
+<<<<<<< HEAD
 
 
 A --> B
@@ -115,23 +116,87 @@ P --> Q
 R --> E
 
 S -.-> H
+=======
 
----
+A --> B
+B --> C
 
-## 🧪 Performance & Benchmarks
+C --> D
+D --> E
 
-| Metric | Target | IVANNA OMEGA | Architecture Benefit |
-| :--- | :--- | :--- | :--- |
-| **DSP Latency** | < 10 ms | **< 3.2 ms** | Zero-copy passthrough via SHM memfd |
-| **TinyML Inference** | < 50 µs | **8.2 µs** | ARM NEON INT8 Vectorization |
-| **CPU Overhead** | < 5% | **1.8%** | Multi-threaded offload & Lock-Free IPC |
-| **Memory Footprint** | < 15 MB | **8.4 MB** | Pre-allocated static arenas |
+E --> F
+E --> G
 
----
+G --> H
 
-## 📝 License & Contributing
+H --> I
+H --> J
+H --> K
+H --> N
+H --> O
 
-Copyright © 2026 IVANNA AUDIO.
-Built with ❤️ for supreme acoustic supremacy.
+K --> L
+L --> M
 
-Please refer to `docs/ANTI_DOLBY_INTEGRATION_GUIDE.md` and `docs/ARCHITECTURE_INTEGRATION.md` before submitting Pull Requests modifying the core DSP behavior.
+I --> P
+J --> P
+M --> P
+N --> P
+O --> P
+
+P --> Q
+
+R --> E
+
+S -.-> H
+
+🧪 Performance & Benchmarking
+
+IVANNA OMEGA mantiene una ruta de ejecución de audio desacoplada del hilo de interfaz Android.
+
+El motor DSP nativo C++17 opera de forma independiente al ciclo de vida de Kotlin UI, evitando interferencias causadas por:
+
+pausas del Garbage Collector
+
+corrutinas Kotlin
+
+eventos del hilo principal
+
+bloqueos del framework Android
+
+
+La arquitectura separa claramente:
+
+Control Plane
+
+UI Kotlin
+
+perfiles DSP
+
+estados de ejecución
+
+comandos del usuario
+
+
+Data Plane
+>>>>>>> cae4f6a (docs: rebuild IVANNA architecture diagram and performance section)
+
+OmegaDaemon V8
+
+memoria compartida
+
+procesamiento DSP en tiempo real
+
+renderizado espacial
+
+
+Compute Layer
+
+ARM64 NEON SIMD
+
+optimización vectorial
+
+procesamiento de baja latencia
+
+
+El objetivo es una arquitectura de audio perceptual avanzada con ejecución determinista, comunicación IPC eficiente y procesamiento nativo optimizado para Android. 
