@@ -69,6 +69,16 @@ add_library(ivanna_omega SHARED
     SafHRTFBridge.cpp
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
+    # FIX CRÍTICO (auditoría 2026-08-10): SaFJniBridge.cpp faltaba aquí.
+    # Es el ÚNICO archivo que define los símbolos JNI que SaFBridge.kt
+    # declara como external (nativeSaFInit/nativeSaFFeedback/nativeSaFGetParams/
+    # nativeSaFSaveState/nativeSaFLoadState/etc — verificado con grep en TODO
+    # el árbol, ninguna otra .cpp los define). Sin esta línea, cada llamada
+    # desde Kotlin lanzaba UnsatisfiedLinkError en runtime, silenciado por el
+    # runCatching{} de SaFEngine.kt — la pantalla de calibración SAF (y el fix
+    # de persistencia de esta misma sesión) nunca ejecutaba código nativo real
+    # en el dispositivo, pese a compilar y no dar ningún error visible.
+    SaFJniBridge.cpp
 
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp

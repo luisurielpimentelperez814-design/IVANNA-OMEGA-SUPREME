@@ -2,7 +2,7 @@
 // SaFJniBridge.cpp — JNI bridge: com.ivanna.omega.saf.SaFBridge ↔ SaFOptimizer
 // ─────────────────────────────────────────────────────────────────────────────
 #include <jni.h>
-#include "saf/SaFOptimizer.hpp"
+#include "SaFOptimizer.hpp"
 #include <android/log.h>
 
 #define SAF_JNI_TAG "SaFJni"
