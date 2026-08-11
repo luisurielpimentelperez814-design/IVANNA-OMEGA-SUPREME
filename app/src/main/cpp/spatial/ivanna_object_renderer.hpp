@@ -10,7 +10,7 @@
 #pragma once
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
-#include "../SafOptimizer.hpp"
+#include "../SaFOptimizer.hpp"
 #include <vector>
 #include <array>
 #include <atomic>

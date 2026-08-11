@@ -19,7 +19,7 @@ bool init(const SAFModel& model)
 
 bool update(
     const std::array<float,7>& q,
-    SyntheticHRTF& hrtf,
+    ivanna::SyntheticHRTF& hrtf,
     float azimuth
 )
 {
@@ -61,7 +61,7 @@ bool update(
 }
 
 
-const HRIRPair& current() const
+const ivanna::HRIRPair& current() const
 {
     return current_;
 }
@@ -71,7 +71,7 @@ private:
 
 SafPcaDecoder decoder_;
 
-HRIRPair current_;
+ivanna::HRIRPair current_;
 
 };
 
