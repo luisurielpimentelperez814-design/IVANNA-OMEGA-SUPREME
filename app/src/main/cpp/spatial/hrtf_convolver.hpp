@@ -23,6 +23,7 @@
 #include <atomic>
 #include "synthetic_hrtf.hpp"
 #include "../SafHRTFDatasetBridge.hpp"
+#include "../SafSpatialModifier.hpp"
 
 namespace ivanna {
 
@@ -58,6 +59,9 @@ public:
     // virtual speaker en ObjectRenderer::reset().
     void reset() noexcept;
 
+    // SAF adaptive spatial field update
+    void updateSafField(const std::array<float,7>& q, float azimuth);
+
     // Carga un dataset HRTF personalizado (formato binario "IHR1").
     bool loadHrtfDatasetFromFile(const char* path) {
         return hrtf_.loadDatasetFromFile(path);
@@ -86,6 +90,7 @@ private:
     int fftSize_ = 0;
     std::unique_ptr<FFTRadix2> fft_;
     SyntheticHRTF hrtf_;
+    SafSpatialModifier safModifier_;
 
     // Búferes de trabajo (solo usados en el hilo de audio)
     std::vector<float> histL_, histR_;

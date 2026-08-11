@@ -345,3 +345,30 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
 }
 
 } // namespace ivanna
+
+
+void HRTFConvolver::updateSafField(
+    const std::array<float,7>& q,
+    float azimuth
+)
+{
+    if(!safModifier_.update(
+        q,
+        hrtf_,
+        azimuth))
+        return;
+
+
+    const HRIRPair& h =
+        safModifier_.current();
+
+
+    hrir_L_target_ = h.L;
+    hrir_R_target_ = h.R;
+
+
+    xfadeSamplesRemaining_.store(
+        XFADE_DURATION_SAMPLES
+    );
+}
+
