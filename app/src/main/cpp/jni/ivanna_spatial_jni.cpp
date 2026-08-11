@@ -1,3 +1,8 @@
+#include <array>
+#include <atomic>
+#include <cstring>
+#include <mutex>
+#include <unordered_map>
 // ivanna_spatial_jni.cpp
 // ============================================================================
 // IVANNA — JNI Bridge para Spatial Audio (Head Tracking + Object Renderer)
@@ -32,11 +37,11 @@ inline ivanna::spatial::ObjectRenderer* toObjectRenderer(jlong h) {
 // lock-free ivanna_saf_get_latent_snapshot() y lo aplicamos al renderer
 // SOLO cuando el vector cambió respecto al último aplicado para ese handle
 // — comparación de 28 bytes, trivial vs el coste de setSafLatent().
-#include <array>
-#include <atomic>
-#include <cstring>
-#include <mutex>
-#include <unordered_map>
+
+
+
+
+
 extern "C" bool ivanna_saf_get_latent_snapshot(float out[7]);
 static std::unordered_map<jlong, std::array<float,7>> g_safLatentApplied;
 static std::mutex g_safLatentAppliedMutex;
