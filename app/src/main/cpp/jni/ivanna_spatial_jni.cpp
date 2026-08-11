@@ -30,18 +30,13 @@ inline ivanna::spatial::HeadTracker* toHeadTracker(jlong h) {
 inline ivanna::spatial::ObjectRenderer* toObjectRenderer(jlong h) {
     return reinterpret_cast<ivanna::spatial::ObjectRenderer*>(static_cast<intptr_t>(h));
 }
+} // namespace
 
-// ── SAF latent consume (saf_latent_bridge.cpp, commit b1caf04) ──────────────
-// El optimizador SAF (SaFJniBridge) publica el vector q[7] en un snapshot
-// seqlock vía ivanna_saf_apply_latent(). Aquí lo leemos con el lector
-// lock-free ivanna_saf_get_latent_snapshot() y lo aplicamos al renderer
-// SOLO cuando el vector cambió respecto al último aplicado para ese handle
-// — comparación de 28 bytes, trivial vs el coste de setSafLatent().
-
-
-
-
-
+// FIX BUILD (NDK 25.1): g_safLatentApplied y g_safLatentMutex estaban dentro
+// del namespace{} anónimo. En NDK 25.1, instanciar std::unordered_map<jlong,…>
+// dentro de un anonymous namespace corrompe el lookup de std::__ndk1::false_type
+// en __hash_table → "unknown class name 'false_type'" y crash de build.
+// Movidos a file scope con static (internal linkage idéntico). Fix mínimo.
 extern "C" bool ivanna_saf_get_latent_snapshot(float out[7]);
 static std::unordered_map<jlong, std::array<float,7>> g_safLatentApplied;
 static std::mutex g_safLatentAppliedMutex;
