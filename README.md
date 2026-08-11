@@ -43,22 +43,65 @@ It intelligently gracefully downgrades:
 IVANNA OMEGA operates directly within the Android `audioserver` execution path. By decoupling the UI from the DSP engine, the processing thread remains completely immune to UI-thread jank, GC pauses, or Kotlin coroutine dispatches.
 
 ```mermaid
-graph TD
-    UI[📱 Kotlin UI / Jetpack Compose] -->|AF_UNIX JSON Command| DAEMON[⚙️ ivanna_daemon]
-    UI -->|AF_UNIX SCM_RIGHTS| DAEMON
-    
-    subgraph Magisk System-Wide Daemon [C++17 / ARM64 NEON]
-        DAEMON -->|Seqlock SHM| FUSION[🧠 IvannaFusionCore]
-        FUSION -->|INT8 Inference| TINYML[🤖 TinyML Classifier]
-        FUSION -->|PI-LSTM| NEURO[⚡ Neuromorphic Engine]
-    end
-    
-    AUDIO_APP[🎵 Media App] -->|AudioTrack| FLINGER[🔊 AudioFlinger]
-    FLINGER -->|AudioEffect API| EFFECT[🔌 libomega_effect.so]
-    EFFECT -->|Lock-Free Ring Buffer| FUSION
-    
-    FUSION -->|Processed L/R PCM| DAC[🎧 Audio HAL / DAC]
-```
+flowchart TB
+
+    %% USER SPACE
+    A["📱 Android Application<br/>Kotlin UI + Control Panels"]
+    B["🎵 Audio Applications<br/>Qobuz / Player / Media APIs"]
+
+    A --> C["JNI Native Bridge<br/>Kotlin ↔ C++"]
+    B --> D["Android Audio Pipeline"]
+
+    %% CONTROL PLANE
+    C --> E["⚙️ Omega Control Plane"]
+    E --> F["OmegaDaemon V8<br/>C++17 Real-Time Service"]
+
+    F --> G["🔗 AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
+    F --> H["🧬 OmegaControlBus<br/>Shared Memory + Seqlock"]
+
+    %% DSP CORE
+    H --> I["🚀 IVANNA DSP Core"]
+
+    I --> J["🧠 PI-LSTM Predictive Engine"]
+    I --> K["🤖 TinyML Audio Intelligence"]
+    I --> L["🎧 SAF HRTF Spatial Engine"]
+    I --> M["🎚 Perceptual Dynamics"]
+
+    %% INTELLIGENCE
+    K --> N["Scene Classification<br/>Adaptive Processing"]
+    J --> O["Temporal Prediction<br/>Energy Modeling"]
+
+    %% SPATIAL
+    L --> P["SOFA / HRTF Database"]
+    L --> Q["Binaural Rendering<br/>Volterra Spatial Model"]
+
+    %% PHYSICS
+    M --> R["ISO 226 Equal Loudness"]
+    M --> S["ITU Loudness Analysis"]
+
+    %% HARDWARE
+    N --> T["ARM64 NEON Acceleration"]
+    O --> T
+    Q --> T
+    R --> T
+    S --> T
+
+    %% OUTPUT
+    T --> U["🔊 Final Audio Stream<br/>Low Latency Output"]
+
+    %% MAGISK
+    V["🛡 Magisk Root Layer"]
+    V --> F
+
+    %% FALLBACK
+    W["Android DynamicsProcessing<br/>No Root Fallback"]
+    W -.-> I
+
+    style A fill:#ffffff
+    style F fill:#ffffff
+    style I fill:#ffffff
+    style U fill:#ffffff
+
 
 ### ⚡ Lock-Free Audio Pipeline
 
