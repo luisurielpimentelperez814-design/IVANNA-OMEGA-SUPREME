@@ -94,13 +94,6 @@ add_library(ivanna_omega SHARED
     # efecto. La definición de omega_effect.cpp queda intacta.
     saf_latent_bridge.cpp
 
-    # FIX LINK (build 2026-08-11): definición hermana de
-    # ivanna_saf_apply_latent() para ESTE target (libivanna_omega.so).
-    # La original vive en omega_effect.cpp pero ese TU solo se compila
-    # dentro de libomega_effect.so (audioserver). Sin esta, el linker
-    # falla: undefined symbol al linkear libivanna_omega.so.
-    saf_latent_app_stub.cpp
-
     # Evolutionary (OFFLINE ONLY)
     evolutionary_kernel.cpp
     neuromorphic/ivanna_neural_upmixer.cpp

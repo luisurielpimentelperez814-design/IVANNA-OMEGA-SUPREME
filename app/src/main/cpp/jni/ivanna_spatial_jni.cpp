@@ -25,6 +25,39 @@ inline ivanna::spatial::HeadTracker* toHeadTracker(jlong h) {
 inline ivanna::spatial::ObjectRenderer* toObjectRenderer(jlong h) {
     return reinterpret_cast<ivanna::spatial::ObjectRenderer*>(static_cast<intptr_t>(h));
 }
+
+// ── SAF latent consume (saf_latent_bridge.cpp, commit b1caf04) ──────────────
+// El optimizador SAF (SaFJniBridge) publica el vector q[7] en un snapshot
+// seqlock vía ivanna_saf_apply_latent(). Aquí lo leemos con el lector
+// lock-free ivanna_saf_get_latent_snapshot() y lo aplicamos al renderer
+// SOLO cuando el vector cambió respecto al último aplicado para ese handle
+// — comparación de 28 bytes, trivial vs el coste de setSafLatent().
+#include <array>
+#include <atomic>
+#include <cstring>
+#include <mutex>
+#include <unordered_map>
+extern "C" bool ivanna_saf_get_latent_snapshot(float out[7]);
+static std::unordered_map<jlong, std::array<float,7>> g_safLatentApplied;
+static std::mutex g_safLatentAppliedMutex;
+
+// Aplica el latente SAF pendiente al renderer del handle, si cambió.
+// Llamada desde nativeObjectRendererCreate (inicial) y renderBlock.
+static inline void safApplyPendingToRenderer(jlong handle,
+        ivanna::spatial::ObjectRenderer* renderer) {
+    float q[7];
+    if (!ivanna_saf_get_latent_snapshot(q)) return;  // lectura inconsistente → skip
+    {
+        std::lock_guard<std::mutex> g(g_safLatentAppliedMutex);
+        auto it = g_safLatentApplied.find(handle);
+        if (it != g_safLatentApplied.end() &&
+            std::memcmp(it->second.data(), q, sizeof(float) * 7) == 0) return;
+        std::array<float,7> arr;
+        std::memcpy(arr.data(), q, sizeof(float) * 7);
+        g_safLatentApplied[handle] = arr;
+    }
+    renderer->setSafLatent(q, 7);
+}
 inline ivanna::ai::NeuralUpmixer* toUpmixer(jlong h) {
     return reinterpret_cast<ivanna::ai::NeuralUpmixer*>(static_cast<intptr_t>(h));
 }
@@ -69,6 +102,7 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererCreate(
     JNIEnv*, jclass, jfloat sampleRate, jint blockSize) {
     auto* renderer = new ivanna::spatial::ObjectRenderer();
     renderer->init(sampleRate, blockSize);
+    safApplyPendingToRenderer(reinterpret_cast<jlong>(renderer), renderer);
     return reinterpret_cast<jlong>(renderer);
 }
 
@@ -99,6 +133,7 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererRenderBloc
     ivanna::audio::enableAudioThreadFastMathOnce();
     auto* renderer = toObjectRenderer(handle);
     if (!renderer) return;
+    safApplyPendingToRenderer(handle, renderer);
 
     auto* objectsIn = static_cast<float*>(env->GetDirectBufferAddress(objectsBuffer));
     auto* outL = static_cast<float*>(env->GetDirectBufferAddress(outLeftBuffer));
