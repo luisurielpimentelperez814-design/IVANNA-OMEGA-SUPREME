@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "saf/SaFOptimizer.hpp"
+#include "SaFOptimizer.hpp"
 
 namespace Ivanna {
 

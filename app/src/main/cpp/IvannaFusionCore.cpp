@@ -1,5 +1,5 @@
 #include "SafSpatialRuntime.hpp"
-#include "saf/SaFOptimizer.hpp"
+#include "SaFOptimizer.hpp"
 #include "SafGlobalBridge.hpp"
 #include <cmath>
 #include <algorithm>
