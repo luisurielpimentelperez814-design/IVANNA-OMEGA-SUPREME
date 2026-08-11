@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <cstring>
 #include <cstddef>
-#include <vector>\n#include <array>
+#include <vector>
+#include <array>
 
 #include "spatial/ivanna_object_renderer.hpp"
 
