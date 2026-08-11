@@ -495,6 +495,33 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // llamadas sucesivas. FIZ (bit 0) añade DAZ para AArch64 (FEAT_AFP,
     // Cortex-A715+A510, Snapdragon 7s Gen 2). Ver audio_thread_priority.h.
     ivanna::audio::enableAudioThreadFastMathOnce();
+
+    // ── ROUTE ARBITER (Ruta A) — nota de arquitectura ─────────────────────
+    // nativeProcess (Ruta A / IN_PROCESS) procesa audio CAPTURADO:
+    //   - AudioRecord (micrófono o loopback del sistema)
+    //   - MediaProjection (capture del mixer de reproducción)
+    // omega_effect.cpp (Ruta B / SYSTEM_WIDE) procesa audio de SALIDA:
+    //   - InsertEffect en el mixer de AudioFlinger (reproducción)
+    //
+    // En la mayoría de los casos NO es el mismo stream físico: Ruta A
+    // ve la señal CAPTURADA y Ruta B ve la señal PRE-MIXER. El ADR
+    // ("cero doble procesamiento") se cumple en el path normal.
+    //
+    // EXCEPCIÓN: cuando PlaybackCaptureService usa MediaProjection con
+    // LOOPBACK, captura el output del mixer DESPUÉS de que omega_effect
+    // ya lo procesó → nativeProcess aplica DSP POR SEGUNDA VEZ sobre
+    // audio ya procesado. Este es el único escenario de doble proceso.
+    //
+    // DECISIÓN (no forzar el gate sin confirmar intención de producto):
+    // El gate "if (route == SYSTEM_WIDE) return" desactivaría nativeProcess
+    // completamente cuando omega_effect está activo — incluyendo el path
+    // de micrófono, que NO tiene doble procesamiento. Una solución correcta
+    // requiere discriminar por sessionId/streamType antes de gatear.
+    // TODO(route-arbiter-v2): cuando PlaybackCapture y omega_effect coexistan,
+    // leer OmegaControlBus::readLatest() aquí y hacer passthrough solo
+    // si route==SYSTEM_WIDE Y el buffer viene de MediaProjection loopback.
+    // ──────────────────────────────────────────────────────────────────────
+
     if (!g_initialized.load(std::memory_order_acquire)) return;
     if (!buf || nFrames <= 0) return;
     const int n = std::min((int)nFrames, 2048);
