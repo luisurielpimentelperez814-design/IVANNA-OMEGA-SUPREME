@@ -58,10 +58,19 @@ static inline void safApplyPendingToRenderer(jlong handle,
     }
     renderer->setSafLatent(q, 7);
 }
-inline ivanna::ai::NeuralUpmixer* toUpmixer(jlong h) {
+static inline ivanna::ai::NeuralUpmixer* toUpmixer(jlong h) {
     return reinterpret_cast<ivanna::ai::NeuralUpmixer*>(static_cast<intptr_t>(h));
 }
-}
+
+// FIX (CI 2026-08-11, exit code 1 en Build Debug APK): el commit anterior
+// (6836024) movió el cierre del namespace{} anónimo a la línea 33 para
+// sacar g_safLatentApplied/g_safLatentAppliedMutex de ahí, pero dejó el
+// cierre ORIGINAL del namespace (que antes cerraba después de toUpmixer,
+// más abajo) como una llave huérfana sin apertura correspondiente —
+// error de sintaxis directo, confirmado contando llaves línea por línea
+// (balance -1 antes de este fix). toUpmixer() marcado 'static' explícito
+// para preservar el internal linkage que tenía dentro del namespace
+// anónimo (mismo criterio ya aplicado a las otras dos variables movidas).
 
 // ============================================================================
 // HeadTracker JNI
