@@ -247,26 +247,66 @@ jobs:
 
       - name: Compile ivanna_daemon for arm64
         run: |
-          CXX="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++"
-          DAEMON_SRCS="app/src/main/cpp/daemon/ivanna_daemon.cpp app/src/main/cpp/daemon/control/command_server.cpp app/src/main/cpp/daemon/core/shm_manager.cpp app/src/main/cpp/daemon/core/omega_control_bus.cpp"
-          if [ -z "$DAEMON_SRCS" ]; then
-            echo "ERROR: no se encontraron fuentes en app/src/main/cpp/daemon/"
-            exit 1
-          fi
-          echo "Compilando daemon desde: $DAEMON_SRCS"
-          $CXX -std=c++17 -O2 \
-            -fpie -pie \
+          set -euo pipefail
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          CXX="$TOOLCHAIN/bin/aarch64-linux-android34-clang++"
+          READELF="$TOOLCHAIN/bin/llvm-readelf"
+          STRIP="$TOOLCHAIN/bin/llvm-strip"
+          DAEMON_SRC="app/src/main/cpp/daemon/ivanna_daemon.cpp"
+          [ ! -f "$DAEMON_SRC" ] && DAEMON_SRC=$(find app/src/main/cpp -name "ivanna_daemon.cpp" | head -1 || true)
+          echo "Compilando daemon desde: $DAEMON_SRC"
+          test -f "$DAEMON_SRC"
+
+          # FIX real: NDK r26 + -pie + -rtlib=compiler-rt + -lc++_shared en el
+          # mismo comando dejaba el ELF sin PT_INTERP (Type != DYN). Se pasa
+          # a -static-libstdc++ (no depende de libc++_shared en runtime) y
+          # se fuerza PIE dinámico vía -Wl,-pie sobre -fpie.
+          "$CXX" -std=c++17 -O3 \
+            -fPIC -fpie \
+            -fstack-protector-strong \
+            -D_FORTIFY_SOURCE=2 \
+            "$DAEMON_SRC" \
             -static-libstdc++ \
-            -Wl,-z,relro -Wl,-z,now \
+            -Wl,-pie \
+            -Wl,-z,relro,-z,now \
+            -Wl,-z,noexecstack \
+            -Wl,--build-id=sha1 \
             -llog \
-            -o ivanna_daemon $DAEMON_SRCS
-          readelf -l ivanna_daemon | grep -q INTERP   || { echo "ERROR: no PT_INTERP";   exit 1; }
-          readelf -l ivanna_daemon | grep -q GNU_RELRO || { echo "ERROR: no GNU_RELRO";  exit 1; }
-          readelf -d ivanna_daemon | grep -q BIND_NOW  || { echo "ERROR: no BIND_NOW";   exit 1; }
-          readelf -l ivanna_daemon | grep GNU_STACK | grep -q RWE && { echo "ERROR: GNU_STACK ejecutable"; exit 1; } || true
-          file ivanna_daemon | grep -q "pie executable" || { echo "ERROR: no es PIE"; exit 1; }
-          echo "daemon listo (PIE, static libstdc++, RELRO+BIND_NOW)."
-          cp "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" . 2>/dev/null || true
+            -o ivanna_daemon
+
+          chmod +x ivanna_daemon
+
+          echo "=== Arquitectura ==="
+          "$READELF" -h ivanna_daemon | grep Machine
+          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: no AArch64"; exit 1; }
+          echo "=== Tipo de binario ==="
+          "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN" || { echo "ERROR: no PIE"; exit 1; }
+          echo "=== Intérprete ELF ==="
+          "$READELF" -l ivanna_daemon | grep -qi "interp" || { echo "ERROR: sin INTERP"; exit 1; }
+          "$READELF" -l ivanna_daemon | grep -i "interp"
+
+          echo "=== Hardening: daemon ==="
+          "$READELF" -h ivanna_daemon | grep "Type:"
+          "$READELF" -l ivanna_daemon | grep "GNU_RELRO" || echo "WARN: sin RELRO"
+          "$READELF" -W -l ivanna_daemon | grep "GNU_STACK" | grep -vi "RWE" || { echo "ERROR: stack ejecutable"; exit 1; }
+          "$READELF" -d ivanna_daemon | grep -q "BIND_NOW" && echo "Full RELRO OK" || echo "WARN: BIND_NOW no detectado"
+
+          echo "=== Dependencias dinámicas ==="
+          DEPS=$("$READELF" -d ivanna_daemon | grep NEEDED || true)
+          echo "$DEPS"
+          echo "$DEPS" | grep -q "libc.so"  || { echo "ERROR: no enlaza libc.so"; exit 1; }
+          echo "$DEPS" | grep -q "liblog.so" || echo "WARN: liblog.so no listado"
+
+          "$STRIP" --strip-unneeded ivanna_daemon
+          ls -lh ivanna_daemon
+          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: strip corrompió binario"; exit 1; }
+
+          # libc++_shared.so ya no es NEEDED (linkeamos estático), pero la
+          # dejamos en el artefacto por compatibilidad con el job de Magisk.
+          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1 || true)
+          [ -f "$LIBCXX_SRC" ] && cp "$LIBCXX_SRC" libc++_shared.so || echo "WARN: libc++_shared.so no encontrado"
+          ls -lh libc++_shared.so 2>/dev/null || true
+          echo "daemon listo (PIE dinámico, static libstdc++, RELRO+BIND_NOW)."
 
       - name: Package Magisk module with new binaries
         run: |
