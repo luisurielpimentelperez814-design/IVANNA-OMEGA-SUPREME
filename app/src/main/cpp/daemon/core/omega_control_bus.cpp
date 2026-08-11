@@ -32,11 +32,22 @@ static uint64_t nowMs() noexcept {
 bool OmegaControlBus::openWriter(const char* path) noexcept {
     if (m_region) return true; // ya abierto
 
-    // Crear el archivo SHM (rw para propietario = root/daemon)
-    int fd = ::open(path, O_RDWR | O_CREAT, 0660);
+    // Crear el archivo SHM. 0644 (no 0660): audioserver (proceso que ejecuta
+    // omega_effect.cpp) NO es root y no comparte grupo con el daemon — con
+    // 0660 el open() en openReader() fallaría con EACCES a nivel DAC, ANTES
+    // de que SELinux siquiera entre en juego. 0644 es world-readable pero
+    // NUNCA world-writable (solo el propietario/root puede escribir).
+    int fd = ::open(path, O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
         OMEGA_CTRL_LOGW("openWriter: open(%s) failed: %s", path, strerror(errno));
         return false;
+    }
+    // fchmod explícito: O_CREAT respeta umask del proceso que arranca el
+    // daemon (Magisk/su), que puede no ser 022 — sin esto, un umask distinto
+    // dejaría el archivo sin el bit 'other read' pese a pedir 0644 en open().
+    if (::fchmod(fd, 0644) != 0) {
+        OMEGA_CTRL_LOGW("openWriter: fchmod advertencia: %s (verificar permisos manualmente)",
+                        strerror(errno));
     }
 
     // Asegurar tamaño mínimo de REGION_SIZE bytes
