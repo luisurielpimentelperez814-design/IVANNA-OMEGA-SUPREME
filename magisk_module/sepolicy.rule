@@ -76,7 +76,59 @@ allow priv_app     su:unix_stream_socket     connectto;
 allow priv_app     magisk:unix_stream_socket connectto;
 
 # ═══════════════════════════════════════════════════════════════════════
-#  5. Búsqueda del socket abstract via /proc/net/unix
+#  6. AUDIOSERVER → SHM del Control Plane cross-process
+#
+#  FIX CRÍTICO: OmegaControlBus escribe el snapshot en
+#  /data/adb/ivanna_omega/omega_control_snapshot (tipo adb_data_file
+#  en AOSP Android 10+). omega_effect.cpp corre en el proceso audioserver
+#  y llama openReader() → open(path, O_RDONLY) → mmap(PROT_READ).
+#
+#  Sin estas reglas, SELinux enforcing bloquea el open() con EACCES
+#  ANTES de que el DAC 0644 importe. El bus nunca abre, ctrlBusOpen=false,
+#  y omega_effect.cpp corre con defaults inmutables sin importar qué
+#  mande la app. El bug de 0660→0644 ya fue corregido; este es el segundo
+#  requisito para que la lectura funcione end-to-end.
+#
+#  adb_data_file: tipo estándar AOSP para /data/adb/ y subdirectorios.
+#  system_data_file: fallback en ROMs pre-Android-10 o custom donde el
+#    directorio hereda del tipo del parent /data/.
+#  magisk_file: en Magisk Delta y KernelSU el daemon puede crear archivos
+#    bajo su namespace con este tipo.
+#  unlabeled: para el caso de que el SHM file no tenga contexto explícito
+#    (creado por un proceso root que saltó el labeling de contexto).
+# ═══════════════════════════════════════════════════════════════════════
+
+# Leer el archivo SHM (el reader mapea en PROT_READ|MAP_SHARED)
+allow audioserver adb_data_file:file { read open getattr map };
+allow audioserver adb_data_file:dir  { search getattr open read };
+
+# Fallback para ROMs donde el tipo no es adb_data_file
+allow audioserver system_data_file:file { read open getattr map };
+allow audioserver system_data_file:dir  { search getattr };
+
+# Fallback Magisk Delta / KernelSU
+allow audioserver magisk_file:file { read open getattr map };
+allow audioserver magisk_file:dir  { search getattr };
+
+# Fallback sin contexto explícito (proceso root que creó sin transición)
+allow audioserver unlabeled:file { read open getattr map };
+
+# media_rw_data_file: si el SHM se mueve a /sdcard/Android/data/ como
+# fallback cuando /data/adb/ no es accesible por audioserver (plan B)
+allow audioserver media_rw_data_file:file { read open getattr map };
+
+# ═══════════════════════════════════════════════════════════════════════
+#  7. AUDIOSERVER → acceso propio al socket del daemon (telemetría futura)
+#
+#  audioserver puede querer enviar acks de generation aplicada al daemon
+#  (consumer_generation en el SHM). Añadimos connect ahora para no
+#  necesitar otra iteración de sepolicy cuando se implemente el ack.
+# ═══════════════════════════════════════════════════════════════════════
+allow audioserver su:unix_stream_socket     connectto;
+allow audioserver magisk:unix_stream_socket connectto;
+allow audioserver audioserver:unix_stream_socket {
+    create connect read write getopt setopt shutdown
+};
 # ═══════════════════════════════════════════════════════════════════════
 # ivanna_control.sh y el auto-probe de MagiskBridge leen /proc/net/unix
 # para verificar que el socket está bindeado. En SELinux enforcing
