@@ -62,13 +62,15 @@ class AudioEngine {
             Log.w(TAG, "Librería nativa no disponible — modo degradado")
             return
         }
-        nativeInit(sampleRate)
-        Log.i(TAG, "AudioEngine inicializado @ $sampleRate Hz")
+        runCatching { nativeInit(sampleRate) }
+            .onSuccess { Log.i(TAG, "AudioEngine inicializado @ $sampleRate Hz") }
+            .onFailure { Log.w(TAG, "nativeInit sin símbolo — modo degradado: $it") }
     }
 
     fun setExciter(amount: Float) {
         exciterAmount = amount.coerceIn(0f, 1f)
-        if (libLoaded) nativeSetExciter(exciterAmount)
+        if (libLoaded) runCatching { nativeSetExciter(exciterAmount) }
+            .onFailure { Log.w(TAG, "setExciter: símbolo ausente — $it") }
     }
 
     fun setGain(gain: Float) {
@@ -86,17 +88,20 @@ class AudioEngine {
     }
 
     fun setBypass(bypass: Boolean) {
-        if (libLoaded) nativeSetBypass(bypass)
+        if (libLoaded) runCatching { nativeSetBypass(bypass) }
+            .onFailure { Log.w(TAG, "setBypass: símbolo ausente — $it") }
     }
 
     fun setEqGain(gain: Float) {
         eqGainAmount = gain.coerceIn(-12f, 12f)
-        if (libLoaded) nativeSetEqGain(eqGainAmount)
+        if (libLoaded) runCatching { nativeSetEqGain(eqGainAmount) }
+            .onFailure { Log.w(TAG, "setEqGain: símbolo ausente — $it") }
     }
 
     fun setWidth(width: Float) {
         widthAmount = width.coerceIn(0f, 1f)
-        if (libLoaded) nativeSetWidth(widthAmount)
+        if (libLoaded) runCatching { nativeSetWidth(widthAmount) }
+            .onFailure { Log.w(TAG, "setWidth: símbolo ausente — $it") }
     }
 
     fun release() {
