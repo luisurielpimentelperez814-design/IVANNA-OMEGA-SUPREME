@@ -10,6 +10,7 @@
 #pragma once
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
+#include "../SafOptimizer.hpp"
 #include <vector>
 #include <array>
 #include <atomic>
@@ -118,6 +119,9 @@ private:
 
     // [FIX-HRTF] HRTFConvolver::init() solo recibe sampleRate
     std::array<HRTFConvolver, kNumVirtualSpeakers> hrtfConvolvers_;
+
+    // SAF latent spatial state
+    std::array<float,7> saf_q_{};
 
     // [FIX-WHISTLE] Azimut base (grados, -90..+90, +=derecha) de cada
     // virtual speaker, precalculado una vez en init() a partir de su

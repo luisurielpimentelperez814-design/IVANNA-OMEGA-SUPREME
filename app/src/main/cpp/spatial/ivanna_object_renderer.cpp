@@ -200,3 +200,26 @@ void ObjectRenderer::reset() noexcept {
 }
 
 } // namespace ivanna::spatial
+
+
+void ObjectRenderer::setSafLatent(
+    const std::array<float,7>& q
+)
+{
+    saf_q_ = q;
+
+
+    for(size_t i=0;i<hrtfConvolvers_.size();i++)
+    {
+        float az =
+            baseAzimuthDeg_[i];
+
+
+        hrtfConvolvers_[i]
+            .updateSafField(
+                saf_q_,
+                az
+            );
+    }
+}
+
