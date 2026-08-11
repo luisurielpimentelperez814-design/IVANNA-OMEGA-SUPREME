@@ -52,80 +52,77 @@ flowchart TB
 
 USER["Android User Space<br/>Kotlin UI + Control Panels"]
 
-SOURCE["Audio Sources<br/>Qobuz • Media Players • Android APIs"]
+MEDIA["Audio Sources<br/>Qobuz • Media Players • Android Audio APIs"]
 
-JNI["JNI Native Bridge<br/>Kotlin ↔ C++ Runtime"]
+JNI["JNI Native Bridge<br/>Kotlin ↔ C++"]
 
-CONTROL["Omega Control Plane<br/>State Management + DSP Commands"]
+CONTROL["Omega Control Plane<br/>Runtime State + DSP Commands"]
 
-DAEMON["OmegaDaemon V8<br/>C++17 Real-Time Audio Service"]
+DAEMON["OmegaDaemon V8<br/>C++17 Real-Time Service"]
 
-IPC["AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
+SOCKET["AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
 
-SHM["OmegaControlBus<br/>Shared Memory + Seqlock Synchronization"]
+SHM["OmegaControlBus<br/>Shared Memory + Seqlock"]
 
 DSP["IVANNA DSP Core<br/>Low Latency Perceptual Engine"]
 
-PERCEPTION["TinyML Perception Engine<br/>Real-Time Audio Intelligence"]
+AI["TinyML Perception Engine<br/>Real-Time Audio Intelligence"]
 
-PILSTM["PI-LSTM Cognitive Model<br/>Temporal Energy Prediction"]
+PILSTM["PI-LSTM Predictive Engine<br/>Temporal Energy Modeling"]
 
 SAF["SAF Spatial Engine<br/>Synthetic Acoustic Field"]
 
 HRTF["HRTF / SOFA Renderer<br/>Personalized Binaural Processing"]
 
-VOLTERRA["Volterra Spatial Model<br/>Nonlinear Acoustic Reconstruction"]
+VOLTERRA["Volterra Model<br/>Nonlinear Spatial Reconstruction"]
 
-LOUDNESS["Perceptual Loudness Engine<br/>ISO 226 + ITU-R Analysis"]
+LOUD["ISO 226 + ITU Loudness Engine<br/>Human Hearing Calibration"]
 
-DYNAMIC["Adaptive Dynamics<br/>Compression + Excitation Control"]
+DYNAMIC["Adaptive Dynamics Engine<br/>Compression + Excitation Control"]
 
-NEON["ARM64 NEON Acceleration<br/>SIMD Optimized DSP"]
+NEON["ARM64 NEON Acceleration<br/>SIMD Optimized Processing"]
 
-OUTPUT["Final Audio Pipeline<br/>Low Latency Renderer"]
+OUTPUT["Final Audio Renderer<br/>Low Latency Audio Stream"]
 
-MAGISK["Magisk Runtime Layer<br/>Root System Integration"]
+MAGISK["Magisk Runtime Layer<br/>System Integration"]
 
-NO_ROOT["Android Native Fallback<br/>DynamicsProcessing Mode"]
+FALLBACK["Android DynamicsProcessing<br/>No Root Fallback"]
 
 
 USER --> JNI
-SOURCE --> JNI
+MEDIA --> JNI
 
 JNI --> CONTROL
 CONTROL --> DAEMON
 
-DAEMON --> IPC
+DAEMON --> SOCKET
 DAEMON --> SHM
 
 SHM --> DSP
 
-DSP --> PERCEPTION
+DSP --> AI
 DSP --> PILSTM
 DSP --> SAF
-DSP --> LOUDNESS
+DSP --> LOUD
 DSP --> DYNAMIC
 
 SAF --> HRTF
 HRTF --> VOLTERRA
 
-PERCEPTION --> NEON
+AI --> NEON
 PILSTM --> NEON
 VOLTERRA --> NEON
-LOUDNESS --> NEON
+LOUD --> NEON
 DYNAMIC --> NEON
 
 NEON --> OUTPUT
 
 MAGISK --> DAEMON
 
-NO_ROOT -.-> DSP
+FALLBACK -.-> DSP
 
 
-
-### Native Kernel Development
-To work exclusively on the DSP kernel (e.g., tuning the `EvolutionaryEQ` or `HarmonicExciter`):
-```bash
+bash
 cd native_kernel
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a
 cmake --build build --config Release
