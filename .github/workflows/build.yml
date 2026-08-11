@@ -256,9 +256,15 @@ jobs:
 
 echo "=== Fuentes daemon ==="
 echo "$DAEMON_SRCS"
-          [ ! -f "$DAEMON_SRC" ] && DAEMON_SRC=$(find app/src/main/cpp -name "ivanna_daemon.cpp" | head -1 || true)
-          echo "Compilando daemon desde: $DAEMON_SRC"
-          test -f "$DAEMON_SRC"
+          echo "Compilando daemon desde:"
+          echo "$DAEMON_SRCS"
+
+          for SRC in $DAEMON_SRCS; do
+            test -f "$SRC" || {
+              echo "ERROR: falta $SRC"
+              exit 1
+            }
+          done
 
           # FIX real: NDK r26 + -pie + -rtlib=compiler-rt + -lc++_shared en el
           # mismo comando dejaba el ELF sin PT_INTERP (Type != DYN). Se pasa
