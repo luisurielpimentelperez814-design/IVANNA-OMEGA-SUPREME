@@ -73,6 +73,20 @@ public:
 
     void reset() noexcept;
 
+    // Propaga el vector latente q_t del optimizador Φ_SAF^∞ a los 12 virtual
+    // speakers. Llamar desde el hilo de control tras cada feedFeedback().
+    void setLatentParams(const float q[7]) noexcept {
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            hrtfConvolvers_[i].setLatentParams(q);
+        }
+    }
+
+    void clearLatentParams() noexcept {
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            hrtfConvolvers_[i].clearLatentParams();
+        }
+    }
+
     // Propaga un dataset HRTF personalizado a los 12 virtual speakers.
     bool loadHrtfDatasetFromFile(const char* path) {
         bool ok = true;
