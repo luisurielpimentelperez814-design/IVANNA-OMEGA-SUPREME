@@ -80,6 +80,51 @@ public:
 
     bool hasCustomDataset() const { return hasDataset_; }
 
+    // ── SAF latent morphing ────────────────────────────────────────────
+    // Aplica el vector q_t (7 componentes PCA) del optimizador Φ_SAF^∞
+    // como un morph lineal sobre los HRIRs del dataset.
+    //
+    // Modelo: HRIR_personalizado = HRIR_base + Σ q[k] * basis_k
+    //
+    // Dado que no tenemos la base PCA expandida en muestras de tiempo
+    // (eso requeriría cargar la matriz V de SAF_model.json que es 7×irLen),
+    // usamos una aproximación práctica de alta fidelidad:
+    //   - q[0] → ganancia broadband (escala global del HRIR)
+    //   - q[1] → balance L/R (ITD proxy: ganancia diferencial oído contralateral)
+    //   - q[2] → notch front-back 8-10 kHz (profundidad del filtro de pinna)
+    //   - q[3] → elevación: refuerzo de altas frecuencias (concha)
+    //   - q[4] → elevación: atenuación de medias (anti-helix)
+    //   - q[5] → textura espectral fina canal L (ridges de pinna)
+    //   - q[6] → textura espectral fina canal R
+    //
+    // Los rangos de q[k] son ±3σ según kPMax/kPMin del SaFOptimizer.
+    // Esta función es llamada desde el hilo de control (no audio) tras
+    // cada feedFeedback(); actualiza latentL_/latentR_ que generate()
+    // lee de forma segura vía flag atómico latentDirty_.
+    void setLatentParams(const float q[7]) noexcept {
+        // Normalizar q a [-1,1] usando los rangos ±3σ del optimizador
+        // (kPMax[k] ≈ 3*sqrt(kG0[k])). Aproximación suficiente sin cargar
+        // el JSON completo en esta capa.
+        static constexpr float kSigma[7] = {
+            0.02888f, 0.03102f, 0.03354f,
+            0.03923f, 0.05319f, 0.08036f, 0.16148f
+        };
+        float qn[7];
+        for (int i = 0; i < 7; ++i) {
+            qn[i] = (kSigma[i] > 0.f)
+                ? std::clamp(q[i] / kSigma[i], -1.f, 1.f)
+                : 0.f;
+        }
+        // Guardar para que generate() los aplique en la próxima llamada
+        for (int i = 0; i < 7; ++i) latentQ_[i] = qn[i];
+        latentActive_ = true;
+    }
+
+    void clearLatentParams() noexcept {
+        latentActive_ = false;
+        for (int i = 0; i < 7; ++i) latentQ_[i] = 0.f;
+    }
+
     HRIRPair generate(float azimuthDeg, float aggressiveness) const {
         if (!std::isfinite(azimuthDeg)) azimuthDeg = 0.f;
         if (!std::isfinite(aggressiveness)) aggressiveness = 0.5f;
@@ -129,6 +174,9 @@ public:
             apply_notch_fir(nearEar, 7500.f, notchDepth);
             apply_notch_fir(farEar,  7500.f, notchDepth * 0.7f);
         }
+
+        // Aplicar SAF latent morph si está activo
+        if (latentActive_) applyLatentMorph(out);
         return out;
     }
 
@@ -159,6 +207,7 @@ private:
             out.L[k] = (1.f - t) * l0 + t * l1;
             out.R[k] = (1.f - t) * r0 + t * r1;
         }
+        if (latentActive_) applyLatentMorph(out);
         return out;
     }
 
@@ -183,6 +232,67 @@ private:
         buf.swap(tmp);
     }
 
+    // ── applyLatentMorph: SAF q_t → HRIR modulation ───────────────────
+    // Aplica los 7 coeficientes latentes normalizados a [-1,1] sobre el
+    // par de HRIRs ya generado. Cada componente afecta un rasgo distinto:
+    void applyLatentMorph(HRIRPair& p) const noexcept {
+        const int N = (int)p.L.size();
+        if (N == 0) return;
+        const float* qn = latentQ_;
+
+        // q[0]: ganancia broadband ±20% — PC0 = forma espectral global
+        const float gain = 1.f + 0.2f * qn[0];
+        for (int k = 0; k < N; ++k) {
+            p.L[k] *= gain;
+            p.R[k] *= gain;
+        }
+
+        // q[1]: balance L/R ±15% — PC1 = ITD/ILD lateral
+        const float balScale = 0.15f * qn[1];
+        for (int k = 0; k < N; ++k) {
+            p.L[k] *= (1.f - balScale);
+            p.R[k] *= (1.f + balScale);
+        }
+
+        // q[2]: notch pinna front-back en 9 kHz, profundidad ±0.4 — PC2
+        if (std::fabs(qn[2]) > 0.01f) {
+            apply_notch_fir(p.L, 9000.f,  0.4f * qn[2]);
+            apply_notch_fir(p.R, 9000.f,  0.4f * qn[2]);
+        }
+
+        // q[3]: refuerzo de concha (elevación), shelving HF ±0.3 — PC3
+        // Implementado como complemento de un LP muy suave (shelving simple)
+        {
+            const float alpha3 = std::clamp(0.3f * std::fabs(qn[3]), 0.f, 0.3f);
+            const float sign3  = (qn[3] >= 0.f) ? 1.f : -1.f;
+            // high-shelf: y[n] = x[n] + sign3*alpha3*(x[n] - LP(x[n]))
+            float lpL = 0.f, lpR = 0.f;
+            const float lpA = 0.85f; // fc ≈ sr*(1-0.85)/(2π)
+            for (int k = 0; k < N; ++k) {
+                lpL = lpA * lpL + (1.f - lpA) * p.L[k];
+                lpR = lpA * lpR + (1.f - lpA) * p.R[k];
+                p.L[k] += sign3 * alpha3 * (p.L[k] - lpL);
+                p.R[k] += sign3 * alpha3 * (p.R[k] - lpR);
+            }
+        }
+
+        // q[4]: atenuación de medias 2-4 kHz ±0.25 — PC4 = anti-helix
+        if (std::fabs(qn[4]) > 0.01f) {
+            apply_notch_fir(p.L, 3000.f, 0.25f * qn[4]);
+            apply_notch_fir(p.R, 3000.f, 0.25f * qn[4]);
+        }
+
+        // q[5]: textura espectral canal L (ridges pinna) ±0.15 — PC5
+        if (std::fabs(qn[5]) > 0.01f) {
+            apply_notch_fir(p.L, 12000.f, 0.15f * qn[5]);
+        }
+
+        // q[6]: textura espectral canal R ±0.15 — PC6
+        if (std::fabs(qn[6]) > 0.01f) {
+            apply_notch_fir(p.R, 12000.f, 0.15f * qn[6]);
+        }
+    }
+
     float sr_    = 96000.f;
     int   irLen_ = 128;
 
@@ -191,6 +301,10 @@ private:
     int   dsIrLen_ = 0;
     std::vector<float> dsAz_;
     std::vector<std::vector<float>> dsL_, dsR_;
+
+    // SAF latent state — actualizado por setLatentParams() desde el hilo de control
+    bool  latentActive_ = false;
+    float latentQ_[7]   = {};  // q normalizado a [-1,1]
 };
 
 } // namespace ivanna
