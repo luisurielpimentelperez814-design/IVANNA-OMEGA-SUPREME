@@ -45,116 +45,83 @@ IVANNA OMEGA operates directly within the Android `audioserver` execution path. 
 ```mermaid
 flowchart TB
 
-    %% USER SPACE
-    A["📱 Android Application<br/>Kotlin UI + Control Panels"]
-    B["🎵 Audio Applications<br/>Qobuz / Player / Media APIs"]
+%% =====================================================
+%% IVANNA OMEGA SUPREME
+%% PERCEPTUAL AUDIO COMPUTING ARCHITECTURE
+%% =====================================================
 
-    A --> C["JNI Native Bridge<br/>Kotlin ↔ C++"]
-    B --> D["Android Audio Pipeline"]
+USER["Android User Space<br/>Kotlin UI + Control Panels"]
 
-    %% CONTROL PLANE
-    C --> E["⚙️ Omega Control Plane"]
-    E --> F["OmegaDaemon V8<br/>C++17 Real-Time Service"]
+SOURCE["Audio Sources<br/>Qobuz • Media Players • Android APIs"]
 
-    F --> G["🔗 AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
-    F --> H["🧬 OmegaControlBus<br/>Shared Memory + Seqlock"]
+JNI["JNI Native Bridge<br/>Kotlin ↔ C++ Runtime"]
 
-    %% DSP CORE
-    H --> I["🚀 IVANNA DSP Core"]
+CONTROL["Omega Control Plane<br/>State Management + DSP Commands"]
 
-    I --> J["🧠 PI-LSTM Predictive Engine"]
-    I --> K["🤖 TinyML Audio Intelligence"]
-    I --> L["🎧 SAF HRTF Spatial Engine"]
-    I --> M["🎚 Perceptual Dynamics"]
+DAEMON["OmegaDaemon V8<br/>C++17 Real-Time Audio Service"]
 
-    %% INTELLIGENCE
-    K --> N["Scene Classification<br/>Adaptive Processing"]
-    J --> O["Temporal Prediction<br/>Energy Modeling"]
+IPC["AF_UNIX Abstract Socket<br/>@omega_daemon_socket"]
 
-    %% SPATIAL
-    L --> P["SOFA / HRTF Database"]
-    L --> Q["Binaural Rendering<br/>Volterra Spatial Model"]
+SHM["OmegaControlBus<br/>Shared Memory + Seqlock Synchronization"]
 
-    %% PHYSICS
-    M --> R["ISO 226 Equal Loudness"]
-    M --> S["ITU Loudness Analysis"]
+DSP["IVANNA DSP Core<br/>Low Latency Perceptual Engine"]
 
-    %% HARDWARE
-    N --> T["ARM64 NEON Acceleration"]
-    O --> T
-    Q --> T
-    R --> T
-    S --> T
+PERCEPTION["TinyML Perception Engine<br/>Real-Time Audio Intelligence"]
 
-    %% OUTPUT
-    T --> U["🔊 Final Audio Stream<br/>Low Latency Output"]
+PILSTM["PI-LSTM Cognitive Model<br/>Temporal Energy Prediction"]
 
-    %% MAGISK
-    V["🛡 Magisk Root Layer"]
-    V --> F
+SAF["SAF Spatial Engine<br/>Synthetic Acoustic Field"]
 
-    %% FALLBACK
-    W["Android DynamicsProcessing<br/>No Root Fallback"]
-    W -.-> I
+HRTF["HRTF / SOFA Renderer<br/>Personalized Binaural Processing"]
 
-    style A fill:#ffffff
-    style F fill:#ffffff
-    style I fill:#ffffff
-    style U fill:#ffffff
+VOLTERRA["Volterra Spatial Model<br/>Nonlinear Acoustic Reconstruction"]
+
+LOUDNESS["Perceptual Loudness Engine<br/>ISO 226 + ITU-R Analysis"]
+
+DYNAMIC["Adaptive Dynamics<br/>Compression + Excitation Control"]
+
+NEON["ARM64 NEON Acceleration<br/>SIMD Optimized DSP"]
+
+OUTPUT["Final Audio Pipeline<br/>Low Latency Renderer"]
+
+MAGISK["Magisk Runtime Layer<br/>Root System Integration"]
+
+NO_ROOT["Android Native Fallback<br/>DynamicsProcessing Mode"]
 
 
-### ⚡ Lock-Free Audio Pipeline
+USER --> JNI
+SOURCE --> JNI
 
-The DSP pipeline executes strictly within the audio thread's time budget. To prevent Priority Inversion and dropouts:
-1. **No Mutexes:** Parameter updates are propagated via a lock-free Single-Producer/Single-Consumer (SPSC) ring buffer implemented in `CommandServer`.
-2. **No Allocations:** `malloc`/`free` are strictly forbidden inside `process()`. All context buffers are pre-allocated during `EFFECT_CMD_SET_CONFIG`.
-3. **Session Isolation:** Each AudioFlinger session receives a dedicated, sandboxed `IvannaFusionCore` instance, eliminating cross-talk and phase cancellation between concurrent streams (e.g., Music + Navigation).
+JNI --> CONTROL
+CONTROL --> DAEMON
 
----
+DAEMON --> IPC
+DAEMON --> SHM
 
-## 🎛️ Feature Modules
+SHM --> DSP
 
-| Module | Description | Technical Spec |
-| :--- | :--- | :--- |
-| **Volterra H2 Processor** | Models nonlinear analog harmonics to introduce subtle tube-like warmth. | 2nd-Order Volterra Kernel |
-| **Spatial Engine** | Binaural 3D rendering bypassing the system's spatializer. | KEMAR HRTF Dataset (`.ihr1`) |
-| **ISO 226 Calibrator** | Perceptual loudness compensation mapped to the user's biological hearing curve. | Standard ISO-226:2003 |
-| **Evolutionary EQ** | Real-time adaptive equalizer continuously responding to the environment and output load. | CMA-ES Adaptive Metrics |
-| **Harmonic Exciter** | Multi-band asymmetric clipping with 2x Oversampling and Anti-Aliasing filters. | Soft-Clip Padé [3/2] |
+DSP --> PERCEPTION
+DSP --> PILSTM
+DSP --> SAF
+DSP --> LOUDNESS
+DSP --> DYNAMIC
 
----
+SAF --> HRTF
+HRTF --> VOLTERRA
 
-## 📦 Installation
+PERCEPTION --> NEON
+PILSTM --> NEON
+VOLTERRA --> NEON
+LOUDNESS --> NEON
+DYNAMIC --> NEON
 
-### Prerequisites
-- **Root Access:** Magisk v24.0+ required for system-wide injection.
-- **OS:** Android 11+ (API 30+) - Compatible with AOSP, LineageOS, and OEM ROMs.
-- **Architecture:** `arm64-v8a` (Daemon compiled with `-pie` and `PT_INTERP`).
+NEON --> OUTPUT
 
-### Flashing via Magisk
-1. Download the latest `IVANNA-OMEGA-SUPREME-v2.1-magisk.zip` from the Releases section.
-2. Open Magisk Manager -> Modules -> **Install from storage**.
-3. Select the `.zip` file and wait for the installation to complete.
-4. **Reboot** your device.
-5. Open the IVANNA OMEGA app. The `AudioBackendSelector` will automatically route to `Mode.ROOT_DAEMON`.
+MAGISK --> DAEMON
 
----
+NO_ROOT -.-> DSP
 
-## 🛠️ Build from Source
 
-This project uses modern Gradle (Kotlin DSL) for the Android App and CMake for the Native Kernel.
-
-```bash
-# Clone the repository
-git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
-cd IVANNA-OMEGA-SUPREME
-
-# Build the Android App (Debug)
-./gradlew assembleDebug
-
-# The Magisk Module is automatically assembled via Gradle tasks.
-# You can find the output zip in app/build/outputs/magisk/
-```
 
 ### Native Kernel Development
 To work exclusively on the DSP kernel (e.g., tuning the `EvolutionaryEQ` or `HarmonicExciter`):
