@@ -1,4 +1,5 @@
 #include "SafSpatialRuntime.hpp"
+#include "saf/SaFOptimizer.hpp"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -25,6 +26,8 @@ private:
 
     // ── Renderizador binaural de objetos (ruta de salida activa) ──
     ivanna::spatial::ObjectRenderer mRenderer;
+
+    Ivanna::SaFOptimizer* mSafOptimizer = nullptr;
     bool mSpatialActive = false;
     int  mBlockSize = 4096;
     std::vector<float> mObjBuf;      // [kUpmixObjects * 2 * numFrames]
@@ -34,6 +37,27 @@ private:
 
 public:
     IvannaFusionCore(float sampleRate = 48000.0f) : mSampleRate(sampleRate) {}
+
+    
+    void attachSafOptimizer(Ivanna::SaFOptimizer* saf)
+    {
+        mSafOptimizer = saf;
+    }
+
+    void pullSafState()
+    {
+        if(!mSafOptimizer)
+            return;
+
+        float q[7]{};
+        mSafOptimizer->getParams(q);
+
+        std::array<float,7> latent{};
+        for(int i=0;i<7;i++)
+            latent[i]=q[i];
+
+        setSafLatent(latent);
+    }
 
     void setSpatialWidth(float width) { mSpatialWidth = std::clamp(width, 0.1f, 3.0f); }
     void setHarmonicGain(float gain) { mHarmonicGain = std::clamp(gain, 0.0f, 2.0f); }
@@ -89,6 +113,8 @@ public:
     }
 
     void processStereo(float* bufferLeft, float* bufferRight, size_t numFrames) {
+
+        pullSafState();
         if (mSpatialActive && numFrames > 0 && numFrames <= (size_t)mBlockSize) {
             renderSpatial(bufferLeft, bufferRight, numFrames);
         }
