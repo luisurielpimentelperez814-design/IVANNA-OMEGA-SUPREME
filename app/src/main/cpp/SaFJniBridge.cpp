@@ -2,13 +2,14 @@
 // SaFJniBridge.cpp — JNI bridge: com.ivanna.omega.saf.SaFBridge ↔ SaFOptimizer
 // ─────────────────────────────────────────────────────────────────────────────
 #include <jni.h>
-#include "SaFOptimizer.hpp"
+#include "saf/SaFOptimizer.hpp"
+#include "SafGlobalBridge.hpp"
 #include <android/log.h>
 
 #define SAF_JNI_TAG "SaFJni"
 
 // ── Singleton optimizer instance ─────────────────────────────────────────────
-static Ivanna::SaFOptimizer g_saf;
+static Ivanna::SaFOptimizer& g_saf = Ivanna::getGlobalSaF();
 
 // Cable SAF → FusionCore (definida en omega_effect.cpp).
 // Propaga q_t al ObjectRenderer activo tras cada paso de calibración.
