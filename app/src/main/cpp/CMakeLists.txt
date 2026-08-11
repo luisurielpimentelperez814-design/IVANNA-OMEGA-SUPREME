@@ -65,6 +65,7 @@ add_library(ivanna_omega SHARED
     # SAF Phi_SAF_infinity HRTF adaptive bridge
     SaFOptimizer.cpp
     SafModelLoader.cpp
+    SafPcaDecoder.cpp
     SofaHRTFLoader.cpp
     SafHRTFBridge.cpp
     HRTFBinLoader.cpp
