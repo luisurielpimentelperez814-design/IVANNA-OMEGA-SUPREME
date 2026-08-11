@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -O2 -g -DNDEBUG -Xlinker --dependency-file=CMakeFiles/test_audio_bus.dir/link.d CMakeFiles/test_audio_bus.dir/test_audio_bus.cpp.o -o test_audio_bus  -lpthread

@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -O2 -g -DNDEBUG -Xlinker --dependency-file=CMakeFiles/test_regression_tuning.dir/link.d CMakeFiles/test_regression_tuning.dir/test_regression_tuning.cpp.o -o test_regression_tuning  lib/libgtest_main.a libivanna_dsp_under_test.a lib/libgtest.a -lpthread

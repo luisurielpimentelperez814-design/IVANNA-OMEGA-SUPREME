@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -O2 -g -DNDEBUG -Xlinker --dependency-file=CMakeFiles/dsp_core_stability.dir/link.d CMakeFiles/dsp_core_stability.dir/dsp_core_stability.cpp.o -o dsp_core_stability  lib/libgtest_main.a libivanna_dsp_under_test.a lib/libgtest.a -lpthread

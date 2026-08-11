@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -O2 -g -DNDEBUG -Xlinker --dependency-file=CMakeFiles/no_denormals_low_level.dir/link.d CMakeFiles/no_denormals_low_level.dir/no_denormals_low_level.cpp.o -o no_denormals_low_level  lib/libgtest_main.a libivanna_dsp_under_test.a lib/libgtest.a -lpthread

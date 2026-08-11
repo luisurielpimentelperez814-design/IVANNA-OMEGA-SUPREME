@@ -1,5 +1,0 @@
-if(EXISTS "/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/test_regression_tuning[1]_tests.cmake")
-  include("/data/data/com.termux/files/home/IVANNA-OMEGA-SUPREME/app/src/main/cpp/tests/build-tests/test_regression_tuning[1]_tests.cmake")
-else()
-  add_test(test_regression_tuning_NOT_BUILT test_regression_tuning_NOT_BUILT)
-endif()

@@ -1,1 +1,0 @@
-/data/data/com.termux/files/usr/bin/c++ -O2 -g -DNDEBUG -Xlinker --dependency-file=CMakeFiles/test_control_frame_bus_stress.dir/link.d CMakeFiles/test_control_frame_bus_stress.dir/test_control_frame_bus_stress.cpp.o -o test_control_frame_bus_stress  -lpthread
