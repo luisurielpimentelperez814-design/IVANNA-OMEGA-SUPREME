@@ -63,7 +63,20 @@ inline const std::array<VirtualSpeaker, kNumVirtualSpeakers> kVirtualSpeakers = 
 
 class ObjectRenderer {
 public:
-    void setSafLatent(const float* q, int size);
+    // AUDIT FIX (build): la definición out-of-line en .cpp usa
+    // (const std::array<float,7>&) y los callers en IvannaFusionCore.cpp
+    // pasan un std::array<float,7>. La declaración anterior
+    // (const float* q, int size) no existía en el .cpp -> "out-of-line
+    // definition does not match any declaration". Se alinea el header a
+    // la definición real y se conserva un adaptador (const float*, int)
+    // por si algún caller legacy con puntero crudo llega en el futuro.
+    void setSafLatent(const std::array<float,7>& q);
+    inline void setSafLatent(const float* q, int size) {
+        std::array<float,7> a{};
+        const int n = (size < 7) ? size : 7;
+        for (int i = 0; i < n; ++i) a[i] = q[i];
+        setSafLatent(a);
+    }
 
 public:
     void init(float sampleRate, int blockSize) noexcept;
