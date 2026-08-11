@@ -1,5 +1,6 @@
 #include "SafSpatialRuntime.hpp"
 #include "saf/SaFOptimizer.hpp"
+#include "SafGlobalBridge.hpp"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -36,7 +37,11 @@ private:
     static constexpr int kUpmixObjects = 4;
 
 public:
-    IvannaFusionCore(float sampleRate = 48000.0f) : mSampleRate(sampleRate) {}
+    IvannaFusionCore(float sampleRate = 48000.0f)
+        : mSampleRate(sampleRate)
+    {
+        attachSafOptimizer(&Ivanna::getGlobalSaF());
+    }
 
     
     void attachSafOptimizer(Ivanna::SaFOptimizer* saf)
