@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # customize.sh — IVANNA OMEGA SUPREME Magisk Module
-# Deploys DSP libs + SAF_model.json for Φ_SAF^∞ HRTF personalisation
+# Deploys DSP libs + SAF_model.json + hrtf_dataset.ihr1 for Φ_SAF^∞ HRTF personalisation
 
 SKIPUNZIP=0
 
@@ -15,6 +15,25 @@ if [ -f "$MODPATH/saf/SAF_model.json" ]; then
     ui_print "  ✓ SAF_model.json → $SAF_DIR (214 subjects, K=7)"
 else
     ui_print "  ! SAF_model.json not found in module — app will use baked constants"
+fi
+
+# ── HRTF dataset deployment ───────────────────────────────────────────────────
+# FIX: hrtf_dataset.ihr1 (1250 posiciones esféricas, 512 taps, IHR1 format)
+# vive en system/etc/ivanna_omega/ dentro del módulo pero NUNCA se deployana
+# a /data/adb/ivanna_omega/ donde SofaHRTFLoader y HRTFBinLoader lo buscan
+# en runtime. Sin este deploy el motor HRTF corre siempre con el fallback
+# sintético (genérico de 214 sujetos), sin importar que el dataset esté
+# correctamente instalado en el módulo.
+ui_print "- Deploying HRTF dataset (IHR1 — 1250 positions, 512 taps)..."
+HRTF_SRC="$MODPATH/system/etc/ivanna_omega/hrtf_dataset.ihr1"
+HRTF_DEST="$SAF_DIR/hrtf_dataset.ihr1"
+if [ -f "$HRTF_SRC" ]; then
+    cp -f "$HRTF_SRC" "$HRTF_DEST"
+    set_perm "$HRTF_DEST" root root 0644
+    HRTF_SIZE=$(stat -c%s "$HRTF_SRC" 2>/dev/null || echo "?")
+    ui_print "  ✓ hrtf_dataset.ihr1 → $SAF_DIR (${HRTF_SIZE} bytes)"
+else
+    ui_print "  ! hrtf_dataset.ihr1 not found — HRTF engine will use synthetic fallback"
 fi
 
 # ── DSP libraries ─────────────────────────────────────────────────────────────
