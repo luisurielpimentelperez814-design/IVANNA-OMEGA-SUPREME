@@ -134,7 +134,11 @@ private fun EQTab() {
     }
 
     Spacer(Modifier.height(8.dp))
-    Iso226StatusPanel(modifier = Modifier.fillMaxWidth())
+    // FIX: Iso226StatusPanel solo mostraba el estado (read-only) pero no
+    // permitía al usuario cambiar el nivel de escucha ni aplicar la compensación.
+    // Iso226CalibratorPanel añade sliders + preview de curva + botón APLICAR
+    // que llama Iso226Calibrator.applyAll() en las 3 capas: EQ + DSPBridge + daemon.
+    Iso226CalibratorPanel(modifier = Modifier.fillMaxWidth())
 }
 
 // ── Tab DINÁMICA ─────────────────────────────────────────────────────────────
