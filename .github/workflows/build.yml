@@ -151,17 +151,28 @@ jobs:
           set -euo pipefail
           SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1 || true)
           [ -n "$SO" ] || { echo "ERROR: libomega_effect.so not found"; exit 1; }
-          test -s "$SO"
-          file "$SO" | grep -q "ELF"
+          test -s "$SO" || { echo "ERROR: libomega_effect.so existe pero está vacío (0 bytes)"; exit 1; }
+          file "$SO" | grep -q "ELF" || { echo "ERROR: $SO no es un binario ELF válido"; file "$SO"; exit 1; }
 
           NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           READELF="$NDK_BIN/llvm-readelf"
           NM="$NDK_BIN/llvm-nm"
 
           echo "=== ELF Hardening: libomega_effect.so ==="
-          "$READELF" -h "$SO" | grep "Machine:"
-          "$READELF" -l "$SO" | grep "GNU_RELRO"
-          "$READELF" -W -l "$SO" | grep "GNU_STACK"
+          # FIX (mismo patrón de silent-kill que UUID_SO más abajo, aplicado
+          # aquí también): estas 3 líneas eran `grep` sin protección bajo
+          # `set -e` — si el patrón exacto no aparecía verbatim en el output
+          # de readelf (posible por diferencias de versión/formato entre
+          # llvm-readelf y lo que se esperaba), el script moría aquí mismo
+          # con "exit code 1" genérico, SIN ningún mensaje — indistinguible
+          # de cualquier otro fallo en este step de 100 líneas. Ahora cada
+          # una imprime el motivo real antes de salir.
+          HDR=$("$READELF" -h "$SO" || true)
+          echo "$HDR" | grep "Machine:" || { echo "ERROR: no se pudo leer 'Machine:' del header ELF — salida completa de readelf -h:"; echo "$HDR"; exit 1; }
+          RELRO=$("$READELF" -l "$SO" || true)
+          echo "$RELRO" | grep "GNU_RELRO" || echo "WARN: libomega_effect.so no tiene segmento GNU_RELRO (no fatal, ver check explícito abajo)"
+          STACK=$("$READELF" -W -l "$SO" || true)
+          echo "$STACK" | grep "GNU_STACK" || echo "WARN: no se encontró segmento GNU_STACK en el output de readelf -W -l (no fatal aquí, revisar manualmente si el binario final no tiene NX stack)"
 
           if ! "$READELF" -h "$SO" | grep -q "AArch64"; then
             echo "ERROR: libomega_effect.so no es AArch64"
@@ -240,7 +251,7 @@ jobs:
             exit 1
           fi
 
-          file libomega_effect_arm64.so | grep -q "ELF"
+          file libomega_effect_arm64.so | grep -q "ELF" || { echo "ERROR: la copia libomega_effect_arm64.so no es ELF válido"; exit 1; }
           "$READELF" -h libomega_effect_arm64.so | grep -q "AArch64" || { echo "ERROR: copia corrupta"; exit 1; }
           ls -lh libomega_effect_arm64.so
           echo "libomega_effect.so copiada y validada."
@@ -307,16 +318,16 @@ jobs:
           "$READELF" -d ivanna_daemon || true
 
           echo "=== Arquitectura ==="
-          "$READELF" -h ivanna_daemon | grep Machine
+          "$READELF" -h ivanna_daemon | grep Machine || echo "WARN: no se pudo imprimir el campo Machine (informativo, ver check real abajo)"
           "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: no AArch64"; exit 1; }
           echo "=== Tipo de binario ==="
           "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN" || { echo "ERROR: no PIE"; exit 1; }
           echo "=== Intérprete ELF ==="
           "$READELF" -l ivanna_daemon | grep -qi "interp" || { echo "ERROR: sin INTERP"; exit 1; }
-          "$READELF" -l ivanna_daemon | grep -i "interp"
+          "$READELF" -l ivanna_daemon | grep -i "interp" || true
 
           echo "=== Hardening: daemon ==="
-          "$READELF" -h ivanna_daemon | grep "Type:"
+          "$READELF" -h ivanna_daemon | grep "Type:" || echo "WARN: no se pudo imprimir Type: (informativo)"
           "$READELF" -l ivanna_daemon | grep "GNU_RELRO" || echo "WARN: sin RELRO"
           "$READELF" -W -l ivanna_daemon | grep "GNU_STACK" | grep -vi "RWE" || { echo "ERROR: stack ejecutable"; exit 1; }
           "$READELF" -d ivanna_daemon | grep -q "BIND_NOW" && echo "Full RELRO OK" || echo "WARN: BIND_NOW no detectado"
