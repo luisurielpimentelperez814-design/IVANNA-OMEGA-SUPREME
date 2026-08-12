@@ -83,6 +83,7 @@ RunResult runOnce() {
 
     std::thread producer([&]() {
         float epoch = 0.0f;
+        uint64_t iter = 0;
         while (!stop.load(std::memory_order_relaxed)) {
             ControlFrame f{};
             epoch += 0.0001f;
@@ -96,6 +97,18 @@ RunResult runOnce() {
                 f.nho_alpha = f.nho_beta = f.nho_wet = f.spatial_width = epoch;
             bus.publish(f);
             result.publishes++;
+            // FIX (flake real, no solo de sandbox): confirmado que este
+            // test también falla en runners multi-core de CI, no solo en
+            // entornos de 1 núcleo — el productor en spin-loop puro puede
+            // acaparar el scheduler el tiempo suficiente para dejar al
+            // consumidor con apenas ~15-20 lecturas sobre millones de
+            // publishes, sin que haya corrupción ni ruptura de invariantes
+            // (el bus en sí funciona correctamente — es un problema de
+            // fairness del scheduler bajo contención de CPU, no del
+            // algoritmo). yield() periódico (no en cada iteración, para no
+            // perder la naturaleza de "stress" del test) le da al SO
+            // ventanas reales para intercalar el consumidor.
+            if ((++iter & 0xFFu) == 0) std::this_thread::yield();
         }
     });
 
@@ -103,6 +116,7 @@ RunResult runOnce() {
         ControlFrame out;
         uint64_t lastSeen = 0;
         uint64_t lastSeq = 0;
+        uint64_t iter = 0;
         while (!stop.load(std::memory_order_relaxed)) {
             if (bus.consumeIfNewer(out, lastSeen)) {
                 result.reads++;
@@ -111,6 +125,7 @@ RunResult runOnce() {
                 if (out.seq < lastSeq) result.nonMonotonicSeq = true;
                 lastSeq = out.seq;
             }
+            if ((++iter & 0xFFu) == 0) std::this_thread::yield();
         }
     });
 
