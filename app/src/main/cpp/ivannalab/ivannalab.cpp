@@ -15,6 +15,27 @@
 #include <numeric>
 #include <sstream>
 #include <iomanip>
+#include <array>
+
+template <typename T, size_t Cap>
+class LabRingBuffer {
+    std::array<T, Cap> buf{};
+    size_t head = 0;
+    size_t count = 0;
+public:
+    void push(T v) {
+        buf[head] = v;
+        head = (head + 1) % Cap;
+        if (count < Cap) count++;
+    }
+    void clear() { head = count = 0; }
+    size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+    T get(size_t i) const {
+        return buf[(head + Cap - count + i) % Cap];
+    }
+};
+
 #include <mutex>
 
 namespace ivanna {
@@ -83,13 +104,14 @@ static float hannAt(int n, int N) noexcept {
     return 0.5f - 0.5f * std::cos(2.f * static_cast<float>(M_PI) * n / (N - 1));
 }
 
-static float dftMagnitudeAt(const std::vector<float>& mono, int start, int N, float freq, float sr) {
+template<size_t Cap>
+static float dftMagnitudeAt(const LabRingBuffer<float, Cap>& mono, int start, int N, float freq, float sr) {
     if (N <= 0 || freq <= 0.f) return 0.f;
     double re = 0.0, im = 0.0, winSum = 0.0;
     const double w = 2.0 * M_PI * static_cast<double>(freq) / sr;
     for (int n = 0; n < N; ++n) {
         const float win = hannAt(n, N);
-        const double x = mono[start + n] * win;
+        const double x = mono.get(start + n) * win;
         re += x * std::cos(w * n);
         im -= x * std::sin(w * n);
         winSum += win;
@@ -122,14 +144,15 @@ struct IvannaLab::Impl {
     double stepSumSqKwR = 0.0;
     int    stepFill     = 0;
 
-    std::vector<float> gatedBlocks;
-    std::vector<float> monoHistory;
+    LabRingBuffer<float, 512> gatedBlocks;
+    LabRingBuffer<float, 16384> historyL;
+    LabRingBuffer<float, 16384> historyR;
     float lufsSnapshot = -144.f;
 
     // FIX (SIGSEGV en measure(), tombstone 2026-08-08 17:24, proceso
     // com.ivanna.omega, hilo "DefaultDispatch"): feed() corre en el hilo
     // de captura de audio (PlaybackCaptureService.kt) y hace push_back()
-    // sobre monoHistory/gatedBlocks — puede reallocar el buffer interno
+    // sobre historyL/gatedBlocks — puede reallocar el buffer interno
     // del vector en cualquier momento. measure() (const) corre en un
     // coroutine de UI (IvannaLabMonitor$measureNow$1) y lee esos mismos
     // vectores sin ninguna sincronizacion previa. Carrera clasica:
@@ -155,7 +178,7 @@ struct IvannaLab::Impl {
         kwBufSize = std::max(1, winFrames / stepFrames);
         kwBufL.assign(kwBufSize, 0.f);
         kwBufR.assign(kwBufSize, 0.f);
-        monoHistory.reserve(static_cast<size_t>(std::max(this->fftSize, static_cast<int>(sr))));
+        
     }
 
     void reset() noexcept {
@@ -171,13 +194,14 @@ struct IvannaLab::Impl {
         stepSumSqKwL = stepSumSqKwR = 0.0;
         stepFill = 0;
         gatedBlocks.clear();
-        monoHistory.clear();
+        historyL.clear();
+        historyR.clear();
         lufsSnapshot = -144.f;
     }
 
     void feed(const float* buf, int frames) {
         std::lock_guard<std::mutex> lock(mtx);
-        monoHistory.reserve(monoHistory.size() + static_cast<size_t>(frames));
+        
         for (int i = 0; i < frames; ++i) {
             const float l = buf[i * 2];
             const float r = buf[i * 2 + 1];
@@ -187,7 +211,8 @@ struct IvannaLab::Impl {
             if (absR > peakAbs) peakAbs = absR;
             sumSqL += (double)(l * l);
             sumSqR += (double)(r * r);
-            monoHistory.push_back(0.5f * (l + r));
+            historyL.push(l);
+            historyR.push(r);
 
             const float kwL = kw2L.process(kw1L.process(l));
             const float kwR = kw2R.process(kw1R.process(r));
@@ -206,12 +231,12 @@ struct IvannaLab::Impl {
                 if (kwBufCount >= kwBufSize) {
                     double sumL = 0.0, sumR = 0.0;
                     for (int k = 0; k < kwBufSize; ++k) { sumL += kwBufL[k]; sumR += kwBufR[k]; }
-                    const double meanSq = (sumL + sumR) / (2.0 * kwBufSize);
+                    const double meanSq = (sumL + sumR) / kwBufSize; // ITU-R BS.1770
                     constexpr double kAbsGateLinear = 1.584893e-7;
                     if (meanSq > kAbsGateLinear) {
-                        gatedBlocks.push_back(static_cast<float>(meanSq));
+                        gatedBlocks.push(static_cast<float>(meanSq));
                         double sumGated = 0.0;
-                        for (float ms2 : gatedBlocks) sumGated += ms2;
+                        for (size_t i = 0; i < gatedBlocks.size(); ++i) sumGated += gatedBlocks.get(i);
                         const double avgGated = sumGated / gatedBlocks.size();
                         lufsSnapshot = static_cast<float>(-0.691 + 10.0 * std::log10(avgGated + 1e-30));
                     }
@@ -222,7 +247,7 @@ struct IvannaLab::Impl {
     }
 
     float measureTruePeak() const {
-        if (monoHistory.empty()) return -1.f;
+        if (historyL.empty()) return -1.f;
         static constexpr int kOS = 4;
         static constexpr std::array<float, 16> kFir = {
             -0.001246f, -0.003098f,  0.006866f,  0.031409f,
@@ -231,26 +256,29 @@ struct IvannaLab::Impl {
              0.031409f,  0.006866f, -0.003098f, -0.001246f
         };
         float peak = 0.f;
-        const int upN = static_cast<int>(monoHistory.size()) * kOS;
+        const int upN = static_cast<int>(historyL.size()) * kOS;
         for (int n = 0; n < upN; ++n) {
-            double y = 0.0;
+            double yL = 0.0, yR = 0.0;
             for (int t = 0; t < static_cast<int>(kFir.size()); ++t) {
                 const int srcUp = n - t;
                 if ((srcUp % kOS) != 0) continue;
                 const int src = srcUp / kOS;
-                if (src >= 0 && src < static_cast<int>(monoHistory.size())) y += monoHistory[src] * kFir[t] * kOS;
+                if (src >= 0 && src < static_cast<int>(historyL.size())) {
+                    yL += historyL.get(src) * kFir[t] * kOS;
+                    yR += historyR.get(src) * kFir[t] * kOS;
+                }
             }
-            peak = std::max(peak, static_cast<float>(std::fabs(y)));
+            peak = std::max({peak, static_cast<float>(std::fabs(yL)), static_cast<float>(std::fabs(yR))});
         }
         return ampToDb(peak);
     }
 
     float measureTHD() const {
-        if (monoHistory.size() < static_cast<size_t>(fftSize)) return -1.f;
-        const int N = std::min<int>(fftSize, monoHistory.size());
-        const int start = static_cast<int>(monoHistory.size()) - N;
+        if (historyL.size() < static_cast<size_t>(fftSize)) return -1.f;
+        const int N = std::min<int>(fftSize, historyL.size());
+        const int start = static_cast<int>(historyL.size()) - N;
         double rms = 0.0;
-        for (int i = 0; i < N; ++i) rms += monoHistory[start + i] * monoHistory[start + i];
+        for (int i = 0; i < N; ++i) rms += historyL.get(start + i) * historyL.get(start + i);
         rms = std::sqrt(rms / N);
         if (rms < 0.001) return -1.f; // < -60 dBFS
 
@@ -260,32 +288,32 @@ struct IvannaLab::Impl {
         const int maxBin = std::min(N / 6, static_cast<int>(5000.f * N / sampleRate));
         for (int bin = minBin; bin <= maxBin; ++bin) {
             const float freq = bin * static_cast<float>(sampleRate) / N;
-            const float mag = dftMagnitudeAt(monoHistory, start, N, freq, (float)sampleRate);
+            const float mag = dftMagnitudeAt(historyL, start, N, freq, (float)sampleRate);
             if (mag > bestMag) { bestMag = mag; bestBin = bin; }
         }
         const float f1 = bestBin * static_cast<float>(sampleRate) / N;
-        const float h1 = dftMagnitudeAt(monoHistory, start, N, f1, (float)sampleRate);
+        const float h1 = dftMagnitudeAt(historyL, start, N, f1, (float)sampleRate);
         if (h1 < 1e-6f) return -1.f;
-        const float h2 = (2.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 2.f * f1, (float)sampleRate) : 0.f;
-        const float h3 = (3.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 3.f * f1, (float)sampleRate) : 0.f;
-        const float h4 = (4.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(monoHistory, start, N, 4.f * f1, (float)sampleRate) : 0.f;
+        const float h2 = (2.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 2.f * f1, (float)sampleRate) : 0.f;
+        const float h3 = (3.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 3.f * f1, (float)sampleRate) : 0.f;
+        const float h4 = (4.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 4.f * f1, (float)sampleRate) : 0.f;
         return 100.f * std::sqrt(h2 * h2 + h3 * h3 + h4 * h4) / h1;
     }
 
     float measureIMD() const {
-        if (monoHistory.size() < static_cast<size_t>(fftSize)) return -1.f;
-        const int N = std::min<int>(fftSize, monoHistory.size());
-        const int start = static_cast<int>(monoHistory.size()) - N;
+        if (historyL.size() < static_cast<size_t>(fftSize)) return -1.f;
+        const int N = std::min<int>(fftSize, historyL.size());
+        const int start = static_cast<int>(historyL.size()) - N;
         double total = 0.0;
-        for (int i = 0; i < N; ++i) total += monoHistory[start + i] * monoHistory[start + i];
+        for (int i = 0; i < N; ++i) total += historyL.get(start + i) * historyL.get(start + i);
         if (total / N < 1e-6) return -1.f;
-        const float low = dftMagnitudeAt(monoHistory, start, N, 250.f, (float)sampleRate);
-        const float high = dftMagnitudeAt(monoHistory, start, N, 8000.f, (float)sampleRate);
+        const float low = dftMagnitudeAt(historyL, start, N, 250.f, (float)sampleRate);
+        const float high = dftMagnitudeAt(historyL, start, N, 8000.f, (float)sampleRate);
         if (low < 0.001f || high < 0.001f) return -1.f;
-        const float d1 = dftMagnitudeAt(monoHistory, start, N, 7750.f, (float)sampleRate);
-        const float d2 = dftMagnitudeAt(monoHistory, start, N, 8250.f, (float)sampleRate);
-        const float d3 = dftMagnitudeAt(monoHistory, start, N, 7500.f, (float)sampleRate);
-        const float d4 = dftMagnitudeAt(monoHistory, start, N, 8500.f, (float)sampleRate);
+        const float d1 = dftMagnitudeAt(historyL, start, N, 7750.f, (float)sampleRate);
+        const float d2 = dftMagnitudeAt(historyL, start, N, 8250.f, (float)sampleRate);
+        const float d3 = dftMagnitudeAt(historyL, start, N, 7500.f, (float)sampleRate);
+        const float d4 = dftMagnitudeAt(historyL, start, N, 8500.f, (float)sampleRate);
         const float carrier = std::sqrt(low * low + high * high);
         const float products = std::sqrt(d1 * d1 + d2 * d2 + d3 * d3 + d4 * d4);
         return carrier > 1e-6f ? 100.f * products / carrier : -1.f;
@@ -302,7 +330,8 @@ struct IvannaLab::Impl {
         if (gatedBlocks.size() < 2) return -1.f;
         std::vector<float> loudness;
         loudness.reserve(gatedBlocks.size());
-        for (float ms2 : gatedBlocks) {
+        for (size_t i = 0; i < gatedBlocks.size(); ++i) {
+            float ms2 = gatedBlocks.get(i);
             loudness.push_back(static_cast<float>(-0.691 + 10.0 * std::log10((double)ms2 + 1e-30)));
         }
         double sum = 0.0;
