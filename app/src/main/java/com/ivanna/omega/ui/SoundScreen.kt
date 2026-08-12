@@ -105,6 +105,9 @@ private fun EQTab() {
 
     GlassCard("ECUALIZADOR PARAMÉTRICO", AuroraCyan, "8 bandas · Q adaptativo · ISO 226") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // FIX (auditoría 2026-08-12): "ISO 226" en el subtítulo de arriba
+            // era decorativo — el panel real con datos en vivo está debajo.
+            Bark64VisualizerPanel(modifier = Modifier.fillMaxWidth())
             IvannaSliderRow("GRAVES", audioState.eqBass, -18f, 18f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(eqBass = v) }
                 if (IvannaNativeLib.isLoaded)
@@ -129,6 +132,9 @@ private fun EQTab() {
             }
         }
     }
+
+    Spacer(Modifier.height(8.dp))
+    Iso226StatusPanel(modifier = Modifier.fillMaxWidth())
 }
 
 // ── Tab DINÁMICA ─────────────────────────────────────────────────────────────
