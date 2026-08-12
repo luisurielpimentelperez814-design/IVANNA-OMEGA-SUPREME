@@ -45,6 +45,7 @@ add_library(ivanna_omega SHARED
         # Φ_SAF-Room^∞ JNI bridge
         jni/saf_room_jni.cpp
     jni/ivanna_visualizer_v2_jni.cpp
+    jni/ivanna_visualizer_bark64_jni.cpp
     jni/ivanna_npe_jni.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp

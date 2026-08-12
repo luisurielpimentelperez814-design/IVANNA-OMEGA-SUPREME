@@ -26,6 +26,7 @@ import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.audio.IvannaLabMonitor
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
+import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -294,6 +295,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 return
             }
             IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
+            IvannaVisualizerBark64Bridge.init(SAMPLE_RATE, BLOCK_FRAMES)
             // FIX: arrancar medición automática Lab (THD/LUFS/SNR cada 30s)
             IvannaLabMonitor.startAutoMeasure()
             voiceController = VoiceController(context)
@@ -326,6 +328,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             spatialEngine.stop()
             voiceProtection?.release(); voiceProtection = null
             IvannaVisualizerBridgeV2.release()
+            IvannaVisualizerBark64Bridge.release()
             IvannaLabMonitor.stopAutoMeasure()
             runCatching { projection.unregisterCallback(projCallback) }
             voiceFill = 0; voiceAcc = 0f; voiceCount = 0
@@ -452,6 +455,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     for (i in 0 until frames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, frames) }
                     runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames) }
+                    runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, frames) }
                     // FIX: IvannaLabMonitor.feed() nunca se llamaba.
                     // El analizador THD/IMD/LUFS/SNR declara feed() pero ningún
                     // caller lo invocaba — acumulaba 0 frames, measure() devolvía

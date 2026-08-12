@@ -18,6 +18,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const oscNodeRef = useRef<OscillatorNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   const toggleAudio = () => {
     if (isPlaying) {
@@ -32,6 +33,10 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
         const gain = ctx.createGain();
         gain.gain.value = 0.15;
         gain.connect(ctx.destination);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        gain.connect(analyser);
+        analyserRef.current = analyser;
 
         const osc = ctx.createOscillator();
         osc.type = signalType === 'sine' ? 'sine' : signalType === 'noise' ? 'sawtooth' : 'triangle';
@@ -60,74 +65,42 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
     let animId: number;
     let phase = 0;
 
+    
     const render = () => {
-      phase += 0.08;
-
-      // 1. Oscilloscope Render
       const oscCanvas = oscCanvasRef.current;
+      const analyser = analyserRef.current;
+      
+      const timeData = new Float32Array(analyser ? analyser.fftSize : 1024);
+      const freqData = new Uint8Array(analyser ? analyser.frequencyBinCount : 1024);
+      if (analyser) {
+        analyser.getFloatTimeDomainData(timeData);
+        analyser.getByteFrequencyData(freqData);
+      }
+      
       if (oscCanvas) {
         const ctx = oscCanvas.getContext('2d');
         if (ctx) {
           const w = oscCanvas.width;
           const h = oscCanvas.height;
-
           ctx.fillStyle = '#0F1116';
           ctx.fillRect(0, 0, w, h);
-
-          // Grid lines
-          ctx.strokeStyle = '#1E2128';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(0, h / 2);
-          ctx.lineTo(w, h / 2);
-          ctx.stroke();
-
-          // Raw Input Wave (Dimmed)
-          ctx.strokeStyle = 'rgba(136, 136, 136, 0.4)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          for (let x = 0; x < w; x++) {
-            const t = (x / w) * Math.PI * 8 + phase;
-            let val = 0;
-            if (signalType === 'sine') val = Math.sin(t);
-            else if (signalType === 'harmonics') val = Math.sin(t) + 0.3 * Math.sin(2 * t) + 0.2 * Math.sin(3 * t);
-            else if (signalType === 'impulse') val = (x % 60 === 0) ? 0.9 : 0;
-            else val = (Math.random() - 0.5) * 1.5;
-
-            const y = h / 2 - val * (h * 0.3);
-            if (x === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-
-          // Processed Output Wave (IVANNA DSP Kernel)
+          
           ctx.strokeStyle = params.goldenEarEnabled ? '#FB923C' : '#4ADE80';
           ctx.lineWidth = 2.5;
           ctx.shadowBlur = 8;
           ctx.shadowColor = params.goldenEarEnabled ? '#FB923C' : '#4ADE80';
+          
           ctx.beginPath();
-
           for (let x = 0; x < w; x++) {
-            const t = (x / w) * Math.PI * 8 + phase;
-            let raw = 0;
-            if (signalType === 'sine') raw = Math.sin(t);
-            else if (signalType === 'harmonics') raw = Math.sin(t) + 0.3 * Math.sin(2 * t) + 0.2 * Math.sin(3 * t);
-            else if (signalType === 'impulse') raw = (x % 60 === 0) ? 0.9 : 0;
-            else raw = (Math.random() - 0.5) * 1.5;
-
-            // Apply fatigue damping
-            let out = raw * params.iirAlpha;
-
-            // Apply Golden Ear Chebyshev harmonics
-            if (params.goldenEarEnabled) {
-              const drv = out * params.goldenEarDrive;
-              const h2 = 2.0 * (drv * drv) - 1.0;
-              const h3 = 4.0 * (drv * drv * drv) - 3.0 * drv;
-              out = out + (h2 * 0.12 + h3 * 0.08) * params.goldenEarMix;
-              // Soft tanh clip
-              out = Math.tanh(out);
+            let out = 0;
+            if (analyser) {
+                const idx = Math.floor((x / w) * timeData.length);
+                out = timeData[idx];
+            } else {
+                const t = (x / w) * Math.PI * 8 + performance.now() * 0.005;
+                out = Math.sin(t) * 0.5;
             }
-
+            
             const y = h / 2 - out * (h * 0.32);
             if (x === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
@@ -136,38 +109,48 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
           ctx.shadowBlur = 0;
         }
       }
-
-      // 2. Spectrum Analyzer Render
+      
       const specCanvas = specCanvasRef.current;
       if (specCanvas) {
         const ctx = specCanvas.getContext('2d');
         if (ctx) {
           const w = specCanvas.width;
           const h = specCanvas.height;
-
           ctx.fillStyle = '#0F1116';
           ctx.fillRect(0, 0, w, h);
-
+          
           const bars = 64;
           const barWidth = w / bars;
-
+          
+          // Bark scale mapping
+          // z = 13 * arctan(0.00076 * f) + 3.5 * arctan((f / 7500)^2)
           for (let i = 0; i < bars; i++) {
-            const freqRatio = i / bars;
-            let magnitude = Math.exp(-freqRatio * 3) * (0.6 + 0.4 * Math.sin(phase * 2 + i * 0.3));
-
-            // High frequency roll-off due to fatigue IIR
-            if (i > 30) {
-              magnitude *= params.iirAlpha;
+            let magnitude = 0;
+            if (analyser) {
+                // Map the i-th bark band to an FFT bin
+                const barkTarget = (i / bars) * 24; // 24 Bark bands approx
+                let bin = 0;
+                let found = false;
+                const fs = audioCtxRef.current?.sampleRate || 48000;
+                for(let b=0; b<analyser.frequencyBinCount; b++) {
+                    const f = b * fs / analyser.fftSize;
+                    const z = 13 * Math.atan(0.00076 * f) + 3.5 * Math.atan(Math.pow(f / 7500, 2));
+                    if (z >= barkTarget) {
+                        bin = b;
+                        found = true;
+                        break;
+                    }
+                }
+                const raw = freqData[bin] / 255;
+                magnitude = raw;
+            } else {
+                const freqRatio = i / bars;
+                magnitude = Math.exp(-freqRatio * 3) * (0.6 + 0.4 * Math.sin(performance.now() * 0.002 + i * 0.3));
             }
-
-            // Harmonic peaks if Golden Ear is active
-            if (params.goldenEarEnabled && (i % 8 === 0 || i % 12 === 0)) {
-              magnitude += 0.25 * params.goldenEarMix;
-            }
-
+            
             const barHeight = Math.min(h * 0.85, magnitude * h);
-
             const gradient = ctx.createLinearGradient(0, h, 0, h - barHeight);
+            
             if (params.goldenEarEnabled) {
               gradient.addColorStop(0, '#78350F');
               gradient.addColorStop(0.5, '#FB923C');
@@ -177,16 +160,13 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
               gradient.addColorStop(0.5, '#4ADE80');
               gradient.addColorStop(1, '#BBF7D0');
             }
-
             ctx.fillStyle = gradient;
-            ctx.fillRect(i * barWidth, h - barHeight, barWidth - 2, barHeight);
+            ctx.fillRect(i * barWidth, h - barHeight, barWidth - 2, Math.max(2, barHeight));
           }
         }
       }
-
       animId = requestAnimationFrame(render);
     };
-
     render();
 
     return () => {
