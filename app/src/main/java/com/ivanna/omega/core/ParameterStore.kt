@@ -225,4 +225,14 @@ class ParameterStore(context: Context) {
     fun hasAdaptiveIntensity(): Boolean = prefs.contains(KEY_ADAPTIVE_INTENSITY)
     fun hasVoiceProtection(): Boolean = prefs.contains(KEY_VOICE_PROTECTION)
     fun hasAdaptiveManualMode(): Boolean = prefs.contains(KEY_ADAPTIVE_MANUAL_MODE)
+
+    // ── Primer lanzamiento ────────────────────────────────────────────────────
+    // Controla si el preset magistral de entrada ya fue enviado al daemon.
+    // Se marca una sola vez; las preferencias del usuario prevalecen después.
+    fun hasAppliedFirstLaunchPreset(): Boolean =
+        prefs.getBoolean("first_launch_preset_applied", false)
+
+    fun markFirstLaunchPresetApplied() {
+        prefs.edit().putBoolean("first_launch_preset_applied", true).apply()
+    }
 }

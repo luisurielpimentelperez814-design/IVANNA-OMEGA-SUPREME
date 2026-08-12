@@ -267,6 +267,32 @@ class IVANNAApplication : Application() {
                     }
                 }
 
+                // ── PRIMER LANZAMIENTO: preset magistral de entrada ──────────────
+                // En el primer uso (o si el usuario nunca guardó preferencias),
+                // enviar los parámetros de experiencia óptima al daemon. Esto
+                // asegura que desde el primer segundo el audio ya esté calibrado
+                // con la curva completa: spatial, harmonic, bass, widener, ISO 226.
+                // Después de este envío el daemon publica el snapshot en el SHM
+                // y omega_effect.cpp lo aplica en el siguiente frame de audio.
+                if (omegaBridge.isConnected && !paramStore.hasAppliedFirstLaunchPreset()) {
+                    launch(Dispatchers.IO) {
+                        try {
+                            // Parámetros perceptuales magistrales
+                            MagiskBridge.sendCommand("""{"action":"SET_PERCEPTUAL_STATE","compressor":-5.5,"exciterReduction":0.15,"highCutHz":19500,"spatialWidth":1.55,"loudnessTargetLuFS":-16.0,"harmonicGain":0.78,"antiDolbyIntensity":0.85}""")
+                            // Intensidad global
+                            MagiskBridge.sendCommand("""{"action":"SET_INTENSITY","intensity":0.92}""")
+                            // Route profile: sub-graves + presencia vocal + ensanchamiento
+                            MagiskBridge.sendCommand("""{"action":"SET_ROUTE_PROFILE","bassBoostDb":2.5,"dialogBoostDb":1.5,"widenerMult":1.38}""")
+                            // Preset adaptativo — se aplica "Spatial" para el arranque
+                            MagiskBridge.setPreset("Spatial")
+                            paramStore.markFirstLaunchPresetApplied()
+                            Log.i(TAG, "✅ Preset magistral de primer lanzamiento aplicado")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Preset primer lanzamiento: ${e.message}")
+                        }
+                    }
+                }
+
                 // Loop de reconexión: reintenta cada 5s si el daemon sube tarde
                 // (e.g. Magisk late_start_service). Solo dispara probes ligeros.
                 launch {
