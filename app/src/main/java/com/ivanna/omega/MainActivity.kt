@@ -92,6 +92,8 @@ import com.ivanna.omega.ai.PerceptualSnapshot
 import com.ivanna.omega.ui.PerceptualBrainDashboard
 import com.ivanna.omega.ui.SaFCalibrationScreen
 import com.ivanna.omega.ui.MainScaffold
+import com.ivanna.omega.ui.Bark64VisualizerPanel
+import com.ivanna.omega.audio.IvannaLabMonitor
 
 // ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
 private val Carbon = Color(0xFF0A0A0A)
@@ -305,39 +307,101 @@ fun OmegaApp() {
                 )
             }
             composable("visualizer") {
+                // FIX: la ruta "visualizer" mostraba solo texto aunque captureActive=true.
+                // Bark64VisualizerPanel estaba completamente implementado (JNI + bridge
+                // + PlaybackCaptureService.processBlock()) pero nadie lo instanciaba aquí.
                 LaunchedEffect(Unit) {
                     if (!captureActive) {
                         projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
                     }
                 }
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.fillMaxSize().background(Carbon)
-                        .windowInsetsPadding(WindowInsets.systemBars),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
+                val labSnapshot by IvannaLabMonitor.snapshot.collectAsState()
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
                 ) {
-                    androidx.compose.foundation.layout.Column(
-                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+                    // Header
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
-                        androidx.compose.material3.Text(
-                            "VISUALIZADOR DE ESPECTRO",
-                            color = CyanGlow,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
-                            letterSpacing = 2.sp
-                        )
-                        androidx.compose.material3.Text(
-                            if (captureActive) "CAPTURA ACTIVA · FFT 64-Band" else "Aguardando permiso MediaProjection…",
-                            color = if (captureActive) CyanGlow else TextSec,
-                            fontSize = 11.sp
-                        )
+                        androidx.compose.foundation.layout.Column {
+                            androidx.compose.material3.Text(
+                                "ESPECTRO BARK · 64 BANDAS",
+                                color = CyanGlow,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                letterSpacing = 1.5.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                            androidx.compose.material3.Text(
+                                if (captureActive) "CAPTURA ACTIVA · FFT perceptual · Escala Bark"
+                                else "Aguardando permiso MediaProjection…",
+                                color = if (captureActive) CyanGlow.copy(alpha = 0.7f) else TextSec,
+                                fontSize = 10.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
                         if (!captureActive) {
                             androidx.compose.material3.OutlinedButton(
-                                onClick = {
-                                    projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-                                },
+                                onClick = { projectionLauncher.launch(projectionManager.createScreenCaptureIntent()) },
                                 border = androidx.compose.foundation.BorderStroke(1.dp, CyanGlow)
+                            ) { androidx.compose.material3.Text("ACTIVAR", color = CyanGlow, fontSize = 11.sp) }
+                        }
+                    }
+
+                    // ── Visualizador Bark64 real ──────────────────────────────────
+                    Bark64VisualizerPanel(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                    )
+
+                    // ── Métricas Lab en tiempo real (THD · SNR · LUFS) ───────────
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                    ) {
+                        val s = labSnapshot
+                        listOf(
+                            Triple("THD",  if (s == null) "—" else "${"%.2f".format(s.thd)}%",
+                                if (s != null && s.thd > 1f) androidx.compose.ui.graphics.Color(0xFFFF3B30)
+                                else CyanGlow),
+                            Triple("SNR",  if (s == null) "—" else "${"%.1f".format(s.snr)} dB",
+                                if (s != null && s.snr < 60f) androidx.compose.ui.graphics.Color(0xFFFFD600)
+                                else CyanGlow),
+                            Triple("LUFS", if (s == null) "—" else "${"%.1f".format(s.lufs)}",
+                                CyanGlow)
+                        ).forEach { (label, value, color) ->
+                            androidx.compose.foundation.layout.Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        androidx.compose.ui.graphics.Color(0xFF111111),
+                                        androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(10.dp),
+                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
                             ) {
-                                androidx.compose.material3.Text("ACTIVAR CAPTURA", color = CyanGlow)
+                                androidx.compose.material3.Text(
+                                    label,
+                                    color = androidx.compose.ui.graphics.Color(0xFF888888),
+                                    fontSize = 9.sp,
+                                    letterSpacing = 1.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                                androidx.compose.material3.Text(
+                                    value,
+                                    color = color,
+                                    fontSize = 14.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
                             }
                         }
                     }
