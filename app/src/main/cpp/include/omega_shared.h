@@ -6,7 +6,12 @@
 
 
 #include "saf_runtime.h"
-#include "saf_full_math.h"
+// EXPURGO (auditoría 2026-08-12): saf_full_math.h eliminado — declaraba
+// g_saf_full (SAFFullState con std::atomic<float> por campo) + SAFFullUpdate
+// / projectionPiS sin un solo usuario en todo el árbol, y g_saf_full jamás
+// fue definido (link-error latente si alguien lo hubiera usado). Los atomics
+// per-sample además son un riesgo de cache-line bouncing si se hubieran
+// conectado al hilo DSP en el futuro. saf_runtime.h (el motor vivo) sigue.
 
 #include <cstdint>
 #include <cstring>
