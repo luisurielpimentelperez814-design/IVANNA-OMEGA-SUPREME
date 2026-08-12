@@ -238,3 +238,19 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerReset(JNIEnv*, jc
 }
 
 } // extern "C"
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSubject(JNIEnv* env, jclass, jlong handle, jstring subjectId) {
+    auto* renderer = toObjectRenderer(handle);
+    if (!renderer || !subjectId) return;
+    const char* subjStr = env->GetStringUTFChars(subjectId, nullptr);
+    if (subjStr) {
+        // En una implementación completa esto cargaría el sujeto específico
+        // del archivo .ihr1 o de un .sofa. Como el modelo SAF maneja
+        // hrtf_dataset.ihr1 general, enviamos el comando base.
+        // Simulando loadHrtfDatasetFromFile() con la ruta estándar si el
+        // módulo magisk monta la base en /data/adb/ivanna_omega/
+        renderer->loadHrtfDatasetFromFile("/data/adb/ivanna_omega/hrtf_dataset.ihr1");
+        env->ReleaseStringUTFChars(subjectId, subjStr);
+    }
+}

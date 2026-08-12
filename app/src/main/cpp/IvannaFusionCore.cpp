@@ -1,181 +1,106 @@
-#include "SaFOptimizer.hpp"
-#include "SafGlobalBridge.hpp"
-#include <cmath>
-#include <algorithm>
-#include <cstring>
-#include <cstddef>
-#include <vector>
-#include <array>
+#include "IvannaFusionCore.hpp"
+#include "HrtfManager.hpp"
+#include "EvolutionaryEQ.hpp"
+#include "Psychoacoustics.hpp"
+#include "IvannaAudioClassifier.hpp"
+#include <iostream>
 
-#include "spatial/ivanna_object_renderer.hpp"
+namespace Ivanna {
 
+IvannaFusionEngine::IvannaFusionEngine() {
+    // Raw pointer members constructed at initialization to guarantee ZERO audio-thread heap allocations
+    m_hrtf = new HrtfManager();
+    m_evoEq = new EvolutionaryEQ();
+    m_psycho = new Psychoacoustics();
+    m_classifier = new IvannaAudioClassifier();
+}
+
+IvannaFusionEngine::~IvannaFusionEngine() {
+    delete m_hrtf;
+    delete m_evoEq;
+    delete m_psycho;
+    delete m_classifier;
+}
+
+void IvannaFusionEngine::runAcousticProfiling() {
+    m_evoEq->calibrateTargetRoom();
+}
+
+void IvannaFusionEngine::setGoldenEarMode(bool enable) {
+    m_goldenEarActive = enable;
+}
+
+void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) {
+    m_hrtf->setHeadPose(yaw, pitch, roll);
+}
+
+void IvannaFusionEngine::process(AudioBuffer* buffer) {
+    // 0. TinyML Anti-Dolby Scene Classifier (Ingest & Inference via Lock-Free Ring Buffer)
+    m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
+    m_classifier->processInference();
+
+    // 1. Predictive fatigue mitigation (TinyML int8 LSTM + dynamic IIR)
+    m_psycho->predictAndMitigateFatigue(buffer);
+
+    // 2. Evolutionary EQ FIR filtering (LM-CMA-ES 256-Tap SIMD)
+    m_evoEq->processNEON(buffer);
+
+    // 3. Psychoacoustic dynamic masking compensation
+    m_psycho->applyMaskingCompensation(buffer);
+
+    // 4. 3D Binaural HRTF cross-talk spatialization
+    m_hrtf->processBinauralScene(buffer);
+
+    // 5. Golden Ear Harmonic Exciter & Soft Clipping (if enabled)
+    if (m_goldenEarActive) {
+        applyGoldenEarGAN(buffer);
+    }
+}
+
+void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
+    // Non-linear harmonic exciter using Chebyshev polynomials H2(x)=2x^2-1, H3(x)=4x^3-3x
+    // Emulates mastering hardware transformer saturation with ARMv8 NEON
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
+    float32x4_t drive = vdupq_n_f32(1.2f);
+    float32x4_t mix = vdupq_n_f32(0.15f);
+
+    for (size_t i = 0; i < BLOCK_SIZE; i += 4) {
+        float32x4_t l = vld1q_f32(&buffer->left[i]);
+        float32x4_t r = vld1q_f32(&buffer->right[i]);
+
+        // Input Drive Scaling
+        float32x4_t l_drv = vmulq_f32(l, drive);
+        float32x4_t r_drv = vmulq_f32(r, drive);
+
+        // Even Harmonics: H2(x) = 2x^2 - 1
+        float32x4_t l_sq = vmulq_f32(l_drv, l_drv);
+        float32x4_t r_sq = vmulq_f32(r_drv, r_drv);
+
+        float32x4_t h2_l = vsubq_f32(vmulq_n_f32(l_sq, 2.0f), vdupq_n_f32(1.0f));
+        float32x4_t h2_r = vsubq_f32(vmulq_n_f32(r_sq, 2.0f), vdupq_n_f32(1.0f));
+
+        // Blend Harmonics & Soft-Clip Tanh
+        float32x4_t out_l = fast_tanh_neon(vaddq_f32(l, vmulq_f32(h2_l, mix)));
+        float32x4_t out_r = fast_tanh_neon(vaddq_f32(r, vmulq_f32(h2_r, mix)));
+
+        vst1q_f32(&buffer->left[i], out_l);
+        vst1q_f32(&buffer->right[i], out_r);
+    }
+#else
+    // Scalar fallback
+    const float drive = 1.2f;
+    const float mix = 0.15f;
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        float l_drv = buffer->left[i] * drive;
+        float r_drv = buffer->right[i] * drive;
+
+        float h2_l = 2.0f * (l_drv * l_drv) - 1.0f;
+        float h2_r = 2.0f * (r_drv * r_drv) - 1.0f;
+
+        buffer->left[i] = fast_tanh_scalar(buffer->left[i] + h2_l * mix);
+        buffer->right[i] = fast_tanh_scalar(buffer->right[i] + h2_r * mix);
+    }
 #endif
+}
 
-class IvannaFusionCore {
-private:
-    float mSampleRate = 48000.0f;
-    float mSpatialWidth = 1.20f;
-    float mHarmonicGain = 1.0f;
-    float mCompressorThreshold = -12.0f;
-    float mCompressorRatio = 3.0f;
-    float mMaxLoudnessLuFS = -14.0f;
-    float mCurrentGain = 1.0f;
-    float mTargetGain = 1.0f;
-
-    // ── Renderizador binaural de objetos (ruta de salida activa) ──
-    ivanna::spatial::ObjectRenderer mRenderer;
-
-    Ivanna::SaFOptimizer* mSafOptimizer = nullptr;
-    bool mSpatialActive = false;
-    int  mBlockSize = 4096;
-    std::vector<float> mObjBuf;      // [kUpmixObjects * 2 * numFrames]
-    std::vector<float> mRenderL, mRenderR;
-    std::vector<ivanna::spatial::AudioObject> mObjects;
-    static constexpr int kUpmixObjects = 4;
-
-public:
-    IvannaFusionCore(float sampleRate = 48000.0f)
-        : mSampleRate(sampleRate)
-    {
-        attachSafOptimizer(&Ivanna::getGlobalSaF());
-    }
-
-    
-    void attachSafOptimizer(Ivanna::SaFOptimizer* saf)
-    {
-        mSafOptimizer = saf;
-    }
-
-    void pullSafState()
-    {
-        if(!mSafOptimizer)
-            return;
-
-        float q[7]{};
-        mSafOptimizer->getParams(q);
-
-        std::array<float,7> latent{};
-        for(int i=0;i<7;i++)
-            latent[i]=q[i];
-
-        setSafLatent(latent);
-    }
-
-    void setSpatialWidth(float width) { mSpatialWidth = std::clamp(width, 0.1f, 3.0f); }
-    void setHarmonicGain(float gain) { mHarmonicGain = std::clamp(gain, 0.0f, 2.0f); }
-    void setCompressorParams(float thresholdDb, float ratio) {
-        mCompressorThreshold = thresholdDb;
-        mCompressorRatio = std::max(1.0f, ratio);
-    }
-
-    // Inicializa el renderer. blockSize debe ser >= el mayor numFrames esperado.
-    void initSpatial(float sampleRate, int blockSize) {
-        mSampleRate = sampleRate;
-        mBlockSize  = blockSize;
-        mRenderer.init(sampleRate, blockSize);
-        mRenderer.setReverbLevel(0.20f);
-
-        // Upmix perceptual: 4 objetos derivados del estéreo.
-        // {id, x, y, z, width, gain, isBed, bedChannel, active}
-        mObjects.resize(kUpmixObjects);
-        mObjects[0] = {0,  0.0f,  1.0f, 0.0f, 0.2f, 0.65f, false, 0, true}; // central (frente)
-        mObjects[1] = {1, -0.9f,  0.4f, 0.0f, 0.3f, 0.50f, false, 0, true}; // lateral izq
-        mObjects[2] = {2,  0.9f,  0.4f, 0.0f, 0.3f, 0.50f, false, 0, true}; // lateral der
-        mObjects[3] = {3,  0.0f, -1.0f, 0.0f, 0.6f, 0.35f, false, 0, true}; // ambiente (atrás)
-        mRenderer.setObjects(mObjects);
-
-        mRenderL.assign(blockSize, 0.f);
-        mRenderR.assign(blockSize, 0.f);
-        mObjBuf.assign((size_t)kUpmixObjects * 2 * blockSize, 0.f);
-        mSpatialActive = true;
-    }
-
-    void setSpatialActive(bool active) { mSpatialActive = active; }
-    bool isSpatialActive() const { return mSpatialActive; }
-
-    // SAF adaptive spatial latent field [q0..q6]
-    void setSafLatent(const std::array<float,7>& q)
-    {
-        mRenderer.setSafLatent(q);
-    }
-
-    // Carga un dataset HRTF personalizado (formato binario "IHR1").
-    bool loadCustomHrtf(const char* path) {
-        return mRenderer.loadHrtfDatasetFromFile(path);
-    }
-
-    // Propaga el vector latente q_t del optimizador Φ_SAF^∞ al renderer.
-    // Llamar desde el hilo de control (SaFJniBridge) tras cada feedFeedback().
-    void setSafLatentParams(const float q[7]) noexcept {
-        mRenderer.setLatentParams(q);
-    }
-
-    void clearSafLatentParams() noexcept {
-        mRenderer.clearLatentParams();
-    }
-
-    void processStereo(float* bufferLeft, float* bufferRight, size_t numFrames) {
-
-        pullSafState();
-        if (mSpatialActive && numFrames > 0 && numFrames <= (size_t)mBlockSize) {
-            renderSpatial(bufferLeft, bufferRight, numFrames);
-        }
-        applyOutputDsp(bufferLeft, bufferRight, numFrames);
-    }
-
-private:
-    void renderSpatial(float* bufferLeft, float* bufferRight, size_t numFrames) {
-        const int N = (int)numFrames;
-        const float w = mSpatialWidth;
-
-        for (int n = 0; n < N; ++n) {
-            const float L = bufferLeft[n];
-            const float R = bufferRight[n];
-            const float mid  = 0.5f * (L + R);
-            const float side = 0.5f * (L - R);
-
-            // Layout por objeto: [obj_L (N) | obj_R (N)]
-            float* o0 = &mObjBuf[(size_t)0 * 2 * N];
-            o0[n] = mid;            o0[N + n] = mid;             // central
-            float* o1 = &mObjBuf[(size_t)1 * 2 * N];
-            o1[n] = L * 0.5f * w;   o1[N + n] = L * 0.5f * w;    // lateral izq
-            float* o2 = &mObjBuf[(size_t)2 * 2 * N];
-            o2[n] = R * 0.5f * w;   o2[N + n] = R * 0.5f * w;    // lateral der
-            float* o3 = &mObjBuf[(size_t)3 * 2 * N];
-            o3[n] = side * 0.6f * w; o3[N + n] = side * 0.6f * w; // ambiente
-        }
-
-        // Ganancias dinámicas ligadas al width
-        mObjects[1].gain = 0.50f * w;
-        mObjects[2].gain = 0.50f * w;
-        mObjects[3].gain = 0.35f * w;
-        mRenderer.setObjects(mObjects);
-
-        mRenderer.renderBlock(mObjBuf.data(), kUpmixObjects,
-                              mRenderL.data(), mRenderR.data(), N);
-
-        for (int n = 0; n < N; ++n) {
-            bufferLeft[n]  = mRenderL[n];
-            bufferRight[n] = mRenderR[n];
-        }
-    }
-
-    void applyOutputDsp(float* bufferLeft, float* bufferRight, size_t numFrames) {
-        const float alpha = 0.995f;
-        for (size_t i = 0; i < numFrames; ++i) {
-            float outL = bufferLeft[i];
-            float outR = bufferRight[i];
-            float satL = std::tanh(outL * mHarmonicGain);
-            float satR = std::tanh(outR * mHarmonicGain);
-            outL = 0.7f * outL + 0.3f * satL;
-            outR = 0.7f * outR + 0.3f * satR;
-            float maxPeak = std::max(std::abs(outL), std::abs(outR));
-            mTargetGain = (maxPeak > 0.95f) ? (0.95f / maxPeak) : 1.0f;
-            mCurrentGain = alpha * mCurrentGain + (1.0f - alpha) * mTargetGain;
-            bufferLeft[i] = std::clamp(outL * mCurrentGain, -1.0f, 1.0f);
-            bufferRight[i] = std::clamp(outR * mCurrentGain, -1.0f, 1.0f);
-        }
-    }
-};
+} // namespace Ivanna
