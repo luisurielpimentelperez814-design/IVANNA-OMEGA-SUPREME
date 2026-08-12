@@ -1,8 +1,6 @@
 {
-  "_deprecated_mirror_of": "magisk_module/update.json",
-  "_note": "No borrado (regla del proyecto), pero YA NO es la fuente de verdad — module.prop:updateJson fue repuntado a magisk_module/update.json (Foco #8, 2026-08-09). Mantener sincronizado manualmente hasta que se elimine en un release futuro si se confirma que nada más lo referencia.",
-  "version": "v2.1.0",
-  "versionCode": 2100,
+  "version": "v2.2.0",
+  "versionCode": 2200,
   "zipUrl": "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest/download/ivanna-omega-magisk.zip",
   "changelog": "https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/CHANGELOG.md"
 }

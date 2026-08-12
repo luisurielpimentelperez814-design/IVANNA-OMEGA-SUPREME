@@ -6,21 +6,23 @@
 
 # IVANNA OMEGA SUPREME
 
-### Motor de audio inmersivo, binaural y espacial de nivel de investigación para Android
+### Motor DSP system-wide con Volterra H2, optimización Riemanniana HRTF y EQ evolutivo para Android ARM64
 
 <br/>
 
 [![Build](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml/badge.svg)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
-[![API](https://img.shields.io/badge/API-26%2B-brightgreen.svg)](https://android-arsenal.com/api?level=26)
-[![NDK](https://img.shields.io/badge/NDK-25.1-blue.svg)](https://developer.android.com/ndk)
+[![API](https://img.shields.io/badge/API-28%2B-brightgreen.svg)](https://android-arsenal.com/api?level=28)
+[![NDK](https://img.shields.io/badge/NDK-26.1-blue.svg)](https://developer.android.com/ndk)
+[![Version](https://img.shields.io/badge/version-v2.2.0-gold.svg)](#)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Magisk](https://img.shields.io/badge/Magisk-20.4%2B-blueviolet.svg)](https://github.com/topjohnwu/Magisk)
 [![SOFA](https://img.shields.io/badge/HRTF-434%20datasets-orange.svg)](#hrtf--personalización)
 
 <br/>
 
-> **Lo que Dolby y Apple hacen con millones de dólares y hardware propietario.**
-> **IVANNA lo hace en cualquier Android rooteado.**
+> **Dolby usa hardware propietario y contratos OEM. Apple usa TrueDepth y Apple Silicon.**
+> **IVANNA usa algoritmos que ellos no tienen: Volterra H2, HRTF Riemanniano, EQ evolutivo.**
+> **En cualquier Android rooteado.**
 
 </div>
 
@@ -31,11 +33,13 @@
 IVANNA OMEGA SUPREME es un **motor DSP system-wide** que opera directamente dentro de AudioFlinger — el servidor de audio del kernel Android — vía Magisk. No es un ecualizador. No es un plugin de Spotify. Es una plataforma de procesamiento de audio de investigación con arquitectura de producción real:
 
 - **Insert effect en AudioFlinger**: procesa todo el audio del sistema, no solo una app
-- **Daemon en tiempo real** con `SCHED_FIFO` y prioridad de kernel
-- **HRTF medido** sobre 434 datasets de sujetos reales y maniquíes de laboratorio
-- **Control Plane cross-process** con memoria compartida y seqlock atómico
-- **Volterra H2 simétrico** para modelado no-lineal de segundo orden
-- **Algoritmo evolutivo** con fitness acoplado al audio real en tiempo de ejecución
+- **Daemon en tiempo real** con `SCHED_FIFO` prioridad 80 y backoff exponencial ante crashes
+- **HRTF personalizado** sobre 434 datasets — 214 sujetos reales para la métrica de Fisher Φ_SAF^∞
+- **Control Plane cross-process** con memoria mmap + seqlock atómico (zero-lock en hot path de audio)
+- **Volterra H2 simétrico** — modelado no-lineal de segundo orden ausente en cualquier producto consumer Android
+- **Algoritmo evolutivo** con fitness acoplado al audio real en tiempo de ejecución (energy × variance)
+- **ISO 226 calibrador** de igual-loudness integrado en la UI con sliders por banda
+- **Bark64 visualizador** espectral en tiempo real (64 bandas de Bark, FFT nativa)
 
 ---
 
@@ -236,15 +240,20 @@ OFF          → nadie procesa           | passthrough total
 
 | Capacidad | Dolby Atmos | Apple Spatial Audio | IVANNA OMEGA SUPREME |
 |---|:---:|:---:|:---:|
-| Insert en AudioFlinger (sistema) | ✅ OEM | ✅ Apple | ✅ Magisk |
-| HRTF medido en laboratorio | genérico | por cámara | 434 datasets + 214 sujetos |
-| Personalización HRTF | ❌ | cámara → individual | Riemanniano K=7 |
+| Insert en AudioFlinger (sistema) | ✅ OEM/HAL | ✅ Apple Silicon | ✅ Magisk (software) |
+| HRTF medido en laboratorio | genérico | cámara → individual | 434 datasets + 214 sujetos |
+| Personalización HRTF | ❌ | TrueDepth + foto oído | Riemanniano K=7 (feedback) |
+| Aceleración DSP hardware | ✅ Hexagon/Qualcomm | ✅ Apple Silicon | ❌ (soft; Hexagon experimental) |
+| Head tracking en tiempo real | algunos OEM | ✅ AirPods + sensor | ❌ (en hoja de ruta) |
 | Volterra H2 no-lineal | ❌ | ❌ | ✅ |
 | Motor evolutivo adaptativo | ❌ | ❌ | ✅ |
+| ISO 226 calibrador perceptual | ❌ | ❌ | ✅ |
 | Auto-preset por app | ❌ | ❌ | ✅ (MQA monitor) |
-| Control plane auditable | ❌ | ❌ | ✅ (SHM seqlock) |
+| Control plane auditable | ❌ | ❌ | ✅ (SHM seqlock + generation) |
 | Código abierto | ❌ | ❌ | ✅ |
-| Dispositivos compatibles | Solo OEM licenciados | Solo Apple | Cualquier Android root |
+| Dispositivos compatibles | Solo OEM licenciados | Solo Apple | Cualquier Android root ARM64 |
+
+> **Nota honesta**: Dolby Atmos y Apple Spatial Audio tienen ventajas reales de hardware que software puro no puede igualar en latencia y eficiencia energética. IVANNA compite en algoritmos, no en integración OEM.
 
 ---
 
@@ -252,9 +261,9 @@ OFF          → nadie procesa           | passthrough total
 
 ### Requisitos
 
-- Android 8.0+ (API 26+)
+- Android 9.0+ (API 28+, `minSdk = 28`)
 - Root via **Magisk 20.4+** o **KernelSU**
-- Dispositivo ARM64 (aarch64)
+- Dispositivo ARM64 (aarch64) — sin soporte x86/ARMv7
 
 ### Instalar el módulo
 
@@ -285,10 +294,12 @@ adb shell grep omega_daemon_socket /proc/net/unix
 
 | Job | Plataforma | Estado |
 |---|---|---|
-| Build APK & Native Binaries | Ubuntu (NDK 25.1, ARM64) | [![Build](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml/badge.svg)](../../actions) |
-| DSP Native Tests (CTest) | Ubuntu host (g++ C++17) | [![Tests](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml/badge.svg)](../../actions) |
+| Build APK & Native Binaries | Ubuntu (NDK 26.1, ARM64) | [![Build](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml/badge.svg)](../../actions) |
+| DSP Native Tests (CTest / GTest 1.14) | Ubuntu host (g++ C++17) | [![Tests](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml/badge.svg)](../../actions) |
+| ELF gate (PIE, AArch64, INTERP, RELRO) | llvm-readelf NDK 26.1 | en build job |
+| SBOM + Cosign keyless + SLSA L2 | sigstore.dev | en CI |
 
-Los tests host-side validan: `SeqlockBus`, `OmegaDspSnapshot` CRC, `OmegaControlBus` publish/read, y el contrato JSON del CommandServer. Los tests ARM64 device-side están en la hoja de ruta (ADR-0001).
+**7 suites de test** que validan en host: `SeqlockBus`, `OmegaDspSnapshot` CRC, `OmegaControlBus` publish/read round-trip, estabilidad gammatone, piso numérico sin denormales, métricas de calidad de audio (SNR/THD), y regresión de tuning DSP. Los tests ARM64 device-side están en la hoja de ruta (ADR-0001).
 
 ---
 
