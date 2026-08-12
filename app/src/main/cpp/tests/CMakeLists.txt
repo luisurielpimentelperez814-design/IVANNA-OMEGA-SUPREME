@@ -210,3 +210,10 @@ set_tests_properties(test_audio_bus PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON
 # - SafetyLimiter: gainReduction se almacena en dB (Parche 6)
 # - Compressor: makeup compensa runtimeAmount_ (Parche 7)
 ivanna_add_test(test_regression_tuning)
+
+# ── Audio Quality Metrics: SNR · THD · Latencia · Piso numérico ──────────────
+# Tests que miden propiedades de calidad del audio procesado, no solo
+# que el código no crasha. Umbrales basados en los valores de IvannaLabMonitor:
+#   SNR > 90 dB en bypass, THD < 10% en clipping deliberado,
+#   latencia < 1ms por bloque de 512 frames, 0 NaN en 1000 bloques.
+ivanna_add_test(test_audio_quality_metrics)
