@@ -684,6 +684,30 @@ void CommandServer::acceptLoop() {
         ssize_t nbytes = recv(clientFd, recvBuf, sizeof(recvBuf) - 1, 0);
 
         if (nbytes > 0) {
+            // Drenar el mensaje completo con un timeout corto tras el primer byte.
+            // El primer recv() usa SO_RCVTIMEO=150ms (seteado antes del accept).
+            // Una vez que llegó algo, el resto debe llegar casi de inmediato —
+            // usamos 20ms para drenar sin bloquear el loop.
+            struct timeval cont_tv { .tv_sec = 0, .tv_usec = 20000 };  // 20ms
+            setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO,
+                       reinterpret_cast<const char*>(&cont_tv), sizeof(cont_tv));
+            const bool is_json = (recvBuf[strspn(recvBuf, " \t\r\n")] == '{');
+            while (nbytes < (ssize_t)sizeof(recvBuf) - 1) {
+                recvBuf[nbytes] = '\0';
+                if (!is_json && memchr(recvBuf, '\n', (size_t)nbytes)) break;
+                if (is_json) {
+                    int depth = 0; bool closed = false;
+                    for (ssize_t i = 0; i < nbytes; ++i) {
+                        if (recvBuf[i] == '{') depth++;
+                        else if (recvBuf[i] == '}' && --depth == 0) { closed = true; break; }
+                    }
+                    if (closed) break;
+                }
+                ssize_t more = recv(clientFd, recvBuf + nbytes,
+                                    sizeof(recvBuf) - 1 - (size_t)nbytes, 0);
+                if (more <= 0) break;
+                nbytes += more;
+            }
             recvBuf[nbytes] = '\0';
 
             // ── Detección de protocolo: JSON ('{') vs texto plano ────────────
