@@ -86,11 +86,15 @@ fi
 HRTF_ASSET="$MODDIR/system/etc/ivanna_omega/hrtf_dataset.ihr1"
 HRTF_DEST="/data/adb/ivanna_omega/hrtf_dataset.ihr1"
 if [ -f "$HRTF_ASSET" ]; then
-    if [ ! -f "$HRTF_DEST" ]; then
-        cp -f "$HRTF_ASSET" "$HRTF_DEST"
-        chmod 644 "$HRTF_DEST"
-        echo "[$(date)] hrtf_dataset.ihr1 restaurado → $HRTF_DEST ($(stat -c%s "$HRTF_ASSET" 2>/dev/null || echo ?) bytes)" >> "$LOGFILE"
-    fi
+    # FIX: antes se copiaba solo si faltaba ([ ! -f ]), igual que SAF_model.
+    # Con ese guard, una actualización del módulo con dataset HRTF nuevo NUNCA
+    # refrescaba el archivo en /data/adb/ para usuarios ya instalados — corrían
+    # siempre con el dataset de la primera instalación aunque el módulo fuera
+    # más reciente. Ahora siempre se sobreescribe (como SAF_model.json) para
+    # garantizar consistencia entre el binario del módulo y los assets en /data/.
+    cp -f "$HRTF_ASSET" "$HRTF_DEST"
+    chmod 644 "$HRTF_DEST"
+    echo "[$(date)] hrtf_dataset.ihr1 refrescado → $HRTF_DEST ($(stat -c%s "$HRTF_ASSET" 2>/dev/null || echo ?) bytes)" >> "$LOGFILE"
 else
     echo "[$(date)] WARN: hrtf_dataset.ihr1 NO encontrado en $HRTF_ASSET — HRTF usará fallback sintético" >> "$LOGFILE"
 fi
