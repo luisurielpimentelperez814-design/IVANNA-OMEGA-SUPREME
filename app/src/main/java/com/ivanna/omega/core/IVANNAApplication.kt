@@ -7,6 +7,7 @@ import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaDaemon
 import com.ivanna.omega.audio.Iso226Calibrator
+import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
