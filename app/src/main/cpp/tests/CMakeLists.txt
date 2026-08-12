@@ -10,13 +10,14 @@ option(IVANNA_TEST_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
 find_package(Threads REQUIRED)
 
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
-FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-FetchContent_MakeAvailable(googletest)
+# ── GoogleTest vendoreado (cero red en CI) ────────────────────────────────────
+# FetchContent de https://github.com/google/googletest/archive/v1.14.0.zip
+# fallaba en CI por timeouts de red, rate-limiting de GitHub y DNS flaky.
+# Cada fallo del job de tests bloqueaba el build de APK completo via needs:.
+# GTest 1.14.0 está ahora en third_party/googletest/ — determinista y offline.
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+set(BUILD_GMOCK   ON  CACHE BOOL "" FORCE)
+add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 
 enable_testing()
 include(GoogleTest)
