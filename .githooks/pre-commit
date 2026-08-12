@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
-"$ROOT/scripts/run_ctest.sh"
+# Pre-commit: ejecutar chequeos locales
+echo "Running pre-commit checks..."
+if [ -f validation/scripts/run_local_checks.sh ]; then
+  bash validation/scripts/run_local_checks.sh
+fi

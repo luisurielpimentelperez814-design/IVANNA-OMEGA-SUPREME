@@ -1,0 +1,18 @@
+site_name: IVANNA OMEGA SUPREME Documentation
+site_description: Plataforma de audio Android de alto rendimiento
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.highlight
+    - content.code.copy
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - admonition
+nav:
+  - Home: index.md
+  - Arquitectura: architecture.md
+  - Desarrollo: development.md
+  - API: api.md

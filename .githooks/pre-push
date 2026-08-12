@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Pre-push: ejecutar tests rápidos
+echo "Running pre-push checks..."
+if [ -f gradlew ]; then
+  ./gradlew testDebugUnitTest --quiet || exit 1
+fi
+exit 0
