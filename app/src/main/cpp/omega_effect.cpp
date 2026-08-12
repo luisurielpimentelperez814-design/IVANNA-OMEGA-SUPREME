@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <atomic>
+#include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
+#include <cmath>
 
 #define LOG_TAG "IvannaOmegaEffect"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -19,6 +21,78 @@
 #ifndef LOGW
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #endif
+
+// ── AUDIT FIX #4 (plano de control) ──────────────────────────────────────────
+// EFFECT_CMD_SET_PARAM era un no-op: cualquier android.media.audiofx.
+// AudioEffect.setParameter() enviado por la app se descartaba en silencio.
+// El bus cross-process (OmegaControlBus, seqlock SHM) YA existía y YA está
+// enganchado a omega_process/omega_apply_snapshot — pero solo lo alimentaba
+// el daemon (command_server.publish). En un dispositivo sin root ni daemon,
+// el bus quedaba mudo y omega_process corría con los defaults del core.
+//
+// Este bloque cierra el ciclo SIN romper nada:
+//   1. El efecto abre un writer del bus (path per-proceso, no colisiona con
+//      el del daemon) SOLO si openReader() del daemon falló, evitando dos
+//      writers concurrentes sobre la misma SHM.
+//   2. Cuando llega SET_PARAM, el efecto:
+//        a) Aplica el parámetro directamente al ctx->fusionCore (no se
+//           pierde antes del próximo readLatest()).
+//        b) Publica un OmegaDspSnapshot al bus (writer local, o al daemon
+//           via bus si el daemon corre — en ese caso la app debería usar
+//           su LocalSocket, pero si por lo que sea llega aquí, aplicamos
+//           local y ya está).
+//   3. IDs de parámetro: rango proprietary 0x00010000+, nunca colisiona
+//      con IDs AOSP reservados (0..0x00FFFFFF están reservados pero AOSP
+//      no reclama subrangos concretos para efectos custom con UUID propio).
+// ─────────────────────────────────────────────────────────────────────────────
+enum omega_effect_param_id : uint32_t {
+    OMEGA_PARAM_INTENSITY           = 0x00010001, // f32 [0..1]
+    OMEGA_PARAM_SPATIAL_WIDTH       = 0x00010002, // f32 [0..3]
+    OMEGA_PARAM_HARMONIC_GAIN       = 0x00010003, // f32 [0..2]
+    OMEGA_PARAM_COMPRESSOR_THRESHOLD= 0x00010004, // f32 (dB, <0)
+    OMEGA_PARAM_COMPRESSOR_AMOUNT   = 0x00010005, // f32 [0..1]
+    OMEGA_PARAM_LOUDNESS_TARGET     = 0x00010006, // f32 (LUFS)
+    OMEGA_PARAM_ANTI_DOLBY          = 0x00010007, // f32 [0..1]
+    OMEGA_PARAM_HIGH_CUT_HZ         = 0x00010008, // f32 (Hz)
+    OMEGA_PARAM_BASS_BOOST_DB       = 0x00010009, // f32 (dB)
+    OMEGA_PARAM_DIALOG_BOOST_DB     = 0x0001000A, // f32 (dB)
+    OMEGA_PARAM_WIDENER_MULT        = 0x0001000B, // f32 [0..2]
+    OMEGA_PARAM_ROUTE_MODE          = 0x0001000C, // i32 (RouteMode)
+    OMEGA_PARAM_MASTER_BYPASS       = 0x0001000D, // i32 (0/1)
+};
+
+// Parseo AOSP effect_param_t: | u32 psize | u32 vsize | u8 param[psize] | pad4 | u8 value[vsize] |
+// Sin structs nuevos, sin depender de headers que no tengamos.
+static inline bool omega_param_read_id(const void* pCmdData, uint32_t cmdSize,
+                                       uint32_t& outId, uint32_t& outVsize,
+                                       const uint8_t*& outValPtr) noexcept {
+    if (!pCmdData) return false;
+    if (cmdSize < (uint32_t)(sizeof(uint32_t) * 3)) return false;
+    const uint8_t* p = static_cast<const uint8_t*>(pCmdData);
+    uint32_t psize, vsize;
+    memcpy(&psize, p + 0,             sizeof(uint32_t));
+    memcpy(&vsize, p + sizeof(uint32_t), sizeof(uint32_t));
+    if (psize != sizeof(uint32_t) || vsize == 0) return false;
+    const size_t hdr     = sizeof(uint32_t) * 2 + psize;
+    const size_t val_off = (hdr + 3u) & ~size_t(3u);
+    if (val_off + vsize > cmdSize) return false;
+    memcpy(&outId, p + sizeof(uint32_t) * 2, sizeof(uint32_t));
+    outVsize  = vsize;
+    outValPtr = p + val_off;
+    return true;
+}
+
+static inline bool omega_param_val_f32(const uint8_t* v, uint32_t vsize, float& out) noexcept {
+    if (vsize != sizeof(float)) return false;
+    memcpy(&out, v, sizeof(float));
+    return std::isfinite(out);
+}
+
+static inline bool omega_param_val_i32(const uint8_t* v, uint32_t vsize, int32_t& out) noexcept {
+    if (vsize != sizeof(int32_t)) return false;
+    memcpy(&out, v, sizeof(int32_t));
+    return true;
+}
 
 // EXPURGO (auditoría 2026-08-12): eliminados los 3 JNI fantasma
 //   nativeInitDSP / nativeSetSpatialWidthDirect / nativeSetHarmonicGain
@@ -100,7 +174,27 @@ struct omega_effect_context_t {
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
+    // AUDIT FIX #4 (plano de control): estado del writer local para
+    // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
+    // Snapshot que se publica al recibir SET_PARAM: se conserva entre
+    // llamadas para no perder los valores ya recibidos.
+    bool                     localWriterOpen;
+    ivanna::OmegaDspSnapshot pendingSnap;
 };
+
+// AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
+// /data/adb/ivanna_omega/... — path root-only. El writer local usa una
+// región propia por-proceso (audioserver), NUNCA la del daemon: dos writers
+// concurrentes romperían el seqlock. Solo se abre si openReader() falló.
+static constexpr const char* OMEGA_LOCAL_BUS_PATH =
+    "/data/local/tmp/omega_effect_ctrl_local";
+
+// Publica ctx->pendingSnap al bus local (writer local del efecto), o aplica
+// directo si el writer aún no está abierto. Idempotente: si el reader
+// (daemon) está activo y publica su propio snapshot después, ambos
+// terminan aplicando la misma familia de parámetros — el último gana, que
+// es el mismo comportamiento que UI -> daemon -> SHM.
+static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept;
 
 // Capacidad máxima esperada por bloque. AudioFlinger normalmente pasa
 // bloques entre 128 y 2048 frames; se reserva un margen holgado para no
@@ -398,7 +492,108 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             ctx->enabled = false;
             break;
         case EFFECT_CMD_SET_PARAM:
-        case EFFECT_CMD_SET_PARAM_COMMIT:
+        case EFFECT_CMD_SET_PARAM_COMMIT: {
+            // AUDIT FIX #4: enrutar al UnifiedControlBus existente (SHM).
+            // Camino cerrado: parseo AOSP -> pendingSnap -> aplicar directo
+            // a ctx->fusionCore (nunca se pierde el parámetro) -> publish
+            // al bus local (o no-op si daemon activo, ya aplicó). Sin IPC
+            // nuevo, sin degradar el path del daemon.
+            if (!ctx) break;
+            uint32_t id = 0, vsize = 0;
+            const uint8_t* val = nullptr;
+            if (!omega_param_read_id(pCmdData, cmdSize, id, vsize, val)) {
+                LOGW("SET_PARAM: layout inválido (cmdSize=%u)", cmdSize);
+                break;
+            }
+            ivanna::OmegaDspSnapshot& s = ctx->pendingSnap;
+            // Semilla del snapshot en la primera invocación: preserva
+            // magic/version/route por defecto (SYSTEM_WIDE) para que
+            // omega_apply_snapshot NO lo rechace como "otra ruta".
+            if (s.magic != OMEGA_CTRL_MAGIC) {
+                s = ivanna::OmegaDspSnapshot::makeDefault();
+            }
+            bool touched = false;
+            switch (id) {
+                case OMEGA_PARAM_INTENSITY: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.intensity = std::clamp(v, 0.f, 1.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_SPATIAL_WIDTH: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.spatial_width = std::clamp(v, 0.f, 3.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_HARMONIC_GAIN: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.harmonic_gain = std::clamp(v, 0.f, 2.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_COMPRESSOR_THRESHOLD: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        // dB negativos; clamp a rango razonable.
+                        s.compressor = std::clamp(v, -60.f, 0.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_COMPRESSOR_AMOUNT: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.comp_amount = std::clamp(v, 0.f, 1.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_LOUDNESS_TARGET: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.loudness_target = std::clamp(v, -36.f, -6.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_ANTI_DOLBY: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.anti_dolby = std::clamp(v, 0.f, 1.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_HIGH_CUT_HZ: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.high_cut_hz = std::clamp(v, 0.f, 24000.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_BASS_BOOST_DB: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.bass_boost_db = std::clamp(v, -12.f, 12.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_DIALOG_BOOST_DB: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.dialog_boost_db = std::clamp(v, -12.f, 12.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_WIDENER_MULT: {
+                    float v; if (omega_param_val_f32(val, vsize, v)) {
+                        s.widener_mult = std::clamp(v, 0.f, 2.f); touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_ROUTE_MODE: {
+                    int32_t v; if (omega_param_val_i32(val, vsize, v)) {
+                        if (v < 0) v = 0; if (v > 2) v = 2;
+                        s.active_route = v; touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_MASTER_BYPASS: {
+                    int32_t v; if (omega_param_val_i32(val, vsize, v)) {
+                        // bit 0 del campo flags: bypass global.
+                        if (v) s.flags |= 0x1u;
+                        else   s.flags &= ~0x1u;
+                        touched = true;
+                    }
+                } break;
+                default:
+                    // ID desconocido → no-op explícito (no toca el snapshot,
+                    // no envenena el bus). Antes esto ni se logueaba.
+                    LOGW("SET_PARAM ignorado: id=0x%08x vsize=%u", id, vsize);
+                    break;
+            }
+            if (touched) {
+                omega_local_publish_or_apply(ctx);
+            }
+        } break;
         case EFFECT_CMD_GET_PARAM:
         case EFFECT_CMD_SET_DEVICE:
         case EFFECT_CMD_SET_VOLUME:
@@ -457,8 +652,42 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtCapacity = 0;
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
+    ctx->localWriterOpen = false;  // AUDIT FIX #4: writer local se abre lazy
+    // pendingSnap queda con magic=0 hasta el primer SET_PARAM (se sembrará
+    // con makeDefault() ahí).
+    memset(&ctx->pendingSnap, 0, sizeof(ctx->pendingSnap));
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
+}
+
+// AUDIT FIX #4: implementación del writer local + apply directo. Se pone
+// aquí (post-declaración de ctx) para no reordenar los símbolos AELI.
+static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept {
+    if (!ctx) return;
+    // (a) Apply directo al DSP local — nunca se pierde el parámetro.
+    if (ctx->fusionCore) {
+        omega_apply_snapshot(ctx->fusionCore, ctx->pendingSnap);
+    }
+    // (b) Publicar al bus SHM para que otras instancias del efecto en el
+    //     mismo proceso audioserver (múltiples sesiones AudioFlinger) vean
+    //     el cambio en el próximo readLatest(). Solo abrimos writer local
+    //     si el reader del daemon NO está activo — dos writers sobre el
+    //     mismo SHM romperían el seqlock.
+    if (ctx->ctrlBusOpen) {
+        // Daemon activo → él es el writer autoritativo. El apply directo
+        // de (a) es suficiente hasta el siguiente publish() del daemon.
+        return;
+    }
+    if (!ctx->localWriterOpen) {
+        ctx->localWriterOpen =
+            ivanna::effectControlBus().openWriter(OMEGA_LOCAL_BUS_PATH);
+        if (ctx->localWriterOpen) {
+            LOGI("OmegaControlBus local writer opened at %s", OMEGA_LOCAL_BUS_PATH);
+        }
+    }
+    if (ctx->localWriterOpen) {
+        ivanna::effectControlBus().publish(ctx->pendingSnap);
+    }
 }
 
 static int32_t omega_release_effect(effect_handle_t handle) {
