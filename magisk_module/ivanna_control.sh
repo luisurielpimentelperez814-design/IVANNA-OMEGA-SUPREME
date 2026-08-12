@@ -35,15 +35,25 @@ socket_alive() {
 
 have_nc() { command -v nc >/dev/null 2>&1; }
 
-# Detecta si el nc disponible soporta AF_UNIX abstract. Toybox nc y el
-# busybox nc antiguo NO. Se hace un probe rápido con timeout duro para
-# no colgar el CLI si falla.
+# Cache del resultado de nc_supports_abstract() — se calcula una sola
+# vez por invocación del script (evita la doble conexión al daemon que
+# antes ocurría en cada send_command: 1x probe + 1x comando real).
+_NC_ABS_TESTED=0
+_NC_ABS_OK=0
+
+# Detecta si el nc disponible soporta AF_UNIX abstract namespace.
+# Usa PING (comando texto válido desde v2.1) al socket ya conocido vivo.
+# Resultado cacheado: el probe solo conecta UNA vez por invocación del script.
 nc_supports_abstract() {
-    have_nc || return 1
-    # -U es AF_UNIX; -N cierra en EOF (busybox moderno). Se prueba sobre
-    # el socket real ya conocido vivo; si nc no acepta el argumento
-    # abstract, timeout expira o retorna != 0 inmediato.
-    timeout 1 sh -c "echo PING | nc -U '$SOCKET_ABS'" >/dev/null 2>&1
+    if [ "$_NC_ABS_TESTED" -eq 1 ]; then
+        [ "$_NC_ABS_OK" -eq 1 ]; return
+    fi
+    _NC_ABS_TESTED=1
+    have_nc || { _NC_ABS_OK=0; return 1; }
+    if echo "PING" | timeout 1 nc -U "$SOCKET_ABS" >/dev/null 2>&1; then
+        _NC_ABS_OK=1; return 0
+    fi
+    _NC_ABS_OK=0; return 1
 }
 
 send_command() {
