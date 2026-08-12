@@ -18,40 +18,23 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #endif
 
-static IvannaFusionCore* g_fusionCore = nullptr;
-
-extern "C" {
-
-// NOTA (audit fix): g_fusionCore se mantiene sólo para el canal legacy JNI
-// (IvannaNativeLib.nativeInitDSP/nativeSetSpatialWidth/nativeSetHarmonicGain)
-// que la UI usa como "controlador global" fuera del pipeline AudioFlinger.
-// El pipeline AudioFlinger real (omega_process) YA NO lo toca — cada
-// instancia usa ctx->fusionCore.
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv* env, jclass clazz, jint sampleRate) {
-    if (g_fusionCore != nullptr) {
-        delete g_fusionCore;
-    }
-    g_fusionCore = new IvannaFusionCore(static_cast<float>(sampleRate));
-    g_fusionCore->initSpatial(static_cast<float>(sampleRate), 4096);
-    LOGI("IvannaFusionCore initialized at %d Hz (spatial renderer active)", sampleRate);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(JNIEnv* env, jclass clazz, jfloat width) {
-    if (g_fusionCore) {
-        g_fusionCore->setSpatialWidth(width);
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv* env, jclass clazz, jfloat gain) {
-    if (g_fusionCore) {
-        g_fusionCore->setHarmonicGain(gain);
-    }
-}
-
-}
+// EXPURGO (auditoría 2026-08-12): eliminados los 3 JNI fantasma
+//   nativeInitDSP / nativeSetSpatialWidthDirect / nativeSetHarmonicGain
+// y su singleton g_fusionCore.
+//
+// Por qué eran dead code:
+//   Este archivo compila a libomega_effect.so (módulo AudioFlinger cargado
+//   por audioserver vía dlopen, SIN máquina virtual ART). Los símbolos
+//   Java_com_ivanna_omega_core_IvannaNativeLib_* nunca pueden resolverse
+//   aquí — la app los llama contra libivanna_omega.so, donde YA existen
+//   las definiciones reales:
+//     - nativeInitDSP               → jni/ivanna_omega_jni.cpp:867
+//     - nativeSetSpatialWidthDirect → jni/ivanna_omega_jni.cpp:1171
+//     - nativeSetHarmonicGain       → jni/ivanna_omega_jni.cpp:1139
+//   El pipeline real usa IvannaFusionCore PER-INSTANCE (ctx->fusionCore,
+//   líneas 108/129/167/251/388) — nunca el global que estos JNI mantenían.
+//   Efecto: -31 líneas, tabla de símbolos de libomega_effect.so limpia.
+//   No se toca <jni.h> (otros símbolos del archivo lo pueden requerir).
 
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -414,13 +397,18 @@ static int32_t omega_get_descriptor_lib(const effect_uuid_t *uuid,
 }
 
 // ── Cable SAF → FusionCore ────────────────────────────────────────────────────
-// Llamada desde SaFJniBridge.cpp tras cada feedFeedback() para propagar
-// el vector latente q_t del optimizador Φ_SAF^∞ al ObjectRenderer activo.
-// No es static para que SaFJniBridge pueda declararla extern.
-// Si el engine aún no fue inicializado (g_fusionCore == nullptr), es no-op.
-extern "C" void ivanna_saf_apply_latent(const float q[7]) {
-    if (g_fusionCore) g_fusionCore->setSafLatentParams(q);
-}
+// EXPURGO (auditoría 2026-08-12, continuación del expurgo JNI):
+// ivanna_saf_apply_latent() también era fantasma en este target.
+//   * La definición real la provee saf_latent_bridge.cpp:35 en
+//     libivanna_omega.so (proceso app), que publica q[7] en un
+//     snapshot atómico con seqlock-lite (ivanna_saf_get_latent_snapshot).
+//   * Esta copia vivía en libomega_effect.so (proceso audioserver,
+//     sin ART) — nunca fue enlazada por SaFJniBridge (ese TU compila
+//     al target app, no a éste).
+//   * Además dependía del singleton g_fusionCore que el expurgo JNI
+//     anterior eliminó → quedó rota por construcción.
+// El push SAF→ObjectRenderer inter-proceso sigue siendo alcance
+// separado (documentado en saf_latent_bridge.cpp).
 
 /* ── SÍMBOLO "AELI" — el que audioserver busca con dlsym() ───────────────── */
 extern "C" __attribute__((visibility("default"), used))
