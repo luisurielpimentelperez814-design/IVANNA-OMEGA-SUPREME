@@ -48,12 +48,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Audio foreground service -->
-        <service
-            android:name=".audio.AudioForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback"/>
-
         <!-- Playback capture service (MediaProjection) -->
         <service
             android:name=".audio.PlaybackCaptureService"

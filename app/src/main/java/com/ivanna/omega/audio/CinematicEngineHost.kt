@@ -11,7 +11,7 @@ import com.ivanna.omega.ai.AntiDolbyCrnnClassifier
  * con CRNN pero nadie lo llamaba desde el hilo de audio — AntiDolbyController
  * arrancaba el engine (enableAntiDolby → eng.start()) pero como owner era una
  * instancia local de un composable (DashboardScreen), y AudioPipeline (el
- * hot-path real de audio, en AudioForegroundService) no tenía forma de
+ * hot-path real de audio, en PlaybackCaptureService) no tenía forma de
  * alcanzarla. latestBuf nunca se actualizaba → el hilo clasificador dormía
  * cada 50ms sin clasificar nada real.
  *
