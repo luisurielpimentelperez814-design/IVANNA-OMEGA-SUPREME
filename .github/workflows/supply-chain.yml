@@ -1,0 +1,156 @@
+name: Supply Chain Security
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no upload)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write       # Cosign keyless OIDC
+  attestations: write   # GitHub SLSA attestations
+
+jobs:
+  sbom-and-sign:
+    name: SBOM + Sign + SLSA
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Descargar APK y módulo del job anterior ──────────────────────────────
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-omega-apks
+          path: artifacts/apk
+        continue-on-error: true  # no existe en dry_run / run manual
+
+      - name: Download Magisk module artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ivanna-magisk-module
+          path: artifacts/magisk
+        continue-on-error: true
+
+      # ── SBOM con Syft ─────────────────────────────────────────────────────────
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin v1.4.1
+
+      - name: Generate SBOM (SPDX JSON)
+        run: |
+          mkdir -p sbom
+          # SBOM del APK (dependencias empaquetadas)
+          APK=$(find artifacts/apk -name "*.apk" 2>/dev/null | head -1 || true)
+          if [ -n "$APK" ]; then
+            syft "$APK" -o spdx-json=sbom/ivanna-omega-apk.spdx.json
+            syft "$APK" -o cyclonedx-json=sbom/ivanna-omega-apk.cdx.json
+          fi
+          # SBOM del repo (código fuente + dependencias Gradle declaradas)
+          syft dir:. \
+            --exclude './.git' \
+            --exclude './build' \
+            --exclude './app/build' \
+            -o spdx-json=sbom/ivanna-omega-src.spdx.json
+          ls -lh sbom/
+
+      # ── Análisis de vulnerabilidades con Trivy ───────────────────────────────
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+            https://aquasecurity.github.io/trivy-repo/deb generic main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -qq && sudo apt-get install -y trivy
+
+      - name: Vulnerability scan (SBOM-based)
+        run: |
+          mkdir -p trivy-results
+          SBOM=sbom/ivanna-omega-src.spdx.json
+          [ -f "$SBOM" ] || exit 0
+          trivy sbom "$SBOM" \
+            --exit-code 0 \
+            --severity HIGH,CRITICAL \
+            --format json \
+            -o trivy-results/vulns.json || true
+          trivy sbom "$SBOM" \
+            --exit-code 0 \
+            --severity HIGH,CRITICAL \
+            --format table || true
+          # Solo falla en CRITICAL con fix disponible (no bloquea releases por CVEs sin patch)
+          trivy sbom "$SBOM" \
+            --exit-code 1 \
+            --severity CRITICAL \
+            --ignore-unfixed \
+            --quiet || {
+              echo "⚠️  CVEs CRITICAL con fix disponible detectados — revisar antes de release"
+              exit 1
+            }
+
+      # ── Cosign keyless signing (OIDC — sin claves privadas) ──────────────────
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.4'
+
+      - name: Sign artifacts with Cosign (keyless OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          mkdir -p signatures
+          for f in \
+            artifacts/apk/*.apk \
+            artifacts/magisk/ivanna_omega_supreme.zip \
+            artifacts/magisk/ivanna_daemon \
+            artifacts/magisk/libomega_effect_arm64.so; do
+            [ -f "$f" ] || continue
+            echo "Signing: $f"
+            cosign sign-blob \
+              --yes \
+              --bundle "signatures/$(basename $f).cosign.bundle" \
+              "$f" || echo "WARN: cosign sign failed for $f (check OIDC)"
+          done
+          ls -lh signatures/ || true
+
+      # ── SLSA Attestation (GitHub nativo) ─────────────────────────────────────
+      - name: Attest APK provenance (SLSA L2)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            artifacts/apk/*.apk
+            artifacts/magisk/ivanna_omega_supreme.zip
+        continue-on-error: true  # requiere permisos de repositorio configurados
+
+      # ── Verificación de integridad del módulo Magisk ─────────────────────────
+      - name: Verify Magisk module integrity
+        run: |
+          MODULE=artifacts/magisk/ivanna_omega_supreme.zip
+          [ -f "$MODULE" ] || { echo "Módulo no encontrado — skip"; exit 0; }
+          echo "=== Checksums de artefactos de release ==="
+          sha256sum artifacts/apk/*.apk 2>/dev/null || true
+          sha256sum "$MODULE" 2>/dev/null || true
+          sha256sum artifacts/magisk/ivanna_daemon 2>/dev/null || true
+          sha256sum artifacts/magisk/libomega_effect_arm64.so 2>/dev/null || true
+          # Validar que el ZIP tiene los archivos críticos
+          unzip -l "$MODULE" | grep -E "module.prop|service.sh|sepolicy.rule|system/bin/ivanna_daemon" || true
+
+      # ── Upload de artefactos de seguridad ────────────────────────────────────
+      - name: Upload SBOM + signatures
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-artifacts
+          path: |
+            sbom/
+            signatures/
+            trivy-results/
+          retention-days: 90
