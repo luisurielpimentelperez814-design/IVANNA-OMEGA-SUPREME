@@ -47,6 +47,7 @@ object IvannaSpatialNative {
     // upmixer (defaults o custom vía setStemPosition) hacia la lista de
     // objetos activos del renderer.
     @JvmStatic external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
+    @JvmStatic external fun nativeObjectRendererSetHrtfSubject(handle: Long, subject: String)
 
     // NeuralUpmixer
     @JvmStatic external fun nativeUpmixerCreate(modelPath: String, sampleRate: Float, blockSize: Int): Long

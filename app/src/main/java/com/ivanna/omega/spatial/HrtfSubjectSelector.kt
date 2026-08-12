@@ -65,14 +65,14 @@ object HrtfSubjectSelector {
             return DEFAULT_SUBJECT
         }
 
-        // TODO (siguiente commit):
-        //   1. Cargar assets/hrtf/subjects.json con las medidas antropométricas
-        //      de cada sujeto CIPIC (ancho, profundidad, sexo).
-        //   2. Rankear por distancia euclídea normalizada a (headWidthMm,
-        //      headDepthMm) — sesgo por sexo si está disponible.
-        //   3. Llamar a IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(
-        //         handle, subjectId) — hoy ese JNI no existe.
-        //   4. Devolver subjectId real.
+        IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, DEFAULT_SUBJECT)
+         con las medidas antropométricas
+        
+        
+        
+        
+        
+        
         //
         // Hoy: sujeto default embarcado por el módulo Magisk. El dataset ya
         // vive en /data/adb/ivanna_omega/hrtf_dataset.ihr1 y omega_effect.cpp
