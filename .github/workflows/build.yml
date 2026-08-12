@@ -333,8 +333,22 @@ jobs:
           echo "=== Tipo de binario ==="
           "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN" || { echo "ERROR: no PIE"; exit 1; }
           echo "=== Intérprete ELF ==="
-          "$READELF" -l ivanna_daemon | grep -qi "interp" || { echo "ERROR: sin INTERP"; exit 1; }
-          "$READELF" -l ivanna_daemon | grep -i "interp" || true
+          # FIX: `readelf -l | grep` falla cuando readelf emite warnings a stderr
+          # bajo set -e — el pipe muere antes de que grep vea nada y el gate
+          # rechaza un binario válido. Solución: capturar stdout en una variable
+          # (2>/dev/null || true) y luego grep sobre ella.
+          # Check secundario con -p .interp: más directo y no depende del formato
+          # de la tabla de segmentos (llvm-readelf vs GNU readelf difieren aquí).
+          SEGS=$("$READELF" -l ivanna_daemon 2>/dev/null || true)
+          echo "$SEGS" | grep -qi "interp" || {
+            echo "ERROR: sin INTERP en readelf -l — output completo:"
+            echo "$SEGS"
+            exit 1
+          }
+          # Verificación directa del string del intérprete via -p .interp
+          "$READELF" -p .interp ivanna_daemon 2>/dev/null | grep -q "linker64" || \
+            echo "WARN: -p .interp no confirmó /system/bin/linker64 (no fatal si -l lo detectó)"
+          echo "$SEGS" | grep -i "interp" || true
 
           echo "=== Hardening: daemon ==="
           "$READELF" -h ivanna_daemon | grep "Type:" || echo "WARN: no se pudo imprimir Type: (informativo)"
