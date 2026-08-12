@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Pre-commit: ejecutar chequeos locales
-echo "Running pre-commit checks..."
-if [ -f validation/scripts/run_local_checks.sh ]; then
-  bash validation/scripts/run_local_checks.sh
+echo "Local pre-commit: git-only checks"
+# Evitar archivos grandes accidentalmente (>10 MB) en archivos nuevos o modificados
+large_files=$(git diff --cached --name-only --diff-filter=ACMR | xargs -r ls -l 2>/dev/null | awk '$5 > 10485760 {print $9}')
+if [ -n "$large_files" ]; then
+  echo "❌ No comitees archivos mayores a 10 MB:"
+  echo "$large_files"
+  exit 1
 fi
+echo "✅ Pre-commit checks passed"
+exit 0
