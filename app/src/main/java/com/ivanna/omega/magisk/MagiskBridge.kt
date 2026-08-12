@@ -26,8 +26,7 @@ import java.io.File
  *     en Namespace.ABSTRACT contra "omega_daemon_socket", igual que
  *     hacen OmegaEngineBridge.probeSocket() y OmegaEngineBridge.sendCommand().
  *   - sendCommand() escribe directamente al LocalSocket sin invocar `su`
- *     ni `nc`, en abstract namespace. Fallback a /data/pf/pf.sock por
- *     filesystem si el abstract no responde.
+ *     ni `nc`, en abstract namespace.
  *   - Lectura de props sin root (SystemProperties reflection) se mantiene.
  *   - Cache de estados anti-thrashing se mantiene.
  */
@@ -36,7 +35,6 @@ object MagiskBridge {
     private const val TAG = "IVANNA-MagiskBridge"
 
     private const val SOCKET_OMEGA = "omega_daemon_socket"
-    private const val SOCKET_LEGACY = "/data/pf/pf.sock"
 
     private const val PROP_ACTIVE = "persist.ivanna.magisk_active"
     private const val PROP_VERSION = "persist.ivanna.version"
@@ -107,13 +105,11 @@ object MagiskBridge {
 
     // ── Envío de comandos (SIN root, LocalSocket directo) ──────────────────
     /**
-     * Envía un comando de texto al daemon y devuelve la respuesta.
-     * Prueba abstract namespace primero (@omega_daemon_socket), fallback
-     * a /data/pf/pf.sock por filesystem si el abstract no responde.
-     * Sin dependencia de `nc` ni de `su`.
+     * Envía un comando de texto al daemon (abstract @omega_daemon_socket) y devuelve la respuesta.
+     * Retorna "" si el daemon no está disponible. Sin dependencia de `nc` ni de `su`.
      */
     fun sendCommand(command: String): String {
-        // 1) Abstract namespace — donde publica ivanna_daemon
+        // Abstract namespace — donde publica ivanna_daemon
         runCatching {
             LocalSocket().use { sock ->
                 sock.soTimeout = SOCKET_READ_TIMEOUT_MS
@@ -131,31 +127,7 @@ object MagiskBridge {
             }
         }.onFailure { Log.d(TAG, "abstract socket send failed: ${it.message}") }
 
-        // 2) Fallback filesystem legacy
-        if (File(SOCKET_LEGACY).exists()) {
-            runCatching {
-                LocalSocket().use { sock ->
-                    sock.soTimeout = SOCKET_READ_TIMEOUT_MS
-                    sock.connect(
-                        LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
-                    )
-                    sock.outputStream.apply {
-                        write(command.toByteArray(Charsets.UTF_8))
-                        write("\n".toByteArray(Charsets.UTF_8))
-                        flush()
-                    }
-                    val buf = ByteArray(1024)
-                    val n = runCatching { sock.inputStream.read(buf) }.getOrDefault(-1)
-                    return if (n > 0) String(buf, 0, n, Charsets.UTF_8).trim() else "ACK"
-                }
-            }.onFailure { Log.d(TAG, "legacy socket send failed: ${it.message}") }
-        }
-
-        // 3) Nada respondió. Retorna "" (sentinel de fallo) para que cualquier
-        //    caller pueda distinguir offline de respuesta real con isEmpty().
-        //    "queued" era semánticamente incorrecto: implica que el comando fue
-        //    aceptado y procesado, cuando en realidad fue descartado.
-        //    everConnected NO se modifica aquí — solo se marca en isDaemonRunning.
+        // Daemon offline: retorna "" (sentinel) para que callers usen isEmpty().
         Log.w(TAG, "Daemon offline — command NOT delivered: $command")
         return ""
     }
@@ -205,20 +177,14 @@ object MagiskBridge {
     // exec(), ProcResult y setSystemProp eliminados — eran dead code que añadía 3 s de latencia
 
     /**
-     * Probe real de conectividad al daemon.
-     * Prioridad:
-     *   1) Abstract namespace @omega_daemon_socket (daemon actual).
-     *   2) Filesystem legacy /data/pf/pf.sock (compatibilidad hacia atrás).
-     * NO comprueba /dev/socket/... (los abstract sockets no viven ahí).
-     *
-     * FIX: soTimeout = SOCKET_READ_TIMEOUT_MS en ambas ramas para evitar que
-     * connect() se bloquee cuando el backlog del daemon está al límite o el
-     * kernel tarda en responder ECONNREFUSED.
+     * Probe real de conectividad al daemon vía abstract namespace @omega_daemon_socket.
+     * NO necesita fallback a filesystem — el PF Engine legacy fue removido.
+     * soTimeout garantiza que connect() no se bloquee si el backlog está al límite.
      */
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {
             LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS   // FIX Bug-4: sin esto puede bloquearse
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
@@ -226,16 +192,6 @@ object MagiskBridge {
             }
         }.getOrDefault(false)
         if (abstractOk) { everConnected = true; return true }
-
-        return runCatching {
-            if (!File(SOCKET_LEGACY).exists()) return@runCatching false
-            LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS   // FIX Bug-4: idem legacy
-                sock.connect(
-                    LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
-                )
-                true
-            }
-        }.getOrDefault(false)
+        return false
     }
 }

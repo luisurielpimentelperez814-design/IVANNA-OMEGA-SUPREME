@@ -24,7 +24,6 @@ object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
     private const val SOCKET_PRIMARY  = "omega_daemon_socket"
     private const val SOCKET_CONTROL  = "omega_command_socket"
-    private const val SOCKET_LEGACY   = "/data/pf/pf.sock"
     private const val CONNECT_TIMEOUT = 2000 // ms
 
     @Volatile var isConnected = false
@@ -52,12 +51,9 @@ object OmegaEngineBridge {
     }
 
     private fun probeSocket(): Boolean {
-        // FIX: soTimeout = CONNECT_TIMEOUT en probe — el CONNECT_TIMEOUT estaba
-        // definido pero nunca usado. Sin timeout, connect() podía bloquearse varios
-        // segundos en ciertos kernels cuando el backlog del daemon está lleno.
         val probedPrimary = runCatching {
             val sock = LocalSocket()
-            sock.soTimeout = CONNECT_TIMEOUT          // FIX Bug-1: evita bloqueo en backlog
+            sock.soTimeout = CONNECT_TIMEOUT
             sock.connect(
                 LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
             )
@@ -65,27 +61,10 @@ object OmegaEngineBridge {
             true
         }.getOrDefault(false)
 
-        if (probedPrimary) {
-            if (!isConnected) Log.i(TAG, "✅ Socket @$SOCKET_PRIMARY conectado")
-            isConnected = true
-            return true
-        }
-
-        // Fallback socket legacy /data/pf/pf.sock
-        val probedLegacy = runCatching {
-            val sock = LocalSocket()
-            sock.soTimeout = CONNECT_TIMEOUT          // FIX Bug-1: idem para legacy
-            sock.connect(
-                LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
-            )
-            sock.close()
-            true
-        }.getOrDefault(false)
-
-        isConnected = probedLegacy
-        if (probedLegacy) Log.i(TAG, "✅ Socket legacy $SOCKET_LEGACY conectado")
-        else              Log.d(TAG, "⚪ Daemon no disponible (no-root o módulo no instalado)")
-        return probedLegacy
+        isConnected = probedPrimary
+        if (probedPrimary) Log.i(TAG, "✅ Socket @$SOCKET_PRIMARY conectado")
+        else               Log.d(TAG, "⚪ Daemon no disponible (no-root o módulo no instalado)")
+        return probedPrimary
     }
 
     // ── Envío de comandos ────────────────────────────────────────────────
@@ -95,22 +74,14 @@ object OmegaEngineBridge {
         return try {
             val t0 = System.nanoTime()
             socket = LocalSocket()
-            socket.soTimeout = CONNECT_TIMEOUT        // FIX Bug-2: timeout en connect + read
+            socket.soTimeout = CONNECT_TIMEOUT
 
-            // Intentar primero socket abstracto, luego legacy
             val connected = runCatching {
                 socket.connect(
                     LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
                 )
                 true
-            }.getOrElse {
-                runCatching {
-                    socket.connect(
-                        LocalSocketAddress(SOCKET_LEGACY, LocalSocketAddress.Namespace.FILESYSTEM)
-                    )
-                    true
-                }.getOrDefault(false)
-            }
+            }.getOrDefault(false)
 
             if (!connected) {
                 isConnected = false
