@@ -1,0 +1,448 @@
+app/src/main/cpp/CMakeLists.txt:34:add_library(ivanna_omega SHARED
+app/src/main/cpp/CMakeLists.txt:120:    shm_hyperplane.cpp
+app/src/main/cpp/CMakeLists.txt:121:    # FIX (auditoria 2026-08-07): omega_daemon.cpp SACADO de la libreria.
+app/src/main/cpp/CMakeLists.txt:122:    # El archivo define un `int main()` completo (socket AF_UNIX, listen,
+app/src/main/cpp/CMakeLists.txt:131:    # daemon/OmegaShmManager.cpp) y stageado
+app/src/main/cpp/CMakeLists.txt:134:    # dentro de la shared library. Los otros dos daemons duplicados
+app/src/main/cpp/CMakeLists.txt:135:    # (daemon/omega_daemon.cpp, sin CMakeLists que lo enlace) se atacan en
+app/src/main/cpp/CMakeLists.txt:138:    # FIX (build): stub del puente omega_daemon → app process.
+app/src/main/cpp/CMakeLists.txt:139:    # Define omega_daemon_get_shared_state() referenciado por
+app/src/main/cpp/CMakeLists.txt:141:    # nullptr; el caller ya maneja ese caso con `if (!shared) continue;`
+app/src/main/cpp/CMakeLists.txt:144:    omega_daemon_bridge_stub.cpp
+app/src/main/cpp/CMakeLists.txt:237:add_library(omega_effect SHARED
+app/src/main/cpp/audio_orchestrator.cpp:11:#include "omega_shared.h"
+app/src/main/cpp/include/omega_shared.h:2:#ifndef OMEGA_SHARED_H
+app/src/main/cpp/include/omega_shared.h:3:#define OMEGA_SHARED_H
+app/src/main/cpp/include/omega_shared.h:42:struct OmegaSharedState {
+app/src/main/cpp/include/omega_shared.h:97:    // omega_daemon_get_shared_state() en omega_daemon.cpp).
+app/src/main/cpp/include/omega_shared.h:121:    // g_widener_b (omega_daemon.cpp) corría siempre con su ancho por
+app/src/main/cpp/include/omega_shared.h:123:    // el memset(0) de omega_daemon_init() lo dejaría en 0 si no se
+app/src/main/cpp/include/omega_shared.h:131:    // streaming. Calculado dentro de processLoop() (omega_daemon.cpp) con
+app/src/main/cpp/include/omega_shared.h:174:    // UnifiedControlFrame, mismos rangos, escritos vía socket
+app/src/main/cpp/include/omega_shared.h:189:    OmegaSharedState()
+app/src/main/cpp/include/omega_shared.h:214:#endif // OMEGA_SHARED_H
+app/src/main/cpp/include/nlohmann/json.hpp:6153:#include <memory> // shared_ptr, make_shared, addressof
+app/src/main/cpp/include/nlohmann/json.hpp:14927:#include <memory> // shared_ptr, make_shared
+app/src/main/cpp/include/nlohmann/json.hpp:14959:using output_adapter_t = std::shared_ptr<output_adapter_protocol<CharType>>;
+app/src/main/cpp/include/nlohmann/json.hpp:15041:        : oa(std::make_shared<output_vector_adapter<CharType, AllocatorType>>(vec)) {}
+app/src/main/cpp/include/nlohmann/json.hpp:15045:        : oa(std::make_shared<output_stream_adapter<CharType>>(s)) {}
+app/src/main/cpp/include/nlohmann/json.hpp:15049:        : oa(std::make_shared<output_string_adapter<CharType, StringType>>(s)) {}
+app/src/main/cpp/include/omega_control_bus.h:10: *     - OmegaControlBus::openWriter(path) → mmap con MAP_SHARED+PROT_WRITE
+app/src/main/cpp/include/omega_control_bus.h:11: *     - OmegaControlBus::publish(snapshot) → seqlock atómico en SHM
+app/src/main/cpp/include/omega_control_bus.h:15: *     - OmegaControlBus::openReader(path) → mmap con MAP_SHARED+PROT_READ
+app/src/main/cpp/include/omega_control_bus.h:40: * SHM PATH: /data/adb/ivanna_omega/omega_control_snapshot
+app/src/main/cpp/include/omega_control_bus.h:219:// SharedControlRegion — layout real de la región mmap
+app/src/main/cpp/include/omega_control_bus.h:226:struct alignas(64) SharedControlRegion {
+app/src/main/cpp/include/omega_control_bus.h:232:static_assert(sizeof(SharedControlRegion) <= 4096,
+app/src/main/cpp/include/omega_control_bus.h:233:    "SharedControlRegion no cabe en una página (4096 bytes)");
+app/src/main/cpp/include/omega_control_bus.h:261:    /** Crea/abre el archivo SHM y lo mapea con permisos de escritura.
+app/src/main/cpp/include/omega_control_bus.h:276:    /** Abre el archivo SHM y lo mapea en solo-lectura.
+app/src/main/cpp/include/omega_control_bus.h:298:    SharedControlRegion* m_region     = nullptr;
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:458:// desreferencia. Se pasa a shared_ptr con acceso atómico (std::atomic_load/
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:459:// atomic_store — API C++17 sobre shared_ptr), que mantiene la vida del
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:463:// por el shared_ptr global.
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:465:static std::shared_ptr<Engine> g_active_sp; // guarded por atomic_load/store
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:467:static inline std::shared_ptr<Engine> get_active_engine() noexcept {
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:471:static inline void set_active_engine(std::shared_ptr<Engine> sp) noexcept {
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:486:// Handle -> shared_ptr registry (only for global-query lifecycle safety;
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:490:static std::vector<std::shared_ptr<Engine>> g_handles;
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:495:    auto sp = std::make_shared<Engine>(sr, maxBlk);
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:514:    // usando su propia copia del shared_ptr → el Engine sobrevive hasta que
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:522:    // el shared_ptr destruye el Engine aquí; si algún reader la retiene, se
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:647:// shared_ptr (atomic_load) — mientras esta copia esté viva, el Engine
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:34:#include "omega_shared.h"
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:35:// FIX (build roto — ld: undefined symbol: g_shared): g_shared vive
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:36:// DENTRO de un namespace anónimo en omega_daemon.cpp (líneas 53-514),
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:39:// OmegaSharedState* g_shared;` directo desde aquí (otro .cpp, mismo
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:41:// enlazar contra él — de ahí el "ld: error: undefined symbol: g_shared"
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:44:// FUERA del namespace anónimo al final de omega_daemon.cpp — su cuerpo
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:45:// sí puede leer g_shared sin calificar porque comparte translation unit
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:49:// omega_daemon_bridge_stub.cpp DEFINE este simbolo como `extern "C"`,
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:52://   _Z30omega_daemon_get_shared_statev
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:54://   omega_daemon_get_shared_state
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:56://   "did you mean: extern \"C\" omega_daemon_get_shared_state".
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:62:extern "C" OmegaSharedState* omega_daemon_get_shared_state();
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:216:// La única vía real entre ambos procesos ya existía: OmegaSharedState,
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:217:// mapeada en ambos procesos vía memfd + SCM_RIGHTS (ver omega_daemon.cpp/
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:254:        OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:255:        if (!shared) continue;  // daemon aún no arrancó/mapeó memoria en este proceso
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:256:        const float rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:257:        const float peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:273:        if (shared->ai_enabled.load(std::memory_order_relaxed)) {
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:274:            const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:281:        // Ahora viene de BandEnergyMeter (omega_daemon.cpp::processLoop()),
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:283:        rawM.band_low_energy   = shared->ai_band_low.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:284:        rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:285:        rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:308:        // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:319:            shared->ai_runtime_gain_mul.store(
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:325:            // (omega_daemon.cpp, paso 6). Clamp [0,2] = rango real de
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:327:            shared->ai_runtime_spatial_width.store(
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:330:            // spatial_width, gap real distinto): omega_daemon.cpp SÍ lee
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:333:            // setRuntimeReduction() — y el socket SÍ acepta SET_AI_RUNTIME_
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:341:            shared->ai_runtime_comp_amount.store(
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:343:            shared->ai_runtime_exciter_red.store(
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:429:    // AdaptiveDecisionEngine y el watchdog de omega_daemon.cpp.
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1558:// audioRouteBridgeLoop (Ruta B vía 3 IIR bandpass en omega_daemon).
+app/src/main/cpp/omega_effect.cpp:96: * última generation del OmegaControlBus (SHM) aplicada por esta instancia.
+app/src/main/cpp/omega_effect.cpp:112:    uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
+app/src/main/cpp/omega_effect.cpp:123:// vía SHM al IvannaFusionCore local. Se llama fuera del hot-path (una vez
+app/src/main/cpp/omega_effect.cpp:174:    // por callback. readLatest() es lock-free (seqlock en SHM), no bloquea,
+app/src/main/cpp/omega_effect.cpp:177:    // -> SHM -> omega_process, cerrando el ciclo que estaba roto.
+app/src/main/cpp/omega_effect.cpp:268:                // OmegaControlBus (SHM cross-process). Si el daemon todavía
+app/src/main/cpp/omega_effect.cpp:269:                // no creó el SHM (arranque en frío del audioserver), la
+app/src/main/cpp/shm_hyperplane.cpp:3: * SHM Hyperplane - usa Android SharedMemory desde Kotlin; aquí solo mlock
+app/src/main/cpp/shm_hyperplane.cpp:11:#define LOG_TAG "IVANNA-SHM-NATIVE"
+app/src/main/cpp/shm_hyperplane.cpp:28:// FIX (bug real): el símbolo JNI apuntaba a com.ivanna.omega.ShmManager,
+app/src/main/cpp/shm_hyperplane.cpp:35:Java_com_ivanna_omega_magisk_ShmManager_nativeMlock(JNIEnv *, jobject, jlong addr, jlong len) {
+app/src/main/cpp/shm_hyperplane.cpp:40:// android.os.SharedMemory (Kotlin) en vez de exigirle a Kotlin extraer y
+app/src/main/cpp/shm_hyperplane.cpp:45:Java_com_ivanna_omega_magisk_ShmManager_nativeMlockBuffer(JNIEnv* env, jobject, jobject buffer) {
+app/src/main/cpp/shm_hyperplane.cpp:59:// ── NUEVO (fix "SHM nunca conecta"): mapear el fd que el daemon entrega por
+app/src/main/cpp/shm_hyperplane.cpp:60:// SCM_RIGHTS. Antes ShmManager.kt creaba su PROPIA region con
+app/src/main/cpp/shm_hyperplane.cpp:61:// android.os.SharedMemory: dos regiones distintas, cero memoria compartida con
+app/src/main/cpp/shm_hyperplane.cpp:62:// el daemon. android.os.SharedMemory no puede envolver un fd ajeno, asi que el
+app/src/main/cpp/shm_hyperplane.cpp:65:Java_com_ivanna_omega_magisk_ShmManager_nativeMapSharedFd(JNIEnv* env, jobject, jint fd, jint size) {
+app/src/main/cpp/shm_hyperplane.cpp:67:        LOGE("mapSharedFd: parametros invalidos fd=%d size=%d", fd, size);
+app/src/main/cpp/shm_hyperplane.cpp:71:                      MAP_SHARED, fd, 0);
+app/src/main/cpp/shm_hyperplane.cpp:73:        LOGE("mapSharedFd: mmap fallo fd=%d errno=%d", fd, errno);
+app/src/main/cpp/shm_hyperplane.cpp:83:Java_com_ivanna_omega_magisk_ShmManager_nativeUnmapSharedFd(JNIEnv* env, jobject, jobject buffer) {
+app/src/main/cpp/experimental/adaptive_engine/README.md:37:  watchdog de `omega_daemon.cpp`).
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:48: *     fuera del callback (mismo patrón que el watchdog de omega_daemon.cpp).
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:123:// puente de la ruta B — omega_effect.cpp vía OmegaSharedState). El
+app/src/main/cpp/daemon/ivanna_daemon.cpp:2:#include "core/shm_manager.h"
+app/src/main/cpp/daemon/ivanna_daemon.cpp:28:#include <sys/socket.h>
+app/src/main/cpp/daemon/ivanna_daemon.cpp:33:#define LOG_TAG "IVANNA_OMEGA_DAEMON"
+app/src/main/cpp/daemon/ivanna_daemon.cpp:35:// Explicit path requirement: Must use /data/adb/ivanna_omega/omega_shm
+app/src/main/cpp/daemon/ivanna_daemon.cpp:36:constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
+app/src/main/cpp/daemon/ivanna_daemon.cpp:39:constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
+app/src/main/cpp/daemon/ivanna_daemon.cpp:44:static std::string g_socket_path = DEFAULT_SOCKET_PATH;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:77:        if (!g_socket_path.empty() && g_socket_path[0] != '@') {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:78:            unlink(g_socket_path.c_str());
+app/src/main/cpp/daemon/ivanna_daemon.cpp:94:int setup_shared_memory() {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:95:    // FIX: usar OmegaShmManager (core/shm_manager.cpp) en vez de código
+app/src/main/cpp/daemon/ivanna_daemon.cpp:96:    // SHM inline. La lógica de mmap/mlock/seqlock queda encapsulada en
+app/src/main/cpp/daemon/ivanna_daemon.cpp:97:    // shmManager() y disponible para command_server.cpp y futuras extensiones
+app/src/main/cpp/daemon/ivanna_daemon.cpp:100:    log_message("Initializing Shared Memory via OmegaShmManager at: " +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:101:                std::string(OMEGA_SHM_PATH));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:103:    if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:104:        log_message("Error: OmegaShmManager::init() falló en " +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:105:                    std::string(OMEGA_SHM_PATH));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:109:    log_message("Shared Memory listo (OmegaShmManager): fd=" +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:110:                std::to_string(ivanna::shmManager().fd()) +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:112:                    reinterpret_cast<uintptr_t>(ivanna::shmManager().base())) +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:113:                " size=" + std::to_string(ivanna::shmManager().size()));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:114:    return ivanna::shmManager().fd();
+app/src/main/cpp/daemon/ivanna_daemon.cpp:117:int create_socket_server(const std::string& socket_path) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:118:    // Ensure parent socket folder exists
+app/src/main/cpp/daemon/ivanna_daemon.cpp:119:    std::string dir = socket_path;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:120:    size_t last_slash = (socket_path[0] == '@') ? std::string::npos
+app/src/main/cpp/daemon/ivanna_daemon.cpp:127:    // Unlink any existing socket file (solo filesystem: los abstract no existen
+app/src/main/cpp/daemon/ivanna_daemon.cpp:129:    if (socket_path[0] != '@') {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:130:        unlink(socket_path.c_str());
+app/src/main/cpp/daemon/ivanna_daemon.cpp:133:    int server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:135:        log_message("Error: Socket creation failed: " + std::string(strerror(errno)));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:140:    // Sin este flag, si el daemon crashea rápido (SEGV en init de SHM, panic
+app/src/main/cpp/daemon/ivanna_daemon.cpp:142:    // signal handler, el kernel Linux mantiene el nombre @omega_daemon_socket
+app/src/main/cpp/daemon/ivanna_daemon.cpp:152:    // Aplica igual a sockets de filesystem: si el daemon crashea sin unlink,
+app/src/main/cpp/daemon/ivanna_daemon.cpp:157:        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+app/src/main/cpp/daemon/ivanna_daemon.cpp:168:    addr.sun_family = AF_UNIX;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:169:    if (socket_path[0] == '@') {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:170:        // Abstract socket: null byte prefix + name (no filesystem path).
+app/src/main/cpp/daemon/ivanna_daemon.cpp:172:        // FIX CRITICO (causa raiz de "socket OFFLINE / queued" permanente):
+app/src/main/cpp/daemon/ivanna_daemon.cpp:175:        //   asi que el kernel registraba "omega_daemon_socket" seguido de 88
+app/src/main/cpp/daemon/ivanna_daemon.cpp:176:        //   bytes NUL. Android LocalSocket (Namespace.ABSTRACT) conecta con
+app/src/main/cpp/daemon/ivanna_daemon.cpp:181:        const std::string name = socket_path.substr(1);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:183:            log_message("Error: abstract socket name demasiado largo: " + name);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:192:        // Filesystem socket
+app/src/main/cpp/daemon/ivanna_daemon.cpp:194:                     socket_path.c_str(),
+app/src/main/cpp/daemon/ivanna_daemon.cpp:200:        log_message("Error: Socket bind failed at " + socket_path + ": " + std::string(strerror(errno)));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:205:    // chmod/unlink solo tienen sentido en sockets de filesystem: con un nombre
+app/src/main/cpp/daemon/ivanna_daemon.cpp:206:    // abstracto creaban/tocaban un fichero literal "@omega_daemon_socket" en el
+app/src/main/cpp/daemon/ivanna_daemon.cpp:208:    if (socket_path[0] != '@') {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:209:        chmod(socket_path.c_str(), 0666);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:213:        log_message("Error: Socket listen failed: " + std::string(strerror(errno)));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:215:        unlink(socket_path.c_str());
+app/src/main/cpp/daemon/ivanna_daemon.cpp:219:    log_message("Socket server active and listening on: " + socket_path);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:224:    std::string socket_path = DEFAULT_SOCKET_PATH;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:232:        if (arg == "--socket" && i + 1 < argc) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:233:            socket_path = argv[++i];
+app/src/main/cpp/daemon/ivanna_daemon.cpp:244:                      << "  --socket <path>   Unix socket path (default: " << DEFAULT_SOCKET_PATH << ")\n"
+app/src/main/cpp/daemon/ivanna_daemon.cpp:252:    g_socket_path = socket_path;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:273:    log_message("Shared Memory Target: " + std::string(OMEGA_SHM_PATH));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:274:    log_message("Configuration -> Socket: " + socket_path + " | Rate: " + std::to_string(rate) +
+app/src/main/cpp/daemon/ivanna_daemon.cpp:287:    // Initialize shared memory
+app/src/main/cpp/daemon/ivanna_daemon.cpp:288:    // FIX: setup_shared_memory() devuelve el FD del SHM (positivo) en exito y
+app/src/main/cpp/daemon/ivanna_daemon.cpp:291:    if (setup_shared_memory() < 0) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:292:        log_message("Warning: Shared memory setup encountered errors. Continuing with socket service.");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:295:    // Create UNIX socket server
+app/src/main/cpp/daemon/ivanna_daemon.cpp:296:    g_server_fd = create_socket_server(socket_path);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:298:        log_message("Fatal Error: Could not initialize socket server. Exiting.");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:305:// FIX (socket queued/offline intermitente — causa raíz encontrada):
+app/src/main/cpp/daemon/ivanna_daemon.cpp:306://   g_server_fd (create_socket_server() arriba) YA está bind()eado en
+app/src/main/cpp/daemon/ivanna_daemon.cpp:307://   @omega_daemon_socket y el select-loop de abajo YA despacha JSON/texto
+app/src/main/cpp/daemon/ivanna_daemon.cpp:312://   "@omega_daemon_socket". Un abstract socket solo admite un listener
+app/src/main/cpp/daemon/ivanna_daemon.cpp:314://   dejaba "ERROR starting @omega_daemon_socket" en el log en CADA
+app/src/main/cpp/daemon/ivanna_daemon.cpp:316://   — exactamente el tipo de ruido que hace ver el socket como
+app/src/main/cpp/daemon/ivanna_daemon.cpp:328:// @omega_command_socket sí es un nombre distinto — no compite con el
+app/src/main/cpp/daemon/ivanna_daemon.cpp:330:// que no sea OmegaEngineBridge (que hardcodea @omega_daemon_socket).
+app/src/main/cpp/daemon/ivanna_daemon.cpp:333:if (controlServer.start("@omega_command_socket")) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:334:    log_message("CONTROL socket ready: @omega_command_socket");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:339:    log_message("ERROR starting @omega_command_socket");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:355:            log_message("Select socket error: " + std::string(strerror(errno)));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:364:                log_message("Client connection accepted on " + socket_path);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:366:                // FIX: demux socket — el mismo @omega_daemon_socket sirve dos propósitos:
+app/src/main/cpp/daemon/ivanna_daemon.cpp:373:                //   Modo B — SHM fd delivery (ShmManager.kt / cliente legacy):
+app/src/main/cpp/daemon/ivanna_daemon.cpp:375:                //     el fd del SHM vía SCM_RIGHTS como siempre.
+app/src/main/cpp/daemon/ivanna_daemon.cpp:377:                // Por qué este socket y no solo @omega_command_socket:
+app/src/main/cpp/daemon/ivanna_daemon.cpp:378:                //   OmegaEngineBridge.kt hardcodea SOCKET_PRIMARY = "omega_daemon_socket".
+app/src/main/cpp/daemon/ivanna_daemon.cpp:386:                //        el daemon creia "cliente SHM" (modo B) y mandaba un FD
+app/src/main/cpp/daemon/ivanna_daemon.cpp:396:                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+app/src/main/cpp/daemon/ivanna_daemon.cpp:399:                setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO,
+app/src/main/cpp/daemon/ivanna_daemon.cpp:409:                    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+app/src/main/cpp/daemon/ivanna_daemon.cpp:438:                    // AUDIT FIX (demux race / socket contaminado): un cliente
+app/src/main/cpp/daemon/ivanna_daemon.cpp:439:                    // que ENVIÓ datos nunca es el cliente SHM (Modo B) — el
+app/src/main/cpp/daemon/ivanna_daemon.cpp:440:                    // cliente SHM legacy conecta en silencio. Antes, si el GC
+app/src/main/cpp/daemon/ivanna_daemon.cpp:443:                    // un FD binario por SCM_RIGHTS a un socket que esperaba
+app/src/main/cpp/daemon/ivanna_daemon.cpp:449:                    //      socket en vez de pasársela al parser).
+app/src/main/cpp/daemon/ivanna_daemon.cpp:480:                        // ── Basura en el socket: ni JSON ni texto válido ──────
+app/src/main/cpp/daemon/ivanna_daemon.cpp:486:                    // ── Modo B: SCM_RIGHTS SHM fd delivery ──────────────────
+app/src/main/cpp/daemon/ivanna_daemon.cpp:487:                    // FIX: usar el fd del shmManager en vez de re-abrir
+app/src/main/cpp/daemon/ivanna_daemon.cpp:488:                    int shm_fd = ivanna::shmManager().isReady()
+app/src/main/cpp/daemon/ivanna_daemon.cpp:489:                        ? dup(ivanna::shmManager().fd())
+app/src/main/cpp/daemon/ivanna_daemon.cpp:490:                        : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:491:                    if (shm_fd < 0) {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:492:                        log_message("ERROR: shm_fd no disponible");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:513:                    cmsg->cmsg_level = SOL_SOCKET;
+app/src/main/cpp/daemon/ivanna_daemon.cpp:517:                    memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
+app/src/main/cpp/daemon/ivanna_daemon.cpp:522:                        log_message("omega_shm FD sent via SCM_RIGHTS");
+app/src/main/cpp/daemon/ivanna_daemon.cpp:525:                    close(shm_fd);
+app/src/main/cpp/daemon/ivanna_daemon.cpp:539:    // FIX Foco #7: stop() llama shutdown()+close() en serverFd del control socket.
+app/src/main/cpp/daemon/ivanna_daemon.cpp:541:    // bloqueado en accept4(@omega_command_socket) indefinidamente después de que
+app/src/main/cpp/daemon/ivanna_daemon.cpp:546:    if (socket_path[0] != '@') {
+app/src/main/cpp/daemon/ivanna_daemon.cpp:547:        unlink(socket_path.c_str());
+app/src/main/cpp/daemon/ivanna_daemon.cpp:550:    log_message("Socket resources released.");
+app/src/main/cpp/daemon/CMakeLists.txt:10:    core/shm_manager.cpp
+app/src/main/cpp/daemon/control/command_server.cpp:16://       └── Si sin datos (cliente SHM legacy) → send 12 bytes (frame_len+epoch)
+app/src/main/cpp/daemon/control/command_server.cpp:29:#include "../core/shm_manager.h"
+app/src/main/cpp/daemon/control/command_server.cpp:33:#include <sys/socket.h>
+app/src/main/cpp/daemon/control/command_server.cpp:176:// en el SHM es actualizada por omega_effect.cpp cuando aplica el snapshot).
+app/src/main/cpp/daemon/control/command_server.cpp:366:            // Actualizar ruta en el SHM directamente
+app/src/main/cpp/daemon/control/command_server.cpp:425:bool CommandServer::start(const std::string& socketName)
+app/src/main/cpp/daemon/control/command_server.cpp:439:    serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+app/src/main/cpp/daemon/control/command_server.cpp:443:    // Mismo motivo que en ivanna_daemon.cpp create_socket_server(): sin este
+app/src/main/cpp/daemon/control/command_server.cpp:444:    // flag el nombre @omega_command_socket queda en cooldown del kernel tras
+app/src/main/cpp/daemon/control/command_server.cpp:449:        if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR,
+app/src/main/cpp/daemon/control/command_server.cpp:457:    addr.sun_family = AF_UNIX;
+app/src/main/cpp/daemon/control/command_server.cpp:459:    if (!socketName.empty() && socketName[0] == '@') {
+app/src/main/cpp/daemon/control/command_server.cpp:463:        // Android (LocalSocket ABSTRACT) puede conectarse jamas.
+app/src/main/cpp/daemon/control/command_server.cpp:464:        const std::string name = socketName.substr(1);
+app/src/main/cpp/daemon/control/command_server.cpp:466:            CS_LOG("abstract socket name demasiado largo: %s", name.c_str());
+app/src/main/cpp/daemon/control/command_server.cpp:476:        strncpy(addr.sun_path, socketName.c_str(), sizeof(addr.sun_path) - 1);
+app/src/main/cpp/daemon/control/command_server.cpp:481:        CS_LOG("bind(%s) error: %s", socketName.c_str(), strerror(errno));
+app/src/main/cpp/daemon/control/command_server.cpp:494:    CS_LOG("CommandServer activo en %s (JSON dispatch habilitado)", socketName.c_str());
+app/src/main/cpp/daemon/control/command_server.cpp:513:// ── dispatchFrame — SHM seqlock write ────────────────────────────────────────
+app/src/main/cpp/daemon/control/command_server.cpp:516:    if (!ivanna::shmManager().isReady()) {
+app/src/main/cpp/daemon/control/command_server.cpp:517:        CS_LOG("dispatchFrame: SHM no inicializado");
+app/src/main/cpp/daemon/control/command_server.cpp:520:    bool ok = ivanna::shmManager().write(data, len);
+app/src/main/cpp/daemon/control/command_server.cpp:521:    if (!ok) CS_LOG("dispatchFrame: write SHM falló (len=%zu)", len);
+app/src/main/cpp/daemon/control/command_server.cpp:627:// Protocolo de demux (mismo socket, dos modos):
+app/src/main/cpp/daemon/control/command_server.cpp:633://   Modo B — NOTIFICACIÓN SHM (cliente legacy que solo quiere frame_len+epoch):
+app/src/main/cpp/daemon/control/command_server.cpp:639://   La latencia de loopback Unix socket en Android (sin cruce de red) es <1ms,
+app/src/main/cpp/daemon/control/command_server.cpp:654:        // y el comando se clasificaba como Modo B (SHM notify) en vez de
+app/src/main/cpp/daemon/control/command_server.cpp:657:        setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO,
+app/src/main/cpp/daemon/control/command_server.cpp:688:            // ── Modo B: notificación SHM (cliente legacy / SHM polling) ─────
+app/src/main/cpp/daemon/control/command_server.cpp:689:            if (ivanna::shmManager().isReady()) {
+app/src/main/cpp/daemon/control/command_server.cpp:690:                auto* hdr = static_cast<const ivanna::ShmHeader*>(
+app/src/main/cpp/daemon/control/command_server.cpp:691:                    ivanna::shmManager().base());
+app/src/main/cpp/daemon/control/command_server.h:4:// CommandServer — servidor Unix socket de comandos JSON para el daemon IVANNA-OMEGA.
+app/src/main/cpp/daemon/control/command_server.h:6:// FIX CRÍTICO (socket DESCONECTADO en Kotlin):
+app/src/main/cpp/daemon/control/command_server.h:8://   (frame_len + epoch del SHM) sin leer nunca el payload JSON que OmegaEngineBridge
+app/src/main/cpp/daemon/control/command_server.h:9://   manda a @omega_daemon_socket. Resultado: todos los SET_INTENSITY / SET_PF_PARAMS /
+app/src/main/cpp/daemon/control/command_server.h:15://   Si no llega nada (cliente legacy que solo quiere el SHM fd) → notificación SHM
+app/src/main/cpp/daemon/control/command_server.h:28:// Actualizado por los comandos JSON del socket; leído por el engine de audio.
+app/src/main/cpp/daemon/control/command_server.h:77:     * Vincula el socket Unix (abstract si empieza con '@').
+app/src/main/cpp/daemon/control/command_server.h:80:    bool start(const std::string& socketName);
+app/src/main/cpp/daemon/control/command_server.h:90:     * además bind()ear su propio socket en @omega_daemon_socket (nombre ya
+app/src/main/cpp/daemon/control/command_server.h:91:     * tomado por el socket raw de create_socket_server(), ver ivanna_daemon.cpp).
+app/src/main/cpp/daemon/control/command_server.h:95:    // ── SHM dispatch ─────────────────────────────────────────────────────────
+app/src/main/cpp/daemon/control/command_server.h:98:     * Escribe @p len bytes de @p data en la región SHM con seqlock.
+app/src/main/cpp/daemon/control/command_server.h:99:     * FIX: método que faltaba — sin él el SHM nunca recibía datos.
+app/src/main/cpp/daemon/control/command_server.h:100:     * @return true si OmegaShmManager::write() tuvo éxito.
+app/src/main/cpp/daemon/control/command_server.h:154:     *   3. Si sin datos → notificación SHM 12 bytes (frame_len + epoch).
+app/src/main/cpp/daemon/control/command_server.h:156:     * FIX: antes enviaba únicamente 12 bytes SHM sin leer — todos los
+app/src/main/cpp/daemon/core/shm_manager.cpp:1:// daemon/core/shm_manager.cpp
+app/src/main/cpp/daemon/core/shm_manager.cpp:2:// Implementación de OmegaShmManager para el proceso daemon.
+app/src/main/cpp/daemon/core/shm_manager.cpp:5://   · ivanna_daemon.cpp — crea el archivo SHM en initialize_shared_memory()
+app/src/main/cpp/daemon/core/shm_manager.cpp:8://   · shm_manager.cpp — añade una API de alto nivel reutilizable para
+app/src/main/cpp/daemon/core/shm_manager.cpp:14://   initialize_shared_memory() en ivanna_daemon.cpp mapea el mismo archivo
+app/src/main/cpp/daemon/core/shm_manager.cpp:15://   backing (OMEGA_SHM_PATH) con ftruncate + mmap inline. OmegaShmManager
+app/src/main/cpp/daemon/core/shm_manager.cpp:20:#include "shm_manager.h"
+app/src/main/cpp/daemon/core/shm_manager.cpp:31:#define SHM_TAG "IVANNA_SHM"
+app/src/main/cpp/daemon/core/shm_manager.cpp:32:#define SHM_LOG(fmt, ...)     __android_log_print(ANDROID_LOG_INFO, SHM_TAG, fmt, ##__VA_ARGS__)
+app/src/main/cpp/daemon/core/shm_manager.cpp:36:bool OmegaShmManager::init(const std::string& path) {
+app/src/main/cpp/daemon/core/shm_manager.cpp:38:        SHM_LOG("init() ignorado: ya inicializado en %s", path.c_str());
+app/src/main/cpp/daemon/core/shm_manager.cpp:47:        SHM_LOG("open(%s) error: %s", path.c_str(), strerror(errno));
+app/src/main/cpp/daemon/core/shm_manager.cpp:53:    if (fstat(m_fd, &st) == 0 && static_cast<size_t>(st.st_size) < SHM_SIZE) {
+app/src/main/cpp/daemon/core/shm_manager.cpp:54:        if (ftruncate(m_fd, static_cast<off_t>(SHM_SIZE)) != 0) {
+app/src/main/cpp/daemon/core/shm_manager.cpp:55:            SHM_LOG("ftruncate error: %s", strerror(errno));
+app/src/main/cpp/daemon/core/shm_manager.cpp:62:    // MAP_SHARED: visible a cualquier proceso que mapee el mismo fd
+app/src/main/cpp/daemon/core/shm_manager.cpp:63:    void* ptr = mmap(nullptr, SHM_SIZE,
+app/src/main/cpp/daemon/core/shm_manager.cpp:65:                     MAP_SHARED, m_fd, 0);
+app/src/main/cpp/daemon/core/shm_manager.cpp:67:        SHM_LOG("mmap error: %s", strerror(errno));
+app/src/main/cpp/daemon/core/shm_manager.cpp:74:    if (mlock(ptr, SHM_SIZE) != 0) {
+app/src/main/cpp/daemon/core/shm_manager.cpp:76:        SHM_LOG("mlock advertencia: %s (no fatal)", strerror(errno));
+app/src/main/cpp/daemon/core/shm_manager.cpp:80:    m_size = SHM_SIZE;
+app/src/main/cpp/daemon/core/shm_manager.cpp:83:    auto* hdr = static_cast<ShmHeader*>(m_base);
+app/src/main/cpp/daemon/core/shm_manager.cpp:88:      SHM_LOG("SHM listo: %s (%llu bytes, mapeado en %p)",
+app/src/main/cpp/daemon/core/shm_manager.cpp:90:              static_cast<unsigned long long>(SHM_SIZE),
+app/src/main/cpp/daemon/core/shm_manager.cpp:95:void OmegaShmManager::close() {
+app/src/main/cpp/daemon/core/shm_manager.cpp:108:bool OmegaShmManager::write(const void* src, size_t len) noexcept {
+app/src/main/cpp/daemon/core/shm_manager.cpp:111:    constexpr size_t kHeaderSize = sizeof(ShmHeader);
+app/src/main/cpp/daemon/core/shm_manager.cpp:112:    if (len > SHM_SIZE - kHeaderSize) return false;
+app/src/main/cpp/daemon/core/shm_manager.cpp:114:    auto* hdr  = static_cast<ShmHeader*>(m_base);
+app/src/main/cpp/daemon/core/shm_manager.h:3:// daemon/core/shm_manager.h
+app/src/main/cpp/daemon/core/shm_manager.h:5:// OmegaShmManager — región de memoria compartida entre ivanna_daemon y la app.
+app/src/main/cpp/daemon/core/shm_manager.h:7:// El daemon crea un archivo backing en OMEGA_SHM_PATH, lo trunca a SHM_SIZE,
+app/src/main/cpp/daemon/core/shm_manager.h:8:// lo mapea con MAP_SHARED y mlockea la región para evitar swapping en el
+app/src/main/cpp/daemon/core/shm_manager.h:9:// hilo de audio. La app Kotlin la accede vía android.os.SharedMemory (API 27+)
+app/src/main/cpp/daemon/core/shm_manager.h:19:#include <atomic>    // FIX: std::atomic<uint64_t> en ShmHeader lo requiere;
+app/src/main/cpp/daemon/core/shm_manager.h:20:                     // sin este include cualquier TU que incluya shm_manager.h
+app/src/main/cpp/daemon/core/shm_manager.h:28:// Tamaño de la región SHM (64 KiB — 16 frames × ~4 KiB)
+app/src/main/cpp/daemon/core/shm_manager.h:29:inline constexpr size_t SHM_SIZE = 65536;
+app/src/main/cpp/daemon/core/shm_manager.h:32:struct alignas(8) ShmHeader {
+app/src/main/cpp/daemon/core/shm_manager.h:38:class OmegaShmManager {
+app/src/main/cpp/daemon/core/shm_manager.h:42:     * Abre o crea el archivo backing en @p path, lo trunca a SHM_SIZE y lo
+app/src/main/cpp/daemon/core/shm_manager.h:43:     * mapea con MAP_SHARED | PROT_READ | PROT_WRITE. Llama a mlock() para
+app/src/main/cpp/daemon/core/shm_manager.h:54:    /** Puntero al inicio de la región SHM, o nullptr si no inicializado. */
+app/src/main/cpp/daemon/core/shm_manager.h:62:     * Escribe @p len bytes de @p src en el buffer SHM con protocolo seqlock:
+app/src/main/cpp/daemon/core/shm_manager.h:64:     *   2. Copia datos a (base + sizeof(ShmHeader)).
+app/src/main/cpp/daemon/core/shm_manager.h:71:     * @return false si la región no está lista o @p len > SHM_SIZE - sizeof(ShmHeader).
+app/src/main/cpp/daemon/core/shm_manager.h:75:    ~OmegaShmManager() { close(); }
+app/src/main/cpp/daemon/core/shm_manager.h:78:    OmegaShmManager() = default;
+app/src/main/cpp/daemon/core/shm_manager.h:79:    OmegaShmManager(const OmegaShmManager&) = delete;
+app/src/main/cpp/daemon/core/shm_manager.h:80:    OmegaShmManager& operator=(const OmegaShmManager&) = delete;
+app/src/main/cpp/daemon/core/shm_manager.h:89:inline OmegaShmManager& shmManager() {
+app/src/main/cpp/daemon/core/shm_manager.h:90:    static OmegaShmManager instance;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:4: * Writer (daemon process):  crea/abre SHM, publica snapshots atómicos.
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:5: * Reader (audioserver):     mapea SHM en read-only, lee sin bloqueo.
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:35:    // Crear el archivo SHM. 0644 (no 0660): audioserver (proceso que ejecuta
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:64:                        PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:72:    m_region   = reinterpret_cast<SharedControlRegion*>(addr);
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:75:    // Si el SHM es nuevo (magic inválido), escribir snapshot default
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:78:        // Escribir sin seqlock: nadie más puede estar leyendo un SHM nuevo
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:81:        OMEGA_CTRL_LOGD("openWriter: initialized new SHM at %s", path);
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:83:        OMEGA_CTRL_LOGD("openWriter: attached existing SHM at %s (gen=%llu)",
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:127:                        PROT_READ, MAP_SHARED, fd, 0);
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:135:    m_region   = reinterpret_cast<SharedControlRegion*>(addr);
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:138:    OMEGA_CTRL_LOGD("openReader: mapped SHM from %s (gen=%llu)",
+app/src/main/cpp/daemon/core/OmegaControlBus.h:14:#define OMEGA_SHM_NAME "/omega_control_bus"
+app/src/main/cpp/daemon/core/OmegaControlBus.h:15:#define OMEGA_SHM_SIZE 4096
+app/src/main/cpp/daemon/core/OmegaControlBus.h:25:        m_fd = shm_open(OMEGA_SHM_NAME, O_RDWR | (writer ? O_CREAT : 0), 0666);
+app/src/main/cpp/daemon/core/OmegaControlBus.h:27:            __android_log_print(ANDROID_LOG_ERROR, "OmegaBus", "shm_open failed: %s", strerror(errno));
+app/src/main/cpp/daemon/core/OmegaControlBus.h:31:        if (writer && ftruncate(m_fd, OMEGA_SHM_SIZE) < 0) {
+app/src/main/cpp/daemon/core/OmegaControlBus.h:37:        m_base = mmap(nullptr, OMEGA_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, m_fd, 0);
+app/src/main/cpp/daemon/core/OmegaControlBus.h:95:            munmap(m_base, OMEGA_SHM_SIZE);
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:1:// omega_daemon_bridge_stub.cpp
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:3:// FIX (build): definición del símbolo `omega_daemon_get_shared_state()`
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:7://   * omega_daemon.cpp es un binario STANDALONE con main() — su
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:15://     de omega_daemon.cpp, el link seguiría fallando o la memoria no
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:20://   no está mapeado, el caller ya lo maneja con `if (!shared) continue;`
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:29://     1) reciba el fd por AF_UNIX + SCM_RIGHTS,
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:30://     2) mmap() ese fd a un OmegaSharedState*,
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:33://     declara con `OmegaSharedState* omega_daemon_get_shared_state();`
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:39:#include "include/omega_shared.h"
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:43:extern "C" OmegaSharedState* omega_daemon_get_shared_state() {
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:50:            "omega_daemon_get_shared_state(): stub activo — Ruta B (omega_effect "
+magisk_module/customize.sh:25:# Permite que la app (untrusted_app) se conecte al socket abstracto del daemon.
+magisk_module/customize.sh:28:ui_print "- Aplicando reglas SELinux (socket daemon)..."
+magisk_module/customize.sh:42:    ui_print "  ! ivanna_daemon no encontrado — el socket no estará disponible"
+magisk_module/ivanna_control.sh:2:# IVANNA OMEGA SUPREME — ivanna_control.sh v2.0 (FIX cableado socket)
+magisk_module/ivanna_control.sh:5:#   v1.1 usaba SOCKET=/dev/socket/ivanna_omega — una ruta del filesystem
+magisk_module/ivanna_control.sh:7:#   (@omega_daemon_socket, ver app/src/main/cpp/daemon/ivanna_daemon.cpp:36
+magisk_module/ivanna_control.sh:8:#   y service.sh:36 "--socket @omega_daemon_socket"). Consecuencia:
+magisk_module/ivanna_control.sh:9:#   TODO comando caía en el primer `[ -e $SOCKET ]` y terminaba en el
+magisk_module/ivanna_control.sh:14:#     - Probe real via /proc/net/unix (tabla de sockets del kernel).
+magisk_module/ivanna_control.sh:15:#       Ahí sí aparece el abstract socket como "@omega_daemon_socket".
+magisk_module/ivanna_control.sh:17:#       detecta por probe corto contra el propio socket. Si nc no soporta
+magisk_module/ivanna_control.sh:22:SOCKET_NAME="omega_daemon_socket"        # sin @, para grep en /proc/net/unix
+magisk_module/ivanna_control.sh:23:SOCKET_ABS="@${SOCKET_NAME}"             # forma que acepta nc -U compatible
+magisk_module/ivanna_control.sh:28:# Devuelve 0 si el socket abstract está listo (kernel lo tiene bindeado).
+magisk_module/ivanna_control.sh:31:socket_alive() {
+magisk_module/ivanna_control.sh:33:    grep -q " @${SOCKET_NAME}$" /proc/net/unix 2>/dev/null
+magisk_module/ivanna_control.sh:38:# Detecta si el nc disponible soporta AF_UNIX abstract. Toybox nc y el
+magisk_module/ivanna_control.sh:43:    # -U es AF_UNIX; -N cierra en EOF (busybox moderno). Se prueba sobre
+magisk_module/ivanna_control.sh:44:    # el socket real ya conocido vivo; si nc no acepta el argumento
+magisk_module/ivanna_control.sh:46:    timeout 1 sh -c "echo PING | nc -U '$SOCKET_ABS'" >/dev/null 2>&1
+magisk_module/ivanna_control.sh:52:    if ! socket_alive; then
+magisk_module/ivanna_control.sh:53:        log "ERROR: @$SOCKET_NAME no publicado — daemon no arrancó (ver service.sh log)"
+magisk_module/ivanna_control.sh:59:        log "AVISO: nc no soporta AF_UNIX abstract en este device — CLI shell no puede escribir. Use la app o adb-forward + LocalSocket."
+magisk_module/ivanna_control.sh:64:    RESP=$(echo "$CMD" | timeout "$TIMEOUT" nc -U "$SOCKET_ABS" 2>/dev/null)
+magisk_module/ivanna_control.sh:91:                if socket_alive; then
+magisk_module/ivanna_control.sh:93:                        R=$(echo "PING" | timeout 1 nc -U "$SOCKET_ABS" 2>/dev/null)
+magisk_module/ivanna_control.sh:94:                        [ -n "$R" ] && echo "alive" || echo "socket_open_no_response"
+magisk_module/ivanna_control.sh:96:                        echo "socket_open_no_nc"
+magisk_module/ivanna_control.sh:104:Socket: @${SOCKET_NAME} (abstract namespace)
+magisk_module/ivanna_control.sh:113:  $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)
+magisk_module/mqa_monitor.sh:2:# IVANNA OMEGA SUPREME — mqa_monitor.sh v1.3 (FIX cableado socket)
+magisk_module/mqa_monitor.sh:30:# FIX v1.3: el gate anterior probaba [ -e /dev/socket/ivanna_omega ] —
+magisk_module/mqa_monitor.sh:32:# en abstract namespace (@omega_daemon_socket, ver ivanna_daemon.cpp:36
+magisk_module/mqa_monitor.sh:38:DAEMON_SOCKET_NAME="omega_daemon_socket"
+magisk_module/mqa_monitor.sh:39:socket_alive() {
+magisk_module/mqa_monitor.sh:41:    grep -q " @${DAEMON_SOCKET_NAME}$" /proc/net/unix 2>/dev/null
+magisk_module/mqa_monitor.sh:46:        socket_alive && break
+magisk_module/mqa_monitor.sh:50:    if ! socket_alive; then
+magisk_module/mqa_monitor.sh:51:        log "@$DAEMON_SOCKET_NAME nunca apareció — modo app-only, saliendo"
+magisk_module/mqa_monitor.sh:54:    log "@$DAEMON_SOCKET_NAME detectado — arrancando loop de auto-preset"
+magisk_module/post-fs-data.sh:48:# ── 3. Socket dir ────────────────────────────────────────────────────────────
+magisk_module/post-fs-data.sh:49:mkdir -p /dev/socket 2>/dev/null
+magisk_module/post-fs-data.sh:50:chmod 0755 /dev/socket 2>/dev/null
+magisk_module/sepolicy.rule:4:# sobre @omega_daemon_socket / @omega_command_socket sin denials silenciosos
+magisk_module/sepolicy.rule:16:#       socket publicado (@omega_daemon_socket visible en /proc/net/unix,
+magisk_module/sepolicy.rule:29:# connectto = permitir connect() sobre un unix_stream_socket que ya
+magisk_module/sepolicy.rule:31:allow untrusted_app su:unix_stream_socket             connectto;
+magisk_module/sepolicy.rule:32:allow untrusted_app magisk:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:33:allow untrusted_app kernel:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:34:allow untrusted_app init:unix_stream_socket           connectto;
+magisk_module/sepolicy.rule:35:allow untrusted_app system_server:unix_stream_socket  connectto;
+magisk_module/sepolicy.rule:36:allow untrusted_app zygote:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:37:allow untrusted_app system_app:unix_stream_socket     connectto;
+magisk_module/sepolicy.rule:40:#  2. UNTRUSTED_APP → operaciones sobre su propio unix_stream_socket
+magisk_module/sepolicy.rule:44:# SO_RCVTIMEO/SO_SNDTIMEO (LocalSocket.setSoTimeout hace ambos).
+magisk_module/sepolicy.rule:45:# getattr/ioctl salen en algunos vendors cuando el LocalSocket pasa
+magisk_module/sepolicy.rule:47:allow untrusted_app untrusted_app:unix_stream_socket {
+magisk_module/sepolicy.rule:58:allow isolated_app su:unix_stream_socket             connectto;
+magisk_module/sepolicy.rule:59:allow isolated_app magisk:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:60:allow isolated_app kernel:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:61:allow isolated_app init:unix_stream_socket           connectto;
+magisk_module/sepolicy.rule:62:allow isolated_app zygote:unix_stream_socket         connectto;
+magisk_module/sepolicy.rule:63:allow isolated_app isolated_app:unix_stream_socket {
+magisk_module/sepolicy.rule:73:allow platform_app su:unix_stream_socket     connectto;
+magisk_module/sepolicy.rule:74:allow platform_app magisk:unix_stream_socket connectto;
+magisk_module/sepolicy.rule:75:allow priv_app     su:unix_stream_socket     connectto;
+magisk_module/sepolicy.rule:76:allow priv_app     magisk:unix_stream_socket connectto;
+magisk_module/sepolicy.rule:79:#  6. AUDIOSERVER → SHM del Control Plane cross-process
+magisk_module/sepolicy.rule:97:#  unlabeled: para el caso de que el SHM file no tenga contexto explícito
+magisk_module/sepolicy.rule:101:# Leer el archivo SHM (el reader mapea en PROT_READ|MAP_SHARED)
+magisk_module/sepolicy.rule:116:# media_rw_data_file: si el SHM se mueve a /sdcard/Android/data/ como
+magisk_module/sepolicy.rule:121:#  7. AUDIOSERVER → acceso propio al socket del daemon (telemetría futura)
+magisk_module/sepolicy.rule:124:#  (consumer_generation en el SHM). Añadimos connect ahora para no
+magisk_module/sepolicy.rule:127:allow audioserver su:unix_stream_socket     connectto;
+magisk_module/sepolicy.rule:128:allow audioserver magisk:unix_stream_socket connectto;
+magisk_module/sepolicy.rule:129:allow audioserver audioserver:unix_stream_socket {
+magisk_module/sepolicy.rule:134:# para verificar que el socket está bindeado. En SELinux enforcing
+magisk_module/uninstall.sh:29:# el módulo ya no existe pero untrusted_app → su:unix_stream_socket { connectto }
+magisk_module/uninstall.sh:37:        "deny untrusted_app su:unix_stream_socket connectto" \
+magisk_module/uninstall.sh:38:        "deny untrusted_app magisk:unix_stream_socket connectto" \
+magisk_module/uninstall.sh:39:        "deny isolated_app su:unix_stream_socket connectto" \
+magisk_module/uninstall.sh:40:        "deny isolated_app magisk:unix_stream_socket connectto" \
+magisk_module/service.sh:19:# Sin esto, untrusted_app (la app) no puede connect() al socket abstracto del
+magisk_module/service.sh:29:        # `connectto` y con el socket del daemon inalcanzable.
+magisk_module/service.sh:91:#        shutdown). La app la leia y mostraba ONLINE con el socket muerto.
+magisk_module/service.sh:93:# FIX 2: backoff exponencial. Si el daemon crashea al arrancar (SHM ocupada,
+magisk_module/service.sh:153:    "$DAEMON_BIN" --socket "@omega_daemon_socket" --realtime >> "$LOGFILE" 2>&1 &
+magisk_module/service.sh:162:    # Esperar hasta 3s a que el daemon arranque Y publique el socket abstracto.
+magisk_module/service.sh:164:    # estar vivo pero el socket aún no bindeado (SHM init lento, SELinux, etc.)
+magisk_module/service.sh:166:    # Ahora se espera que @omega_daemon_socket aparezca en /proc/net/unix.
+magisk_module/service.sh:172:        grep -q " @omega_daemon_socket$" /proc/net/unix 2>/dev/null && { SOCK_READY=1; break; }
+magisk_module/service.sh:178:            echo "[$(date)] Daemon PID=$DAEMON_PID activo — @omega_daemon_socket listo" >> "$LOGFILE"
+magisk_module/service.sh:180:            echo "[$(date)] WARN: Daemon PID=$DAEMON_PID vivo pero socket no detectado en /proc/net/unix tras 3s" >> "$LOGFILE"

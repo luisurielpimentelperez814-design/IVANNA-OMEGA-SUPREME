@@ -1,0 +1,558 @@
+app/src/main/cpp/CMakeLists.txt:49:    jni/ivanna_jni_stub.cpp
+app/src/main/cpp/CMakeLists.txt:84:    # nativeSaFSaveState/nativeSaFLoadState/etc — verificado con grep en TODO
+app/src/main/cpp/CMakeLists.txt:102:    # proceso audioserver), inaccesible desde este target. Este stub define
+app/src/main/cpp/CMakeLists.txt:138:    # FIX (build): stub del puente omega_daemon → app process.
+app/src/main/cpp/CMakeLists.txt:144:    omega_daemon_bridge_stub.cpp
+app/src/main/cpp/audio_control_plane.cpp:7:// del proyecto (ver control_frame.hpp) exige que TODO cambio de
+app/src/main/cpp/audio_control_plane.cpp:75:// si la JVM todavía no está conectada o el método no está cacheado (por
+app/src/main/cpp/audio_control_plane.hpp:21: * TODO corre en audio thread (FIFO RT-safe, lock-free).
+app/src/main/cpp/audio_orchestrator.cpp:178:    // Ganancias (aplicadas a todos los canales uniformemente)
+app/src/main/cpp/benchmark_logger.cpp:3: * © 2025–2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/control_frame.hpp:44:// ── Snapshot inmutable de todos los parámetros controlables ──────────────
+app/src/main/cpp/control_frame.hpp:121:            return false;
+app/src/main/cpp/dsp/SafetyLimiter.cpp:43:    // ceiling=0.989 < 1.0, así que todo clip que activa (limited>ceiling)
+app/src/main/cpp/dsp/loudness_meter.hpp:7: * Implementación REAL (sustituye los placeholders -23.0 / -6.0 de
+app/src/main/cpp/evolutionary_kernel.cpp:3: * © 2025 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/evolutionary_kernel.cpp:58:    if (g_savePath.empty()) return false;
+app/src/main/cpp/evolutionary_kernel.cpp:60:    if (!f) return false;
+app/src/main/cpp/evolutionary_kernel.cpp:69:    if (g_savePath.empty()) return false;
+app/src/main/cpp/evolutionary_kernel.cpp:71:    if (!f) return false;
+app/src/main/cpp/evolutionary_kernel.cpp:172:    // donde se quedó en vez de perder todo el progreso al reabrir la app.
+app/src/main/cpp/hexagon/hexagon_dsp_integration.hpp:4:// © 2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/hexagon/hexagon_dsp_integration.hpp:6:// Este header sustituye al stub original. Expone un contrato mínimo estable
+app/src/main/cpp/hexagon/ivanna_dsp.cpp:5://  Fase H: implementación real del "stub" generado por qaic.
+app/src/main/cpp/hexagon/ivanna_dsp.cpp:10://    2. Resuelve las 5 funciones IDL exportadas por el stub qaic real:
+app/src/main/cpp/hexagon/ivanna_dsp.cpp:99:        return nullptr;
+app/src/main/cpp/hexagon/ivanna_dsp.cpp:103:    (void)lib; (void)sym; return nullptr;
+app/src/main/cpp/hexagon/ivanna_dsp.h:2://  ivanna_dsp.h — Stub generado por qaic desde ivanna_dsp.idl
+app/src/main/cpp/hexagon/ivanna_dsp.h:5://  IMPORTANTE: Este es un stub vacío para compilar sin el Hexagon SDK.
+app/src/main/cpp/hexagon/ivanna_dsp.h:12://  Con IVANNA_HEXAGON_STUB_MISSING=1 (definido en CMakeLists cuando no
+app/src/main/cpp/hexagon/ivanna_dsp.h:13://  existe el stub real), el runtime deshabilita el DSP offloading.
+app/src/main/cpp/hexagon/ivanna_dsp.h:21:// Stub de la interfaz generada por qaic.
+app/src/main/cpp/hexagon/ivanna_dsp.hpp:2:/** ivanna_dsp.hpp — Hexagon DSP IDL types stub */
+app/src/main/cpp/hexagon/ivanna_dsp.idl:1:/* ivanna_dsp.idl — Hexagon DSP IDL stub */
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:5: * © 2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:127:            return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:132:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:187:    return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:227:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:230:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:233:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:265:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:268:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp:271:        return false;
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.hpp:8: * Todos los modelos matemáticos, arquitecturas de sistema y implementaciones
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.hpp:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.hpp:26:// FastRPC stubs para delegación al Hexagon DSP de Qualcomm
+app/src/main/cpp/hexagon/ivanna_fastrpc_client.idl:2: * FastRPC IDL stub — Qualcomm QAIC compiler required for real codegen.
+app/src/main/cpp/hexagon/ivanna_fastrpc_client_load.cpp:3:// © 2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/include/StereoWidener.h:16:    // de todo widener naive). El "side" se separa en low/high; el ensanche
+app/src/main/cpp/include/anti_dolby.h:3: * © 2025–2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/include/audio_effect_compat.h:5: * Todos los layouts de struct están verificados contra el código fuente AOSP
+app/src/main/cpp/include/ivanna_npe_license.h:2:// Stub license header for build compatibility
+app/src/main/cpp/include/omega_shared.h:25:        if (next_head == m_tail.load(std::memory_order_acquire)) return false;
+app/src/main/cpp/include/omega_shared.h:32:        if (tail == m_head.load(std::memory_order_acquire)) return false;
+app/src/main/cpp/include/audio_bus.h:58:    // Lector: puede haber varios lectores concurrentes (todos ven el
+app/src/main/cpp/include/audio_bus.h:64:        if (curSeq == lastSeenSeq) return false;
+app/src/main/cpp/include/audio_bus.h:93:// todos los slots y se queda con el de secuencia global más alta.
+app/src/main/cpp/include/audio_bus.h:141:        if (!haveBest || bestSeq == lastSeenSeq) return false;
+app/src/main/cpp/include/nlohmann/json.hpp:6769:    @return whether parsing should proceed (must return false)
+app/src/main/cpp/include/nlohmann/json.hpp:6930:        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:7180:        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:7360:        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:7579:    error message and return false. Otherwise, return true.
+app/src/main/cpp/include/nlohmann/json.hpp:7604:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:8250:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:8278:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9319:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9324:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9345:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9504:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9510:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9515:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9520:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9541:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9546:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9962:                        return false;        // LCOV_EXCL_LINE
+app/src/main/cpp/include/nlohmann/json.hpp:9980:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:9985:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10059:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10124:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10155:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10224:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10251:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10260:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10270:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10289:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10302:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10307:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10318:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10323:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10725:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10907:                return false;  // LCOV_EXCL_LINE
+app/src/main/cpp/include/nlohmann/json.hpp:10919:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10926:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10941:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10950:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10955:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:10997:            get();  // TODO(niels): may we ignore N here?
+app/src/main/cpp/include/nlohmann/json.hpp:11002:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11096:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11109:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11121:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11133:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11167:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11178:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11194:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11210:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11226:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11251:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11266:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11281:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11305:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11326:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11338:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11397:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11405:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11527:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11532:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11592:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11631:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11655:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11666:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11673:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11684:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11695:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11706:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11715:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11722:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11739:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11755:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11764:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11768:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11779:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11783:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11793:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11800:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11804:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11835:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:11941:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12367:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12375:                                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12389:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12412:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12420:                                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12445:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12455:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12464:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12473:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12482:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12491:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12500:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12567:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12600:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:12621:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14394:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14406:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14411:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14418:                            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14425:                                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14434:                        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:14453:                    return false;
+app/src/main/cpp/include/nlohmann/json.hpp:16655:    @return false if the object is successfully converted to a bjdata ndarray, true if the type or size is invalid
+app/src/main/cpp/include/nlohmann/json.hpp:16763:        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:18704:        return false;
+app/src/main/cpp/include/nlohmann/json.hpp:22240:                return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23012:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23050:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23071:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23124:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23181:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23211:            return false;
+app/src/main/cpp/include/nlohmann/json.hpp:23240:            return false;
+app/src/main/cpp/include/omega_control_bus.h:90://   4. CRC32 cubre todos los campos desde generation hasta crc32 (exclusive)
+app/src/main/cpp/include/omega_control_bus.h:192:    // Calcula y escribe el CRC sobre todos los campos excepto crc32 mismo
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:2: * ivanna_jni_stub.cpp — Stub JNI para AudioEngine.kt
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:3: * © 2025-2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:7: *   que faltaba. AudioEngine.kt declara este método @JvmStatic en companion
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:8: *   pero el stub no lo implementaba → UnsatisfiedLinkError en runtime.
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:10: *   El stub delega al gState.antiDolby del audio_orchestrator.cpp via
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:19:#define LOG_TAG "IVANNA-Stub"
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:43:// ── Stub para nativeSetAntiDolbyScoresJni (companion @JvmStatic) ─────────────
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:57:    LOGI("AntiDolby via stub: speech=%.2f music=%.2f bass=%.2f", speech, music, bass);
+app/src/main/cpp/jni/ivanna_jni_stub.cpp:60:// ── Stub para nativeSetRouteProfileJni (companion @JvmStatic) ───────────────
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:77:// (LIMITER_THRESH/LIMITER_CEIL) para mantener consistencia en todo el
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:396:        // FIX: fastrpc_client.hpp actual son stubs inline (dsp_open()==nullptr),
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:599:    if (!eng) return nullptr;
+app/src/main/cpp/jni/ivanna_npe_jni.cpp:717:    JNIEnv*, jclass) { return nullptr; }
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:49:// omega_daemon_bridge_stub.cpp DEFINE este simbolo como `extern "C"`,
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:60:// exactamente el contrato que el propio stub documenta ("NO cambiar la
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:119:// placeholder muerto de audio_control_plane.hpp (output_lufs nunca se
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:378:    if (!src || n <= 0) return false;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:380:    if (!p) return false;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:427:    // std::thread se detach() a propósito — vive todo el ciclo de vida del
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:449:    // g_dspProcessMutex durante todo el bloque (~10ms). nativeSetParams
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:520:    // TODO(route-arbiter-v2): cuando PlaybackCapture y omega_effect coexistan,
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:674:    // percibido real, no el placeholder muerto que había antes.
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:990:    if (!out) return nullptr;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1033:// de abajo sobreescribe TODO g_params y dispara setParams() en
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1059:// g_exciter/g_gain/g_pd), sin tocar nativeSetParams (que reescribe TODO g_params).
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1278:// o el método no está cacheado. Llamada desde audio_control_plane.cpp.
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1326:// de estado. ivanna_adaptive_jni.cpp queda intacto — sus stubs *_unused
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1332:// el switch para que llame al método correcto según el estado.
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1395:    if (!arr) return nullptr;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1442:    if (!arr) return nullptr;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1509:    if (!arr) return nullptr;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1563:    if (!arr) return nullptr;
+app/src/main/cpp/jni/ivanna_omega_jni.cpp:1586:    if (!arr) return nullptr;
+app/src/main/cpp/neuromorphic/autonomous_brain.hpp:56:    // ── Coeficientes (constantes en todo el lifetime) ─────────────────────────
+app/src/main/cpp/neuromorphic/autonomous_brain.hpp:223:    // ── Métodos privados ──────────────────────────────────────────────────────
+app/src/main/cpp/neuromorphic/autonomous_brain.hpp:227:     * Actualiza todos los acumuladores y dispara evaluateAndDrive()
+app/src/main/cpp/neuromorphic/autonomous_brain.hpp:288:        // Todos los parámetros viven en [-1, 1]; Synthesizer::clamp11 los
+app/src/main/cpp/neuromorphic/autonomous_brain.hpp:407:    /// Reinicia todos los acumuladores de ventana a cero sin tocar los filtros.
+app/src/main/cpp/neuromorphic/fir_upsampler_engine.hpp:2: * FIRUpsamplerEngine — stub header
+app/src/main/cpp/neuromorphic/ivanna_neural_upmixer.cpp:25:        // Passthrough: todo a "Other" stem
+app/src/main/cpp/neuromorphic/ivanna_neural_upmixer.cpp:63:        // Other = todo lo demás (side + residuo)
+app/src/main/cpp/neuromorphic/ivanna_npe_engine.cpp:3://  © 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.
+app/src/main/cpp/neuromorphic/ivanna_npe_engine.cpp:95:        if (!input || !output || input_frames == 0 || !m_delay_line) return false;
+app/src/main/cpp/neuromorphic/lif_neuron_pool.hpp:50:    // Inicializar todos los estados al potencial de reposo
+app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp:3: * © 2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp:55:        return false;
+app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp:58:        return false;
+app/src/main/cpp/neuromorphic/neuro_cochlear_manifold.cpp:83:        return false;
+app/src/main/cpp/neuromorphic/synthesizer.hpp:33:/// Snapshot de los 5 parámetros de perfil tonal, todos en [-1, 1].
+app/src/main/cpp/neuromorphic/synthesizer.hpp:84:    /// Reinicia smoother y targets a silencio neutro (todo en 0).
+app/src/main/cpp/neuromorphic/volterra_h2_symmetric.cpp:8: * Todos los modelos matemáticos, arquitecturas de sistema e implementaciones
+app/src/main/cpp/neuromorphic/volterra_h2_symmetric.cpp:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/cpp/neuromorphic/volterra_h2_symmetric.hpp:8: * Todos los modelos matemáticos, arquitecturas de sistema y implementaciones
+app/src/main/cpp/neuromorphic/volterra_h2_symmetric.hpp:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/cpp/phase_oracle.cpp:3: * © 2025 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/pi_lstm_bridge_jni.cpp:120: * TELEMETRÍA REAL (sustituye el placeholder anterior).
+app/src/main/cpp/shm_hyperplane.cpp:31:// método nativo (UnsatisfiedLinkError en runtime). Corregido al paquete
+app/src/main/cpp/shm_hyperplane.cpp:68:        return nullptr;
+app/src/main/cpp/shm_hyperplane.cpp:74:        return nullptr;
+app/src/main/cpp/spatial/hrtf_convolver.hpp:8: * Todos los modelos matemáticos, arquitecturas de sistema e implementaciones
+app/src/main/cpp/spatial/hrtf_convolver.hpp:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:30:        if (numDirs <= 0 || irLen <= 0 || !azimuthsDeg || !irL || !irR) return false;
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:55:        if (!path) return false;
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:57:        if (!f) return false;
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:60:            std::fclose(f); return false;
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:65:            std::fread(&sr, 4, 1, f) != 1) { std::fclose(f); return false; }
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:67:            std::fclose(f); return false;
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:73:            if (std::fread(&az[d], 4, 1, f) != 1) { std::fclose(f); return false; }
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:74:            if (std::fread(&L[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:75:            if (std::fread(&R[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
+app/src/main/cpp/spatial/hrtf_convolver.cpp:8: * Todos los modelos matemáticos, arquitecturas de sistema e implementaciones
+app/src/main/cpp/spatial/hrtf_convolver.cpp:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/cpp/spatial/hrtf_convolver.cpp:306:            // Si se consumió todo el crossfade, intercambiar filtros
+app/src/main/cpp/tests/CMakeLists.txt:189:# marca el "race" formal esperado de todo seqlock, ya documentado y
+app/src/main/cpp/tests/no_denormals_low_level.cpp:10:        if (!std::isfinite(vals[i])) return false;
+app/src/main/cpp/tests/no_denormals_low_level.cpp:12:        if (cls == FP_SUBNORMAL) return false;
+app/src/main/cpp/tests/test_audio_bus.cpp:81:    EXPECT(out.a == 5.0, "la fuente 0 gana ahora porque su seq global es el más alto de todos");
+app/src/main/cpp/tests/test_audio_bus.cpp:99:    // Invariante verificable: todos los campos del payload son IGUALES
+app/src/main/cpp/tests/test_audio_bus.cpp:135:    EXPECT(publishesA.load() > 1000, "hilo A publicó un volumen real durante los 200ms (no fue todo overhead)");
+app/src/main/cpp/tests/test_audio_bus.cpp:148:        std::printf("TODOS LOS TESTS PASARON.\n");
+app/src/main/cpp/tests/test_control_frame_bus_stress.cpp:54:// Invariante anti-tearing: TODOS los campos float de un ControlFrame
+app/src/main/cpp/tests/test_control_frame_bus_stress.cpp:90:            // Todos los campos "consistentes" al mismo valor de época —
+app/src/main/cpp/tests/test_control_frame_bus_stress.cpp:146:        std::printf("TODOS LOS TESTS PASARON (%d/%d repeticiones limpias).\n", kRepetitions, kRepetitions);
+app/src/main/cpp/usb_audio_pro_manager.cpp:33:// Sustituye por completo los dos TODO ("motor asíncrono real" / "detención
+app/src/main/cpp/usb_audio_pro_manager.cpp:56:// Todo el camino de audio es lock-free: anillo SPSC con índices atómicos.
+app/src/main/cpp/usb_audio_pro_manager.cpp:188:        if (!e.slots[i].urb || !e.slots[i].buf) return false;
+app/src/main/cpp/usb_audio_pro_manager.cpp:226:        return false;
+app/src/main/cpp/usb_audio_pro_manager.cpp:241:        return false;
+app/src/main/cpp/usb_audio_pro_manager.cpp:252:        return false;
+app/src/main/cpp/usb_audio_pro_manager.cpp:367:    return nullptr;
+app/src/main/cpp/usb_audio_pro_manager.cpp:518:    if (!out) return nullptr;
+app/src/main/cpp/experimental/adaptive_engine/FASE3_REPORT.md:21:`CMakeLists.txt`: **no modificado**. Decisión deliberada — el módulo compila y pasa todos los
+app/src/main/cpp/experimental/adaptive_engine/FASE3_REPORT.md:40:TODOS LOS TESTS PASARON.  (21/21 assertions)
+app/src/main/cpp/experimental/adaptive_engine/README.md:91:- Sin `malloc` tras `start()` — todo el estado (`RawAudioMetrics`, `AdaptiveState`) es POD de
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:49: *   - Sin malloc tras start() — todo el estado es POD de tamaño fijo; el
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:165:    // El lector recorre TODOS los slots y se queda con el de 'seq' más
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:206:        if (!haveBest || best.seq == lastSeenSeq) return false;
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:249:        if (snap.timestamp == lastSeenSeq) return false;
+app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp:265:// AdaptiveState. Todo el estado es POD fijo — cero malloc tras start().
+app/src/main/cpp/experimental/adaptive_engine/tests/test_adaptive_engine.cpp:14://   2. Todos los valores quedan dentro de los rangos documentados.
+app/src/main/cpp/experimental/adaptive_engine/tests/test_adaptive_engine.cpp:66:    RawAudioMetrics m{};  // todo en 0 por defecto
+app/src/main/cpp/experimental/adaptive_engine/tests/test_adaptive_engine.cpp:402:        std::printf("TODOS LOS TESTS PASARON.\n");
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:54:        return false;
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:56:    if (s.target_gain < 0.5f || s.target_gain > 1.0f) return false;         // clamp documentado
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:57:    if (s.compressor_amount < 0.0f || s.compressor_amount > 1.0f) return false;
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:58:    if (s.exciter_reduction < 0.0f || s.exciter_reduction > 1.0f) return false;
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:59:    if (s.safety_margin < 0.0f || s.safety_margin > 1.0f) return false;
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:60:    if (s.voice_protection_amount < 0.0f || s.voice_protection_amount > 1.0f) return false;
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:68:// motor a transicionar entre todos sus regímenes de decisión durante la
+app/src/main/cpp/experimental/adaptive_engine/tests/test_stability.cpp:226:        std::printf("TODOS LOS TESTS PASARON.\n");
+app/src/main/cpp/adaptive_engine_core.hpp:219:        float periodicity = 0.5f;  // Placeholder
+app/src/main/cpp/ivannalab/ivannalab.cpp:3: * © 2025–2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/ivannalab/ivannalab.h:3: * © 2025–2026 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
+app/src/main/cpp/ivannalab/ivannalab.h:33:// Todos los campos en -1.0f cuando la medición no está implementada o
+app/src/main/cpp/daemon/ivanna_daemon.cpp:174:        //   abstract namespace el NOMBRE es TODO el rango [sun_path, addrlen),
+app/src/main/cpp/daemon/ivanna_daemon.cpp:178:        //   nombre SIN padding: los dos nombres no coinciden y todo connect()
+app/src/main/cpp/daemon/control/command_server.cpp:106:    if (!p) return false;
+app/src/main/cpp/daemon/control/command_server.cpp:109:    if (*p != '[') return false;
+app/src/main/cpp/daemon/control/command_server.cpp:407:            return false;
+app/src/main/cpp/daemon/control/command_server.cpp:440:    if (serverFd < 0) return false;
+app/src/main/cpp/daemon/control/command_server.cpp:461:        // nombre es todo el rango [sun_path, addrLen). Pasar sizeof(addr)
+app/src/main/cpp/daemon/control/command_server.cpp:469:            return false;
+app/src/main/cpp/daemon/control/command_server.cpp:484:        return false;
+app/src/main/cpp/daemon/control/command_server.cpp:491:        return false;
+app/src/main/cpp/daemon/control/command_server.cpp:518:        return false;
+app/src/main/cpp/daemon/control/command_server.h:9://   manda a @omega_daemon_socket. Resultado: todos los SET_INTENSITY / SET_PF_PARAMS /
+app/src/main/cpp/daemon/control/command_server.h:99:     * FIX: método que faltaba — sin él el SHM nunca recibía datos.
+app/src/main/cpp/daemon/control/command_server.h:156:     * FIX: antes enviaba únicamente 12 bytes SHM sin leer — todos los
+app/src/main/cpp/daemon/core/shm_manager.cpp:48:        return false;
+app/src/main/cpp/daemon/core/shm_manager.cpp:58:            return false;
+app/src/main/cpp/daemon/core/shm_manager.cpp:70:        return false;
+app/src/main/cpp/daemon/core/shm_manager.cpp:109:    if (!m_base || !src) return false;
+app/src/main/cpp/daemon/core/shm_manager.cpp:112:    if (len > SHM_SIZE - kHeaderSize) return false;
+app/src/main/cpp/daemon/core/shm_manager.h:71:     * @return false si la región no está lista o @p len > SHM_SIZE - sizeof(ShmHeader).
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:43:        return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:59:            return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:68:        return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:93:    if (!m_region || !m_isWriter) return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:123:        return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:131:        return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:146:    if (!m_region) return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:167:    return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:171:    if (snap.generation == lastSeenGen) return false;
+app/src/main/cpp/daemon/core/omega_control_bus.cpp:179:        return false;
+app/src/main/cpp/daemon/core/OmegaControlBus.h:28:            return false;
+app/src/main/cpp/daemon/core/OmegaControlBus.h:34:            return false;
+app/src/main/cpp/daemon/core/OmegaControlBus.h:41:            return false;
+app/src/main/cpp/daemon/core/OmegaControlBus.h:54:        if (!m_ready || !m_is_writer || !m_snapshot) return false;
+app/src/main/cpp/daemon/core/OmegaControlBus.h:72:        if (!m_ready || !m_snapshot) return false;
+app/src/main/cpp/IvannaAudioClassifier.hpp:36:        if ((current_head + count - current_tail) > Capacity) return false;
+app/src/main/cpp/IvannaAudioClassifier.hpp:48:        if (current_head - current_tail < count) return false;
+app/src/main/cpp/HrtfManager.cpp:26:// Los dos metodos que el header ya declaraba quedaban sin definir: si algun
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:1:// omega_daemon_bridge_stub.cpp
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:22://   sin publicar telemetría fantasma en el bus SPSC). Este stub honra
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:50:            "omega_daemon_get_shared_state(): stub activo — Ruta B (omega_effect "
+app/src/main/cpp/omega_daemon_bridge_stub.cpp:54:    return nullptr;
+app/src/main/cpp/SaFOptimizer.cpp:188:    if (m_iter.load() < 5) return false;
+app/src/main/cpp/SaFOptimizer.cpp:204:        return false;
+app/src/main/cpp/SaFOptimizer.cpp:222:        return false;
+app/src/main/cpp/SaFOptimizer.cpp:229:        return false;
+app/src/main/cpp/SaFOptimizer.cpp:238:        return false;
+app/src/main/cpp/SafModelLoader.cpp:19:        return false;
+app/src/main/cpp/SafHRTFBridge.cpp:13:        return false;
+app/src/main/cpp/SafHRTFBridge.cpp:17:        return false;
+app/src/main/cpp/HRTFBinLoader.cpp:12:        return false;
+app/src/main/cpp/HRTFBinLoader.cpp:22:        return false;
+app/src/main/cpp/HRTFBinLoader.cpp:52:            return false;
+app/src/main/cpp/SafHRTFDatasetBridge.cpp:19:        return false;
+app/src/main/cpp/SafHRTFDatasetBridge.cpp:33:        return false;
+app/src/main/cpp/saf_runtime.cpp:30:        return false;
+app/src/main/cpp/SafSpatialModifier.hpp:33:        return false;
+app/src/main/cpp/saf_latent_bridge.cpp:17://   Este stub define el símbolo en el proceso app. En lugar de un pozo
+app/src/main/cpp/saf_latent_bridge.cpp:51:    if (!out) return false;
+app/src/main/cpp/saf_latent_bridge.cpp:59:    return false;
+app/src/main/java/com/ivanna/omega/MainActivity.kt:195:    // llamaba en todo el repo (grep DSPStatePrefs = 0 hits fuera de su
+app/src/main/java/com/ivanna/omega/MainActivity.kt:196:    // archivo). El estado arrancaba SIEMPRE en DSPState() por defecto y todo
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:36:        if (javaClass != other?.javaClass) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:38:        if (rms != other.rms) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:39:        if (lufs != other.lufs) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:40:        if (spectralCentroid != other.spectralCentroid) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:41:        if (spectralFlux != other.spectralFlux) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:42:        if (!melEnergy.contentEquals(other.melEnergy)) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:43:        if (!barkEnergy.contentEquals(other.barkEnergy)) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:44:        if (crestFactor != other.crestFactor) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:45:        if (transientDensity != other.transientDensity) return false
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:106:        put("immersion",           immersion.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:107:        put("fatigue",             fatigue.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:108:        put("confidence",          confidence.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:109:        put("iso226LoudnessDb",    iso226LoudnessDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:110:        put("dynamicRangeDb",      dynamicRangeDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:111:        put("convNextConfidence",  convNextConfidence.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:113:        put("phaseCoherence",      phaseCoherence.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:163:        // invalidado. scope.cancel() cierra todo el árbol de corrutinas hijas
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:291:        put("immersion",           snap.immersion.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:292:        put("fatigue",             snap.fatigue.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:293:        put("confidence",          snap.confidence.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:294:        put("iso226LoudnessDb",    snap.iso226LoudnessDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:295:        put("dynamicRangeDb",      snap.dynamicRangeDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainEngine.kt:296:        put("convNextConfidence",  snap.convNextConfidence.toDouble())
+app/src/main/java/com/ivanna/omega/ai/AntiDolbyCrnnClassifier.kt:36: * devuelve isValid=false y todos los callers ya manejan ese caso.
+app/src/main/java/com/ivanna/omega/ai/AntiDolbyCrnnClassifier.kt:164:        val denom = (size - 1).toDouble()
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:21:        put("bassPreferenceDb", bassPreferenceDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:22:        put("treblePreferenceDb", treblePreferenceDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:23:        put("fatigueSensitivity", fatigueSensitivity.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:24:        put("preferredLoudnessTarget", preferredLoudnessTarget.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:25:        put("maxHearingSafeVolumeDb", maxHearingSafeVolumeDb.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:26:        put("spatialPreference", spatialPreference.toDouble())
+app/src/main/java/com/ivanna/omega/ai/UserProfile.kt:27:        put("aggressiveness", aggressiveness.toDouble())
+app/src/main/java/com/ivanna/omega/ai/PerceptualDecisionEngine.kt:78:                decision.compressorAmount.toDouble(),
+app/src/main/java/com/ivanna/omega/ai/PerceptualDecisionEngine.kt:79:                decision.exciterReduction.toDouble(),
+app/src/main/java/com/ivanna/omega/ai/PerceptualDecisionEngine.kt:80:                decision.eqHighCut.toDouble(),
+app/src/main/java/com/ivanna/omega/ai/PerceptualDecisionEngine.kt:81:                decision.spatialWidth.toDouble()
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainCortex.kt:48:            sumEnergy += (sample * sample).toDouble()
+app/src/main/java/com/ivanna/omega/ai/PerceptualBrainCortex.kt:65:            val simEnergy = (meanEnergy * (1.0 + 0.3 * sin(b.toDouble() * 0.5))).toFloat()
+app/src/main/java/com/ivanna/omega/ai/HybridDecisionEngine.kt:214:    // ── AUDIT FIX PR 5: Método para aplicar EQ calculado a la librería nativa ──
+app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt:122:        // Notificar a todos los listeners (IvannaBridgePlayer, DSPBridge, etc.)
+app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt:229:            //   paquete). La rica tiene defaults en todos los campos, así que
+app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt:287:     * Notificar a todos los listeners de un cambio de estado.
+app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt:212:                // async del DAC — hoy stub de logging — no reemplace la salida).
+app/src/main/java/com/ivanna/omega/audio/AudioResampler.kt:31:        ratio = targetSampleRate.toDouble() / sampleRate
+app/src/main/java/com/ivanna/omega/audio/AudioResampler.kt:65:        val downRatio = targetRate.toDouble() / targetSampleRate
+app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt:102:            // API no pública/vendor-specific (sin garantía en todos los OEM);
+app/src/main/java/com/ivanna/omega/audio/AudioRoutingManager.kt:45:        return false
+app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt:43: *   inyectar DSP custom en el proceso de audio de otra app sin root. Todo
+app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt:51: *   de que todo el motor suene con música de verdad, no con el micrófono.
+app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt:64:    // (AudioCallbackManager estaba definida pero jamás instanciada en todo
+app/src/main/java/com/ivanna/omega/audio/IvannaGlobalEffectManager.kt:351:    /** Libera todos los AudioEffect activos. Llamar en onTerminate(). */
+app/src/main/java/com/ivanna/omega/audio/IvannaGlobalEffectManager.kt:407:    // ─── Creadores con manejo de error (muchos dispositivos no soportan todos) ─
+app/src/main/java/com/ivanna/omega/audio/IvannaGlobalEffectManager.kt:420:        // stubs de compileSdk 35 → "Cannot access '<init>': it is package-private".
+app/src/main/java/com/ivanna/omega/audio/OmegaVibratoryProcessor.kt:9: * Antes era un stub que devolvía el audio sin tocar.
+app/src/main/java/com/ivanna/omega/audio/OmegaVibratoryProcessor.kt:16: * Diseño sin allocs: todos los buffers son locales o reutilizados.
+app/src/main/java/com/ivanna/omega/audio/OmegaVibratoryProcessor.kt:39:            var s = (tanh((audioData[i] * d).toDouble()) * invD).toFloat()
+app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt:340:            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt:358:                audioRecord?.release(); audioRecord = null; return false
+app/src/main/java/com/ivanna/omega/audio/PlaybackCaptureService.kt:380:                return false
+app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt:105:                return false
+app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt:135:            return false
+app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt:173:     * Lista todos los perfiles disponibles
+app/src/main/java/com/ivanna/omega/audio/ProfileManager.kt:282:            return false
+app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:7: *    al companion object pero startCapture() (método de instancia) necesitaba
+app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:65:        // pero startCapture() (método de instancia) necesitaba escribir estas vars
+app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:227:                                sumSq   += s.toDouble() * s.toDouble()
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:8: * Todos los modelos matemáticos, arquitecturas de sistema y implementaciones
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:14: * Todos los derechos reservados. © 2026 Luis Uriel Pimentel Pérez.
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:81:            return false
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:86:            return false
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:89:        val connection = usbManager.openDevice(targetDevice) ?: return false
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:117:            return false
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:140:            return false
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:178:     * FIX (cableado real): antes esta clase no tenía ningún método para
+app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:181:     * siendo un stub de logging (no hace poll() real del endpoint
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:116:                        src[3].toDouble(), // targetGain actual
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:117:                        src[4].toDouble(), // compAmount actual
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:118:                        src[5].toDouble(), // excReduction actual
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:119:                        src[6].toDouble()  // spatialWidth actual
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:177:    // Usa ValueAnimator para interpolar todos los parámetros continuos en 400ms.
+app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt:240:    // FloatArray(13){0f} y llamaba a nativeSetParams (que sobreescribe TODO
+app/src/main/java/com/ivanna/omega/audio/AdaptiveEngineModulator.kt:67:     * Aplicar factor a todos los parámetros modulables
+app/src/main/java/com/ivanna/omega/audio/AdaptiveEngineModulator.kt:107:        val clipped = tanh(normalized.toDouble()).toFloat()  // tanh comprime a (-1, 1)
+app/src/main/java/com/ivanna/omega/audio/INTEGRATION_GUIDE.md:188:Ejecutar todos los tests:
+app/src/main/java/com/ivanna/omega/audio/INTEGRATION_GUIDE.md:204:- **Audio loop**: Sin bloqueos (todo async)
+app/src/main/java/com/ivanna/omega/audio/INTEGRATION_GUIDE.md:212:Todos los cambios se loguean con Log.d() en TAG específicos:
+app/src/main/java/com/ivanna/omega/audio/ParameterStore.kt:110:     * Borrar todos los parámetros guardados
+app/src/main/java/com/ivanna/omega/audio/ParameterStore.kt:114:        Log.d(TAG, "🗑️ Todos los parámetros borrados")
+app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt:114:        val ratio = sourceSampleRate.toDouble() / TARGET_SR
+app/src/main/java/com/ivanna/omega/audio/StereoAudioResampler.kt:11:        ratio = targetRate.toDouble() / rate.toDouble()
+app/src/main/java/com/ivanna/omega/audio/effects/AudioEffects.kt:119:            val fr = (dSamples - floor(dSamples.toDouble())).toFloat()
+app/src/main/java/com/ivanna/omega/audio/effects/AudioEffects.kt:167:            var dp = (ph[k]-lastPhase[k]).toDouble(); lastPhase[k]=ph[k]
+app/src/main/java/com/ivanna/omega/audio/effects/AudioEffects.kt:178:            val r=(synMag[k]*cos(synPh[k].toDouble())).toFloat()
+app/src/main/java/com/ivanna/omega/audio/effects/AudioEffects.kt:179:            val im=(synMag[k]*sin(synPh[k].toDouble())).toFloat()
+app/src/main/java/com/ivanna/omega/audio/effects/AudioEffects.kt:212:            out[i] = s + tanh((sub*drive*2.5f).toDouble()).toFloat()*mix
+app/src/main/java/com/ivanna/omega/audio/effects/NeuromorphicProcessingEngine.kt:178:            val memContrib = (0 until neuronCount).fold(0.0) { acc, i -> acc + readoutWeights[i] * tanh(membrane[i].toDouble()) * 0.1 }.toFloat()
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:86:        val af = AF[freqIdx].toDouble()
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:87:        val lu = LU[freqIdx].toDouble()
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:88:        val tf = TF[freqIdx].toDouble()
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:153:        if (!OmegaEngineBridge.isConnected) return false
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:154:        val arr = JSONArray().apply { gains.forEach { put(it.toDouble()) } }
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:158:            put("listenPhon", listenPhon.toDouble())
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:159:            put("refPhon",    refPhon.toDouble())
+app/src/main/java/com/ivanna/omega/audio/Iso226Calibrator.kt:260:        if (!prefs.getBoolean(KEY_CALIBRATED, false)) return false
+app/src/main/java/com/ivanna/omega/audio/IvannaControlLoop.kt:22:// no un placeholder.
+app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt:47:        // en todo el repo. Quien decide el modo es AudioBackendSelector;
+app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt:53:            return false
+app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt:91:            return false
+app/src/main/java/com/ivanna/omega/core/AntiDolbyPreset.kt:74:            return false
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:50: *   6. Reemplazar los 3 placeholders TODO_FIREBASE_* de abajo con esos valores.
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:51: *      Mientras sigan siendo el placeholder, isConfigured queda en false y
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:63:    private const val TODO_FIREBASE_PROJECT_ID = "TODO_FIREBASE_PROJECT_ID"
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:64:    private const val TODO_FIREBASE_APP_ID = "TODO_FIREBASE_APP_ID"
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:65:    private const val TODO_FIREBASE_API_KEY = "TODO_FIREBASE_API_KEY"
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:68:        get() = TODO_FIREBASE_PROJECT_ID != "TODO_FIREBASE_PROJECT_ID" &&
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:69:                TODO_FIREBASE_APP_ID != "TODO_FIREBASE_APP_ID" &&
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:70:                TODO_FIREBASE_API_KEY != "TODO_FIREBASE_API_KEY"
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:79:     * nada si isConfigured es false (placeholders sin rellenar).
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:85:            return false
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:90:                .setProjectId(TODO_FIREBASE_PROJECT_ID)
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:91:                .setApplicationId(TODO_FIREBASE_APP_ID)
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:92:                .setApiKey(TODO_FIREBASE_API_KEY)
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:106:            Log.i(TAG, "Firebase inicializado (proyecto=$TODO_FIREBASE_PROJECT_ID)")
+app/src/main/java/com/ivanna/omega/core/CloudSyncManager.kt:110:            return false
+app/src/main/java/com/ivanna/omega/core/RootAccess.kt:11: *   En todo el repo NO existia ni una sola comprobacion de root
+app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:34:    // FIX QUIRÚRGICO: nativeSetParams(FloatArray) sobreescribe TODO g_params
+app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:40:    // Usar este método para EQ en tiempo real; NO usar nativeSetParams para eso.
+app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:241:        // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
+app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt:173:        // se instanciaba en todo el repo pese a que su destino
+app/src/main/java/com/ivanna/omega/dsp/DSPBridge.kt:82:    // ── AUDIT FIX PR 4: Métodos para que PerceptualCortex envíe parámetros DSP ──────
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:9: * DSP State — inmutable data class para todos los parámetros DSP.
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:49:     * Envía todos los parámetros al DSP nativo vía DSPBridge.
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:69:        // todo el repo): estas 13 llamadas cruzan a C++ y luego a un socket
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:209:            (Math.pow(slider.toDouble(), 2.0) * 4.0).toFloat().coerceIn(0f, 4f)
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:219:            (20.0 * Math.pow(1000.0, slider.toDouble())).toFloat()
+app/src/main/java/com/ivanna/omega/dsp/DSPState.kt:223:            (0.1 * Math.pow(100.0, slider.toDouble())).toFloat()
+app/src/main/java/com/ivanna/omega/magisk/MagiskBridge.kt:92:            // muerto y todos los comandos cayendo en "queued". El unico testigo
+app/src/main/java/com/ivanna/omega/magisk/OmegaDaemon.kt:23: *   procesa audio system-wide (todo lo que suena en el dispositivo),
+app/src/main/java/com/ivanna/omega/magisk/OmegaDaemon.kt:33: *   Redirigimos todos los wrappers PF al puente socket real. Start/Stop pasan a
+app/src/main/java/com/ivanna/omega/magisk/OmegaDaemon.kt:39: *   IVANNAApplication) sigue compilando y funcionando; internamente TODO viaja
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:117:                return false
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:149:        put("compressor",           compressor.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:150:        put("exciterReduction",     exciterRed.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:151:        put("highCutHz",            highCut.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:152:        put("spatialWidth",         spatialWidth.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:153:        put("loudnessTargetLuFS",   loudnessTarget.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:154:        put("harmonicGain",         harmonicGain.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:155:        put("antiDolbyIntensity",   antiDolby.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:161:        put("intensity", intensity.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:172:            put("targetGain", targetGain.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:173:            put("compAmount", compAmount.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:174:            put("excRed",     excRed.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:181:            put("speech",     speech.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:182:            put("music",      music.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:184:            put("confidence", confidence.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:191:            put("bassBoostDb",    bassBoostDb.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:192:            put("dialogBoostDb",  dialogBoostDb.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:193:            put("widenerMult",    widenerMult.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:200:            put("deltaEnergy", deltaEnergy.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:201:            put("metricNorm",  metricNorm.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:202:            put("memory",      memory.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:203:            put("gain",        gain.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:210:        gainsDb.forEach { arr.put(it.toDouble()) }
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:214:            put("listenPhon", listenPhon.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:215:            put("refPhon",    refPhon.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:223:        put("listenPhon",  com.ivanna.omega.audio.Iso226Calibrator.listenPhon.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:224:        put("refPhon",     com.ivanna.omega.audio.Iso226Calibrator.refPhon.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt:225:        put("latencyMs",   lastLatencyMs.toDouble())
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:19: * FIX (bug real, ver auditoría): esta clase era un stub de una línea
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:20: * ("init stub") y el símbolo JNI que debía usar (nativeMlock) apuntaba
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:91:        // /data/adb/ivanna_omega/omega_shm por SCM_RIGHTS a todo cliente que
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:202:        val buf = buffer ?: return false
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:203:        if (!isReady) return false
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:206:        if (!mappedFromDaemon) return false
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:210:            if (buf.capacity() < HEADER_BYTES + 16) return false
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:214:            if (epochBefore % 2L != 0L) return false   // escritura en curso
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:223:            if (epochAfter != epochBefore) return false  // torn read — reintentar después
+app/src/main/java/com/ivanna/omega/magisk/ShmManager.kt:226:            if (gain !in 0.1f..4.0f) return false
+app/src/main/java/com/ivanna/omega/neuromorphic/IvannaDspManager.kt:106:    /** Cierra el handle FastRPC y libera todos los recursos. */
+app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:18: * existió como target de CMake (ni el .so real ni el stub omega_vibratory_stub.cpp
+app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:21: * siempre -> todo IvannaNpeEngine (telemetría RMS/género/AGC/classify +
+app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:138:     * Cierra el handle FastRPC y libera todos los buffers ION.
+app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:13: * Todo el procesamiento ocurre en C++ con zero-allocation y lock-free.
+app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:16: * de un `object` Kotlin se compila como método de INSTANCIA en el bytecode
+app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:17: * (recibe `jobject thiz` en el JNI). Todo ivanna_spatial_jni.cpp exporta las
+app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:19: * UnsatisfiedLinkError en runtime al invocar cualquier método spatial. Se
+app/src/main/java/com/ivanna/omega/spatial/HrtfSubjectSelector.kt:7: * HrtfSubjectSelector — stub honesto de selección de sujeto HRTF.
+app/src/main/java/com/ivanna/omega/spatial/HrtfSubjectSelector.kt:18: * ESTE ARCHIVO — placeholder honesto, NO impostor:
+app/src/main/java/com/ivanna/omega/spatial/HrtfSubjectSelector.kt:68:        // TODO (siguiente commit):
+app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt:78:                current.paramNorm.toDouble(),
+app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt:79:                current.errorEnergy.toDouble(),
+app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt:80:                current.iteration.toDouble(),
+app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt:27: * sliders de arriba. Sin este control, todo el tuning fino no tiene un
+app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt:32: * Sin seek, sin cola, sin media-session. Todo eso se agrega encima.
+app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt:140:            // comprimir/solapar botones (antes todo iba en una sola Row).
+app/src/main/java/com/ivanna/omega/ui/theme/IvannaTheme.kt:42:val ObsidianVoid     = Color(0xFF010204)  // negro absoluto detrás de todo
+app/src/main/java/com/ivanna/omega/ui/MagiskStatusPanel.kt:233:                "✓ El módulo espeja la cadena DSP completa al audio de TODO el " +
+app/src/main/java/com/ivanna/omega/ui/IvannaNavigation.kt:102:                // otros 19 callbacks quedaban en su default `{}` → todos los knobs DSP
+app/src/main/java/com/ivanna/omega/ui/SystemScreen.kt:136:                   "Extremo · Todo al máximo · Material denso"
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:235:            if (eglDisplay == EGL14.EGL_NO_DISPLAY) return false
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:238:            if (!EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) return false
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:254:                return false
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:262:            if (eglContext == EGL14.EGL_NO_CONTEXT) return false
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:266:            if (eglSurface == EGL14.EGL_NO_SURFACE) return false
+app/src/main/java/com/ivanna/omega/visualizer/GLTextureView.kt:269:                return false
+app/src/main/java/com/ivanna/omega/visualizer/IvannaVisualizerBridgeV2.kt:11: * [FIX-FREEZE-5.1] Nuevos métodos:
+app/src/main/java/com/ivanna/omega/visualizer/IvannaVisualizerNativeV2.kt:6: * IvannaVisualizerNativeV2 — Declaración JNI con método sampleInto zero-alloc.
+app/src/main/java/com/ivanna/omega/saf/SaFEngine.kt:125:            // de perder todo el progreso y volver a q=0.
