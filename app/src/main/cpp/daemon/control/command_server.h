@@ -123,6 +123,7 @@ public:
      *
      * Comandos soportados:
      *   STATUS              → texto de estado del daemon
+     *   PING                → "IVANNA-OMEGA PONG daemon=active intensity=X" (nc probe)
      *   GET_TELEMETRY       → "temp=0.0 latency=<ms>"
      *   RELOAD_PARAMS       → ACK
      *   SET_BYPASS:0|1      → ACK

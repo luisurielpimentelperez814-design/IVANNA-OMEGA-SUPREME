@@ -600,6 +600,15 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
     } else if (strcmp(verb, "SET_PRESET") == 0) {
         n = snprintf(reply, reply_sz, "ACK SET_PRESET:%s", valstr);
 
+    } else if (strcmp(verb, "PING") == 0) {
+        // PING de texto plano: usado por ivanna_control.sh nc_supports_abstract()
+        // para validar que nc puede conectar al abstract socket. Responde igual
+        // que el PING JSON para que cualquier cliente (nc, MagiskBridge, shell)
+        // reciba confirmación real de vida del daemon.
+        n = snprintf(reply, reply_sz,
+            "IVANNA-OMEGA PONG daemon=active intensity=%.3f",
+            m_state.intensity);
+
     } else if (strcmp(verb, "SET_REVERB") == 0) {
         // spatial_width como proxy de reverb level
         float v = (float)strtod(valstr, nullptr);
