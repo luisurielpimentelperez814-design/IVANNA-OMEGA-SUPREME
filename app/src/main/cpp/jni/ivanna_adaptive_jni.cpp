@@ -45,13 +45,13 @@ static std::unique_ptr<AdaptiveEngineCore> gAdaptiveEngine;
 extern "C" {
 
 // FIX (colisión de símbolos): renombrado desde
-// Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine —
+// ivanna_adaptive_jni_nativeCreateAdaptiveEngine_unused —
 // esa firma exacta ya la implementa jni/ivanna_omega_jni.cpp. Se conserva
 // como función C++ normal (no exportada a Java) para no perder el código;
 // nadie la llama todavía, gAdaptiveEngine queda null hasta que se decida
 // revivir este motor como sensor independiente.
 JNIEXPORT jlong JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(JNIEnv *env, jclass clazz) {
+ivanna_adaptive_jni_nativeCreateAdaptiveEngine_unused(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         gAdaptiveEngine = std::make_unique<AdaptiveEngineCore>();
         LOGI("Adaptive Engine creado");
@@ -79,10 +79,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeAnalyzeAudio(JNIEnv *env, jclas
 }
 
 // FIX (colisión de símbolos): renombrado, ver nota arriba. Duplicaba
-// Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters
+// ivanna_adaptive_jni_nativeGetAdaptiveParameters_unused
 // de jni/ivanna_omega_jni.cpp (esa versión sí devuelve datos reales).
 JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(JNIEnv *env, jclass clazz) {
+ivanna_adaptive_jni_nativeGetAdaptiveParameters_unused(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         jfloatArray result = env->NewFloatArray(12);
         return result;
@@ -116,10 +116,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveParameters(JNIEnv *e
 }
 
 // FIX (colisión de símbolos): renombrado, ver nota arriba. Duplicaba
-// Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics
+// ivanna_adaptive_jni_nativeGetAudioCharacteristics_unused
 // de jni/ivanna_omega_jni.cpp (esa versión sí devuelve datos reales).
 JNIEXPORT jfloatArray JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioCharacteristics(JNIEnv *env, jclass clazz) {
+ivanna_adaptive_jni_nativeGetAudioCharacteristics_unused(JNIEnv *env, jclass clazz) {
     if (!gAdaptiveEngine) {
         jfloatArray result = env->NewFloatArray(8);
         return result;

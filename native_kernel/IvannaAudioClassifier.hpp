@@ -94,6 +94,8 @@ public:
 
     // Returns softmax probability vector for [Speech, Music, Transient, Ambient]
     const float* getClassProbabilities() const noexcept { return m_probabilities; }
+    // Compatibility API: bridge JNI legacy expects this accessor name.
+    const float* getProbabilities() const noexcept { return m_probabilities; }
 
     uint8_t getDominantClass() const noexcept { return m_dominantClass; }
 
