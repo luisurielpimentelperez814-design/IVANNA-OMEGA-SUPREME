@@ -238,6 +238,16 @@ target_link_libraries(ivanna_omega
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
+    # FIX(build): omega_effect.cpp incluye IvannaFusionCore.cpp via unity-build
+    # (#include "IvannaFusionCore.cpp" en línea 3), que a su vez instancia las
+    # 4 clases siguientes. Sus .cpp deben compilarse como unidades separadas
+    # para que el linker encuentre los símbolos que IvannaFusionCore necesita.
+    # IvannaFusionCore.cpp NO se lista aquí — ya entra por el unity-include;
+    # añadirlo aquí generaría ODR violation (símbolos duplicados al enlazar).
+    HrtfManager.cpp
+    EvolutionaryEQ.cpp
+    Psychoacoustics.cpp
+    IvannaAudioClassifier.cpp
     saf_optimizer.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
