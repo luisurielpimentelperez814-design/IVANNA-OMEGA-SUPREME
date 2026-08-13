@@ -237,9 +237,9 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerReset(JNIEnv*, jc
     if (upmixer) upmixer->reset();
 }
 
-} // extern "C"
 
-JNIEXPORT void JNICALL
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSubject(JNIEnv* env, jclass, jlong handle, jstring subjectId) {
     auto* renderer = toObjectRenderer(handle);
     if (!renderer || !subjectId) return;
@@ -273,3 +273,5 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqB
         renderer->getAutoEq().setBand(bandIndex, freqHz, gainDb, q);
     }
 }
+
+} // extern "C"
