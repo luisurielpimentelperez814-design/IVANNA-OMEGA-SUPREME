@@ -27,6 +27,7 @@ object IvannaSpatialManager {
     private const val BLOCK_SIZE  = 512   // debe coincidir con BLOCK en hrtf_convolver.hpp
 
     @Volatile internal var rendererHandle: Long = 0L
+    private var headTracker: IvannaHeadTracker? = null
     @Volatile var ready: Boolean = false
         private set
     @Volatile var activeSubject: String = "none"
@@ -63,13 +64,23 @@ object IvannaSpatialManager {
             try {
                 val handle = IvannaSpatialNative.nativeObjectRendererCreate(
                     SAMPLE_RATE.toFloat(), BLOCK_SIZE)
+
                 if (handle == 0L) {
                     Log.e(TAG, "nativeObjectRendererCreate devolvió 0"); return@Runnable
                 }
+                
+                // Inicializar Head Tracker y acoplarlo al Renderer Espacial Nativo
+                val tracker = IvannaHeadTracker(context)
+                tracker.init()
+                tracker.start()
+                IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle)
+                
+
                 val subject = HrtfSubjectSelector.activate(
                     context, handle, headWidthMm, headDepthMm, sex)
                 synchronized(lock) {
                     rendererHandle = handle
+                    headTracker = tracker
                     activeSubject  = subject
                     ready = true
                 }
@@ -86,6 +97,8 @@ object IvannaSpatialManager {
             if (h != 0L) {
                 runCatching { IvannaSpatialNative.nativeObjectRendererDestroy(h) }
             }
+            headTracker?.release()
+            headTracker = null
             rendererHandle = 0L
             ready = false
             activeSubject = "none"

@@ -30,6 +30,10 @@ void IvannaFusionEngine::setGoldenEarMode(bool enable) {
     m_goldenEarActive = enable;
 }
 
+void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) {
+    m_hrtf->setHeadPose(yaw, pitch, roll);
+}
+
 void IvannaFusionEngine::process(AudioBuffer* buffer) {
     // 0. TinyML Anti-Dolby Scene Classifier (Ingest & Inference via Lock-Free Ring Buffer)
     m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);

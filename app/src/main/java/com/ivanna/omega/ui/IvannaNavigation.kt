@@ -147,7 +147,8 @@ fun MainScaffold(
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
-                    onOpenAuditory   = { outerNav.navigate("auditory") }
+                    onOpenAuditory   = { outerNav.navigate("auditory") },
+                    onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) }
                 )
             }
 
@@ -170,7 +171,8 @@ fun SpatialHubScreen(
     onOpenVisualizer : () -> Unit,
     onOpenOpe        : () -> Unit,
     onOpenBinaural   : () -> Unit,
-    onOpenAuditory   : () -> Unit
+    onOpenAuditory   : () -> Unit,
+    onOpenAbxTest    : () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -183,6 +185,7 @@ fun SpatialHubScreen(
         HubCard("EQ / COMPRESOR · OPE",      "IIR 10-Band · Brickwall Limiter",      AuroraCyan,   onOpenOpe)
         HubCard("MOTOR BINAURAL",            "HRTF + VBAP + 32 Objetos + 6DoF",     NeonMagenta,  onOpenBinaural)
         HubCard("EXPERIENCIA AUDITIVA",      "Calibración perceptual + ISO 226",     NeonMagenta,  onOpenAuditory)
+        HubCard("PRUEBA ABX",                "Validación perceptual espacial",       NeonMagenta,  onOpenAbxTest)
     }
 }
 

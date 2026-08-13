@@ -139,3 +139,35 @@ JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDb
 }
 
 }
+
+
+// ── AudioEngine.kt missing JNI bindings ──
+
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeInit(
+    JNIEnv* /*env*/, jobject /*thiz*/, jint sampleRate) {
+    LOGI("AudioEngine_nativeInit: sampleRate=%d", sampleRate);
+}
+
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetExciter(
+    JNIEnv* /*env*/, jobject /*thiz*/, jfloat amount) {
+    if (!std::isfinite(amount)) { LOGE("nativeSetExciter: NaN/Inf — ignorado"); return; }
+    LOGI("AudioEngine_nativeSetExciter: amount=%.2f", amount);
+}
+
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetBypass(
+    JNIEnv* /*env*/, jobject /*thiz*/, jboolean bypass) {
+    LOGI("AudioEngine_nativeSetBypass: %s", bypass ? "true" : "false");
+}
+
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetRouteProfileJni(
+    JNIEnv* /*env*/, jclass /*clazz*/,
+    jfloat bassBoostDb, jfloat dialogBoostDb, jfloat widenerMult) {
+    if (!std::isfinite(bassBoostDb) || !std::isfinite(dialogBoostDb) || !std::isfinite(widenerMult)) {
+        LOGE("nativeSetRouteProfileJni (companion): valores NaN/Inf — ignorado");
+        return;
+    }
+    ivanna_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
+    LOGI("RouteProfile (companion): bass=%.2f dialog=%.2f widener=%.2f",
+         bassBoostDb, dialogBoostDb, widenerMult);
+}
+

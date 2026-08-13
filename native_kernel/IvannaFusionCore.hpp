@@ -57,6 +57,7 @@ public:
     void runAcousticProfiling();
     void process(AudioBuffer* buffer);
     void setGoldenEarMode(bool enable);
+    void updateHeadPose(float yaw, float pitch, float roll);
     IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
 
 private:

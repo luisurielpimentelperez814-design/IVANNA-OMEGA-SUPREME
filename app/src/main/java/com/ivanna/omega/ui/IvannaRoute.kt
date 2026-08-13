@@ -40,4 +40,5 @@ object IvannaRoute {
     // Legacy / aliases
     const val OPE_ALIAS = "ope"
     const val BINAURAL_ALIAS = "binaural"
+    const val ABX_TEST = "abx_test"
 }
