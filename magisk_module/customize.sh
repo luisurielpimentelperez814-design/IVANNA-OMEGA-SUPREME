@@ -36,6 +36,27 @@ else
     ui_print "  ! hrtf_dataset.ihr1 not found — HRTF engine will use synthetic fallback"
 fi
 
+# ── RIR dataset deployment (200 salas medidas) ───────────────────────────────
+# 200 room impulse responses (rir_0000.wav..rir_0199.wav, stereo 16kHz/16bit)
+# + metadata.csv (dimensiones de sala, posición fuente/mic, distancia, RT60).
+# Mismo patrón que SAF_model.json/hrtf_dataset.ihr1: vive en el módulo bajo
+# system/etc/ivanna_omega/rir/ y se despliega a /data/adb/ivanna_omega/rir/
+# en instalación, world-readable (0644), para que RirDataset.cpp (proceso
+# app, untrusted_app) pueda leerlo directamente sin pasar por el daemon.
+ui_print "- Deploying RIR dataset (200 measured rooms)..."
+RIR_SRC="$MODPATH/system/etc/ivanna_omega/rir"
+RIR_DEST="$SAF_DIR/rir"
+if [ -d "$RIR_SRC" ] && [ -f "$RIR_SRC/metadata.csv" ]; then
+    mkdir -p "$RIR_DEST"
+    cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
+    cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
+    set_perm_recursive "$RIR_DEST" root root 0755 0644
+    RIR_COUNT=$(ls "$RIR_DEST"/*.wav 2>/dev/null | wc -l)
+    ui_print "  ✓ RIR dataset → $RIR_DEST (${RIR_COUNT} salas)"
+else
+    ui_print "  ! RIR dataset not found in module — room simulation usará síntesis algorítmica"
+fi
+
 # ── DSP libraries ─────────────────────────────────────────────────────────────
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644

@@ -98,6 +98,29 @@ endif()
 add_test(NAME test_adaptive_engine COMMAND test_adaptive_engine)
 set_tests_properties(test_adaptive_engine PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 
+# RIR dataset (200 salas medidas, integrado 2026-08-12): valida el loader
+# contra el CSV+WAV reales shippeados en magisk_module/, no fixtures
+# inventados. La ruta se pasa como macro de compilación, resuelta en
+# configure-time desde CMAKE_SOURCE_DIR (tests/ -> cpp/ -> main/ -> app/ ->
+# raíz del repo -> magisk_module/...) para no hardcodear una ruta absoluta
+# que solo funcione en un entorno específico.
+set(IVANNA_RIR_DIR "${CMAKE_SOURCE_DIR}/../../../../../magisk_module/system/etc/ivanna_omega/rir")
+get_filename_component(IVANNA_RIR_DIR "${IVANNA_RIR_DIR}" ABSOLUTE)
+add_executable(test_rir_dataset
+  test_rir_dataset.cpp
+  ../spatial/RirDataset.cpp
+)
+target_compile_definitions(test_rir_dataset PRIVATE
+  IVANNA_RIR_DATASET_DIR="${IVANNA_RIR_DIR}"
+)
+target_compile_options(test_rir_dataset PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_rir_dataset PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_rir_dataset PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_rir_dataset COMMAND test_rir_dataset)
+set_tests_properties(test_rir_dataset PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
 # FIX (mismo gap encontrado en test_adaptive_engine, ahora en
 # test_close_loop.cpp — "aceptación de Fase 4B", agregado en 74e51c4):
 # tampoco estaba enganchado a ningún target de CMake. Verificado

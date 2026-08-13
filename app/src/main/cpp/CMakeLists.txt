@@ -58,6 +58,7 @@ add_library(ivanna_omega SHARED
     spatial/ivanna_head_tracker.cpp
     spatial/ivanna_object_renderer.cpp
     spatial/hrtf_convolver.cpp
+    spatial/RirDataset.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
