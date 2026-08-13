@@ -16,6 +16,9 @@
  */
 
 #include "hrtf_convolver.hpp"
+#if defined(__aarch64__) || defined(__arm__)
+#include <arm_neon.h>
+#endif
 #include "fft_radix2.hpp"
 #include "../include/audio_thread_priority.h"
 #include "../SafHRTFDatasetBridge.hpp"
@@ -254,12 +257,42 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         fft_->forward(monoRe_.data(), monoIm_.data());
 
         // 2d. Convolución con filtro actual (A)
+#if defined(__aarch64__)
+        int i = 0;
+        for (; i <= fftSize_ - 4; i += 4) {
+            float32x4_t mRe = vld1q_f32(&monoRe_[i]);
+            float32x4_t mIm = vld1q_f32(&monoIm_[i]);
+            
+            // L
+            float32x4_t hlRe = vld1q_f32(&H_ReL_curr_[i]);
+            float32x4_t hlIm = vld1q_f32(&H_ImL_curr_[i]);
+            float32x4_t yReL = vsubq_f32(vmulq_f32(mRe, hlRe), vmulq_f32(mIm, hlIm));
+            float32x4_t yImL = vaddq_f32(vmulq_f32(mRe, hlIm), vmulq_f32(mIm, hlRe));
+            vst1q_f32(&yReL_[i], yReL);
+            vst1q_f32(&yImL_[i], yImL);
+            
+            // R
+            float32x4_t hrRe = vld1q_f32(&H_ReR_curr_[i]);
+            float32x4_t hrIm = vld1q_f32(&H_ImR_curr_[i]);
+            float32x4_t yReR = vsubq_f32(vmulq_f32(mRe, hrRe), vmulq_f32(mIm, hrIm));
+            float32x4_t yImR = vaddq_f32(vmulq_f32(mRe, hrIm), vmulq_f32(mIm, hrRe));
+            vst1q_f32(&yReR_[i], yReR);
+            vst1q_f32(&yImR_[i], yImR);
+        }
+        for (; i < fftSize_; ++i) {
+            yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
+            yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
+            yReR_[i] = monoRe_[i] * H_ReR_curr_[i] - monoIm_[i] * H_ImR_curr_[i];
+            yImR_[i] = monoRe_[i] * H_ImR_curr_[i] + monoIm_[i] * H_ReR_curr_[i];
+        }
+#else
         for (int i = 0; i < fftSize_; ++i) {
             yReL_[i] = monoRe_[i] * H_ReL_curr_[i] - monoIm_[i] * H_ImL_curr_[i];
             yImL_[i] = monoRe_[i] * H_ImL_curr_[i] + monoIm_[i] * H_ReL_curr_[i];
             yReR_[i] = monoRe_[i] * H_ReR_curr_[i] - monoIm_[i] * H_ImR_curr_[i];
             yImR_[i] = monoRe_[i] * H_ImR_curr_[i] + monoIm_[i] * H_ReR_curr_[i];
         }
+#endif
         fft_->inverse(yReL_.data(), yImL_.data());
         fft_->inverse(yReR_.data(), yImR_.data());
         float scale = 1.0f / static_cast<float>(fftSize_);
@@ -268,12 +301,42 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         xfadeRemaining = xfadeSamplesRemaining_.load(std::memory_order_relaxed);
         if (xfadeRemaining > 0) {
             // Convolución con filtro destino (B)
+#if defined(__aarch64__)
+            int j = 0;
+            for (; j <= fftSize_ - 4; j += 4) {
+                float32x4_t mRe = vld1q_f32(&monoRe_[j]);
+                float32x4_t mIm = vld1q_f32(&monoIm_[j]);
+                
+                // L
+                float32x4_t hlRe = vld1q_f32(&H_ReL_targ_[j]);
+                float32x4_t hlIm = vld1q_f32(&H_ImL_targ_[j]);
+                float32x4_t yReL = vsubq_f32(vmulq_f32(mRe, hlRe), vmulq_f32(mIm, hlIm));
+                float32x4_t yImL = vaddq_f32(vmulq_f32(mRe, hlIm), vmulq_f32(mIm, hlRe));
+                vst1q_f32(&reL_[j], yReL);
+                vst1q_f32(&imL_[j], yImL);
+                
+                // R
+                float32x4_t hrRe = vld1q_f32(&H_ReR_targ_[j]);
+                float32x4_t hrIm = vld1q_f32(&H_ImR_targ_[j]);
+                float32x4_t yReR = vsubq_f32(vmulq_f32(mRe, hrRe), vmulq_f32(mIm, hrIm));
+                float32x4_t yImR = vaddq_f32(vmulq_f32(mRe, hrIm), vmulq_f32(mIm, hrRe));
+                vst1q_f32(&reR_[j], yReR);
+                vst1q_f32(&imR_[j], yImR);
+            }
+            for (; j < fftSize_; ++j) {
+                reL_[j] = monoRe_[j] * H_ReL_targ_[j] - monoIm_[j] * H_ImL_targ_[j];
+                imL_[j] = monoRe_[j] * H_ImL_targ_[j] + monoIm_[j] * H_ReL_targ_[j];
+                reR_[j] = monoRe_[j] * H_ReR_targ_[j] - monoIm_[j] * H_ImR_targ_[j];
+                imR_[j] = monoRe_[j] * H_ImR_targ_[j] + monoIm_[j] * H_ReR_targ_[j];
+            }
+#else
             for (int i = 0; i < fftSize_; ++i) {
                 reL_[i] = monoRe_[i] * H_ReL_targ_[i] - monoIm_[i] * H_ImL_targ_[i];
                 imL_[i] = monoRe_[i] * H_ImL_targ_[i] + monoIm_[i] * H_ReL_targ_[i];
                 reR_[i] = monoRe_[i] * H_ReR_targ_[i] - monoIm_[i] * H_ImR_targ_[i];
                 imR_[i] = monoRe_[i] * H_ImR_targ_[i] + monoIm_[i] * H_ReR_targ_[i];
             }
+#endif
             fft_->inverse(reL_.data(), imL_.data());
             fft_->inverse(reR_.data(), imR_.data());
 
