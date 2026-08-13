@@ -34,3 +34,4 @@ app/src/main/cpp/tests/build-tests/
 **/build-tests/
 *.so
 *.so.fixed*
+.cxx/
