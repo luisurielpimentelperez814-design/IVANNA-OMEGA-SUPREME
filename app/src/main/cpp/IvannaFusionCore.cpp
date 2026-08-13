@@ -14,20 +14,18 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_volterra = new ivanna::dsp::VolterraH2Symmetric(64, 2);
     
     // Synthetic initialization of Volterra Kernels for true Non-Linear processing
-    std::vector<float> h1(64, 0.f);
-    std::vector<float> h2(64 * (64 + 1) / 2, 0.f);
-    h1[0] = 1.0f;     // Identity bypass for linear
-    h1[1] = 0.15f;    // Slight linear pre-delay echo for warmth
+
     
-    // H2 symmetric kernel for 2nd order harmonic injection (warmth/saturation)
-    // We populate the diagonal of the H2 matrix to act as a square-law exciter
+    // Pre-allocate Autonomous Modulator Kernels
+    for (int i = 0; i < 64; ++i) m_h1Kernel[i] = 0.0f;
+    for (int i = 0; i < (64 * 65 / 2); ++i) m_h2Kernel[i] = 0.0f;
+    m_h1Kernel[0] = 1.0f; // Linear identity
+    
+    // Initial upload
     for (int i = 0; i < 64; ++i) {
-        // Flat index for upper triangular matrix: i * (i + 1) / 2 + i (Wait, for diagonal: row i, col i -> flat index depends on memory layout)
-        // VolterraH2Symmetric usually indexes as i * kernel_length - i*(i-1)/2 + j - i.
-        // Let's just sprinkle some H2 energy safely
-        h2[i] = 0.05f * std::exp(-0.1f * i);
+        m_h2Kernel[i] = m_currentH2Drive * std::exp(-0.1f * i);
     }
-    m_volterra->updateKernels(h1.data(), h2.data(), 64);
+    m_volterra->updateKernels(m_h1Kernel, m_h2Kernel, 64);
     m_volterra->setEnabled(true);
 
     m_hrtf = new HrtfManager();
@@ -60,6 +58,34 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     // 0. TinyML Anti-Dolby Scene Classifier (Ingest & Inference via Lock-Free Ring Buffer)
     m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
     m_classifier->processInference();
+
+    // ====================================================================================
+    // AUTONOMOUS NEURAL MODULATOR (The "Brain")
+    // ====================================================================================
+    // Dynamic acoustic physics mapping based on real-time neural classification (4 classes)
+    const float* probs = m_classifier->getProbabilities();
+    
+    // Class 0 (Action/Bass): High Volterra H2 saturation, wide Riemannian curvature
+    // Class 1 (Speech): Zero Volterra, zero curvature (pure Euclidean)
+    // Class 2 (Music): Moderate warmth, moderate curvature
+    // Class 3 (Ambient): Max curvature (holographic space), zero saturation
+    
+    float target_h2 = (probs[0] * 0.12f) + (probs[1] * 0.0f) + (probs[2] * 0.06f) + (probs[3] * 0.0f);
+    float target_curv = (probs[0] * 0.25f) + (probs[1] * 0.0f) + (probs[2] * 0.15f) + (probs[3] * 0.45f);
+    
+    // Smooth EMA (Exponential Moving Average) to prevent auditory clicks/glitches
+    m_currentH2Drive = m_currentH2Drive * 0.999f + target_h2 * 0.001f;
+    m_currentCurvature = m_currentCurvature * 0.999f + target_curv * 0.001f;
+
+    // Zero-allocation Kernel Update
+    for (int i = 0; i < 64; ++i) {
+        m_h2Kernel[i] = m_currentH2Drive * std::exp(-0.1f * i);
+    }
+    m_volterra->updateKernels(m_h1Kernel, m_h2Kernel, 64);
+    
+    // Modulate spatial manifold curvature
+    m_hrtf->setRiemannianCurvature(m_currentCurvature);
+    // ====================================================================================
 
     // 1. Predictive fatigue mitigation (TinyML int8 LSTM + dynamic IIR)
     m_psycho->predictAndMitigateFatigue(buffer);

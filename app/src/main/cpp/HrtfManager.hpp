@@ -10,10 +10,12 @@ public:
     HrtfManager();
     void processBinauralScene(AudioBuffer* buffer);
     void setHeadPose(float yaw, float pitch, float roll);
+    void setRiemannianCurvature(float curvature) { m_intrinsicCurvature.store(curvature, std::memory_order_relaxed); }
 
 private:
     void synthesizeHrtf(float yaw, float pitch, float roll, int bank);
     std::atomic<int> m_activeBank{0};
+    std::atomic<float> m_intrinsicCurvature{0.15f};
     
     ALIGN_NEON float m_hrtfLL[2][HRTF_TAPS]; // Left to Left Ear
     ALIGN_NEON float m_hrtfLR[2][HRTF_TAPS]; // Left to Right Ear (Crosstalk)

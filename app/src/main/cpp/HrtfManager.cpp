@@ -34,7 +34,7 @@ void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
     float geodesic_dist = std::acos(std::max(-1.0f, std::min(1.0f, std::cos(phi) * std::cos(theta))));
     
     // Riemannian scaling factor based on intrinsic curvature
-    float riemannian_scale = 1.0f + 0.15f * std::sin(geodesic_dist);
+    float riemannian_scale = 1.0f + m_intrinsicCurvature.load(std::memory_order_relaxed) * std::sin(geodesic_dist);
 
     float itd = std::sin(theta) * 0.1f * riemannian_scale; // Delay offset (Riemannian corrected)
     float ild = std::sin(theta) * riemannian_scale;        // Intensity offset (Riemannian corrected)

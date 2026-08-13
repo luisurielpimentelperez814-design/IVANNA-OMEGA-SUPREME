@@ -116,6 +116,12 @@ private:
     bool m_goldenEarActive = false;
     ivanna::dsp::VolterraH2Symmetric* m_volterra = nullptr;
     HrtfManager* m_hrtf = nullptr;
+    
+    // Autonomous Modulator State
+    float m_currentH2Drive = 0.05f;
+    float m_currentCurvature = 0.15f;
+    float m_h1Kernel[64];
+    float m_h2Kernel[64 * 65 / 2];
     EvolutionaryEQ* m_evoEq = nullptr;
     Psychoacoustics* m_psycho = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;

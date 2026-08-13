@@ -1505,9 +1505,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveControls(
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
     JNIEnv* env, jobject) {
-    jfloatArray arr = env->NewFloatArray(10);
+    jfloatArray arr = env->NewFloatArray(14);
     if (!arr) return nullptr;
-    float v[10];
+    float v[14];
     v[0] = g_lastRawRms.load(std::memory_order_relaxed);
     v[1] = g_lastRawPeak.load(std::memory_order_relaxed);
     v[2] = g_lastRawGrDb.load(std::memory_order_relaxed);
