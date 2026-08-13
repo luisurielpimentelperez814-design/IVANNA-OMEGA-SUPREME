@@ -104,4 +104,4 @@ object HrtfSubjectSelector {
         Log.i(TAG, "HRTF Individualization (handle=$handle): $anthropoLog -> sujeto_seleccionado=$selectedSubject")
         return selectedSubject
     }
-
+}
