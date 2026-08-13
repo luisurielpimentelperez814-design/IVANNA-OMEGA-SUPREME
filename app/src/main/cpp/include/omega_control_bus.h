@@ -158,6 +158,18 @@ struct OmegaDspSnapshot {
     float    saf_memory;
     float    saf_gain;
 
+    // ── Sala RIR ──────────────────────────────────────────────────────────────
+    // Selección y mezcla de la respuesta al impulso de sala (RirDataset).
+    // room_rt60_s: RT60 objetivo en segundos [0.1, 6.0] — selector de sala.
+    //   0.0 = sala desactivada (bypass del convolver RIR).
+    // room_idx: índice de la sala seleccionada en el dataset (0..199).
+    //   Calculado por RirDataset::findByRt60(room_rt60_s).
+    // room_wet: mezcla wet/dry [0.0, 1.0].
+    //   0.0 = solo señal seca, 1.0 = solo señal con reverberación.
+    float    room_rt60_s;   // RT60 objetivo [0.1,6.0], 0 = bypass
+    int32_t  room_idx;      // índice sala [-1 = ninguna, 0..199]
+    float    room_wet;      // wet/dry [0,1]
+
     // ── Flags ────────────────────────────────────────────────────────────────
     // bit 0: bypass global
     // bit 1: eq_calibrated
@@ -178,6 +190,9 @@ struct OmegaDspSnapshot {
         s.active_route = static_cast<int32_t>(RouteMode::SYSTEM_WIDE);
         s.intensity  = 0.85f;
         s.listen_phon = 40.f;
+        s.room_rt60_s = 0.f;   // sala desactivada por defecto
+        s.room_idx    = -1;
+        s.room_wet    = 0.35f;
         s.ref_phon    = 70.f;
         s.loudness_target = -18.f;
         s.harmonic_gain   = 1.f;
