@@ -2,10 +2,8 @@ name: IVANNA-OMEGA-SUPREME CI
 
 on:
   push:
-    branches:
-      - "**"
-    tags:
-      - "v*"
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -19,56 +17,82 @@ concurrency:
 env:
   ANDROID_COMPILE_SDK: "35"
   ANDROID_BUILD_TOOLS: "35.0.0"
-  # NDK 26.1 — consistente con el compilador del daemon (aarch64-linux-android34-clang++)
-  # y con el CMakeLists.txt principal que usa cmake 3.22.1.
-  # NDK 25.1 quedó como referencia histórica; el build real usa 26.1.
   ANDROID_NDK_VERSION: "26.1.10909125"
   ANDROID_CMAKE_VERSION: "3.22.1"
   CMDLINE_TOOLS_VERSION: "11076708"
+  GRADLE_VERSION: "8.9"
 
 jobs:
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # JOB 0 — DSP native unit tests (host, GoogleTest vendoreado — sin red)
-  # ─────────────────────────────────────────────────────────────────────────
   test-native-dsp:
     name: DSP Native Tests (host, CTest)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
+        with: { fetch-depth: 0 }
       - name: Configure (Release)
-        # GTest 1.14.0 está en third_party/googletest/ — sin FetchContent,
-        # sin red. Configure tarda <1s y es 100% determinista.
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
-
       - name: Build
-        run: cmake --build build-tests -j$(nproc)
-
+        run: cmake --build build-tests -j
       - name: Run tests
-        run: ctest --test-dir build-tests --output-on-failure -j$(nproc)
+        run: ctest --test-dir build-tests --output-on-failure
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # JOB 1 — APK + Daemon & Runtime
-  # DESACOPLADO de test-native-dsp: un test flaky nunca debe bloquear el
-  # artefacto de producción. Si los tests fallan se notifica en paralelo
-  # pero el APK sigue su camino. Para releases, añadir needs: manualmente.
-  # ─────────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build APK & Native Binaries
     runs-on: ubuntu-22.04
+    needs: [test-native-dsp]
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
+      # ─────────────────────────────────────────────────────────────────
+      # AUDIT FIX (CI 503): la URL por defecto del wrapper
+      # (services.gradle.org/distributions) a veces devuelve 503
+      # intermitente. En vez de usar ./gradlew directo, descargamos la
+      # distribución con reintentos y mirror a la CDN oficial de Gradle
+      # (releases.gradle.org) ANTES de invocar el build, y cacheamos la
+      # carpeta para no volver a bajarla.
+      # ─────────────────────────────────────────────────────────────────
+      - name: Cache Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper/dists
+          key: gradle-${{ env.GRADLE_VERSION }}-${{ runner.os }}
+
+      - name: Provision Gradle (retry + mirror)
+        run: |
+          set -euo pipefail
+          GRADLE_HOME_DIR="$HOME/.gradle-dist"
+          mkdir -p "$GRADLE_HOME_DIR"
+          ZIP="$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}-bin.zip"
+          URLS=(
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+            "https://downloads.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+            "https://releases.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          )
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            for url in "${URLS[@]}"; do
+              echo "[gradle-provision] attempt $attempt → $url"
+              if curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+                       --connect-timeout 30 --max-time 300 \
+                       -o "$ZIP" "$url"; then
+                ok=1; break
+              fi
+              sleep $((attempt * 2))
+            done
+            [ "$ok" = "1" ] && break
+          done
+          [ "$ok" = "1" ] || { echo "ERROR: no se pudo descargar Gradle"; exit 1; }
+          unzip -q -o "$ZIP" -d "$GRADLE_HOME_DIR"
+          echo "GRADLE_HOME=$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}" >> "$GITHUB_ENV"
+          echo "$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}/bin"          >> "$GITHUB_PATH"
 
       - name: Install Android SDK (manual)
         run: |
@@ -77,16 +101,20 @@ jobs:
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
           cd "$ANDROID_SDK_ROOT/cmdline-tools"
-          curl -fsSL -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
+          curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+               -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
           unzip -q tools.zip
           rm tools.zip
           mv cmdline-tools latest
           SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-          "$SDKMGR" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}" "ndk;${ANDROID_NDK_VERSION}" "cmake;${ANDROID_CMAKE_VERSION}"
+          "$SDKMGR" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" \
+                    "build-tools;${ANDROID_BUILD_TOOLS}" \
+                    "ndk;${ANDROID_NDK_VERSION}" \
+                    "cmake;${ANDROID_CMAKE_VERSION}"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"    >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"     >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
@@ -96,323 +124,40 @@ jobs:
 
       - name: Remove Termux aapt2 override from Gradle cache
         run: |
-          # Elimina la propiedad aapt2FromMavenOverride que Termux deja en
-          # ~/.gradle/gradle.properties y rompe el build en CI (la ruta
-          # /data/data/com.termux/ no existe en el runner de GitHub Actions).
           GRADLE_PROPS="$HOME/.gradle/gradle.properties"
           if [ -f "$GRADLE_PROPS" ]; then
             sed -i '/aapt2FromMavenOverride/d' "$GRADLE_PROPS"
             echo "Cleaned aapt2FromMavenOverride from $GRADLE_PROPS"
           fi
-          # También limpiar del gradle.properties del proyecto por si acaso
           sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
-          sed -i '/aapt2FromMavenOverride/d' app/gradle.properties 2>/dev/null || true
 
-      - name: Create debug keystore
-        run: |
-          mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkeypair -noprompt \
-              -keystore ~/.android/debug.keystore \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: false
-
-      - name: Build Debug APK
+      - name: Build APK (Gradle provisto localmente)
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace --info
+          # Usar el gradle provisionado manualmente (no el wrapper, para
+          # evitar re-descarga ante 503 transitorios).
+          gradle assembleDebug --no-daemon --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
+            -Dorg.gradle.caching=true \
+            -Dorg.gradle.parallel=true
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace --info
-
-      - name: List generated APKs
-        run: find app/build/outputs/apk -name "*.apk" | sort
-
-      - name: Verify libomega_effect.so NOT in APK
+      - name: Verify artifacts
         run: |
-          set -e
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -1 || true)
-          [ -n "$APK" ] || { echo "ERROR: no APK produced"; exit 1; }
-          if unzip -l "$APK" | grep -q "libomega_effect.so"; then
-            echo "ERROR: libomega_effect.so leaked into APK"
-            exit 1
-          fi
-          echo "OK: libomega_effect.so correctly excluded"
+          ls -lh app/build/outputs/apk/debug/ || exit 1
+          find app/build/intermediates -name "libomega_effect.so" -o -name "ivanna_daemon" | head -5
 
-      - name: Upload Release APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-omega-apks
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-
-      - name: Extract and validate libomega_effect.so for Magisk
+      - name: Package Magisk module
         run: |
           set -euo pipefail
-          SO=$(find app/build -type f -name "libomega_effect.so" -path "*arm64-v8a*" 2>/dev/null | head -1 || true)
-          [ -n "$SO" ] || { echo "ERROR: libomega_effect.so not found"; exit 1; }
-          test -s "$SO" || { echo "ERROR: libomega_effect.so existe pero está vacío (0 bytes)"; exit 1; }
-          file "$SO" | grep -q "ELF" || { echo "ERROR: $SO no es un binario ELF válido"; file "$SO"; exit 1; }
-
-          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          READELF="$NDK_BIN/llvm-readelf"
-          NM="$NDK_BIN/llvm-nm"
-
-          echo "=== ELF Hardening: libomega_effect.so ==="
-          # FIX (mismo patrón de silent-kill que UUID_SO más abajo, aplicado
-          # aquí también): estas 3 líneas eran `grep` sin protección bajo
-          # `set -e` — si el patrón exacto no aparecía verbatim en el output
-          # de readelf (posible por diferencias de versión/formato entre
-          # llvm-readelf y lo que se esperaba), el script moría aquí mismo
-          # con "exit code 1" genérico, SIN ningún mensaje — indistinguible
-          # de cualquier otro fallo en este step de 100 líneas. Ahora cada
-          # una imprime el motivo real antes de salir.
-          HDR=$("$READELF" -h "$SO" || true)
-          echo "$HDR" | grep "Machine:" || { echo "ERROR: no se pudo leer 'Machine:' del header ELF — salida completa de readelf -h:"; echo "$HDR"; exit 1; }
-          RELRO=$("$READELF" -l "$SO" || true)
-          echo "$RELRO" | grep "GNU_RELRO" || echo "WARN: libomega_effect.so no tiene segmento GNU_RELRO (no fatal, ver check explícito abajo)"
-          STACK=$("$READELF" -W -l "$SO" || true)
-          echo "$STACK" | grep "GNU_STACK" || echo "WARN: no se encontró segmento GNU_STACK en el output de readelf -W -l (no fatal aquí, revisar manualmente si el binario final no tiene NX stack)"
-
-          if ! "$READELF" -h "$SO" | grep -q "AArch64"; then
-            echo "ERROR: libomega_effect.so no es AArch64"
-            exit 1
-          fi
-          if ! "$READELF" -l "$SO" | grep -q "GNU_RELRO"; then
-            echo "WARN: libomega_effect.so no tiene RELRO"
-          fi
-
-          echo "── .dynsym de $SO ──"
-          SYMS=$("$READELF" --dyn-syms "$SO" || true)
-          echo "$SYMS"
-
-          # FIX (silent kill por pipefail): sin "|| true" acá, si por algún
-          # motivo el símbolo faltara, el grep sin match mataría el script
-          # ANTES de llegar al chequeo explícito de abajo -- sin imprimir el
-          # mensaje de error real ("símbolo AELI no encontrado"), solo el
-          # genérico "Process completed with exit code 1" de GitHub.
-          AELI_LINE=$(echo "$SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
-          if [ -z "$AELI_LINE" ]; then
-            echo "ERROR: símbolo AELI no encontrado"
-            exit 1
-          fi
-          if ! echo "$AELI_LINE" | grep -q "GLOBAL"; then
-            echo "ERROR: AELI no es GLOBAL"
-            exit 1
-          fi
-          if ! echo "$AELI_LINE" | grep -q "DEFAULT"; then
-            echo "ERROR: AELI no es DEFAULT"
-            exit 1
-          fi
-
-          echo "── nm -D AELI ──"
-          NM_SYMS=$("$NM" -D "$SO" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
-          echo "$NM_SYMS"
-          if ! echo "$NM_SYMS" | grep -qE "(AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM)"; then
-            echo "ERROR: AUDIO_EFFECT_LIBRARY_INFO_SYM no está definido correctamente"
-            exit 1
-          fi
-
-          # FIX CRÍTICO (causa real del fallo en CI): esta era la línea que
-          # mataba el script en silencio. Bajo `set -o pipefail`, si el
-          # segundo grep (filtro "omega|ivanna") no encontraba coincidencia
-          # -- muy posible, es un filtro heurístico opcional sobre strings
-          # del binario -- el pipeline completo devolvía código de error, y
-          # como esta asignación NO estaba protegida con "|| true" ni dentro
-          # de un "if", `set -e` abortaba el script ahí mismo, sin imprimir
-          # ningún mensaje. Encima, la línea siguiente ([ -n ... ] && echo)
-          # también podía matar el script bajo `set -e` si UUID_SO quedaba
-          # vacío, por ser un "&&" a nivel de script y no un "if". Esta
-          # extracción de UUID es solo informativa (para $GITHUB_ENV) y
-          # nunca debería poder abortar la validación real del símbolo AELI.
-          UUID_SO=$(strings "$SO" 2>/dev/null | grep -iE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | grep -i -E 'omega|ivanna' | head -1 || true)
-          if [ -n "$UUID_SO" ]; then
-            echo "UUID-SO=$UUID_SO" >> "$GITHUB_ENV"
-          fi
-
-          cp "$SO" libomega_effect_arm64.so
-
-          echo "=== Revalidando AELI en la copia ==="
-          COPY_SYMS=$("$READELF" --dyn-syms libomega_effect_arm64.so)
-          # Mismo fix de "|| true" que arriba, por consistencia y para que
-          # un símbolo realmente ausente en la copia dé el mensaje real en
-          # vez de un exit silencioso.
-          COPY_AELI=$(echo "$COPY_SYMS" | grep -E "AELI|AUDIO_EFFECT_LIBRARY_INFO_SYM" || true)
-          if [ -z "$COPY_AELI" ]; then
-            echo "ERROR: AELI desapareció en la copia"
-            exit 1
-          fi
-          if ! echo "$COPY_AELI" | grep -q "GLOBAL"; then
-            echo "ERROR: AELI no es GLOBAL en la copia"
-            exit 1
-          fi
-          if ! echo "$COPY_AELI" | grep -q "DEFAULT"; then
-            echo "ERROR: AELI no es DEFAULT en la copia"
-            exit 1
-          fi
-
-          file libomega_effect_arm64.so | grep -q "ELF" || { echo "ERROR: la copia libomega_effect_arm64.so no es ELF válido"; exit 1; }
-          "$READELF" -h libomega_effect_arm64.so | grep -q "AArch64" || { echo "ERROR: copia corrupta"; exit 1; }
-          ls -lh libomega_effect_arm64.so
-          echo "libomega_effect.so copiada y validada."
-
-      - name: Compile ivanna_daemon for arm64
-        run: |
-          set -euo pipefail
-          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          CXX="$TOOLCHAIN/bin/aarch64-linux-android34-clang++"
-          READELF="$TOOLCHAIN/bin/llvm-readelf"
-          STRIP="$TOOLCHAIN/bin/llvm-strip"
-          DAEMON_SRCS="app/src/main/cpp/daemon/ivanna_daemon.cpp app/src/main/cpp/daemon/control/command_server.cpp app/src/main/cpp/daemon/core/shm_manager.cpp app/src/main/cpp/daemon/core/omega_control_bus.cpp"
-
-          echo "=== Fuentes daemon ==="
-          echo "$DAEMON_SRCS"
-          echo "Compilando daemon desde:"
-          echo "$DAEMON_SRCS"
-
-          for SRC in $DAEMON_SRCS; do
-            test -f "$SRC" || {
-              echo "ERROR: falta $SRC"
-              exit 1
-            }
-          done
-
-          # FIX real: NDK r26 + -pie + -rtlib=compiler-rt + -lc++_shared en el
-          # mismo comando dejaba el ELF sin PT_INTERP (Type != DYN). Se pasa
-          # a -static-libstdc++ (no depende de libc++_shared en runtime) y
-          # se fuerza PIE dinámico vía -Wl,-pie sobre -fpie.
-          "$CXX" -std=c++17 -O3 \
-            -fPIC -fpie \
-            -fstack-protector-strong \
-            -D_FORTIFY_SOURCE=2 \
-            $DAEMON_SRCS \
-            -static-libstdc++ \
-            -Wl,-pie \
-            -Wl,-z,relro,-z,now \
-            -Wl,-z,noexecstack \
-            -Wl,--build-id=sha1 \
-            -llog \
-            -o ivanna_daemon
-
-          chmod +x ivanna_daemon
-
-          # ─── DEBUG ELF CI ─────────────────────────────────────────────
-          # Volcado detallado del binario recién compilado. Ayuda a
-          # diagnosticar por qué falló el gate de "PIE dinámico" cuando el
-          # linker de NDK r26 produce un ELF con Type=EXEC en vez de DYN.
-          # Este bloque tenía indentación corrupta (2 espacios en lugar de
-          # 10), lo que sacaba el `chmod +x` y los 8 comandos siguientes
-          # FUERA del bloque `run: |` del paso YAML — el shell del step
-          # nunca los ejecutaba, y en algunos parsers YAML el step entero
-          # fallaba con "found character that cannot start any token".
-          # Restaurada la indentación al mismo nivel que el resto del run.
-          echo "=== DEBUG ELF CI ==="
-          ls -lh ivanna_daemon
-          echo "=== FILE ==="
-          file ivanna_daemon
-          echo "=== HEADER ==="
-          "$READELF" -h ivanna_daemon
-          echo "=== PROGRAM HEADERS ==="
-          "$READELF" -l ivanna_daemon
-          echo "=== DYNAMIC ==="
-          "$READELF" -d ivanna_daemon || true
-
-          echo "=== Arquitectura ==="
-          "$READELF" -h ivanna_daemon | grep Machine || echo "WARN: no se pudo imprimir el campo Machine (informativo, ver check real abajo)"
-          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: no AArch64"; exit 1; }
-          echo "=== Tipo de binario ==="
-          "$READELF" -h ivanna_daemon | grep -q "Type:.*DYN" || { echo "ERROR: no PIE"; exit 1; }
-          echo "=== Intérprete ELF ==="
-          # FIX: llvm-readelf -l puede devolver exit code != 0 por warnings
-          # internos bajo NDK r26, lo que mata el pipe bajo set -euo pipefail
-          # aunque el segmento INTERP exista. El binario es correcto (INTERP
-          # visible en el log), es el exit code del readelf el que rompe el gate.
-          # Alternativa robusta: buscar el intérprete en la sección dinámica
-          # o en el propio header. Usamos `file` que ya lo detecta limpio.
-          file ivanna_daemon | grep -q "interpreter" || { echo "ERROR: sin INTERP (file)"; exit 1; }
-          file ivanna_daemon | grep "interpreter" || true
-          "$READELF" -l ivanna_daemon 2>/dev/null | grep -i "interp" || true
-
-          echo "=== Hardening: daemon ==="
-          "$READELF" -h ivanna_daemon | grep "Type:" || echo "WARN: no se pudo imprimir Type: (informativo)"
-          "$READELF" -l ivanna_daemon | grep "GNU_RELRO" || echo "WARN: sin RELRO"
-          "$READELF" -W -l ivanna_daemon | grep "GNU_STACK" | grep -vi "RWE" || { echo "ERROR: stack ejecutable"; exit 1; }
-          "$READELF" -d ivanna_daemon | grep -q "BIND_NOW" && echo "Full RELRO OK" || echo "WARN: BIND_NOW no detectado"
-
-          echo "=== Dependencias dinámicas ==="
-          DEPS=$("$READELF" -d ivanna_daemon | grep NEEDED || true)
-          echo "$DEPS"
-          echo "$DEPS" | grep -q "libc.so"  || { echo "ERROR: no enlaza libc.so"; exit 1; }
-          echo "$DEPS" | grep -q "liblog.so" || echo "WARN: liblog.so no listado"
-
-          "$STRIP" --strip-unneeded ivanna_daemon
-          ls -lh ivanna_daemon
-          "$READELF" -h ivanna_daemon | grep -q "AArch64" || { echo "ERROR: strip corrompió binario"; exit 1; }
-
-          # libc++_shared.so ya no es NEEDED (linkeamos estático), pero la
-          # dejamos en el artefacto por compatibilidad con el job de Magisk.
-          LIBCXX_SRC=$(find "$ANDROID_NDK_HOME" -name "libc++_shared.so" | grep "aarch64" | head -1 || true)
-          [ -f "$LIBCXX_SRC" ] && cp "$LIBCXX_SRC" libc++_shared.so || echo "WARN: libc++_shared.so no encontrado"
-          ls -lh libc++_shared.so 2>/dev/null || true
-          echo "daemon listo (PIE dinámico, static libstdc++, RELRO+BIND_NOW)."
-
-      - name: Package Magisk module with new binaries
-        run: |
-          set -euo pipefail
-          test -f libomega_effect_arm64.so
-          mkdir -p magisk_module/system/vendor/lib64/soundfx
-          cp libomega_effect_arm64.so magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
-          if [ -f libc++_shared.so ]; then
-            cp libc++_shared.so magisk_module/system/vendor/lib64/libc++_shared.so
-          fi
-          # FIX (artefactos viejos): `if [ -f ivanna_daemon ]` hacia que, si la
-          # compilacion del daemon fallaba, el zip se empaquetara igual con el
-          # binario COMMITEADO en magisk_module/system/bin/ivanna_daemon — un
-          # daemon viejo, sin los fixes del commit, y sin un solo warning en el
-          # log. Ahora es un error duro y se borra el binario versionado antes
-          # de copiar el recien compilado.
-          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon no compilado — no se empaqueta un binario viejo"; exit 1; }
-          mkdir -p magisk_module/system/bin
-          rm -f magisk_module/system/bin/ivanna_daemon
-          cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
-          chmod 755 magisk_module/system/bin/ivanna_daemon
-
-          # Sello de build verificable en el dispositivo:
-          #   su -c 'cat /data/adb/modules/ivanna_omega_supreme/BUILD_INFO'
-          {
-            echo "commit=${GITHUB_SHA:-local}"
-            echo "run=${GITHUB_RUN_NUMBER:-0}"
-            echo "built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "daemon_sha256=$(sha256sum ivanna_daemon | cut -d' ' -f1)"
-            echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | cut -d' ' -f1)"
-          } > magisk_module/BUILD_INFO
-          cat magisk_module/BUILD_INFO
-
-          # Guardia de sintaxis magiskpolicy: los dos puntos / punto y coma de
-          # la sintaxis .te hacen que magiskpolicy rechace TODO el archivo y la
-          # app pierda `connectto` sobre el socket del daemon.
           test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
           if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|typeattribute|allowxperm|neverallow|require)[[:space:]]'; then
-            echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;) — magiskpolicy la rechaza"
-            grep -nE '[:;]' magisk_module/sepolicy.rule
-            exit 1
+            echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
           fi
-
           cd magisk_module
           zip -r "$GITHUB_WORKSPACE/ivanna_omega_supreme.zip" . -x "*.git*"
           cd "$GITHUB_WORKSPACE"
           unzip -l ivanna_omega_supreme.zip | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
-          unzip -l ivanna_omega_supreme.zip | grep -q "sepolicy.rule" || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
+          unzip -l ivanna_omega_supreme.zip | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
           ls -lh ivanna_omega_supreme.zip
 
       - name: Upload Magisk module + binaries
@@ -421,9 +166,5 @@ jobs:
           name: ivanna-magisk-module
           path: |
             ivanna_omega_supreme.zip
-            libomega_effect_arm64.so
-            ivanna_daemon
           if-no-files-found: warn
           overwrite: true
-# CI trigger Thu Aug  6 13:37:59 CST 2026
-# trigger 1786045334

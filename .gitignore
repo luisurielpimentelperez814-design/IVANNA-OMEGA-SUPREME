@@ -1,37 +1,39 @@
-node_modules/
+# Build outputs
 build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
-*.zip
-app/.cxx/
 app/build/
-app/src/main/cpp/tests/build-tests/
-*.apk
-*.aab
-repo_tmp/
-
-# Build artifacts
-app/build/
-app/.cxx/
 .gradle/
 *.apk
+*.aar
 *.aab
-*.zip
-*.patch
-
-# Privacidad
-Chat\ de\ WhatsApp*/
-Meta\ AI
-
-# Duplicados numerados
-*\ (1)/
-*\ (2)/
-app/src/main/cpp/tests/build-tests/
-**/build-tests/
 *.so
-*.so.fixed*
-.cxx/
+*.zip
+
+# Scratch / one-shot patches (la historia vive en git, no en la raíz)
+*.patch
+*.diff
+build_error.txt
+ABCD-reference.diff
+01_*.sh
+0[1-9]_commit_*.sh
+0[1-9]_fix_*.py
+1[0-9]_commit_*.py
+1[0-9]_commit_*.sh
+*.bak.*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+local.properties
+
+# Datos pesados (regenerables o descargables)
+*.ihr1
+hrtf_dataset.*
+
+# Reports de auditoría one-shot (NO son artefactos de build)
+large_files_audit.txt
+spatial_assets_inventory.txt
+world_audio_pipeline_map.txt
+world_audit_debt.txt
+daemon_architecture_report.txt
