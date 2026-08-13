@@ -514,6 +514,7 @@ fun OmegaApp() {
             composable(IvannaRoute.TELEMETRY) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
             composable("adaptive_profiles") {
             composable(IvannaRoute.ABX_TEST) { com.ivanna.omega.ui.AbxTestScreen(onBack = { nav.popBackStack() }) }
+            composable("benchmark") { com.ivanna.omega.ui.BenchmarkScreen(onBack = { nav.popBackStack() }) }
                 com.ivanna.omega.ui.AdaptiveProfilesScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)

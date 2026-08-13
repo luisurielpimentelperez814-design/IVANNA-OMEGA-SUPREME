@@ -148,7 +148,8 @@ fun MainScaffold(
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
                     onOpenAuditory   = { outerNav.navigate("auditory") },
-                    onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) }
+                    onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) },
+                    onOpenBenchmark  = { outerNav.navigate("benchmark") }
                 )
             }
 
@@ -172,7 +173,8 @@ fun SpatialHubScreen(
     onOpenOpe        : () -> Unit,
     onOpenBinaural   : () -> Unit,
     onOpenAuditory   : () -> Unit,
-    onOpenAbxTest    : () -> Unit
+    onOpenAbxTest    : () -> Unit,
+    onOpenBenchmark  : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -186,6 +188,7 @@ fun SpatialHubScreen(
         HubCard("MOTOR BINAURAL",            "HRTF + VBAP + 32 Objetos + 6DoF",     NeonMagenta,  onOpenBinaural)
         HubCard("EXPERIENCIA AUDITIVA",      "Calibración perceptual + ISO 226",     NeonMagenta,  onOpenAuditory)
         HubCard("PRUEBA ABX",                "Validación perceptual espacial",       NeonMagenta,  onOpenAbxTest)
+        HubCard("BENCHMARK & EVIDENCE",      "Telemetría y validación acústica",     NeonMagenta,  onOpenBenchmark)
     }
 }
 
