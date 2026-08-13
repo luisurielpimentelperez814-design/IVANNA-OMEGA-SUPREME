@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include <memory>
+#include <atomic>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -35,17 +36,18 @@ public:
         std::sort(idx.begin(), idx.end(),
                   [&](int a, int b) { return az[a] < az[b]; });
 
-        dsAz_.resize(numDirs);
-        dsL_.resize(numDirs);
-        dsR_.resize(numDirs);
+        auto ds = std::make_shared<SharedDataset>();
+        ds->irLen = irLen;
+        ds->az.resize(numDirs);
+        ds->L.resize(numDirs);
+        ds->R.resize(numDirs);
         for (int i = 0; i < numDirs; ++i) {
             int s = idx[i];
-            dsAz_[i] = az[s];
-            dsL_[i].assign(irL + (size_t)s * irLen, irL + (size_t)(s + 1) * irLen);
-            dsR_[i].assign(irR + (size_t)s * irLen, irR + (size_t)(s + 1) * irLen);
+            ds->az[i] = az[s];
+            ds->L[i].assign(irL + (size_t)s * irLen, irL + (size_t)(s + 1) * irLen);
+            ds->R[i].assign(irR + (size_t)s * irLen, irR + (size_t)(s + 1) * irLen);
         }
-        dsIrLen_ = irLen;
-        hasDataset_ = true;
+        std::atomic_store(&dataset_, ds);
         return true;
     }
 
@@ -79,7 +81,22 @@ public:
         return loadDataset(az.data(), L.data(), R.data(), numDirs, irLen);
     }
 
-    bool hasCustomDataset() const { return hasDataset_; }
+    bool hasCustomDataset() const {
+        return std::atomic_load(&dataset_) != nullptr;
+    }
+
+    // Dataset compartido: una sola copia en memoria para todos los
+    // convolvers del renderer (HRTFConvolver::setSharedDataset la propaga).
+    // PUBLICO: hrtf_convolver.hpp e ivanna_object_renderer.hpp referencian
+    // SyntheticHRTF::SharedDataset directamente.
+    struct SharedDataset {
+        int irLen = 0;
+        std::vector<float> az;
+        std::vector<std::vector<float>> L, R;
+    };
+    void setSharedDataset(std::shared_ptr<SharedDataset> ds) noexcept {
+        std::atomic_store(&dataset_, std::move(ds));
+    }
 
     // ── SAF latent morphing ────────────────────────────────────────────
     // Aplica el vector q_t (7 componentes PCA) del optimizador Φ_SAF^∞
@@ -307,13 +324,7 @@ private:
     float sr_    = 96000.f;
     int   irLen_ = 128;
 
-    // Dataset personalizado
-    
-    struct SharedDataset {
-        int irLen = 0;
-        std::vector<float> az;
-        std::vector<std::vector<float>> L, R;
-    };
+    // Dataset personalizado (struct declarado en la zona pública)
     std::shared_ptr<SharedDataset> dataset_;
 
 
