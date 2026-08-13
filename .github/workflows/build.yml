@@ -28,7 +28,7 @@ jobs:
     name: DSP Native Tests (host, CTest)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Configure (Release)
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [test-native-dsp]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
 
       - name: Setup Java 17
