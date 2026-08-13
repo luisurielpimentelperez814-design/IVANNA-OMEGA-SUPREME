@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <android/log.h>
 #include "IvannaFusionCore.cpp"
+#include "spatial/RirConvolver.hpp"
+#include "spatial/RirDataset.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -89,6 +91,9 @@ struct omega_effect_context_t {
     effect_config_t config;
     bool enabled;
     IvannaFusionCore* fusionCore;   // AUDIT FIX: DSP per-instance (era global)
+    // ── RIR sala — instanciados per-session, cargados lazy al primer SET_ROOM_RT60
+    RirConvolver*     rirConvolver; // convolucionador overlap-save (null hasta 1er load)
+    RirDataset*       rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
     float* rtL;                     // AUDIT FIX: buffer L preasignado (realtime)
     float* rtR;                     // AUDIT FIX: buffer R preasignado (realtime)
     int    rtCapacity;              // frames que caben en rtL/rtR
@@ -127,11 +132,74 @@ static inline void omega_apply_snapshot(IvannaFusionCore* fc,
     }
     // Compresor (threshold / ratio)
     if (std::isfinite(s.compressor) && s.compressor < 0.f) {
-        // s.compressor viene en dB negativos (threshold), ratio derivada del
-        // campo comp_amount [0..1] mapeado a [1..8]:1 (compat con el driver).
         const float ratio = 1.0f + 7.0f * std::clamp(s.comp_amount, 0.f, 1.f);
         fc->setCompressorParams(s.compressor, ratio);
     }
+}
+
+// ── Cable RIR: aplica la sala seleccionada por SET_ROOM_RT60 ─────────────────
+// Llamada desde omega_process cuando el snapshot tiene un room_rt60_s nuevo.
+// Si rt60==0 → bypass. Si hay una sala cargada con ese RT60 → load() en el
+// RirConvolver (lock-free, el proceso() del próximo bloque la absorbe).
+static inline void omega_apply_room(omega_effect_context_t* ctx,
+                                    const ivanna::OmegaDspSnapshot& s) noexcept {
+    if (!ctx) return;
+
+    // Lazy-init del dataset (cargado una sola vez por proceso audioserver)
+    static RirDataset* g_dataset = nullptr;
+    static bool g_dataset_tried = false;
+    if (!g_dataset_tried) {
+        g_dataset_tried = true;
+        g_dataset = new RirDataset();
+        const char* base = "/data/adb/ivanna_omega/rir";
+        const char* csv  = "/data/adb/ivanna_omega/rir/metadata.csv";
+        if (!g_dataset->load(base, csv)) {
+            LOGW("RirDataset: no se pudo cargar desde %s — sala desactivada", base);
+            delete g_dataset; g_dataset = nullptr;
+        } else {
+            LOGI("RirDataset: %d salas cargadas desde %s", (int)g_dataset->size(), base);
+        }
+    }
+
+    // Lazy-init del convolver por instancia
+    if (!ctx->rirConvolver) {
+        ctx->rirConvolver = new RirConvolver();
+    }
+
+    const float rt60 = s.room_rt60_s;
+    const float wet  = s.room_wet;
+
+    if (rt60 < 0.01f || !g_dataset || g_dataset->size() == 0) {
+        // Bypass: desactivar convolver
+        ctx->rirConvolver->setWetDry(0.f);
+        ctx->rirConvolver->unload();
+        return;
+    }
+
+    // Seleccionar sala más cercana al RT60 objetivo
+    const auto* room = g_dataset->findByRt60(rt60);
+    if (!room || room->ir.empty()) {
+        ctx->rirConvolver->setWetDry(0.f);
+        return;
+    }
+
+    // Solo recargar si la sala cambió (comparar por idx)
+    const int32_t targetIdx = s.room_idx;
+    if (targetIdx >= 0 && ctx->rirConvolver->isLoaded()) {
+        // Si el índice no cambió, solo actualizar wet/dry
+        ctx->rirConvolver->setWetDry(wet);
+        return;
+    }
+
+    // Cargar la IR — el convolver la absorberá en el próximo process()
+    // room->ir es estéreo interleaved L R L R... o mono (duplicar al canal R)
+    const int irLen = (int)room->ir.size();
+    std::vector<float> irL(irLen), irR(irLen);
+    // El dataset carga la IR como mono (canal 0); duplicar para estéreo
+    for (int i = 0; i < irLen; ++i) { irL[i] = room->ir[i]; irR[i] = room->ir[i]; }
+    ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
+    ctx->rirConvolver->setWetDry(wet);
+    LOGI("RirConvolver: sala RT60=%.2fs wet=%.2f cargada", (double)rt60, (double)wet);
 }
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
@@ -162,6 +230,7 @@ static int32_t omega_process(effect_handle_t self,
         ivanna::OmegaDspSnapshot snap;
         if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
             omega_apply_snapshot(fc, snap);
+            omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
         }
     }
 
@@ -202,6 +271,8 @@ static int32_t omega_process(effect_handle_t self,
 
         // Render binaural de objetos (VBAP + HRTF) + DSP de salida
         fc->processStereo(L, R, (size_t)chunk);
+        // Cable RIR: aplicar reverberación de sala si está activa
+        if (ctx->rirConvolver) ctx->rirConvolver->process(L, R, chunk);
 
         // Interleave -> salida
         for (int n = 0; n < chunk; ++n) {
@@ -357,6 +428,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
+    ctx->rirConvolver = nullptr;
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
@@ -379,6 +451,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->fusionCore) {
             delete ctx->fusionCore;
             ctx->fusionCore = nullptr;
+        }
+        if (ctx->rirConvolver) {
+            delete ctx->rirConvolver;
+            ctx->rirConvolver = nullptr;
         }
         // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
         if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }

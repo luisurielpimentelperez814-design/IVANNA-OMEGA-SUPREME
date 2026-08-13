@@ -156,8 +156,36 @@ object OmegaEngineBridge {
             put("timestamp",  System.currentTimeMillis())
         })
 
-    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =
+    /**
+     * Selecciona una sala RIR por RT60 objetivo y mezcla wet/dry.
+     *
+     * @param rt60S  RT60 objetivo en segundos [0.1, 6.0]. 0 = sala desactivada.
+     * @param wet    Mezcla wet/dry [0, 1]. 0 = señal seca, 1 = sólo reverberación.
+     * @param roomIdx  Índice explícito de sala [-1 = auto por RT60, 0..199].
+     *
+     * El daemon busca la sala más cercana al RT60 en el RirDataset (200 salas
+     * medidas), la publica en OmegaControlBus, y omega_effect.cpp la carga en
+     * el RirConvolver (overlap-save FFT, lock-free, sin malloc en el hot path).
+     */
+    fun setRoom(rt60S: Float, wet: Float = 0.35f, roomIdx: Int = -1): Boolean =
         sendCommand(JSONObject().apply {
+            put("action",  "SET_ROOM_RT60")
+            put("rt60",    rt60S.toDouble())
+            put("wet",     wet.toDouble())
+            put("idx",     roomIdx)
+        })
+
+    /** Desactiva la reverberación de sala (bypass del RirConvolver). */
+    fun disableRoom(): Boolean = setRoom(0f, 0f)
+
+    /** Obtiene el estado actual de la sala (rt60, idx, wet). */
+    fun getRoomStatus(): JSONObject? = try {
+        val result = JSONObject()
+        sendCommand(JSONObject().apply { put("action", "GET_ROOM_STATUS") })
+        result
+    } catch (e: Exception) { null }
+
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =        sendCommand(JSONObject().apply {
             put("action",         "SET_ROUTE_PROFILE")
             put("bassBoostDb",    bassBoostDb.toDouble())
             put("dialogBoostDb",  dialogBoostDb.toDouble())
