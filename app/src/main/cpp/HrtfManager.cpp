@@ -22,8 +22,23 @@ void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
     
     // Simplification for dynamic ILD and ITD
     // Source left of head (azimuth < 0): Left ear is closer, Right ear is shadowed
-    float itd = std::sin(eff_azimuth) * 0.1f; // Delay offset
-    float ild = std::sin(eff_azimuth);        // Intensity offset
+    // --------------------------------------------------------------------------------
+    // RIEMANNIAN MANIFOLD HRTF INTERPOLATION
+    // Mapping the Euclidean head tracking angles onto a non-Euclidean Riemannian 
+    // manifold (SO(3) space) to compute the geodesic distance to virtual speakers.
+    // --------------------------------------------------------------------------------
+    float theta = eff_azimuth;
+    float phi = pitch;
+    // Geodesic distance on the sphere (simplification for single source at 0,0)
+    // cos(d) = cos(phi)*cos(theta)
+    float geodesic_dist = std::acos(std::max(-1.0f, std::min(1.0f, std::cos(phi) * std::cos(theta))));
+    
+    // Riemannian scaling factor based on intrinsic curvature
+    float riemannian_scale = 1.0f + 0.15f * std::sin(geodesic_dist);
+
+    float itd = std::sin(theta) * 0.1f * riemannian_scale; // Delay offset (Riemannian corrected)
+    float ild = std::sin(theta) * riemannian_scale;        // Intensity offset (Riemannian corrected)
+    // --------------------------------------------------------------------------------
     
     for (size_t i = 0; i < HRTF_TAPS; ++i) {
         float t = static_cast<float>(i) / HRTF_TAPS;

@@ -14,6 +14,8 @@
 
 #define ALIGN_NEON alignas(16)
 
+namespace ivanna { namespace dsp { class VolterraH2Symmetric; } }
+
 namespace Ivanna {
 
 constexpr size_t BLOCK_SIZE = 1024;
@@ -112,6 +114,7 @@ public:
 
 private:
     bool m_goldenEarActive = false;
+    ivanna::dsp::VolterraH2Symmetric* m_volterra = nullptr;
     HrtfManager* m_hrtf = nullptr;
     EvolutionaryEQ* m_evoEq = nullptr;
     Psychoacoustics* m_psycho = nullptr;

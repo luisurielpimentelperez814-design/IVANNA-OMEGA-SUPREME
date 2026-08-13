@@ -204,6 +204,7 @@ add_library(ivanna_omega SHARED
     # ============================================================================
     ivannalab/ivannalab.cpp
     #     IvannaAudioClassifier.cpp
+    neuromorphic/volterra_h2_symmetric.cpp
     #     IvannaFusionCore.cpp
     #     EvolutionaryEQ.cpp   # AVISO 2026-08-08: 3 copias en el repo divergieron entre si;
     #                          # el kernel evolutivo real es evolutionary_kernel.cpp (API en C, distinta)
@@ -248,6 +249,7 @@ add_library(omega_effect SHARED
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
     IvannaAudioClassifier.cpp
+    neuromorphic/volterra_h2_symmetric.cpp
     saf_optimizer.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
