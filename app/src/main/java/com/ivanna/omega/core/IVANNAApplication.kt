@@ -36,6 +36,8 @@ class IVANNAApplication : Application() {
 
 
     companion object {
+        lateinit var instance: IVANNAApplication
+
         private const val TAG = "IVANNAApplication"
         val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -83,6 +85,8 @@ class IVANNAApplication : Application() {
     }
 
     override fun onCreate() {
+        instance = this
+
         paramStore = ParameterStore(this)
 
         super.onCreate()

@@ -46,6 +46,7 @@ fun MagiskStatusPanel(
 ) {
     var moduleActive    by remember { mutableStateOf(false) }
     var moduleVersion   by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var daemonRunning   by remember { mutableStateOf(false) }
     var daemonConnected by remember { mutableStateOf(false) }
     var lastCommandOutput by remember { mutableStateOf("") }
@@ -204,6 +205,22 @@ fun MagiskStatusPanel(
                         "✅ Socket conectado. Latencia: ${omegaBridge.getLastLatencyMs()}ms"
                     else
                         "⚪ Socket no disponible (daemon offline o módulo no instalado)"
+                    actionInFlight = false
+                }
+            }
+            ActionButton("ROOT PING", !actionInFlight) {
+                actionInFlight = true
+                scope.launch {
+                    lastCommandOutput = "Solicitando Root (Magisk)..."
+                    val rootOk = withContext(Dispatchers.IO) { com.ivanna.omega.core.RootAccess.probeSu(force = true) }
+                    lastCommandOutput = if (rootOk) {
+                        "✅ Root concedido. Reevaluando backend..."
+                    } else {
+                        "❌ Root denegado o Magisk no responde."
+                    }
+                    if (rootOk) {
+                        com.ivanna.omega.audio.AudioBackendSelector.start(context)
+                    }
                     actionInFlight = false
                 }
             }

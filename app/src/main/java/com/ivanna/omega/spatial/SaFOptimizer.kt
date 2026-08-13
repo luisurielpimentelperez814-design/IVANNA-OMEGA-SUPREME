@@ -50,16 +50,36 @@ object SaFOptimizer {
         "subject_009", "subject_010", "subject_011"
     )
 
+    private const val PREFS_NAME = "saf_optimizer_prefs"
+
     /**
      * Inicializar el optimizador.
      * Llamado desde IVANNAApplication.onCreate() — carga el estado persistido
      * si existe, o deja el estado por defecto (iteration=0, sin calibrar).
      */
     fun init(context: Context) {
-        // FIX: IVANNAApplication llama a SaFOptimizer.init(this) en onCreate().
-        // Por ahora no hay persistencia; el estado se restablece a default en
-        // cada arranque. Fase futura: cargar desde SharedPreferences o archivo.
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val iter = prefs.getInt("iteration", 0)
+        val subj = prefs.getString("selectedSubject", "") ?: ""
+        val pNorm = prefs.getFloat("paramNorm", 0f)
+        val eEnergy = prefs.getFloat("errorEnergy", 0f)
+        
+        _state.value = SaFOptimizerState(iter, subj, pNorm, eEnergy)
+        if (iter > 0) {
+            syncToRoomBridge()
+        }
         Log.d(TAG, "SaFOptimizer inicializado (iteration=${_state.value.iteration})")
+    }
+    
+    private fun saveState(context: Context) {
+        val st = _state.value
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt("iteration", st.iteration)
+            .putString("selectedSubject", st.selectedSubject)
+            .putFloat("paramNorm", st.paramNorm)
+            .putFloat("errorEnergy", st.errorEnergy)
+            .apply()
     }
 
     /**
@@ -113,6 +133,8 @@ object SaFOptimizer {
     fun reset() {
         _state.value = SaFOptimizerState()
         SaFRoomBridge.reset()
+        val prefs = com.ivanna.omega.core.IVANNAApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().clear().apply()
         Log.d(TAG, "Optimizer reset")
     }
 
