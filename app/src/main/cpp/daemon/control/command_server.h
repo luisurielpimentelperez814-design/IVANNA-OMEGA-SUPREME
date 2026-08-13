@@ -64,6 +64,11 @@ struct OmegaDspState {
     float    saf_memory;
     float    saf_gain;
 
+    // Sala RIR — selección por RT60 y mezcla wet/dry
+    float    room_rt60_s;   // RT60 objetivo [0.1,6.0]s; 0 = sala desactivada
+    int32_t  room_idx;      // índice sala [-1 = ninguna, 0..199]
+    float    room_wet;      // wet/dry [0,1]
+
     // General
     float    intensity;
     uint64_t last_update_ms;

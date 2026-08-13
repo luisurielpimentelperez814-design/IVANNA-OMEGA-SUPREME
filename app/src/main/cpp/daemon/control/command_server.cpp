@@ -85,6 +85,9 @@ static const OmegaDspState kDefaultState = {
     /* saf_metric    */ 0.f,
     /* saf_memory    */ 0.f,
     /* saf_gain      */ 1.0f,
+    /* room_rt60_s   */ 0.f,    // sala desactivada por defecto
+    /* room_idx      */ -1,
+    /* room_wet      */ 0.35f,
     /* intensity     */ 0.92f,
     /* last_update   */ 0ULL,
 };
@@ -177,6 +180,9 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.saf_metric_norm  = s.saf_metric_norm;
     snap.saf_memory       = s.saf_memory;
     snap.saf_gain         = s.saf_gain;
+    snap.room_rt60_s      = s.room_rt60_s;
+    snap.room_idx         = s.room_idx;
+    snap.room_wet         = s.room_wet;
     for (int i = 0; i < OMEGA_EQ_BANDS && i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i)
         snap.eq_gains[i] = s.eq_gains[i];
     for (int i = 0; i < 13; ++i)
@@ -314,8 +320,33 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
               gen > 0 ? "applied" : "accepted_pending_consumer",
               gen, "SYSTEM_WIDE", nullptr); }
 
-    } else if (strcmp(action, "SET_SAF_STATE") == 0) {
-        m_state.saf_delta_energy = _jsonFloat(json, "deltaEnergy", m_state.saf_delta_energy);
+    } else if (strcmp(action, "SET_ROOM_RT60") == 0) {
+        // {"action":"SET_ROOM_RT60","rt60":1.5,"wet":0.35}
+        // rt60=0 → sala desactivada (bypass RirConvolver).
+        float rt60 = 0.f, wet = 0.35f;
+        int32_t idx = -1;
+        if (auto* v = findValue(params, "rt60"))  rt60 = parseFloat(v, 0.f);
+        if (auto* v = findValue(params, "wet"))   wet  = parseFloat(v, 0.35f);
+        if (auto* v = findValue(params, "idx"))   idx  = (int32_t)parseFloat(v, -1.f);
+        rt60 = (rt60 < 0.f) ? 0.f : (rt60 > 6.f ? 6.f : rt60);
+        wet  = (wet  < 0.f) ? 0.f : (wet  > 1.f ? 1.f : wet);
+        m_state.room_rt60_s = rt60;
+        m_state.room_idx    = idx;
+        m_state.room_wet    = wet;
+        { uint64_t gen = publishCurrentState(m_state);
+          snprintf(resp, RESP_CAP,
+              "{\"ok\":true,\"action\":\"SET_ROOM_RT60\","
+              "\"rt60\":%.3f,\"idx\":%d,\"wet\":%.3f,\"gen\":%" PRIu64 "}",
+              (double)rt60, idx, (double)wet, gen);
+        }
+    } else if (strcmp(action, "GET_ROOM_STATUS") == 0) {
+        snprintf(resp, RESP_CAP,
+            "{\"ok\":true,\"action\":\"GET_ROOM_STATUS\","
+            "\"rt60\":%.3f,\"idx\":%d,\"wet\":%.3f}",
+            (double)m_state.room_rt60_s,
+            m_state.room_idx,
+            (double)m_state.room_wet);
+    } else if (strcmp(action, "SET_SAF_STATE") == 0) {        m_state.saf_delta_energy = _jsonFloat(json, "deltaEnergy", m_state.saf_delta_energy);
         m_state.saf_metric_norm  = _jsonFloat(json, "metricNorm",  m_state.saf_metric_norm);
         m_state.saf_memory       = _jsonFloat(json, "memory",      m_state.saf_memory);
         m_state.saf_gain         = _jsonFloat(json, "gain",        m_state.saf_gain);
