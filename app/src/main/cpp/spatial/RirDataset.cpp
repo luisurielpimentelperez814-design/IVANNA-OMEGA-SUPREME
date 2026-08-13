@@ -26,7 +26,13 @@ std::vector<std::string> splitCsvLine(const std::string& line) {
 }
 
 float toFloatSafe(const std::string& s, float fallback = 0.f) {
-    try { return std::stof(s); } catch (...) { return fallback; }
+    // FIX: std::stof lanza std::invalid_argument / std::out_of_range.
+    // El NDK compila con -fno-exceptions → try/catch ilegal en este target.
+    // strtof devuelve 0.f en error y no lanza nada — equivalente seguro.
+    if (s.empty()) return fallback;
+    char* end = nullptr;
+    float v = std::strtof(s.c_str(), &end);
+    return (end != s.c_str()) ? v : fallback;
 }
 
 // ── Parser WAV PCM16 manual (RIFF/fmt /data), sin libsndfile ────────────────
