@@ -66,8 +66,10 @@ public:
     // Propaga el dataset HRTF compartido a la capa SyntheticHRTF
     void setSharedDataset(std::shared_ptr<ivanna::SyntheticHRTF::SharedDataset> ds) {
         hrtf_.setSharedDataset(ds);
-        // Force crossfade on next block
-        targetAzimuthDeg_ += 0.0001f; // dirty the target slightly
+        // Force crossfade on next block — mismo mecanismo que setLatentParams():
+        // targetAzimuth_ es std::atomic (no admite '+=' compuesto); el flag
+        // newTargetPending_ es el canal oficial de "recalcular filtros".
+        newTargetPending_.store(true, std::memory_order_release);
     }
 
     bool loadHrtfDatasetFromFile(const char* path) {
