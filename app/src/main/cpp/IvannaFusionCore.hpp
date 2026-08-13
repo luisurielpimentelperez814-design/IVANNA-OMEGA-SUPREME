@@ -71,3 +71,11 @@ private:
 };
 
 } // namespace Ivanna
+
+// ── Alias de compatibilidad ───────────────────────────────────────────────────
+// El bot renombró IvannaFusionCore → IvannaFusionEngine en este header pero
+// omega_effect.cpp y otros consumidores siguen usando IvannaFusionCore.
+// El alias evita tocar todos los sitios de uso y mantiene la semántica clara.
+namespace Ivanna {
+    using IvannaFusionCore = IvannaFusionEngine;
+}

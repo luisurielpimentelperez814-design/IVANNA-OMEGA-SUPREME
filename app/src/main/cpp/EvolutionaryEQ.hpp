@@ -28,14 +28,14 @@ public:
     void processNEON(AudioBuffer* buffer);
     void updateLM_CMA_ES(); // Pasos evolutivos CMA-ES
 
-    void processBlock(AudioBuffer* buffer) override { processNEON(buffer); }
+    void processBlock(AudioBuffer* buffer) { processNEON(buffer); }
 
     // FIX (build): estaba definido inline aqui Y de nuevo fuera de linea en
     // EvolutionaryEQ.cpp:96, lo que daba "redefinition of void
     // Ivanna::EvolutionaryEQ::setParameter(uint32_t, float)". Se conserva la
     // version del .cpp (la que hace algo real: asigna m_stepSize) y aqui
     // queda solo la declaracion.
-    void setParameter(uint32_t paramId, float value) override;
+    void setParameter(uint32_t paramId, float value);
 
 private:
     // FIX (build): calculateFitness se define en EvolutionaryEQ.cpp:32 y se
