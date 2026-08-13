@@ -31,8 +31,24 @@ import android.os.Looper
  */
 class IvannaHeadTracker(private val context: Context) : SensorEventListener {
 
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    // FIX (crash de inicialización): getSystemService() y getDefaultSensor()
+    // se ejecutaban en la declaración del campo, es decir, en el CONSTRUCTOR
+    // de la clase. Si quien lo crea lo hace con un contexto de Activity que
+    // luego el sistema destruye/recrea (rotación, low memory, process death),
+    // el SensorManager queda atado a un contexto muerto y el primer
+    // registerListener revienta con NPE / Resources.NotFoundException.
+    //
+    // Solución: perezoso. Solo se resuelve cuando alguien llama a start(),
+    // momento en el que el contexto ya está garantizado vivo. Además se
+    // usa applicationContext para que el SensorManager sobreviva a la
+    // Activity que lo creó.
+    private val appContext = context.applicationContext
+    private val sensorManager: SensorManager by lazy {
+        appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+    private val rotationSensor: Sensor? by lazy {
+        sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    }
 
     internal var nativeHandle: Long = 0
     private val mainHandler = Handler(Looper.getMainLooper())

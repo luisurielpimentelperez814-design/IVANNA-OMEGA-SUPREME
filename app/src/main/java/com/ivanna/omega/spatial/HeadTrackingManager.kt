@@ -9,10 +9,23 @@ import android.os.SystemClock
 import android.util.Log
 
 class HeadTrackingManager(private val context: Context, private val trackerHandle: Long) : SensorEventListener {
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        ?: sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-    private val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+    // FIX (crash de inicialización): mismo patrón que IvannaHeadTracker —
+    // getSystemService/getDefaultSensor en la declaración del campo = se
+    // ejecutan en el constructor. Si el contexto de Activity muere antes
+    // del primer start(), el SensorManager queda colgado y el siguiente
+    // registerListener revienta. Perezoso + applicationContext.
+    private val appContext = context.applicationContext
+    private val sensorManager: SensorManager by lazy {
+        appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+    private val rotationSensor: Sensor? by lazy {
+        sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+    }
+    private val gyroSensor: Sensor? by lazy {
+        sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+    }
     
     private val filter = OrientationFilter()
     private val predictor = OrientationPredictor()
