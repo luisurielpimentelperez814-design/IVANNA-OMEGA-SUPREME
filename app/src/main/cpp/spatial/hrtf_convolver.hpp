@@ -63,6 +63,13 @@ public:
     void updateSafField(const std::array<float,7>& q, float azimuth);
 
     // Carga un dataset HRTF personalizado (formato binario "IHR1").
+    // Propaga el dataset HRTF compartido a la capa SyntheticHRTF
+    void setSharedDataset(std::shared_ptr<ivanna::SyntheticHRTF::SharedDataset> ds) {
+        hrtf_.setSharedDataset(ds);
+        // Force crossfade on next block
+        targetAzimuthDeg_ += 0.0001f; // dirty the target slightly
+    }
+
     bool loadHrtfDatasetFromFile(const char* path) {
         return hrtf_.loadDatasetFromFile(path);
     }

@@ -107,11 +107,45 @@ public:
 
     // Propaga un dataset HRTF personalizado a los 12 virtual speakers.
     bool loadHrtfDatasetFromFile(const char* path) {
-        bool ok = true;
-        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
-            if (!hrtfConvolvers_[i].loadHrtfDatasetFromFile(path)) ok = false;
+        // Carga una sola vez y lo comparte (lock-free para el audio thread)
+        auto newDs = std::make_shared<SyntheticHRTF::SharedDataset>();
+        
+        FILE* f = std::fopen(path, "rb");
+        if (!f) return false;
+        char magic[4];
+        if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IHR1", 4) != 0) {
+            std::fclose(f); return false;
         }
-        return ok;
+        int32_t numDirs = 0, irLen = 0, sr = 0;
+        if (std::fread(&numDirs, 4, 1, f) != 1 ||
+            std::fread(&irLen, 4, 1, f) != 1 ||
+            std::fread(&sr, 4, 1, f) != 1) {
+            std::fclose(f); return false;
+        }
+        if (numDirs <= 0 || numDirs > 1000 || irLen <= 0 || irLen > 4096) {
+            std::fclose(f); return false;
+        }
+        
+        newDs->irLen = irLen;
+        newDs->az.resize(numDirs);
+        newDs->L.resize(numDirs);
+        newDs->R.resize(numDirs);
+        
+        for (int i = 0; i < numDirs; ++i) {
+            float az = 0.f;
+            if (std::fread(&az, 4, 1, f) != 1) break;
+            newDs->az[i] = az;
+            std::vector<float> tmp(irLen * 2);
+            if (std::fread(tmp.data(), 4, irLen * 2, f) != (size_t)(irLen * 2)) break;
+            newDs->L[i].assign(tmp.begin(), tmp.begin() + irLen);
+            newDs->R[i].assign(tmp.begin() + irLen, tmp.end());
+        }
+        std::fclose(f);
+        
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            hrtfConvolvers_[i].setSharedDataset(newDs);
+        }
+        return true;
     }
 
 private:

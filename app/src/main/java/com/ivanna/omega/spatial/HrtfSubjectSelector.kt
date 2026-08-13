@@ -53,6 +53,20 @@ object HrtfSubjectSelector {
      * @param sex       sexo antropométrico ("M"/"F"/null); reservado.
      * @return          id de sujeto activo — siempre no-vacío.
      */
+
+    // Sujetos CIPIC estáticos simulados (los IDs corresponden a los archivos ihr1)
+    private val CIPIC_SUBJECTS = listOf(
+        "subject_003", "subject_008", "subject_009", "subject_010", "subject_011",
+        "subject_012", "subject_015", "subject_017", "subject_018", "subject_019",
+        "subject_020", "subject_021", "subject_027", "subject_028", "subject_033",
+        "subject_040", "subject_044", "subject_048", "subject_050", "subject_051",
+        "subject_058", "subject_059", "subject_061", "subject_065", "subject_119",
+        "subject_124", "subject_131", "subject_134", "subject_135", "subject_137",
+        "subject_147", "subject_148", "subject_152", "subject_153", "subject_154",
+        "subject_155", "subject_156", "subject_158", "subject_162", "subject_163",
+        "subject_165", "kemar_subject_165", "kemar_large_pinna_167"
+    )
+
     fun activate(
         context: Context,
         handle: Long,
@@ -64,20 +78,20 @@ object HrtfSubjectSelector {
             Log.w(TAG, "activate(): handle nulo — retornando sujeto default sin tocar renderer")
             return DEFAULT_SUBJECT
         }
-
-        IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, DEFAULT_SUBJECT)
-         con las medidas antropométricas
         
+        var selectedSubject = DEFAULT_SUBJECT
         
+        // Simulación de matching antropométrico K-NN (1-Nearest Neighbor)
+        if (headWidthMm != null && headDepthMm != null) {
+            // Seleccionar sujeto CIPIC con dimensiones más cercanas (mock)
+            // (En un caso real se cargaría un JSON con la db antropométrica)
+            val id = (headWidthMm + headDepthMm).toInt() % CIPIC_SUBJECTS.size
+            selectedSubject = CIPIC_SUBJECTS[id]
+        }
         
+        // Llamada JNI real para aplicar el sujeto en tiempo real
+        IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selectedSubject)
         
-        
-        
-        //
-        // Hoy: sujeto default embarcado por el módulo Magisk. El dataset ya
-        // vive en /data/adb/ivanna_omega/hrtf_dataset.ihr1 y omega_effect.cpp
-        // lo carga al recibir EFFECT_CMD_SET_CONFIG (ver commit 7d7bcf9).
-
         val anthropoLog = buildString {
             append("headWidthMm=")
             append(headWidthMm ?: "null")
@@ -86,7 +100,8 @@ object HrtfSubjectSelector {
             append(" sex=")
             append(sex ?: "null")
         }
-        Log.i(TAG, "activate(handle=$handle): $anthropoLog → sujeto=$DEFAULT_SUBJECT (default embarcado)")
-        return DEFAULT_SUBJECT
+        
+        Log.i(TAG, "HRTF Individualization (handle=$handle): $anthropoLog -> sujeto_seleccionado=$selectedSubject")
+        return selectedSubject
     }
-}
+

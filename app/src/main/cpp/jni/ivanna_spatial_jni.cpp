@@ -250,7 +250,10 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
         // hrtf_dataset.ihr1 general, enviamos el comando base.
         // Simulando loadHrtfDatasetFromFile() con la ruta estándar si el
         // módulo magisk monta la base en /data/adb/ivanna_omega/
-        renderer->loadHrtfDatasetFromFile("/data/adb/ivanna_omega/hrtf_dataset.ihr1");
+        
+        std::string path = "/data/adb/ivanna_omega/hrtf_" + std::string(subjStr) + ".ihr1";
+        renderer->loadHrtfDatasetFromFile(path.c_str());
+
         env->ReleaseStringUTFChars(subjectId, subjStr);
     }
 }

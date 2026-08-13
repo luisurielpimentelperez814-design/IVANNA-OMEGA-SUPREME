@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <vector>
+#include <memory>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -131,7 +132,8 @@ public:
         aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
 
         // Prioridad: dataset medido > modelo sintético
-        if (hasDataset_ && !dsAz_.empty()) {
+        auto ds = std::atomic_load(&dataset_);
+        if (ds && !ds->az.empty()) {
             return generateFromDataset(azimuthDeg);
         }
 
@@ -185,28 +187,37 @@ private:
         HRIRPair out;
         out.L.assign(irLen_, 0.f);
         out.R.assign(irLen_, 0.f);
-        const int n = (int)dsAz_.size();
+        
+        auto ds = std::atomic_load(&dataset_);
+        if (!ds) return out;
+        
+        const int n = (int)ds->az.size();
         if (n == 0) return out;
+        
         if (n == 1) {
-            for (int k = 0; k < irLen_ && k < dsIrLen_; ++k) {
-                out.L[k] = dsL_[0][k];
-                out.R[k] = dsR_[0][k];
+            for (int k = 0; k < irLen_ && k < ds->irLen; ++k) {
+                out.L[k] = ds->L[0][k];
+                out.R[k] = ds->R[0][k];
             }
             return out;
         }
+        
         int lo = 0;
-        while (lo < n - 1 && dsAz_[lo + 1] < azimuthDeg) ++lo;
+        while (lo < n - 1 && ds->az[lo + 1] < azimuthDeg) ++lo;
         int hi = std::min(lo + 1, n - 1);
-        float a0 = dsAz_[lo], a1 = dsAz_[hi];
+        
+        float a0 = ds->az[lo], a1 = ds->az[hi];
         float t = (a1 > a0) ? std::clamp((azimuthDeg - a0) / (a1 - a0), 0.f, 1.f) : 0.f;
+        
         for (int k = 0; k < irLen_; ++k) {
-            float l0 = (k < dsIrLen_) ? dsL_[lo][k] : 0.f;
-            float l1 = (k < dsIrLen_) ? dsL_[hi][k] : 0.f;
-            float r0 = (k < dsIrLen_) ? dsR_[lo][k] : 0.f;
-            float r1 = (k < dsIrLen_) ? dsR_[hi][k] : 0.f;
+            float l0 = (k < ds->irLen) ? ds->L[lo][k] : 0.f;
+            float l1 = (k < ds->irLen) ? ds->L[hi][k] : 0.f;
+            float r0 = (k < ds->irLen) ? ds->R[lo][k] : 0.f;
+            float r1 = (k < ds->irLen) ? ds->R[hi][k] : 0.f;
             out.L[k] = (1.f - t) * l0 + t * l1;
             out.R[k] = (1.f - t) * r0 + t * r1;
         }
+        
         if (latentActive_) applyLatentMorph(out);
         return out;
     }
@@ -297,10 +308,14 @@ private:
     int   irLen_ = 128;
 
     // Dataset personalizado
-    bool  hasDataset_ = false;
-    int   dsIrLen_ = 0;
-    std::vector<float> dsAz_;
-    std::vector<std::vector<float>> dsL_, dsR_;
+    
+    struct SharedDataset {
+        int irLen = 0;
+        std::vector<float> az;
+        std::vector<std::vector<float>> L, R;
+    };
+    std::shared_ptr<SharedDataset> dataset_;
+
 
     // SAF latent state — actualizado por setLatentParams() desde el hilo de control
     bool  latentActive_ = false;
