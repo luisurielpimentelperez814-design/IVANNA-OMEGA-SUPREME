@@ -257,3 +257,19 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
         env->ReleaseStringUTFChars(subjectId, subjStr);
     }
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqEnabled(JNIEnv* env, jclass, jlong handle, jboolean enabled) {
+    auto* renderer = toObjectRenderer(handle);
+    if (renderer) {
+        renderer->getAutoEq().setEnabled(enabled);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqBand(JNIEnv* env, jclass, jlong handle, jint bandIndex, jfloat freqHz, jfloat gainDb, jfloat q) {
+    auto* renderer = toObjectRenderer(handle);
+    if (renderer) {
+        renderer->getAutoEq().setBand(bandIndex, freqHz, gainDb, q);
+    }
+}

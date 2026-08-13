@@ -10,6 +10,7 @@
 #pragma once
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
+#include "auto_eq_filter.hpp"
 #include "../SaFOptimizer.hpp"
 #include <vector>
 #include <array>
@@ -88,6 +89,7 @@ public:
 
     void setHeadTracker(HeadTracker* tracker) noexcept { headTracker_ = tracker; }
     void setReverbLevel(float level) noexcept { reverbLevel_ = std::clamp(level, 0.f, 1.f); }
+    AutoEqFilter& getAutoEq() noexcept { return autoEq_; }
 
     void reset() noexcept;
 
@@ -156,6 +158,7 @@ private:
     int blockSize_ = 512;
     HeadTracker* headTracker_ = nullptr;
     float reverbLevel_ = 0.3f;
+    AutoEqFilter autoEq_;
 
     // [FIX-CRASH-BLOCKSIZE] Buffers internos de renderBlock() dimensionados
     // dinámicamente a blockSize_ en init(). Antes eran arrays fijos de 512

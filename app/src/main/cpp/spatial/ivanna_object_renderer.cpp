@@ -10,6 +10,7 @@ namespace ivanna::spatial {
 
 void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
     sampleRate_ = sampleRate;
+    autoEq_.init(sampleRate);
     blockSize_ = blockSize;
 
     // [FIX-HRTF] HRTFConvolver::init() solo recibe sampleRate
@@ -135,6 +136,9 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
     if (reverbLevel_ > 0.01f) {
         processReverb(outLeft, outRight, numFrames);
     }
+
+    autoEq_.process(outLeft, outRight, numFrames);
+
 
     float maxLevel = 0.f;
     for (int n = 0; n < numFrames; ++n) {

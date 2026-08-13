@@ -149,7 +149,8 @@ fun MainScaffold(
                     onOpenBinaural   = { outerNav.navigate("binaural") },
                     onOpenAuditory   = { outerNav.navigate("auditory") },
                     onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) },
-                    onOpenBenchmark  = { outerNav.navigate("benchmark") }
+                    onOpenBenchmark  = { outerNav.navigate("benchmark") },
+                    onOpenPhase7     = { outerNav.navigate("phase7") }
                 )
             }
 
@@ -174,7 +175,8 @@ fun SpatialHubScreen(
     onOpenBinaural   : () -> Unit,
     onOpenAuditory   : () -> Unit,
     onOpenAbxTest    : () -> Unit,
-    onOpenBenchmark  : () -> Unit = {}
+    onOpenBenchmark  : () -> Unit = {},
+    onOpenPhase7     : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -189,6 +191,7 @@ fun SpatialHubScreen(
         HubCard("EXPERIENCIA AUDITIVA",      "Calibración perceptual + ISO 226",     NeonMagenta,  onOpenAuditory)
         HubCard("PRUEBA ABX",                "Validación perceptual espacial",       NeonMagenta,  onOpenAbxTest)
         HubCard("BENCHMARK & EVIDENCE",      "Telemetría y validación acústica",     NeonMagenta,  onOpenBenchmark)
+        HubCard("FASE 7: HEGEMONIA",         "Computer Vision & AutoEQ",             NeonMagenta,  onOpenPhase7)
     }
 }
 
