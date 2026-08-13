@@ -122,10 +122,11 @@ private:
 
 } // namespace Ivanna
 
-// ── Alias de compatibilidad ───────────────────────────────────────────────────
-// El bot renombró IvannaFusionCore → IvannaFusionEngine en este header pero
-// omega_effect.cpp y otros consumidores siguen usando IvannaFusionCore.
-// El alias evita tocar todos los sitios de uso y mantiene la semántica clara.
-namespace Ivanna {
-    using IvannaFusionCore = IvannaFusionEngine;
-}
+// ── Alias de compatibilidad — NAMESPACE GLOBAL ───────────────────────────────
+// CRÍTICO: el alias debe estar en el namespace GLOBAL, no en Ivanna{}.
+// Cuando estaba en namespace Ivanna{}, solo existía como Ivanna::IvannaFusionCore.
+// omega_effect.cpp usa IvannaFusionCore SIN prefijo de namespace → el compilador
+// buscaba ::IvannaFusionCore (global) → no encontraba nada → el tipo degeneraba
+// a 'int' por error recovery de clang → "no known conversion from
+// Ivanna::IvannaFusionCore* to int*" en omega_apply_snapshot().
+using IvannaFusionCore = Ivanna::IvannaFusionEngine;
