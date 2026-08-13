@@ -92,8 +92,8 @@ struct omega_effect_context_t {
     bool enabled;
     IvannaFusionCore* fusionCore;   // AUDIT FIX: DSP per-instance (era global)
     // ── RIR sala — instanciados per-session, cargados lazy al primer SET_ROOM_RT60
-    RirConvolver*     rirConvolver; // convolucionador overlap-save (null hasta 1er load)
-    RirDataset*       rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
+    Ivanna::RirConvolver* rirConvolver; // convolucionador overlap-save (null hasta 1er load)
+    Ivanna::RirDataset*   rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
     float* rtL;                     // AUDIT FIX: buffer L preasignado (realtime)
     float* rtR;                     // AUDIT FIX: buffer R preasignado (realtime)
     int    rtCapacity;              // frames que caben en rtL/rtR
@@ -146,60 +146,83 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     if (!ctx) return;
 
     // Lazy-init del dataset (cargado una sola vez por proceso audioserver)
-    static RirDataset* g_dataset = nullptr;
+    // FIX (log real CI 2026-08-13): la API real de Ivanna::RirDataset difiere
+    // de lo que este archivo asumía — verificado contra spatial/RirDataset.hpp/.cpp
+    // (la clase que YO construí y probé contra las 200 salas reales), no adivinado:
+    //   - load(dir) toma UN argumento (deriva "<dir>/metadata.csv" internamente),
+    //     no load(dir, csvPath).
+    //   - roomCount(), no size().
+    //   - findNearestByRT60(rt60) devuelve size_t (índice), no un puntero a una
+    //     struct con .ir embebido — la IR se carga aparte vía loadImpulseResponse().
+    static Ivanna::RirDataset* g_dataset = nullptr;
     static bool g_dataset_tried = false;
     if (!g_dataset_tried) {
         g_dataset_tried = true;
-        g_dataset = new RirDataset();
+        g_dataset = new Ivanna::RirDataset();
         const char* base = "/data/adb/ivanna_omega/rir";
-        const char* csv  = "/data/adb/ivanna_omega/rir/metadata.csv";
-        if (!g_dataset->load(base, csv)) {
+        if (!g_dataset->load(base)) {
             LOGW("RirDataset: no se pudo cargar desde %s — sala desactivada", base);
             delete g_dataset; g_dataset = nullptr;
         } else {
-            LOGI("RirDataset: %d salas cargadas desde %s", (int)g_dataset->size(), base);
+            LOGI("RirDataset: %d salas cargadas desde %s", (int)g_dataset->roomCount(), base);
         }
     }
 
     // Lazy-init del convolver por instancia
     if (!ctx->rirConvolver) {
-        ctx->rirConvolver = new RirConvolver();
+        ctx->rirConvolver = new Ivanna::RirConvolver();
     }
 
     const float rt60 = s.room_rt60_s;
     const float wet  = s.room_wet;
 
-    if (rt60 < 0.01f || !g_dataset || g_dataset->size() == 0) {
+    if (rt60 < 0.01f || !g_dataset || g_dataset->roomCount() == 0) {
         // Bypass: desactivar convolver
         ctx->rirConvolver->setWetDry(0.f);
         ctx->rirConvolver->unload();
         return;
     }
 
-    // Seleccionar sala más cercana al RT60 objetivo
-    const auto* room = g_dataset->findByRt60(rt60);
-    if (!room || room->ir.empty()) {
-        ctx->rirConvolver->setWetDry(0.f);
-        return;
-    }
+    // Seleccionar sala más cercana al RT60 objetivo (índice, no puntero)
+    const size_t roomIdx = g_dataset->findNearestByRT60(rt60);
 
     // Solo recargar si la sala cambió (comparar por idx)
     const int32_t targetIdx = s.room_idx;
-    if (targetIdx >= 0 && ctx->rirConvolver->isLoaded()) {
+    if (targetIdx >= 0 && static_cast<size_t>(targetIdx) == roomIdx && ctx->rirConvolver->isLoaded()) {
         // Si el índice no cambió, solo actualizar wet/dry
         ctx->rirConvolver->setWetDry(wet);
         return;
     }
 
-    // Cargar la IR — el convolver la absorberá en el próximo process()
-    // room->ir es estéreo interleaved L R L R... o mono (duplicar al canal R)
-    const int irLen = (int)room->ir.size();
-    std::vector<float> irL(irLen), irR(irLen);
-    // El dataset carga la IR como mono (canal 0); duplicar para estéreo
-    for (int i = 0; i < irLen; ++i) { irL[i] = room->ir[i]; irR[i] = room->ir[i]; }
+    // Cargar la IR real (estéreo genuino — el dataset shippeado SÍ es
+    // estéreo, verificado con Python wave module al integrarlo; no hace
+    // falta duplicar mono→estéreo como asumía la versión anterior).
+    std::vector<float> irL, irR;
+    int sampleRateHz = 0;
+    if (!g_dataset->loadImpulseResponse(roomIdx, irL, irR, sampleRateHz) || irL.empty()) {
+        LOGW("RirDataset: sala idx=%d no se pudo cargar — bypass", (int)roomIdx);
+        ctx->rirConvolver->setWetDry(0.f);
+        return;
+    }
+
+    // RirConvolver::MAX_IR limita la longitud de IR soportada (ver
+    // spatial/RirConvolver.hpp). Varias de las 200 salas reales superan
+    // esto ampliamente (hasta ~59500 muestras @16kHz, ~3.7s) — truncar
+    // defensivamente en vez de desbordar o crashear. Trunca la cola de
+    // reverberación tardía, conserva el reflejo temprano (lo perceptualmente
+    // más relevante para localización), degradación aceptable documentada.
+    int irLen = static_cast<int>(irL.size());
+    if (irLen > Ivanna::RirConvolver::MAX_IR) {
+        LOGW("RirConvolver: sala idx=%d IR=%d muestras > MAX_IR=%d — truncando "
+             "(se pierde cola de reverb tardía, se conserva reflejo temprano)",
+             (int)roomIdx, irLen, Ivanna::RirConvolver::MAX_IR);
+        irLen = Ivanna::RirConvolver::MAX_IR;
+    }
+
     ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
     ctx->rirConvolver->setWetDry(wet);
-    LOGI("RirConvolver: sala RT60=%.2fs wet=%.2f cargada", (double)rt60, (double)wet);
+    LOGI("RirConvolver: sala idx=%d RT60=%.2fs wet=%.2f sr=%dHz cargada",
+         (int)roomIdx, (double)rt60, (double)wet, sampleRateHz);
 }
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
