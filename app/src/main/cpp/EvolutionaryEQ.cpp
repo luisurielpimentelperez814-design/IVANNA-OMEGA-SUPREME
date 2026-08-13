@@ -116,4 +116,38 @@ void EvolutionaryEQ::setParameter(uint32_t paramId, float value) {
     }
 }
 
+// calibrateTargetRoom() — declarado en EvolutionaryEQ.hpp, nunca implementado.
+//
+// Intención (comentario en el header): "delegar a HrtfManager::loadIhr1(path)".
+// En esta capa, calibrateTargetRoom() no tiene acceso a HrtfManager ni a un path
+// de HRTF (esos viven en IvannaFusionCore). Lo que SÍ puede hacer de forma
+// honesta es ejecutar varias iteraciones del optimizador CMA-ES ya existente
+// para converger los coeficientes FIR al estado de "sala calibrada" — que es
+// exactamente lo que significa "calibrar" para este módulo: minimizar la función
+// de fitness (suavidad espectral) sobre el genoma actual.
+//
+// N=20 iteraciones: suficiente para un paso de calibración sin bloquear
+// el hilo de llamada, congruente con las iteraciones que processNEON() haría
+// en ~200 ms de audio (BLOCK_SIZE=256 @ 48kHz → ~5ms/bloque × 40 bloques).
+void EvolutionaryEQ::calibrateTargetRoom() {
+    constexpr int kCalibrationSteps = 20;
+    for (int i = 0; i < kCalibrationSteps; ++i) {
+        updateLM_CMA_ES();
+    }
+    // Propagar el genoma convergido a los coeficientes FIR activos.
+    // m_meanGenome tiene BANDS_512 entradas; los FIR_TAPS coeficientes se
+    // toman del segmento central del genoma (posición más influente en el
+    // dominio de frecuencias) para no sobreescribir más allá del array.
+    constexpr size_t kOffset = (BANDS_512 - FIR_TAPS) / 2;
+    for (size_t t = 0; t < FIR_TAPS; ++t) {
+        float coeff = m_meanGenome[kOffset + t];
+        // Clamp a rango estable para FIR lineal de fase: evitar explosión
+        // de energía si el genoma divergió durante la calibración.
+        if (coeff >  2.0f) coeff =  2.0f;
+        if (coeff < -2.0f) coeff = -2.0f;
+        m_firCoeffsL[t] = coeff;
+        m_firCoeffsR[t] = coeff;
+    }
+}
+
 } // namespace Ivanna
