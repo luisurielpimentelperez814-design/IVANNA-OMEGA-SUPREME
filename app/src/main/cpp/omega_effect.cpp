@@ -509,7 +509,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             // Semilla del snapshot en la primera invocación: preserva
             // magic/version/route por defecto (SYSTEM_WIDE) para que
             // omega_apply_snapshot NO lo rechace como "otra ruta".
-            if (s.magic != OMEGA_CTRL_MAGIC) {
+            if (s.magic != ivanna::OMEGA_CTRL_MAGIC) {
                 s = ivanna::OmegaDspSnapshot::makeDefault();
             }
             bool touched = false;
