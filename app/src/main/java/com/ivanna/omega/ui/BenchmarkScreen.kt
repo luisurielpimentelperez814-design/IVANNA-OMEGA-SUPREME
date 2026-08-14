@@ -10,11 +10,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.spatial.BenchmarkRunner
+import org.json.JSONObject
 
 @Composable
 fun BenchmarkScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var benchmarkResults by remember { mutableStateOf<String?>(null) }
+    // Guardamos ambos: el String visible en la Card y el JSONObject original
+    // para acceder a métricas granulares (dsp_roundtrip_median_us / p99) sin
+    // reparsear el String en cada recomposición Compose.
+    var benchmarkText by remember { mutableStateOf<String?>(null) }
+    var benchmarkJson by remember { mutableStateOf<JSONObject?>(null) }
     
     Column(
         modifier = Modifier
@@ -29,20 +34,25 @@ fun BenchmarkScreen(onBack: () -> Unit) {
         Button(onClick = {
             val results = BenchmarkRunner.runAutomatedBenchmark(context)
             BenchmarkRunner.generateAbxDataset(context)
-            benchmarkResults = results.toString(4)
+            benchmarkJson = results
+            benchmarkText = results.toString(4)
         }) {
             Text("Ejecutar Benchmark Automático y Suite Acústica")
         }
         
-        if (benchmarkResults != null) {
+        if (benchmarkText != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Resultados del Benchmark (Telemetría Real)", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(benchmarkResults ?: "")
-                    run {
-                        val m = results.optDouble("dsp_roundtrip_median_us", -1.0)
-                        val p = results.optDouble("dsp_roundtrip_p99_us", -1.0)
+                    Text(benchmarkText ?: "")
+                    // FIX(compile 2026-08-14): antes leía `results` fuera del
+                    // scope del onClick — Unresolved reference en compileDebugKotlin.
+                    // Usamos benchmarkJson (State<JSONObject?>) que sobrevive al
+                    // lambda y es el mismo objeto que ya se serializó a texto.
+                    benchmarkJson?.let { json ->
+                        val m = json.optDouble("dsp_roundtrip_median_us", -1.0)
+                        val p = json.optDouble("dsp_roundtrip_p99_us", -1.0)
                         if (m >= 0.0) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("DSP round-trip (CLOCK_MONOTONIC, n=100): " +
