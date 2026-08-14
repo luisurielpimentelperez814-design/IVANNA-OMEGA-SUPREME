@@ -24,7 +24,7 @@
 
 <br/>
 
-| 78 017 LOC | 334 archivos | 1 218 commits | 23 / 23 tests |
+| 107 652 LOC | 334 archivos | 1 235 commits | 23 / 23 tests |
 |:---:|:---:|:---:|:---:|
 | C++17 + Kotlin | NDK r26.1 · compileSdk 35 | git log auditables | CTest host, sin emulador |
 
@@ -276,12 +276,17 @@ bridge.disableRoom()
 
 ---
 
+## Cerrado en la auditoría de exposición mundial
+
+- **Matriz V PCA completa** (`3904128`): el morph SAF ya no usa aproximaciones por bandas — la proyección algebraica exacta se hace con la base PCA `V` (`pca_basis_V.bin`, desplegada por `service.sh`).
+- **Individualización de pinna** (`6f3d9dd`): `SaFCalibrationScreen` incluye el panel `PinnaMetrics` — 3 medidas de geometría de oreja (concha/hélix/fosa) → `findBestMatch()` sobre el dataset → ancla de sujeto vía JNI → `SET_PINNA_METRICS` al daemon.
+- **Benchmark en hardware** (`d50ad48`): `nativeMeasureRoundTripLatencyUs()` mide el round-trip de la cadena DSP real de la Ruta A (ParametricEQ → Compressor → HarmonicExciter → StereoWidener → GainStage → SafetyLimiter) con `CLOCK_MONOTONIC`.
+- **ABX con persistencia** (`4aa8100`): `AbxResultStore.kt` guarda resultados, test binomial y exportación JSON.
+
 ## Lo que falta (honestidad)
 
-- **Medición end-to-end en hardware real**: la latencia < 5 ms es del código; los números reales del dispositivo los da `benchmark_device.sh`.
-- **Validación ABX con usuarios externos**: `AbxTestScreen` existe, los resultados no.
-- **Matriz V PCA completa**: el morph SAF usa aproximaciones por bandas; la proyección algebraica exacta requiere cargar V desde el JSON (campo pendiente).
-- **Individualización de pinna**: `HrtfManager` selecciona la posición más cercana del dataset pero no tiene datos de geometría de oreja por usuario.
+- **Validación ABX con usuarios externos**: la infraestructura existe (`AbxTestScreen` + `AbxResultStore`); los resultados con oyentes ajenos al proyecto, todavía no.
+- **Medición end-to-end en hardware real publicada**: la instrumentación existe (benchmark round-trip en `libivanna_omega`); los números publicados por dispositivo los da `benchmark_device.sh`.
 
 ---
 
@@ -293,7 +298,7 @@ No borramos — mejoramos, auditamos, cableamos.
 No mega-commits. No nombres que exageran.
 ```
 
-1218 commits. Cada uno auditable en `git log`.
+1235 commits. Cada uno auditable en `git log`.
 
 ---
 
@@ -306,6 +311,6 @@ Uso personal permitido. Redistribución comercial requiere acuerdo escrito.
 
 <div align="center">
 
-`78 017 LOC · 23/23 tests · 200 salas medidas · 1250 pos HRTF · 214 sujetos SAF`
+`107 652 LOC · 23/23 tests · 200 salas medidas · 1250 pos HRTF · 214 sujetos SAF`
 
 </div>
