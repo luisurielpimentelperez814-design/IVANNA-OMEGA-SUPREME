@@ -15,7 +15,13 @@ object IvannaVisualizerBark64Bridge {
 
     fun init(sampleRate: Int, maxBlockFrames: Int) {
         if (handle.get() != 0L) return
-        val h = IvannaVisualizerBark64Native.nativeCreate(sampleRate.toFloat())
+        // FIX (desconexión): nativeCreate() se llamaba sin verificar que la
+        // librería nativa del visualizador estuviera cargada. Si la carga
+        // falló (ABI, lib ausente), UnsatisfiedLinkError tumbaba el hilo UI.
+        if (!IvannaVisualizerBark64Native.isLoaded) return
+        val h = try {
+            IvannaVisualizerBark64Native.nativeCreate(sampleRate.toFloat())
+        } catch (t: Throwable) { return }
         if (h == 0L) return
         maxFrames = maxBlockFrames
         monoBuf = ByteBuffer.allocateDirect(maxBlockFrames * Float.SIZE_BYTES)
@@ -31,7 +37,7 @@ object IvannaVisualizerBark64Bridge {
         buf.clear()
         buf.put(mono, 0, numFrames)
         buf.flip()
-        IvannaVisualizerBark64Native.nativeProcessBlock(h, buf, numFrames)
+        runCatching { IvannaVisualizerBark64Native.nativeProcessBlock(h, buf, numFrames) }
     }
 
     fun sampleInto(dst: FloatArray) {
@@ -40,17 +46,17 @@ object IvannaVisualizerBark64Bridge {
             java.util.Arrays.fill(dst, 0, BAND_COUNT, 0f)
             return
         }
-        IvannaVisualizerBark64Native.nativeSampleInto(h, dst)
+        runCatching { IvannaVisualizerBark64Native.nativeSampleInto(h, dst) }
     }
 
     fun reset() {
         val h = handle.get()
-        if (h != 0L) IvannaVisualizerBark64Native.nativeReset(h)
+        if (h != 0L) runCatching { IvannaVisualizerBark64Native.nativeReset(h) }
     }
 
     fun release() {
         val h = handle.getAndSet(0L)
-        if (h != 0L) IvannaVisualizerBark64Native.nativeDestroy(h)
+        if (h != 0L) runCatching { IvannaVisualizerBark64Native.nativeDestroy(h) }
         monoBuf = null
     }
 }
