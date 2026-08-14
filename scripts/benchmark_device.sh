@@ -189,3 +189,14 @@ log " Clip count limiter    : $CLIP_COUNT          (= 0    → $PASS_CLIP)"
 log " Socket round-trip     : ${SOCKET_US} µs"
 log "══════════════════════════════════════════"
 log " JSON: $OUT"
+
+# ── TAREA 1: latencia DSP round-trip (medida in-app vía JNI CLOCK_MONOTONIC) ──
+# La app escribe /data/local/tmp/ivanna_dsp_roundtrip_us.json al correr el
+# benchmark; si no existe (app no corrida o sin permisos), se reporta n/a.
+DSP_RT_FILE="/data/local/tmp/ivanna_dsp_roundtrip_us.json"
+if [ -f "$DSP_RT_FILE" ]; then
+    DSP_RT=$(cat "$DSP_RT_FILE")
+else
+    DSP_RT='{"dsp_roundtrip_us":"n/a"}'
+fi
+echo "$DSP_RT"

@@ -40,6 +40,16 @@ fun BenchmarkScreen(onBack: () -> Unit) {
                     Text("Resultados del Benchmark (Telemetría Real)", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(benchmarkResults ?: "")
+                    run {
+                        val m = results.optDouble("dsp_roundtrip_median_us", -1.0)
+                        val p = results.optDouble("dsp_roundtrip_p99_us", -1.0)
+                        if (m >= 0.0) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("DSP round-trip (CLOCK_MONOTONIC, n=100): " +
+                                 "mediana ${"%.1f".format(m)} µs · p99 ${"%.1f".format(p)} µs",
+                                 color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Dataset ABX (n=30) generado y exportado a CSV.", color = MaterialTheme.colorScheme.primary)
                 }

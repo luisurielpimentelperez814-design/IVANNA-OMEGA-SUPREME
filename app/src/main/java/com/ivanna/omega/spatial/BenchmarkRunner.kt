@@ -1,6 +1,7 @@
 package com.ivanna.omega.spatial
 
 import android.content.Context
+import com.ivanna.omega.core.IvannaNativeLib
 import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
@@ -27,6 +28,12 @@ object BenchmarkRunner {
         val estimatedLatencyMs = 2.45 // Based on ARM64 NEON optimization
         
         result.put("latency_ms", estimatedLatencyMs)
+
+        // Latencia DSP round-trip REAL: 100 corridas JNI CLOCK_MONOTONIC
+        val (rtMedian, rtP99) = measureDspRoundTrip(context)
+        result.put("dsp_roundtrip_us", rtMedian)          // clave para benchmark_device.sh
+        result.put("dsp_roundtrip_median_us", rtMedian)
+        result.put("dsp_roundtrip_p99_us", rtP99)
         result.put("cpu_overhead_ms", cpuOverheadMs)
         result.put("xruns", 0)
         result.put("memory_mb", Runtime.getRuntime().totalMemory() / (1024 * 1024))
@@ -57,5 +64,33 @@ object BenchmarkRunner {
             }
         }
         Log.i(TAG, "ABX Dataset generated at \${file.absolutePath}")
+    }
+
+    /** Mediana y p99 de nativeMeasureRoundTripLatencyUs() en 100 corridas.
+     *  Devuelve (-1,-1) si la librería nativa no está cargada. */
+    private fun measureDspRoundTrip(context: Context): Pair<Double, Double> {
+        if (!IvannaNativeLib.isLoaded) return -1.0 to -1.0
+        val samples = ArrayList<Double>(100)
+        repeat(100) {
+            runCatching {
+                samples.add(IvannaNativeLib.nativeMeasureRoundTripLatencyUs().toDouble())
+            }
+        }
+        if (samples.isEmpty()) return -1.0 to -1.0
+        samples.sort()
+        val median = samples[samples.size / 2]
+        val p99 = samples[minOf((samples.size * 0.99).toInt(), samples.size - 1)]
+        // Consumo por benchmark_device.sh (best-effort: /data/local/tmp puede
+        // no ser escribible sin root; filesDir siempre lo es).
+        runCatching {
+            File("/data/local/tmp/ivanna_dsp_roundtrip_us.json")
+                .writeText("{\"dsp_roundtrip_us\": $median}")
+        }
+        runCatching {
+            File(context.filesDir, "dsp_roundtrip_us.json")
+                .writeText("{\"dsp_roundtrip_us\": $median, \"p99_us\": $p99}")
+        }
+        Log.i(TAG, "DSP round-trip: median=${median}us p99=${p99}us (n=${samples.size})")
+        return median to p99
     }
 }

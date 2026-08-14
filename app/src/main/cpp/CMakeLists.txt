@@ -152,6 +152,7 @@ add_library(ivanna_omega SHARED
 
     # Benchmark logger (JNI para benchmarking) — FIX v1.5
     benchmark_logger.cpp
+    ivanna_benchmark_jni.cpp
 
     # Phase oracle (JNI para prediction) — FIX v1.5
     phase_oracle.cpp

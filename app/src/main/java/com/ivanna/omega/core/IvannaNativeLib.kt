@@ -164,6 +164,8 @@ object IvannaNativeLib {
     // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
     // Disponible cuando el ADE está activo y hay señal de audio real.
     external fun nativeGetBandEnergies(): FloatArray?
+    // Latencia round-trip del pipeline DSP (µs, CLOCK_MONOTONIC) — benchmark hardware
+    external fun nativeMeasureRoundTripLatencyUs(): Long
 
 // FloatArray[8]: [activeRoute,rms,peak,voiceProtect,
 // compAmount,excReduction,spatialWidth,adaptiveActive]
