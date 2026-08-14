@@ -60,9 +60,16 @@ void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
 }
 
 void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
-    // Non-blocking synthesis into the inactive bank
     int targetBank = 1 - m_activeBank.load(std::memory_order_relaxed);
-    synthesizeHrtf(yaw, pitch, roll, targetBank);
+    if (m_datasetLoaded) {
+        // Dataset real disponible: seleccionar posición medida más cercana al azimut
+        // yaw en radianes → grados para buscar en el dataset IHR1
+        const float azDeg = yaw * (180.f / 3.14159265f);
+        loadFromDatasetAtAzimuth(azDeg, targetBank);
+    } else {
+        // Fallback: modelo esférico Rayleigh (síntesis analítica)
+        synthesizeHrtf(yaw, pitch, roll, targetBank);
+    }
     m_activeBank.store(targetBank, std::memory_order_release);
 }
 
@@ -125,6 +132,45 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
         m_histL[i] = m_histL[BLOCK_SIZE + i];
         m_histR[i] = m_histR[BLOCK_SIZE + i];
     }
+}
+
+bool HrtfManager::loadFromDataset(const char* path) {
+    if (!m_loader.load(path)) return false;
+    m_datasetLoaded = true;
+    // Pre-cargar la posición frontal (azimut 0°) en ambos bancos
+    loadFromDatasetAtAzimuth(0.f, 0);
+    loadFromDatasetAtAzimuth(0.f, 1);
+    return true;
+}
+
+void HrtfManager::loadFromDatasetAtAzimuth(float azimuthDeg, int bank) {
+    if (!m_datasetLoaded || m_loader.size() == 0) return;
+
+    // Buscar la entrada más cercana al azimut pedido
+    const size_t n = m_loader.size();
+    float bestDiff = 1e9f;
+    size_t bestIdx = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const auto& e = m_loader.entry(i);
+        float diff = std::fabs(e.azimuthDeg - azimuthDeg);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    }
+
+    const auto& e = m_loader.entry(bestIdx);
+    const size_t copyL = std::min((size_t)HRTF_TAPS, e.left.size());
+    const size_t copyR = std::min((size_t)HRTF_TAPS, e.right.size());
+
+    std::memset(m_hrtfLL[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfRR[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfLR[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfRL[bank], 0, HRTF_TAPS * sizeof(float));
+
+    // Canal L → oído izquierdo, Canal R → oído derecho
+    // Crosstalk (LR / RL) se deja en cero — el dataset no incluye
+    // mediciones de crosstalk por separado. El HRTFConvolver completo
+    // (con los 12 virtual speakers) sí hace la separación correcta.
+    std::memcpy(m_hrtfLL[bank], e.left.data(),  copyL * sizeof(float));
+    std::memcpy(m_hrtfRR[bank], e.right.data(), copyR * sizeof(float));
 }
 
 } // namespace Ivanna

@@ -126,7 +126,7 @@ private:
     Psychoacoustics* m_psycho = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
 
-    void applyGoldenEarGAN(AudioBuffer* buffer);
+    void applyHarmonicExciter(AudioBuffer* buffer);
 };
 
 } // namespace Ivanna

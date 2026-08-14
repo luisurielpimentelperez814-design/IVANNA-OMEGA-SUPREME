@@ -29,6 +29,20 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_volterra->setEnabled(true);
 
     m_hrtf = new HrtfManager();
+    // Intentar cargar el dataset HRTF medido (IHR1, 1250 posiciones, 512 taps).
+    // Si está disponible, setHeadPose() seleccionará posiciones medidas reales
+    // en lugar de sintetizar analíticamente (modelo Rayleigh esférico).
+    // El path es el mismo que deploya customize.sh del módulo Magisk.
+    static const char* kIHR1Path = "/data/adb/ivanna_omega/hrtf_dataset.ihr1";
+    if (!m_hrtf->loadFromDataset(kIHR1Path)) {
+        // Fallback silencioso — el modelo Rayleigh sigue funcionando.
+        // LOGW solo si hay ANDROID_LOG disponible (no en tests de host).
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_WARN, "IvannaFusion",
+            "HrtfManager: dataset IHR1 no disponible en %s — usando modelo Rayleigh",
+            kIHR1Path);
+#endif
+    }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
     m_classifier = new IvannaAudioClassifier();
@@ -113,11 +127,11 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
 
     // 5. Golden Ear Harmonic Exciter & Soft Clipping (if enabled)
     if (m_goldenEarActive) {
-        applyGoldenEarGAN(buffer);
+        applyHarmonicExciter(buffer);
     }
 }
 
-void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
+void IvannaFusionEngine::applyHarmonicExciter(AudioBuffer* buffer) {
     // Non-linear harmonic exciter using Chebyshev polynomials H2(x)=2x^2-1, H3(x)=4x^3-3x
     // Emulates mastering hardware transformer saturation with ARMv8 NEON
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
