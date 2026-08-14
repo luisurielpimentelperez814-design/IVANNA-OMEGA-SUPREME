@@ -81,6 +81,31 @@ public:
         return loadDataset(az.data(), L.data(), R.data(), numDirs, irLen);
     }
 
+    // ── Base PCA V (morph algebraico exacto: HRIR += V·q) ─────────────
+    // Formato: [4B "PCAV"][i32 K][i32 irLen] + por componente [irLen f32 L][irLen f32 R]
+    // Generado por scripts/compute_pca_basis.py desde hrtf_dataset.ihr1.
+    bool loadPcaBasis(const char* path) {
+        if (!path) return false;
+        FILE* f = std::fopen(path, "rb");
+        if (!f) return false;
+        char magic[4];
+        if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "PCAV", 4) != 0) {
+            std::fclose(f); return false;
+        }
+        int32_t K = 0, irLen = 0;
+        if (std::fread(&K, 4, 1, f) != 1 || std::fread(&irLen, 4, 1, f) != 1) {
+            std::fclose(f); return false;
+        }
+        if (K <= 0 || K > 64 || irLen <= 0 || irLen > 8192) { std::fclose(f); return false; }
+        std::vector<float> v((size_t)K * 2 * irLen);
+        if (std::fread(v.data(), 4, v.size(), f) != v.size()) { std::fclose(f); return false; }
+        std::fclose(f);
+        pcaV_.swap(v);
+        pcaK_ = K;
+        pcaIrLen_ = irLen;
+        return true;
+    }
+
     bool hasCustomDataset() const {
         return std::atomic_load(&dataset_) != nullptr;
     }
@@ -268,6 +293,27 @@ private:
         if (N == 0) return;
         const float* qn = latentQ_;
 
+        // Ruta EXACTA: HRIR(az) += V·q en muestras de tiempo (base PCA real
+        // del dataset). Cuando V no está cargada se cae a la aproximación
+        // por bandas espectrales de más abajo (comportamiento previo).
+        if (pcaK_ > 0 && pcaIrLen_ > 0 &&
+            (int)pcaV_.size() == pcaK_ * 2 * pcaIrLen_) {
+            const int M2 = 2 * pcaIrLen_;
+            const int lim = N < pcaIrLen_ ? N : pcaIrLen_;
+            for (int n = 0; n < lim; ++n) {
+                float dL = 0.f, dR = 0.f;
+                for (int k = 0; k < pcaK_; ++k) {
+                    const float q = qn[k];
+                    if (q == 0.f) continue;
+                    dL += q * pcaV_[(size_t)k * M2 + n];
+                    dR += q * pcaV_[(size_t)k * M2 + pcaIrLen_ + n];
+                }
+                p.L[n] += dL;
+                p.R[n] += dR;
+            }
+            return;
+        }
+
         // q[0]: ganancia broadband ±20% — PC0 = forma espectral global
         const float gain = 1.f + 0.2f * qn[0];
         for (int k = 0; k < N; ++k) {
@@ -326,6 +372,10 @@ private:
 
     // Dataset personalizado (struct declarado en la zona pública)
     std::shared_ptr<SharedDataset> dataset_;
+    // Base PCA del dataset (morph exacto)
+    std::vector<float> pcaV_;
+    int pcaK_ = 0;
+    int pcaIrLen_ = 0;
 
 
     // SAF latent state — actualizado por setLatentParams() desde el hilo de control
