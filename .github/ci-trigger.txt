@@ -1,5 +1,5 @@
 CI run trigger
 
-Triggered by GitHub Copilot at user's request to re-run CI.
+Trigger trivial para re-ejecutar el workflow.
 
 Note: this file exists only to create a trivial commit and start the workflow.

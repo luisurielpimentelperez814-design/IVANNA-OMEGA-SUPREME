@@ -27,7 +27,7 @@ git push origin main
 ### Opción 2: Desde este contenedor (si tienes SSH key configurada)
 
 ```bash
-cd /home/claude/IVANNA-OMEGA-SUPREME
+cd ~/IVANNA-OMEGA-SUPREME
 git remote -v
 git push -u origin main
 ```

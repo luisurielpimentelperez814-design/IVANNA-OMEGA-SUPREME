@@ -226,5 +226,5 @@ g_spatialState.mu = static_cast<int16_t>(mu * 1000.0f);     // 0.001 precision
 ---
 
 **Fecha**: 2026-07-05  
-**Committer**: Claude Haiku 4.5  
+**Committer**: Luis Uriel Pimentel Pérez  
 **Status**: ✅ READY FOR COMMIT

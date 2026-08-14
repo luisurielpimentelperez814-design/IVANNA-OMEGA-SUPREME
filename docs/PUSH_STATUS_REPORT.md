@@ -56,7 +56,7 @@ El token puede tener uno de estos problemas:
 
 ```bash
 # Si tienes SSH key configurada:
-cd /home/claude/IVANNA-OMEGA-SUPREME
+cd ~/IVANNA-OMEGA-SUPREME
 git remote set-url origin git@github.com:luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
 git push -u origin main
 ```
@@ -72,7 +72,7 @@ gh auth login
 # Seleccionar: GitHub.com → HTTPS → Paste token
 
 # Push
-cd /home/claude/IVANNA-OMEGA-SUPREME
+cd ~/IVANNA-OMEGA-SUPREME
 gh repo push
 ```
 
@@ -179,7 +179,7 @@ git push origin main
 
 4. **Ejecuta el push**:
    ```bash
-   cd /home/claude/IVANNA-OMEGA-SUPREME
+   cd ~/IVANNA-OMEGA-SUPREME
    git push origin main
    ```
 
