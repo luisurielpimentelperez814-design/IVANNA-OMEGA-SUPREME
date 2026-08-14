@@ -42,6 +42,12 @@ object SaFOptimizer {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    // FIX (desconexión): reset() accedía a IVANNAApplication.instance para
+    // borrar las prefs — acoplamiento frágil (si el companion no expone
+    // instance, o el proceso aún no tiene Application viva, crash). Se
+    // conserva el applicationContext recibido en init() y se reutiliza.
+    private var appContext: Context? = null
+
     // Tabla mínima de sujetos conocidos (subset CIPIC + MIT).
     // El matching real usará distancia euclidiana sobre head-width / head-depth;
     // por ahora la selección es round-robin sobre esta lista durante la calib.
@@ -58,7 +64,8 @@ object SaFOptimizer {
      * si existe, o deja el estado por defecto (iteration=0, sin calibrar).
      */
     fun init(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext = context.applicationContext
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val iter = prefs.getInt("iteration", 0)
         val subj = prefs.getString("selectedSubject", "") ?: ""
         val pNorm = prefs.getFloat("paramNorm", 0f)
@@ -73,7 +80,7 @@ object SaFOptimizer {
     
     private fun saveState(context: Context) {
         val st = _state.value
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putInt("iteration", st.iteration)
             .putString("selectedSubject", st.selectedSubject)
@@ -132,9 +139,10 @@ object SaFOptimizer {
     /** Reinicia el optimizador al estado inicial. */
     fun reset() {
         _state.value = SaFOptimizerState()
-        SaFRoomBridge.reset()
-        val prefs = com.ivanna.omega.core.IVANNAApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().clear().apply()
+        runCatching { SaFRoomBridge.reset() }
+            .onFailure { Log.w(TAG, "SaFRoomBridge.reset no disponible: ${it.message}") }
+        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            ?.edit()?.clear()?.apply()
         Log.d(TAG, "Optimizer reset")
     }
 
@@ -149,18 +157,26 @@ object SaFOptimizer {
      */
     fun syncToRoomBridge(rt60: Float = 0.3f) {
         val st = _state.value
-        // H_t: mismatch normalizado — errorEnergy ya está en [0,1] por diseño
-        SaFRoomBridge.setHrtfState(
-            mismatchEnergy  = st.errorEnergy,
-            convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
-        )
-        // R_t: sala actual
-        SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
-        // Target en el espacio latente SAF-Room: dirección de menor error
-        // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
-        SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
-        // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
-        val alpha = SaFRoomBridge.step()
-        Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60")
+        // FIX (desconexión): SaFRoomBridge es un singleton con estado nativo
+        // — si la librería SAF no cargó o el bridge aún no está listo, cada
+        // llamada lanzaba y el paso de calibración moría a mitad. Un fallo
+        // aquí no debe abortar la calibración: se registra y se continúa.
+        try {
+            // H_t: mismatch normalizado — errorEnergy ya está en [0,1] por diseño
+            SaFRoomBridge.setHrtfState(
+                mismatchEnergy  = st.errorEnergy,
+                convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
+            )
+            // R_t: sala actual
+            SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
+            // Target en el espacio latente SAF-Room: dirección de menor error
+            // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
+            SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
+            // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
+            val alpha = SaFRoomBridge.step()
+            Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60")
+        } catch (t: Throwable) {
+            Log.w(TAG, "syncToRoomBridge omitido (bridge no listo): ${t.message}")
+        }
     }
 }
