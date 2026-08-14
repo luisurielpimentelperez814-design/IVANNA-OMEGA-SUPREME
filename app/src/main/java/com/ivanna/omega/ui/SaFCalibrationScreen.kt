@@ -90,6 +90,12 @@ fun SaFCalibrationScreen(
         // ── Status pill ───────────────────────────────────────────────────
         PhaseBadge(state.phase, state.iteration)
 
+        // ── Geometría de pinna (TAREA 4): solo antes de calibrar ──────────
+        // 3 medidas del oído → sujeto HRTF más cercano del dataset SOFA.
+        if (state.phase == SaFPhase.IDLE) {
+            PinnaMetricsSection()
+        }
+
         // ── Main content by phase ─────────────────────────────────────────
         when (state.phase) {
             SaFPhase.IDLE        -> IdlePanel  { engine.startCalibration() }

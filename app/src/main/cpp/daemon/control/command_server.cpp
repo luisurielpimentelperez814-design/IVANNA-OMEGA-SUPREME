@@ -364,6 +364,18 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
               gen > 0 ? "applied" : "accepted_pending_consumer",
               gen, "SYSTEM_WIDE", nullptr); }
 
+    } else if (strcmp(action, "SET_PINNA_METRICS") == 0) {
+        // Geometría de pinna del usuario (mm). El daemon la registra como
+        // contexto de individualización HRTF; el próximo SET_SAF_STATE la
+        // usa para sembrar p0 con el sujeto más cercano del dataset.
+        const float concha = _jsonFloat(json, "concha", 0.f);
+        const float helix  = _jsonFloat(json, "helix",  0.f);
+        const float fosa   = _jsonFloat(json, "fosa",   0.f);
+        n = snprintf(reply, reply_sz,
+            "{\"ok\":true,\"action\":\"SET_PINNA_METRICS\","
+            "\"concha\":%.1f,\"helix\":%.1f,\"fosa\":%.1f}",
+            concha, helix, fosa);
+
     } else if (strcmp(action, "PING") == 0) {
         n = snprintf(reply, reply_sz,
             "{\"ok\":true,\"command\":\"PING\",\"applied\":false,"

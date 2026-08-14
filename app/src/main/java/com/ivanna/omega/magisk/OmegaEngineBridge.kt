@@ -185,6 +185,15 @@ object OmegaEngineBridge {
         result
     } catch (e: Exception) { null }
 
+    fun setPinnaMetrics(conchaMm: Float, helixMm: Float, fosaMm: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action",     "SET_PINNA_METRICS")
+            put("concha",     conchaMm.toDouble())
+            put("helix",      helixMm.toDouble())
+            put("fosa",       fosaMm.toDouble())
+            put("timestamp",  System.currentTimeMillis())
+        })
+
     fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =        sendCommand(JSONObject().apply {
             put("action",         "SET_ROUTE_PROFILE")
             put("bassBoostDb",    bassBoostDb.toDouble())

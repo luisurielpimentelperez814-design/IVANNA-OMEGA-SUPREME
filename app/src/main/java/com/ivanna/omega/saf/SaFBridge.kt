@@ -21,4 +21,21 @@ object SaFBridge {
     // modelo de referencia de 214 sujetos, no el resultado personal).
     @JvmStatic external fun nativeSaFSaveState(path: String): Boolean
     @JvmStatic external fun nativeSaFLoadState(path: String): Boolean
+
+    /**
+     * Pista de sujeto inicial para Φ_SAF: el próximo nativeSaFInit parte del
+     * sujeto elegido por geometría de pinna en vez del promedio poblacional.
+     * Viaja al daemon por el socket (SET_PINNA_METRICS.subjectIndex) — no
+     * requiere símbolo JNI nuevo.
+     */
+    fun setSubjectIndexHint(idx: Int) {
+        runCatching {
+            com.ivanna.omega.magisk.OmegaEngineBridge.sendCommand(
+                org.json.JSONObject().apply {
+                    put("action", "SET_PINNA_METRICS")
+                    put("subjectIndex", idx)
+                    put("timestamp", System.currentTimeMillis())
+                })
+        }
+    }
 }

@@ -104,4 +104,80 @@ object HrtfSubjectSelector {
         Log.i(TAG, "HRTF Individualization (handle=$handle): $anthropoLog -> sujeto_seleccionado=$selectedSubject")
         return selectedSubject
     }
+
+    // ── Geometría de pinna → mejor sujeto del dataset ──────────────────────
+    /** Medidas en mm. Rangos plausibles: concha 20–45, hélix 50–80, fosa 15–35. */
+    data class PinnaMetrics(val conchaMm: Float, val helixMm: Float, val fosaMm: Float)
+
+    /**
+     * Busca en subjects_metadata del SAF_model.json (assets/saf) el sujeto
+     * cuya antropometría de oreja más se acerca (distancia euclidiana
+     * normalizada por el rango de cada medida). Si ninguna entrada tiene
+     * antropometría numérica suficiente, devuelve DEFAULT_SUBJECT y lo loguea
+     * — nunca crashea ni inventa datos.
+     */
+    fun findBestMatch(context: Context, m: PinnaMetrics): String {
+        return runCatching {
+            val root = context.assets.open("saf/SAF_model.json").bufferedReader()
+                .use { org.json.JSONObject(it.readText()) }
+            val subs = root.getJSONArray("subjects_metadata")
+            var best: String? = null
+            var bestDist = Double.MAX_VALUE
+            val rng = doubleArrayOf(25.0, 30.0, 20.0)  // rangos de normalización
+            val target = doubleArrayOf(m.conchaMm.toDouble(), m.helixMm.toDouble(),
+                                       m.fosaMm.toDouble())
+            for (i in 0 until subs.length()) {
+                val s = subs.getJSONObject(i)
+                val anth = s.optJSONObject("anthropometry") ?: continue
+                // Claves candidatas (CIPIC usa códigos x1..; aceptamos cualquier
+                // nombre que contenga concha/helix/fosa/pinna, si no: primeros
+                // 3 valores numéricos disponibles).
+                val vals = ArrayList<Double>()
+                val keys = anth.keys()
+                val priority = listOf("concha", "helix", "fosa", "pinna")
+                val seen = HashSet<String>()
+                for (kw in priority) {
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        if (seen.add(k) && k.lowercase().contains(kw)) {
+                            val v = anth.optDouble(k, Double.NaN)
+                            if (!v.isNaN()) vals.add(v)
+                        }
+                    }
+                }
+                if (vals.size < 3) {
+                    val it2 = anth.keys()
+                    while (it2.hasNext() && vals.size < 3) {
+                        val k = it2.next()
+                        if (seen.add(k)) {
+                            val v = anth.optDouble(k, Double.NaN)
+                            if (!v.isNaN()) vals.add(v)
+                        }
+                    }
+                }
+                if (vals.size < 3) continue
+                var d = 0.0
+                for (j in 0 until 3) {
+                    val dd = (vals[j] - target[j]) / rng[j]
+                    d += dd * dd
+                }
+                if (d < bestDist) {
+                    bestDist = d
+                    best = s.optString("file").substringAfterLast('/')
+                        .substringBeforeLast('.').ifBlank { "subject_$i" }
+                }
+            }
+            if (best == null) {
+                Log.i(TAG, "findBestMatch: sin antropometría en metadata → default")
+                DEFAULT_SUBJECT
+            } else {
+                Log.i(TAG, "findBestMatch(concha=${m.conchaMm}, helix=${m.helixMm}, " +
+                           "fosa=${m.fosaMm}) → $best (dist=${"%.3f".format(bestDist)})")
+                best!!
+            }
+        }.getOrElse {
+            Log.w(TAG, "findBestMatch falló: ${it.message} → default")
+            DEFAULT_SUBJECT
+        }
+    }
 }
