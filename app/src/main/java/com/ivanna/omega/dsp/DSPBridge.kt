@@ -87,9 +87,12 @@ object DSPBridge {
      * @param gain ganancia perceptual calculada
      */
     fun applyPerceptualGain(gain: Float) {
-        if (!loaded) return
+        // FIX (desconexión): `loaded` refleja NativeLibraryLoader, pero estos
+        // métodos llaman a IvannaNativeLib — otra librería con su propio
+        // estado de carga. Si ésta falló, UnsatisfiedLinkError en caliente.
+        if (!loaded || !IvannaNativeLib.isLoaded) return
         Log.d(TAG, "applyPerceptualGain: $gain")
-        IvannaNativeLib.nativeSetPerceptualGain(gain.coerceIn(0f, 2f))
+        runCatching { IvannaNativeLib.nativeSetPerceptualGain(gain.coerceIn(0f, 2f)) }
     }
 
     /**
@@ -99,9 +102,9 @@ object DSPBridge {
      * @param amount compresión calculada
      */
     fun applyCompressorAmount(amount: Float) {
-        if (!loaded) return
+        if (!loaded || !IvannaNativeLib.isLoaded) return
         Log.d(TAG, "applyCompressorAmount: $amount")
-        IvannaNativeLib.nativeSetCompressorAmount(amount.coerceIn(0f, 1f))
+        runCatching { IvannaNativeLib.nativeSetCompressorAmount(amount.coerceIn(0f, 1f)) }
     }
 
     /**
@@ -111,9 +114,9 @@ object DSPBridge {
      * @param amount reducción de exciter
      */
     fun applyExciterReduction(amount: Float) {
-        if (!loaded) return
+        if (!loaded || !IvannaNativeLib.isLoaded) return
         Log.d(TAG, "applyExciterReduction: $amount")
-        IvannaNativeLib.nativeSetExciterReduction(amount.coerceIn(0f, 1f))
+        runCatching { IvannaNativeLib.nativeSetExciterReduction(amount.coerceIn(0f, 1f)) }
     }
 
     /**
@@ -123,9 +126,9 @@ object DSPBridge {
      * @param width ancho espacial calculado
      */
     fun applySpatialWidth(width: Float) {
-        if (!loaded) return
+        if (!loaded || !IvannaNativeLib.isLoaded) return
         Log.d(TAG, "applySpatialWidth: $width")
-        IvannaNativeLib.nativeSetSpatialWidth(width.coerceIn(0.5f, 2f))
+        runCatching { IvannaNativeLib.nativeSetSpatialWidth(width.coerceIn(0.5f, 2f)) }
     }
 
     /**
@@ -137,13 +140,15 @@ object DSPBridge {
      * @param highDb ganancia en altos
      */
     fun applyPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float) {
-        if (!loaded) return
+        if (!loaded || !IvannaNativeLib.isLoaded) return
         Log.d(TAG, "applyPerceptualEQ: low=$lowDb, mid=$midDb, high=$highDb")
-        IvannaNativeLib.nativeSetPerceptualEQ(
-            lowDb.coerceIn(-12f, 12f),
-            midDb.coerceIn(-12f, 12f),
-            highDb.coerceIn(-12f, 12f)
-        )
+        runCatching {
+            IvannaNativeLib.nativeSetPerceptualEQ(
+                lowDb.coerceIn(-12f, 12f),
+                midDb.coerceIn(-12f, 12f),
+                highDb.coerceIn(-12f, 12f)
+            )
+        }
     }
 
     fun version(): String = if (loaded) nativeVersion() else "native unavailable"
