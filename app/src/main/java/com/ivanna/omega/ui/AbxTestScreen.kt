@@ -7,6 +7,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.core.NativeLibraryLoader
+import com.ivanna.omega.spatial.AbxResultStore
+import com.ivanna.omega.spatial.AbxStats
 import com.ivanna.omega.spatial.IvannaSpatialNative
 import org.json.JSONObject
 import java.io.File
@@ -14,6 +16,10 @@ import java.util.Date
 
 @Composable
 fun AbxTestScreen(onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var totalTrials by remember { mutableStateOf(AbxResultStore.loadAll(context).size) }
+    var totalHits by remember { mutableStateOf(AbxResultStore.loadAll(context).count { it.optBoolean("correct") }) }
+    var lastExport by remember { mutableStateOf<String?>(null) }
     var testActive by remember { mutableStateOf(false) }
     var currentSample by remember { mutableStateOf("A") } // A, B, X
     var selectedMatch by remember { mutableStateOf<String?>(null) }
@@ -83,8 +89,9 @@ fun AbxTestScreen(onBack: () -> Unit) {
                         put("scoreSpatial", scoreSpatial)
                         put("scoreNatural", scoreNatural)
                     }
-                    val file = File("/data/local/tmp/ivanna_abx_results.jsonl") // In production, context.filesDir
-                    file.appendText(result.toString() + "\n")
+                    AbxResultStore.record(context, result)
+                    totalTrials += 1
+                    if (correct) totalHits += 1
                     
                     testActive = false
                     selectedMatch = null
@@ -96,6 +103,31 @@ fun AbxTestScreen(onBack: () -> Unit) {
         }
         
         Spacer(modifier = Modifier.height(24.dp))
+        if (totalTrials > 0) {
+            val p = AbxStats.binomialTest(totalHits, totalTrials)
+            val (ciLo, ciHi) = AbxStats.wilsonInterval95(totalHits, totalTrials)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Resultados acumulados", style = MaterialTheme.typography.titleMedium)
+                    Text("Trials: $totalTrials · Aciertos: $totalHits " +
+                         "(${if (totalTrials>0) (100.0*totalHits/totalTrials).toInt() else 0}%)")
+                    Text("p-valor (binomial exacto, H0=0.5): ${"%.4f".format(p)}")
+                    Text("IC 95%: [${"%.2f".format(ciLo)}, ${"%.2f".format(ciHi)}]")
+                    Text(
+                        if (totalTrials >= 10 && p < 0.05) "VEREDICTO: PERCEPTIBLE (p<0.05)"
+                        else "VEREDICTO: NO DEMOSTRADO",
+                        color = if (totalTrials >= 10 && p < 0.05)
+                            MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        lastExport = AbxResultStore.exportJson(context)?.absolutePath
+                    }) { Text("Exportar JSON") }
+                    lastExport?.let { Text("→ $it", style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        }
         Button(onClick = onBack) {
             Text("Volver")
         }
