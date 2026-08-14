@@ -215,7 +215,14 @@ class UsbAudioProManager private constructor(context: Context) {
     fun stopStreaming() {
         isStreaming.set(false)
         isAsyncSlave.set(false)
-        nativeStopAsyncEngine(nativeEngineHandle)
+        // FIX (desconexión): nativeStopAsyncEngine se llamaba sin guard —
+        // si el motor nativo nunca arrancó (USB desconectado a mitad de
+        // sesión, lib no cargada), UnsatisfiedLinkError tumbaba el stop.
+        try {
+            nativeStopAsyncEngine(nativeEngineHandle)
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "stopStreaming: motor nativo no disponible (${t.message})")
+        }
         teardown()
     }
 
