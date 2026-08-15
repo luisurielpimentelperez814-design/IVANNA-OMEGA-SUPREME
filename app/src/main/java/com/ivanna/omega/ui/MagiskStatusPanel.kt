@@ -286,7 +286,6 @@ private fun StatusRow(label: String, active: Boolean, activeText: String, inacti
 }
 
 @Composable
-@Composable
 private fun ActionButton(
     label: String,
     enabled: Boolean,
