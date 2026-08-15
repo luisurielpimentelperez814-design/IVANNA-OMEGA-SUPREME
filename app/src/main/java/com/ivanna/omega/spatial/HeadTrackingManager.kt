@@ -57,7 +57,7 @@ class HeadTrackingManager(private val context: Context, private val trackerHandl
         filter.reset()
         predictor.reset()
         if (trackerHandle != 0L) {
-            IvannaSpatialNative.nativeHeadTrackerReset(trackerHandle)
+            runCatching { IvannaSpatialNative.nativeHeadTrackerReset(trackerHandle) }
         }
     }
 
