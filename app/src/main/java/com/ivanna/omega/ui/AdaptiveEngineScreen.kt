@@ -231,7 +231,7 @@ internal fun AdaptiveEngineScreen(
                         IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveControls(
                             audioState.adaptiveMode.ordinal,
                             v * 100f
-                        )
+                        ) }
                     }
                 }
             )
