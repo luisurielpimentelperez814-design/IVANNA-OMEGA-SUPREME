@@ -295,12 +295,16 @@ set_target_properties(omega_effect PROPERTIES
 
 
 # Auto stage libomega_effect.so for Magisk
+# AUDIT FIX (staging path): el path era "${CMAKE_SOURCE_DIR}/../magisk_module"
+# que desde app/src/main/cpp resuelve a app/src/main/magisk_module (inexistente).
+# El daemon usa ../../../../magisk_module (raiz del repo) — se alinea el effect
+# al mismo path para que el zip del modulo lleve ambos binarios.
 add_custom_command(TARGET omega_effect POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
-    "${CMAKE_SOURCE_DIR}/../magisk_module/system/vendor/lib64/soundfx"
+    "${CMAKE_SOURCE_DIR}/../../../../magisk_module/system/vendor/lib64/soundfx"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:omega_effect>
-    "${CMAKE_SOURCE_DIR}/../magisk_module/system/vendor/lib64/soundfx/libomega_effect.so"
+    "${CMAKE_SOURCE_DIR}/../../../../magisk_module/system/vendor/lib64/soundfx/libomega_effect.so"
     VERBATIM
 )
 add_custom_target(stage_omega_effect ALL DEPENDS omega_effect)
