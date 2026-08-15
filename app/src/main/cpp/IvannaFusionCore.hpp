@@ -41,6 +41,7 @@ class IvannaAudioClassifier;
 class IvannaFusionEngine : public IvannaFusionCore {
 public:
     IvannaFusionEngine();
+    explicit IvannaFusionEngine(float /*sampleRate*/) : IvannaFusionEngine() {}
     virtual ~IvannaFusionEngine();
 
     void runAcousticProfiling();
@@ -53,12 +54,48 @@ public:
     void processBlock(AudioBuffer* buffer) override { process(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
 
+    // ── API requerida por omega_effect.cpp ────────────────────────────────────
+    // omega_effect.cpp fue escrito contra una versión anterior de IvannaFusionCore
+    // que tenía estos métodos. Se mantienen aquí para que el contrato de omega_effect
+    // no necesite cambiar — toda la lógica real está en process() y en los miembros.
+
+    void initSpatial(float sr, int /*blockSize*/) noexcept {
+        m_sampleRate = sr;
+    }
+
+    // Procesa un bloque estéreo in-place delegando a process().
+    void processStereo(float* L, float* R, size_t frames) noexcept {
+        if (!L || !R || frames == 0) return;
+        AudioBuffer buf{};
+        const size_t n = frames < BLOCK_SIZE ? frames : BLOCK_SIZE;
+        for (size_t i = 0; i < n; ++i) { buf.left[i] = L[i]; buf.right[i] = R[i]; }
+        process(&buf);
+        for (size_t i = 0; i < n; ++i) { L[i] = buf.left[i]; R[i] = buf.right[i]; }
+    }
+
+    bool loadCustomHrtf(const char* /*path*/) noexcept { return false; }
+    void setSpatialWidth(float /*w*/) noexcept {}
+    void setHarmonicGain(float g) noexcept { m_harmonicGain = g; }
+    void setCompressorParams(float t, float r) noexcept { m_compThresh = t; m_compRatio = r; }
+    void setSafLatentParams(const float /*q*/[7]) noexcept {}
+    void clearSafLatentParams() noexcept {}
+    void updateHeadPose(float /*yaw*/, float /*pitch*/, float /*roll*/) noexcept {}
+
 private:
-    bool m_goldenEarActive = false;
-    HrtfManager* m_hrtf = nullptr;
-    EvolutionaryEQ* m_evoEq = nullptr;
-    Psychoacoustics* m_psycho = nullptr;
+    bool  m_goldenEarActive = false;
+    float m_sampleRate  = SAMPLE_RATE;
+    float m_harmonicGain = 0.f;
+    float m_compThresh   = -18.f;
+    float m_compRatio    = 4.f;
+    HrtfManager*          m_hrtf       = nullptr;
+    EvolutionaryEQ*       m_evoEq      = nullptr;
+    Psychoacoustics*      m_psycho     = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
+
+    void applyHarmonicExciter(AudioBuffer* buffer);
 };
 
+// Alias: omega_effect.cpp aún usa IvannaFusionCore para instanciar y como tipo.
+// Con este alias puede hacer `new IvannaFusionCore(sr)` y obtener un IvannaFusionEngine.
+using IvannaFusionCore = IvannaFusionEngine;
 } // namespace Ivanna

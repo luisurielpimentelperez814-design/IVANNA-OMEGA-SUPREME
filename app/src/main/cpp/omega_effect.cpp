@@ -13,6 +13,10 @@
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include <cmath>
 
+// IvannaFusionCore = IvannaFusionEngine (alias en IvannaFusionCore.hpp).
+// using namespace evita cualificar con Ivanna:: en todo el archivo.
+using namespace Ivanna;
+
 #define LOG_TAG "IvannaOmegaEffect"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 // FIX (trazabilidad HRTF): sin este canal no habia forma de saber, en un
