@@ -27,7 +27,10 @@ fun Phase7Screen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = {
                     val data = ComputerVisionScanner.scanEarTopology()
-                    scanResult = "Ancho: \${data.headWidthMm}mm\nProfundidad: \${data.headDepthMm}mm\nPinna: \${data.pinnaCavityDepthMm}mm"
+                    scanResult = "Ancho: ${data.headWidthMm}mm\n" +
+                        "Profundidad: ${data.headDepthMm}mm\n" +
+                        "Pinna: ${data.pinnaCavityDepthMm}mm\n" +
+                        "Longitud oreja: ${data.earLengthMm}mm"
                 }) {
                     Text("Escanear Topología de Oreja")
                 }
