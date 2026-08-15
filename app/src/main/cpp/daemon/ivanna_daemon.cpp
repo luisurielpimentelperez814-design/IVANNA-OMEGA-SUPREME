@@ -35,7 +35,12 @@
 // Explicit path requirement: Must use /data/adb/ivanna_omega/omega_shm
 constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
 constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
-constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_daemon.log";
+// FIX: el log interno del daemon escribía en /data/adb/ivanna_daemon.log
+// mientras service.sh (y cualquier diagnóstico documentado) lee
+// /data/adb/ivanna_omega/daemon.log — el stdout/stderr del proceso ya se
+// redirige ahí desde service.sh, pero los mensajes vía log_message() iban
+// a un archivo que nadie mira. Unificado al path canónico del estado.
+constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_omega/daemon.log";
 constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
 
 // Global running status for clean signal shutdown
@@ -225,6 +230,13 @@ int main(int argc, char* argv[]) {
     int rate = 48000;
     int buffer = 64;
     bool realtime = false;
+
+    // El log vive dentro de /data/adb/ivanna_omega (ver DEFAULT_LOG_PATH).
+    // service.sh ya lo crea con mkdir -p antes de lanzarnos, pero en un
+    // arranque standalone (pruebas manuales desde shell) el directorio
+    // puede no existir y los primeros log_message() se perderían en
+    // silencio. Crearlo aquí es barato e idempotente.
+    ensure_directory_exists(OMEGA_DIR_PATH);
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
