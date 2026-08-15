@@ -1,3 +1,8 @@
+// ⚠ ARCHIVO LEGADO — NO EDITAR ⚠
+// La fuente de verdad es app/src/main/cpp/EvolutionaryEQ.cpp
+// Este archivo existe por historial pero NO se compila en ningún target.
+// Cualquier cambio aquí se perderá. Edita app/src/main/cpp/.
+//
 // ════════════════════════════════════════════════════════════════════════
 // AVISO (auditoria 2026-08-08): este archivo NO se compila.
 // app/src/main/cpp/CMakeLists.txt linea ~162 tiene "EvolutionaryEQ.cpp"

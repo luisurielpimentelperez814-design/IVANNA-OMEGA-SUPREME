@@ -1,3 +1,8 @@
+// ⚠ ARCHIVO LEGADO — NO EDITAR ⚠
+// La fuente de verdad es app/src/main/cpp/HrtfManager.cpp
+// Este archivo existe por historial pero NO se compila en ningún target.
+// Cualquier cambio aquí se perderá. Edita app/src/main/cpp/.
+//
 #include "HrtfManager.hpp"
 #include <cmath>
 #include <algorithm>

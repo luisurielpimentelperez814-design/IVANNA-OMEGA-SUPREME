@@ -1,3 +1,8 @@
+// ⚠ ARCHIVO LEGADO — NO EDITAR ⚠
+// La fuente de verdad es app/src/main/cpp/IvannaAudioClassifier.cpp
+// Este archivo existe por historial pero NO se compila en ningún target.
+// Cualquier cambio aquí se perderá. Edita app/src/main/cpp/.
+//
 #include "IvannaAudioClassifier.hpp"
 #include <cmath>
 #include <algorithm>
