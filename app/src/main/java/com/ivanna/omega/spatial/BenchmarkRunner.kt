@@ -86,7 +86,7 @@ object BenchmarkRunner {
         val samples = ArrayList<Double>(100)
         repeat(100) {
             runCatching {
-                samples.add(IvannaNativeLib.nativeMeasureRoundTripLatencyUs().toDouble())
+                samples.add(runCatching { IvannaNativeLib.nativeMeasureRoundTripLatencyUs() }.getOrDefault(-1L).toDouble())
             }
         }
         if (samples.isEmpty()) return -1.0 to -1.0
