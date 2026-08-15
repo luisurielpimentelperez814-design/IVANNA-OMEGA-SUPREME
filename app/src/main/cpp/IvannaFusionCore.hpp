@@ -97,5 +97,5 @@ private:
 
 // Alias: omega_effect.cpp aún usa IvannaFusionCore para instanciar y como tipo.
 // Con este alias puede hacer `new IvannaFusionCore(sr)` y obtener un IvannaFusionEngine.
-using IvannaFusionCore = IvannaFusionEngine;
+// using IvannaFusionCore = IvannaFusionEngine; // FIXED: Removed alias redefinition
 } // namespace Ivanna

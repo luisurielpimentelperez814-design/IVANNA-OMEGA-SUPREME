@@ -423,7 +423,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
                 if (!ctx->fusionCore) {
-                    ctx->fusionCore = new IvannaFusionCore((float)sr);
+                    ctx->fusionCore = new IvannaFusionEngine((float)sr);
                 }
                 ctx->fusionCore->initSpatial((float)sr, 4096);
                 // AUDIT FIX (realtime allocation): preasignar buffers L/R
