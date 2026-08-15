@@ -73,11 +73,18 @@ class HeadTrackingManager(private val context: Context, private val trackerHandl
             val filteredQ = filter.filter(quaternion[1], quaternion[2], quaternion[3], quaternion[0], timestampMs)
             val predictedQ = predictor.predict(filteredQ[0], filteredQ[1], filteredQ[2], filteredQ[3], timestampMs)
             
-            IvannaSpatialNative.nativeHeadTrackerUpdate(
-                trackerHandle, 
-                predictedQ[0], predictedQ[1], predictedQ[2], predictedQ[3], 
-                timestampMs
-            )
+            // FIX (auditoría 2026-08-15): única llamada nativa de spatial/ que
+            // corría en cada evento de sensor (alta frecuencia, sin guard) —
+            // si trackerHandle se invalida (release() concurrente con el
+            // listener aún activo), esto crashea el callback del sensor
+            // repetidamente en vez de degradar limpio una vez.
+            runCatching {
+                IvannaSpatialNative.nativeHeadTrackerUpdate(
+                    trackerHandle,
+                    predictedQ[0], predictedQ[1], predictedQ[2], predictedQ[3],
+                    timestampMs
+                )
+            }
         } else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             predictor.updateGyro(event.values[0], event.values[1], event.values[2], timestampMs)
         }
