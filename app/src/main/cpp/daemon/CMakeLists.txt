@@ -34,6 +34,14 @@ add_custom_command(TARGET ivanna_daemon POST_BUILD
     VERBATIM
 )
 
-set_target_properties(ivanna_daemon PROPERTIES
-    EXCLUDE_FROM_ALL TRUE
-)
+# AUDIT FIX (build/artifacts): ivanna_daemon tenia EXCLUDE_FROM_ALL TRUE
+# y NO existia un add_custom_target(... ALL DEPENDS ivanna_daemon) que lo
+# forzara al grafo ALL. Android Gradle Plugin invoca CMake sin --target
+# -> el binario nunca se compilaba en CI y el POST_BUILD que lo copia a
+# magisk_module/system/bin/ nunca disparaba. El paso "Package Magisk
+# module" del workflow exige system/bin/ivanna_daemon dentro del zip
+# (grep || exit 1) -> build roto en la fase de empaquetado.
+# Se elimina EXCLUDE_FROM_ALL y se ancla el target a ALL.
+# El binario sigue fuera del APK: solo entra al Magisk zip via el
+# POST_BUILD ya existente.
+add_custom_target(stage_ivanna_daemon ALL DEPENDS ivanna_daemon)

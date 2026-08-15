@@ -143,8 +143,25 @@ jobs:
 
       - name: Verify artifacts
         run: |
-          ls -lh app/build/outputs/apk/debug/ || exit 1
-          find app/build/intermediates -name "libomega_effect.so" -o -name "ivanna_daemon" | head -5
+          set -euo pipefail
+          # APK debug debe existir
+          ls -lh app/build/outputs/apk/debug/*.apk
+          # Binarios nativos: no basta con listarlos — si falta alguno, el
+          # build esta roto aunque Gradle haya terminado en verde. El daemon
+          # (ivanna_daemon) y el efecto (libomega_effect.so) son los dos
+          # artefactos que el modulo Magisk necesita en el dispositivo.
+          DAEMON=$(find app/build/intermediates -name "ivanna_daemon" -type f | head -1)
+          EFFECT=$(find app/build/intermediates -name "libomega_effect.so" -type f | head -1)
+          test -n "$DAEMON" || { echo "ERROR: ivanna_daemon no compilado"; exit 1; }
+          test -n "$EFFECT" || { echo "ERROR: libomega_effect.so no compilado"; exit 1; }
+          echo "daemon: $DAEMON"
+          echo "effect: $EFFECT"
+          file "$DAEMON" | grep -q "ELF 64-bit" || { echo "ERROR: daemon no es ELF arm64"; exit 1; }
+          file "$EFFECT" | grep -q "ELF 64-bit" || { echo "ERROR: effect no es ELF arm64"; exit 1; }
+          # El POST_BUILD del daemon copia el binario al staging del modulo;
+          # sin esta copia el zip sale sin daemon y el socket no arranca.
+          test -f magisk_module/system/bin/ivanna_daemon || { echo "ERROR: daemon no stageado en magisk_module/system/bin"; exit 1; }
+          test -f magisk_module/system/vendor/lib64/soundfx/libomega_effect.so || { echo "ERROR: libomega_effect.so no stageado en soundfx"; exit 1; }
 
       - name: Package Magisk module
         run: |
@@ -166,5 +183,15 @@ jobs:
           name: ivanna-magisk-module
           path: |
             ivanna_omega_supreme.zip
-          if-no-files-found: warn
+            magisk_module/system/bin/ivanna_daemon
+            magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-omega-apk-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           overwrite: true
