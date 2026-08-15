@@ -207,10 +207,10 @@ internal fun AdaptiveEngineScreen(
                                 backend.applyManualState(AudioStateManager.audioState.value)
                             // 3D: notificar al motor nativo el modo y la intensidad actual
                             runCatching {
-                                IvannaNativeLib.nativeSetAdaptiveControls(
+                                IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveControls(
                                     mode.ordinal,
                                     audioState.adaptiveIntensity * 100f
-                                )
+                                ) }
                             }
                         },
                         modifier = Modifier.weight(1f)
@@ -228,7 +228,7 @@ internal fun AdaptiveEngineScreen(
                         backend.applyManualState(AudioStateManager.audioState.value)
                     // 3D: notificar al motor nativo la intensidad y el modo actual
                     runCatching {
-                        IvannaNativeLib.nativeSetAdaptiveControls(
+                        IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveControls(
                             audioState.adaptiveMode.ordinal,
                             v * 100f
                         )
@@ -256,7 +256,7 @@ internal fun AdaptiveEngineScreen(
                             // Motor A y Motor B nunca escriben al mismo tiempo.
                             // enabled=true  -> manual toma control.
                             // enabled=false -> motor adaptativo recupera control.
-                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
+                            IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled) }
                         } catch (_: Throwable) { }
 
                         if (enabled) {

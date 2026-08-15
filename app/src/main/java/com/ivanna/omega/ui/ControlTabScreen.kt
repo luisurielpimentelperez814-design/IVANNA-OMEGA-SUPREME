@@ -62,7 +62,7 @@ fun ControlTabScreen(
                 dsp.value = dsp.value.copy(wet = exciter, stereoWidth = width)
                 dsp.value.pushToNative()
                 if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetEQParams(eqGainDb, eqGainDb, eqGainDb, dsp.value.master)
+                    IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetEQParams(eqGainDb, eqGainDb, eqGainDb, dsp.value.master) }
             }
         }
     }
@@ -92,8 +92,8 @@ fun ControlTabScreen(
         onNhoHarmonicChange   = { if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it) },
         onEvoEnabledChange    = { enabled ->
             if (IvannaNativeLib.isLoaded) {
-                if (enabled) IvannaNativeLib.nativeStartEvoThread()
-                else IvannaNativeLib.nativeStopEvoThread()
+                if (enabled) IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeStartEvoThread() }
+                else IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeStopEvoThread() }
             }
         },
 
