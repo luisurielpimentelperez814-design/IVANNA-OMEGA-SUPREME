@@ -21,12 +21,7 @@
 
 namespace Ivanna {
 
-#ifndef SAMPLE_RATE
-constexpr float SAMPLE_RATE = 48000.0f;
-#endif
-#ifndef SAMPLING_RATE
-constexpr float SAMPLING_RATE = SAMPLE_RATE;
-#endif
+constexpr float CLASSIFIER_SAMPLE_RATE = 48000.0f;
 
 constexpr size_t MEL_BANDS = 64;
 constexpr size_t CLASSIFIER_FRAME_SIZE = 512;
@@ -113,9 +108,7 @@ private:
     ALIGN_NEON float m_melFilterbank[MEL_BANDS][FFT_SPECTRUM_SIZE];
 
     ALIGN_NEON float m_depthwiseKernel[MEL_BANDS];
-    ALIGN_NEON float m_convDepthwiseWeights[MEL_BANDS];
     ALIGN_NEON float m_pointwiseWeights[CONV_CHANNELS][MEL_BANDS];
-    ALIGN_NEON float m_convPointwiseWeights[CONV_CHANNELS][MEL_BANDS];
     ALIGN_NEON float m_pointwiseBiases[CONV_CHANNELS];
     ALIGN_NEON float m_denseWeights[NUM_CLASSES][CONV_CHANNELS];
     ALIGN_NEON float m_denseBiases[NUM_CLASSES];

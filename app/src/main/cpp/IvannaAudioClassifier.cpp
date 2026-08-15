@@ -9,7 +9,6 @@
 
 namespace Ivanna {
 
-static constexpr float PI_F = 3.14159265358979323846f;
 
 IvannaAudioClassifier::IvannaAudioClassifier() {
     initFilterbankAndWindow();
@@ -75,7 +74,7 @@ void IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
 
     // 2. Precalculate 64-Band Triangular Mel Filterbank Matrix
     const float fMin = 20.0f;
-    const float fMax = SAMPLE_RATE * 0.5f; // 24000.0 Hz Nyquist
+    const float fMax = CLASSIFIER_SAMPLE_RATE * 0.5f; // 24000.0 Hz Nyquist
     
     auto hzToMel = [](float hz) { return 2595.0f * std::log10(1.0f + hz / 700.0f); };
     auto melToHz = [](float mel) { return 700.0f * (std::pow(10.0f, mel / 2595.0f) - 1.0f); };
@@ -90,7 +89,7 @@ void IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
     for (size_t i = 0; i < MEL_BANDS + 2; ++i) {
         melPoints[i] = melMin + static_cast<float>(i) * melStep;
         float hz = melToHz(melPoints[i]);
-        binPoints[i] = static_cast<size_t>(std::floor((CLASSIFIER_FRAME_SIZE + 1) * hz / SAMPLE_RATE));
+        binPoints[i] = static_cast<size_t>(std::floor((CLASSIFIER_FRAME_SIZE + 1) * hz / CLASSIFIER_SAMPLE_RATE));
         if (binPoints[i] >= FFT_SPECTRUM_SIZE) {
             binPoints[i] = FFT_SPECTRUM_SIZE - 1;
         }
