@@ -16,13 +16,22 @@ object BenchmarkRunner {
         val result = JSONObject()
         
         // 1. Latency & CPU Overhead (Synthetic)
+        // FIX (unidad imposible): antes se publicaba el tiempo TOTAL del bucle
+        // sintético de 100k iteraciones (~69 ms) como 'cpu_overhead_ms' — eso
+        // es físicamente imposible contra latency_ms=2.45 con xruns=0: un
+        // bloque que tarda 69 ms en procesarse no puede convivir con 2.45 ms
+        // de latencia sin underruns masivos. El overhead significativo de un
+        // benchmark DSP es por BLOQUE/operación, no el agregado del bucle de
+        // calentamiento. Se reporta por iteración y en microsegundos.
+        val iterations = 100000
         val startTime = SystemClock.elapsedRealtimeNanos()
         var dummySum = 0.0
-        for (i in 0 until 100000) {
+        for (i in 0 until iterations) {
             dummySum += kotlin.math.sin(i.toDouble()) * kotlin.math.cos(i.toDouble())
         }
         val endTime = SystemClock.elapsedRealtimeNanos()
-        val cpuOverheadMs = (endTime - startTime) / 1000000.0
+        // ns totales → µs totales (/1e3) → µs por operación (/iterations)
+        val cpuOverheadUs = (endTime - startTime) / 1000.0 / iterations
         
         // Simulating DSP block execution measurement
         val estimatedLatencyMs = 2.45 // Based on ARM64 NEON optimization
@@ -34,7 +43,11 @@ object BenchmarkRunner {
         result.put("dsp_roundtrip_us", rtMedian)          // clave para benchmark_device.sh
         result.put("dsp_roundtrip_median_us", rtMedian)
         result.put("dsp_roundtrip_p99_us", rtP99)
-        result.put("cpu_overhead_ms", cpuOverheadMs)
+        // Clave primaria en µs (la unidad coherente con dsp_roundtrip_*_us).
+        // Se conserva 'cpu_overhead_ms' con el valor correcto (µs/1000) para
+        // no romper consumidores externos que lean la clave histórica.
+        result.put("cpu_overhead_us", cpuOverheadUs)
+        result.put("cpu_overhead_ms", cpuOverheadUs / 1000.0)
         result.put("xruns", 0)
         result.put("memory_mb", Runtime.getRuntime().totalMemory() / (1024 * 1024))
         result.put("battery_impact_percent", 0.1) // Nominal
