@@ -1,6 +1,7 @@
 package com.ivanna.omega.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -174,7 +175,8 @@ fun MagiskStatusPanel(
         // carácter). Se parte en dos filas 3+2: cada botón conserva su
         // ancho natural y ningún label se corta.
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionButton("STATUS", daemonRunning && !actionInFlight) {
+            ActionButton("STATUS", daemonRunning && !actionInFlight,
+                modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { MagiskBridge.getStatus() }
@@ -182,7 +184,8 @@ fun MagiskStatusPanel(
                     actionInFlight = false
                 }
             }
-            ActionButton("TELEMETRY", daemonConnected && !actionInFlight) {
+            ActionButton("TELEMETRY", daemonConnected && !actionInFlight,
+                modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { omegaBridge.requestTelemetry() }
@@ -190,7 +193,8 @@ fun MagiskStatusPanel(
                     actionInFlight = false
                 }
             }
-            ActionButton("RELOAD", moduleActive && !actionInFlight) {
+            ActionButton("RELOAD", moduleActive && !actionInFlight,
+                modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) { MagiskBridge.reloadParams() }
@@ -201,14 +205,14 @@ fun MagiskStatusPanel(
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // FIX: botón RECONECTAR para forzar probe manual
-            ActionButton("RECONECTAR", !actionInFlight) {
+            ActionButton("RECONECTAR", !actionInFlight,
+                modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
                     lastCommandOutput = "Probando socket..."
                     val ok = withContext(Dispatchers.IO) { omegaBridge.connect() }
                     daemonConnected  = ok
-                    daemonRunning    = ok || daemonRunning
+                    daemonRunning    = ok || MagiskBridge.isDaemonRunning
                     lastCommandOutput = if (ok)
                         "✅ Socket conectado. Latencia: ${omegaBridge.getLastLatencyMs()}ms"
                     else
@@ -216,7 +220,8 @@ fun MagiskStatusPanel(
                     actionInFlight = false
                 }
             }
-            ActionButton("ROOT PING", !actionInFlight) {
+            ActionButton("ROOT PING", !actionInFlight,
+                modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
                     lastCommandOutput = "Solicitando Root (Magisk)..."
@@ -281,20 +286,35 @@ private fun StatusRow(label: String, active: Boolean, activeText: String, inacti
 }
 
 @Composable
-private fun ActionButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+@Composable
+private fun ActionButton(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     val containerColor = if (enabled) AuroraCyan.copy(alpha = 0.18f) else ObsidianEdge.copy(alpha = 0.4f)
     val borderColor    = if (enabled) AuroraCyan else ObsidianEdge
     val textColor      = if (enabled) AuroraCyan else TextMuted
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(containerColor)
             .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(label, color = textColor, fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = label,
+            color = textColor,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,                   // FIX: evita apilado vertical de letras
+            softWrap = false,               // FIX: nunca parte el label
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
