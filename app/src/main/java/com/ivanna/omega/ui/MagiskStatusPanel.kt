@@ -168,6 +168,11 @@ fun MagiskStatusPanel(
         Text("ACCIONES", color = AuroraCyan, fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 2.sp)
 
+        // FIX (layout): 5 botones en un solo Row con spacedBy(8.dp) se
+        // comprimían en pantallas angostas hasta que "ROOT PING" se apilaba
+        // letra por letra (Text envuelve por carácter cuando el ancho < 1
+        // carácter). Se parte en dos filas 3+2: cada botón conserva su
+        // ancho natural y ningún label se corta.
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionButton("STATUS", daemonRunning && !actionInFlight) {
                 actionInFlight = true
@@ -193,6 +198,9 @@ fun MagiskStatusPanel(
                     actionInFlight = false
                 }
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // FIX: botón RECONECTAR para forzar probe manual
             ActionButton("RECONECTAR", !actionInFlight) {
                 actionInFlight = true
