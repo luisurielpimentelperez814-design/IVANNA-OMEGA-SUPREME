@@ -161,6 +161,23 @@ jobs:
           # El POST_BUILD del daemon copia el binario al staging del modulo;
           # sin esta copia el zip sale sin daemon y el socket no arranca.
           test -f magisk_module/system/bin/ivanna_daemon || { echo "ERROR: daemon no stageado en magisk_module/system/bin"; exit 1; }
+          # Guardrail (regresión documentada): el daemon lo lanza Magisk
+          # service.sh como root, fuera del sandbox de la app y sin el
+          # directorio de librerías del APK. Si el binario queda vinculado
+          # a libc++_shared.so, el loader lo mata antes de main() y el
+          # daemon nunca arranca en el dispositivo (panel: módulo ACTIVO,
+          # daemon DETENIDO, log vacío). La STL va estática solo en este
+          # target (daemon/CMakeLists.txt); esta comprobación lo exige.
+          if command -v llvm-readobj >/dev/null 2>&1; then
+            NEEDS=$(llvm-readobj --needed-libs magisk_module/system/bin/ivanna_daemon 2>/dev/null || true)
+          elif command -v readelf >/dev/null 2>&1; then
+            NEEDS=$(readelf -d magisk_module/system/bin/ivanna_daemon 2>/dev/null | grep NEEDED || true)
+          else
+            NEEDS=$(grep -a -o "libc++_shared\.so" magisk_module/system/bin/ivanna_daemon | head -1 || true)
+          fi
+          echo "daemon NEEDED libs: $NEEDS"
+          echo "$NEEDS" | grep -q "libc++_shared" && { echo "ERROR: daemon vinculado a libc++_shared.so — morirá al arrancar vía service.sh (ver daemon/CMakeLists.txt -static-libstdc++)"; exit 1; }
+          true
           test -f magisk_module/system/vendor/lib64/soundfx/libomega_effect.so || { echo "ERROR: libomega_effect.so no stageado en soundfx"; exit 1; }
 
       - name: Package Magisk module
