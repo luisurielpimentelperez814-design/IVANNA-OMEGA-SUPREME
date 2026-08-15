@@ -59,7 +59,9 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
 
     fun init() {
         if (nativeHandle != 0L) return
-        nativeHandle = IvannaSpatialNative.nativeHeadTrackerCreate()
+        // Guard JNI: si libivanna_omega no cargó, UnsatisfiedLinkError aquí
+        // tumba el hilo del sensor. Handle 0 = modo degradado (sin head tracking).
+        nativeHandle = runCatching { IvannaSpatialNative.nativeHeadTrackerCreate() }.getOrDefault(0L)
     }
 
     fun start() {
@@ -81,14 +83,14 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
 
     fun reset() {
         if (nativeHandle != 0L) {
-            IvannaSpatialNative.nativeHeadTrackerReset(nativeHandle)
+            runCatching { IvannaSpatialNative.nativeHeadTrackerReset(nativeHandle) }
         }
     }
 
     fun release() {
         stop()
         if (nativeHandle != 0L) {
-            IvannaSpatialNative.nativeHeadTrackerDestroy(nativeHandle)
+            runCatching { IvannaSpatialNative.nativeHeadTrackerDestroy(nativeHandle) }
             nativeHandle = 0
         }
     }
@@ -114,7 +116,8 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
                 }
         val timestampMs = event.timestamp / 1_000_000f  // ns → ms
 
-        IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs)
+        runCatching { IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs) }
+            .onFailure { nativeHandle = 0L }  // JNI muerto → desactivar para no reintentar
 
         // FIX: alimentar SaFRoomBridge con el estado del campo sonoro S_t.
         // SaFRoomBridge.setSoundFieldState() usaba diffuseness=0 (constante)
