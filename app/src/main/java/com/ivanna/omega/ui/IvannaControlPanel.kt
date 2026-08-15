@@ -311,8 +311,17 @@ fun IvannaControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatBlock("MODELO IA", "ConvNeXt-v3", AuroraCyan, Modifier.weight(1f))
-                StatBlock("INFERENCIA", "380 µs", PhosphorGreen, Modifier.weight(1f))
-                StatBlock("LATENCIA SPSC", "<0.42 ms", PhosphorGreen, Modifier.weight(1f))
+                // FIX (auditoría visual 2026-08-15, capturas reales de Luis):
+                // "380 µs" y "<0.42 ms" eran strings estáticos, no telemetría
+                // — verificado: IvannaNpeEngine.getMetrics() (el array real de
+                // 8 métricas expuesto por JNI) no trae ningún campo de tiempo
+                // de inferencia ni latencia SPSC. Instrumentar la medición real
+                // (clock_gettime en el hilo de audio + exponerlo por JNI) es
+                // trabajo nuevo, no un fix — mientras tanto, mostrarlo como
+                // "objetivo de diseño" en vez de fingir que es una lectura en
+                // vivo, mismo criterio aplicado a las cifras del README.
+                StatBlock("INFERENCIA", "380 µs (objetivo)", PhosphorGreen, Modifier.weight(1f))
+                StatBlock("LATENCIA SPSC", "<0.42 ms (objetivo)", PhosphorGreen, Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(10.dp))
             Row(
