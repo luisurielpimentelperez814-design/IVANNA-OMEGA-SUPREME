@@ -57,6 +57,8 @@ import java.io.File
  * tipo de fallo que se estuvo arreglando en esta misma sesión.
  */
 object CloudSyncManager {
+    var isFirebaseOptInEnabled = false
+
     private const val TAG = "CloudSyncManager"
 
     // ── Rellenar con los valores reales de tu proyecto Firebase (ver setup arriba) ──
@@ -80,6 +82,10 @@ object CloudSyncManager {
      */
     @Synchronized
     private fun ensureInit(context: Context): Boolean {
+        if (!isFirebaseOptInEnabled) {
+            Log.i(TAG, "Firebase sync is not explicitly opted-in. Skipping sync.")
+            return false
+        }
         if (!isConfigured) {
             Log.w(TAG, "CloudSyncManager no configurado — ver instrucciones de setup en CloudSyncManager.kt. Sync desactivado.")
             return false
