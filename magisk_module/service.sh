@@ -100,8 +100,33 @@ else
 fi
 
 # ── Verificar binario ─────────────────────────────────────────────────────────
+# FIX (panel muestra DETENIDO con módulo ACTIVO):
+#   Si el zip instalado es anterior al fix de CI que stagea el binario,
+#   $DAEMON_BIN no existe y este script hacía exit 1 en silencio — el panel
+#   leía daemon_active=0 para siempre sin pista de la causa. Ahora:
+#     1. Se verifica que el binario sea un ELF ejecutable real (magic 7f454c46),
+#        no solo que el archivo exista (un zip corrupto dejaba un archivo de
+#        0 bytes que también pasaba el [ -f ]).
+#     2. Se baja daemon_active=0 explícitamente y se deja instrucción de
+#        reinstalación en el log, para diagnóstico desde logcat.
+#     3. exit 1 sigue siendo correcto (no tiene sentido el watchdog sin
+#        binario), pero ahora el log dice POR QUÉ y CÓMO arreglarlo.
 if [ ! -f "$DAEMON_BIN" ]; then
-    echo "[$(date)] ERROR: $DAEMON_BIN not found — módulo no instalado correctamente" >> "$LOGFILE"
+    echo "[$(date)] ERROR FATAL: $DAEMON_BIN no existe en el módulo." >> "$LOGFILE"
+    echo "[$(date)] CAUSA: el zip instalado es anterior al fix de CI que compila" >> "$LOGFILE"
+    echo "[$(date)]        ivanna_daemon (commit 843eb32). Reinstala el módulo" >> "$LOGFILE"
+    echo "[$(date)]        con el zip actual de GitHub Actions (artefacto" >> "$LOGFILE"
+    echo "[$(date)]        ivanna-magisk-module) y reinicia." >> "$LOGFILE"
+    setprop persist.ivanna.daemon_active 0
+    exit 1
+fi
+# Verificar que es un ELF real (un archivo vacío o corrupto también pasa [ -f ])
+ELF_MAGIC=$(head -c4 "$DAEMON_BIN" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+if [ "$ELF_MAGIC" != "7f454c46" ]; then
+    echo "[$(date)] ERROR FATAL: $DAEMON_BIN no es un binario ELF válido" >> "$LOGFILE"
+    echo "[$(date)]        (magic=$ELF_MAGIC, esperado 7f454c46). El módulo" >> "$LOGFILE"
+    echo "[$(date)]        está corrupto — reinstala desde el zip del CI." >> "$LOGFILE"
+    setprop persist.ivanna.daemon_active 0
     exit 1
 fi
 chmod 755 "$DAEMON_BIN"

@@ -232,9 +232,15 @@ int main(int argc, char* argv[]) {
         if (arg == "--socket" && i + 1 < argc) {
             socket_path = argv[++i];
         } else if (arg == "--rate" && i + 1 < argc) {
-            rate = std::stoi(argv[++i]);
+            // FIX: std::stoi sin try/catch lanzaba std::invalid_argument y
+            // abortaba el daemon antes de publicar el socket — el watchdog
+            // de service.sh lo reiniciaba en backoff exponencial y la UI
+            // mostraba DETENIDO de forma permanente.
+            try { rate = std::stoi(argv[++i]); }
+            catch (...) { log_message("WARN: --rate invalido, usando 48000"); ++i; rate = 48000; }
         } else if (arg == "--buffer" && i + 1 < argc) {
-            buffer = std::stoi(argv[++i]);
+            try { buffer = std::stoi(argv[++i]); }
+            catch (...) { log_message("WARN: --buffer invalido, usando 64"); ++i; buffer = 64; }
         } else if (arg == "--realtime") {
             realtime = true;
         } else if (arg == "--help" || arg == "-h") {
