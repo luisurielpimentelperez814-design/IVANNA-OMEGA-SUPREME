@@ -58,6 +58,10 @@ object IvannaNpeEngine {
         Log.i(TAG, "init sr=$sampleRate maxBlockFrames=$maxBlockFrames handle=$handle")
     }
 
+    /** Tiempo de la última inferencia en microsegundos. -1 si aún no se ha ejecutado. */
+    var lastInferenceUs: Long = -1L
+        private set
+
     /**
      * Procesa in-place un buffer intercalado estéreo (L,R,L,R,...) de
      * PlaybackCaptureService. numFrames = muestras por canal.
@@ -76,7 +80,9 @@ object IvannaNpeEngine {
         }
         inL.flip(); inR.flip()
 
+        val t0 = System.nanoTime()
         IvannaNpeNative.nativeProcessStereo(handle, inL, inR, outL, outR, numFrames)
+        lastInferenceUs = (System.nanoTime() - t0) / 1_000L
 
         for (i in 0 until numFrames) {
             buffer[i * 2] = outL.get(i)
