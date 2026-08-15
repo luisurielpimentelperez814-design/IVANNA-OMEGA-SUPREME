@@ -73,13 +73,70 @@ else
     ui_print "  ! magiskpolicy no disponible — las reglas se aplicarán en el próximo boot"
 fi
 
-# ── ivanna_daemon: permisos de ejecución ─────────────────────────────────────
+# ── ivanna_daemon: validación ELF + permisos + diagnóstico visible ───────────
+# FIX (panel muestra DETENIDO/DESCONECTADO con módulo ACTIVO, 2026-08-15):
+#   Reportes de campo con módulo instalado pero socket ausente. Causa raíz:
+#   el zip instalado no tenía system/bin/ivanna_daemon (fue empaquetado
+#   antes del fix de CI 843eb32) o llegó corrupto (0 bytes). service.sh
+#   hacía exit 1 en silencio y el panel se quedaba en "daemon DETENIDO"
+#   sin pista de la causa.
+#
+#   Este bloque ahora:
+#     1. Valida que el binario exista y sea un ELF real (magic 7f454c46)
+#        — un archivo de 0 bytes también pasa [ -f ] pero muere al ejecutar.
+#     2. Valida que sea AArch64 dinámico (Type=DYN/EXEC, Machine=AARCH64).
+#     3. Marca ejecutable con set_perm root:root 0755.
+#     4. Si algo falla, imprime en pantalla el motivo Y la solución concreta
+#        (reinstalar con el zip actual del CI). Sin exit para no dejar al
+#        usuario con Magisk en un limbo.
 DAEMON="$MODPATH/system/bin/ivanna_daemon"
-if [ -f "$DAEMON" ]; then
-    set_perm "$DAEMON" root root 0755
-    ui_print "  ✓ ivanna_daemon listo"
+if [ ! -f "$DAEMON" ]; then
+    ui_print "  ✗ ivanna_daemon NO ENCONTRADO en el zip"
+    ui_print "    → El módulo se instaló sin el binario del daemon."
+    ui_print "    → Panel Magisk mostrará daemon DETENIDO permanente."
+    ui_print "    → Solución: descarga el zip actual desde"
+    ui_print "      GitHub Actions → artifact ivanna-magisk-module"
+    ui_print "      y reinstala."
+elif [ ! -s "$DAEMON" ]; then
+    ui_print "  ✗ ivanna_daemon está VACÍO (0 bytes)"
+    ui_print "    → Zip corrupto durante descarga o transferencia."
+    ui_print "    → Solución: re-descargar el zip y reinstalar."
 else
-    ui_print "  ! ivanna_daemon no encontrado — el socket no estará disponible"
+    # Validar magic ELF (7f 45 4c 46) — un archivo no-ELF de tamaño no-cero
+    # también pasa [ -s ] pero el kernel devuelve ENOEXEC al ejecutarlo.
+    ELF_MAGIC=$(head -c4 "$DAEMON" 2>/dev/null | od -An -tx1 | tr -d " \n")
+    if [ "$ELF_MAGIC" != "7f454c46" ]; then
+        ui_print "  ✗ ivanna_daemon no es ELF (magic=$ELF_MAGIC)"
+        ui_print "    → Binario corrupto — reinstala desde el zip del CI."
+    else
+        # Validar arquitectura AArch64 — si el zip trae un binario de otra
+        # arquitectura (build cruzado mal configurado), service.sh recibirá
+        # ENOEXEC del kernel Android.
+        ARCH_OK=1
+        if command -v file >/dev/null 2>&1; then
+            file "$DAEMON" 2>/dev/null | grep -q "aarch64\|ARM aarch64" || ARCH_OK=0
+        fi
+        set_perm "$DAEMON" root root 0755
+        DAEMON_SIZE=$(stat -c%s "$DAEMON" 2>/dev/null || echo "?")
+        if [ "$ARCH_OK" -eq 1 ]; then
+            ui_print "  ✓ ivanna_daemon validado (ELF AArch64, ${DAEMON_SIZE} bytes, 0755)"
+        else
+            ui_print "  ⚠ ivanna_daemon validado como ELF pero \`file\` no pudo"
+            ui_print "    confirmar AArch64. Si el arranque falla, verifica en"
+            ui_print "    /data/adb/ivanna_omega/daemon.log."
+        fi
+
+        # Diagnóstico proactivo: si el binario depende de libc++_shared.so,
+        # morirá antes de main() bajo service.sh (regresión conocida — fix
+        # e03793d hizo la STL estática). Aviso al instalador si detecta la
+        # dependencia, sin abortar (el usuario decide si aún reinstala).
+        if grep -a -q "libc++_shared\.so" "$DAEMON" 2>/dev/null; then
+            ui_print "  ⚠ ivanna_daemon referencia libc++_shared.so"
+            ui_print "    → Este zip es anterior al fix e03793d (STL estática)."
+            ui_print "    → El daemon morirá al arrancar. Reinstala con el zip"
+            ui_print "      actual (artifact ivanna-magisk-module del CI)."
+        fi
+    fi
 fi
 
 ui_print "- IVANNA OMEGA SUPREME installed successfully"
