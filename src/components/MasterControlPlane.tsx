@@ -1,5 +1,6 @@
 import React from 'react';
 import { DspParameters, BenchmarkMetrics } from '../types';
+import { MagiskIntegrationPanel } from './MagiskIntegrationPanel';
 import { Sliders, ShieldAlert, Cpu, Waves, Sparkles, RotateCcw, Activity, Zap, CheckCircle2, Terminal, RefreshCw, Layers } from 'lucide-react';
 
 interface MasterControlPlaneProps {
@@ -21,6 +22,9 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
 }) => {
   return (
     <div className="space-y-6 font-mono text-xs">
+      
+      {/* Magisk IPC Panel */}
+      <MagiskIntegrationPanel />
       
       {/* Header Banner & Auto-Calibration CTA */}
       <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 shadow-lg relative overflow-hidden">
