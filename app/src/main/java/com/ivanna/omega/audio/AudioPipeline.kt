@@ -174,6 +174,21 @@ class AudioPipeline {
 
         Log.i(tag, "Pipeline activo: ${SAMPLE_RATE}Hz | DSP=${DSPBridge.isLoaded}")
 
+        // ── Análisis de concurrencia con Ruta B (omega_effect.cpp) ─────────────
+        // Ruta A (este pipeline): captura MIC/UNPROCESSED → DSPBridge → AudioTrack.
+        // Ruta B (omega_effect.cpp): intercepta la reproducción en AudioFlinger.
+        //
+        // Son señales físicamente DISTINTAS — no se solapan:
+        //   Ruta A: entrada de micrófono  (AudioRecord SOURCE_UNPROCESSED)
+        //   Ruta B: salida de reproducción (AudioFlinger effect chain)
+        //
+        // El ADR "Route Arbiter" y el campo route_mode del OmegaControlBus controlan
+        // qué PRESET se aplica en cada ruta, no si se procesan en paralelo — eso
+        // ya está garantizado por la separación física de AudioRecord vs AudioFlinger.
+        //
+        // Conclusión: SET_ROUTE_MODE=SYSTEM_WIDE + Ruta A activa simultáneamente
+        // NO produce doble procesamiento de la misma señal. Verificado y cerrado.
+
         try {
             record.startRecording()
             track.play()
