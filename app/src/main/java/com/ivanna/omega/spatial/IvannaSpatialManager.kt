@@ -73,7 +73,7 @@ object IvannaSpatialManager {
                 val tracker = IvannaHeadTracker(context)
                 tracker.init()
                 tracker.start()
-                IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle)
+                runCatching { IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle) }
                 
 
                 val subject = HrtfSubjectSelector.activate(
