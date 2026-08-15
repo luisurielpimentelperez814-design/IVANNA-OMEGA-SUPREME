@@ -44,6 +44,8 @@ public:
     virtual ~IvannaFusionEngine();
 
     void runAcousticProfiling();
+    void setGoldenEarMode(bool enable);
+    void applyGoldenEarGAN(AudioBuffer* buffer);
     void process(AudioBuffer* buffer);
 
     IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }

@@ -5,7 +5,26 @@
 #include "IvannaAudioClassifier.hpp"
 #include <iostream>
 
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+static inline float32x4_t fast_tanh_neon(float32x4_t x) {
+    // fast approximation of tanh for neon
+    // tanh(x) ~ x / (1 + |x|)
+    float32x4_t abs_x = vabsq_f32(x);
+    float32x4_t den = vaddq_f32(vdupq_n_f32(1.0f), abs_x);
+    // reciprocal estimate
+    float32x4_t rec = vrecpeq_f32(den);
+    rec = vmulq_f32(vrecpsq_f32(den, rec), rec);
+    return vmulq_f32(x, rec);
+}
+#else
+static inline float fast_tanh_scalar(float x) {
+    return x / (1.0f + std::abs(x));
+}
+#endif
+
 namespace Ivanna {
+
 
 IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();

@@ -32,6 +32,7 @@ public:
     void calibrateTargetRoom();
     void processNEON(AudioBuffer* buffer);
     void updateLM_CMA_ES(); // Evolution step
+    float calculateFitness(const float* genome);
 
     void processBlock(AudioBuffer* buffer) override { processNEON(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
@@ -39,7 +40,12 @@ public:
 private:
     ALIGN_NEON float m_firCoeffsL[FIR_TAPS];
     ALIGN_NEON float m_firCoeffsR[FIR_TAPS];
+    ALIGN_NEON float m_histL[BLOCK_SIZE + FIR_TAPS];
+    ALIGN_NEON float m_histR[BLOCK_SIZE + FIR_TAPS];
+    float m_meanGenome[BANDS_512];
+    float m_evolutionPath[BANDS_512];
     float m_fitnessScore = 0.0f;
+    float m_stepSize = 0.1f;
 };
 
 } // namespace Ivanna
