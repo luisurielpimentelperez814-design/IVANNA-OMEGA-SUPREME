@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <vector>
 #include <cstddef>
+#include <fstream>  // FIX (auditoría 2026-08-15): std::ifstream usado en
+                    // loadIVHRTF01()/loadIHR1() sin este include — error
+                    // real de compilación ("'std::ifstream' has not been
+                    // declared"), verificado compilando en aislamiento.
 
 namespace Ivanna {
 
