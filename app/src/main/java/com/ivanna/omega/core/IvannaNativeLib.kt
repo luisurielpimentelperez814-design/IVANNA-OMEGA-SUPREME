@@ -21,6 +21,23 @@ object IvannaNativeLib {
 
     val isLoaded: Boolean get() = loaded
 
+    inline fun <T> guardedNative(fallback: T, block: () -> T): T {
+        return try {
+            if (!isLoaded) {
+                Log.e("IvannaNativeLib", "guardedNative: native library not loaded. Returning fallback.")
+                return fallback
+            }
+            block()
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("IvannaNativeLib", "guardedNative: UnsatisfiedLinkError - ${e.message}", e)
+            fallback
+        } catch (e: Throwable) {
+            Log.e("IvannaNativeLib", "guardedNative: Exception - ${e.message}", e)
+            fallback
+        }
+    }
+
+
     // ═══════════════════════════════════════════════════════════════════════
     //  DSP Core (ivanna_omega_jni.cpp)
     // ═══════════════════════════════════════════════════════════════════════
