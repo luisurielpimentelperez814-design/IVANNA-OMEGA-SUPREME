@@ -20,6 +20,29 @@ target_link_options(ivanna_daemon PRIVATE
     -pie -Wl,-z,relro,-z,now
 )
 
+# FIX (daemon muere al arrancar pese a módulo activo + root OK):
+#   ivanna_daemon.cpp usa la STL en 30+ sitios (std::string, std::thread,
+#   std::ofstream, std::chrono, std::cout...). El build global de la app
+#   usa ANDROID_STL=c++_shared (ver pickFirsts de libc++_shared.so en
+#   app/build.gradle.kts:74), así que el ejecutable quedaba vinculado
+#   dinámicamente a libc++_shared.so.
+#
+#   Pero el daemon NO lo lanza la app: lo ejecuta Magisk service.sh como
+#   root, fuera del sandbox de la app y SIN el directorio de librerías
+#   del APK en LD_LIBRARY_PATH. El dynamic loader no encuentra
+#   libc++_shared.so y mata el proceso ANTES de main() — sin escribir
+#   ni una línea en /data/adb/ivanna_daemon.log. Eso explica el panel:
+#   módulo ACTIVO, root concedido, daemon DETENIDO, socket muerto y log
+#   vacío. service.sh lo reintentaba en backoff exponencial sin éxito.
+#
+#   Enlazar la STL estáticamente SOLO en este target: el ejecutable queda
+#   autocontenido (bionic libc/libm/libdl/liblog siguen dinámicas —
+#   siempre presentes en /system). No afecta a las shared libraries del
+#   APK, que siguen con c++_shared.
+if(ANDROID)
+    target_link_options(ivanna_daemon PRIVATE -static-libstdc++)
+endif()
+
 target_link_libraries(ivanna_daemon
     ${log-lib}
 )
