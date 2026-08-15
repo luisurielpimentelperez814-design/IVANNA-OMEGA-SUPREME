@@ -236,23 +236,15 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
 
       // Actualizar params: masterGain ajustado por el offset de loudness general,
       // iirAlpha refleja la atenuación de fatiga espectral post-compensación
-      const newMasterGain = parseFloat(Math.max(0.5, Math.min(2.0,
-        params.masterGain + (midComp / 20)
-      ).toFixed(2)));
+      const newMasterGain = parseFloat((Math.max(0.5, Math.min(2.0, params.masterGain + (midComp / 20)))).toFixed(2));
 
-      const newIirAlpha = parseFloat(Math.max(0.70, Math.min(0.99,
-        0.94 - (bassComp / 200)
-      ).toFixed(3)));
+      const newIirAlpha = parseFloat((Math.max(0.70, Math.min(0.99, 0.94 - (bassComp / 200)))).toFixed(3));
 
       // NHO Alpha refleja el perfil de bajos de la curva de compensación
-      const newNhoAlpha = parseFloat(Math.max(0.5, Math.min(1.0,
-        params.nhoAlpha + (bassComp / 120)
-      ).toFixed(3)));
+      const newNhoAlpha = parseFloat((Math.max(0.5, Math.min(1.0, params.nhoAlpha + (bassComp / 120)))).toFixed(3));
 
       // Spatialidad levemente modulada por el perfil de agudos
-      const newCrosstalk = parseFloat(Math.max(0.1, Math.min(0.6,
-        params.crosstalkGain + (trebleComp / 100)
-      ).toFixed(3)));
+      const newCrosstalk = parseFloat((Math.max(0.1, Math.min(0.6, params.crosstalkGain + (trebleComp / 100)))).toFixed(3));
 
       onParamChange('masterGain',   newMasterGain);
       onParamChange('iirAlpha',     newIirAlpha);
