@@ -90,7 +90,7 @@ object HrtfSubjectSelector {
         }
         
         // Llamada JNI real para aplicar el sujeto en tiempo real
-        IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selectedSubject)
+        runCatching { IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selectedSubject) }
         
         val anthropoLog = buildString {
             append("headWidthMm=")
