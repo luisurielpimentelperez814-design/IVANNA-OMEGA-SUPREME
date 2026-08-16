@@ -77,6 +77,11 @@ public:
     void setSpatialWidth(float /*w*/) noexcept {}
     void setHarmonicGain(float g) noexcept { m_harmonicGain = g; }
     void setCompressorParams(float t, float r) noexcept { m_compThresh = t; m_compRatio = r; }
+    void setIntensity(float /*i*/)                          noexcept {}
+    void setRouteProfile(float /*bass*/, float /*dialog*/,
+                         float /*widener*/)                 noexcept {}
+    void setEqGains(const float* /*g*/, int /*n*/,
+                    float /*listenPhon*/, float /*refPhon*/) noexcept {}
     void setSafLatentParams(const float /*q*/[7]) noexcept {}
     void clearSafLatentParams() noexcept {}
     void updateHeadPose(float /*yaw*/, float /*pitch*/, float /*roll*/) noexcept {}
@@ -95,7 +100,12 @@ private:
     void applyHarmonicExciter(AudioBuffer* buffer);
 };
 
-// Alias: omega_effect.cpp aún usa IvannaFusionCore para instanciar y como tipo.
-// Con este alias puede hacer `new IvannaFusionCore(sr)` y obtener un IvannaFusionEngine.
-// using IvannaFusionCore = IvannaFusionEngine; // FIXED: Removed alias redefinition
 } // namespace Ivanna
+
+// ── Alias global (FUERA de namespace Ivanna) ──────────────────────────────────
+// omega_effect.cpp usa 'IvannaFusionCore' sin cualificar (scope global).
+// Ivanna::IvannaFusionCore es la CLASE BASE; ::IvannaFusionCore (este alias)
+// apunta a IvannaFusionEngine (la clase concreta con todos los métodos).
+// Estaba comentado + dentro de namespace Ivanna{} — ambos errores corregidos.
+// ::IvannaFusionCore ≠ Ivanna::IvannaFusionCore → sin conflicto de nombres.
+using IvannaFusionCore = Ivanna::IvannaFusionEngine;
