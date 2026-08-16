@@ -43,8 +43,25 @@ if(ANDROID)
     target_link_options(ivanna_daemon PRIVATE -static-libstdc++)
 endif()
 
+# FIX (CI exit 2, ld.lld: undefined symbol __android_log_print):
+#   target_link_libraries(... ${log-lib}) asumía que la variable log-lib
+#   venía definida del scope padre (app/src/main/cpp/CMakeLists.txt:230).
+#   Eso vale cuando el subdir se compila DENTRO del build de la app —
+#   pero este CMakeLists tiene su propio cmake_minimum_required y se
+#   configura STANDALONE en el paso del workflow que compila el daemon
+#   (contexto donde log-lib nunca se seteó -> expansión vacía -> el
+#   ejecutable queda sin -llog y el símbolo falla al linkear).
+#   Fix: find_library explícito en el scope del propio target, bajo
+#   guard ANDROID (en host tests no existe liblog y no se necesita).
+if(ANDROID)
+    find_library(LOG_LIB log)
+    if(NOT LOG_LIB)
+        message(FATAL_ERROR "liblog no encontrada en el NDK — requerida por ivanna_daemon")
+    endif()
+endif()
+
 target_link_libraries(ivanna_daemon
-    ${log-lib}
+    ${LOG_LIB}
 )
 
 # Stage automático al módulo Magisk
