@@ -437,6 +437,33 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
                 gen, ivanna::routeModeStr(static_cast<ivanna::RouteMode>(routeI)), nullptr);
         }
 
+    } else if (strcmp(action, "SET_PRESET") == 0) {
+        // ivanna_client envía {"action":"SET_PRESET","preset":"Spatial"}.
+        // El daemon no tiene motor de presets propio (los perfiles viven en
+        // la app); se ACK igual que el modo texto para que el CLI no marque
+        // fallo en un comando válido del protocolo.
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
+
+    } else if (strcmp(action, "SET_BYPASS") == 0) {
+        // {"action":"SET_BYPASS","bypass":true|false}
+        // Mismo alcance que el modo texto (SET_BYPASS:0|1 → ACK): el campo
+        // no existe en OmegaDspState; el bypass real lo aplica el consumidor.
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
+
+    } else if (strcmp(action, "SET_VOLUME") == 0) {
+        // {"action":"SET_VOLUME","volume":0.0-1.0} → pf_params[12] (master)
+        m_state.pf_params[12] = _clamp(_jsonFloat(json, "volume", m_state.pf_params[12]), 0.f, 1.f);
+        { uint64_t gen = publishCurrentState(m_state);
+          n = buildRichReply(reply, reply_sz, true, action,
+              gen > 0 ? "applied" : "accepted_pending_consumer",
+              gen, "SYSTEM_WIDE", nullptr); }
+
     } else if (strlen(action) == 0) {
         n = buildRichReply(reply, reply_sz, false, action,
             "invalid_params", 0, "UNKNOWN", "\"no action field in JSON\"");
