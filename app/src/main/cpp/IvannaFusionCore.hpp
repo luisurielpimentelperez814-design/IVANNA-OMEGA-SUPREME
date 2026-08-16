@@ -108,4 +108,4 @@ private:
 // apunta a IvannaFusionEngine (la clase concreta con todos los métodos).
 // Estaba comentado + dentro de namespace Ivanna{} — ambos errores corregidos.
 // ::IvannaFusionCore ≠ Ivanna::IvannaFusionCore → sin conflicto de nombres.
-using IvannaFusionCore = Ivanna::IvannaFusionEngine;
+

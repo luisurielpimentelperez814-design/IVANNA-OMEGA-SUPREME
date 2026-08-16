@@ -61,3 +61,25 @@ allow omega_daemon audioserver:binder call;
 # allow audioserver system_file:file { read open execute execute_no_trans getattr };
 # allow mediaserver system_file:file { read open execute execute_no_trans getattr map };
 # allow hal_audio_default system_file:file { read open execute execute_no_trans getattr map };
+
+# ═══════════════════════════════════════════════════════════════════════
+#  8. OMEGA DAEMON ISOLATED DOMAIN (AOSP STRIC POLICIES)
+# ═══════════════════════════════════════════════════════════════════════
+type omega_daemon, domain
+type omega_daemon_exec, exec_type, file_type, system_file_type
+
+# Transición automática desde magisk
+domain_auto_trans(magisk, omega_daemon_exec, omega_daemon)
+domain_auto_trans(su, omega_daemon_exec, omega_daemon)
+
+# Permisos base del daemon
+allow omega_daemon magisk fd use
+allow omega_daemon su fd use
+allow omega_daemon magisk_file file { read getattr execute }
+allow omega_daemon system_file file { read getattr execute }
+
+# IPC seguro (App -> Daemon aislado)
+allow untrusted_app omega_daemon unix_stream_socket connectto
+allow appdomain omega_daemon unix_stream_socket connectto
+allow platform_app omega_daemon unix_stream_socket connectto
+allow priv_app omega_daemon unix_stream_socket connectto

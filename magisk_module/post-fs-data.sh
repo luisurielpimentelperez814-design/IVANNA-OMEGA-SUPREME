@@ -77,3 +77,9 @@ for SO in "$SO_VENDOR" "$SO_SYSTEM"; do
 done
 
 log "post-fs-data.sh v2.1 completado"
+
+# ── 5. SELinux Context para ivanna_daemon (Dominio Aislado) ──────────────────
+# Asignamos el tipo ejecutable para que la transición de dominio (domain_auto_trans)
+# ocurra automáticamente cuando service.sh lo lance.
+chcon u:object_r:omega_daemon_exec:s0 $MODDIR/system/bin/ivanna_daemon 2>/dev/null
+log "SELinux context assigned to ivanna_daemon"
