@@ -75,8 +75,13 @@ jobs:
           rm -f magisk_module/system/bin/ivanna_daemon
           rm -f ivanna_daemon
           rm -f extracted_daemon
-          find . -path ./.git -prune -o -name "*.so" -type f -print -delete
-          find . -path ./.git -prune -o -name "ivanna_daemon" -type f -print -delete
+          # FIX (CI exit 1): GNU find con -delete activa -depth implicitamente,
+          # y con -depth activo el -prune deja de funcionar -> find aborta con
+          # "The -delete action automatically turns on -depth, but -prune does
+          # nothing when -depth is in effect" y el job moria ANTES de compilar.
+          # La exclusion de .git se hace con -not -path (no requiere prune).
+          find . -not -path "./.git/*" -name "*.so" -type f -print -delete
+          find . -not -path "./.git/*" -name "ivanna_daemon" -type f -print -delete
           echo "Purge OK — repo contiene solo fuentes"
 
       - name: Cache Gradle distribution
