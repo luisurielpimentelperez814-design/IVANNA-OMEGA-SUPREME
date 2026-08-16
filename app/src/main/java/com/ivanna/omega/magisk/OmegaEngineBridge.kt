@@ -69,6 +69,52 @@ object OmegaEngineBridge {
 
     // ── Envío de comandos ────────────────────────────────────────────────
     @Synchronized
+    fun requestCommand(payload: JSONObject): JSONObject? {
+        var socket: LocalSocket? = null
+        return try {
+            val t0 = System.nanoTime()
+            socket = LocalSocket()
+            val connected = runCatching {
+                socket.connect(
+                    LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
+                )
+                socket.soTimeout = CONNECT_TIMEOUT
+                true
+            }.getOrDefault(false)
+
+            if (!connected) {
+                isConnected = false
+                return null
+            }
+
+            val output: OutputStream = socket.outputStream
+            val jsonBytes = payload.toString().toByteArray(Charsets.UTF_8)
+            output.write(jsonBytes)
+            output.flush()
+
+            val input: InputStream = socket.inputStream
+            val buffer = ByteArray(4096)
+            val bytesRead = input.read(buffer)
+            val t1 = System.nanoTime()
+            lastLatencyMs = (t1 - t0) / 1_000_000f
+
+            isConnected = bytesRead > 0
+            if (isConnected) {
+                val responseStr = String(buffer, 0, bytesRead, Charsets.UTF_8)
+                JSONObject(responseStr)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "requestCommand error: ${e.message}")
+            isConnected = false
+            null
+        } finally {
+            runCatching { socket?.close() }
+        }
+    }
+
+    @Synchronized
     fun sendCommand(payload: JSONObject): Boolean {
         var socket: LocalSocket? = null
         return try {
@@ -115,7 +161,8 @@ object OmegaEngineBridge {
         compressor: Float, exciterRed: Float, highCut: Float,
         spatialWidth: Float, loudnessTarget: Float,
         harmonicGain: Float, antiDolby: Float
-    ): Boolean = sendCommand(JSONObject().apply {
+    ): Boolean =
+        sendCommand(JSONObject().apply {
         put("action", "SET_PERCEPTUAL_STATE")
         put("compressor",           compressor.toDouble())
         put("exciterReduction",     exciterRed.toDouble())
@@ -127,12 +174,14 @@ object OmegaEngineBridge {
         put("timestamp",            System.currentTimeMillis())
     })
 
-    fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply {
+    fun setIntensity(intensity: Float): Boolean =
+        sendCommand(JSONObject().apply {
         put("action",    "SET_INTENSITY")
         put("intensity", intensity.toDouble())
     })
 
-    fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply {
+    fun setPFParams(vararg params: Float): Boolean =
+        sendCommand(JSONObject().apply {
         put("action", "SET_PF_PARAMS")
         put("params", params.toList())
     })
@@ -180,9 +229,7 @@ object OmegaEngineBridge {
 
     /** Obtiene el estado actual de la sala (rt60, idx, wet). */
     fun getRoomStatus(): JSONObject? = try {
-        val result = JSONObject()
-        sendCommand(JSONObject().apply { put("action", "GET_ROOM_STATUS") })
-        result
+        requestCommand(JSONObject().apply { put("action", "GET_ROOM_STATUS") })
     } catch (e: Exception) { null }
 
     fun setPinnaMetrics(conchaMm: Float, helixMm: Float, fosaMm: Float): Boolean =
@@ -194,7 +241,8 @@ object OmegaEngineBridge {
             put("timestamp",  System.currentTimeMillis())
         })
 
-    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =        sendCommand(JSONObject().apply {
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean =
+        sendCommand(JSONObject().apply {
             put("action",         "SET_ROUTE_PROFILE")
             put("bassBoostDb",    bassBoostDb.toDouble())
             put("dialogBoostDb",  dialogBoostDb.toDouble())
@@ -211,7 +259,6 @@ object OmegaEngineBridge {
             put("gain",        gain.toDouble())
             put("timestamp",   System.currentTimeMillis())
         })
-
 
     fun setEqBands(gainsDb: FloatArray, listenPhon: Float = 60f, refPhon: Float = 80f): Boolean {
         val arr = org.json.JSONArray()
@@ -233,12 +280,15 @@ object OmegaEngineBridge {
         put("latencyMs",   lastLatencyMs.toDouble())
     }
 
-    fun requestTelemetry(): String {                   // FIX Bug-3: probe real antes de leer lastLatencyMs
-        val ok = sendCommand(JSONObject().apply { put("action", "GET_STATUS") })
-        return if (ok)
-            "Omega telemetry OK latency=${"%.1f".format(lastLatencyMs)}ms | ISO226=${com.ivanna.omega.audio.Iso226Calibrator.describe()}"
-        else
+    fun requestTelemetry(): String {
+        val resp = requestCommand(JSONObject().apply { put("action", "GET_STATUS") })
+        return if (resp != null) {
+            val dInt = resp.optDouble("intensity", -1.0)
+            val dComp = resp.optDouble("compressor", -1.0)
+            "Omega telemetry OK latency=${"%.1f".format(lastLatencyMs)}ms | Int=${"%.2f".format(dInt)} Comp=${"%.2f".format(dComp)} | ISO226=${com.ivanna.omega.audio.Iso226Calibrator.describe()}"
+        } else {
             "Omega telemetry OFFLINE | Daemon no responde"
+        }
     }
 
     fun disconnect() { isConnected = false }

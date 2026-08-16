@@ -317,9 +317,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    
-
-    
     std::string selinux_ctx = "UNKNOWN";
     FILE* fp = fopen("/proc/self/attr/current", "r");
     if (fp) {
@@ -393,7 +390,6 @@ if (controlServer.start("@omega_command_socket")) {
             socklen_t client_len = sizeof(client_addr);
             int client_fd = accept(g_server_fd, (struct sockaddr*)&client_addr, &client_len);
             if (client_fd >= 0) {
-                
                 struct ucred credentials;
                 int ucred_length = sizeof(struct ucred);
                 if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &credentials, (socklen_t*)&ucred_length) == 0) {
