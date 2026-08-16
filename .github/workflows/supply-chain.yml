@@ -26,14 +26,14 @@ jobs:
 
       # ── Descargar APK y módulo del job anterior ──────────────────────────────
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ivanna-omega-apks
           path: artifacts/apk
         continue-on-error: true  # no existe en dry_run / run manual
 
       - name: Download Magisk module artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ivanna-magisk-module
           path: artifacts/magisk

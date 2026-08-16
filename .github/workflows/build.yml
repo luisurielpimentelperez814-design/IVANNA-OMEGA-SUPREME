@@ -278,7 +278,7 @@ jobs:
     needs: [build-apk]
     steps:
       - name: Download published artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ivanna-magisk-module-arm64-${{ github.sha }}
 
