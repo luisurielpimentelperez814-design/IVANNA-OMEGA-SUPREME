@@ -193,7 +193,47 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+# ── daemon_kill_orphans ────────────────────────────────────────────────────────
+# FIX (auditoría runtime 2026-08-16 — doble instancia / "Address already in use"):
+#   Si un service.sh anterior (boot mal cerrado, módulo re-flasheado sin
+#   reiniciar, kill -9 del proceso padre) dejó un ivanna_daemon vivo, su socket
+#   abstracto @omega_daemon_socket queda bindeado por el kernel y el nuevo
+#   daemon muere en bind() con EADDRINUSE — exactamente el error visto en el
+#   log real: "Socket bind failed at @omega_daemon_socket: Address already in
+#   use" a las 00:04 tras un arranque exitoso a las 23:15.
+#
+#   Antes de lanzar: se mata cualquier ivanna_daemon previo, primero por
+#   PID_FILE (rápido, exacto) y luego por pidof como red de seguridad (cubre
+#   el caso en que el PID file se perdió pero el proceso sigue). `kill -0`
+#   valida que el PID exista, y pidof filtra por nombre real del binario —
+#   imposible matar un proceso ajeno por PID reciclado.
+daemon_kill_orphans() {
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE" 2>/dev/null)
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            kill "$OLD_PID" 2>/dev/null
+            sleep 0.3
+            kill -0 "$OLD_PID" 2>/dev/null && kill -9 "$OLD_PID" 2>/dev/null
+            echo "[$(date)] Daemon huérfano PID=$OLD_PID matado (via $PID_FILE)" >> "$LOGFILE"
+        fi
+        rm -f "$PID_FILE"
+    fi
+    # Red de seguridad: pidof cubre daemons cuyo PID file se perdió.
+    ORPHANS=$(pidof ivanna_daemon 2>/dev/null)
+    if [ -n "$ORPHANS" ]; then
+        kill $ORPHANS 2>/dev/null
+        sleep 0.3
+        ORPHANS_LEFT=$(pidof ivanna_daemon 2>/dev/null)
+        [ -n "$ORPHANS_LEFT" ] && kill -9 $ORPHANS_LEFT 2>/dev/null
+        echo "[$(date)] Daemon(s) huérfano(s) matados via pidof: $ORPHANS" >> "$LOGFILE"
+    fi
+}
+
 while true; do
+    # No lanzar una segunda instancia mientras el socket siga ocupado por un
+    # daemon huérfano — eso garantizaba EADDRINUSE en bind() y un crash-loop.
+    daemon_kill_orphans
+
     echo "[$(date)] Launching $DAEMON_BIN" >> "$LOGFILE"
     START_TS=$(date +%s)
     "$DAEMON_BIN" --socket "@omega_daemon_socket" --realtime >> "$LOGFILE" 2>&1 &
