@@ -307,7 +307,7 @@ jobs:
       # artefacto descargable. Ahora 6: zip del módulo, APK + su hash,
       # daemon suelto + su hash, y el .so del efecto.
       - name: Upload artifacts (clean, versioned)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ivanna-magisk-module-arm64-${{ github.sha }}
           path: |
