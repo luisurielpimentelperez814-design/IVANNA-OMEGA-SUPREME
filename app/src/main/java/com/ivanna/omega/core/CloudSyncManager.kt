@@ -81,7 +81,10 @@ object CloudSyncManager {
      * nada si isConfigured es false (placeholders sin rellenar).
      */
     @Synchronized
+    var firebaseOptIn: Boolean = false // OPT-IN EXPLÍCITO
+
     private fun ensureInit(context: Context): Boolean {
+        if (!firebaseOptIn) return false
         if (!isFirebaseOptInEnabled) {
             Log.i(TAG, "Firebase sync is not explicitly opted-in. Skipping sync.")
             return false
