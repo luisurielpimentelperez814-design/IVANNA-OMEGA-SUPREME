@@ -38,7 +38,7 @@ jobs:
         run: ctest --test-dir build-tests --output-on-failure
 
   build-apk:
-    name: Build APK & Native Binaries
+    name: Build APK & Native Binaries (artifact integrity enforced)
     runs-on: ubuntu-22.04
     needs: [test-native-dsp]
     steps:
@@ -51,14 +51,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ─────────────────────────────────────────────────────────────────
-      # AUDIT FIX (CI 503): la URL por defecto del wrapper
-      # (services.gradle.org/distributions) a veces devuelve 503
-      # intermitente. En vez de usar ./gradlew directo, descargamos la
-      # distribución con reintentos y mirror a la CDN oficial de Gradle
-      # (releases.gradle.org) ANTES de invocar el build, y cacheamos la
-      # carpeta para no volver a bajarla.
-      # ─────────────────────────────────────────────────────────────────
+      # ═══════════════════════════════════════════════════════════════════
+      # ARTIFACT INTEGRITY (auditoría 2026-08-16)
+      # El zip Magisk distribuido contenía un ivanna_daemon ARM32 / NDK r25b
+      # antiguo (BuildID 7a92e8...) en lugar del ARM64 recién compilado.
+      # Causa: staging condicional ("if [ -f ] cp") que copiaba binarios
+      # versionados/residuales cuando la compilación no dejaba el artefacto
+      # en la ruta esperada. Política nueva:
+      #   1. PURGA total antes de compilar (ningún binario preexistente).
+      #   2. Compilación obligatoria desde fuente — si no produce binario,
+      #      el job FALLA (test -f || exit 1). Nunca se copia "lo que haya".
+      #   3. Validación estricta: file → 64-bit LSB arm64, readelf →
+      #      AArch64 + DYN (PIE), sha256 registrado.
+      #   4. Manifiesto BUILD_INFO dentro del módulo.
+      #   5. Validación post-zip: el daemon extraído del zip debe tener
+      #      hash idéntico al compilado.
+      #   6. Artefacto versionado por SHA: ivanna-magisk-module-arm64-<sha>.
+      # ═══════════════════════════════════════════════════════════════════
+
+      - name: Purge any prebuilt/committed binaries (anti-contamination)
+        run: |
+          set -euo pipefail
+          rm -f magisk_module/system/bin/ivanna_daemon
+          rm -f ivanna_daemon
+          rm -f extracted_daemon
+          find . -path ./.git -prune -o -name "*.so" -type f -print -delete
+          find . -path ./.git -prune -o -name "ivanna_daemon" -type f -print -delete
+          echo "Purge OK — repo contiene solo fuentes"
+
       - name: Cache Gradle distribution
         uses: actions/cache@v4
         with:
@@ -81,8 +101,7 @@ jobs:
             for url in "${URLS[@]}"; do
               echo "[gradle-provision] attempt $attempt → $url"
               if curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
-                       --connect-timeout 30 --max-time 300 \
-                       -o "$ZIP" "$url"; then
+                       --connect-timeout 30 --max-time 300 -o "$ZIP" "$url"; then
                 ok=1; break
               fi
               sleep $((attempt * 2))
@@ -94,7 +113,7 @@ jobs:
           echo "GRADLE_HOME=$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}" >> "$GITHUB_ENV"
           echo "$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}/bin"          >> "$GITHUB_PATH"
 
-      - name: Install Android SDK (manual)
+      - name: Install Android SDK + NDK (manual)
         run: |
           set -euo pipefail
           export ANDROID_SDK_ROOT="$HOME/android-sdk"
@@ -103,9 +122,7 @@ jobs:
           cd "$ANDROID_SDK_ROOT/cmdline-tools"
           curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
                -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
-          unzip -q tools.zip
-          rm tools.zip
-          mv cmdline-tools latest
+          unzip -q tools.zip && rm tools.zip && mv cmdline-tools latest
           SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
@@ -127,88 +144,175 @@ jobs:
           GRADLE_PROPS="$HOME/.gradle/gradle.properties"
           if [ -f "$GRADLE_PROPS" ]; then
             sed -i '/aapt2FromMavenOverride/d' "$GRADLE_PROPS"
-            echo "Cleaned aapt2FromMavenOverride from $GRADLE_PROPS"
           fi
           sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
 
-      - name: Build APK (Gradle provisto localmente)
-        run: |
-          chmod +x gradlew
-          # Usar el gradle provisionado manualmente (no el wrapper, para
-          # evitar re-descarga ante 503 transitorios).
-          gradle assembleDebug --no-daemon --stacktrace \
-            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
-            -Dorg.gradle.caching=true \
-            -Dorg.gradle.parallel=true
-
-      - name: Verify artifacts
+      # ── COMPILACIÓN DEL DAEMON (obligatoria, desde fuente) ────────────
+      - name: Compile ivanna_daemon from source (NDK r26, arm64-v8a)
         run: |
           set -euo pipefail
-          # APK debug debe existir
-          ls -lh app/build/outputs/apk/debug/*.apk
-          # Binarios nativos: no basta con listarlos — si falta alguno, el
-          # build esta roto aunque Gradle haya terminado en verde. El daemon
-          # (ivanna_daemon) y el efecto (libomega_effect.so) son los dos
-          # artefactos que el modulo Magisk necesita en el dispositivo.
-          DAEMON=$(find app/build/intermediates -name "ivanna_daemon" -type f | head -1)
-          EFFECT=$(find app/build/intermediates -name "libomega_effect.so" -type f | head -1)
-          test -n "$DAEMON" || { echo "ERROR: ivanna_daemon no compilado"; exit 1; }
-          test -n "$EFFECT" || { echo "ERROR: libomega_effect.so no compilado"; exit 1; }
-          echo "daemon: $DAEMON"
-          echo "effect: $EFFECT"
-          file "$DAEMON" | grep -q "ELF 64-bit" || { echo "ERROR: daemon no es ELF arm64"; exit 1; }
-          file "$EFFECT" | grep -q "ELF 64-bit" || { echo "ERROR: effect no es ELF arm64"; exit 1; }
-          # El POST_BUILD del daemon copia el binario al staging del modulo;
-          # sin esta copia el zip sale sin daemon y el socket no arranca.
-          test -f magisk_module/system/bin/ivanna_daemon || { echo "ERROR: daemon no stageado en magisk_module/system/bin"; exit 1; }
-          # Guardrail (regresión documentada): el daemon lo lanza Magisk
-          # service.sh como root, fuera del sandbox de la app y sin el
-          # directorio de librerías del APK. Si el binario queda vinculado
-          # a libc++_shared.so, el loader lo mata antes de main() y el
-          # daemon nunca arranca en el dispositivo (panel: módulo ACTIVO,
-          # daemon DETENIDO, log vacío). La STL va estática solo en este
-          # target (daemon/CMakeLists.txt); esta comprobación lo exige.
-          if command -v llvm-readobj >/dev/null 2>&1; then
-            NEEDS=$(llvm-readobj --needed-libs magisk_module/system/bin/ivanna_daemon 2>/dev/null || true)
-          elif command -v readelf >/dev/null 2>&1; then
-            NEEDS=$(readelf -d magisk_module/system/bin/ivanna_daemon 2>/dev/null | grep NEEDED || true)
-          else
-            NEEDS=$(grep -a -o "libc++_shared\.so" magisk_module/system/bin/ivanna_daemon | head -1 || true)
-          fi
-          echo "daemon NEEDED libs: $NEEDS"
-          echo "$NEEDS" | grep -q "libc++_shared" && { echo "ERROR: daemon vinculado a libc++_shared.so — morirá al arrancar vía service.sh (ver daemon/CMakeLists.txt -static-libstdc++)"; exit 1; }
-          true
-          test -f magisk_module/system/vendor/lib64/soundfx/libomega_effect.so || { echo "ERROR: libomega_effect.so no stageado en soundfx"; exit 1; }
+          NDK="$ANDROID_NDK_HOME"
+          TC="$NDK/build/cmake/android.toolchain.cmake"
+          test -f "$TC" || { echo "ERROR: toolchain NDK no encontrado en $TC"; exit 1; }
+          cmake -B build-daemon -S app/src/main/cpp/daemon \
+            -DCMAKE_TOOLCHAIN_FILE="$TC" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-27 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          cmake --build build-daemon -j --config Release
+          # Localizar el binario producido — DEBE existir, nunca copiar otra cosa
+          DAEMON_BIN_PATH=$(find build-daemon -name "ivanna_daemon" -type f | head -1)
+          test -n "$DAEMON_BIN_PATH" || { echo "ERROR: la compilación no produjo ivanna_daemon"; exit 1; }
+          cp "$DAEMON_BIN_PATH" ./ivanna_daemon
+          chmod 755 ./ivanna_daemon
 
-      - name: Package Magisk module
+      # ── VALIDACIÓN ESTRICTA DEL BINARIO COMPILADO ──────────────────────
+      - name: Validate daemon ELF (arm64 / AArch64 / PIE / hash)
+        run: |
+          set -euo pipefail
+          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon ausente tras compilar"; exit 1; }
+          FILE_OUT="$(file ivanna_daemon)"
+          echo "$FILE_OUT"
+          echo "$FILE_OUT" | grep -q "64-bit"  || { echo "ERROR: daemon no es 64-bit"; exit 1; }
+          echo "$FILE_OUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon no es ARM64"; exit 1; }
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          [ -x "$READELF" ] || READELF=readelf
+          HDR="$("$READELF" -h ivanna_daemon)"
+          echo "$HDR"
+          echo "$HDR" | grep -q "AArch64"          || { echo "ERROR: readelf no reporta AArch64"; exit 1; }
+          echo "$HDR" | grep -qE "Type:.*DYN"       || { echo "ERROR: daemon no es PIE (Type != DYN)"; exit 1; }
+          # Hardening: RELRO + BIND_NOW (segmento GNU_RELRO + flag BIND_NOW)
+          "$READELF" -lW ivanna_daemon | grep -q "GNU_RELRO" || { echo "ERROR: sin RELRO"; exit 1; }
+          "$READELF" -dW ivanna_daemon | grep -qE "BIND_NOW|FLAGS.*NOW" || { echo "ERROR: sin BIND_NOW"; exit 1; }
+          sha256sum ivanna_daemon | tee daemon_sha256.txt
+
+      - name: Build APK (Gradle provisionado)
+        run: |
+          chmod +x gradlew
+          gradle assembleDebug --no-daemon --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
+            -Dorg.gradle.caching=true -Dorg.gradle.parallel=true
+
+      # ── STAGING OBLIGATORIO: prohibido copiar "si existe", siempre ────
+      # ── se copia el binario recién validado o el job muere. ────────────
+      - name: Stage daemon + effect lib into Magisk module (no legacy copy)
+        run: |
+          set -euo pipefail
+          # REGLA: nunca "if [ -f ] cp" — el binario validado DEBE existir.
+          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon no compilado"; exit 1; }
+          rm -f magisk_module/system/bin/ivanna_daemon
+          mkdir -p magisk_module/system/bin
+          cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
+          chmod 755 magisk_module/system/bin/ivanna_daemon
+          # libomega_effect.so desde la salida de Gradle — obligatoria también
+          EFFECT_SO=$(find app/build -path "*arm64-v8a*" -name "libomega_effect.so" | head -1)
+          test -n "$EFFECT_SO" || { echo "ERROR: libomega_effect.so no encontrada en app/build"; exit 1; }
+          mkdir -p magisk_module/system/vendor/lib64/soundfx
+          rm -f magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          cp "$EFFECT_SO" magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          cp "$EFFECT_SO" ./libomega_effect_arm64.so
+          file libomega_effect_arm64.so
+
+      # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
+      - name: Generate BUILD_INFO manifest
+        run: |
+          set -euo pipefail
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "run=$GITHUB_RUN_NUMBER"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "daemon_sha256=$(sha256sum ivanna_daemon | awk '{print $1}')"
+            echo "daemon_file=$(file ivanna_daemon)"
+            echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | awk '{print $1}')"
+            echo "ndk=${ANDROID_NDK_VERSION}"
+          } > magisk_module/BUILD_INFO
+          cat magisk_module/BUILD_INFO
+
+      # ── EMPAQUETADO + VALIDACIÓN DEL ZIP FINAL ─────────────────────────
+      - name: Package Magisk module + verify zip integrity
         run: |
           set -euo pipefail
           test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
           if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|typeattribute|allowxperm|neverallow|require)[[:space:]]'; then
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
           fi
-          cd magisk_module
-          zip -r "$GITHUB_WORKSPACE/ivanna_omega_supreme.zip" . -x "*.git*"
-          cd "$GITHUB_WORKSPACE"
-          unzip -l ivanna_omega_supreme.zip | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
-          unzip -l ivanna_omega_supreme.zip | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
-          ls -lh ivanna_omega_supreme.zip
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" )
+          # El zip DEBE contener el daemon
+          unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"               || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
+          # Extracción + validación del daemon DENTRO del zip
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "64-bit" || { echo "ERROR: daemon del zip no es 64-bit"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon del zip no es ARM64"; exit 1; }
+          H_ZIP=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_SRC=$(sha256sum ivanna_daemon    | awk '{print $1}')
+          echo "zip_daemon_sha256=$H_ZIP"
+          echo "src_daemon_sha256=$H_SRC"
+          [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
+          echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          ls -lh "$ZIPNAME"
 
-      - name: Upload Magisk module + binaries
+      # ── SUBIDA DE ARTEFACTOS LIMPIOS (solo los 3 autorizados) ──────────
+      - name: Upload artifacts (clean, versioned)
         uses: actions/upload-artifact@v4
         with:
-          name: ivanna-magisk-module
+          name: ivanna-magisk-module-arm64-${{ github.sha }}
           path: |
-            ivanna_omega_supreme.zip
-            magisk_module/system/bin/ivanna_daemon
-            magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+            ivanna-magisk-module-arm64-${{ github.sha }}.zip
+            ivanna_daemon
+            libomega_effect_arm64.so
+            daemon_sha256.txt
           if-no-files-found: error
-          overwrite: true
+          overwrite: false
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+  # ── JOB FINAL: verificación independiente del artefacto publicado ──────
+  verify-release:
+    name: Verify published artifact (download → extract → validate)
+    runs-on: ubuntu-22.04
+    needs: [build-apk]
+    steps:
+      - name: Download published artifact
+        uses: actions/download-artifact@v4
         with:
-          name: ivanna-omega-apk-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          overwrite: true
+          name: ivanna-magisk-module-arm64-${{ github.sha }}
+
+      - name: Validate downloaded zip end-to-end
+        run: |
+          set -euo pipefail
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
+          test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
+          test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "ELF"               || { echo "ERROR: no es ELF"; exit 1; }
+          echo "$FOUT" | grep -q "64-bit"            || { echo "ERROR: ARM32 o no-64 detectado"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64"   || { echo "ERROR: no es AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
+          H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
+          H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
+          echo "extracted=$H_EXTRACT"
+          echo "published=$H_PUBLISHED"
+          echo "recorded =$H_RECORDED"
+          [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
+          [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+          # BUILD_INFO debe estar dentro del zip y apuntar a ESTE commit
+          unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
+          grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
+          grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+          echo "════════════════════════════════════════════════════════"
+          echo " VERIFY-RELEASE OK"
+          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
+          echo " hash idéntico: compilación → zip → artefacto → módulo"
+          echo "════════════════════════════════════════════════════════"

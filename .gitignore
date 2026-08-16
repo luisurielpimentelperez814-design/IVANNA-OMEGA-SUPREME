@@ -37,3 +37,11 @@ spatial_assets_inventory.txt
 world_audio_pipeline_map.txt
 world_audit_debt.txt
 daemon_architecture_report.txt
+
+# ARTIFACT INTEGRITY (auditoría 2026-08-16):
+# Nunca commitear el daemon compilado ni binarios stageados.
+ivanna_daemon
+extracted_daemon
+magisk_module/system/bin/ivanna_daemon
+magisk_module/system/lib64/soundfx/*.so
+magisk_module/system/vendor/lib64/soundfx/*.so
