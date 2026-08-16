@@ -53,10 +53,10 @@ object OmegaEngineBridge {
     private fun probeSocket(): Boolean {
         val probedPrimary = runCatching {
             val sock = LocalSocket()
-            sock.soTimeout = CONNECT_TIMEOUT
             sock.connect(
                 LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
             )
+            sock.soTimeout = CONNECT_TIMEOUT
             sock.close()
             true
         }.getOrDefault(false)
@@ -74,12 +74,12 @@ object OmegaEngineBridge {
         return try {
             val t0 = System.nanoTime()
             socket = LocalSocket()
-            socket.soTimeout = CONNECT_TIMEOUT
 
             val connected = runCatching {
                 socket.connect(
                     LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT)
                 )
+                socket.soTimeout = CONNECT_TIMEOUT
                 true
             }.getOrDefault(false)
 

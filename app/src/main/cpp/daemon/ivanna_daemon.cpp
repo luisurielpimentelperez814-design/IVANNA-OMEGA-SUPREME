@@ -318,7 +318,21 @@ int main(int argc, char* argv[]) {
     }
 
     
-log_message("IVANNA OMEGA Daemon running successfully.");
+
+    
+    std::string selinux_ctx = "UNKNOWN";
+    FILE* fp = fopen("/proc/self/attr/current", "r");
+    if (fp) {
+        char buf[256];
+        if (fgets(buf, sizeof(buf), fp)) {
+            selinux_ctx = buf;
+            if (!selinux_ctx.empty() && selinux_ctx.back() == '\n') selinux_ctx.pop_back();
+        }
+        fclose(fp);
+    }
+    log_message("Runtime Info -> PID: " + std::to_string(getpid()) + " | UID: " + std::to_string(getuid()) + " | SELinux: " + selinux_ctx);
+    log_message("IVANNA OMEGA Daemon running successfully.");
+
 
 // FIX (socket queued/offline intermitente — causa raíz encontrada):
 //   g_server_fd (create_socket_server() arriba) YA está bind()eado en
@@ -379,7 +393,15 @@ if (controlServer.start("@omega_command_socket")) {
             socklen_t client_len = sizeof(client_addr);
             int client_fd = accept(g_server_fd, (struct sockaddr*)&client_addr, &client_len);
             if (client_fd >= 0) {
-                log_message("Client connection accepted on " + socket_path);
+                
+                struct ucred credentials;
+                int ucred_length = sizeof(struct ucred);
+                if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &credentials, (socklen_t*)&ucred_length) == 0) {
+                    log_message("Client connection accepted on " + socket_path + " | UID: " + std::to_string(credentials.uid) + " | PID: " + std::to_string(credentials.pid));
+                } else {
+                    log_message("Client connection accepted on " + socket_path);
+                }
+
 
                 // FIX: demux socket — el mismo @omega_daemon_socket sirve dos propósitos:
                 //
