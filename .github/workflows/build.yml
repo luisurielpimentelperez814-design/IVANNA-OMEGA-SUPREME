@@ -214,6 +214,29 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
             -Dorg.gradle.caching=true -Dorg.gradle.parallel=true
 
+      # ── STAGING + VALIDACIÓN DEL APK (auditoría 2026-08-16) ────────────
+      # FIX: gradle assembleDebug SÍ generaba el APK en app/build/outputs/apk/
+      # pero ningún step posterior lo copiaba, validaba, ni lo incluía en
+      # el path: del Upload artifacts de más abajo — se compilaba y se
+      # descartaba en silencio. Nadie podía descargar un APK actualizado
+      # desde un run de CI exitoso pese a que Gradle no fallaba nunca.
+      # Mismo nivel de validación que ya se le exige a ivanna_daemon y
+      # libomega_effect.so — no "cp si existe", el job muere si falta.
+      - name: Stage + validate APK artifact
+        run: |
+          set -euo pipefail
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          test -n "$APK_PATH" || { echo "ERROR: gradle assembleDebug no produjo ningún .apk en app/build/outputs/apk/"; exit 1; }
+          test -s "$APK_PATH" || { echo "ERROR: $APK_PATH existe pero está vacío (0 bytes)"; exit 1; }
+          # Validación real de que es un APK válido, no un archivo corrupto:
+          # todo APK es un ZIP y DEBE contener AndroidManifest.xml en la raíz.
+          unzip -l "$APK_PATH" | grep -q "AndroidManifest.xml" || { echo "ERROR: $APK_PATH no contiene AndroidManifest.xml — APK corrupto"; exit 1; }
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK_PATH" "./$APK_NAME"
+          sha256sum "./$APK_NAME" | tee apk_sha256.txt
+          ls -lh "./$APK_NAME"
+          echo "APK_ARTIFACT_NAME=$APK_NAME" >> "$GITHUB_ENV"
+
       # ── STAGING OBLIGATORIO: prohibido copiar "si existe", siempre ────
       # ── se copia el binario recién validado o el job muere. ────────────
       - name: Stage daemon + effect lib into Magisk module (no legacy copy)
@@ -278,13 +301,19 @@ jobs:
           echo "INTEGRITY OK — compilación → zip: hash idéntico"
           ls -lh "$ZIPNAME"
 
-      # ── SUBIDA DE ARTEFACTOS LIMPIOS (solo los 3 autorizados) ──────────
+      # ── SUBIDA DE ARTEFACTOS LIMPIOS ────────────────────────────────────
+      # FIX (auditoría 2026-08-16): antes decía "solo los 3 autorizados" y
+      # el APK no era uno de ellos — se compilaba y nunca llegaba al
+      # artefacto descargable. Ahora 6: zip del módulo, APK + su hash,
+      # daemon suelto + su hash, y el .so del efecto.
       - name: Upload artifacts (clean, versioned)
         uses: actions/upload-artifact@v4
         with:
           name: ivanna-magisk-module-arm64-${{ github.sha }}
           path: |
             ivanna-magisk-module-arm64-${{ github.sha }}.zip
+            ${{ env.APK_ARTIFACT_NAME }}
+            apk_sha256.txt
             ivanna_daemon
             libomega_effect_arm64.so
             daemon_sha256.txt
@@ -309,6 +338,17 @@ jobs:
           test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
           test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
           test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+          # FIX (auditoría 2026-08-16): el APK nunca se publicaba, así que
+          # tampoco se verificaba aquí — agregado con el mismo rigor.
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
+          test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
+          test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
+          H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          H_APK_MANIFEST=$(awk '{print $1}' apk_sha256.txt)
+          [ "$H_APK_PUBLISHED" = "$H_APK_MANIFEST" ] || { echo "ERROR FATAL: hash APK publicado != manifiesto apk_sha256.txt"; exit 1; }
+          echo "APK OK: $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
           rm -f extracted_daemon
           unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
           test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
