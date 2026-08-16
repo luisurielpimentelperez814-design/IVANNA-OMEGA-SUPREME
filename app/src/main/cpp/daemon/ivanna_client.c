@@ -30,6 +30,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/time.h>
+#include <stddef.h>
 #include <time.h>
 
 #define SOCKET_NAME   "omega_command_socket"
