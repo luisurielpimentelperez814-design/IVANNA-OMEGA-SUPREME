@@ -168,7 +168,15 @@ struct omega_effect_context_t {
     const struct effect_interface_s *itfe;
     effect_config_t config;
     bool enabled;
-    IvannaFusionCore* fusionCore;   // AUDIT FIX: DSP per-instance (era global)
+    IvannaFusionEngine* fusionCore; // AUDIT FIX: DSP per-instance (era global)
+                                    // AUDIT FIX (type mismatch): la clase base
+                                    // IvannaFusionCore solo expone processBlock/
+                                    // setParameter; los metodos que usa este
+                                    // archivo (initSpatial/processStereo/
+                                    // setSpatialWidth/...) viven en la derivada
+                                    // IvannaFusionEngine. La instancia ya se crea
+                                    // como new IvannaFusionEngine(sr) — el tipo
+                                    // del puntero debe coincidir.
     // ── RIR sala — instanciados per-session, cargados lazy al primer SET_ROOM_RT60
     Ivanna::RirConvolver* rirConvolver; // convolucionador overlap-save (null hasta 1er load)
     Ivanna::RirDataset*   rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
@@ -212,7 +220,7 @@ static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
 // SAF, etc.) se ignoran hasta que se añadan setters en fases posteriores
 // — lo que importa aquí es que los sliders visibles de la UI (spatial
 // width, harmonic gain, compresor) SI lleguen al audio real.
-static inline void omega_apply_snapshot(IvannaFusionCore* fc,
+static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
                                         const ivanna::OmegaDspSnapshot& s) noexcept {
     if (!fc) return;
     // El route arbiter marca quién aplica DSP. Si no somos SYSTEM_WIDE,
@@ -336,7 +344,7 @@ static int32_t omega_process(effect_handle_t self,
 
     // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
     // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
-    IvannaFusionCore* fc = ctx->fusionCore;
+    IvannaFusionEngine* fc = ctx->fusionCore;
     if (!fc) {
         memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
         return 0;
