@@ -172,6 +172,21 @@ jobs:
           cp "$DAEMON_BIN_PATH" ./ivanna_daemon
           chmod 755 ./ivanna_daemon
 
+      - name: Compile ivanna_client (NDK r26, arm64-v8a)
+        run: |
+          set -euo pipefail
+          CXX="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+          test -x "$CXX" || { echo "ERROR: clang NDK no encontrado"; exit 1; }
+          "$CXX" -std=c11 -O2 -pie -fPIE -fstack-protector-strong \
+            -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,--build-id=sha1 \
+            app/src/main/cpp/daemon/ivanna_client.c -o ivanna_client
+          chmod 755 ivanna_client
+          file ivanna_client | grep -qiE "aarch64|arm64" || { echo "ERROR: no ARM64"; exit 1; }
+          sha256sum ivanna_client
+          mkdir -p magisk_module/system/bin
+          cp ivanna_client magisk_module/system/bin/ivanna_client
+          echo "ivanna_client OK"
+
       # ── VALIDACIÓN ESTRICTA DEL BINARIO COMPILADO ──────────────────────
       - name: Validate daemon ELF (arm64 / AArch64 / PIE / hash)
         run: |
