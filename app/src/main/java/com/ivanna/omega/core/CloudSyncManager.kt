@@ -80,7 +80,7 @@ object CloudSyncManager {
      * sesión anónima si no existe. Seguro de llamar múltiples veces. No hace
      * nada si isConfigured es false (placeholders sin rellenar).
      */
-    @Synchronized
+    @Volatile
     var firebaseOptIn: Boolean = false // OPT-IN EXPLÍCITO
 
     private fun ensureInit(context: Context): Boolean {
