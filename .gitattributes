@@ -1,0 +1,15 @@
+# FIX (auditoría 2026-08-17): las 200 RIR .wav se corrompieron en un
+# force-push (bde62755) — probablemente un `git config core.autocrlf`
+# activado en otro entorno convirtió bytes \n dentro del PCM binario a
+# \r\n, rompiendo la estructura RIFF/WAVE. Restauradas desde el commit
+# original íntegro (faa2b4e5). Este archivo evita que vuelva a pasar:
+# marca explícitamente los binarios como binary, sin conversión de fin
+# de línea bajo ninguna circunstancia, sin importar la config del entorno
+# de quien haga el commit.
+*.wav   -text -diff binary
+*.so    -text -diff binary
+*.ihr1  -text -diff binary
+*.ihr*  -text -diff binary
+*.zip   -text -diff binary
+*.png   -text -diff binary
+*.jpg   -text -diff binary
