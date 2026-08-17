@@ -44,7 +44,8 @@ private:
     ALIGN_NEON float m_histR[BLOCK_SIZE + FIR_TAPS];
     float m_meanGenome[BANDS_512];
     float m_evolutionPath[BANDS_512];
-    float m_fitnessScore = 0.0f;
+    // m_fitnessScore: reservado para reporting externo (getter en roadmap)
+    [[maybe_unused]] float m_fitnessScore = 0.0f;
     float m_stepSize = 0.1f;
 };
 

@@ -1,4 +1,8 @@
+#if defined(__clang__)
+#pragma clang optimize on
+#else
 #pragma GCC optimize("O3", "unroll-loops")
+#endif
 #include "../include/HarmonicExciter.h"
 #include <cmath>
 #include <cstring>

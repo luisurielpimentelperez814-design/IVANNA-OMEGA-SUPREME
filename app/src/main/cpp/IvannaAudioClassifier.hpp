@@ -26,13 +26,12 @@
 
 namespace Ivanna {
 
-#ifndef SAMPLE_RATE
-constexpr float SAMPLE_RATE = 48000.0f;
-#endif
-
-#ifndef SAMPLING_RATE
-constexpr float SAMPLING_RATE = SAMPLE_RATE;
-#endif
+// SAMPLE_RATE y SAMPLING_RATE provienen de IvannaFusionCore.hpp (mismo namespace).
+// Se eliminaron las redefiniciones que causaban error de compilación:
+//   IvannaAudioClassifier.hpp:30: error: redefinition of 'SAMPLE_RATE'
+//   IvannaAudioClassifier.hpp:34: error: redefinition of 'SAMPLING_RATE'
+// Los guards #ifndef no aplican a constexpr (son detectados por el compilador,
+// no por el preprocesador) → la única solución correcta es eliminar el duplicado.
 
 // ── Model Architecture Hyperparameters ────────────────────────
 constexpr size_t MEL_BANDS = 64;
@@ -125,12 +124,15 @@ private:
     ALIGN_NEON float m_powerSpectrum[FFT_SPECTRUM_SIZE];
     ALIGN_NEON float m_melLogEnergies[MEL_BANDS];
     
-    // DSP Pre-computation tables
+    // DSP Pre-computation tables (reservadas para la implementación completa del FFT)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
     ALIGN_NEON float m_hanningWindow[CLASSIFIER_FRAME_SIZE];
     ALIGN_NEON float m_fftTwiddleReal[CLASSIFIER_FRAME_SIZE / 2];
     ALIGN_NEON float m_fftTwiddleImag[CLASSIFIER_FRAME_SIZE / 2];
     uint16_t m_bitRevTable[CLASSIFIER_FRAME_SIZE];
     ALIGN_NEON float m_melFilterbank[MEL_BANDS][FFT_SPECTRUM_SIZE];
+#pragma clang diagnostic pop
 
     // TinyML Architectural Weights (SE-TCN)
     ALIGN_NEON float m_tcnConvWeights[TINYML_CHANNELS][MEL_BANDS];

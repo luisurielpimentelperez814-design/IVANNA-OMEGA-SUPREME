@@ -227,10 +227,10 @@ public:
         g_control_frame.evolutionary_active.store(true, std::memory_order_release);
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
-            float prev_fitness = 0.f;
             while (evo_running_.load(std::memory_order_acquire)) {
                 evo_evolve_generation();
                 const float fit = evo_best_fitness();
+                (void)fit; // publicación siempre activa — gate del 1% eliminado
                 // FIX: always publish — gate del 1% congelaba el frame al converger
                 {
                     uint8_t genome[33];
@@ -238,7 +238,6 @@ public:
                     // Write to staging buffer, then signal audio thread
                     for (int i = 0; i < 33; ++i) evo_staging_[i] = genome[i];
                     evo_pending_.store(true, std::memory_order_release);
-                    prev_fitness = fit;
 
                     // NUEVO: alimenta el UnifiedControlFrame con el mismo genoma
                     // ganador (normalizado a [0..1]) para que el orquestador
