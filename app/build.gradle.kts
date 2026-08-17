@@ -118,7 +118,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // FIX (bb4fa6b): com/ivanna/omega/audio/ParameterStore.kt (el nuevo,
     // NO el de core/) usa com.google.gson.Gson para serializar AudioState —
     // no estaba declarada, mismo tipo de bug que rompió el resample() antes.
@@ -144,7 +144,7 @@ dependencies {
     // Necesaria para el .await() de kotlinx.coroutines.tasks sobre
     // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 }
 
 dependencies {
