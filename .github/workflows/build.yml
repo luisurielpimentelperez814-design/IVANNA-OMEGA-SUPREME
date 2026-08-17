@@ -85,7 +85,7 @@ jobs:
           echo "Purge OK — repo contiene solo fuentes"
 
       - name: Cache Gradle distribution
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.gradle/wrapper/dists
           key: gradle-${{ env.GRADLE_VERSION }}-${{ runner.os }}
