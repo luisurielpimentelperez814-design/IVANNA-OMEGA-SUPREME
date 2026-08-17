@@ -1,5 +1,8 @@
 package com.ivanna.omega
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import android.media.AudioManager
 import android.util.Log
@@ -531,10 +534,15 @@ fun SplashScreen(onAccept: () -> Unit) {
         contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 28.dp)) {
-            Text("IVANNA-OMEGA-SUPREME", color = TextPri, fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("GORE TNS · LUPP-OR9 · DSP ENGINE v1.0", color = CyanGlow,
+            // Logo IVANNA OMEGA SUPREME
+            Image(
+                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_ivanna_logo),
+                contentDescription = "IVANNA OMEGA SUPREME",
+                modifier = Modifier.size(220.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("GORE TNS · LUPP-OR9 · DSP ENGINE v2.2.0", color = CyanGlow,
                 fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.height(6.dp))
             Text("PI-LSTM Milenio · Neuro-Cochlear · Volterra H2 · Ω-Atlas",
