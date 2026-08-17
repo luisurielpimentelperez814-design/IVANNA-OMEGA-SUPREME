@@ -1,0 +1,6 @@
+/* ivanna_dsp.idl — Hexagon DSP IDL stub */
+interface IvannaDsp {
+    long init(in unsigned long sample_rate);
+    long process(in sequence<float> pcm, rout sequence<float> out);
+    long deinit();
+};

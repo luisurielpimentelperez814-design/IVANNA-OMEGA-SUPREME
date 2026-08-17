@@ -1,0 +1,270 @@
+package com.ivanna.omega.core
+
+import android.util.Log
+
+/**
+ * JNI bindings for IVANNA OMEGA SUPREME native library.
+ * Compiled into libivanna_omega.so — unified entry point for DSP, PI-LSTM,
+ * evolutionary kernel, phase oracle, and spatial engine.
+ */
+object IvannaNativeLib {
+    /**
+     * FIX (crash #2): El init original capturaba UnsatisfiedLinkError pero no
+     * guardaba ningún flag, así que las llamadas a `external fun` posteriores
+     * (nativeSetCompressorParams, nativeSetHarmonicGain, nativeSetSpatialAngleRad,
+     * nativeSetSpatialWidthDirect, nativeStartEvoThread, etc.) en MainActivity.onCreate()
+     * seguían lanzando UnsatisfiedLinkError y crasheaban la app.
+     * Ahora se expone `isLoaded` para que MainActivity y callbacks puedan hacer guard.
+     * Patrón idéntico al de DSPBridge y OmegaEngine.
+     */
+    private val loaded = NativeLibraryLoader.ensureLoaded()
+
+    val isLoaded: Boolean get() = loaded
+
+    inline fun <T> guardedNative(fallback: T, block: () -> T): T {
+        return try {
+            if (!isLoaded) {
+                Log.e("IvannaNativeLib", "guardedNative: native library not loaded. Returning fallback.")
+                return fallback
+            }
+            block()
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("IvannaNativeLib", "guardedNative: UnsatisfiedLinkError - ${e.message}", e)
+            fallback
+        } catch (e: Throwable) {
+            Log.e("IvannaNativeLib", "guardedNative: Exception - ${e.message}", e)
+            fallback
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  DSP Core (ivanna_omega_jni.cpp)
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeInitDSP(sampleRate: Int): Boolean
+    external fun nativeProcessBlock(
+        inL: FloatArray, inR: FloatArray,
+        outL: FloatArray, outR: FloatArray,
+        frames: Int
+    )
+    external fun nativeSetParams(params: FloatArray)
+    // FIX QUIRÚRGICO: nativeSetParams(FloatArray) sobreescribe TODO g_params
+    // (drive/wet/mix/alpha/beta/gamma/freq/resonance incluidos) y dispara
+    // setParams() en compresor/exciter/widener — si el caller solo llena
+    // low/mid/high/master (como hacía AdaptiveBackend.applyEQ) el resto
+    // llega en 0 y apaga esos motores. Este setter SOLO toca EQ+master y
+    // SOLO reconfigura g_eq/g_gain en el motor nativo (ver ivanna_omega_jni.cpp).
+    // Usar este método para EQ en tiempo real; NO usar nativeSetParams para eso.
+    external fun nativeSetEQParams(low: Float, mid: Float, high: Float, master: Float)
+    external fun nativeResetDSP()
+    external fun nativeGetClipCount(): Int
+    external fun nativeResetClipCount()
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  PDEngine: NHO + BiquadEnvelopeBank + CueBasedSpatial
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeInitPILSTM()
+    external fun nativeSetAlpha(v: Float)
+    external fun nativeSetBeta(v: Float)
+    external fun nativeSetGamma(v: Float)
+    external fun nativeSetDelta(v: Float)
+    external fun nativeSetEta(v: Float)
+    external fun nativeSetSpatialWet(v: Float)
+    external fun nativeSetHarmonicGain(v: Float)
+    external fun nativeSetHRTFEnabled(en: Boolean)
+    external fun nativeSetAdaptEnabled(en: Boolean)
+    external fun nativeSetNPMax(v: Float)
+    external fun nativeSetReflectionGain(i: Int, g: Float)
+    external fun nativeSetReflectionDelay(i: Int, d: Float)
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Evolutionary Kernel (evolutionary_kernel.cpp)
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeInitializeEvolution(populationSize: Int, generations: Int): Boolean
+    external fun nativeGetBestFitness(): Double
+    external fun nativeGetGeneration(): Int
+    external fun nativeEvolveStep(): Boolean
+    external fun nativeSetMutationRate(rate: Float)
+    external fun nativeGetMutationRate(): Float
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Phase Oracle (phase_oracle.cpp)
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativePredictSamples(audioBuffer: FloatArray, sampleCount: Int): FloatArray
+    external fun nativeGetPhaseState(): Float
+    external fun nativeSetPhaseParameters(alpha: Float, beta: Float, gamma: Float): Boolean
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Spatial Engine (spatial_jni.cpp)
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeInitSpatialEngine(sampleRate: Int, bufferSize: Int): Boolean
+    external fun nativeRenderSpatialBlock(
+        inputBuffer: FloatArray,
+        outL: FloatArray, outR: FloatArray,
+        posX: Int, posY: Int, posZ: Int, mu: Int
+    ): Int
+    external fun nativeReleaseSpatialEngine(): Boolean
+    external fun nativeGetSpatialState(): String
+    external fun nativeSetSpatialParams(params: String): Boolean
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  EvolutionaryKernel ↔ PDEngine (pd_engine.hpp evo_thread_)
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeStartEvoThread()
+    external fun nativeStopEvoThread()
+    external fun nativeGetEvoBestFitness(): Float
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  EvolutionaryKernel: persistencia (evolutionary_kernel.cpp)
+    //  nativeSetEvoSavePath() DEBE llamarse antes de DSPBridge.init(), ya que
+    //  start_evo_thread() dispara evo_initialize_population() -> intenta
+    //  cargar el save-state en ese preciso momento.
+    // ═══════════════════════════════════════════════════════════════════════
+    external fun nativeSetEvoSavePath(path: String)
+    external fun nativeSaveEvoState(): Boolean
+    external fun nativeLoadEvoState(): Boolean
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  FIX v3.0: cableado GlassCard "COMPRESOR" y "NHO / ESPACIAL"
+    //  (ivanna_omega_jni.cpp — g_comp.setThreshold/setRatio, g_pd.set_spatial_*)
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX (build roto — Kotlin: 'Too many arguments'): MainActivity.kt ya
+    // llamaba a esta función con 4 argumentos (threshold, ratio, attackMs,
+    // releaseMs) desde el loop del "Adaptive Engine" (nativeCreateAdaptiveEngine/
+    // nativeGetAdaptiveParameters), pero la firma solo declaraba 2 — Compressor.h
+    // SÍ tiene setAttack()/setRelease() reales, solo faltaba la conexión JNI.
+    external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
+    external fun nativeSetSpatialAngleRad(rad: Float)
+    external fun nativeSetSpatialWidthDirect(width: Float)
+    external fun nativeSetAntiDolbyIntensity(intensity: Float)
+
+    // ═══ FASE 2: aplicación del ControlFrame desde el hilo de control ═══
+    // Llama a control_apply_frame() en C++, que fusiona:
+    //   - UnifiedControlFrame (YAMNet + PhaseOracle + Evo genome)
+    //   - Sesgo aprendido por (contexto, param) vía LearningBias.jniGetBias
+    // y publica un ControlFrame nuevo al bus seqlock. NUNCA llamar desde
+    // el hilo de audio (nativeProcess / g_pd.process_block).
+    external fun nativeApplyControlFrame(): Int
+
+    // Setter del contexto activo ("genre:rock", "preset:Warm", ...). El C++
+    // lo pasa a LearningBias.jniSetActiveContext().
+    external fun nativeSetLearningContext(ctx: String)
+
+    // ═══ FASE 4B: telemetría del ciclo adaptativo real ════════════════════
+    // Snapshot POD de 10 floats — fuente única de telemetría del lazo
+    // adaptativo, alimentado por nativeProcess() (audio thread) y consumido
+    // por la UI/logs (con throttle recomendado ≥500 ms). Layout fijo:
+    //   [0] rms                       (lineal, salida procesada)
+    //   [1] peak                      (lineal, salida procesada)
+    //   [2] gain_reduction_db         (post gainReductionLinearToDb)
+    //   [3] target_gain               (0..2)
+    //   [4] compressor_amount         (0..1)
+    //   [5] exciter_reduction         (0..1)
+    //   [6] spatial_width             (0..1.5, sugerido por el motor)
+    //   [7] safety_margin             (1 sano → 0 crítico)
+    //   [8] voice_protection_amount   (0..1)
+    //   [9] adaptive_applied_count    (bloques con consumeIfNewer==true)
+    external fun nativeSetAdaptiveControls(
+        modeOrdinal: Int,
+        intensityPercent: Float
+    )
+
+    external fun nativeGetAdaptiveTelemetry(): FloatArray?
+    external fun nativeIsAdaptiveEngineRunning(): Boolean
+
+    // FIX (conexión pantalla "Modo Manual"): pausa/reanuda el hilo de
+    // control de AdaptiveDecisionEngine (Motor A) para que el modo manual
+    // (AudioStateManager/DspStateUpdater) y el modo automático nunca
+    // escriban compresor/exciter/ancho al mismo tiempo. Llamar false al
+    // abrir la pantalla de modo manual, true al cerrarla.
+    external fun nativeSetAdaptiveEngineEnabled(enabled: Boolean)
+    // FloatArray[3]: [low, mid, high] — amplitud lineal RMS (0..1)
+    // Disponible cuando el ADE está activo y hay señal de audio real.
+    external fun nativeGetBandEnergies(): FloatArray?
+    // Latencia round-trip del pipeline DSP (µs, CLOCK_MONOTONIC) — benchmark hardware
+    external fun nativeMeasureRoundTripLatencyUs(): Long
+
+// FloatArray[8]: [activeRoute,rms,peak,voiceProtect,
+// compAmount,excReduction,spatialWidth,adaptiveActive]
+external fun nativeGetUnifiedPipelineStatus(): FloatArray?
+
+
+    // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
+    // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo
+    // Analiza características de audio en tiempo real y ajusta parámetros
+    
+    /** Crear instancia del Adaptive Engine */
+    external fun nativeCreateAdaptiveEngine(): Long
+    
+    /** Analizar buffer de audio y calcular parámetros óptimos */
+    external fun nativeAnalyzeAudio(audioBuffer: FloatArray)
+    
+    /** Obtener parámetros adaptativos suavizados (12 floats):
+     *  [0] compressor_threshold (dB)
+     *  [1] compressor_ratio
+     *  [2] exciter_amount (0-1)
+     *  [3] stereo_width (0-2)
+     *  [4] eq_bass (dB)
+     *  [5] eq_mid (dB)
+     *  [6] eq_treble (dB)
+     *  [7] overall_gain (master)
+     *  [8] compressor_attack (ms)
+     *  [9] compressor_release (ms)
+     *  [10] spatial_intensity (0-1)
+     *  [11] safety_margin (0-1)
+     */
+    external fun nativeGetAdaptiveParameters(): FloatArray
+    
+    /** Obtener características analizadas del audio (8 floats):
+     *  [0] rms (volumen)
+     *  [1] peak (pico máximo)
+     *  [2] percussiveness (0-1, cuánto ataque)
+     *  [3] tonality (0-1, música vs ruido)
+     *  [4] reverb_amount (0-1)
+     *  [5] dynamic_range (0-1)
+     *  [6] spectral_centroid (Hz)
+     *  [7] spectral_spread (Hz)
+     */
+    external fun nativeGetAudioCharacteristics(): FloatArray
+    
+    /** Destruir instancia del Adaptive Engine */
+    external fun nativeDestroyAdaptiveEngine()
+
+    // ── IvannaLab — medición THD/IMD/LUFS/SNR/peak/truepeak ──────────────────
+    // Implementadas en ivanna_omega_jni.cpp:917-949, símbolo JNI ya apunta a
+    // esta clase (Java_com_ivanna_omega_core_IvannaNativeLib_nativeLab*),
+    // solo faltaban las declaraciones Kotlin.
+    /** Reinicia el acumulador de medición de IvannaLab. */
+    external fun nativeLabReset()
+    /** Alimenta [frames] frames estéreo intercalados [L0,R0,L1,R1,...]. */
+    external fun nativeLabFeed(interleavedStereo: FloatArray, frames: Int)
+    /** [0]=thd% [1]=imd% [2]=integratedLUFS [3]=luRange [4]=snrDB [5]=peakDBFS [6]=truepeakDBTP */
+    external fun nativeLabMeasure(): FloatArray?
+    /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
+    external fun nativeLabReport(): String
+
+    // ── API RETIRADA (λ_t / RT60 adaptativo) ───────────────────────────────
+    // `nativeGetAdaptiveLambdaT()` y `nativeSetAdaptiveEnvironmentRT60()` estaban
+    // declaradas como `external fun` sin NINGÚN símbolo JNI en la .so, y además
+    // AdaptiveDecisionEngine (app/src/main/cpp/experimental/adaptive_engine/
+    // adaptive_decision_engine.hpp:266) no tiene concepto de λ_t ni de RT60: su
+    // API pública es computeTargetGain/CompressorAmount/ExciterReduction/
+    // SpatialWidth/SafetyMargin/VoiceProtection. No hay motor real detrás.
+    //
+    // DECISIÓN: se retira la API fantasma en vez de inventar DSP. Los dos
+    // callers (PerceptualCortex.applyAdaptiveLambdaT y
+    // AdaptiveEnvironmentBridge.updateEnvironmentRT60) quedan en la misma
+    // semántica que ya tenían cuando λ_t no estaba disponible (< 0 → no-op),
+    // pero sin riesgo de UnsatisfiedLinkError.
+
+        // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
+        // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
+        // pero nunca estaban declarados en IvannaNativeLib — falta de sincronización
+        // entre .kt declarations y .cpp implementation.
+        external fun nativeSetPerceptualGain(gain: Float)
+        external fun nativeSetCompressorAmount(amount: Float)
+        external fun nativeSetExciterReduction(amount: Float)
+        external fun nativeSetSpatialWidth(width: Float)
+        external fun nativeSetPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float)
+
+    }

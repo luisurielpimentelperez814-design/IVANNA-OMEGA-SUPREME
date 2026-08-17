@@ -1,0 +1,85 @@
+# ⚠ LEGADO — NO ES LA POLÍTICA ACTIVA. NO borrado por regla del proyecto
+# (no borramos, solo mejoramos/reparamos/optimizamos), pero nada en el árbol
+# actual lo aplica ni lo referencia.
+#
+# Esto es de la arquitectura anterior basada en un efecto AudioFlinger INSERT
+# (dominio SELinux propio omega_daemon, tipo omega_effect_lib mapeado por
+# audioserver/mediaserver/hal_audio_default). La arquitectura actual usa un
+# daemon standalone (ivanna_daemon) sobre socket abstracto Unix corriendo
+# en el dominio su/magisk, sin tipos SELinux propios.
+#
+# La política real que SÍ se aplica hoy — la que customize.sh invoca con
+# `magiskpolicy --live --apply "$MODPATH/sepolicy.rule"` y que service.sh
+# reaplica en cada boot — es magisk_module/sepolicy.rule (untrusted_app/
+# isolated_app → su/magisk connectto). Si estás depurando un AVC denial
+# del socket del daemon, es AHÍ donde hay que mirar, no aquí.
+#
+# Corregido README.md (que apuntaba aquí incorrectamente como "reglas
+# SELinux para el socket abstracto") en el mismo commit que agregó esta nota.
+#
+# IVANNA-OMEGA-SUPREME v1.8.1 — SELinux Policy
+# FIX v1.5: elimina permisos execute sobre system_file (AVC denial Android 13+)
+# FIX v1.5: crea tipo propio omega_effect_lib con vendor_file_type
+# audit v1.8.1: documenta AudioSessionReceiver (broadcast in-process, no
+#               requiere allow SELinux nuevo pero lo dejamos constatado
+#               para el próximo auditor que se pregunte "¿y este receiver?")
+
+# ── Tipos propios ─────────────────────────────────────────────────────────────
+type omega_effect_lib, vendor_file_type, file_type;
+type omega_daemon, domain;
+type omega_daemon_exec, exec_type, vendor_file_type;
+
+# ── Permisos audioserver sobre omega_effect_lib ──────────────────────────────
+# Solo read/open/getattr/map — NO execute (el .so se mapea, no ejecuta)
+allow audioserver omega_effect_lib:file { read open getattr map };
+allow audioserver omega_effect_lib:dir { search };
+
+# ── Permisos mediaserver ──────────────────────────────────────────────────────
+allow mediaserver omega_effect_lib:file { read open getattr map };
+
+# ── Permisos hal_audio_default (Qualcomm) ─────────────────────────────────────
+allow hal_audio_default omega_effect_lib:file { read open getattr map };
+
+# ── Daemon omega ───────────────────────────────────────────────────────────────
+init_daemon_domain(omega_daemon)
+allow omega_daemon self:capability { sys_nice };
+allow omega_daemon audioserver:binder call;
+
+# ── AudioSessionReceiver (audit v1.8.1) ──────────────────────────────────────
+# El AudioManifest declara un BroadcastReceiver interno para los intents:
+#   android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION
+#   android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION
+# Estos broadcasts son emitidos por AudioFlinger dentro del propio proceso
+# de la app (categoría "in-process app broadcast" del framework), NO cruzan
+# el binder de audioserver a un dominio SELinux distinto. Por eso NO
+# necesita ninguna regla `allow` en este archivo — la política default de
+# untrusted_app (o platform_app si estuviera firmada) ya la cubre.
+# Se documenta aquí para que un futuro auditor no se pregunte por qué el
+# receiver no aparece en sepolicy.rule.
+
+# ── ELIMINADO en v1.5 (causaba AVC denial): ──────────────────────────────────
+# allow audioserver system_file:file { read open execute execute_no_trans getattr };
+# allow mediaserver system_file:file { read open execute execute_no_trans getattr map };
+# allow hal_audio_default system_file:file { read open execute execute_no_trans getattr map };
+
+# ═══════════════════════════════════════════════════════════════════════
+#  8. OMEGA DAEMON ISOLATED DOMAIN (AOSP STRIC POLICIES)
+# ═══════════════════════════════════════════════════════════════════════
+type omega_daemon, domain
+type omega_daemon_exec, exec_type, file_type, system_file_type
+
+# Transición automática desde magisk
+domain_auto_trans(magisk, omega_daemon_exec, omega_daemon)
+domain_auto_trans(su, omega_daemon_exec, omega_daemon)
+
+# Permisos base del daemon
+allow omega_daemon magisk fd use
+allow omega_daemon su fd use
+allow omega_daemon magisk_file file { read getattr execute }
+allow omega_daemon system_file file { read getattr execute }
+
+# IPC seguro (App -> Daemon aislado)
+allow untrusted_app omega_daemon unix_stream_socket connectto
+allow appdomain omega_daemon unix_stream_socket connectto
+allow platform_app omega_daemon unix_stream_socket connectto
+allow priv_app omega_daemon unix_stream_socket connectto

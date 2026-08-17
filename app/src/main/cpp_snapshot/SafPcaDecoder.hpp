@@ -1,0 +1,25 @@
+#pragma once
+
+#include "SafModelLoader.hpp"
+#include <vector>
+
+namespace Ivanna {
+
+class SafPcaDecoder {
+public:
+
+    bool init(const SAFModel& model);
+
+    std::vector<float> decode(
+        const float* q,
+        int dims
+    ) const;
+
+private:
+
+    std::vector<float> p0_;
+    std::vector<std::vector<float>> V_;
+
+};
+
+}

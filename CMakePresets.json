@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "host-release",
+      "displayName": "Host Release (CTest)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "host-release",
+      "configurePreset": "host-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "host-release",
+      "configurePreset": "host-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+*.apk
+*.aar
+*.aab
+*.so
+*.zip
+
+# Scratch / one-shot patches (la historia vive en git, no en la raíz)
+*.patch
+*.diff
+build_error.txt
+ABCD-reference.diff
+01_*.sh
+0[1-9]_commit_*.sh
+0[1-9]_fix_*.py
+1[0-9]_commit_*.py
+1[0-9]_commit_*.sh
+*.bak.*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+local.properties
+
+# Datos pesados (regenerables o descargables)
+*.ihr1
+hrtf_dataset.*
+
+# Reports de auditoría one-shot (NO son artefactos de build)
+large_files_audit.txt
+spatial_assets_inventory.txt
+world_audio_pipeline_map.txt
+world_audit_debt.txt
+daemon_architecture_report.txt
+
+# ARTIFACT INTEGRITY (auditoría 2026-08-16):
+# Nunca commitear el daemon compilado ni binarios stageados.
+ivanna_daemon
+extracted_daemon
+magisk_module/system/bin/ivanna_daemon
+magisk_module/system/lib64/soundfx/*.so
+magisk_module/system/vendor/lib64/soundfx/*.so

@@ -1,0 +1,58 @@
+#!/sbin/sh
+# IVANNA OMEGA SUPREME — Magisk Module Installer
+# © 2026 Luis Uriel Pimentel Pérez — GORE TNS
+
+SKIPUNZIP=1
+
+# ── Magisk bootstrap ──────────────────────────────────────────────────────────
+if [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
+  # Running inside Magisk Manager (BOOTMODE)
+  print_modname() { ui_print "  IVANNA OMEGA SUPREME"; }
+else
+  # Recovery / legacy installer
+  OUTFD=$2
+  ZIPFILE=$3
+  ui_print() { echo "$1"; }
+fi
+
+ui_print ""
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print "   IVANNA OMEGA SUPREME v1.0"
+ui_print "   © 2026 Luis Uriel Pimentel"
+ui_print "   Motor audio neuromórfico NDK"
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print ""
+
+# ── Extract module files ──────────────────────────────────────────────────────
+ui_print "- Extrayendo archivos del módulo..."
+unzip -o "$ZIPFILE" 'system/*' -d "$MODPATH" >/dev/null 2>&1
+
+# ── Verify libomega_effect.so ─────────────────────────────────────────────────
+SO_PATH="$MODPATH/system/vendor/lib64/soundfx/libomega_effect.so"
+if [ -f "$SO_PATH" ]; then
+  ui_print "- libomega_effect.so instalado correctamente"
+  SO_SIZE=$(wc -c < "$SO_PATH")
+  ui_print "  Tamaño: ${SO_SIZE} bytes"
+else
+  ui_print "! ADVERTENCIA: libomega_effect.so no encontrado"
+  ui_print "  El efecto global no estará activo"
+fi
+
+# ── Set permissions ───────────────────────────────────────────────────────────
+ui_print "- Ajustando permisos..."
+set_perm_recursive "$MODPATH/system" root root 0755 0644
+if [ -f "$SO_PATH" ]; then
+  set_perm "$SO_PATH" root root 0644
+fi
+
+# ── Audio effect XML configs ──────────────────────────────────────────────────
+for XML in "$MODPATH"/system/etc/audio_effects*.xml; do
+  [ -f "$XML" ] && ui_print "  Config: $(basename $XML)"
+done
+
+ui_print ""
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print "  Instalación completada."
+ui_print "  Reinicia para activar el efecto."
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print ""
