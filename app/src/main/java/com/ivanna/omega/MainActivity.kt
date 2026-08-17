@@ -266,11 +266,22 @@ fun OmegaApp() {
                     }
                     pendingBandProfileId = null
                 }
+                val audioStateMs by com.ivanna.omega.audio.AudioStateManager.audioState.collectAsState()
                 MainScaffold(
                     outerNav     = nav,
                     dsp          = dsp,
                     adaptiveBack = adaptiveBackend,
-                    voiceMgr     = voiceProtectionManager
+                    voiceMgr     = voiceProtectionManager,
+                    adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioStateMs.adaptiveMode.name),
+                    onAdaptiveModeChange = { uiMode ->
+                        val bm = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
+                        com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = bm) }
+                    },
+                    adaptiveIntensity = audioStateMs.adaptiveIntensity * 100f,
+                    onAdaptiveIntensityChange = { percent ->
+                        val v = percent / 100f
+                        com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
+                    }
                 )
             }
             composable("magisk") {
