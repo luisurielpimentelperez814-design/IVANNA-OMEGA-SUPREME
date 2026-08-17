@@ -344,20 +344,62 @@ private fun EngineStatusRow(dsp: DSPState) {
 }
 
 @Composable
+@Composable
 private fun RouteRow(route: PipelineState) {
-    // FIX build (compileDebugKotlin): route.activeRoute es enum ActiveRoute,
-    // no String — .ifBlank { "Desconocida" } no aplica. Se mapea el enum
-    // al mismo texto humano ya establecido en IvannaOmniComponents.kt para
-    // mantener consistencia visual entre HUD y este panel.
-    val routeText = when (route.activeRoute) {
-        com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> "RUTA A"
-        com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> "RUTA B"
-        com.ivanna.omega.audio.ActiveRoute.NONE   -> "Desconocida"
+    // FIX "Ruta A desconectada": mostrar LED de estado + ruta activa.
+    // Antes solo mostraba texto plano — sin indicador visual de conexión.
+    // Ahora: LED verde=ROUTE_A/B activa, ámbar=sin señal, con texto.
+    val isActive = route.activeRoute != com.ivanna.omega.audio.ActiveRoute.NONE
+    val ledColor = when (route.activeRoute) {
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> PhosphorGreen
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> AuroraCyan
+        com.ivanna.omega.audio.ActiveRoute.NONE   -> CoralWarn
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically) {
+    val routeText = when (route.activeRoute) {
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> "Ruta A  (IvannaBridgePlayer)"
+        com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> "Ruta B  (omega_effect)"
+        com.ivanna.omega.audio.ActiveRoute.NONE   -> "Sin señal"
+    }
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text("Ruta de audio", fontSize = 11.sp, color = TextSecondary)
-        Text(routeText, fontSize = 11.sp, color = AuroraCyan, fontFamily = Mono)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // LED de estado (idéntico al de MagiskRow para consistencia visual)
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .background(ledColor, androidx.compose.foundation.shape.CircleShape)
+            )
+            Text(
+                routeText,
+                fontSize = 11.sp,
+                color = ledColor,
+                fontFamily = Mono
+            )
+        }
+    }
+    // Sub-fila de telemetría cuando Ruta A está activa
+    if (route.activeRoute == com.ivanna.omega.audio.ActiveRoute.ROUTE_A) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 4.dp, top = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "RMS ${"%.2f".format(route.rms)}  Peak ${"%.2f".format(route.peak)}",
+                fontSize = 9.sp,
+                color = TextMuted,
+                fontFamily = Mono
+            )
+            if (route.adaptiveActive) {
+                Text("ADE ✓", fontSize = 9.sp, color = PhosphorGreen, fontFamily = Mono)
+            }
+        }
     }
 }
 

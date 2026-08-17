@@ -103,21 +103,42 @@ object IvannaUnifiedPipeline {
 
     private fun poll() {
         try {
-            val raw = IvannaNativeLib.nativeGetUnifiedPipelineStatus() ?: return
-            if (raw.size < 8) return
-            val route = when (raw[0].toInt()) {
+            val raw = IvannaNativeLib.nativeGetUnifiedPipelineStatus()
+
+            // FIX "Ruta A desconectada":
+            // nativeGetUnifiedPipelineStatus devuelve raw[0]=0 (NONE) hasta que el
+            // audio thread nativo procesa el PRIMER bloque de audio. En cold-start,
+            // AudioPipeline ya llamó notifyRouteAStarted() → routeARunning=true,
+            // pero la UI mostraba "Desconocida" porque poll() ignoraba ese flag.
+            // Solución: si native dice NONE pero routeARunning=true → ROUTE_A.
+            // Si JNI no está disponible (null) → mismo fallback.
+
+            if (raw == null || raw.size < 8) {
+                // JNI no disponible: usar solo estado Kotlin
+                if (routeARunning) {
+                    _state.value = _state.value.copy(activeRoute = ActiveRoute.ROUTE_A)
+                }
+                return
+            }
+
+            val nativeRoute = when (raw[0].toInt()) {
                 1    -> ActiveRoute.ROUTE_A
                 2    -> ActiveRoute.ROUTE_B
                 else -> ActiveRoute.NONE
             }
+            // Si native dice NONE pero AudioPipeline confirmó que Ruta A arrancó,
+            // mantenemos ROUTE_A hasta que el audio thread actualice g_activeRoute.
+            val route = if (nativeRoute == ActiveRoute.NONE && routeARunning)
+                ActiveRoute.ROUTE_A else nativeRoute
+
             _state.value = PipelineState(
-                activeRoute   = route,
-                rms           = raw[1],
-                peak          = raw[2],
-                voiceProtect  = raw[3],
-                compAmount    = raw[4],
-                excReduction  = raw[5],
-                spatialWidth  = raw[6],
+                activeRoute    = route,
+                rms            = raw[1],
+                peak           = raw[2],
+                voiceProtect   = raw[3],
+                compAmount     = raw[4],
+                excReduction   = raw[5],
+                spatialWidth   = raw[6],
                 adaptiveActive = raw[7] > 0.5f
             )
         } catch (_: Throwable) {
