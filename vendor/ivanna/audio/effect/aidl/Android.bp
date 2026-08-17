@@ -1,0 +1,33 @@
+cc_library_shared {
+
+    name:
+    "libivanna_audio_effect",
+
+    vendor: true,
+
+
+    srcs:[
+        "IvannaEffect.cpp",
+    ],
+
+
+    shared_libs:[
+
+        "libbinder_ndk",
+
+        "android.hardware.audio.effect-V1-ndk",
+
+    ],
+
+
+    cflags:[
+
+        "-Wall",
+
+        "-Wextra",
+
+        "-std=c++20"
+
+    ]
+
+}

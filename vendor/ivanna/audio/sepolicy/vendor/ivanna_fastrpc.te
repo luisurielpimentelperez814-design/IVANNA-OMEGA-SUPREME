@@ -1,0 +1,25 @@
+
+
+type ivanna_fastrpc,
+    domain;
+
+
+
+allow ivanna_fastrpc
+    vendor_file:file
+    { read open execute };
+
+
+
+allow ivanna_fastrpc
+    ion_device:chr_file
+    rw_file_perms;
+
+
+
+allow ivanna_fastrpc
+    self:process
+    execmem;
+
+
+

@@ -1,0 +1,34 @@
+
+
+service vendor.audio-hal-ivanna \
+    /vendor/bin/hw/android.hardware.audio.core-service.ivanna
+{
+    class hal
+
+    user audioserver
+
+    group audio
+           camera
+           media
+
+    capabilities SYS_NICE
+
+    oneshot
+}
+
+
+
+service vendor.ivanna.dsp \
+    /vendor/bin/ivanna_dsp_service
+{
+
+    class hal
+
+    user root
+
+    group audio
+
+    oneshot
+
+}
+

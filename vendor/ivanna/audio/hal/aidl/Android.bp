@@ -1,0 +1,308 @@
+//
+// IVANNA OMEGA SUPREME
+// Vendor Audio HAL
+// Android AIDL Audio Core + DSP + FastRPC
+//
+
+package {
+    default_applicable_licenses: [
+        "Android-Apache-2.0",
+    ],
+}
+
+
+// ============================================================
+// AIDL Audio HAL Interface
+// android.hardware.audio.core
+// ============================================================
+
+aidl_interface {
+    name: "android.hardware.audio.core.ivanna",
+
+    vendor_available: true,
+
+    srcs: [
+        "IAudioHw.aidl",
+        "IAudioStream.aidl",
+        "IAudioModule.aidl",
+    ],
+
+    stability: "vintf",
+
+    backend: {
+        cpp: {
+            enabled: true,
+        },
+
+        java: {
+            enabled: false,
+        },
+
+        ndk: {
+            enabled: true,
+        },
+    },
+}
+
+
+// ============================================================
+// IVANNA Audio HAL Core
+// Vendor partition shared library
+// ============================================================
+
+cc_library_shared {
+
+    name: "android.hardware.audio.core.ivanna-impl",
+
+    vendor: true,
+
+    relative_install_path: "hw",
+
+    srcs: [
+        "AudioHw.cpp",
+        "Module.cpp",
+    ],
+
+
+    shared_libs: [
+
+        // Android Audio Core AIDL
+        "android.hardware.audio.core.ivanna-V1-ndk",
+
+        // Binder
+        "libbinder_ndk",
+        "libbinder",
+
+        // Audio framework
+        "libaudiohal",
+        "libaudioclient",
+
+        // System
+        "libutils",
+        "libbase",
+        "liblog",
+
+        // Memory
+        "libcutils",
+
+    ],
+
+
+    cflags: [
+
+        "-DANDROID_PLATFORM",
+
+        "-DIVANNA_AUDIO_HAL",
+
+        "-Wno-unused-parameter",
+
+        "-Wall",
+
+        "-Wextra",
+
+    ],
+
+
+    export_include_dirs: [
+        ".",
+    ],
+}
+
+
+
+// ============================================================
+// IVANNA DSP ENGINE
+// Vendor DSP processing library
+// ============================================================
+
+cc_library_shared {
+
+    name: "libivanna_dsp",
+
+    vendor: true,
+
+
+    srcs: [
+
+        "dsp/IvannaDSP.cpp",
+
+        "dsp/DSPPipeline.cpp",
+
+        "dsp/NeuralProcessor.cpp",
+
+        "dsp/SpatialEngine.cpp",
+
+    ],
+
+
+    shared_libs: [
+
+        "liblog",
+
+        "libutils",
+
+        "libcutils",
+
+    ],
+
+
+    cflags: [
+
+        "-DIVANNA_DSP_ENGINE",
+
+        "-O3",
+
+        "-ffast-math",
+
+        "-fvectorize",
+
+    ],
+
+
+    export_include_dirs: [
+
+        "dsp",
+
+    ],
+}
+
+
+
+// ============================================================
+// Qualcomm Hexagon FastRPC Layer
+// DSP firmware bridge
+// ============================================================
+
+cc_library_shared {
+
+    name: "libivanna_fastrpc",
+
+    vendor: true,
+
+
+    srcs: [
+
+        "fastrpc/IvannaFastRPC.cpp",
+
+        "fastrpc/DSPRemote.cpp",
+
+    ],
+
+
+
+    shared_libs: [
+
+        "libadsprpc",
+
+        "liblog",
+
+        "libutils",
+
+    ],
+
+
+
+    cflags: [
+
+        "-DIVANNA_FASTRPC",
+
+        "-DHEXAGON_DSP",
+
+    ],
+
+
+    export_include_dirs: [
+
+        "fastrpc",
+
+    ],
+}
+
+
+
+// ============================================================
+// Complete vendor audio stack
+// HAL + DSP + FastRPC
+// ============================================================
+
+cc_library_shared {
+
+    name: "libivanna_audio_vendor_stack",
+
+    vendor: true,
+
+
+    whole_static_libs: [
+
+    ],
+
+
+    shared_libs: [
+
+        "android.hardware.audio.core.ivanna-impl",
+
+        "libivanna_dsp",
+
+        "libivanna_fastrpc",
+
+    ],
+
+
+    cflags: [
+
+        "-DIVANNA_VENDOR_AUDIO_STACK",
+
+    ],
+}
+
+
+
+// ============================================================
+// VINTF Manifest fragment
+// ============================================================
+
+vintf_fragment {
+
+    name: "ivanna_audio_hal_vintf",
+
+    vendor: true,
+
+    srcs: [
+        "manifest_audio.xml",
+    ],
+}
+
+
+
+cc_binary {
+
+    name: "android.hardware.audio.core.ivanna-service",
+
+    vendor: true,
+
+
+    relative_install_path: "hw",
+
+
+    srcs: [
+        "Module.cpp",
+    ],
+
+
+    shared_libs: [
+
+        "android.hardware.audio.core.ivanna-impl",
+
+        "libbinder_ndk",
+
+        "liblog",
+
+    ],
+
+
+    init_rc: [
+        "android.hardware.audio.core.ivanna.rc",
+    ],
+
+}
+

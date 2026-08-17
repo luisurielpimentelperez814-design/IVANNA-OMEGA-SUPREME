@@ -1,0 +1,30 @@
+
+<audio_effects_conf>
+
+
+<libraries>
+
+    <library
+        name="ivanna"
+        path="libaudioeffect_ivanna.so"/>
+
+
+</libraries>
+
+
+
+<effects>
+
+
+    <effect
+        name="IvannaSpatialDSP"
+        library="ivanna"
+        uuid="4956414e-4e41-4f4d-4547-412d4453500001"/>
+
+
+
+</effects>
+
+
+</audio_effects_conf>
+

@@ -1,0 +1,28 @@
+########################################
+# IVANNA Audio HAL Service
+########################################
+
+
+hal_attribute(
+    ivanna_audio
+)
+
+
+
+type hal_ivanna_audio_hwservice,
+    hwservice_manager_type;
+
+
+
+add_hwservice(
+    hal_ivanna_audio,
+    hal_ivanna_audio_hwservice
+)
+
+
+
+allow hal_ivanna_audio
+hal_ivanna_audio_hwservice:
+hwservice_manager
+{ add find };
+

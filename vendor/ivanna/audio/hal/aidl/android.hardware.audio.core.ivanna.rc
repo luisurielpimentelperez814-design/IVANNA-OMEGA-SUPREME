@@ -1,0 +1,19 @@
+
+service ivanna_audio_hal \
+ /vendor/bin/hw/android.hardware.audio.core.ivanna-service
+
+    class hal
+
+    user audioserver
+
+    group audio camera media
+
+    seclabel u:r:hal_ivanna_audio:s0
+
+    disabled
+
+
+on property:sys.boot_completed=1
+    start ivanna_audio_hal
+
+

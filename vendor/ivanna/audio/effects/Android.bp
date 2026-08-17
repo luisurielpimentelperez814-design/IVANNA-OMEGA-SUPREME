@@ -1,0 +1,64 @@
+
+
+cc_library_shared {
+
+
+    name:
+    "libaudioeffect_ivanna",
+
+
+    vendor:true,
+
+
+    srcs:[
+
+        "ivanna_effect.cpp"
+
+    ],
+
+
+
+    shared_libs:[
+
+        "liblog",
+
+        "libaudioclient",
+
+    ],
+
+
+
+    cflags:[
+
+        "-DIVANNA_EFFECT_HAL",
+
+        "-O3",
+
+    ],
+
+
+
+}
+
+
+
+prebuilt_etc {
+
+
+    name:
+    "ivanna_audio_effects_xml",
+
+
+    vendor:true,
+
+
+    src:
+    "audio_effects.xml",
+
+
+    sub_dir:
+    "audio",
+
+}
+
+

@@ -1,0 +1,46 @@
+
+
+prebuilt_etc {
+
+
+    name:
+    "ivanna_audio_policy_configuration",
+
+
+    vendor:true,
+
+
+    src:
+    "audio_policy_configuration.xml",
+
+
+    sub_dir:
+    "audio"
+
+
+}
+
+
+
+
+prebuilt_etc {
+
+
+    name:
+    "ivanna_audio_effects",
+
+
+    vendor:true,
+
+
+    src:
+    "ivanna_audio_effects.xml",
+
+
+    sub_dir:
+    "audio"
+
+
+}
+
+

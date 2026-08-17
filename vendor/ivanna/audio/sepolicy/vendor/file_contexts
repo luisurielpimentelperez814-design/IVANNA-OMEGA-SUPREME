@@ -1,0 +1,15 @@
+
+
+/vendor/bin/hw/android.hardware.audio.core-service.ivanna
+    u:object_r:hal_ivanna_audio_exec:s0
+
+
+/vendor/bin/ivanna_dsp_service
+    u:object_r:ivanna_dsp_service_exec:s0
+
+
+
+/vendor/lib(64)?/hw/audio\.primary\.ivanna\.so
+    u:object_r:vendor_file:s0
+
+

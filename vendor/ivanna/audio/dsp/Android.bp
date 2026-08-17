@@ -1,0 +1,34 @@
+
+cc_library_shared {
+
+    name: "libivanna_hexagon_rpc",
+
+    vendor: true,
+
+    srcs: [
+        "hexagon/ivanna_audio_skel.c"
+    ],
+
+    export_include_dirs: [
+        "idl"
+    ],
+
+    cflags: [
+        "-DHEXAGON_AUDIO_DSP"
+    ]
+}
+
+
+
+cc_library_shared {
+
+    name: "libivanna_audio_memory",
+
+    vendor: true,
+
+    srcs: [
+        "../memory/IvannaAudioBuffer.cpp"
+    ],
+
+}
+

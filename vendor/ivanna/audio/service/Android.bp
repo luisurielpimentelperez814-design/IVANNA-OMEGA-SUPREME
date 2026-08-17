@@ -1,0 +1,50 @@
+
+cc_binary {
+
+    name:
+    "android.hardware.audio.core-service.ivanna",
+
+    vendor:true,
+
+
+    relative_install_path:
+    "hw",
+
+
+    srcs:[
+
+        "main.cpp"
+
+    ],
+
+
+    shared_libs:[
+
+        "libbinder_ndk",
+        "libbase",
+        "liblog",
+
+        "android.hardware.audio.core-V1-ndk",
+
+        "android.hardware.audio.core.ivanna-impl",
+
+        "libivanna_audio_engine"
+
+    ],
+
+
+    init_rc:[
+
+        "android.hardware.audio.core-service.ivanna.rc"
+
+    ],
+
+
+    vintf_fragments:[
+
+        "android.hardware.audio.core-service.ivanna.xml"
+
+    ]
+
+}
+

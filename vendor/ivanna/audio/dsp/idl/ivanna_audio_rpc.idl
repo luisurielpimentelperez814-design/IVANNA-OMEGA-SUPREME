@@ -1,0 +1,25 @@
+
+interface ivanna_audio_rpc {
+
+    int ivanna_dsp_init();
+
+    int ivanna_dsp_configure(
+        uint32 sample_rate,
+        uint32 channels
+    );
+
+    int ivanna_dsp_process(
+        handle input_buffer,
+        handle output_buffer,
+        uint32 frames
+    );
+
+    int ivanna_dsp_set_parameter(
+        uint32 id,
+        uint32 value
+    );
+
+    int ivanna_dsp_shutdown();
+
+};
+

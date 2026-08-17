@@ -1,0 +1,10 @@
+
+
+android.hardware.audio.core.IModule/default
+    u:object_r:hal_audio_hwservice:s0
+
+
+vendor.ivanna.dsp
+    u:object_r:ivanna_dsp_service:s0
+
+

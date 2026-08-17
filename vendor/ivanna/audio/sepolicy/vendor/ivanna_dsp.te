@@ -1,0 +1,37 @@
+
+
+type ivanna_dsp_service,
+    domain;
+
+
+type ivanna_dsp_service_exec,
+    exec_type,
+    vendor_file_type,
+    file_type;
+
+
+
+init_daemon_domain(
+    ivanna_dsp_service
+)
+
+
+
+allow ivanna_dsp_service
+    hal_ivanna_audio:binder
+    { call transfer };
+
+
+
+allow ivanna_dsp_service
+    ashmem_device:chr_file
+    rw_file_perms;
+
+
+
+allow ivanna_dsp_service
+    ion_device:chr_file
+    rw_file_perms;
+
+
+

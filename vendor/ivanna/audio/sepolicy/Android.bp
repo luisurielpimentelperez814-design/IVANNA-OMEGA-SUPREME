@@ -1,0 +1,15 @@
+
+
+se_policy_cil {
+
+    name:
+    "ivanna_audio_sepolicy",
+
+    srcs:
+    [
+        "vendor/*.te"
+    ]
+
+}
+
+

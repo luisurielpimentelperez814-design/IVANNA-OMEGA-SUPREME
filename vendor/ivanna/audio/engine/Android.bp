@@ -1,0 +1,41 @@
+
+cc_library_shared {
+
+    name:
+    "libivanna_audio_engine",
+
+    vendor:true,
+
+
+    srcs:[
+
+        "IvannaEngineAdapter.cpp"
+
+    ],
+
+
+    shared_libs:[
+
+        "libivanna_fastrpc",
+        "liblog"
+
+    ],
+
+
+    export_include_dirs:[
+
+        "."
+
+    ],
+
+
+    cflags:[
+
+        "-O3",
+        "-ffast-math",
+        "-DANDROID_VENDOR_BUILD"
+
+    ]
+
+}
+

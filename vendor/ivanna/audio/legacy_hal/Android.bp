@@ -1,0 +1,43 @@
+
+cc_library_shared {
+
+    name:
+    "audio.primary.ivanna",
+
+
+    vendor:
+    true,
+
+
+    relative_install_path:
+    "hw",
+
+
+    srcs:
+    [
+        "audio_hw.cpp"
+    ],
+
+
+
+    shared_libs:
+    [
+        "liblog",
+        "libhardware",
+        "libutils",
+        "libbinder_ndk",
+        "libivanna_hexagon_rpc",
+        "libivanna_audio_memory"
+    ],
+
+
+
+    cflags:
+    [
+        "-Wall",
+        "-Wextra",
+        "-Werror"
+    ]
+
+}
+

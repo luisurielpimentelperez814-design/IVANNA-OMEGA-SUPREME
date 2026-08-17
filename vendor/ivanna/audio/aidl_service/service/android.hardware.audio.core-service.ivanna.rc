@@ -1,0 +1,14 @@
+
+
+service android.hardware.audio.core-service.ivanna \
+    /vendor/bin/hw/android.hardware.audio.core-service.ivanna
+
+    class hal
+
+    user system
+
+    group audio
+
+    oneshot
+
+

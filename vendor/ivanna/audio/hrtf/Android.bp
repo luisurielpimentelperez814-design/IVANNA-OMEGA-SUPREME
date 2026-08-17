@@ -1,0 +1,19 @@
+
+prebuilt_etc {
+
+    name:
+    "ivanna_hrtf_sofa",
+
+    vendor:true,
+
+
+    srcs:[
+        "*.sofa"
+    ],
+
+
+    sub_dir:
+    "ivanna/hrtf"
+
+}
+

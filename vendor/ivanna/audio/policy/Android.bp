@@ -1,0 +1,18 @@
+
+prebuilt_etc {
+
+    name:
+    "ivanna_audio_policy_configuration.xml",
+
+    vendor:true,
+
+
+    src:
+    "audio_policy_configuration.xml",
+
+
+    sub_dir:
+    "etc"
+
+}
+

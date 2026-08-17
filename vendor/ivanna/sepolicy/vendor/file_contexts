@@ -1,0 +1,16 @@
+
+
+/vendor/lib(64)?/hw/audio\.primary\.ivanna\.so
+    u:object_r:hal_audio_hw_file:s0
+
+
+
+/vendor/bin/hw/android\.hardware\.audio\.core-service\.ivanna
+    u:object_r:hal_ivanna_audio_exec:s0
+
+
+
+/vendor/lib(64)?/libivanna.*
+    u:object_r:vendor_file:s0
+
+

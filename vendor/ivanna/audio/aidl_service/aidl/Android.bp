@@ -1,0 +1,32 @@
+
+
+aidl_interface {
+
+
+    name:
+    "android.hardware.audio.core.ivanna",
+
+
+    vendor_available:true,
+
+
+    srcs:[
+
+        "android/hardware/audio/core/*.aidl"
+
+    ],
+
+
+
+    backend:{
+
+        cpp:{},
+
+        ndk:{}
+
+    }
+
+
+}
+
+

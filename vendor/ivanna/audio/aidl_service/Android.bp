@@ -1,0 +1,71 @@
+
+
+cc_binary {
+
+
+    name:
+    "android.hardware.audio.core-service.ivanna",
+
+
+
+    vendor:true,
+
+
+
+    relative_install_path:
+    "hw",
+
+
+
+    srcs:[
+
+
+        "service/main.cpp",
+
+
+        "service/Module.cpp"
+
+
+    ],
+
+
+
+
+    shared_libs:[
+
+
+        "libbinder_ndk",
+
+
+        "libbase",
+
+
+        "liblog",
+
+
+        "android.hardware.audio.core-V1-ndk"
+
+
+    ],
+
+
+
+
+    cflags:[
+
+
+        "-Wall",
+
+
+        "-Wextra",
+
+
+        "-Werror"
+
+
+    ]
+
+
+
+}
+
