@@ -34,7 +34,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("EQ", "DINÁMICA", "BINAURAL", "NHO")
+    val tabs = listOf("EQ", "DINÁMICA", "BINAURAL", "NHO", "FFT")
 
     // Estado persistente levantado (bugs C/D/E) — cargado una vez, guardado en cada cambio
     var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
@@ -93,6 +93,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
                 1 -> DynamicsTab(prefs, ::updatePrefs)
                 2 -> BinauralTab(prefs, ::updatePrefs)
                 3 -> NHOTab(prefs, ::updatePrefs)
+                4 -> FftOscilloscopePanel()
             }
         }
     }

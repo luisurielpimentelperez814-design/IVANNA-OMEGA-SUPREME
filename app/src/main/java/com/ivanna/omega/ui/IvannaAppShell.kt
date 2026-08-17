@@ -234,6 +234,7 @@ private fun HomeTab(
             }
         }
         // ── Route + Magisk ──────────────────────────────────────────────
+        item { MasterControlPanel() }
         item {
             SectionCard(title = "SEÑAL Y DAEMON") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

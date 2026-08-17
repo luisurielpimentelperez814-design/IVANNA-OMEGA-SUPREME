@@ -39,7 +39,7 @@ fun BrainScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("ADAPTATIVO", "PERCEPTUAL", "EVOLUTIVO", "LAB")
+    val tabs = listOf("ADAPTATIVO", "PERCEPTUAL", "EVOLUTIVO", "LAB", "PROFILER")
 
     // Bug F fix — estado evolutivo levantado para sobrevivir cambios de tab
     var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
@@ -88,9 +88,10 @@ fun BrainScreen(modifier: Modifier = Modifier) {
         ) {
             when (selectedTab) {
                 0 -> AdaptiveTab()
-                1 -> PerceptualTab()
-                2 -> EvolutionTab(prefs, ::updatePrefs)
+                1 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { PerceptualTab(); TinyMlClassifierPanel() }
+                2 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { EvolutionTab(prefs, ::updatePrefs); CmaEsFitnessPanel() }
                 3 -> LabTab()
+                4 -> NeonProfilerPanel()
             }
         }
     }
