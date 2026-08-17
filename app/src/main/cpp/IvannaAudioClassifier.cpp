@@ -158,7 +158,23 @@ void IvannaAudioClassifier::processInference() noexcept {
             float32x4_t mel = vld1q_f32(&m_melLogEnergies[b]);
             sum = vmlaq_f32(sum, w, mel);
         }
+        // FIX (build CI): vaddvq_f32 es intrinseco EXCLUSIVO de AArch64.
+        // Este bloque esta guardado por __ARM_NEON, pero esa macro TAMBIEN
+        // se define en armeabi-v7a (32-bit) — y abiFilters en
+        // app/build.gradle.kts incluye armeabi-v7a, asi que CI compila
+        // omega_effect para 32-bit y clang aborta con
+        // 'use of undeclared identifier vaddvq_f32'.
+        // En AArch64 mantenemos la reduccion nativa de 1 instruccion;
+        // en v7a usamos el par (vpadd) NEON clasico, identico resultado.
+#if defined(__aarch64__)
         tcnOutput[c] = vaddvq_f32(sum);
+#else
+        // Reduccion pairwise NEON 32-bit: vaddv via vpadd (ARMv7 NEON)
+        float32x2_t lo = vget_low_f32(sum);
+        float32x2_t hi = vget_high_f32(sum);
+        float32x2_t s2 = vpadd_f32(lo, hi);
+        tcnOutput[c] = vget_lane_f32(vpadd_f32(s2, s2), 0);
+#endif
     }
 #else
     for (size_t c = 0; c < TINYML_CHANNELS; ++c) {
