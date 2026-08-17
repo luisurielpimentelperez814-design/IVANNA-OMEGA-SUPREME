@@ -120,6 +120,16 @@ class AudioEngine {
     private external fun nativeSetBypass(bypass: Boolean)
     private external fun nativeSetRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
     private external fun nativeSetManifoldEnabled(enabled: Boolean)
+    // FIX (auditoría 2026-08-17): nativeProcessAudio es la única external fun
+    // de las 201 en todo el proyecto sin símbolo JNI implementado (verificado
+    // cruzando cada external fun contra Java_<paquete>_<clase>_<método> real
+    // en todo app/src/main/cpp) Y sin ningún caller en Kotlin — declarada,
+    // nunca implementada, nunca usada. No se borra (regla del proyecto), mero
+    // marcada para que nadie asuma que este camino de procesamiento in-place
+    // (inArray/outArray por bloque) existe de verdad. El procesamiento real
+    // de audio en AudioEngine pasa por nativeSetGain/nativeSetExciter/etc
+    // (parámetros individuales, sí implementados) — no por un único
+    // process() de bloque como este.
     private external fun nativeProcessAudio(
         inArray: FloatArray,
         outArray: FloatArray,
