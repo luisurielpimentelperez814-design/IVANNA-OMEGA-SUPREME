@@ -436,6 +436,32 @@ static int32_t omega_process(effect_handle_t self,
         }
         offset += chunk;
     }
+
+    // ── Telemetría de audio real → OmegaControlBus local ─────────────────────
+    // Calcula RMS y peak sobre la salida procesada y los escribe en el snapshot
+    // pendiente (ctx->pendingSnap). OmegaControlBus.publish() los propaga via
+    // SHM al proceso de la app, donde audioRouteBridgeLoop() los lee cada 30ms.
+    // Sin esto: audioRouteBridgeLoop() nunca detecta Ruta B activa porque
+    // omega_daemon_get_shared_state() es un stub → UI siempre marca "sin audio".
+    {
+        const float *out = (const float *)inBuffer->raw;
+        const uint32_t outFrames = (uint32_t)frames;
+        float sumSq = 0.0f, pk = 0.0f;
+        for (uint32_t i = 0; i < outFrames * 2u; ++i) {
+            const float s = out[i];
+            sumSq += s * s;
+            if (s > pk) pk = s; else if (-s > pk) pk = -s;
+        }
+        const float rms = (outFrames > 0)
+            ? __builtin_sqrtf(sumSq / (float)(outFrames * 2u)) : 0.0f;
+        ctx->pendingSnap.raw_rms   = rms;
+        ctx->pendingSnap.raw_peak  = pk;
+        ctx->pendingSnap.effect_frames += (uint64_t)outFrames;
+        // publish() es no-op si el daemon no abrió el bus — seguro en ruta caliente
+        if (ctx->localWriterOpen) {
+            ivanna::effectControlBus().publish(ctx->pendingSnap);
+        }
+    }
     return 0;
 }
 
