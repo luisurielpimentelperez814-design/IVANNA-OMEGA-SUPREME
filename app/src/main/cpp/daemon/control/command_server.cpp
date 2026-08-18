@@ -54,11 +54,11 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
     snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
     snap.intensity=s.intensity; snap.listen_phon=s.listen_phon; snap.ref_phon=s.ref_phon;
-    snap.compressor=s.compressor; snap.exciter_reduction=s.exciter_reduction; snap.high_cut_hz=s.high_cut_hz;
-    snap.spatial_width=s.spatial_width; snap.loudness_target=s.loudness_target; snap.harmonic_gain=s.harmonic_gain;
+    snap.compressor=s.compressor; snap.exciter_red=s.exciter_red; snap.high_cut_hz=s.high_cut_hz;
+    snap.spatial_width=s.spatial_width; snap.loudness_tgt=s.loudness_tgt; snap.harmonic_gain=s.harmonic_gain;
     snap.anti_dolby=s.anti_dolby; snap.target_gain=s.target_gain; snap.comp_amount=s.comp_amount; snap.exc_red=s.exc_red;
-    snap.bass_boost_db=s.bass_boost_db; snap.dialog_boost_db=s.dialog_boost_db; snap.widener_mult=s.widener_mult;
-    snap.saf_delta_energy=s.saf_delta_energy; snap.saf_metric_norm=s.saf_metric_norm; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
+    snap.bass_boost=s.bass_boost; snap.dialog_boost=s.dialog_boost; snap.widener_mult=s.widener_mult;
+    snap.saf_delta_e=s.saf_delta_e; snap.saf_metric=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
     snap.room_rt60_s=s.room_rt60_s; snap.room_idx=s.room_idx; snap.room_wet=s.room_wet;
     for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
     for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
@@ -78,7 +78,7 @@ static int buildRichReply(char* buf, int sz, bool ok, const char* command, const
 int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz) {
     if (!json || !reply || reply_sz<2) return 0;
     pthread_mutex_lock(&m_mutex);
-    m_state.last_update_ms = _nowMs();
+    m_state.last_update = _nowMs();
     char action[64]; _jsonAction(json, action, sizeof(action));
     int n=0;
 
@@ -98,14 +98,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.compressor = _jsonFloat(json,"compressor", m_state.compressor);
         float er1 = _jsonFloat(json,"exciterRed", 9999.f);
         float er2 = _jsonFloat(json,"exciterReduction", 9999.f);
-        if (er1!=9999.f) m_state.exciter_reduction = er1; else if (er2!=9999.f) m_state.exciter_reduction = er2;
+        if (er1!=9999.f) m_state.exciter_red = er1; else if (er2!=9999.f) m_state.exciter_red = er2;
         float hc1 = _jsonFloat(json,"highCut", 9999.f);
         float hc2 = _jsonFloat(json,"highCutHz", 9999.f);
         if (hc1!=9999.f) m_state.high_cut_hz = hc1; else if (hc2!=9999.f) m_state.high_cut_hz = hc2;
         m_state.spatial_width = _jsonFloat(json,"spatialWidth", m_state.spatial_width);
         float lt1 = _jsonFloat(json,"loudnessTarget", 9999.f);
         float lt2 = _jsonFloat(json,"loudnessTargetLuFS", 9999.f);
-        if (lt1!=9999.f) m_state.loudness_target = lt1; else if (lt2!=9999.f) m_state.loudness_target = lt2;
+        if (lt1!=9999.f) m_state.loudness_tgt = lt1; else if (lt2!=9999.f) m_state.loudness_tgt = lt2;
         m_state.harmonic_gain = _jsonFloat(json,"harmonicGain", m_state.harmonic_gain);
         float ad1 = _jsonFloat(json,"antiDolby", 9999.f);
         float ad2 = _jsonFloat(json,"antiDolbyIntensity", 9999.f);
@@ -143,14 +143,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             action, (unsigned long long)gen, cons, speech, music, (int)classId, conf);
 
     } else if (strcmp(action,"SET_ROUTE_PROFILE")==0) {
-        m_state.bass_boost_db = _jsonFloat(json,"bassBoostDb", m_state.bass_boost_db);
-        m_state.dialog_boost_db = _jsonFloat(json,"dialogBoostDb", m_state.dialog_boost_db);
+        m_state.bass_boost = _jsonFloat(json,"bassBoostDb", m_state.bass_boost);
+        m_state.dialog_boost = _jsonFloat(json,"dialogBoostDb", m_state.dialog_boost);
         m_state.widener_mult = _jsonFloat(json,"widenerMult", m_state.widener_mult);
         float a = _jsonFloat(json,"a", 9999.f);
         float b = _jsonFloat(json,"b", 9999.f);
         float c = _jsonFloat(json,"c", 9999.f);
-        if (a!=9999.f) m_state.bass_boost_db = a;
-        if (b!=9999.f) m_state.dialog_boost_db = b;
+        if (a!=9999.f) m_state.bass_boost = a;
+        if (b!=9999.f) m_state.dialog_boost = b;
         if (c!=9999.f) m_state.widener_mult = c;
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
@@ -173,8 +173,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             (double)m_state.room_rt60_s, (int)m_state.room_idx, (double)m_state.room_wet);
 
     } else if (strcmp(action,"SET_SAF_STATE")==0 || strcmp(action,"PUSH_SAF_STATE")==0) {
-        m_state.saf_delta_energy = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_energy);
-        m_state.saf_metric_norm = _jsonFloat(json,"metricNorm", m_state.saf_metric_norm);
+        m_state.saf_delta_e = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_e);
+        m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
         m_state.saf_memory = _jsonFloat(json,"memory", m_state.saf_memory);
         m_state.saf_gain = _jsonFloat(json,"gain", m_state.saf_gain);
         uint64_t gen = publishCurrentState(m_state);
@@ -197,7 +197,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             "{\"ok\":true,\"command\":\"PING\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"pong\":true,\"uptime_ms\":%llu,\"error\":null}",
             (unsigned long long)ivanna::controlBus().lastPublishedGeneration(),
             hasActiveConsumer()?"\"omega_effect\"":"null",
-            (unsigned long long)m_state.last_update_ms);
+            (unsigned long long)m_state.last_update);
 
     } else if (strcmp(action,"GET_STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
@@ -206,7 +206,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
-            m_state.harmonic_gain, m_state.anti_dolby, (unsigned long long)m_state.last_update_ms);
+            m_state.harmonic_gain, m_state.anti_dolby, (unsigned long long)m_state.last_update);
 
     } else if (strcmp(action,"GET_HEALTH")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
@@ -235,7 +235,7 @@ CommandServer::~CommandServer() { stop(); pthread_mutex_destroy(&m_mutex); }
 void CommandServer::resetState() {
     pthread_mutex_lock(&m_mutex);
     m_state = kDefaultState;
-    m_state.last_update_ms = _nowMs();
+    m_state.last_update = _nowMs();
     pthread_mutex_unlock(&m_mutex);
 }
 bool CommandServer::start(const std::string& socket_path) {
