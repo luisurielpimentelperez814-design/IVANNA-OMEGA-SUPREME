@@ -325,9 +325,15 @@ class IVANNAApplication : Application() {
         // arranque del motor DSP si falla o tarda (red lenta, etc.).
         appScope.launch {
             try {
+                // HARDENING: proveer path correcto según disponibilidad de root.
+                // RootAccess detecta si /data/adb es accesible; sino usa filesDir sandbox.
+                val profilePath = if (RootAccess.isMagiskPresent())
+                    "/data/adb/ivanna_omega/profile"
+                else
+                    filesDir.absolutePath + "/profile"
                 CloudSyncManager.syncDown(
                       this@IVANNAApplication,
-                      UserProfileManager()
+                      UserProfileManager(profilePath)
                   )
             } catch (e: Exception) {
                 Log.w(TAG, "syncDown en arranque falló (no crítico): ${e.message}")

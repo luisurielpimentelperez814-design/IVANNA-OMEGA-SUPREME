@@ -43,7 +43,16 @@ data class UserProfile(
 }
 
 class UserProfileManager(private val context: Context) {
-    private val profileDir = File("/data/adb/ivanna_omega/profile").also { if (!it.exists()) it.mkdirs() }
+    // HARDENING: /data/adb inaccesible sin root. Se intenta la ruta Magisk;
+    // si no existe (sin root), se usa el directorio sandbox de la app.
+    // El caller debe inyectar context.filesDir cuando no hay root disponible.
+    // Este fallback interno evita FileNotFoundException en dispositivos OEM sin root.
+    private val profileDir = run {
+        val magisk = File("/data/adb/ivanna_omega/profile")
+        val dir = if (magisk.parentFile?.canWrite() == true) magisk
+                  else File(System.getProperty("java.io.tmpdir") ?: "/data/local/tmp", "ivanna_profile")
+        dir.also { if (!it.exists()) it.mkdirs() }
+    }
     private val fallbackDir = File(context.filesDir, "profiles").also { if (!it.exists()) it.mkdirs() }
 
     fun saveProfile(profile: UserProfile): Boolean {

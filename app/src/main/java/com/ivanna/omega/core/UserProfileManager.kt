@@ -20,7 +20,11 @@ data class UserProfile(
 )
 
 class UserProfileManager(
-    private val profileDirectoryPath: String = "/data/adb/ivanna_omega/profile"
+    // HARDENING (distribución global): /data/adb solo es accesible con root/Magisk.
+    // En dispositivos sin root el path por defecto es el filesDir de la app (sandboxed).
+    // El caller provee el path correcto: MagiskBridge pasa /data/adb si tiene acceso,
+    // la Activity pasa context.filesDir.absolutePath + "/profile" en todos los demás casos.
+    private val profileDirectoryPath: String
 ) {
 
     private val profileFile = File(profileDirectoryPath, "user_profile.json")
