@@ -10,6 +10,7 @@
 #include <jni.h>
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
+#include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
