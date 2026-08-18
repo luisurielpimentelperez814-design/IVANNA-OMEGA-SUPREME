@@ -343,7 +343,11 @@ private fun EngineStatusRow(dsp: DSPState) {
     }
 }
 
-@Composable
+// FIX(compile 2026-08-18): la anotación @Composable estaba duplicada
+// literalmente en dos líneas consecutivas. El compilador Kotlin lanza
+// "This annotation is not repeatable" en RouteRow y aborta con exit 1
+// el step de :app:compileDebugKotlin. La anotación debe aparecer una
+// sola vez encima de la función Composable.
 @Composable
 private fun RouteRow(route: PipelineState) {
     // FIX "Ruta A desconectada": mostrar LED de estado + ruta activa.
