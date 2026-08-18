@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collect
 import android.content.Context
 import android.util.Log
+import com.ivanna.omega.core.IvannaNativeLib
 
 data class AudioState(
     val adaptiveMode: AdaptiveMode = AdaptiveMode.NATURAL,
@@ -135,9 +136,60 @@ object AudioStateManager {
         val restored = store.loadParameters()
         _audioState.value = restored
         _audioStateLive.postValue(restored)
+
+        // FIX P1+P4 (auditoría 2026-08-18): el restore anterior solo poblaba
+        // el StateFlow — la UI mostraba los sliders en su posición guardada,
+        // pero el motor DSP nativo seguía con los defaults de arranque. La
+        // app "recordaba" visualmente y sonaba con otros valores. Se empujan
+        // los campos restaurados al nativo una sola vez aquí, en el mismo
+        // punto donde el estado entra en memoria.
+        restoreToNative(restored)
+
         // Guardar en cada cambio (debounced dentro de ParameterStore)
         persistScope.launch {
             _audioState.drop(1).collect { store.saveParametersDebounced(it) }
         }
+    }
+
+    /**
+     * Empuja un AudioState restaurado al motor nativo (libivanna_omega.so).
+     *
+     * No-op seguro si la librería no cargó (IvannaNativeLib.isLoaded=false) —
+     * el DSP nativo no existe en ese contexto y no hay nada que restaurar.
+     * Cada setter va en runCatching individual: un JNI ausente o un valor
+     * fuera de rango en un campo no debe abortar el restore de los demás.
+     *
+     * Se llama SOLO desde attachPersistence (una vez por arranque del
+     * proceso). No llamar desde updateState — eso re-escribiría el nativo
+     * en cada tick de slider (el DSP ya se actualiza por su propio camino:
+     * DSPState.pushToNative / AdaptiveBackend).
+     */
+    private fun restoreToNative(state: AudioState) {
+        if (!IvannaNativeLib.isLoaded) {
+            Log.d(TAG, "restoreToNative: lib no cargada — restore nativo omitido")
+            return
+        }
+        runCatching {
+            IvannaNativeLib.nativeSetEQParams(
+                state.eqBass, state.eqMid, state.eqTreble, state.masterGain)
+        }.onFailure { Log.w(TAG, "restore EQ falló: ${it.message}") }
+        runCatching {
+            IvannaNativeLib.nativeSetCompressorParams(
+                state.compressorThreshold, state.compressorRatio,
+                state.compressorAttack, state.compressorRelease)
+        }.onFailure { Log.w(TAG, "restore compressor falló: ${it.message}") }
+        runCatching {
+            IvannaNativeLib.nativeSetSpatialWidthDirect(state.spatialWidth)
+        }.onFailure { Log.w(TAG, "restore spatialWidth falló: ${it.message}") }
+        runCatching {
+            IvannaNativeLib.nativeSetSpatialWet(state.spatialIntensity)
+        }.onFailure { Log.w(TAG, "restore spatialIntensity falló: ${it.message}") }
+        runCatching {
+            IvannaNativeLib.nativeSetHarmonicGain(state.exciterAmount)
+        }.onFailure { Log.w(TAG, "restore exciter falló: ${it.message}") }
+        Log.i(TAG, "restoreToNative: estado restaurado al DSP " +
+            "(eq=[${state.eqBass},${state.eqMid},${state.eqTreble}] " +
+            "master=${state.masterGain} comp=${state.compressorThreshold}dB/${state.compressorRatio} " +
+            "width=${state.spatialWidth} wet=${state.spatialIntensity} exc=${state.exciterAmount})")
     }
 }
