@@ -26,11 +26,13 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // signingConfig configurado via IVANNA_KEYSTORE_* env vars en CI/distribución
+            // No usar debug key en release — inaceptable para distribución OEM
         }
         debug {
             isDebuggable = true
