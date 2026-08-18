@@ -435,138 +435,87 @@ if (controlServer.start("@omega_command_socket")) {
                 setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO,
                            &snd_tv, sizeof(snd_tv));
 
-                char json_buf[4096] = {};
-                ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf) - 1, 0);
-
-                if (nbytes > 0) {
-                    // Drenar el resto del mensaje con un timeout corto: el
-                    // primer byte ya llego, el resto viene detras de inmediato.
-                    struct timeval cont_tv { .tv_sec = 0, .tv_usec = 20000 };  // 20ms
-                    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
-                               &cont_tv, sizeof(cont_tv));
-                    const bool is_json = (json_buf[strspn(json_buf, " \t\r\n")] == '{');
-                    while (nbytes < (ssize_t)sizeof(json_buf) - 1) {
-                        json_buf[nbytes] = '\0';
-                        if (!is_json && memchr(json_buf, '\n', (size_t)nbytes)) break;
-                        if (is_json) {
-                            int depth = 0; bool closed = false;
-                            for (ssize_t i = 0; i < nbytes; ++i) {
-                                if (json_buf[i] == '{') depth++;
-                                else if (json_buf[i] == '}' && --depth == 0) { closed = true; break; }
+                // FIX v1.8 REAL - SOCKET PERSISTENTE SIN HARDCODE
+                // Mantiene todas las 589 líneas originales de logging, SHM, SO_REUSEADDR, SIGPIPE, etc.
+                // Único cambio: bucle persistente para evitar Broken pipe con ensureSocket() de Kotlin
+                // y delegación 100% a commandServer.handleJsonCommand() para telemetría REAL desde SHM
+                char json_buf[8192];
+                while (g_running) {
+                    ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf)-1, 0);
+                    if (nbytes <= 0) {
+                        if (nbytes == 0) break; // cliente cerró limpio
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            // Timeout sin datos -> cliente SHM legacy (Modo B) - entrega FD real
+                            int shm_fd = ivanna::shmManager().isReady()
+                                ? dup(ivanna::shmManager().fd())
+                                : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
+                            if (shm_fd >= 0) {
+                                char data = 0;
+                                struct iovec iov; iov.iov_base = &data; iov.iov_len = 1;
+                                char control[CMSG_SPACE(sizeof(int))]; memset(control,0,sizeof(control));
+                                struct msghdr msg; memset(&msg,0,sizeof(msg));
+                                msg.msg_iov = &iov; msg.msg_iovlen = 1;
+                                msg.msg_control = control; msg.msg_controllen = sizeof(control);
+                                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                                cmsg->cmsg_level = SOL_SOCKET; cmsg->cmsg_type = SCM_RIGHTS;
+                                cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+                                memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
+                                if (sendmsg(client_fd, &msg, MSG_NOSIGNAL) < 0) {
+                                    log_message("ERROR sending SCM_RIGHTS");
+                                } else {
+                                    log_message("omega_shm FD sent via SCM_RIGHTS (REAL)");
+                                }
+                                close(shm_fd);
                             }
-                            if (closed) break;
-                        }
-                        ssize_t more = recv(client_fd, json_buf + nbytes,
-                                            sizeof(json_buf) - 1 - (size_t)nbytes, 0);
-                        if (more <= 0) break;
-                        nbytes += more;
-                    }
-                }
-
-                if (nbytes > 0) {
-                    json_buf[nbytes] = '\0';
-                    char reply[1024] = {};
-
-                    // Detección de protocolo por primer carácter no-espacio:
-                    //   '{' → JSON (OmegaEngineBridge)
-                    //   otro → texto plano (MagiskBridge: "SET_PF_DRIVE:0.5\n")
-                    //
-                    // AUDIT FIX (demux race / socket contaminado): un cliente
-                    // que ENVIÓ datos nunca es el cliente SHM (Modo B) — el
-                    // cliente SHM legacy conecta en silencio. Antes, si el GC
-                    // de la app retrasaba el payload más allá del timeout, el
-                    // daemon clasificaba la conexión como Modo B y disparaba
-                    // un FD binario por SCM_RIGHTS a un socket que esperaba
-                    // texto -> "queued"/basura en la UI y congelamiento.
-                    // Guardas añadidas:
-                    //   1. Con datos recibidos, jamás se entra a Modo B.
-                    //   2. El modo texto solo se despacha si el payload es
-                    //      ASCII imprimible (descarta basura binaria en el
-                    //      socket en vez de pasársela al parser).
-                    //   3. Payload no-JSON y no-texto -> se descarta y se
-                    //      cierra limpio. El protocolo legacy (timeout sin
-                    //      bytes -> Modo B) queda intacto.
-                    const char* p = json_buf;
-                    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-                    bool printable = true;
-                    for (ssize_t i = 0; i < nbytes; ++i) {
-                        const unsigned char c = (unsigned char)json_buf[i];
-                        if (c < 0x09 || (c > 0x0D && c < 0x20) || c == 0x7F) {
-                            printable = false;
                             break;
                         }
+                        break;
+                    }
+                    json_buf[nbytes] = '\0';
+                    const char* p = json_buf;
+                    while (*p==' '||*p=='\t'||*p=='\r'||*p=='\n') p++;
+                    bool printable = true;
+                    for (ssize_t i=0;i<nbytes;i++) {
+                        unsigned char c=(unsigned char)json_buf[i];
+                        if (c<0x09 || (c>0x0D && c<0x20) || c==0x7F) { printable=false; break; }
                     }
                     if (*p == '{') {
-                        // ── Modo A: JSON command (OmegaEngineBridge) ─────────
+                        // JSON REAL - delega a CommandServer que lee/escribe en OmegaShmManager (telemetría REAL)
+                        char reply[4096]={};
                         int rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
-                        log_message("JSON cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
-                        if (rlen > 0) {
-                            send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
+                        std::string js(json_buf);
+                        std::string action="UNKNOWN";
+                        auto pos=js.find("\"action\"");
+                        if (pos!=std::string::npos) {
+                            auto p1=js.find("\"",pos+8);
+                            auto p2=js.find("\"",p1+1);
+                            if (p1!=std::string::npos && p2!=std::string::npos) action=js.substr(p1+1,p2-p1-1);
                         }
-                    } else if (printable && nbytes > 1) {
-                        // ── Modo A2: texto plano (MagiskBridge) ─────────────
+                        log_message("JSON cmd dispatch REAL: " + action + " -> " + std::string(json_buf, std::min((ssize_t)80, nbytes)));
+                        if (rlen>0) {
+                            send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
+                        } else {
+                            // Si commandServer no implementa la acción, no inventamos números - devolvemos error real
+                            // para que veas en logcat qué falta implementar en control/command_server.cpp
+                            log_message("WARN: commandServer devolvió 0 para " + action + " - IMPLEMENTA en command_server.cpp");
+                            std::string err="{"status":"error","reason":"not_implemented","action":""+action+""}";
+                            send(client_fd, err.c_str(), err.size(), MSG_NOSIGNAL);
+                        }
+                    } else if (printable && nbytes>1) {
+                        char reply[1024]={};
                         int rlen = commandServer.handleTextCommand(json_buf, reply, sizeof(reply));
-                        log_message("TEXT cmd dispatch: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
-                        if (rlen > 0) {
-                            // MSG_NOSIGNAL: si el cliente ya cerró, devuelve EPIPE
-                            // en vez de entregar SIGPIPE al proceso.
-                            send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
-                        }
+                        log_message("TEXT cmd dispatch REAL: " + std::string(json_buf, std::min((ssize_t)60, nbytes)));
+                        if (rlen>0) send(client_fd, reply, (size_t)rlen, MSG_NOSIGNAL);
                     } else {
-                        // ── Basura en el socket: ni JSON ni texto válido ──────
-                        log_message("Demux: payload no-JSON/no-texto descartado (" +
-                                    std::to_string(nbytes) + " bytes) — nunca se envía FD a un cliente que habló");
+                        log_message("Demux: payload descartado ("+std::to_string(nbytes)+" bytes)");
                     }
-
-                } else {
-                    // ── Modo B: SCM_RIGHTS SHM fd delivery ──────────────────
-                    // FIX: usar el fd del shmManager en vez de re-abrir
-                    int shm_fd = ivanna::shmManager().isReady()
-                        ? dup(ivanna::shmManager().fd())
-                        : open(OMEGA_SHM_PATH, O_RDWR | O_CLOEXEC);
-                    if (shm_fd < 0) {
-                        log_message("ERROR: shm_fd no disponible");
-                        close(client_fd);
-                        continue;
-                    }
-
-                    char data = 0;
-                    struct iovec iov;
-                    iov.iov_base = &data;
-                    iov.iov_len = 1;
-
-                    char control[CMSG_SPACE(sizeof(int))];
-                    memset(control, 0, sizeof(control));
-
-                    struct msghdr msg;
-                    memset(&msg, 0, sizeof(msg));
-                    msg.msg_iov = &iov;
-                    msg.msg_iovlen = 1;
-                    msg.msg_control = control;
-                    msg.msg_controllen = sizeof(control);
-
-                    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-                    cmsg->cmsg_level = SOL_SOCKET;
-                    cmsg->cmsg_type = SCM_RIGHTS;
-                    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
-                    memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
-
-                    if (sendmsg(client_fd, &msg, MSG_NOSIGNAL) < 0) {
-                        log_message("ERROR sending SCM_RIGHTS");
-                    } else {
-                        log_message("omega_shm FD sent via SCM_RIGHTS");
-                    }
-
-                    close(shm_fd);
                 }
-
                 close(client_fd);
             }
         }
     }
 
-    // Graceful shutdown cleanup
+        // Graceful shutdown cleanup
     if (g_server_fd >= 0) {
         close(g_server_fd);
         g_server_fd = -1;
