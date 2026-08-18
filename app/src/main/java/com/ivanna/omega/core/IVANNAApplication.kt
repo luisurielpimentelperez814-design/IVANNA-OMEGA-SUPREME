@@ -327,7 +327,7 @@ class IVANNAApplication : Application() {
             try {
                 // HARDENING: proveer path correcto según disponibilidad de root.
                 // RootAccess detecta si /data/adb es accesible; sino usa filesDir sandbox.
-                val profilePath = if (RootAccess.isMagiskPresent())
+                val profilePath = if (RootAccess.cachedRoot || RootAccess.suBinaryVisible())
                     "/data/adb/ivanna_omega/profile"
                 else
                     filesDir.absolutePath + "/profile"
