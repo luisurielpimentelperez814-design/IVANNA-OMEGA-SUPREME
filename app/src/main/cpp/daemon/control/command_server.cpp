@@ -54,11 +54,11 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
     snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
     snap.intensity=s.intensity; snap.listen_phon=s.listen_phon; snap.ref_phon=s.ref_phon;
-    snap.compressor=s.compressor; snap.exciter_red=s.exciter_red; snap.high_cut_hz=s.high_cut_hz;
-    snap.spatial_width=s.spatial_width; snap.loudness_tgt=s.loudness_tgt; snap.harmonic_gain=s.harmonic_gain;
+    snap.compressor=s.compressor; snap.exciter_reduction=s.exciter_red; snap.high_cut_hz=s.high_cut_hz;
+    snap.spatial_width=s.spatial_width; snap.loudness_target=s.loudness_tgt; snap.harmonic_gain=s.harmonic_gain;
     snap.anti_dolby=s.anti_dolby; snap.target_gain=s.target_gain; snap.comp_amount=s.comp_amount; snap.exc_red=s.exc_red;
-    snap.bass_boost=s.bass_boost; snap.dialog_boost=s.dialog_boost; snap.widener_mult=s.widener_mult;
-    snap.saf_delta_e=s.saf_delta_e; snap.saf_metric=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
+    snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
+    snap.saf_delta_energy=s.saf_delta_e; snap.saf_metric_norm=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
     snap.room_rt60_s=s.room_rt60_s; snap.room_idx=s.room_idx; snap.room_wet=s.room_wet;
     for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
     for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
