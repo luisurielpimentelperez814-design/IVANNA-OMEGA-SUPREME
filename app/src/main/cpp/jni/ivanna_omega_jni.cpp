@@ -268,14 +268,23 @@ static void audioRouteBridgeLoop() {
             peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
         } else {
             // Fallback Ruta B: leer el bus local del efecto (audioserver).
-            static bool s_busTried = false;
-            static bool s_busOpen  = false;
-            if (!s_busTried) {
-                s_busTried = true;
-                s_busOpen  = ivanna::effectControlBus().openReader(
-                                 ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
+            // HARDENING: reintentar apertura del bus si omega_effect se reinicia.
+            // La version anterior usaba s_busTried=true una sola vez — si el efecto
+            // no estaba listo en el primer ciclo, nunca se reintentaba.
+            // Con backoff de 1s: seguro en hilo de telemetria (no es audio callback).
+            static bool     s_busOpen = false;
+            static uint64_t s_retryMs = 0;
+            if (!s_busOpen) {
+                auto nowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                if (nowMs >= s_retryMs) {
+                    s_busOpen = ivanna::effectControlBus().openReader(
+                                    ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
+                    s_retryMs = nowMs + 1000ULL;
+                }
             }
-            if (!s_busOpen) continue;  // ni daemon ni bus local — offline real
+            if (!s_busOpen) continue;  // bus no disponible — retry en siguiente ciclo
             static uint64_t s_lastGen = 0;
             ivanna::OmegaDspSnapshot snap{};
             // readLatest es lock-free (seqlock); si no hay generation nueva,
