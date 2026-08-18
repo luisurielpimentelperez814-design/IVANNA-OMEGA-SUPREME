@@ -93,15 +93,11 @@ object BenchmarkRunner {
         samples.sort()
         val median = samples[samples.size / 2]
         val p99 = samples[minOf((samples.size * 0.99).toInt(), samples.size - 1)]
-        // Consumo por benchmark_device.sh (best-effort: /data/local/tmp puede
-        // no ser escribible sin root; filesDir siempre lo es).
-        runCatching {
-            File("/data/local/tmp/ivanna_dsp_roundtrip_us.json")
-                .writeText("{\"dsp_roundtrip_us\": $median}")
-        }
+        // HARDENING: /data/local/tmp requiere shell/root en Android 10+.
+        // Solo filesDir (sandbox seguro, siempre escribible, borrado al desinstalar).
         runCatching {
             File(context.filesDir, "dsp_roundtrip_us.json")
-                .writeText("{\"dsp_roundtrip_us\": $median, \"p99_us\": $p99}")
+                .writeText("{\"dsp_roundtrip_us\": $median, \"p99_us\": $p99, \"n\": ${samples.size}}")
         }
         Log.i(TAG, "DSP round-trip: median=${median}us p99=${p99}us (n=${samples.size})")
         return median to p99
