@@ -177,8 +177,17 @@ struct OmegaDspSnapshot {
     // bit 3: anti_dolby_on
     uint32_t flags;
 
+    // ── Telemetría de audio real (Ruta B) ────────────────────────────────────
+    // Escritos por omega_effect.cpp en el proceso audioserver (cada bloque DSP).
+    // Leídos por audioRouteBridgeLoop() en el proceso de la app vía OmegaControlBus.
+    // Sin estos campos, audioRouteBridgeLoop() nunca detecta Ruta B activa aunque
+    // sí esté procesando — por eso la UI marcaba "sin audio" con Ruta B viva.
+    float    raw_rms;          // RMS del bloque actual [0, 1] — 0 = silencio
+    float    raw_peak;         // Peak del bloque actual [0, 1]
+    uint64_t effect_frames;    // Total de frames procesados por omega_effect (monotónico)
+
     // ── Integridad ────────────────────────────────────────────────────────────
-    uint32_t crc32;            // CRC32 de bytes [magic .. flags] inclusive
+    uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -200,6 +209,9 @@ struct OmegaDspSnapshot {
         s.saf_gain        = 1.f;
         s.consumer_generation = 0;
         s.flags = 0;
+        s.raw_rms      = 0.0f;
+        s.raw_peak     = 0.0f;
+        s.effect_frames = 0ULL;
         s.stampCrc();
         return s;
     }
