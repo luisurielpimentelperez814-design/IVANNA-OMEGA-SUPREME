@@ -32,6 +32,10 @@ add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 # Target: libivanna_omega.so (APK NDK library)
 # ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
+    # Bus SHM seqlock — reader del bus local del efecto (Ruta B,
+    # telemetría UI "SIN AUDIO"). Antes NO se enlazaba en este target:
+    # audioRouteBridgeLoop() no podía abrir OMEGA_EFFECT_LOCAL_BUS_PATH.
+    daemon/core/omega_control_bus.cpp
     saf_optimizer.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp

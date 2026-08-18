@@ -252,9 +252,42 @@ static void audioRouteBridgeLoop() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
-        if (!shared) continue;  // daemon aún no arrancó/mapeó memoria en este proceso
-        const float rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
-        const float peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+        // ── FIX (UI "SIN AUDIO" con motor procesando, Ruta B sin daemon) ──
+        // omega_daemon_get_shared_state() es un stub que siempre devuelve
+        // nullptr cuando el daemon no corre (dispositivo sin root o módulo
+        // sin daemon). Pero omega_effect SÍ publica telemetría real
+        // (raw_rms/raw_peak/effect_frames) en su bus local SHM
+        // OMEGA_EFFECT_LOCAL_BUS_PATH desde 865c53c6. El canal previsto por
+        // la arquitectura ES ese bus seqlock (no hay canal alternativo: el
+        // socket del daemon no existe sin daemon). La app lo lee como
+        // READER lock-free — mismo mecanismo, sin IPC nuevo.
+        float rms = 0.0f, peak = 0.0f;
+        if (shared) {
+            rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
+            peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+        } else {
+            // Fallback Ruta B: leer el bus local del efecto (audioserver).
+            static bool s_busTried = false;
+            static bool s_busOpen  = false;
+            if (!s_busTried) {
+                s_busTried = true;
+                s_busOpen  = ivanna::effectControlBus().openReader(
+                                 ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
+            }
+            if (!s_busOpen) continue;  // ni daemon ni bus local — offline real
+            static uint64_t s_lastGen = 0;
+            ivanna::OmegaDspSnapshot snap{};
+            // readLatest es lock-free (seqlock); si no hay generation nueva,
+            // reusamos la última lectura (lastRms/lastPeak ya la filtran).
+            if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
+                rms  = snap.raw_rms;
+                peak = snap.raw_peak;
+            } else if (lastRms < 0.0f) {
+                continue;  // bus abierto pero jamás publicó — sin audio aún
+            } else {
+                rms = lastRms; peak = lastPeak;  // sin novedad: conservar
+            }
+        }
         // Silencio absoluto sostenido (o sin cambios desde la última
         // lectura) → omega_effect probablemente no está procesando audio
         // real ahora mismo (nadie reproduciendo, o efecto en bypass). No
@@ -270,7 +303,7 @@ static void audioRouteBridgeLoop() {
         // excursión positiva (AGC compensando señal débil) no es
         // "reducción" y se descarta a 0.
         float grDb = 0.0f;
-        if (shared->ai_enabled.load(std::memory_order_relaxed)) {
+        if (shared && shared->ai_enabled.load(std::memory_order_relaxed)) {
             const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
             grDb = gainDb < 0.0f ? -gainDb : 0.0f;
         }

@@ -198,8 +198,9 @@ struct omega_effect_context_t {
 // /data/adb/ivanna_omega/... — path root-only. El writer local usa una
 // región propia por-proceso (audioserver), NUNCA la del daemon: dos writers
 // concurrentes romperían el seqlock. Solo se abre si openReader() falló.
+// Path unificado en include/omega_control_bus.h (OMEGA_EFFECT_LOCAL_BUS_PATH).
 static constexpr const char* OMEGA_LOCAL_BUS_PATH =
-    "/data/local/tmp/omega_effect_ctrl_local";
+    ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH;
 
 // Publica ctx->pendingSnap al bus local (writer local del efecto), o aplica
 // directo si el writer aún no está abierto. Idempotente: si el reader
