@@ -32,6 +32,9 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
     var currentGen  by remember { mutableIntStateOf(0) }
     var isRunning   by remember { mutableStateOf(false) }
     var stepSize    by remember { mutableFloatStateOf(0.10f) }
+    // Rango dinámico para normalización adaptativa de la curva
+    var fitnessMin  by remember { mutableDoubleStateOf(Double.MAX_VALUE) }
+    var fitnessMax  by remember { mutableDoubleStateOf(Double.MIN_VALUE) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -41,7 +44,13 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                     val gen = IvannaNativeLib.nativeGetGeneration()
                     val run = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
                     bestFitness = bf; currentGen = gen; isRunning = run
-                    val norm = ((bf + 1.0) / 1.0).coerceIn(0.0, 1.0).toFloat()
+                    // Normalización adaptativa: rango crece con los valores observados.
+                    // La normalización fija (bf+1)/1 comprimía todo a ~1.0 cuando
+                    // bestFitness > 0, dejando la curva pegada al tope del canvas.
+                    if (bf < fitnessMin) fitnessMin = bf
+                    if (bf > fitnessMax) fitnessMax = bf
+                    val range = (fitnessMax - fitnessMin).coerceAtLeast(0.001)
+                    val norm = ((bf - fitnessMin) / range).coerceIn(0.0, 1.0).toFloat()
                     if (fitnessHistory.size >= 80) fitnessHistory.removeFirst()
                     fitnessHistory.addLast(norm)
                 }
