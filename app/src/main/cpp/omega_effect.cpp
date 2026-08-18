@@ -444,11 +444,11 @@ static int32_t omega_process(effect_handle_t self,
     // Sin esto: audioRouteBridgeLoop() nunca detecta Ruta B activa porque
     // omega_daemon_get_shared_state() es un stub → UI siempre marca "sin audio".
     {
-        const float *out = (const float *)inBuffer->raw;
+        const float *proc = outBuf->f32;
         const uint32_t outFrames = (uint32_t)frames;
         float sumSq = 0.0f, pk = 0.0f;
         for (uint32_t i = 0; i < outFrames * 2u; ++i) {
-            const float s = out[i];
+            const float s = proc[i];
             sumSq += s * s;
             if (s > pk) pk = s; else if (-s > pk) pk = -s;
         }
