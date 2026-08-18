@@ -111,9 +111,32 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
                 .clip(RoundedCornerShape(8.dp)).background(ObsidianVoid)) {
                 val nBands = 64; val bw = size.width / nBands
                 val real = bandEnergies
+                // FIX: nativeGetBandEnergies devuelve solo 3 bandas (low/mid/high).
+                // Con 3 valores, las 61 barras restantes eran 0 → espectro casi vacío.
+                // Solución: interpolar las 3 bandas a 64 con curva de forma espectral
+                // plausible (más energía en bajos, declive natural hacia agudos).
+                val bands64 = FloatArray(nBands) { i ->
+                    if (real != null && real.size >= 3) {
+                        val t = i / (nBands - 1).toFloat()  // 0..1
+                        // Bandas reales: low=[0..21], mid=[22..42], high=[43..63]
+                        val e = when {
+                            i < 22 -> real[0] * (1f - t * 0.4f)  // bajos con caída suave
+                            i < 43 -> {
+                                val tm = (i - 22f) / 21f
+                                real[0] * (1f - tm) * 0.6f + real[1] * tm  // cruce bajo→mid
+                            }
+                            else   -> {
+                                val th = (i - 43f) / 21f
+                                real[1] * (1f - th) * 0.7f + real[2] * th  // cruce mid→high
+                            }
+                        }
+                        e.coerceIn(0f, 1f)
+                    } else {
+                        fftFallback(i, nBands, signal, fundHz)
+                    }
+                }
                 for (i in 0 until nBands) {
-                    val e = if (real != null && i < real.size) real[i].coerceIn(0f, 1f)
-                            else fftFallback(i, nBands, signal, fundHz)
+                    val e = bands64[i]
                     drawRect(AmberSignal.copy(alpha = 0.4f + e * 0.6f),
                         topLeft = Offset(i * bw + 1f, size.height - e * size.height),
                         size = Size(bw - 2f, e * size.height))
