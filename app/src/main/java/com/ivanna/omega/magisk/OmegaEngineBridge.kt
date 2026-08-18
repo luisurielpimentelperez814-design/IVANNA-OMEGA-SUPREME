@@ -92,6 +92,7 @@ object OmegaEngineBridge {
         }
     }
 
+    // --- API EXISTENTE ---
     fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
     fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",targetGain.toDouble()); put("compAmount",compAmount.toDouble()); put("excRed",excRed.toDouble()); put("timestamp",System.currentTimeMillis()) })
     fun setRoom(rt60S: Float, wet: Float = 0.35f, roomIdx: Int = -1): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S.toDouble()); put("wet",wet.toDouble()); put("idx",roomIdx) })
@@ -101,6 +102,29 @@ object OmegaEngineBridge {
         val resp = requestCommand(JSONObject().apply { put("action","GET_STATUS") })
         return if (resp!= null) "Omega OK latency=${"%.1f".format(lastLatencyMs)}ms" else "Omega OFFLINE"
     }
+
+    // --- METODOS QUE TE FALTABAN Y ROMPIAN LA BUILD ---
+    fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity.toDouble()) })
+    fun setIntensity(intensity: Double): Boolean = setIntensity(intensity.toFloat())
+    fun setIntensity(intensity: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity.toString()) })
+
+    fun pushSAFState(state: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", state.toString()) })
+    fun pushSAFState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", json) })
+
+    fun sendPerceptualState(state: Any): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("state", state.toString()) })
+    fun sendPerceptualState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("state", json) })
+
+    fun setRouteProfile(profile: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("profile", profile.toString()) })
+    fun setRouteProfile(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("profile", json) })
+
+    fun pushYamnetScores(scores: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.toString()) })
+    fun pushYamnetScores(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", json) })
+    fun pushYamnetScores(scores: FloatArray): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.toList()) })
+    fun pushYamnetScores(scores: List<Float>): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores) })
+
+    fun setPinnaMetrics(metrics: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("metrics", metrics.toString()) })
+    fun setPinnaMetrics(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("metrics", json) })
+
     fun disconnect() { isConnected = false; runCatching { persistentSocket?.close() }; persistentSocket = null }
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
