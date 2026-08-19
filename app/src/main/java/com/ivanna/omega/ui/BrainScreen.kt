@@ -302,7 +302,7 @@ private fun LabTab() {
                         if (i < m.size) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(lbl, color = TextSecondary, fontSize = 10.sp)
-                                Text("%.4f".format(m[i]), color = NeonMagenta, fontSize = 10.sp,
+                                Text(if (m[i] == -1f) "—" else "%.4f".format(m[i]), color = NeonMagenta, fontSize = 10.sp,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                             }
                         }
