@@ -29,6 +29,21 @@ SOFA (30 años) → PCA Pinna → SaF Riemannian → HRTF Personalizada → RIR 
 
 ---
 
+---
+
+### 🛰 COBERTURA POR RUTA — SAF / SOFA / RIR (estado real, verificado en código)
+
+Dos rutas de audio con capacidades distintas. Sin afirmaciones aspiracionales:
+
+| Componente | Ruta A (app, `nativeProcess`) | Ruta B (audioserver, system-wide) |
+| :--- | :--- | :--- |
+| **SAF Φ_SAF∞** — morph latente q[7] → ObjectRenderer | ✅ completo | ➖ no aplica (q[7] no cabe en el bus seqlock sin cambio de ABI) |
+| **SAF** — escalares `saf_gain` / `saf_delta_energy` | ✅ | ✅ aplicados en `omega_apply_snapshot()` — modulación del harmonic gain (clamp 0.5–2.0, SafetyLimiter al final) |
+| **SOFA** (`SafHRTFBridge`) | ✅ activo | ⏸ compilado, no cargado en Ruta B |
+| **RIR** — `RirDataset` (200 salas) + `RirConvolver` (overlap-save FFT) | ⏸ no cableado | ✅ activo (`SET_ROOM_RT60` → sala por RT60 → convolver por instancia) |
+| **Bus de control SHM** (seqlock + CRC32 + route arbiter) | ✅ reader del bus local del efecto | ✅ writer (daemon) + reader (efecto) |
+| **Telemetría** (raw_rms / raw_peak / effect_frames) | ✅ la app lee el bus local del efecto aun sin daemon | ✅ escrita por `omega_effect` por bloque |
+
 ### 📦 30 AÑOS DE METADATA — SOFA (Spatially Oriented Format for Acoustics)
 
 No usamos perfiles genéricos. Usamos el estándar AES para HRTF: **SOFA v2.0**.
