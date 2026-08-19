@@ -1,6 +1,7 @@
 #pragma once
 #include "IvannaFusionCore.hpp"
 #include "HRTFBinLoader.hpp"
+#include <algorithm>  // FIX: std::clamp usado en setSafLatentQ() sin este include
 #include <atomic>
 #include <cstring>
 
