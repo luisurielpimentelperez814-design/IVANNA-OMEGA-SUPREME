@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include "HrtfManager.hpp
 #include <cstdint>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -33,7 +34,6 @@ public:
     virtual void setParameter(uint32_t paramId, float value) { (void)paramId; (void)value; }
 };
 
-class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
