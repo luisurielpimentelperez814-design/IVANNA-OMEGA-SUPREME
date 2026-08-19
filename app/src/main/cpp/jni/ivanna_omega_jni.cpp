@@ -323,9 +323,19 @@ static void audioRouteBridgeLoop() {
         // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado.
         // Ahora viene de BandEnergyMeter (omega_daemon.cpp::processLoop()),
         // 3 filtros IIR reales sobre la señal seca — ver ese archivo.
-        rawM.band_low_energy   = shared->ai_band_low.load(std::memory_order_relaxed);
-        rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
-        rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
+        // AUDIT FIX (SIGSEGV en fallback sin daemon): cuando shared == nullptr
+        // (stub activo, telemetría leída del bus local del efecto), el código
+        // anterior dereferenciaba shared->ai_band_* sin verificar -> crash
+        // garantizado en el hilo puente en todo dispositivo sin daemon
+        // (el escenario "SIN AUDIO": la app moría aquí antes de publicar la
+        // telemetría que SÍ había leído del bus local). Band energy solo
+        // existe en la región legacy del daemon; con bus local se reporta 0
+        // y voice_score deriva a 0 por bandTotal=1e-6 (seguro).
+        if (shared) {
+            rawM.band_low_energy   = shared->ai_band_low.load(std::memory_order_relaxed);
+            rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
+            rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
+        }
         rawM.gain_reduction_db = grDb;
         // FIX (telemetría Compression/Voice Prot congelada en 0%): omega_effect
         // corre en el proceso de audioserver y no puede correr
