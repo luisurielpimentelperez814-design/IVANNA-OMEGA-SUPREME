@@ -52,7 +52,21 @@ fun Iso226CalibratorPanel(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    // Estado local de los sliders — inicia desde la última calibración aplicada
+    // Estado local de los sliders — inicia desde la última calibración aplicada.
+    // load() restaura las prefs ANTES del remember (se ejecuta primero en la
+    // composición): sin esto los sliders volvían a 85/80 Phon en cada arranque
+    // aunque persist() sí guardaba al aplicar.
+    // restoreIfSaved() ya existe en Iso226Calibrator: lee listen_phon/ref_phon
+    // de SharedPreferences y re-aplica la curva si estaba calibrada. Se llama
+    // ANTES de los remember{} para que los sliders abran con el valor real.
+    // effectManager puede ser null en previews — el restore es best-effort.
+    remember {
+        runCatching {
+            val em = (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)?.globalEffectManager
+            if (em != null) Iso226Calibrator.restoreIfSaved(context, em)
+        }
+        true
+    }
     var listenPhon by remember { mutableFloatStateOf(Iso226Calibrator.listenPhon) }
     var refPhon    by remember { mutableFloatStateOf(Iso226Calibrator.refPhon)    }
 
