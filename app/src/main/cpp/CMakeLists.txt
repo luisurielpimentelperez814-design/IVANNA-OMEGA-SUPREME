@@ -274,6 +274,13 @@ add_library(omega_effect SHARED
     # APK) pero no aquí → símbolos indefinidos al enlazar libomega_effect.so.
     spatial/RirDataset.cpp
     spatial/RirConvolver.cpp
+    # FIX (distorsion digital Ruta B): omega_process expandia el canal side
+    # con s *= 1.2f (TinyML bloque 'Music') y pasaba por el RIR SIN limiter
+    # al final — con señal caliente eso clippea (distorsion digital dura).
+    # La Ruta A (ivanna_native) ya lo compila (linea dsp/SafetyLimiter.cpp
+    # del target ivanna_omega); se añade aqui para que la cadena system-wide
+    # tenga exactamente la misma proteccion anti-clip que la app.
+    dsp/SafetyLimiter.cpp
 )
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})

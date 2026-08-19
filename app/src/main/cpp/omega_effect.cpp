@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <atomic>
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
+#include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
 #include <cmath>
 
 // IvannaFusionCore = IvannaFusionEngine (alias en IvannaFusionCore.hpp).
@@ -186,6 +187,10 @@ struct omega_effect_context_t {
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
+    // FIX (distorsion digital): limiter por instancia al final de la cadena
+    // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
+    // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
+    ivanna::SafetyLimiter* safetyLimiter;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -430,6 +435,13 @@ static int32_t omega_process(effect_handle_t self,
         // Cable RIR: aplicar reverberación de sala si está activa
         if (ctx->rirConvolver) ctx->rirConvolver->process(L, R, chunk);
 
+        // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
+        // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
+        // expansion mid/side del TinyML (s *= 1.2f en clase 'Music') o un
+        // RIR con ganancia alta clippeaban directo al interleave.
+        // process() es branchless NEON, sin malloc/locks: seguro en RT.
+        if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
+
         // Interleave -> salida
         for (int n = 0; n < chunk; ++n) {
             outChunk[2 * n]     = L[n];
@@ -500,6 +512,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 ctx->rtCapacity =
                     (ctx->rtL && ctx->rtR) ? OMEGA_RT_MAX_FRAMES : 0;
+                // Limiter por sesion: misma instancia que la Ruta A usa en
+                // ivanna_omega_jni.cpp (g_safety_limiter) pero por-contexto,
+                // asi dos sesiones simultaneas no comparten estado de gain-
+                // reduction ni se contaminan la telemetria entre si.
+                if (!ctx->safetyLimiter) ctx->safetyLimiter = new ivanna::SafetyLimiter();
+                if (ctx->safetyLimiter) ctx->safetyLimiter->setParams();
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
                 // no creó el SHM (arranque en frío del audioserver), la
@@ -767,6 +785,7 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             reinterpret_cast<omega_effect_context_t *>(handle);
         if (ctx->fusionCore) {
             delete ctx->fusionCore;
+        delete ctx->safetyLimiter;  // FIX distorsion: liberar limiter por sesion
             ctx->fusionCore = nullptr;
         }
         if (ctx->rirConvolver) {
