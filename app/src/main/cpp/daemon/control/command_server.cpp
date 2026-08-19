@@ -59,6 +59,12 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.anti_dolby=s.anti_dolby; snap.target_gain=s.target_gain; snap.comp_amount=s.comp_amount; snap.exc_red=s.exc_red;
     snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
     snap.saf_delta_energy=s.saf_delta_e; snap.saf_metric_norm=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
+    // FIX: copiar el vector latente q[7] — antes solo se publicaban escalares SAF.
+    // Sin esta copia, snap.saf_q quedaba en ceros (makeDefaultSnapshot),
+    // ObjectRenderer nunca recibía un q real → HRTF personalizado sin efecto.
+    for (int i = 0; i < ivanna::OMEGA_CTRL_SAF_Q && i < 7; ++i)
+        snap.saf_q[i] = s.saf_q[i];
+    snap.saf_q_valid = 1u;   // marcar como publicado para que el consumidor lo aplique
     snap.room_rt60_s=s.room_rt60_s; snap.room_idx=s.room_idx; snap.room_wet=s.room_wet;
     for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
     for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
@@ -177,6 +183,10 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
         m_state.saf_memory = _jsonFloat(json,"memory", m_state.saf_memory);
         m_state.saf_gain = _jsonFloat(json,"gain", m_state.saf_gain);
+        // FIX: parsear el vector latente q[7] del payload JSON.
+        // Formato esperado: {"action":"SET_SAF_STATE","q":[q0,q1,q2,q3,q4,q5,q6],...}
+        // Si el campo "q" no viene (cliente antiguo), el vector queda sin cambio.
+        _jsonFloatArray(json, "q", m_state.saf_q, 7);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

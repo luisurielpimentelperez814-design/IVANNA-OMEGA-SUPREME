@@ -247,28 +247,26 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         const float ratio = 1.0f + 7.0f * std::clamp(s.comp_amount, 0.f, 1.f);
         fc->setCompressorParams(s.compressor, ratio);
     }
-    // ── Cable SAF → Ruta B (cierre del hueco auditado) ──────────────────────
-    // El daemon YA publica saf_gain / saf_delta_energy al bus (command_server
-    // los computa del modelo Φ_SAF), pero omega_effect nunca los aplicaba al
-    // audio: la personalización HRTF llegaba solo a Ruta A (app, morph q[7]
-    // → ObjectRenderer). En Ruta B (audioserver) el bus solo transporta
-    // escalares — el vector latente q[7] no cabe sin cambio de ABI del
-    // seqlock, que queda fuera de alcance por diseño ("no inventar IPC
-    // nuevo"). Lo que SÍ se puede cerrar sin tocar la ABI: aplicar la
-    // ganancia SAF y su delta de energía como modulación del harmonic gain
-    // del motor. saf_gain=1.0 (default) → neutro, sin cambio audible.
-    // Rango: [0.5, 2.0] para que un SAF mal calibrado nunca sature ni
-    // enmudezca la salida; el SafetyLimiter del final de la cadena
-    // (58855bff) sigue siendo la última línea anti-clip.
+    // ── Cable SAF → Ruta B — vector latente q[7] → motor HRTF ──────────────
+    // FIX: ABI v2 añade saf_q[7] + saf_q_valid al snapshot. Cuando el daemon
+    // publica un SET_SAF_STATE con el vector latente, saf_q_valid=1 y los
+    // valores llegan hasta aquí. setSafLatentParams() propaga q[] a
+    // HrtfManager::setSafLatentQ() que modula:
+    //   q[0] → curvatura Riemanniana (personalización espacial del HRTF)
+    //   q[1] → sesgo de azimut fino ±10°
+    //   q[2..6] → morph de dataset (reservado)
+    // El comentario anterior ("q[7] no cabe sin cambio de ABI") ya no aplica —
+    // la ABI fue extendida (saf_q[7] en omega_control_bus.h, OMEGA_CTRL_SAF_Q).
+    if (s.saf_q_valid == 1u) {
+        fc->setSafLatentParams(s.saf_q);
+    }
+    // Aplicar saf_gain como modulación de harmonic_gain (compatibilidad con
+    // clientes que solo envían escalares SAF sin vector q[7]).
     if (std::isfinite(s.saf_gain) && s.saf_gain > 0.f) {
-        const float safGain   = std::clamp(s.saf_gain, 0.5f, 2.0f);
-        const float safDelta  = std::isfinite(s.saf_delta_energy)
-                                  ? std::clamp(s.saf_delta_energy, -1.f, 1.f)
-                                  : 0.f;
-        // Base: harmonic_gain del slider; modulación SAF multiplicativa.
-        // delta positivo (más energía percibida tras SAF) reduce ligeramente
-        // el realce armónico para no duplicar loudness; delta negativo lo
-        // compensa. Factor ±15% máximo, perceptualmente transparente.
+        const float safGain  = std::clamp(s.saf_gain, 0.5f, 2.0f);
+        const float safDelta = std::isfinite(s.saf_delta_energy)
+                                 ? std::clamp(s.saf_delta_energy, -1.f, 1.f)
+                                 : 0.f;
         const float base = (std::isfinite(s.harmonic_gain) && s.harmonic_gain >= 0.f)
                              ? s.harmonic_gain : 1.0f;
         const float mod  = safGain * (1.0f - 0.15f * safDelta);

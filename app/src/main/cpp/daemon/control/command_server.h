@@ -29,6 +29,7 @@ struct OmegaDspState {
     float saf_metric;
     float saf_memory;
     float saf_gain;
+    float saf_q[7];          // vector latente Φ_SAF — poblado por SET_SAF_STATE JSON
     float room_rt60_s;
     int room_idx;
     float room_wet;
