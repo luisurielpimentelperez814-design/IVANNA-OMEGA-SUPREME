@@ -92,8 +92,18 @@ inline const char* routeModeStr(RouteMode r) noexcept {
 // ══════════════════════════════════════════════════════════════════════════════
 
 constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
-constexpr uint16_t OMEGA_CTRL_VERSION = 1u;
+// ABI v2 (2026-08-19): añadido saf_q[7] al snapshot para cerrar la cadena
+// Φ_SAF → q[7] → OmegaControlBus → DSP-like adaptive rendering en Ruta B.
+// Antes solo viajaban escalares (saf_gain, saf_delta_energy) y el morph
+// vector completo se quedaba en Ruta A. Ahora omega_effect recibe el q[7]
+// crudo y lo entrega directo al ObjectRenderer/HRTFConvolver via
+// setLatentParams(q), habilitando morph HRTF cross-process.
+// El bump de VERSION invalida snapshots viejos por diseño (mismatch
+// detectado en isVersionValid()); el reader cae a defaults hasta que
+// el daemon publique con la ABI nueva — sin ruido audible.
+constexpr uint16_t OMEGA_CTRL_VERSION = 2u;
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
+constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {
@@ -157,6 +167,13 @@ struct OmegaDspSnapshot {
     float    saf_metric_norm;
     float    saf_memory;
     float    saf_gain;
+    // ABI v2: morph vector Φ_SAF^∞ para HRTF cross-process.
+    // El optimizador escribe q[0..6] tras cada iteración; omega_effect
+    // lo entrega a ObjectRenderer::setLatentParams(q) por bloque. Rango
+    // típico [-1, 1] (normalizado por el PCA decoder); consumidores
+    // deben clampear defensivamente.
+    float    saf_q[OMEGA_CTRL_SAF_Q];
+    uint32_t saf_q_valid;   // 1 = q[7] recén publicado; 0 = usar HRTF neutro
 
     // ── Sala RIR ──────────────────────────────────────────────────────────────
     // Selección y mezcla de la respuesta al impulso de sala (RirDataset).
@@ -207,6 +224,8 @@ struct OmegaDspSnapshot {
         s.harmonic_gain   = 1.f;
         s.widener_mult    = 1.f;
         s.saf_gain        = 1.f;
+        for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i) s.saf_q[i] = 0.f;
+        s.saf_q_valid     = 0u;
         s.consumer_generation = 0;
         s.flags = 0;
         s.raw_rms      = 0.0f;
