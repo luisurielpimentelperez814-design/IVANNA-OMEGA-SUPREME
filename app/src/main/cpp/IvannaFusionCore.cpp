@@ -98,3 +98,11 @@ void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
 }
 
 } // namespace Ivanna
+
+void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
+    if (!q) return;
+
+    if (m_hrtf) {
+        m_hrtf->setSafLatentQ(q, 7);
+    }
+}

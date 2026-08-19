@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include "HrtfManager.hpp"
 #include <cstdint>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -34,6 +33,7 @@ public:
     virtual void setParameter(uint32_t paramId, float value) { (void)paramId; (void)value; }
 };
 
+class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
@@ -82,15 +82,7 @@ public:
                          float /*widener*/)                 noexcept {}
     void setEqGains(const float* /*g*/, int /*n*/,
                     float /*listenPhon*/, float /*refPhon*/) noexcept {}
-    void setSafLatentParams(const float q[7]) noexcept {
-        // FIX: antes era stub vacío — el vector latente nunca llegaba al motor HRTF.
-        // Propaga q[7] a HrtfManager::setSafLatentQ() que modula:
-        //   q[0] → curvatura Riemanniana (personalización espacial)
-        //   q[1] → sesgo de azimut fino ±10°
-        //   q[2..6] → reservados para morph de dataset medido
-        if (m_hrtf) {
-            m_hrtf->setSafLatentQ(q, 7);
-        }
+    void setSafLatentParams(const float q[7]) noexcept;
     }
     void clearSafLatentParams() noexcept {}
     void updateHeadPose(float /*yaw*/, float /*pitch*/, float /*roll*/) noexcept {}
