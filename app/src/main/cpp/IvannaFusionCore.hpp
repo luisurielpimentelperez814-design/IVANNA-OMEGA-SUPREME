@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include "HrtfManager.hpp
+#include "HrtfManager.hpp"
 #include <cstdint>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
