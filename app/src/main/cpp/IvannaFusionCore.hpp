@@ -83,7 +83,6 @@ public:
     void setEqGains(const float* /*g*/, int /*n*/,
                     float /*listenPhon*/, float /*refPhon*/) noexcept {}
     void setSafLatentParams(const float q[7]) noexcept;
-    }
     void clearSafLatentParams() noexcept {}
     void updateHeadPose(float /*yaw*/, float /*pitch*/, float /*roll*/) noexcept {}
 
