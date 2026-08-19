@@ -38,9 +38,14 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
 
     val dispUs    = if (latencyUs > 0L) latencyUs else (metrics.latencyMs * 1000f).toLong()
     val cpu       = telemetry?.getOrNull(0) ?: metrics.cpuPercent
-    val simdPct   = ((1f - (cpu / 100f).coerceIn(0f, 0.8f)) * 100f).coerceIn(40f, 100f)
-    val l1Hit     = if (dispUs < 500L) 99.98f else (100f - (dispUs - 500f) / 100f).coerceIn(90f, 99.98f)
-    val gflops    = simdPct * 0.89f
+    // FIX (honestidad de métricas): SIMD efficiency, L1 cache hit y GFLOPS NO
+    // son medibles desde userspace Android (PMU/perf_event es root-only).
+    // Antes eran fórmulas cosméticas — siempre ~100%, 88.95 GFLOPS, 99.98% —
+    // números fabricados que la UI presentaba como medición en vivo.
+    // Se muestran SOLO señales reales: latencia (CLOCK_MONOTONIC nativo) y
+    // carga del motor DSP (telemetría nativa). Lo no medible se marca "N/M".
+    val dspLoad   = cpu.coerceIn(0f, 100f)
+    val simdPct   = dspLoad  // alias para usos legacy — ahora = carga real
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -48,14 +53,14 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 if (dispUs == 0L) "-- μs" else "${dispUs} μs",
                 "${metrics.sampleRate / 1000} kHz", AuroraCyan, Modifier.weight(1f))
             ProfilerStat("SIMD VECTORIZACIÓN",
-                "${"%.0f".format(simdPct)}% NEON",
+                "NEON activo",  // verídico: compilado con -march=armv8.2-a+simd
                 "128-bit float32x4 / int16x8", PhosphorGreen, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ProfilerStat("HEAP HILO AUDIO", "0.00 B",
                 "Zero allocations in process()", PhosphorGreen, Modifier.weight(1f))
             ProfilerStat("L1 CACHE HIT",
-                "${"%.2f".format(l1Hit)}%",
+                "N/M",  // L1 hit no medible sin PMU (root)
                 "alignas(16) cache-line fit", AmberSignal, Modifier.weight(1f))
         }
 
@@ -81,18 +86,18 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
         GlassCard("EFICIENCIA SIMD EN VIVO", PhosphorGreen) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("SIMD Vector Efficiency", color = TextSecondary, fontSize = 11.sp)
+                    Text("Carga del motor DSP", color = TextSecondary, fontSize = 11.sp)
                     Text("${"%.0f".format(simdPct)}%", color = PhosphorGreen,
                         fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 LinearProgressIndicator(
-                    progress = { simdPct / 100f },
+                    progress = { dspLoad / 100f },
                     modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                     color = PhosphorGreen, trackColor = ObsidianEdge
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("GFLOPS Throughput", color = TextSecondary, fontSize = 11.sp)
-                    Text("${"%.2f".format(gflops)} GFLOPS", color = AmberSignal,
+                    Text("N/M — PMU no accesible", color = TextMuted,
                         fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
