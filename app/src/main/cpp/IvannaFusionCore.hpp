@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HrtfManager.hpp"
 #include <cstdint>
 #include <array>
 #include <memory>
@@ -44,7 +45,6 @@ inline float fast_tanh_scalar(float x) {
 }
 #endif
 
-class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
