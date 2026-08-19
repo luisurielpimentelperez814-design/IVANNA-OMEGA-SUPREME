@@ -77,12 +77,12 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
             }
         }
 
-        GlassCard("1024-Sample Oscilloscope", AuroraCyan,
+        GlassCard("1024-Sample Oscilloscope · señal de prueba sintética", AuroraCyan,
             rightSlot = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    LegendDot("Raw Input", TextMuted)
-                    LegendDot("IVANNA DSP", AmberSignal)
+                    LegendDot("Señal generada", TextMuted)
+                    LegendDot("Modelo tanh (sim)", AmberSignal)
                 }
             }) {
             Canvas(Modifier.fillMaxWidth().height(120.dp)
@@ -152,7 +152,7 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
 }
 
 private fun buildOscillo(type: SignalKind, fundHz: Float, tick: Long): Pair<FloatArray, FloatArray> {
-    val n = 256; val raw = FloatArray(n); val dsp = FloatArray(n)
+    val n = 1024; val raw = FloatArray(n); val dsp = FloatArray(n)
     val t = tick / 1000.0; val cy = fundHz / 100f
     for (i in 0 until n) {
         val x = i / n.toFloat()
