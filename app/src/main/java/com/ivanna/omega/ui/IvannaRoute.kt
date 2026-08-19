@@ -19,6 +19,10 @@ object IvannaRoute {
     const val BRAIN = "perceptual_brain"
     const val PERCEPTUAL = "perceptual_brain"
     const val ADAPTIVE = "adaptive"
+    // FIX (pantalla muerta): PerceptualBrainDashboard (461 lineas, motor real +
+    // sliders interactivos) estaba importada en MainActivity pero SIN destino en
+    // el NavHost: era inalcanzable. Ruta propia, distinta de BRAIN (BrainScreen).
+    const val PERCEPTUAL_CORTEX = "perceptual_cortex"
     // MAGISTRAL — dashboard cognitivo (MagistralDashboardScreen). Ruta propia:
     // BRAIN ("perceptual_brain") ya la ocupa BrainScreen y no se toca.
     const val MAGISTRAL = "magistral"

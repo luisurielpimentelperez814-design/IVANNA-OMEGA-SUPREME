@@ -471,7 +471,7 @@ fun OmegaApp() {
                         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeResetDSP() }
                     },
                     onCalibrateHrtf       = { nav.navigate("calibracion_saf") },
-                    onOpenPerceptualBrain = { nav.navigate(IvannaRoute.BRAIN) },
+                    onOpenPerceptualBrain = { nav.navigate(IvannaRoute.PERCEPTUAL_CORTEX) },
                     bandData              = null,
                     modifier              = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.systemBars)
@@ -496,6 +496,18 @@ fun OmegaApp() {
             composable(IvannaRoute.BRAIN) {
                 BrainScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            // FIX (pantalla muerta): PerceptualBrainDashboard se importaba en este
+            // archivo pero nunca se instanciaba ni tenia ruta -> el usuario no podia
+            // llegar a ella. Ahora es el destino del CTA "PERCEPTUAL BRAIN CORTEX".
+            composable(IvannaRoute.PERCEPTUAL_CORTEX) {
+                val brainEngine = remember { PerceptualBrainEngine() }
+                PerceptualBrainDashboard(
+                    engine = brainEngine,
+                    onBack = { nav.popBackStack() },
+                    modifier = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
