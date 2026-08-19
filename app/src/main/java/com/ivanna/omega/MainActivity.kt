@@ -1009,54 +1009,7 @@ fun StatusDot(active: Boolean, label: String) {
     }
 }
 
-@Composable
-fun DspSection(title: String, content: @Composable RowScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().border(1.dp, Border1, RoundedCornerShape(10.dp))
-        .background(Surface1, RoundedCornerShape(10.dp)).padding(10.dp)) {
-        Text(title, color = CyanGlow, fontSize = 10.sp,
-            fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
-            content = content)
-    }
-}
-
-@Composable
-fun FaderControl(name: String, value: Float, desc: String, onValueChange: (Float) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(54.dp)) {
-        Text("%.2f".format(value), color = CyanGlow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(2.dp))
-        Box(Modifier.width(34.dp).height(88.dp), contentAlignment = Alignment.Center) {
-            Slider(value = value, onValueChange = onValueChange,
-                modifier = Modifier.width(88.dp).rotate(-90f),
-                colors = SliderDefaults.colors(thumbColor = CyanGlow,
-                    activeTrackColor = CyanGlow, inactiveTrackColor = Border1))
-        }
-        Spacer(Modifier.height(2.dp))
-        Text(name, color = TextPri, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center)
-        Text(desc, color = TextSec, fontSize = 7.sp,
-            textAlign = TextAlign.Center, lineHeight = 9.sp)
-    }
-}
-
-@Composable
-fun EqFader(name: String, db: Float, onDbChange: (Float) -> Unit) {
-    val sliderVal = DSPState.dbToSlider(db)
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(54.dp)) {
-        Text(if (db >= 0) "+%.1f".format(db) else "%.1f".format(db),
-            color = CyanGlow, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(2.dp))
-        Box(Modifier.width(34.dp).height(88.dp), contentAlignment = Alignment.Center) {
-            Slider(value = sliderVal, onValueChange = { onDbChange(DSPState.sliderToDb(it)) },
-                modifier = Modifier.width(88.dp).rotate(-90f),
-                colors = SliderDefaults.colors(
-                    thumbColor = if (db > 0f) CyanGlow else Color(0xFF00AACC),
-                    activeTrackColor = CyanGlow, inactiveTrackColor = Border1))
-        }
-        Spacer(Modifier.height(2.dp))
-        Text(name, color = TextPri, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center)
-        Text("dB", color = TextSec, fontSize = 7.sp, textAlign = TextAlign.Center)
-    }
-}
+// Nota de auditoria: DspSection/FaderControl/EqFader vivian aqui (50 lineas)
+// sin un solo call-site en todo el repo — sliders muertos que nadie renderizaba.
+// Los faders reales de la UI son IvannaSliderRow (SoundScreen) y los paneles
+// de BrainScreen. Eliminados para que no vuelvan a confundir la auditoria.
