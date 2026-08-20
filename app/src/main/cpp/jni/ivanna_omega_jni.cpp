@@ -635,6 +635,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     static thread_local float s_targetGainSmooth = 1.0f;
     static thread_local float s_compAmountSmooth = 0.0f;
     static thread_local float s_excReductionSmooth = 0.0f;
+    // Límites del Perceptual Guard calculados en el bloque ANTERIOR — ver
+    // el comentario junto a s_guardCompLimit/s_guardExcLimit más abajo para
+    // la razón del orden. Declarados aquí (mismo scope thread_local) para
+    // que persistan entre llamadas y estén listos antes de smoothing.
+    static thread_local float s_guardCompLimitApplied = 1.0f;
+    static thread_local float s_guardExcLimitApplied  = 1.0f;
     const float adaptiveStrength = adaptive_ui_strength();
     const float targetGainUi = blend_adaptive_from_neutral(
         1.0f,
@@ -651,6 +657,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     s_targetGainSmooth += 0.05f * (targetGainUi - s_targetGainSmooth);
     s_compAmountSmooth += 0.05f * (compAmountUi - s_compAmountSmooth);
     s_excReductionSmooth += 0.05f * (excReductionUi - s_excReductionSmooth);
+    // Aplicar el límite del guard calculado en el bloque anterior. El delay
+    // de 1 bloque es estructural (ver comentario junto a s_guardCompLimit
+    // más abajo) — lo que se corrigió fue el escalón duro, no el delay.
+    s_compAmountSmooth = std::max(s_compAmountSmooth, s_guardCompLimitApplied);
+    s_excReductionSmooth = std::min(s_excReductionSmooth, s_guardExcLimitApplied);
     g_gain.setRuntimeGain(s_targetGainSmooth);
     g_comp.setRuntimeAmount(s_compAmountSmooth);
     g_comp.process(chL, chR, n);
@@ -775,14 +786,35 @@ g_exciter.process(chL, chR, n);
     );
 
     // OMEGA PERCEPTUAL GUARD FINAL
-    // Seguridad perceptual: limita extremos sin sustituir AdaptiveEngine
-    s_compAmountSmooth = std::max(s_compAmountSmooth, limits.compressor);
-    s_excReductionSmooth = std::min(
-        s_excReductionSmooth,
-        limits.exciterReduction
-    );
-
-
+    // FIX (pumping ~200Hz): el guard escribía directamente sobre
+    // s_compAmountSmooth/s_excReductionSmooth con std::max/std::min DURO,
+    // DESPUÉS de que esos valores ya se habían aplicado a g_comp/g_exciter
+    // más arriba en este mismo bloque (líneas ~655-657). El escalón
+    // resultante solo tomaba efecto real en el SIGUIENTE bloque, y al ser
+    // un salto duro (no suavizado) competía con el smoothing 0.05 del
+    // adaptive engine — la firma clásica de pumping audible en baja
+    // frecuencia.
+    //
+    // El guard mide LUFS/crest/brightness sobre pdOutL/pdOutR — la salida
+    // DESPUÉS de compresor+exciter+PDEngine. Esto crea una dependencia
+    // circular real: el límite que el guard calcula para "este bloque"
+    // solo puede aplicarse al SIGUIENTE, porque necesita ver el resultado
+    // del bloque actual para decidir. El delay de 1 bloque (≈10.7ms @
+    // 512/48kHz) es estructural, no un bug de orden.
+    //
+    // Lo que SÍ era un bug: el escalón duro sin suavizar. Fix: el límite
+    // del guard se suaviza con su propio EMA lento (0.15) antes de
+    // aplicarse — el "freno" llega gradual en vez de como un escalón que
+    // compite con el smoothing del target. El resultado se publica en
+    // s_guardCompLimitApplied/s_guardExcLimitApplied, que el INICIO del
+    // siguiente bloque usa como límite antes de aplicar smoothing (ver
+    // declaración junto a s_compAmountSmooth más arriba).
+    static thread_local float s_guardCompLimit = 1.0f;   // sin límite = 1.0 (permite hasta 100%)
+    static thread_local float s_guardExcLimit  = 1.0f;
+    s_guardCompLimit += 0.15f * (limits.compressor - s_guardCompLimit);
+    s_guardExcLimit  += 0.15f * (limits.exciterReduction - s_guardExcLimit);
+    s_guardCompLimitApplied = s_guardCompLimit;
+    s_guardExcLimitApplied  = s_guardExcLimit;
 
     const float trim = g_loudnessMeter.update_trim(target);
         g_control_frame.output_lufs.store(lufs, std::memory_order_relaxed);
