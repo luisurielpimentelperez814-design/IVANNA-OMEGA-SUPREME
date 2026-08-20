@@ -67,6 +67,24 @@ float SafetyLimiter::limitSample(float x) {
 void SafetyLimiter::process(float* L, float* R, int frames) {
     if (m_bypass) return;
 
+    // Transparencia absoluta: si el bloque completo está debajo
+    // del threshold y no existe reducción activa, no tocar la señal.
+    // Evita degradación por lookahead/release en material limpio.
+    float inputPeak = 0.0f;
+
+    for (int i = 0; i < frames; ++i) {
+        if (std::isfinite(L[i]))
+            inputPeak = std::max(inputPeak, std::fabs(L[i]));
+        if (std::isfinite(R[i]))
+            inputPeak = std::max(inputPeak, std::fabs(R[i]));
+    }
+
+    if (inputPeak <= m_threshold && m_gainNow >= 0.999f) {
+        m_peakBefore.store(inputPeak, std::memory_order_relaxed);
+        m_gainReduction.store(0.0f, std::memory_order_relaxed);
+        return;
+    }
+
     // Lazy-init del lookahead si nunca se llamó setSampleRate().
     if (m_delayLen == 0) setSampleRate(m_sampleRate);
 
