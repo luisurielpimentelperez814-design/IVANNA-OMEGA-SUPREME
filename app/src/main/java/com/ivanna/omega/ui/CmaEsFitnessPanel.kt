@@ -32,6 +32,16 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
     var currentGen  by remember { mutableIntStateOf(0) }
     var isRunning   by remember { mutableStateOf(false) }
     var stepSize    by remember { mutableFloatStateOf(0.10f) }
+
+    // Cargar step size real desde el motor al arrancar
+    LaunchedEffect(Unit) {
+        if (IvannaNativeLib.isLoaded) {
+            runCatching {
+                val real = IvannaNativeLib.nativeGetMutationRate()
+                if (real > 0f) stepSize = real.coerceIn(0.01f, 0.5f)
+            }
+        }
+    }
     // Rango dinámico para normalización adaptativa de la curva
     var fitnessMin  by remember { mutableDoubleStateOf(Double.MAX_VALUE) }
     var fitnessMax  by remember { mutableDoubleStateOf(Double.MIN_VALUE) }
