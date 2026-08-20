@@ -165,10 +165,47 @@ void HRTFConvolver::set_position(float azimuthDeg, float aggressiveness) noexcep
 }
 
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// AUDIT FIX (SOFA nunca llegaba al audio): los 5 archivos .sofa de
+// assets/sofa/ (sujetos NH del dataset LISTEN) tenían cargador
+// (SofaHRTFLoader) compilado pero sin un solo call-site — la HRTF siempre
+// salía del dataset IHR1 o del modelo sintético. Esta entrada inyecta el
+// IR medido directo en los búferes del convolver. Se ejecuta en el hilo de
+// control (resize fuera del hot path); el hilo de audio solo lee los
+// búferes ya fijos dentro de updateFilterResponses(), protegido por el
+// seqlock de newTargetPending_ igual que cualquier cambio de azimut.
+bool HRTFConvolver::loadCustomHrir(const float* irL, const float* irR, size_t len) noexcept {
+    if (!irL || !irR || len == 0) return false;
+    const size_t n = len < static_cast<size_t>(IR_LEN) ? len : static_cast<size_t>(IR_LEN);
+    if (customIrL_.size() != static_cast<size_t>(IR_LEN)) {
+        customIrL_.assign(IR_LEN, 0.0f);
+        customIrR_.assign(IR_LEN, 0.0f);
+    }
+    std::fill(customIrL_.begin(), customIrL_.end(), 0.0f);
+    std::fill(customIrR_.begin(), customIrR_.end(), 0.0f);
+    std::memcpy(customIrL_.data(), irL, n * sizeof(float));
+    std::memcpy(customIrR_.data(), irR, n * sizeof(float));
+    customHrirActive_.store(true, std::memory_order_release);
+    newTargetPending_.store(true, std::memory_order_release);
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept {
-    const HRIRPair hrir = hrtf_.generate(azimuthDeg, aggressiveness);
-    std::vector<float> irL = hrir.L;
-    std::vector<float> irR = hrir.R;
+    // Fuente del IR: HRIR medido (SOFA) si está activo, si no el sintético.
+    // Punteros (no referencias a subobjetos de temporales): el HRIRPair
+    // sintético se materializa en synthHolder SOLO en esa rama, y ambos
+    // punteros quedan siempre válidos durante todo el cuerpo.
+    HRIRPair synthHolder{};
+    const std::vector<float>* irLp = &customIrL_;
+    const std::vector<float>* irRp = &customIrR_;
+    if (!customHrirActive_.load(std::memory_order_acquire)) {
+        synthHolder = hrtf_.generate(azimuthDeg, aggressiveness);
+        irLp = &synthHolder.L;
+        irRp = &synthHolder.R;
+    }
+    const std::vector<float>& irL = *irLp;
+    const std::vector<float>& irR = *irRp;
 
     if (immediate) {
         std::fill(H_ReL_curr_.begin(), H_ReL_curr_.end(), 0.0f);

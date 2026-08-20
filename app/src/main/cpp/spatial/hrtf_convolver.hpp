@@ -90,6 +90,21 @@ public:
         newTargetPending_.store(true, std::memory_order_release);
     }
 
+    // Inyecta un HRIR medido (p.ej. extraído de un archivo .sofa) directamente
+    // como filtro del convolver. El IR se copia a búferes propios y el
+    // crossfade lo absorbe en el próximo bloque vía newTargetPending_ — mismo
+    // mecanismo lock-free que setLatentParams()/setSharedDataset().
+    // Mientras customHrirActive_ sea true, updateFilterResponses() usa este IR
+    // en lugar de sintetizar con SyntheticHRTF. Llamar desde hilo de control.
+    bool loadCustomHrir(const float* irL, const float* irR, size_t len) noexcept;
+    void clearCustomHrir() noexcept {
+        customHrirActive_.store(false, std::memory_order_release);
+        newTargetPending_.store(true, std::memory_order_release);
+    }
+    bool hasCustomHrir() const noexcept {
+        return customHrirActive_.load(std::memory_order_acquire);
+    }
+
 private:
     void updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept;
     static uint32_t next_pow2(uint32_t v);
@@ -129,6 +144,14 @@ private:
     float currentAzimuth_ = 0.0f;
     float currentAggressiveness_ = 0.5f;
     bool filterInitialized_ = false;
+
+    // HRIR custom (SOFA/medido): escrito por hilo de control, leído por el
+    // hilo de audio solo dentro de updateFilterResponses() (ya serializado
+    // por newTargetPending_ + xfade). customHrirActive_ es el flag atómico
+    // que conmuta la fuente; los búferes tienen tamaño fijo IR_LEN para no
+    // asignar en la ruta caliente.
+    std::vector<float> customIrL_, customIrR_;
+    std::atomic<bool>  customHrirActive_{false};
 };
 
 } // namespace ivanna

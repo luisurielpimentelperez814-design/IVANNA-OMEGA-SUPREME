@@ -150,6 +150,26 @@ public:
         return true;
     }
 
+    // AUDIT FIX (SOFA sin call-site): inyecta un HRIR medido (extraído de un
+    // archivo .sofa por SofaHRTFLoader) en los 12 virtual speakers. El IR se
+    // propaga con el mecanismo lock-free ya existente de HRTFConvolver
+    // (newTargetPending_ + crossfade); nada cambia en la ruta caliente.
+    // Devuelve true solo si TODOS los convolvers aceptaron el IR.
+    bool loadCustomHrirAll(const float* irL, const float* irR, size_t len) noexcept {
+        if (!irL || !irR || len == 0) return false;
+        bool allOk = true;
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            allOk &= hrtfConvolvers_[i].loadCustomHrir(irL, irR, len);
+        }
+        return allOk;
+    }
+
+    void clearCustomHrirAll() noexcept {
+        for (int i = 0; i < kNumVirtualSpeakers; ++i) {
+            hrtfConvolvers_[i].clearCustomHrir();
+        }
+    }
+
 private:
     void updateVBAPGains(const AudioObject& obj, float gains[kNumVirtualSpeakers]) noexcept;
     void processReverb(float* left, float* right, int frames) noexcept;
