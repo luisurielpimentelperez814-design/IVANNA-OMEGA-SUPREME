@@ -141,6 +141,12 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     // clip-count, ver tests/test_regression_tuning.cpp Parche 6A).
     float gain = m_gainNow;
 
+    // FIX THD:
+    // El gain NO puede seguir cada muestra de un seno.
+    // Eso genera modulación de amplitud y armónicos.
+    // Se calcula una sola reducción por bloque usando el peak detectado.
+    const float blockGain = computeGainForPeak(peak);
+
     for (int i = 0; i < frames; ++i) {
         const float inL = L[i];
         const float inR = R[i];
@@ -148,13 +154,13 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         // Clip detection (entrada, una sola vez por evento)
         if (std::fabs(inL) > ceil_ || std::fabs(inR) > ceil_) ++clips;
 
-        // Envolvente: ataque instantáneo si hay que bajar, release exponencial
-        const float need = std::min(computeGainForPeak(std::fabs(inL)),
-                                    computeGainForPeak(std::fabs(inR)));
-        if (need < gain) {
-            gain = need;
+        // Ataque rápido al gain del bloque + release suave.
+        // Mantiene la forma de onda intacta.
+        if (blockGain < gain) {
+            gain = blockGain;
         } else {
-            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef) * 1.0f;
+            gain = m_releaseCoef * gain +
+                   (1.0f - m_releaseCoef) * 1.0f;
         }
 
         // Lookahead: la ganancia se aplica a la muestra retrasada.
