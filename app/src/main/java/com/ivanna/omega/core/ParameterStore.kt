@@ -71,6 +71,9 @@ class ParameterStore(context: Context) {
         private const val KEY_VOICE_PROTECTION = "voice_protection"
         private const val KEY_AUDIO_PROFILE_ID = "audio_profile_id"
         private const val KEY_ADAPTIVE_MANUAL_MODE = "adaptive_manual_mode"
+
+        // Preset de primer arranque (IVANNA_OMEGA_SIGNATURE)
+        private const val KEY_SIGNATURE_APPLIED = "signature_preset_applied"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
@@ -78,6 +81,40 @@ class ParameterStore(context: Context) {
 
     fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
     fun setEqGain(value: Float) = prefs.edit().putFloat(KEY_EQ_GAIN, value).apply()
+
+    /**
+     * IVANNA_OMEGA_SIGNATURE — preset premium de primer arranque.
+     *
+     * Se aplica UNA sola vez (flag KEY_SIGNATURE_APPLIED): jamás sobrescribe
+     * la configuración de un usuario que ya ajustó algo. Solo escribe claves
+     * cuya escala está verificada en este archivo/AdaptiveControlsState:
+     *   - width 1.30        → escenario más amplio sin exageración
+     *   - eq_gain 1.8 dB    → detalle/presencia sin fatiga (LPF 14.5k protege)
+     *   - exciter 0.55      → armónicos 2ª/3ª controlados
+     *   - anti_dolby 0.85   → neutraliza compresión OEM agresiva
+     *   - npe_hrtf true     → voces naturales al frente
+     *   - spatial_enabled true + spatial_width 0.65 → separación instrumental
+     * Los graves quedan gobernados por los RouteProfile de AudioRouteManager
+     * (bassBoostDb por ruta) — escala distinta, no se toca aquí.
+     * El restoreToNative() del arranque empuja estos valores al DSP nativo.
+     *
+     * @return true si se aplicó (primer inicio), false si ya existía.
+     */
+    fun applySignaturePresetIfFirstRun(): Boolean {
+        if (prefs.getBoolean(KEY_SIGNATURE_APPLIED, false)) return false
+        prefs.edit()
+            .putFloat(KEY_WIDTH, 1.30f)
+            .putFloat(KEY_EQ_GAIN, 1.8f)
+            .putFloat(KEY_EXCITER, 0.55f)
+            .putFloat(KEY_ANTI_DOLBY, 0.85f)
+            .putBoolean(KEY_NPE_HRTF, true)
+            .putBoolean(KEY_SPATIAL_ENABLED, true)
+            .putFloat(KEY_SPATIAL_WIDTH, 0.65f)
+            .putString(KEY_PRESET, "IVANNA_OMEGA_SIGNATURE")
+            .putBoolean(KEY_SIGNATURE_APPLIED, true)
+            .apply()
+        return true
+    }
 
     fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
     fun setWidth(value: Float) = prefs.edit().putFloat(KEY_WIDTH, value).apply()
