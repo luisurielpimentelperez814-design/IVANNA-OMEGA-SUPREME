@@ -5,10 +5,20 @@ namespace ivanna {
 
 ParametricEQ::ParametricEQ() noexcept { reset(); }
 void ParametricEQ::reset() noexcept { for(int i=0;i<NUM_BANDS;++i){ bandsL[i].reset(); bandsR[i].reset(); } }
-void ParametricEQ::setSampleRate(float sr) noexcept { sampleRate_ = sr; }
+void ParametricEQ::setSampleRate(float sr) noexcept {
+    // Validación: fuera de rango de audio real se ignora (mantiene los
+    // coeficientes vigentes en vez de generar filtros inestables).
+    if (sr >= 8000.0f && sr <= 768000.0f) sampleRate_ = sr;
+}
 
 void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     if(b<0||b>=NUM_BANDS) return;
+    // Clamp de seguridad: por encima de ~Nyquist*0.98 el biquad RBJ degenera
+    // (alpha -> 0, coeficientes explotan). Igual criterio que Biquad::clampFreq.
+    const float nyq = sampleRate_ * 0.5f;
+    if (f < 20.0f) f = 20.0f;
+    if (f > nyq - 100.0f) f = nyq - 100.0f;
+    if (q < 0.1f) q = 0.1f; else if (q > 10.0f) q = 10.0f;
     float A = powf(10.0f, g/40.0f);
     float w0 = 2.0f * float(M_PI) * f / sampleRate_;
     float c = cosf(w0), s = sinf(w0);
@@ -21,6 +31,18 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
 }
 
 void ParametricEQ::setParams(const DSPParams& p) noexcept {
+    // FIX CRÍTICO (respuesta en frecuencia): setSampleRate() no tenía NINGÚN
+    // llamador en todo el proyecto y sampleRate_ se quedaba en su default de
+    // 96000 Hz. Con un stream real a 48 kHz cada w0 = 2*pi*f/96000 salía a la
+    // mitad → TODAS las bandas caían una octava arriba de su frecuencia
+    // nominal (el low-shelf de 80 Hz actuaba en ~160 Hz, el "aire" de 12 kHz
+    // en ~24 kHz = fuera de banda audible y por tanto inerte). Ahora el EQ
+    // toma el sample rate real del pipeline (g_params.sampleRate, seteado en
+    // el JNI) en cada actualización de parámetros.
+    // Validación: barrido de tono + FFT — el -3 dB del shelf debe coincidir
+    // con la frecuencia pedida a 44.1/48/96 kHz.
+    setSampleRate(static_cast<float>(p.sampleRate));
+
     // p.low / p.mid / p.high / p.presence arrive as dB values directly from Kotlin
     // (DSPBridge.setParams passes them verbatim — they are NOT 0..1 scalars).
     // Previous code multiplied by 8/12 which produced wild values (e.g. +6 dB * 12 = +72 dB).
