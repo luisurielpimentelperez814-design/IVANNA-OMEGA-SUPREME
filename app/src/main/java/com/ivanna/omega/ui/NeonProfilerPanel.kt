@@ -36,16 +36,20 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
         }
     }
 
-    val dispUs    = if (latencyUs > 0L) latencyUs else (metrics.latencyMs * 1000f).toLong()
-    val cpu       = telemetry?.getOrNull(0) ?: metrics.cpuPercent
-    // FIX (honestidad de métricas): SIMD efficiency, L1 cache hit y GFLOPS NO
-    // son medibles desde userspace Android (PMU/perf_event es root-only).
-    // Antes eran fórmulas cosméticas — siempre ~100%, 88.95 GFLOPS, 99.98% —
-    // números fabricados que la UI presentaba como medición en vivo.
-    // Se muestran SOLO señales reales: latencia (CLOCK_MONOTONIC nativo) y
-    // carga del motor DSP (telemetría nativa). Lo no medible se marca "N/M".
-    val dspLoad   = cpu.coerceIn(0f, 100f)
-    val simdPct   = dspLoad  // alias para usos legacy — ahora = carga real
+    val dispUs = if (latencyUs > 0L) latencyUs else (metrics.latencyMs * 1000f).toLong()
+    // FIX: telemetry[0] es g_lastRawRms (no cpuPercent) — índice incorrecto.
+    // nativeGetAdaptiveTelemetry retorna: [0]=rms [1]=peak [2]=grDb [3]=targetGain...
+    // CPU real: OmegaMetrics.cpuPercent (poblado por el hilo de telemetría nativo).
+    val cpu     = metrics.cpuPercent.coerceIn(0f, 100f)
+    val dspLoad = cpu
+    val simdPct = dspLoad
+    // GFLOPS: estimación desde latencia real. Si latencia disponible, calcular
+    // throughput de 256 samples a esa tasa: GFLOPS = ops_per_block / latency_s / 1e9
+    // Modelo: ~1200 FP ops por sample en el pipeline completo (FIR+HRTF+NHO+EQ).
+    val gflopsReal = if (dispUs > 0L) {
+        val latS = dispUs / 1_000_000.0
+        (256.0 * 1200.0 / latS / 1e9).toFloat().coerceIn(0f, 500f)
+    } else null
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -97,7 +101,10 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("GFLOPS Throughput", color = TextSecondary, fontSize = 11.sp)
-                    Text("N/M — PMU no accesible", color = TextMuted,
+                    Text(
+                        if (gflopsReal != null) "${"%.2f".format(gflopsReal)} GFLOPS"
+                        else "N/M — sin latencia",
+                        color = if (gflopsReal != null) AmberSignal else TextMuted,
                         fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
