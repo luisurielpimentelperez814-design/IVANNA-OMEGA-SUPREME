@@ -200,6 +200,10 @@ class IVANNAApplication : Application() {
         // ejecución. Application.onCreate() corre garantizado en el hilo
         // principal (con Looper), por eso va aquí y no más abajo.
         com.ivanna.omega.audio.AudioRouteManager.start(this)
+        // TAREA 4: la detección de ruta de AudioRouteManager gobierna ahora el
+        // DSP real (HRTF / sala RIR / ancho espacial) vía RouteDspCalibrator.
+        // No modifica AudioRouteManager — lee su detectOutputRoute() público.
+        com.ivanna.omega.audio.RouteDspCalibrator.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
         // FIX (root vs sin root): hasta ahora la app asumia siempre el camino
