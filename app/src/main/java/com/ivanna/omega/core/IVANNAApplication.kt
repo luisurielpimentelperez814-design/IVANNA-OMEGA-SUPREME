@@ -89,6 +89,13 @@ class IVANNAApplication : Application() {
 
         paramStore = ParameterStore(this)
 
+        // Primer arranque: aplica IVANNA_OMEGA_SIGNATURE antes de cualquier
+        // restore — el restoreToNative() posterior lo empuja al DSP nativo.
+        // Si el usuario ya tenía configuración, no se toca nada (flag).
+        if (paramStore.applySignaturePresetIfFirstRun()) {
+            Log.i(TAG, "✨ Preset IVANNA_OMEGA_SIGNATURE aplicado (primer inicio)")
+        }
+
         super.onCreate()
         AudioStateManager.attachPersistence(this)
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
