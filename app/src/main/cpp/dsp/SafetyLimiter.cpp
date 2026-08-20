@@ -39,9 +39,16 @@ void SafetyLimiter::setSampleRate(float sampleRate) {
 // threshold se reduce a ratio 10:1 hasta el ceiling; por debajo, ganancia 1.
 float SafetyLimiter::computeGainForPeak(float peakLin) const {
     if (peakLin <= m_threshold) return 1.0f;
-    const float excess  = peakLin - m_threshold;
-    float limited = m_threshold + excess * kKneeRatio;
-    if (limited > m_ceiling) limited = m_ceiling;
+    const float excess = peakLin - m_threshold;
+
+    // Curva suave hacia ceiling para reducir THD.
+    // Evita que el knee genere una discontinuidad fuerte.
+    float limited = m_threshold +
+                    excess / (1.0f + excess * 8.0f);
+
+    if (limited > m_ceiling)
+        limited = m_ceiling;
+
     return (peakLin > 1e-9f) ? (limited / peakLin) : 1.0f;
 }
 
@@ -56,7 +63,11 @@ float SafetyLimiter::limitSample(float x) {
     const float ax = std::fabs(x);
     if (ax <= m_threshold) return std::clamp(x, -1.0f, 1.0f);
     const float sign  = x < 0.0f ? -1.0f : 1.0f;
-    float limited = m_threshold + (ax - m_threshold) * kKneeRatio;
+    float excess = ax - m_threshold;
+
+    float limited = m_threshold +
+                    excess / (1.0f + excess * 8.0f);
+
     if (limited > m_ceiling) {
         limited = m_ceiling;
         m_clipCount.fetch_add(1, std::memory_order_relaxed);
