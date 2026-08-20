@@ -57,22 +57,19 @@ bool SafHRTFDatasetBridge::load(
 
     for (uint32_t i = 0; i < header.positions; i++)
     {
-        // SOFA viene ordenado por SourcePosition.
-        // Primer eje = azimuth.
-        // La conversión ya dejó posiciones consecutivas.
+        const auto& e = loader.entry(i);
 
-        float az =
-            -180.0f +
-            (360.0f *
-            (float)i /
-            (float)(header.positions-1));
-
+        // FIX (auditoría 2026-08-20): antes el azimut se SINTETIZABA con
+        // az = -180 + 360·i/(n-1) — una distribución uniforme inventada que
+        // no corresponde a las posiciones medidas reales del dataset. Eso
+        // desplazaba cada fuente virtual a un ángulo equivocado (error de
+        // localización audible: la escena se corría respecto a la real).
+        // IHR1 y IVHRTF01 ya traen la tabla az/el medida por posición en
+        // HRTFEntry.azimuthDeg (leída en HRTFBinLoader::loadIHR1) — se usa
+        // esa, que es la que el convolver necesita para interpolar bien.
+        float az = e.azimuthDeg;
 
         azimuths[i] = az;
-
-
-        const auto& e =
-            loader.entry(i);
 
 
         for(uint32_t k=0;k<header.taps;k++)
