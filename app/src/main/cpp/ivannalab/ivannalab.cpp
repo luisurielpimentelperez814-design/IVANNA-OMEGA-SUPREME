@@ -313,7 +313,11 @@ struct IvannaLab::Impl {
         if (total / N < 1e-6) return -1.f;
         const float low = dftMagnitudeAt(historyL, start, N, 250.f, (float)sampleRate);
         const float high = dftMagnitudeAt(historyL, start, N, 8000.f, (float)sampleRate);
-        if (low < 0.001f || high < 0.001f) return -1.f;
+        // FIX: threshold 0.001f demasiado alto para audio real (no tonos puros).
+        // Con programa musical/voz los componentes en 250Hz y 8000Hz pueden
+        // ser órdenes de magnitud menores. Bajamos a 0.00005f para capturar
+        // IMD real en contenido de audio típico.
+        if (low < 0.00005f || high < 0.00005f) return -1.f;
         const float d1 = dftMagnitudeAt(historyL, start, N, 7750.f, (float)sampleRate);
         const float d2 = dftMagnitudeAt(historyL, start, N, 8250.f, (float)sampleRate);
         const float d3 = dftMagnitudeAt(historyL, start, N, 7500.f, (float)sampleRate);
