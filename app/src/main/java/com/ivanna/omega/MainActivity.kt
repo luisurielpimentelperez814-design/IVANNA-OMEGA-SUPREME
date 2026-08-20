@@ -547,6 +547,12 @@ fun OmegaApp() {
             composable(IvannaRoute.ABX_TEST) { com.ivanna.omega.ui.AbxTestScreen(onBack = { nav.popBackStack() }) }
             composable("benchmark") { com.ivanna.omega.ui.BenchmarkScreen(onBack = { nav.popBackStack() }) }
             composable("phase7") { com.ivanna.omega.ui.Phase7Screen(onBack = { nav.popBackStack() }) }
+            composable("audio_control_hub") {
+                com.ivanna.omega.ui.SofaAfRirSafPanelScreen(
+                    onBack = { nav.popBackStack() },
+                    voiceMgr = voiceProtectionManager
+                )
+            }
         }
     }
 }
