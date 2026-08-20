@@ -26,8 +26,18 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     float b0 = 1.0f + alpha*A, b1 = -2.0f*c, b2 = 1.0f - alpha*A;
     float a0 = 1.0f + alpha/A, a1 = -2.0f*c, a2 = 1.0f - alpha/A;
     b0/=a0; b1/=a0; b2/=a0; a1/=a0; a2/=a0;
-    bandsL[b] = {b0,b1,b2,a1,a2,0,0,0,0};
-    bandsR[b] = bandsL[b];
+    // Reutilizar el estado si la banda ya estaba activa (evita click al
+    // reajustar en caliente); si estaba inactiva, arranca limpia.
+    const bool wasActive = active_[b];
+    const float x1L = wasActive ? bandsL[b].x1 : 0.f, x2L = wasActive ? bandsL[b].x2 : 0.f;
+    const float y1L = wasActive ? bandsL[b].y1 : 0.f, y2L = wasActive ? bandsL[b].y2 : 0.f;
+    const float x1R = wasActive ? bandsR[b].x1 : 0.f, x2R = wasActive ? bandsR[b].x2 : 0.f;
+    const float y1R = wasActive ? bandsR[b].y1 : 0.f, y2R = wasActive ? bandsR[b].y2 : 0.f;
+    bandsL[b] = {b0,b1,b2,a1,a2,x1L,x2L,y1L,y2L};
+    bandsR[b] = {b0,b1,b2,a1,a2,x1R,x2R,y1R,y2R};
+    // Umbral 0.02 dB: por debajo es inaudible (< 1/20 del JND de nivel) y la
+    // banda se marca inactiva para saltarse por completo en process().
+    active_[b] = (g > 0.02f || g < -0.02f);
 }
 
 void ParametricEQ::setParams(const DSPParams& p) noexcept {
@@ -82,9 +92,15 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
     if(frames<=0) return;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
+    // Lista de bandas activas resuelta fuera del loop de muestras: en
+    // configuracion plana (todos los faders a 0 dB) el EQ es un no-op
+    // bit-exacto y la cadena queda transparente de verdad.
+    int idx[NUM_BANDS]; int nAct = 0;
+    for(int b=0;b<NUM_BANDS;++b) if(active_[b]) idx[nAct++]=b;
+    if(nAct==0) return;
     for(int i=0;i<frames;++i){
         float L=l[i], R=r[i];
-        for(int b=0;b<NUM_BANDS;++b){ L=bandsL[b].processSample(L); R=bandsR[b].processSample(R); }
+        for(int k=0;k<nAct;++k){ const int b=idx[k]; L=bandsL[b].processSample(L); R=bandsR[b].processSample(R); }
         l[i]=L; r[i]=R;
     }
 #pragma clang diagnostic pop

@@ -22,6 +22,11 @@ private:
     static constexpr int NUM_BANDS = 8;
     Biquad bandsL[NUM_BANDS];
     Biquad bandsR[NUM_BANDS];
+    // Transparencia absoluta: una banda a 0 dB es matematicamente la
+    // identidad, pero procesarla igual acumula ruido de cuantizacion float
+    // (8 biquads en cascada => ~8x el ruido de redondeo) y gasta CPU.
+    // active_[b] = false => la banda se salta bit-exacto.
+    bool active_[NUM_BANDS] = {false,false,false,false,false,false,false,false};
     float sampleRate_ = 96000.0f;
 };
 }
