@@ -659,7 +659,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
     g_gain.processOutput(chL, chR, n);
-    g_safety_limiter.process(chL, chR, n);
+    // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
+    // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
+    // El primer limiter limitaba chL/chR; PDEngine re-amplificaba; el segundo
+    // volvía a limitar con el estado interno del primero ya modificado.
+    // Resultado: pumping + distorsión de intermodulación audible.
+    // SOLUCIÓN: el único punto de limiting es DESPUÉS de PDEngine (FASE 4B),
+    // donde la señal ya tiene su nivel final. Se elimina esta llamada.
     // FIX CRÍTICO: este es el único proceso que el bucle de audio real
     // (AudioPipeline.kt → DSPBridge.process()) invoca en cada bloque.
     // PDEngine (NHO + Spatial + HRTF) se inicializa y arranca su hilo
