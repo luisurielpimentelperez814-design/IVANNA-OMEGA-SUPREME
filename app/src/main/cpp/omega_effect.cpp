@@ -320,8 +320,12 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
         return;
     }
 
-    // Seleccionar sala más cercana al RT60 objetivo (índice, no puntero)
-    const size_t roomIdx = g_dataset->findNearestByRT60(rt60);
+    // Selección inteligente multi-criterio (TAREA 2): RT60 prioriza (60%),
+    // volumen geométrico desempata (25%), distancia fuente→mic refina (15%).
+    // Con solo RT60 había empates y saltos de sala arbitrarios entre salas
+    // con reverberación casi idéntica pero geometría opuesta (pasillo
+    // largo vs cubiculo compacto suenan distinto al mismo RT60).
+    const size_t roomIdx = g_dataset->findNearestSmart(rt60);
 
     // Solo recargar si la sala cambió (comparar por idx)
     const int32_t targetIdx = s.room_idx;

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
+#include <algorithm>
 
 namespace Ivanna {
 
@@ -197,6 +198,63 @@ size_t RirDataset::findNearestByVolume(float targetVolumeM3) const {
     for (size_t i = 0; i < rooms_.size(); ++i) {
         float diff = std::fabs(rooms_[i].volumeM3() - targetVolumeM3);
         if (diff < bestDiff) { bestDiff = diff; best = i; }
+    }
+    return best;
+}
+
+size_t RirDataset::findNearestSmart(float targetRt60S,
+                                    float targetVolumeM3,
+                                    float targetDistanceM) const {
+    if (rooms_.empty()) return 0;
+    if (rooms_.size() == 1) return 0;
+
+    // Rangos reales del dataset (min-max) para normalizar cada criterio —
+    // sin esto, comparar RT60 (≈0.3..2.5 s) contra distancia (≈0.6..9.4 m)
+    // y volumen (≈50..800 m³) en bruto deja un solo criterio dominando.
+    float rt60Min = 1e30f, rt60Max = -1e30f;
+    float volMin  = 1e30f, volMax  = -1e30f;
+    float distMin = 1e30f, distMax = -1e30f;
+    for (const auto& r : rooms_) {
+        rt60Min = std::min(rt60Min, r.rt60S);      rt60Max = std::max(rt60Max, r.rt60S);
+        const float v = r.volumeM3();
+        volMin  = std::min(volMin,  v);            volMax  = std::max(volMax,  v);
+        distMin = std::min(distMin, r.distanceM);  distMax = std::max(distMax, r.distanceM);
+    }
+    const float rt60Span = (rt60Max - rt60Min) > 1e-6f ? (rt60Max - rt60Min) : 1.f;
+    const float volSpan  = (volMax  - volMin)  > 1e-6f ? (volMax  - volMin)  : 1.f;
+    const float distSpan = (distMax - distMin) > 1e-6f ? (distMax - distMin) : 1.f;
+
+    // targetVolumeM3 <= 0 → objetivo neutro = volumen de la sala con el RT60
+    // pedido más cercano (la geometría acompaña al RT60 en vez de inventarse).
+    float volTarget = targetVolumeM3;
+    if (volTarget <= 0.f) {
+        volTarget = rooms_[findNearestByRT60(targetRt60S)].volumeM3();
+    }
+    // targetDistanceM <= 0 → mediana de distancias (sala ni íntima ni cavernosa).
+    float distTarget = targetDistanceM;
+    if (distTarget <= 0.f) {
+        std::vector<float> dists;
+        dists.reserve(rooms_.size());
+        for (const auto& r : rooms_) dists.push_back(r.distanceM);
+        std::sort(dists.begin(), dists.end());
+        distTarget = dists[dists.size() / 2];
+    }
+
+    // Pesos: RT60 manda (es lo que se percibe como tamaño de sala), la
+    // geometría desempata, la distancia refina (más cerca = más directo).
+    constexpr float W_RT60 = 0.60f;
+    constexpr float W_VOL  = 0.25f;
+    constexpr float W_DIST = 0.15f;
+
+    size_t best = 0;
+    float bestScore = std::numeric_limits<float>::max();
+    for (size_t i = 0; i < rooms_.size(); ++i) {
+        const auto& r = rooms_[i];
+        const float dRt60 = std::fabs(r.rt60S      - targetRt60S) / rt60Span;
+        const float dVol  = std::fabs(r.volumeM3() - volTarget)   / volSpan;
+        const float dDist = std::fabs(r.distanceM  - distTarget)  / distSpan;
+        const float score = W_RT60 * dRt60 + W_VOL * dVol + W_DIST * dDist;
+        if (score < bestScore) { bestScore = score; best = i; }
     }
     return best;
 }

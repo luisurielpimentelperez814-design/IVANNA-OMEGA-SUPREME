@@ -83,6 +83,24 @@ public:
     size_t findNearestByVolume(float targetVolumeM3) const;
 
     /**
+     * Selección inteligente multi-criterio (TAREA 2, integración runtime):
+     * prioriza RT60 (lo que más se percibe como "tamaño de sala"), desempata
+     * por volumen geométrico (m³), y como último criterio por distancia
+     * fuente→micrófono (más cerca = más directo, más limpio).
+     *
+     * Implementación: distancia ponderada sobre valores NORMALIZADOS por el
+     * rango real del dataset (no absolutos — sin normalizar, el RT60 dominaría
+     * o desaparecería según las unidades). Pesos: RT60 60%, volumen 25%,
+     * distancia 15%.
+     *
+     * targetDistanceM <= 0 → se usa la mediana de distancias del dataset
+     * como objetivo neutro (una sala "típica", ni íntima ni cavernosa).
+     */
+    size_t findNearestSmart(float targetRt60S,
+                            float targetVolumeM3 = 0.f,
+                            float targetDistanceM = -1.f) const;
+
+    /**
      * Carga la respuesta al impulso estéreo de la sala `idx` desde disco.
      * outL/outR se llenan normalizados a [-1, 1] (float32, mismo formato que
      * el resto del pipeline DSP). Devuelve false si el archivo no se pudo
