@@ -144,6 +144,7 @@ fun MainScaffold(
             composable(TABS[3].route) {
                 SpatialHubScreen(
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
+                    onOpenAudioControlHub = { outerNav.navigate("audio_control_hub") },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
@@ -176,7 +177,8 @@ fun SpatialHubScreen(
     onOpenAuditory   : () -> Unit,
     onOpenAbxTest    : () -> Unit,
     onOpenBenchmark  : () -> Unit = {},
-    onOpenPhase7     : () -> Unit = {}
+    onOpenPhase7     : () -> Unit = {},
+    onOpenAudioControlHub : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -192,6 +194,7 @@ fun SpatialHubScreen(
         HubCard("PRUEBA ABX",                "Validación perceptual espacial",       NeonMagenta,  onOpenAbxTest)
         HubCard("BENCHMARK & EVIDENCE",      "Telemetría y validación acústica",     NeonMagenta,  onOpenBenchmark)
         HubCard("FASE 7: HEGEMONIA",         "Computer Vision & AutoEQ",             NeonMagenta,  onOpenPhase7)
+        HubCard("SOFA · AF · RIR · SAF",     "Panel de control de motores avanzados · HRTF real · Sala · Adaptativo", AuroraCyan, onOpenAudioControlHub)
     }
 }
 
