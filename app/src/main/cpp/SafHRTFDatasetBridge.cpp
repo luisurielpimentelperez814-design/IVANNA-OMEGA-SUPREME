@@ -59,15 +59,16 @@ bool SafHRTFDatasetBridge::load(
     {
         const auto& e = loader.entry(i);
 
-        // FIX (auditoría 2026-08-20): antes el azimut se SINTETIZABA con
-        // az = -180 + 360·i/(n-1) — una distribución uniforme inventada que
-        // no corresponde a las posiciones medidas reales del dataset. Eso
-        // desplazaba cada fuente virtual a un ángulo equivocado (error de
-        // localización audible: la escena se corría respecto a la real).
-        // IHR1 y IVHRTF01 ya traen la tabla az/el medida por posición en
-        // HRTFEntry.azimuthDeg (leída en HRTFBinLoader::loadIHR1) — se usa
-        // esa, que es la que el convolver necesita para interpolar bien.
-        float az = e.azimuthDeg;
+        // Azimut por posición:
+        //   - IHR1: tabla az+el medida por posición (leída en loadIHR1,
+        //     guardada en HRTFEntry.azimuthDeg) — es la posición REAL de
+        //     cada medición, la que el convolver necesita para interpolar.
+        //   - IVHRTF01: no trae tabla de ángulos (formato legacy, solo
+        //     HRIRs consecutivas) — fallback: rejilla uniforme
+        //     -180..+180 como aproximación documentada.
+        float az = loader.isIHR1Format()
+            ? e.azimuthDeg
+            : (-180.0f + (360.0f * (float)i / (float)(header.positions - 1)));
 
         azimuths[i] = az;
 
