@@ -74,6 +74,7 @@ class ParameterStore(context: Context) {
 
         // Preset de primer arranque (IVANNA_OMEGA_SIGNATURE)
         private const val KEY_SIGNATURE_APPLIED = "signature_preset_applied"
+        private const val KEY_ANTI_DOLBY_INTENSITY = "anti_dolby_intensity"
     }
 
     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
@@ -106,7 +107,13 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_WIDTH, 1.30f)
             .putFloat(KEY_EQ_GAIN, 1.8f)
             .putFloat(KEY_EXCITER, 0.55f)
-            .putFloat(KEY_ANTI_DOLBY, 0.85f)
+            // FIX (ClassCastException): la versión anterior escribía
+            // anti_dolby como Float (0.85f) pero isAntiDolbyEnabled() la
+            // lee con getBoolean() → crash en el primer arranque tras
+            // aplicar el signature. anti_dolby es un toggle booleano en
+            // toda la app; la intensidad 0.85 va en su propia clave float.
+            .putBoolean(KEY_ANTI_DOLBY, true)
+            .putFloat(KEY_ANTI_DOLBY_INTENSITY, 0.85f)
             .putBoolean(KEY_NPE_HRTF, true)
             .putBoolean(KEY_SPATIAL_ENABLED, true)
             .putFloat(KEY_SPATIAL_WIDTH, 0.65f)
@@ -262,6 +269,13 @@ class ParameterStore(context: Context) {
     fun hasAdaptiveIntensity(): Boolean = prefs.contains(KEY_ADAPTIVE_INTENSITY)
     fun hasVoiceProtection(): Boolean = prefs.contains(KEY_VOICE_PROTECTION)
     fun hasAdaptiveManualMode(): Boolean = prefs.contains(KEY_ADAPTIVE_MANUAL_MODE)
+
+    // Presencia de las claves que el preset IVANNA_OMEGA_SIGNATURE siembra —
+    // reconcileWithCore() en audio/ParameterStore las usa para llevar el
+    // signature al AudioState (y de ahí, vía restoreToNative(), al DSP nativo).
+    fun hasSignatureSeed(): Boolean = prefs.contains(KEY_WIDTH) &&
+            prefs.contains(KEY_EQ_GAIN) && prefs.contains(KEY_EXCITER)
+    fun getAntiDolbyIntensity(): Float = prefs.getFloat(KEY_ANTI_DOLBY_INTENSITY, 0.85f)
 
     // ── Primer lanzamiento ────────────────────────────────────────────────────
     // Controla si el preset magistral de entrada ya fue enviado al daemon.

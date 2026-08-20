@@ -163,6 +163,28 @@ class ParameterStore(context: Context) {
         if (core.hasAdaptiveManualMode()) {
             out = out.copy(manualModeEnabled = core.isAdaptiveManualModeEnabled())
         }
+
+        // FIX TAREA 3 (canal muerto del preset signature): el preset
+        // IVANNA_OMEGA_SIGNATURE escribe sus valores en core.ParameterStore,
+        // pero el restore del DSP lee el AudioState de ESTE archivo. Sin
+        // reconciliar las claves del signature aquí, el preset quedaba
+        // guardado en disco pero nunca llegaba al motor nativo. Solo se
+        // aplican si el signature ya fue sembrado (hasSignatureSeed) Y el
+        // campo del AudioState sigue en su default de fábrica — así el
+        // preset da el primer arranque premium sin sobrescribir a un
+        // usuario que después ajustó algo.
+        if (core.hasSignatureSeed()) {
+            // Solo sembrar campos que el usuario NO haya tocado aún (default
+            // de fábrica). El preset es el punto de partida, no un override.
+            if (out.spatialWidth == 1.0f)   out = out.copy(spatialWidth = core.getSpatialWidth().coerceIn(0.5f, 2f))
+            if (out.exciterAmount == 0.5f)  out = out.copy(exciterAmount = core.getExciter().coerceIn(0f, 1f))
+            if (out.eqTreble == 0f)         out = out.copy(eqTreble = core.getEqGain().coerceIn(-12f, 12f))
+            if (out.binaural)               out = out.copy(binaural = core.getNpeHrtf())
+            // spatialEnabled / antiDolbyEnabled son toggles de engine que la
+            // app aplica en su propio arranque (IvannaGlobalEffectManager /
+            // AntiDolbyController) — no viven en AudioState; su reconciliación
+            // se hace en el punto donde cada engine lee la SSOT.
+        }
         return out
     }
 
