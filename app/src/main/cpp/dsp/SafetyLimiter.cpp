@@ -103,7 +103,9 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     // El primer bloque no debe salir parcialmente vacío por el lookahead.
     // El limiter conserva la forma de onda y evita artefactos iniciales.
     if (m_delayWrite == 0) {
-        float peakInit = 0.0f;
+        const float ceil_ = m_ceiling;
+
+    float peakInit = 0.0f;
         for (int i = 0; i < frames; ++i) {
             peakInit = std::max(
                 peakInit,
