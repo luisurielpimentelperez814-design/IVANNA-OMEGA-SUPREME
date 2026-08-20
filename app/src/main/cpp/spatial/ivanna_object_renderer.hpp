@@ -16,6 +16,8 @@
 #include <array>
 #include <atomic>
 #include <algorithm>
+#include <cmath>
+#include <android/log.h>
 
 namespace ivanna::spatial {
 
@@ -72,10 +74,25 @@ public:
     // la definición real y se conserva un adaptador (const float*, int)
     // por si algún caller legacy con puntero crudo llega en el futuro.
     void setSafLatent(const std::array<float,7>& q);
+    // Adaptador para callers con puntero crudo. Valida explícitamente el
+    // tamaño entrante (>=1 y <=256, límites del espacio latente SAF); fuera
+    // de rango se rechaza con log y no se toca el estado del renderer.
+    // Dentro de rango, se copian min(size,7) componentes al vector canónico
+    // de 7 y se clampan a [-1,1] por si el caller no saneó.
     inline void setSafLatent(const float* q, int size) {
+        if (q == nullptr || size < 1 || size > 256) {
+            __android_log_print(ANDROID_LOG_WARN, "ObjectRenderer",
+                "setSafLatent rechazado: q=%p size=%d (esperado 1..256)",
+                (const void*)q, size);
+            return;
+        }
         std::array<float,7> a{};
         const int n = (size < 7) ? size : 7;
-        for (int i = 0; i < n; ++i) a[i] = q[i];
+        for (int i = 0; i < n; ++i) {
+            float v = q[i];
+            if (!std::isfinite(v)) v = 0.f;
+            a[i] = (v < -1.f) ? -1.f : (v > 1.f ? 1.f : v);
+        }
         setSafLatent(a);
     }
 
