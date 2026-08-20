@@ -115,10 +115,17 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
 
         float initGain = computeGainForPeak(peakInit);
 
+        int initClips = 0;
         for (int i = 0; i < frames; ++i) {
+            if (std::fabs(L[i]) > ceil_ || std::fabs(R[i]) > ceil_)
+                ++initClips;
+
             L[i] *= initGain;
             R[i] *= initGain;
         }
+
+        if (initClips > 0)
+            m_clipCount.fetch_add(initClips, std::memory_order_relaxed);
 
         m_peakBefore.store(peakInit, std::memory_order_relaxed);
         m_gainReduction.store(
