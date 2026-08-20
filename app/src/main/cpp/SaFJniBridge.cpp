@@ -24,6 +24,17 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFInit(JNIEnv* env, jobject, jstring 
     const char* path = env->GetStringUTFChars(jPath, nullptr);
     const bool  ok   = g_saf.initFromJson(path);
     env->ReleaseStringUTFChars(jPath, path);
+
+    // Publicar q_0 al snapshot global aún antes del primer feedback:
+    // así el renderer arranca con el latente medido, no con ceros.
+    if (ok) {
+        float q[Ivanna::SAF_K];
+        g_saf.getParams(q);
+        ivanna_saf_apply_latent(q);
+        __android_log_print(ANDROID_LOG_INFO, SAF_JNI_TAG,
+            "SAF activo q0=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f]",
+            q[0], q[1], q[2], q[3], q[4], q[5], q[6]);
+    }
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
