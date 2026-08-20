@@ -35,6 +35,26 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
 
     const float w = width_;
 
+    // FIX: unity debe ser transparente.
+    // Con width=1 no existe transformación M/S real,
+    // por lo tanto no debe pasar por filtros que cambien fase.
+    if (w > 0.999999f && w < 1.000001f) {
+
+        // Mantener estados calientes para evitar clicks al reactivar.
+        for (int i = 0; i < frames; ++i) {
+            const float xL = left[i];
+            const float xR = right[i];
+
+            dcyL_ = xL - dcxL_ + dcCoef_ * dcyL_;
+            dcxL_ = xL;
+
+            dcyR_ = xR - dcxR_ + dcCoef_ * dcyR_;
+            dcxR_ = xR;
+        }
+
+        return;
+    }
+
     // FIX (tuning magistral): a w<=1 (unity/narrow) el comportamiento es
     // IDÉNTICO al widener naive anterior (bassFactor==w) — no cambia el
     // sonido por defecto. Sólo al ensanchar (w>1, el caso real de riesgo

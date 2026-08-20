@@ -151,6 +151,54 @@ object DSPBridge {
         }
     }
 
+
+    // ── Adaptive DSP State bridge ───────────────────────────────────────
+    // Ruta:
+    // Perceptual AI → AdaptiveDSPState → DSPBridge → JNI → DSP
+
+    fun applyAdaptiveState(state: AdaptiveDSPState) {
+        if (!loaded || !IvannaNativeLib.isLoaded) return
+
+        applyPerceptualGain(state.gain)
+
+        applyCompressorAmount(
+            state.compressor
+        )
+
+        applyExciterReduction(
+            state.exciter
+        )
+
+        applySpatialWidth(
+            state.spatial
+        )
+
+        applyPerceptualEQ(
+            state.lowEqDb,
+            state.midEqDb,
+            state.highEqDb
+        )
+
+        applyFatigueProtection(
+            state.iso226Compensation,
+            state.fatigueProtection
+        )
+    }
+
+    private fun applyFatigueProtection(
+        iso226: Float,
+        fatigue: Float
+    ) {
+        if (!loaded || !IvannaNativeLib.isLoaded) return
+
+        runCatching {
+            IvannaNativeLib.nativeSetFatigueProtection(
+                iso226.coerceIn(-12f, 12f),
+                fatigue.coerceIn(0f, 1f)
+            )
+        }
+    }
+
     fun version(): String = if (loaded) nativeVersion() else "native unavailable"
 
     private external fun nativeInit(sampleRate: Int)

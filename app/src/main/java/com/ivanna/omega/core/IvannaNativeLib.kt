@@ -267,4 +267,9 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
         external fun nativeSetSpatialWidth(width: Float)
         external fun nativeSetPerceptualEQ(lowDb: Float, midDb: Float, highDb: Float)
 
+        external fun nativeSetFatigueProtection(
+            iso226Compensation: Float,
+            fatigueProtection: Float
+        )
+
     }

@@ -13,6 +13,7 @@ import android.util.Log
 import com.ivanna.omega.ai.PerceptualState
 import com.ivanna.omega.ai.PerceptualStateListener
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.dsp.AdaptiveDSPState
 import com.ivanna.omega.audio.AudioRoutingManager
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.neuromorphic.IvannaNpeNative
@@ -365,10 +366,19 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
             // Enviar parámetros al DSPBridge para que se apliquen al stream en vivo
             if (isPlaying()) {
-                DSPBridge.applyPerceptualGain(dspControl.gain)
-                DSPBridge.applyCompressorAmount(dspControl.compressor)
-                DSPBridge.applyExciterReduction(dspControl.exciter)
-                DSPBridge.applySpatialWidth(dspControl.spatial)
+                DSPBridge.applyAdaptiveState(
+                    AdaptiveDSPState(
+                        gain = dspControl.gain,
+                        compressor = dspControl.compressor,
+                        exciter = dspControl.exciter,
+                        spatial = dspControl.spatial,
+                        lowEqDb = dspControl.lowEqDb,
+                        midEqDb = dspControl.midEqDb,
+                        highEqDb = dspControl.highEqDb,
+                        iso226Compensation = dspControl.iso226Compensation,
+                        fatigueProtection = dspControl.fatigueProtection
+                    )
+                )
             }
         } catch (e: Exception) {
             Log.e("IvannaBridgePlayer", "Error aplicando estado perceptual: ${e.message}")

@@ -1245,6 +1245,28 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualEQ(
     g_eq.setParams(g_params);
 }
 
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
+    JNIEnv*, jobject,
+    jfloat iso,
+    jfloat fatigue) {
+
+    if (!std::isfinite(iso) || !std::isfinite(fatigue))
+        return;
+
+    const float comp =
+        std::clamp(iso, -12.0f, 12.0f);
+
+    const float protect =
+        std::clamp(fatigue, 0.0f, 1.0f);
+
+    g_params.high += comp * (1.0f - protect);
+    g_params.mid  -= protect * 3.0f;
+
+    g_eq.setParams(g_params);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();

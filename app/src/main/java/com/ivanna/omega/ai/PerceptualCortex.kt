@@ -182,6 +182,27 @@ class PerceptualCortex {
 
 
 
+        // ── ISO226 + Fatigue perceptual EQ ─────────────────────────────
+        val isoComp =
+            ((analysis.loudnessLUFS + 60f) / 60f)
+                .coerceIn(0f, 1f)
+
+        val fatigueEqCut =
+            protection * -6f
+
+        val lowComp =
+            ((1f - isoComp) * 6f)
+                .coerceIn(0f, 6f)
+
+        val midComp =
+            (fatigueEqCut * 0.5f)
+                .coerceIn(-6f, 0f)
+
+        val highComp =
+            fatigueEqCut
+                .coerceIn(-12f, 0f)
+
+
         val ctrl = DSPPerceptualControl(
 
             gain =
@@ -198,7 +219,17 @@ class PerceptualCortex {
 
             spatial =
                 (0.5f + abs(brightness) * 0.2f)
-                    .coerceIn(0f,1f)
+                    .coerceIn(0f,1f),
+
+            lowEqDb = lowComp,
+
+            midEqDb = midComp,
+
+            highEqDb = highComp,
+
+            iso226Compensation = isoComp,
+
+            fatigueProtection = protection
         )
 
         // FIX: PerceptualCortex calculaba DSPPerceptualControl pero nunca
@@ -352,7 +383,19 @@ data class DSPPerceptualControl(
 
     val exciter: Float,
 
-    val spatial: Float
+    val spatial: Float,
+
+    // Canales adaptativos perceptuales
+    // ISO226 + protección por fatiga auditiva
+    val lowEqDb: Float = 0f,
+
+    val midEqDb: Float = 0f,
+
+    val highEqDb: Float = 0f,
+
+    val iso226Compensation: Float = 0f,
+
+    val fatigueProtection: Float = 0f
 )
 
 

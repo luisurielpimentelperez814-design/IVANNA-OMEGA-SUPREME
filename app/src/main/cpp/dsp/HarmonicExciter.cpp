@@ -96,8 +96,11 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
         // Insertar interpolación lineal entre muestra i e i+1
         // (o la última conocida si es la última muestra)
-        float nextL = (i + 1 < frames) ? left[i + 1] : lastL_;
-        float nextR = (i + 1 < frames) ? right[i + 1] : lastR_;
+        // FIX: no usar lastL_/lastR_ como muestra futura.
+        // Es la última muestra del bloque anterior y crea una discontinuidad
+        // periódica en cada frontera de buffer.
+        float nextL = (i + 1 < frames) ? left[i + 1] : l;
+        float nextR = (i + 1 < frames) ? right[i + 1] : r;
 
         osLeft_[osIdx] = 0.5f * (l + nextL);
         osRight_[osIdx] = 0.5f * (r + nextR);
