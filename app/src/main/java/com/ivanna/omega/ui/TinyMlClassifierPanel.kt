@@ -82,11 +82,20 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                     Slider(value = fatigueIndex,
                         onValueChange = { v ->
                             fatigueIndex = v
+                            // FIX (botón muerto): el slider recomputa highCutHz
+                            // localmente pero el snapshot enviado al daemon
+                            // usaba el valor de la composición ANTERIOR
+                            // (highCutHz aquí viene del by remember previo),
+                            // así que mover el slider no cambiaba el cutoff
+                            // real en el daemon hasta la siguiente recomposición
+                            // — el usuario veía 15% → 84% sin efecto audible.
+                            // Se recalcula highCut LOCAL con la 'v' actual.
+                            val liveHighCut = (19500f - v * 3500f).coerceIn(16000f, 19500f)
                             scope.launch(Dispatchers.IO) {
                                 runCatching {
                                     OmegaEngineBridge.sendPerceptualState(
                                         compressor = -5.5f, exciterRed = 0.15f,
-                                        highCut = highCutHz, spatialWidth = 1.55f,
+                                        highCut = liveHighCut, spatialWidth = 1.55f,
                                         loudnessTarget = -16f, harmonicGain = 0.78f, antiDolby = 0.85f)
                                 }
                             }
