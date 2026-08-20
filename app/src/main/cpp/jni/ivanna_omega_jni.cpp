@@ -818,7 +818,17 @@ g_exciter.process(chL, chR, n);
 
     const float trim = g_loudnessMeter.update_trim(target);
         g_control_frame.output_lufs.store(lufs, std::memory_order_relaxed);
-        if (std::fabs(trim) > 0.01f) {
+        // FIX (modulación de volumen continua): update_trim() devuelve un
+        // valor ACUMULADO con EMA interno (emaAlpha_=0.01) que converge
+        // hacia el target pero raramente cae en exactamente 0 — siempre
+        // queda un residual de oscilación normal del propio filtro. Con
+        // el umbral anterior (0.01dB) el trigger se activaba en casi
+        // TODOS los bloques, aplicando la multiplicación de ganancia de
+        // forma continua = modulación de volumen perceptible.
+        // 0.15dB es inaudible como salto puntual (umbral JND ~0.3-0.5dB
+        // para tonos puros, más alto para música) pero evita el trigger
+        // permanente sobre el residual del EMA.
+        if (std::fabs(trim) > 0.15f) {
             const float trimLin = std::pow(10.f, trim / 20.f);
             for (int i = 0; i < n; ++i) {
                 pdOutL[i] *= trimLin;
