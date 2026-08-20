@@ -1040,9 +1040,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
     g_gain.processOutput(lBuf, rBuf, n);
-    // SafetyLimiter: faltaba en esta ruta. nativeProcess lo aplica; sin él
-    // aquí bloques que superen 0 dBFS salían sin protección hacia el DAC.
-    g_safety_limiter.process(lBuf, rBuf, n);
+    // AUDIT FIX (limiter en posición equivocada — pumping): el SafetyLimiter
+    // corría aquí, ANTES de g_pd.process_block(). Es el mismo patrón que el
+    // fix de distorsión de nativeProcess documentó como bug: limitar, dejar
+    // que PDEngine re-amplifique (NHO/Spatial), y entregar esa salida sin
+    // protección final. El limiter se mueve DESPUÉS de process_block, donde
+    // la señal ya tiene su nivel definitivo — idéntico a nativeProcess:881.
     // FIX: Kernel Evolutivo → orquestador central real (antes: el genoma
     // ganador solo llegaba a z[]/harmonic_gain vía apply_evo_genome() interno
     // de PDEngine; evolutionary_active nunca se activaba y
@@ -1066,6 +1069,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     }
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
+    // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
+    // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
+    // NHO/Spatial saldrían sin protección hacia el DAC.
+    g_safety_limiter.process(oL, oR, n);
     jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
