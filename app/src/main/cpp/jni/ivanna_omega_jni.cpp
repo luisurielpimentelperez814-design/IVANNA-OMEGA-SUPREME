@@ -964,7 +964,6 @@ g_exciter.process(chL, chR, n);
             }
         }
     }
-    }
     // ── RIR en Ruta A: reverberación de sala real ──────────────────────────
     // Mismo patrón exacto de omega_apply_room() en omega_effect.cpp (Ruta B):
     // RirDataset singleton lazy por proceso + RirConvolver por instancia.
