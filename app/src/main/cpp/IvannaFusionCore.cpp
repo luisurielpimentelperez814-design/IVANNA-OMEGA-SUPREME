@@ -26,6 +26,20 @@ namespace Ivanna {
 
 IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();
+    // Cierra el hueco SOFA/IHR1: HrtfManager::loadFromDataset() existía
+    // desde la sesión anterior (usa HRTFBinLoader, formato .ihr1 binario
+    // convertido offline de los .sofa reales vía tools/hrtf/sofa_to_ihr1.py)
+    // pero nadie lo llamaba — el motor operaba siempre en modo sintético
+    // (synthesizeHrtf, modelo Rayleigh esférico), sin importar cuántos
+    // .sofa reales estuvieran shippeados en el módulo.
+    //
+    // El path coincide exacto con el que magisk_module/customize.sh ya
+    // deploya (ver esa función: "hrtf_dataset.ihr1 → $SAF_DIR"). Si el
+    // archivo no existe todavía (pipeline de conversión offline pendiente
+    // de correr), loadFromDataset() devuelve false y HrtfManager sigue
+    // en modo sintético — mismo fallback ya probado, cero riesgo de
+    // crashear por archivo ausente.
+    m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf_dataset.ihr1");
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
     m_classifier = new IvannaAudioClassifier();

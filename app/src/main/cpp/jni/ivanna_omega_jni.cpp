@@ -26,6 +26,8 @@
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
+#include "../spatial/RirConvolver.hpp"
+#include "../spatial/RirDataset.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../audio_control_plane.hpp"
@@ -960,6 +962,60 @@ g_exciter.process(chL, chR, n);
                 pdOutL[i] = mid + side;
                 pdOutR[i] = mid - side;
             }
+        }
+    }
+    }
+    // ── RIR en Ruta A: reverberación de sala real ──────────────────────────
+    // Mismo patrón exacto de omega_apply_room() en omega_effect.cpp (Ruta B):
+    // RirDataset singleton lazy por proceso + RirConvolver por instancia.
+    // No es una segunda implementación del motor — es la MISMA clase
+    // (spatial/RirConvolver.hpp, spatial/RirDataset.hpp) corriendo en el
+    // proceso de la app (Ruta A vive en com.ivanna.omega, Ruta B vive en
+    // audioserver — procesos distintos, cada uno necesita su propia
+    // instancia del mismo motor, igual que ya ocurre con HrtfManager).
+    //
+    // room_rt60_s/room_wet/room_idx llegan por el mismo OmegaDspSnapshot
+    // que Ruta A ya lee en audioRouteBridgeLoop (ABI compartido, sin
+    // extensión) — aquí se lee de nuevo porque ese hilo de telemetría
+    // hace polling cada 30ms y este es el hot path de audio en tiempo real.
+    {
+        static Ivanna::RirDataset* s_rirDataset = nullptr;
+        static bool s_rirDatasetTried = false;
+        static Ivanna::RirConvolver* s_rirConvolver = nullptr;
+        if (!s_rirDatasetTried) {
+            s_rirDatasetTried = true;
+            s_rirDataset = new Ivanna::RirDataset();
+            if (!s_rirDataset->load("/data/adb/ivanna_omega/rir")) {
+                delete s_rirDataset; s_rirDataset = nullptr;
+            }
+        }
+        if (!s_rirConvolver) s_rirConvolver = new Ivanna::RirConvolver();
+
+        static uint64_t s_rirLastGen = 0;
+        ivanna::OmegaDspSnapshot rirSnap{};
+        if (ivanna::effectControlBus().readLatest(rirSnap, s_rirLastGen)) {
+            const float rt60 = rirSnap.room_rt60_s;
+            const float wet  = rirSnap.room_wet;
+            if (rt60 < 0.01f || !s_rirDataset || s_rirDataset->roomCount() == 0) {
+                s_rirConvolver->setWetDry(0.f);
+            } else {
+                static int32_t s_rirLastIdx = -1;
+                const size_t roomIdx = s_rirDataset->findNearestSmart(rt60);
+                if ((int32_t)roomIdx != s_rirLastIdx || !s_rirConvolver->isLoaded()) {
+                    std::vector<float> irL, irR;
+                    int sr = 0;
+                    if (s_rirDataset->loadImpulseResponse(roomIdx, irL, irR, sr) && !irL.empty()) {
+                        int irLen = (int)irL.size();
+                        if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+                        s_rirConvolver->load(irL.data(), irR.data(), irLen);
+                        s_rirLastIdx = (int32_t)roomIdx;
+                    }
+                }
+                s_rirConvolver->setWetDry(wet);
+            }
+        }
+        if (s_rirConvolver->isLoaded()) {
+            s_rirConvolver->process(pdOutL, pdOutR, n);
         }
     }
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
