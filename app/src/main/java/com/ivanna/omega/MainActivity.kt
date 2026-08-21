@@ -445,6 +445,12 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
+            composable("spatial_audio") {
+                com.ivanna.omega.ui.SpatialAudioPanel(
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
             composable("calibracion_saf") {
                 SaFCalibrationScreen(onDismiss = { nav.popBackStack() })
             }
@@ -526,7 +532,7 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("auditory")   { nav.navigate(IvannaRoute.SPACE) { popUpTo("dashboard") } }
+            composable("auditory")   { nav.navigate("spatial_audio") { popUpTo("dashboard") } }
 
             // ── Sección SISTEMA ───────────────────────────────────────────
             composable(IvannaRoute.SYSTEM) {
