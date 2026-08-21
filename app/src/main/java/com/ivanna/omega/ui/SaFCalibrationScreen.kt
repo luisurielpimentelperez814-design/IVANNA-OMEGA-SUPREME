@@ -85,6 +85,11 @@ fun SaFCalibrationScreen(
                 colors  = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
                 border  = BorderStroke(1.dp, ObsidianEdge)
             ) { Text("← VOLVER", fontSize = 10.sp) }
+            OutlinedButton(
+                onClick = onOpenSpatialControl,
+                colors  = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan),
+                border  = BorderStroke(1.dp, AuroraCyan.copy(0.4f))
+            ) { Text("ESPACIAL", fontSize = 10.sp) }
         }
 
         // ── Status pill ───────────────────────────────────────────────────
