@@ -91,6 +91,30 @@ object IvannaSpatialManager {
         }, "IvannaSpatialMgrInit").start()
     }
 
+    // ── FASE 2: control HRTF desde UI (flujo Compose→Manager→JNI→DSP) ────
+    fun setHrtfSubject(subjectId: String): Boolean {
+        val h = rendererHandle
+        if (!ready || h == 0L) return false
+        return runCatching {
+            IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(h, subjectId)
+            activeSubject = subjectId
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Estado REAL del motor — no el último comando enviado. */
+    fun isHrtfDatasetLoaded(): Boolean {
+        val h = rendererHandle
+        if (!ready || h == 0L) return false
+        return runCatching { IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(h) }.getOrDefault(false)
+    }
+
+    fun currentHrtfSubject(): String {
+        val h = rendererHandle
+        if (!ready || h == 0L) return "none"
+        return runCatching { IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h) }.getOrDefault(activeSubject)
+    }
+
     fun release() {
         synchronized(lock) {
             val h = rendererHandle

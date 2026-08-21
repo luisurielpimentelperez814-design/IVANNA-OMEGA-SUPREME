@@ -48,6 +48,8 @@ object IvannaSpatialNative {
     // objetos activos del renderer.
     @JvmStatic external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
     @JvmStatic external fun nativeObjectRendererSetHrtfSubject(handle: Long, subject: String)
+    @JvmStatic external fun nativeObjectRendererIsHrtfLoaded(handle: Long): Boolean
+    @JvmStatic external fun nativeObjectRendererGetCurrentSubject(handle: Long): String
     @JvmStatic external fun nativeObjectRendererSetAutoEqEnabled(handle: Long, enabled: Boolean)
     @JvmStatic external fun nativeObjectRendererSetAutoEqBand(handle: Long, bandIndex: Int, freqHz: Float, gainDb: Float, q: Float)
 
