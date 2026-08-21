@@ -8,6 +8,8 @@
 // que hace único a Dolby Atmos, ahora en tu bolsillo.
 // ============================================================================
 #pragma once
+#include <atomic>
+#include <string>
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
 #include "auto_eq_filter.hpp"
@@ -125,7 +127,14 @@ public:
     }
 
     // Propaga un dataset HRTF personalizado a los 12 virtual speakers.
+    // ── Estado HRTF observable (FASE 1) — la UI no asume, pregunta ──────
+    bool hrtfDatasetLoaded() const noexcept { return hrtfDatasetLoaded_.load(std::memory_order_acquire); }
+    const std::string& currentSubject() const noexcept { return currentSubject_; }
+    const std::string& hrtfDatasetPath() const noexcept { return hrtfDatasetPath_; }
+    void setCurrentSubjectName(const char* n) { if (n) currentSubject_ = n; }
+
     bool loadHrtfDatasetFromFile(const char* path) {
+        hrtfDatasetLoaded_.store(false, std::memory_order_release);
         // Carga una sola vez y lo comparte (lock-free para el audio thread)
         auto newDs = std::make_shared<SyntheticHRTF::SharedDataset>();
         
@@ -164,6 +173,8 @@ public:
         for (int i = 0; i < kNumVirtualSpeakers; ++i) {
             hrtfConvolvers_[i].setSharedDataset(newDs);
         }
+        hrtfDatasetPath_ = (path ? path : "");
+        hrtfDatasetLoaded_.store(true, std::memory_order_release);
         return true;
     }
 
@@ -266,6 +277,11 @@ private:
             }
         }
     } reverb_;
+
+    // FASE 1 — estado del dataset HRTF (escrito en loadHrtfDatasetFromFile)
+    std::atomic<bool> hrtfDatasetLoaded_{false};
+    std::string currentSubject_{"none"};
+    std::string hrtfDatasetPath_;
 };
 
 } // namespace ivanna::spatial

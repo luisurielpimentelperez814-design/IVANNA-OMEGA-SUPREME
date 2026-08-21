@@ -252,10 +252,24 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
         // módulo magisk monta la base en /data/adb/ivanna_omega/
         
         std::string path = "/data/adb/ivanna_omega/hrtf_" + std::string(subjStr) + ".ihr1";
-        renderer->loadHrtfDatasetFromFile(path.c_str());
+        if (renderer->loadHrtfDatasetFromFile(path.c_str()))
+            renderer->setCurrentSubjectName(subjStr);
 
         env->ReleaseStringUTFChars(subjectId, subjStr);
     }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererIsHrtfLoaded(JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return (renderer && renderer->hrtfDatasetLoaded()) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetCurrentSubject(JNIEnv* env, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    if (!renderer) return env->NewStringUTF("none");
+    return env->NewStringUTF(renderer->currentSubject().c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL
