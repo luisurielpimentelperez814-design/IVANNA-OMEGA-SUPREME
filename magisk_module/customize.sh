@@ -58,6 +58,33 @@ else
 fi
 
 # ── DSP libraries ─────────────────────────────────────────────────────────────
+# ── HRTF IHR1 datasets (11 sujetos, 512 taps @ 48kHz) ─────────────────────────
+HRTF_SRC="$MODPATH/system/etc/ivanna_omega/hrtf"
+HRTF_DST="/data/adb/ivanna_omega/hrtf"
+if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
+    ui_print "- Deploying HRTF datasets (IHR1, 11 subjects)..."
+    mkdir -p "$HRTF_DST"
+    cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_DST/" 2>/dev/null
+    # Validación por hash contra el índice — rollback si alguno no coincide
+    HRTF_OK=1
+    cd "$HRTF_DST"
+    for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
+        EXPECTED=$(grep -A3 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+        if [ -n "$EXPECTED" ] && [ -f "$F" ]; then
+            ACTUAL=$(sha256sum "$F" 2>/dev/null | awk '{print $1}')
+            [ "$ACTUAL" = "$EXPECTED" ] || { ui_print "  ! hash mismatch en $F — rollback"; HRTF_OK=0; break; }
+        fi
+    done
+    if [ "$HRTF_OK" = "1" ]; then
+        set_perm_recursive "$HRTF_DST" root root 0755 0644
+        ui_print "  ✓ HRTF: $(ls *.ihr1 | wc -l) sujetos IHR1 verificados → $HRTF_DST"
+    else
+        rm -rf "$HRTF_DST"
+        ui_print "  ! HRTF rollback completo — se usará HRTF sintético (fallback seguro)"
+    fi
+    cd "$MODPATH"
+fi
+
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
 
