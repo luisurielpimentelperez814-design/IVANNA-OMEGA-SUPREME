@@ -94,6 +94,7 @@ import com.ivanna.omega.ai.PerceptualBrainEngine
 import com.ivanna.omega.ai.PerceptualSnapshot
 import com.ivanna.omega.ui.PerceptualBrainDashboard
 import com.ivanna.omega.ui.SaFCalibrationScreen
+import com.ivanna.omega.ui.SpatialControlPanel
 import com.ivanna.omega.ui.MainScaffold
 import com.ivanna.omega.ui.Bark64VisualizerPanel
 import com.ivanna.omega.audio.IvannaLabMonitor
@@ -452,7 +453,10 @@ fun OmegaApp() {
                 )
             }
             composable("calibracion_saf") {
-                SaFCalibrationScreen(onDismiss = { nav.popBackStack() })
+                SaFCalibrationScreen(onDismiss = { nav.popBackStack(, onOpenSpatialControl = { nav.navigate("spatial_control") }) 
+            composable("spatial_control") {
+                SpatialControlPanel(onBack = { nav.popBackStack() })
+            }})
             }
             // ── MAGISTRAL DASHBOARD ───────────────────────────────────────
             // FIX (pantalla huérfana): MagistralDashboardScreen estaba
