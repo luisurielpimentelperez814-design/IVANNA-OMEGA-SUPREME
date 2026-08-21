@@ -5,6 +5,11 @@
 
 #include "ivanna_object_renderer.hpp"
 #include "../include/audio_thread_priority.h"
+#include <android/log.h>
+#include <mutex>
+#include <cmath>
+
+#define IVR_TAG "ObjectRenderer"
 
 namespace ivanna::spatial {
 
@@ -192,7 +197,86 @@ void ObjectRenderer::updateVBAPGains(const AudioObject& obj, float gains[kNumVir
 }
 
 void ObjectRenderer::processReverb(float* left, float* right, int frames) noexcept {
+    // Ruta preferida: convolución con RIR medida (overlap-save, lock-free)
+    // procesada por bloques del tamaño nativo del convolver (BLOCK=512).
+    // Fallback: FDN sintético si no hay sala cargada.
+    if (rirConvolver_ && rirConvolver_->isLoaded()) {
+        constexpr int kRirBlock = Ivanna::RirConvolver::BLOCK;
+        int off = 0;
+        while (off < frames) {
+            const int n = std::min(kRirBlock, frames - off);
+            rirConvolver_->process(left + off, right + off, n);
+            off += n;
+        }
+        return;
+    }
     reverb_.process(left, right, frames, reverbLevel_);
+}
+
+Ivanna::RirDataset& ObjectRenderer::sharedDataset() noexcept {
+    // Indexación perezosa única por proceso; el CSV es liviano.
+    static Ivanna::RirDataset ds;
+    static std::once_flag flag;
+    std::call_once(flag, []{
+        const char* base = "/data/adb/ivanna_omega/rir";
+        if (!ds.load(base)) {
+            __android_log_print(ANDROID_LOG_WARN, IVR_TAG,
+                "RirDataset no disponible en %s — fallback FDN activo", base);
+        } else {
+            __android_log_print(ANDROID_LOG_INFO, IVR_TAG,
+                "RirDataset: %zu salas indexadas desde %s", ds.roomCount(), base);
+        }
+    });
+    return ds;
+}
+
+bool ObjectRenderer::selectRoomByRT60(float targetRt60S) noexcept {
+    if (!std::isfinite(targetRt60S) || targetRt60S <= 0.01f) {
+        clearRoom();
+        return false;
+    }
+    auto& ds = sharedDataset();
+    if (!ds.isLoaded() || ds.roomCount() == 0) {
+        // Fallback silencioso al FDN — no cortamos audio.
+        return false;
+    }
+
+    const size_t idx = ds.findNearestByRT60(targetRt60S);
+    if (currentRoomIdx_ == static_cast<int>(idx) &&
+        rirConvolver_ && rirConvolver_->isLoaded()) {
+        return true;  // ya cargada
+    }
+
+    std::vector<float> irL, irR;
+    int sr = 0;
+    if (!ds.loadImpulseResponse(idx, irL, irR, sr) || irL.empty()) {
+        __android_log_print(ANDROID_LOG_WARN, IVR_TAG,
+            "loadImpulseResponse(%zu) fallido — fallback FDN", idx);
+        return false;
+    }
+
+    int irLen = static_cast<int>(irL.size());
+    if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+
+    if (!rirConvolver_) rirConvolver_ = std::make_unique<Ivanna::RirConvolver>();
+    rirConvolver_->load(irL.data(), irR.data(), irLen);
+    rirConvolver_->setWetDry(reverbLevel_);
+
+    currentRoomIdx_ = static_cast<int>(idx);
+    currentRt60S_   = ds.meta(idx).rt60S;
+    __android_log_print(ANDROID_LOG_INFO, IVR_TAG,
+        "RIR activo: sala idx=%d RT60=%.2fs wet=%.2f sr=%dHz irLen=%d",
+        currentRoomIdx_, (double)currentRt60S_, (double)reverbLevel_, sr, irLen);
+    return true;
+}
+
+void ObjectRenderer::clearRoom() noexcept {
+    if (rirConvolver_) {
+        rirConvolver_->setWetDry(0.f);
+        rirConvolver_->unload();
+    }
+    currentRoomIdx_ = -1;
+    currentRt60S_   = 0.f;
 }
 
 void ObjectRenderer::reset() noexcept {

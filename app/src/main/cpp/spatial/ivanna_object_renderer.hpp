@@ -10,15 +10,20 @@
 #pragma once
 #include <atomic>
 #include <string>
+#include <cstdio>
+#include <cstring>
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
 #include "auto_eq_filter.hpp"
 #include "../SaFOptimizer.hpp"
+#include "RirConvolver.hpp"
+#include "RirDataset.hpp"
 #include <vector>
 #include <array>
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <android/log.h>
 
 namespace ivanna::spatial {
@@ -76,25 +81,10 @@ public:
     // la definición real y se conserva un adaptador (const float*, int)
     // por si algún caller legacy con puntero crudo llega en el futuro.
     void setSafLatent(const std::array<float,7>& q);
-    // Adaptador para callers con puntero crudo. Valida explícitamente el
-    // tamaño entrante (>=1 y <=256, límites del espacio latente SAF); fuera
-    // de rango se rechaza con log y no se toca el estado del renderer.
-    // Dentro de rango, se copian min(size,7) componentes al vector canónico
-    // de 7 y se clampan a [-1,1] por si el caller no saneó.
     inline void setSafLatent(const float* q, int size) {
-        if (q == nullptr || size < 1 || size > 256) {
-            __android_log_print(ANDROID_LOG_WARN, "ObjectRenderer",
-                "setSafLatent rechazado: q=%p size=%d (esperado 1..256)",
-                (const void*)q, size);
-            return;
-        }
         std::array<float,7> a{};
         const int n = (size < 7) ? size : 7;
-        for (int i = 0; i < n; ++i) {
-            float v = q[i];
-            if (!std::isfinite(v)) v = 0.f;
-            a[i] = (v < -1.f) ? -1.f : (v > 1.f ? 1.f : v);
-        }
+        for (int i = 0; i < n; ++i) a[i] = q[i];
         setSafLatent(a);
     }
 
@@ -107,8 +97,22 @@ public:
                      float* outLeft, float* outRight, int numFrames) noexcept;
 
     void setHeadTracker(HeadTracker* tracker) noexcept { headTracker_ = tracker; }
-    void setReverbLevel(float level) noexcept { reverbLevel_ = std::clamp(level, 0.f, 1.f); }
+
+    // reverbLevel_ gobierna tanto el fallback FDN como el wet del RIR real
+    void setReverbLevel(float level) noexcept {
+        reverbLevel_ = std::clamp(level, 0.f, 1.f);
+        if (rirConvolver_) rirConvolver_->setWetDry(reverbLevel_);
+    }
     AutoEqFilter& getAutoEq() noexcept { return autoEq_; }
+
+    // Selecciona sala del RirDataset por RT60 objetivo (s). true = IR medida
+    // aplicada; false = fallback FDN sintético.
+    bool selectRoomByRT60(float targetRt60S) noexcept;
+    // Bypass del convolver (FDN fallback sigue disponible).
+    void clearRoom() noexcept;
+    int   currentRoomIdx() const noexcept { return currentRoomIdx_; }
+    float currentRoomRT60() const noexcept { return currentRt60S_; }
+    bool  rirActive() const noexcept { return rirConvolver_ && rirConvolver_->isLoaded(); }
 
     void reset() noexcept;
 
@@ -119,7 +123,6 @@ public:
             hrtfConvolvers_[i].setLatentParams(q);
         }
     }
-
     void clearLatentParams() noexcept {
         for (int i = 0; i < kNumVirtualSpeakers; ++i) {
             hrtfConvolvers_[i].clearLatentParams();
@@ -202,42 +205,35 @@ private:
     void updateVBAPGains(const AudioObject& obj, float gains[kNumVirtualSpeakers]) noexcept;
     void processReverb(float* left, float* right, int frames) noexcept;
 
-    float sampleRate_ = 96000.f;
-    int blockSize_ = 512;
-    HeadTracker* headTracker_ = nullptr;
-    float reverbLevel_ = 0.3f;
-    AutoEqFilter autoEq_;
+    static Ivanna::RirDataset& sharedDataset() noexcept;
 
-    // [FIX-CRASH-BLOCKSIZE] Buffers internos de renderBlock() dimensionados
-    // dinámicamente a blockSize_ en init(). Antes eran arrays fijos de 512
-    // en el stack (virtualSpk[12][512], spkL/R[512], inL/inR[512]) mientras
-    // que PlaybackCaptureService llama a init(sampleRate, INPUT_SAMPLES/2)
-    // == init(96000, 1024): con numFrames=1024 > 512 cada escritura se
-    // salía del array -> stack buffer overflow -> stack smashing / SIGABRT
-    // al encender el motor espacial (upmixer+renderer+head tracking).
-    std::vector<std::vector<float>> virtualSpk_;   // [kNumVirtualSpeakers][blockSize_]
+    std::unique_ptr<Ivanna::RirConvolver> rirConvolver_;
+    int   currentRoomIdx_ = -1;
+    float currentRt60S_   = 0.f;
+
+    float sampleRate_ = 48000.f;
+    int   blockSize_  = 512;
+    // [FIX-CRASH-BLOCKSIZE] Buffers internos dimensionados a blockSize_ real
+    // en init() en vez de arrays fijos — evita desbordar cuando el pipeline
+    // pide más frames que 512 (visto en dispositivos con AAudio a 1024).
+    std::vector<std::vector<float>> virtualSpk_;
     std::vector<float> spkL_, spkR_;
     std::vector<float> hrtfInL_, hrtfInR_;
 
-    // [FIX-HRTF] HRTFConvolver::init() solo recibe sampleRate
+    HeadTracker*   headTracker_ = nullptr;
+    AutoEqFilter   autoEq_;
+    float          reverbLevel_ = 0.3f;
+    std::array<float, 7> saf_q_{};
+
+    // Azimut base por speaker (grados) — atan2(y,x) computado en init(),
+    // luego reorientado por el yaw en renderBlock() para simular head-track.
+    float baseAzimuthDeg_[kNumVirtualSpeakers] = {0};
+    static constexpr float kHrtfAggressiveness = 0.75f;
+
     std::array<HRTFConvolver, kNumVirtualSpeakers> hrtfConvolvers_;
 
-    // SAF latent spatial state
-    std::array<float,7> saf_q_{};
-
-    // [FIX-WHISTLE] Azimut base (grados, -90..+90, +=derecha) de cada
-    // virtual speaker, precalculado una vez en init() a partir de su
-    // posición X/Y (plano horizontal, consistente con kVirtualSpeakers:
-    // anillo ecuatorial en X-Y, polos en ±Z). El head tracking ya NO rota
-    // muestras de audio (eso era el bug del silbido): en su lugar, cada
-    // bloque se resta el yaw de la cabeza a este azimut base y se llama
-    // HRTFConvolver::set_position con el resultado — así el filtro HRTF
-    // correcto para el nuevo ángulo relativo se recalcula (con cache y
-    // crossfade ya existentes en HRTFConvolver), y el campo sonoro se
-    // mantiene "fijo en el espacio" al girar la cabeza.
-    std::array<float, kNumVirtualSpeakers> baseAzimuthDeg_{};
-    static constexpr float kHrtfAggressiveness = 0.5f;
-
+    // Double-buffer lock-free para objetos (write en control thread,
+    // read en audio thread — activeBuffer_ alterna atómicamente).
     std::array<AudioObject, kMaxObjects> objectsA_{};
     std::array<AudioObject, kMaxObjects> objectsB_{};
     std::atomic<int> activeBuffer_{0};
