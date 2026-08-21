@@ -144,7 +144,7 @@ fun MainScaffold(
             composable(TABS[3].route) {
                 SpatialHubScreen(
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
-                    onOpenAudioControlHub = { outerNav.navigate("audio_control_hub") },
+                    onOpenAudioControlHub = { outerNav.navigate(IvannaRoute.AUDIO_CONTROL_HUB) },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
