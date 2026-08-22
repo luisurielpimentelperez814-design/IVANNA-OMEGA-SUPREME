@@ -100,6 +100,21 @@ object OmegaEngineBridge {
     fun setIntensity(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
 
     fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("deltaEnergy", deltaEnergy); put("metricNorm", metricNorm); put("memory", memory); put("gain", gain) })
+    /**
+     * Envía el vector latente q[7] real de Φ_SAF-Room^∞ (SaFRoomBridge.getParams())
+     * al daemon — este es el único punto donde q[7] llega al bus (saf_q en
+     * OmegaDspSnapshot), que omega_effect.cpp aplica vía setSafLatentParams().
+     * Antes de este método, SpatialAudioPanel activaba el switch SAF pero nunca
+     * enviaba el vector calculado; el DSP nunca recibía la calibración real.
+     */
+    fun pushSafLatentQ(q: FloatArray, gain: Float = 1.0f): Boolean {
+        if (q.size < 7) return false
+        return sendCommand(JSONObject().apply {
+            put("action", "PUSH_SAF_STATE")
+            put("q", org.json.JSONArray(q.take(7)))
+            put("gain", gain)
+        })
+    }
     fun pushSAFState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", json) })
     fun pushSAFState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("args", args.map { it.toString() }) })
 

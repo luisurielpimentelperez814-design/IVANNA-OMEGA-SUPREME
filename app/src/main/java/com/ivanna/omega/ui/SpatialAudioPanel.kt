@@ -49,6 +49,14 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
         if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet)
         if (state.safEnabled) {
             runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
+            // Propagar q[7] real al daemon en el restore — sin esto el DSP
+            // arrancaba sin la calibración SAF aunque el switch persistido
+            // fuera "activo".
+            val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+            OmegaEngineBridge.pushSafLatentQ(
+                FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
+                gain = state.safIntensity
+            )
         }
         while (true) {
             hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
@@ -116,12 +124,35 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
         SpatialCard("SAF · AJUSTE ESPECTRAL ADAPTATIVO", "Vector latente q[7] → ObjectRenderer.setSafLatent") {
             RowSwitch("SAF activo", state.safEnabled) { on ->
                 update { it.copy(safEnabled = on) }
-                if (on) runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
-                else runCatching { SaFBridge.nativeSaFReset() }
+                if (on) {
+                    runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
+                    // FIX (descableado): el switch solo inicializaba el modelo local
+                    // pero nunca enviaba q[7] al daemon — omega_effect.cpp nunca
+                    // recibía la calibración real. SaFRoomBridge.getParams() es el
+                    // p_t real del optimizador Riemanniano; se envía escalado por
+                    // la intensidad actual.
+                    val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(
+                        FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
+                        gain = state.safIntensity
+                    )
+                } else {
+                    runCatching { SaFBridge.nativeSaFReset() }
+                    OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
+                }
             }
             LabeledSlider("Intensidad", state.safIntensity, 0f..1f, "%.2f") { v ->
                 update { it.copy(safIntensity = v) }
-                if (state.safEnabled) runCatching { SaFOptimizer.syncToRoomBridge(state.rirRt60) }
+                if (state.safEnabled) {
+                    runCatching { SaFOptimizer.syncToRoomBridge(state.rirRt60) }
+                    // Reenviar q[7] escalado por la nueva intensidad — antes este
+                    // slider solo guardaba el número en prefs sin efecto en audio.
+                    val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(
+                        FloatArray(7) { i -> q.getOrElse(i) { 0f } * v },
+                        gain = v
+                    )
+                }
             }
             RowSwitch("Modo automático", state.safAutoMode) { on -> update { it.copy(safAutoMode = on) } }
             Text("Modelo: $safStatus", color = TextMuted, fontSize = 10.sp)
