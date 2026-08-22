@@ -52,8 +52,10 @@ object SaFOptimizer {
     // El matching real usará distancia euclidiana sobre head-width / head-depth;
     // por ahora la selección es round-robin sobre esta lista durante la calib.
     private val KNOWN_SUBJECTS = listOf(
-        "kemar_subject_165", "subject_003", "subject_008",
-        "subject_009", "subject_010", "subject_011"
+        // IDs reales del hrtf_index.json deployado (magisk_module/.../hrtf).
+        "kemar", "kemar_large", "tu_berlin_kemar",
+        "cipic_003", "cipic_008", "cipic_009",
+        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
     )
 
     private const val PREFS_NAME = "saf_optimizer_prefs"
