@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.spatial.HrtfSubjectSelector
+import com.ivanna.omega.spatial.IvannaSpatialManager
 
 /**
  * PinnaMetricsSection — 3 medidas de la oreja del usuario (mm) para
@@ -46,7 +47,20 @@ fun PinnaMetricsSection(modifier: Modifier = Modifier) {
                 val m = HrtfSubjectSelector.PinnaMetrics(concha, helix, fosa)
                 matched = HrtfSubjectSelector.findBestMatch(context, m)
                 prefs.edit().putString("matched", matched).apply()
+                // HUECO CONOCIDO: SET_PINNA_METRICS en el daemon
+                // (command_server.cpp) es eco puro — parsea y responde ok,
+                // pero no escribe m_state ni publica al bus, así que por sí
+                // solo no cambia el DSP. Se sigue llamando (telemetría/ABI),
+                // pero el efecto real se aplica por la ruta que SÍ funciona:
+                // ObjectRenderer in-process vía setHrtfSubject.
                 OmegaEngineBridge.setPinnaMetrics(concha, helix, fosa)
+                matched?.let { id ->
+                    IvannaSpatialManager.setHrtfSubject(id)
+                    SpatialAudioPrefs.save(
+                        context,
+                        SpatialAudioPrefs.load(context).copy(hrtfSubject = id)
+                    )
+                }
             }) { Text("Aplicar geometría de oreja") }
             matched?.let {
                 Text("Sujeto HRTF más cercano: $it",
