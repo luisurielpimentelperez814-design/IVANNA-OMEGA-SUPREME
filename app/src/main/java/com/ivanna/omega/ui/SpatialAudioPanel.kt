@@ -65,6 +65,22 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
             safStatus     = runCatching {
                 if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
             }.getOrDefault("modelo no cargado")
+
+            // FIX (descableado): "Modo automático" solo se guardaba en prefs y no
+            // hacía absolutamente nada. Ahora, con SAF activo, ejecuta un paso real
+            // del optimizador Riemanniano (SaFRoomBridge.step) alimentado con el
+            // estado de sala actual y republica el q[7] resultante al daemon.
+            if (state.safEnabled && state.safAutoMode) {
+                runCatching {
+                    com.ivanna.omega.saf.SaFRoomBridge.setRoomState(state.rirRt60, 0f, 0f)
+                    com.ivanna.omega.saf.SaFRoomBridge.step()
+                    val qa = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(
+                        FloatArray(7) { i -> qa.getOrElse(i) { 0f } * state.safIntensity },
+                        gain = state.safIntensity
+                    )
+                }
+            }
             delay(1000)
         }
     }
