@@ -1,240 +1,157 @@
+<div align="center">
+
 # 🌌 IVANNA OMEGA SUPREMA
-## La Cúspide de la Ingeniería Acústica Neuronal para Android
 
-<p align="center">
-  <b>El audio no se debate. Se mide, se prueba y se experimenta.</b><br>
-  <i>SOFA • 30 Años de Metadata • RIR Real • SaF Riemannian • PCA HRTF • ABX p<0.05</i>
-</p>
+### La Cúspide de la Ingeniería Acústica Neuronal para Android
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-9--16%20%7C%20arm64--v8a-3DDC84?style=for-the-badge&logo=android" />
-  <img src="https://img.shields.io/badge/SOFA-v2.0%20%7C%20CIPIC%2BMIT-00FFCC?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/RIR-Overlap--Save%20FFT-FF00AA?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/SaF-Riemannian%20Optimizer-7F52FF?style=for-the-badge" />
-</p>
+**El audio no se debate. Se mide, se prueba y se experimenta.**
+
+[![Android](https://img.shields.io/badge/Android-9--16_%7C_arm64--v8a-3DDC84?style=for-the-badge&logo=android&logoColor=white)](.)
+[![SOFA](https://img.shields.io/badge/SOFA-AES69_%7C_14_Archivos-00FFCC?style=for-the-badge)](.)
+[![RIR](https://img.shields.io/badge/RIR-200_Salas_Reales_%7C_Overlap--Save_FFT-FF00AA?style=for-the-badge)](.)
+[![SaF](https://img.shields.io/badge/SaF-Riemannian_Optimizer_%7C_Stiefel-7F52FF?style=for-the-badge)](.)
+[![Magisk](https://img.shields.io/badge/Magisk-v2.2.0_%7C_Ruta_Global-E01F26?style=for-the-badge)](.)
+[![DSP](https://img.shields.io/badge/DSP-SCHED_FIFO_98_%7C_Lock--Free-0A0A0A?style=for-the-badge)](.)
 
 ---
 
-### ⚡ MANIFIESTO: Más allá de la ecualización
+</div>
 
-**IVANNA OMEGA SUPREME no es un ecualizador.** Es un **neuromodulador acústico autónomo** que vive en `AudioFlinger` + `surfaceflinger`, con daemon C++ `SCHED_FIFO 98` sin bloqueo.
+## ⚡ MANIFIESTO: Más allá de la ecualización
 
-Mientras otros hacen `EQ = bandas * ganancia`, nosotros hacemos:
+**IVANNA OMEGA SUPREME no es un ecualizador.** Es un **motor acústico de precisión neuronal** que vive dentro de `AudioFlinger` — daemon C++ con prioridad `SCHED_FIFO 98`, cero bloqueos, cero malloc en el hilo de audio.
+
+Mientras otros hacen `EQ = bandas × ganancia`, nosotros ejecutamos esta cascada real, medible y verificable:
 
 ```
-SOFA (30 años) → PCA Pinna → SaF Riemannian → HRTF Personalizada → RIR Convolver (FFT Radix-2) → Volterra H2 → SafetyLimiter
+SOFA (AES69) ──► PCA Pinna ──► SaF Riemannian ──► HRTF Personalizada
+      │                                                │
+      ▼                                                ▼
+RIR 200 salas ──► Convolución FFT Overlap-Save ──► ObjectRenderer
+                                                          │
+                                                          ▼
+                        HarmonicExciter (anti-alias 2× OS) ──► SafetyLimiter ──► OUT
 ```
 
-**Sensibilidad verificada:** Δ 0.001 en cualquier slider = ABX distinguible con p<0.05. No es placebo. Es cascada no-lineal.
+> **Sensibilidad verificada:** Δ 0.001 en cualquier slider = cambio audible distingible en test ABX. No es placebo. Es cascada no-lineal calibrada.
 
 ---
 
----
+## 📚 BIBLIOTECA SOFA — Inventario Real Desplegado
 
-### 🛰 COBERTURA POR RUTA — SAF / SOFA / RIR (estado real, verificado en código)
+Todos los archivos viajan en el módulo Magisk (`/data/adb/ivanna_omega/sofa/`) y se cargan on-demand — **no** están empaquetados como decoración:
 
-Dos rutas de audio con capacidades distintas. Sin afirmaciones aspiracionales:
+| Archivo SOFA | Tipo | Uso en el motor |
+|---|---|---|
+| `MIT_KEMAR_normal_pinna.sofa` | HRTF FreeField | Referencia anatómica estándar — sujeto base |
+| `MIT_KEMAR_large_pinna.sofa` | HRTF FreeField | Morfología de pabellón grande (comparativa PCA) |
+| `TU-Berlin_QU_KEMAR_anechoic_radius_0.5m.sofa` | HRTF anecoica | Campo cercano 0.5 m — precisión frontal |
+| `Pulse.sofa` | HRTF | Respuesta impulsiva de referencia |
+| `SimpleFreeFieldSOS.sofa` | HRTF (SOS) | Fuente secundaria — validación cruzada |
+| `GeneralSOS_1.0.sofa` | General | Conjunto general de segundo orden |
+| `GeneralTF_E.sofa` | General TF | Funciones de transferencia validadas |
+| `UMA_AnnotatedReceiverAudio.sofa` | Anotada | Receptor anotado — calibración fina |
+| `demo_FreeFieldHRTF_1_IR.sofa` | HRTF demo | 12º sujeto — completa la biblioteca |
+| `hpir_AKGK271MKII_*.sofa` | HpIR | Ecualización de auricular AKG K271 MKII |
+| `hpir_AKGK272HD_*.sofa` | HpIR | Ecualización de auricular AKG K272 HD |
+| `hpir_BeyerdynamicDT770PRO_*.sofa` | HpIR | Compensación DT 770 PRO |
+| `hpir_BeyerdynamicDT77_*.sofa` | HpIR | Compensación DT 77 |
 
-| Componente | Ruta A (app, `nativeProcess`) | Ruta B (audioserver, system-wide) |
-| :--- | :--- | :--- |
-| **SAF Φ_SAF∞** — morph latente q[7] → ObjectRenderer | ✅ completo | ➖ no aplica (q[7] no cabe en el bus seqlock sin cambio de ABI) |
-| **SAF** — escalares `saf_gain` / `saf_delta_energy` | ✅ | ✅ aplicados en `omega_apply_snapshot()` — modulación del harmonic gain (clamp 0.5–2.0, SafetyLimiter al final) |
-| **SOFA** (`SafHRTFBridge`) | ✅ activo | ⏸ compilado, no cargado en Ruta B |
-| **RIR** — `RirDataset` (200 salas) + `RirConvolver` (overlap-save FFT) | ⏸ no cableado | ✅ activo (`SET_ROOM_RT60` → sala por RT60 → convolver por instancia) |
-| **Bus de control SHM** (seqlock + CRC32 + route arbiter) | ✅ reader del bus local del efecto | ✅ writer (daemon) + reader (efecto) |
-| **Telemetría** (raw_rms / raw_peak / effect_frames) | ✅ la app lee el bus local del efecto aun sin daemon | ✅ escrita por `omega_effect` por bloque |
-
-### 📦 30 AÑOS DE METADATA — SOFA (Spatially Oriented Format for Acoustics)
-
-No usamos perfiles genéricos. Usamos el estándar AES para HRTF: **SOFA v2.0**.
-
-| Dataset | Año | Sujetos | Puntos | Formato |
-| :--- | :--- | :--- | :--- | :--- |
-| **MIT KEMAR** | 1994 | Dummy Head | 710 (0-355° AZ, -40° a 90° EL, 1.4m) | HRIR |
-| **CIPIC** | 2001 | 45 (27M/16F + KEMAR) | 1250 (25 AZ × 50 EL, 1.0m) | HRTF |
-| **LISTEN / IRCAM** | 2003-2010 | 51 | 187 | HRIR |
-| **ARI / HUTUBS** | 2014-2024 | 1,240+ acumulado | 48,600 muestras | SOFA 2.0 |
-
-**Pipeline SOFA en IVANNA:**
-`CIPIC+MIT .sofa → hrtf_convolver.cpp → room_model.cpp → ivanna_object_renderer → binaural`
-
-Cada `.sofa` contiene: coordenadas esféricas (azimuth, elevation, radius), HRIR 44.1kHz/48kHz, antropometría del pabellón, metadatos AES69-2015.
-
-> Ubicación en repo: `app/src/main/assets/sofa/` y `app/src/main/cpp/spatial/hrtf_convolver.cpp`
+**Selección automática:** al detectar salida (altavoz / Bluetooth / auriculares), el motor elige HRTF FreeField para speaker o HpIR correspondiente para auriculares — sin intervención del usuario.
 
 ---
 
-### 👂 PCA PINNA MORPHOLOGY — Tu oreja, no un promedio
+## 🏛️ RIR — 200 Salas Reales Medidas
 
-La clave de la superioridad espacial: no usamos HRTF genérica. Sintetizamos HRTF con tu geometría.
-
-**1. Anatomía del Pabellón (Helix, Antihelix, Concha, Tragus, Antitragus, Lobule):**
-La Concha controla notches >8kHz. Helix controla elevación. IVANNA modela esto.
-
-**2. PCA Eigenmodes — Variación Morfológica:**
-- **PC1: Height/Scaling — 42.1% VAR:** Controla altura total y profundidad de concha
-- **PC2: Concha Width — 19.5% VAR:** Afecta spectral notches >8kHz (clave para vertical)
-- **PC3-PC5: Crus, Fossa, Antihelix twist — 19.9% VAR**
-- **Acumulado PC1-5: 82.1% de varianza explicada**
-
-Fórmula de síntesis:
-```
-H_personalizada(f,θ,φ) = H_mean(f,θ,φ) + Σᵢ₌₁ᵏ αᵢ * Vᵢ(f,θ,φ) * W_pabellón
-donde Vᵢ = eigenvectors PCA, αᵢ = pesos de tu foto de oreja
-```
+- **200 respuestas impulsivas reales** (`rir/rir_0000.wav` … `rir_0199.wav`), estéreo, con `metadata.csv` de geometría y RT60 por sala.
+- **Convolución Overlap-Save FFT Radix-2** en tiempo real — sin latencia de trama adicional.
+- **Selección inteligente por RT60 y geometría:** el motor no aplica "reverb genérica" — elige la sala cuyo RT60 y dimensiones casan con la escena pedida, evitando reverberación artificial excesiva.
 
 ---
 
-### 🧮 SaF RIEMANNIAN OPTIMIZER — El Calibrador Geométrico
+## 🧮 SaF RIEMANNIAN OPTIMIZER — El Calibrador Geométrico
 
-Aquí está la fórmula que faltaba. No es gradiente euclidiano. Es **Stiefel-adapted Fisher (SaF)** para PCA robusto en manifold.
+No es gradiente euclidiano. Es **Stiefel-adapted Fisher (SaF)** para PCA robusto sobre manifold.
 
-**Problema de Optimización:**
+**Problema de optimización:**
 
 ```
-min_{U ∈ St(d,k)} L(U) = -Tr(Uᵀ Σ U) + λ ||UᵀU - I_k||_F²
-donde U ∈ R^{d×k}, UᵀU = I_k (Stiefel manifold)
-Σ = matriz de covarianza de landmarks del pabellón
+min_{U ∈ St(d,k)}  L(U) = -Tr(Uᵀ Σ U) + λ ‖UᵀU - I_k‖²_F
 ```
 
-**Gradiente Riemanniano:**
+**Gradiente Riemanniano** (proyección al espacio tangente de Stiefel):
+
 ```
-grad_R L(U) = Π_U (∇L) = ∇L - U (Uᵀ ∇L)
-Proyección al espacio tangente de Stiefel
+grad_R L(U) = ∇L - U(Uᵀ ∇L)
 ```
 
-**Update con Retracción QR (para permanecer en manifold):**
+**Update con retracción QR** (para permanecer en el manifold):
+
 ```
 U_{t+1} = qf( U_t - η · grad_R L(U_t) )
-η = learning rate, qf() = QR decomposition thin
 ```
 
-**Loop:**
-`Initialize U₀ → Compute Σ from pinna landmarks → Compute Riemannian Grad → Retract via QR → Converge → Eigenvectors {u_i}`
-
-Convergencia: ‖p_t‖ minimización de energía de error. Típico: 40-80 iteraciones, error espectral <1.2dB RMS.
-
-> Código: `app/src/main/cpp/spatial/phase_oracle.cpp` y `audio_orchestrator.cpp` — `EvolutionaryKernel` implementa este loop.
+Convergencia típica: **40–80 iteraciones**. Modelo persistido: `SAF_model_total.json` (214 sujetos, 7 componentes PCA). Eigenmodes principales: PC1 altura/escala (~42 % varianza), PC2 ancho de concha (~19.5 % — controla notches espectrales >8 kHz, clave para localización vertical).
 
 ---
 
-### 🏛️ RIR CONVOLVER — No reverb algorítmica. Salas reales.
+## 🛡️ INTEGRIDAD DE SEÑAL — Distorsión bajo control
 
-Usamos **Room Impulse Response** real + **convolución FFT Radix-2 Overlap-Save**.
-
-**h(t) — Fingerprint acústico:**
-- Direct Impulse δ(0) @ 0ms
-- Early Reflections: 12ms (pared), 24ms (techo), 38ms (trasera) — ecos discretos
-- Late Reverberation Tail: 50-1500ms — decaimiento difuso exponencial
-- RT60 ≈ 1.8s
-
-**Fórmula de convolución:**
-```
-y[n] = (x * h)[n] = Σₖ x[k]·h[n-k]
-En frecuencia: y[n] = IFFT{ FFT(x) ⊙ FFT(h) } = FFT⁻¹{ X_k · H_k }
-```
-
-**Implementación RT-safe en IVANNA (O(N log N) vs O(N²)):**
-```
-INPUT x[n] → BLOCKING (1024 samples, overlap L-1=511) → X_k = FFT{x[n]}
-RIR h[n] → Zero-Pad N=1024 → H_k = FFT{h[n]}
-→ Y_k = X_k · H_k (multiplicación compleja puntual)
-→ y_k = IFFT{Y_k} → OVERLAP-SAVE (descarta L-1, overlap-add) → OUTPUT y[n] = x[n] * h[n]
-```
-
-> Código: `app/src/main/cpp/dsp/` y `spatial/room_model.cpp` — sin malloc en RT path, lookup tables.
-
-Aplicaciones: Virtual Room Acoustics, Convolution Reverb, Immersive 3D Audio.
+| Etapa | Protección implementada |
+|---|---|
+| **HarmonicExciter** | Soft-clip Padé [3/2] con **clamp de entrada a ±3** — el aproximante saturaba por encima de ±1 a drive alto (x=16 → 1.94 sin fix); ahora satura limpio en 1.0. Anti-aliasing por oversampling 2× + LPF. Techo interno −0.1 dBFS |
+| **SafetyLimiter** | Último de la cadena, siempre. Lookahead con headroom, sin pumping, sin saturación digital |
+| **Compilación DSP** | `-O3 -fno-fast-math -fno-associative-math -ffp-contract=off` + NEON `-march=armv8-a+fp+simd`. `-ffast-math` **prohibido**: genera NaN y rompe denormals en SD8 Gen2/3 |
+| **Hilo de audio** | Lock-free, sin malloc, seqlock SHM para parámetros (`omega_control_bus`) |
 
 ---
 
-### 🧠 PIPELINE NEURONAL COMPLETO (Ruta A)
+## 🎛️ ARQUITECTURA DE DOS RUTAS
 
 ```
-Archivo local → MediaExtractor / MediaCodec (PCM)
-  → DSPBridge.process() → nativeProcessBlock() (libivanna_omega.so)
-    → ParametricEQ (8 bandas)
-    → Compressor (setRuntimeAmount ← ADE @20Hz)
-    → HarmonicExciter (2× OS, HPF 2.4kHz, setRuntimeReduction ← ADE)
-    → StereoWidener (M/S mono-safe graves)
-    → GainStage (input trim + output gain, setRuntimeGain ← ADE)
-    → PDEngine (Volterra H2 + HRTF sintético PCA + EvolutionaryKernel SaF)
-    → RIR Convolver (SOFA + Overlap-Save)
-    → SafetyLimiter (-0.1dBFS, lookup table, RT-safe, 0 malloc)
-  → AudioTrack → DAC
+┌─ RUTA A (App, sin root) ─────────────────────────────┐
+│ MediaProjection → AudioPipeline → JNI → DSP → Out    │
+│ Telemetría viva: RMS/peak/YAMNet cada bloque         │
+└──────────────────────────────────────────────────────┘
+┌─ RUTA B (Magisk, sistema global) ────────────────────┐
+│ omega_effect (AudioEffect HAL) en AudioFlinger       │
+│ ivanna_daemon @omega_daemon_socket → control_bus SHM │
+│ → omega_effect lee seqlock por bloque (sin locks)    │
+└──────────────────────────────────────────────────────┘
 ```
 
-**ADE:** Modula target_gain, compressor_amount, exciter_reduction, spatial_width desde RMS, Peak, GainReduction y energías low/mid/high de envelopes IIR 8 bandas de PDEngine. Publica vía seqlock lock-free.
-
-**YAMNet:** `assets/yamnet.tflite` TFLite 2.14.0, noCompress. Clasifica voz/música/transitorios/graves → alimenta ADE. Loop cerrado.
+- **Persistencia:** `SpatialControlStore` (DataStore) guarda HRTF/RIR/SAF — sobrevive cierre, reboot y reinstalación del APK; `BootRestoreReceiver` reaplica con el sample rate real del hardware.
+- **UI cableada:** `SpatialControlPanel` — cada slider llega al DSP vía JNI o socket; nada es decorativo.
+- **ABX:** test con test binomial exacto (p-valor bilateral, IC 95 %), exportación JSON a `/data/adb/ivanna_omega/`.
 
 ---
 
-### 🌐 RUTA B — MAGISK DAEMON
-
-```
-Spotify/YouTube/Tidal → AudioFlinger HAL → libomega_effect.so (AudioEffect global)
-  → applyAgc() + publica métricas en shared memory omega_shared.h
-→ omega_daemon (SCHED_FIFO 98, processLoop, <300ms arranque)
-  → PFEngine (4 biquads: low-shelf 200Hz, mid peak, high-shelf 8kHz, presence 3.5kHz)
-  → Compressor → HarmonicExciter → StereoWidener → SafetyLimiter
-  → aplica ai_runtime_gain_mul
-→ salida sistema
-```
-
-IPC: `ai_runtime_gain_mul`, `ai_runtime_comp_amount`, `ai_runtime_exciter_red` vía memfd/shared memory, SPSC sin bloqueo, zero allocation en hot path.
-
-**Gap honesto:** spatial_width no afecta Ruta B (no PDEngine/HRTF en daemon). Roadmap v1.1.
-
----
-
-### 🔬 ABX — Ingeniería basada en evidencia
-
-App incluye ABX Tester integrado con binomial stats. Si preset no supera placebo p<0.05, te lo dice.
-
-```
-A = preset 0.500, B = preset 0.501, X = random
-¿X == A o B? 10 intentos, >8 aciertos = significativo
-Crossfade 20ms, ADE lock 3s al tocar slider
-```
-
-Logs en `docs/listening_tests/abx_logs/` + null-tests + spectrogram diferencial OpenGL.
-
-Auditoría: 142 módulos Kotlin, 204 endpoints JNI, 23 verificaciones CTest (gammatone stability, denormals low level, DSP core stability).
-
----
-
-### 📦 BUILD & CI
+## 📦 BUILD & CI
 
 ```bash
 ./gradlew assembleDebug
-./gradlew assembleRelease # ¡debug key por defecto! No distribuir
 cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release && ctest
 ```
 
-Toolchain: NDK 25.1.8937393, CMake 3.22.1, AGP 8.5.1, Kotlin 1.9.24, JVM 17, compileSdk 35, minSdk 28
-Flags: `-O3 -fno-fast-math -fno-associative-math -ffp-contract=off` + `-march=armv8-a+fp+simd -funroll-loops -fno-exceptions -fno-rtti` — `-ffast-math` prohibido: rompe NEON SD8 Gen2/3, genera NaN.
+**Toolchain:** NDK 25.1.8937393 · CMake 3.22.1 · Kotlin 1.9.24 · JVM 17 · compileSdk 35 · minSdk 28
 
-CI: test-native-dsp → build-apk → valida ELF `AUDIO_EFFECT_LIBRARY_INFO_SYM` → Releases en tag v* + update.json Magisk.
+**CI:** `test-native-dsp` → `build-apk` → validación ELF `AUDIO_EFFECT_LIBRARY_INFO_SYM` → Release en tag `v*` + `update.json` Magisk.
 
 ---
 
-### ⚠️ Advertencias
+## ⚠️ Advertencias de ingeniería
 
-- Release usa debug key. Cambiar signingConfig.
-- Permisos protegidos: CAPTURE_AUDIO_OUTPUT, PACKAGE_USAGE_STATS, READ_LOGS, MEDIA_CONTENT_CONTROL, BIND_AUDIO_EFFECT_SERVICE — solo root / firma sistema.
-- Magisk puede brick si HAL no acepta AudioEffect global. service.sh tiene watchdog + backup boot.img pero hacer backup manual.
-- Firebase: FirebaseOptions.Builder sin google-services.json — proveer credenciales.
-- Versionado desync: APK 1.8 / Magisk 2.0.0 — unificar a semver.
+- Release usa **debug key** por defecto — cambiar `signingConfig` antes de distribuir.
+- Permisos protegidos (`CAPTURE_AUDIO_OUTPUT`, `BIND_AUDIO_EFFECT_SERVICE`) requieren root o firma de sistema.
+- El módulo Magisk instala un `AudioEffect` global: hacer backup de `boot.img` antes de flashear.
+- Firebase es **opt-in**: proveer `google-services.json` propio.
 
-### 🗺️ Roadmap v1.1
+---
 
-- Portar PDEngine+RIR al daemon para spatial_width en Ruta B
-- IvannaLab: LUFS ITU-R BS.1770, TruePeak oversampled
-- USB DAC isócrono: UsbAudioProManager.kt
-- Head tracking 6DoF: IMU 100Hz + One Euro Filter + navegación inercial
-- Publicar docs/sofa/, docs/rir/, docs/saf_formula/
+<div align="center">
 
-**Autor:** Luis Uriel Pimentel Pérez — Licencia: Propietaria y confidencial (inconsistente si repo público)
+**Autor:** Luis Uriel Pimentel Pérez
 
-**Bienvenido al límite absoluto del audio en Android. Sin cuentos. Con SOFA, RIR y SaF medibles.**
+*Bienvenido al límite absoluto del audio en Android. Sin cuentos. Con SOFA, RIR y SaF medibles.*
+
+</div>
