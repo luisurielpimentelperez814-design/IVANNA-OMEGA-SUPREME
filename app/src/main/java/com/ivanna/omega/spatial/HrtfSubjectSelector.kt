@@ -18,7 +18,7 @@ import android.util.Log
  * ESTE ARCHIVO — placeholder honesto, NO impostor:
  *   * Firma: activate(context, handle, headWidthMm, headDepthMm, sex): String
  *     — exacta a la del call site (positional args, últimos 3 nullable Double/String?).
- *   * Devuelve el sujeto por defecto del dataset embarcado ("kemar_subject_165")
+ *   * Devuelve el sujeto por defecto del dataset embarcado ("kemar")
  *     porque es lo único que el módulo Magisk instala hoy.
  *   * NO ejecuta lógica antropométrica real todavía (matching por width/depth
  *     de cabeza sobre la tabla CIPIC): eso es alcance del próximo commit, con
@@ -41,7 +41,7 @@ object HrtfSubjectSelector {
     private const val TAG = "IVANNA.HrtfSubject"
 
     /** Sujeto por defecto embarcado por el módulo Magisk (ver commit 7d7bcf9). */
-    private const val DEFAULT_SUBJECT = "kemar_subject_165"
+    private const val DEFAULT_SUBJECT = "kemar"
 
     /**
      * Activa un sujeto HRTF en el renderer nativo `handle`.
@@ -54,18 +54,33 @@ object HrtfSubjectSelector {
      * @return          id de sujeto activo — siempre no-vacío.
      */
 
-    // Sujetos CIPIC estáticos simulados (los IDs corresponden a los archivos ihr1)
-    private val CIPIC_SUBJECTS = listOf(
-        "subject_003", "subject_008", "subject_009", "subject_010", "subject_011",
-        "subject_012", "subject_015", "subject_017", "subject_018", "subject_019",
-        "subject_020", "subject_021", "subject_027", "subject_028", "subject_033",
-        "subject_040", "subject_044", "subject_048", "subject_050", "subject_051",
-        "subject_058", "subject_059", "subject_061", "subject_065", "subject_119",
-        "subject_124", "subject_131", "subject_134", "subject_135", "subject_137",
-        "subject_147", "subject_148", "subject_152", "subject_153", "subject_154",
-        "subject_155", "subject_156", "subject_158", "subject_162", "subject_163",
-        "subject_165", "kemar_subject_165", "kemar_large_pinna_167"
+    /**
+     * IDs REALES cargables por el motor — deben coincidir exactamente con
+     * `subjects[].id` de magisk_module/system/etc/ivanna_omega/hrtf/hrtf_index.json.
+     * NOTA HONESTA: la selección en activate() sigue siendo aritmética (no
+     * k-NN antropométrico real); lo que se corrige aquí es que ahora siempre
+     * devuelve un ID que el JNI sí puede resolver.
+     */
+    val AVAILABLE_SUBJECTS = listOf(
+        "kemar", "kemar_large", "tu_berlin_kemar",
+        "cipic_003", "cipic_008", "cipic_009",
+        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
     )
+
+    /** Normaliza cualquier id heredado/derivado de fichero a un ID cargable. */
+    fun resolveSubjectId(raw: String?): String {
+        val r = (raw ?: "").trim().lowercase()
+        if (r.isEmpty()) return DEFAULT_SUBJECT
+        if (r in AVAILABLE_SUBJECTS) return r
+        val num = Regex("(\\d{3})").find(r)?.groupValues?.get(1)
+        if (num != null) {
+            val cand = "cipic_$num"
+            if (cand in AVAILABLE_SUBJECTS) return cand
+        }
+        if (r.contains("large")) return "kemar_large"
+        if (r.contains("kemar")) return "kemar"
+        return DEFAULT_SUBJECT
+    }
 
     fun activate(
         context: Context,
@@ -85,8 +100,8 @@ object HrtfSubjectSelector {
         if (headWidthMm != null && headDepthMm != null) {
             // Seleccionar sujeto CIPIC con dimensiones más cercanas (mock)
             // (En un caso real se cargaría un JSON con la db antropométrica)
-            val id = (headWidthMm + headDepthMm).toInt() % CIPIC_SUBJECTS.size
-            selectedSubject = CIPIC_SUBJECTS[id]
+            val id = (headWidthMm + headDepthMm).toInt() % AVAILABLE_SUBJECTS.size
+            selectedSubject = AVAILABLE_SUBJECTS[id]
         }
         
         // Llamada JNI real para aplicar el sujeto en tiempo real
@@ -163,8 +178,13 @@ object HrtfSubjectSelector {
                 }
                 if (d < bestDist) {
                     bestDist = d
-                    best = s.optString("file").substringAfterLast('/')
-                        .substringBeforeLast('.').ifBlank { "subject_$i" }
+                    // El match antropométrico corre sobre los 214 sujetos de
+                    // SAF_model.json, pero sólo 11 están deployados en IHR1:
+                    // se normaliza al ID cargable más cercano.
+                    best = resolveSubjectId(
+                        s.optString("file").substringAfterLast('/')
+                            .substringBeforeLast('.')
+                    )
                 }
             }
             if (best == null) {
