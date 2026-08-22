@@ -23,9 +23,11 @@ private:
     float currentOut_ = 1.0f;
     float runtimeMul_ = 1.0f;
 
-    // Limitador true-peak brick-wall — 1 muestra de ataque, release ~50ms
-    float limGain_    = 1.0f;   // ganancia actual del limitador
-    float limRelCoef_ = 0.999f; // release coefficient (recalculado en setParams)
-    static constexpr float LIM_THRESHOLD = 0.9886f; // −0.1 dBFS true-peak
+    // FIX (ruido digital): aqui vivia un limitador brick-wall de 1 muestra de
+    // ataque, en cascada delante del SafetyLimiter. Dos limiters en serie con
+    // ataque instantaneo modulan la senal muestra a muestra y generan
+    // intermodulacion de banda ancha. El SafetyLimiter final ya garantiza el
+    // techo de -0.1 dBFS con escalado por bloque (sin AM), asi que esta etapa
+    // ahora es solo ganancia suavizada, lineal y transparente.
 };
 }

@@ -30,7 +30,8 @@ private:
     float attackCoef_ = 0.99f;
     float releaseCoef_ = 0.999f;
 
-    float makeupGain_ = 1.0f;
+    float makeupGain_ = 1.0f;   // lineal (solo informativo/compat)
+    float makeupDb_ = 0.0f;     // techo de compensacion en dB
     float env_ = 0.0f;
     float runtimeAmount_ = 0.0f;
 

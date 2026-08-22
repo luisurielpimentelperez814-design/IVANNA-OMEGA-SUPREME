@@ -15,11 +15,19 @@ Compressor::Compressor() {
 }
 
 void Compressor::recomputeMakeup() noexcept {
+    // FIX (ruido digital): makeupGain_ se aplicaba como ganancia estatica
+    // (hasta ~+11 dB) incluso con la senal por debajo del threshold, es decir
+    // sin ninguna reduccion que compensar. Eso empujaba material ya limpio
+    // contra el SafetyLimiter, que entraba a trabajar sin razon.
+    // Ahora se guarda en dB y en process() se limita a la reduccion REAL
+    // instantanea: nunca se devuelve mas de lo que se quito.
     const float reduction =
         threshold_ * (1.0f - 1.0f / ratio_);
 
-    makeupGain_ =
-        std::pow(10.0f, (-reduction * 0.5f) / 20.0f);
+    makeupDb_ = -reduction * 0.5f;      // objetivo maximo de compensacion
+    if (makeupDb_ < 0.0f) makeupDb_ = 0.0f;
+
+    makeupGain_ = std::pow(10.0f, makeupDb_ / 20.0f);
 
     slope_ = 1.0f - 1.0f / ratio_;
 }
@@ -106,13 +114,9 @@ void Compressor::process(float* __restrict__ left,
         runtimeAmount_ * 12.0f *
         (1.0f - 1.0f / effRatio);
 
-    const float makeupRuntime =
-        std::pow(
-            10.0f,
-            grAdditional * 0.10f / 20.0f);
-
-    const float makeup =
-        makeupGain_ * makeupRuntime;
+    // Techo de compensacion en dB (estatico + aporte del runtime).
+    const float makeupCeilDb =
+        makeupDb_ + grAdditional * 0.10f;
 
     float env = env_;
 
@@ -174,9 +178,16 @@ void Compressor::process(float* __restrict__ left,
         }
 
 
+        // Makeup acoplado a la reduccion real: gainDb es <= 0 (o 0 si no hay
+        // compresion), asi que -gainDb es la reduccion aplicada en dB. Con la
+        // senal bajo threshold no hay reduccion -> makeup 0 dB -> unidad
+        // exacta, sin ganancia gratuita hacia el limiter.
+        const float grDb = -gainDb;
+        const float makeupDb =
+            grDb < makeupCeilDb ? grDb : makeupCeilDb;
+
         float lin =
-            makeup *
-            std::exp(gainDb * kLn10Div20);
+            std::exp((gainDb + makeupDb) * kLn10Div20);
 
         left[i] *= lin;
         right[i] *= lin;
