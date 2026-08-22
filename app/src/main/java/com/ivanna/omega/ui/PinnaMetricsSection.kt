@@ -19,24 +19,33 @@ import com.ivanna.omega.spatial.HrtfSubjectSelector
 @Composable
 fun PinnaMetricsSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var concha by remember { mutableStateOf(30f) }   // 20–45 mm
-    var helix  by remember { mutableStateOf(65f) }   // 50–80 mm
-    var fosa   by remember { mutableStateOf(24f) }   // 15–35 mm
-    var matched by remember { mutableStateOf<String?>(null) }
+    val prefs   = remember { context.getSharedPreferences("pinna_metrics", android.content.Context.MODE_PRIVATE) }
+
+    var concha  by remember { mutableStateOf(prefs.getFloat("concha", 30f)) }
+    var helix   by remember { mutableStateOf(prefs.getFloat("helix",  65f)) }
+    var fosa    by remember { mutableStateOf(prefs.getFloat("fosa",   24f)) }
+    var matched by remember { mutableStateOf(prefs.getString("matched", null)) }
+
+    fun save() = prefs.edit()
+        .putFloat("concha", concha)
+        .putFloat("helix",  helix)
+        .putFloat("fosa",   fosa)
+        .apply()
 
     Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp),
                verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Geometría de tu oreja (pinna)", style = MaterialTheme.typography.titleMedium)
             Text("Concha: ${concha.toInt()} mm", style = MaterialTheme.typography.bodySmall)
-            Slider(value = concha, onValueChange = { concha = it }, valueRange = 20f..45f)
+            Slider(value = concha, onValueChange = { concha = it; save() }, valueRange = 20f..45f)
             Text("Hélix: ${helix.toInt()} mm", style = MaterialTheme.typography.bodySmall)
-            Slider(value = helix, onValueChange = { helix = it }, valueRange = 50f..80f)
+            Slider(value = helix, onValueChange = { helix = it; save() }, valueRange = 50f..80f)
             Text("Fosa: ${fosa.toInt()} mm", style = MaterialTheme.typography.bodySmall)
-            Slider(value = fosa, onValueChange = { fosa = it }, valueRange = 15f..35f)
+            Slider(value = fosa, onValueChange = { fosa = it; save() }, valueRange = 15f..35f)
             Button(onClick = {
                 val m = HrtfSubjectSelector.PinnaMetrics(concha, helix, fosa)
                 matched = HrtfSubjectSelector.findBestMatch(context, m)
+                prefs.edit().putString("matched", matched).apply()
                 OmegaEngineBridge.setPinnaMetrics(concha, helix, fosa)
             }) { Text("Aplicar geometría de oreja") }
             matched?.let {
