@@ -41,6 +41,11 @@ object HrtfSubjectSelector {
     private const val TAG = "IVANNA.HrtfSubject"
 
     /** Sujeto por defecto embarcado por el módulo Magisk (ver commit 7d7bcf9). */
+    // FIX (descableado): "kemar_subject_165" no existe en el índice IHR1
+    // real (11 sujetos deployados: kemar, kemar_large, tu_berlin_kemar,
+    // cipic_003..cipic_165, pulse — ver
+    // magisk_module/.../hrtf/hrtf_index.json). "kemar" es el único sujeto
+    // presente en TODAS las builds del módulo, por eso es el default seguro.
     private const val DEFAULT_SUBJECT = "kemar"
 
     /**

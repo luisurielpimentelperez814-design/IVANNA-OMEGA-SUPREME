@@ -51,6 +51,12 @@ object SaFOptimizer {
     // Tabla mínima de sujetos conocidos (subset CIPIC + MIT).
     // El matching real usará distancia euclidiana sobre head-width / head-depth;
     // por ahora la selección es round-robin sobre esta lista durante la calib.
+    // FIX (descableado): IDs corregidos contra el índice IHR1 real
+    // (magisk_module/.../hrtf/hrtf_index.json, 11 sujetos deployados).
+    // Los anteriores (kemar_subject_165, subject_003/008/009/010/011) no
+    // existen en ningún build — selectedSubject solo se consume en el log
+    // de este archivo (no llega a JNI ni afecta audio), pero corregirlo
+    // evita confusión al leer logs de calibración.
     private val KNOWN_SUBJECTS = listOf(
         // IDs reales del hrtf_index.json deployado (magisk_module/.../hrtf).
         "kemar", "kemar_large", "tu_berlin_kemar",

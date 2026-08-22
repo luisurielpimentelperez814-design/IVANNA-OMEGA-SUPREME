@@ -98,15 +98,20 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
                 if (on) IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
             }
             Text("Sujeto:", color = TextSecondary, fontSize = 11.sp)
-            // Mapeo etiqueta → id IHR1 real desplegado (ver HrtfSubjectSelector)
+            // FIX (descableado): los IDs anteriores (kemar_subject_165,
+            // subject_003, subject_008, subject_009) no coincidían con
+            // NINGUNO de los 11 sujetos reales del índice deployado
+            // (magisk_module/.../hrtf/hrtf_index.json) — cada chip fallaba
+            // silenciosamente (runCatching en setHrtfSubject → false, sin
+            // efecto, sin log visible al usuario). IDs verificados contra
+            // el índice real: kemar, cipic_003..cipic_165, pulse.
             val subjects = listOf(
                 "KEMAR"      to "kemar",
                 "KEMAR-LG"   to "kemar_large",
                 "CIPIC 003"  to "cipic_003",
                 "CIPIC 165"  to "cipic_165",
                 "TU-Berlin"  to "tu_berlin_kemar",
-                "Pulse"      to "pulse",
-                "ITA"        to "ita_artificial_head"
+                "Pulse"      to "pulse"
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 subjects.forEach { (label, id) ->
