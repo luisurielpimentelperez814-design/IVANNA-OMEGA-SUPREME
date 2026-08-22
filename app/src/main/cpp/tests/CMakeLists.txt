@@ -240,3 +240,10 @@ ivanna_add_test(test_regression_tuning)
 #   SNR > 90 dB en bypass, THD < 10% en clipping deliberado,
 #   latencia < 1ms por bloque de 512 frames, 0 NaN en 1000 bloques.
 ivanna_add_test(test_audio_quality_metrics)
+
+# ── Overshoot del HarmonicExciter: barrera de regresión del clipping digital ──
+# softClip() (Padé [3/2]) no saturaba hacia ±1 (llegaba a 1.94 con drive máximo)
+# y la mezcla dry+wet alcanzaba 1.52 — clipping digital dentro del exciter,
+# antes del SafetyLimiter. Este test barre drive × wet × 6 señales de peor
+# caso y falla si cualquiera de los dos límites se rompe otra vez.
+ivanna_add_test(test_harmonic_exciter_overshoot)
