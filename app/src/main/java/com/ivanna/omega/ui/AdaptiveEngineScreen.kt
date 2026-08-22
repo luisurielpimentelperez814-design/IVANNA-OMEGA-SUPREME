@@ -205,6 +205,8 @@ internal fun AdaptiveEngineScreen(
                             AudioStateManager.updateState { it.copy(adaptiveMode = mode) }
                             if (manualModeEnabled)
                                 backend.applyManualState(AudioStateManager.audioState.value)
+                            else
+                                backend.persist(AudioStateManager.audioState.value)
                             // 3D: notificar al motor nativo el modo y la intensidad actual
                             runCatching {
                                 IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveControls(
@@ -226,6 +228,8 @@ internal fun AdaptiveEngineScreen(
                     AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
                     if (manualModeEnabled)
                         backend.applyManualState(AudioStateManager.audioState.value)
+                    else
+                        backend.persist(AudioStateManager.audioState.value)
                     // 3D: notificar al motor nativo la intensidad y el modo actual
                     runCatching {
                         IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveControls(
@@ -266,8 +270,11 @@ internal fun AdaptiveEngineScreen(
                             backend.forceManualState(updatedState)
                         } else {
                             // AudioStateManager ya mantiene el estado válido.
-                            // No acceder a persistencia interna del backend desde UI.
                             // El Motor A recupera el control con el estado actual.
+                            // FIX (sin persistencia): apagar Modo Manual no se
+                            // guardaba, así que al reabrir la app volvía a
+                            // arrancar en manual.
+                            backend.persist(updatedState)
                         }
                     },
                     accent = PhosphorGreen
