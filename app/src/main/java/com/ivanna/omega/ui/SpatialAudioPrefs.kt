@@ -5,7 +5,7 @@ import android.content.Context
 /** Estado persistente del panel Spatial Audio (HRTF + RIR + SAF). */
 data class SpatialAudioState(
     val hrtfEnabled: Boolean = true,
-    val hrtfSubject: String = "kemar_subject_165",
+    val hrtfSubject: String = "kemar",
     val rirEnabled: Boolean = false,
     val rirRt60: Float = 0.5f,
     val rirWet: Float = 0.35f,
