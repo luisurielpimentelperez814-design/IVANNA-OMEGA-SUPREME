@@ -268,6 +268,14 @@ class AdaptiveBackend(context: Context) {
         }
     }
 
+    /**
+     * Persistencia explícita desde UI. Necesaria porque adaptiveMode /
+     * adaptiveIntensity y el apagado de Modo Manual solo tocaban
+     * AudioStateManager en memoria: al reabrir la app se restauraba el estado
+     * anterior (p.ej. manualModeEnabled=true ya apagado por el usuario).
+     */
+    fun persist(state: AudioState) = persistState(state)
+
     fun restoreState(): AudioState? {
         return try {
             store.loadParameters()
