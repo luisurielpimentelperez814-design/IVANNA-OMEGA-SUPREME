@@ -241,9 +241,22 @@ class IVANNAApplication : Application() {
 
         appScope.launch {
             try {
-                // 1. DSP nativo
-                DSPBridge.init(sampleRate = 96000)
-                Log.d(TAG, "✅ DSPBridge listo — 96000 Hz")
+                // 1. DSP nativo — SR REAL del hardware, no hardcodeado.
+                // FIX (hi-res 48/96/192/384k): antes estaba fijo a 96000 Hz.
+                // Si el dispositivo corre a 48 kHz, TODOS los filtros del DSP
+                // (EQ biquad, compresor, excitador, widener) se calculaban con
+                // la tasa equivocada → bandas EQ desplazadas ×2 en frecuencia,
+                // envelopes del compresor 2× más rápidos, y cualquier módulo
+                // con fase acumulada (NHO/PhaseOracle) derivando el tono.
+                // Esa es una fuente directa de distorsión de tono/reportada.
+                // PROPERTY_OUTPUT_SAMPLE_RATE reporta la tasa REAL del mix
+                // del HAL (48/96/192k según el dispositivo y la ruta activa);
+                // 48000 solo como último fallback defensivo.
+                val hwSr = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager)
+                    .getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+                    ?.toIntOrNull() ?: 48000
+                DSPBridge.init(sampleRate = hwSr)
+                Log.d(TAG, "✅ DSPBridge listo — $hwSr Hz (hardware real)")
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal).
                 // FIX (re-aplicado): OmegaDaemon.kt declara 18 external fun sin
