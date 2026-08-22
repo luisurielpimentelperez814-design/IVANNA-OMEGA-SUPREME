@@ -33,7 +33,14 @@ class BootRestoreReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                runCatching { DSPBridge.init(48_000) }
+                // FIX (hi-res): SR hardcodeado a 48 kHz desincronizaba el DSP
+                // del HAL en dispositivos que corren a 96/192 kHz tras boot —
+                // mismas consecuencias que el fix de IVANNAApplication (EQ
+                // desplazado, envelopes del compresor con timing equivocado).
+                val hwSr = (context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager)
+                    .getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+                    ?.toIntOrNull() ?: 48000
+                runCatching { DSPBridge.init(hwSr) }
                 val state = DSPStatePrefs.load(context)
                 runCatching { state.pushToNative() }
                 Log.i("IVANNA-BootRestore", "estado DSP restaurado tras boot (bypass=${state.bypass})")
