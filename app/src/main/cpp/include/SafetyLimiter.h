@@ -15,8 +15,9 @@ namespace ivanna {
  * eso limita pero puede bombear en material con transientes densos, porque
  * la ganancia salta muestra a muestra. Ahora es un limiter con:
  *
- *   - Lookahead 5 ms   : el peak se detecta antes de que llegue, así la
- *                        reducción empieza ANTES del pico (sin overshoot).
+ *   - Lookahead de bloque : el peak del bloque se resuelve ANTES de escribir
+ *                        una muestra, así la reducción ya está aplicada
+ *                        cuando el pico sale — sin overshoot y sin latencia.
  *   - Knee suave        : ratio 10:1 sobre el threshold (igual que antes).
  *   - Release 50 ms     : la ganancia vuelve a 1.0 suavemente tras el pico
  *                        (sin pumping audible).
@@ -64,13 +65,6 @@ private:
     float m_sampleRate = 48000.f;
     float m_gainNow    = 1.0f;      // ganancia aplicada actual (suavizada)
     float m_releaseCoef = 0.f;      // coeficiente de release (por muestra)
-
-    // Delay line del lookahead (5 ms por canal). Se redimensiona en
-    // setSampleRate() / primer process() — nunca en el hot path.
-    std::vector<float> m_delayL;
-    std::vector<float> m_delayR;
-    int m_delayLen   = 0;           // muestras de lookahead (5 ms)
-    int m_delayWrite = 0;           // índice de escritura circular
 
     std::atomic<float> m_peakBefore{0.0f};
     std::atomic<float> m_gainReduction{0.0f};

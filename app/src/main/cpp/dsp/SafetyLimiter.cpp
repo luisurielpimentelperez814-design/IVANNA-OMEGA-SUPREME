@@ -11,7 +11,6 @@ namespace ivanna {
 
 // ── Constantes del limiter (TAREA 5) ────────────────────────────────────────
 namespace {
-    constexpr float kLookaheadMs = 5.0f;    // lookahead
     constexpr float kReleaseMs   = 50.0f;   // release suave
     constexpr float kKneeRatio   = 0.1f;    // soft-knee 10:1 sobre threshold
 } // namespace
@@ -23,14 +22,6 @@ void SafetyLimiter::setParams(float threshold, float ceiling) {
 
 void SafetyLimiter::setSampleRate(float sampleRate) {
     if (sampleRate > 8000.f) m_sampleRate = sampleRate;
-    // Dimensionar delay line del lookahead fuera del hot path.
-    const int len = (int)(m_sampleRate * kLookaheadMs / 1000.f);
-    if (len != m_delayLen && len > 0) {
-        m_delayLen = len;
-        m_delayL.assign((size_t)m_delayLen, 0.f);
-        m_delayR.assign((size_t)m_delayLen, 0.f);
-        m_delayWrite = 0;
-    }
     // Coeficiente de release (decaimiento exponencial por muestra).
     m_releaseCoef = std::exp(-1.0f / (m_sampleRate * kReleaseMs / 1000.f));
 }
@@ -76,73 +67,20 @@ float SafetyLimiter::limitSample(float x) {
 }
 
 void SafetyLimiter::process(float* L, float* R, int frames) {
-    if (m_bypass) return;
+    if (m_bypass || frames <= 0) return;
 
-    // Transparencia absoluta: si el bloque completo está debajo
-    // del threshold y no existe reducción activa, no tocar la señal.
-    // Evita degradación por lookahead/release en material limpio.
-    float inputPeak = 0.0f;
+    // Lazy-init del coeficiente de release si nunca se llamo setSampleRate().
+    if (m_releaseCoef <= 0.f) setSampleRate(m_sampleRate);
 
-    for (int i = 0; i < frames; ++i) {
-        if (std::isfinite(L[i]))
-            inputPeak = std::max(inputPeak, std::fabs(L[i]));
-        if (std::isfinite(R[i]))
-            inputPeak = std::max(inputPeak, std::fabs(R[i]));
-    }
-
-    if (inputPeak <= m_threshold && m_gainNow >= 0.999f) {
-        m_peakBefore.store(inputPeak, std::memory_order_relaxed);
-        m_gainReduction.store(0.0f, std::memory_order_relaxed);
-        return;
-    }
-
-    // Lazy-init del lookahead si nunca se llamó setSampleRate().
-    if (m_delayLen == 0) setSampleRate(m_sampleRate);
-
-    // FIX THD TEST:
-    // El primer bloque no debe salir parcialmente vacío por el lookahead.
-    // El limiter conserva la forma de onda y evita artefactos iniciales.
-    if (m_delayWrite == 0) {
-        const float ceil_ = m_ceiling;
-
-    float peakInit = 0.0f;
-        for (int i = 0; i < frames; ++i) {
-            peakInit = std::max(
-                peakInit,
-                std::max(std::fabs(L[i]), std::fabs(R[i]))
-            );
-        }
-
-        float initGain = computeGainForPeak(peakInit);
-
-        int initClips = 0;
-        for (int i = 0; i < frames; ++i) {
-            if (std::fabs(L[i]) > ceil_ || std::fabs(R[i]) > ceil_)
-                ++initClips;
-
-            L[i] *= initGain;
-            R[i] *= initGain;
-        }
-
-        if (initClips > 0)
-            m_clipCount.fetch_add(initClips, std::memory_order_relaxed);
-
-        m_peakBefore.store(peakInit, std::memory_order_relaxed);
-        m_gainReduction.store(
-            peakInit > ceil_ ? 20.0f * std::log10(peakInit / ceil_) : 0.0f,
-            std::memory_order_relaxed
-        );
-
-        return;
-    }
-
+    // ── Peak del bloque (vectorizado NEON si esta disponible) ───────────────
+    // El bloque ES el lookahead: la ganancia se decide con el peak de TODO el
+    // bloque antes de escribir una sola muestra, asi que ningun pico sale sin
+    // su reduccion aplicada — sin delay line y sin latencia añadida.
     float peak  = 0.0f;
     int   clips = 0;
     const float ceil_ = m_ceiling;
+    bool nonFinite = false;
 
-    // ── Detección de peak de entrada (vectorizada NEON si disponible) ───────
-    // Se mide sobre la ENTRADA (antes del limiting) — es lo que
-    // AdaptiveDecisionEngine usa para reaccionar vía getGainReduction().
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     {
         float32x4_t vPeak = vdupq_n_f32(0.0f);
@@ -156,67 +94,64 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         for (int j = 0; j < 4; ++j) peak = std::max(peak, pk[j]);
         for (; i < frames; ++i)
             peak = std::max(peak, std::max(std::fabs(L[i]), std::fabs(R[i])));
+        if (!std::isfinite(peak)) { nonFinite = true; peak = 0.f; }
     }
 #else
-    for (int i = 0; i < frames; ++i)
-        peak = std::max(peak, std::max(std::fabs(L[i]), std::fabs(R[i])));
+    for (int i = 0; i < frames; ++i) {
+        const float al = std::fabs(L[i]);
+        const float ar = std::fabs(R[i]);
+        if (!std::isfinite(al) || !std::isfinite(ar)) { nonFinite = true; continue; }
+        peak = std::max(peak, std::max(al, ar));
+    }
 #endif
 
-    // ── Envolvente de ganancia por muestra con lookahead + release ──────────
-    //
-    // Clave del diseño (evita el overshoot que tenía la versión por bloque):
-    // la ganancia necesaria se calcula sobre la muestra RETRASADA que está a
-    // punto de salir — así el pico recibe exactamente su ganancia objetivo
-    // cuando cruza la salida (ataque instantáneo en la línea de tiempo
-    // retrasada), y la release 50 ms solo actúa entre picos, nunca durante.
-    // El lookahead de 5 ms hace que la bajada de ganancia caiga sobre el
-    // contenido anterior al pico (menor nivel), enmascarando el escalón.
-    //
-    // Detección de clipping: se cuenta en la ENTRADA (muestra que supera el
-    // ceiling antes de ser rescatada). Cada evento cuenta exactamente una vez
-    // — la seguridad dura de salida no vuelve a contar (fix del doble
-    // clip-count, ver tests/test_regression_tuning.cpp Parche 6A).
-    float gain = m_gainNow;
+    // Recuento de clips sobre la ENTRADA: exactamente un evento por muestra
+    // que supera el ceiling (convencion del Parche 6A, ver
+    // tests/test_regression_tuning.cpp — la seguridad dura de salida no
+    // vuelve a contar).
+    if (peak > ceil_ || nonFinite) {
+        for (int i = 0; i < frames; ++i) {
+            const float al = std::fabs(L[i]);
+            const float ar = std::fabs(R[i]);
+            if (!std::isfinite(al) || !std::isfinite(ar)) { ++clips; continue; }
+            if (al > ceil_ || ar > ceil_) ++clips;
+        }
+    }
 
-    // FIX THD:
-    // El gain NO puede seguir cada muestra de un seno.
-    // Eso genera modulación de amplitud y armónicos.
-    // Se calcula una sola reducción por bloque usando el peak detectado.
+    // Transparencia absoluta: material limpio sin reduccion residual sale
+    // bit-exacto — y con la MISMA latencia (cero) que cuando el limiter actua.
+    if (peak <= m_threshold && m_gainNow >= 0.99999f && !nonFinite) {
+        m_gainNow = 1.0f;
+        m_peakBefore.store(peak, std::memory_order_relaxed);
+        m_gainReduction.store(0.0f, std::memory_order_relaxed);
+        return;
+    }
+
+    // Ganancia del bloque: ataque inmediato (el pico ya es conocido de
+    // antemano), release exponencial de 50 ms entre picos. La ganancia NO
+    // sigue la forma de onda muestra a muestra -> sin modulacion de amplitud
+    // (que es distorsion armonica) ni pumping.
     const float blockGain = computeGainForPeak(peak);
+    float gain = m_gainNow;
+    if (blockGain < gain) gain = blockGain;
 
     for (int i = 0; i < frames; ++i) {
-        const float inL = L[i];
-        const float inR = R[i];
-
-        // Clip detection (entrada, una sola vez por evento)
-        if (std::fabs(inL) > ceil_ || std::fabs(inR) > ceil_) ++clips;
-
-        // Ataque rápido al gain del bloque + release suave.
-        // Mantiene la forma de onda intacta.
-        if (blockGain < gain) {
-            gain = blockGain;
-        } else {
-            gain = m_releaseCoef * gain +
-                   (1.0f - m_releaseCoef) * 1.0f;
+        if (blockGain >= gain) {
+            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef);
+            if (gain > 1.0f) gain = 1.0f;
         }
 
-        // Lookahead: la ganancia se aplica a la muestra retrasada.
-        const int rd = m_delayWrite;
-        float outL = m_delayL[rd] * gain;
-        float outR = m_delayR[rd] * gain;
-        m_delayL[rd] = inL;
-        m_delayR[rd] = inR;
-        m_delayWrite = (rd + 1) % m_delayLen;
+        float outL = L[i] * gain;
+        float outR = R[i] * gain;
 
-        // Seguridad dura final (NaN/Inf o residuo numérico) — silenciosa,
-        // no re-cuenta clips (ya contados en la entrada).
+        // Seguridad dura final (NaN/Inf o residuo numerico) — silenciosa.
         if (!std::isfinite(outL)) outL = 0.f;
         if (!std::isfinite(outR)) outR = 0.f;
         if (std::fabs(outL) > ceil_) outL = std::copysign(ceil_, outL);
         if (std::fabs(outR) > ceil_) outR = std::copysign(ceil_, outR);
 
-        L[i] = std::clamp(outL, -1.0f, 1.0f);
-        R[i] = std::clamp(outR, -1.0f, 1.0f);
+        L[i] = outL;
+        R[i] = outR;
     }
 
     m_gainNow = gain;
@@ -224,13 +159,11 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     if (clips > 0) m_clipCount.fetch_add(clips, std::memory_order_relaxed);
     m_peakBefore.store(peak, std::memory_order_relaxed);
 
-    // Ganancia de reducción en dB (convención ya usada por
-    // AdaptiveDecisionEngine::computeTargetGain — 20*log10(peak/ceiling)).
+    // Reduccion en dB (convencion de AdaptiveDecisionEngine::computeTargetGain).
     float reduction_db = 0.0f;
-    if (peak > ceil_ && peak > 1e-9f && ceil_ > 1e-9f) {
+    if (peak > ceil_ && peak > 1e-9f && ceil_ > 1e-9f)
         reduction_db = 20.0f * std::log10(peak / ceil_);
-        if (reduction_db < 0.0f) reduction_db = 0.0f;
-    }
+    if (reduction_db < 0.0f) reduction_db = 0.0f;
     m_gainReduction.store(reduction_db, std::memory_order_relaxed);
 }
 
@@ -238,9 +171,6 @@ void SafetyLimiter::reset() {
     m_peakBefore.store(0.0f, std::memory_order_relaxed);
     m_gainReduction.store(0.0f, std::memory_order_relaxed);
     m_gainNow = 1.0f;
-    if (!m_delayL.empty()) std::fill(m_delayL.begin(), m_delayL.end(), 0.f);
-    if (!m_delayR.empty()) std::fill(m_delayR.begin(), m_delayR.end(), 0.f);
-    m_delayWrite = 0;
     resetClipCount();
 }
 
