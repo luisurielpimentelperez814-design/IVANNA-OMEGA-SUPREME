@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +32,21 @@ fun PerceptualBrainDashboard(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
+    // FIX (persistencia): los 6 controles perceptuales llegaban al DSP nativo
+    // pero nunca se guardaban; al reabrir la app el motor quedaba con los
+    // defaults del snapshot. Restauramos el estado guardado en el motor real.
+    LaunchedEffect(engine) {
+        val saved = PerceptualBrainPrefs.load(context)
+        engine.setPerceptualIntelligence(saved.perceptualIntelligence)
+        engine.setNeuralAdaptation(saved.neuralAdaptation)
+        engine.setSpatialImmersion(saved.spatialImmersion)
+        engine.setHarmonicReconstruction(saved.harmonicReconstruction)
+        engine.setAntiDolbyBlend(saved.antiDolbyBlend)
+        engine.setHumanLoudnessCompensation(saved.humanLoudnessCompensation)
+    }
+
     DisposableEffect(engine) {
         engine.start()
         onDispose {
@@ -320,6 +336,7 @@ private fun DspCortexPanel(snapshot: PerceptualSnapshot) {
 
 @Composable
 private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: PerceptualBrainEngine) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -340,7 +357,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Perceptual Intelligence",
                 value = snapshot.perceptualIntelligence,
                 color = AuroraCyan,
-                onValueChange = { engine.setPerceptualIntelligence(it) }
+                onValueChange = {
+                    engine.setPerceptualIntelligence(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(perceptualIntelligence = it))
+                }
             )
 
             Spacer(Modifier.height(10.dp))
@@ -349,7 +369,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Neural Adaptation",
                 value = snapshot.neuralAdaptation,
                 color = PhosphorGreen,
-                onValueChange = { engine.setNeuralAdaptation(it) }
+                onValueChange = {
+                    engine.setNeuralAdaptation(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(neuralAdaptation = it))
+                }
             )
 
             Spacer(Modifier.height(10.dp))
@@ -358,7 +381,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Spatial Immersion",
                 value = snapshot.spatialImmersion,
                 color = NeonMagenta,
-                onValueChange = { engine.setSpatialImmersion(it) }
+                onValueChange = {
+                    engine.setSpatialImmersion(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(spatialImmersion = it))
+                }
             )
 
             Spacer(Modifier.height(10.dp))
@@ -367,7 +393,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Harmonic Reconstruction",
                 value = snapshot.harmonicReconstruction,
                 color = AmberSignal,
-                onValueChange = { engine.setHarmonicReconstruction(it) }
+                onValueChange = {
+                    engine.setHarmonicReconstruction(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(harmonicReconstruction = it))
+                }
             )
 
             Spacer(Modifier.height(10.dp))
@@ -376,7 +405,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Anti-Dolby Blend",
                 value = snapshot.antiDolbyBlend,
                 color = AuroraCyan,
-                onValueChange = { engine.setAntiDolbyBlend(it) }
+                onValueChange = {
+                    engine.setAntiDolbyBlend(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(antiDolbyBlend = it))
+                }
             )
 
             Spacer(Modifier.height(10.dp))
@@ -385,7 +417,10 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
                 label = "Human Loudness Comp.",
                 value = snapshot.humanLoudnessCompensation,
                 color = PhosphorGreen,
-                onValueChange = { engine.setHumanLoudnessCompensation(it) }
+                onValueChange = {
+                    engine.setHumanLoudnessCompensation(it)
+                    PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(humanLoudnessCompensation = it))
+                }
             )
         }
     }
