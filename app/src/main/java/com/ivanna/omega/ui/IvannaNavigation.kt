@@ -126,18 +126,24 @@ fun MainScaffold(
             composable(TABS[2].route) {
                 val telemetry = remember { mutableStateOf<FloatArray?>(null) }
                 val bands     = remember { mutableStateOf<FloatArray?>(null) }
+                val audioChar = remember { mutableStateOf<FloatArray?>(null) }  // [rms,peak,percussiveness,tonality,reverb,dynRange,centroid,spread]
                 LaunchedEffect(Unit) {
                     while (true) {
                         if (IvannaNativeLib.isLoaded) {
                             runCatching {
-                                telemetry.value = IvannaNativeLib.nativeGetAdaptiveTelemetry()
-                                bands.value     = IvannaNativeLib.nativeGetBandEnergies()
+                                telemetry.value  = IvannaNativeLib.nativeGetAdaptiveTelemetry()
+                                bands.value      = IvannaNativeLib.nativeGetBandEnergies()
+                                audioChar.value  = IvannaNativeLib.nativeGetAudioCharacteristics()
                             }
                         }
                         kotlinx.coroutines.delay(200)
                     }
                 }
-                AdaptiveDashboard(telemetry = telemetry.value, bandEnergies = bands.value)
+                AdaptiveDashboard(
+                    telemetry    = telemetry.value,
+                    bandEnergies = bands.value,
+                    audioChar    = audioChar.value
+                )
             }
 
             // ── SPATIAL ──────────────────────────────────────────────────

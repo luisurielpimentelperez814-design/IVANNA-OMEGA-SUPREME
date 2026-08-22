@@ -46,6 +46,7 @@ import kotlin.math.max
 fun AdaptiveDashboard(
     telemetry: FloatArray?,        // null = ADE no corriendo o JNI no cargado
     bandEnergies: FloatArray? = null,  // FloatArray[3]: [low, mid, high] lineal RMS
+    audioChar: FloatArray?    = null,  // FloatArray[8]: [rms,peak,percussiveness,tonality,reverb,dynRange,centroid,spread]
     modifier: Modifier = Modifier
 ) {
     val t = telemetry
@@ -157,6 +158,28 @@ fun AdaptiveDashboard(
                     Text("Sin señal de audio activa",
                          color = Color.White.copy(0.3f),
                          fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                }
+            }
+        }
+
+        // ── Audio characteristics (nativeGetAudioCharacteristics — antes descableado) ──
+        if (audioChar != null) {
+            val percussive = audioChar.getOrElse(2) { 0f }
+            val tonality   = audioChar.getOrElse(3) { 0f }
+            val centroid   = audioChar.getOrElse(6) { 0f }
+            val spread     = audioChar.getOrElse(7) { 0f }
+            GlassCard(title = "CARACTERÍSTICAS DE AUDIO", accent = AuroraCyan.copy(0.5f)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MeterRow("Percusividad",  percussive, 0f, 1f, AmberSignal,  "${"%.0f".format(percussive*100)}%")
+                    MeterRow("Tonalidad",     tonality,   0f, 1f, AuroraCyan,   "${"%.0f".format(tonality*100)}%")
+                    Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
+                        androidx.compose.material3.Text("Centroide espectral: ${"%.0f".format(centroid)} Hz",
+                            color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
+                            fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                        androidx.compose.material3.Text("Spread: ${"%.0f".format(spread)} Hz",
+                            color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
+                            fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                    }
                 }
             }
         }
