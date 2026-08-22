@@ -42,6 +42,15 @@ private:
     
     // Interpolación lineal para upsample
     float lastL_ = 0.f, lastR_ = 0.f;
+
+    // Techo interno del exciter (anti clipping digital): la suma
+    // dry + wet*excitación podía superar ±1.0 (medido: 1.52 con drive=16,
+    // wet=1.0 sobre onda cuadrada) y salir clipeada del exciter antes de
+    // llegar al SafetyLimiter. excScale_ escala SOLO la excitación para
+    // respetar el headroom que deja la señal seca, con ataque inmediato y
+    // release suave (~20 ms) para no modular el timbre muestra a muestra.
+    float excScaleL_ = 1.f, excScaleR_ = 1.f;
+    float excRelCoef_ = 0.999f;   // recalculado en setParams() (tasa OS)
 };
 
 } // namespace ivanna

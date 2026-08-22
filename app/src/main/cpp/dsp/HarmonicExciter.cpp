@@ -34,6 +34,10 @@ static inline __attribute__((always_inline)) float softClip(float x, float drive
     return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
 }
 
+// Techo interno del exciter — mismo -0.1 dBFS que el SafetyLimiter de
+// salida: la señal entra al resto de la cadena ya sin clipping digital.
+static constexpr float kExcCeiling = 0.98855f;
+
 void HarmonicExciter::setParams(const DSPParams& p) {
     drive_ = 1.f + p.drive * 15.f;  // 1..16
     wet_   = p.wet;
@@ -72,6 +76,9 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     osLpfL_.a1 = (float)(-2.0 * cwOS * a0OS_inv);
     osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
     osLpfR_ = osLpfL_;
+
+    // Release del techo interno: ~20 ms a la tasa oversampled.
+    excRelCoef_ = std::exp(-1.0f / ((float)p.sampleRate * OS_FACTOR * 0.020f));
 }
 
 __attribute__((hot, flatten))
@@ -127,9 +134,32 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         excL = osLpfL_.process(excL);
         excR = osLpfR_.process(excR);
 
+        // ── Techo interno: la excitación se limita al headroom real ─────────
+        // dry + wet*exc podía superar ±1.0 y salir del exciter ya clipeada
+        // (clipping digital + armónicos de orden alto que ningún LPF de
+        // downsample puede quitar). Se escala SOLO la parte húmeda: la señal
+        // seca nunca se toca, así que a wet bajo el comportamiento es idéntico.
+        float wl = wet * excL;
+        float wr = wet * excR;
+
+        const float headL = kExcCeiling - (l < 0.f ? -l : l);
+        const float headR = kExcCeiling - (r < 0.f ? -r : r);
+        const float awl = wl < 0.f ? -wl : wl;
+        const float awr = wr < 0.f ? -wr : wr;
+
+        float needL = 1.f, needR = 1.f;
+        if (awl > 1e-9f && awl > headL) needL = headL > 0.f ? headL / awl : 0.f;
+        if (awr > 1e-9f && awr > headR) needR = headR > 0.f ? headR / awr : 0.f;
+
+        // Ataque inmediato, release exponencial (~20 ms) hacia 1.0.
+        if (needL < excScaleL_) excScaleL_ = needL;
+        else excScaleL_ = excRelCoef_ * excScaleL_ + (1.f - excRelCoef_);
+        if (needR < excScaleR_) excScaleR_ = needR;
+        else excScaleR_ = excRelCoef_ * excScaleR_ + (1.f - excRelCoef_);
+
         // Mezcla
-        osLeft_[i] = l + wet * excL;
-        osRight_[i] = r + wet * excR;
+        osLeft_[i]  = l + wl * excScaleL_;
+        osRight_[i] = r + wr * excScaleR_;
     }
 
     // ===== PASO 3: DOWNSAMPLE 2x (tomar cada 2da muestra) =====
@@ -146,6 +176,8 @@ void HarmonicExciter::reset() {
     osLpfR_.reset();
     lastL_ = 0.f;
     lastR_ = 0.f;
+    excScaleL_ = 1.f;
+    excScaleR_ = 1.f;
     std::memset(osLeft_, 0, sizeof(osLeft_));
     std::memset(osRight_, 0, sizeof(osRight_));
 }
