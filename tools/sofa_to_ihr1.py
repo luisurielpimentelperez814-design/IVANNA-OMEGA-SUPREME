@@ -87,6 +87,7 @@ DATASETS = [
     ("subject_012.sofa", "cipic_012.ihr1", "CIPIC sujeto 012"),
     ("subject_165.sofa", "cipic_165.ihr1", "CIPIC sujeto 165"),
     ("Pulse.sofa",       "pulse.ihr1",     "Pulse HRTF"),
+    ("demo_FreeFieldHRTF_1_IR.sofa", "freefield_demo.ihr1", "FreeField HRTF (demo, 1 IR)"),
 ]
 
 if __name__ == "__main__":

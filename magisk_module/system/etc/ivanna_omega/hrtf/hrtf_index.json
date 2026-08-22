@@ -91,6 +91,14 @@
       "positions": 1250,
       "sourceSampleRate": 48000.0,
       "sha256": "c8b742dc7aad82b03823ecc1a1a65fd3cdc61df76910813e0545309031fcbf95"
+    },
+    {
+      "id": "freefield_demo",
+      "file": "freefield_demo.ihr1",
+      "label": "FreeField HRTF (demo, 1 IR)",
+      "positions": 2354,
+      "sourceSampleRate": 48000.0,
+      "sha256": "282883ff27d08a63d66d6b9ab6e37c07df0d19ccc27217e51eceeeaa98255b84"
     }
   ]
 }
