@@ -62,11 +62,17 @@ private fun ExciterSliderRow(
  */
 @Composable
 fun HarmonicExciterPanel(modifier: Modifier = Modifier) {
-    // Defaults idénticos al comando de calibración inicial real en
-    // IVANNAApplication.kt — no inventados, copiados de ahí a propósito.
-    var harmonicGain by remember { mutableStateOf(0.78f) }
-    var antiDolby by remember { mutableStateOf(0.85f) }
+    val ctx   = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("harmonic_exciter_prefs", android.content.Context.MODE_PRIVATE) }
+
+    var harmonicGain by remember { mutableStateOf(prefs.getFloat("harmonicGain", 0.78f)) }
+    var antiDolby    by remember { mutableStateOf(prefs.getFloat("antiDolby",    0.85f)) }
     val scope = rememberCoroutineScope()
+
+    fun save() = prefs.edit()
+        .putFloat("harmonicGain", harmonicGain)
+        .putFloat("antiDolby",    antiDolby)
+        .apply()
 
     fun push(newHarmonicGain: Float = harmonicGain, newAntiDolby: Float = antiDolby) {
         scope.launch(Dispatchers.IO) {
@@ -82,6 +88,7 @@ fun HarmonicExciterPanel(modifier: Modifier = Modifier) {
                 )
             }
         }
+        save()
     }
 
     GlassCard(
