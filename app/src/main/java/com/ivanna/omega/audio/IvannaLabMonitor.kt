@@ -96,6 +96,7 @@ object IvannaLabMonitor {
     fun resetAndStart() {
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeLabReset() }
+            runCatching { IvannaNativeLib.nativeResetClipCount() }
         }
         _snapshot.value = null
         startAutoMeasure()
