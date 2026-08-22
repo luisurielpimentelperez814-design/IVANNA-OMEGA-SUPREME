@@ -24,8 +24,23 @@ import kotlinx.coroutines.launch
 internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
     val yamnet = AudioPipeline.sharedYamnetResult.collectAsState().value
     val scope  = rememberCoroutineScope()
+    val ctx    = androidx.compose.ui.platform.LocalContext.current
 
-    var fatigueIndex by remember { mutableFloatStateOf(0.15f) }
+    // FIX (sin persistencia): el Fatigue Index volvía a 0.15 en cada
+    // apertura del panel, así que el highCut del daemon se quedaba con el
+    // último valor enviado mientras la UI mostraba otro. Ahora se guarda.
+    val prefs = remember {
+        ctx.getSharedPreferences("ivanna_tinyml_prefs", android.content.Context.MODE_PRIVATE)
+    }
+    // FIX (colisión entre paneles): los 6 parámetros restantes de
+    // SEND_PERCEPTUAL_STATE iban hardcodeados, de modo que mover este
+    // slider sobreescribía en el daemon la ganancia armónica / antiDolby
+    // que HarmonicExciterPanel sí persiste. Se leen de su propio store.
+    val exciterPrefs = remember {
+        ctx.getSharedPreferences("harmonic_exciter_prefs", android.content.Context.MODE_PRIVATE)
+    }
+
+    var fatigueIndex by remember { mutableFloatStateOf(prefs.getFloat("fatigueIndex", 0.15f)) }
     val iirAlpha  = (0.9f - fatigueIndex * 0.4f).coerceIn(0.5f, 0.95f)
     val highCutHz = (19500f - fatigueIndex * 3500f).coerceIn(16000f, 19500f)
 
@@ -91,12 +106,15 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                             // — el usuario veía 15% → 84% sin efecto audible.
                             // Se recalcula highCut LOCAL con la 'v' actual.
                             val liveHighCut = (19500f - v * 3500f).coerceIn(16000f, 19500f)
+                            prefs.edit().putFloat("fatigueIndex", v).apply()
+                            val hg = exciterPrefs.getFloat("harmonicGain", 0.78f)
+                            val ad = exciterPrefs.getFloat("antiDolby", 0.85f)
                             scope.launch(Dispatchers.IO) {
                                 runCatching {
                                     OmegaEngineBridge.sendPerceptualState(
                                         compressor = -5.5f, exciterRed = 0.15f,
                                         highCut = liveHighCut, spatialWidth = 1.55f,
-                                        loudnessTarget = -16f, harmonicGain = 0.78f, antiDolby = 0.85f)
+                                        loudnessTarget = -16f, harmonicGain = hg, antiDolby = ad)
                                 }
                             }
                         },

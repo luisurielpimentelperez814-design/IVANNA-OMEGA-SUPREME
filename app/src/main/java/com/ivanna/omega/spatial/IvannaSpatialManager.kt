@@ -115,6 +115,26 @@ object IvannaSpatialManager {
         return runCatching { IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h) }.getOrDefault(activeSubject)
     }
 
+    /**
+     * FASE 7 (control muerto): el checkbox "Activar Calibración" de
+     * Phase7Screen sólo movía un mutableStateOf local — AutoEqManager
+     * estaba importado pero nunca se llamaba, así que el AutoEQ nativo
+     * jamás se activaba. Este es el puente que faltaba: UI → Manager →
+     * AutoEqManager → JNI (nativeObjectRendererSetAutoEqEnabled/Band).
+     *
+     * Devuelve false si el renderer aún no está listo, para que la UI
+     * pueda decir la verdad en vez de fingir que se aplicó.
+     */
+    fun setAutoEq(enabled: Boolean, profileName: String): Boolean {
+        val h = rendererHandle
+        if (!ready || h == 0L) return false
+        return runCatching {
+            if (enabled) AutoEqManager.applyProfile(h, profileName)
+            else AutoEqManager.disable(h)
+            true
+        }.getOrDefault(false)
+    }
+
     fun release() {
         synchronized(lock) {
             val h = rendererHandle

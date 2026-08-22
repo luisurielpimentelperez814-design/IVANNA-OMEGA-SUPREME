@@ -31,14 +31,23 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
     var bestFitness by remember { mutableDoubleStateOf(0.0) }
     var currentGen  by remember { mutableIntStateOf(0) }
     var isRunning   by remember { mutableStateOf(false) }
-    var stepSize    by remember { mutableFloatStateOf(0.10f) }
+    // FIX (sin persistencia): el step size sí llegaba al motor, pero no se
+    // guardaba; si el motor nativo no estaba cargado al reabrir, la UI
+    // volvía a 0.10 y el usuario perdía su calibración.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember {
+        ctx.getSharedPreferences("ivanna_cmaes_prefs", android.content.Context.MODE_PRIVATE)
+    }
+    var stepSize    by remember { mutableFloatStateOf(prefs.getFloat("stepSize", 0.10f)) }
 
-    // Cargar step size real desde el motor al arrancar
+    // Preferencia de verdad: el valor real del motor manda; si no hay motor,
+    // se reenvía el valor guardado para que UI y DSP coincidan.
     LaunchedEffect(Unit) {
         if (IvannaNativeLib.isLoaded) {
             runCatching {
                 val real = IvannaNativeLib.nativeGetMutationRate()
                 if (real > 0f) stepSize = real.coerceIn(0.01f, 0.5f)
+                else IvannaNativeLib.nativeSetMutationRate(stepSize)
             }
         }
     }
@@ -138,6 +147,7 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                     Slider(value = stepSize,
                         onValueChange = { v ->
                             stepSize = v
+                            prefs.edit().putFloat("stepSize", v).apply()
                             if (IvannaNativeLib.isLoaded)
                                 runCatching { IvannaNativeLib.nativeSetMutationRate(v) }
                         },
