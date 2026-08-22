@@ -84,8 +84,13 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
             Text("Sujeto:", color = TextSecondary, fontSize = 11.sp)
             // Mapeo etiqueta → id IHR1 real desplegado (ver HrtfSubjectSelector)
             val subjects = listOf(
-                "KEMAR" to "kemar_subject_165", "CIPIC" to "subject_003",
-                "TU-Berlin" to "subject_008", "Pulse" to "subject_009"
+                "KEMAR"      to "kemar",
+                "KEMAR-LG"   to "kemar_large",
+                "CIPIC 003"  to "cipic_003",
+                "CIPIC 165"  to "cipic_165",
+                "TU-Berlin"  to "tu_berlin_kemar",
+                "Pulse"      to "pulse",
+                "ITA"        to "ita_artificial_head"
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 subjects.forEach { (label, id) ->
