@@ -9,10 +9,6 @@
 
 namespace ivanna {
 
-HarmonicExciter::HarmonicExciter() {
-    reset();
-}
-
 void HarmonicExciter::reset() {
     lastL_ = 0.0f;
     lastR_ = 0.0f;
@@ -21,10 +17,9 @@ void HarmonicExciter::reset() {
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    drive_ = p.goldenEarDrive;
-    wet_ = p.goldenEarMix;
-    dry_ = 1.0f - p.goldenEarMix;
-    harmonicGain_ = p.harmonicGain;
+    drive_ = p.exciterDrive;
+    wet_ = p.exciterMix;
+    dry_ = 1.0f - p.exciterMix;
 
     double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
     double fc = 18000.0;
@@ -63,7 +58,6 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     const float drive = drive_;
     const float wet   = wet_ * runtimeReductionMul_;
-    const float dry   = dry_;
 
     int osIdx = 0;
     for (int i = 0; i < frames; ++i) {
