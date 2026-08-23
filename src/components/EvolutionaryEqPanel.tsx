@@ -119,7 +119,15 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsEvoRunning(!isEvoRunning)}
+              onClick={() => {
+            const nextState = !isEvoRunning;
+            setIsEvoRunning(nextState);
+            if (window.cefQuery) {
+              window.cefQuery({ request: JSON.stringify({ action: "toggle_cma_es", enabled: nextState }) });
+            } else {
+              console.log("CMA-ES Evolution state toggled:", nextState);
+            }
+          }}
               className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
                 isEvoRunning
                   ? 'bg-[#18261E] border-[#4ADE80] text-[#4ADE80]'
