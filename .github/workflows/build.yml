@@ -335,7 +335,6 @@ jobs:
           path: |
             app/build/outputs/apk/**/*.apk
             apk_sha256.txt
-          if-no-files-found: warn
           if-no-files-found: error
           overwrite: false
 
