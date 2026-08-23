@@ -943,9 +943,15 @@ fun DashboardScreen(
             },
             adaptiveTelemetry = adaptiveTelemetry,
             onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
-            // Antes duplicaba onOpenAdaptive (ambos → BRAIN). Ahora abre el
-            // dashboard magistral; BRAIN sigue accesible por onOpenAdaptive.
-            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.MAGISTRAL) },
+            // FIX (pantalla muerta): el botón "MOTOR ADAPTATIVO"
+            // (IvannaOmniComponents.kt:260) disparaba este callback hacia
+            // MAGISTRAL (dashboard cognitivo), dejando la ruta "adaptive"
+            // (AdaptiveEngineScreen — motor adaptativo completo con
+            // voiceProtectionManager + adaptiveBackend) registrada en el
+            // NavHost pero SIN ningún punto de entrada. Inalcanzable.
+            // Ahora abre su pantalla real; MAGISTRAL sigue accesible vía
+            // la ruta adaptive_dash (alias registrado en el NavHost).
+            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.ADAPTIVE) },
             onOpenMagisk = { nav.navigate(IvannaRoute.MAGISK) },
             onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
             adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
