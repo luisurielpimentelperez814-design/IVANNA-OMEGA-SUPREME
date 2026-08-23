@@ -439,13 +439,55 @@
         "arp"
       ],
       "recommendedFor": "Frankenstein, Free Ride, Tobacco Road — sintetizadores y punch de estudio 1972"
+    },
+    {
+      "id": "bachman_turner_overdrive",
+      "name": "Bachman-Turner Overdrive — Not Fragile Drive",
+      "description": "BTO (Not Fragile, 1974): guitarra rítmica gruesa de Randy Bachman, voces rasposas de Fred Turner al frente, bajo conducido y batería seca y directa. Medios adelante, graves firmes, cero reverb artificial — rock de autopista, tight y con torque.",
+      "category": "hard_rock_70s",
+      "priority": 7,
+      "audioEngine": {
+        "gain": 1.0,
+        "exciterAmount": 0.4,
+        "eqGain": 0.65,
+        "widthAmount": 0.5,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.42,
+        "bassThreshold": 0.5,
+        "eqBoost2k4k": 0.4,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.1
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.6,
+        "lateralInhibition": 0.45,
+        "ohcCompression": 0.5,
+        "masterGainDb": -1.5,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 3.0,
+        "dialogBoostDb": 1.5,
+        "widenerMult": 1.1
+      },
+      "tags": [
+        "hard-rock",
+        "70s",
+        "guitar-driven",
+        "randy-bachman",
+        "not-fragile",
+        "takin-care-of-business"
+      ],
+      "recommendedFor": "Not Fragile, Bachman-Turner Overdrive II — You Ain't Seen Nothing Yet, Takin' Care of Business"
     }
   ],
   "metadata": {
     "version": "1.0.0",
     "createdDate": "2026-07-21",
     "lastModified": "2026-08-23",
-    "totalProfiles": 11,
+    "totalProfiles": 12,
     "trainingSequence": [
       "steve_miller",
       "grand_funk",
