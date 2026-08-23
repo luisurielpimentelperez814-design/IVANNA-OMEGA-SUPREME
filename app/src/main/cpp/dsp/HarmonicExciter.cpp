@@ -17,9 +17,9 @@ void HarmonicExciter::reset() {
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    drive_ = p.goldenEarDrive;
-    wet_ = p.goldenEarMix;
-    dry_ = 1.0f - p.goldenEarMix;
+    drive_ = p.drive;
+    wet_ = p.wet;
+    dry_ = 1.0f - p.wet;
 
     double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
     double fc = 18000.0;
