@@ -397,13 +397,55 @@
         "page-production"
       ],
       "recommendedFor": "Led Zeppelin I–IV, Houses of the Holy, Physical Graffiti — baterías de sala y guitarras con aire"
+    },
+    {
+      "id": "edgar_winter",
+      "name": "Edgar Winter Group — Frankenstein Punch",
+      "description": "Producción de Rick Derringer (They Only Come Out at Night, 1972): instrumental con ARP synth, clavinet mordido y bajo synth potente. Mezcla tight y punchy — exciter para armónicos de sintetizador, presencia 2–4 kHz para el clavinet, low-end controlado pero gordo.",
+      "category": "hard_rock_70s",
+      "priority": 6,
+      "audioEngine": {
+        "gain": 1.0,
+        "exciterAmount": 0.55,
+        "eqGain": 0.55,
+        "widthAmount": 0.6,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.45,
+        "bassThreshold": 0.5,
+        "eqBoost2k4k": 0.5,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.15
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.55,
+        "lateralInhibition": 0.5,
+        "ohcCompression": 0.55,
+        "masterGainDb": -0.5,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 2.0,
+        "dialogBoostDb": 0.5,
+        "widenerMult": 1.15
+      },
+      "tags": [
+        "instrumental",
+        "synth-rock",
+        "frankenstein",
+        "rick-derringer",
+        "clavinet",
+        "arp"
+      ],
+      "recommendedFor": "Frankenstein, Free Ride, Tobacco Road — sintetizadores y punch de estudio 1972"
     }
   ],
   "metadata": {
     "version": "1.0.0",
     "createdDate": "2026-07-21",
     "lastModified": "2026-08-23",
-    "totalProfiles": 10,
+    "totalProfiles": 11,
     "trainingSequence": [
       "steve_miller",
       "grand_funk",
