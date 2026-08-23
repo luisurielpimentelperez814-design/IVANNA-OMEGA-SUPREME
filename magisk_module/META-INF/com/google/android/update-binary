@@ -2,7 +2,16 @@
 # IVANNA OMEGA SUPREME — Magisk Module Installer
 # © 2026 Luis Uriel Pimentel Pérez — GORE TNS
 
-SKIPUNZIP=1
+# AUDIT FIX (módulo instalaba sin daemon/datasets): SKIPUNZIP=1 + extracción
+# manual de solo 'system/*' dejaba fuera customize.sh (que despliega
+# SAF_model.json + hrtf_dataset.ihr1 + 200 RIR a /data/adb/ivanna_omega/),
+# service.sh (arranca el daemon), post-fs-data.sh y sepolicy.rule. Resultado
+# en dispositivo: módulo "instalado" pero sin daemon ni datasets -> la app
+# reportaba "módulo no instalado", HRTF en fallback sintético, RIR sin salas
+# reales y SAF sin modelo. Con SKIPUNZIP=0 Magisk extrae el ZIP COMPLETO a
+# MODPATH antes de ejecutar este script, y customize.sh corre después con
+# todos los archivos disponibles.
+SKIPUNZIP=0
 
 # ── Magisk bootstrap ──────────────────────────────────────────────────────────
 if [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
@@ -24,8 +33,12 @@ ui_print "━━━━━━━━━━━━━━━━━━━━━━━�
 ui_print ""
 
 # ── Extract module files ──────────────────────────────────────────────────────
-ui_print "- Extrayendo archivos del módulo..."
-unzip -o "$ZIPFILE" 'system/*' -d "$MODPATH" >/dev/null 2>&1
+# SKIPUNZIP=0: Magisk ya extrajo el zip completo en MODPATH. Verificación
+# defensiva por si un instalador legacy no lo hizo: extraer lo esencial.
+if [ ! -d "$MODPATH/system" ]; then
+  ui_print "- Extrayendo archivos del módulo (modo legacy)..."
+  unzip -o "$ZIPFILE" -d "$MODPATH" >/dev/null 2>&1
+fi
 
 # ── Verify libomega_effect.so ─────────────────────────────────────────────────
 SO_PATH="$MODPATH/system/vendor/lib64/soundfx/libomega_effect.so"
