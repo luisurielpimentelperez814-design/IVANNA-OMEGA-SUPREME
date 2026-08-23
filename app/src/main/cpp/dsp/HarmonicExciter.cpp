@@ -6,6 +6,7 @@
 #include "../include/HarmonicExciter.h"
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 
 namespace ivanna {
 
@@ -14,10 +15,14 @@ void HarmonicExciter::reset() {
     lastR_ = 0.0f;
     std::memset(osLeft_, 0, sizeof(osLeft_));
     std::memset(osRight_, 0, sizeof(osRight_));
+    hpfL_.reset();
+    hpfR_.reset();
+    osLpfL_.reset();
+    osLpfR_.reset();
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    drive_ = p.drive;
+    drive_ = 1.0f + p.drive * 15.0f; // Mapeo correcto de drive (0..1 -> 1..16) según el test
     wet_ = p.wet;
     dry_ = 1.0f - p.wet;
 
@@ -37,14 +42,19 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
     osLpfR_ = osLpfL_;
 
+    double hpfFc = 3000.0;
+    if (hpfFc > sampleRateOS * 0.45) hpfFc = sampleRateOS * 0.45;
+    hpfL_.setHighpass(hpfFc, 0.707, sampleRateOS);
+    hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
+
     excRelCoef_ = std::exp(-1.0f / ((float)p.sampleRate * OS_FACTOR * 0.020f));
 }
 
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {
     x *= drive;
     float absX = x < 0.0f ? -x : x;
-    if (absX > 2.5f) {
-        x = x > 0.0f ? (2.5f + 0.5f * std::tanh((x - 2.5f) * 0.5f)) : (-2.5f - 0.5f * std::tanh((-x - 2.5f) * 0.5f));
+    if (absX > 3.0f) {
+        x = x > 0.0f ? (3.0f + 0.5f * std::tanh((x - 3.0f) * 0.5f)) : (-3.0f - 0.5f * std::tanh((-x - 3.0f) * 0.5f));
     }
     float x2 = x * x;
     return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
@@ -56,8 +66,16 @@ __attribute__((hot, flatten))
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
+    const float wet = wet_ * runtimeReductionMul_;
+
+    // Transparencia bit-exacta cuando wet es cero
+    if (wet <= 0.00001f) {
+        lastL_ = left[frames - 1];
+        lastR_ = right[frames - 1];
+        return;
+    }
+
     const float drive = drive_;
-    const float wet   = wet_ * runtimeReductionMul_;
 
     int osIdx = 0;
     for (int i = 0; i < frames; ++i) {
@@ -92,8 +110,8 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         excL = osLpfL_.process(excL);
         excR = osLpfR_.process(excR);
 
-        float wl = wet * excL;
-        float wr = wet * excR;
+        float wl = kExcCeiling * wet * excL;
+        float wr = kExcCeiling * wet * excR;
 
         left[i / 2] = l + wl;
         right[i / 2] = r + wr;
