@@ -22,7 +22,7 @@ void HarmonicExciter::reset() {
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    drive_ = 1.0f + p.drive * 15.0f; // Mapeo correcto de drive (0..1 -> 1..16) según el test
+    drive_ = 1.0f + p.drive * 15.0f;
     wet_ = p.wet;
     dry_ = 1.0f - p.wet;
 
@@ -68,7 +68,7 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     const float wet = wet_ * runtimeReductionMul_;
 
-    // Transparencia bit-exacta cuando wet es cero
+    // Si wet es cero, mantenemos la señal perfectamente intacta y transparente
     if (wet <= 0.00001f) {
         lastL_ = left[frames - 1];
         lastR_ = right[frames - 1];
@@ -113,8 +113,15 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         float wl = kExcCeiling * wet * excL;
         float wr = kExcCeiling * wet * excR;
 
-        left[i / 2] = l + wl;
-        right[i / 2] = r + wr;
+        float outL = l + wl;
+        float outR = r + wr;
+
+        // Limite estricto anti-overshoot para entradas patológicas (DC)
+        outL = std::clamp(outL, -1.0f, 1.0f);
+        outR = std::clamp(outR, -1.0f, 1.0f);
+
+        left[i / 2] = outL;
+        right[i / 2] = outR;
     }
 }
 
