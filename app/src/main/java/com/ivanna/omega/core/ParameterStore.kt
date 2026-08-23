@@ -20,6 +20,10 @@ class ParameterStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "ivanna_omega_params"
 
+        // Sample rate nativo activo (48k/96k/192k/384k) — persiste tras
+        // reinicio de app/servicio para no volver a 48k por defecto.
+        private const val KEY_NATIVE_SR = "native_sample_rate_hz"
+
         // DSP Core (ya existentes)
         private const val KEY_EXCITER = "exciter"
         private const val KEY_EQ_GAIN = "eq_gain"
@@ -294,5 +298,4 @@ class ParameterStore(context: Context) {
         prefs.edit().putInt(KEY_NATIVE_SR, sr).apply()
     }
     fun loadNativeSampleRate(): Int = prefs.getInt(KEY_NATIVE_SR, 48000)
-    companion object { private const val KEY_NATIVE_SR = "native_sample_rate_hz" }
 }
