@@ -770,8 +770,40 @@ fun DashboardScreen(
 
     val playerPositionMs by player.currentPositionMs.collectAsState()
     val playerDurationMs by player.durationMs.collectAsState()
-    val omegaMetrics by player.omegaMetrics.collectAsState()
     var playerState by remember { mutableStateOf(player.state) }
+    // FIX (panel ENGINE muerto en standby): antes se leía solo
+    // player.omegaMetrics — el flow local del reproductor, que solo se
+    // actualiza dentro del loop de reproducción local (pollOmegaMetrics).
+    // Sin reproducción, EngineStatusCard mostraba STANDBY / HRTF OFF /
+    // Width 0% / AI "— 0%" aunque la captura del sistema (Ruta A) estuviera
+    // procesando audio y publicando niveles a OmegaMetrics.shared.
+    // Ahora se hace merge: si el player está reproduciendo, sus métricas
+    // (más ricas: latencia HW, cpu, yamnet) tienen prioridad; en standby
+    // se usan las del bus compartido (captura, AudioPipeline, DspStateUpdater).
+    val playerMetrics by player.omegaMetrics.collectAsState()
+    val sharedMetrics by com.ivanna.omega.audio.OmegaMetrics.shared.collectAsState()
+    val omegaMetrics = if (playerState == IvannaBridgePlayer.State.PLAYING) {
+        playerMetrics
+    } else {
+        // Merge: player como base (campos propios como sampleRate), shared
+        // rellena los que el player no publica en standby.
+        playerMetrics.copy(
+            rmsLevel         = sharedMetrics.rmsLevel,
+            peakLevel        = sharedMetrics.peakLevel,
+            clipCount        = sharedMetrics.clipCount,
+            dspActive        = sharedMetrics.dspActive || playerMetrics.dspActive,
+            hrtfActive       = sharedMetrics.hrtfActive || playerMetrics.hrtfActive,
+            spatialWidth     = if (sharedMetrics.spatialWidth != 0f)
+                                   sharedMetrics.spatialWidth
+                               else playerMetrics.spatialWidth,
+            yamnetCategory   = if (sharedMetrics.yamnetCategory != "—")
+                                   sharedMetrics.yamnetCategory
+                               else playerMetrics.yamnetCategory,
+            yamnetConfidence = if (sharedMetrics.yamnetConfidence > 0f)
+                                   sharedMetrics.yamnetConfidence
+                               else playerMetrics.yamnetConfidence
+        )
+    }
     var currentUri  by remember { mutableStateOf<Uri?>(null) }
     var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var queueIdx    by remember { mutableStateOf(-1) }
