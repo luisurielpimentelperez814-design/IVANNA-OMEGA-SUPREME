@@ -179,7 +179,7 @@ private fun PanelCard(title: String, accent: androidx.compose.ui.graphics.Color,
                       content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth()
-            .background(CardBg, RoundedCornerShape(12.dp))
+            .background(ObsidianSoft, RoundedCornerShape(12.dp))
             .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
