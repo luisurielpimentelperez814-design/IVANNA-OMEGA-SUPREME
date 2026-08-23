@@ -30,6 +30,7 @@
 #include "../spatial/RirDataset.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
+#include "../include/dc_blocker.hpp"
 #include "../audio_control_plane.hpp"
 #include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "../perceptual_loudness.hpp"
@@ -87,6 +88,8 @@ static Compressor     g_comp;
 static HarmonicExciter g_exciter;
 static StereoWidener  g_widener;
 static GainStage      g_gain;
+// Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
+static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
 static SafetyLimiter  g_safety_limiter;
 // OMEGA PERCEPTUAL GUARD
 static OmegaPerceptualGuard g_perceptualGuard;
@@ -463,7 +466,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
 }
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
-    if (sr < 8000 || sr > 192000) { LOGE("Bad SR: %d", sr); return; }
+    if (sr < 8000 || sr > 384000) { LOGE("Bad SR: %d", sr); return; }
+    // NATIVOS DIRECTOS: 48000/96000/192000/384000 Hz pasan sin remuestreo
+    // ni re-cuantización. Antes el gate rechazaba 384k ("Bad SR") y todo
+    // lo que no fuera <=192k moría aquí — el DSP completo (EQ, compresor,
+    // exciter, widener, PDEngine, loudness meter) YA acepta cualquier SR
+    // vía g_params.sampleRate/g_pd.init()/g_loudnessMeter.init(), solo el
+    // gate lo bloqueaba. Sin cambio de arquitectura: misma cadena, gate
+    // ampliado al rango que el hardware USB/Hi-Fi actual expone.
     g_params.sampleRate = (uint32_t)sr;
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
@@ -473,6 +483,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
     g_loudnessMeter.init((float)sr);
+    g_dcBlockL.init((uint32_t)sr);
+    g_dcBlockR.init((uint32_t)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
     // start() crea un std::thread propio (el hilo de control lento) que
@@ -881,6 +893,12 @@ g_exciter.process(chL, chR, n);
         // peakAbs (para que las métricas reflejen el pico que hubiera salido) y
         // ANTES del M/S ensanchamiento y la copia a data.
         g_safety_limiter.process(pdOutL, pdOutR, n);
+        // Anti-ruido digital: DC-block + NaN/Inf sanitize — ULTIMA etapa,
+        // despues del SafetyLimiter. Interleaved L/R.
+        for (size_t i = 0; i + 1 < (size_t)(frames * 2); i += 2) {
+            buffer[i]   = g_dcBlockL.process(buffer[i]);
+            buffer[i+1] = g_dcBlockR.process(buffer[i+1]);
+        }
         // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
         // 4) Publicar. Es un memcpy de POD atrás de un seqlock, no bloquea.

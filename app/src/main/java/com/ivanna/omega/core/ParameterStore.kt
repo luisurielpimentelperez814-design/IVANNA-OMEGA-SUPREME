@@ -286,4 +286,13 @@ class ParameterStore(context: Context) {
     fun markFirstLaunchPresetApplied() {
         prefs.edit().putBoolean("first_launch_preset_applied", true).apply()
     }
+
+    // ── Sample rate nativo directo (48k/96k/192k/384k) ──────────────────
+    // Persiste la SR activa para que el motor arranque en la misma SR tras
+    // reinicio de app/servicio — el usuario no vuelve a 48k por defecto.
+    fun saveNativeSampleRate(sr: Int) {
+        prefs.edit().putInt(KEY_NATIVE_SR, sr).apply()
+    }
+    fun loadNativeSampleRate(): Int = prefs.getInt(KEY_NATIVE_SR, 48000)
+    companion object { private const val KEY_NATIVE_SR = "native_sample_rate_hz" }
 }
