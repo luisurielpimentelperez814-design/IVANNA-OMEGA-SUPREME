@@ -333,8 +333,9 @@ jobs:
         with:
           name: apk-build-${{ github.sha }}
           path: |
-            ${{ env.APK_ARTIFACT_NAME }}
+            app/build/outputs/apk/**/*.apk
             apk_sha256.txt
+          if-no-files-found: warn
           if-no-files-found: error
           overwrite: false
 
