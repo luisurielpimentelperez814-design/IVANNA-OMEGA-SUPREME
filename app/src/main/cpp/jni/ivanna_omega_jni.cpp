@@ -895,9 +895,9 @@ g_exciter.process(chL, chR, n);
         g_safety_limiter.process(pdOutL, pdOutR, n);
         // Anti-ruido digital: DC-block + NaN/Inf sanitize — ULTIMA etapa,
         // despues del SafetyLimiter. Interleaved L/R.
-        for (size_t i = 0; i + 1 < (size_t)(frames * 2); i += 2) {
-            buffer[i]   = g_dcBlockL.process(buffer[i]);
-            buffer[i+1] = g_dcBlockR.process(buffer[i+1]);
+        for (int i = 0; i < n; ++i) {
+            pdOutL[i] = g_dcBlockL.process(pdOutL[i]);
+            pdOutR[i] = g_dcBlockR.process(pdOutR[i]);
         }
         // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
