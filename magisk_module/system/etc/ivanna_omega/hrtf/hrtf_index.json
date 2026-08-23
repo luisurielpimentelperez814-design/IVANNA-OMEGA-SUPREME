@@ -7,7 +7,7 @@
     {
       "id": "kemar",
       "file": "kemar.ihr1",
-      "label": "KEMAR — pinna normal (MIT 1994)",
+      "label": "KEMAR \u2014 pinna normal (MIT 1994)",
       "positions": 710,
       "sourceSampleRate": 44100.0,
       "sha256": "32d1b30a62bc59813ea498234a79d4cc0bd19cc1bb3f3c50be2d5f5b851134ad"
@@ -15,7 +15,7 @@
     {
       "id": "kemar_large",
       "file": "kemar_large.ihr1",
-      "label": "KEMAR — pinna grande (MIT 1994)",
+      "label": "KEMAR \u2014 pinna grande (MIT 1994)",
       "positions": 710,
       "sourceSampleRate": 44100.0,
       "sha256": "4582ff2cf80b5fa1718acd202e317cb32a3bcbb7a4be9cc131969f945a50fdcf"
