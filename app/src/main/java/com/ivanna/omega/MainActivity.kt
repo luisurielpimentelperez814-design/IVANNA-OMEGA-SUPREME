@@ -453,10 +453,13 @@ fun OmegaApp() {
                 )
             }
             composable("calibracion_saf") {
-                SaFCalibrationScreen(onDismiss = { nav.popBackStack(, onOpenSpatialControl = { nav.navigate("spatial_control") }) 
+                SaFCalibrationScreen(
+                    onDismiss = { nav.popBackStack() },
+                    onOpenSpatialControl = { nav.navigate("spatial_control") }
+                )
+            }
             composable("spatial_control") {
                 SpatialControlPanel(onBack = { nav.popBackStack() })
-            }})
             }
             // ── MAGISTRAL DASHBOARD ───────────────────────────────────────
             // FIX (pantalla huérfana): MagistralDashboardScreen estaba

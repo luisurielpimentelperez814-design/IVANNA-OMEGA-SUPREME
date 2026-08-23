@@ -42,7 +42,8 @@ import kotlin.math.sin
 @Composable
 fun SaFCalibrationScreen(
     rendererHandle: Long = 0L,
-    onDismiss: () -> Unit = {}
+    onDismiss: () -> Unit = {},
+    onOpenSpatialControl: () -> Unit = {}
 ) {
     val onBack = onDismiss
     val context = LocalContext.current
