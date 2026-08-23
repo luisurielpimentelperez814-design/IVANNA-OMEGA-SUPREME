@@ -306,17 +306,35 @@ jobs:
       # el APK no era uno de ellos — se compilaba y nunca llegaba al
       # artefacto descargable. Ahora 6: zip del módulo, APK + su hash,
       # daemon suelto + su hash, y el .so del efecto.
-      - name: Upload artifacts (clean, versioned)
+      #
+      # FIX (empaquetado, colisión de nombre): el artefacto de GitHub Actions
+      # se llamaba IGUAL que el zip interno del módulo Magisk
+      # (ivanna-magisk-module-arm64-<sha>.zip en ambos casos). Al descargar
+      # desde la UI de Actions, GitHub comprime TODO el path: en un único
+      # .zip nombrado con el name: del artefacto — así que el usuario
+      # terminaba con un archivo llamado igual que el que había DENTRO,
+      # lo que rompe la extracción en varios gestores de archivos (sobre
+      # todo en apps de Android). Fix: dos artefactos separados con
+      # nombres que nunca coinciden con ningún archivo interno.
+      - name: Upload Magisk module (zip + daemon + effect lib)
         uses: actions/upload-artifact@v4
         with:
-          name: ivanna-magisk-module-arm64-${{ github.sha }}
+          name: magisk-module-bundle-${{ github.sha }}
           path: |
             ivanna-magisk-module-arm64-${{ github.sha }}.zip
-            ${{ env.APK_ARTIFACT_NAME }}
-            apk_sha256.txt
             ivanna_daemon
             libomega_effect_arm64.so
             daemon_sha256.txt
+          if-no-files-found: error
+          overwrite: false
+
+      - name: Upload APK (separate artifact — was colliding with module zip name)
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-build-${{ github.sha }}
+          path: |
+            ${{ env.APK_ARTIFACT_NAME }}
+            apk_sha256.txt
           if-no-files-found: error
           overwrite: false
 
@@ -326,10 +344,15 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-apk]
     steps:
-      - name: Download published artifact
+      - name: Download module bundle
         uses: actions/download-artifact@v4
         with:
-          name: ivanna-magisk-module-arm64-${{ github.sha }}
+          name: magisk-module-bundle-${{ github.sha }}
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-build-${{ github.sha }}
 
       - name: Validate downloaded zip end-to-end
         run: |
