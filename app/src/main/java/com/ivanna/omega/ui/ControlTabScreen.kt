@@ -50,7 +50,17 @@ fun ControlTabScreen(
     val audioState by AudioStateManager.audioState.collectAsState()
     val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
     val voiceActive by voiceMgr.voiceProtectionActive.observeAsState(false)
-    var npeBypassState by remember { mutableStateOf(false) }
+    // FIX (persistencia): el bypass NPE arrancaba siempre en false aunque el
+    // usuario lo hubiera activado y ParameterStore ya lo guardara
+    // (KEY_NPE_BYPASS). Ahora se restaura desde prefs y se reaplica al motor
+    // nativo — el estado del toggle sobrevive cierre de app y reboot.
+    var npeBypassState by remember { mutableStateOf(paramStore.isNpeBypass()) }
+
+    LaunchedEffect(Unit) {
+        if (npeBypassState && PiLstmBridge.isReady) {
+            PiLstmBridge.setBypass(true)
+        }
+    }
 
     val adaptiveTelemetryRaw by adaptiveBack.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
@@ -100,6 +110,7 @@ fun ControlTabScreen(
         // ── NPE / PI-LSTM ───────────────────────────────────────────────
         onNpeBypassChange = { on ->
             npeBypassState = on
+            paramStore.setNpeBypass(on)   // persistir — antes solo vivía en memoria
             if (PiLstmBridge.isReady) PiLstmBridge.setBypass(on)
         },
         onNpeHarmonicChange       = { v -> if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v) },
