@@ -54,7 +54,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(c.hrtfEnabled) }
         // Sujeto → ancla SAF + daemon
         val idx = SpatialControlStore.SUBJECTS.indexOf(c.hrtfSubject)
-        if (IvannaNativeLib.isLoaded && idx >= 0) runCatching { SaFBridge.nativeSaFSetSubjectIndex(idx) }
+        if (IvannaNativeLib.isLoaded && idx >= 0) runCatching { SaFBridge.setSubjectIndexHint(idx) }
         // RIR wet → DSPBridge (wet espacial real) + daemon (reverb)
         if (DSPBridge.isLoaded) runCatching {
             DSPBridge.setParams(drive = 0.5f, wet = if (c.rirEnabled) c.rirWet else 0f, mix = 0.8f,
