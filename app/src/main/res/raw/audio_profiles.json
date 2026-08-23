@@ -355,13 +355,55 @@
         "conservative"
       ],
       "recommendedFor": "Sesiones largas de escucha, protección auditiva, volumen conservador"
+    },
+    {
+      "id": "led_zeppelin",
+      "name": "Led Zeppelin — Bonham's Room",
+      "description": "Producción de Jimmy Page: batería ambiental de John Bonham con room mic mezclado casi al nivel del close mic (kick tan presente como el snare), Les Paul con microfoneo ambiental de ampli. Escena amplia y profunda, graves con cuerpo, dinámica enorme sin comprimir de más.",
+      "category": "hard_rock_70s",
+      "priority": 5,
+      "audioEngine": {
+        "gain": 1.0,
+        "exciterAmount": 0.35,
+        "eqGain": 0.6,
+        "widthAmount": 0.85,
+        "bypass": false
+      },
+      "antiDolby": {
+        "speechThreshold": 0.4,
+        "bassThreshold": 0.55,
+        "eqBoost2k4k": 0.3,
+        "exciterLowOnly": false,
+        "widenerMultiplier": 1.3
+      },
+      "neuromorphic": {
+        "harmonicGain": 0.7,
+        "lateralInhibition": 0.4,
+        "ohcCompression": 0.5,
+        "masterGainDb": -1.0,
+        "cochlearBandwidth": "adaptive"
+      },
+      "route": {
+        "bassBoostDb": 2.5,
+        "dialogBoostDb": 1.0,
+        "widenerMult": 1.4
+      },
+      "tags": [
+        "hard-rock",
+        "70s",
+        "ambient-drums",
+        "bonham-room",
+        "les-paul",
+        "page-production"
+      ],
+      "recommendedFor": "Led Zeppelin I–IV, Houses of the Holy, Physical Graffiti — baterías de sala y guitarras con aire"
     }
   ],
   "metadata": {
     "version": "1.0.0",
     "createdDate": "2026-07-21",
-    "lastModified": "2026-07-21",
-    "totalProfiles": 4,
+    "lastModified": "2026-08-23",
+    "totalProfiles": 10,
     "trainingSequence": [
       "steve_miller",
       "grand_funk",
