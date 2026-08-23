@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -36,12 +37,26 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
     var fundHz      by remember { mutableFloatStateOf(440f) }
     var tick        by remember { mutableLongStateOf(0L) }
     var bandEnergies by remember { mutableStateOf<FloatArray?>(null) }
+    // Buffer reutilizable para las 64 bandas reales del visualizador Bark64
+    // (alimentado por PlaybackCaptureService.processBlock en cada bloque de
+    // captura — fuente real, no la interpolación 3→64 ni el fallback sintético).
+    val bark64Buf = remember { FloatArray(IvannaVisualizerBark64Bridge.BAND_COUNT) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
             delay(50L); tick = System.currentTimeMillis()
-            if (IvannaNativeLib.isLoaded)
+            // Prioridad de fuentes para el espectro:
+            //   1. Bark64 nativo (64 bandas reales, captura del sistema activa)
+            //   2. nativeGetBandEnergies (3 bandas low/mid/high, reproductor local)
+            //   3. fftFallback (sintético, solo cuando no hay ninguna fuente)
+            if (IvannaVisualizerBark64Bridge.isReady) {
+                runCatching {
+                    IvannaVisualizerBark64Bridge.sampleInto(bark64Buf)
+                    bandEnergies = bark64Buf.copyOf()
+                }
+            } else if (IvannaNativeLib.isLoaded) {
                 runCatching { bandEnergies = IvannaNativeLib.nativeGetBandEnergies() }
+            }
         }
     }
 
@@ -115,8 +130,12 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
                 // Con 3 valores, las 61 barras restantes eran 0 → espectro casi vacío.
                 // Solución: interpolar las 3 bandas a 64 con curva de forma espectral
                 // plausible (más energía en bajos, declive natural hacia agudos).
+                // Si llegan 64 bandas del Bark64Bridge (captura activa), se usan
+                // directo sin interpolar — espectro real por banda.
                 val bands64 = FloatArray(nBands) { i ->
-                    if (real != null && real.size >= 3) {
+                    if (real != null && real.size >= 64) {
+                        real[i].coerceIn(0f, 1f)
+                    } else if (real != null && real.size >= 3) {
                         val t = i / (nBands - 1).toFloat()  // 0..1
                         // Bandas reales: low=[0..21], mid=[22..42], high=[43..63]
                         val e = when {
