@@ -76,7 +76,12 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     }
 
     // Estado real de carga de datasets (filesystem, no simulado)
-    val ihr1 = File("/data/adb/ivanna_omega/hrtf_dataset.ihr1")
+    // Buscar IHR1 activo en rutas prioritarias (Magisk mount primero)
+    val ihr1 = listOf(
+        File("/system/etc/ivanna_omega/hrtf/${cfg.subject}.ihr1"),
+        File("/system/etc/ivanna_omega/hrtf/kemar.ihr1"),
+        File("/data/adb/ivanna_omega/hrtf_dataset.ihr1")
+    ).firstOrNull { it.exists() }
     val safModel = File("/data/adb/ivanna_omega/SAF_model.json")
     val rirDir = File("/data/adb/ivanna_omega/rir")
     val rirMeta = File(rirDir, "metadata.csv")
@@ -113,9 +118,9 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 }
             }
             Text(
-                if (ihr1.exists()) "Dataset: hrtf_dataset.ihr1 cargado (${ihr1.length() / 1024} KB)"
+                if (ihr1 != null) "Dataset: ${ihr1.name} (${ihr1.length() / 1024} KB)"
                 else "Dataset: FALLBACK sintético (módulo no instalado)",
-                color = if (ihr1.exists()) PhosphorGreen else AmberSignal, fontSize = 10.sp,
+                color = if (ihr1 != null) PhosphorGreen else AmberSignal, fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace)
             if (hrtfSubjectReply.isNotBlank()) Text(hrtfSubjectReply, color = TextMuted, fontSize = 10.sp)
         }
