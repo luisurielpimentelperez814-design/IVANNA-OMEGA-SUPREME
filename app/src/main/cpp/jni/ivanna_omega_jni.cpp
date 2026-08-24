@@ -1055,7 +1055,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
 // ═══════════════════════════════════════════════════════════════════════════════
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
-    if (sr < 8000 || sr > 192000) return JNI_FALSE;
+    if (sr < 8000 || sr > 384000) return JNI_FALSE;  // paridad con nativeInit (9f99d4e6): nativas directas hasta 384k
     g_params.sampleRate = (uint32_t)sr;
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
