@@ -245,17 +245,24 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
     if (!renderer || !subjectId) return;
     const char* subjStr = env->GetStringUTFChars(subjectId, nullptr);
     if (subjStr) {
-        // En una implementación completa esto cargaría el sujeto específico
-        // del archivo .ihr1 o de un .sofa. Como el modelo SAF maneja
-        // hrtf_dataset.ihr1 general, enviamos el comando base.
-        // Simulando loadHrtfDatasetFromFile() con la ruta estándar si el
-        // módulo magisk monta la base en /data/adb/ivanna_omega/
-        
-        std::string path = "/data/adb/ivanna_omega/hrtf_" + std::string(subjStr) + ".ihr1";
-        if (renderer->loadHrtfDatasetFromFile(path.c_str()))
-            renderer->setCurrentSubjectName(subjStr);
-
+        const std::string subj(subjStr);
         env->ReleaseStringUTFChars(subjectId, subjStr);
+
+        // Rutas en orden de prioridad:
+        // 1. Módulo Magisk montado en /system/etc (disponible con root)
+        // 2. Ruta legado /data/adb
+        const char* candidates[] = {
+            ("/system/etc/ivanna_omega/hrtf/" + subj + ".ihr1").c_str(),
+            ("/data/adb/ivanna_omega/hrtf/" + subj + ".ihr1").c_str(),
+            ("/data/adb/ivanna_omega/hrtf_" + subj + ".ihr1").c_str(),
+            nullptr
+        };
+        for (int i = 0; candidates[i]; ++i) {
+            if (renderer->loadHrtfDatasetFromFile(candidates[i])) {
+                renderer->setCurrentSubjectName(subj.c_str());
+                break;
+            }
+        }
     }
 }
 
