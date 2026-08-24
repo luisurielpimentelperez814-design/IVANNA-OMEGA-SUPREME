@@ -77,6 +77,17 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     const float drive = drive_;
 
+    // FIX (distorsion digital): el clamp duro final (std::clamp ±1.0) de cada
+    // muestra generaba clipping de onda cuadrada cuando dry+wet*excitacion
+    // superaba el techo — armonicos impares de banda ancha en material ya
+    // saturado, antes de que el SafetyLimiter pudiera actuar limpiamente.
+    // Se activa el mecanismo excScale_ documentado en el header: escala la
+    // excitacion ANTES de sumarla al seco, con ataque inmediato (por muestra
+    // OS) y release suave (~20 ms a tasa OS) para no modular el timbre.
+    float scaleL = excScaleL_;
+    float scaleR = excScaleR_;
+    const float rel = excRelCoef_;
+
     int osIdx = 0;
     for (int i = 0; i < frames; ++i) {
         float l = left[i];
@@ -110,15 +121,27 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         excL = osLpfL_.process(excL);
         excR = osLpfR_.process(excR);
 
-        float wl = kExcCeiling * wet * excL;
-        float wr = kExcCeiling * wet * excR;
+        // Headroom disponible: cuanta excitacion cabe sin superar el techo.
+        // Ataque inmediato si la muestra reventaria, release exponencial
+        // cuando sobra headroom -> la reduccion se percibe como nivel, no
+        // como distorsion (sin modulacion muestra-a-muestra de la suma).
+        const float headL = 1.0f - std::fabs(l);
+        const float headR = 1.0f - std::fabs(r);
+        const float reqL = kExcCeiling * wet * std::fabs(excL);
+        const float reqR = kExcCeiling * wet * std::fabs(excR);
+        const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
+        const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
+        if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
+        if (needR < scaleR) scaleR = needR; else scaleR = rel * scaleR + (1.0f - rel);
+        if (scaleL > 1.0f) scaleL = 1.0f;
+        if (scaleR > 1.0f) scaleR = 1.0f;
 
-        float outL = l + wl;
-        float outR = r + wr;
+        float outL = l + kExcCeiling * wet * excL * scaleL;
+        float outR = r + kExcCeiling * wet * excR * scaleR;
 
-        // Limite estricto anti-overshoot para entradas patológicas (DC)
-        outL = std::clamp(outL, -1.0f, 1.0f);
-        outR = std::clamp(outR, -1.0f, 1.0f);
+        // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
+        if (!std::isfinite(outL)) outL = 0.f;
+        if (!std::isfinite(outR)) outR = 0.f;
 
         // FIX (desfase): el decimado debe escribir SOLO en índices PARES
         // (muestras originales, i%2==0). Antes escribía en left[i/2] tanto
@@ -132,6 +155,9 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
             right[i >> 1] = outR;
         }
     }
+
+    excScaleL_ = scaleL;
+    excScaleR_ = scaleR;
 }
 
 } // namespace ivanna
