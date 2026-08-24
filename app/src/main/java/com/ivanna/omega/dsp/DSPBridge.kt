@@ -18,7 +18,11 @@ object DSPBridge {
 
     val isLoaded: Boolean get() = loaded
 
-    fun init(sampleRate: Int = 96000) {
+    // FIX (auditoría 2026-08-24): el default 96000 era una trampa latente —
+    // un call-site futuro que lo invocara sin argumento reintroduciría el bug
+    // de SR fijo (filtros desafinados) ya reparado en IVANNAApplication y
+    // BootRestoreReceiver. Sin default: el compilador obliga a pasar SR real.
+    fun init(sampleRate: Int) {
         if (loaded) nativeInit(sampleRate)
     }
 
