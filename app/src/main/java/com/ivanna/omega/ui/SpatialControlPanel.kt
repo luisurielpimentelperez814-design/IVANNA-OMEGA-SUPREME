@@ -1,5 +1,6 @@
 package com.ivanna.omega.ui
 
+import com.ivanna.omega.spatial.HrtfSubjectSelector
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -78,7 +79,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     // Estado real de carga de datasets (filesystem, no simulado)
     // Buscar IHR1 activo en rutas prioritarias (Magisk mount primero)
     val ihr1 = listOf(
-        File("/system/etc/ivanna_omega/hrtf/${cfg.subject}.ihr1"),
+        File("/system/etc/ivanna_omega/hrtf/${HrtfSubjectSelector.resolveSubjectId(cfg.hrtfSubject)}.ihr1"),
         File("/system/etc/ivanna_omega/hrtf/kemar.ihr1"),
         File("/data/adb/ivanna_omega/hrtf_dataset.ihr1")
     ).firstOrNull { it.exists() }
