@@ -120,8 +120,17 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         outL = std::clamp(outL, -1.0f, 1.0f);
         outR = std::clamp(outR, -1.0f, 1.0f);
 
-        left[i / 2] = outL;
-        right[i / 2] = outR;
+        // FIX (desfase): el decimado debe escribir SOLO en índices PARES
+        // (muestras originales, i%2==0). Antes escribía en left[i/2] tanto
+        // en pares como en impares, de modo que la muestra impar (punto
+        // medio interpolado) SOBRESCRIBÍA a la par y la salida quedaba
+        // retardada 0.25 muestras respecto al resto de la cadena DSP →
+        // desfase global + peine sutil audible en agudos. Con i par, la
+        // señal de salida mantiene alineación temporal exacta.
+        if ((i & 1) == 0) {
+            left[i >> 1]  = outL;
+            right[i >> 1] = outR;
+        }
     }
 }
 
