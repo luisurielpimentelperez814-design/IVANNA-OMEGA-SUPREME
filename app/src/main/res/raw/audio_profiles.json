@@ -162,7 +162,7 @@
       "name": "Music",
       "description": "Perfil general balanceado para escucha diaria — realce moderado sin coloración excesiva",
       "category": "general",
-      "priority": 5,
+      "priority": 8,
       "audioEngine": {
         "gain": 0.85,
         "exciterAmount": 0.35,
@@ -201,7 +201,7 @@
       "name": "Voice",
       "description": "Podcasts, llamadas y contenido hablado — máxima inteligibilidad, ancho reducido, graves mínimos",
       "category": "speech",
-      "priority": 6,
+      "priority": 9,
       "audioEngine": {
         "gain": 0.9,
         "exciterAmount": 0.1,
@@ -241,7 +241,7 @@
       "name": "Gaming",
       "description": "Imagen estéreo amplia para audio posicional — pasos y direccionalidad por encima de calidez tonal",
       "category": "gaming",
-      "priority": 7,
+      "priority": 10,
       "audioEngine": {
         "gain": 0.88,
         "exciterAmount": 0.3,
@@ -281,7 +281,7 @@
       "name": "Studio",
       "description": "Referencia plana para monitoreo crítico — coloración mínima, fiel a la fuente",
       "category": "reference",
-      "priority": 8,
+      "priority": 11,
       "audioEngine": {
         "gain": 0.75,
         "exciterAmount": 0.0,
@@ -321,7 +321,7 @@
       "name": "Safe",
       "description": "Perfil conservador orientado a protección auditiva en sesiones largas — ganancia y excursión limitadas",
       "category": "protection",
-      "priority": 9,
+      "priority": 12,
       "audioEngine": {
         "gain": 0.6,
         "exciterAmount": 0.1,
@@ -486,14 +486,17 @@
   "metadata": {
     "version": "1.0.0",
     "createdDate": "2026-07-21",
-    "lastModified": "2026-08-23",
+    "lastModified": "2026-08-24",
     "totalProfiles": 12,
     "trainingSequence": [
       "steve_miller",
       "grand_funk",
+      "led_zeppelin",
       "rush",
-      "budgie"
+      "budgie",
+      "edgar_winter",
+      "bachman_turner_overdrive"
     ],
-    "trainingNotes": "Start with Steve Miller (gentle), progress to Grand Funk (balanced), then RUSH (technical/wide), end with Budgie (heavy/saturated). Each step increases the harmonic exertion and width — the ear adapts across sessions. Recommended cadence: 1 profile per ~20 min of listening."
+    "trainingNotes": "Start with Steve Miller (gentle), progress through Grand Funk (balanced), Led Zeppelin (ambient width), RUSH (technical/wide), Budgie (heavy/saturated), Edgar Winter (synth punch), end with BTO (tight highway drive). Each step increases harmonic exertion and width — the ear adapts across sessions. Recommended cadence: 1 profile per ~20 min of listening."
   }
 }
