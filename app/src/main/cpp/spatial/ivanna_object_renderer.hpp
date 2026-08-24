@@ -138,38 +138,52 @@ public:
 
     bool loadHrtfDatasetFromFile(const char* path) {
         hrtfDatasetLoaded_.store(false, std::memory_order_release);
-        // Carga una sola vez y lo comparte (lock-free para el audio thread)
         auto newDs = std::make_shared<SyntheticHRTF::SharedDataset>();
-        
+
         FILE* f = std::fopen(path, "rb");
         if (!f) return false;
-        char magic[4];
+
+        // IHR1 header: magic[4] + uint32 numPos + uint32 irLen + uint32 srHz
+        char magic[4]{};
         if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IHR1", 4) != 0) {
             std::fclose(f); return false;
         }
-        int32_t numDirs = 0, irLen = 0, sr = 0;
+        uint32_t numDirs = 0, irLen = 0, sr = 0;
         if (std::fread(&numDirs, 4, 1, f) != 1 ||
-            std::fread(&irLen, 4, 1, f) != 1 ||
-            std::fread(&sr, 4, 1, f) != 1) {
+            std::fread(&irLen,   4, 1, f) != 1 ||
+            std::fread(&sr,      4, 1, f) != 1) {
             std::fclose(f); return false;
         }
-        if (numDirs <= 0 || numDirs > 1000 || irLen <= 0 || irLen > 4096) {
+        // FIX: guard anterior rechazaba CIPIC (1250) y freefield (2354)
+        if (numDirs == 0 || numDirs > 8192 || irLen == 0 || irLen > 4096) {
             std::fclose(f); return false;
         }
-        
-        newDs->irLen = irLen;
+
+        newDs->irLen = static_cast<int>(irLen);
         newDs->az.resize(numDirs);
+        std::vector<float> elev(numDirs);   // elevación leída pero no usada por convolvers
         newDs->L.resize(numDirs);
         newDs->R.resize(numDirs);
-        
-        for (int i = 0; i < numDirs; ++i) {
-            float az = 0.f;
-            if (std::fread(&az, 4, 1, f) != 1) break;
-            newDs->az[i] = az;
-            std::vector<float> tmp(irLen * 2);
-            if (std::fread(tmp.data(), 4, irLen * 2, f) != (size_t)(irLen * 2)) break;
-            newDs->L[i].assign(tmp.begin(), tmp.begin() + irLen);
-            newDs->R[i].assign(tmp.begin() + irLen, tmp.end());
+
+        // FIX: el formato IHR1 escribe TODA la tabla angular primero, luego todos los HRIRs.
+        // La versión anterior mezclaba az+HRIR en el mismo loop → offset incorrecto desde pos 1.
+
+        // PASO 1: leer tabla angular completa [az, el] × numDirs
+        for (uint32_t i = 0; i < numDirs; ++i) {
+            if (std::fread(&newDs->az[i], 4, 1, f) != 1 ||
+                std::fread(&elev[i],      4, 1, f) != 1) {
+                std::fclose(f); return false;
+            }
+        }
+
+        // PASO 2: leer HRIRs [L×irLen + R×irLen] × numDirs (L completa, luego R completa)
+        for (uint32_t i = 0; i < numDirs; ++i) {
+            newDs->L[i].resize(irLen);
+            newDs->R[i].resize(irLen);
+            if (std::fread(newDs->L[i].data(), sizeof(float), irLen, f) != irLen ||
+                std::fread(newDs->R[i].data(), sizeof(float), irLen, f) != irLen) {
+                std::fclose(f); return false;
+            }
         }
         std::fclose(f);
         
