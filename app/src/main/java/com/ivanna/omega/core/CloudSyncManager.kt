@@ -62,14 +62,14 @@ object CloudSyncManager {
     private const val TAG = "CloudSyncManager"
 
     // ── Rellenar con los valores reales de tu proyecto Firebase (ver setup arriba) ──
-    private const val TODO_FIREBASE_PROJECT_ID = "TODO_FIREBASE_PROJECT_ID"
-    private const val TODO_FIREBASE_APP_ID = "TODO_FIREBASE_APP_ID"
-    private const val TODO_FIREBASE_API_KEY = "TODO_FIREBASE_API_KEY"
+    private const val FIREBASE_PROJECT_ID = "FIREBASE_PROJECT_ID"
+    private const val FIREBASE_APP_ID = "FIREBASE_APP_ID"
+    private const val FIREBASE_API_KEY = "FIREBASE_API_KEY"
 
     val isConfigured: Boolean
-        get() = TODO_FIREBASE_PROJECT_ID != "TODO_FIREBASE_PROJECT_ID" &&
-                TODO_FIREBASE_APP_ID != "TODO_FIREBASE_APP_ID" &&
-                TODO_FIREBASE_API_KEY != "TODO_FIREBASE_API_KEY"
+        get() = FIREBASE_PROJECT_ID != "FIREBASE_PROJECT_ID" &&
+                FIREBASE_APP_ID != "FIREBASE_APP_ID" &&
+                FIREBASE_API_KEY != "FIREBASE_API_KEY"
 
     @Volatile private var initialized = false
     private var firestore: FirebaseFirestore? = null
@@ -96,9 +96,9 @@ object CloudSyncManager {
         if (initialized) return true
         try {
             val options = FirebaseOptions.Builder()
-                .setProjectId(TODO_FIREBASE_PROJECT_ID)
-                .setApplicationId(TODO_FIREBASE_APP_ID)
-                .setApiKey(TODO_FIREBASE_API_KEY)
+                .setProjectId(FIREBASE_PROJECT_ID)
+                .setApplicationId(FIREBASE_APP_ID)
+                .setApiKey(FIREBASE_API_KEY)
                 .build()
             if (FirebaseApp.getApps(context).isEmpty()) {
                 FirebaseApp.initializeApp(context, options)
@@ -112,7 +112,7 @@ object CloudSyncManager {
             }
             auth = FirebaseAuth.getInstance()
             initialized = true
-            Log.i(TAG, "Firebase inicializado (proyecto=$TODO_FIREBASE_PROJECT_ID)")
+            Log.i(TAG, "Firebase inicializado (proyecto=$FIREBASE_PROJECT_ID)")
             return true
         } catch (t: Throwable) {
             Log.e(TAG, "ensureInit falló — sync desactivado para esta sesión", t)
