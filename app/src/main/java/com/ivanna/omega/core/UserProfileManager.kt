@@ -1,5 +1,6 @@
 package com.ivanna.omega.core
 
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 
@@ -52,7 +53,7 @@ class UserProfileManager(
                 saveProfile(currentProfile)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("UserProfileManager", "loadProfile falló, usando defaults", e)
             currentProfile = UserProfile()
         }
         return currentProfile

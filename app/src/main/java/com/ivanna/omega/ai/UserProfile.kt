@@ -1,7 +1,7 @@
 package com.ivanna.omega.ai
 
 import android.content.Context
-import org.json.JSONObject
+import android.util.Logimport org.json.JSONObject
 import java.io.File
 
 data class UserProfile(
@@ -64,7 +64,7 @@ class UserProfileManager(private val context: Context) {
             fallbackFile.writeText(jsonStr)
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("UserProfileManager", "saveProfile falló", e)
             false
         }
     }
