@@ -20,7 +20,10 @@ data class DSPDecision(
     val fatigueProtectionDb: Float = 0f,
 
     val moodAdaptation: Float = 0f,
-    val harmonicGain: Float = 1f,
+    // FIX: default 1f causaba 100% saturacion tanh cada vez que la IA
+    // tomaba una decision sin calcular harmonicGain explicitamente.
+    // 0f = excitador BYPASS hasta que el usuario lo active.
+    val harmonicGain: Float = 0f,
     val antiDolbyIntensity: Float = 0f,
 
     val roomSize: Float = 0f,

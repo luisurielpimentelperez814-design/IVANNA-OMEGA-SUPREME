@@ -38,7 +38,7 @@ data class AdaptiveControlsState(
     val binauralElevation: Float = 0f,
     // Bug E — NHOTab
     val nhoEta: Float = 0.5f,
-    val nhoHarmonicGain: Float = 0.5f,
+    val nhoHarmonicGain: Float = 0.0f,
     val nhoLateralInhib: Float = 0.3f,
     val nhoOhcGain: Float = 0.5f,
     // Bug F — EvolutionTab

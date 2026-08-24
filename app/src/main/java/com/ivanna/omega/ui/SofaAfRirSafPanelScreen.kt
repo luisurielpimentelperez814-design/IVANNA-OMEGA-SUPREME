@@ -20,94 +20,85 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.saf.SaFBridge
 import com.ivanna.omega.saf.SaFRoomBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
+import com.ivanna.omega.spatial.SpatialControlStore
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.delay
-import kotlin.math.pow
 
-/**
- * SofaAfRirSafPanelScreen v2 — panel unificado SOFA · AF · RIR · SAF.
- *
- * FIXES v2:
- *   BUG 1 (ruido + armónica): nativeSetReflectionDelay esperaba ratio [0..1]
- *     (d * FS_BASE=96000 → samples), pero recibía milisegundos directamente.
- *     Cualquier delay > 1 ms se clampeaba a 1.0 → 96000 samples → alias de
- *     buffer (96000 % MAX_DELAY=4096 = 1792 fijos para todos) = comb filter
- *     y resonancias armónicas. FIX: convertir ms → ratio = ms/1000.
- *     Además cap en MAX_DELAY_MS=(4096/96000)*1000≈42.6ms para evitar aliasing.
- *   BUG 2 (ruido): SaFRoomBridge.setRoomState enviaba DRR≠0 cuando RIR
- *     estaba desactivado. FIX: drr=0f cuando rirEnabled=false.
- *   BUG 3 (persistencia): todo usaba remember{mutableStateOf(default)} —
- *     cada apertura de pantalla reseteaba parámetros al default.
- *     FIX: SharedPreferences "ivanna_sofa_af_rir_saf" carga en init y guarda
- *     en cada cambio.
- */
+// ── Constantes C++ (pi_lstm_milenio.hpp) ─────────────────────────────────
+private const val N_REFL        = 8
+private const val FS_BASE       = 96000f
+private const val MAX_DELAY_SMP = 4096f
+private val MAX_DELAY_MS        = (MAX_DELAY_SMP / FS_BASE) * 1000f  // 42.6 ms
 
-// ── Constantes C++ (pi_lstm_milenio.hpp) ────────────────────────────────────
-private const val N_REFL         = 8
-private const val FS_BASE        = 96000f   // escala de delays en C++
-private const val MAX_DELAY_SMP  = 4096f    // tamaño del ring buffer
-// Delay máximo que no produce aliasing de buffer
-private val MAX_DELAY_MS         = (MAX_DELAY_SMP / FS_BASE) * 1000f  // ≈ 42.6 ms
-
-private const val PREFS_NAME = "ivanna_sofa_af_rir_saf"
-
-// ── Prefs helper ─────────────────────────────────────────────────────────────
-private data class PanelState(
-    val sofaEnabled:  Boolean = true,
-    val sofaPreset:   Int     = 0,
-    val sofaIntensity: Float  = 0.5f,
-    val afAuto:       Boolean = true,
-    val afModeOrd:    Int     = AdaptiveMode.NATURAL.ordinal,
-    val afIntensity:  Float   = 50f,
-    val rirEnabled:   Boolean = false,
-    val roomSize:     Float   = 0.4f,
-    val reflections:  Int     = 4,
-    val decay:        Float   = 0.35f,
-    val dryWet:       Float   = 0.25f,
-    val safProtection: Float  = 0.5f,
-    val voiceProt:    Boolean = false
+// ── Mapa SOFA — IDs reales que carga nativeObjectRendererSetHrtfSubject ──
+// Fuente: HrtfSubjectSelector.AVAILABLE_SUBJECTS + assets/saf/sofa_elite/
+private val SOFA_PRESETS = listOf(
+    "MIT KEMAR"      to "kemar",
+    "KEMAR Large"    to "kemar_large",
+    "TU-Berlin KEMAR" to "tu_berlin_kemar",
+    "CIPIC 165"      to "cipic_165",
+    "Pulse"          to "pulse"
 )
 
-private fun loadState(ctx: Context): PanelState {
-    val p = ctx.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+private const val PREFS = "ivanna_sofa_af_rir_saf_v3"
+
+private data class PanelState(
+    val sofaEnabled:   Boolean = true,
+    val sofaPresetIdx: Int     = 0,
+    val sofaIntensity: Float   = 0.5f,
+    val afAuto:        Boolean = false,   // FIX: false por defecto, usuario activa
+    val afModeOrd:     Int     = 0,       // OFF
+    val afIntensity:   Float   = 0f,
+    val rirEnabled:    Boolean = false,
+    val roomSize:      Float   = 0.3f,
+    val reflections:   Int     = 3,
+    val decay:         Float   = 0.3f,
+    val dryWet:        Float   = 0.2f,
+    val safIntensity:  Float   = 0.5f,
+    val voiceProt:     Boolean = false,
+    val phaseIntensity: Float  = 0f
+)
+
+private fun load(ctx: Context): PanelState {
+    val p = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val d = PanelState()
     return PanelState(
-        sofaEnabled   = p.getBoolean("sofaEnabled",   d.sofaEnabled),
-        sofaPreset    = p.getInt    ("sofaPreset",    d.sofaPreset),
-        sofaIntensity = p.getFloat  ("sofaIntensity", d.sofaIntensity),
-        afAuto        = p.getBoolean("afAuto",        d.afAuto),
-        afModeOrd     = p.getInt    ("afModeOrd",     d.afModeOrd),
-        afIntensity   = p.getFloat  ("afIntensity",   d.afIntensity),
-        rirEnabled    = p.getBoolean("rirEnabled",    d.rirEnabled),
-        roomSize      = p.getFloat  ("roomSize",      d.roomSize),
-        reflections   = p.getInt    ("reflections",   d.reflections),
-        decay         = p.getFloat  ("decay",         d.decay),
-        dryWet        = p.getFloat  ("dryWet",        d.dryWet),
-        safProtection = p.getFloat  ("safProtection", d.safProtection),
-        voiceProt     = p.getBoolean("voiceProt",     d.voiceProt)
+        sofaEnabled    = p.getBoolean("sofaEnabled",    d.sofaEnabled),
+        sofaPresetIdx  = p.getInt    ("sofaPresetIdx",  d.sofaPresetIdx),
+        sofaIntensity  = p.getFloat  ("sofaIntensity",  d.sofaIntensity),
+        afAuto         = p.getBoolean("afAuto",         d.afAuto),
+        afModeOrd      = p.getInt    ("afModeOrd",      d.afModeOrd),
+        afIntensity    = p.getFloat  ("afIntensity",    d.afIntensity),
+        rirEnabled     = p.getBoolean("rirEnabled",     d.rirEnabled),
+        roomSize       = p.getFloat  ("roomSize",       d.roomSize),
+        reflections    = p.getInt    ("reflections",    d.reflections),
+        decay          = p.getFloat  ("decay",          d.decay),
+        dryWet         = p.getFloat  ("dryWet",         d.dryWet),
+        safIntensity   = p.getFloat  ("safIntensity",   d.safIntensity),
+        voiceProt      = p.getBoolean("voiceProt",      d.voiceProt),
+        phaseIntensity = p.getFloat  ("phaseIntensity", d.phaseIntensity)
     )
 }
 
-private fun saveState(ctx: Context, s: PanelState) {
-    ctx.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean("sofaEnabled",   s.sofaEnabled)
-        .putInt    ("sofaPreset",    s.sofaPreset)
-        .putFloat  ("sofaIntensity", s.sofaIntensity)
-        .putBoolean("afAuto",        s.afAuto)
-        .putInt    ("afModeOrd",     s.afModeOrd)
-        .putFloat  ("afIntensity",   s.afIntensity)
-        .putBoolean("rirEnabled",    s.rirEnabled)
-        .putFloat  ("roomSize",      s.roomSize)
-        .putInt    ("reflections",   s.reflections)
-        .putFloat  ("decay",         s.decay)
-        .putFloat  ("dryWet",        s.dryWet)
-        .putFloat  ("safProtection", s.safProtection)
-        .putBoolean("voiceProt",     s.voiceProt)
+private fun save(ctx: Context, s: PanelState) {
+    ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .putBoolean("sofaEnabled",    s.sofaEnabled)
+        .putInt    ("sofaPresetIdx",  s.sofaPresetIdx)
+        .putFloat  ("sofaIntensity",  s.sofaIntensity)
+        .putBoolean("afAuto",         s.afAuto)
+        .putInt    ("afModeOrd",      s.afModeOrd)
+        .putFloat  ("afIntensity",    s.afIntensity)
+        .putBoolean("rirEnabled",     s.rirEnabled)
+        .putFloat  ("roomSize",       s.roomSize)
+        .putInt    ("reflections",    s.reflections)
+        .putFloat  ("decay",          s.decay)
+        .putFloat  ("dryWet",         s.dryWet)
+        .putFloat  ("safIntensity",   s.safIntensity)
+        .putBoolean("voiceProt",      s.voiceProt)
+        .putFloat  ("phaseIntensity", s.phaseIntensity)
         .apply()
 }
 
-// ── Screen ───────────────────────────────────────────────────────────────────
 @Composable
 fun SofaAfRirSafPanelScreen(
     onBack: () -> Unit = {},
@@ -115,67 +106,74 @@ fun SofaAfRirSafPanelScreen(
 ) {
     val ctx    = LocalContext.current
     val loaded = IvannaNativeLib.isLoaded
+    val init   = remember { load(ctx) }
+    val modes  = AdaptiveMode.entries.toList()
 
-    // Cargar estado persistido (una vez al entrar)
-    val init = remember { loadState(ctx) }
+    // ── Estado ──────────────────────────────────────────────────────────────
+    var sofaEnabled    by remember { mutableStateOf(init.sofaEnabled) }
+    var sofaPresetIdx  by remember { mutableStateOf(init.sofaPresetIdx.coerceIn(0, SOFA_PRESETS.lastIndex)) }
+    var sofaIntensity  by remember { mutableStateOf(init.sofaIntensity) }
+    var afAuto         by remember { mutableStateOf(init.afAuto) }
+    var afMode         by remember { mutableStateOf(modes.getOrElse(init.afModeOrd) { AdaptiveMode.OFF }) }
+    var afIntensity    by remember { mutableStateOf(init.afIntensity) }
+    var rirEnabled     by remember { mutableStateOf(init.rirEnabled) }
+    var roomSize       by remember { mutableStateOf(init.roomSize) }
+    var reflections    by remember { mutableStateOf(init.reflections) }
+    var decay          by remember { mutableStateOf(init.decay) }
+    var dryWet         by remember { mutableStateOf(init.dryWet) }
+    var safIntensity   by remember { mutableStateOf(init.safIntensity) }
+    var voiceProt      by remember { mutableStateOf(voiceMgr?.isActive() ?: init.voiceProt) }
+    var phaseIntensity by remember { mutableStateOf(init.phaseIntensity) }
 
-    // ── SOFA ──────────────────────────────────────────────────────────────
-    var sofaEnabled   by remember { mutableStateOf(init.sofaEnabled) }
-    var sofaPreset    by remember { mutableStateOf(init.sofaPreset) }
-    var sofaIntensity by remember { mutableStateOf(init.sofaIntensity) }
-
-    // ── AF ────────────────────────────────────────────────────────────────
-    val modeValues = AdaptiveMode.entries.toList()
-    var afAuto      by remember { mutableStateOf(init.afAuto) }
-    var afMode      by remember { mutableStateOf(
-        modeValues.getOrNull(init.afModeOrd) ?: AdaptiveMode.NATURAL) }
-    var afIntensity by remember { mutableStateOf(init.afIntensity) }
+    // ── Telemetria ───────────────────────────────────────────────────────────
     var afRunning   by remember { mutableStateOf(false) }
     var afTelemetry by remember { mutableStateOf<FloatArray?>(null) }
+    var safDiag     by remember { mutableStateOf(FloatArray(5)) }
+    var phaseState  by remember { mutableStateOf(0f) }
+    var sofaSubject by remember { mutableStateOf(IvannaSpatialManager.activeSubject) }
 
-    // ── RIR ───────────────────────────────────────────────────────────────
-    var rirEnabled  by remember { mutableStateOf(init.rirEnabled) }
-    var roomSize    by remember { mutableStateOf(init.roomSize) }   // 0..1 → 3..40 m
-    var reflections by remember { mutableStateOf(init.reflections) }
-    var decay       by remember { mutableStateOf(init.decay) }      // 0..1 → RT60 0..2.5 s
-    var dryWet      by remember { mutableStateOf(init.dryWet) }
-
-    // ── SAF ───────────────────────────────────────────────────────────────
-    var safProtection by remember { mutableStateOf(init.safProtection) }
-    var voiceProt     by remember { mutableStateOf(
-        if (voiceMgr != null) voiceMgr.isActive() else init.voiceProt) }
-    var safDiag  by remember { mutableStateOf(FloatArray(5)) }
-    var safParams by remember { mutableStateOf(FloatArray(7)) }
-
-    // ── Helper de persistencia ──────────────────────────────────────────────
-    fun persist() = saveState(ctx, PanelState(
-        sofaEnabled, sofaPreset, sofaIntensity,
-        afAuto, afMode.ordinal, afIntensity,
-        rirEnabled, roomSize, reflections, decay, dryWet,
-        safProtection, voiceProt
-    ))
-
-    // ── Telemetría viva ────────────────────────────────────────────────────
     LaunchedEffect(loaded) {
         while (loaded) {
             runCatching {
                 afRunning   = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
                 afTelemetry = IvannaNativeLib.nativeGetAdaptiveTelemetry()
                 safDiag     = SaFRoomBridge.getDiagnostics()
-                safParams   = SaFRoomBridge.getParams()
+                phaseState  = IvannaNativeLib.nativeGetPhaseState()
+                sofaSubject = IvannaSpatialManager.activeSubject
             }
-            delay(250)
+            delay(300)
         }
     }
 
-    // ── Aplicadores — APIs existentes, sin tocar DSP C++ ──────────────────
+    fun persist() = save(ctx, PanelState(
+        sofaEnabled, sofaPresetIdx, sofaIntensity,
+        afAuto, afMode.ordinal, afIntensity,
+        rirEnabled, roomSize, reflections, decay, dryWet,
+        safIntensity, voiceProt, phaseIntensity
+    ))
+
+    // ── Aplicadores ─────────────────────────────────────────────────────────
+
     fun applySofa() {
         if (!loaded) return
         runCatching {
             IvannaNativeLib.nativeSetHRTFEnabled(sofaEnabled)
             IvannaNativeLib.nativeSetSpatialWet(if (sofaEnabled) sofaIntensity else 0f)
             IvannaNativeLib.nativeSetSpatialWidthDirect(
-                if (sofaEnabled) 0.5f + sofaIntensity else 0.5f)
+                if (sofaEnabled) 0.5f + sofaIntensity * 0.5f else 0.5f)
+            if (sofaEnabled) {
+                // Usar el ID real del dataset embarcado
+                val subjectId = SOFA_PRESETS.getOrNull(sofaPresetIdx)?.second ?: "kemar"
+                IvannaSpatialManager.setHrtfSubject(subjectId)
+                // Hint para calibracion SAF: idx del sujeto en tabla de 214
+                SaFBridge.setSubjectIndexHint(sofaPresetIdx)
+                // Sincronizar SpatialControlStore para que otros modulos lean
+                val sc = SpatialControlStore.load(ctx)
+                SpatialControlStore.save(ctx, sc.copy(
+                    hrtfEnabled = sofaEnabled,
+                    hrtfSubject = SOFA_PRESETS.getOrNull(sofaPresetIdx)?.first ?: "MIT KEMAR"
+                ))
+            }
         }
     }
 
@@ -184,7 +182,10 @@ fun SofaAfRirSafPanelScreen(
         runCatching {
             IvannaNativeLib.nativeSetAdaptEnabled(afAuto)
             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(afAuto)
-            IvannaNativeLib.nativeSetAdaptiveControls(afMode.ordinal, afIntensity)
+            if (afAuto)
+                IvannaNativeLib.nativeSetAdaptiveControls(afMode.ordinal, afIntensity)
+            else
+                IvannaNativeLib.nativeSetAdaptiveControls(AdaptiveMode.OFF.ordinal, 0f)
         }
     }
 
@@ -192,54 +193,69 @@ fun SofaAfRirSafPanelScreen(
         if (!loaded) return
         val meters = 3f + roomSize * 37f
         val rt60   = decay * 2.5f
-
-        // FIX BUG 1 — unidades de delay:
-        //   C++: delays_smp[i] = clampf(d, 0, 1) * FS_BASE (96000)
-        //   El código anterior pasaba delayMs directamente → clamp(100, 0, 1) = 1.0
-        //   → 96000 samples → alias 96000 % 4096 = 1792 para todas las reflexiones
-        //   → comb filter → ruido digital + armónicas.
-        //   FIX: d = delayMs / 1000  (segundos ≡ ratio para FS_BASE=96000)
-        //   Cap en MAX_DELAY_MS ≈ 42.6ms para no superar el buffer de 4096 muestras.
         runCatching {
             for (i in 0 until N_REFL) {
                 val active = rirEnabled && i < reflections
+                // FIX unidades: ratio = segundos (FS_BASE = 96000 Hz)
                 val delayMs = if (active)
                     ((2f * meters * (i + 1) / 343f) * 1000f).coerceAtMost(MAX_DELAY_MS)
                     else 0f
-                // FIX: ratio = delayMs / 1000f (FS_BASE = 96000 Hz → 1s = ratio 1.0)
                 val delayRatio = delayMs / 1000f
                 val gain = if (active)
-                    dryWet * 0.9f.pow((i + 1).toFloat() * (1.6f - decay))
+                    dryWet * Math.pow(0.9, ((i + 1) * (1.6f - decay)).toDouble()).toFloat()
                     else 0f
                 IvannaNativeLib.nativeSetReflectionDelay(i, delayRatio)
                 IvannaNativeLib.nativeSetReflectionGain(i, gain)
             }
-            // FIX BUG 2 — DRR no-cero cuando RIR desactivado:
-            //   Antes: drr = 15f - (roomSize*15) - (decay*10) enviado siempre.
-            //   Con rirEnabled=false y drr≠0 el SaFRoomBridge seguía modulando
-            //   la respuesta espacial. FIX: drr=0 y roomMode=0 cuando desactivado.
+            // FIX: drr=0 cuando desactivado para no modular respuesta espacial
             if (rirEnabled) {
-                val drr = 15f - (roomSize * 15f) - (decay * 10f)
+                val drr = 5f - roomSize * 10f - decay * 5f
                 SaFRoomBridge.setRoomState(rt60 = rt60, drr = drr, roomMode = roomSize)
+                // Informar al optimizador SAF-Room el estado real de la sala
+                SaFRoomBridge.setSoundFieldState(
+                    diffuseness = dryWet,
+                    complexity  = roomSize * decay
+                )
             } else {
                 SaFRoomBridge.setRoomState(rt60 = 0f, drr = 0f, roomMode = 0f)
+                SaFRoomBridge.setSoundFieldState(diffuseness = 0f, complexity = 0f)
             }
+            SpatialControlStore.save(ctx, SpatialControlStore.load(ctx).copy(
+                rirEnabled = rirEnabled,
+                rirWet     = dryWet
+            ))
         }
     }
 
     fun applySaf() {
         if (!loaded) return
         runCatching {
-            IvannaNativeLib.nativeSetFatigueProtection(safProtection, safProtection)
+            IvannaNativeLib.nativeSetFatigueProtection(safIntensity, safIntensity)
+            // Informar mismatch al optimizador: 0 cuando no hay calibracion activa
+            SaFRoomBridge.setHrtfState(
+                mismatchEnergy  = if (sofaEnabled) safIntensity * 0.1f else 0f,
+                convergenceRate = if (safDiag.size >= 5 && safDiag[4] > 0f) 0.05f else 1f
+            )
         }
     }
 
-    // Aplicar estado restaurado al motor al abrir pantalla (no ciegos: usa prefs)
-    LaunchedEffect(Unit) {
-        applySofa(); applyAf(); applyRir(); applySaf()
+    fun applyPhase() {
+        if (!loaded) return
+        runCatching {
+            IvannaNativeLib.nativeSetPhaseParameters(
+                phaseIntensity,
+                phaseIntensity * 0.7f,
+                phaseIntensity * 0.5f
+            )
+        }
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────
+    // Aplicar estado restaurado (no ciegos: solo si hay motivo de cambio)
+    LaunchedEffect(Unit) {
+        applySofa(); applyAf(); applyRir(); applySaf(); applyPhase()
+    }
+
+    // ── UI ──────────────────────────────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -248,157 +264,160 @@ fun SofaAfRirSafPanelScreen(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("SOFA · AF · RIR · SAF",
                     color = AuroraCyan,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold)
-                Text(
-                    if (loaded) "Motor cargado — estado persistido" else "Motor NO cargado",
+                Text(if (loaded) "Motor activo" else "Motor no cargado",
                     color = if (loaded) PhosphorGreen else AmberSignal,
                     style = MaterialTheme.typography.labelSmall)
             }
             TextButton(onClick = onBack) { Text("VOLVER", color = TextMuted) }
         }
 
-        // ── SOFA ──────────────────────────────────────────────────────────
-        PanelSection("SOFA · HRTF", AuroraCyan) {
-            ToggleRow("Activar HRTF/SOFA", sofaEnabled) {
+        // ── SOFA ────────────────────────────────────────────────────────────
+        SPanel("SOFA · HRTF", AuroraCyan) {
+            SRow("Activar HRTF", sofaEnabled) {
                 sofaEnabled = it; applySofa(); persist()
             }
-            Text("Perfil / preset", color = TextMuted,
+            Text("Dataset SOFA embarcado", color = TextMuted,
                 style = MaterialTheme.typography.labelSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SOFA_PRESETS.forEachIndexed { idx, label ->
+            // Chips con IDs reales
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()) {
+                SOFA_PRESETS.forEachIndexed { idx, (label, _) ->
                     FilterChip(
-                        selected = sofaPreset == idx,
+                        selected = sofaPresetIdx == idx,
                         onClick  = {
-                            sofaPreset = idx
-                            runCatching {
-                                SaFBridge.setSubjectIndexHint(idx)
-                                IvannaSpatialManager.reloadHrtf(ctx)
-                            }
+                            sofaPresetIdx = idx
                             applySofa(); persist()
                         },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
-            SliderRow("Intensidad espacial", sofaIntensity, 0f, 1f) {
+            SSlider("Intensidad espacial", sofaIntensity, 0f, 1f) {
                 sofaIntensity = it; applySofa(); persist()
             }
-            StatusLine("Sujeto activo", IvannaSpatialManager.activeSubject)
-            StatusLine("Estado", if (sofaEnabled) "ACTIVO" else "BYPASS")
+            SLine("Sujeto activo", sofaSubject)
+            SLine("HRTF cargado",
+                if (IvannaSpatialManager.isHrtfDatasetLoaded()) "SI" else "NO")
         }
 
-        // ── AF ────────────────────────────────────────────────────────────
-        PanelSection("AF · ADAPTIVE FEATURES", NeonMagenta) {
-            ToggleRow(if (afAuto) "Modo AUTO" else "Modo MANUAL", afAuto) {
+        // ── FASE / PhaseOracle ───────────────────────────────────────────────
+        SPanel("PHASE ORACLE · Corrección de desfase", NeonMagenta) {
+            SSlider(
+                "Intensidad corrección (alpha, beta=70%, gamma=50%)",
+                phaseIntensity, 0f, 1f
+            ) { phaseIntensity = it; applyPhase(); persist() }
+            SLine("phi(t) estado",   "%.4f".format(phaseState))
+            SLine("alpha",           "%.3f".format(phaseIntensity))
+            SLine("beta",            "%.3f".format(phaseIntensity * 0.7f))
+            SLine("gamma",           "%.3f".format(phaseIntensity * 0.5f))
+            Text("0 = sin corrección de fase (safe). >0 aplica oracle PI-LSTM.",
+                color = TextMuted, style = MaterialTheme.typography.labelSmall)
+        }
+
+        // ── AF ──────────────────────────────────────────────────────────────
+        SPanel("AF · ADAPTIVE FEATURES", AuroraCyan) {
+            SRow(if (afAuto) "Modo AUTO activo" else "Modo MANUAL / OFF") {
                 afAuto = it; applyAf(); persist()
             }
-            Text("Perfil adaptativo", color = TextMuted,
-                style = MaterialTheme.typography.labelSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                modeValues.forEach { m ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                modes.forEach { m ->
                     FilterChip(
                         selected = afMode == m,
                         onClick  = { afMode = m; applyAf(); persist() },
-                        label = { Text(m.label, style = MaterialTheme.typography.labelSmall) }
+                        label    = { Text(m.label, style = MaterialTheme.typography.labelSmall) },
+                        enabled  = afAuto
                     )
                 }
             }
-            SliderRow("Intensidad adaptativa", afIntensity, 0f, 100f) {
-                afIntensity = it; applyAf(); persist()
-            }
-            StatusLine("Motor", if (afRunning) "EN EJECUCIÓN" else "DETENIDO")
-            afTelemetry?.takeIf { it.size >= 9 }?.let { t ->
-                StatusLine("Target gain",      fmt(t[3]))
-                StatusLine("Compresor",         fmt(t[4]))
-                StatusLine("Ancho espacial",    fmt(t[6]))
-                StatusLine("Margen seguridad",  fmt(t[7]))
+            SSlider("Intensidad", afIntensity, 0f, 100f,
+                enabled = afAuto) { afIntensity = it; applyAf(); persist() }
+            SLine("Motor", if (afRunning) "EN EJECUCIÓN" else "DETENIDO")
+            afTelemetry?.takeIf { it.size >= 8 }?.let { t ->
+                SLine("target_gain",     "%.3f".format(t[3]))
+                SLine("compresor",       "%.3f".format(t[4]))
+                SLine("ancho_espacial",  "%.3f".format(t[6]))
+                SLine("margen_seg",      "%.3f".format(t[7]))
             }
         }
 
-        // ── RIR ───────────────────────────────────────────────────────────
-        PanelSection("RIR · SALA / REFLEXIONES", AuroraCyan) {
-            ToggleRow("Activar RIR", rirEnabled) {
+        // ── RIR ─────────────────────────────────────────────────────────────
+        SPanel("RIR · SALA / REFLEXIONES", PhosphorGreen) {
+            SRow("Activar RIR", rirEnabled) {
                 rirEnabled = it; applyRir(); persist()
             }
-            SliderRow("Tamaño de sala", roomSize, 0f, 1f,
-                "${(3f + roomSize * 37f).toInt()} m") {
+            val metros = (3f + roomSize * 37f).toInt()
+            SSlider("Sala", roomSize, 0f, 1f, "$metros m") {
                 roomSize = it; applyRir(); persist()
             }
-            SliderRow("Reflexiones", reflections.toFloat(), 1f, N_REFL.toFloat(),
+            SSlider("Reflexiones", reflections.toFloat(), 1f, N_REFL.toFloat(),
                 "$reflections", steps = N_REFL - 2) {
                 reflections = it.toInt().coerceIn(1, N_REFL); applyRir(); persist()
             }
-            SliderRow("Decay (RT60)", decay, 0f, 1f, fmt(decay * 2.5f) + " s") {
+            SSlider("Decay RT60", decay, 0f, 1f,
+                "${"%.2f".format(decay * 2.5f)} s") {
                 decay = it; applyRir(); persist()
             }
-            SliderRow("Mezcla dry/wet", dryWet, 0f, 1f) {
+            SSlider("Dry/Wet", dryWet, 0f, 1f) {
                 dryWet = it; applyRir(); persist()
             }
-            val maxDelayRoomMs = (2f * (3f + roomSize * 37f) * reflections / 343f) * 1000f
-            StatusLine("Delay máx útil", "${MAX_DELAY_MS.toInt()} ms")
-            StatusLine("Delay sala actual", "${maxDelayRoomMs.toInt()} ms" +
-                if (maxDelayRoomMs > MAX_DELAY_MS) " ⚠ cap" else "")
-            StatusLine("Estado", if (rirEnabled) "ACTIVO" else "BYPASS")
+            val maxRoomDelayMs = (2f * metros * reflections / 343f * 1000f).toInt()
+            SLine("Delay cap útil", "${MAX_DELAY_MS.toInt()} ms")
+            SLine("Delay sala",
+                "$maxRoomDelayMs ms${if (maxRoomDelayMs > MAX_DELAY_MS) " ⚠cap" else ""}")
+            SLine("Estado", if (rirEnabled) "ACTIVO" else "BYPASS")
         }
 
-        // ── SAF ───────────────────────────────────────────────────────────
-        PanelSection("SAF · Φ_SAF-Room^∞", PhosphorGreen) {
-            StatusLine("Sistema",
-                if (loaded && safDiag.size >= 5 && safDiag[4] > 0f)
-                    "CONVERGIENDO" else "EN ESPERA")
-            SliderRow("Intensidad protección", safProtection, 0f, 1f) {
-                safProtection = it; applySaf(); persist()
+        // ── SAF ─────────────────────────────────────────────────────────────
+        SPanel("SAF · Φ_SAF-Room^∞", AmberSignal) {
+            SLine("Sistema",
+                if (safDiag.size >= 5 && safDiag[4] > 0f) "CONVERGIENDO" else "EN ESPERA")
+            SSlider("Intensidad protección", safIntensity, 0f, 1f) {
+                safIntensity = it; applySaf(); persist()
             }
-            ToggleRow("Protección de voz", voiceProt) { on ->
+            SRow("Protección de voz", voiceProt) { on ->
                 voiceProt = on
                 runCatching { if (on) voiceMgr?.enable() else voiceMgr?.disable() }
                 persist()
             }
             if (safDiag.size >= 5) {
-                StatusLine("α* (paso óptimo)",    fmt(safDiag[0]))
-                StatusLine("E_t (error)",          fmt(safDiag[1]))
-                StatusLine("λ_t (regularización)", fmt(safDiag[2]))
-                StatusLine("σ (acoplamiento)",     fmt(safDiag[3]))
-                StatusLine("Iteraciones",          safDiag[4].toInt().toString())
+                SLine("α* paso óptimo",     "%.4f".format(safDiag[0]))
+                SLine("E_t error",           "%.4f".format(safDiag[1]))
+                SLine("λ_t regularización",  "%.4f".format(safDiag[2]))
+                SLine("σ acoplamiento",      "%.4f".format(safDiag[3]))
+                SLine("Iteraciones",         safDiag[4].toInt().toString())
             }
-            StatusLine("p_t", safParams.joinToString(" ") { fmt(it) })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { runCatching { SaFRoomBridge.step() } }) {
-                    Text("STEP") }
-                OutlinedButton(onClick = { runCatching { SaFRoomBridge.reset() } }) {
-                    Text("RESET") }
+                OutlinedButton(onClick = {
+                    runCatching { SaFRoomBridge.step() }
+                }) { Text("STEP", style = MaterialTheme.typography.labelSmall) }
+                OutlinedButton(onClick = {
+                    runCatching { SaFRoomBridge.reset() }
+                }) { Text("RESET", style = MaterialTheme.typography.labelSmall) }
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
     }
 }
 
-// ── Constantes y helpers privados ────────────────────────────────────────────
-private val SOFA_PRESETS = listOf("NEUTRO", "AMPLIO", "CERCANO", "CINE")
-
-private fun fmt(v: Float): String = "%.3f".format(v)
-
+// ── Componentes privados ─────────────────────────────────────────────────────
 @Composable
-private fun PanelSection(
-    title: String, accent: Color,
-    content: @Composable ColumnScope.() -> Unit
-) {
+private fun SPanel(title: String, accent: Color, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color    = ObsidianSoft,
         shape    = MaterialTheme.shapes.medium,
         border   = BorderStroke(1.dp, accent.copy(alpha = 0.30f))
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, color = accent,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold)
@@ -408,7 +427,7 @@ private fun PanelSection(
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SRow(label: String, checked: Boolean = false, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = TextMuted,
             style = MaterialTheme.typography.bodySmall,
@@ -418,9 +437,9 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 @Composable
-private fun SliderRow(
+private fun SSlider(
     label: String, value: Float, min: Float, max: Float,
-    valueText: String? = null, steps: Int = 0,
+    valueText: String? = null, steps: Int = 0, enabled: Boolean = true,
     onChange: (Float) -> Unit
 ) {
     Column {
@@ -428,16 +447,17 @@ private fun SliderRow(
             Text(label, color = TextMuted,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.weight(1f))
-            Text(valueText ?: fmt(value), color = AuroraCyan,
+            Text(valueText ?: "%.3f".format(value),
+                color = AuroraCyan,
                 style = MaterialTheme.typography.labelSmall)
         }
         Slider(value = value, onValueChange = onChange,
-            valueRange = min..max, steps = steps)
+            valueRange = min..max, steps = steps, enabled = enabled)
     }
 }
 
 @Composable
-private fun StatusLine(label: String, value: String) {
+private fun SLine(label: String, value: String) {
     Row {
         Text(label, color = TextMuted,
             style = MaterialTheme.typography.labelSmall,
