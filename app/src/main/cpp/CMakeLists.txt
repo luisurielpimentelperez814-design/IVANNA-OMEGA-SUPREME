@@ -81,8 +81,12 @@ add_library(ivanna_omega SHARED
     SafSpatialModifier.cpp
     # SAF Spatial Runtime (solo si existe en el checkout)
     $<$<BOOL:${EXISTS_SAF_SPATIAL_RUNTIME}>:SafSpatialRuntime.cpp>
-    SofaHRTFLoader.cpp
-    SafHRTFBridge.cpp
+    # NOTA (auditoria 2026-08-24): SofaHRTFLoader.cpp y SafHRTFBridge.cpp
+    # retirados del target — cadena muerta confirmada: SafHRTFBridge solo se
+    # incluye a si mismo (0 call-sites), SofaHRTFLoader solo es usado por
+    # SafHRTFBridge. La HRTF real llega via IHR1 -> HRTFBinLoader ->
+    # SafHRTFDatasetBridge -> hrtf_convolver. Los archivos permanecen en el
+    # repo por si se retoma la carga SOFA directa (libmysofa).
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
     # FIX CRÍTICO (auditoría 2026-08-10): SaFJniBridge.cpp faltaba aquí.
