@@ -17,7 +17,9 @@ import com.ivanna.omega.core.RootAccess
 class NoRootAudioProcessor(private val context: Context) {
     companion object {
         private const val TAG = "NoRootAudio"
-        private const val SAMPLE_RATE = 96000
+        /** SR real del hardware — hardcodear 96kHz rompía la captura en dispositivos 48k. */
+        @Volatile var SAMPLE_RATE: Int = android.media.AudioTrack.getNativeOutputSampleRate(
+            android.media.AudioManager.STREAM_MUSIC).takeIf { it in 8000..192000 } ?: 48000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_FLOAT
         private const val BUFFER_SIZE = 4096
