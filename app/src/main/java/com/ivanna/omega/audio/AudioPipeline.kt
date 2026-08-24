@@ -37,7 +37,17 @@ class AudioPipeline {
     )
 
     companion object {
-        const val SAMPLE_RATE = 96000
+        /** SR real del hardware — query a AudioManager, fallback 48k si la propiedad no existe.
+         *  Hardcodear 96kHz hacía que AudioRecord/AudioTrack rechazaran el pipeline en
+         *  dispositivos cuyo DSP nativo corre a 48k (la mayoría): Ruta A moría al iniciar. */
+        private const val FALLBACK_SAMPLE_RATE = 48000
+        @Volatile var SAMPLE_RATE: Int = FALLBACK_SAMPLE_RATE
+            private set
+        fun syncHardwareSampleRate(context: android.content.Context) {
+            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+            val hw = am?.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull()
+            if (hw != null && hw in 8000..192000) SAMPLE_RATE = hw
+        }
         const val FRAMES_PER_BLOCK = 256
         const val BUFFER_SIZE = FRAMES_PER_BLOCK * 2   // estéreo intercalado
 
@@ -94,6 +104,7 @@ class AudioPipeline {
     fun start() {
         if (isRunning) return
         isRunning = true
+        // SAMPLE_RATE ya sincronizado vía syncHardwareSampleRate() desde quien crea el pipeline
         DSPBridge.init(SAMPLE_RATE)
         IvannaUnifiedPipeline.notifyRouteAStarted()
         dspState.pushToNative()
