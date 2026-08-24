@@ -14,6 +14,7 @@
 #include <cstring>
 #include "ivanna_head_tracker.hpp"
 #include "hrtf_convolver.hpp"
+#include "ihr1_format.hpp"
 #include "auto_eq_filter.hpp"
 #include "../SaFOptimizer.hpp"
 #include "RirConvolver.hpp"
@@ -138,55 +139,28 @@ public:
 
     bool loadHrtfDatasetFromFile(const char* path) {
         hrtfDatasetLoaded_.store(false, std::memory_order_release);
+
+        // Parseo delegado a spatial/ihr1_format.hpp: un solo lector para
+        // todo el arbol, que autodetecta los dos layouts historicos del
+        // magic IHR1 en vez de asumir uno. Antes este metodo asumia el
+        // layout [az][el] separado y SyntheticHRTF asumia el intercalado:
+        // el fichero "equivocado" se leia corrido, sin fallar.
+        ihr1::Dataset ds;
+        if (!ihr1::read(path, ds)) return false;
+
         auto newDs = std::make_shared<SyntheticHRTF::SharedDataset>();
-
-        FILE* f = std::fopen(path, "rb");
-        if (!f) return false;
-
-        // IHR1 header: magic[4] + uint32 numPos + uint32 irLen + uint32 srHz
-        char magic[4]{};
-        if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IHR1", 4) != 0) {
-            std::fclose(f); return false;
-        }
-        uint32_t numDirs = 0, irLen = 0, sr = 0;
-        if (std::fread(&numDirs, 4, 1, f) != 1 ||
-            std::fread(&irLen,   4, 1, f) != 1 ||
-            std::fread(&sr,      4, 1, f) != 1) {
-            std::fclose(f); return false;
-        }
-        // FIX: guard anterior rechazaba CIPIC (1250) y freefield (2354)
-        if (numDirs == 0 || numDirs > 8192 || irLen == 0 || irLen > 4096) {
-            std::fclose(f); return false;
+        const int32_t numDirs = ds.numPositions();
+        const size_t  taps    = static_cast<size_t>(ds.irLen);
+        newDs->irLen = static_cast<int>(ds.irLen);
+        newDs->az    = ds.az;
+        newDs->L.resize(static_cast<size_t>(numDirs));
+        newDs->R.resize(static_cast<size_t>(numDirs));
+        for (int32_t i = 0; i < numDirs; ++i) {
+            const size_t off = static_cast<size_t>(i) * taps;
+            newDs->L[static_cast<size_t>(i)].assign(ds.L.begin() + off, ds.L.begin() + off + taps);
+            newDs->R[static_cast<size_t>(i)].assign(ds.R.begin() + off, ds.R.begin() + off + taps);
         }
 
-        newDs->irLen = static_cast<int>(irLen);
-        newDs->az.resize(numDirs);
-        std::vector<float> elev(numDirs);   // elevación leída pero no usada por convolvers
-        newDs->L.resize(numDirs);
-        newDs->R.resize(numDirs);
-
-        // FIX: el formato IHR1 escribe TODA la tabla angular primero, luego todos los HRIRs.
-        // La versión anterior mezclaba az+HRIR en el mismo loop → offset incorrecto desde pos 1.
-
-        // PASO 1: leer tabla angular completa [az, el] × numDirs
-        for (uint32_t i = 0; i < numDirs; ++i) {
-            if (std::fread(&newDs->az[i], 4, 1, f) != 1 ||
-                std::fread(&elev[i],      4, 1, f) != 1) {
-                std::fclose(f); return false;
-            }
-        }
-
-        // PASO 2: leer HRIRs [L×irLen + R×irLen] × numDirs (L completa, luego R completa)
-        for (uint32_t i = 0; i < numDirs; ++i) {
-            newDs->L[i].resize(irLen);
-            newDs->R[i].resize(irLen);
-            if (std::fread(newDs->L[i].data(), sizeof(float), irLen, f) != irLen ||
-                std::fread(newDs->R[i].data(), sizeof(float), irLen, f) != irLen) {
-                std::fclose(f); return false;
-            }
-        }
-        std::fclose(f);
-        
         for (int i = 0; i < kNumVirtualSpeakers; ++i) {
             hrtfConvolvers_[i].setSharedDataset(newDs);
         }
