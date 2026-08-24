@@ -328,10 +328,17 @@ jobs:
           if-no-files-found: error
           overwrite: false
 
+      - name: Validate staged APK before artifact upload
+        run: |
+          unzip -t ivanna-omega-supreme-${{ github.sha }}.apk
+          sha256sum -c apk_sha256.txt
+
       - name: Upload APK (separate artifact — was colliding with module zip name)
         uses: actions/upload-artifact@v4
         with:
           name: apk-build-${{ github.sha }}
+          compression-level: 0
+          if-no-files-found: error
           path: |
             ivanna-omega-supreme-${{ github.sha }}.apk
             apk_sha256.txt
