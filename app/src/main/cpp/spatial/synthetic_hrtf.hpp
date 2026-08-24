@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cstdint>
 
+#include "ihr1_format.hpp"
+
 namespace ivanna {
 
 struct HRIRPair {
@@ -51,34 +53,20 @@ public:
         return true;
     }
 
-    // Formato binario "IHR1":
-    //   [4B magic "IHR1"][int32 numDirs][int32 irLen][int32 sampleRate]
-    //   por dirección: [float azimuthDeg][irLen floats L][irLen floats R]
+    // Carga un dataset "IHR1" (cualquiera de los dos layouts historicos;
+    // ver spatial/ihr1_format.hpp). La elevacion se lee pero no se usa
+    // aqui: este interpolador indexa solo por azimut.
     bool loadDatasetFromFile(const char* path) {
-        if (!path) return false;
-        FILE* f = std::fopen(path, "rb");
-        if (!f) return false;
-        char magic[4];
-        if (std::fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "IHR1", 4) != 0) {
-            std::fclose(f); return false;
-        }
-        int32_t numDirs = 0, irLen = 0, sr = 0;
-        if (std::fread(&numDirs, 4, 1, f) != 1 ||
-            std::fread(&irLen, 4, 1, f) != 1 ||
-            std::fread(&sr, 4, 1, f) != 1) { std::fclose(f); return false; }
-        if (numDirs <= 0 || irLen <= 0 || numDirs > 1024 || irLen > 8192) {
-            std::fclose(f); return false;
-        }
-        std::vector<float> az(numDirs);
-        std::vector<float> L((size_t)numDirs * irLen);
-        std::vector<float> R((size_t)numDirs * irLen);
-        for (int d = 0; d < numDirs; ++d) {
-            if (std::fread(&az[d], 4, 1, f) != 1) { std::fclose(f); return false; }
-            if (std::fread(&L[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
-            if (std::fread(&R[(size_t)d * irLen], 4, irLen, f) != (size_t)irLen) { std::fclose(f); return false; }
-        }
-        std::fclose(f);
-        return loadDataset(az.data(), L.data(), R.data(), numDirs, irLen);
+        // El parseo vive en ihr1_format.hpp, unico lector del arbol.
+        // La version anterior de esta funcion asumia el layout [az][L][R]
+        // intercalado, mientras HRTFBinLoader y ObjectRenderer asumian la
+        // tabla [az][el] separada — mismo magic, ficheros incompatibles.
+        // Ademas su guard numDirs > 1024 rechazaba en silencio los datasets
+        // reales (CIPIC son 1250 posiciones) y caia al modelo sintetico.
+        ihr1::Dataset ds;
+        if (!ihr1::read(path, ds)) return false;
+        return loadDataset(ds.az.data(), ds.L.data(), ds.R.data(),
+                           ds.numPositions(), ds.irLen);
     }
 
     // ── Base PCA V (morph algebraico exacto: HRIR += V·q) ─────────────
