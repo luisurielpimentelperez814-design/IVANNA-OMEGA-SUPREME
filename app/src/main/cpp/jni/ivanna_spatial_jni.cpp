@@ -251,10 +251,23 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
         // Rutas en orden de prioridad:
         // 1. Módulo Magisk montado en /system/etc (disponible con root)
         // 2. Ruta legado /data/adb
+        //
+        // FIX (UB grave — heap-use-after-free): la versión anterior guardaba
+        // en `candidates[]` los `.c_str()` de temporales `std::string`
+        // construidos en la expresión de inicialización. Los temporales se
+        // destruyen al final de esa expresión, así que cada `candidates[i]`
+        // apuntaba a memoria ya liberada — comportamiento indefinido:
+        // a veces "funciona" (heap aún sin reescribir), a veces lee basura
+        // y loadHrtfDatasetFromFile abre rutas corruptas o crashea. Los
+        // std::string ahora viven en variables con nombre hasta el final
+        // del scope, y el array solo guarda vistas válidas.
+        const std::string candSystemEtc = "/system/etc/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candDataAdb   = "/data/adb/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candLegacy    = "/data/adb/ivanna_omega/hrtf_" + subj + ".ihr1";
         const char* candidates[] = {
-            ("/system/etc/ivanna_omega/hrtf/" + subj + ".ihr1").c_str(),
-            ("/data/adb/ivanna_omega/hrtf/" + subj + ".ihr1").c_str(),
-            ("/data/adb/ivanna_omega/hrtf_" + subj + ".ihr1").c_str(),
+            candSystemEtc.c_str(),
+            candDataAdb.c_str(),
+            candLegacy.c_str(),
             nullptr
         };
         for (int i = 0; candidates[i]; ++i) {
