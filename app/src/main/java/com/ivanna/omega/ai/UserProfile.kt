@@ -1,7 +1,8 @@
 package com.ivanna.omega.ai
 
 import android.content.Context
-import android.util.Logimport org.json.JSONObject
+import android.util.Log
+import org.json.JSONObject
 import java.io.File
 
 data class UserProfile(
