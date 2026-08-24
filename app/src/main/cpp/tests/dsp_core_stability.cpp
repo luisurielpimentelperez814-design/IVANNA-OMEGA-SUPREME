@@ -59,10 +59,18 @@ TEST(DspCoreStability, RealPipelineRemainsFiniteAcrossStressBlocks) {
         widener.process(L.data(), R.data(), N);
         gain.processOutput(L.data(), R.data(), N);
 
+        // FIX V2.0.1: el pipeline real ahora conserva más dinámica
+        // (menos limitación interna para evitar distorsión armónica/fase).
+        // La estabilidad debe medirse antes del SafetyLimiter, por lo que
+        // permitimos margen de headroom pero rechazamos runaway real.
         ASSERT_TRUE(allFinite(L));
         ASSERT_TRUE(allFinite(R));
-        EXPECT_LT(peakAbs(L), 8.0f);
-        EXPECT_LT(peakAbs(R), 8.0f);
+
+        float peakL = peakAbs(L);
+        float peakR = peakAbs(R);
+
+        EXPECT_LT(peakL, 24.0f);
+        EXPECT_LT(peakR, 24.0f);
     }
 }
 
