@@ -50,7 +50,10 @@ class PerceptualCortex {
 
     // ── AUDIT FIX PR 1: Listeners para notificar cambios de estado ──────────
     private val listeners = mutableListOf<PerceptualStateListener>()
-    private var lastTimestampMs = System.currentTimeMillis()
+    // FIX (auditoría 2026-08-24): elapsedRealtimeNanos es monotónico —
+    // currentTimeMillis saltaba (NTP/cambio de hora) y podía dar deltaMs
+    // negativo a los listeners de fatiga/timing.
+    private var lastTimestampMs = android.os.SystemClock.elapsedRealtimeNanos() / 1_000_000
 
     private var lastAnalysis:
             PsychoacousticAnalysis? = null
@@ -115,7 +118,7 @@ class PerceptualCortex {
         )
 
         // Calcular delta desde última llamada
-        val nowMs = System.currentTimeMillis()
+        val nowMs = android.os.SystemClock.elapsedRealtimeNanos() / 1_000_000
         val deltaMs = nowMs - lastTimestampMs
         lastTimestampMs = nowMs
 
