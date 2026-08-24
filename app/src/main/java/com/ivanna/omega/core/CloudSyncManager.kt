@@ -47,9 +47,10 @@ import java.io.File
  *        - Project ID
  *        - App ID  (formato "1:XXXXXXXXXXXX:android:XXXXXXXXXXXXXXXX")
  *        - Web API Key (la de "General" del proyecto, no la de una app específica)
- *   6. Reemplazar los 3 placeholders TODO_FIREBASE_* de abajo con esos valores.
- *      Mientras sigan siendo el placeholder, isConfigured queda en false y
- *      todas las funciones de esta clase son no-op seguro (no crashea nada).
+ *   6. Reemplazar las 3 constantes FIREBASE_* de abajo con esos valores.
+ *      Mientras sigan siendo el placeholder (su propio nombre), isConfigured
+ *      queda en false y todas las funciones de esta clase son no-op seguro
+ *      (no crashea nada).
  *
  * Por qué sin el plugin google-services: es una forma soportada oficialmente
  * por Firebase (FirebaseOptions.Builder + FirebaseApp.initializeApp) y evita
