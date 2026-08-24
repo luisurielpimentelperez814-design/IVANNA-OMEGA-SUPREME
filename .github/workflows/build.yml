@@ -338,11 +338,9 @@ jobs:
         with:
           name: apk-build-${{ github.sha }}
           compression-level: 0
-          if-no-files-found: error
           path: |
             ivanna-omega-supreme-${{ github.sha }}.apk
             apk_sha256.txt
-          if-no-files-found: error
           overwrite: false
 
   # ── JOB FINAL: verificación independiente del artefacto publicado ──────
