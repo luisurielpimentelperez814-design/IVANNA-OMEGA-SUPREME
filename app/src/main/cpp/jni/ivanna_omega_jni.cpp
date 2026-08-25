@@ -259,7 +259,7 @@ static void audioRouteBridgeLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
         // ── FIX (UI "SIN AUDIO" con motor procesando, Ruta B sin daemon) ──
-        // omega_daemon_get_shared_state() es un stub que siempre devuelve
+        // omega_daemon_get_shared_state() conecta al estado compartido SHM cuando está disponible; si no existe devuelve nullptr
         // nullptr cuando el daemon no corre (dispositivo sin root o módulo
         // sin daemon). Pero omega_effect SÍ publica telemetría real
         // (raw_rms/raw_peak/effect_frames) en su bus local SHM

@@ -484,7 +484,7 @@ static int32_t omega_process(effect_handle_t self,
     // pendiente (ctx->pendingSnap). OmegaControlBus.publish() los propaga via
     // SHM al proceso de la app, donde audioRouteBridgeLoop() los lee cada 30ms.
     // Sin esto: audioRouteBridgeLoop() nunca detecta Ruta B activa porque
-    // omega_daemon_get_shared_state() es un stub → UI siempre marca "sin audio".
+    // omega_daemon_get_shared_state() usa SHM compartida; UI refleja audio cuando el daemon está conectado.
     {
         const float *proc = outBuf->f32;
         const uint32_t outFrames = (uint32_t)frames;
