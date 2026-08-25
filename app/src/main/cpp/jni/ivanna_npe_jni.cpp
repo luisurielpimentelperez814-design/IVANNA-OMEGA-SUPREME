@@ -272,8 +272,20 @@ public:
             yL *= masterLin; yR *= masterLin;
 
             // ── Gate de piso de ruido ────────────────────────────────────
-            if (std::fabs(yL) < noise_floor_lin_) yL = 0.f;
-            if (std::fabs(yR) < noise_floor_lin_) yR = 0.f;
+            // FIX (ruido digital): el corte duro a cero (sample < piso → 0)
+            // creaba una discontinuidad por cada cruce del umbral — click /
+            // zipper audible en pasajes bajos (finales de nota, fades).
+            // Rodilla suave 2:1 bajo el piso (atenuacion cuadratica, no
+            // corte): la señal bajo piso se atenua progresivamente en vez
+            // de desaparecer de golpe — mismo efecto perceptual, sin el
+            // artefacto de comutación.
+            if (noise_floor_lin_ > 0.f) {
+                const float nf = noise_floor_lin_;
+                const float magL = std::fabs(yL);
+                const float magR = std::fabs(yR);
+                if (magL < nf) { const float t = magL / nf; yL *= t * t; }
+                if (magR < nf) { const float t = magR / nf; yR *= t * t; }
+            }
 
             // AUDIT FIX: limiter final — nunca existía un techo aquí. Este es
             // el causante directo del crujido al subir AGC rate + Master gain.
