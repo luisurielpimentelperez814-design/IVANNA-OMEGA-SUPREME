@@ -100,6 +100,13 @@ static ivanna::IvannaLab g_lab(96000, 4096);
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
+// FIX RT (Ruta A): el dataset RIR y su convolver se inicializan en
+// nativeInitDSP (hilo de UI, no-RT) y se publican con release-store; el
+// hot path de audio solo hace load acquire — antes el primer callback de
+// audio hacia `new RirDataset()` + lectura de disco desde el propio
+// callback -> XRun garantizado en el arranque de la reproducción.
+static std::atomic<Ivanna::RirDataset*>   g_rirDataset{nullptr};
+static std::atomic<Ivanna::RirConvolver*> g_rirConvolver{nullptr};
 // FEATURE (Voice Protection): 0..1, cuánta voz detecta YamnetClassifier en
 // el bloque actual. Protege la inteligibilidad de la voz mezclando de
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
@@ -996,18 +1003,11 @@ g_exciter.process(chL, chR, n);
     // extensión) — aquí se lee de nuevo porque ese hilo de telemetría
     // hace polling cada 30ms y este es el hot path de audio en tiempo real.
     {
-        static Ivanna::RirDataset* s_rirDataset = nullptr;
-        static bool s_rirDatasetTried = false;
-        static Ivanna::RirConvolver* s_rirConvolver = nullptr;
-        if (!s_rirDatasetTried) {
-            s_rirDatasetTried = true;
-            s_rirDataset = new Ivanna::RirDataset();
-            if (!s_rirDataset->load("/data/adb/ivanna_omega/rir")) {
-                delete s_rirDataset; s_rirDataset = nullptr;
-            }
-        }
-        if (!s_rirConvolver) s_rirConvolver = new Ivanna::RirConvolver();
-
+        Ivanna::RirDataset*   s_rirDataset   = g_rirDataset.load(std::memory_order_acquire);
+        Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire);
+        if (!s_rirConvolver) {
+            // nativeInitDSP aún no corrió: nada que convolver, passthrough.
+        } else {
         static uint64_t s_rirLastGen = 0;
         ivanna::OmegaDspSnapshot rirSnap{};
         if (ivanna::effectControlBus().readLatest(rirSnap, s_rirLastGen)) {
@@ -1034,6 +1034,7 @@ g_exciter.process(chL, chR, n);
         if (s_rirConvolver->isLoaded()) {
             s_rirConvolver->process(pdOutL, pdOutR, n);
         }
+        } // !s_rirConvolver guard
     }
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
@@ -1062,6 +1063,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_gain.setParams(g_params);
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
+    // FIX RT: inicializar RIR aquí (hilo de UI) — alocación + disco fuera
+    // del callback de audio. nativeProcess solo leerá los punteros ya
+    // publicados con acquire-load.
+    if (g_rirConvolver.load(std::memory_order_acquire) == nullptr) {
+        Ivanna::RirDataset* ds = new Ivanna::RirDataset();
+        if (!ds->load("/data/adb/ivanna_omega/rir")) {
+            delete ds; ds = nullptr;
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — passthrough");
+        }
+        g_rirDataset.store(ds, std::memory_order_release);
+        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+    }
     g_initialized.store(true, std::memory_order_release);
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
     return JNI_TRUE;
