@@ -560,6 +560,19 @@ fun OmegaApp() {
             composable(IvannaRoute.ABX_TEST) { com.ivanna.omega.ui.AbxTestScreen(onBack = { nav.popBackStack() }) }
             composable("benchmark") { com.ivanna.omega.ui.BenchmarkScreen(onBack = { nav.popBackStack() }) }
             composable("phase7") { com.ivanna.omega.ui.Phase7Screen(onBack = { nav.popBackStack() }) }
+            // FIX (sub-entorno muerto): CognitiveDashboardActivity estaba
+            // registrada en el Manifest pero ninguna ruta la lanzaba —
+            // pantalla completa (dashboard cognitivo, perceptual brain) que
+            // era inalcanzable desde la UI. Esta ruta la abre con Intent.
+            composable("cognitive_dash") {
+                val ctx = LocalContext.current
+                LaunchedEffect(Unit) {
+                    ctx.startActivity(
+                        Intent(ctx, com.ivanna.omega.ui.CognitiveDashboardActivity::class.java)
+                    )
+                    nav.popBackStack()
+                }
+            }
             composable(IvannaRoute.AUDIO_CONTROL_HUB) {
                 com.ivanna.omega.ui.SofaAfRirSafPanelScreen(
                     onBack = { nav.popBackStack() },

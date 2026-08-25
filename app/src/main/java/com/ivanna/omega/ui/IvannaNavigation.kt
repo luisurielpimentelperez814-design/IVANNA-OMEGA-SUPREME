@@ -157,7 +157,8 @@ fun MainScaffold(
                     onOpenAuditory   = { outerNav.navigate("auditory") },
                     onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) },
                     onOpenBenchmark  = { outerNav.navigate("benchmark") },
-                    onOpenPhase7     = { outerNav.navigate("phase7") }
+                    onOpenPhase7     = { outerNav.navigate("phase7") },
+                    onOpenCognitiveDash = { outerNav.navigate("cognitive_dash") }
                 )
             }
 
@@ -184,7 +185,8 @@ fun SpatialHubScreen(
     onOpenAbxTest    : () -> Unit,
     onOpenBenchmark  : () -> Unit = {},
     onOpenPhase7     : () -> Unit = {},
-    onOpenAudioControlHub : () -> Unit = {}
+    onOpenAudioControlHub : () -> Unit = {},
+    onOpenCognitiveDash : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -201,6 +203,10 @@ fun SpatialHubScreen(
         HubCard("BENCHMARK & EVIDENCE",      "Telemetría y validación acústica",     NeonMagenta,  onOpenBenchmark)
         HubCard("FASE 7: HEGEMONIA",         "Computer Vision & AutoEQ",             NeonMagenta,  onOpenPhase7)
         HubCard("SOFA · AF · RIR · SAF",     "Panel de control de motores avanzados · HRTF real · Sala · Adaptativo", AuroraCyan, onOpenAudioControlHub)
+        // FIX (sub-entorno muerto): CognitiveDashboardActivity estaba en el
+        // Manifest pero sin entrada en la UI — pantalla inalcanzable. Ahora
+        // tiene su HubCard que navega a la ruta "cognitive_dash".
+        HubCard("CEREBRO COGNITIVO",         "Perceptual Brain · Fatiga · Emoción · Q-Learning", AuroraCyan,   onOpenCognitiveDash)
     }
 }
 
