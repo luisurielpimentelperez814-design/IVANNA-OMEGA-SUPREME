@@ -517,7 +517,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 if (!sawInputEOS) {
                     val inIndex = codec.dequeueInputBuffer(TIMEOUT_US)
                     if (inIndex >= 0) {
-                        val inBuf = codec.getInputBuffer(inIndex)!!
+                        val inBuf = codec.getInputBuffer(inIndex) ?: continue
                         val sampleSize = extractor.readSampleData(inBuf, 0)
                         if (sampleSize < 0) {
                             codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -535,7 +535,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
                 val outIndex = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
                 if (outIndex >= 0) {
-                    val outBuf = codec.getOutputBuffer(outIndex)!!
+                    val outBuf = codec.getOutputBuffer(outIndex) ?: continue
                     if (bufferInfo.size > 0) {
                         outBuf.position(bufferInfo.offset)
                         outBuf.limit(bufferInfo.offset + bufferInfo.size)
