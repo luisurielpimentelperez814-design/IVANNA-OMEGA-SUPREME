@@ -105,8 +105,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         retryThread?.quitSafely()
         _isCapturing.value = false
 
-        perceptualCortex.removeStateListener(this)
-
         super.onDestroy()
     }
 
