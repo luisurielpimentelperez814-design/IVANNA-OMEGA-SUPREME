@@ -27,6 +27,11 @@ private:
     float wet_   = 0.5f;
     float dry_   = 0.5f;
     float runtimeReductionMul_ = 1.f;  // 1.0 = sin reducción, 0.0 = exciter mudo
+    // Anti-zipper: wet_ cambia de golpe al arrastrar el slider y la mezcla
+    // dry+wet*exc es lineal en wet -> click por bloque. wetNow_ converge
+    // por muestra OS (~15 ms). Recalculado en setParams().
+    float wetNow_    = 0.5f;
+    float wetSmooth_ = 0.9995f;
     
     // HPF to feed only highs into exciter (3 kHz cutoff)
     Biquad hpfL_, hpfR_;

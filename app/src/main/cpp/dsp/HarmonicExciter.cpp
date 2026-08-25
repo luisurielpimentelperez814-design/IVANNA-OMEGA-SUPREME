@@ -51,6 +51,11 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
 
     excRelCoef_ = std::exp(-1.0f / ((float)p.sampleRate * OS_FACTOR * 0.020f));
+
+    // Rampa anti-zipper del wet a tasa OS (~15 ms): igual criterio que
+    // StereoWidener (widthNow_). Snap si el cambio es inaudible.
+    wetSmooth_ = 1.0f - 1.0f / ((float)p.sampleRate * OS_FACTOR * 0.015f);
+    if (wetSmooth_ < 0.99f) wetSmooth_ = 0.99f;
 }
 
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {
@@ -69,16 +74,25 @@ __attribute__((hot, flatten))
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
-    const float wet = wet_ * runtimeReductionMul_;
+    // Objetivo de wet para este bloque; el valor aplicado (wetNow_) converge
+    // por muestra dentro del loop — ver comentario anti-zipper en el header.
+    const float wetTarget = wet_ * runtimeReductionMul_;
 
-    // Si wet es cero, mantenemos la señal perfectamente intacta y transparente
-    if (wet <= 0.00001f) {
+    // Si tanto el objetivo como el valor suavizado son cero, bypass total.
+    if (wetTarget <= 0.00001f && wetNow_ <= 0.00001f) {
         lastL_ = left[frames - 1];
         lastR_ = right[frames - 1];
+        wetNow_ = wetTarget;
         return;
     }
 
     const float drive = drive_;
+    float wetNow = wetNow_;
+    const float wsm = wetSmooth_, wsmi = 1.0f - wetSmooth_;
+    {
+        const float d = wetTarget - wetNow;
+        if (d > -1e-5f && d < 1e-5f) wetNow = wetTarget;  // snap inaudible
+    }
 
     // FIX (distorsion digital): el clamp duro final (std::clamp ±1.0) de cada
     // muestra generaba clipping de onda cuadrada cuando dry+wet*excitacion
@@ -139,10 +153,13 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // Ataque inmediato si la muestra reventaria, release exponencial
         // cuando sobra headroom -> la reduccion se percibe como nivel, no
         // como distorsion (sin modulacion muestra-a-muestra de la suma).
+        // Anti-zipper: suavizar wet por muestra OS antes de mezclar.
+        wetNow = wsm * wetNow + wsmi * wetTarget;
+
         const float headL = 1.0f - std::fabs(l);
         const float headR = 1.0f - std::fabs(r);
-        const float reqL = kExcCeiling * wet * std::fabs(excL);
-        const float reqR = kExcCeiling * wet * std::fabs(excR);
+        const float reqL = kExcCeiling * wetNow * std::fabs(excL);
+        const float reqR = kExcCeiling * wetNow * std::fabs(excR);
         const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
         const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
         if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
@@ -150,8 +167,8 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         if (scaleL > 1.0f) scaleL = 1.0f;
         if (scaleR > 1.0f) scaleR = 1.0f;
 
-        float outL = l + kExcCeiling * wet * excL * scaleL;
-        float outR = r + kExcCeiling * wet * excR * scaleR;
+        float outL = l + kExcCeiling * wetNow * excL * scaleL;
+        float outR = r + kExcCeiling * wetNow * excR * scaleR;
 
         // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
         if (!std::isfinite(outL)) outL = 0.f;
@@ -169,6 +186,7 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     excScaleL_ = scaleL;
     excScaleR_ = scaleR;
+    wetNow_ = wetNow;
 }
 
 } // namespace ivanna
