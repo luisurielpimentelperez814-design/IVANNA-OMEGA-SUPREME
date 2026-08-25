@@ -1,5 +1,6 @@
 #include "control/command_server.h"
 #include "core/shm_manager.h"
+#include "include/omega_shared.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -69,12 +70,35 @@ void ensure_directory_exists(const char* path) {
 
 int setup_shared_memory(int sampleRate) {
     ensure_directory_exists(OMEGA_DIR_PATH);
-    log_message("Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
+
+    log_message("Initializing Shared Memory via OmegaShmManager at: " 
+        + std::string(OMEGA_SHM_PATH));
+
     if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
         log_message("Error: OmegaShmManager::init() fallo");
         return -1;
     }
-    log_message("Shared Memory listo fd=" + std::to_string(ivanna::shmManager().fd()));
+
+    void* base = ivanna::shmManager().base();
+
+    if (base != nullptr) {
+        auto* state =
+            reinterpret_cast<OmegaSharedState*>(
+                static_cast<uint8_t*>(base)
+                + sizeof(ivanna::ShmHeader)
+            );
+
+        new(state) OmegaSharedState();
+
+        state->is_processing.store(true);
+        state->current_latency_ms.store(0.0f);
+
+        log_message("OmegaSharedState inicializado dentro de SHM");
+    }
+
+    log_message("Shared Memory listo fd=" 
+        + std::to_string(ivanna::shmManager().fd()));
+
     return ivanna::shmManager().fd();
 }
 
