@@ -67,7 +67,7 @@ void ensure_directory_exists(const char* path) {
     }
 }
 
-int setup_shared_memory() {
+int setup_shared_memory(int sampleRate) {
     ensure_directory_exists(OMEGA_DIR_PATH);
     log_message("Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
     if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
@@ -120,7 +120,8 @@ int main(int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
     log_message("IVANNA-OMEGA Daemon v1.8 REAL TELEMETRY - Starting");
     if (realtime) { struct sched_param p; p.sched_priority=80; sched_setscheduler(0,SCHED_FIFO,&p); }
-    setup_shared_memory();
+    setup_shared_memory(rate);
+    log_message("DSP sample rate configured: " + std::to_string(rate));
     g_server_fd = create_socket_server(socket_path);
     if (g_server_fd<0) return 1;
 
