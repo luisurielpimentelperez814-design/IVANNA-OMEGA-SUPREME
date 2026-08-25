@@ -33,6 +33,8 @@ import kotlinx.coroutines.launch
 class IVANNAApplication : Application() {
     
     private lateinit var paramStore: ParameterStore
+    @Volatile var lastNativeSampleRate: Int = 48000
+        private set
 
 
     companion object {
@@ -88,6 +90,11 @@ class IVANNAApplication : Application() {
         instance = this
 
         paramStore = ParameterStore(this)
+        // Polish: consumir la SR nativa persistida (9f99d4e6 la guardaba sin
+        // consumidor). Application tiene Context — unico punto seguro para
+        // leerla antes de cualquier init de motor. La SR guardada sobrevive
+        // reinicios; si nunca se guardo, loadNativeSampleRate() = 48000.
+        lastNativeSampleRate = paramStore.loadNativeSampleRate()
 
         // Primer arranque: aplica IVANNA_OMEGA_SIGNATURE antes de cualquier
         // restore — el restoreToNative() posterior lo empuja al DSP nativo.

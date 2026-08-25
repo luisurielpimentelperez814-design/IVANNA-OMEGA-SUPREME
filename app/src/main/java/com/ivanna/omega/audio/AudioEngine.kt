@@ -14,7 +14,7 @@ class AudioEngine {
         private const val TAG = "AudioEngine"
         /** SR real del hardware — hardcodear 96kHz rompía la captura en dispositivos 48k. */
         @Volatile var SAMPLE_RATE: Int = android.media.AudioTrack.getNativeOutputSampleRate(
-            android.media.AudioManager.STREAM_MUSIC).takeIf { it in 8000..192000 } ?: 48000
+            android.media.AudioManager.STREAM_MUSIC).takeIf { it in 8000..384000 } ?: 48000  // paridad con gates nativos 1caeb1cb: nativas directas hasta 384k
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_FLOAT
 
