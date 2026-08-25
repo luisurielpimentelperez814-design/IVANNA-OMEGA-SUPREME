@@ -73,7 +73,7 @@ class AdaptiveBackend(context: Context) {
                 handler.postDelayed(this, TELEMETRY_INTERVAL_MS)
             }
         }
-        handler.post(telemetryRunnable!!)
+        telemetryRunnable?.let { handler.post(it) }
         Log.d(TAG, "Telemetría iniciada @10Hz")
     }
 
