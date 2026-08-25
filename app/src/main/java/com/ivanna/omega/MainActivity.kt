@@ -5,7 +5,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import android.media.AudioManager
-import android.util.Log
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
