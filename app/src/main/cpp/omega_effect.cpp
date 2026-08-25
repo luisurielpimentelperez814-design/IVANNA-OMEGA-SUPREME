@@ -274,6 +274,33 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     }
 }
 
+// ── RIR dataset: inicialización fuera del hilo RT ───────────────────────────
+// FIX RT (auditoría 2026-08-25): este init (new + lectura de disco de 200
+// WAV) se hacía dentro de omega_apply_room, invocada desde omega_process —
+// el callback de audio del daemon. El primer frame con una sala activa
+// pagaba el coste de disco + malloc en el hilo RT -> XRun/glitch en el
+// arranque (mismo bug reparado en la ruta JNI por 12e3ea52, aquí seguía
+// vivo en la ruta daemon). Ahora se inicializa en EFFECT_CMD_SET_CONFIG
+// (hilo de control, no-RT) vía omega_rir_dataset_init(); el audio thread
+// solo hace acquire-load del puntero ya publicado.
+static std::atomic<Ivanna::RirDataset*> g_rirDataset{nullptr};
+
+// Llamar SOLO desde omega_command(EFFECT_CMD_SET_CONFIG) — hilo no-RT.
+// Idempotente: solo carga la primera vez que tiene éxito.
+static void omega_rir_dataset_init() noexcept {
+    if (g_rirDataset.load(std::memory_order_acquire) != nullptr) return;
+    Ivanna::RirDataset* ds = new Ivanna::RirDataset();
+    const char* base = "/data/adb/ivanna_omega/rir";
+    if (!ds->load(base)) {
+        LOGW("RirDataset: no se pudo cargar desde %s — sala desactivada", base);
+        delete ds;
+        return;
+    }
+    LOGI("RirDataset: %d salas cargadas desde %s", (int)ds->roomCount(), base);
+    // release-store: publica el dataset completamente construido al hilo RT
+    g_rirDataset.store(ds, std::memory_order_release);
+}
+
 // ── Cable RIR: aplica la sala seleccionada por SET_ROOM_RT60 ─────────────────
 // Llamada desde omega_process cuando el snapshot tiene un room_rt60_s nuevo.
 // Si rt60==0 → bypass. Si hay una sala cargada con ese RT60 → load() en el
@@ -291,29 +318,21 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     //   - roomCount(), no size().
     //   - findNearestByRT60(rt60) devuelve size_t (índice), no un puntero a una
     //     struct con .ir embebido — la IR se carga aparte vía loadImpulseResponse().
-    static Ivanna::RirDataset* g_dataset = nullptr;
-    static bool g_dataset_tried = false;
-    if (!g_dataset_tried) {
-        g_dataset_tried = true;
-        g_dataset = new Ivanna::RirDataset();
-        const char* base = "/data/adb/ivanna_omega/rir";
-        if (!g_dataset->load(base)) {
-            LOGW("RirDataset: no se pudo cargar desde %s — sala desactivada", base);
-            delete g_dataset; g_dataset = nullptr;
-        } else {
-            LOGI("RirDataset: %d salas cargadas desde %s", (int)g_dataset->roomCount(), base);
+    // Audio thread (RT): solo acquire-load. Si el dataset aún no se publicó
+    // (SET_CONFIG no corrió o la carga falló) -> bypass seco, SIN tocar disco
+    // ni hacer malloc en este hilo.
+    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+    if (!ds || ds->roomCount() == 0 || !ctx->rirConvolver) {
+        if (ctx->rirConvolver) {
+            ctx->rirConvolver->setWetDry(0.f);
         }
-    }
-
-    // Lazy-init del convolver por instancia
-    if (!ctx->rirConvolver) {
-        ctx->rirConvolver = new Ivanna::RirConvolver();
+        return;  // dry path: sin sala hasta que SET_CONFIG la prepare
     }
 
     const float rt60 = s.room_rt60_s;
     const float wet  = s.room_wet;
 
-    if (rt60 < 0.01f || !g_dataset || g_dataset->roomCount() == 0) {
+    if (rt60 < 0.01f) {
         // Bypass: desactivar convolver
         ctx->rirConvolver->setWetDry(0.f);
         ctx->rirConvolver->unload();
@@ -325,7 +344,7 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     // Con solo RT60 había empates y saltos de sala arbitrarios entre salas
     // con reverberación casi idéntica pero geometría opuesta (pasillo
     // largo vs cubiculo compacto suenan distinto al mismo RT60).
-    const size_t roomIdx = g_dataset->findNearestSmart(rt60);
+    const size_t roomIdx = ds->findNearestSmart(rt60);
 
     // Solo recargar si la sala cambió (comparar por idx)
     const int32_t targetIdx = s.room_idx;
@@ -340,7 +359,7 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     // falta duplicar mono→estéreo como asumía la versión anterior).
     std::vector<float> irL, irR;
     int sampleRateHz = 0;
-    if (!g_dataset->loadImpulseResponse(roomIdx, irL, irR, sampleRateHz) || irL.empty()) {
+    if (!ds->loadImpulseResponse(roomIdx, irL, irR, sampleRateHz) || irL.empty()) {
         LOGW("RirDataset: sala idx=%d no se pudo cargar — bypass", (int)roomIdx);
         ctx->rirConvolver->setWetDry(0.f);
         return;
@@ -547,6 +566,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // reduction ni se contaminan la telemetria entre si.
                 if (!ctx->safetyLimiter) ctx->safetyLimiter = new ivanna::SafetyLimiter();
                 if (ctx->safetyLimiter) ctx->safetyLimiter->setParams();
+                // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
+                // el convolver AQUÍ, en el hilo de control — nunca en el
+                // callback omega_process. Ver omega_rir_dataset_init().
+                omega_rir_dataset_init();
+                if (!ctx->rirConvolver) ctx->rirConvolver = new Ivanna::RirConvolver();
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
                 // no creó el SHM (arranque en frío del audioserver), la
