@@ -814,8 +814,15 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             reinterpret_cast<omega_effect_context_t *>(handle);
         if (ctx->fusionCore) {
             delete ctx->fusionCore;
-        delete ctx->safetyLimiter;  // FIX distorsion: liberar limiter por sesion
             ctx->fusionCore = nullptr;
+        }
+        // FIX lifecycle: el limiter se liberaba DENTRO del if(fusionCore)
+        // — si fusionCore era null (init fallido) pero safetyLimiter no,
+        // quedaba fugado y su puntero nunca se anulaba. Liberacion
+        // independiente y nulificado de ambos.
+        if (ctx->safetyLimiter) {
+            delete ctx->safetyLimiter;
+            ctx->safetyLimiter = nullptr;
         }
         if (ctx->rirConvolver) {
             delete ctx->rirConvolver;
