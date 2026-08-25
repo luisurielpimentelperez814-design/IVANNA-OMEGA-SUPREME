@@ -51,11 +51,6 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
 
     excRelCoef_ = std::exp(-1.0f / ((float)p.sampleRate * OS_FACTOR * 0.020f));
-
-    // Rampa anti-zipper del wet a tasa OS (~15 ms): igual criterio que
-    // StereoWidener (widthNow_). Snap si el cambio es inaudible.
-    wetSmooth_ = 1.0f - 1.0f / ((float)p.sampleRate * OS_FACTOR * 0.015f);
-    if (wetSmooth_ < 0.99f) wetSmooth_ = 0.99f;
 }
 
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {
@@ -74,25 +69,15 @@ __attribute__((hot, flatten))
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
-    // Objetivo de wet para este bloque; el valor aplicado (wetNow_) converge
-    // por muestra dentro del loop — ver comentario anti-zipper en el header.
-    const float wetTarget = wet_ * runtimeReductionMul_;
+    const float wet = wet_ * runtimeReductionMul_;
 
-    // Si tanto el objetivo como el valor suavizado son cero, bypass total.
-    if (wetTarget <= 0.00001f && wetNow_ <= 0.00001f) {
-        lastL_ = left[frames - 1];
-        lastR_ = right[frames - 1];
-        wetNow_ = wetTarget;
+    // Bypass perfecto: wet=0 debe ser bit-transparente.
+    // No actualizar estados internos ni tocar buffers DSP.
+    if (wet <= 0.00001f) {
         return;
     }
 
     const float drive = drive_;
-    float wetNow = wetNow_;
-    const float wsm = wetSmooth_, wsmi = 1.0f - wetSmooth_;
-    {
-        const float d = wetTarget - wetNow;
-        if (d > -1e-5f && d < 1e-5f) wetNow = wetTarget;  // snap inaudible
-    }
 
     // FIX (distorsion digital): el clamp duro final (std::clamp ±1.0) de cada
     // muestra generaba clipping de onda cuadrada cuando dry+wet*excitacion
@@ -105,36 +90,25 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     float scaleR = excScaleR_;
     const float rel = excRelCoef_;
 
-    // FIX (zumbido periódico + estado muerto): el punto medio se calculaba
-    // hacia ADELANTE (l, nextL) con nextL=l al final del bloque -> meseta
-    // de media muestra cada frontera de bloque (~5 ms con 256 frames),
-    // audible como zumbido tenue periódico en tonos sostenidos. Ademas
-    // lastL_/lastR_ se escribian pero JAMAS se leian (estado muerto).
-    // Ahora el punto medio va ANTES de cada original usando prevL/R
-    // (continuidad exacta entre bloques: la primera meseta del bloque
-    // interpola contra la ultima muestra del bloque anterior).
-    // Layout: [mid(prev,cur), orig] x N -> los originales caen en IMPARES.
     int osIdx = 0;
-    float prevL = lastL_;
-    float prevR = lastR_;
     for (int i = 0; i < frames; ++i) {
-        const float l = left[i];
-        const float r = right[i];
+        float l = left[i];
+        float r = right[i];
 
-        osLeft_[osIdx]  = 0.5f * (prevL + l);   // punto medio hacia atras
-        osRight_[osIdx] = 0.5f * (prevR + r);
-        osIdx++;
-
-        osLeft_[osIdx]  = l;                    // original en indice impar
+        osLeft_[osIdx] = l;
         osRight_[osIdx] = r;
         osIdx++;
 
-        prevL = l;
-        prevR = r;
+        float nextL = (i + 1 < frames) ? left[i + 1] : l;
+        float nextR = (i + 1 < frames) ? right[i + 1] : r;
+
+        osLeft_[osIdx] = 0.5f * (l + nextL);
+        osRight_[osIdx] = 0.5f * (r + nextR);
+        osIdx++;
     }
     int osFrames = osIdx;
-    lastL_ = prevL;   // estado VIVO: lo lee el proximo bloque
-    lastR_ = prevR;
+    lastL_ = left[frames - 1];
+    lastR_ = right[frames - 1];
 
     for (int i = 0; i < osFrames; ++i) {
         float l = osLeft_[i];
@@ -153,13 +127,10 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // Ataque inmediato si la muestra reventaria, release exponencial
         // cuando sobra headroom -> la reduccion se percibe como nivel, no
         // como distorsion (sin modulacion muestra-a-muestra de la suma).
-        // Anti-zipper: suavizar wet por muestra OS antes de mezclar.
-        wetNow = wsm * wetNow + wsmi * wetTarget;
-
         const float headL = 1.0f - std::fabs(l);
         const float headR = 1.0f - std::fabs(r);
-        const float reqL = kExcCeiling * wetNow * std::fabs(excL);
-        const float reqR = kExcCeiling * wetNow * std::fabs(excR);
+        const float reqL = kExcCeiling * wet * std::fabs(excL);
+        const float reqR = kExcCeiling * wet * std::fabs(excR);
         const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
         const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
         if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
@@ -167,18 +138,21 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         if (scaleL > 1.0f) scaleL = 1.0f;
         if (scaleR > 1.0f) scaleR = 1.0f;
 
-        float outL = l + kExcCeiling * wetNow * excL * scaleL;
-        float outR = r + kExcCeiling * wetNow * excR * scaleR;
+        float outL = l + kExcCeiling * wet * excL * scaleL;
+        float outR = r + kExcCeiling * wet * excR * scaleR;
 
         // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
         if (!std::isfinite(outL)) outL = 0.f;
         if (!std::isfinite(outR)) outR = 0.f;
 
-        // FIX (desfase): decimar SOLO las muestras originales. Con el
-        // layout actualizado [mid, orig] los originales caen en IMPARES.
-        // Escribir tambien el punto medio sobrescribiria la original y
-        // retardaria la salida 0.25 muestras -> desfase + peine en agudos.
-        if ((i & 1) == 1) {
+        // FIX (desfase): el decimado debe escribir SOLO en índices PARES
+        // (muestras originales, i%2==0). Antes escribía en left[i/2] tanto
+        // en pares como en impares, de modo que la muestra impar (punto
+        // medio interpolado) SOBRESCRIBÍA a la par y la salida quedaba
+        // retardada 0.25 muestras respecto al resto de la cadena DSP →
+        // desfase global + peine sutil audible en agudos. Con i par, la
+        // señal de salida mantiene alineación temporal exacta.
+        if ((i & 1) == 0) {
             left[i >> 1]  = outL;
             right[i >> 1] = outR;
         }
@@ -186,7 +160,6 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     excScaleL_ = scaleL;
     excScaleR_ = scaleR;
-    wetNow_ = wetNow;
 }
 
 } // namespace ivanna
