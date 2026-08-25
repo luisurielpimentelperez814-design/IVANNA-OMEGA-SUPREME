@@ -34,7 +34,7 @@ class DspStateUpdater {
         updateRunnable = Runnable {
             applyUpdate(newState)
         }
-        handler.postDelayed(updateRunnable!!, DEBOUNCE_DELAY_MS)
+        updateRunnable?.let { handler.postDelayed(it, DEBOUNCE_DELAY_MS) }
     }
     
     /**
