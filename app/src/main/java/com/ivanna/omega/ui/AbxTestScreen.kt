@@ -7,8 +7,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.core.NativeLibraryLoader
+import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.AbxResultStore
 import com.ivanna.omega.spatial.AbxStats
+import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.spatial.IvannaSpatialNative
 import org.json.JSONObject
 import java.io.File
@@ -31,8 +33,33 @@ fun AbxTestScreen(onBack: () -> Unit) {
     val scenarioB = 2
     val scenarioX = remember { listOf(1, 2).random() }
 
+    // AUDIT FIX (ABX no media nada): setScenario() estaba vacia — solo un
+    // comentario "Implement logic". El test ciego conmutaba etiquetas A/B/X
+    // sin tocar el DSP: los tres escenarios sonaban identicos (bypass) y el
+    // veredicto estadistico era ruido. Ahora cada escenario conmuta el motor
+    // real:
+    //   0 Bypass        → HRTF OFF  (nativeSetHRTFEnabled(false), modo PD 0)
+    //   1 Static HRTF   → HRTF ON + head tracking PAUSADO (pose fija)
+    //   2 Dynamic HRTF  → HRTF ON + head tracking ACTIVO (pose sigue IMU)
+    // nativeSetHRTFEnabled → g_pd.set_mode(2|0) (ivanna_omega_jni.cpp:1359);
+    // el tracker vive en IvannaSpatialManager.init() y se acopla al renderer
+    // via nativeObjectRendererSetHeadTracker — start/stop controla si la pose
+    // fluye al DSP sin reiniciar el audio.
     fun setScenario(scenario: Int) {
-        // Implement logic to switch DSP engine mode between Bypass, Static HRTF, Dynamic HRTF
+        if (!NativeLibraryLoader.ensureLoaded()) return
+        when (scenario) {
+            0 -> { // Bypass: sin HRTF
+                runCatching { IvannaNativeLib.nativeSetHRTFEnabled(false) }
+            }
+            1 -> { // HRTF estatico: HRTF on, pose congelada
+                runCatching { IvannaNativeLib.nativeSetHRTFEnabled(true) }
+                runCatching { IvannaSpatialManager.pauseHeadTracking() }
+            }
+            2 -> { // HRTF dinamico: HRTF on, pose siguiendo la cabeza
+                runCatching { IvannaNativeLib.nativeSetHRTFEnabled(true) }
+                runCatching { IvannaSpatialManager.resumeHeadTracking() }
+            }
+        }
     }
 
     Column(

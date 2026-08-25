@@ -135,6 +135,23 @@ object IvannaSpatialManager {
         }.getOrDefault(false)
     }
 
+    /**
+     * AUDIT FIX (ABX Static vs Dynamic HRTF): control de head tracking sin
+     * reiniciar el motor. pauseHeadTracking() congela la pose (el renderer
+     * sigue con la última orientación conocida — HRTF estático);
+     * resumeHeadTracking() reanuda el flujo de la IMU (HRTF dinámico).
+     * IvannaHeadTracker.stop()/start() desuscriben/resuscriben el listener
+     * del sensor; el renderer nativo nunca se destruye — el audio no se
+     * interrumpe. Usado por AbxTestScreen.setScenario().
+     */
+    fun pauseHeadTracking() {
+        headTracker?.stop()
+    }
+
+    fun resumeHeadTracking() {
+        headTracker?.start()
+    }
+
     fun release() {
         synchronized(lock) {
             val h = rendererHandle
