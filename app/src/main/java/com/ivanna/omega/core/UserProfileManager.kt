@@ -80,7 +80,7 @@ class UserProfileManager(
             profileFile.writeText(json.toString(2))
             currentProfile = profile
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("UserProfileManager", "saveProfile(history) falló", e)
         }
     }
 
