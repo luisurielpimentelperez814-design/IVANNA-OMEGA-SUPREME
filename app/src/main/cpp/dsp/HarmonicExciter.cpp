@@ -22,7 +22,10 @@ void HarmonicExciter::reset() {
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
-    drive_ = 1.0f + p.drive * 15.0f;
+    // FIX distorsión digital: drive 1..16 causaba que HPF signals típicas (0.2-0.4)
+    // × drive=12 = 2.4-4.8 → zona de clipping duro del softClip → THD masivo.
+    // Rango 1..4: drive=1 neutro, drive=4 saturación Chebyshev audible y limpia.
+    drive_ = 1.0f + p.drive * 3.0f;
     wet_ = p.wet;
     dry_ = 1.0f - p.wet;
 
