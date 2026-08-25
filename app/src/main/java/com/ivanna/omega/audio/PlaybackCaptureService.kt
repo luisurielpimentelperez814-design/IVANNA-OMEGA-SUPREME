@@ -127,7 +127,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             val adaptiveBufferSize = if (fatigueLevel > 0.6f) 4096 else 2048
 
             // Log del cambio
-            Log.d(TAG, "Perceptual update: fatigue=${String.format("%.2f", fatigueLevel)}, " +
+            if (com.ivanna.omega.BuildConfig.DEBUG) Log.d(TAG, "Perceptual update: fatigue=${String.format("%.2f", fatigueLevel)}, " +
                 "adaptiveBuffer=$adaptiveBufferSize, emotion=${state.emotion}")
 
             // Aquí podrías aplicar dinámicamente:
