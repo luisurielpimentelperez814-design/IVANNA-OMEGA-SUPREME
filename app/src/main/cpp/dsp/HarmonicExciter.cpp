@@ -91,25 +91,36 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     float scaleR = excScaleR_;
     const float rel = excRelCoef_;
 
+    // FIX (zumbido periódico + estado muerto): el punto medio se calculaba
+    // hacia ADELANTE (l, nextL) con nextL=l al final del bloque -> meseta
+    // de media muestra cada frontera de bloque (~5 ms con 256 frames),
+    // audible como zumbido tenue periódico en tonos sostenidos. Ademas
+    // lastL_/lastR_ se escribian pero JAMAS se leian (estado muerto).
+    // Ahora el punto medio va ANTES de cada original usando prevL/R
+    // (continuidad exacta entre bloques: la primera meseta del bloque
+    // interpola contra la ultima muestra del bloque anterior).
+    // Layout: [mid(prev,cur), orig] x N -> los originales caen en IMPARES.
     int osIdx = 0;
+    float prevL = lastL_;
+    float prevR = lastR_;
     for (int i = 0; i < frames; ++i) {
-        float l = left[i];
-        float r = right[i];
+        const float l = left[i];
+        const float r = right[i];
 
-        osLeft_[osIdx] = l;
+        osLeft_[osIdx]  = 0.5f * (prevL + l);   // punto medio hacia atras
+        osRight_[osIdx] = 0.5f * (prevR + r);
+        osIdx++;
+
+        osLeft_[osIdx]  = l;                    // original en indice impar
         osRight_[osIdx] = r;
         osIdx++;
 
-        float nextL = (i + 1 < frames) ? left[i + 1] : l;
-        float nextR = (i + 1 < frames) ? right[i + 1] : r;
-
-        osLeft_[osIdx] = 0.5f * (l + nextL);
-        osRight_[osIdx] = 0.5f * (r + nextR);
-        osIdx++;
+        prevL = l;
+        prevR = r;
     }
     int osFrames = osIdx;
-    lastL_ = left[frames - 1];
-    lastR_ = right[frames - 1];
+    lastL_ = prevL;   // estado VIVO: lo lee el proximo bloque
+    lastR_ = prevR;
 
     for (int i = 0; i < osFrames; ++i) {
         float l = osLeft_[i];
@@ -146,14 +157,11 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         if (!std::isfinite(outL)) outL = 0.f;
         if (!std::isfinite(outR)) outR = 0.f;
 
-        // FIX (desfase): el decimado debe escribir SOLO en índices PARES
-        // (muestras originales, i%2==0). Antes escribía en left[i/2] tanto
-        // en pares como en impares, de modo que la muestra impar (punto
-        // medio interpolado) SOBRESCRIBÍA a la par y la salida quedaba
-        // retardada 0.25 muestras respecto al resto de la cadena DSP →
-        // desfase global + peine sutil audible en agudos. Con i par, la
-        // señal de salida mantiene alineación temporal exacta.
-        if ((i & 1) == 0) {
+        // FIX (desfase): decimar SOLO las muestras originales. Con el
+        // layout actualizado [mid, orig] los originales caen en IMPARES.
+        // Escribir tambien el punto medio sobrescribiria la original y
+        // retardaria la salida 0.25 muestras -> desfase + peine en agudos.
+        if ((i & 1) == 1) {
             left[i >> 1]  = outL;
             right[i >> 1] = outR;
         }
