@@ -231,7 +231,7 @@ class AntiDolbyController(private val context: Context) {
         smoothWidth   += EMA_OUT * (tWidth   - smoothWidth)
         smoothEq      += EMA_OUT * (tEq      - smoothEq)
 
-        onDspUpdate!!.invoke(smoothExciter, smoothWidth, smoothEq)
+        onDspUpdate?.invoke(smoothExciter, smoothWidth, smoothEq)
 
         Log.v(TAG, "adj exc=%.3f wid=%.3f eq=%.2fdB [sp=%.2f mu=%.2f ba=%.2f si=%.2f]"
             .format(smoothExciter, smoothWidth, smoothEq,
