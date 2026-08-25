@@ -156,10 +156,14 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         PanelCard("SAF — PERSONALIZACIÓN Φ", NeonMagenta) {
             ToggleRow("Adaptación SAF", cfg.safEnabled) { apply(cfg.copy(safEnabled = it)) }
             SliderRow("Intensidad", cfg.safIntensity, 0f..1f) { apply(cfg.copy(safIntensity = it)) }
+            val model = safModel
             Text(
-                if (safModel.exists()) "SAF_model.json ✓ (${safModel.length() / 1024} KB)"
-                else "SAF_model.json no desplegado",
-                color = if (safModel.exists()) PhosphorGreen else AmberSignal,
+                if (model?.exists() == true) {
+                    "SAF_model.json ✓ (${model.length() / 1024} KB)"
+                } else {
+                    "SAF_model.json no desplegado"
+                },
+                color = if (model?.exists() == true) PhosphorGreen else AmberSignal,
                 fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
 
