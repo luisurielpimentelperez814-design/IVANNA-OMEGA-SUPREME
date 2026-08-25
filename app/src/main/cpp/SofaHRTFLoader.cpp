@@ -42,22 +42,20 @@ bool SofaHRTFLoader::load(const std::string& path) {
         return false;
     }
 
-    // TODO: Integración real de libmysofa o NetCDF para extraer Data.IR
-    // Por el momento, la carga pasa la validación física, poblamos con TEST DATA / PLACEHOLDER.
-
-    // ==========================================
-    // TEST DATA / PLACEHOLDER 
-    // Mantiene compatibilidad con el pipeline DSP
-    // ==========================================
+    // Arquitectura: los .sofa NO se parsean en runtime. La conversión
+    // AES69 → IHR1 ocurre offline (tools/sofa_to_ihr1.py) y los .ihr1 se
+    // cargan por HRTFBinLoader con cabecera IHR1 + HRIRs reales.
+    // Este loader solo valida que el archivo SOFA esté íntegro; devolver
+    // true con impulsos Dirac haría que el pipeline reportara "medido"
+    // con una HRTF plana — silenciosamente destructivo. Mejor devolver
+    // false y que el fallback sintético (SyntheticHRTF) quede activo.
     m_hrtf.sampleRate = 48000.0f;
-    m_hrtf.left.assign(512, 0.0f);
-    m_hrtf.right.assign(512, 0.0f);
-    // Impulso en dirac para no destruir el audio
-    m_hrtf.left[0] = 1.0f;
-    m_hrtf.right[0] = 1.0f;
-    
-    LOGI("SofaHRTFLoader: Validacion completada (Tam: %ld). Placeholder impulsos cargados.", (long)size);
-    return true;
+    m_hrtf.left.clear();
+    m_hrtf.right.clear();
+
+    LOGI("SofaHRTFLoader: SOFA válido (Tam: %ld bytes) pero sin parser runtime; "
+         "usar IHR1 precalculado vía HRTFBinLoader.", (long)size);
+    return false;
 }
 
 }
