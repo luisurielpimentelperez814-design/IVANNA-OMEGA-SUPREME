@@ -14,6 +14,10 @@ namespace ivanna {
 void StereoWidener::setParams(const DSPParams& p) {
     if (p.sampleRate != lastSampleRate_) {
         lastSampleRate_ = p.sampleRate;
+        // Rampa de ancho ~15 ms a cualquier sample rate (anti-zipper al
+        // arrastrar el slider). exp(-1/(sr*0.015)) ≈ 0.99956 @ 48k.
+        widthSmooth_ = 1.0f - 1.0f / (static_cast<float>(p.sampleRate) * 0.015f);
+        if (widthSmooth_ < 0.99f) widthSmooth_ = 0.99f;
         // Corte a 150Hz, Q=0.707 (Butterworth) — protege el "punch" de bajo
         // (kick/bajo eléctrico) de cancelación de fase al sumar en mono.
         sideLpf_.setLowpass(150.0, 0.70710678, static_cast<double>(p.sampleRate));
@@ -33,12 +37,24 @@ __attribute__((hot, flatten))
 void StereoWidener::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0) return;
 
-    const float w = width_;
+    // FIX (zipper noise): width_ cambia de golpe al mover el slider y el
+    // widener M/S es lineal en width -> cada salto discretizado por bloque
+    // se oía como un click. Se suaviza widthNow_ hacia width_ muestra a
+    // muestra (one-pole ~15 ms). Si ya está convergido, camino rápido sin
+    // multiplicar por bloque.
+    const float wTarget = width_;
+    float wNow = widthNow_;
+    const float ws = widthSmooth_;
+    const float wsi = 1.0f - ws;
+    // Si la diferencia es inaudible, snap directo (evita convergencia
+    // asintótica eterna y el branch extra por muestra).
+    const float d = wTarget - wNow;
+    if (d > -1e-5f && d < 1e-5f) wNow = wTarget;
 
     // FIX: unity debe ser transparente.
     // Con width=1 no existe transformación M/S real,
     // por lo tanto no debe pasar por filtros que cambien fase.
-    if (w > 0.999999f && w < 1.000001f) {
+    if (wNow > 0.999999f && wNow < 1.000001f && wTarget == wNow) {
 
         // Mantener estados calientes para evitar clicks al reactivar.
         for (int i = 0; i < frames; ++i) {
@@ -52,6 +68,7 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
             dcxR_ = xR;
         }
 
+        widthNow_ = wNow;
         return;
     }
 
@@ -61,11 +78,14 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
     // de cancelación en mono) se limita el boost de graves, rampa lineal
     // de 1.0 en w=1 hasta 0.25 en w=2 (75% menos boost de side en graves
     // al ancho máximo, altas siguen recibiendo el ensanche completo).
-    const float bassFactor = (w <= 1.0f) ? w : (1.0f + (0.25f - 1.0f) * (w - 1.0f));
-
     // NOTE: loop contains stateful sideLpf_.process() — cannot be auto-vectorized.
     // Pragma removed to suppress -Wpass-failed=transform-warning.
     for (int i = 0; i < frames; ++i) {
+        // Suavizado por muestra del ancho (anti-zipper).
+        wNow = ws * wNow + wsi * wTarget;
+        const float w = wNow;
+        const float bassFactor = (w <= 1.0f) ? w : (1.0f + (0.25f - 1.0f) * (w - 1.0f));
+
         const float l = left[i];
         const float r = right[i];
         const float mid  = 0.5f * (l + r);
@@ -91,11 +111,14 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
         left[i]  = outL;
         right[i] = outR;
     }
+
+    widthNow_ = wNow;
 }
 
 void StereoWidener::reset() {
     sideLpf_.reset();
     dcxL_ = dcyL_ = dcxR_ = dcyR_ = 0.f;
+    widthNow_ = width_;  // arrancar sin rampa tras reset
 }
 
 } // namespace ivanna
