@@ -26,7 +26,7 @@ class AudioCallbackManager(
                     .setAudioAttributes(attrs)
                     .setOnAudioFocusChangeListener { onAudioFocusChange(it) }
                     .build()
-                val result = audioManager.requestAudioFocus(audioFocusRequest!!)
+                val result = audioFocusRequest?.let { audioManager.requestAudioFocus(it) } ?: android.media.AudioManager.AUDIOFOCUS_REQUEST_FAILED
                 isAudioFocusOwned = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
                 isAudioFocusOwned
             } else {
@@ -48,7 +48,7 @@ class AudioCallbackManager(
     fun abandonAudioFocus() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
-                audioManager.abandonAudioFocusRequest(audioFocusRequest!!)
+                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
                 audioFocusRequest = null
             } else {
                 @Suppress("DEPRECATION")
