@@ -1,6 +1,6 @@
 #include "control/command_server.h"
 #include "core/shm_manager.h"
-#include "include/omega_shared.h"
+#include "../include/omega_shared.h"
 #include <iostream>
 #include <fstream>
 #include <string>
