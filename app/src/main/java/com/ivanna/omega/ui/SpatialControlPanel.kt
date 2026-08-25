@@ -83,7 +83,10 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         File("/system/etc/ivanna_omega/hrtf/kemar.ihr1"),
         File("/data/adb/ivanna_omega/hrtf_dataset.ihr1")
     ).firstOrNull { it.exists() }
-    val safModel = File("/data/adb/ivanna_omega/SAF_model.json")
+    val safModel = listOf(
+        File("/system/etc/ivanna_omega/SAF_model.json"),
+        File("/data/adb/ivanna_omega/SAF_model.json")
+    ).firstOrNull { it.exists() }
     val rirDir = File("/data/adb/ivanna_omega/rir")
     val rirMeta = File(rirDir, "metadata.csv")
     val rooms = remember { parseRirRooms(rirMeta) }
