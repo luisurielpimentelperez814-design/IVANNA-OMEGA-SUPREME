@@ -95,9 +95,17 @@ object IvannaSpatialManager {
     fun setHrtfSubject(subjectId: String): Boolean {
         val h = rendererHandle
         if (!ready || h == 0L) return false
+        // FIX (auditoría 2026-08-26): el JNI construye la ruta literal
+        // ".../hrtf/" + subj + ".ihr1" SIN normalizar. Una etiqueta legible
+        // ("MIT KEMAR", "CIPIC", "TU-Berlin") enviada desde un panel hacía
+        // fallar loadHrtfDatasetFromFile en las 3 rutas candidatas, en
+        // silencio — el usuario veía el sujeto seleccionado pero el motor
+        // seguía con el dataset anterior. Normalizamos SIEMPRE al ID de
+        // archivo real antes de cruzar el JNI.
+        val resolved = HrtfSubjectSelector.resolveSubjectId(subjectId)
         return runCatching {
-            IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(h, subjectId)
-            activeSubject = subjectId
+            IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(h, resolved)
+            activeSubject = resolved
             true
         }.getOrDefault(false)
     }
