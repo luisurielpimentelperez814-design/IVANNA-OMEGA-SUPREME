@@ -19,6 +19,14 @@ void HarmonicExciter::reset() {
     hpfR_.reset();
     osLpfL_.reset();
     osLpfR_.reset();
+    // FIX (estado residual): reset() se llama en el bypass por wet=0 y dejaba
+    // excScale_ (limitador de headroom) y wetNow_ (rampa anti-zipper) con los
+    // valores del estado anterior. Al reactivar, la excitación arrancaba
+    // atenuada ~20 ms (release de excScale) y el wet arrancaba a mitad de
+    // rampa — discontinuidad de nivel audible tras bypass→on.
+    excScaleL_ = 1.0f;
+    excScaleR_ = 1.0f;
+    wetNow_ = wet_;
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
