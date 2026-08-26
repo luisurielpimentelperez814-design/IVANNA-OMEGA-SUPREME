@@ -52,6 +52,8 @@ void Compressor::setParams(const DSPParams& p) {
     inv_atk_ = 1.0f - attackCoef_;
     inv_rel_ = 1.0f - releaseCoef_;
 
+    runtimeCoef_ = 0.0f;  // forzar recálculo si cambió sr_ (ver process())
+
     scHpfL_.setHighpass(
         120.0,
         0.70710678,
@@ -100,6 +102,17 @@ void Compressor::process(float* __restrict__ left,
 
     const float attackCoef = attackCoef_;
     const float releaseCoef = releaseCoef_;
+
+    // Anti-zipper del runtimeAmount: el motor adaptativo fija el objetivo
+    // por bloque (setRuntimeAmount); aquí se converge con un one-pole de
+    // ~20 ms para que threshold/ratio no salten de golpe en sostenidos.
+    // runtimeCoef_ se recalcula si sr_ cambió (queda 0 tras setParams).
+    if (runtimeCoef_ <= 0.0f)
+        runtimeCoef_ = std::exp(-1.0f / (sr_ * 0.020f));
+    {
+        const float rc = runtimeCoef_;
+        runtimeAmount_ = rc * runtimeAmount_ + (1.0f - rc) * runtimeTarget_;
+    }
 
     const float threshold =
         threshold_ - runtimeAmount_ * 12.0f;

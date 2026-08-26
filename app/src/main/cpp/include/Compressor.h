@@ -16,7 +16,11 @@ public:
     void reset();
 
     void setRuntimeAmount(float amount01) noexcept {
-        runtimeAmount_ =
+        // Solo fija el OBJETIVO — process() converge con one-pole (~20 ms).
+        // El motor adaptativo llama esto por bloque y antes el valor entraba
+        // directo a threshold (-12 dB) y ratio (+8): cada actualización era
+        // un salto de ganancia audible en material sostenido (zipper adaptativo).
+        runtimeTarget_ =
             amount01 < 0.f ? 0.f :
             (amount01 > 1.f ? 1.f : amount01);
     }
@@ -33,7 +37,9 @@ private:
     float makeupGain_ = 1.0f;   // lineal (solo informativo/compat)
     float makeupDb_ = 0.0f;     // techo de compensacion en dB
     float env_ = 0.0f;
-    float runtimeAmount_ = 0.0f;
+    float runtimeAmount_ = 0.0f;   // valor suavizado (uso real en process)
+    float runtimeTarget_ = 0.0f;   // objetivo fijado por setRuntimeAmount
+    float runtimeCoef_ = 0.0f;     // coef one-pole; 0 => recalcular en process
 
     Biquad scHpfL_;
     Biquad scHpfR_;
