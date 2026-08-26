@@ -30,7 +30,10 @@ private:
     // Anti-zipper: wet_ cambia de golpe al arrastrar el slider y la mezcla
     // dry+wet*exc es lineal en wet -> click por bloque. wetNow_ converge
     // por muestra OS (~15 ms). Recalculado en setParams().
-    float wetNow_    = 0.5f;
+    // FIX transparencia: arrancar en 0.0 — el bypass bit-exacto de
+    // process() exige wetNow_ <= 0.00001f; con 0.5 nunca se disparaba y
+    // wet=0 alteraba la señal ~6.7e-4 (medido por WetZeroIsTransparent).
+    float wetNow_    = 0.0f;
     float wetSmooth_ = 0.9995f;
     
     // HPF to feed only highs into exciter (3 kHz cutoff)

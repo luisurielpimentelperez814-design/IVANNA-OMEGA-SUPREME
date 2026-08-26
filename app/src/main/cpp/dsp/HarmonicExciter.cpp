@@ -161,14 +161,28 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         if (scaleL > 1.0f) scaleL = 1.0f;
         if (scaleR > 1.0f) scaleR = 1.0f;
 
-        // Convergencia anti-zipper del wet efectivo (por muestra OS, ~15 ms).
-        // Antes el mix usaba el wet por bloque directo → clic en cada
-        // movimiento de slider o ajuste del lazo adaptativo.
+        // Mezcla con el MISMO wetNow que se usó para el headroom de arriba.
+        // FIX overshoot 1e-6: antes wetNow convergía ANTES de la mezcla, así
+        // la excitación aplicada usaba un wet mayor que el del headroom
+        // calculado → la suma dry+wet reventaba el techo en ~7e-6 por
+        // muestra (medido por ExciterOvershoot.NeverExceedsFullScale).
+        float outL = l + kExcCeiling * wetNow * excL * scaleL;
+        float outR = r + kExcCeiling * wetNow * excR * scaleR;
+
+        // Convergencia anti-zipper del wet efectivo (por muestra OS, ~15 ms)
+        // — DESPUÉS de la mezcla, para que la muestra actual sea consistente
+        // con el headroom que la limitó. El próximo OS-sample usa el valor
+        // convergido (equivalente a un retardo de 1 muestra OS, inaudible).
         wetNow = wetSm * wetNow + (1.0f - wetSm) * wetTarget;
         wetNow_ = wetNow;
 
-        float outL = l + kExcCeiling * wetNow * excL * scaleL;
-        float outR = r + kExcCeiling * wetNow * excR * scaleR;
+        // Clamp numérico de seguridad: el headroom garantiza |out|<=1 en
+        // aritmética exacta, pero el redondeo FP del producto
+        // ceiling*wet*exc*scale puede dejar un residuo de ~1e-6 por encima
+        // del techo. El clamp solo atrapa ese residuo (inaudible) — el
+        // trabajo anti-clipping real lo sigue haciendo excScale_.
+        if (outL > 1.0f) outL = 1.0f; else if (outL < -1.0f) outL = -1.0f;
+        if (outR > 1.0f) outR = 1.0f; else if (outR < -1.0f) outR = -1.0f;
 
         // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
         if (!std::isfinite(outL)) outL = 0.f;
