@@ -42,7 +42,7 @@ object HrtfSubjectSelector {
 
     /** Sujeto por defecto embarcado por el módulo Magisk (ver commit 7d7bcf9). */
     // FIX (descableado): "kemar_subject_165" no existe en el índice IHR1
-    // real (11 sujetos deployados: kemar, kemar_large, tu_berlin_kemar,
+    // real (12 sujetos deployados: kemar, kemar_large, tu_berlin_kemar,
     // cipic_003..cipic_165, pulse — ver
     // magisk_module/.../hrtf/hrtf_index.json). "kemar" es el único sujeto
     // presente en TODAS las builds del módulo, por eso es el default seguro.
@@ -66,10 +66,14 @@ object HrtfSubjectSelector {
      * k-NN antropométrico real); lo que se corrige aquí es que ahora siempre
      * devuelve un ID que el JNI sí puede resolver.
      */
+    // 12 sujetos — sincronizado con hrtf_index.json (verificado 2026-08-26:
+    // 12/12 hashes SHA-256 OK en el módulo). freefield_demo se añadió al
+    // dataset pero faltaba aquí: la UI no podía seleccionarlo.
     val AVAILABLE_SUBJECTS = listOf(
         "kemar", "kemar_large", "tu_berlin_kemar",
         "cipic_003", "cipic_008", "cipic_009",
-        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
+        "cipic_010", "cipic_011", "cipic_012", "cipic_165",
+        "pulse", "freefield_demo"
     )
 
     /** Normaliza cualquier id heredado/derivado de fichero a un ID cargable. */
@@ -83,6 +87,10 @@ object HrtfSubjectSelector {
             if (cand in AVAILABLE_SUBJECTS) return cand
         }
         if (r.contains("large")) return "kemar_large"
+        if (r.contains("freefield") || r.contains("free_field") || r.contains("free-field"))
+            return "freefield_demo"
+        if (r.contains("berlin")) return "tu_berlin_kemar"
+        if (r.contains("pulse")) return "pulse"
         if (r.contains("kemar")) return "kemar"
         return DEFAULT_SUBJECT
     }
