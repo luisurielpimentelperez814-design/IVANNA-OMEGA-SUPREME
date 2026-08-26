@@ -29,6 +29,17 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     wet_ = p.wet;
     dry_ = 1.0f - p.wet;
 
+    // Anti-zipper: coeficiente del one-pole que suaviza el wet EFECTIVO en
+    // process(). wetNow_/wetSmooth_ estaban declarados en el header pero
+    // nunca se cableaban — el mix usaba el wet calculado por bloque y cada
+    // cambio de slider (o de runtimeReductionMul_ del motor adaptativo) era
+    // un escalón de ganancia audible. ~15 ms a tasa OS (el loop de mezcla
+    // corre a sampleRate * OS_FACTOR).
+    {
+        const double srOS = (double)p.sampleRate * (double)OS_FACTOR;
+        wetSmooth_ = (float)std::exp(-1.0 / (srOS * 0.015));
+    }
+
     double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
     double fc = 18000.0;
     if (fc > sampleRateOS * 0.45) fc = sampleRateOS * 0.45;
@@ -69,11 +80,18 @@ __attribute__((hot, flatten))
 void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
     if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
-    const float wet = wet_ * runtimeReductionMul_;
+    // Objetivo del wet efectivo (slider * reducción adaptativa). El one-pole
+    // wetNow_ converge por muestra OS en el loop de mezcla de abajo — el
+    // primer bloque tras setParams/arranque arranca desde el objetivo para
+    // no introducir un fade-in al reproducir por primera vez.
+    const float wetTarget = wet_ * runtimeReductionMul_;
+    if (wetNow_ <= 0.00001f && wetTarget > 0.00001f) wetNow_ = wetTarget;
+    float wetNow = wetNow_;
+    const float wetSm = wetSmooth_ > 0.f ? wetSmooth_ : 0.9995f;
 
     // Bypass perfecto: wet=0 debe ser bit-transparente.
     // No actualizar estados internos ni tocar buffers DSP.
-    if (wet <= 0.00001f) {
+    if (wetTarget <= 0.00001f && wetNow <= 0.00001f) {
         return;
     }
 
@@ -129,8 +147,8 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // como distorsion (sin modulacion muestra-a-muestra de la suma).
         const float headL = 1.0f - std::fabs(l);
         const float headR = 1.0f - std::fabs(r);
-        const float reqL = kExcCeiling * wet * std::fabs(excL);
-        const float reqR = kExcCeiling * wet * std::fabs(excR);
+        const float reqL = kExcCeiling * wetNow * std::fabs(excL);
+        const float reqR = kExcCeiling * wetNow * std::fabs(excR);
         const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
         const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
         if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
@@ -138,8 +156,14 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         if (scaleL > 1.0f) scaleL = 1.0f;
         if (scaleR > 1.0f) scaleR = 1.0f;
 
-        float outL = l + kExcCeiling * wet * excL * scaleL;
-        float outR = r + kExcCeiling * wet * excR * scaleR;
+        // Convergencia anti-zipper del wet efectivo (por muestra OS, ~15 ms).
+        // Antes el mix usaba el wet por bloque directo → clic en cada
+        // movimiento de slider o ajuste del lazo adaptativo.
+        wetNow = wetSm * wetNow + (1.0f - wetSm) * wetTarget;
+        wetNow_ = wetNow;
+
+        float outL = l + kExcCeiling * wetNow * excL * scaleL;
+        float outR = r + kExcCeiling * wetNow * excR * scaleR;
 
         // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
         if (!std::isfinite(outL)) outL = 0.f;
