@@ -74,7 +74,13 @@ public:
         delayBufR[writeIdx & (ITD_BUF_SIZE-1)] = xR;
 
         // ITD: delay amount (fractional, interpolated)
-        const float delay = std::clamp(itd_samples(sample_rate), 0.f, TAU_MAX_SAMP);
+        // FIX (imagen asimétrica): itd_samples() es negativo cuando θ<0
+        // (fuente a la izquierda) y el clamp a [0, TAU_MAX] lo anulaba —
+        // el retardo interaural SOLO se aplicaba a fuentes a la derecha.
+        // Resultado: pan a la izquierda sin ITD = imagen desplazada/rota
+        // en auriculares (el ILD sí funcionaba, el ITD no). Se toma |τ|
+        // y se aplica al oído contralateral según el signo de θ.
+        const float delay = std::clamp(std::fabs(itd_samples(sample_rate)), 0.f, TAU_MAX_SAMP);
         const int   d0    = (int)delay;
         const float frac  = delay - (float)d0;
 
