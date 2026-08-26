@@ -49,7 +49,7 @@ class AntiDolbyController(private val context: Context) {
     private val antiDolbyPreset = AntiDolbyPreset()
     
     private var classificationJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Default + Job())
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob()) // SupervisorJob: un child que falla no cancela el pipeline completo
     
     private var isInitialized = false
     private var isAntiDolbyEnabled = false
