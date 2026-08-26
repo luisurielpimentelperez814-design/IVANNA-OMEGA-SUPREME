@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME — post-fs-data.sh v2.1 (PATCH)
 # Fixes:
 #  - Anti-bootloop: solo dispara safe_mode si service.sh NUNCA logró correr

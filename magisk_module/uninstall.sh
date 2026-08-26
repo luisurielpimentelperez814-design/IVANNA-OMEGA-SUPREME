@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME — uninstall.sh v2.2
 # FIX v2.2: matar mqa_monitor.sh via MQA_PID_FILE antes de limpiar archivos.
 # v2.1 solo mataba el daemon (ivanna_daemon.pid) pero dejaba mqa_monitor.sh

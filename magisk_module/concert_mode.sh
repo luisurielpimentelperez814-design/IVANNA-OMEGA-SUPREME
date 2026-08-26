@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME — concert_mode.sh v1.1
 MODDIR="${1:-$(dirname "$0")}"
 CONTROL="$MODDIR/ivanna_control.sh"

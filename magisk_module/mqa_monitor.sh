@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME — mqa_monitor.sh v1.3 (FIX cableado socket)
 # - No arranca si el daemon no está vivo (evita loop inútil)
 # - dumpsys opcional; sale limpio si no está

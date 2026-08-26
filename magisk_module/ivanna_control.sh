@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME — ivanna_control.sh v2.0 (FIX cableado socket)
 #
 # CAMBIO CLAVE respecto v1.1:

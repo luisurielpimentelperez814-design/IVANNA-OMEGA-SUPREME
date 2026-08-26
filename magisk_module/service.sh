@@ -1,4 +1,5 @@
 #!/system/bin/sh
+set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
 # IVANNA OMEGA SUPREME v6.3 - Magisk Realtime Daemon Service
 MODDIR=${0%/*}
 
