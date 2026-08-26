@@ -28,5 +28,18 @@ private:
     // active_[b] = false => la banda se salta bit-exacto.
     bool active_[NUM_BANDS] = {false,false,false,false,false,false,false,false};
     float sampleRate_ = 96000.0f;
+
+    // ── Anti-zipper (crossfade de coeficientes, ~15 ms) ────────────────────
+    // setBand() recalcula los 5 coeficientes del biquad en un instante; con
+    // la misma estructura direct-form-II y estado heredado, el salto de
+    // b0/b1/b2/a1/a2 produce un clic audible al arrastrar cualquier fader de
+    // EQ. Interpolar coeficientes por muestra atraviesa filtros intermedios
+    // potencialmente inestables con Q alto; la solucion segura y estandar es
+    // crossfade temporal: durante ~15 ms se procesa la banda vieja (estado
+    // intacto) y la nueva en paralelo, mezclando linealmente old->new.
+    Biquad prevL[NUM_BANDS];
+    Biquad prevR[NUM_BANDS];
+    int fade_[NUM_BANDS] = {};
+    int fadeLen_[NUM_BANDS] = {};
 };
 }

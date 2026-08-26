@@ -33,10 +33,26 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     const float y1L = wasActive ? bandsL[b].y1 : 0.f, y2L = wasActive ? bandsL[b].y2 : 0.f;
     const float x1R = wasActive ? bandsR[b].x1 : 0.f, x2R = wasActive ? bandsR[b].x2 : 0.f;
     const float y1R = wasActive ? bandsR[b].y1 : 0.f, y2R = wasActive ? bandsR[b].y2 : 0.f;
+    // Anti-zipper: guardar el filtro saliente como copia y arrancar un
+    // crossfade temporal (~15 ms) en process(). Sin esto, el salto de
+    // coeficientes mete un clic audible al arrastrar los faders de EQ.
+    // Si la banda estaba inactiva (filtro = identidad), no hace falta
+    // fundido — la salida vieja es bit-exacta a la entrada.
+    if (wasActive) {
+        prevL[b] = bandsL[b];
+        prevR[b] = bandsR[b];
+        fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
+        fade_[b] = fadeLen_[b];
+    } else {
+        fade_[b] = 0;
+    }
     bandsL[b] = {b0,b1,b2,a1,a2,x1L,x2L,y1L,y2L};
     bandsR[b] = {b0,b1,b2,a1,a2,x1R,x2R,y1R,y2R};
     // Umbral 0.02 dB: por debajo es inaudible (< 1/20 del JND de nivel) y la
     // banda se marca inactiva para saltarse por completo en process().
+    // NOTA: si la banda queda inactiva pero hay un fundido en curso (usuario
+    // llevó el fader a 0 dB de golpe), process() debe dejar terminar el
+    // crossfade hacia la identidad — por eso fade_ se consulta aparte.
     active_[b] = (g > 0.02f || g < -0.02f);
 }
 
@@ -95,12 +111,30 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
     // Lista de bandas activas resuelta fuera del loop de muestras: en
     // configuracion plana (todos los faders a 0 dB) el EQ es un no-op
     // bit-exacto y la cadena queda transparente de verdad.
+    // Lista de bandas a procesar: activas O con fundido anti-zipper en curso
+    // (una banda recién puesta a 0 dB sigue procesando hasta terminar de
+    // fundirse hacia la identidad — sin clic al apagarla).
     int idx[NUM_BANDS]; int nAct = 0;
-    for(int b=0;b<NUM_BANDS;++b) if(active_[b]) idx[nAct++]=b;
+    for(int b=0;b<NUM_BANDS;++b) if(active_[b] || fade_[b] > 0) idx[nAct++]=b;
     if(nAct==0) return;
     for(int i=0;i<frames;++i){
         float L=l[i], R=r[i];
-        for(int k=0;k<nAct;++k){ const int b=idx[k]; L=bandsL[b].processSample(L); R=bandsR[b].processSample(R); }
+        for(int k=0;k<nAct;++k){
+            const int b=idx[k];
+            float nL=bandsL[b].processSample(L), nR=bandsR[b].processSample(R);
+            if (fade_[b] > 0) {
+                // Crossfade lineal old->new sobre la salida de la banda.
+                // prevL/prevR conservan su propio estado, así la rama vieja
+                // sigue siendo el filtro original hasta desvanecerse.
+                const float t = 1.0f - (float)fade_[b] / (float)fadeLen_[b];
+                const float oL = prevL[b].processSample(L);
+                const float oR = prevR[b].processSample(R);
+                nL = oL + (nL - oL) * t;
+                nR = oR + (nR - oR) * t;
+                fade_[b]--;
+            }
+            L=nL; R=nR;
+        }
         l[i]=L; r[i]=R;
     }
 #pragma clang diagnostic pop
