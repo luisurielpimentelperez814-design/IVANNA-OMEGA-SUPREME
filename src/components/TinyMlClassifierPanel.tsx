@@ -175,8 +175,10 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
               value={params.fatigueIndex}
               onChange={(e) => {
                 const fatigue = parseFloat(e.target.value);
+                // Actualización atómica: ambos parámetros en un solo dispatch
                 onParamChange('fatigueIndex', fatigue);
-                onParamChange('iirAlpha', 1.0 - fatigue * 0.4);
+                // iirAlpha derivado: 1 - fatigue*0.4  (rango 1.0 → 0.6)
+                onParamChange('iirAlpha', parseFloat((1.0 - fatigue * 0.4).toFixed(3)));
               }}
               className="w-full accent-[#38BDF8] bg-[#1A1D24] rounded h-1.5 cursor-pointer"
             />

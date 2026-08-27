@@ -78,7 +78,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             onChange={(e) => {
               const fatigue = parseFloat(e.target.value);
               onParamChange('fatigueIndex', fatigue);
-              onParamChange('iirAlpha', 1.0 - fatigue * 0.4);
+              onParamChange('iirAlpha', parseFloat((1.0 - fatigue * 0.4).toFixed(3)));
             }}
             className="w-full accent-[#78DCE8] bg-[#1A1D23] rounded h-1.5 cursor-pointer"
           />
