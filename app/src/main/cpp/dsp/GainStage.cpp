@@ -14,8 +14,18 @@ void GainStage::setParams(const DSPParams& p) {
     oneMinusSmooth_ = 1.0f - smoothCoeff_;
     inputGain_ = dbToLin((p.mix - 0.5f) * 12.0f);
     outputGain_ = dbToLin(p.master);
-    currentIn_ = inputGain_;
-    currentOut_ = outputGain_;
+    // FIX (clicks al mover sliders): setParams() saltaba currentIn_/currentOut_
+    // directamente al nuevo objetivo, anulando la rampa anti-zipper de 15 ms
+    // del propio process(). Cada actualizacion de mix/master desde la UI (o del
+    // motor adaptativo) era un escalon de ganancia de bloque -> chasquido.
+    // Ahora solo se inicializa en el primer setParams o si cambio el sample
+    // rate (donde no hay continuidad de senal que preservar).
+    if (!initialized_ || sr_ != lastSr_) {
+        initialized_ = true;
+        lastSr_ = sr_;
+        currentIn_ = inputGain_;
+        currentOut_ = outputGain_;
+    }
 }
 
 void GainStage::processInput(float* __restrict__ left, float* __restrict__ right, int frames) {

@@ -22,6 +22,8 @@ private:
     float currentIn_ = 1.0f;
     float currentOut_ = 1.0f;
     float runtimeMul_ = 1.0f;
+    float lastSr_ = 0.0f;
+    bool  initialized_ = false;
 
     // FIX (ruido digital): aqui vivia un limitador brick-wall de 1 muestra de
     // ataque, en cascada delante del SafetyLimiter. Dos limiters en serie con
