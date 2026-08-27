@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { usePersist } from '../usePersist';
 import { DspParameters } from '../types';
 import { Play, Pause, Radio, Activity } from 'lucide-react';
 
@@ -10,9 +11,9 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
   const oscCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const specCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [signalType, setSignalType] = useState<'sine' | 'impulse' | 'harmonics' | 'noise'>('harmonics');
-  const [fundamentalFreq, setFundamentalFreq] = useState(440);
+  const [isPlaying, setIsPlaying] = usePersist<boolean>('viz_isPlaying', false);
+  const [signalType, setSignalType] = usePersist<'sine' | 'impulse' | 'harmonics' | 'noise'>('viz_signalType', 'harmonics');
+  const [fundamentalFreq, setFundamentalFreq] = usePersist<number>('viz_fundamentalFreq', 440);
 
   // Web Audio Context & Oscillator setup for audio preview
   const audioCtxRef = useRef<AudioContext | null>(null);
