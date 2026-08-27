@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { usePersist } from '../usePersist';
 import { Shield, Cpu, Terminal, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const MagiskIntegrationPanel: React.FC = () => {
-  const [status, setStatus] = useState<'idle' | 'checking' | 'granted' | 'denied'>('idle');
-  const [logs, setLogs] = useState<string[]>([]);
+  const [status, setStatus] = usePersist<'idle' | 'checking' | 'granted' | 'denied'>('magisk_status', 'idle');
+  const [logs, setLogs] = usePersist<string[]>('magisk_logs', []);
 
   const addLog = (msg: string) => {
     setLogs(prev => [...prev, `[${new Date().toISOString().substring(11, 19)}] ${msg}`].slice(-6));
