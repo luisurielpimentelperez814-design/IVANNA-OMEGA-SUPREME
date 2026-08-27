@@ -8,7 +8,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.spatial.AutoEqManager
-import com.ivanna.omega.spatial.ComputerVisionScanner
 import com.ivanna.omega.spatial.IvannaSpatialManager
 
 @Composable
@@ -22,7 +21,6 @@ fun Phase7Screen(onBack: () -> Unit) {
     }
     val profile = remember { AutoEqManager.availableProfiles.first() }
 
-    var scanResult by remember { mutableStateOf<String?>(null) }
     var eqEnabled by remember { mutableStateOf(prefs.getBoolean("autoEqEnabled", false)) }
     var eqApplied by remember { mutableStateOf(false) }
 
@@ -52,19 +50,17 @@ fun Phase7Screen(onBack: () -> Unit) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Visión Computacional (ARCore)", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = {
-                    val data = ComputerVisionScanner.scanEarTopology()
-                    scanResult = "Ancho: ${data.headWidthMm}mm\n" +
-                        "Profundidad: ${data.headDepthMm}mm\n" +
-                        "Pinna: ${data.pinnaCavityDepthMm}mm\n" +
-                        "Longitud oreja: ${data.earLengthMm}mm"
-                }) {
-                    Text("Escanear Topología de Oreja")
-                }
-                if (scanResult != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(scanResult ?: "", color = MaterialTheme.colorScheme.secondary)
-                }
+                // El escaneo antropométrico real (MediaPipe/ARCore) no está
+                // implementado: la versión anterior devolvía medidas fijas
+                // hardcodeadas fingiendo un escaneo. Eliminado por completo.
+                // La calibración antropométrica real hoy es la manual:
+                // sliders de pinna (PinnaMetricsSection) → sujeto HRTF más
+                // cercano del dataset (SaFCalibrationScreen).
+                Text(
+                    "No disponible. La calibración antropométrica activa es la manual (medidas de pinna) en la pantalla de calibración SAF.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
         }
         
