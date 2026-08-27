@@ -504,24 +504,26 @@ static int32_t omega_process(effect_handle_t self,
         if (auto* classifier = fc->getClassifier()) {
             uint8_t domClass = classifier->getDominantClass();
             // 0: Speech, 1: Music, 2: Transient, 3: Noise
-            if (domClass == 0) {
-                // Speech: Focus vocal (reducción espacial sutil)
-                for (int n = 0; n < chunk; ++n) {
-                    float m = (L[n] + R[n]) * 0.5f;
-                    float s = (L[n] - R[n]) * 0.5f;
-                    s *= 0.8f; // Atenuar side
-                    L[n] = m + s;
-                    R[n] = m - s;
-                }
-            } else if (domClass == 1) {
-                // Music: Expansión estéreo armónica
-                for (int n = 0; n < chunk; ++n) {
-                    float m = (L[n] + R[n]) * 0.5f;
-                    float s = (L[n] - R[n]) * 0.5f;
-                    s *= 1.2f; // Expandir side
-                    L[n] = m + s;
-                    R[n] = m - s;
-                }
+            // FIX (tronidos, 2026-08-27): la ganancia del side saltaba DURO
+            // entre bloques cuando el clasificador cambiaba de clase
+            // (0.8 -> 1.0 -> 1.2: escalones de ±4 dB en la frontera del
+            // bloque, ~cada 50 ms con música hablada -> tronido/zipper
+            // audible continuo). Mismo patrón que el fix de voice-protect
+            // de Ruta A: EMA por muestra (~10 ms) con el SR real de la
+            // sesión, convergencia suave hacia el objetivo de la clase.
+            const float sideTarget = (domClass == 0) ? 0.8f
+                                   : (domClass == 1) ? 1.2f : 1.0f;
+            static thread_local float s_sideGainSmooth = 1.0f;
+            const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                 ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float sideCoef = std::exp(-1.0f / (0.010f * (float)srNow));
+            for (int n = 0; n < chunk; ++n) {
+                s_sideGainSmooth += (1.0f - sideCoef) * (sideTarget - s_sideGainSmooth);
+                const float m = (L[n] + R[n]) * 0.5f;
+                float sv = (L[n] - R[n]) * 0.5f;
+                sv *= s_sideGainSmooth;
+                L[n] = m + sv;
+                R[n] = m - sv;
             }
         }
 
