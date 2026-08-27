@@ -65,6 +65,7 @@ private:
     float m_sampleRate = 48000.f;
     float m_gainNow    = 1.0f;      // ganancia aplicada actual (suavizada)
     float m_releaseCoef = 0.f;      // coeficiente de release (por muestra)
+    float m_attackCoef  = 0.f;      // coeficiente de ataque ~1.5 ms (por muestra)
 
     std::atomic<float> m_peakBefore{0.0f};
     std::atomic<float> m_gainReduction{0.0f};

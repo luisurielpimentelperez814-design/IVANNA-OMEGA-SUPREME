@@ -12,7 +12,21 @@ namespace ivanna {
 // ── Constantes del limiter (TAREA 5) ────────────────────────────────────────
 namespace {
     constexpr float kReleaseMs   = 50.0f;   // release suave
+    constexpr float kAttackMs    = 1.5f;    // ataque corto pero continuo
     constexpr float kKneeRatio   = 0.1f;    // soft-knee 10:1 sobre threshold
+
+// Saturacion suave hacia el techo: identidad por debajo del 90 % del ceiling,
+// curva racional (continua en valor y pendiente) por encima, y nunca supera
+// el ceiling. Sustituye al recorte duro del final de process().
+inline float softCeil(float x, float ceil_) {
+    const float knee = ceil_ * 0.9f;
+    const float ax = x < 0.f ? -x : x;
+    if (ax <= knee) return x;
+    const float range = ceil_ - knee;          // > 0
+    const float over  = (ax - knee) / range;   // >= 0
+    const float y = knee + range * (over / (1.0f + over));
+    return x < 0.f ? -y : y;
+}
 } // namespace
 
 void SafetyLimiter::setParams(float threshold, float ceiling) {
@@ -24,6 +38,7 @@ void SafetyLimiter::setSampleRate(float sampleRate) {
     if (sampleRate > 8000.f) m_sampleRate = sampleRate;
     // Coeficiente de release (decaimiento exponencial por muestra).
     m_releaseCoef = std::exp(-1.0f / (m_sampleRate * kReleaseMs / 1000.f));
+    m_attackCoef  = std::exp(-1.0f / (m_sampleRate * kAttackMs  / 1000.f));
 }
 
 // Ganancia objetivo (<=1) para un peak lineal dado. Soft-knee: por encima del
@@ -127,16 +142,28 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         return;
     }
 
-    // Ganancia del bloque: ataque inmediato (el pico ya es conocido de
-    // antemano), release exponencial de 50 ms entre picos. La ganancia NO
-    // sigue la forma de onda muestra a muestra -> sin modulacion de amplitud
-    // (que es distorsion armonica) ni pumping.
+    // Ganancia del bloque: objetivo derivado del peak del bloque, ataque
+    // continuo de ~1.5 ms y release exponencial de 50 ms entre picos. La
+    // ganancia NO sigue la forma de onda muestra a muestra -> sin modulacion
+    // de amplitud (que es distorsion armonica) ni pumping.
+    // FIX (chasquidos / distorsion armonica): el ataque era instantaneo en la
+    // PRIMERA muestra del bloque (gain = min(gainNow, blockGain)). Ese escalon
+    // de ganancia cae siempre en la frontera de bloque, donde la senal no tiene
+    // por que estar en un cruce por cero -> discontinuidad periodica a razon de
+    // un evento por buffer = chasquido/tronido audible, y espectralmente un
+    // peine de armonicos a la frecuencia de bloque. Ahora el ataque converge
+    // por muestra (~1.5 ms), asi que la envolvente de ganancia es continua.
+    // El residuo que pueda asomar durante la rampa lo recoge la saturacion
+    // suave de abajo (antes era un recorte duro = onda cuadrada).
     const float blockGain = computeGainForPeak(peak);
+    if (m_attackCoef <= 0.f) m_attackCoef = std::exp(-1.0f / (m_sampleRate * kAttackMs / 1000.f));
     float gain = m_gainNow;
-    if (blockGain < gain) gain = blockGain;
 
     for (int i = 0; i < frames; ++i) {
-        if (blockGain >= gain) {
+        if (blockGain < gain) {
+            gain = m_attackCoef * gain + (1.0f - m_attackCoef) * blockGain;
+            if (gain < blockGain) gain = blockGain;
+        } else {
             gain = m_releaseCoef * gain + (1.0f - m_releaseCoef);
             if (gain > 1.0f) gain = 1.0f;
         }
@@ -144,11 +171,14 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         float outL = L[i] * gain;
         float outR = R[i] * gain;
 
-        // Seguridad dura final (NaN/Inf o residuo numerico) — silenciosa.
+        // Seguridad final: NaN/Inf a cero y saturacion SUAVE del residuo.
+        // El clip duro anterior (copysign al ceiling) aplanaba la cresta ->
+        // armonicos impares de banda ancha. softCeil() curva el excedente y
+        // solo toca el ultimo tramo antes del techo.
         if (!std::isfinite(outL)) outL = 0.f;
         if (!std::isfinite(outR)) outR = 0.f;
-        if (std::fabs(outL) > ceil_) outL = std::copysign(ceil_, outL);
-        if (std::fabs(outR) > ceil_) outR = std::copysign(ceil_, outR);
+        outL = softCeil(outL, ceil_);
+        outR = softCeil(outR, ceil_);
 
         L[i] = outL;
         R[i] = outR;
