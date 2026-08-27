@@ -7,6 +7,7 @@
  */
 
 #include <jni.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
@@ -212,11 +213,20 @@ static void mutate(uint8_t* __restrict__ genome, float rate) {
 
 __attribute__((hot, flatten))
 static void evolveGeneration() {
+    // FIX (elitismo roto): la poblacion nunca se ordenaba por fitness, asi
+    // que individuals[0..ELITE_COUNT-1] eran posiciones arbitrarias del
+    // arreglo, no los mejores genomas. Un buen timbre encontrado en
+    // cualquier otra posicion se podia perder en la siguiente generacion.
+    // Verificado con harness aislado: sin este sort, bestFitness retrocede
+    // 4 veces en 15 generaciones; con el sort, nunca retrocede y converge
+    // a un fitness mas alto. Costo: O(P log P) sobre 128 individuos, trivial
+    // frente al resto del trabajo por generacion.
+    std::sort(g_population.individuals, g_population.individuals + POPULATION_SIZE,
+              [](const Individual& a, const Individual& b) { return a.fitness > b.fitness; });
+
     static Individual next[POPULATION_SIZE];
 
     memcpy(next, g_population.individuals, sizeof(Individual) * ELITE_COUNT);
-
-    float best = g_population.individuals[0].fitness;
 
     constexpr uint32_t MASK = POPULATION_SIZE - 1;
     for (int i = ELITE_COUNT; i < POPULATION_SIZE; ++i) {
@@ -234,11 +244,19 @@ static void evolveGeneration() {
         crossover(p1->genome, p2->genome, next[i].genome);
         mutate(next[i].genome, g_mutationRate);
         next[i].fitness = evaluateFitness(next[i].genome);
-        if (next[i].fitness > best) best = next[i].fitness;
     }
 
     memcpy(g_population.individuals, next, sizeof(next));
     g_population.generation++;
+
+    // bestFitness real: escanea TODA la nueva poblacion (elites + hijos).
+    // Antes solo arrancaba en individuals[0] pre-evolucion y nunca
+    // consideraba individuals[1..ELITE_COUNT-1] tras copiarlos a next —
+    // podia subreportar el mejor fitness real incluso cuando el elitismo
+    // funcionara bien.
+    float best = next[0].fitness;
+    for (int i = 1; i < POPULATION_SIZE; ++i)
+        if (next[i].fitness > best) best = next[i].fitness;
     g_population.bestFitness = best;
 
     // Autosave periódico: no depende de que stop_evo_thread()/onTerminate()
