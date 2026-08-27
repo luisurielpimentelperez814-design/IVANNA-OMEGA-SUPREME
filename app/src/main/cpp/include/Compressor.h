@@ -39,6 +39,7 @@ private:
     float env_ = 0.0f;
     float runtimeAmount_ = 0.0f;   // valor suavizado (uso real en process)
     float runtimeTarget_ = 0.0f;   // objetivo fijado por setRuntimeAmount
+    uint32_t lastSr_ = 0;             // sample rate con el que se armo el sidechain
     float runtimeCoef_ = 0.0f;     // coef one-pole; 0 => recalcular en process
 
     Biquad scHpfL_;

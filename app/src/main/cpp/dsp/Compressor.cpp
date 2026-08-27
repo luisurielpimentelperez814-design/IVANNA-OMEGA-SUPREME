@@ -54,18 +54,28 @@ void Compressor::setParams(const DSPParams& p) {
 
     runtimeCoef_ = 0.0f;  // forzar recálculo si cambió sr_ (ver process())
 
-    scHpfL_.setHighpass(
-        120.0,
-        0.70710678,
-        static_cast<double>(p.sampleRate));
+    // FIX (chasquidos al mover sliders): setParams() recalculaba el sidechain
+    // HPF y ademas reseteaba su estado en CADA llamada. Arrastrar cualquier
+    // fader (alpha/beta/gamma) vaciaba el historial del filtro -> el detector
+    // veia un transitorio artificial -> salto de ganancia audible por cada
+    // evento de UI. Los coeficientes solo dependen del sample rate, asi que se
+    // recalculan (y el estado se limpia) unicamente cuando el sr cambia.
+    if (p.sampleRate != lastSr_) {
+        lastSr_ = p.sampleRate;
 
-    scHpfR_.setHighpass(
-        120.0,
-        0.70710678,
-        static_cast<double>(p.sampleRate));
+        scHpfL_.setHighpass(
+            120.0,
+            0.70710678,
+            static_cast<double>(p.sampleRate));
 
-    scHpfL_.reset();
-    scHpfR_.reset();
+        scHpfR_.setHighpass(
+            120.0,
+            0.70710678,
+            static_cast<double>(p.sampleRate));
+
+        scHpfL_.reset();
+        scHpfR_.reset();
+    }
 }
 
 void Compressor::setThreshold(float db) {
