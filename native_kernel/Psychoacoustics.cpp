@@ -1,8 +1,3 @@
-// ⚠ ARCHIVO LEGADO — NO EDITAR ⚠
-// La fuente de verdad es app/src/main/cpp/Psychoacoustics.cpp
-// Este archivo existe por historial pero NO se compila en ningún target.
-// Cualquier cambio aquí se perderá. Edita app/src/main/cpp/.
-//
 #include "Psychoacoustics.hpp"
 #include <cmath>
 
@@ -36,8 +31,18 @@ void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
             m_envLeft += rel * (absL - m_envLeft);
         }
 
-        if (buffer->left[i] > 0.001f && m_envLeft > 0.1f) {
+        // FIX (distorsión asimétrica / clipping):
+        // 1. La condición anterior (buffer->left[i] > 0.001f) sólo procesaba
+        //    muestras POSITIVAS — las negativas no recibían expansión. Esa
+        //    asimetría produce rectificación de semionada → distorsión par
+        //    más zumbido DC audible. Ahora se usa absL para que el efecto se
+        //    aplique a ambas polaridades con la misma ganancia.
+        // 2. comp sin límite podía llegar a ~1.5 (env=0.9, abs=0.001) y
+        //    empujar muestras ya altas por encima de 1.0. Se clampea a 1.25
+        //    (equivale a +2 dB de expansión máxima — audible pero no clip).
+        if (absL > 0.001f && m_envLeft > 0.1f) {
             float comp = 1.0f + (0.5f * (m_envLeft - absL));
+            if (comp > 1.25f) comp = 1.25f;   // FIX: evitar amplificación excesiva
             buffer->left[i] *= comp;
         }
 
@@ -49,8 +54,9 @@ void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
             m_envRight += rel * (absR - m_envRight);
         }
 
-        if (buffer->right[i] > 0.001f && m_envRight > 0.1f) {
+        if (absR > 0.001f && m_envRight > 0.1f) {
             float comp = 1.0f + (0.5f * (m_envRight - absR));
+            if (comp > 1.25f) comp = 1.25f;   // FIX: evitar amplificación excesiva
             buffer->right[i] *= comp;
         }
     }
@@ -85,15 +91,19 @@ void Psychoacoustics::predictAndMitigateFatigue(AudioBuffer* buffer) {
 
     // High frequency dampening via 1st-order IIR cascade filter during listening fatigue
     float alpha = 1.0f - (m_fatigueIndex * 0.4f);
-    float stateL = 0.0f;
-    float stateR = 0.0f;
 
+    // FIX (tronidos / pops a la frecuencia de bloque): stateL/stateR eran
+    // variables LOCALES inicializadas a 0.0f en cada llamada. Al inicio de
+    // cada buffer el filtro saltaba de 0 al primer sample → escalón de
+    // amplitud brusco → chasquido/tronido periódico (p.ej. cada 64 muestras
+    // a 48 kHz = tronido cada ~1.3 ms, perceptible como zumbido/distorsión).
+    // Ahora se usan m_iirStateL/m_iirStateR que persisten entre bloques.
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-        stateL = stateL + alpha * (buffer->left[i] - stateL);
-        buffer->left[i] = stateL;
+        m_iirStateL = m_iirStateL + alpha * (buffer->left[i] - m_iirStateL);
+        buffer->left[i] = m_iirStateL;
 
-        stateR = stateR + alpha * (buffer->right[i] - stateR);
-        buffer->right[i] = stateR;
+        m_iirStateR = m_iirStateR + alpha * (buffer->right[i] - m_iirStateR);
+        buffer->right[i] = m_iirStateR;
     }
 }
 

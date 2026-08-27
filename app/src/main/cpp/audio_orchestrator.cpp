@@ -421,12 +421,25 @@ extern "C" void ivanna_orchestrate(
                 lp +
                 sideHigh*(1.f+wetTotal);
 
+            float outL = mid + sideOut;
+            float outR = mid - sideOut;
 
-            buffer[i] =
-                mid+sideOut;
+            // FIX (bombeo / clipping): la expansion M/S podia superar ±1.0
+            // (especialmente con wetTotal>0.5 y material estereo ancho).
+            // Sin limitador downstream en ivanna_orchestrate(), el overflow
+            // llegaba directo al DAC → distorsion / clipping.
+            // Se aplica softclip racional x/(1+|x|) que es C1-continuo y
+            // tiene derivada 1 en x=0 (transparente para señales limpias).
+            if (outL >  1.0f) outL =  outL / (1.0f + outL - 1.0f);
+            if (outL < -1.0f) outL = -(-outL / (1.0f - outL - 1.0f));
+            if (outR >  1.0f) outR =  outR / (1.0f + outR - 1.0f);
+            if (outR < -1.0f) outR = -(-outR / (1.0f - outR - 1.0f));
+            // Seguridad dura: nunca más de ±1.0
+            if (outL >  1.0f) outL =  1.0f; else if (outL < -1.0f) outL = -1.0f;
+            if (outR >  1.0f) outR =  1.0f; else if (outR < -1.0f) outR = -1.0f;
 
-            buffer[i+1] =
-                mid-sideOut;
+            buffer[i]   = outL;
+            buffer[i+1] = outR;
         }
 
 

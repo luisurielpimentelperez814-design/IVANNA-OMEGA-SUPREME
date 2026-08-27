@@ -25,6 +25,14 @@ private:
     float m_fatigueIndex = 0.0f;
     float m_envLeft = 0.0f;
     float m_envRight = 0.0f;
+
+    // FIX (tronidos / pops periódicos): el IIR de predictAndMitigateFatigue
+    // usaba variables locales inicializadas a 0 en cada bloque. Cada buffer
+    // empezaba con un escalón de ganancia desde cero → discontinuidad audible
+    // a la frecuencia de bloque (típicamente 64-512 Hz → pop/tronido).
+    // Ahora el estado persiste entre bloques como miembro de la clase.
+    float m_iirStateL = 0.0f;
+    float m_iirStateR = 0.0f;
 };
 
 } // namespace Ivanna

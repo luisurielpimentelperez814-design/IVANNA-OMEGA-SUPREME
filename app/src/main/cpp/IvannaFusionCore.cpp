@@ -78,7 +78,27 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     m_hrtf->processBinauralScene(buffer);
 
     if (m_goldenEarActive) {
-        applyGoldenEarGAN(buffer);
+        applyGoldenEarGAN(buffer);  // contiene fast_tanh como limitador de salida
+    } else {
+        // FIX (clipping cuando GoldenEar está desactivado): la cadena
+        // applyMaskingCompensation + processBinauralScene puede empujar la
+        // señal por encima de 1.0 sin que ningún módulo la devuelva al rango
+        // seguro. Cuando GoldenEar está on, fast_tanh() actúa de limitador
+        // suave. Cuando está off, no había nada. Se aplica el mismo soft-clip
+        // Padé [3/2] sobre la señal antes de salir de process().
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        for (size_t i = 0; i < BLOCK_SIZE; i += 4) {
+            float32x4_t l = vld1q_f32(&buffer->left[i]);
+            float32x4_t r = vld1q_f32(&buffer->right[i]);
+            vst1q_f32(&buffer->left[i],  fast_tanh_neon(l));
+            vst1q_f32(&buffer->right[i], fast_tanh_neon(r));
+        }
+#else
+        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+            buffer->left[i]  = fast_tanh_scalar(buffer->left[i]);
+            buffer->right[i] = fast_tanh_scalar(buffer->right[i]);
+        }
+#endif
     }
 }
 
