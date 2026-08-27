@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -75,7 +76,20 @@ public:
 
     bool loadCustomHrtf(const char* /*path*/) noexcept { return false; }
     void setSpatialWidth(float /*w*/) noexcept {}
-    void setHarmonicGain(float g) noexcept { m_harmonicGain = g; }
+    void setHarmonicGain(float g) noexcept {
+        // FIX (anti-zipper): escalon duro por bloque → target + slew EMA.
+        // El slider mueve este parametro decenas de veces por segundo; sin
+        // suavizado, cada movimiento es un salto de ganancia del exciter
+        // (click audible). Mismo patron que RirConvolver::wetSmooth_ (10ms).
+        m_harmonicGainTarget = g;
+    }
+    float smoothedHarmonicGain() noexcept {
+        // tau ~10 ms @48k; m_sampleRate ya la fija initSpatial().
+        const float sr = m_sampleRate > 0.f ? m_sampleRate : 48000.f;
+        const float k  = std::exp(-1.0 / ((double)sr * 0.010));
+        m_harmonicGain += (float)k * (m_harmonicGainTarget - m_harmonicGain);
+        return m_harmonicGain;
+    }
     void setCompressorParams(float t, float r) noexcept { m_compThresh = t; m_compRatio = r; }
     void setIntensity(float /*i*/)                          noexcept {}
     void setRouteProfile(float /*bass*/, float /*dialog*/,
