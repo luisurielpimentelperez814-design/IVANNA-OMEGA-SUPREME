@@ -82,8 +82,21 @@ void RirConvolver::unload() noexcept {
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {
-    const float wet = wetDry_.load(std::memory_order_relaxed);
-    if (wet < 1e-4f || !loaded_.load(std::memory_order_acquire)) return;
+    const float wetTarget = wetDry_.load(std::memory_order_relaxed);
+
+    // Anti-zipper: coeficiente one-pole una sola vez (~10 ms a 48 kHz OS).
+    // wetSmooth_==0 → primera pasada; se deriva del sampleRate si está
+    // disponible, si no 0.9995 es equivalente a ~10 ms.
+    if (wetSmooth_ <= 0.f) {
+        wetSmooth_ = (float)std::exp(-1.0 / (48000.0 * 0.010));  // ~10 ms @48k
+    }
+    // Snap inicial: si el efecto acaba de activarse, arrancar en el target
+    // para no arrastrar un barrido largo desde 0 (evita "fade-in" espurio).
+    if (wetNow_ <= 0.00001f && wetTarget > 0.00001f) wetNow_ = wetTarget;
+
+    // Bypass limpio: solo cuando tanto el target como el suavizado están en 0
+    if (wetTarget < 1e-4f && wetNow_ < 1e-4f) return;
+    if (!loaded_.load(std::memory_order_acquire)) return;
 
     // Aplicar IR pendiente si load() fue llamado desde el hilo de control.
     // FIX (tronidos, 2026-08-27): antes se hacia memcpy duro + memset del
@@ -123,7 +136,6 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
     }
 
     const int n = std::min(frames, BLOCK);
-    const float dry = 1.f - wet;
 
     // Procesar L
     {
@@ -145,9 +157,12 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
-        // Mezcla wet/dry — tomar muestras válidas del overlap-save (offset ol)
-        for (int i = 0; i < n; ++i)
-            L[i] = dry * L[i] + wet * workRe_[ol + i];
+        // Mezcla wet/dry POR MUESTRA (anti-zipper) — el wet converge suave
+        for (int i = 0; i < n; ++i) {
+            wetNow_ = wetTarget + wetSmooth_ * (wetNow_ - wetTarget);
+            const float dryNow = 1.f - wetNow_;
+            L[i] = dryNow * L[i] + wetNow_ * workRe_[ol + i];
+        }
     }
 
     // Procesar R (simétrico)
@@ -167,8 +182,11 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
-        for (int i = 0; i < n; ++i)
-            R[i] = dry * R[i] + wet * workRe_[ol + i];
+        for (int i = 0; i < n; ++i) {
+            wetNow_ = wetTarget + wetSmooth_ * (wetNow_ - wetTarget);
+            const float dryNow = 1.f - wetNow_;
+            R[i] = dryNow * R[i] + wetNow_ * workRe_[ol + i];
+        }
     }
 
     // FIX (tronidos): crossfade del IR en curso. Funde la IR anterior hacia

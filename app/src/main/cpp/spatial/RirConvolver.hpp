@@ -70,6 +70,10 @@ private:
     float workIm_[FFT_SIZE] = {};
 
     std::atomic<float> wetDry_{0.f};
+    // Anti-zipper del wet/dry: el slider se aplica por BLOQUE (escalón duro
+    // de ganancia = tronido). Se suaviza por muestra con un one-pole.
+    float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)
+    float wetSmooth_ = 0.0f;   // coef. one-pole; 0 = se deriva de sampleRate
     std::atomic<bool>  loaded_{false};
     std::atomic<bool>  pending_{false};
 
