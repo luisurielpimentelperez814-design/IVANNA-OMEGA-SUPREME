@@ -610,7 +610,16 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // asi dos sesiones simultaneas no comparten estado de gain-
                 // reduction ni se contaminan la telemetria entre si.
                 if (!ctx->safetyLimiter) ctx->safetyLimiter = new ivanna::SafetyLimiter();
-                if (ctx->safetyLimiter) ctx->safetyLimiter->setParams();
+                if (ctx->safetyLimiter) {
+                    ctx->safetyLimiter->setParams();
+                    // FIX CRITICO (clipping/bombeo, 2026-08-27): faltaba
+                    // setSampleRate() — ataque/release quedaban calculados
+                    // para 48 kHz aunque el HAL corriera a 96/192/384 kHz
+                    // (ataque real 3/6/12 ms -> transientes sin limitar ->
+                    // tronidos; release 100/200/400 ms -> bombeo grave).
+                    // `sr` ya esta validado arriba en este mismo handler.
+                    ctx->safetyLimiter->setSampleRate((float)sr);
+                }
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
