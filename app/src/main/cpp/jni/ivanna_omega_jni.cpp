@@ -529,6 +529,22 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_loudnessMeter.init((float)sr);
     g_dcBlockL.init((uint32_t)sr);
     g_dcBlockR.init((uint32_t)sr);
+    // FIX CRITICO (clipping/bombeo/tronidos, 2026-08-27): g_safety_limiter
+    // corria con los defaults del constructor — setSampleRate() y setParams()
+    // nunca se llamaban en Ruta A (grep: 0 call-sites). Consecuencias:
+    //   a) threshold == ceiling == 0.98855 -> soft-knee ANULADO: el limiter
+    //      actuaba como pared de ladrillo (toda la reduccion de golpe en un
+    //      solo bloque -> pumping; transientes fuertes -> thuds).
+    //   b) ataque/release calculados para 48 kHz aunque la sesion corriera a
+    //      96/192/384 kHz -> ataque real 3/6/12 ms (transientes pasan sin
+    //      limitar -> tronidos/clipping) y release 100/200/400 ms (bombeo
+    //      grave en musica con graves densos).
+    // setParams() restaura el knee real (threshold -4 dBFS, ceiling -0.1
+    // dBFS — ver include/SafetyLimiter.h) y setSampleRate() recalcula los
+    // coeficientes con la SR real de la sesion. Idempotente: se re-ejecuta
+    // si nativeInit se re-llama por cambio de SR.
+    g_safety_limiter.setParams();
+    g_safety_limiter.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
     // start() crea un std::thread propio (el hilo de control lento) que
@@ -1137,6 +1153,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_gain.setParams(g_params);
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
+    // FIX CRITICO (clipping/bombeo, 2026-08-27): mismo fix que nativeInit —
+    // el limiter necesita SR real (ataque 1.5ms/release 50ms correctos) y
+    // setParams() para el soft-knee (threshold -4 dBFS). Sin esto, esta ruta
+    // limitaba con pared de ladrillo y constantes de tiempo de 48 kHz.
+    g_safety_limiter.setParams();
+    g_safety_limiter.setSampleRate((float)sr);
     // FIX RT: inicializar RIR aquí (hilo de UI) — alocación + disco fuera
     // del callback de audio. nativeProcess solo leerá los punteros ya
     // publicados con acquire-load.
