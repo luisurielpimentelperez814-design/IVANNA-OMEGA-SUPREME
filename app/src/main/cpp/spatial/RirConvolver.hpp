@@ -79,6 +79,19 @@ private:
     float pendIrReR_[FFT_SIZE] = {};
     float pendIrImR_[FFT_SIZE] = {};
     int   pendOverlapLen_ = 0;
+
+    // FIX (tronidos, 2026-08-27): crossfade del IR al cambiar de sala.
+    // Antes el swap borraba el overlap y cambiaba el IR en seco — la cola
+    // de reverb se cortaba abruptamente = tronido audible. Ahora la IR
+    // anterior se conserva y se funde con la nueva durante XFADE_BLOCKS
+    // bloques (~43 ms @ 512/48k) en el dominio de la frecuencia; la cola
+    // vieja (overlap) sigue sirviéndose sin cortes durante el fade.
+    static constexpr int XFADE_BLOCKS = 4;  // 4 × 512 muestras ≈ 43 ms @48k
+    float oldIrReL_[FFT_SIZE] = {};
+    float oldIrImL_[FFT_SIZE] = {};
+    float oldIrReR_[FFT_SIZE] = {};
+    float oldIrImR_[FFT_SIZE] = {};
+    int   xfadeBlocks_ = 0;  // >0 mientras dura el crossfade
 };
 
 } // namespace Ivanna

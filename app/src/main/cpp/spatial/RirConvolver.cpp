@@ -85,15 +85,33 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
     const float wet = wetDry_.load(std::memory_order_relaxed);
     if (wet < 1e-4f || !loaded_.load(std::memory_order_acquire)) return;
 
-    // Aplicar IR pendiente si load() fue llamado desde el hilo de control
+    // Aplicar IR pendiente si load() fue llamado desde el hilo de control.
+    // FIX (tronidos, 2026-08-27): antes se hacia memcpy duro + memset del
+    // overlap -> la cola de reverb de la sala anterior se CORTABA en seco y
+    // la nueva IR entraba de golpe = discontinuidad audible en el stream.
+    // Ahora: la cola vieja se conserva (overlapLen_ no se toca hasta que
+    // termina el crossfade) y el nuevo IR se crossfadea con el viejo en el
+    // dominio de la frecuencia durante XFADE_BLOCKS bloques — la transición
+    // es continua, la cola vieja muere de forma natural.
     if (pending_.load(std::memory_order_acquire)) {
+        // Guardar la IR actual para el crossfade (si había una cargada)
+        const bool hadIr = (overlapLen_ > 0) || xfadeBlocks_ > 0;
+        if (hadIr) {
+            std::memcpy(oldIrReL_, irReL_, sizeof oldIrReL_);
+            std::memcpy(oldIrImL_, irImL_, sizeof oldIrImL_);
+            std::memcpy(oldIrReR_, irReR_, sizeof oldIrReR_);
+            std::memcpy(oldIrImR_, irImR_, sizeof oldIrImR_);
+            xfadeBlocks_ = XFADE_BLOCKS;
+        } else {
+            xfadeBlocks_ = 0;  // primera carga: no hay nada que fundir
+        }
         std::memcpy(irReL_, pendIrReL_, sizeof irReL_);
         std::memcpy(irImL_, pendIrImL_, sizeof irImL_);
         std::memcpy(irReR_, pendIrReR_, sizeof irReR_);
         std::memcpy(irImR_, pendIrImR_, sizeof irImR_);
-        overlapLen_ = pendOverlapLen_;
-        std::memset(overlapL_, 0, sizeof overlapL_);
-        std::memset(overlapR_, 0, sizeof overlapR_);
+        // IMPORTANTE: NO borrar overlapL_/overlapR_ ni cambiar overlapLen_
+        // aqui — la cola vieja sigue sirviendo muestras durante el fade.
+        // pendOverlapLen_ se aplica al final del crossfade.
         pending_.store(false, std::memory_order_release);
     }
 
@@ -144,6 +162,27 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         fftReal(workRe_, workIm_, FFT_SIZE, true);
         for (int i = 0; i < n; ++i)
             R[i] = dry * R[i] + wet * workRe_[ol + i];
+    }
+
+    // FIX (tronidos): crossfade del IR en curso. Funde la IR anterior hacia
+    // la nueva en el dominio de la frecuencia (lineal en potencia por bin).
+    // Al terminar, aplica pendOverlapLen_ (la cola vieja ya se desvaneció
+    // sola durante el fade — no se corta nada). Sin alloc, sin lock.
+    if (xfadeBlocks_ > 0) {
+        // alpha va de ~1 (recién cargada, casi todo viejo) a 0 (todo nuevo)
+        const float alpha = (float)xfadeBlocks_ / (float)(XFADE_BLOCKS + 1);
+        const float beta  = 1.0f - alpha;
+        for (int i = 0; i < FFT_SIZE; ++i) {
+            irReL_[i] = alpha * oldIrReL_[i] + beta * irReL_[i];
+            irImL_[i] = alpha * oldIrImL_[i] + beta * irImL_[i];
+            irReR_[i] = alpha * oldIrReR_[i] + beta * irReR_[i];
+            irImR_[i] = alpha * oldIrImR_[i] + beta * irImR_[i];
+        }
+        if (--xfadeBlocks_ == 0) {
+            // Fade terminado: la nueva IR ya domina al 100%. Ahora sí
+            // ajustamos la longitud de cola efectiva de la nueva sala.
+            overlapLen_ = pendOverlapLen_;
+        }
     }
 }
 
