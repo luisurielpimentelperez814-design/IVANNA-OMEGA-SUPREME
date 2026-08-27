@@ -1,4 +1,5 @@
 #include "IvannaFusionCore.hpp"
+#include "IvannaMath.hpp"
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
@@ -25,7 +26,7 @@ void IvannaFusionEngine::runAcousticProfiling() {
     m_evoEq->calibrateTargetRoom();
 }
 
-void IvannaFusionEngine::setGoldenEarMode(bool enable) {
+void IvannaFusionEngine::setGoldenEarMode(bool enable) noexcept {
     m_goldenEarActive = enable;
 }
 
@@ -43,7 +44,7 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     }
 }
 
-void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
+void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) noexcept {
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     float32x4_t drive = vdupq_n_f32(1.2f);
     float32x4_t mix = vdupq_n_f32(0.15f);

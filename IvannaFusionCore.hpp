@@ -1,4 +1,5 @@
 #pragma once
+#include "IvannaMath.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -45,13 +46,17 @@ public:
 
     void runAcousticProfiling();
     void process(AudioBuffer* buffer);
+    void setGoldenEarMode(bool enable) noexcept;
 
     IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
+    bool isGoldenEarActive() const noexcept { return m_goldenEarActive; }
 
     void processBlock(AudioBuffer* buffer) override { process(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
 
 private:
+    void applyGoldenEarGAN(AudioBuffer* buffer) noexcept;
+
     bool m_goldenEarActive = false;
     HrtfManager* m_hrtf = nullptr;
     EvolutionaryEQ* m_evoEq = nullptr;
