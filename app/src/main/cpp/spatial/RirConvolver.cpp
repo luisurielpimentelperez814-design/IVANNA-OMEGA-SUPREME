@@ -103,7 +103,14 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             std::memcpy(oldIrImR_, irImR_, sizeof oldIrImR_);
             xfadeBlocks_ = XFADE_BLOCKS;
         } else {
+            // FIX (primera carga): xfadeBlocks_=0 significa que el bloque de
+            // crossfade NUNCA corre, así que overlapLen_ jamás recibía
+            // pendOverlapLen_ — el offset de overlap-save quedaba en 0 y se
+            // leían muestras contaminadas del wrap circular. En primera carga
+            // no hay nada que fundir, pero la cola SÍ debe arrancar con la
+            // longitud correcta: aplicar pendOverlapLen_ de inmediato.
             xfadeBlocks_ = 0;  // primera carga: no hay nada que fundir
+            overlapLen_  = pendOverlapLen_;
         }
         std::memcpy(irReL_, pendIrReL_, sizeof irReL_);
         std::memcpy(irImL_, pendIrImL_, sizeof irImL_);
