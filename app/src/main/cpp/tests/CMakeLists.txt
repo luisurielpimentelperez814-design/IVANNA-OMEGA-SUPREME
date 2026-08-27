@@ -247,3 +247,10 @@ ivanna_add_test(test_audio_quality_metrics)
 # antes del SafetyLimiter. Este test barre drive × wet × 6 señales de peor
 # caso y falla si cualquiera de los dos límites se rompe otra vez.
 ivanna_add_test(test_harmonic_exciter_overshoot)
+
+# ── Timing hi-res del SafetyLimiter: barrera de regresión del bug 2026-08-27 ──
+# setSampleRate()/setParams() nunca se llamaban: soft-knee anulado (threshold
+# == ceiling) y ataque/release a 48 kHz fijos (a 384 kHz: ataque 12 ms,
+# release 400 ms -> clipping en transientes + bombeo). 4 tests miden el
+# comportamiento temporal real del limiter a 48k y 384k.
+ivanna_add_test(test_limiter_hires_timing)
