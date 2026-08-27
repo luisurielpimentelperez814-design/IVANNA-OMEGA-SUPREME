@@ -140,9 +140,29 @@ void SaFOptimizer::step(const float delta[SAF_K], float Et) {
          m_iter.load(), (double)alpha, (double)normG, (double)normM, (double)Et);
 }
 
+// Saturacion suave por dimension hacia kPMax[i] (kPMin[i] = -kPMax[i], rango
+// simetrico por construccion). Reemplaza el clamp duro: si el usuario da
+// feedback "incorrecto" repetido en la misma direccion, q_t puede empujar
+// contra el borde de S iteracion tras iteracion; el clamp duro produce un
+// salto no diferenciable justo en el borde (misma familia de problema que el
+// brick-wall de SafetyLimiter). Igual que softCeil() en dsp/SafetyLimiter.cpp:
+// identidad por debajo del 90% del rango, curva racional continua en valor y
+// pendiente por encima, nunca excede el limite fisiologico +-3 sigma_i.
+// No requiere Hessiano ni estado nuevo: cada dimension ya tiene su propio
+// limite kPMax[i], que es lo unico que esta funcion necesita.
+static inline float saturateDim(float q, float pMax) {
+    const float knee = pMax * 0.9f;
+    const float aq = std::fabs(q);
+    if (aq <= knee) return q;
+    const float range = pMax - knee;             // > 0
+    const float over  = (aq - knee) / range;      // >= 0
+    const float y = knee + range * (over / (1.0f + over));
+    return q < 0.f ? -y : y;
+}
+
 void SaFOptimizer::projectToS() {
     for (int i = 0; i < SAF_K; ++i)
-        m_q[i] = std::max(kPMin[i], std::min(kPMax[i], m_q[i]));
+        m_q[i] = saturateDim(m_q[i], kPMax[i]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
