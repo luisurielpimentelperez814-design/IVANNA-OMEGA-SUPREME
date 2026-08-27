@@ -117,13 +117,12 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                     drawPath(path, PhosphorGreen, style = Stroke(2f, cap = StrokeCap.Round))
                     drawCircle(PhosphorGreen, 4f, Offset(w, h - hist.last() * h * 0.85f - h * 0.05f))
                 } else {
-                    val path = Path()
-                    for (i in 0..80) {
-                        val x = i / 80f * w; val t = i / 80f * 3.14159f
-                        val y = h * 0.5f - (sin(t * 2 + cos(t * 3) * 0.5f) * h * 0.3f).toFloat()
-                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-                    drawPath(path, PhosphorGreen.copy(0.35f), style = Stroke(1.5f, cap = StrokeCap.Round))
+                    // Sin datos reales todavía: baseline plano en el piso del
+                    // canvas. Nada de curvas sintéticas — la verdad es que el
+                    // motor no ha publicado ninguna medición todavía.
+                    drawLine(PhosphorGreen.copy(0.35f),
+                        Offset(0f, h - h * 0.05f), Offset(w, h - h * 0.05f),
+                        1.5f, cap = StrokeCap.Round)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
