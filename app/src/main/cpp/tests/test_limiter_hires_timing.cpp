@@ -8,9 +8,10 @@
  *   1) threshold == ceiling (0.98855) → soft-knee anulado, pared de ladrillo
  *      → pumping/thuds en material con transientes densos.
  *   2) Ataque (1.5 ms) y release (50 ms) calculados con m_sampleRate=48 kHz
- *      fijo → a 96/192/384 kHz el ataque real era 3/6/12 ms (transientes
- *      pasaban sin limitar → tronidos/clipping) y el release 100/200/400 ms
- *      (bombeo grave audible).
+ *      fijo → a 96/192/384 kHz las constantes quedaban 2×/4×/8× CORTAS en
+ *      tiempo real (ataque 0.75/0.38/0.19 ms → tronidos en transientes;
+ *      release 25/12.5/6.25 ms → la ganancia rebota a la frontera de cada
+ *      bloque = bombeo/flutter audible).
  *
  * Estos tests miden el COMPORTAMIENTO temporal del limiter — no su estado
  * interno — para que la regresión se detecte aunque la implementación
@@ -37,24 +38,7 @@ void makePeakBurst(std::vector<float>& L, std::vector<float>& R,
     R[peakPos] = peakAmp;
 }
 
-// Cuenta en qué muestra del bloque la envolvente de ganancia recupera el
-// 90% del camino hacia 1.0 tras un pico. Devuelve -1 si nunca recupera.
-int measureReleaseSamples(ivanna::SafetyLimiter& lim,
-                          std::vector<float> L, std::vector<float> R,
-                          int peakPos, float peakAmp) {
-    lim.process(L.data(), R.data(), (int)L.size());
-    // La ganancia aplicada se observa como out/in en las muestras tras el
-    // pico (donde la entrada vuelve a ser pequeña y conocida).
-    // Medimos indirectamente: la amplitud de la sinusoide de salida tras
-    // el pico, buscando dónde vuelve al 90% de su nivel original.
-    const float baseAmp = 0.1f;
-    const int start = peakPos + 1;
-    const float target = baseAmp * 0.9f;
-    for (int i = start; i < (int)L.size() - 1; ++i) {
-        if (std::fabs(L[i]) >= target) return i - start;
-    }
-    return -1;
-}
+
 
 } // namespace
 
@@ -122,24 +106,48 @@ TEST(LimiterHiResTiming, AttackScalesWithRealSampleRate) {
 // muestras (mismo tiempo). Si el coeficiente quedara en 48 kHz, a 384 kHz
 // tardaría ~153600 muestras (400 ms) — 8× más.
 TEST(LimiterHiResTiming, ReleaseIsRealtimeAtHighSampleRate) {
-    const int N = 24000;         // 62.5 ms @ 384k — margen para 50 ms reales
-    const int peakPos = 500;
+    // El release solo ocurre ENTRE bloques: blockGain se calcula con el peak
+    // de cada bloque. Diseño: bloque 0 con pico 1.3 + DC 0.3; bloques
+    // siguientes de DC 0.3 puro (< threshold 0.631 -> blockGain=1 -> la
+    // envolvente suelta hacia 1.0 con el coeficiente de release).
+    const int blockSize = 512;
+    const int numBlocks = 120;               // 61440 muestras = 160 ms @384k
+    const float dcAmp = 0.3f;
 
     ivanna::SafetyLimiter lim;
     lim.setParams();
     lim.setSampleRate(384000.f);
-    std::vector<float> L(N), R(N);
-    makePeakBurst(L, R, N, 0.1f, 1.3f, peakPos);
-    lim.process(L.data(), R.data(), N);
 
-    const int recover = measureReleaseSamples(lim, L, R, peakPos, 1.3f);
-    ASSERT_NE(recover, -1) << "La ganancia nunca recuperó 90% en 62 ms @384k";
-    // 50 ms reales @384k = 19200 muestras. Permitimos hasta 22000 (≈57 ms)
-    // como tolerancia. Con el bug serían ~153600 (no alcanzable en N=24000,
-    // así que ASSERT_NE(-1) ya lo atrapa; el umbral refuerza).
-    EXPECT_LT(recover, 22000)
-        << "Release demasiado lento @384k: " << recover << " muestras "
-           "(=" << (recover / 384.0f) << " ms) — coeficientes a 48 kHz fijos?";
+    std::vector<float> L(blockSize, dcAmp), R(blockSize, dcAmp);
+    L[100] = 1.3f; R[100] = 1.3f;            // pico aislado en el bloque 0
+    lim.process(L.data(), R.data(), blockSize);
+
+    // Medir la envolvente de ganancia real (out/in sobre DC) hasta 90%.
+    int recover = -1, total = 0;
+    for (int b = 1; b < numBlocks && recover < 0; ++b) {
+        std::fill(L.begin(), L.end(), dcAmp);
+        std::fill(R.begin(), R.end(), dcAmp);
+        lim.process(L.data(), R.data(), blockSize);
+        for (int i = 0; i < blockSize; ++i) {
+            ++total;
+            if (L[i] / dcAmp >= 0.9f) { recover = total; break; }
+        }
+    }
+
+    ASSERT_NE(recover, -1)
+        << "La ganancia nunca recuperó 90% en 160 ms @384k";
+
+    // Cálculo exacto: tras el bloque del pico la ganancia converge por ataque
+    // (576 muestras tau @384k) quedando en ~0.78; el release correcto
+    // (19200 muestras tau) la lleva a 0.9 en ~15k muestras (~40 ms).
+    // Con el bug (coeficiente de 48 kHz aplicado a 384 kHz) serian ~1.9k
+    // muestras (~5 ms) — rebote 8× más rápido = bombeo. Umbral 8000:
+    // holgado para el caso correcto, atrapa el bug con 4× de margen.
+    EXPECT_GT(recover, 8000)
+        << "Release demasiado CORTO @384k: " << recover << " muestras "
+           "(=" << (recover / 384.0f) << " ms) — coeficientes de 48 kHz?";
+    EXPECT_LT(recover, 60000)
+        << "Release demasiado largo @384k: " << recover << " muestras";
 }
 
 // ── 4) Idempotencia: re-llamar setSampleRate por cambio de SR no rompe ────
