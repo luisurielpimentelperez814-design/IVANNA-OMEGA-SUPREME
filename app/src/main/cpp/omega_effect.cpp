@@ -617,8 +617,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // FIX CRITICO (clipping/bombeo, 2026-08-27): faltaba
                     // setSampleRate() — ataque/release quedaban calculados
                     // para 48 kHz aunque el HAL corriera a 96/192/384 kHz
-                    // (ataque real 3/6/12 ms -> transientes sin limitar ->
-                    // tronidos; release 100/200/400 ms -> bombeo grave).
+                    // (constantes 2x/4x/8x CORTAS: ataque 0.19 ms a 384k =
+                    // distorsion armonica; release 6.25 ms = bombeo).
                     // `sr` ya esta validado arriba en este mismo handler.
                     ctx->safetyLimiter->setSampleRate((float)sr);
                 }

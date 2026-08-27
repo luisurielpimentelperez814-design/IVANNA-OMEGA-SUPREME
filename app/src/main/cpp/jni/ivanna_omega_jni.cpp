@@ -536,9 +536,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     //      actuaba como pared de ladrillo (toda la reduccion de golpe en un
     //      solo bloque -> pumping; transientes fuertes -> thuds).
     //   b) ataque/release calculados para 48 kHz aunque la sesion corriera a
-    //      96/192/384 kHz -> ataque real 3/6/12 ms (transientes pasan sin
-    //      limitar -> tronidos/clipping) y release 100/200/400 ms (bombeo
-    //      grave en musica con graves densos).
+    //      96/192/384 kHz -> constantes 2x/4x/8x CORTAS: ataque de 0.19 ms a
+    //      384k (la envolvente sigue la forma de onda en graves -> distorsion
+    //      armonica) y release de 6.25 ms (rebote de ganancia a frecuencia de
+    //      bloque -> bombeo/flutter).
     // setParams() restaura el knee real (threshold -4 dBFS, ceiling -0.1
     // dBFS — ver include/SafetyLimiter.h) y setSampleRate() recalcula los
     // coeficientes con la SR real de la sesion. Idempotente: se re-ejecuta
@@ -1156,7 +1157,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // FIX CRITICO (clipping/bombeo, 2026-08-27): mismo fix que nativeInit —
     // el limiter necesita SR real (ataque 1.5ms/release 50ms correctos) y
     // setParams() para el soft-knee (threshold -4 dBFS). Sin esto, esta ruta
-    // limitaba con pared de ladrillo y constantes de tiempo de 48 kHz.
+    // limitaba con pared de ladrillo y constantes 8x cortas a 384 kHz
+    // (ataque 0.19ms = distorsion armonica; release 6.25ms = bombeo).
     g_safety_limiter.setParams();
     g_safety_limiter.setSampleRate((float)sr);
     // FIX RT: inicializar RIR aquí (hilo de UI) — alocación + disco fuera
