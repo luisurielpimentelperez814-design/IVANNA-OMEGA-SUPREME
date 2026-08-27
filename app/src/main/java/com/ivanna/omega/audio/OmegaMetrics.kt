@@ -5,7 +5,7 @@ data class OmegaMetrics(
     var peakLevel: Float = 0f,
     var clipCount: Int = 0,
     var cpuPercent: Float = 0f,
-    var latencyMs: Float = 2.8f,
+    var latencyMs: Float = 0f,  // 0 = sin medición; el bus mmap / updateSharedLevels publica el valor real por bloque
     // FIX (UI mostraba 96 kHz aún con hardware a 48 kHz): el default estaba
     // hardcodeado a 96000 y OmegaMetrics sólo se actualiza dentro de
     // IvannaBridgePlayer.pollOmegaMetrics(), que sólo corre reproduciendo por
