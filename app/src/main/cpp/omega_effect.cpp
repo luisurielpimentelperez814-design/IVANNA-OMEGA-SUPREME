@@ -13,6 +13,9 @@
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
 #include <cmath>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 // IvannaFusionCore = IvannaFusionEngine (alias en IvannaFusionCore.hpp).
 // using namespace evita cualificar con Ivanna:: en todo el archivo.
@@ -301,6 +304,69 @@ static void omega_rir_dataset_init() noexcept {
     g_rirDataset.store(ds, std::memory_order_release);
 }
 
+// ── Worker de carga de IR (Ruta B) ─────────────────────────────────────────
+// FIX RT (2026-08-27): loadImpulseResponse() lee un WAV de disco y aloca
+// vectores — antes se llamaba dentro de omega_process (callback de audio)
+// en cada cambio de sala -> I/O + alloc en el hot path = XRun/tronido.
+// Ahora el hot path solo publica {ctx, roomIdx} y este hilo de control
+// hace disco + FFT, entregando vía RirConvolver::load() (thread-safe con
+// process() vía pending_ + crossfade). El mutex solo protege secciones
+// de microsegundos (registro + entrega); el disco corre sin él.
+static std::mutex              g_rirBMtx;
+static std::condition_variable g_rirBCv;
+static std::atomic<bool>       g_rirBStarted{false};
+static std::vector<omega_effect_context_t*> g_rirBLive;   // ctx vivos
+static omega_effect_context_t* g_rirBCtx = nullptr;       // petición pendiente
+static int32_t                 g_rirBIdx = -1;
+
+static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
+    for (auto* c : g_rirBLive) if (c == ctx) return true;
+    return false;
+}
+
+static void omega_rir_worker_loop() {
+    std::unique_lock<std::mutex> lk(g_rirBMtx);
+    while (true) {
+        g_rirBCv.wait(lk, [] { return g_rirBIdx >= 0; });
+        omega_effect_context_t* ctx = g_rirBCtx;
+        const int32_t idx = g_rirBIdx;
+        g_rirBIdx = -1; g_rirBCtx = nullptr;
+        if (idx < 0 || !ctx) continue;
+        Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+        if (!ds) continue;
+        // Fase lenta SIN el mutex: disco + alloc (ds es proceso-global,
+        // inmutable tras su carga única en SET_CONFIG).
+        lk.unlock();
+        std::vector<float> irL, irR;
+        int sr = 0;
+        const bool ok = ds->loadImpulseResponse((size_t)idx, irL, irR, sr)
+                        && !irL.empty();
+        lk.lock();
+        // Fase rápida CON el mutex: entregar solo si el ctx sigue vivo
+        // (release_effect des-registra bajo el mismo mutex -> sin UAF).
+        if (!omega_rir_ctx_alive_locked(ctx) || !ctx->rirConvolver) continue;
+        if (!ok) {
+            LOGW("RirDataset: sala idx=%d no se pudo cargar — bypass", (int)idx);
+            ctx->rirConvolver->setWetDry(0.f);
+            continue;
+        }
+        int irLen = (int)irL.size();
+        if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+        ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
+        LOGI("RirConvolver: sala idx=%d sr=%dHz cargada (worker, fuera de RT)",
+             (int)idx, sr);
+    }
+}
+
+// Llamable desde el hilo de audio: publicación breve bajo mutex (contención
+// ~cero — el worker solo lo retiene para registro/entrega, nunca para disco).
+static void omega_rir_post_load(omega_effect_context_t* ctx, size_t roomIdx) noexcept {
+    std::lock_guard<std::mutex> lk(g_rirBMtx);
+    g_rirBCtx = ctx;
+    g_rirBIdx = (int32_t)roomIdx;
+    g_rirBCv.notify_one();
+}
+
 // ── Cable RIR: aplica la sala seleccionada por SET_ROOM_RT60 ─────────────────
 // Llamada desde omega_process cuando el snapshot tiene un room_rt60_s nuevo.
 // Si rt60==0 → bypass. Si hay una sala cargada con ese RT60 → load() en el
@@ -354,35 +420,14 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
         return;
     }
 
-    // Cargar la IR real (estéreo genuino — el dataset shippeado SÍ es
-    // estéreo, verificado con Python wave module al integrarlo; no hace
-    // falta duplicar mono→estéreo como asumía la versión anterior).
-    std::vector<float> irL, irR;
-    int sampleRateHz = 0;
-    if (!ds->loadImpulseResponse(roomIdx, irL, irR, sampleRateHz) || irL.empty()) {
-        LOGW("RirDataset: sala idx=%d no se pudo cargar — bypass", (int)roomIdx);
-        ctx->rirConvolver->setWetDry(0.f);
-        return;
-    }
-
-    // RirConvolver::MAX_IR limita la longitud de IR soportada (ver
-    // spatial/RirConvolver.hpp). Varias de las 200 salas reales superan
-    // esto ampliamente (hasta ~59500 muestras @16kHz, ~3.7s) — truncar
-    // defensivamente en vez de desbordar o crashear. Trunca la cola de
-    // reverberación tardía, conserva el reflejo temprano (lo perceptualmente
-    // más relevante para localización), degradación aceptable documentada.
-    int irLen = static_cast<int>(irL.size());
-    if (irLen > Ivanna::RirConvolver::MAX_IR) {
-        LOGW("RirConvolver: sala idx=%d IR=%d muestras > MAX_IR=%d — truncando "
-             "(se pierde cola de reverb tardía, se conserva reflejo temprano)",
-             (int)roomIdx, irLen, Ivanna::RirConvolver::MAX_IR);
-        irLen = Ivanna::RirConvolver::MAX_IR;
-    }
-
-    ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
+    // FIX RT (2026-08-27): la lectura del WAV + vectores salen de este hilo
+    // (omega_process = callback de audio). El worker de control hace disco +
+    // FFT y entrega vía RirConvolver::load() (crossfade incluido). El wet se
+    // aplica ya: si el IR aún no llegó, process() es no-op hasta entonces —
+    // la sala entra ~1-5 ms después, sin tronido ni XRun. La truncación a
+    // MAX_IR la hace el worker (mismo criterio: reflejo temprano conservado).
     ctx->rirConvolver->setWetDry(wet);
-    LOGI("RirConvolver: sala idx=%d RT60=%.2fs wet=%.2f sr=%dHz cargada",
-         (int)roomIdx, (double)rt60, (double)wet, sampleRateHz);
+    omega_rir_post_load(ctx, roomIdx);
 }
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
@@ -571,6 +616,17 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // callback omega_process. Ver omega_rir_dataset_init().
                 omega_rir_dataset_init();
                 if (!ctx->rirConvolver) ctx->rirConvolver = new Ivanna::RirConvolver();
+                // FIX RT (2026-08-27): arrancar el worker de carga de IR
+                // (hilo de control, proceso-global). Idempotente; el hilo
+                // duerme en la CV hasta que omega_apply_room publique una
+                // sala pendiente — cero coste mientras no hay cambios.
+                if (!g_rirBStarted.exchange(true, std::memory_order_acq_rel)) {
+                    std::thread(omega_rir_worker_loop).detach();
+                    // detach a propósito: vive el ciclo de vida del proceso
+                    // audioserver; el acceso a ctx se protege con g_rirBLive
+                    // bajo g_rirBMtx (release_effect des-registra antes de
+                    // liberar -> sin UAF aunque el hilo sobreviva al efecto).
+                }
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
                 // no creó el SHM (arranque en frío del audioserver), la
@@ -792,6 +848,12 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     // pendingSnap queda con magic=0 hasta el primer SET_PARAM (se sembrará
     // con makeDefault() ahí).
     memset(&ctx->pendingSnap, 0, sizeof(ctx->pendingSnap));
+    {
+        // Registrar en el set de ctx vivos del worker RIR (Ruta B) — el
+        // worker solo entrega IR a ctx registrados (anti-UAF).
+        std::lock_guard<std::mutex> lk(g_rirBMtx);
+        g_rirBLive.push_back(ctx);
+    }
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
 }
@@ -836,6 +898,22 @@ static int32_t omega_release_effect(effect_handle_t handle) {
     if (handle) {
         omega_effect_context_t *ctx =
             reinterpret_cast<omega_effect_context_t *>(handle);
+        {
+            // FIX UAF (2026-08-27): des-registrar del set de ctx vivos del
+            // worker RIR ANTES de liberar nada — si el hilo estaba a mitad
+            // de una entrega (disco ya leído, esperando el mutex), al
+            // adquirirlo comprobará alive() == false y descartará la IR
+            // en vez de escribir sobre memoria liberada.
+            std::lock_guard<std::mutex> lk(g_rirBMtx);
+            for (size_t i = 0; i < g_rirBLive.size(); ++i) {
+                if (g_rirBLive[i] == ctx) {
+                    g_rirBLive[i] = g_rirBLive.back();
+                    g_rirBLive.pop_back();
+                    break;
+                }
+            }
+            if (g_rirBCtx == ctx) { g_rirBCtx = nullptr; g_rirBIdx = -1; }
+        }
         if (ctx->fusionCore) {
             delete ctx->fusionCore;
             ctx->fusionCore = nullptr;
