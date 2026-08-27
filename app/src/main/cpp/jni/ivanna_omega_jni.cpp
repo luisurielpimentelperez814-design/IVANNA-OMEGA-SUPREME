@@ -894,18 +894,14 @@ g_exciter.process(chL, chR, n);
         if (peakAbs > kOutputCeiling && peakAbs > 1e-9f) {
             grDb = 20.0f * std::log10(peakAbs / kOutputCeiling);
         }
-        // FIX (output sin limiter): la cadena DSP→Limiter→PDEngine nunca tenía
-        // protección después del PDEngine. pdOutL/pdOutR con peak=2.5 iba directo
-        // al hardware. Aplicar el limiter sobre la salida real DESPUÉS de medir
-        // peakAbs (para que las métricas reflejen el pico que hubiera salido) y
-        // ANTES del M/S ensanchamiento y la copia a data.
-        g_safety_limiter.process(pdOutL, pdOutR, n);
-        // Anti-ruido digital: DC-block + NaN/Inf sanitize — ULTIMA etapa,
-        // despues del SafetyLimiter. Interleaved L/R.
-        for (int i = 0; i < n; ++i) {
-            pdOutL[i] = g_dcBlockL.process(pdOutL[i]);
-            pdOutR[i] = g_dcBlockR.process(pdOutR[i]);
-        }
+        // FIX (2026-08-27 — clipping residual post-limiter): el limiter ya no
+        // corre aquí. M/S widening (sideMul hasta ~1.5x) y la convolución RIR
+        // vienen DESPUÉS de este punto y pueden re-amplificar la señal por
+        // encima del ceiling — el limiter protegía una señal que aún no era
+        // la final. Se mueve (junto al DC-block) al final real de la cadena,
+        // tras RIR, justo antes del re-interleave. peakAbs ya se midió arriba
+        // (pre-limiter) para que las métricas/adaptativo sigan viendo el pico
+        // que hubiera salido sin protección.
         // 3) Voice score real (VoiceProtectionController → YAMNet TFLite).
         const float vpScore = g_voice_protect_score.load(std::memory_order_relaxed);
         // 4) Publicar. Es un memcpy de POD atrás de un seqlock, no bloquea.
@@ -1035,6 +1031,18 @@ g_exciter.process(chL, chR, n);
             s_rirConvolver->process(pdOutL, pdOutR, n);
         }
         } // !s_rirConvolver guard
+    }
+    // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
+    // FIX (clipping/bombeo/tronidos, 2026-08-27): ambos corren aquí, DESPUÉS
+    // del ensanchamiento M/S adaptativo (sideMul hasta ~1.5x) y de la
+    // convolución RIR (suma de cola de reverb). Antes estaban antes de esas
+    // dos etapas: el limiter protegía una señal intermedia y M/S + RIR podían
+    // volver a subir el nivel por encima del ceiling sin protección — de ahí
+    // los tronidos en material con mucha reverb o contenido casi-mono.
+    g_safety_limiter.process(pdOutL, pdOutR, n);
+    for (int i = 0; i < n; ++i) {
+        pdOutL[i] = g_dcBlockL.process(pdOutL[i]);
+        pdOutR[i] = g_dcBlockR.process(pdOutR[i]);
     }
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
