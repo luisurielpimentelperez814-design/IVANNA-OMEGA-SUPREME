@@ -10,6 +10,8 @@ import { NeonProfiler } from './components/NeonProfiler';
 import { CodeExporter } from './components/CodeExporter';
 import { DspParameters, BenchmarkMetrics, TinyMlClassification } from './types';
 import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
+import { DspPipeline } from './components/DspPipeline';
+import { ParameterControls } from './components/ParameterControls';
 import { usePersist } from './usePersist';
 
 const DEFAULT_PARAMS: DspParameters = {
@@ -58,7 +60,7 @@ const DEFAULT_METRICS: BenchmarkMetrics = {
   lastCalibratedAt: new Date().toLocaleTimeString(),
 };
 
-type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226';
+type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline';
 
 export default function App() {
   // ── Persistencia de tab activo ──────────────────────────────────────────────
@@ -310,6 +312,12 @@ export default function App() {
         {activeTab === 'code' && <CodeExporter />}
         {activeTab === 'iso226' && (
           <Iso226CalibrationPanel params={params} onParamChange={handleParamChange} />
+        )}
+        {activeTab === 'pipeline' && (
+          <div className="space-y-6">
+            <DspPipeline params={params} onParamChange={handleParamChange} />
+            <ParameterControls params={params} onParamChange={handleParamChange} />
+          </div>
         )}
       </main>
 

@@ -3,8 +3,8 @@ import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Spar
 import { DspParameters } from '../types';
 
 interface HeaderProps {
-  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226';
-  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226') => void;
+  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline';
+  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline') => void;
   params: DspParameters;
   onParamChange: (key: keyof DspParameters, value: any) => void;
   onApplyPreset: (presetName: DspParameters['activePreset']) => void;
@@ -230,6 +230,19 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <BarChart2 className="w-3.5 h-3.5 text-[#A855F7]" />
             <span>ISO 226 Calibr.</span>
+          </button>
+
+
+          <button
+            onClick={() => setActiveTab('pipeline')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'pipeline'
+                ? 'bg-[#1A1A10] border-[#F59E0B] text-[#F59E0B] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-[#F59E0B]" />
+            <span>DSP Pipeline</span>
           </button>
 
         </nav>
