@@ -10,58 +10,92 @@ import { NeonProfiler } from './components/NeonProfiler';
 import { CodeExporter } from './components/CodeExporter';
 import { DspParameters, BenchmarkMetrics, TinyMlClassification } from './types';
 import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
+import { usePersist } from './usePersist';
+
+const DEFAULT_PARAMS: DspParameters = {
+  masterGain: 1.0,
+  antiDolbyIntensity: 0.85,
+  masterBypass: false,
+  goldenEarEnabled: true,
+  goldenEarDrive: 1.2,
+  goldenEarMix: 0.15,
+  fatigueIndex: 0.15,
+  iirAlpha: 0.94,
+  crosstalkGain: 0.30,
+  hrtfDelayMs: 0.25,
+  spatialAngleDeg: 35,
+  spatialWidth: 1.2,
+  spatialWetEta: 0.4,
+  eqMutationRate: 0.10,
+  sampleRate: 48000,
+  blockSize: 512,
+  nhoAlpha: 0.90,
+  nhoBeta: 0.85,
+  harmonicGain: 1.1,
+  hrtfEnabled: true,
+  adaptEnabled: true,
+  compThresholdDb: -18.0,
+  compRatio: 2.5,
+  compAttackMs: 1.5,
+  compReleaseMs: 120,
+  activePreset: 'anti_dolby_extreme',
+};
+
+const DEFAULT_METRICS: BenchmarkMetrics = {
+  blockLatencyMicroseconds: 12.4,
+  sampleLatencyNanoseconds: 24.2,
+  simdEfficiencyPercent: 100,
+  heapAllocationsInAudioThread: 0,
+  l1CacheHitRatePercent: 99.98,
+  gflopsThroughput: 148.5,
+  registersActiveCount: 32,
+  clipCount: 0,
+  evolutionFitness: -0.0182,
+  optimalBlockSize: 512,
+  isCalibrating: false,
+  calibrationProgress: 0,
+  calibrationLog: [],
+  lastCalibratedAt: new Date().toLocaleTimeString(),
+};
+
+type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<
-    'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226'
-  >('master');
+  // ── Persistencia de tab activo ──────────────────────────────────────────────
+  const [activeTab, setActiveTab] = usePersist<ActiveTab>('activeTab', 'master');
 
-  const [params, setParams] = useState<DspParameters>({
-    masterGain: 1.0,
-    antiDolbyIntensity: 0.85,
-    masterBypass: false,
-    goldenEarEnabled: true,
-    goldenEarDrive: 1.2,
-    goldenEarMix: 0.15,
-    fatigueIndex: 0.15,
-    iirAlpha: 0.94,
-    crosstalkGain: 0.30,
-    hrtfDelayMs: 0.25,
-    spatialAngleDeg: 35,
-    spatialWidth: 1.2,
-    spatialWetEta: 0.4,
-    eqMutationRate: 0.10,
-    sampleRate: 48000,
-    blockSize: 512,
-    nhoAlpha: 0.90,
-    nhoBeta: 0.85,
-    harmonicGain: 1.1,
-    hrtfEnabled: true,
-    adaptEnabled: true,
-    compThresholdDb: -18.0,
-    compRatio: 2.5,
-    compAttackMs: 1.5,
-    compReleaseMs: 120,
-    activePreset: 'anti_dolby_extreme',
-  });
+  // ── Persistencia completa de parámetros DSP ─────────────────────────────────
+  const [params, setParams] = usePersist<DspParameters>('params', DEFAULT_PARAMS);
+
+  // ── Métricas runtime (clip count y calibración persisten; telemetría no) ────
+  const [clipCount, setClipCount] = usePersist<number>('clipCount', 0);
+  const [lastCalibratedAt, setLastCalibratedAt] = usePersist<string>(
+    'lastCalibratedAt',
+    DEFAULT_METRICS.lastCalibratedAt ?? ''
+  );
+  const [calibrationLog, setCalibrationLog] = usePersist<string[]>('calibrationLog', []);
 
   const [metrics, setMetrics] = useState<BenchmarkMetrics>({
-    blockLatencyMicroseconds: 12.4,
-    sampleLatencyNanoseconds: 24.2,
-    simdEfficiencyPercent: 100,
-    heapAllocationsInAudioThread: 0,
-    l1CacheHitRatePercent: 99.98,
-    gflopsThroughput: 148.5,
-    registersActiveCount: 32,
-    clipCount: 0,
-    evolutionFitness: -0.0182,
-    optimalBlockSize: 512,
-    isCalibrating: false,
-    calibrationProgress: 0,
-    calibrationLog: [],
-    lastCalibratedAt: new Date().toLocaleTimeString(),
+    ...DEFAULT_METRICS,
+    clipCount,
+    lastCalibratedAt,
+    calibrationLog,
   });
 
+  // Sincroniza los campos persisted cuando cambia el state runtime
+  useEffect(() => {
+    setClipCount(metrics.clipCount);
+  }, [metrics.clipCount]); // eslint-disable-line
+
+  useEffect(() => {
+    if (metrics.lastCalibratedAt) setLastCalibratedAt(metrics.lastCalibratedAt);
+  }, [metrics.lastCalibratedAt]); // eslint-disable-line
+
+  useEffect(() => {
+    if (metrics.calibrationLog.length > 0) setCalibrationLog(metrics.calibrationLog);
+  }, [metrics.calibrationLog]); // eslint-disable-line
+
+  // ── Clasificación TinyML (no persiste — live-only) ──────────────────────────
   const [classification, setClassification] = useState<TinyMlClassification>({
     speech: 0.42,
     music: 0.38,
@@ -72,22 +106,24 @@ export default function App() {
     inferenceTimeUs: 8.2,
   });
 
-  // Telemetría en tiempo real sincronizada con el pipeline C++ NEON
+  // ── Telemetría en tiempo real ───────────────────────────────────────────────
   useEffect(() => {
     const timer = setInterval(() => {
       setMetrics((prev) => {
         if (prev.isCalibrating) return prev;
 
-        const baseLatencyUs = (params.blockSize / params.sampleRate) * 1000000;
-        const processingOverheadRatio = params.masterBypass ? 0.002 : 0.012;
-        const calculatedLatencyUs = baseLatencyUs * processingOverheadRatio + (Math.random() - 0.5) * 0.4;
-        const finalLatencyUs = Math.max(4.2, calculatedLatencyUs);
+        const baseLatencyUs = (params.blockSize / params.sampleRate) * 1_000_000;
+        const ratio = params.masterBypass ? 0.002 : 0.012;
+        const finalLatencyUs = Math.max(4.2, baseLatencyUs * ratio + (Math.random() - 0.5) * 0.4);
 
         const baseGflops = (params.sampleRate / 48000) * (params.blockSize / 512) * 90;
         const intensityBonus = params.antiDolbyIntensity * 35;
         const hrtfBonus = params.hrtfEnabled ? 25 : 0;
         const goldenEarBonus = params.goldenEarEnabled ? 15 : 0;
-        const computedGflops = Math.min(240, Math.max(45, baseGflops + intensityBonus + hrtfBonus + goldenEarBonus + (Math.random() - 0.5) * 2));
+        const computedGflops = Math.min(
+          240,
+          Math.max(45, baseGflops + intensityBonus + hrtfBonus + goldenEarBonus + (Math.random() - 0.5) * 2)
+        );
 
         const totalGainDrive = params.masterGain * (1 + (params.goldenEarEnabled ? params.goldenEarDrive * 0.15 : 0));
         const newClipInc = totalGainDrive > 1.80 && !params.masterBypass ? Math.floor(Math.random() * 2) : 0;
@@ -129,87 +165,43 @@ export default function App() {
     return () => clearInterval(timer);
   }, [params]);
 
+  // ── Handlers ────────────────────────────────────────────────────────────────
   const handleParamChange = (key: keyof DspParameters, value: any) => {
-    setParams((prev) => ({
-      ...prev,
-      [key]: value,
-      activePreset: 'custom',
-    }));
+    setParams((prev) => ({ ...prev, [key]: value, activePreset: 'custom' }));
   };
 
   const handleApplyPreset = (presetName: DspParameters['activePreset']) => {
-    if (presetName === 'anti_dolby_extreme') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 1.0,
-        masterGain: 1.15,
-        goldenEarEnabled: true,
-        goldenEarDrive: 1.35,
-        goldenEarMix: 0.20,
-        crosstalkGain: 0.25,
-        hrtfEnabled: true,
-        blockSize: 512,
-        activePreset: 'anti_dolby_extreme',
-      }));
-    } else if (presetName === 'audiophile') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 0.70,
-        masterGain: 1.0,
-        goldenEarEnabled: true,
-        goldenEarDrive: 1.10,
-        goldenEarMix: 0.10,
-        spatialAngleDeg: 45,
-        spatialWidth: 1.35,
-        crosstalkGain: 0.35,
-        hrtfEnabled: true,
-        blockSize: 512,
-        activePreset: 'audiophile',
-      }));
-    } else if (presetName === 'bass_head') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 0.80,
-        masterGain: 1.10,
-        goldenEarEnabled: true,
-        goldenEarDrive: 2.10,
-        goldenEarMix: 0.30,
-        harmonicGain: 1.5,
-        blockSize: 1024,
-        activePreset: 'bass_head',
-      }));
-    } else if (presetName === 'vocal_protect') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 0.90,
-        masterGain: 1.0,
-        fatigueIndex: 0.25,
-        iirAlpha: 0.90,
-        compRatio: 3.5,
-        blockSize: 512,
-        activePreset: 'vocal_protect',
-      }));
-    } else if (presetName === 'gaming_spatial') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 0.95,
-        masterGain: 1.05,
-        spatialAngleDeg: 60,
-        spatialWidth: 1.50,
-        hrtfEnabled: true,
-        blockSize: 256,
-        activePreset: 'gaming_spatial',
-      }));
-    } else if (presetName === 'evo_cma_es') {
-      setParams((prev) => ({
-        ...prev,
-        antiDolbyIntensity: 0.88,
-        eqMutationRate: 0.22,
-        goldenEarEnabled: true,
-        goldenEarDrive: 1.40,
-        blockSize: 512,
-        activePreset: 'evo_cma_es',
-      }));
+    const presets: Record<string, Partial<DspParameters>> = {
+      anti_dolby_extreme: {
+        antiDolbyIntensity: 1.0, masterGain: 1.15, goldenEarEnabled: true,
+        goldenEarDrive: 1.35, goldenEarMix: 0.20, crosstalkGain: 0.25,
+        hrtfEnabled: true, blockSize: 512,
+      },
+      audiophile: {
+        antiDolbyIntensity: 0.70, masterGain: 1.0, goldenEarEnabled: true,
+        goldenEarDrive: 1.10, goldenEarMix: 0.10, spatialAngleDeg: 45,
+        spatialWidth: 1.35, crosstalkGain: 0.35, hrtfEnabled: true, blockSize: 512,
+      },
+      bass_head: {
+        antiDolbyIntensity: 0.80, masterGain: 1.10, goldenEarEnabled: true,
+        goldenEarDrive: 2.10, goldenEarMix: 0.30, harmonicGain: 1.5, blockSize: 1024,
+      },
+      vocal_protect: {
+        antiDolbyIntensity: 0.90, masterGain: 1.0, fatigueIndex: 0.25,
+        iirAlpha: 0.90, compRatio: 3.5, blockSize: 512,
+      },
+      gaming_spatial: {
+        antiDolbyIntensity: 0.95, masterGain: 1.05, spatialAngleDeg: 60,
+        spatialWidth: 1.50, hrtfEnabled: true, blockSize: 256,
+      },
+      evo_cma_es: {
+        antiDolbyIntensity: 0.88, eqMutationRate: 0.22, goldenEarEnabled: true,
+        goldenEarDrive: 1.40, blockSize: 512,
+      },
+    };
+
+    if (presetName in presets) {
+      setParams((prev) => ({ ...prev, ...presets[presetName], activePreset: presetName }));
     } else {
       setParams((prev) => ({ ...prev, activePreset: 'custom' }));
     }
@@ -217,6 +209,7 @@ export default function App() {
 
   const handleResetClipCount = () => {
     setMetrics((prev) => ({ ...prev, clipCount: 0 }));
+    setClipCount(0);
   };
 
   const handleRunAutoCalibration = () => {
@@ -232,41 +225,29 @@ export default function App() {
       ],
     }));
 
-    setTimeout(() => {
-      setMetrics((prev) => ({
-        ...prev,
-        calibrationProgress: 30,
-        calibrationLog: [
-          ...prev.calibrationLog,
-          'Paso 1/4: Probando bloque de 128 muestras (2.67ms frame)...',
-          'Resultado: Latencia 6.8 µs, pero mayor tasa de interrupciones L1 cache (3.8%).',
-        ],
-      }));
-    }, 400);
+    setTimeout(() => setMetrics((prev) => ({
+      ...prev, calibrationProgress: 30,
+      calibrationLog: [...prev.calibrationLog,
+        'Paso 1/4: Probando bloque de 128 muestras (2.67ms frame)...',
+        'Resultado: Latencia 6.8 µs, mayor tasa de interrupciones L1 cache (3.8%).',
+      ],
+    })), 400);
 
-    setTimeout(() => {
-      setMetrics((prev) => ({
-        ...prev,
-        calibrationProgress: 55,
-        calibrationLog: [
-          ...prev.calibrationLog,
-          'Paso 2/4: Evaluando desempaquetado de vectores ARM NEON float32x4...',
-          'Análisis vmlaq_f32: 118 GFLOPS sostenidos con 16 registros Q activos.',
-        ],
-      }));
-    }, 900);
+    setTimeout(() => setMetrics((prev) => ({
+      ...prev, calibrationProgress: 55,
+      calibrationLog: [...prev.calibrationLog,
+        'Paso 2/4: Evaluando desempaquetado de vectores ARM NEON float32x4...',
+        'Análisis vmlaq_f32: 118 GFLOPS sostenidos con 16 registros Q activos.',
+      ],
+    })), 900);
 
-    setTimeout(() => {
-      setMetrics((prev) => ({
-        ...prev,
-        calibrationProgress: 85,
-        calibrationLog: [
-          ...prev.calibrationLog,
-          'Paso 3/4: Probando bloque óptimo de 512 muestras...',
-          'Punto dulce detectado: 100% vectorización SIMD | 148.5 GFLOPS | 0% jitter en buffer SPSC lock-free.',
-        ],
-      }));
-    }, 1400);
+    setTimeout(() => setMetrics((prev) => ({
+      ...prev, calibrationProgress: 85,
+      calibrationLog: [...prev.calibrationLog,
+        'Paso 3/4: Probando bloque óptimo de 512 muestras...',
+        'Punto dulce detectado: 100% vectorización SIMD | 148.5 GFLOPS | 0% jitter SPSC lock-free.',
+      ],
+    })), 1400);
 
     setTimeout(() => {
       const nowStr = new Date().toLocaleTimeString();
@@ -285,7 +266,7 @@ export default function App() {
         lastCalibratedAt: nowStr,
         calibrationLog: [
           ...prev.calibrationLog,
-          `✅ Auto-calibración completada a las ${nowStr}. Configurado bloque óptimo: 512 muestras.`,
+          `✅ Auto-calibración completada a las ${nowStr}. Bloque óptimo: 512 muestras.`,
         ],
       }));
     }, 1900);
@@ -293,8 +274,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0A0C10] text-[#E2E8F0] font-sans selection:bg-[#38BDF8] selection:text-[#0A0C10]">
-      
-      {/* Navbar Superior con Conmutadores de Modo */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -303,9 +282,7 @@ export default function App() {
         onApplyPreset={handleApplyPreset}
       />
 
-      {/* Estación de Control Principal */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
         {activeTab === 'master' && (
           <MasterControlPlane
             params={params}
@@ -316,59 +293,26 @@ export default function App() {
             onApplyPreset={handleApplyPreset}
           />
         )}
-
         {activeTab === 'tinyml' && (
-          <TinyMlClassifierPanel
-            params={params}
-            classification={classification}
-            onParamChange={handleParamChange}
-          />
+          <TinyMlClassifierPanel params={params} classification={classification} onParamChange={handleParamChange} />
         )}
-
         {activeTab === 'evo_eq' && (
-          <EvolutionaryEqPanel
-            params={params}
-            metrics={metrics}
-            onParamChange={handleParamChange}
-          />
+          <EvolutionaryEqPanel params={params} metrics={metrics} onParamChange={handleParamChange} />
         )}
-
         {activeTab === 'spatial' && (
-          <SpatialHrtfPanel
-            params={params}
-            onParamChange={handleParamChange}
-          />
+          <SpatialHrtfPanel params={params} onParamChange={handleParamChange} />
         )}
-
         {activeTab === 'golden_ear' && (
-          <GoldenEarPanel
-            params={params}
-            onParamChange={handleParamChange}
-          />
+          <GoldenEarPanel params={params} onParamChange={handleParamChange} />
         )}
-
-        {activeTab === 'visualizer' && (
-          <AudioVisualizer params={params} />
-        )}
-
-        {activeTab === 'benchmarks' && (
-          <NeonProfiler metrics={metrics} />
-        )}
-
-        {activeTab === 'code' && (
-          <CodeExporter />
-        )}
-
+        {activeTab === 'visualizer' && <AudioVisualizer params={params} />}
+        {activeTab === 'benchmarks' && <NeonProfiler metrics={metrics} />}
+        {activeTab === 'code' && <CodeExporter />}
         {activeTab === 'iso226' && (
-          <Iso226CalibrationPanel
-            params={params}
-            onParamChange={handleParamChange}
-          />
+          <Iso226CalibrationPanel params={params} onParamChange={handleParamChange} />
         )}
-
       </main>
 
-      {/* Pie de Página */}
       <footer className="border-t border-[#1E2330] bg-[#0A0C10]/90 py-6 mt-12 font-mono text-xs text-[#64748B]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
@@ -381,7 +325,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-
     </div>
   );
 }
