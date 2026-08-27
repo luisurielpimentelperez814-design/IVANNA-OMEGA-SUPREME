@@ -104,6 +104,10 @@ private:
     bool  m_goldenEarActive = false;
     float m_sampleRate  = SAMPLE_RATE;
     float m_harmonicGain = 0.f;
+    // Target del slew anti-zipper (83bf9eb9): el setter escribía esta variable
+    // sin declararla — error de compilación en arm64-v8a/armeabi-v7a que
+    // tumbaba el build del APK (CI 33122617356).
+    float m_harmonicGainTarget = 0.f;
     float m_compThresh   = -18.f;
     float m_compRatio    = 4.f;
     HrtfManager*          m_hrtf       = nullptr;
