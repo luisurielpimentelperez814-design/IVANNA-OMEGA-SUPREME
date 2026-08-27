@@ -19,6 +19,7 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
+#include <condition_variable>
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
@@ -107,6 +108,42 @@ static std::atomic<bool> g_initialized{false};
 // callback -> XRun garantizado en el arranque de la reproducción.
 static std::atomic<Ivanna::RirDataset*>   g_rirDataset{nullptr};
 static std::atomic<Ivanna::RirConvolver*> g_rirConvolver{nullptr};
+// FIX (tronidos + RT violation, 2026-08-27): el cambio de sala RIR leía
+// un WAV de disco (readWavPcm16) y alocaba std::vector DENTRO del callback
+// de audio cada vez que cambiaba roomIdx -> I/O + alloc en el hot path =
+// tronido garantizado en cada cambio de sala. Ahora el hot path solo
+// publica el índice deseado (atomic store) y un hilo de control hace la
+// lectura de disco + la FFT del IR y la entrega vía RirConvolver::load()
+// (que ya es thread-safe con process() vía pending_ + crossfade).
+static std::atomic<int32_t>       g_rirPendingIdx{-1};
+static std::mutex                 g_rirWorkerMtx;
+static std::condition_variable    g_rirWorkerCv;
+static std::atomic<bool>          g_rirWorkerRunning{false};
+static std::thread                g_rirWorkerThread;
+static void rirWorkerLoop() {
+    std::unique_lock<std::mutex> lk(g_rirWorkerMtx);
+    while (true) {
+        g_rirWorkerCv.wait(lk, [] {
+            return !g_rirWorkerRunning.load(std::memory_order_acquire)
+                || g_rirPendingIdx.load(std::memory_order_acquire) >= 0;
+        });
+        if (!g_rirWorkerRunning.load(std::memory_order_acquire)) return;
+        const int32_t idx = g_rirPendingIdx.exchange(-1, std::memory_order_acq_rel);
+        if (idx < 0) continue;
+        Ivanna::RirDataset*   ds   = g_rirDataset.load(std::memory_order_acquire);
+        Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
+        if (!ds || !conv) continue;
+        lk.unlock();  // no retener el mutex durante disco + FFT
+        std::vector<float> irL, irR;
+        int sr = 0;
+        if (ds->loadImpulseResponse((size_t)idx, irL, irR, sr) && !irL.empty()) {
+            int irLen = (int)irL.size();
+            if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+            conv->load(irL.data(), irR.data(), irLen);
+        }
+        lk.lock();
+    }
+}
 // FEATURE (Voice Protection): 0..1, cuánta voz detecta YamnetClassifier en
 // el bloque actual. Protege la inteligibilidad de la voz mezclando de
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
@@ -521,6 +558,25 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         std::thread(audioRouteBridgeLoop).detach();
         LOGI("AudioRoute bridge started (omega_effect -> AdaptiveDecisionEngine, @30ms)");
     }
+    // FIX RT (2026-08-27): el bloque RIR de nativeProcess (abajo) consume
+    // g_rirDataset/g_rirConvolver — pero el init solo estaba en
+    // IvannaNativeLib_nativeInitDSP, y la ruta real del bridge player es
+    // ESTA (DSPBridge_nativeInit). Sin el init aquí, el worker de carga
+    // nunca arrancaba y la reverb quedaba muerta. Guards: idempotente si
+    // ambas rutas conviven (misma librería, mismo proceso).
+    if (g_rirConvolver.load(std::memory_order_acquire) == nullptr) {
+        Ivanna::RirDataset* ds = new Ivanna::RirDataset();
+        if (!ds->load("/data/adb/ivanna_omega/rir")) {
+            delete ds; ds = nullptr;
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — passthrough");
+        }
+        g_rirDataset.store(ds, std::memory_order_release);
+        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+    }
+    if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
+        g_rirWorkerThread = std::thread(rirWorkerLoop);
+        // NO detach — se une en JNI_OnUnload antes de los destructores.
+    }
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
@@ -765,12 +821,23 @@ g_exciter.process(chL, chR, n);
     // dominante en el bloque, mezcla de vuelta hacia la señal seca en vez
     // de dejar que Exciter/Compresor/Widener sobre-procesen la voz. Máximo
     // 55% de mezcla seca aun con score=1.0 — protege sin anular el DSP.
+    // FIX (tronidos, 2026-08-27): el blend de voz aplicaba un dryMix DURO
+    // por bloque — un salto de ganancia en cada frontera de bloque cada vez
+    // que Yamnet actualizaba el score (~1s) → tronido audible. Se suaviza
+    // con EMA por muestra (~10 ms) para que el crossfade sea continuo.
     const float vp = g_voice_protect_score.load(std::memory_order_relaxed);
-    if (vp > 0.01f) {
-        constexpr float VOICE_PROTECT_MAX = 0.55f;
-        const float dryMix = vp * VOICE_PROTECT_MAX;
-        const float wetMix = 1.f - dryMix;
+    static thread_local float s_dryMixSmooth = 0.f;
+    constexpr float VOICE_PROTECT_MAX = 0.55f;
+    const float dryMixTarget = std::clamp(vp, 0.f, 1.f) * VOICE_PROTECT_MAX;
+    if (dryMixTarget > 0.0005f || s_dryMixSmooth > 0.0005f) {
+        // τ ≈ 10 ms; el coeficiente usa el sample rate real de la sesión
+        // (el pipeline soporta nativas directas hasta 384 kHz).
+        const float srNow = (float)std::max(g_params.sampleRate, 8000u);
+        const float mixCoef = std::exp(-1.0f / (0.010f * srNow));
         for (int i = 0; i < n; ++i) {
+            s_dryMixSmooth += (1.0f - mixCoef) * (dryMixTarget - s_dryMixSmooth);
+            const float dryMix = s_dryMixSmooth;
+            const float wetMix = 1.f - dryMix;
             pdOutL[i] = pdOutL[i] * wetMix + dryL[i] * dryMix;
             pdOutR[i] = pdOutR[i] * wetMix + dryR[i] * dryMix;
         }
@@ -1015,14 +1082,13 @@ g_exciter.process(chL, chR, n);
                 static int32_t s_rirLastIdx = -1;
                 const size_t roomIdx = s_rirDataset->findNearestSmart(rt60);
                 if ((int32_t)roomIdx != s_rirLastIdx || !s_rirConvolver->isLoaded()) {
-                    std::vector<float> irL, irR;
-                    int sr = 0;
-                    if (s_rirDataset->loadImpulseResponse(roomIdx, irL, irR, sr) && !irL.empty()) {
-                        int irLen = (int)irL.size();
-                        if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
-                        s_rirConvolver->load(irL.data(), irR.data(), irLen);
-                        s_rirLastIdx = (int32_t)roomIdx;
-                    }
+                    // FIX RT: NO leer disco aquí. Publicar el índice y
+                    // despertar al worker — él hace WAV+FFT y entrega vía
+                    // load() (crossfade incluido). La sala entra ~1-5 ms
+                    // después, sin tronido ni XRun.
+                    g_rirPendingIdx.store((int32_t)roomIdx, std::memory_order_release);
+                    g_rirWorkerCv.notify_one();
+                    s_rirLastIdx = (int32_t)roomIdx;
                 }
                 s_rirConvolver->setWetDry(wet);
             }
@@ -1082,6 +1148,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         }
         g_rirDataset.store(ds, std::memory_order_release);
         g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+    }
+    // FIX RT: arrancar el worker de carga de IR (hilo de control, joinable).
+    // Idempotente — nativeInitDSP puede re-llamarse por cambio de SR.
+    if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
+        g_rirWorkerThread = std::thread(rirWorkerLoop);
+        // NO detach — se une en JNI_OnUnload antes de los destructores.
     }
     g_initialized.store(true, std::memory_order_release);
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
@@ -1859,4 +1931,10 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
     if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
         g_adaptiveEngine.stop();
     }
+
+    // 3. Parar el worker de carga de IR Ruta A — accede a g_rirDataset/
+    //    g_rirConvolver (estáticos) y no debe sobrevivir a dlclose().
+    g_rirWorkerRunning.store(false, std::memory_order_release);
+    g_rirWorkerCv.notify_all();
+    if (g_rirWorkerThread.joinable()) g_rirWorkerThread.join();
 }
