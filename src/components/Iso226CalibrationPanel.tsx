@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { usePersist } from '../usePersist';
 import { DspParameters } from '../types';
 import { Activity, Zap, CheckCircle2, RefreshCw, BarChart2, Sliders, Target, Wifi, WifiOff, Layers, Volume2 } from 'lucide-react';
 
@@ -192,16 +193,17 @@ interface Iso226CalibrationPanelProps {
 export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
   params, onParamChange
 }) => {
-  const [listenPhon, setListenPhon] = useState(60);
-  const [refPhon, setRefPhon]       = useState(80);
-  const [applied, setApplied]       = useState(false);
-  const [calibrating, setCalibrating] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
-  const [layerStatus, setLayerStatus] = useState({
-    eq: false,      // Android Equalizer (AudioEffect)
-    dsp: false,     // DSPBridge nativo (libivanna_omega.so)
-    socket: false,  // Daemon Magisk (OmegaEngineBridge)
-  });
+  // ── Controles con persistencia ──────────────────────────────────────────────
+  const [listenPhon, setListenPhon] = usePersist<number>('iso226_listenPhon', 60);
+  const [refPhon, setRefPhon]       = usePersist<number>('iso226_refPhon', 80);
+  const [applied, setApplied]       = usePersist<boolean>('iso226_applied', false);
+  const [log, setLog]               = usePersist<string[]>('iso226_log', []);
+  const [layerStatus, setLayerStatus] = usePersist<{ eq: boolean; dsp: boolean; socket: boolean }>(
+    'iso226_layerStatus',
+    { eq: false, dsp: false, socket: false }
+  );
+  // calibrating es transitorio — no persiste (reinicia en false al recargar)
+  const [calibrating, setCalibrating] = usePersist<boolean>('iso226_calibrating', false);
 
   // Compensaciones en todos los índices de frecuencia
   const compAll = useMemo(() => computeCompensation(listenPhon, refPhon), [listenPhon, refPhon]);
