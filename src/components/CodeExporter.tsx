@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
+import { usePersist } from '../usePersist';
 import { CPP_FILES, generateFullTermuxScript } from '../data/cppFiles';
 import { Terminal, Copy, Check, Download, FileCode, Package, Cpu } from 'lucide-react';
 
 export const CodeExporter: React.FC = () => {
-  const [selectedFilename, setSelectedFilename] = useState<string>('IvannaFusionCore.hpp');
+  const [selectedFilename, setSelectedFilename] = usePersist<string>('code_selectedFilename', 'IvannaFusionCore.hpp');
   const [copiedFilename, setCopiedFilename] = useState<string | null>(null);
   const [copiedFullScript, setCopiedFullScript] = useState<boolean>(false);
 
