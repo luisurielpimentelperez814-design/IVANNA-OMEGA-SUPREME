@@ -4,7 +4,6 @@ import { Cpu, Zap, Activity, Waves, Sliders, ShieldAlert, Sparkles } from 'lucid
 
 interface DspPipelineProps {
   params: DspParameters;
-  onParamChange: (key: keyof DspParameters, value: number | boolean) => void;
 }
 
 export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {

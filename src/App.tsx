@@ -315,7 +315,7 @@ export default function App() {
         )}
         {activeTab === 'pipeline' && (
           <div className="space-y-6">
-            <DspPipeline params={params} onParamChange={handleParamChange} />
+            <DspPipeline params={params} />
             <ParameterControls params={params} onParamChange={handleParamChange} />
           </div>
         )}
