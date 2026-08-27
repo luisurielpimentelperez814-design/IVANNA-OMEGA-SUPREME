@@ -476,6 +476,24 @@ fun OmegaApp() {
                         kotlinx.coroutines.delay(250L)
                     }
                 }
+                // FIX (bark spectrum muerto): bandData llegaba siempre null →
+                // el dashboard mostraba baseline plano aunque la captura
+                // Bark64 (PlaybackCaptureService → IvannaVisualizerBark64Bridge)
+                // estuviera alimentando 64 bandas reales. Polling a 20 Hz del
+                // bridge nativo; null solo si el bridge no está listo (verdad:
+                // sin captura activa, no se inventa energía).
+                val barkBands by produceState<FloatArray?>(initialValue = null) {
+                    val buf = FloatArray(com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge.BAND_COUNT)
+                    while (true) {
+                        value = if (com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge.isReady) {
+                            runCatching {
+                                com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge.sampleInto(buf)
+                                buf.copyOf()
+                            }.getOrNull()
+                        } else null
+                        kotlinx.coroutines.delay(50L)
+                    }
+                }
                 com.ivanna.omega.ui.MagistralDashboardScreen(
                     latencyMs             = daemonTelemetry.second,
                     isDaemonActive        = daemonTelemetry.first,
@@ -484,7 +502,7 @@ fun OmegaApp() {
                     },
                     onCalibrateHrtf       = { nav.navigate("calibracion_saf") },
                     onOpenPerceptualBrain = { nav.navigate(IvannaRoute.PERCEPTUAL_CORTEX) },
-                    bandData              = null,
+                    bandData              = barkBands,
                     modifier              = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
