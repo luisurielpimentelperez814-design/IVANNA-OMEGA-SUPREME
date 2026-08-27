@@ -35,8 +35,15 @@ class SafetyLimiter {
 public:
     SafetyLimiter() = default;
 
+    // FIX (bombeo/tronidos): threshold == ceiling anulaba el soft-knee — el
+    // limiter actuaba como pared de ladrillo (toda la reduccion de ganancia
+    // de golpe en un solo bloque -> pumping, y transientes fuertes -> thuds).
+    // threshold ahora vive ~4 dB por debajo del ceiling, dando margen real
+    // para que la curva racional de computeGainForPeak() suavice el knee
+    // antes de llegar al techo.
     // ceiling default 0.98855 ≈ -0.1 dBFS (20*log10(0.98855) = -0.100 dB).
-    void setParams(float threshold = 0.98855f, float ceiling = 0.98855f);
+    // threshold default 0.63096 ≈ -4.0 dBFS (20*log10(0.63096) = -4.00 dB).
+    void setParams(float threshold = 0.63096f, float ceiling = 0.98855f);
 
     // sampleRate: necesario para dimensionar el lookahead (5 ms) y el
     // release (50 ms). Si no se llama, se asume 48000 Hz.
