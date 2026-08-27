@@ -44,7 +44,14 @@ IvannaFusionEngine::IvannaFusionEngine() {
     // de correr), loadFromDataset() devuelve false y HrtfManager sigue
     // en modo sintético — mismo fallback ya probado, cero riesgo de
     // crashear por archivo ausente.
-    m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf_dataset.ihr1");
+    // FIX (fidelidad): el path legacy hrtf_dataset.ihr1 ya no se deploya
+            // (83a5e450 eliminó ese archivo del módulo — los 12 sujetos viven
+            // en /data/adb/ivanna_omega/hrtf/*.ihr1 con índice verificado por
+            // sha256). Sin este fallback el motor caía SIEMPRE al HRTF
+            // sintético en sesiones sin selector previo.
+            if (!m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf_dataset.ihr1")) {
+                m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf/kemar.ihr1");
+            }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
     m_classifier = new IvannaAudioClassifier();
