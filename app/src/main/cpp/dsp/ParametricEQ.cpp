@@ -39,10 +39,23 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     // Si la banda estaba inactiva (filtro = identidad), no hace falta
     // fundido — la salida vieja es bit-exacta a la entrada.
     if (wasActive) {
-        prevL[b] = bandsL[b];
-        prevR[b] = bandsR[b];
-        fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
-        fade_[b] = fadeLen_[b];
+        // FIX (truena al mover Graves/Agudos y al aplicar ISO 226):
+        // el crossfade se REINICIABA en cada setBand — al arrastrar un
+        // fader (decenas de setBand por segundo) o al aplicar ISO (10
+        // bandas a la vez), prevL/prevR se sobrescribían a mitad de
+        // fundido y el factor de mezcla saltaba a t=0 → discontinuidad
+        // audible por cada re-entrada (clics/truenos continuos).
+        // Ahora: solo se captura prev y se arranca el fundido si NO hay
+        // uno en curso; si ya hay (usuario arrastrando), se conservan
+        // prevL/prevR y la posición del fade, y solo se actualizan los
+        // coeficientes destino — la mezcla converge suave al nuevo
+        // filtro sin reinicios ni saltos.
+        if (fade_[b] == 0) {
+            prevL[b] = bandsL[b];
+            prevR[b] = bandsR[b];
+            fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
+            fade_[b] = fadeLen_[b];
+        }
     } else {
         fade_[b] = 0;
     }
