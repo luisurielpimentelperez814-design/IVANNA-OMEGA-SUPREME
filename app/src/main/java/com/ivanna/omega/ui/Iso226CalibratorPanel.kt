@@ -22,6 +22,8 @@ import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.ui.theme.AuroraCyan
 import com.ivanna.omega.ui.theme.ObsidianVoid
+import com.ivanna.omega.ui.theme.ObsidianSoft
+import com.ivanna.omega.ui.theme.TextMuted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -81,11 +83,12 @@ fun Iso226CalibratorPanel(
 
     val isCalibrated = Iso226Calibrator.isCalibrated
 
-    // Colores del tema
-    val panelBg    = Color(0xFF0D0D0F)
-    val cardBg     = Color(0xFF111114)
+    // Colores del tema (realineado a Aurora Obsidiana — antes grises planos
+    // 0D0D0F/111114/888899 que rompían la coherencia con las demás pantallas)
+    val panelBg    = ObsidianVoid
+    val cardBg     = ObsidianSoft
     val borderCol  = AuroraCyan.copy(alpha = 0.18f)
-    val textMuted  = Color(0xFF888899)
+    val textMuted  = TextMuted
 
     Column(
         modifier = modifier
