@@ -188,9 +188,9 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
 
 @Composable
 private fun SpatialCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = Color(0xFF111318), shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
+    Surface(color = ObsidianSoft, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, color = Color(0xFFE2E8F0), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = TextMuted, fontSize = 9.sp)
             content()
         }
