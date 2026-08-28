@@ -11,7 +11,7 @@ files=sorted(
 
 
 if len(files)<2:
-    print("No previous metrics available")
+    print("Baseline OEM-RC1 available")
     exit(0)
 
 
