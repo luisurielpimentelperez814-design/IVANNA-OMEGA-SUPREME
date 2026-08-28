@@ -745,8 +745,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // de vuelta hacia ella si YamnetClassifier detecta voz dominante — ver
     // blend al final de esta función, después de PDEngine.
     // buffers en g_ats
-    std::memcpy(dryL, chL, n * sizeof(float));
-    std::memcpy(dryR, chR, n * sizeof(float));
+    std::memcpy(g_ats.dryL, g_ats.chL, n * sizeof(float));
+    std::memcpy(g_ats.dryR, g_ats.chR, n * sizeof(float));
     // FIX (Fase C, pulido de oído absoluto): processInput() (trim de
     // entrada, derivado de p.mix, ±6dB) corría DESPUÉS de EQ/Compressor/
     // Exciter/Widener — violando el orden de una cadena de ganancia
@@ -757,8 +757,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // no el nivel que p.mix estaba pensado para normalizar antes de
     // llegar ahí. processOutput() (ganancia final, derivada de p.master)
     // sí pertenece al final de la cadena — ahí se queda.
-    g_gain.processInput(chL, chR, n);
-    g_eq.process(chL, chR, n);
+    g_gain.processInput(g_ats.chL, g_ats.chR, n);
+    g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
     // (GainStage/Compressor/HarmonicExciter), no como ajustes paralelos
@@ -800,12 +800,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_ats.excReductionSmooth = std::min(g_ats.excReductionSmooth, g_ats.guardExcLimitApplied);
     g_gain.setRuntimeGain(g_ats.targetGainSmooth);
     g_comp.setRuntimeAmount(g_ats.compAmountSmooth);
-    g_comp.process(chL, chR, n);
+    g_comp.process(g_ats.chL, g_ats.chR, n);
     g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);
 
-g_exciter.process(chL, chR, n);
-    g_widener.process(chL, chR, n);
-    g_gain.processOutput(chL, chR, n);
+    g_exciter.process(g_ats.chL, g_ats.chR, n);
+    g_widener.process(g_ats.chL, g_ats.chR, n);
+    g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
     // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
     // El primer limiter limitaba chL/chR; PDEngine re-amplificaba; el segundo
@@ -835,7 +835,7 @@ g_exciter.process(chL, chR, n);
         g_pd.set_spatial_width(sp_width);
     }
     // buffers en g_ats
-    g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
+    g_pd.process_block(g_ats.chL, g_ats.chR, g_ats.pdOutL, g_ats.pdOutR, n);
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -906,7 +906,7 @@ g_exciter.process(chL, chR, n);
     // el target (-14 LUFS por defecto) — normalización de volumen
     // percibido real, no el placeholder muerto que había antes.
     if (g_loudnessMeterInit.load(std::memory_order_relaxed)) {
-        const float lufs = g_loudnessMeter.measure_block(pdOutL, pdOutR, n);
+        const float lufs = g_loudnessMeter.measure_block(g_ats.pdOutL, g_ats.pdOutR, n);
         const float target = g_loudness_target.load(std::memory_order_relaxed);
     // OMEGA PERCEPTUAL GUARD FINAL
     // Proteccion dinamica contra fatiga, clipping y brillo excesivo
@@ -1153,7 +1153,7 @@ g_exciter.process(chL, chR, n);
             }
         }
         if (s_rirConvolver->isLoaded()) {
-            s_rirConvolver->process(pdOutL, pdOutR, n);
+            s_rirConvolver->process(g_ats.pdOutL, g_ats.pdOutR, n);
         }
         } // !s_rirConvolver guard
     }
@@ -1164,7 +1164,7 @@ g_exciter.process(chL, chR, n);
     // dos etapas: el limiter protegía una señal intermedia y M/S + RIR podían
     // volver a subir el nivel por encima del ceiling sin protección — de ahí
     // los tronidos en material con mucha reverb o contenido casi-mono.
-    g_safety_limiter.process(pdOutL, pdOutR, n);
+    g_safety_limiter.process(g_ats.pdOutL, g_ats.pdOutR, n);
     for (int i = 0; i < n; ++i) {
         g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
         g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
