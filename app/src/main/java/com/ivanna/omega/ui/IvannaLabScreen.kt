@@ -24,6 +24,8 @@ private val LabCyan = Color(0xFF6FF3FF)    // AuroraCyan
 private val LabGreen = Color(0xFF23F09A)   // PhosphorGreen
 private val LabYellow = Color(0xFFF7B733)  // AmberSignal
 private val LabRed = Color(0xFFFF5C4D)     // CoralWarn
+private val LabMuted = Color(0xFF57708F)   // TextMuted (etiquetas)
+private val LabText = Color(0xFF93A8C6)    // TextSecondary (cuerpo)
 
 // Umbrales de alerta pedidos en el brief: THD>1% = rojo, SNR<60dB = amarillo.
 private fun thdColor(thd: Float) = when {
@@ -48,7 +50,7 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize().background(LabBg).padding(16.dp)
     ) {
         Text("IVANNA LAB", color = LabCyan, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-        Text("THD · IMD · LUFS · SNR · Peak · True Peak", color = Color(0xFF888888), fontSize = 11.sp)
+        Text("THD · IMD · LUFS · SNR · Peak · True Peak", color = LabMuted, fontSize = 11.sp)
         Spacer(Modifier.height(16.dp))
 
         Row(
@@ -102,7 +104,7 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
                 ) {
                     Text("REPORTE", color = LabCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Spacer(Modifier.height(6.dp))
-                    Text(s.report, color = Color(0xFFCCCCCC), fontSize = 11.sp, lineHeight = 15.sp)
+                    Text(s.report, color = LabText, fontSize = 11.sp, lineHeight = 15.sp)
                 }
             }
         }
