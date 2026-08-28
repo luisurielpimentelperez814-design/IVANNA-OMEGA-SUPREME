@@ -306,7 +306,7 @@ fun Iso226CalibratorPanel(
                             .weight(1f)
                             .background(
                                 if (ok) AuroraCyan.copy(alpha = 0.08f)
-                                else Color(0xFF1A1A1A),
+                                else ObsidianSoft,
                                 RoundedCornerShape(6.dp)
                             )
                             .padding(vertical = 6.dp, horizontal = 8.dp),
