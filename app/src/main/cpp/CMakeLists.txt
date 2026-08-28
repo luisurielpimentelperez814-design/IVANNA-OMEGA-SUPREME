@@ -339,7 +339,7 @@ target_link_libraries(test_oem_stability_suite
 )
 
 target_include_directories(test_oem_stability_suite PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/googletest/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
 )
 
     
