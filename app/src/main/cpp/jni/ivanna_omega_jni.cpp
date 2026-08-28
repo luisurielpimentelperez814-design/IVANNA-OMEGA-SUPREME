@@ -793,6 +793,23 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // llegar ahí. processOutput() (ganancia final, derivada de p.master)
     // sí pertenece al final de la cadena — ahí se queda.
     g_gain.processInput(g_ats.chL, g_ats.chR, n);
+    // Pre-EQ peak guard: IIR biquads divergen si reciben >~1.0.
+    // mix=0.8 de ISO226 añade +3.6dB antes del EQ; biquad AGUDOS +8.4dB
+    // acumula estado → NaN → SafetyLimiter clampea a 0 → tronido.
+    // Reducción por bloque completo (sin AM per-sample = sin distorsión).
+    {
+        float pk = 0.f;
+        for (int i = 0; i < n; ++i) {
+            const float al = g_ats.chL[i] < 0.f ? -g_ats.chL[i] : g_ats.chL[i];
+            const float ar = g_ats.chR[i] < 0.f ? -g_ats.chR[i] : g_ats.chR[i];
+            if (al > pk) pk = al;
+            if (ar > pk) pk = ar;
+        }
+        if (pk > 0.89f && pk > 1e-9f) {
+            const float sc = 0.89f / pk;
+            for (int i = 0; i < n; ++i) { g_ats.chL[i] *= sc; g_ats.chR[i] *= sc; }
+        }
+    }
     g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
@@ -1321,6 +1338,19 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
     g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
     g_gain.processInput(lBuf, rBuf, n);
+    {
+        float pk = 0.f;
+        for (int i = 0; i < n; ++i) {
+            const float al = lBuf[i] < 0.f ? -lBuf[i] : lBuf[i];
+            const float ar = rBuf[i] < 0.f ? -rBuf[i] : rBuf[i];
+            if (al > pk) pk = al;
+            if (ar > pk) pk = ar;
+        }
+        if (pk > 0.89f && pk > 1e-9f) {
+            const float sc = 0.89f / pk;
+            for (int i = 0; i < n; ++i) { lBuf[i] *= sc; rBuf[i] *= sc; }
+        }
+    }
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
     g_comp.setRuntimeAmount(g_ats.blkCaSmooth);

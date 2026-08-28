@@ -321,62 +321,58 @@ jobs:
           echo "INTEGRITY OK — compilación → zip: hash idéntico"
           ls -lh "$ZIPNAME"
 
-      # ── SUBIDA DE ARTEFACTOS LIMPIOS ────────────────────────────────────
-      # FIX (auditoría 2026-08-16): antes decía "solo los 3 autorizados" y
-      # el APK no era uno de ellos — se compilaba y nunca llegaba al
-      # artefacto descargable. Ahora 6: zip del módulo, APK + su hash,
-      # daemon suelto + su hash, y el .so del efecto.
-      #
-      # FIX (empaquetado, colisión de nombre): el artefacto de GitHub Actions
-      # se llamaba IGUAL que el zip interno del módulo Magisk
-      # (ivanna-magisk-module-arm64-<sha>.zip en ambos casos). Al descargar
-      # desde la UI de Actions, GitHub comprime TODO el path: en un único
-      # .zip nombrado con el name: del artefacto — así que el usuario
-      # terminaba con un archivo llamado igual que el que había DENTRO,
-      # lo que rompe la extracción en varios gestores de archivos (sobre
-      # todo en apps de Android). Fix: dos artefactos separados con
-      # nombres que nunca coinciden con ningún archivo interno.
+      # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
+      # FIX: los pasos "Verify APK integrity before upload" y
+      # "Package APK deterministically" aparecían DOS veces. El segundo
+      # intento de `zip -T ivanna-apk-package.zip *` incluía el propio
+      # .zip en sí mismo → APK bundle corrupto, no descomprimible.
+      # También: `sha256sum -c apk_sha256.txt` fallaba porque en ese
+      # punto apk_sha256.txt tenía la ruta de Gradle (app/build/…), no
+      # el nombre canónico ivanna-omega-supreme-SHA.apk.
+      # Solución: un único bloque ordenado con hash canónico desde el inicio.
 
-      - name: Verify APK integrity before upload
+      - name: Verify and package APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          # Localizar el APK producido por Gradle — debe existir, tamaño >0
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          [ -n "$APK" ] || { echo "ERROR: Gradle no produjo ningún APK"; exit 1; }
+          [ -s "$APK" ] || { echo "ERROR: APK existe pero está vacío"; exit 1; }
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
+          echo "APK origen: $APK  ($(du -h "$APK" | cut -f1))"
           file "$APK"
 
+          # Validación ZIP — todo APK es un ZIP; debe contener AndroidManifest.xml
           unzip -t "$APK"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml" \
+            || { echo "ERROR: APK sin AndroidManifest.xml — corrupto"; exit 1; }
 
-          sha256sum "$APK" | tee apk_sha256.txt
+          # Renombrar al nombre canónico versionado por SHA
+          APK_FINAL="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK" "./$APK_FINAL"
 
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
+          # Hash del archivo canónico (este es el que viaja como artefacto)
+          sha256sum "./$APK_FINAL" | tee apk_sha256.txt
+          echo "APK_ARTIFACT_NAME=$APK_FINAL" >> "$GITHUB_ENV"
 
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
+          sha256sum -c apk_sha256.txt
 
-          mkdir -p artifact
+          # Empaquetado determinístico en directorio limpio
+          rm -rf artifact && mkdir artifact
+          cp "./$APK_FINAL"  artifact/
+          cp apk_sha256.txt  artifact/
+          # -j: sin paths internos; -X: sin metadatos extra; sin incluir el zip en sí
+          ( cd artifact && zip -jX ivanna-apk-package.zip "$APK_FINAL" apk_sha256.txt )
+          # Validar el zip producido
+          unzip -t artifact/ivanna-apk-package.zip
+          unzip -l artifact/ivanna-apk-package.zip | grep -q "$(basename "$APK_FINAL")" \
+            || { echo "ERROR: APK no encontrado dentro del package zip"; exit 1; }
+          sha256sum artifact/ivanna-apk-package.zip | tee artifact/package_sha256.txt
 
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
+          echo "✓ APK empaquetado y verificado: $APK_FINAL"
 
       - name: Upload Magisk module (zip + daemon + effect lib)
         uses: actions/upload-artifact@v4
@@ -390,54 +386,7 @@ jobs:
           if-no-files-found: error
           overwrite: false
 
-      - name: Validate staged APK before artifact upload
-        run: |
-          unzip -t ivanna-omega-supreme-${{ github.sha }}.apk
-          sha256sum -c apk_sha256.txt
-
-
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
-
-      - name: Upload APK (separate artifact — was colliding with module zip name)
+      - name: Upload APK (separate artifact — never collides with module zip name)
         uses: actions/upload-artifact@v4
         with:
           name: apk-build-${{ github.sha }}
@@ -445,7 +394,11 @@ jobs:
           path: |
             ivanna-omega-supreme-${{ github.sha }}.apk
             apk_sha256.txt
+            artifact/ivanna-apk-package.zip
+            artifact/package_sha256.txt
+          if-no-files-found: error
           overwrite: false
+
 
   # ── JOB FINAL: verificación independiente del artefacto publicado ──────
   verify-release:
