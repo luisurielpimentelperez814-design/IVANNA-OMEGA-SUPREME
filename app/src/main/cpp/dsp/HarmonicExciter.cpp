@@ -19,6 +19,8 @@ void HarmonicExciter::reset() {
     hpfR_.reset();
     osLpfL_.reset();
     osLpfR_.reset();
+    preLpfL_.reset();
+    preLpfR_.reset();
     // FIX (estado residual): reset() se llama en el bypass por wet=0 y dejaba
     // excScale_ (limitador de headroom) y wetNow_ (rampa anti-zipper) con los
     // valores del estado anterior. Al reactivar, la excitación arrancaba
@@ -49,7 +51,16 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     }
 
     double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
-    double fc = 18000.0;
+
+    // ── Post-clip anti-alias LPF (rebajado 18kHz → 12kHz) ────────────────────
+    // FIX: el LPF a 18kHz a tasa OS (96kHz) sólo atenuaba -8 dB en 24kHz
+    // (la frontera del decimador 2:1). Los armónicos del softclip en 24-48kHz
+    // OS aliaseaban a 0-24kHz base → tronidos de alta frecuencia.
+    // A 12kHz, la 2° Butterworth da -15 dB en 24kHz: mucho mejor.
+    // Para eliminar completamente el aliasing se combinan dos acciones:
+    //   1. pre-LPF a 8kHz antes del softclip (ver preLpfL_/R_)
+    //   2. post-LPF a 12kHz para shaping final de la banda de excitación
+    double fc = 12000.0;  // rebajado de 18000 → 12000 Hz
     if (fc > sampleRateOS * 0.45) fc = sampleRateOS * 0.45;
     double omegaOS = 2.0 * M_PI * fc / sampleRateOS;
     double swOS = std::sin(omegaOS);
@@ -57,12 +68,33 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     double alphaOS = swOS / (2.0 * 0.707);
     double a0OS_inv = 1.0 / (1.0 + alphaOS);
 
-    osLpfL_.b0 = (float)((1.0 + cwOS) * 0.5 * a0OS_inv);
-    osLpfL_.b1 = (float)(-(1.0 + cwOS) * a0OS_inv);
+    osLpfL_.b0 = (float)((1.0 - cwOS) * 0.5 * a0OS_inv);
+    osLpfL_.b1 = (float)((1.0 - cwOS) * a0OS_inv);
     osLpfL_.b2 = osLpfL_.b0;
     osLpfL_.a1 = (float)(-2.0 * cwOS * a0OS_inv);
     osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
     osLpfR_ = osLpfL_;
+
+    // ── Pre-saturation LPF a 8kHz (tasa BASE, mismos coefs en ambas ramas) ──
+    // Butterworth 2° orden, fc=8000 Hz, sr=p.sampleRate (48000 Hz), Q=0.7071:
+    //   K=tan(π×8/48)=0.57735, norm=2.14984
+    //   b0=b2=0.15505, b1=0.31010, a1=-0.62003, a2=0.24041
+    // Con input limitado a ≤8kHz, H3 del softclip va a ≤24kHz = Nyquist base.
+    // No tiene estado en el loop de OS — se aplica antes del upsample.
+    {
+        double sr = (double)p.sampleRate;
+        double fc_pre = 8000.0;
+        double K = std::tan(M_PI * fc_pre / sr);
+        double KK = K * K;
+        double Q = 0.707106781;
+        double norm_pre = 1.0 + K / Q + KK;
+        preLpfL_.b0 = (float)(KK / norm_pre);
+        preLpfL_.b1 = (float)(2.0 * KK / norm_pre);
+        preLpfL_.b2 = preLpfL_.b0;
+        preLpfL_.a1 = (float)(2.0 * (KK - 1.0) / norm_pre);
+        preLpfL_.a2 = (float)((1.0 - K / Q + KK) / norm_pre);
+        preLpfR_ = preLpfL_;
+    }
 
     double hpfFc = 3000.0;
     if (hpfFc > sampleRateOS * 0.45) hpfFc = sampleRateOS * 0.45;
@@ -121,20 +153,34 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     float scaleR = excScaleR_;
     const float rel = excRelCoef_;
 
+    // ── Pre-filtro LPF 8kHz: filtrar el frame completo ANTES del loop OS ──────
+    // Así evitamos llamar preLpfL_.process() dos veces sobre el mismo sample
+    // dentro del loop de interpolación OS (que causaría doble-filtrado y
+    // avanzaría el estado del biquad incorrectamente en samples adelantados).
+    // El dry path (left[i]/right[i] originals) queda intacto — se usa en
+    // la mezcla final para preservar el timbre completo ≥8kHz.
+    float preFiltL[MAX_OS_FRAMES];
+    float preFiltR[MAX_OS_FRAMES];
+    for (int i = 0; i < frames; ++i) {
+        preFiltL[i] = preLpfL_.process(left[i]);
+        preFiltR[i] = preLpfR_.process(right[i]);
+    }
+
     int osIdx = 0;
     for (int i = 0; i < frames; ++i) {
-        float l = left[i];
+        float l = left[i];   // ORIGINAL — para el dry path
         float r = right[i];
 
-        osLeft_[osIdx] = l;
-        osRight_[osIdx] = r;
+        // OS buffer usa la señal pre-filtrada (≤8kHz) para el softclip
+        osLeft_[osIdx]  = preFiltL[i];
+        osRight_[osIdx] = preFiltR[i];
         osIdx++;
 
-        float nextL = (i + 1 < frames) ? left[i + 1] : l;
-        float nextR = (i + 1 < frames) ? right[i + 1] : r;
-
-        osLeft_[osIdx] = 0.5f * (l + nextL);
-        osRight_[osIdx] = 0.5f * (r + nextR);
+        // Punto medio OS: promedio entre muestra actual y siguiente (pre-filtradas)
+        float nextLF = (i + 1 < frames) ? preFiltL[i + 1] : preFiltL[i];
+        float nextRF = (i + 1 < frames) ? preFiltR[i + 1] : preFiltR[i];
+        osLeft_[osIdx]  = 0.5f * (preFiltL[i] + nextLF);
+        osRight_[osIdx] = 0.5f * (preFiltR[i] + nextRF);
         osIdx++;
     }
     int osFrames = osIdx;
@@ -174,8 +220,13 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // la excitación aplicada usaba un wet mayor que el del headroom
         // calculado → la suma dry+wet reventaba el techo en ~7e-6 por
         // muestra (medido por ExciterOvershoot.NeverExceedsFullScale).
-        float outL = l + kExcCeiling * wetNow * excL * scaleL;
-        float outR = r + kExcCeiling * wetNow * excR * scaleR;
+        // FIX dry path: la señal seca DEBE ser el sample original (no pre-filtrado)
+        // para que el timbre ≥8kHz pase intacto. La excitación (wet*excL*scaleL)
+        // viene del path filtrado (≤8kHz) pero se mezcla sobre el dry original.
+        float dryL = left[i >> 1];
+        float dryR = right[i >> 1];
+        float outL = dryL + kExcCeiling * wetNow * excL * scaleL;
+        float outR = dryR + kExcCeiling * wetNow * excR * scaleR;
 
         // Convergencia anti-zipper del wet efectivo (por muestra OS, ~15 ms)
         // — DESPUÉS de la mezcla, para que la muestra actual sea consistente

@@ -38,6 +38,16 @@ private:
     
     // HPF to feed only highs into exciter (3 kHz cutoff)
     Biquad hpfL_, hpfR_;
+
+    // ── Pre-saturation LPF (FIX aliasing del exciter) ────────────────────────
+    // El softclip genera armónicos de hasta 3× la fundamental. Sin pre-filtro,
+    // contenido a 10-16 kHz (HPF pasa 3kHz+) produce 3er armónico a 30-48 kHz
+    // (tasa OS 96kHz). En el decimador 2:1 a 48kHz, frecuencias de 24-48kHz
+    // (OS) alias a 0-24kHz → tronidos de alta frecuencia audibles.
+    // Solución: LPF a 8kHz ANTES del softclip. H3 de 8kHz = 24kHz = Nyquist
+    // base → safe. El estado persiste entre bloques (igual que el fix IIR de
+    // Psychoacoustics — estado local = discontinuidad = pop por bloque).
+    Biquad preLpfL_, preLpfR_;  // fc=8kHz @48kHz base, coefs en setParams()
     
     // Anti-aliasing: oversampling 2x buffers
     static constexpr int OS_FACTOR = 2;  // 2x oversampling
