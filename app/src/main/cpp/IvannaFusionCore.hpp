@@ -137,3 +137,11 @@ private:
 // Estaba comentado + dentro de namespace Ivanna{} — ambos errores corregidos.
 // ::IvannaFusionCore ≠ Ivanna::IvannaFusionCore → sin conflicto de nombres.
 
+
+
+inline float fast_tanh_scalar(float x) {
+    if (x > 5.0f) return 1.0f;
+    if (x < -5.0f) return -1.0f;
+    return tanhf(x);
+}
+

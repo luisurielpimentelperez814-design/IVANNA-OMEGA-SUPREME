@@ -21,10 +21,6 @@ static inline float32x4_t fast_tanh_neon(float32x4_t x) {
     return vmulq_f32(num, rec);
 }
 #else
-static inline float fast_tanh_scalar(float x) {
-    const float x2 = x * x;
-    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
-}
 #endif
 
 namespace Ivanna {
