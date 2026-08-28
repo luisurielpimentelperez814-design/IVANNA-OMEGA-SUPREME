@@ -473,7 +473,7 @@ private fun MetricProgressBlock(
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp)),
             color = if (dataAvailable) color else Color.Gray,
-            trackColor = Color(0xFF222222)
+            trackColor = ObsidianEdge
         )
     }
 }
@@ -508,7 +508,7 @@ private fun PerceptualSliderRow(
             colors = SliderDefaults.colors(
                 thumbColor = color,
                 activeTrackColor = color,
-                inactiveTrackColor = Color(0xFF2B2B2B)
+                inactiveTrackColor = ObsidianEdge
             ),
             modifier = Modifier.height(24.dp)
         )
