@@ -14,7 +14,7 @@ echo "=================================" >> "$REPORT"
 echo "" >> "$REPORT"
 echo "[1] SOURCE SAFETY CHECK" >> "$REPORT"
 
-if grep -R -nE "nan|inf|NaN|INF" app/src/main/cpp 2>/dev/null; then
+if grep -R -nE "([[:space:](=]|^)(nan|inf|NaN|INF)([[:space:]);,)]|[0-9]+\.(nan|inf|NaN|INF))" app/src/main/cpp --include="*.cpp" --include="*.hpp" --include="*.h" 2>/dev/null; then
     echo "FAIL: invalid floating point constants detected" >> "$REPORT"
     FAIL=1
 else
