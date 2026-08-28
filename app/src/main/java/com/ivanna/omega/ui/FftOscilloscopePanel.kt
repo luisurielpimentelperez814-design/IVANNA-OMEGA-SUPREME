@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import com.ivanna.omega.ui.theme.*
@@ -33,8 +35,17 @@ private enum class SignalKind(val label: String) {
 
 @Composable
 internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
-    var signal      by remember { mutableStateOf(SignalKind.HARMONICS) }
-    var fundHz      by remember { mutableFloatStateOf(440f) }
+    val ctx   = LocalContext.current
+    // FIX (sin persistencia): signal y fundHz volvían a HARMONICS/440 Hz
+    // en cada arranque. Se guardan en SharedPreferences para que el
+    // generador de señal de prueba recuerde la última configuración.
+    val prefs = remember {
+        ctx.getSharedPreferences("ivanna_fft_osc_prefs", Context.MODE_PRIVATE)
+    }
+    var signal      by remember { mutableStateOf(
+        SignalKind.entries.getOrElse(prefs.getInt("signalOrd", 0)) { SignalKind.HARMONICS }
+    ) }
+    var fundHz      by remember { mutableFloatStateOf(prefs.getFloat("fundHz", 440f)) }
     var tick        by remember { mutableLongStateOf(0L) }
     var bandEnergies by remember { mutableStateOf<FloatArray?>(null) }
     // Buffer reutilizable para las 64 bandas reales del visualizador Bark64
@@ -72,7 +83,10 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
                             .clip(RoundedCornerShape(6.dp))
                             .background(if (sel) AmberSignal.copy(0.2f) else ObsidianSoft)
                             .border(1.dp, if (sel) AmberSignal else ObsidianEdge, RoundedCornerShape(6.dp))
-                            .clickable { signal = sk },
+                            .clickable {
+                                signal = sk
+                                prefs.edit().putInt("signalOrd", sk.ordinal).apply()
+                            },
                             contentAlignment = Alignment.Center) {
                             Text(sk.label, color = if (sel) AmberSignal else TextMuted,
                                 fontSize = 9.sp, fontFamily = FontFamily.Monospace,
@@ -85,7 +99,10 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
                     Text("${"%.0f".format(fundHz)} Hz", color = AmberSignal,
                         fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
-                Slider(value = fundHz, onValueChange = { fundHz = it },
+                Slider(value = fundHz, onValueChange = { v ->
+                        fundHz = v
+                        prefs.edit().putFloat("fundHz", v).apply()
+                    },
                     valueRange = 110f..2000f,
                     colors = SliderDefaults.colors(thumbColor = AmberSignal,
                         activeTrackColor = AmberSignal, inactiveTrackColor = ObsidianEdge))

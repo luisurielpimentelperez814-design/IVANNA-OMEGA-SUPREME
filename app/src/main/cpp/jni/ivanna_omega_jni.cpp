@@ -224,6 +224,14 @@ static std::atomic<bool>  g_adaptiveSnapshotStarted{false};
 // estáticos destruyan g_adaptiveEngine.
 static std::atomic<bool>  g_snapshotRunning{false};
 static std::thread        g_snapshotThread;
+// FIX (UB on unload — same class as g_snapshotThread): audioRouteBridgeLoop
+// usaba detach() + while(true) sin flag de parada. JNI_OnUnload paraba el
+// snapshot thread pero el bridge loop seguía vivo y accedía a
+// g_adaptiveEngine.rawMetrics/adaptiveState después de que sus destructores
+// estáticos corriesen → UB / std::terminate() en Ruta B activa al salir.
+// Fix idéntico al del snapshot: hilo joinable + flag atómico de parada.
+static std::atomic<bool>  g_bridgeRunning{false};
+static std::thread        g_bridgeThread;
 
 static void adaptiveSnapshotLoop() {
     uint64_t seq = 0;
@@ -299,7 +307,7 @@ static void audioRouteBridgeLoop() {
     float lastRms = -1.0f, lastPeak = -1.0f;
     uint64_t frameCounter = 0;
     auto lastLogTime = std::chrono::steady_clock::now();
-    while (true) {
+    while (g_bridgeRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
         // ── FIX (UI "SIN AUDIO" con motor procesando, Ruta B sin daemon) ──
@@ -568,12 +576,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
     // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
     // adaptativo (nativeInit puede re-llamarse por cambio de sample rate).
-    // std::thread se detach() a propósito — vive todo el ciclo de vida del
-    // proceso de la app, igual que el hilo de control del propio
-    // AdaptiveDecisionEngine y el watchdog de omega_daemon.cpp.
+    // Hilo joinable (g_bridgeThread) con g_bridgeRunning; JNI_OnUnload
+    // hace flag=false + join() antes de que ~g_adaptiveEngine corra.
     if (!g_audioRouteBridgeStarted.exchange(true, std::memory_order_acq_rel)) {
-        std::thread(audioRouteBridgeLoop).detach();
-        LOGI("AudioRoute bridge started (omega_effect -> AdaptiveDecisionEngine, @30ms)");
+        g_bridgeRunning.store(true, std::memory_order_release);
+        g_bridgeThread = std::thread(audioRouteBridgeLoop);
+        // NO detach() — el hilo se une en JNI_OnUnload antes de que los
+        // destructores estáticos destruyan g_adaptiveEngine (mismo patrón
+        // que g_snapshotThread, que ya tenía este fix aplicado).
+        LOGI("AudioRoute bridge started joinable (omega_effect -> AdaptiveDecisionEngine, @30ms)");
     }
     // FIX RT (2026-08-27): el bloque RIR de nativeProcess (abajo) consume
     // g_rirDataset/g_rirConvolver — pero el init solo estaba en
@@ -1841,9 +1852,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveControls(
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
     JNIEnv* env, jobject) {
-    jfloatArray arr = env->NewFloatArray(14);
+    // FIX: NewFloatArray(14) pero solo 10 elementos escritos con
+    // SetFloatArrayRegion(arr,0,10,v) — los 4 últimos eran cero-garbage.
+    // Kotlin espera exactamente 10 (AdaptiveEngineCard.kt:74: t.size < 10).
+    // Cambiado a 10 para que el contrato sea explícito y coherente.
+    jfloatArray arr = env->NewFloatArray(10);
     if (!arr) return nullptr;
-    float v[14];
+    float v[10];
     v[0] = g_lastRawRms.load(std::memory_order_relaxed);
     v[1] = g_lastRawPeak.load(std::memory_order_relaxed);
     v[2] = g_lastRawGrDb.load(std::memory_order_relaxed);
@@ -1946,12 +1961,19 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
 // UB → std::terminate(). El std::terminate() se reproducía 2/3 corridas
 // en el stress-test de estabilidad.
 JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
-    // 1. Parar el hilo snapshot — debe ocurrir ANTES del destructor de
+    // 1. Parar el hilo bridge (Ruta B, audioRouteBridgeLoop) — accede a
+    //    g_adaptiveEngine.rawMetrics/adaptiveState; debe parar ANTES de
+    //    que el destructor de g_adaptiveEngine corra. Mismo orden que el
+    //    snapshot thread: flag → join → engine.stop().
+    g_bridgeRunning.store(false, std::memory_order_release);
+    if (g_bridgeThread.joinable()) g_bridgeThread.join();
+
+    // 2. Parar el hilo snapshot — debe ocurrir ANTES del destructor de
     //    g_adaptiveEngine (que destruye adaptiveState que el loop usa).
     g_snapshotRunning.store(false, std::memory_order_release);
     if (g_snapshotThread.joinable()) g_snapshotThread.join();
 
-    // 2. Parar el hilo de control del AdaptiveDecisionEngine.
+    // 3. Parar el hilo de control del AdaptiveDecisionEngine.
     if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
         g_adaptiveEngine.stop();
     }

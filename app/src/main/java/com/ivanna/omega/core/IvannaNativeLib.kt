@@ -184,9 +184,9 @@ object IvannaNativeLib {
     // Latencia round-trip del pipeline DSP (µs, CLOCK_MONOTONIC) — benchmark hardware
     external fun nativeMeasureRoundTripLatencyUs(): Long
 
-// FloatArray[8]: [activeRoute,rms,peak,voiceProtect,
-// compAmount,excReduction,spatialWidth,adaptiveActive]
-external fun nativeGetUnifiedPipelineStatus(): FloatArray?
+    // FloatArray[8]: [activeRoute,rms,peak,voiceProtect,
+    // compAmount,excReduction,spatialWidth,adaptiveActive]
+    external fun nativeGetUnifiedPipelineStatus(): FloatArray?
 
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════

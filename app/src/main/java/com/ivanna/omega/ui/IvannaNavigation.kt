@@ -60,8 +60,6 @@ fun MainScaffold(
     val entry   by tabNav.currentBackStackEntryAsState()
     val current  = entry?.destination?.route
 
-    var voiceProtEnabled by remember { mutableStateOf(true) }
-
     Scaffold(
         containerColor = ObsidianVoid,
         bottomBar = {

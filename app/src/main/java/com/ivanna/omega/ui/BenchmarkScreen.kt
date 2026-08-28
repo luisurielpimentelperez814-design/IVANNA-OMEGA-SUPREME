@@ -65,13 +65,32 @@ fun BenchmarkScreen(onBack: () -> Unit) {
                 }
             }
             
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Comparativa Reproducible", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("1. Bypass: Latencia 0ms, Inmersión baja.")
-                    Text("2. HRTF Estático: Latencia 2.45ms, Error ITD ~25us.")
-                    Text("3. HRTF Dinámico (IVANNA): Latencia 2.45ms, Error ITD <15us, Inmersión máxima.")
+            benchmarkJson?.let { json ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Comparativa (Datos Reales)", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val latMs   = json.optDouble("latency_ms", -1.0)
+                        val itdUs   = json.optDouble("itd_error_us", -1.0)
+                        val ildDb   = json.optDouble("ild_error_db", -1.0)
+                        val freqDb  = json.optDouble("frequency_response_deviation_db", -1.0)
+                        val memMb   = json.optLong("memory_mb", -1L)
+                        val src     = json.optString("acoustic_metrics_source", "")
+                        fun d(v: Double, unit: String, dec: Int = 2) =
+                            if (v < 0) "—" else "${"%.${dec}f".format(v)} $unit"
+                        Text("Latencia DSP round-trip: ${d(latMs, "ms")}")
+                        Text("Error ITD: ${d(itdUs, "µs")}  ·  ILD: ${d(ildDb, "dB")}")
+                        Text("Desv. respuesta frecuencial: ${d(freqDb, "dB rms")}")
+                        Text("Memoria JVM: ${if (memMb > 0) "$memMb MB" else "—"}")
+                        if (src.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Métricas acústicas: estimación de modelo ($src) — no medición directa",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
