@@ -28,6 +28,7 @@
 #include "IvannaFusionCore.hpp"
 #include <cstddef>
 #include <cmath>
+#include <cstring>
 #include <random>
 
 namespace Ivanna {
@@ -112,10 +113,10 @@ void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
         buffer->right[i] = r_out;
     }
 
-    for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
-        m_histL[i] = m_histL[BLOCK_SIZE + i];
-        m_histR[i] = m_histR[BLOCK_SIZE + i];
-    }
+    // FIX: memmove es más seguro que el loop manual — el compilador puede
+    // optimizarlo a una instrucción de bloque y no hay riesgo de aliasing.
+    std::memmove(m_histL, m_histL + BLOCK_SIZE, (FIR_TAPS - 1) * sizeof(float));
+    std::memmove(m_histR, m_histR + BLOCK_SIZE, (FIR_TAPS - 1) * sizeof(float));
 }
 
 // calibrateTargetRoom() — declarado en EvolutionaryEQ.hpp, implementado en

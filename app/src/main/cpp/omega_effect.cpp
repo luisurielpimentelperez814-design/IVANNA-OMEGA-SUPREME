@@ -194,6 +194,14 @@ struct omega_effect_context_t {
     // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
     // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
     ivanna::SafetyLimiter* safetyLimiter;
+    // FIX (tronido en cambio de clase TinyML): s_sideGainSmooth era thread_local
+    // estático — si AudioFlinger rota el thread entre callbacks, cada thread nuevo
+    // arrancaba en 1.0f → salto de ganancia → tronido. Ahora es miembro del
+    // contexto por-instancia: estado persistente entre callbacks sin importar qué
+    // thread ejecuta el callback. calloc lo inicializa a 0; la primera muestra
+    // hará EMA desde 0 hacia el target, pero al ser coef ≈ 0.9998 a 48kHz la
+    // rampa de 0→1 tarda ~50ms — imperceptible vs el salto duro de ±4 dB.
+    float sideGainSmooth;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -513,15 +521,17 @@ static int32_t omega_process(effect_handle_t self,
             // sesión, convergencia suave hacia el objetivo de la clase.
             const float sideTarget = (domClass == 0) ? 0.8f
                                    : (domClass == 1) ? 1.2f : 1.0f;
-            static thread_local float s_sideGainSmooth = 1.0f;
+            // FIX: ctx->sideGainSmooth — estado por instancia, no thread_local
             const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
                                  ? ctx->config.outputCfg.samplingRate : 48000u;
             const float sideCoef = std::exp(-1.0f / (0.010f * (float)srNow));
+            // Inicialización lazy: si sideGainSmooth es 0 (calloc), arranca en 1.0
+            if (ctx->sideGainSmooth < 0.01f) ctx->sideGainSmooth = 1.0f;
             for (int n = 0; n < chunk; ++n) {
-                s_sideGainSmooth += (1.0f - sideCoef) * (sideTarget - s_sideGainSmooth);
+                ctx->sideGainSmooth += (1.0f - sideCoef) * (sideTarget - ctx->sideGainSmooth);
                 const float m = (L[n] + R[n]) * 0.5f;
                 float sv = (L[n] - R[n]) * 0.5f;
-                sv *= s_sideGainSmooth;
+                sv *= ctx->sideGainSmooth;
                 L[n] = m + sv;
                 R[n] = m - sv;
             }
