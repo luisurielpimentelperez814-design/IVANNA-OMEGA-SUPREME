@@ -63,9 +63,9 @@ fun BridgePlayerCard(
     }
     val stateColor = when (playerState) {
         IvannaBridgePlayer.State.PLAYING -> AuroraCyan
-        IvannaBridgePlayer.State.PAUSED  -> Color(0xFFFFC857)
-        IvannaBridgePlayer.State.ERROR   -> Color(0xFFFF6B6B)
-        else -> Color(0xFFB8C0CC)
+        IvannaBridgePlayer.State.PAUSED  -> Color(0xFFF7B733)
+        IvannaBridgePlayer.State.ERROR   -> Color(0xFFFF5C4D)
+        else -> Color(0xFF93A8C6)
     }
 
     Surface(
@@ -104,14 +104,14 @@ fun BridgePlayerCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Motor completo (NHO + Spatial + Kernel Evo) sonando con archivo real",
-                color = Color(0xFF9AA3AF),
+                color = Color(0xFF57708F),
                 fontSize = 10.sp
             )
 
             Spacer(Modifier.height(8.dp))
             Text(
                 text = currentUri?.lastPathSegment ?: "Ningún archivo seleccionado",
-                color = Color(0xFFCFD6E0),
+                color = Color(0xFFF1F8FF),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp
             )
@@ -120,7 +120,7 @@ fun BridgePlayerCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Pista ${(queueIndex + 1).coerceAtLeast(1)} de ${queue.size}",
-                    color = Color(0xFF9AA3AF),
+                    color = Color(0xFF57708F),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp
                 )
@@ -186,7 +186,7 @@ fun BridgePlayerCard(
                 ) {
                     Text(
                         text = formatMmSs(displayMs),
-                        color = Color(0xFFB8C0CC),
+                        color = Color(0xFF93A8C6),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp
                     )
@@ -204,7 +204,7 @@ fun BridgePlayerCard(
                         colors = SliderDefaults.colors(
                             thumbColor = AuroraCyan,
                             activeTrackColor = AuroraCyan,
-                            inactiveTrackColor = Color(0x44B8C0CC)
+                            inactiveTrackColor = Color(0x4493A8C6)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -212,7 +212,7 @@ fun BridgePlayerCard(
                     )
                     Text(
                         text = formatMmSs(durationMs),
-                        color = Color(0xFFB8C0CC),
+                        color = Color(0xFF93A8C6),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp
                     )
