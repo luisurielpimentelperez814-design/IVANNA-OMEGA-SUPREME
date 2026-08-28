@@ -118,7 +118,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (selectedTab) {
-                0 -> EQTab()
+                0 -> EQTab(prefs, ::updatePrefs)
                 1 -> DynamicsTab(prefs, ::updatePrefs)
                 2 -> BinauralTab(prefs, ::updatePrefs)
                 3 -> NHOTab(prefs, ::updatePrefs)
@@ -130,7 +130,10 @@ fun SoundScreen(modifier: Modifier = Modifier) {
 
 // ── Tab EQ ──────────────────────────────────────────────────────────────────
 @Composable
-private fun EQTab() {
+private fun EQTab(
+    prefs: AdaptiveControlsState,
+    updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
+) {
     val audioState by AudioStateManager.audioState.collectAsState()
 
     GlassCard("ECUALIZADOR PARAMÉTRICO", AuroraCyan, "8 bandas · Q adaptativo · ISO 226") {
