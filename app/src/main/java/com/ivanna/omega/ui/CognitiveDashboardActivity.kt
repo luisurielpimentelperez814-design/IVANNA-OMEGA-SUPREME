@@ -114,21 +114,27 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
                     // Draw Fatigue Line (Red)
                     val fatiguePath = Path()
-                    state.fatigueHistory.forEachIndexed { i: Int, valNorm: Float ->
-                        val x = (i.toFloat() / (state.fatigueHistory.size - 1)) * width
-                        val y = height - (valNorm * height)
-                        if (i == 0) fatiguePath.moveTo(x, y) else fatiguePath.lineTo(x, y)
+                    val fSize = state.fatigueHistory.size
+                    if (fSize >= 2) {
+                        state.fatigueHistory.forEachIndexed { i: Int, valNorm: Float ->
+                            val x = (i.toFloat() / (fSize - 1)) * width
+                            val y = height - (valNorm * height)
+                            if (i == 0) fatiguePath.moveTo(x, y) else fatiguePath.lineTo(x, y)
+                        }
+                        drawPath(fatiguePath, color = Color(0xFFF87171), style = Stroke(width = 3.dp.toPx()))
                     }
-                    drawPath(fatiguePath, color = Color(0xFFF87171), style = Stroke(width = 3.dp.toPx()))
 
                     // Draw Immersion Line (Cyan)
                     val immersionPath = Path()
-                    state.immersionHistory.forEachIndexed { i: Int, valNorm: Float ->
-                        val x = (i.toFloat() / (state.immersionHistory.size - 1)) * width
-                        val y = height - (valNorm * height)
-                        if (i == 0) immersionPath.moveTo(x, y) else immersionPath.lineTo(x, y)
+                    val iSize = state.immersionHistory.size
+                    if (iSize >= 2) {
+                        state.immersionHistory.forEachIndexed { i: Int, valNorm: Float ->
+                            val x = (i.toFloat() / (iSize - 1)) * width
+                            val y = height - (valNorm * height)
+                            if (i == 0) immersionPath.moveTo(x, y) else immersionPath.lineTo(x, y)
+                        }
+                        drawPath(immersionPath, color = Color(0xFF38BDF8), style = Stroke(width = 3.dp.toPx()))
                     }
-                    drawPath(immersionPath, color = Color(0xFF38BDF8), style = Stroke(width = 3.dp.toPx()))
                 }
             }
         }

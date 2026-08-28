@@ -154,12 +154,26 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(if (snapshot.perceptionOnline) PhosphorGreen else Color.Red)
+                            .background(
+                                when {
+                                    !snapshot.dataAvailable -> Color.Gray
+                                    snapshot.perceptionOnline -> PhosphorGreen
+                                    else -> Color.Red
+                                }
+                            )
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (snapshot.perceptionOnline) "ENGINE ONLINE" else "OFFLINE",
-                        color = if (snapshot.perceptionOnline) PhosphorGreen else Color.Red,
+                        text = when {
+                            !snapshot.dataAvailable -> "SIN SEÑAL"
+                            snapshot.perceptionOnline -> "ENGINE ONLINE"
+                            else -> "OFFLINE"
+                        },
+                        color = when {
+                            !snapshot.dataAvailable -> Color.Gray
+                            snapshot.perceptionOnline -> PhosphorGreen
+                            else -> Color.Red
+                        },
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -432,7 +446,8 @@ private fun MetricProgressBlock(
     label: String,
     value: Float,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dataAvailable: Boolean = true
 ) {
     Column(
         modifier = modifier
@@ -444,16 +459,20 @@ private fun MetricProgressBlock(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(label, color = TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-            Text("%.0f%%".format(value * 100f), color = color, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                if (dataAvailable) "%.0f%%".format(value * 100f) else "—",
+                color = if (dataAvailable) color else Color.Gray,
+                fontSize = 8.sp, fontWeight = FontWeight.ExtraBold
+            )
         }
         Spacer(Modifier.height(4.dp))
         LinearProgressIndicator(
-            progress = { value.coerceIn(0f, 1f) },
+            progress = { if (dataAvailable) value.coerceIn(0f, 1f) else 0f },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp)),
-            color = color,
+            color = if (dataAvailable) color else Color.Gray,
             trackColor = Color(0xFF222222)
         )
     }

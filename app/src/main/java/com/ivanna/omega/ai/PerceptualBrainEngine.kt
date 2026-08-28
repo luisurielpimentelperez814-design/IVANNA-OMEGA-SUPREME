@@ -61,33 +61,41 @@ data class AudioFeaturesInput(
 
 /**
  * PerceptualSnapshot - Real-time state vector of the human auditory perception model and TinyML core.
+ *
+ * FIX (métricas falsas): los defaults anteriores eran valores altos plausibles
+ * (immersion=0.92, confidence=0.97, perceptionOnline=true) que se mostraban en
+ * la UI incluso cuando el motor no había procesado audio real. El usuario veía
+ * "INMERSIÓN 92%" y "CONFIANZA 97%" sin señal activa — métricas falsas.
+ * Ahora todos los defaults son 0/false/"—". dataAvailable=false hasta que
+ * processAudioFeatures() se llame al menos una vez con audio real.
  */
 data class PerceptualSnapshot(
-    val immersion: Float = 0.92f,
-    val fatigue: Float = 0.12f,
-    val emotion: Float = 0.88f,
-    val attention: Float = 0.95f,
-    val confidence: Float = 0.97f,
-    val perceptionOnline: Boolean = true,
+    val dataAvailable: Boolean = false,     // false → UI muestra "—", no ceros engañosos
+    val immersion: Float = 0f,
+    val fatigue: Float = 0f,
+    val emotion: Float = 0f,
+    val attention: Float = 0f,
+    val confidence: Float = 0f,
+    val perceptionOnline: Boolean = false,
 
     // Human Auditory Metrics (Psychoacoustics)
-    val iso226LoudnessDb: Float = 84.5f,
+    val iso226LoudnessDb: Float = 0f,
     val barkBandsCount: Int = 24,
     val melBandsCount: Int = 64,
-    val maskingEfficiency: Float = 0.91f,
-    val temporalMaskingMs: Float = 14.8f,
-    val spectralBalanceRatio: Float = 0.89f,
-    val dynamicRangeDb: Float = 18.2f,
+    val maskingEfficiency: Float = 0f,
+    val temporalMaskingMs: Float = 0f,
+    val spectralBalanceRatio: Float = 0f,
+    val dynamicRangeDb: Float = 0f,
 
     // TinyML Metrics (ConvNeXt INT8)
-    val convNextLatencyUs: Long = 185L,
-    val convNextConfidence: Float = 0.96f,
-    val ringBufferOccupancy: Float = 0.32f,
-    val dominantClassLabel: String = "HIGH_FIDELITY_STEREO",
+    val convNextLatencyUs: Long = 0L,
+    val convNextConfidence: Float = 0f,
+    val ringBufferOccupancy: Float = 0f,
+    val dominantClassLabel: String = "—",
 
     // DSP Cortex Metrics
-    val hrtfStatus: String = "CUE_3D_ACTIVE",
-    val phaseCoherence: Float = 0.93f,
+    val hrtfStatus: String = "—",
+    val phaseCoherence: Float = 0f,
     val spatialFieldAngleDeg: Float = 45.0f,
     val volterraH2Ratio: Float = 0.14f,
     val npeStateActive: Boolean = true,
@@ -178,6 +186,8 @@ class PerceptualBrainEngine {
         val computedEmotion = (harmonicReconstruction * 0.5f + (1.0f - computedFatigue) * 0.5f).coerceIn(0.1f, 1.0f)
 
         _snapshot.value = _snapshot.value.copy(
+            dataAvailable = true,
+            perceptionOnline = true,
             immersion = computedImmersion,
             fatigue = computedFatigue,
             emotion = computedEmotion,
