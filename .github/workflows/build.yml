@@ -506,6 +506,16 @@ jobs:
           echo "recorded =$H_RECORDED"
           [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
           [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+          # Datasets HRTF: los 12 IHR1 + índice deben viajar en el zip
+          # (sin ellos el selector de pinna cae al sintético en silencio).
+          N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
+          echo "ihr1_en_zip=$N_IHR1"
+          [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          # Verificación de integridad de un IHR1 extraído (magic + tamaño)
+          unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
+          MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
+          [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
           # BUILD_INFO debe estar dentro del zip y apuntar a ESTE commit
           unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
           grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
