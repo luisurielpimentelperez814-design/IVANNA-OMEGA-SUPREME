@@ -166,38 +166,85 @@ int main(int argc, char* argv[]) {
             struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
             if (client_fd<0) continue;
-            struct timeval rcv_tv{0,150000}; setsockopt(client_fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_tv,sizeof(rcv_tv));
-            struct timeval snd_tv{0,300000}; setsockopt(client_fd,SOL_SOCKET,SO_SNDTIMEO,&snd_tv,sizeof(snd_tv));
 
-            char json_buf[8192];
-            while (g_running) {
-                ssize_t nbytes = recv(client_fd, json_buf, sizeof(json_buf)-1, 0);
-                if (nbytes<=0) break;
-                json_buf[nbytes]='\0';
-                const char* p=json_buf; while(*p==' '||*p=='\t'||*p=='\r'||*p=='\n') p++;
-                if (*p!='{') {
-                    char reply[1024]={};
-                    int rlen = commandServer.handleTextCommand(json_buf, reply, sizeof(reply));
-                    if (rlen>0) send(client_fd, reply, rlen, MSG_NOSIGNAL);
-                    continue;
+            // FIX (concurrencia): antes el bucle principal atendia a UN cliente
+            // en un recv-loop bloqueante. El bridge Kotlin mantiene su socket
+            // abierto de forma persistente, asi que mientras ese cliente
+            // mandara trafico el daemon jamas volvia a accept() y cualquier
+            // otra conexion (reinstanciacion del engine, hot-reload) se
+            // pudria en el backlog. Ahora cada conexion va a su propio hilo
+            // (los handlers de CommandServer ya estan protegidos por mutex).
+            std::thread([client_fd, &commandServer]() {
+                struct timeval rcv_tv{0,150000}; setsockopt(client_fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_tv,sizeof(rcv_tv));
+                struct timeval snd_tv{0,300000}; setsockopt(client_fd,SOL_SOCKET,SO_SNDTIMEO,&snd_tv,sizeof(snd_tv));
+
+                // FIX (framing): un socket stream NO garantiza mensajes
+                // completos por recv() — un JSON grande podia llegar partido
+                // y parsearse roto (comando perdido en silencio). Se acumula
+                // y se extraen objetos JSON completos por balance de llaves
+                // (respetando comillas y escapes); el resto queda en buffer
+                // para el siguiente recv.
+                std::string pending;
+                pending.reserve(16384);
+                char chunk[8192];
+                while (g_running) {
+                    ssize_t nbytes = recv(client_fd, chunk, sizeof(chunk), 0);
+                    if (nbytes<=0) break;
+                    pending.append(chunk, (size_t)nbytes);
+
+                    // Descarta whitespace inter-mensaje.
+                    size_t start = pending.find_first_not_of(" \t\r\n");
+                    if (start==std::string::npos) { pending.clear(); continue; }
+                    pending.erase(0, start);
+
+                    if (pending[0]!='{') {
+                        // Comandos de texto plano (ruta MagiskBridge): se
+                        // procesa la linea completa hasta '\n' si existe, o el
+                        // buffer entero (comportamiento historico).
+                        std::string text = pending;
+                        size_t nl = pending.find('\n');
+                        if (nl!=std::string::npos) { text = pending.substr(0, nl); pending.erase(0, nl+1); }
+                        else pending.clear();
+                        char reply[1024]={};
+                        int rlen = commandServer.handleTextCommand(text.c_str(), reply, sizeof(reply));
+                        if (rlen>0) send(client_fd, reply, rlen, MSG_NOSIGNAL);
+                        continue;
+                    }
+
+                    // Extrae el primer objeto JSON completo del buffer.
+                    int depth=0; bool inStr=false, esc=false; size_t end=std::string::npos;
+                    for (size_t i=0;i<pending.size();++i) {
+                        char c=pending[i];
+                        if (inStr) { if (esc) esc=false; else if (c=='\\') esc=true; else if (c=='\"') inStr=false; continue; }
+                        if (c=='\"') inStr=true;
+                        else if (c=='{') ++depth;
+                        else if (c=='}' && --depth==0) { end=i+1; break; }
+                    }
+                    if (end==std::string::npos) {
+                        // JSON incompleto: espera al siguiente fragmento.
+                        if (pending.size() > 65536) pending.clear(); // proteccion anti-flood
+                        continue;
+                    }
+                    std::string js = pending.substr(0, end);
+                    pending.erase(0, end);
+
+                    std::string action="UNKNOWN";
+                    auto pos=js.find("\"action\"");
+                    if (pos!=std::string::npos) {
+                        auto p1=js.find("\"",pos+8); auto p2=js.find("\"",p1+1);
+                        if (p1!=std::string::npos && p2!=std::string::npos) action=js.substr(p1+1,p2-p1-1);
+                    }
+                    char reply[4096]={};
+                    int rlen = commandServer.handleJsonCommand(js.c_str(), reply, sizeof(reply));
+                    if (rlen>0) {
+                        send(client_fd, reply, rlen, MSG_NOSIGNAL);
+                    } else {
+                        std::string err = "{\"status\":\"error\",\"reason\":\"not_implemented\",\"action\":\"" + action + "\"}";
+                        send(client_fd, err.c_str(), err.size(), MSG_NOSIGNAL);
+                    }
                 }
-                std::string js(json_buf);
-                std::string action="UNKNOWN";
-                auto pos=js.find("\"action\"");
-                if (pos!=std::string::npos) {
-                    auto p1=js.find("\"",pos+8); auto p2=js.find("\"",p1+1);
-                    if (p1!=std::string::npos && p2!=std::string::npos) action=js.substr(p1+1,p2-p1-1);
-                }
-                char reply[4096]={};
-                int rlen = commandServer.handleJsonCommand(json_buf, reply, sizeof(reply));
-                if (rlen>0) {
-                    send(client_fd, reply, rlen, MSG_NOSIGNAL);
-                } else {
-                    std::string err = "{\"status\":\"error\",\"reason\":\"not_implemented\",\"action\":\"" + action + "\"}";
-                    send(client_fd, err.c_str(), err.size(), MSG_NOSIGNAL);
-                }
-            }
-            close(client_fd);
+                close(client_fd);
+            }).detach();
         }
     }
     if (g_server_fd>=0) close(g_server_fd);
