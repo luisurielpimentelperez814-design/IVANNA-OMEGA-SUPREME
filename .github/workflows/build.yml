@@ -424,7 +424,6 @@ jobs:
           echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
           echo " hash idéntico: compilación → zip → artefacto → módulo"
           echo "════════════════════════════════════════════════════════"
-\n
       - name: Generate OEM stability report
         if: always()
         run: |
@@ -437,7 +436,6 @@ jobs:
         with:
           name: ivanna-oem-stability-report
           path: ivanna_oem_stability_report.txt
-\n
       - name: Run OEM certification gate
         if: always()
         run: |
@@ -450,7 +448,6 @@ jobs:
         with:
           name: ivanna-certification-gate-report
           path: ivanna_oem_certification_gate.txt
-\n
       - name: Collect OEM performance telemetry
         if: always()
         run: |
@@ -482,7 +479,6 @@ jobs:
         with:
           name: ivanna-oem-dashboard
           path: ivanna_oem_dashboard.html
-\n
       - name: Compare OEM performance regression
         if: always()
         run: |
@@ -494,7 +490,6 @@ jobs:
         with:
           name: ivanna-oem-regression-report
           path: ivanna_oem_delta_report.html
-\n
       - name: Run OEM performance quality gate
         if: always()
         run: |
