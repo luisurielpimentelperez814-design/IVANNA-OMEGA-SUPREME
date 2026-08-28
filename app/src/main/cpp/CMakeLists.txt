@@ -325,6 +325,8 @@ add_custom_command(TARGET omega_effect POST_BUILD
 add_custom_target(stage_omega_effect ALL DEPENDS omega_effect)
 
 # IVANNA daemon standalone (Magisk)
+add_subdirectory(tests/third_party/googletest)
+
 add_subdirectory(daemon)
 
 
