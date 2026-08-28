@@ -29,14 +29,14 @@ private val LabText = Color(0xFF93A8C6)    // TextSecondary (cuerpo)
 
 // Umbrales de alerta pedidos en el brief: THD>1% = rojo, SNR<60dB = amarillo.
 private fun thdColor(thd: Float) = when {
-    thd < 0f -> Color(0xFF555555)
+    thd < 0f -> LabMuted
     thd > 1f -> LabRed
     thd > 0.3f -> LabYellow
     else -> LabGreen
 }
 private fun snrColor(snr: Float) = when {
     snr < 0f && snr != -1f -> LabGreen
-    snr == -1f -> Color(0xFF555555)
+    snr == -1f -> LabMuted
     snr < 60f -> LabYellow
     else -> LabGreen
 }
@@ -85,7 +85,7 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
 
         if (snapshot == null) {
             Text("Sin mediciones todavía — pulsa MEDIR AHORA o activa auto-medición.",
-                color = Color(0xFF666666), fontSize = 12.sp)
+                color = LabMuted, fontSize = 12.sp)
         } else {
             val s = snapshot!!
             LabMetricRow("THD", s.thd, "%", thdColor(s.thd))
@@ -118,7 +118,7 @@ private fun LabMetricRow(label: String, value: Float, unit: String, color: Color
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Color(0xFFAAAAAA), fontSize = 13.sp)
+        Text(label, color = LabText, fontSize = 13.sp)
         Text(
             if (value == -1f) "—" else "%.2f %s".format(value, unit),
             color = color, fontSize = 14.sp, fontWeight = FontWeight.Bold
