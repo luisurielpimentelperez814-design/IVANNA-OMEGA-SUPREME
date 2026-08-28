@@ -173,7 +173,8 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
                             val compThreshDb = p[7]; val compRatio = p[8]
                             if (DSPBridge.isLoaded) runCatching {
                                 DSPBridge.setParams(
-                                    drive = 0.45f, wet = exciterWet, mix = 0.70f,
+                                    // FIX: mix=0.70→0.5 (neutro). mix>0.5 → pre-EQ gain → biquad inestable
+                                    drive = 0.45f, wet = exciterWet, mix = 0.5f,
                                     alpha = ((compThreshDb + 24f) / 24f).coerceIn(0f, 1f),
                                     beta  = ((compRatio - 1f) / 19f).coerceIn(0f, 1f),
                                     gamma = 0.72f, freq = 1000f, resonance = 0.707f,

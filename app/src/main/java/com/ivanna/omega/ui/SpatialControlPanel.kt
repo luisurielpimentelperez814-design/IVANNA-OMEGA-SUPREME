@@ -58,7 +58,8 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         if (IvannaNativeLib.isLoaded && idx >= 0) runCatching { SaFBridge.setSubjectIndexHint(idx) }
         // RIR wet → DSPBridge (wet espacial real) + daemon (reverb)
         if (DSPBridge.isLoaded) runCatching {
-            DSPBridge.setParams(drive = 0.5f, wet = if (c.rirEnabled) c.rirWet else 0f, mix = 0.8f,
+            // FIX: mix=0.8→0.5 (neutro). mix>0.5 → +3.6dB pre-EQ → biquad inestable → tronido
+            DSPBridge.setParams(drive = 0.5f, wet = if (c.rirEnabled) c.rirWet else 0f, mix = 0.5f,
                 alpha = 0.94f, beta = 0.85f, gamma = 0.72f, freq = 1000f, resonance = 0.7f,
                 low = 0f, mid = 0f, high = 0f, presence = 0f, master = 0.85f)
         }
