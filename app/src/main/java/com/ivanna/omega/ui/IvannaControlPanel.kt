@@ -159,29 +159,6 @@ fun IvannaControlPanel(
         val cur = AdaptiveControlsPrefs.load(context)
         AdaptiveControlsPrefs.save(context, cur.copy(phaseOracleIntensity = phaseOracleIntensity))
     }
-    LaunchedEffect(omegaMode) {
-        val cur = AdaptiveControlsPrefs.load(context)
-        AdaptiveControlsPrefs.save(context, cur.copy(omegaMode = omegaMode))
-    }
-    LaunchedEffect(nhoHarmonic, spatialAngle, spatialWidth) {
-        val cur = AdaptiveControlsPrefs.load(context)
-        AdaptiveControlsPrefs.save(context, cur.copy(
-            nhoHarmonic  = nhoHarmonic,
-            spatialAngle = spatialAngle,
-            spatialWidth = spatialWidth
-        ))
-    }
-    LaunchedEffect(npeHarmonic, npeLateralInhib, npeOhcCompression, npeMasterGain, npeAgcTarget, npeAgcRate) {
-        val cur = AdaptiveControlsPrefs.load(context)
-        AdaptiveControlsPrefs.save(context, cur.copy(
-            npeHarmonic       = npeHarmonic,
-            npeLateralInhib   = npeLateralInhib,
-            npeOhcCompression = npeOhcCompression,
-            npeMasterGain     = npeMasterGain,
-            npeAgcTarget      = npeAgcTarget,
-            npeAgcRate        = npeAgcRate
-        ))
-    }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
     var eq by remember { mutableFloatStateOf(initialEq) }
     var width by remember { mutableFloatStateOf(initialWidth) }
@@ -205,6 +182,34 @@ fun IvannaControlPanel(
     var npeMasterGain by remember { mutableFloatStateOf(savedState.npeMasterGain) }
     var npeAgcTarget by remember { mutableFloatStateOf(savedState.npeAgcTarget) }
     var npeAgcRate by remember { mutableFloatStateOf(savedState.npeAgcRate) }
+    // FIX (build): estos 3 LaunchedEffect estaban ANTES de las declaraciones
+    // de omegaMode/nhoHarmonic/spatialAngle/spatialWidth/npeHarmonic/etc.
+    // (usados antes de declararse -> "Unresolved reference" en compileDebugKotlin,
+    // build del APK roto). Se mueven aqui, justo despues de que todas las
+    // variables que referencian ya existen.
+    LaunchedEffect(omegaMode) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(omegaMode = omegaMode))
+    }
+    LaunchedEffect(nhoHarmonic, spatialAngle, spatialWidth) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(
+            nhoHarmonic  = nhoHarmonic,
+            spatialAngle = spatialAngle,
+            spatialWidth = spatialWidth
+        ))
+    }
+    LaunchedEffect(npeHarmonic, npeLateralInhib, npeOhcCompression, npeMasterGain, npeAgcTarget, npeAgcRate) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(
+            npeHarmonic       = npeHarmonic,
+            npeLateralInhib   = npeLateralInhib,
+            npeOhcCompression = npeOhcCompression,
+            npeMasterGain     = npeMasterGain,
+            npeAgcTarget      = npeAgcTarget,
+            npeAgcRate        = npeAgcRate
+        ))
+    }
     var npeHrtf by remember { mutableStateOf(initialNpeHrtf) }
     var npeCochlear by remember { mutableStateOf(initialNpeCochlear) }
     var npeAdapt by remember { mutableStateOf(initialNpeAdapt) }
@@ -402,34 +407,26 @@ fun IvannaControlPanel(
                     runCatching { IvannaNativeLib.nativeSetSpatialWet(it) }
                 }
             }
-            // FIX: spscRingFactor no tenía llamada nativa. Wired →
-            // nativeSetAdaptiveControls como parámetro de buffer width del motor
-            // adaptativo (controla el ratio read/write del ring buffer SPSC).
+            // FIX (build + semantica): nativeSetAdaptiveControls(modeOrdinal, intensity)
+            // es exclusivamente para el modo/intensidad del motor adaptativo (ver
+            // IvannaNativeLib.kt:167) -- llamarla aqui con 3 floats no compilaba
+            // (aridad/tipos) y, si hubiera compilado, habria escrito el ring
+            // factor SPSC dentro de g_adaptiveUiMode como si fuera un modo (0-3),
+            // corrompiendo el motor adaptativo real. spscRingFactor SI persiste
+            // (prefs arriba); no tiene todavia una llamada nativa correcta porque
+            // ese parametro (ratio read/write del ring buffer SPSC) no expone un
+            // setter propio en el JNI actual. Pendiente: exponer uno real en vez
+            // de reusar una funcion que significa otra cosa.
             AuroraSlider("FACTOR ANCHO RING BUFFER SPSC", spscRingFactor, 0.5f..1.5f, unit = "x") {
                 spscRingFactor = it
-                if (IvannaNativeLib.isLoaded) {
-                    runCatching {
-                        IvannaNativeLib.nativeSetAdaptiveControls(
-                            it,          // spsc ring factor como intensidad adaptativa
-                            spatialSuppression,
-                            tinymlInferenceGain
-                        )
-                    }
-                }
             }
             // FIX: tinymlInferenceGain no tenía llamada nativa. Ahora escala
             // la intensidad antiDolby activa: umbral × gananciaInferencia.
-            // También se replica al motor adaptativo vía nativeSetAdaptiveControls.
             AuroraSlider("GANANCIA INFERENCIA TINYML", tinymlInferenceGain, 0f..2f, unit = "dB") {
                 tinymlInferenceGain = it
                 if (IvannaNativeLib.isLoaded) {
                     runCatching {
                         IvannaNativeLib.nativeSetAntiDolbyIntensity(antiDolbyThreshold * it.coerceIn(0f, 2f))
-                        IvannaNativeLib.nativeSetAdaptiveControls(
-                            spscRingFactor,
-                            spatialSuppression,
-                            it
-                        )
                     }
                 }
             }
