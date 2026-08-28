@@ -14,6 +14,19 @@ class IvannaSpatialEngine private constructor() {
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) { shared.distance = v.coerceIn(0.5f, 2.0f) }
 
+        // FIX: elevación existía en UI (slider binauralElevation) y en prefs
+        // pero no tenía ninguna función en el motor espacial ni llamada nativa.
+        // Se modela como pitch del head-tracker: ±45° → nativeSetSpatialParams
+        // con JSON {elevation_rad: v} que el motor HRTF ya acepta.
+        fun setElevation(rad: Float) {
+            shared.elevationRad = rad.coerceIn(-Math.PI.toFloat() / 4f, Math.PI.toFloat() / 4f)
+            if (IvannaNativeLib.isLoaded) runCatching {
+                IvannaNativeLib.nativeSetSpatialParams(
+                    """{"azimuth_rad":${shared.azimuthRad},"elevation_rad":${shared.elevationRad}}"""
+                )
+            }
+        }
+
         /**
          * Cablea el HeadTracker al motor nativo.
          * onOrientationChanged → nativeSetSpatialAngleRad (yaw) en el hilo
@@ -31,6 +44,7 @@ class IvannaSpatialEngine private constructor() {
     private val earlyReflectionGains = floatArrayOf(0.3f, 0.2f, 0.15f, 0.1f)
 
     @Volatile var azimuthRad: Float = 0f
+    @Volatile var elevationRad: Float = 0f
     @Volatile var widthFactor: Float = 1.0f
     @Volatile var distance: Float = 1.0f
 

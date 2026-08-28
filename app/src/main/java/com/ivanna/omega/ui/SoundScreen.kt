@@ -309,8 +309,14 @@ private fun BinauralTab(
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
             }
+            // FIX: ELEVACIÓN persistía en prefs pero no llamaba a ningún motor
+            // espacial ni función nativa — la elevación era decorativa.
+            // Wired → IvannaSpatialEngine.setElevation (que a su vez llama
+            // nativeSetSpatialParams con JSON azimuth+elevation).
             IvannaSliderRow("ELEVACIÓN", prefs.binauralElevation, -45f, 45f, "°") { v ->
                 updatePrefs { it.copy(binauralElevation = v) }
+                val rad = v * Math.PI.toFloat() / 180f
+                com.ivanna.omega.spatial.IvannaSpatialEngine.setElevation(rad)
             }
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
