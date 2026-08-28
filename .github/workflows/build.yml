@@ -424,3 +424,16 @@ jobs:
           echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
           echo " hash idéntico: compilación → zip → artefacto → módulo"
           echo "════════════════════════════════════════════════════════"
+\n
+      - name: Generate OEM stability report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate_oem_report.sh
+          .github/scripts/generate_oem_report.sh
+
+      - name: Upload OEM certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-stability-report
+          path: ivanna_oem_stability_report.txt
