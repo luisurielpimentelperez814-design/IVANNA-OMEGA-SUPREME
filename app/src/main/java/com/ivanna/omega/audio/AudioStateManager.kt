@@ -31,6 +31,8 @@ data class AudioState(
     val eqBass: Float = 0f,
     val eqMid: Float = 0f,
     val eqTreble: Float = 0f,
+    // Banda de presencia EQ (2-5 kHz) — slider propio, no reutiliza spatialWidth
+    val eqPresence: Float = 0f,
     val masterGain: Float = 1.0f,
     val safetyMargin: Float = 0.9f,
     val manualModeEnabled: Boolean = false,
