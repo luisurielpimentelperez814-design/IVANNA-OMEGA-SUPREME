@@ -60,6 +60,22 @@ fun AdaptiveProfilesScreen(
         mutableStateOf(runCatching { ProfilesLoader.loadMetadata(context) }.getOrNull())
     }
 
+    // FIX (tarjetas decorativas): AdaptiveProfileCard no tenía acción — se
+    // veía el perfil (con parámetros DSP reales en el modelo) pero pulsarlo
+    // no hacía nada. Ahora aplica de verdad vía ProfileManagerBridge →
+    // ProfileManager.applyToDsp → DSPStatePrefs (mismo path que
+    // ProfileSelectorScreen) y persiste el id activo.
+    val bridge = remember { com.ivanna.omega.ProfileManagerBridge(context) }
+    // Mismo store que usa MainActivity/ProfileSelectorScreen (ParameterStore,
+    // claves compartidas) — no un store nuevo que desalinearía el id activo.
+    val profileStore = remember { com.ivanna.omega.core.ParameterStore(context) }
+    var appliedId by remember {
+        mutableStateOf(runCatching { profileStore.getCurrentAudioProfileId() }.getOrNull())
+    }
+    var dsp by remember {
+        mutableStateOf(com.ivanna.omega.dsp.DSPStatePrefs.load(context))
+    }
+
     Column(
         modifier = modifier
             .background(ObsidianDeep)
@@ -107,20 +123,39 @@ fun AdaptiveProfilesScreen(
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(profiles, key = { it.id }) { profile ->
-                AdaptiveProfileCard(profile)
+                AdaptiveProfileCard(
+                    profile   = profile,
+                    isApplied = profile.id == appliedId,
+                    onApply   = {
+                        bridge.applyProfile(profile.id, dsp) { updated ->
+                            dsp = updated
+                        }
+                        appliedId = profile.id
+                        profileStore.setCurrentAudioProfileId(profile.id)
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AdaptiveProfileCard(profile: IvannaAudioProfile) {
+private fun AdaptiveProfileCard(
+    profile: IvannaAudioProfile,
+    isApplied: Boolean = false,
+    onApply: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(ObsidianSoft)
-            .border(1.dp, ObsidianEdge, RoundedCornerShape(12.dp))
+            .background(if (isApplied) ObsidianSoft else ObsidianSoft)
+            .border(
+                1.dp,
+                if (isApplied) AuroraCyan else ObsidianEdge,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable { onApply() }
             .padding(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
