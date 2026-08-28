@@ -158,6 +158,37 @@ static std::atomic<float> g_nho_wet_exciter{0.16f};
 static std::atomic<float> g_nho_wet_spatial{1.0f};
 static std::atomic<float> g_nho_wet_eta    {0.5f};
 
+// ── Estado del hilo de audio (reemplaza thread_local) ─────────────────────────
+// thread_local dentro del callback JNI es incorrecto: Android puede migrar
+// el callback entre threads en reinstanciaciones del engine (nativeReset +
+// nativeInit) → cada thread nuevo arranca con estado 0 → salto de ganancia →
+// tronido/pop audible. Un único g_ats por proceso es correcto porque el engine
+// es singleton (un solo hilo de audio activo en todo momento).
+struct AudioThreadState {
+    float g_ats.chL[2048]            = {};
+    float g_ats.chR[2048]            = {};
+    float g_ats.dryL[2048]           = {};
+    float g_ats.dryR[2048]           = {};
+    float g_ats.pdOutL[2048]         = {};
+    float g_ats.pdOutR[2048]         = {};
+    float targetGainSmooth     = 1.0f;
+    float compAmountSmooth     = 0.0f;
+    float excReductionSmooth   = 0.0f;
+    float guardCompLimitApplied= 1.0f;
+    float guardExcLimitApplied = 1.0f;
+    float g_ats.corrSmooth           = 0.7f;
+    float dryMixSmooth         = 0.0f;
+    float guardCompLimit       = 1.0f;
+    float guardExcLimit        = 1.0f;
+    float widthSmooth          = 1.0f;
+    uint64_t lastAdaptiveSeq   = 0;
+    // nativeProcessBlock path (puede correr en thread distinto a nativeProcess)
+    float blkTgSmooth          = 1.0f;
+    float blkCaSmooth          = 0.0f;
+    float blkErSmooth          = 0.0f;
+};
+static AudioThreadState g_ats;
+
 static inline void applyNhoWet() noexcept {
     float v = g_nho_wet_exciter.load(std::memory_order_relaxed)
             * g_nho_wet_spatial.load(std::memory_order_relaxed)
@@ -705,15 +736,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // El código anterior pasaba el mismo puntero como left y right → mono aliasado.
     // Fix: de-intercalar a buffers L/R reales (thread_local: sin stack overhead),
     // correr la cadena en estéreo verdadero, y re-intercalar al final.
-    static thread_local float chL[2048], chR[2048];
+    // buffers en g_ats
     for (int i = 0; i < n; ++i) {
-        chL[i] = data[2 * i];
-        chR[i] = data[2 * i + 1];
+        g_ats.chL[i] = data[2 * i];
+        g_ats.chR[i] = data[2 * i + 1];
     }
     // FEATURE (Voice Protection): copia seca (pre-DSP) para poder mezclar
     // de vuelta hacia ella si YamnetClassifier detecta voz dominante — ver
     // blend al final de esta función, después de PDEngine.
-    static thread_local float dryL[2048], dryR[2048];
+    // buffers en g_ats
     std::memcpy(dryL, chL, n * sizeof(float));
     std::memcpy(dryR, chR, n * sizeof(float));
     // FIX (Fase C, pulido de oído absoluto): processInput() (trim de
@@ -737,15 +768,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // final, pero suavizar la SUGERENCIA en sí evita saltos audibles entre
     // bloques de 50ms cuando consumeIfNewer() trae un valor nuevo del hilo
     // de control.
-    static thread_local float s_targetGainSmooth = 1.0f;
-    static thread_local float s_compAmountSmooth = 0.0f;
-    static thread_local float s_excReductionSmooth = 0.0f;
+    // estado en g_ats
+    // estado en g_ats
+    // estado en g_ats
     // Límites del Perceptual Guard calculados en el bloque ANTERIOR — ver
-    // el comentario junto a s_guardCompLimit/s_guardExcLimit más abajo para
+    // el comentario junto a g_ats.guardCompLimit/g_ats.guardExcLimit más abajo para
     // la razón del orden. Declarados aquí (mismo scope thread_local) para
     // que persistan entre llamadas y estén listos antes de smoothing.
-    static thread_local float s_guardCompLimitApplied = 1.0f;
-    static thread_local float s_guardExcLimitApplied  = 1.0f;
+    // estado en g_ats
+    // estado en g_ats
     const float adaptiveStrength = adaptive_ui_strength();
     const float targetGainUi = blend_adaptive_from_neutral(
         1.0f,
@@ -759,18 +790,18 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         0.0f,
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength);
-    s_targetGainSmooth += 0.05f * (targetGainUi - s_targetGainSmooth);
-    s_compAmountSmooth += 0.05f * (compAmountUi - s_compAmountSmooth);
-    s_excReductionSmooth += 0.05f * (excReductionUi - s_excReductionSmooth);
+    g_ats.targetGainSmooth += 0.05f * (targetGainUi - g_ats.targetGainSmooth);
+    g_ats.compAmountSmooth += 0.05f * (compAmountUi - g_ats.compAmountSmooth);
+    g_ats.excReductionSmooth += 0.05f * (excReductionUi - g_ats.excReductionSmooth);
     // Aplicar el límite del guard calculado en el bloque anterior. El delay
-    // de 1 bloque es estructural (ver comentario junto a s_guardCompLimit
+    // de 1 bloque es estructural (ver comentario junto a g_ats.guardCompLimit
     // más abajo) — lo que se corrigió fue el escalón duro, no el delay.
-    s_compAmountSmooth = std::max(s_compAmountSmooth, s_guardCompLimitApplied);
-    s_excReductionSmooth = std::min(s_excReductionSmooth, s_guardExcLimitApplied);
-    g_gain.setRuntimeGain(s_targetGainSmooth);
-    g_comp.setRuntimeAmount(s_compAmountSmooth);
+    g_ats.compAmountSmooth = std::max(g_ats.compAmountSmooth, g_ats.guardCompLimitApplied);
+    g_ats.excReductionSmooth = std::min(g_ats.excReductionSmooth, g_ats.guardExcLimitApplied);
+    g_gain.setRuntimeGain(g_ats.targetGainSmooth);
+    g_comp.setRuntimeAmount(g_ats.compAmountSmooth);
     g_comp.process(chL, chR, n);
-    g_exciter.setRuntimeReduction(s_excReductionSmooth);
+    g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);
 
 g_exciter.process(chL, chR, n);
     g_widener.process(chL, chR, n);
@@ -803,7 +834,7 @@ g_exciter.process(chL, chR, n);
         g_pd.set_spatial_angle(sp_angle);
         g_pd.set_spatial_width(sp_width);
     }
-    static thread_local float pdOutL[2048], pdOutR[2048];
+    // buffers en g_ats
     g_pd.process_block(chL, chR, pdOutL, pdOutR, n);
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
@@ -832,18 +863,18 @@ g_exciter.process(chL, chR, n);
     {
         double sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
         for (int i = 0; i < n; ++i) {
-            sumLR += (double)dryL[i] * dryR[i];
-            sumLL += (double)dryL[i] * dryL[i];
-            sumRR += (double)dryR[i] * dryR[i];
+            sumLR += (double)g_ats.dryL[i] * g_ats.dryR[i];
+            sumLL += (double)g_ats.dryL[i] * g_ats.dryL[i];
+            sumRR += (double)g_ats.dryR[i] * g_ats.dryR[i];
         }
         const double denom = std::sqrt(sumLL * sumRR) + 1e-9;
         const float corrRaw = (float)std::clamp(sumLR / denom, -1.0, 1.0);
-        static thread_local float corrSmooth = 0.7f;  // arranca neutral, no en 1.0
-        corrSmooth += 0.08f * (corrRaw - corrSmooth);  // EMA suave, sin saltos por transitorio
+        // estado en g_ats
+        g_ats.corrSmooth += 0.08f * (corrRaw - g_ats.corrSmooth);  // EMA suave, sin saltos por transitorio
         // corr alto (≈mono) → ensancha hasta +40%. corr bajo (ya ancho) →
         // no toca (multiplicador 1.0). Zona muerta entre 0.4 y 0.8 para no
         // reaccionar a fluctuaciones normales de una mezcla ya balanceada.
-        widenAmountFromCorrelation = std::clamp((corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
+        widenAmountFromCorrelation = std::clamp((g_ats.corrSmooth - 0.8f) / 0.2f, 0.f, 1.f) * 0.4f;
     }
     // FEATURE (Voice Protection): cuando YamnetClassifier detecta voz
     // dominante en el bloque, mezcla de vuelta hacia la señal seca en vez
@@ -854,20 +885,20 @@ g_exciter.process(chL, chR, n);
     // que Yamnet actualizaba el score (~1s) → tronido audible. Se suaviza
     // con EMA por muestra (~10 ms) para que el crossfade sea continuo.
     const float vp = g_voice_protect_score.load(std::memory_order_relaxed);
-    static thread_local float s_dryMixSmooth = 0.f;
+    // estado en g_ats
     constexpr float VOICE_PROTECT_MAX = 0.55f;
     const float dryMixTarget = std::clamp(vp, 0.f, 1.f) * VOICE_PROTECT_MAX;
-    if (dryMixTarget > 0.0005f || s_dryMixSmooth > 0.0005f) {
+    if (dryMixTarget > 0.0005f || g_ats.dryMixSmooth > 0.0005f) {
         // τ ≈ 10 ms; el coeficiente usa el sample rate real de la sesión
         // (el pipeline soporta nativas directas hasta 384 kHz).
         const float srNow = (float)std::max(g_params.sampleRate, 8000u);
         const float mixCoef = std::exp(-1.0f / (0.010f * srNow));
         for (int i = 0; i < n; ++i) {
-            s_dryMixSmooth += (1.0f - mixCoef) * (dryMixTarget - s_dryMixSmooth);
-            const float dryMix = s_dryMixSmooth;
+            g_ats.dryMixSmooth += (1.0f - mixCoef) * (dryMixTarget - g_ats.dryMixSmooth);
+            const float dryMix = g_ats.dryMixSmooth;
             const float wetMix = 1.f - dryMix;
-            pdOutL[i] = pdOutL[i] * wetMix + dryL[i] * dryMix;
-            pdOutR[i] = pdOutR[i] * wetMix + dryR[i] * dryMix;
+            g_ats.pdOutL[i] = g_ats.pdOutL[i] * wetMix + g_ats.dryL[i] * dryMix;
+            g_ats.pdOutR[i] = g_ats.pdOutR[i] * wetMix + g_ats.dryR[i] * dryMix;
         }
     }
     // FEATURE (Perceptual Optimizer): mide LUFS real (K-weighted) sobre la
@@ -903,7 +934,7 @@ g_exciter.process(chL, chR, n);
 
     // OMEGA PERCEPTUAL GUARD FINAL
     // FIX (pumping ~200Hz): el guard escribía directamente sobre
-    // s_compAmountSmooth/s_excReductionSmooth con std::max/std::min DURO,
+    // g_ats.compAmountSmooth/g_ats.excReductionSmooth con std::max/std::min DURO,
     // DESPUÉS de que esos valores ya se habían aplicado a g_comp/g_exciter
     // más arriba en este mismo bloque (líneas ~655-657). El escalón
     // resultante solo tomaba efecto real en el SIGUIENTE bloque, y al ser
@@ -922,15 +953,15 @@ g_exciter.process(chL, chR, n);
     // del guard se suaviza con su propio EMA lento (0.15) antes de
     // aplicarse — el "freno" llega gradual en vez de como un escalón que
     // compite con el smoothing del target. El resultado se publica en
-    // s_guardCompLimitApplied/s_guardExcLimitApplied, que el INICIO del
+    // g_ats.guardCompLimitApplied/g_ats.guardExcLimitApplied, que el INICIO del
     // siguiente bloque usa como límite antes de aplicar smoothing (ver
-    // declaración junto a s_compAmountSmooth más arriba).
-    static thread_local float s_guardCompLimit = 1.0f;   // sin límite = 1.0 (permite hasta 100%)
-    static thread_local float s_guardExcLimit  = 1.0f;
-    s_guardCompLimit += 0.15f * (limits.compressor - s_guardCompLimit);
-    s_guardExcLimit  += 0.15f * (limits.exciterReduction - s_guardExcLimit);
-    s_guardCompLimitApplied = s_guardCompLimit;
-    s_guardExcLimitApplied  = s_guardExcLimit;
+    // declaración junto a g_ats.compAmountSmooth más arriba).
+    // estado en g_ats
+    // estado en g_ats
+    g_ats.guardCompLimit += 0.15f * (limits.compressor - g_ats.guardCompLimit);
+    g_ats.guardExcLimit  += 0.15f * (limits.exciterReduction - g_ats.guardExcLimit);
+    g_ats.guardCompLimitApplied = g_ats.guardCompLimit;
+    g_ats.guardExcLimitApplied  = g_ats.guardExcLimit;
 
     const float trim = g_loudnessMeter.update_trim(target);
         g_control_frame.output_lufs.store(lufs, std::memory_order_relaxed);
@@ -947,8 +978,8 @@ g_exciter.process(chL, chR, n);
         if (std::fabs(trim) > 0.15f) {
             const float trimLin = std::pow(10.f, trim / 20.f);
             for (int i = 0; i < n; ++i) {
-                pdOutL[i] *= trimLin;
-                pdOutR[i] *= trimLin;
+                g_ats.pdOutL[i] *= trimLin;
+                g_ats.pdOutR[i] *= trimLin;
             }
         }
     }
@@ -968,8 +999,8 @@ g_exciter.process(chL, chR, n);
         double sumSq = 0.0;
         float peakAbs = 0.0f;
         for (int i = 0; i < n; ++i) {
-            const float l = pdOutL[i];
-            const float r = pdOutR[i];
+            const float l = g_ats.pdOutL[i];
+            const float r = g_ats.pdOutR[i];
             sumSq += (double)l * l + (double)r * r;
             const float al = std::fabs(l);
             const float ar = std::fabs(r);
@@ -1039,9 +1070,9 @@ g_exciter.process(chL, chR, n);
         // 5) Consumir el último AdaptiveState publicado por el hilo de
         //    control (lock-free, no bloquea si no hay uno nuevo). El seq
         //    local persiste en thread_local (audio thread es único caller).
-        static thread_local uint64_t s_lastAdaptiveSeq = 0;
+        // estado en g_ats
         ivanna::experimental::AdaptiveState st;
-        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastAdaptiveSeq)) {
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, g_ats.lastAdaptiveSeq)) {
             g_lastAdaptiveTargetGain .store(st.target_gain,             std::memory_order_relaxed);
             g_lastAdaptiveCompAmount .store(st.compressor_amount,       std::memory_order_relaxed);
             g_lastAdaptiveExcReduction.store(st.exciter_reduction,       std::memory_order_relaxed);
@@ -1062,21 +1093,21 @@ g_exciter.process(chL, chR, n);
         //    componer un sobre-ensanchamiento cuando ambas piden ensanchar
         //    al mismo tiempo. Encoding M/S: pdOut = mid + side*sideMul.
         //    Smoothing exponencial (thread_local) para evitar clics.
-        static thread_local float s_widthSmooth = 1.0f;
+        // estado en g_ats
         const float widthTarget = blend_adaptive_from_neutral(
             1.0f,
             std::clamp(g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f),
             adaptiveStrength);
-        s_widthSmooth += 0.02f * (widthTarget - s_widthSmooth);  // ~50 bloques a τ
-        const float adaptiveWidenAmount = std::max(0.f, s_widthSmooth - 1.f);
+        g_ats.widthSmooth += 0.02f * (widthTarget - g_ats.widthSmooth);  // ~50 bloques a τ
+        const float adaptiveWidenAmount = std::max(0.f, g_ats.widthSmooth - 1.f);
         const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
         if (combinedWidenAmount > 0.005f) {
             const float sideMul = 1.f + combinedWidenAmount;
             for (int i = 0; i < n; ++i) {
-                const float mid  = (pdOutL[i] + pdOutR[i]) * 0.5f;
-                const float side = (pdOutL[i] - pdOutR[i]) * 0.5f * sideMul;
-                pdOutL[i] = mid + side;
-                pdOutR[i] = mid - side;
+                const float mid  = (g_ats.pdOutL[i] + g_ats.pdOutR[i]) * 0.5f;
+                const float side = (g_ats.pdOutL[i] - g_ats.pdOutR[i]) * 0.5f * sideMul;
+                g_ats.pdOutL[i] = mid + side;
+                g_ats.pdOutR[i] = mid - side;
             }
         }
     }
@@ -1135,13 +1166,13 @@ g_exciter.process(chL, chR, n);
     // los tronidos en material con mucha reverb o contenido casi-mono.
     g_safety_limiter.process(pdOutL, pdOutR, n);
     for (int i = 0; i < n; ++i) {
-        pdOutL[i] = g_dcBlockL.process(pdOutL[i]);
-        pdOutR[i] = g_dcBlockR.process(pdOutR[i]);
+        g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
+        g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
     }
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
-        data[2 * i]     = pdOutL[i];
-        data[2 * i + 1] = pdOutR[i];
+        data[2 * i]     = g_ats.pdOutL[i];
+        data[2 * i + 1] = g_ats.pdOutR[i];
     }
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
@@ -1213,9 +1244,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // el mismo; en ambos casos converge a los mismos valores del ADE).
     // Sin malloc, sin mutex — solo atomic loads + EMA, idéntico patrón al
     // bloque de P0 en nativeProcess.
-    static thread_local float s_blk_tgSmooth  = 1.0f;
-    static thread_local float s_blk_caSmooth  = 0.0f;
-    static thread_local float s_blk_erSmooth  = 0.0f;
+    // estado en g_ats (ver struct AudioThreadState)
     const float adaptiveStrength = adaptive_ui_strength();
     const float blkTargetGain = blend_adaptive_from_neutral(
         1.0f,
@@ -1229,13 +1258,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         0.0f,
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength);
-    s_blk_tgSmooth += 0.05f * (blkTargetGain - s_blk_tgSmooth);
-    s_blk_caSmooth += 0.05f * (blkCompAmount - s_blk_caSmooth);
-    s_blk_erSmooth += 0.05f * (blkExcReduction - s_blk_erSmooth);
+    g_ats.blkTgSmooth += 0.05f * (blkTargetGain - g_ats.blkTgSmooth);
+    g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
+    g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
     g_gain.processInput(lBuf, rBuf, n);
     g_eq.process(lBuf, rBuf, n);
-    g_gain.setRuntimeGain(s_blk_tgSmooth);
-    g_comp.setRuntimeAmount(s_blk_caSmooth);
+    g_gain.setRuntimeGain(g_ats.blkTgSmooth);
+    g_comp.setRuntimeAmount(g_ats.blkCaSmooth);
     g_comp.process(lBuf, rBuf, n);
 
     g_exciter.process(lBuf, rBuf, n);
