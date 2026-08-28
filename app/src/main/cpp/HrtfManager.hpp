@@ -53,6 +53,13 @@ private:
     void loadFromDatasetAtAzimuth(float azimuthDeg, int bank);
 
     std::atomic<int>   m_activeBank{0};
+    std::atomic<int>   m_pendingBank{0};
+    int                m_pendingBankLocal = 0;
+
+    std::atomic<bool>  m_xfadeTrigger{false};
+    bool               m_xfading = false;
+    size_t             m_xfadePos = 0;
+
     std::atomic<float> m_intrinsicCurvature{0.15f};
     std::atomic<float> m_safAzimuthBias{0.f};   // sesgo de azimut fino desde q[1]
     std::atomic<bool>  m_safQValid{false};
