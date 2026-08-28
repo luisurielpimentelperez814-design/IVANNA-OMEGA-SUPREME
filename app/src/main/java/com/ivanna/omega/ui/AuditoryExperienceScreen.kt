@@ -25,12 +25,14 @@ import coil.request.ImageRequest
 import coil.request.videoFrameMillis
 import java.io.File
 
-val BackgroundDark = Color(0xFF0C0C0C)
-val CyanAccent = Color(0xFF00E5FF)
-val CardBackground = Color(0xFF141616)
-val CardBorder = Color(0xFF1F2B2B)
-val ButtonBackground = Color(0xFF0B2B2B)
-val TextGray = Color(0xFFA0A0A0)
+// Paleta realineada con IvannaTheme Aurora Obsidiana v3.0 (nombres intactos):
+// verde-cian plano → profundidad obsidiana azul del tema central.
+val BackgroundDark = Color(0xFF010204)   // ObsidianVoid
+val CyanAccent = Color(0xFF6FF3FF)       // AuroraCyan
+val CardBackground = Color(0xFF0A101C)   // ObsidianSoft
+val CardBorder = Color(0xFF223050)       // ObsidianEdge
+val ButtonBackground = Color(0xFF0D1524) // ObsidianGlass
+val TextGray = Color(0xFF93A8C6)         // TextSecondary
 
 @Composable
 fun AuditoryExperienceScreen(
