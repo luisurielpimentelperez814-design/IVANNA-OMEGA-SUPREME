@@ -36,11 +36,40 @@ fun SoundScreen(modifier: Modifier = Modifier) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("EQ", "DINÁMICA", "BINAURAL", "NHO", "FFT")
 
-    // Estado persistente levantado (bugs C/D/E) — cargado una vez, guardado en cada cambio
+    // Estado persistente levantado (bugs C/D/E + EQ reset) — cargado una vez, guardado en cada cambio
     var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
     fun updatePrefs(update: (AdaptiveControlsState) -> AdaptiveControlsState) {
         prefs = update(prefs)
         AdaptiveControlsPrefs.save(context, prefs)
+    }
+
+    // FIX: EQ/Compresor/Gain se perdían en cada reinicio porque AudioState
+    // es in-memory. Restaurar desde prefs y replicar al motor nativo al abrir.
+    LaunchedEffect(Unit) {
+        val p = prefs
+        AudioStateManager.updateState {
+            it.copy(
+                eqBass              = p.eqBass,
+                eqMid               = p.eqMid,
+                eqTreble            = p.eqTreble,
+                eqPresence          = p.eqPresence,
+                masterGain          = p.masterGain,
+                compressorThreshold = p.compressorThreshold,
+                compressorRatio     = p.compressorRatio,
+                compressorAttack    = p.compressorAttack,
+                compressorRelease   = p.compressorRelease
+            )
+        }
+        if (IvannaNativeLib.isLoaded) {
+            runCatching {
+                IvannaNativeLib.nativeSetEQParams(p.eqBass, p.eqMid, p.eqTreble, p.masterGain)
+                IvannaNativeLib.nativeSetHarmonicGain((p.eqPresence / 12f + 0.5f).coerceIn(0f, 1f))
+                IvannaNativeLib.nativeSetCompressorParams(
+                    p.compressorThreshold, p.compressorRatio,
+                    p.compressorAttack, p.compressorRelease
+                )
+            }
+        }
     }
 
     Column(modifier = modifier.background(ObsidianDeep)) {
@@ -111,16 +140,19 @@ private fun EQTab() {
             Bark64VisualizerPanel(modifier = Modifier.fillMaxWidth())
             IvannaSliderRow("GRAVES", audioState.eqBass, -18f, 18f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(eqBass = v) }
+                updatePrefs { it.copy(eqBass = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetEQParams(v, audioState.eqMid, audioState.eqTreble, audioState.masterGain) }
             }
             IvannaSliderRow("MEDIOS", audioState.eqMid, -18f, 18f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(eqMid = v) }
+                updatePrefs { it.copy(eqMid = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetEQParams(audioState.eqBass, v, audioState.eqTreble, audioState.masterGain) }
             }
             IvannaSliderRow("AGUDOS", audioState.eqTreble, -18f, 18f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(eqTreble = v) }
+                updatePrefs { it.copy(eqTreble = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetEQParams(audioState.eqBass, audioState.eqMid, v, audioState.masterGain) }
             }
@@ -130,6 +162,7 @@ private fun EQTab() {
             // (campo dedicado) y llama nativeSetEQParams con los 4 valores reales.
             IvannaSliderRow("PRESENCIA", audioState.eqPresence, -12f, 12f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(eqPresence = v) }
+                updatePrefs { it.copy(eqPresence = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching {
                         // DSPBridge tiene presence como 5º band; nativeSetEQParams
@@ -147,6 +180,7 @@ private fun EQTab() {
             // nativeSetEQParams — el motor seguía con el masterGain anterior.
             IvannaSliderRow("VOLUMEN", audioState.masterGain, 0.5f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(masterGain = v) }
+                updatePrefs { it.copy(masterGain = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching {
                         IvannaNativeLib.nativeSetEQParams(
@@ -184,21 +218,31 @@ private fun DynamicsTab(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             IvannaSliderRow("UMBRAL", audioState.compressorThreshold, -60f, 0f, "dB") { v ->
                 AudioStateManager.updateState { it.copy(compressorThreshold = v) }
+                updatePrefs { it.copy(compressorThreshold = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetCompressorParams(v, audioState.compressorRatio, audioState.compressorAttack, audioState.compressorRelease) }
             }
             IvannaSliderRow("RATIO", audioState.compressorRatio, 1f, 20f, ":1") { v ->
                 AudioStateManager.updateState { it.copy(compressorRatio = v) }
+                updatePrefs { it.copy(compressorRatio = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetCompressorParams(audioState.compressorThreshold, v, audioState.compressorAttack, audioState.compressorRelease) }
             }
             IvannaSliderRow("ATAQUE", audioState.compressorAttack, 0.1f, 200f, "ms") { v ->
                 AudioStateManager.updateState { it.copy(compressorAttack = v) }
-                if (IvannaNativeLib.isLoaded)
+                updatePrefs { it.copy(compressorAttack = v) }
+                // FIX: nativeSetGamma controla attack/release timing en el DSP.
+                // Nunca se llamaba desde UI aunque el external fun existía declarado.
+                // Derivación: gamma = attackMs/200 (normalizado 0..1 para release).
+                val gamma = (v / 200f).coerceIn(0f, 1f)
+                if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetCompressorParams(audioState.compressorThreshold, audioState.compressorRatio, v, audioState.compressorRelease) }
+                    runCatching { IvannaNativeLib.nativeSetGamma(gamma) }
+                }
             }
             IvannaSliderRow("RELEASE", audioState.compressorRelease, 10f, 2000f, "ms") { v ->
                 AudioStateManager.updateState { it.copy(compressorRelease = v) }
+                updatePrefs { it.copy(compressorRelease = v) }
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetCompressorParams(audioState.compressorThreshold, audioState.compressorRatio, audioState.compressorAttack, v) }
             }

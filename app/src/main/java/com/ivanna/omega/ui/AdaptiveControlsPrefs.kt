@@ -49,7 +49,17 @@ data class AdaptiveControlsState(
     val antiDolbyThreshold: Float = 0.85f,
     val spatialSuppression: Float = 0.72f,
     val spscRingFactor: Float = 0.95f,
-    val tinymlInferenceGain: Float = 1.0f
+    val tinymlInferenceGain: Float = 1.0f,
+    // EQ + Compresor + Gain — AudioState es in-memory; sin esto se pierden al salir
+    val eqBass: Float = 0f,
+    val eqMid: Float = 0f,
+    val eqTreble: Float = 0f,
+    val eqPresence: Float = 0f,
+    val masterGain: Float = 1.0f,
+    val compressorThreshold: Float = -20f,
+    val compressorRatio: Float = 2f,
+    val compressorAttack: Float = 10f,
+    val compressorRelease: Float = 100f
 )
 
 object AdaptiveControlsPrefs {
@@ -101,7 +111,16 @@ object AdaptiveControlsPrefs {
                 antiDolbyThreshold   = p.getFloat("antiDolbyThreshold", d.antiDolbyThreshold),
                 spatialSuppression   = p.getFloat("spatialSuppression", d.spatialSuppression),
                 spscRingFactor       = p.getFloat("spscRingFactor", d.spscRingFactor),
-                tinymlInferenceGain  = p.getFloat("tinymlInferenceGain", d.tinymlInferenceGain)
+                tinymlInferenceGain  = p.getFloat("tinymlInferenceGain", d.tinymlInferenceGain),
+                eqBass               = p.getFloat("eqBass", d.eqBass),
+                eqMid                = p.getFloat("eqMid", d.eqMid),
+                eqTreble             = p.getFloat("eqTreble", d.eqTreble),
+                eqPresence           = p.getFloat("eqPresence", d.eqPresence),
+                masterGain           = p.getFloat("masterGain", d.masterGain),
+                compressorThreshold  = p.getFloat("compressorThreshold", d.compressorThreshold),
+                compressorRatio      = p.getFloat("compressorRatio", d.compressorRatio),
+                compressorAttack     = p.getFloat("compressorAttack", d.compressorAttack),
+                compressorRelease    = p.getFloat("compressorRelease", d.compressorRelease)
             )
         } catch (e: Exception) {
             AdaptiveControlsState()
@@ -154,6 +173,15 @@ object AdaptiveControlsPrefs {
                 .putFloat("spatialSuppression", s.spatialSuppression)
                 .putFloat("spscRingFactor", s.spscRingFactor)
                 .putFloat("tinymlInferenceGain", s.tinymlInferenceGain)
+                .putFloat("eqBass", s.eqBass)
+                .putFloat("eqMid", s.eqMid)
+                .putFloat("eqTreble", s.eqTreble)
+                .putFloat("eqPresence", s.eqPresence)
+                .putFloat("masterGain", s.masterGain)
+                .putFloat("compressorThreshold", s.compressorThreshold)
+                .putFloat("compressorRatio", s.compressorRatio)
+                .putFloat("compressorAttack", s.compressorAttack)
+                .putFloat("compressorRelease", s.compressorRelease)
                 .apply()
         } catch (e: Exception) {
             // no romper la UI
