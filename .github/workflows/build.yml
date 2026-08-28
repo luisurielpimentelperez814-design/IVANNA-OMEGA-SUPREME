@@ -532,47 +532,6 @@ jobs:
           .github/scripts/generate_oem_report.sh
 
 
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
-
       - name: Upload OEM certification report
         if: always()
         uses: actions/upload-artifact@v4
@@ -587,47 +546,6 @@ jobs:
           .github/scripts/oem_certification_gate.sh
 
 
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
-
       - name: Upload certification gate report
         if: always()
         uses: actions/upload-artifact@v4
@@ -641,47 +559,6 @@ jobs:
           chmod +x tools/telemetry/collect_oem_metrics.sh
           tools/telemetry/collect_oem_metrics.sh
 
-
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
 
       - name: Upload OEM telemetry metrics
         if: always()
@@ -702,47 +579,6 @@ jobs:
           python3 tools/dashboard/generate_dashboard.py
 
 
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
-
       - name: Upload OEM dashboard
         if: always()
         uses: actions/upload-artifact@v4
@@ -755,47 +591,6 @@ jobs:
         run: |
           python3 tools/dashboard/compare_history.py
 
-
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
 
       - name: Upload OEM regression report
         if: always()
@@ -814,47 +609,6 @@ jobs:
         run: |
           python3 tools/iael/iael_audio_certification.py
 
-
-      - name: Verify APK integrity before upload
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-
-          echo "APK: $APK"
-
-          ls -lh "$APK"
-
-          file "$APK"
-
-          unzip -t "$APK"
-
-          sha256sum "$APK" | tee apk_sha256.txt
-
-      - name: Package APK deterministically
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
-
-          mkdir -p artifact
-
-          cp "$APK" artifact/
-
-          cp apk_sha256.txt artifact/
-
-          cd artifact
-
-          zip -T ivanna-apk-package.zip *
-
-          sha256sum ivanna-apk-package.zip > package_sha256.txt
 
       - name: Upload IAEL Certification Report
         if: always()
