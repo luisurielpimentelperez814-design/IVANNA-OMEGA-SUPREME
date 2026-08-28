@@ -767,22 +767,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // llegar ahí. processOutput() (ganancia final, derivada de p.master)
     // sí pertenece al final de la cadena — ahí se queda.
     g_gain.processInput(g_ats.chL, g_ats.chR, n);
-    // Peak guard pre-EQ: clampea a ±1.0 ANTES de que los biquads del EQ vean la
-    // señal. Evita que gain.processInput() (+3.6dB si mix=0.8) + EQ ISO226
-    // (+8.4dB en 5kHz) lleven el IIR fuera de su rango estable → NaN → tronido.
-    // No sustituye el fix de mix=0.5 en Iso226Calibrator — actúa como red de
-    // seguridad ante cualquier combinación de ganancia/EQ futura.
-    {
-        const int nn = n;
-        float* __restrict__ lp = g_ats.chL;
-        float* __restrict__ rp = g_ats.chR;
-        for (int i = 0; i < nn; ++i) {
-            if (lp[i] >  1.0f) lp[i] =  1.0f;
-            else if (lp[i] < -1.0f) lp[i] = -1.0f;
-            if (rp[i] >  1.0f) rp[i] =  1.0f;
-            else if (rp[i] < -1.0f) rp[i] = -1.0f;
-        }
-    }
     g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
@@ -1261,6 +1245,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray inL, jfloatArray inR,
     jfloatArray outL, jfloatArray outR,
     jint frames) {
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
@@ -1292,16 +1277,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
     g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
     g_gain.processInput(lBuf, rBuf, n);
-    // Peak guard pre-EQ (mismo patrón que nativeProcess)
-    {
-        const int nn = n;
-        for (int i = 0; i < nn; ++i) {
-            if (lBuf[i] >  1.0f) lBuf[i] =  1.0f;
-            else if (lBuf[i] < -1.0f) lBuf[i] = -1.0f;
-            if (rBuf[i] >  1.0f) rBuf[i] =  1.0f;
-            else if (rBuf[i] < -1.0f) rBuf[i] = -1.0f;
-        }
-    }
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
     g_comp.setRuntimeAmount(g_ats.blkCaSmooth);
@@ -1397,6 +1372,7 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     JNIEnv* env, jobject, jfloatArray params) {
     if (!params) return;
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     jfloat* p = env->GetFloatArrayElements(params, nullptr);
     if (!p) return;
     const int n = env->GetArrayLength(params);
@@ -1433,6 +1409,7 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     JNIEnv*, jobject,
     jfloat low, jfloat mid, jfloat high, jfloat master) {
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     g_params.low    = low;
     g_params.mid    = mid;
     g_params.high   = high;

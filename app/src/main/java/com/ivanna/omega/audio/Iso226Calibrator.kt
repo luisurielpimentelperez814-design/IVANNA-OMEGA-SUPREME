@@ -97,11 +97,15 @@ object Iso226Calibrator {
      * Curva de compensación completa: ΔdB por cada una de las 10 bandas EQ.
      * gain[i] > 0 → boost; < 0 → cut.
      */
-    fun computeCompensation(listenPhon: Float, refPhon: Float): FloatArray =
-        FloatArray(10) { i ->
+    fun computeCompensation(listenPhon: Float, refPhon: Float): FloatArray {
+        val raw = FloatArray(10) { i ->
             val idx = EQ_BAND_TO_ISO_IDX[i]
             lp(idx, refPhon) - lp(idx, listenPhon)
         }
+        val offset = raw[5]
+        for (i in 0 until 10) raw[i] -= offset
+        return raw
+    }
 
     // ── Clamp de ganancias para proteger el sistema ───────────────────────────
     // Android Equalizer: ±15 dB máximo típico (limitamos a ±12 dB)
@@ -150,12 +154,13 @@ object Iso226Calibrator {
         // mix=0.5 es el punto neutro: (0.5-0.5)*12=0dB, sin ganancia de entrada.
         // El nivel de la calibración ISO 226 lo aportan los parámetros low/mid/
         // high/presence (dB directos al ParametricEQ), no mix.
+        val st = AudioStateManager.audioState.value
         DSPBridge.setParams(
-            drive = 0.5f, wet = 0.7f, mix = 0.5f,
+            drive = st.adaptiveIntensity, wet = 0.7f, mix = 0.5f,
             alpha = 0.94f, beta = 0.85f, gamma = 0.72f,
             freq = 1000f, resonance = 0.7f,
-            low = low, mid = mid, high = high,
-            presence = presence, master = 0.85f
+            low = low + st.eqBass, mid = mid + st.eqMid, high = high + st.eqTreble,
+            presence = presence + st.eqPresence, master = st.masterGain
         )
         Log.i(TAG, "ISO 226 → DSPBridge: low=${"%.2f".format(low)}dB mid=${"%.2f".format(mid)}dB high=${"%.2f".format(high)}dB presence=${"%.2f".format(presence)}dB")
     }

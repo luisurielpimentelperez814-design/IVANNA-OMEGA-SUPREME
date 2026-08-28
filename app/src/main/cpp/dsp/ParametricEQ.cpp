@@ -181,7 +181,7 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
                 // Crossfade lineal old->new sobre la salida de la banda.
                 // prevL/prevR conservan su propio estado, así la rama vieja
                 // sigue siendo el filtro original hasta desvanecerse.
-                const float t = 1.0f - (float)fade_[b] / (float)fadeLen_[b];
+                const float t = (fadeLen_[b] > 0) ? (1.0f - (float)fade_[b] / (float)fadeLen_[b]) : 1.0f;
                 const float oL = prevL[b].processSample(L);
                 const float oR = prevR[b].processSample(R);
                 nL = oL + (nL - oL) * t;
