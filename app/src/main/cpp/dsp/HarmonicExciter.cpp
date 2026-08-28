@@ -125,7 +125,12 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     // primer bloque tras setParams/arranque arranca desde el objetivo para
     // no introducir un fade-in al reproducir por primera vez.
     const float wetTarget = wet_ * runtimeReductionMul_;
-    if (wetNow_ <= 0.00001f && wetTarget > 0.00001f) wetNow_ = wetTarget;
+    // FIX (tronido al aplicar perfil): Se borraba el smoothing cuando wet pasaba 
+    // de 0 (bypass) a >0, haciendo que wetNow_ saltara instantáneamente a wetTarget.
+    // Esto causaba que el transitorio natural del encendido de los HPF (con 
+    // estados reseteados) se sumara al 100% de golpe a la señal, generando un click.
+    // Al respetar el one-pole, wetNow_ sube desde 0 durante ~15ms, ocultando 
+    // el transitorio de estabilización del HPF debajo del fade-in acústico.
     float wetNow = wetNow_;
     const float wetSm = wetSmooth_ > 0.f ? wetSmooth_ : 0.9995f;
 

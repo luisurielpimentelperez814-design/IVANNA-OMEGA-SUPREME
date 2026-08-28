@@ -60,6 +60,8 @@ void StereoWidener::process(float* __restrict__ left, float* __restrict__ right,
         for (int i = 0; i < frames; ++i) {
             const float xL = left[i];
             const float xR = right[i];
+            // FIX (thump al activar widener): Mantener lpf side caliente
+            sideLpf_.process(0.5f * (xL - xR));
 
             dcyL_ = xL - dcxL_ + dcCoef_ * dcyL_;
             dcxL_ = xL;

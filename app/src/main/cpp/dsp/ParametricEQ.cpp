@@ -38,26 +38,18 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     // coeficientes mete un clic audible al arrastrar los faders de EQ.
     // Si la banda estaba inactiva (filtro = identidad), no hace falta
     // fundido — la salida vieja es bit-exacta a la entrada.
-    if (wasActive) {
-        // FIX (truena al mover Graves/Agudos y al aplicar ISO 226):
-        // el crossfade se REINICIABA en cada setBand — al arrastrar un
-        // fader (decenas de setBand por segundo) o al aplicar ISO (10
-        // bandas a la vez), prevL/prevR se sobrescribían a mitad de
-        // fundido y el factor de mezcla saltaba a t=0 → discontinuidad
-        // audible por cada re-entrada (clics/truenos continuos).
-        // Ahora: solo se captura prev y se arranca el fundido si NO hay
-        // uno en curso; si ya hay (usuario arrastrando), se conservan
-        // prevL/prevR y la posición del fade, y solo se actualizan los
-        // coeficientes destino — la mezcla converge suave al nuevo
-        // filtro sin reinicios ni saltos.
-        if (fade_[b] == 0) {
-            prevL[b] = bandsL[b];
-            prevR[b] = bandsR[b];
-            fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
-            fade_[b] = fadeLen_[b];
-        }
-    } else {
-        fade_[b] = 0;
+    // FIX (tronidos al encender/apagar bandas o aplicar un preset con EQ):
+    // Antes, si wasActive era falso, fade_[b] se forzaba a 0 y la banda saltaba
+    // instantáneamente desde la identidad a +5dB, generando un fuerte thump.
+    // Ahora TODO cambio de parámetros genera un crossfade de 15ms. Si la
+    // banda estaba inactiva, bandsL[b] ya contiene coeficientes planos (identidad),
+    // por lo que prevL se inicializa limpiamente con un filtro transparente y 
+    // se hace un fade hacia la nueva EQ de manera segura.
+    if (fade_[b] == 0) {
+        prevL[b] = bandsL[b];
+        prevR[b] = bandsR[b];
+        fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
+        fade_[b] = fadeLen_[b];
     }
     bandsL[b] = {b0,b1,b2,a1,a2,x1L,x2L,y1L,y2L};
     bandsR[b] = {b0,b1,b2,a1,a2,x1R,x2R,y1R,y2R};

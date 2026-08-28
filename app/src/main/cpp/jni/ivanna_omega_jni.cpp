@@ -641,6 +641,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
 }
 // ── FIX: mutex DSP — declarado antes de nativeSetParams y nativeProcess ──────
 static std::mutex g_dspProcessMutex;
+static std::mutex g_uiMutex;
+static ivanna::DSPParams g_params_ui;
+static std::atomic<bool> g_params_dirty{false};
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
@@ -655,12 +658,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // escribía a g_eq/g_comp/g_exciter/g_widener/g_gain sin el mutex →
     // data race en las estructuras de parámetros → valores corruptos →
     // crash o congelamiento al pulsar HRTF/DSP desde la UI.
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    g_params.drive = drive; g_params.wet = wet;   g_params.mix = mix;
-    g_params.alpha = alpha; g_params.beta = beta; g_params.gamma = gamma_v;
-    g_params.freq  = freq;  g_params.resonance = resonance;
-    g_params.low   = low;   g_params.mid = mid;   g_params.high = high;
-    g_params.presence = presence;
+    std::lock_guard<std::mutex> lock(g_uiMutex);
+    g_params_ui.drive = drive; g_params_ui.wet = wet;   g_params_ui.mix = mix;
+    g_params_ui.alpha = alpha; g_params_ui.beta = beta; g_params_ui.gamma = gamma_v;
+    g_params_ui.freq  = freq;  g_params_ui.resonance = resonance;
+    g_params_ui.low   = low;   g_params_ui.mid = mid;   g_params_ui.high = high;
+    g_params_ui.presence = presence;
     // FIX (mismo bug que nativeSetEQParams): master llega lineal [0.5..2.0],
     // GainStage lo trata como dB → conversión incorrecta + overflow.
     const float masterDbNsp = (master <= 0.001f) ? -60.0f
@@ -703,6 +706,29 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
+        if (g_uiMutex.try_lock()) {
+            g_params = g_params_ui;
+            g_uiMutex.unlock();
+            
+            g_eq.setParams(g_params);
+            g_comp.setParams(g_params);
+            g_exciter.setParams(g_params);
+            g_widener.setParams(g_params);
+            const float compNsp = g_eq.getOutputCompensationDb();
+            const float masterDbNsp = g_params.master;
+            g_params.master = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
+            g_gain.setParams(g_params);
+            g_params.master = masterDbNsp;
+            
+            g_pd.set_nho_alpha(g_params.alpha);
+            g_pd.set_nho_beta(g_params.beta);
+            g_nho_wet_exciter.store(g_params.wet * 0.5f, std::memory_order_relaxed);
+            applyNhoWet();
+        } else {
+            g_params_dirty.store(true, std::memory_order_release);
+        }
+    }
     // FTZ+DAZ una sola vez por hilo de audio: elimina el costo 10-100x de
     // operar sobre números subnormales IEEE 754 (endémicos en filtros IIR
     // cuyos estados decaen hacia cero). thread_local → cero overhead en
@@ -1246,6 +1272,24 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray outL, jfloatArray outR,
     jint frames) {
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
+        if (g_uiMutex.try_lock()) {
+            g_params = g_params_ui;
+            g_uiMutex.unlock();
+            
+            g_eq.setParams(g_params);
+            g_comp.setParams(g_params);
+            g_exciter.setParams(g_params);
+            g_widener.setParams(g_params);
+            const float compNsp = g_eq.getOutputCompensationDb();
+            const float masterDbNsp = g_params.master;
+            g_params.master = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
+            g_gain.setParams(g_params);
+            g_params.master = masterDbNsp;
+        } else {
+            g_params_dirty.store(true, std::memory_order_release);
+        }
+    }
     if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
