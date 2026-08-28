@@ -436,6 +436,7 @@ jobs:
         with:
           name: ivanna-oem-stability-report
           path: ivanna_oem_stability_report.txt
+
       - name: Run OEM certification gate
         if: always()
         run: |
@@ -448,6 +449,7 @@ jobs:
         with:
           name: ivanna-certification-gate-report
           path: ivanna_oem_certification_gate.txt
+
       - name: Collect OEM performance telemetry
         if: always()
         run: |
@@ -460,7 +462,6 @@ jobs:
         with:
           name: ivanna-oem-performance-metrics
           path: ivanna_oem_metrics.json
-
 
       - name: Store OEM metrics history
         if: always()
@@ -479,6 +480,7 @@ jobs:
         with:
           name: ivanna-oem-dashboard
           path: ivanna_oem_dashboard.html
+
       - name: Compare OEM performance regression
         if: always()
         run: |
@@ -490,17 +492,16 @@ jobs:
         with:
           name: ivanna-oem-regression-report
           path: ivanna_oem_delta_report.html
+
       - name: Run OEM performance quality gate
         if: always()
         run: |
           python3 tools/dashboard/oem_quality_gate.py
 
-
       - name: Run IVANNA IAEL Audio Certification
         if: always()
         run: |
           python3 tools/iael/iael_audio_certification.py
-
 
       - name: Upload IAEL Certification Report
         if: always()
@@ -510,4 +511,5 @@ jobs:
           path: |
             ivanna_iael_report.html
             telemetry/iael/latest_certification.json
+
 
