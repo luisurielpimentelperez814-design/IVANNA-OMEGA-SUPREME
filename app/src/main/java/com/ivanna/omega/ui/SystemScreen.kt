@@ -13,7 +13,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.theme.*
 
 /**
@@ -125,21 +128,86 @@ private fun MagiskTab(onOpenMagisk: () -> Unit) {
     }
 }
 
+// Parámetros DSP de cada preset: (low, mid, high, presence, master, exciterWet, stereoWidth, compThresholdDb, compRatio)
+private val PRESET_PARAMS = mapOf(
+    "CÁLIDO"   to floatArrayOf(+4f, +1f, -2f,  0f,  0f, 0.25f, 1.0f, -24f, 3f),
+    "NATURAL"  to floatArrayOf( 0f,  0f,  0f,  0f,  0f, 0.10f, 1.0f, -20f, 2f),
+    "ESPACIAL" to floatArrayOf( 0f, +1f, +2f, +2f,  0f, 0.30f, 1.5f, -18f, 2f),
+    "VOCAL"    to floatArrayOf(-2f, +3f, +1f, +4f,  0f, 0.15f, 0.9f, -16f, 4f),
+    "EXTREMO"  to floatArrayOf(+6f, +3f, +4f, +3f, +3f, 0.60f, 1.4f, -12f, 6f)
+)
+
 @Composable
 private fun ProfilesTab(onOpenProfiles: () -> Unit) {
-    GlassCard("PERFILES DE AUDIO", AuroraCyan, "Presets · Calibración · Historial") {
+    val context = LocalContext.current
+    // FIX: los botones de perfil sólo llamaban onOpenProfiles (navegar a otra
+    // pantalla) sin tocar ningún parámetro de audio — eran botones de navegación
+    // disfrazados de presets. Ahora cada botón aplica sus valores DSP al motor
+    // nativo (DSPBridge, IvannaNativeLib, OmegaEngineBridge) y persiste la
+    // selección en AdaptiveControlsPrefs.
+    var selected by remember {
+        mutableStateOf(AdaptiveControlsPrefs.load(context).selectedPreset)
+    }
+    GlassCard("PERFILES DE AUDIO", AuroraCyan, "Presets aplicados al DSP en tiempo real") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Cálido · Graves realzados, agudos suaves",
-                   "Natural · Curva plana, respuesta neutra",
-                   "Espacial · HRTF + widener máximo",
-                   "Vocal · Presencia 2.5kHz, menos graves",
-                   "Extremo · Todo al máximo · Material denso"
-            ).forEachIndexed { i, desc ->
-                val name = listOf("CÁLIDO","NATURAL","ESPACIAL","VOCAL","EXTREMO")[i]
+            listOf(
+                "CÁLIDO"   to "Graves realzados, agudos suaves",
+                "NATURAL"  to "Curva plana, respuesta neutra",
+                "ESPACIAL" to "HRTF + widener máximo",
+                "VOCAL"    to "Presencia 2.5 kHz, menos graves",
+                "EXTREMO"  to "Todo al máximo · Material denso"
+            ).forEach { (name, desc) ->
+                val isSelected = selected == name
                 OutlinedButton(
-                    onClick = onOpenProfiles,
+                    onClick = {
+                        selected = name
+                        AdaptiveControlsPrefs.save(
+                            context,
+                            AdaptiveControlsPrefs.load(context).copy(selectedPreset = name)
+                        )
+                        // Aplicar parámetros DSP reales del preset
+                        PRESET_PARAMS[name]?.let { p ->
+                            val low = p[0]; val mid = p[1]; val high = p[2]
+                            val presence = p[3]; val master = p[4]
+                            val exciterWet = p[5]; val stereoWidth = p[6]
+                            val compThreshDb = p[7]; val compRatio = p[8]
+                            if (DSPBridge.isLoaded) runCatching {
+                                DSPBridge.setParams(
+                                    drive = 0.45f, wet = exciterWet, mix = 0.70f,
+                                    alpha = ((compThreshDb + 24f) / 24f).coerceIn(0f, 1f),
+                                    beta  = ((compRatio - 1f) / 19f).coerceIn(0f, 1f),
+                                    gamma = 0.72f, freq = 1000f, resonance = 0.707f,
+                                    low = low, mid = mid, high = high,
+                                    presence = presence, master = master
+                                )
+                                DSPBridge.setStereoWidth(stereoWidth)
+                            }
+                            if (IvannaNativeLib.isLoaded) runCatching {
+                                IvannaNativeLib.nativeSetEQParams(low, mid, high, master)
+                                IvannaNativeLib.nativeSetCompressorParams(compThreshDb, compRatio, 10f, 100f)
+                            }
+                            runCatching {
+                                OmegaEngineBridge.sendPerceptualState(
+                                    compressor     = compThreshDb / 60f,
+                                    exciterRed     = exciterWet,
+                                    highCut        = 19500f,
+                                    spatialWidth   = stereoWidth,
+                                    loudnessTarget = -16f,
+                                    harmonicGain   = exciterWet,
+                                    antiDolby      = 0f
+                                )
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                    border = androidx.compose.foundation.BorderStroke(
+                        if (isSelected) 1.5.dp else 0.5.dp,
+                        if (isSelected) AuroraCyan else ObsidianEdge
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isSelected) AuroraCyan.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent,
+                        contentColor = if (isSelected) AuroraCyan else TextSecondary
+                    )
                 ) {
                     Column {
                         Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -147,6 +215,12 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
                     }
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = onOpenProfiles,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonMagenta)
+            ) { Text("VER TODOS LOS PERFILES →", fontSize = 11.sp) }
         }
     }
 }
