@@ -165,18 +165,18 @@ static std::atomic<float> g_nho_wet_eta    {0.5f};
 // tronido/pop audible. Un único g_ats por proceso es correcto porque el engine
 // es singleton (un solo hilo de audio activo en todo momento).
 struct AudioThreadState {
-    float g_ats.chL[2048]            = {};
-    float g_ats.chR[2048]            = {};
-    float g_ats.dryL[2048]           = {};
-    float g_ats.dryR[2048]           = {};
-    float g_ats.pdOutL[2048]         = {};
-    float g_ats.pdOutR[2048]         = {};
+    float chL[2048]            = {};
+    float chR[2048]            = {};
+    float dryL[2048]           = {};
+    float dryR[2048]           = {};
+    float pdOutL[2048]         = {};
+    float pdOutR[2048]         = {};
     float targetGainSmooth     = 1.0f;
     float compAmountSmooth     = 0.0f;
     float excReductionSmooth   = 0.0f;
     float guardCompLimitApplied= 1.0f;
     float guardExcLimitApplied = 1.0f;
-    float g_ats.corrSmooth           = 0.7f;
+    float corrSmooth           = 0.7f;
     float dryMixSmooth         = 0.0f;
     float guardCompLimit       = 1.0f;
     float guardExcLimit        = 1.0f;
