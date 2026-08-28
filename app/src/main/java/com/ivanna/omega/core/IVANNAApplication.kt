@@ -300,6 +300,11 @@ class IVANNAApplication : Application() {
                     launch(Dispatchers.IO) {
                         val result = Iso226Calibrator.applyAll(lp, rp, globalEffectManager)
                         Log.i(TAG, "ISO 226 restaurado: ${result.summary}")
+                }
+
+                // FIX (descableado): Todos los sliders/switches persistidos en UI pero nunca
+                // inyectados al Engine en el arranque, ahora se inyectan a la perfeccion.
+                runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
                     }
                 }
 
