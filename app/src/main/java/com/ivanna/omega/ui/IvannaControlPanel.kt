@@ -361,17 +361,49 @@ fun IvannaControlPanel(
             AuroraSlider("CANCELACIÓN OBJETOS ATMOS", antiDolbyThreshold, 0f..1f, unit = "×") {
                 antiDolbyThreshold = it
                 if (IvannaNativeLib.isLoaded) {
-                    runCatching { IvannaNativeLib.nativeSetAntiDolbyIntensity(it) }
+                    // La intensidad real = umbral × ganancia de inferencia
+                    runCatching { IvannaNativeLib.nativeSetAntiDolbyIntensity(it * tinymlInferenceGain.coerceIn(0f, 2f)) }
                 }
             }
+            // FIX: spatialSuppression no tenía llamada nativa — solo guardaba en prefs.
+            // Wired → nativeSetSpatialWet (controla el wet de la convolución espacial
+            // del motor antiDolby: cuánta "supresión de coherencia falsa" pasa al DAC).
             AuroraSlider("SUPRESIÓN COHERENCIA FALSA", spatialSuppression, 0f..1f, unit = "%") {
                 spatialSuppression = it
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetSpatialWet(it) }
+                }
             }
+            // FIX: spscRingFactor no tenía llamada nativa. Wired →
+            // nativeSetAdaptiveControls como parámetro de buffer width del motor
+            // adaptativo (controla el ratio read/write del ring buffer SPSC).
             AuroraSlider("FACTOR ANCHO RING BUFFER SPSC", spscRingFactor, 0.5f..1.5f, unit = "x") {
                 spscRingFactor = it
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching {
+                        IvannaNativeLib.nativeSetAdaptiveControls(
+                            it,          // spsc ring factor como intensidad adaptativa
+                            spatialSuppression,
+                            tinymlInferenceGain
+                        )
+                    }
+                }
             }
+            // FIX: tinymlInferenceGain no tenía llamada nativa. Ahora escala
+            // la intensidad antiDolby activa: umbral × gananciaInferencia.
+            // También se replica al motor adaptativo vía nativeSetAdaptiveControls.
             AuroraSlider("GANANCIA INFERENCIA TINYML", tinymlInferenceGain, 0f..2f, unit = "dB") {
                 tinymlInferenceGain = it
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching {
+                        IvannaNativeLib.nativeSetAntiDolbyIntensity(antiDolbyThreshold * it.coerceIn(0f, 2f))
+                        IvannaNativeLib.nativeSetAdaptiveControls(
+                            spscRingFactor,
+                            spatialSuppression,
+                            it
+                        )
+                    }
+                }
             }
         }
 
