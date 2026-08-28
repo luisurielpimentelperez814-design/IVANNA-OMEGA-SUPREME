@@ -24,6 +24,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ivanna.omega.ui.viewmodels.PerceptualViewModel
 
 /**
+ * UI (2026-08-28): paleta slate/tailwind migrada a Aurora Obsidiana v3.0
+ * (ObsidianVoid/Soft, AuroraCyan, PhosphorGreen, CoralWarn, AmberSignal) —
+ * antes usaba su propio esquema (0A0C10/38BDF8/1E2330...) incoherente con
+ * las demás 30 pantallas. Sustitución por valor, estructura intacta.
+ *
  * FIX D: este archivo declaraba `class MainActivity` en com.ivanna.omega.ui,
  * homónimo del launcher real com.ivanna.omega.MainActivity (el único en el
  * AndroidManifest). Código muerto y fuente de ambigüedad en imports/Gradle.
@@ -37,7 +42,7 @@ class CognitiveDashboardActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF0A0C10)
+                    color = Color(0xFF010204)
                 ) {
                     CognitiveDashboardScreen()
                 }
@@ -68,14 +73,14 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
             Column {
                 Text(
                     text = "IVANNA OMEGA SUPREME v6.0",
-                    color = Color(0xFFE2E8F0),
+                    color = Color(0xFFF1F8FF),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
                     text = "Cognitive Neural Audio Cortex",
-                    color = Color(0xFF38BDF8),
+                    color = Color(0xFF6FF3FF),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -83,7 +88,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
             Text(
                 text = if (state.isBridgeConnected) "● MAGISK IPC ONLINE" else "○ IPC DISCONNECTED",
-                color = if (state.isBridgeConnected) Color(0xFF4ADE80) else Color(0xFFF87171),
+                color = if (state.isBridgeConnected) Color(0xFF23F09A) else Color(0xFFFF5C4D),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
@@ -92,13 +97,13 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
         // Real-Time Evolution Graph
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2330)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0A101C)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Perceptual Dynamics (Fatigue vs. Immersion)",
-                    color = Color(0xFF94A3B8),
+                    color = Color(0xFF93A8C6),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -121,7 +126,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                             val y = height - (valNorm * height)
                             if (i == 0) fatiguePath.moveTo(x, y) else fatiguePath.lineTo(x, y)
                         }
-                        drawPath(fatiguePath, color = Color(0xFFF87171), style = Stroke(width = 3.dp.toPx()))
+                        drawPath(fatiguePath, color = Color(0xFFFF5C4D), style = Stroke(width = 3.dp.toPx()))
                     }
 
                     // Draw Immersion Line (Cyan)
@@ -133,7 +138,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                             val y = height - (valNorm * height)
                             if (i == 0) immersionPath.moveTo(x, y) else immersionPath.lineTo(x, y)
                         }
-                        drawPath(immersionPath, color = Color(0xFF38BDF8), style = Stroke(width = 3.dp.toPx()))
+                        drawPath(immersionPath, color = Color(0xFF6FF3FF), style = Stroke(width = 3.dp.toPx()))
                     }
                 }
             }
@@ -141,7 +146,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
 
         // Neural Cortex Status Card
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2330)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0A101C)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Row(
@@ -151,23 +156,23 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Neural Confidence", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("${state.neuralConfidencePercent}%", color = Color(0xFF4ADE80), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Neural Confidence", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("${state.neuralConfidencePercent}%", color = Color(0xFF23F09A), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Column {
-                    Text("Inference Latency", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("${dspDecision.executionLatencyMs} µs", color = Color(0xFF38BDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Inference Latency", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("${dspDecision.executionLatencyMs} µs", color = Color(0xFF6FF3FF), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Column {
-                    Text("Spatial Mode", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text(dspDecision?.spatialMode ?: "STEREO", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Spatial Mode", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text(dspDecision?.spatialMode ?: "STEREO", color = Color(0xFFF7B733), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
             }
         }
 
         // Aggressiveness Slider
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2330)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0A101C)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -175,14 +180,14 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Cortex Aggressiveness Level", color = Color(0xFFE2E8F0), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text("${(userProfile.aggressiveness * 100).toInt()}%", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Cortex Aggressiveness Level", color = Color(0xFFF1F8FF), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text("${(userProfile.aggressiveness * 100).toInt()}%", color = Color(0xFF6FF3FF), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Slider(
                     value = userProfile.aggressiveness,
                     onValueChange = { vm.setAggressiveness(it) },
                     valueRange = 0.0f..1.0f,
-                    colors = SliderDefaults.colors(thumbColor = Color(0xFF38BDF8), activeTrackColor = Color(0xFF38BDF8))
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFF6FF3FF), activeTrackColor = Color(0xFF6FF3FF))
                 )
             }
         }
@@ -191,10 +196,10 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
         Button(
             onClick = { vm.resetToNeutralProfile() },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D1524)),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Text("Reset to Neutral Profile", color = Color(0xFFE2E8F0), fontFamily = FontFamily.Monospace)
+            Text("Reset to Neutral Profile", color = Color(0xFFF1F8FF), fontFamily = FontFamily.Monospace)
         }
     }
 }
