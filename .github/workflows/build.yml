@@ -214,6 +214,26 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
             -Dorg.gradle.caching=true -Dorg.gradle.parallel=true
 
+      # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
+      - name: Validate Gradle APK CRC before staging
+        run: |
+          set -euo pipefail
+
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+
+          test -n "$APK_PATH" || {
+            echo "ERROR: no existe APK generado por Gradle"
+            exit 1
+          }
+
+          echo "APK generado:"
+          ls -lh "$APK_PATH"
+
+          echo "Validando ZIP interno:"
+          unzip -t "$APK_PATH"
+
+          echo "Validación APK completada"
+
       # ── STAGING + VALIDACIÓN DEL APK (auditoría 2026-08-16) ────────────
       # FIX: gradle assembleDebug SÍ generaba el APK en app/build/outputs/apk/
       # pero ningún step posterior lo copiaba, validaba, ni lo incluía en
