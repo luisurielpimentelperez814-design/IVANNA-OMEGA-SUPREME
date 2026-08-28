@@ -9,26 +9,44 @@
  ██║╚██╗ ██╔╝██╔══██║██║╚██╗██║██║╚██╗██║██╔══██║
  ██║ ╚████╔╝ ██║  ██║██║ ╚████║██║ ╚████║██║  ██║
  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚═╝  ╚═╝
-        O M E G A   S U P R E M E   v 2 . 2 . 0
 ```
 
-**Motor DSP neuronal system-wide para Android**<br/>
-*El audio no se debate. Se mide, se prueba y se experimenta.*
+<h3>O M E G A &nbsp; S U P R E M E &nbsp; · &nbsp; v 2 . 2 . 0</h3>
+
+**Motor DSP neuronal system-wide para Android**
+
+> *El audio no se debate. Se mide, se prueba y se experimenta.*
 
 <br/>
 
-[![Android](https://img.shields.io/badge/Android_9--16-arm64--v8a-3DDC84?style=flat-square&logo=android&logoColor=white)](#)
-[![Magisk](https://img.shields.io/badge/Magisk-Global_Effect-E01F26?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=)](#)
-[![CPU](https://img.shields.io/badge/CPU-0.53%25_@_48kHz%2F256-00FFCC?style=flat-square)](#)
-[![Latency](https://img.shields.io/badge/Latency-5.36_ms_E2E-00FFCC?style=flat-square)](#)
-[![SOFA](https://img.shields.io/badge/SOFA-14_archivos_AES69-7F52FF?style=flat-square)](#)
-[![RIR](https://img.shields.io/badge/RIR-200_salas_reales-7F52FF?style=flat-square)](#)
-[![HRTF](https://img.shields.io/badge/HRTF-214_sujetos_PCA-FF00AA?style=flat-square)](#)
-[![DSP](https://img.shields.io/badge/DSP-SCHED__FIFO_98-0A0A0A?style=flat-square)](#)
+[![Android](https://img.shields.io/badge/Android_9--16-arm64--v8a-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#-instalación)
+[![Magisk](https://img.shields.io/badge/Magisk-Global_Effect-E01F26?style=for-the-badge&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=)](#-instalación)
+[![License](https://img.shields.io/badge/Licencia-Ver_repositorio-999999?style=for-the-badge)](#)
 
 <br/>
+
+[![CPU](https://img.shields.io/badge/CPU-0.52%25_@_48kHz%2F256-00FFCC?style=flat-square)](#-benchmarks)
+[![Latency](https://img.shields.io/badge/Latency-5.36_ms_E2E-00FFCC?style=flat-square)](#-benchmarks)
+[![SOFA](https://img.shields.io/badge/SOFA-14_archivos_AES69-7F52FF?style=flat-square)](#-motor-espacial--hrtf-real--rir)
+[![RIR](https://img.shields.io/badge/RIR-200_salas_reales-7F52FF?style=flat-square)](#rir--200-salas-reales)
+[![HRTF](https://img.shields.io/badge/HRTF-214_sujetos_PCA-FF00AA?style=flat-square)](#φ_saf-riemanniano--personalización-hrtf)
+[![DSP](https://img.shields.io/badge/DSP-SCHED__FIFO_98-0A0A0A?style=flat-square)](#-cadena-de-señal-completa)
+
+<br/>
+
+**[⚡ De un vistazo](#-de-un-vistazo)** ·
+**[🔗 Cadena de señal](#-cadena-de-señal-completa)** ·
+**[🏗️ Arquitectura](#️-arquitectura-de-dos-rutas)** ·
+**[🎚️ Módulos DSP](#️-módulos-dsp--especificaciones)** ·
+**[🌌 Motor espacial](#-motor-espacial--hrtf-real--rir)** ·
+**[🤖 IA](#-inteligencia-neural)** ·
+**[📊 Benchmarks](#-benchmarks)** ·
+**[📦 Instalación](#-instalación)** ·
+**[🛠️ Compilar](#️-compilar-y-desarrollar)**
 
 </div>
+
+<br/>
 
 ---
 
@@ -38,16 +56,20 @@ IVANNA no es un ecualizador. Es un **motor de audio de precisión neuronal** que
 
 Mientras otros hacen `EQ = bandas × ganancia`, IVANNA ejecuta esta cadena medible y verificable:
 
+<div align="center">
+
 | Módulo | Tecnología | Overhead |
-|---|---|---|
-| Personalización HRTF | Φ_SAF Riemanniano · 214 sujetos · PCA 7D | < 0.05 ms |
-| Sala acústica | Convolución Overlap-Save FFT · 200 RIRs reales | < 0.3 ms |
-| Excitación armónica | Padé [3/2] soft-clip · Anti-alias 2× OS | < 0.02 ms |
-| Psicoacústica | PI-LSTM int8 · fatiga + enmascaramiento | < 0.01 ms |
-| EQ evolutivo | CMA-ES · 512 bandas · NEON vectorizado | < 0.03 ms |
-| Clasificación IA | YAMNet TFLite + AntiDolby CRNN | async |
-| Limitador seguridad | Lookahead block · soft-ceil · NaN guard | < 0.01 ms |
-| **Total E2E** | **SCHED_FIFO 98 · lock-free · 0 malloc** | **5.36 ms** |
+|:---|:---|:---:|
+| 🌌 Personalización HRTF | Φ_SAF Riemanniano · 214 sujetos · PCA 7D | `< 0.05 ms` |
+| 🏛️ Sala acústica | Convolución Overlap-Save FFT · 200 RIRs reales | `< 0.30 ms` |
+| 🔥 Excitación armónica | Padé [3/2] soft-clip · Anti-alias 2× OS | `< 0.02 ms` |
+| 🧠 Psicoacústica | PI-LSTM int8 · fatiga + enmascaramiento | `< 0.01 ms` |
+| 🎛️ EQ evolutivo | CMA-ES · 512 bandas · NEON vectorizado | `< 0.03 ms` |
+| 🤖 Clasificación IA | YAMNet TFLite + AntiDolby CRNN | `async` |
+| 🛡️ Limitador seguridad | Lookahead block · soft-ceil · NaN guard | `< 0.01 ms` |
+| **Σ Total E2E** | **`SCHED_FIFO 98` · lock-free · 0 malloc** | **`5.36 ms`** |
+
+</div>
 
 ---
 
@@ -90,9 +112,12 @@ flowchart TD
     SL --> OUT(["`**PCM Output**
     −0.1 dBFS max`"])
 
+    style IN fill:#0d1117,stroke:#e8e8f0,stroke-width:1.5px,color:#e8e8f0
+    style OUT fill:#0d1117,stroke:#e8e8f0,stroke-width:1.5px,color:#e8e8f0
     style DSP fill:#0d1117,stroke:#00FFCC,stroke-width:2px,color:#e8e8f0
     style NEURO fill:#0d1117,stroke:#7F52FF,stroke-width:2px,color:#e8e8f0
     style SPATIAL fill:#0d1117,stroke:#FF00AA,stroke-width:2px,color:#e8e8f0
+    style SL fill:#1a0d0d,stroke:#FF4D4D,stroke-width:2px,color:#e8e8f0
 ```
 
 ---
@@ -101,37 +126,66 @@ flowchart TD
 
 IVANNA opera en dos modos según el nivel de acceso al sistema:
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  RUTA A — Sin root (App)                                                  │
-│                                                                            │
-│  MediaProjection ──► AudioPipeline ──► JNI ──► OPE DSP ──► Salida       │
-│  Captura per-app · Telemetría RMS/peak/YAMNet cada bloque               │
-└──────────────────────────────────────────────────────────────────────────┘
+<table>
+<tr><td>
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│  RUTA B — Sistema global (Magisk)                                          │
-│                                                                            │
-│  AudioFlinger ──► libomega_effect.so (AudioEffect HAL)                   │
-│                         │                                                  │
-│              ivanna_daemon @SCHED_FIFO 98                                 │
-│                         │                                                  │
-│              OmegaControlBus (seqlock SHM) ◄── UI sliders               │
-│                         │                                                  │
-│              omega_effect lee seqlock por bloque (sin locks)             │
-│                         │                                                  │
-│              IvannaFusionEngine (per-session, aislado)                   │
-└──────────────────────────────────────────────────────────────────────────┘
+**🅰️ RUTA A — Sin root (App)**
+
+```
+MediaProjection
+      │
+      ▼
+ AudioPipeline
+      │
+      ▼
+     JNI
+      │
+      ▼
+  OPE DSP
+      │
+      ▼
+   Salida
 ```
 
-**Persistencia:** `SpatialControlStore` (DataStore) guarda HRTF/RIR/SAF — sobrevive cierre, reboot y reinstalación del APK. `BootRestoreReceiver` reaplica con el sample rate real del hardware.
+Captura per-app · Telemetría RMS/peak/YAMNet cada bloque
+
+</td><td>
+
+**🅱️ RUTA B — Sistema global (Magisk)**
+
+```
+    AudioFlinger
+         │
+         ▼
+libomega_effect.so (HAL)
+         │
+         ▼
+ivanna_daemon @SCHED_FIFO 98
+         │
+         ▼
+OmegaControlBus (seqlock SHM) ◄── UI sliders
+         │
+         ▼
+omega_effect (sin locks)
+         │
+         ▼
+IvannaFusionEngine (per-session)
+```
+
+</td></tr>
+</table>
+
+> [!NOTE]
+> **Persistencia:** `SpatialControlStore` (DataStore) guarda HRTF/RIR/SAF — sobrevive cierre, reboot y reinstalación del APK. `BootRestoreReceiver` reaplica con el sample rate real del hardware.
 
 ---
 
 ## 🎚️ Módulos DSP — Especificaciones
 
-<details>
-<summary><b>GainStage · ParametricEQ · Compressor</b></summary>
+<details open>
+<summary><b>🎛️ GainStage · ParametricEQ · Compressor</b></summary>
+
+<br/>
 
 **GainStage**
 - Input/Output gain independientes con rampa anti-zipper de 15 ms
@@ -151,7 +205,9 @@ IVANNA opera en dos modos según el nivel de acceso al sistema:
 </details>
 
 <details>
-<summary><b>HarmonicExciter — Anti-alias 2× oversampling</b></summary>
+<summary><b>🔥 HarmonicExciter — Anti-alias 2× oversampling</b></summary>
+
+<br/>
 
 - **HPF 3 kHz** (Butterworth Q=0.707) separa el contenido de alta frecuencia
 - **Soft-clip Padé [3/2]:** `x·(27 + x²)/(27 + 9x²)` — THD < 0.01% en `[-4, 4]`
@@ -163,7 +219,9 @@ IVANNA opera en dos modos según el nivel de acceso al sistema:
 </details>
 
 <details>
-<summary><b>StereoWidener · SafetyLimiter</b></summary>
+<summary><b>🌐 StereoWidener · 🛡️ SafetyLimiter</b></summary>
+
+<br/>
 
 **StereoWidener M/S**
 - Procesamiento Mid/Side independiente
@@ -190,23 +248,29 @@ IVANNA opera en dos modos según el nivel de acceso al sistema:
 
 El motor no aplica un HRTF genérico. Resuelve un problema de optimización sobre el manifold de Stiefel:
 
+<div align="center">
+
 ```
 min_{U ∈ St(d,k)}  L(U) = −Tr(Uᵀ Σ U) + λ ‖UᵀU − I_k‖²_F
 ```
 
+</div>
+
 - **Gradiente Riemanniano:** `∇_R L(U) = ∇L − U(Uᵀ ∇L)` (proyección al espacio tangente)
 - **Retracción QR:** `U_{t+1} = qf(U_t − η · ∇_R L)` (permanece en el manifold)
 - **Dataset:** `SAF_model.json` — 214 sujetos, 7 componentes PCA
-- **PC1:** altura/escala auditiva (~42% varianza); **PC2:** ancho de concha pinna (~19.5%, controla notches >8 kHz para localización vertical)
+- **PC1:** altura/escala auditiva (~42% varianza) · **PC2:** ancho de concha pinna (~19.5%, controla notches >8 kHz para localización vertical)
 - Convergencia típica: 40–80 iteraciones
 
-### Biblioteca SOFA — 14 archivos AES69
+### 📼 Biblioteca SOFA — 14 archivos AES69
 
 <details>
 <summary><b>Ver inventario completo de archivos SOFA</b></summary>
 
+<br/>
+
 | Archivo | Tipo | Uso |
-|---|---|---|
+|:---|:---:|:---|
 | `MIT_KEMAR_normal_pinna.sofa` | HRTF FreeField | Referencia anatómica estándar |
 | `MIT_KEMAR_large_pinna.sofa` | HRTF FreeField | Morfología de pabellón grande (comparativa PCA) |
 | `TU-Berlin_QU_KEMAR_anechoic_radius_0.5m.sofa` | HRTF anecoica | Campo cercano 0.5 m — precisión frontal |
@@ -225,7 +289,7 @@ min_{U ∈ St(d,k)}  L(U) = −Tr(Uᵀ Σ U) + λ ‖UᵀU − I_k‖²_F
 
 </details>
 
-### RIR — 200 Salas Reales
+### 🏛️ RIR — 200 Salas Reales
 
 - `rir_0000.wav` … `rir_0199.wav` — WAV estéreo con `metadata.csv` (RT60, dimensiones, geometría)
 - **Convolución Overlap-Save FFT Radix-2** — sin latencia de trama adicional
@@ -238,20 +302,25 @@ min_{U ∈ St(d,k)}  L(U) = −Tr(Uᵀ Σ U) + λ ‖UᵀU − I_k‖²_F
 
 ## 🤖 Inteligencia Neural
 
+<div align="center">
+
 | Módulo | Tecnología | Función |
-|---|---|---|
-| **YAMNet** | TFLite · async thread | Clasifica contenido: voz / música / transitorio / ruido |
-| **AntiDolby CRNN** | TFLite | Detecta compresión Dolby → ajusta EQ 2–4 kHz y widener |
-| **PI-LSTM int8** | Cuantizado Q.7/Q.8 | Estima fatiga auditiva acumulada → filtra HF suavemente |
-| **CMA-ES (512 bandas)** | Evolutionary EQ | Optimiza respuesta en frecuencia cada 50 ms (8λ, CES) |
-| **IvannaAudioClassifier** | SPSC ring buffer | Inferencia asíncrona sin bloquear el hilo de audio |
+|:---|:---|:---|
+| 🎙️ **YAMNet** | TFLite · async thread | Clasifica contenido: voz / música / transitorio / ruido |
+| 🚫 **AntiDolby CRNN** | TFLite | Detecta compresión Dolby → ajusta EQ 2–4 kHz y widener |
+| 😌 **PI-LSTM int8** | Cuantizado Q.7/Q.8 | Estima fatiga auditiva acumulada → filtra HF suavemente |
+| 🧬 **CMA-ES** (512 bandas) | Evolutionary EQ | Optimiza respuesta en frecuencia cada 50 ms (8λ, CES) |
+| 🔀 **IvannaAudioClassifier** | SPSC ring buffer | Inferencia asíncrona sin bloquear el hilo de audio |
+
+</div>
 
 **Control adaptativo según clase detectada:**
+
 ```
-Voz     → Side ×0.8  (enfoque vocal, reduce imagen espacial)
-Música  → Side ×1.2  (expansión armónica)
-Bajo    → Exciter solo-low (<120 Hz)
-Dolby   → +2 dB en 2–4 kHz  +  widener ajustado
+ Voz      ──▶  Side ×0.8   (enfoque vocal, reduce imagen espacial)
+ Música   ──▶  Side ×1.2   (expansión armónica)
+ Bajo     ──▶  Exciter solo-low (<120 Hz)
+ Dolby    ──▶  +2 dB en 2–4 kHz  +  widener ajustado
 ```
 
 ---
@@ -260,17 +329,22 @@ Dolby   → +2 dB en 2–4 kHz  +  widener ajustado
 
 Medido con `tools/benchmark_suite.cpp` · 48 kHz · bloque 256 frames · 15 segundos:
 
-| Métrica | Valor | Referencia |
-|---|---|---|
-| **Tiempo medio de bloque** | **0.028 ms** | Budget a 48kHz/256: 5.33 ms |
-| **p95 por bloque** | 0.033 ms | — |
-| **p99 por bloque** | 0.043 ms | — |
-| **Máximo absoluto** | 0.066 ms | — |
-| **CPU utilizado** | **0.52 %** | — |
-| **Latencia E2E estimada** | **5.36 ms** | Incluye bloque + promedio |
-| **Jitter (p99 − avg)** | 0.015 ms | — |
-| **Batería estimada** | **0.77 mAh/h** | Referencia: Moto G85 5000 mAh |
+<div align="center">
 
+| Métrica | Valor | Referencia |
+|:---|:---:|:---|
+| Tiempo medio de bloque | **`0.028 ms`** | Budget a 48kHz/256: 5.33 ms |
+| p95 por bloque | `0.033 ms` | — |
+| p99 por bloque | `0.043 ms` | — |
+| Máximo absoluto | `0.066 ms` | — |
+| CPU utilizado | **`0.52 %`** | — |
+| Latencia E2E estimada | **`5.36 ms`** | Incluye bloque + promedio |
+| Jitter (p99 − avg) | `0.015 ms` | — |
+| Batería estimada | **`0.77 mAh/h`** | Referencia: Moto G85 5000 mAh |
+
+</div>
+
+> [!IMPORTANT]
 > Estos números son del host de CI. Para mediciones reales en Moto G85: `scripts/benchmark_device.sh` + Perfetto.
 
 ---
@@ -280,7 +354,7 @@ Medido con `tools/benchmark_suite.cpp` · 48 kHz · bloque 256 frames · 15 segu
 Las siguientes correcciones se acaban de integrar en `main` para eliminar los artefactos reportados (tronidos, clipping, bombeo):
 
 | Bug | Síntoma | Archivo corregido |
-|---|---|---|
+|:---|:---|:---|
 | **IIR state reset por bloque** | Tronido/pop periódico a la frecuencia de buffer | `Psychoacoustics.cpp` — `stateL/R` → `m_iirStateL/R` persistentes |
 | **Condición solo-positiva en expansor** | Distorsión asimétrica / rectificación semionada | `Psychoacoustics.cpp` — `buf[i] > 0` → `abs(buf[i]) > 0` |
 | **Ganancia ilimitada en masking comp** | Clipping cuando envolv. alta y muestra baja | `Psychoacoustics.cpp` — `comp` clampado a 1.25 máx |
@@ -291,7 +365,10 @@ Las siguientes correcciones se acaban de integrar en `main` para eliminar los ar
 
 ## 📦 Instalación
 
-### Ruta B — Sistema global con Magisk (recomendada)
+<table>
+<tr><td width="50%" valign="top">
+
+### 🅱️ Ruta B — Magisk *(recomendada)*
 
 ```bash
 # 1. Flashear el módulo desde Magisk Manager
@@ -305,23 +382,34 @@ ls -la /dev/socket/ivanna_omega
 ps -A | grep ivanna_daemon
 ```
 
-### Ruta A — Sin root (por app)
+</td><td width="50%" valign="top">
+
+### 🅰️ Ruta A — Sin root
 
 ```bash
 # Instalar el APK desde Releases
 adb install -r app-release.apk
-# Conceder permiso de captura de audio cuando el sistema lo solicite
+
+# Conceder permiso de captura de
+# audio cuando el sistema lo solicite
 ```
+
+</td></tr>
+</table>
 
 ### ⚠️ Requisitos
 
+<div align="center">
+
 | Requisito | Detalle |
-|---|---|
-| **Android** | 9 (API 28) — 16 |
-| **Arquitectura** | arm64-v8a (Cortex-A55 o superior) |
-| **Root** | Magisk v24+ (solo Ruta B) |
-| **RAM libre** | ≥ 256 MB en `audioserver` |
-| **Bootloader** | Desbloqueado (para módulo Magisk) |
+|:---|:---|
+| 🤖 **Android** | 9 (API 28) — 16 |
+| 🏗️ **Arquitectura** | arm64-v8a (Cortex-A55 o superior) |
+| 🔓 **Root** | Magisk v24+ (solo Ruta B) |
+| 💾 **RAM libre** | ≥ 256 MB en `audioserver` |
+| 🔐 **Bootloader** | Desbloqueado (para módulo Magisk) |
+
+</div>
 
 ---
 
@@ -345,7 +433,11 @@ cmake --build build-bench -j$(nproc)
 ./build-bench/benchmark_suite
 ```
 
-**Toolchain:** NDK 25.1.8937393 · CMake 3.22.1 · Kotlin 1.9.24 · JVM 17 · compileSdk 35 · minSdk 28
+<div align="center">
+
+`NDK 25.1.8937393` · `CMake 3.22.1` · `Kotlin 1.9.24` · `JVM 17` · `compileSdk 35` · `minSdk 28`
+
+</div>
 
 **Flags críticos de compilación:**
 ```cmake
@@ -354,7 +446,11 @@ cmake --build build-bench -j$(nproc)
 # -ffast-math PROHIBIDO: genera NaN en denormals en SD8 Gen2/3
 ```
 
-**CI pipeline:** `test-native-dsp` → `build-apk` → validación ELF `AUDIO_EFFECT_LIBRARY_INFO_SYM` → release en tag `v*` + `update.json` Magisk
+**CI pipeline:**
+
+```
+test-native-dsp  ──▶  build-apk  ──▶  validación ELF (AUDIO_EFFECT_LIBRARY_INFO_SYM)  ──▶  release en tag v* + update.json Magisk
+```
 
 ---
 
@@ -368,25 +464,32 @@ Entrada → GainStage → EQ → Compressor → HarmonicExciter
          SafetyLimiter → softCeil(x, −0.1 dBFS) → Salida
 ```
 
-En ningún punto de la cadena el audio puede superar `−0.1 dBFS`. El `SafetyLimiter` es el árbitro final y siempre activo — no hay modo de operación sin él.
+> [!TIP]
+> En ningún punto de la cadena el audio puede superar `−0.1 dBFS`. El `SafetyLimiter` es el árbitro final y siempre activo — no hay modo de operación sin él.
 
 ---
 
 ## ⚠️ Notas de ingeniería
 
-- El release usa **debug key** por defecto — cambiar `signingConfig` antes de distribuir públicamente.
-- `CAPTURE_AUDIO_OUTPUT` y `BIND_AUDIO_EFFECT_SERVICE` requieren firma de sistema o root.
-- El módulo Magisk instala un `AudioEffect` global en `AudioFlinger`: hacer backup de `boot.img` antes de flashear.
-- Firebase Analytics es **opt-in**: proveer `google-services.json` propio para habilitarlo.
-- `AudioParameterManager.kt` (smoother de transiciones) está implementado pero sin punto de entrada activo — pendiente de decisión de producto.
+> [!WARNING]
+> - El release usa **debug key** por defecto — cambiar `signingConfig` antes de distribuir públicamente.
+> - `CAPTURE_AUDIO_OUTPUT` y `BIND_AUDIO_EFFECT_SERVICE` requieren firma de sistema o root.
+> - El módulo Magisk instala un `AudioEffect` global en `AudioFlinger`: hacer backup de `boot.img` antes de flashear.
+> - Firebase Analytics es **opt-in**: proveer `google-services.json` propio para habilitarlo.
+> - `AudioParameterManager.kt` (smoother de transiciones) está implementado pero sin punto de entrada activo — pendiente de decisión de producto.
 
 ---
 
 <div align="center">
 
-**Autor:** Luis Uriel Pimentel Pérez · México<br/>
-[@luisurielpimentelperez814-design](https://github.com/luisurielpimentelperez814-design)
+<br/>
+
+**Autor:** Luis Uriel Pimentel Pérez · México
+
+[![GitHub](https://img.shields.io/badge/@luisurielpimentelperez814--design-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/luisurielpimentelperez814-design)
 
 *Sin cuentos. Con SOFA AES69, RIR medidas y SaF Riemanniano verificable.*
+
+<br/>
 
 </div>
