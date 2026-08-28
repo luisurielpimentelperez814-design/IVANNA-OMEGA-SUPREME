@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.2.0
-versionCode=2200
+version=v2.2.1
+versionCode=2201
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=Motor DSP neuromorfico system-wide · Volterra H2 · Φ_SAF∞ HRTF Riemanniano (214 sujetos) · PI-LSTM · ISO 226 · EQ Evolutivo · SCHED_FIFO daemon · Anti-Dolby CRNN
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

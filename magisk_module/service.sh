@@ -1,6 +1,13 @@
 #!/system/bin/sh
-set -e  # abortar ante fallo — estado parcial es peor que fallo explícito
-# IVANNA OMEGA SUPREME v6.3 - Magisk Realtime Daemon Service
+# FIX CRÍTICO: SE ELIMINA set -e
+# set -e hacía que cualquier comando con código de retorno != 0 terminase
+# el script entero. En un watchdog shell, grep -q (devuelve 1 si no encuentra),
+# pidof (devuelve 1 si no hay proceso), kill -0 (devuelve 1 si PID no existe)
+# y los propios `[ ]` que evalúan a falso TODOS matan el proceso. El resultado:
+# service.sh moría silenciosamente antes de llegar al watchdog loop → daemon
+# nunca arrancaba → panel mostraba DETENIDO con módulo ACTIVO.
+# Sin set -e, cada comando falla por su cuenta y el script continúa.
+# IVANNA OMEGA SUPREME v6.4 - Magisk Realtime Daemon Service
 MODDIR=${0%/*}
 
 DAEMON_BIN="$MODDIR/system/bin/ivanna_daemon"
@@ -14,7 +21,7 @@ if [ -f "$LOGFILE" ] && [ "$(stat -c%s "$LOGFILE" 2>/dev/null || echo 0)" -gt 10
     mv "$LOGFILE" "${LOGFILE}.old"
 fi
 
-echo "[$(date)] service.sh v6.3 iniciado" >> "$LOGFILE"
+echo "[$(date)] service.sh v6.4 iniciado" >> "$LOGFILE"
 
 # ── SELinux: cargar reglas del módulo en tiempo real ─────────────────────────
 # Sin esto, untrusted_app (la app) no puede connect() al socket abstracto del

@@ -74,8 +74,26 @@ android {
 
     packaging {
         jniLibs {
+            // FIX (APK corrupto / libs no cargadas):
+            // AGP 4.0+ empaqueta .so sin comprimir por defecto (más eficiente en
+            // instalaciones modernas). Sin useLegacyPackaging = false explícito,
+            // el comportamiento depende de cómo se construyó el APK y qué version
+            // de AGP está activa — en algunos entornos AGP comprimía las .so y en
+            // otros no, provocando que el package manager del dispositivo recibiera
+            // un APK internamente inconsistente (algunas libs comprimidas, otras no)
+            // → instalación parcialmente corrupta → System.loadLibrary() fallaba
+            // con "file not found" o "ELF header corrupt" aunque el APK se había
+            // instalado sin error visible.
+            //
+            // useLegacyPackaging = false garantiza que TODAS las .so van sin
+            // comprimir, que es la forma correcta para minSdk ≥ 23 (soportado
+            // desde Android 6). El Manifest lleva android:extractNativeLibs="false"
+            // para que el package manager las mapee en memoria directamente sin
+            // extraerlas a /data/app — menor uso de disco, carga más rápida.
+            useLegacyPackaging = false
             pickFirsts += listOf("lib/arm64-v8a/libc++_shared.so")
-            // Excluir archivos del módulo Magisk que NO deben estar en el APK
+            // Excluir libomega_effect.so — es un GlobalEffect para Magisk/AudioFlinger,
+            // NO debe ir en el APK (se instala vía magisk_module/system/vendor/lib64/soundfx/)
             excludes += listOf(
                 "lib/arm64-v8a/libomega_effect.so",
                 "lib/armeabi-v7a/libomega_effect.so",
