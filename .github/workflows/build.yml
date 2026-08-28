@@ -463,3 +463,22 @@ jobs:
         with:
           name: ivanna-oem-performance-metrics
           path: ivanna_oem_metrics.json
+
+
+      - name: Store OEM metrics history
+        if: always()
+        run: |
+          chmod +x .github/scripts/store_metrics_history.sh
+          .github/scripts/store_metrics_history.sh
+
+      - name: Generate OEM dashboard
+        if: always()
+        run: |
+          python3 tools/dashboard/generate_dashboard.py
+
+      - name: Upload OEM dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-dashboard
+          path: ivanna_oem_dashboard.html
