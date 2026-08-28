@@ -14,13 +14,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.IvannaLabMonitor
 
-private val LabBg = Color(0xFF0A0A0A)
-private val LabCard = Color(0xFF141414)
-private val LabBorder = Color(0xFF222222)
-private val LabCyan = Color(0xFF00F5FF)
-private val LabGreen = Color(0xFF00E676)
-private val LabYellow = Color(0xFFFFD600)
-private val LabRed = Color(0xFFFF3B30)
+// Paleta realineada con IvannaTheme Aurora Obsidiana v3.0 (nombres intactos):
+// fondos gris plano → obsidiana azul; semáforo de alertas → tonos del tema
+// (PhosphorGreen/AmberSignal/CoralWarn) para coherencia con el resto de la app.
+private val LabBg = Color(0xFF010204)      // ObsidianVoid
+private val LabCard = Color(0xFF0A101C)    // ObsidianSoft
+private val LabBorder = Color(0xFF223050)  // ObsidianEdge
+private val LabCyan = Color(0xFF6FF3FF)    // AuroraCyan
+private val LabGreen = Color(0xFF23F09A)   // PhosphorGreen
+private val LabYellow = Color(0xFFF7B733)  // AmberSignal
+private val LabRed = Color(0xFFFF5C4D)     // CoralWarn
 
 // Umbrales de alerta pedidos en el brief: THD>1% = rojo, SNR<60dB = amarillo.
 private fun thdColor(thd: Float) = when {
