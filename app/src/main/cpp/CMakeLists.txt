@@ -328,6 +328,7 @@ add_custom_target(stage_omega_effect ALL DEPENDS omega_effect)
 add_subdirectory(daemon)
 
 
+# OEM stability regression suite
 add_executable(test_oem_stability_suite
     tests/regression/test_oem_stability_suite.cpp
 )
@@ -337,14 +338,13 @@ target_include_directories(test_oem_stability_suite PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest
 )
 
-add_dependencies(test_oem_stability_suite gtest)
-
-
 target_link_libraries(test_oem_stability_suite
     gtest
     gtest_main
     pthread
 )
+
+add_dependencies(test_oem_stability_suite gtest)
 
 target_include_directories(test_oem_stability_suite PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
