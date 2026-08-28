@@ -45,3 +45,9 @@ extracted_daemon
 magisk_module/system/bin/ivanna_daemon
 magisk_module/system/lib64/soundfx/*.so
 magisk_module/system/vendor/lib64/soundfx/*.so
+
+# OEM generated reports
+ivanna_*.html
+ivanna_*.txt
+ivanna_*.json
+telemetry/iael/
