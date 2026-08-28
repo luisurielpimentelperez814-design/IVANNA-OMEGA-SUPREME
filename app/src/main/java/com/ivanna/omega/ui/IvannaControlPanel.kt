@@ -143,8 +143,9 @@ fun IvannaControlPanel(
     var spscRingFactor by remember { mutableFloatStateOf(savedState.spscRingFactor) }
     var tinymlInferenceGain by remember { mutableFloatStateOf(savedState.tinymlInferenceGain) }
 
-    // Los 4 sliders del Audio Lab se persisten en cada cambio, preservando
-    // el resto de claves de AdaptiveControlsPrefs (merge sobre load actual).
+    // Persistencia inmediata en cada cambio para todos los controles del panel.
+    // FIX: phaseOracleIntensity y omegaMode sólo se guardaban en DisposableEffect
+    // ON_STOP — si la app crasheaba o era matada por el sistema, el valor se perdía.
     LaunchedEffect(antiDolbyThreshold, spatialSuppression, spscRingFactor, tinymlInferenceGain) {
         val cur = AdaptiveControlsPrefs.load(context)
         AdaptiveControlsPrefs.save(context, cur.copy(
@@ -152,6 +153,33 @@ fun IvannaControlPanel(
             spatialSuppression = spatialSuppression,
             spscRingFactor = spscRingFactor,
             tinymlInferenceGain = tinymlInferenceGain
+        ))
+    }
+    LaunchedEffect(phaseOracleIntensity) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(phaseOracleIntensity = phaseOracleIntensity))
+    }
+    LaunchedEffect(omegaMode) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(omegaMode = omegaMode))
+    }
+    LaunchedEffect(nhoHarmonic, spatialAngle, spatialWidth) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(
+            nhoHarmonic  = nhoHarmonic,
+            spatialAngle = spatialAngle,
+            spatialWidth = spatialWidth
+        ))
+    }
+    LaunchedEffect(npeHarmonic, npeLateralInhib, npeOhcCompression, npeMasterGain, npeAgcTarget, npeAgcRate) {
+        val cur = AdaptiveControlsPrefs.load(context)
+        AdaptiveControlsPrefs.save(context, cur.copy(
+            npeHarmonic       = npeHarmonic,
+            npeLateralInhib   = npeLateralInhib,
+            npeOhcCompression = npeOhcCompression,
+            npeMasterGain     = npeMasterGain,
+            npeAgcTarget      = npeAgcTarget,
+            npeAgcRate        = npeAgcRate
         ))
     }
     var exciter by remember { mutableFloatStateOf(initialExciter) }
