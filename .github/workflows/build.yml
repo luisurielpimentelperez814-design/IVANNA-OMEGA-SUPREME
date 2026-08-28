@@ -453,6 +453,13 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-apk]
     steps:
+      # FIX (CI rojo, 2026-08-28): este job nunca hacía checkout del repo —
+      # solo descargaba artefactos. Los pasos OEM/IAEL llaman a scripts en
+      # tools/ (iael_audio_certification.py, dashboard/*, telemetry/*) que
+      # no existían en el runner → "[Errno 2] No such file or directory"
+      # en 6 pasos seguidos. Checkout primero, artefactos después.
+      - uses: actions/checkout@v5
+
       - name: Download module bundle
         uses: actions/download-artifact@v4
         with:
