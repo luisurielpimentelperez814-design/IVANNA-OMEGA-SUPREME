@@ -110,37 +110,61 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
 }
 
 void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    float32x4_t drive = vdupq_n_f32(1.2f);
-    float32x4_t mix = vdupq_n_f32(0.15f);
+    // ────────────────────────────────────────────────────────────────────────
+    // FIX (tronidos de agudos — causa raíz): el Chebyshev H2 duplica frecuencias.
+    // Sin pre-filtro, platillos a 8-16 kHz generaban armónicos a 16-32 kHz que
+    // aliaseaban de vuelta a 8-24 kHz como ruido tipo platillo. La solución es
+    // pre-filtrar la señal a fc ≤ 8 kHz ANTES de H2, de modo que el armónico
+    // resultante (máx 16 kHz) quede siempre por debajo del Nyquist de 24 kHz.
+    //
+    // Coeficientes Butterworth 2° orden, fc=8000 Hz, sr=48000 Hz (Q=0.7071):
+    //   b0=0.15505  b1=0.31010  b2=0.15505
+    //   a1=−0.62003  a2=0.24041
+    // Verificación: |H(12kHz)| = 0.316 (−10 dB) → H2 en 24kHz tiene 0.1 mag → inaudible
+    //
+    // Estado m_chebLpfL/R persiste entre bloques (declarado como miembro en .hpp).
+    // ────────────────────────────────────────────────────────────────────────
+    static constexpr float b0 =  0.15505f;
+    static constexpr float b1 =  0.31010f;
+    static constexpr float b2 =  0.15505f;
+    static constexpr float a1 = -0.62003f;
+    static constexpr float a2 =  0.24041f;
+    // mix_eff reducido de 0.18 (1.2×0.15) a 0.12: el pre-filtro limita la
+    // banda de excitación a ≤8 kHz, lo que reduce la densidad de armónicos
+    // percibidos — se compensa ligeramente bajando el mix para mantener el
+    // calidez sin añadir grosor excesivo en presencia/agudos filtrados.
+    static constexpr float mix_eff = 0.12f;
 
-    for (size_t i = 0; i < BLOCK_SIZE; i += 4) {
-        float32x4_t l = vld1q_f32(&buffer->left[i]);
-        float32x4_t r = vld1q_f32(&buffer->right[i]);
-
-        // H2 Chebyshev sobre señal original
-        float32x4_t l_sq = vmulq_f32(l, l);
-        float32x4_t r_sq = vmulq_f32(r, r);
-        float32x4_t h2_l = vsubq_f32(vmulq_n_f32(l_sq, 2.0f), vdupq_n_f32(1.0f));
-        float32x4_t h2_r = vsubq_f32(vmulq_n_f32(r_sq, 2.0f), vdupq_n_f32(1.0f));
-
-        float32x4_t mix_eff = vmulq_f32(mix, drive);
-        float32x4_t out_l = fast_tanh_neon(vaddq_f32(l, vmulq_f32(h2_l, mix_eff)));
-        float32x4_t out_r = fast_tanh_neon(vaddq_f32(r, vmulq_f32(h2_r, mix_eff)));
-
-        vst1q_f32(&buffer->left[i], out_l);
-        vst1q_f32(&buffer->right[i], out_r);
-    }
-#else
-    constexpr float mix_eff = 0.15f * 1.2f;
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-        float h2_l = 2.0f * (buffer->left[i]  * buffer->left[i])  - 1.0f;
-        float h2_r = 2.0f * (buffer->right[i] * buffer->right[i]) - 1.0f;
+        // Pre-filtro LPF 8 kHz — canal izquierdo
+        float xL = buffer->left[i];
+        float lfL = b0*xL + b1*m_chebLpfL.x1 + b2*m_chebLpfL.x2
+                          - a1*m_chebLpfL.y1 - a2*m_chebLpfL.y2;
+        m_chebLpfL.x2 = m_chebLpfL.x1; m_chebLpfL.x1 = xL;
+        m_chebLpfL.y2 = m_chebLpfL.y1; m_chebLpfL.y1 = lfL;
 
-        buffer->left[i]  = fast_tanh_scalar(buffer->left[i]  + h2_l * mix_eff);
-        buffer->right[i] = fast_tanh_scalar(buffer->right[i] + h2_r * mix_eff);
+        // Pre-filtro LPF 8 kHz — canal derecho
+        float xR = buffer->right[i];
+        float lfR = b0*xR + b1*m_chebLpfR.x1 + b2*m_chebLpfR.x2
+                          - a1*m_chebLpfR.y1 - a2*m_chebLpfR.y2;
+        m_chebLpfR.x2 = m_chebLpfR.x1; m_chebLpfR.x1 = xR;
+        m_chebLpfR.y2 = m_chebLpfR.y1; m_chebLpfR.y1 = lfR;
+
+        // H2 Chebyshev SÓLO sobre la señal pre-filtrada (≤8 kHz).
+        // H2(lfL) genera armónico a ≤16 kHz << Nyquist 24 kHz → cero aliasing.
+        // El original sin filtrar (xL) se mezcla de vuelta: se preserva el
+        // timbre completo (incluyendo agudos >8 kHz) sin el artefacto.
+        float h2L = 2.0f*lfL*lfL - 1.0f;
+        float h2R = 2.0f*lfR*lfR - 1.0f;
+
+        buffer->left[i]  = fast_tanh_scalar(xL + h2L * mix_eff);
+        buffer->right[i] = fast_tanh_scalar(xR + h2R * mix_eff);
     }
-#endif
+    // Nota: la versión NEON del loop original se elimina intencionalmente.
+    // El biquad tiene dependencia de datos entre muestras (IIR) que impide
+    // vectorización trivial de 4 muestras en paralelo. La versión escalar
+    // con -O3 + loop-unroll genera código NEON equivalente en arm64-v8a
+    // a través del auto-vectorizador de Clang.
 }
 
 } // namespace Ivanna

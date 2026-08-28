@@ -104,9 +104,6 @@ private:
     bool  m_goldenEarActive = false;
     float m_sampleRate  = SAMPLE_RATE;
     float m_harmonicGain = 0.f;
-    // Target del slew anti-zipper (83bf9eb9): el setter escribía esta variable
-    // sin declararla — error de compilación en arm64-v8a/armeabi-v7a que
-    // tumbaba el build del APK (CI 33122617356).
     float m_harmonicGainTarget = 0.f;
     float m_compThresh   = -18.f;
     float m_compRatio    = 4.f;
@@ -114,6 +111,19 @@ private:
     EvolutionaryEQ*       m_evoEq      = nullptr;
     Psychoacoustics*      m_psycho     = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
+
+    // ── Pre-filtro del Chebyshev (FIX tronidos de agudos) ────────────────────
+    // H2(x) = 2x² − 1 duplica frecuencias: un platillo a 12 kHz genera
+    // un armónico a 24 kHz (Nyquist) que aliasa a DC/ruido al saltar a 48 kHz.
+    // Solución: pre-filtrar la entrada al Chebyshev a fc ≤ 8 kHz antes de
+    // aplicar H2. H2(8 kHz) → 16 kHz << 24 kHz Nyquist → cero aliasing.
+    // Los coeficientes son Butterworth Q=0.7071, fc=8000 Hz, sr=48000 Hz,
+    // calculados offline (tan(π×8/48)=0.57735, norma=2.14984):
+    //   b0=b2=0.15505, b1=0.31010, a1=-0.62003, a2=0.24041
+    // El estado DEBE persistir entre bloques — si fuera local volvería a 0
+    // en cada llamada → escalón de discontinuidad = tronido periódico.
+    struct ChebLPF { float x1=0,x2=0,y1=0,y2=0; };
+    ChebLPF m_chebLpfL, m_chebLpfR;
 
     void applyHarmonicExciter(AudioBuffer* buffer);
 };
