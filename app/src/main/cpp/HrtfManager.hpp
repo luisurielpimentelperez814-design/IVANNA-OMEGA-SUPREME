@@ -7,6 +7,7 @@
 
 namespace Ivanna {
 constexpr size_t HRTF_TAPS = 128;
+constexpr int XFADE_FRAMES = 128;
 
 class HrtfManager {
 public:
