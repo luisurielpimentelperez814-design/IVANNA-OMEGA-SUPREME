@@ -677,7 +677,7 @@ fun IvannaControlPanel(
         GlassCard(
             title = "KERNEL EVOLUTIVO",
             accent = AmberSignal,
-            subtitle = "g_population · hilo de baja prioridad",
+            subtitle = "g_population · hilo de baja prioridad · CMA-ES 8λ",
             rightSlot = {
                 ToggleSwitch(evoEnabled, { evoEnabled = it; onEvoEnabledChange(it) }, AmberSignal)
             }
@@ -685,6 +685,77 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatBlock("GENERACIÓN", evoGeneration.toString(), AmberSignal, Modifier.weight(1f))
                 StatBlock("FITNESS", "%.3f".format(evoFitness), PhosphorGreen, Modifier.weight(1f))
+            }
+
+            // FIX: evoPopSize/Generations/MutationRate existían en AdaptiveControlsPrefs
+            // pero NUNCA se cargaban al IvannaControlPanel ni se aplicaban al nativo.
+            // Ahora se muestran como sliders y llaman nativeInitializeEvolution +
+            // nativeSetMutationRate en cada cambio.
+            var evoPopSize by remember { mutableIntStateOf(savedState.evoPopSize) }
+            var evoGenerations by remember { mutableIntStateOf(savedState.evoGenerations) }
+            var evoMutationRate by remember { mutableFloatStateOf(savedState.evoMutationRate) }
+
+            Spacer(Modifier.height(6.dp))
+            AuroraSlider(
+                "TAMAÑO POBLACIÓN",
+                evoPopSize.toFloat(), 10f..200f,
+                displayValue = { "${it.toInt()}" }
+            ) { v ->
+                evoPopSize = v.toInt()
+                AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(evoPopSize = evoPopSize))
+                if (IvannaNativeLib.isLoaded && evoEnabled) {
+                    runCatching { IvannaNativeLib.nativeInitializeEvolution(evoPopSize, evoGenerations) }
+                }
+            }
+            AuroraSlider(
+                "GENERACIONES MAX",
+                evoGenerations.toFloat(), 10f..500f,
+                displayValue = { "${it.toInt()}" }
+            ) { v ->
+                evoGenerations = v.toInt()
+                AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(evoGenerations = evoGenerations))
+                if (IvannaNativeLib.isLoaded && evoEnabled) {
+                    runCatching { IvannaNativeLib.nativeInitializeEvolution(evoPopSize, evoGenerations) }
+                }
+            }
+            AuroraSlider(
+                "TASA DE MUTACIÓN",
+                evoMutationRate, 0f..0.5f,
+                displayValue = { "%.3f".format(it) }
+            ) { v ->
+                evoMutationRate = v
+                AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(evoMutationRate = v))
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetMutationRate(v) }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            // FIX: nativeSaveEvoState / nativeLoadEvoState existían pero nunca
+            // tenían un punto de entrada desde UI — el estado evolutivo se perdía.
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        if (IvannaNativeLib.isLoaded) {
+                            runCatching { IvannaNativeLib.nativeSaveEvoState() }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberSignal)
+                ) { Text("GUARDAR EVO", fontSize = 10.sp) }
+                OutlinedButton(
+                    onClick = {
+                        if (IvannaNativeLib.isLoaded) {
+                            runCatching {
+                                IvannaNativeLib.nativeLoadEvoState()
+                                evoFitness = IvannaNativeLib.nativeGetEvoBestFitness()
+                                evoGeneration = IvannaNativeLib.nativeGetGeneration()
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PhosphorGreen)
+                ) { Text("RESTAURAR EVO", fontSize = 10.sp) }
             }
         }
 
