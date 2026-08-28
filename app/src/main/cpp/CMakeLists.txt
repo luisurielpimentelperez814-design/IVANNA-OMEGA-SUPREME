@@ -332,13 +332,15 @@ add_executable(test_oem_stability_suite
     regression/test_oem_stability_suite.cpp
 )
 
-target_include_directories(test_oem_stability_suite PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/googletest/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/googletest
-)
-
 target_link_libraries(test_oem_stability_suite
     gtest
     gtest_main
     pthread
 )
+
+target_include_directories(test_oem_stability_suite PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/googletest/include
+)
+
+    
+add_dependencies(test_oem_stability_suite gtest)
