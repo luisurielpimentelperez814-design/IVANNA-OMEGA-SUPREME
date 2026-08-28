@@ -660,12 +660,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     g_params.alpha = alpha; g_params.beta = beta; g_params.gamma = gamma_v;
     g_params.freq  = freq;  g_params.resonance = resonance;
     g_params.low   = low;   g_params.mid = mid;   g_params.high = high;
-    g_params.presence = presence; g_params.master = master;
+    g_params.presence = presence;
+    // FIX (mismo bug que nativeSetEQParams): master llega lineal [0.5..2.0],
+    // GainStage lo trata como dB → conversión incorrecta + overflow.
+    const float masterDbNsp = (master <= 0.001f) ? -60.0f
+        : std::clamp(20.0f * std::log10f(master), -60.0f, 6.0f);
+    g_params.master = masterDbNsp;
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
     g_exciter.setParams(g_params);
     g_widener.setParams(g_params);
+    // Compensación de headroom EQ antes de GainStage.
+    const float compNsp = g_eq.getOutputCompensationDb();
+    g_params.master  = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
     g_gain.setParams(g_params);
+    g_params.master  = masterDbNsp;  // restaurar
     // NHO parameters mapped from DSP params
     g_pd.set_nho_alpha(alpha);
     g_pd.set_nho_beta(beta);
@@ -1193,7 +1202,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_params.sampleRate = (uint32_t)sr;
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
-    g_gain.setParams(g_params);
+    // Compensación de headroom EQ en init (misma lógica que nativeSetEQParams).
+    { const float mDb = g_params.master;
+      const float c   = g_eq.getOutputCompensationDb();
+      g_params.master = std::clamp(mDb - c, -60.0f, 6.0f);
+      g_gain.setParams(g_params);
+      g_params.master = mDb; }
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
     // FIX CRITICO (clipping/bombeo, 2026-08-27): mismo fix que nativeInit —
@@ -1396,9 +1410,26 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     g_params.low    = low;
     g_params.mid    = mid;
     g_params.high   = high;
-    g_params.master = master;
+    // FIX (ganancia errónea / audio que revienta): el Kotlin pasa `master`
+    // como multiplicador lineal [0.5 .. 2.0] desde el slider VOLUMEN.
+    // GainStage::setParams() hace outputGain_ = dbToLin(p.master), tratándolo
+    // como dB → dbToLin(2.0) = 1.26x en vez del 2.0x que el usuario pide, y
+    // dbToLin(2.0) + EQ peaks de hasta +14 dB = SafetyLimiter en comprensión
+    // extrema → pumping / distorsión audible ("revienta el audio").
+    // Fix: misma conversión que nativeSetPerceptualGain(), con techo +6 dB
+    // para dejarle headroom al SafetyLimiter (sin él, EQ + volumen max lo
+    // saturan sistemáticamente).
+    const float masterDb = (master <= 0.001f) ? -60.0f
+        : std::clamp(20.0f * std::log10f(master), -60.0f, 6.0f);
+    g_params.master = masterDb;
     g_eq.setParams(g_params);
+    // Aplicar compensación de headroom del EQ antes de configurar GainStage.
+    // Sin esto, EQ peaks apilados (ej. high +8.4 dB × 2 bandas + presence) +
+    // VOLUMEN = SafetyLimiter en trabajo extremo → pumping / "audio que revienta".
+    const float comp = g_eq.getOutputCompensationDb();
+    g_params.master  = std::clamp(masterDb - comp, -60.0f, 6.0f);
     g_gain.setParams(g_params);
+    g_params.master  = masterDb;  // restaurar para que otras lecturas de g_params sean correctas
 }
 // ═══════════════════════════════════════════════════════════════════════════════
 // Canal PERCEPTUAL (DSPBridge.applyPerceptualGain / applyCompressorAmount /

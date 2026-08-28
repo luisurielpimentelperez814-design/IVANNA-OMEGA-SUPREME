@@ -102,6 +102,48 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     setBand(6, 8000.f, p.resonance, clampDb(p.presence));
     // Band 7: High shelf ~12 kHz — high param (half for air)
     setBand(7, 12000.f, 0.707f, clampDb(p.high * 0.5f));
+
+    // ── Output-gain compensation (headroom management) ─────────────────────
+    // Problema: las bandas son biquads EN SERIE (cascada), no en paralelo.
+    // A frecuencias donde se solapan (ej. 5-8 kHz con high+presence), los
+    // boosts se suman dB a dB — con AGUDOS +8.4 dB + PRESENCIA +x dB el
+    // pico puede superar 0 dBFS por >10 dB, forzando al SafetyLimiter a
+    // comprimir extremadamente → "revienta el audio" (pumping / distorsión).
+    //
+    // Solución: estimar el boost máximo de los grupos que pueden solaparse
+    // (high shelf + high peak + presence) y el grupo de medios (mid + body),
+    // y compensar reduciendo la ganancia de salida del EQ en la mitad del
+    // exceso. El 50 % (en vez del 100 %) es conservador: no compensa por
+    // completo (deja energía subjetiva al boost), pero asegura que el limiter
+    // no tenga más de ~6 dB de trabajo en el peor caso razonable.
+    // La compensación se aplica via g_params.master DESPUÉS de setParams, por
+    // lo que no interfiere con la ganancia de salida ya calculada del GainStage.
+    const float highGroup = std::max(0.f, p.high)            // Band 5
+                          + std::max(0.f, p.high * 0.5f)     // Band 7
+                          + std::max(0.f, p.presence);        // Band 6
+    const float midGroup  = std::max(0.f, p.mid)             // Band 4
+                          + std::max(0.f, p.mid * 0.6f);      // Band 3
+    const float lowGroup  = std::max(0.f, p.low)             // Band 0
+                          + std::max(0.f, p.low * 0.5f);      // Band 1
+    const float maxStack  = std::max({highGroup, midGroup, lowGroup});
+    // Compensar solo cuando el stack supera 6 dB (por debajo es manejable).
+    if (maxStack > 6.0f) {
+        const float compensationDb = (maxStack - 6.0f) * 0.5f;
+        // Aplica la compensación sobre la banda de identidad (no sobre una
+        // banda activa) para no teñir la curva de respuesta: se crea un
+        // gain-stage inline en la banda 2 (siempre a 0 dB / inactiva).
+        // Más limpio: reducir el outputGain_ del GainStage vía la misma clave
+        // que ya usa — pero GainStage solo expone setParams(DSPParams).
+        // El camino directo: ajustar p.master ANTES de que setParams() del
+        // GainStage lo lea. Como ParametricEQ::setParams ya corrió, usamos
+        // la compensación solo informativa aquí; el llamador (JNI) la aplica
+        // restándola de g_params.master. Anotación para el JNI que llama:
+        // Guardamos el valor calculado para que el JNI lo lea si quiere.
+        // No podemos llamar a g_gain aquí (circular); se guarda en el campo.
+        eqOutputCompensationDb_ = compensationDb;
+    } else {
+        eqOutputCompensationDb_ = 0.f;
+    }
 }
 
 void ParametricEQ::process(float* l,float* r,int frames) noexcept {

@@ -131,10 +131,17 @@ object Iso226Calibrator {
      */
     fun applyToDSPBridge(gains: FloatArray) {
         if (!DSPBridge.isLoaded) return
-        val low      = clampDbForEq((gains[0] + gains[1] + gains[2]) / 3f) / 15f
-        val mid      = clampDbForEq((gains[3] + gains[4] + gains[5]) / 3f) / 15f
-        val high     = clampDbForEq((gains[6] + gains[7]) / 2f) / 15f
-        val presence = clampDbForEq((gains[8] + gains[9]) / 2f) / 15f
+        // FIX (calibración 15x demasiado débil): se dividía por 15f asumiendo
+        // que DSPBridge.setParams() espera valores [0..1]. El comentario canónico
+        // en ParametricEQ::setParams() dice explícitamente:
+        //   "p.low / p.mid / p.high / p.presence arrive as dB values directly"
+        // Con la división, gains[0..2] promedio de +6 dB → 0.4 dB aplicados.
+        // Con la corrección, se aplican los dB reales. clampDbForEq() ya limita
+        // a ±18 dB, así que no hay riesgo de overflow.
+        val low      = clampDbForEq((gains[0] + gains[1] + gains[2]) / 3f)
+        val mid      = clampDbForEq((gains[3] + gains[4] + gains[5]) / 3f)
+        val high     = clampDbForEq((gains[6] + gains[7]) / 2f)
+        val presence = clampDbForEq((gains[8] + gains[9]) / 2f)
         DSPBridge.setParams(
             drive = 0.5f, wet = 0.7f, mix = 0.8f,
             alpha = 0.94f, beta = 0.85f, gamma = 0.72f,
@@ -142,7 +149,7 @@ object Iso226Calibrator {
             low = low, mid = mid, high = high,
             presence = presence, master = 0.85f
         )
-        Log.i(TAG, "ISO 226 → DSPBridge: low=${"%.2f".format(low)} mid=${"%.2f".format(mid)} high=${"%.2f".format(high)} presence=${"%.2f".format(presence)}")
+        Log.i(TAG, "ISO 226 → DSPBridge: low=${"%.2f".format(low)}dB mid=${"%.2f".format(mid)}dB high=${"%.2f".format(high)}dB presence=${"%.2f".format(presence)}dB")
     }
 
     // ── Aplicar al daemon Magisk vía socket ───────────────────────────────────
