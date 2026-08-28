@@ -346,9 +346,3 @@ target_link_libraries(test_oem_stability_suite
 
 add_dependencies(test_oem_stability_suite gtest)
 
-target_include_directories(test_oem_stability_suite PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
-)
-
-    
-add_dependencies(test_oem_stability_suite gtest)
