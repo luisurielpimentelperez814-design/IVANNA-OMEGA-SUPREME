@@ -450,3 +450,16 @@ jobs:
         with:
           name: ivanna-certification-gate-report
           path: ivanna_oem_certification_gate.txt
+\n
+      - name: Collect OEM performance telemetry
+        if: always()
+        run: |
+          chmod +x tools/telemetry/collect_oem_metrics.sh
+          tools/telemetry/collect_oem_metrics.sh
+
+      - name: Upload OEM telemetry metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-performance-metrics
+          path: ivanna_oem_metrics.json
