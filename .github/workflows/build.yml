@@ -494,3 +494,8 @@ jobs:
         with:
           name: ivanna-oem-regression-report
           path: ivanna_oem_delta_report.html
+\n
+      - name: Run OEM performance quality gate
+        if: always()
+        run: |
+          python3 tools/dashboard/oem_quality_gate.py
