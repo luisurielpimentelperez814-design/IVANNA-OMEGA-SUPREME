@@ -98,20 +98,24 @@ import com.ivanna.omega.ui.MainScaffold
 import com.ivanna.omega.ui.Bark64VisualizerPanel
 import com.ivanna.omega.audio.IvannaLabMonitor
 
-// ── Palette (FUSION-PRO dark theme) ──────────────────────────────────────────
-private val Carbon = Color(0xFF0A0A0A)
-private val Surface1 = Color(0xFF111111)
-private val Surface2 = Color(0xFF181818)
-private val Border1 = Color(0xFF222222)
-private val CyanGlow = Color(0xFF00F5FF)
-private val CyanDim = Color(0x3300F5FF)
-private val GoldGlow = Color(0xFFFFD700)
-private val MagentaGlow = Color(0xFFFF00FF)
-private val NeonMagenta  = Color(0xFFFF00FF)
-private val MagentaDim = Color(0x33FF00FF)
-private val TextPri = Color(0xFFFFFFFF)
-private val TextSec = Color(0xFF888888)
-private val TextMid = Color(0xFFCCCCCC)
+// ── Palette (Aurora Obsidiana v3.0 — alineada con ui/theme/IvannaTheme.kt) ──
+// Mismos nombres de variable (drop-in, sin tocar los ~50 usos internos) pero
+// con los valores del tema central: profundidad azul-obsidiana en vez de
+// gris plano, cian aurora suavizado (el 00F5FF puro fatigaba la vista),
+// magenta reducido de puro saturado al tono del tema, texto con jerarquía.
+private val Carbon = Color(0xFF010204)      // ObsidianVoid
+private val Surface1 = Color(0xFF0A101C)    // ObsidianSoft
+private val Surface2 = Color(0xFF0D1524)    // ObsidianGlass
+private val Border1 = Color(0xFF223050)     // ObsidianEdge
+private val CyanGlow = Color(0xFF6FF3FF)    // AuroraCyan
+private val CyanDim = Color(0x556FF3FF)     // AuroraCyanGlow
+private val GoldGlow = Color(0xFFFFD976)    // OmniGoldCore
+private val MagentaGlow = Color(0xFFFF3E86) // NeonMagenta
+private val NeonMagenta  = Color(0xFFFF3E86)
+private val MagentaDim = Color(0x55FF3E86)  // NeonMagentaGlow
+private val TextPri = Color(0xFFF1F8FF)     // TextPrimary
+private val TextSec = Color(0xFF93A8C6)     // TextSecondary
+private val TextMid = Color(0xFF57708F)     // TextMuted
 
 /**
  * PerceptualDspRecommendations - Computed DSP output parameters from Perceptual Brain evaluation.
@@ -210,6 +214,9 @@ fun OmegaApp() {
             runCatching { DSPStatePrefs.save(appContext, state) }
         }
     }
+    // IvannaTheme (Aurora Obsidiana) envuelve TODA la app: antes un
+    // MaterialTheme genérico con Carbon/Surface1 pisaba el tema central en
+    // las 27 pantallas que ya lo importaban — sin tipografía ni glow.
     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
         val context = LocalContext.current
         var captureRequested by remember { mutableStateOf(false) }
