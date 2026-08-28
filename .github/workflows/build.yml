@@ -499,3 +499,20 @@ jobs:
         if: always()
         run: |
           python3 tools/dashboard/oem_quality_gate.py
+
+
+      - name: Run IVANNA IAEL Audio Certification
+        if: always()
+        run: |
+          python3 tools/iael/iael_audio_certification.py
+
+
+      - name: Upload IAEL Certification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-iael-certification
+          path: |
+            ivanna_iael_report.html
+            telemetry/iael/latest_certification.json
+
