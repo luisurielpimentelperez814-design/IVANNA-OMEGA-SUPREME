@@ -124,12 +124,35 @@ private fun EQTab() {
                 if (IvannaNativeLib.isLoaded)
                     runCatching { IvannaNativeLib.nativeSetEQParams(audioState.eqBass, audioState.eqMid, v, audioState.masterGain) }
             }
-            IvannaSliderRow("PRESENCIA", audioState.spatialWidth * 6f - 3f, -12f, 12f, "dB") { v ->
+            // FIX: PRESENCIA tenía su propio campo hasta que alguien lo reemplazó
+            // por `audioState.spatialWidth * 6f - 3f` — el ancho estéreo
+            // interpretado como ganancia de EQ. Ahora usa audioState.eqPresence
+            // (campo dedicado) y llama nativeSetEQParams con los 4 valores reales.
+            IvannaSliderRow("PRESENCIA", audioState.eqPresence, -12f, 12f, "dB") { v ->
+                AudioStateManager.updateState { it.copy(eqPresence = v) }
                 if (IvannaNativeLib.isLoaded)
-                    runCatching { IvannaNativeLib.nativeSetHarmonicGain(v / 12f + 0.5f) }
+                    runCatching {
+                        // DSPBridge tiene presence como 5º band; nativeSetEQParams
+                        // solo tiene 4 params, así que la presencia va a través de
+                        // setParams completo con los valores actuales del audioState.
+                        IvannaNativeLib.nativeSetEQParams(
+                            audioState.eqBass, audioState.eqMid, audioState.eqTreble,
+                            audioState.masterGain
+                        )
+                        // Presence separada via setHarmonicGain escalado (0.5=neutro)
+                        IvannaNativeLib.nativeSetHarmonicGain((v / 12f + 0.5f).coerceIn(0f, 1f))
+                    }
             }
+            // FIX: VOLUMEN actualizaba audioState.masterGain pero no rellamaba
+            // nativeSetEQParams — el motor seguía con el masterGain anterior.
             IvannaSliderRow("VOLUMEN", audioState.masterGain, 0.5f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(masterGain = v) }
+                if (IvannaNativeLib.isLoaded)
+                    runCatching {
+                        IvannaNativeLib.nativeSetEQParams(
+                            audioState.eqBass, audioState.eqMid, audioState.eqTreble, v
+                        )
+                    }
             }
         }
     }
