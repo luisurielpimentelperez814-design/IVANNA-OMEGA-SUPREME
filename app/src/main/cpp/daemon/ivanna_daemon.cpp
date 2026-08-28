@@ -157,11 +157,20 @@ int main(int argc, char* argv[]) {
         std::thread([&controlServer](){ controlServer.acceptLoop(); }).detach();
     }
 
+    // FIX (daemon bloqueante / fd leak / buffer overflow):
+    // 1. El accept loop anterior atendía clientes en el hilo principal de forma
+    //    secuencial bloqueante — mientras un cliente tenía la conexión abierta
+    //    (OmegaDaemon.kt mantiene conexión persistente), ningún otro podía
+    //    conectarse. Se despacha cada cliente en un thread propio (detached).
+    // 2. json_buf[8192] stack con recv parcial causaba lecturas fragmentadas
+    //    sin NUL correcto. Se aumenta a 65536 y se acumula en heap.
+    // 3. reply declarado dos veces en el mismo scope (UB/shadow) — unificado.
     while (g_running) {
         fd_set readfds; FD_ZERO(&readfds); FD_SET(g_server_fd,&readfds);
         struct timeval tv{1,0};
         int activity = select(g_server_fd+1,&readfds,NULL,NULL,&tv);
         if (activity<0 && errno!=EINTR) break;
+<<<<<<< Updated upstream
         if (activity>0 && FD_ISSET(g_server_fd,&readfds)) {
             struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
@@ -246,6 +255,53 @@ int main(int argc, char* argv[]) {
                 close(client_fd);
             }).detach();
         }
+=======
+        if (!(activity>0 && FD_ISSET(g_server_fd,&readfds))) continue;
+
+        struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
+        int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
+        if (client_fd<0) continue;
+
+        // Despachar cliente en hilo propio: el daemon acepta nuevas conexiones
+        // inmediatamente sin bloquear en recv. El hilo se auto-destruye al cerrar.
+        std::thread([client_fd, &commandServer, &g_running]() {
+            struct timeval rcv_tv{0,150000}; setsockopt(client_fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_tv,sizeof(rcv_tv));
+            struct timeval snd_tv{0,300000}; setsockopt(client_fd,SOL_SOCKET,SO_SNDTIMEO,&snd_tv,sizeof(snd_tv));
+
+            std::vector<char> json_buf(65536);
+            std::vector<char> reply_buf(8192);
+
+            while (g_running) {
+                ssize_t nbytes = recv(client_fd, json_buf.data(), json_buf.size()-1, 0);
+                if (nbytes<=0) break;
+                json_buf[nbytes]='\0';
+
+                const char* p=json_buf.data();
+                while(*p==' '||*p=='\t'||*p=='\r'||*p=='\n') p++;
+
+                int rlen = 0;
+                if (*p!='{') {
+                    rlen = commandServer.handleTextCommand(json_buf.data(), reply_buf.data(), (int)reply_buf.size());
+                } else {
+                    std::string js(json_buf.data(), (size_t)nbytes);
+                    rlen = commandServer.handleJsonCommand(json_buf.data(), reply_buf.data(), (int)reply_buf.size());
+                    if (rlen<=0) {
+                        std::string action="UNKNOWN";
+                        auto pos=js.find("\"action\"");
+                        if (pos!=std::string::npos) {
+                            auto p1=js.find("\"",pos+8); auto p2=(p1!=std::string::npos)?js.find("\"",p1+1):std::string::npos;
+                            if (p1!=std::string::npos && p2!=std::string::npos) action=js.substr(p1+1,p2-p1-1);
+                        }
+                        std::string err="{\"status\":\"error\",\"reason\":\"not_implemented\",\"action\":\""+action+"\"}";
+                        send(client_fd, err.c_str(), err.size(), MSG_NOSIGNAL);
+                        continue;
+                    }
+                }
+                if (rlen>0) send(client_fd, reply_buf.data(), (size_t)rlen, MSG_NOSIGNAL);
+            }
+            close(client_fd);
+        }).detach();
+>>>>>>> Stashed changes
     }
     if (g_server_fd>=0) close(g_server_fd);
     controlServer.stop();

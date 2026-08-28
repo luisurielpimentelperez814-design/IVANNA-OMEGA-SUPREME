@@ -142,8 +142,16 @@ object Iso226Calibrator {
         val mid      = clampDbForEq((gains[3] + gains[4] + gains[5]) / 3f)
         val high     = clampDbForEq((gains[6] + gains[7]) / 2f)
         val presence = clampDbForEq((gains[8] + gains[9]) / 2f)
+        // FIX (tronido/NaN): mix=0.8 → GainStage.processInput()=(0.8-0.5)*12=+3.6dB
+        // de ganancia de entrada ANTES del EQ. Si el EQ ISO 226 añade +8.4dB
+        // en la banda de 5kHz, el biquad recibe señal que supera su rango
+        // estable → estado interno crece sin límite → NaN/Inf → SafetyLimiter
+        // clampea a 0 abruptamente → tronido audible.
+        // mix=0.5 es el punto neutro: (0.5-0.5)*12=0dB, sin ganancia de entrada.
+        // El nivel de la calibración ISO 226 lo aportan los parámetros low/mid/
+        // high/presence (dB directos al ParametricEQ), no mix.
         DSPBridge.setParams(
-            drive = 0.5f, wet = 0.7f, mix = 0.8f,
+            drive = 0.5f, wet = 0.7f, mix = 0.5f,
             alpha = 0.94f, beta = 0.85f, gamma = 0.72f,
             freq = 1000f, resonance = 0.7f,
             low = low, mid = mid, high = high,

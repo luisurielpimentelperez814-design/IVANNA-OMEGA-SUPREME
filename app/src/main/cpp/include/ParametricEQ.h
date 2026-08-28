@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include "dsp_types.h"
 
 namespace ivanna {
@@ -18,7 +19,16 @@ private:
     struct Biquad {
         float b0=1,b1=0,b2=0,a1=0,a2=0,x1=0,x2=0,y1=0,y2=0;
         inline float processSample(float x) noexcept {
+            // NaN guard de entrada: si llega NaN/Inf (estado previo roto o
+            // señal saturada) limpia el estado y pasa silencio — evita que
+            // el NaN se propague por todos los biquads en cascada y llegue
+            // al SafetyLimiter que lo clampea a 0 con un tronido audible.
+            if (__builtin_expect(!std::isfinite(x), 0)) { reset(); return 0.f; }
             float y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2;
+            // NaN guard de salida: coeficientes inestables con señal fuera de
+            // rango producen y=Inf/NaN desde la primera iteración. Al detectarlo
+            // se limpia el estado para evitar la propagación al bloque siguiente.
+            if (__builtin_expect(!std::isfinite(y), 0)) { reset(); return 0.f; }
             x2=x1; x1=x; y2=y1; y1=y; return y;
         }
         void reset() noexcept { x1=x2=y1=y2=0; }
