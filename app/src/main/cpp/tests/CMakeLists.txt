@@ -254,3 +254,4 @@ ivanna_add_test(test_harmonic_exciter_overshoot)
 # release 400 ms -> clipping en transientes + bombeo). 4 tests miden el
 # comportamiento temporal real del limiter a 48k y 384k.
 ivanna_add_test(test_limiter_hires_timing)
+add_executable(test_oem_stability_suite regression/test_oem_stability_suite.cpp)
