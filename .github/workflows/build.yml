@@ -437,3 +437,16 @@ jobs:
         with:
           name: ivanna-oem-stability-report
           path: ivanna_oem_stability_report.txt
+\n
+      - name: Run OEM certification gate
+        if: always()
+        run: |
+          chmod +x .github/scripts/oem_certification_gate.sh
+          .github/scripts/oem_certification_gate.sh
+
+      - name: Upload certification gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-certification-gate-report
+          path: ivanna_oem_certification_gate.txt
