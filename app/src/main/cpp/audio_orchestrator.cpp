@@ -424,17 +424,38 @@ extern "C" void ivanna_orchestrate(
             float outL = mid + sideOut;
             float outR = mid - sideOut;
 
-            // FIX (bombeo / clipping): la expansion M/S podia superar ±1.0
-            // (especialmente con wetTotal>0.5 y material estereo ancho).
-            // Sin limitador downstream en ivanna_orchestrate(), el overflow
-            // llegaba directo al DAC → distorsion / clipping.
-            // Se aplica softclip racional x/(1+|x|) que es C1-continuo y
-            // tiene derivada 1 en x=0 (transparente para señales limpias).
-            if (outL >  1.0f) outL =  outL / (1.0f + outL - 1.0f);
-            if (outL < -1.0f) outL = -(-outL / (1.0f - outL - 1.0f));
-            if (outR >  1.0f) outR =  outR / (1.0f + outR - 1.0f);
-            if (outR < -1.0f) outR = -(-outR / (1.0f - outR - 1.0f));
-            // Seguridad dura: nunca más de ±1.0
+            // FIX (soft clip roto): la fórmula anterior era algebraicamente
+            // idéntica a hard clip disfrazado:
+            //   outL / (1 + outL - 1) = outL / outL = 1.0  ← siempre 1.0
+            //   -(-outL / (1 - outL - 1)) = -(-outL / -outL) = -1.0 ← siempre -1.0
+            // Es decir, cualquier muestra que superara ±1.0 se recortaba
+            // directamente a ±1.0 — exactamente un hard clip, solo
+            // disfrazado de fórmula racional. El resultado: espectro de
+            // onda cuadrada (armonicos impares infinitos) en vez de
+            // saturación suave.
+            //
+            // CORRECTO: saturador racional con knee en ±0.9 FS.
+            // Es idéntico a softCeil() de SafetyLimiter.cpp:
+            //   - Identidad para |x| ≤ knee (0.9)
+            //   - knee + range*(over/(1+over)) para |x| > knee
+            //   → pendiente 1.0 en el knee (C1 continuo, sin escalón)
+            //   → asíntota en ceil = 1.0 (nunca supera el techo)
+            // Verificación: x=1.5 → over=6, y=0.9+0.1*6/7=0.9857 < 1.0 ✓
+            {
+                constexpr float kCeil  = 1.0f;
+                constexpr float kKnee  = kCeil * 0.9f;   // 0.9
+                constexpr float kRange = kCeil - kKnee;   // 0.1
+                auto sc = [&](float v) -> float {
+                    const float av = v < 0.f ? -v : v;
+                    if (av <= kKnee) return v;
+                    const float over = (av - kKnee) / kRange;
+                    const float y = kKnee + kRange * (over / (1.0f + over));
+                    return v < 0.f ? -y : y;
+                };
+                outL = sc(outL);
+                outR = sc(outR);
+            }
+            // Seguridad numérica dura (residuo FP, NaN): nunca fuera de ±1.0
             if (outL >  1.0f) outL =  1.0f; else if (outL < -1.0f) outL = -1.0f;
             if (outR >  1.0f) outR =  1.0f; else if (outR < -1.0f) outR = -1.0f;
 
