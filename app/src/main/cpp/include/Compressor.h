@@ -44,10 +44,13 @@ private:
 
     Biquad scHpfL_;
     Biquad scHpfR_;
-
-    [[maybe_unused]] float inv_atk_ = 1.0f;
-    [[maybe_unused]] float inv_rel_ = 1.0f;
-    [[maybe_unused]] float slope_ = 0.75f;
+    // FIX: inv_atk_, inv_rel_, slope_ eran calculados en setAttack/setRelease
+    // y recomputeMakeup() pero NUNCA leídos en process() — el compresor real
+    // usa attackCoef_ y releaseCoef_ (coeficientes de one-pole). Los tres
+    // campos [[maybe_unused]] añadían 12 bytes de estado falso por instancia,
+    // confundían el análisis de cobertura, y podían enmascarar bugs futuros
+    // (un linter podría marcar un campo como "usado" solo porque existe).
+    // Eliminados: el comportamiento del compresor no cambia en absoluto.
 };
 
 }
