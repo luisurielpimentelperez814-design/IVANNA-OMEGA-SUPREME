@@ -165,7 +165,8 @@ fun MainScaffold(
                 SystemHubScreen(
                     onOpenMagisk   = { outerNav.navigate("magisk") },
                     onOpenProfiles = { outerNav.navigate("profiles") },
-                    onOpenLab      = { outerNav.navigate("lab") }
+                    onOpenLab      = { outerNav.navigate("lab") },
+                    onOpenEngines  = { outerNav.navigate("engines_status") }
                 )
             }
         }
@@ -213,17 +214,21 @@ fun SpatialHubScreen(
 fun SystemHubScreen(
     onOpenMagisk   : () -> Unit,
     onOpenProfiles : () -> Unit,
-    onOpenLab      : () -> Unit
+    onOpenLab      : () -> Unit,
+    onOpenEngines  : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HubHeader("SISTEMA", "Magisk · Perfiles · Laboratorio DSP", AmberSignal)
+        HubHeader("SISTEMA", "Magisk · Perfiles · Laboratorio DSP · Motores", AmberSignal)
         HubCard("MAGISK MODULE STATUS", "Daemon RT · Shared Memory · SEPolicy",         AmberSignal,   onOpenMagisk)
         HubCard("PERFILES DE USUARIO",  "Bandas auditivas · EQ precalibrado · Presets", AmberSignal,   onOpenProfiles)
         HubCard("LABORATORIO DSP",      "Sweep · LUFS · THD+N · SNR",                  PhosphorGreen, onOpenLab)
+        HubCard("ESTADO DE MOTORES",
+            "RouteDspCalibrator · USB Pro · HRTF · Backend · Daemon · Control Loop",
+            AuroraCyan, onOpenEngines)
     }
 }
 

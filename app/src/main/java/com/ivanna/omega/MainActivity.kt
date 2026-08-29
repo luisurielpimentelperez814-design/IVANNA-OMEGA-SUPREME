@@ -603,6 +603,13 @@ fun OmegaApp() {
                     voiceMgr = voiceProtectionManager
                 )
             }
+            // ── ESTADO DE MOTORES ─────────────────────────────────────────
+            // Motores que corrían en background sin ningún panel visible:
+            // RouteDspCalibrator, AudioBackendSelector, UsbAudioProManager,
+            // IvannaSpatialManager, AdaptiveEngineModulator, IvannaControlLoop.
+            composable("engines_status") {
+                com.ivanna.omega.ui.EnginesStatusScreen(onBack = { nav.popBackStack() })
+            }
         }
     }
 }
