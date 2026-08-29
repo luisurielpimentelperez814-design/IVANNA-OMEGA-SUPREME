@@ -58,12 +58,37 @@ EvolutionaryEQ::EvolutionaryEQ() {
 }
 
 float EvolutionaryEQ::calculateFitness(const float* genome) {
+    // Función de fitness multi-objetivo para el EQ evolutivo.
+    // Maximizar (retornar valores más altos = mejor genoma):
+    //
+    // 1. Suavidad espectral: penaliza variaciones bruscas entre bandas
+    //    adyacentes. Un EQ que salta 3 dB en una banda → phase-shift
+    //    audible como coloración.
     float smoothnessPenalty = 0.0f;
     for (size_t i = 1; i < BANDS_512; ++i) {
         float diff = genome[i] - genome[i - 1];
         smoothnessPenalty += diff * diff;
     }
-    return -smoothnessPenalty;
+
+    // 2. Penalización de energía total: el genoma NO debe sumar ganancia
+    //    neta positiva. Un EQ que suma energía en promedio presuriza el
+    //    SafetyLimiter innecesariamente. Target: suma ≈ 0 (EQ neutro en
+    //    energía media). Penaliza si la suma > 0.
+    float sumGain = 0.0f;
+    for (size_t i = 0; i < BANDS_512; ++i) sumGain += genome[i];
+    sumGain /= (float)BANDS_512;
+    float energyPenalty = (sumGain > 0.f) ? (sumGain * sumGain * 0.5f) : 0.f;
+
+    // 3. Penalización de rolloff extremo: las bandas de frecuencia extrema
+    //    (20 Hz y 20 kHz) no deben alejarse demasiado del centro espectral.
+    //    Un boost fuerte de sub-graves (infrasónico) o ultra-agudos
+    //    (ultrasónico) es un desperdicio de rango dinámico y puede excitar
+    //    resonancias del DAC.
+    const float rolloffL = genome[0]          * genome[0];
+    const float rolloffR = genome[BANDS_512-1] * genome[BANDS_512-1];
+    float rolloffPenalty = (rolloffL + rolloffR) * 0.1f;
+
+    return -(smoothnessPenalty + energyPenalty + rolloffPenalty);
 }
 
 void EvolutionaryEQ::updateLM_CMA_ES() {

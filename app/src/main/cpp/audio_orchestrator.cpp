@@ -11,6 +11,7 @@
 
 #include "omega_shared.h"
 #include "evolutionary_kernel.h"
+#include "dsp/loudness_meter.hpp"  // BS.1770-4 LUFS real (K-weighting + gating)
 
 #define LOG_TAG "AudioOrchestrator"
 #define ALOG(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -34,6 +35,7 @@ struct OrchestratorState {
 
     float lastLufs = -70.f;
     float lastPeakDbfs = -70.f;
+    ivanna::metering::LoudnessMeter loudnessMeter;  // BS.1770-4 real
 
     float loudness_curve[256]{};
 
@@ -336,11 +338,36 @@ extern "C" void ivanna_orchestrate(
         peak/(rms+1e-9f));
 
 
-    g_orch.lastLufs =
-        20.f*std::log10(rms+1e-9f);
+    // FIX (LUFS real): antes 20*log10(rms) que es dBFS de RMS, no LUFS.
+    // LUFS BS.1770-4 requiere filtrado K-weighting (high-shelf 1681 Hz +
+    // high-pass 38 Hz) y gating absoluto/relativo. El LoudnessMeter ya
+    // implementa todo esto — solo hay que alimentarlo y leer el resultado.
+    // Mono: se alimenta el promedio L+R (canal único) que es lo que
+    // audio_orchestrator ya calcula para rms y peak.
+    g_orch.loudnessMeter.configure((double)sampleRateHz);
+    // Alimentar el bloque mono (feedMono duplica a ambos canales con G=1.0)
+    {
+        // Construir buffer mono temporal: promedio de todos los frames
+        // procesados en este bloque (samples / channels)
+        const int monoFrames = (channels > 0) ? samples / channels : samples;
+        // Stack-safe para bloques de hasta 8192 frames mono
+        if (monoFrames > 0 && monoFrames <= 8192) {
+            float monoBuf[8192];
+            if (channels == 2) {
+                for (int i = 0; i < monoFrames; ++i)
+                    monoBuf[i] = (buffer[2*i] + buffer[2*i+1]) * 0.5f;
+            } else {
+                for (int i = 0; i < monoFrames; ++i)
+                    monoBuf[i] = buffer[i];
+            }
+            g_orch.loudnessMeter.feedMono(monoBuf, monoFrames);
+        }
+    }
+    // Leer LUFS integrado real (gated BS.1770-4)
+    const float lufs = g_orch.loudnessMeter.integratedLufs();
+    g_orch.lastLufs = (lufs > -120.f) ? lufs : (20.f * std::log10(rms + 1e-9f));
 
-    g_orch.lastPeakDbfs =
-        20.f*std::log10(peak+1e-9f);
+    g_orch.lastPeakDbfs = g_orch.loudnessMeter.peakDbfs();
 
 
 
