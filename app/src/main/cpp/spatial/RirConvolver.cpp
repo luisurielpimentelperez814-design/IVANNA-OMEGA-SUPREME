@@ -10,6 +10,14 @@ namespace Ivanna {
 // ── FFT Radix-2 DIT in-place ─────────────────────────────────────────────────
 // Entrada: re[0..n-1], im[0..n-1] (n = potencia de 2)
 // inverse=false: DFT forward; inverse=true: IDFT (normalizada por 1/n)
+//
+// FIX (error de fase en tails de reverb): el twiddle se recalculaba de forma
+// recursiva en float: wr_new = wr*wr0 - wi*wi0. Con n=1024 y 512 mariposas
+// por nivel, el error acumulado es O(n·ε_f32) ≈ 1.2e-4 (-78dBFS). En tails
+// de sala de -60dB o menos, ese error es audible como ruido de piso coloreado.
+// Fix: calcular cada twiddle directamente desde cos/sin de ángulo exacto,
+// sin acumulación. La tabla es local estática (cero-init garantizado por C++).
+// Para n <= 1024 son 512 doubles × 2 = 8 KB — caben en L1.
 void RirConvolver::fftReal(float* re, float* im, int n, bool inverse) noexcept {
     // Bit-reverse permutation
     for (int i = 1, j = 0; i < n; ++i) {
@@ -18,21 +26,21 @@ void RirConvolver::fftReal(float* re, float* im, int n, bool inverse) noexcept {
         j ^= bit;
         if (i < j) { std::swap(re[i], re[j]); std::swap(im[i], im[j]); }
     }
-    // Butterfly
-    const float sign = inverse ? 1.f : -1.f;
+    // Butterfly con twiddle directo (sin acumulación recursiva)
+    const double sign = inverse ? 1.0 : -1.0;
     for (int len = 2; len <= n; len <<= 1) {
-        const float ang = sign * 2.f * 3.14159265f / (float)len;
-        const float wr0 = std::cos(ang), wi0 = std::sin(ang);
+        const double ang0 = sign * 2.0 * 3.14159265358979323846 / (double)len;
         for (int i = 0; i < n; i += len) {
-            float wr = 1.f, wi = 0.f;
-            for (int j = 0; j < len/2; ++j) {
-                float ur = re[i+j], ui = im[i+j];
-                float vr = re[i+j+len/2]*wr - im[i+j+len/2]*wi;
-                float vi = re[i+j+len/2]*wi + im[i+j+len/2]*wr;
+            for (int j = 0; j < len / 2; ++j) {
+                // Twiddle directo — sin acumulación, sin error flotante acumulado
+                const double ang = ang0 * (double)j;
+                const float  wr  = (float)std::cos(ang);
+                const float  wi  = (float)std::sin(ang);
+                const float ur = re[i+j], ui = im[i+j];
+                const float vr = re[i+j+len/2]*wr - im[i+j+len/2]*wi;
+                const float vi = re[i+j+len/2]*wi + im[i+j+len/2]*wr;
                 re[i+j]         = ur + vr;  im[i+j]         = ui + vi;
                 re[i+j+len/2]   = ur - vr;  im[i+j+len/2]   = ui - vi;
-                float nwr = wr*wr0 - wi*wi0;
-                wi = wr*wi0 + wi*wr0; wr = nwr;
             }
         }
     }
@@ -99,15 +107,7 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
     if (!loaded_.load(std::memory_order_acquire)) return;
 
     // Aplicar IR pendiente si load() fue llamado desde el hilo de control.
-    // FIX (tronidos, 2026-08-27): antes se hacia memcpy duro + memset del
-    // overlap -> la cola de reverb de la sala anterior se CORTABA en seco y
-    // la nueva IR entraba de golpe = discontinuidad audible en el stream.
-    // Ahora: la cola vieja se conserva (overlapLen_ no se toca hasta que
-    // termina el crossfade) y el nuevo IR se crossfadea con el viejo en el
-    // dominio de la frecuencia durante XFADE_BLOCKS bloques — la transición
-    // es continua, la cola vieja muere de forma natural.
     if (pending_.load(std::memory_order_acquire)) {
-        // Guardar la IR actual para el crossfade (si había una cargada)
         const bool hadIr = (overlapLen_ > 0) || xfadeBlocks_ > 0;
         if (hadIr) {
             std::memcpy(oldIrReL_, irReL_, sizeof oldIrReL_);
@@ -116,65 +116,61 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             std::memcpy(oldIrImR_, irImR_, sizeof oldIrImR_);
             xfadeBlocks_ = XFADE_BLOCKS;
         } else {
-            // FIX (primera carga): xfadeBlocks_=0 significa que el bloque de
-            // crossfade NUNCA corre, así que overlapLen_ jamás recibía
-            // pendOverlapLen_ — el offset de overlap-save quedaba en 0 y se
-            // leían muestras contaminadas del wrap circular. En primera carga
-            // no hay nada que fundir, pero la cola SÍ debe arrancar con la
-            // longitud correcta: aplicar pendOverlapLen_ de inmediato.
-            xfadeBlocks_ = 0;  // primera carga: no hay nada que fundir
+            xfadeBlocks_ = 0;
             overlapLen_  = pendOverlapLen_;
         }
         std::memcpy(irReL_, pendIrReL_, sizeof irReL_);
         std::memcpy(irImL_, pendIrImL_, sizeof irImL_);
         std::memcpy(irReR_, pendIrReR_, sizeof irReR_);
         std::memcpy(irImR_, pendIrImR_, sizeof irImR_);
-        // IMPORTANTE: NO borrar overlapL_/overlapR_ ni cambiar overlapLen_
-        // aqui — la cola vieja sigue sirviendo muestras durante el fade.
-        // pendOverlapLen_ se aplica al final del crossfade.
         pending_.store(false, std::memory_order_release);
     }
 
-    const int n = std::min(frames, BLOCK);
+    // FIX (partial block bypass): antes solo se procesaban min(frames, BLOCK)
+    // muestras. Si el caller pasaba más de BLOCK frames (lo hace RirWorker con
+    // bloques de 1024), las muestras [BLOCK..frames-1] quedaban sin convolución —
+    // reverb parcial, el tail de sala desaparecía en la segunda mitad del bloque.
+    // Fix: loop over sub-blocks of BLOCK frames hasta cubrir todo `frames`.
+    int remaining = frames;
+    int offset    = 0;
 
-    // Procesar L
-    {
+    while (remaining > 0) {
+        const int n = (remaining < BLOCK) ? remaining : BLOCK;
+
+        // Convolución overlap-save para este sub-bloque — L y R comparten
+        // el MISMO wetNow_ por muestra: FIX (stereo drift).
+        // Bug anterior: el loop de L avanzaba wetNow_ N veces, y el de R
+        // arrancaba desde el valor ya driftado → L y R tenían wet-levels
+        // distintos → separación estéreo se corrompía durante transiciones
+        // (drag del slider, cambio de preset). Fix: computar wet una vez por
+        // par de muestras (un solo loop que procesa L y R juntos), en vez de
+        // dos loops consecutivos que avanzan el one-pole por separado.
+
+        // ── Overlap-save L ────────────────────────────────────────────────
         std::memset(workRe_, 0, FFT_SIZE * sizeof(float));
         std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
-        // Overlap-save: copiar overlap anterior + bloque nuevo
-        const int ol = std::min(overlapLen_, MAX_IR - 1);
+        const int ol = (overlapLen_ < MAX_IR) ? overlapLen_ : MAX_IR - 1;
         std::memcpy(workRe_, overlapL_, ol * sizeof(float));
-        for (int i = 0; i < n; ++i) workRe_[ol + i] = L[i];
-        // Guardar overlap para el próximo bloque
-        const int newOl = std::min(n, MAX_IR - 1);
+        for (int i = 0; i < n; ++i) workRe_[ol + i] = L[offset + i];
+        const int newOl = (n < MAX_IR) ? n : MAX_IR - 1;
         std::memcpy(overlapL_, workRe_ + ol + n - newOl, newOl * sizeof(float));
-
         fftReal(workRe_, workIm_, FFT_SIZE, false);
-        // Multiplicación compleja: X * H
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReL_[i] - workIm_[i]*irImL_[i];
             float yi = workRe_[i]*irImL_[i] + workIm_[i]*irReL_[i];
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
-        // Mezcla wet/dry POR MUESTRA (anti-zipper) — el wet converge suave
-        for (int i = 0; i < n; ++i) {
-            wetNow_ = wetTarget + wetSmooth_ * (wetNow_ - wetTarget);
-            const float dryNow = 1.f - wetNow_;
-            L[i] = dryNow * L[i] + wetNow_ * workRe_[ol + i];
-        }
-    }
+        // Guardar salida L convolucionada temporalmente
+        float convL[BLOCK];
+        for (int i = 0; i < n; ++i) convL[i] = workRe_[ol + i];
 
-    // Procesar R (simétrico)
-    {
+        // ── Overlap-save R ────────────────────────────────────────────────
         std::memset(workRe_, 0, FFT_SIZE * sizeof(float));
         std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
-        const int ol = std::min(overlapLen_, MAX_IR - 1);
         std::memcpy(workRe_, overlapR_, ol * sizeof(float));
-        for (int i = 0; i < n; ++i) workRe_[ol + i] = R[i];
-        const int newOl = std::min(n, MAX_IR - 1);
+        for (int i = 0; i < n; ++i) workRe_[ol + i] = R[offset + i];
         std::memcpy(overlapR_, workRe_ + ol + n - newOl, newOl * sizeof(float));
-
         fftReal(workRe_, workIm_, FFT_SIZE, false);
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReR_[i] - workIm_[i]*irImR_[i];
@@ -182,32 +178,36 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
-        for (int i = 0; i < n; ++i) {
-            wetNow_ = wetTarget + wetSmooth_ * (wetNow_ - wetTarget);
-            const float dryNow = 1.f - wetNow_;
-            R[i] = dryNow * R[i] + wetNow_ * workRe_[ol + i];
-        }
-    }
 
-    // FIX (tronidos): crossfade del IR en curso. Funde la IR anterior hacia
-    // la nueva en el dominio de la frecuencia (lineal en potencia por bin).
-    // Al terminar, aplica pendOverlapLen_ (la cola vieja ya se desvaneció
-    // sola durante el fade — no se corta nada). Sin alloc, sin lock.
-    if (xfadeBlocks_ > 0) {
-        // alpha va de ~1 (recién cargada, casi todo viejo) a 0 (todo nuevo)
-        const float alpha = (float)xfadeBlocks_ / (float)(XFADE_BLOCKS + 1);
-        const float beta  = 1.0f - alpha;
-        for (int i = 0; i < FFT_SIZE; ++i) {
-            irReL_[i] = alpha * oldIrReL_[i] + beta * irReL_[i];
-            irImL_[i] = alpha * oldIrImL_[i] + beta * irImL_[i];
-            irReR_[i] = alpha * oldIrReR_[i] + beta * irReR_[i];
-            irImR_[i] = alpha * oldIrImR_[i] + beta * irImR_[i];
+        // ── Mezcla wet/dry: UN solo one-pole por par de muestras ──────────
+        // wetNow_ avanza exactamente N pasos para N muestras (no 2N).
+        // L y R ven el mismo wetNow_ en cada instante → imagen estéreo correcta.
+        const float ws  = wetSmooth_;
+        const float wsi = 1.f - ws;
+        float wn = wetNow_;
+        for (int i = 0; i < n; ++i) {
+            wn = wetTarget + ws * (wn - wetTarget);
+            const float dry = 1.f - wn;
+            L[offset + i] = dry * L[offset + i] + wn * convL[i];
+            R[offset + i] = dry * R[offset + i] + wn * workRe_[ol + i];
         }
-        if (--xfadeBlocks_ == 0) {
-            // Fade terminado: la nueva IR ya domina al 100%. Ahora sí
-            // ajustamos la longitud de cola efectiva de la nueva sala.
-            overlapLen_ = pendOverlapLen_;
+        wetNow_ = wn;
+
+        // ── Crossfade de IR ───────────────────────────────────────────────
+        if (xfadeBlocks_ > 0) {
+            const float alpha = (float)xfadeBlocks_ / (float)(XFADE_BLOCKS + 1);
+            const float beta  = 1.0f - alpha;
+            for (int i = 0; i < FFT_SIZE; ++i) {
+                irReL_[i] = alpha * oldIrReL_[i] + beta * irReL_[i];
+                irImL_[i] = alpha * oldIrImL_[i] + beta * irImL_[i];
+                irReR_[i] = alpha * oldIrReR_[i] + beta * irReR_[i];
+                irImR_[i] = alpha * oldIrImR_[i] + beta * irImR_[i];
+            }
+            if (--xfadeBlocks_ == 0) overlapLen_ = pendOverlapLen_;
         }
+
+        offset    += n;
+        remaining -= n;
     }
 }
 

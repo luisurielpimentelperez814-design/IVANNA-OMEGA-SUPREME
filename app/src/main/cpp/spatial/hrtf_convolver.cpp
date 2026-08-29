@@ -286,8 +286,19 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         inCount_ -= BLOCK;
 
         // 2c. Preparar mono y FFT
+        // FIX: sin este guard, un NaN de upstream (EQ divergido, etc.)
+        // contamina todos los bins espectrales → salida toda NaN → SafetyLimiter
+        // clampea a 0 → tronido por cada bloque mientras dure la condición.
+        // Resetear el historial evita que el NaN persista en overlap-save.
         for (int i = 0; i < fftSize_; ++i) {
-            monoRe_[i] = (histL_[i] + histR_[i]) * 0.5f;
+            float s = histL_[i] + histR_[i];
+            if (!std::isfinite(s)) {
+                // Estado corrompido: limpiar historial para romper la cadena de NaN
+                std::fill(histL_.begin(), histL_.end(), 0.0f);
+                std::fill(histR_.begin(), histR_.end(), 0.0f);
+                s = 0.f;
+            }
+            monoRe_[i] = s * 0.5f;
             monoIm_[i] = 0.0f;
             if (std::abs(monoRe_[i]) < 1e-30f) monoRe_[i] = 0.0f;
         }
@@ -466,9 +477,10 @@ void ivanna::HRTFConvolver::updateSafField(
     hrir_L_target_ = h.L;
     hrir_R_target_ = h.R;
 
-
+    // FIX: faltaba memory_order_release — el hilo de audio podía leer
+    // xfadeSamplesRemaining_ con el nuevo valor antes de ver los datos
+    // actualizados en H_ReL_targ_/H_ImL_targ_ (escritos por forward() arriba).
     xfadeSamplesRemaining_.store(
-        XFADE_DURATION_SAMPLES
-    );
+        XFADE_DURATION_SAMPLES, std::memory_order_release);
 }
 
