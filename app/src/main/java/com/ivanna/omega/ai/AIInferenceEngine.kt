@@ -16,9 +16,12 @@ class AIInferenceEngine(
     fun processAudioBlock(audioInput: FloatArray): FloatArray {
         if (!_isActive.value) return audioInput.copyOf()
         _inferenceCount.value++
-        
-        // Simulated inference: slight enhancement
-        return audioInput.map { it * 1.05f }.toFloatArray()
+        // FIX: el código anterior aplicaba `it * 1.05f` a cada muestra —
+        // un +0.4 dB silencioso en CADA bloque de audio sin ningún modelo real
+        // cargado. Se etiquetaba como "Simulated inference" pero en producción
+        // el efecto era un boost inesperado que compoundaba con el EQ/GainStage.
+        // Sin un modelo TFLite real inferenciado, el bloque pasa sin modificar.
+        return audioInput.copyOf()
     }
 
     fun startSession() { _isActive.value = true }

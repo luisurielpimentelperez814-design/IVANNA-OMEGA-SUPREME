@@ -16,13 +16,15 @@ class ModelManager(private val context: Context) {
     init { initializeModel() }
 
     private fun initializeModel() {
-        val baseModel = File(modelsDir, "base_model_v1.tflite")
-        if (!baseModel.exists()) createSyntheticModel(baseModel)
-        _currentModelPath.value = baseModel.absolutePath
-    }
-
-    private fun createSyntheticModel(file: File) {
-        file.writeText("TFL3 - IVANNA Speech Enhancer v1 - RNNoise-inspired - 2.1MB INT8")
+        // FIX: createSyntheticModel() escribía el texto "TFL3 - IVANNA Speech Enhancer..."
+        // en un archivo .tflite — un archivo de texto plano que fingía ser un modelo.
+        // AIInferenceEngine ya no aplica inferencia sin modelo real (ver fix allí),
+        // así que no necesitamos crear un placeholder. El directorio existe por si
+        // un modelo fine-tuned real llega vía saveFineTunedModel().
+        val existing = modelsDir.listFiles { f -> f.extension == "tflite" }
+        val newest = existing?.maxByOrNull { it.lastModified() }
+        _currentModelPath.value = newest?.absolutePath
+        // _currentModelVersion permanece en 1 (default) hasta que haya modelo real
     }
 
     fun saveFineTunedModel(data: ByteArray, version: Int): String {
@@ -43,4 +45,6 @@ class ModelManager(private val context: Context) {
 }
 
 fun ModelManager.hasUsableFineTuningModel(): Boolean = false
-fun ModelManager.describeCurrentModel(): String = "default"
+fun ModelManager.describeCurrentModel(): String =
+    currentModelPath.value?.let { "fine-tuned v${currentModelVersion.value} ($it)" }
+        ?: "none (sin modelo TFLite — RealtimeLearningController en modo bias-EMA)"

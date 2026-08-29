@@ -278,20 +278,54 @@ class PerceptualBrainEngine {
 
         val nativeTelem = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
         if (nativeTelem != null && nativeTelem.size >= 8) {
-            val rms = nativeTelem[0]
-            val peak = nativeTelem[1]
-            val compReductionDb = nativeTelem[2]
-            val safetyMarg = nativeTelem[7]
+            val rms               = nativeTelem[0]
+            val peak              = nativeTelem[1]
+            val compReductionDb   = nativeTelem[2]
+            val safetyMarg        = nativeTelem[7]
 
-            val dynamicRange = if (peak > 1e-4f && rms > 1e-4f) max(0.0f, 20.0f * log10(peak / rms)) else 18.2f
+            val dynamicRange = if (peak > 1e-4f && rms > 1e-4f)
+                max(0.0f, 20.0f * log10(peak / rms)) else 0f
+
+            // FIX (métricas falsas):
+            // convNextConfidence antes = (0.92 + rms*0.08).coerceIn(0.85, 0.99)
+            //   → siempre 85-99%, derivado de RMS — no mide confianza del clasificador.
+            // Ahora: máximo de las probabilidades reales del clasificador nativo.
+            // Si el clasificador no tiene señal activa, la confianza es 0 (honesto).
+            val probs = runCatching {
+                IvannaNativeLib.nativeGetClassifierProbabilities()
+            }.getOrNull()
+            val realConfidence = probs?.maxOrNull()?.coerceIn(0f, 1f) ?: 0f
+
+            // dominantClassLabel antes = "—" siempre — nunca se leía del clasificador.
+            // Ahora: mapeado desde nativeGetDominantClass() int → etiqueta string.
+            val classInt = runCatching {
+                IvannaNativeLib.nativeGetDominantClass()
+            }.getOrDefault(-1)
+            val classLabel = when (classInt) {
+                0    -> "VOICE"
+                1    -> "MUSIC"
+                2    -> "BASS"
+                3    -> "SILENCE"
+                else -> if (rms > 1e-4f) "SIGNAL" else "—"
+            }
+
+            // phaseCoherence: no es medible sin señal de referencia + análisis
+            // de salida. Se usa compReductionDb como proxy (más compresión =
+            // menos coherencia relativa) — mejor que el valor fijo anterior pero
+            // etiquetado honestamente como proxy, no medición directa.
+            val phaseCoherenceProxy = (1.0f - (compReductionDb.absoluteValue / 30.0f))
+                .coerceIn(0f, 1f)
 
             _snapshot.value = _snapshot.value.copy(
-                perceptionOnline = true,
-                dynamicRangeDb = dynamicRange,
-                safetyLimiterMarginDb = safetyMarg,
-                phaseCoherence = (1.0f - (compReductionDb.absoluteValue / 30.0f)).coerceIn(0.5f, 0.99f),
-                convNextConfidence = (0.92f + (rms * 0.08f)).coerceIn(0.85f, 0.99f),
-                ringBufferOccupancy = (0.25f + (rms * 0.2f)).coerceIn(0.1f, 0.9f)
+                perceptionOnline       = true,
+                dynamicRangeDb         = dynamicRange,
+                safetyLimiterMarginDb  = safetyMarg,
+                phaseCoherence         = phaseCoherenceProxy,
+                convNextConfidence     = realConfidence,
+                // ringBufferOccupancy: no expuesto por el JNI actual. Se omite
+                // (queda en 0f default) en vez de usar el proxy inventado (RMS).
+                // El campo existe para cuando se conecte la métrica real del HRTFConvolver.
+                dominantClassLabel     = classLabel
             )
         }
     }

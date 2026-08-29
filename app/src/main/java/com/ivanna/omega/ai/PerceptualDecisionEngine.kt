@@ -7,6 +7,10 @@ import com.ivanna.omega.saf.SaFRoomBridge
 
 class PerceptualDecisionEngine {
     private var currentProfile: UserProfile = UserProfile()
+    // FIX (fatiga temporal siempre 0): durationMin era constante 0f —
+    // la componente temporal del fatigueWeight nunca contribuía.
+    // Ahora se mide desde que se instanció el engine (inicio de sesión).
+    private val sessionStartMs = System.currentTimeMillis()
 
     fun updateProfile(profile: UserProfile) {
         this.currentProfile = profile
@@ -19,9 +23,12 @@ class PerceptualDecisionEngine {
         val maskingEff = snapshot.maskingEfficiency
         val dynRange = snapshot.dynamicRangeDb
         val confidence = snapshot.convNextConfidence.coerceIn(0f, 1f)
-        val mood = snapshot.emotion.coerceIn(0f, 1f)             // emotion proxies userMood
-        val envNoise = snapshot.iso226LoudnessDb.coerceIn(0f, 100f) // iso226 proxies environmentNoiseDb
-        val durationMin = 0f                                      // not tracked in PerceptualSnapshot
+        val mood = snapshot.emotion.coerceIn(0f, 1f)
+        val envNoise = snapshot.iso226LoudnessDb.coerceIn(0f, 100f)
+        // Duración real de la sesión en minutos — contribuye a la fatiga temporal.
+        // El modelo de fatiga ITU-R BS.1770 considera que la fatiga auditiva
+        // crece con el tiempo de exposición continua a niveles altos.
+        val durationMin = (System.currentTimeMillis() - sessionStartMs) / 60_000f
 
         val aggress = currentProfile.aggressiveness
 
