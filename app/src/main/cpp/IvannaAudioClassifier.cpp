@@ -56,7 +56,7 @@ static inline float melToHz(float mel) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Constructor — inicializa ventana Hann, filterbank Mel y tabla de bit-reversal
 // ─────────────────────────────────────────────────────────────────────────────
-IvannaAudioClassifier::IvannaAudioClassifier() {
+Ivanna::IvannaAudioClassifier::IvannaAudioClassifier() {
     initFilterbankAndWindow();
 
     // Probabilidades iniciales: uniforme (sin clasificación aún)
@@ -95,7 +95,7 @@ IvannaAudioClassifier::~IvannaAudioClassifier() {
 // ─────────────────────────────────────────────────────────────────────────────
 // initFilterbankAndWindow — Hann + Mel filterbank + bit-reversal table
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
+void Ivanna::IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
     // Ventana Hann — idéntica al CRNN Kotlin
     for (size_t i = 0; i < CLASSIFIER_FRAME_SIZE; ++i) {
         m_hanningWindow[i] = 0.5f * (1.f - std::cosf(2.f * PI_F * i
@@ -156,7 +156,7 @@ void IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 // ingestAudioFrame — recibe PCM estéreo 48kHz, decimanta a 16kHz, empuja al ring
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::ingestAudioFrame(const float* inputLeft,
+void Ivanna::IvannaAudioClassifier::ingestAudioFrame(const float* inputLeft,
                                               const float* inputRight,
                                               size_t numSamples) noexcept {
     // Stack buffer para el mono decimado (máx 512/3 ≈ 171 muestras a 16kHz)
@@ -196,7 +196,7 @@ void IvannaAudioClassifier::ingestAudioFrame(const float* inputLeft,
 // computeSTFT — FFT Cooley-Tukey radix-2 real in-place, N=512
 // Resultado: m_powerSpectrum[0..255] = |X[k]|²
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::computeSTFT(const float* frame) noexcept {
+void Ivanna::IvannaAudioClassifier::computeSTFT(const float* frame) noexcept {
     ALIGN_NEON float re[CLASSIFIER_FRAME_SIZE];
     ALIGN_NEON float im[CLASSIFIER_FRAME_SIZE];
 
@@ -254,7 +254,7 @@ void IvannaAudioClassifier::computeSTFT(const float* frame) noexcept {
 // extractLogMelFilterbank — aplica banco de filtros Mel al power spectrum
 // Resultado: m_melLogEnergies[0..MEL_BANDS-1] = log(max(Σfb*power, 1e-10))
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::extractLogMelFilterbank() noexcept {
+void Ivanna::IvannaAudioClassifier::extractLogMelFilterbank() noexcept {
     for (size_t m = 0; m < MEL_BANDS; ++m) {
         float energy = 0.f;
         const float* fb = m_melFilterbank[m];
@@ -311,7 +311,7 @@ inline void IvannaAudioClassifier::applySqueezeAndExcitation(float* feat) noexce
 // Cuando hay pesos cargados (m_weightsLoaded): usa red TCN+SE+Dense completa.
 // Sin pesos (por defecto): clasificador heurístico espectral calibrado.
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::processInference() noexcept {
+void Ivanna::IvannaAudioClassifier::processInference() noexcept {
     // Ventana + FFT + Mel
     computeSTFT(m_frameBuffer);
     extractLogMelFilterbank();
@@ -448,7 +448,7 @@ void IvannaAudioClassifier::processInference() noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 // inferenceLoop — hilo de inferencia asíncrono
 // ─────────────────────────────────────────────────────────────────────────────
-void IvannaAudioClassifier::inferenceLoop() noexcept {
+void Ivanna::IvannaAudioClassifier::inferenceLoop() noexcept {
     float localFrame[CLASSIFIER_FRAME_SIZE];
 
     while (m_running.load(std::memory_order_acquire)) {
@@ -463,7 +463,7 @@ void IvannaAudioClassifier::inferenceLoop() noexcept {
     }
 }
 
-void IvannaAudioClassifier::getClassProbabilities(float* outProbs) const noexcept {
+void Ivanna::IvannaAudioClassifier::getClassProbabilities(float* outProbs) const noexcept {
     for (size_t i = 0; i < NUM_CLASSES; ++i)
         outProbs[i] = m_probabilities[i].load(std::memory_order_acquire);
 }
@@ -486,7 +486,7 @@ void IvannaAudioClassifier::getClassProbabilities(float* outProbs) const noexcep
 // El script tools/export_classifier_weights.py genera este blob a partir
 // del checkpoint PyTorch/TFLite del CRNN.
 // ─────────────────────────────────────────────────────────────────────────────
-bool IvannaAudioClassifier::loadWeights(const void* data, size_t bytes) noexcept {
+bool Ivanna::IvannaAudioClassifier::loadWeights(const void* data, size_t bytes) noexcept {
     constexpr size_t EXPECTED =
         sizeof(m_tcnConvWeights) + sizeof(m_tcnConvBiases) +
         sizeof(m_seSqueezeWeights) + sizeof(m_seSqueezeBiases) +
