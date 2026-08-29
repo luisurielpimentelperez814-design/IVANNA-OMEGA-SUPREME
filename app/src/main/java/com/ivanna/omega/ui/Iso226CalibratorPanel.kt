@@ -258,7 +258,7 @@ fun Iso226CalibratorPanel(
                 if (!applying && effectManager != null) {
                     applying = true
                     scope.launch(Dispatchers.IO) {
-                        val result = Iso226Calibrator.applyAll(listenPhon, refPhon, effectManager)
+                        val result = Iso226Calibrator.applyAll(context, listenPhon, refPhon, effectManager)
                         Iso226Calibrator.persist(context)
                         lastResult = result
                         applying = false

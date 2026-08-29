@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.dsp.DSPStatePrefs
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import org.json.JSONArray
 import org.json.JSONObject
@@ -133,7 +134,7 @@ object Iso226Calibrator {
      *   high     → promedio de bandas 6..7  (2–4 kHz)
      *   presence → promedio de bandas 8..9  (8–12.5 kHz)
      */
-    fun applyToDSPBridge(gains: FloatArray) {
+    fun applyToDSPBridge(context: Context, gains: FloatArray) {
         if (!DSPBridge.isLoaded) return
         // FIX (calibración 15x demasiado débil): se dividía por 15f asumiendo
         // que DSPBridge.setParams() espera valores [0..1]. El comentario canónico
@@ -146,23 +147,31 @@ object Iso226Calibrator {
         val mid      = clampDbForEq((gains[3] + gains[4] + gains[5]) / 3f)
         val high     = clampDbForEq((gains[6] + gains[7]) / 2f)
         val presence = clampDbForEq((gains[8] + gains[9]) / 2f)
-        // FIX (tronido/NaN): mix=0.8 → GainStage.processInput()=(0.8-0.5)*12=+3.6dB
-        // de ganancia de entrada ANTES del EQ. Si el EQ ISO 226 añade +8.4dB
-        // en la banda de 5kHz, el biquad recibe señal que supera su rango
-        // estable → estado interno crece sin límite → NaN/Inf → SafetyLimiter
-        // clampea a 0 abruptamente → tronido audible.
-        // mix=0.5 es el punto neutro: (0.5-0.5)*12=0dB, sin ganancia de entrada.
-        // El nivel de la calibración ISO 226 lo aportan los parámetros low/mid/
-        // high/presence (dB directos al ParametricEQ), no mix.
-        val st = AudioStateManager.audioState.value
+
+        // FIX (2026-08-29 — "al aplicar ISO 226 truena el audio"):
+        // La versión anterior PISABA todo el estado DSP con valores hardcodeados:
+        //   alpha=0.94  → threshold del compresor = -24 + 0.94*24 = -1.4 dB
+        //   beta=0.85   → ratio = 1 + 0.85*19 ≈ 17:1  (un limiter aplastando)
+        //   master=st.masterGain (AudioState, LINEAL 0..2) pero GainStage
+        //     interpreta master como dB (dbToLin(p.master)) → 1.0 "dB" = ×1.12,
+        //     y peor: si el usuario tenía master en dB distinto se perdía.
+        // Compresión brutal + EQ boost + master en unidades equivocadas, todo
+        // de golpe → trueno inmediato al aplicar.
+        //
+        // Ahora se preserva el estado actual del usuario (DSPStatePrefs) y
+        // solo se SUMA el delta ISO 226 encima de su EQ actual. Los demás
+        // parámetros (drive/wet/mix/alpha/beta/gamma/freq/resonance/master)
+        // quedan exactamente como el usuario los tenía — cero cambio de
+        // carácter, solo la curva de compensación.
+        val cur = DSPStatePrefs.load(context)
         DSPBridge.setParams(
-            drive = st.adaptiveIntensity, wet = 0.7f, mix = 0.5f,
-            alpha = 0.94f, beta = 0.85f, gamma = 0.72f,
-            freq = 1000f, resonance = 0.7f,
-            low = low + st.eqBass, mid = mid + st.eqMid, high = high + st.eqTreble,
-            presence = presence + st.eqPresence, master = st.masterGain
+            drive = cur.drive, wet = cur.wet, mix = cur.mix,
+            alpha = cur.alpha, beta = cur.beta, gamma = cur.gamma,
+            freq = cur.freq, resonance = cur.resonance,
+            low = low + cur.low, mid = mid + cur.mid, high = high + cur.high,
+            presence = presence + cur.presence, master = cur.master
         )
-        Log.i(TAG, "ISO 226 → DSPBridge: low=${"%.2f".format(low)}dB mid=${"%.2f".format(mid)}dB high=${"%.2f".format(high)}dB presence=${"%.2f".format(presence)}dB")
+        Log.i(TAG, "ISO 226 → DSPBridge (delta sobre estado actual): low=${"%.2f".format(low)}dB mid=${"%.2f".format(mid)}dB high=${"%.2f".format(high)}dB presence=${"%.2f".format(presence)}dB")
     }
 
     // ── Aplicar al daemon Magisk vía socket ───────────────────────────────────
@@ -191,6 +200,7 @@ object Iso226Calibrator {
      * @return CalibrationResult con el estado de cada capa
      */
     fun applyAll(
+        context: Context,
         listenPhon: Float,
         refPhon: Float,
         effectManager: IvannaGlobalEffectManager
@@ -207,7 +217,7 @@ object Iso226Calibrator {
         }.onFailure { Log.w(TAG, "Equalizer ISO 226 error: ${it.message}") }
 
         runCatching {
-            applyToDSPBridge(gains)
+            applyToDSPBridge(context, gains)
             dspOk = DSPBridge.isLoaded
         }.onFailure { Log.w(TAG, "DSPBridge ISO 226 error: ${it.message}") }
 
@@ -281,7 +291,7 @@ object Iso226Calibrator {
         val savedListen = prefs.getFloat(KEY_LISTEN, 60f)
         val savedRef    = prefs.getFloat(KEY_REF, 80f)
         Log.i(TAG, "Restaurando calibración ISO 226: ${savedListen}→${savedRef} Phon")
-        val result = applyAll(savedListen, savedRef, effectManager)
+        val result = applyAll(context, savedListen, savedRef, effectManager)
         return result.anyApplied
     }
 

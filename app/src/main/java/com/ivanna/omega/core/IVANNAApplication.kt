@@ -298,7 +298,7 @@ class IVANNAApplication : Application() {
                     val lp = paramStore.loadIso226ListenPhon()
                     val rp = paramStore.loadIso226RefPhon()
                     launch(Dispatchers.IO) {
-                        val result = Iso226Calibrator.applyAll(lp, rp, globalEffectManager)
+                        val result = Iso226Calibrator.applyAll(this@IVANNAApplication, lp, rp, globalEffectManager)
                         Log.i(TAG, "ISO 226 restaurado: ${result.summary}")
                     }
                 }
