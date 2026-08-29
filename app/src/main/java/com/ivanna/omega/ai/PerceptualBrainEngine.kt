@@ -192,7 +192,11 @@ class PerceptualBrainEngine {
             fatigue = computedFatigue,
             emotion = computedEmotion,
             attention = computedAttention,
-            iso226LoudnessDb = 80.0f + (features.rms * 20.0f),
+            // FIX (2026-08-29, unidades): era pseudo-dBSPL (80 + rms*20) —
+            // incompatible con PerceptualCortex, que alimenta el mismo campo
+            // con LUFS reales BS.1770 (negativo). El contrato es LUFS: a
+            // partir de RMS lineal, -60 dBFS piso + 60 dB de rango audible.
+            iso226LoudnessDb = (-60f + features.rms.coerceIn(0f, 1f) * 46f),
             dynamicRangeDb = max(6.0f, features.crestFactor * 1.5f),
             spectralBalanceRatio = normCentroid
         )
