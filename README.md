@@ -49,7 +49,49 @@
 
 <br/>
 
+<!-- ✦ HERO COSMIC ✦ -->
+
+<pre>
+   ✦        ·        ✧                 ·     ✦                    ·          ✧
+        ·        ◦     ✦        ·               ◦     ✧    ·
+ ✧          ·      ◦         ✦        ·                    ✦          ·
+</pre>
+
+<h3><samp>UN GRIS DEL ESPACIO EXTERIOR QUE DECIDE ESCUCHAR</samp></h3>
+
+<table>
+<tr>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/DSP_EN_VIVO-100%25_ARM_NEON-FF00AA?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>4/4 núcleos SIMD</b></sub>
+</td>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/THREAD-URGENT_AUDIO-00FFCC?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>0 jank en callback</b></sub>
+</td>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/HOT_PATH-0_malloc_%C2%B7_0_lock-FF4D4D?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>seqlock SPSC</b></sub>
+</td>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/BUS-SHM_CRC32_%2B_ABI_v2-7F52FF?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>q[7] cross-process</b></sub>
+</td>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/CORRECCI%C3%93N_IEC-ISO_226-FFC64D?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>curvas equal-loudness</b></sub>
+</td>
+<td align="center" width="16%">
+<img src="https://img.shields.io/badge/VALIDACI%C3%93N-23_CTest_%2B_ABX_p%3C0.05-FF00AA?style=flat-square&labelColor=0d1117"/>
+<br/><sub><b>evidencia, no placebo</b></sub>
+</td>
+</tr>
+</table>
+
+<br/>
+
 <sub>
+  <a href="#-de-un-vistazo">⚡ Vistazo</a> ·
   <a href="#-de-un-vistazo">⚡ Vistazo</a> ·
   <a href="#-cadena-de-señal-completa">🔗 Cadena DSP</a> ·
   <a href="#️-arquitectura-de-dos-rutas">🏗️ Arquitectura</a> ·
