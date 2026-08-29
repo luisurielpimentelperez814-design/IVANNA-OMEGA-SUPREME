@@ -19,10 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-<<<<<<< Updated upstream
-=======
 import androidx.compose.ui.text.font.FontFamily
->>>>>>> Stashed changes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,41 +61,6 @@ fun SofaAfRirSafPanelScreen(
     var hrtfLoaded    by remember { mutableStateOf(IvannaSpatialManager.isHrtfDatasetLoaded()) }
     var sofaIntensity by remember { mutableStateOf(0.5f) }
 
-<<<<<<< Updated upstream
-    var phaseIntensity by remember { mutableStateOf(0f) }
-    var phaseState     by remember { mutableStateOf(0f) }
-
-    var afAuto       by remember { mutableStateOf(false) }
-    var afMode by remember { mutableStateOf(0) }
-    var afIntensity  by remember { mutableStateOf(50f) }
-    var afRunning    by remember { mutableStateOf(false) }
-    var afTelemetry  by remember { mutableStateOf<FloatArray?>(null) }
-
-    var rirEnabled   by remember { mutableStateOf(false) }
-    var roomSize     by remember { mutableStateOf(0.5f) }
-    var reflections  by remember { mutableStateOf(10) }
-    var decay        by remember { mutableStateOf(0.3f) }
-    var dryWet       by remember { mutableStateOf(0.2f) }
-    val MAX_DELAY_MS = 250f
-    val N_REFL       = 128
-
-    var safDiag      by remember { mutableStateOf(FloatArray(0)) }
-    var safIntensity by remember { mutableStateOf(0.5f) }
-    var voiceProt    by remember { mutableStateOf(false) }
-    var isSafReady   by remember { mutableStateOf(false) }
-
-    // FIX L61/L106: SpatialAudioPrefs.get() no existe — la API es load(context: Context).
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        val st = SpatialAudioPrefs.load(context)
-        rirEnabled = st.rirEnabled
-        roomSize   = (st.rirRt60 - 0.1f) / 1.4f
-        decay      = st.rirRt60 / 2.5f
-        dryWet     = st.rirWet
-        safIntensity = st.safIntensity
-        voiceProt = false
-=======
     // Sujetos SOFA disponibles (los 12 deployados en el módulo)
     val sofaSubjects = remember {
         listOf("kemar", "kemar_large", "tu_berlin_kemar",
@@ -108,7 +70,6 @@ fun SofaAfRirSafPanelScreen(
     }
     var selectedSubjectIdx by remember {
         mutableStateOf(sofaSubjects.indexOf(IvannaSpatialManager.activeSubject).coerceAtLeast(0))
->>>>>>> Stashed changes
     }
 
     // ── RIR ──────────────────────────────────────────────────────────────────
@@ -185,14 +146,6 @@ fun SofaAfRirSafPanelScreen(
     }
 
     fun persist() {
-<<<<<<< Updated upstream
-        val rt60 = 0.1f + roomSize * 1.4f
-        SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(
-            rirEnabled = rirEnabled,
-            rirRt60 = rt60,
-            rirWet = dryWet,
-            safIntensity = safIntensity
-=======
         SpatialAudioPrefs.save(ctx, SpatialAudioPrefs.load(ctx).copy(
             rirEnabled   = rirEnabled,
             rirRt60      = rirRt60,
@@ -200,7 +153,6 @@ fun SofaAfRirSafPanelScreen(
             safEnabled   = safEnabled,
             safIntensity = safIntensity,
             hrtfSubject  = sofaSubjects.getOrElse(selectedSubjectIdx) { "kemar" }
->>>>>>> Stashed changes
         ))
     }
 
@@ -403,40 +355,6 @@ fun SofaAfRirSafPanelScreen(
                 }
             }
 
-<<<<<<< Updated upstream
-        // ── FASE / PhaseOracle ───────────────────────────────────────────────
-        SPanel("PHASE ORACLE · PI-LSTM", NeonMagenta) {
-            SSlider("Intensidad (alpha, β=70%, γ=50%)", phaseIntensity, 0f, 1f, color = NeonMagenta) { phaseIntensity = it; applyPhase(); persist() }
-            SLine("phi(t) estado", "%.4f".format(phaseState), NeonMagenta)
-            SLine("alpha", "%.3f".format(phaseIntensity), NeonMagenta)
-            SLine("beta", "%.3f".format(phaseIntensity * 0.7f), NeonMagenta)
-            SLine("gamma", "%.3f".format(phaseIntensity * 0.5f), NeonMagenta)
-        }
-
-        // ── AF ──────────────────────────────────────────────────────────────
-        SPanel("AF · ADAPTIVE FEATURES", AuroraCyan) {
-            SRow("Modo AUTO", afAuto, AuroraCyan) { afAuto = it; applyAf(); persist() }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // OptimizationMode no disponible — usar índices simples
-                listOf("BALANCED", "QUALITY", "POWER").forEachIndexed { idx, label ->
-                    FilterChip(
-                        selected = afMode == idx,
-                        onClick  = { afMode = idx; applyAf(); persist() },
-                        label    = { Text(label, fontSize = 9.sp, fontWeight = if (afMode == idx) FontWeight.Bold else FontWeight.Normal) },
-                        enabled  = afAuto,
-                        modifier = Modifier.weight(1f),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AuroraCyan.copy(0.2f),
-                            selectedLabelColor = AuroraCyan,
-                            labelColor = TextMuted
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = afAuto, selected = afMode == idx,
-                            borderColor = if (afMode == idx) AuroraCyan else ObsidianEdge
-                        )
-                    )
-                }
-=======
             // Métricas acústicas calculadas
             val roomVolumeM3 = metros.toFloat().let { it * it * (it * 0.5f) }
             val sabine = (0.161f * roomVolumeM3) / (0.2f * roomVolumeM3) // RT60 Sabine aprox
@@ -446,7 +364,6 @@ fun SofaAfRirSafPanelScreen(
                 MetricChip("Sala", "$metros m", AmberSignal)
                 MetricChip("Wet", "${"%.0f".format(rirWet * 100)} %", AmberSignal)
                 MetricChip("Índice", if (rirRoomIdx < 0) "AUTO" else "#$rirRoomIdx", AmberSignal)
->>>>>>> Stashed changes
             }
         }
 
@@ -470,18 +387,6 @@ fun SofaAfRirSafPanelScreen(
                 safEnabled = it; if (it) applySaf() else persist()
             }
 
-<<<<<<< Updated upstream
-        // ── SAF ─────────────────────────────────────────────────────────────
-        SPanel("SAF · OPTIMIZADOR RIEMANNIANO", PhosphorGreen) {
-            SLine("Diagnóstico SAF", if (safDiag.size >= 5 && safDiag[4] > 0f) "CONVERGIENDO" else "ESPERANDO FEEDBACK", PhosphorGreen)
-            SSlider("Intensidad de Modificación (q)", safIntensity, 0f, 1f, color = PhosphorGreen) { safIntensity = it; applySaf(); persist() }
-            SRow("Protector de Inteligibilidad de Voz", voiceProt, PhosphorGreen) { on -> 
-                voiceProt = on
-                // FIX L210: voiceMgr es Any? — enable()/disable() no existen en Any.
-                // La protección de voz se persiste en prefs; el motor la lee en el
-                // siguiente ciclo del daemon. No se llama ningún método sobre Any.
-                persist() 
-=======
             // Intensidad del parámetro latente q
             IvannaSlider(
                 label     = "Intensidad de modificación (q)",
@@ -503,7 +408,6 @@ fun SofaAfRirSafPanelScreen(
                 MetricChip("Iteración", safIteration.toString(), NeonMagenta)
                 MetricChip("Convergido", if (safConverged) "SÍ" else "NO",
                     if (safConverged) PhosphorGreen else AmberSignal)
->>>>>>> Stashed changes
             }
 
             // Parámetros del vector q si están disponibles
