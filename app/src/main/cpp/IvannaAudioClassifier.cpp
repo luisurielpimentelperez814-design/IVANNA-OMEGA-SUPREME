@@ -47,10 +47,10 @@ static constexpr float DECIMATE_FIR[5] = {
 
 // ── Conversiones Mel ──────────────────────────────────────────────────────────
 static inline float hzToMel(float hz) {
-    return 2595.f * std::log10f(1.f + hz / 700.f);
+    return 2595.f * log10f(1.f + hz / 700.f);
 }
 static inline float melToHz(float mel) {
-    return 700.f * (std::powf(10.f, mel / 2595.f) - 1.f);
+    return 700.f * (powf(10.f, mel / 2595.f) - 1.f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,15 +98,15 @@ IvannaAudioClassifier::~IvannaAudioClassifier() {
 void Ivanna::IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
     // Ventana Hann — idéntica al CRNN Kotlin
     for (size_t i = 0; i < CLASSIFIER_FRAME_SIZE; ++i) {
-        m_hanningWindow[i] = 0.5f * (1.f - std::cosf(2.f * PI_F * i
+        m_hanningWindow[i] = 0.5f * (1.f - cosf(2.f * PI_F * i
                                 / static_cast<float>(CLASSIFIER_FRAME_SIZE - 1)));
     }
 
     // Twiddle factors para FFT radix-2
     for (size_t k = 0; k < CLASSIFIER_FRAME_SIZE / 2; ++k) {
         const float angle = -2.f * PI_F * k / CLASSIFIER_FRAME_SIZE;
-        m_fftTwiddleReal[k] = std::cosf(angle);
-        m_fftTwiddleImag[k] = std::sinf(angle);
+        m_fftTwiddleReal[k] = cosf(angle);
+        m_fftTwiddleImag[k] = sinf(angle);
     }
 
     // Tabla de bit-reversal para N=512
@@ -132,7 +132,7 @@ void Ivanna::IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
     for (int m = 0; m < (int)MEL_BANDS + 2; ++m) {
         melPts[m] = melMin + m * melStep;
         const float hz = melToHz(melPts[m]);
-        binPts[m] = (int)std::floorf((CLASSIFIER_FRAME_SIZE + 1) * hz / SAMPLE_RATE_CLASS);
+        binPts[m] = (int)floorf((CLASSIFIER_FRAME_SIZE + 1) * hz / SAMPLE_RATE_CLASS);
         binPts[m] = std::min(binPts[m], (int)FFT_SPECTRUM_SIZE - 1);
     }
 
@@ -275,7 +275,7 @@ void Ivanna::IvannaAudioClassifier::extractLogMelFilterbank() noexcept {
 #else
         for (size_t k = 0; k < FFT_SPECTRUM_SIZE; ++k) energy += fb[k] * m_powerSpectrum[k];
 #endif
-        m_melLogEnergies[m] = std::logf(std::max(energy, 1e-10f));
+        m_melLogEnergies[m] = logf(std::max(energy, 1e-10f));
     }
 }
 
@@ -419,7 +419,7 @@ void Ivanna::IvannaAudioClassifier::processInference() noexcept {
         logits[0] = 2.0f * harmonicity + 0.5f * e_mid - 0.5f * e_air;     // Speech
         logits[1] = 1.2f * e_bass + 0.8f * e_presence - 0.3f * flatness;   // Music
         logits[2] = 3.0f * delta  - 0.5f * e_total;                         // Transient
-        logits[3] = 4.0f * flatness - 1.5f * std::fabsf(e_total) - 1.0f;   // Noise/Ambient
+        logits[3] = 4.0f * flatness - 1.5f * fabsf(e_total) - 1.0f;   // Noise/Ambient
     }
 
     // Softmax estable
@@ -429,7 +429,7 @@ void Ivanna::IvannaAudioClassifier::processInference() noexcept {
     float expSum = 0.f;
     float probs[NUM_CLASSES];
     for (size_t i = 0; i < NUM_CLASSES; ++i) {
-        probs[i] = std::expf(logits[i] - maxL);
+        probs[i] = expf(logits[i] - maxL);
         expSum  += probs[i];
     }
 
