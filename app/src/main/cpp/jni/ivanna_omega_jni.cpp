@@ -679,7 +679,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // FIX (mismo bug que nativeSetEQParams): master llega lineal [0.5..2.0],
     // GainStage lo trata como dB → conversión incorrecta + overflow.
     const float masterDbNsp = (master <= 0.001f) ? -60.0f
-        : std::clamp(20.0f * std::log10f(master), -60.0f, 6.0f);
+        : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
     g_params.master = masterDbNsp;
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
@@ -1509,7 +1509,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     // para dejarle headroom al SafetyLimiter (sin él, EQ + volumen max lo
     // saturan sistemáticamente).
     const float masterDb = (master <= 0.001f) ? -60.0f
-        : std::clamp(20.0f * std::log10f(master), -60.0f, 6.0f);
+        : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
     g_params.master = masterDb;
     g_eq.setParams(g_params);
     // Aplicar compensación de headroom del EQ antes de configurar GainStage.

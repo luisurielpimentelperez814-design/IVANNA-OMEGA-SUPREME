@@ -46,11 +46,11 @@ static void init_hrtf(int sampleRate) {
         float window = std::exp(-3.0f * t) * (1.0f - t);
 
         // Oído izquierdo: retardo mínimo
-        g_hrtf_left[i] = window * std::sinf(3.14159f * (i + 1) / (HRTF_TAPS + 1));
+        g_hrtf_left[i] = window * std::sin(3.14159f * (i + 1) / (HRTF_TAPS + 1));
 
         // Oído derecho: retardo +0.3ms (aproximado por desplazamiento de fase)
         float phaseShift = 2.0f * 3.14159f * 8000.0f * delaySamples / sampleRate;
-        g_hrtf_right[i] = window * std::sinf(3.14159f * (i + 1) / (HRTF_TAPS + 1) + phaseShift);
+        g_hrtf_right[i] = window * std::sin(3.14159f * (i + 1) / (HRTF_TAPS + 1) + phaseShift);
     }
 
     // Inicializar delay lines
