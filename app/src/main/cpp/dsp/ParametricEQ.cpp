@@ -132,20 +132,11 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
                           + std::max(0.f, p.low * 0.5f);      // Band 1
     const float maxStack  = std::max({highGroup, midGroup, lowGroup});
     // Compensar solo cuando el stack supera 6 dB (por debajo es manejable).
-    if (maxStack > 6.0f) {
-        const float compensationDb = (maxStack - 6.0f) * 0.5f;
-        // Aplica la compensación sobre la banda de identidad (no sobre una
-        // banda activa) para no teñir la curva de respuesta: se crea un
-        // gain-stage inline en la banda 2 (siempre a 0 dB / inactiva).
-        // Más limpio: reducir el outputGain_ del GainStage vía la misma clave
-        // que ya usa — pero GainStage solo expone setParams(DSPParams).
-        // El camino directo: ajustar p.master ANTES de que setParams() del
-        // GainStage lo lea. Como ParametricEQ::setParams ya corrió, usamos
-        // la compensación solo informativa aquí; el llamador (JNI) la aplica
-        // restándola de g_params.master. Anotación para el JNI que llama:
-        // Guardamos el valor calculado para que el JNI lo lea si quiere.
-        // No podemos llamar a g_gain aquí (circular); se guarda en el campo.
-        eqOutputCompensationDb_ = compensationDb;
+        // FIX(7): compensación 50%→80%, threshold 6dB→3dB
+    // Old (50%,6dB): stack=27→comp=10.5→overshoot=16.5dB→pumping visible
+    // New (80%,3dB): stack=27→comp=19.2→overshoot=7.8dB→dentro del knee
+    if (maxStack > 3.0f) {
+        eqOutputCompensationDb_ = (maxStack - 3.0f) * 0.80f;
     } else {
         eqOutputCompensationDb_ = 0.f;
     }
