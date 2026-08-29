@@ -74,6 +74,10 @@ fun MagistralDashboardScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // ── Adaptive Engine en vivo (JNI huérfanas cableadas) ──
+        AdaptiveEngineLivePanel()
+        Spacer(modifier = Modifier.height(12.dp))
+
         // ── Bark Spectrum — datos reales, sin sin() fake ──────────────
         Text("BARK SPECTRUM", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(6.dp))
