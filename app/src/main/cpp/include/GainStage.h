@@ -10,7 +10,15 @@ public:
     void reset();
 
     void setRuntimeGain(float mul) noexcept {
-        runtimeMul_ = mul < 0.1f ? 0.1f : (mul > 1.5f ? 1.5f : mul);
+        // FIX: cap anterior era 1.5× = +3.5 dB. El motor adaptativo
+        // (AdaptiveDecisionEngine) llama esto cada bloque para ajustar el
+        // nivel de salida. Con cap en 1.5, podía aplicar +3.5 dB sobre una
+        // señal ya cercana al techo → SafetyLimiter activado → compresión
+        // de ganancia perceptible como pumping.
+        // Semántica correcta del runtime gain: solo puede ATENUAR (proteger),
+        // nunca amplificar. La ganancia positiva la gestiona el GainStage
+        // normal vía setParams()/outputGain_. Cap máximo = 1.0 (unity).
+        runtimeMul_ = mul < 0.1f ? 0.1f : (mul > 1.0f ? 1.0f : mul);
     }
 
 private:
