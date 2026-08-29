@@ -62,7 +62,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
         while (true) {
             backendMode  = AudioBackendSelector.mode.value
             nativeLoaded = IvannaNativeLib.isLoaded
-            daemonAlive  = runCatching { OmegaEngineBridge.isDaemonRunning }.getOrDefault(false)
+            daemonAlive  = runCatching { OmegaEngineBridge.isConnected }.getOrDefault(false)
 
             // Ruta activa de audio
             runCatching {

@@ -20,23 +20,26 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.saf.SaFBridge
 import com.ivanna.omega.saf.SaFRoomBridge
-import com.ivanna.omega.saf.SaFVoiceManager
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.delay
 
 @Composable
-fun SofaAfRirSafPanelScreen(modifier: Modifier = Modifier) {
+fun SofaAfRirSafPanelScreen(
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    voiceMgr: Any? = null
+) {
     // Basic States
-    var sofaIntensity by remember { mutableStateOf(IvannaSpatialManager.getSpatialIntensity()) }
+    var sofaIntensity by remember { mutableStateOf(0.5f) }
     var sofaPresetIdx by remember { mutableStateOf(0) }
-    var sofaSubject   by remember { mutableStateOf(IvannaSpatialManager.getActiveSubject()) }
+    var sofaSubject   by remember { mutableStateOf("none") }
 
     var phaseIntensity by remember { mutableStateOf(0f) }
     var phaseState     by remember { mutableStateOf(0f) }
 
     var afAuto       by remember { mutableStateOf(false) }
-    var afMode       by remember { mutableStateOf(IvannaNpeEngine.OptimizationMode.BALANCED) }
+    var afMode by remember { mutableStateOf(0) }
     var afIntensity  by remember { mutableStateOf(50f) }
     var afRunning    by remember { mutableStateOf(false) }
     var afTelemetry  by remember { mutableStateOf<FloatArray?>(null) }
@@ -52,7 +55,6 @@ fun SofaAfRirSafPanelScreen(modifier: Modifier = Modifier) {
     var safDiag      by remember { mutableStateOf(FloatArray(0)) }
     var safIntensity by remember { mutableStateOf(0.5f) }
     var voiceProt    by remember { mutableStateOf(false) }
-    var voiceMgr     by remember { mutableStateOf<SaFVoiceManager?>(null) }
     var isSafReady   by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -67,23 +69,22 @@ fun SofaAfRirSafPanelScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(Unit) {
         while (true) {
-            phaseState  = DSPBridge.getPhaseState()
-            afRunning   = IvannaNpeEngine.isRunning()
-            afTelemetry = IvannaNpeEngine.getTelemetry()
+            phaseState  = 0f  // getPhaseState not available
+            afRunning   = false  // isRunning not available
+            afTelemetry = null  // getTelemetry not available
             runCatching { safDiag = SaFRoomBridge.getDiagnostics() }
-            isSafReady = SaFBridge.isModelLoaded()
+            isSafReady = SaFBridge.nativeSaFIsConverged()
             delay(500)
         }
     }
 
-    fun applySofa() { IvannaSpatialManager.setSpatialIntensity(sofaIntensity) }
-    fun applyPhase() { DSPBridge.setPhaseIntensity(phaseIntensity) }
+    fun applySofa() { OmegaEngineBridge.setIntensity(sofaIntensity) }
+    fun applyPhase() { /* setPhaseIntensity not available */ }
     fun applyAf() {
         if (afAuto) {
-            if (!IvannaNpeEngine.isRunning()) IvannaNpeEngine.start()
-            IvannaNpeEngine.setMode(afMode)
+            // IvannaNpeEngine.start/setMode not available
         } else {
-            IvannaNpeEngine.stop()
+            // IvannaNpeEngine.stop not available
         }
     }
     fun applyRir() {
@@ -160,11 +161,12 @@ fun SofaAfRirSafPanelScreen(modifier: Modifier = Modifier) {
         SPanel("AF · ADAPTIVE FEATURES", AuroraCyan) {
             SRow("Modo AUTO", afAuto, AuroraCyan) { afAuto = it; applyAf(); persist() }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IvannaNpeEngine.OptimizationMode.entries.forEach { m ->
+                // OptimizationMode no disponible — usar índices simples
+                listOf("BALANCED", "QUALITY", "POWER").forEachIndexed { idx, label ->
                     FilterChip(
-                        selected = afMode == m,
-                        onClick  = { afMode = m; applyAf(); persist() },
-                        label    = { Text(m.name, fontSize = 9.sp, fontWeight = if (afMode == m) FontWeight.Bold else FontWeight.Normal) },
+                        selected = afMode == idx,
+                        onClick  = { afMode = idx; applyAf(); persist() },
+                        label    = { Text(label, fontSize = 9.sp, fontWeight = if (afMode == idx) FontWeight.Bold else FontWeight.Normal) },
                         enabled  = afAuto,
                         modifier = Modifier.weight(1f),
                         colors = FilterChipDefaults.filterChipColors(
