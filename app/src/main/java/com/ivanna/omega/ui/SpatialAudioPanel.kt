@@ -21,28 +21,43 @@ import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.spatial.SaFOptimizer
 import com.ivanna.omega.ui.theme.*
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 
 @Composable
 fun SpatialAudioPanel(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val state by SpatialAudioPrefs.stateFlow.collectAsState()
     var hrtfLoaded by remember { mutableStateOf(false) }
     var activeSubject by remember { mutableStateOf("none") }
     var roomStatus by remember { mutableStateOf("Desconectado") }
     var safStatus by remember { mutableStateOf("Pendiente") }
 
-    fun update(mutator: (SpatialState) -> SpatialState) {
+    fun update(mutator: (SpatialAudioState) -> SpatialAudioState) {
         val n = mutator(state)
-        SpatialAudioPrefs.save(n)
-        PersistedStateRestorer.restoreSpatial(n)
+        // save() ya publica al stateFlow y persiste a disco. La aplicación al
+        // motor la hace cada control justo después de update() (llamadas
+        // directas a IvannaSpatialManager / OmegaEngineBridge); la llamada a
+        // PersistedStateRestorer.restoreSpatial() era fantasma — nunca existió
+        // en esa clase (solo expone restore(context)).
+        SpatialAudioPrefs.save(context, n)
     }
 
     LaunchedEffect(Unit) {
+        // Sembrar el StateFlow desde SharedPreferences una vez al entrar.
+        SpatialAudioPrefs.init(context)
         while (true) {
-            hrtfLoaded = IvannaSpatialManager.isHrtfLoaded()
-            activeSubject = IvannaSpatialManager.getActiveSubject()
-            roomStatus = OmegaEngineBridge.getRoomStatus()
-            safStatus = if (SaFBridge.isModelLoaded()) "SAF_model.json cargado" else "No cargado"
+            // FIX (build): APIs reales del manager — isHrtfLoaded() y
+            // getActiveSubject() nunca existieron; los nombres reales son
+            // isHrtfDatasetLoaded() y currentHrtfSubject().
+            hrtfLoaded = IvannaSpatialManager.isHrtfDatasetLoaded()
+            activeSubject = IvannaSpatialManager.currentHrtfSubject()
+            // getRoomStatus() devuelve JSONObject? — serializar para mostrar.
+            roomStatus = OmegaEngineBridge.getRoomStatus()?.toString() ?: "Desconectado"
+            // SaFBridge no expone isModelLoaded(): la prueba real es que el
+            // bridge nativo devuelva parámetros (modelo inicializado).
+            safStatus = if (runCatching { SaFBridge.nativeSaFGetParams() != null }.getOrDefault(false))
+                "SAF_model.json cargado" else "No cargado"
 
             if (state.safEnabled && state.safAutoMode) {
                 runCatching {
