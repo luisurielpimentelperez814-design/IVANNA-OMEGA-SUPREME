@@ -126,18 +126,49 @@ void SaFOptimizer::step(const float delta[SAF_K], float Et) {
     const float denom = Et + normG + m_lambda * normM + m_epsilon;
     const float alpha = (denom > m_epsilon) ? (Et / denom) : 0.0f;
 
-    // p_{t+1} = p_t + α · G^{-1} · Δ
+    // ── FIX (2026-08-29): trust region Riemanniana ────────────────────────
+    // Sin ella, el paso natural-gradient α·G^{-1}·Δ tiene norma-G
+    //   ‖α·G^{-1}·Δ‖_G = α·√normG  ≈  0.5·√normG  (cuando E_t ≈ normG)
+    // y Δ viene de (target−q) con componentes ~ σ_i = √G[i] → normG ~ K.
+    // Resultado medido: el primer feedback "incorrecto" movía q ~2.5·σ en
+    // TODAS las dimensiones a la vez — contra un espacio válido de ±3σ por
+    // dimensión, eso es satura el borde y la calibración degenera en
+    // bang-bang (rebotar entre paredes) en vez de converger.
+    //
+    // Trust region clásica (Conn–Gould–Toint, adaptada a la métrica G):
+    // limitar la norma riemanniana del paso a un radio que garantice
+    // movimiento fraccionario de σ por iteración. El paso mantiene la
+    // DIRECCIÓN del gradiente natural (G^{-1}·Δ) intacta — solo se recorta
+    // la magnitud. Convergencia suave, sin oscilación en el borde.
+    //
+    // Radio: 0.5 en unidades de la norma-G ≈ 0.5/√K · σ por dimensión
+    // ≈ 0.19·σ — cada iteración de feedback mueve ~1/5 de la desviación
+    // estándar fisiológica. Suficiente para converger en ~10-15 iteraciones
+    // de calibración (el protocolo SAF completo), sin reventar el espacio.
+    constexpr float kTrustRadiusG = 0.5f;
+    float trustScale = 1.0f;
+    if (normG > m_epsilon) {
+        // norma-G del paso propuesto = alpha · √normG
+        const float stepNormG = alpha * std::sqrt(normG);
+        if (stepNormG > kTrustRadiusG) {
+            trustScale = kTrustRadiusG / stepNormG;
+        }
+    }
+    const float alphaEff = alpha * trustScale;
+
+    // p_{t+1} = p_t + α_eff · G^{-1} · Δ
     for (int i = 0; i < SAF_K; ++i) {
         const float gi_inv = (m_G[i] > m_epsilon) ? (1.0f / m_G[i]) : 0.0f;
-        m_q[i] += alpha * gi_inv * delta[i];
+        m_q[i] += alphaEff * gi_inv * delta[i];
     }
 
     // Π_S^{G_t}: project onto valid parameter space S = ×[pMin_i, pMax_i]
     projectToS();
     m_lastE = Et;
 
-    LOGI("step %d: α=%.4f normG=%.2e normM=%.2e E=%.2e",
-         m_iter.load(), (double)alpha, (double)normG, (double)normM, (double)Et);
+    LOGI("step %d: α=%.4f trust=%.3f normG=%.2e normM=%.2e E=%.2e",
+         m_iter.load(), (double)alphaEff, (double)trustScale,
+         (double)normG, (double)normM, (double)Et);
 }
 
 // Saturacion suave por dimension hacia kPMax[i] (kPMin[i] = -kPMax[i], rango
