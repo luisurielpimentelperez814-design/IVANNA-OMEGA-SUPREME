@@ -291,22 +291,28 @@ class PerceptualBrainEngine {
             //   → siempre 85-99%, derivado de RMS — no mide confianza del clasificador.
             // Ahora: máximo de las probabilidades reales del clasificador nativo.
             // Si el clasificador no tiene señal activa, la confianza es 0 (honesto).
-            val probs = runCatching {
-                IvannaNativeLib.nativeGetClassifierProbabilities()
+            // FIX (build, 2026-08-29): los JNI reales viven en IvannaNpeNative,
+            // no en IvannaNativeLib — 1fd4c9bc los invocó con nombre/clase
+            // erróneos. nativeGetSynthClassify() devuelve
+            // [cluster_id, confidence, thd_pred, score, pca0..2] — la confianza
+            // es el índice 1 (maxOrNull tomaría cluster_id como si fuera score).
+            val classify = runCatching {
+                com.ivanna.omega.neuromorphic.IvannaNpeNative.nativeGetSynthClassify()
             }.getOrNull()
-            val realConfidence = probs?.maxOrNull()?.coerceIn(0f, 1f) ?: 0f
+            val realConfidence =
+                if (classify != null && classify.size >= 2)
+                    classify[1].coerceIn(0f, 1f)
+                else 0f
 
             // dominantClassLabel antes = "—" siempre — nunca se leía del clasificador.
-            // Ahora: mapeado desde nativeGetDominantClass() int → etiqueta string.
-            val classInt = runCatching {
-                IvannaNativeLib.nativeGetDominantClass()
-            }.getOrDefault(-1)
-            val classLabel = when (classInt) {
-                0    -> "VOICE"
-                1    -> "MUSIC"
-                2    -> "BASS"
-                3    -> "SILENCE"
-                else -> if (rms > 1e-4f) "SIGNAL" else "—"
+            // Ahora: etiqueta real desde el NPE (nativeGetDetectedGenre, con
+            // fallback interno a "—" si el handle no está creado).
+            val genre = runCatching {
+                com.ivanna.omega.neuromorphic.IvannaNpeEngine.getDetectedGenre()
+            }.getOrDefault("—")
+            val classLabel = when {
+                genre.isBlank() || genre == "—" -> if (rms > 1e-4f) "SIGNAL" else "—"
+                else -> genre.uppercase()
             }
 
             // phaseCoherence: no es medible sin señal de referencia + análisis
