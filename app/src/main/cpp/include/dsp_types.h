@@ -8,7 +8,11 @@ namespace ivanna {
 struct DSPParams {
     float drive     = 0.45f;
     float wet       = 0.32f;
-    float mix       = 0.70f;
+    // FIX: mix=0.70 → GainStage.inputGain_ = dbToLin((0.70-0.5)*12) = +2.4 dB
+    // antes del EQ en cada cadena que no sobrescriba este campo — boost
+    // gratuito que satura el SafetyLimiter sin que el usuario lo pida.
+    // Valor neutro: 0.50 → dbToLin((0.50-0.5)*12) = dbToLin(0) = 1.0 (0 dB).
+    float mix       = 0.50f;
     float alpha     = 0.375f;
     float beta      = 0.105f;
     float gamma     = 0.72f;
@@ -24,18 +28,31 @@ struct DSPParams {
 
 struct Biquad {
     double b0=1,b1=0,b2=0,a1=0,a2=0;
-    float x1=0,x2=0,y1=0,y2=0;
+    // FIX: estado como double — el cálculo ya era double, pero el estado
+    // era float, causando truncation acumulada por muestra. En filtros
+    // resonantes angostos (presence EQ, HP de sidechain) el error de
+    // truncación por muestra se acumula y eleva el ruido de cuantización
+    // del estado en ~96 dB (float) vs 120 dB (double). Sin consecuencia
+    // en CPU: arm64 Cortex-A55 maneja doubles nativamente (FP64 pipeline).
+    double x1=0,x2=0,y1=0,y2=0;
 
     inline float process(float x) {
-        double y = b0*x + b1*(double)x1 + b2*(double)x2
-                   - a1*(double)y1 - a2*(double)y2;
-        x2=x1; x1=x;
-        y2=y1; y1=(float)y;
+        double y = b0*(double)x + b1*x1 + b2*x2 - a1*y1 - a2*y2;
+        // FIX: NaN guard — un coeficiente inválido (Nyquist, Q→0, fc>sr/2)
+        // propaga NaN hacia adelante indefinidamente. Reemplazar por cero
+        // (mute limpio) es mejor que el silencio catastrófico o el overflow.
+        if (__builtin_expect(!__builtin_isfinite(y), 0)) {
+            y = 0.0;
+            x1 = x2 = y1 = y2 = 0.0;
+        } else {
+            x2=x1; x1=(double)x;
+            y2=y1; y1=y;
+        }
         return (float)y;
     }
 
     void reset() {
-        x1=x2=y1=y2=0.f;
+        x1=x2=y1=y2=0.0;
     }
 
     static double clampQ(double Q) {
