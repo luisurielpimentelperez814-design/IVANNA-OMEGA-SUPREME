@@ -61,12 +61,18 @@ fun SofaAfRirSafPanelScreen(
     var hrtfLoaded    by remember { mutableStateOf(IvannaSpatialManager.isHrtfDatasetLoaded()) }
     var sofaIntensity by remember { mutableStateOf(0.5f) }
 
-    // Sujetos SOFA disponibles (los 12 deployados en el módulo)
+    // Sujetos SOFA disponibles (los 12 deployados en el módulo).
+    // FIX (2026-08-29): la lista incluía "subject_165" — nombre del archivo
+    // SOFA fuente, no del IHR1; el loader buscaba subject_165.ihr1 (inexistente)
+    // y la selección caía al fallback en silencio. Ese sujeto YA está como
+    // "cipic_165"; el 12º real que faltaba es "freefield_demo" (añadido al
+    // dataset en 054bdd5b y a AVAILABLE_SUBJECTS en 8abe28e6).
+    // Sincronizada 1:1 con HrtfSubjectSelector.AVAILABLE_SUBJECTS.
     val sofaSubjects = remember {
         listOf("kemar", "kemar_large", "tu_berlin_kemar",
                "cipic_003", "cipic_008", "cipic_009",
                "cipic_010", "cipic_011", "cipic_012",
-               "cipic_165", "pulse", "subject_165")
+               "cipic_165", "pulse", "freefield_demo")
     }
     var selectedSubjectIdx by remember {
         mutableStateOf(sofaSubjects.indexOf(IvannaSpatialManager.activeSubject).coerceAtLeast(0))
