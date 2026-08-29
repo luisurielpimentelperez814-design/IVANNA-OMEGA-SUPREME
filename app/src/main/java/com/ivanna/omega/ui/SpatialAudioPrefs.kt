@@ -17,6 +17,18 @@ data class SpatialAudioState(
 object SpatialAudioPrefs {
     private const val PREFS = "ivanna_spatial_audio"
 
+    // FIX (build 2026-08-29): SpatialAudioPanel leía SpatialAudioPrefs.stateFlow
+    // y un tipo SpatialState que nunca existieron (el panel fue escrito contra
+    // una API planificada distinta). Se añade el StateFlow observable sin
+    // romper load/save: init() siembra el flujo desde disco y save() publica.
+    private val _stateFlow = kotlinx.coroutines.flow.MutableStateFlow(SpatialAudioState())
+    val stateFlow: kotlinx.coroutines.flow.StateFlow<SpatialAudioState> = _stateFlow
+
+    /** Siembra el StateFlow desde SharedPreferences. Idempotente. */
+    fun init(context: Context) {
+        _stateFlow.value = load(context)
+    }
+
     fun load(context: Context): SpatialAudioState {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val d = SpatialAudioState()
@@ -33,6 +45,7 @@ object SpatialAudioPrefs {
     }
 
     fun save(context: Context, s: SpatialAudioState) {
+        _stateFlow.value = s
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("hrtfEnabled", s.hrtfEnabled)
             .putString("hrtfSubject", s.hrtfSubject)
