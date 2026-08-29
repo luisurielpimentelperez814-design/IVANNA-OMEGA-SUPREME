@@ -12,7 +12,9 @@ private:
     float width_ = 1.0f;        // objetivo (slider)
     float widthNow_ = 1.0f;     // valor suavizado aplicado por muestra
     float widthSmooth_ = 0.9995f;  // ~15ms @ 96kHz, recalculado en setParams()
-    [[maybe_unused]] float halfWidth_ = 0.5f;
+    // FIX: halfWidth_ era [[maybe_unused]] — calculado como 0.5*width_ en
+    // setParams() pero nunca leído en process(). Eliminado: sin cambio de
+    // comportamiento. El proceso M/S usa widthNow_ directamente.
     // FIX (tuning magistral): crossover mono-safe de graves — sin esto, un
     // widener M/S puro cancela fase en mono por debajo de ~150Hz (bug real
     // de todo widener naive). El "side" se separa en low/high; el ensanche
