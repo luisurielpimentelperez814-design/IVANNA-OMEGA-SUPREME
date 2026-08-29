@@ -82,6 +82,15 @@ allow platform_app su unix_stream_socket connectto
 allow platform_app magisk unix_stream_socket connectto
 allow priv_app su unix_stream_socket connectto
 allow priv_app magisk unix_stream_socket connectto
+# FIX v2.3: platform_app y priv_app también necesitan leer /proc/net/unix
+# para que ivanna_control.sh probe y el socket-alive check del SDK funcionen
+# cuando la app se instala con firma de plataforma (ROMs custom frecuentes).
+allow platform_app proc_net file read
+allow platform_app proc_net file open
+allow platform_app proc_net file getattr
+allow priv_app proc_net file read
+allow priv_app proc_net file open
+allow priv_app proc_net file getattr
 
 # ═══════════════════════════════════════════════════════════════════════
 #  6. AUDIOSERVER → SHM del Control Plane cross-process
@@ -162,6 +171,12 @@ allow audioserver audioserver unix_stream_socket getopt
 allow audioserver audioserver unix_stream_socket setopt
 allow audioserver audioserver unix_stream_socket shutdown
 # ═══════════════════════════════════════════════════════════════════════
+# audioserver también lee /proc/net/unix para el probe del socket
+# (OmegaEngineBridge.getRoomStatus() → socket alive check).
+allow audioserver proc_net file read
+allow audioserver proc_net file open
+allow audioserver proc_net file getattr
+# ═══════════════════════════════════════════════════════════════════════
 # ivanna_control.sh y el auto-probe de MagiskBridge leen /proc/net/unix
 # para verificar que el socket está bindeado. En SELinux enforcing
 # sysfs_read del proc no siempre está por defecto para untrusted_app.
@@ -181,3 +196,48 @@ allow isolated_app proc_net file getattr
 # Permisos base del daemon
 
 # IPC seguro (App -> Daemon aislado)
+
+# ═══════════════════════════════════════════════════════════════════════
+#  9. SU / MAGISK DAEMON → leer assets de /data/adb/ivanna_omega/
+#
+#  El daemon (su domain) necesita leer SAF_model.json, hrtf/*.ihr1,
+#  rir/*.wav, sofa/*.sofa en boot-time desde /data/adb/ivanna_omega/.
+#  Sin esto, open() falla con EACCES en kernels que aplican SELinux
+#  al dominio su para archivos de tipo adb_data_file.
+# ═══════════════════════════════════════════════════════════════════════
+allow su adb_data_file file read
+allow su adb_data_file file open
+allow su adb_data_file file getattr
+allow su adb_data_file dir search
+allow su adb_data_file dir read
+allow su adb_data_file dir open
+allow magisk adb_data_file file read
+allow magisk adb_data_file file open
+allow magisk adb_data_file file getattr
+allow magisk adb_data_file dir search
+allow magisk adb_data_file dir read
+allow magisk adb_data_file dir open
+
+# ═══════════════════════════════════════════════════════════════════════
+#  10. SOFA files — audioserver lee /data/adb/ivanna_omega/sofa/
+#
+#  El HRTFBinLoader abre *.sofa como lector de archivos planos.
+#  En Android 12+ con targetSdk 31, el open() pasa por SELinux
+#  aunque sea PROT_READ. Con adb_data_file cubierto en sección 6,
+#  esta sección añade el dir-level traversal explícito para sofa/.
+# ═══════════════════════════════════════════════════════════════════════
+allow audioserver adb_data_file dir read
+allow audioserver adb_data_file dir open
+allow audioserver adb_data_file dir search
+
+# ═══════════════════════════════════════════════════════════════════════
+#  11. SHELL (adb shell) → health_check.sh puede leer el estado
+# ═══════════════════════════════════════════════════════════════════════
+allow shell adb_data_file file read
+allow shell adb_data_file file open
+allow shell adb_data_file file getattr
+allow shell adb_data_file dir search
+allow shell adb_data_file dir read
+allow shell adb_data_file dir open
+allow shell proc_net file read
+allow shell proc_net file open
