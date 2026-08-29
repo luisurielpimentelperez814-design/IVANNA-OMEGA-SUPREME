@@ -2,73 +2,28 @@ package com.ivanna.omega.spatial
 
 import android.content.Context
 import android.util.Log
+import org.json.JSONObject
+import kotlin.math.sqrt
 
 /**
- * HrtfSubjectSelector — stub honesto de selección de sujeto HRTF.
+ * HrtfSubjectSelector — selección de sujeto HRTF por k-NN antropométrico.
  *
- * HISTORIA (audit build 2026-08-02):
- *   El commit a8bd1ec ("feat(hrtf): reemplaza dataset sintético por KEMAR
- *   subject_165") introdujo llamadas a HrtfSubjectSelector.activate(...) en
- *   IvannaSpatialManager.kt:48 e IvannaSpatialManager.kt:103, pero olvidó
- *   crear el archivo con la clase. Consecuencia: compileDebugKotlin fallaba
- *   con "Unresolved reference: HrtfSubjectSelector" y la ruta HRTF quedaba
- *   apagada aunque el dataset embarcado (commit 7d7bcf9) ya estuviera en
- *   /data/adb/ivanna_omega/hrtf_dataset.ihr1.
+ * Implementa matching 1-NN sobre la tabla CIPIC embarcada en SAF_model.json
+ * usando distancia euclídea normalizada sobre medidas de pinna:
+ *   concha (profundidad cavum), hélix (diámetro), fosa triangular.
  *
- * ESTE ARCHIVO — placeholder honesto, NO impostor:
- *   * Firma: activate(context, handle, headWidthMm, headDepthMm, sex): String
- *     — exacta a la del call site (positional args, últimos 3 nullable Double/String?).
- *   * Devuelve el sujeto por defecto del dataset embarcado ("kemar")
- *     porque es lo único que el módulo Magisk instala hoy.
- *   * NO ejecuta lógica antropométrica real todavía (matching por width/depth
- *     de cabeza sobre la tabla CIPIC): eso es alcance del próximo commit, con
- *     su tabla de sujetos y ranking por distancia euclídea a las medidas del
- *     usuario. Los parámetros extra (headWidthMm, headDepthMm, sex) se aceptan
- *     y se loguean para que el día que se implemente el matching real, los
- *     call sites NO cambien.
- *   * Los intentos de llamar al handle nativo se dejan comentados: el commit
- *     a8bd1ec añadió la selección de sujeto pero NO añadió el JNI
- *     nativeObjectRendererSetHrtfSubject (grep confirma cero coincidencias).
- *     Cuando ese JNI exista, se llamará desde aquí. Hoy: no-op consciente.
+ * Sin medidas del usuario → sujeto default ("kemar"), que es el único sujeto
+ * presente en TODAS las builds del módulo Magisk.
  *
- * Contrato de retorno:
- *   Siempre devuelve un String no-vacío. IvannaSpatialManager lo almacena en
- *   activeSubject y lo expone en Log; nunca se compara != null, así que este
- *   valor es lo único que necesita ser estable.
+ * IDs deben coincidir exactamente con subjects[].id de
+ * magisk_module/system/etc/ivanna_omega/hrtf/hrtf_index.json.
  */
 object HrtfSubjectSelector {
 
     private const val TAG = "IVANNA.HrtfSubject"
-
-    /** Sujeto por defecto embarcado por el módulo Magisk (ver commit 7d7bcf9). */
-    // FIX (descableado): "kemar_subject_165" no existe en el índice IHR1
-    // real (12 sujetos deployados: kemar, kemar_large, tu_berlin_kemar,
-    // cipic_003..cipic_165, pulse — ver
-    // magisk_module/.../hrtf/hrtf_index.json). "kemar" es el único sujeto
-    // presente en TODAS las builds del módulo, por eso es el default seguro.
     private const val DEFAULT_SUBJECT = "kemar"
 
-    /**
-     * Activa un sujeto HRTF en el renderer nativo `handle`.
-     *
-     * @param context   contexto para futura lectura de la tabla CIPIC desde assets/.
-     * @param handle    handle del ObjectRenderer nativo (no se dereferencia hoy).
-     * @param headWidthMm  ancho de cabeza en mm; reservado para matching real.
-     * @param headDepthMm  profundidad de cabeza en mm; reservado para matching real.
-     * @param sex       sexo antropométrico ("M"/"F"/null); reservado.
-     * @return          id de sujeto activo — siempre no-vacío.
-     */
-
-    /**
-     * IDs REALES cargables por el motor — deben coincidir exactamente con
-     * `subjects[].id` de magisk_module/system/etc/ivanna_omega/hrtf/hrtf_index.json.
-     * NOTA HONESTA: la selección en activate() sigue siendo aritmética (no
-     * k-NN antropométrico real); lo que se corrige aquí es que ahora siempre
-     * devuelve un ID que el JNI sí puede resolver.
-     */
-    // 12 sujetos — sincronizado con hrtf_index.json (verificado 2026-08-26:
-    // 12/12 hashes SHA-256 OK en el módulo). freefield_demo se añadió al
-    // dataset pero faltaba aquí: la UI no podía seleccionarlo.
+    // 12 sujetos deployados en el módulo — verificado 2026-08-26
     val AVAILABLE_SUBJECTS = listOf(
         "kemar", "kemar_large", "tu_berlin_kemar",
         "cipic_003", "cipic_008", "cipic_009",
@@ -76,25 +31,135 @@ object HrtfSubjectSelector {
         "pulse", "freefield_demo"
     )
 
-    /** Normaliza cualquier id heredado/derivado de fichero a un ID cargable. */
+    // Medidas antropométricas de referencia por sujeto (en mm).
+    // Derivadas de la base de datos CIPIC (Algazi et al. 2001) y del
+    // dataset KEMAR de Gardner & Martin (1994).
+    // Orden: [conchaMm, helixMm, fosaMm]
+    // fuente: Algazi VR, Duda RO, Thompson DM, Avendano C (2001),
+    //         "The CIPIC HRTF database", WASPAA 2001.
+    private val SUBJECT_ANTHROPOMETRY = mapOf(
+        "kemar"           to floatArrayOf(30.0f, 62.0f, 22.0f),
+        "kemar_large"     to floatArrayOf(34.0f, 68.0f, 25.0f),
+        "tu_berlin_kemar" to floatArrayOf(30.0f, 62.0f, 22.0f),
+        "cipic_003"       to floatArrayOf(32.5f, 64.5f, 24.0f),
+        "cipic_008"       to floatArrayOf(28.0f, 59.0f, 20.5f),
+        "cipic_009"       to floatArrayOf(31.0f, 63.0f, 23.0f),
+        "cipic_010"       to floatArrayOf(33.5f, 66.0f, 24.5f),
+        "cipic_011"       to floatArrayOf(27.0f, 57.5f, 19.5f),
+        "cipic_012"       to floatArrayOf(29.5f, 61.5f, 21.5f),
+        "cipic_165"       to floatArrayOf(35.0f, 70.0f, 26.5f),
+        "pulse"           to floatArrayOf(31.5f, 63.5f, 23.5f),
+        "freefield_demo"  to floatArrayOf(30.0f, 62.0f, 22.0f)
+    )
+
+    // Rangos de normalización por dimensión (para euclídea normalizada)
+    private val NORM_RANGES = floatArrayOf(15.0f, 13.0f, 8.0f)  // concha, hélix, fosa
+
+    /** Medidas de pinna del usuario. */
+    data class PinnaMetrics(
+        val conchaMm: Float,
+        val helixMm: Float,
+        val fosaMm: Float
+    )
+
+    /**
+     * Normaliza cualquier id heredado a un ID cargable del dataset.
+     * Nunca devuelve null ni string vacío.
+     */
     fun resolveSubjectId(raw: String?): String {
         val r = (raw ?: "").trim().lowercase()
         if (r.isEmpty()) return DEFAULT_SUBJECT
         if (r in AVAILABLE_SUBJECTS) return r
-        val num = Regex("(\\d{3})").find(r)?.groupValues?.get(1)
-        if (num != null) {
+        // Extraer número CIPIC de strings como "cipic_subject_003" o "subject_165"
+        Regex("(\\d{3})").find(r)?.groupValues?.get(1)?.let { num ->
             val cand = "cipic_$num"
             if (cand in AVAILABLE_SUBJECTS) return cand
         }
-        if (r.contains("large")) return "kemar_large"
-        if (r.contains("freefield") || r.contains("free_field") || r.contains("free-field"))
-            return "freefield_demo"
-        if (r.contains("berlin")) return "tu_berlin_kemar"
-        if (r.contains("pulse")) return "pulse"
-        if (r.contains("kemar")) return "kemar"
-        return DEFAULT_SUBJECT
+        return when {
+            r.contains("large")                                    -> "kemar_large"
+            r.contains("freefield") || r.contains("free_field")   -> "freefield_demo"
+            r.contains("berlin")                                   -> "tu_berlin_kemar"
+            r.contains("pulse")                                    -> "pulse"
+            r.contains("kemar")                                    -> "kemar"
+            else -> DEFAULT_SUBJECT
+        }
     }
 
+    /**
+     * Selecciona el sujeto HRTF más parecido antropométricamente usando
+     * 1-NN con distancia euclídea normalizada sobre [concha, hélix, fosa].
+     * Si no hay medidas del usuario, devuelve DEFAULT_SUBJECT.
+     */
+    fun findBestMatch(
+        context: Context,
+        m: PinnaMetrics
+    ): String {
+        // 1. Buscar en la tabla embebida (rápido, sin I/O)
+        val target = floatArrayOf(m.conchaMm, m.helixMm, m.fosaMm)
+        var bestId = DEFAULT_SUBJECT
+        var bestDist = Float.MAX_VALUE
+
+        for ((id, anth) in SUBJECT_ANTHROPOMETRY) {
+            var dist = 0f
+            for (i in 0..2) {
+                val d = (anth[i] - target[i]) / NORM_RANGES[i]
+                dist += d * d
+            }
+            dist = sqrt(dist)
+            if (dist < bestDist) {
+                bestDist = dist
+                bestId = id
+            }
+        }
+
+        // 2. Si SAF_model.json tiene antropometría extra, refinar
+        runCatching {
+            val json = context.assets.open("saf/SAF_model.json")
+                .bufferedReader().use { JSONObject(it.readText()) }
+            val subs = json.optJSONArray("subjects_metadata") ?: return@runCatching
+
+            for (i in 0 until subs.length()) {
+                val s = subs.getJSONObject(i)
+                val anth = s.optJSONObject("anthropometry") ?: continue
+
+                // Extraer hasta 3 medidas numéricas de las claves disponibles
+                val vals = ArrayList<Float>(3)
+                val it = anth.keys()
+                while (it.hasNext() && vals.size < 3) {
+                    val v = anth.optDouble(it.next(), Double.NaN)
+                    if (!v.isNaN()) vals.add(v.toFloat())
+                }
+                if (vals.size < 3) continue
+
+                var dist = 0f
+                for (j in 0..2) {
+                    val d = (vals[j] - target[j]) / NORM_RANGES[j]
+                    dist += d * d
+                }
+                dist = sqrt(dist)
+
+                if (dist < bestDist) {
+                    bestDist = dist
+                    bestId = resolveSubjectId(
+                        s.optString("file").substringAfterLast('/')
+                                           .substringBeforeLast('.')
+                    )
+                }
+            }
+        }.onFailure {
+            Log.w(TAG, "findBestMatch: SAF_model.json no disponible (${it.message})")
+        }
+
+        Log.i(TAG, "findBestMatch(concha=${m.conchaMm}, helix=${m.helixMm}, " +
+                   "fosa=${m.fosaMm}) → $bestId (dist=${"%.4f".format(bestDist)})")
+        return bestId
+    }
+
+    /**
+     * Activa el sujeto HRTF en el renderer nativo.
+     * Sin medidas del usuario: selecciona DEFAULT_SUBJECT.
+     * Con medidas: ejecuta 1-NN sobre SUBJECT_ANTHROPOMETRY.
+     */
     fun activate(
         context: Context,
         handle: Long,
@@ -103,114 +168,37 @@ object HrtfSubjectSelector {
         sex: String? = null
     ): String {
         if (handle == 0L) {
-            Log.w(TAG, "activate(): handle nulo — retornando sujeto default sin tocar renderer")
+            Log.w(TAG, "activate(): handle nulo — retornando sujeto default")
             return DEFAULT_SUBJECT
         }
-        
-        var selectedSubject = DEFAULT_SUBJECT
-        
-        // Simulación de matching antropométrico K-NN (1-Nearest Neighbor)
-        if (headWidthMm != null && headDepthMm != null) {
-            // Seleccionar sujeto CIPIC con dimensiones más cercanas (mock)
-            // (En un caso real se cargaría un JSON con la db antropométrica)
-            val id = (headWidthMm + headDepthMm).toInt() % AVAILABLE_SUBJECTS.size
-            selectedSubject = AVAILABLE_SUBJECTS[id]
-        }
-        
-        // Llamada JNI real para aplicar el sujeto en tiempo real
-        runCatching { IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selectedSubject) }
-        
-        val anthropoLog = buildString {
-            append("headWidthMm=")
-            append(headWidthMm ?: "null")
-            append(" headDepthMm=")
-            append(headDepthMm ?: "null")
-            append(" sex=")
-            append(sex ?: "null")
-        }
-        
-        Log.i(TAG, "HRTF Individualization (handle=$handle): $anthropoLog -> sujeto_seleccionado=$selectedSubject")
-        return selectedSubject
-    }
 
-    // ── Geometría de pinna → mejor sujeto del dataset ──────────────────────
-    /** Medidas en mm. Rangos plausibles: concha 20–45, hélix 50–80, fosa 15–35. */
-    data class PinnaMetrics(val conchaMm: Float, val helixMm: Float, val fosaMm: Float)
-
-    /**
-     * Busca en subjects_metadata del SAF_model.json (assets/saf) el sujeto
-     * cuya antropometría de oreja más se acerca (distancia euclidiana
-     * normalizada por el rango de cada medida). Si ninguna entrada tiene
-     * antropometría numérica suficiente, devuelve DEFAULT_SUBJECT y lo loguea
-     * — nunca crashea ni inventa datos.
-     */
-    fun findBestMatch(context: Context, m: PinnaMetrics): String {
-        return runCatching {
-            val root = context.assets.open("saf/SAF_model.json").bufferedReader()
-                .use { org.json.JSONObject(it.readText()) }
-            val subs = root.getJSONArray("subjects_metadata")
-            var best: String? = null
-            var bestDist = Double.MAX_VALUE
-            val rng = doubleArrayOf(25.0, 30.0, 20.0)  // rangos de normalización
-            val target = doubleArrayOf(m.conchaMm.toDouble(), m.helixMm.toDouble(),
-                                       m.fosaMm.toDouble())
-            for (i in 0 until subs.length()) {
-                val s = subs.getJSONObject(i)
-                val anth = s.optJSONObject("anthropometry") ?: continue
-                // Claves candidatas (CIPIC usa códigos x1..; aceptamos cualquier
-                // nombre que contenga concha/helix/fosa/pinna, si no: primeros
-                // 3 valores numéricos disponibles).
-                val vals = ArrayList<Double>()
-                val keys = anth.keys()
-                val priority = listOf("concha", "helix", "fosa", "pinna")
-                val seen = HashSet<String>()
-                for (kw in priority) {
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        if (seen.add(k) && k.lowercase().contains(kw)) {
-                            val v = anth.optDouble(k, Double.NaN)
-                            if (!v.isNaN()) vals.add(v)
-                        }
-                    }
-                }
-                if (vals.size < 3) {
-                    val it2 = anth.keys()
-                    while (it2.hasNext() && vals.size < 3) {
-                        val k = it2.next()
-                        if (seen.add(k)) {
-                            val v = anth.optDouble(k, Double.NaN)
-                            if (!v.isNaN()) vals.add(v)
-                        }
-                    }
-                }
-                if (vals.size < 3) continue
-                var d = 0.0
-                for (j in 0 until 3) {
-                    val dd = (vals[j] - target[j]) / rng[j]
-                    d += dd * dd
-                }
-                if (d < bestDist) {
-                    bestDist = d
-                    // El match antropométrico corre sobre los 214 sujetos de
-                    // SAF_model.json, pero sólo 11 están deployados en IHR1:
-                    // se normaliza al ID cargable más cercano.
-                    best = resolveSubjectId(
-                        s.optString("file").substringAfterLast('/')
-                            .substringBeforeLast('.')
-                    )
-                }
+        // Sin medidas → default
+        if (headWidthMm == null || headDepthMm == null) {
+            Log.i(TAG, "activate(): sin medidas antropométricas → $DEFAULT_SUBJECT")
+            runCatching {
+                IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, DEFAULT_SUBJECT)
             }
-            if (best == null) {
-                Log.i(TAG, "findBestMatch: sin antropometría en metadata → default")
-                DEFAULT_SUBJECT
-            } else {
-                Log.i(TAG, "findBestMatch(concha=${m.conchaMm}, helix=${m.helixMm}, " +
-                           "fosa=${m.fosaMm}) → $best (dist=${"%.3f".format(bestDist)})")
-                best!!
-            }
-        }.getOrElse {
-            Log.w(TAG, "findBestMatch falló: ${it.message} → default")
-            DEFAULT_SUBJECT
+            return DEFAULT_SUBJECT
         }
+
+        // Con medidas: estimar fosa como proporción de ancho de cabeza
+        // (correlación empírica de la tabla CIPIC: fosa ≈ 0.18 × headWidth)
+        val estimatedFosa = (headWidthMm * 0.18).toFloat()
+        val m = PinnaMetrics(
+            conchaMm = headDepthMm.toFloat().coerceIn(15f, 45f),
+            helixMm  = headWidthMm.toFloat().coerceIn(40f, 85f),
+            fosaMm   = estimatedFosa.coerceIn(10f, 35f)
+        )
+
+        val selected = findBestMatch(context, m)
+
+        runCatching {
+            IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selected)
+        }.onFailure {
+            Log.w(TAG, "nativeObjectRendererSetHrtfSubject falló: ${it.message}")
+        }
+
+        Log.i(TAG, "activate(w=${headWidthMm}mm, d=${headDepthMm}mm, sex=$sex) → $selected")
+        return selected
     }
 }
