@@ -245,7 +245,7 @@ private fun HumanAuditoryPanel(snapshot: PerceptualSnapshot) {
             Spacer(Modifier.height(10.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextValueItem(label = "ISO 226 Loudness", value = "%.1f dBSPL".format(snapshot.iso226LoudnessDb))
+                TextValueItem(label = "ISO 226 Loudness", value = "%.1f LUFS".format(snapshot.iso226LoudnessDb))
                 TextValueItem(label = "Bark Bands", value = "${snapshot.barkBandsCount} Bands")
                 TextValueItem(label = "Mel Bands", value = "${snapshot.melBandsCount} Bands")
             }
