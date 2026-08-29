@@ -35,43 +35,167 @@ class PsychoacousticAnalyzer {
         7000f, 8500f, 10500f, 13500f
     )
 
+    // ── Espectro real (2026-08-29) ──────────────────────────────────────────
+    // Antes el "espectro Bark" se FABRICABA: meanEnergy × (1 + 0.3·sin(b·0.5))
+    // — una ondulación sinusoidal fija, idéntica para cualquier audio. El
+    // enmascaramiento, el brillo, el tilt y en cascada la emoción, la fatiga
+    // y las decisiones DSP operaban sobre un patrón decorativo, no sobre la
+    // música. Ahora: FFT radix-2 de 1024 puntos sobre el bloque real y
+    // agregación de bins por banda crítica (bordes = punto medio geométrico
+    // entre centros Bark). Normalización por Parseval: la energía de banda
+    // queda en la misma escala que la energía media temporal (un seno full
+    // scale centrado en banda da -3.01 dB, igual que antes).
+    private val fftN = 1024
+    private val fftRe = FloatArray(fftN)
+    private val fftIm = FloatArray(fftN)
+    private val hann = FloatArray(fftN) { i ->
+        (0.5 - 0.5 * cos(2.0 * PI * i / (fftN - 1))).toFloat()
+    }
+    // Bordes de banda (25 bordes para 24 bandas), punto medio geométrico
+    private val barkEdges = FloatArray(25).also { e ->
+        e[0] = 20f
+        for (b in 1 until 24) e[b] = sqrt(barkCenterFreqs[b - 1] * barkCenterFreqs[b])
+        e[24] = 18000f
+    }
+
+    // K-weighting aproximado para LUFS (BS.1770): pre-filtro high-shelf
+    // (+4 dB sobre ~1.68 kHz) + high-pass RLB (~38 Hz). Primer orden — no es
+    // el biquad exacto de la norma (ese vive en el LoudnessMeter C++), pero
+    // captura el énfasis de agudos que la energía cruda ignoraba: dos
+    // señales con igual RMS pero distinto contenido espectral ya no miden
+    // el mismo loudness. Estado persistente entre llamadas (filtro IIR).
+    private var kHpX1 = 0f; private var kHpY1 = 0f     // RLB high-pass 38 Hz
+    private var kHsX1 = 0f; private var kHsY1 = 0f     // high-shelf: extracción de agudos 1.68 kHz
+    private var kFiltersSr = 0
+    private var kHpA = 0f; private var kHsA = 0f
+
+    private fun ensureKWeighting(sr: Int) {
+        if (sr == kFiltersSr) return
+        kFiltersSr = sr
+        val dt = 1.0 / sr
+        val rcHp = 1.0 / (2.0 * PI * 38.0)     // RLB high-pass
+        kHpA = (rcHp / (rcHp + dt)).toFloat()
+        val rcHs = 1.0 / (2.0 * PI * 1680.0)   // corte del shelf
+        kHsA = (rcHs / (rcHs + dt)).toFloat()
+        kHpX1 = 0f; kHpY1 = 0f; kHsX1 = 0f; kHsY1 = 0f
+    }
+
+    // Filtro K-weighting por muestra: HP 38 Hz, luego shelf +4 dB de agudos.
+    private fun kWeight(x: Float): Float {
+        val hp = kHpA * (kHpY1 + x - kHpX1)
+        kHpX1 = x; kHpY1 = hp
+        val high = kHsA * (kHsY1 + hp - kHsX1)
+        kHsX1 = hp; kHsY1 = high
+        return hp + 0.585f * high   // +4 dB shelf ≈ factor (10^(4/20)-1)
+    }
+
+    private fun fftInPlace(re: FloatArray, im: FloatArray) {
+        val n = re.size
+        var j = 0
+        for (i in 1 until n) {
+            var bit = n shr 1
+            while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
+            j = j xor bit
+            if (i < j) {
+                val tr = re[i]; re[i] = re[j]; re[j] = tr
+                val ti = im[i]; im[i] = im[j]; im[j] = ti
+            }
+        }
+        var len = 2
+        while (len <= n) {
+            val ang = -2.0 * PI / len
+            val wRe = cos(ang).toFloat(); val wIm = sin(ang).toFloat()
+            var i = 0
+            while (i < n) {
+                var cRe = 1f; var cIm = 0f
+                val half = len / 2
+                for (k in 0 until half) {
+                    val uRe = re[i + k]; val uIm = im[i + k]
+                    val vRe = re[i + k + half] * cRe - im[i + k + half] * cIm
+                    val vIm = re[i + k + half] * cIm + im[i + k + half] * cRe
+                    re[i + k] = uRe + vRe; im[i + k] = uIm + vIm
+                    re[i + k + half] = uRe - vRe; im[i + k + half] = uIm - vIm
+                    val nr = cRe * wRe - cIm * wIm; cIm = cRe * wIm + cIm * wRe; cRe = nr
+                }
+                i += len
+            }
+            len = len shl 1
+        }
+    }
+
     fun analyze(pcmBuffer: FloatArray, sampleRate: Int): PsychoacousticAnalysis {
         val numSamples = pcmBuffer.size
         if (numSamples == 0) {
             return PsychoacousticAnalysis(-70f, FloatArray(24), FloatArray(24), FloatArray(24), 0f, 0f)
         }
+        ensureKWeighting(sampleRate)
 
-        // 1. ITU-R BS.1770 K-Weighting Energy Estimation
+        // 1. ITU-R BS.1770 K-weighted energy (filtro K-weighting + energía)
         var sumEnergy = 0.0
         for (i in 0 until numSamples) {
-            val sample = pcmBuffer[i]
-            sumEnergy += (sample * sample).toDouble()
+            val s = kWeight(pcmBuffer[i])
+            sumEnergy += (s * s).toDouble()
         }
         val meanEnergy = (sumEnergy / numSamples).coerceAtLeast(1e-12)
         val lufs = (-0.691 + 10.0 * log10(meanEnergy)).toFloat().coerceIn(-80.0f, 0.0f)
 
-        // 2. 24 Bark Critical Band Energy Calculation
-        val barkEnergies = FloatArray(24)
-        val maskingThresholds = FloatArray(24)
-        val iso226Curve = FloatArray(24)
+        // 2. Espectro real → 24 bandas críticas Bark
+        //    Ventana Hann sobre los primeros fftN samples (zero-pad si el
+        //    bloque es más corto); la energía por banda usa Parseval con el
+        //    espectro single-sided (×2 los bins interiores).
+        for (i in 0 until fftN) {
+            fftRe[i] = (if (i < numSamples) pcmBuffer[i] else 0f) * hann[i]
+            fftIm[i] = 0f
+        }
+        fftInPlace(fftRe, fftIm)
 
+        val barkEnergies = FloatArray(24)
+        val iso226Curve = FloatArray(24)
+        val binHz = sampleRate.toFloat() / fftN
+        val invN2 = 1.0 / (fftN.toDouble() * fftN.toDouble())
+        // Compensación de la ventana Hann (potencia ×2.63 coherente-gain)
+        val winComp = 2.63
+        var k = 1  // bin 0 (DC) excluido del reparto por bandas
         for (b in 0 until 24) {
+            val fHi = min(barkEdges[b + 1], sampleRate * 0.5f)
+            var power = 0.0
+            while (k <= fftN / 2 - 1 && k * binHz < fHi) {
+                val p = (fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k]).toDouble()
+                power += 2.0 * p   // single-sided
+                k++
+            }
+            if (k >= fftN / 2) k = fftN / 2 - 1  // no desbordar en SR bajas
+            val meanSqBand = power * invN2 * winComp
+            barkEnergies[b] = (10.0 * log10(max(meanSqBand, 1e-12))).toFloat()
+
             val f = barkCenterFreqs[b]
-            // ISO 226:2003 Equal Loudness Approximation @ 60 Phon
             val isoDb = 3.64 * (f / 1000.0).pow(-0.8) - 6.5 * exp(-0.6 * (f / 1000.0 - 3.3).pow(2.0)) + 10.0.pow(-3.0) * (f / 1000.0).pow(4.0)
             iso226Curve[b] = isoDb.toFloat()
-
-            // Energy distribution simulation across Bark scale
-            val simEnergy = (meanEnergy * (1.0 + 0.3 * sin(b.toDouble() * 0.5))).toFloat()
-            barkEnergies[b] = 10.0f * log10(simEnergy.coerceAtLeast(1e-6f))
-
-            // Psychoacoustic masking threshold calculation
-            maskingThresholds[b] = barkEnergies[b] - (15.0f + b * 0.5f)
         }
 
-        // 3. Dynamic Range & Spectral Tilt
+        // 3. Umbrales de enmascaramiento reales: función de dispersión
+        //    (spreading function) entre bandas Bark — una banda fuerte
+        //    enmascara a sus vecinas con atenuación creciente por distancia
+        //    (25 dB/Bark hacia abajo, 15 dB/Bark hacia arriba, aprox. de
+        //    Schroeder). Antes: energía propia − (15 + 0.5·b), que ignoraba
+        //    por completo a las bandas vecinas.
+        val maskingThresholds = FloatArray(24)
+        for (b in 0 until 24) {
+            var th = -80f  // piso absoluto
+            for (bp in 0 until 24) {
+                val dz = b - bp
+                val atten = if (dz >= 0) 25f * dz else 15f * (-dz)
+                val cand = barkEnergies[bp] - atten
+                if (cand > th) th = cand
+            }
+            maskingThresholds[b] = th - 3f  // offset conservador de excitación→umbral
+        }
+
+        // 4. Dynamic Range & Spectral Tilt (sobre el espectro real)
         val peak = pcmBuffer.maxOf { abs(it) }.coerceAtLeast(1e-6f)
-        val rms = sqrt(meanEnergy).toFloat()
+        var sumRaw = 0.0
+        for (i in 0 until numSamples) { val s = pcmBuffer[i]; sumRaw += (s * s).toDouble() }
+        val rms = sqrt((sumRaw / numSamples).coerceAtLeast(1e-12)).toFloat()
         val dynamicRange = 20.0f * log10(peak / rms)
         val spectralTilt = barkEnergies[23] - barkEnergies[0]
 
