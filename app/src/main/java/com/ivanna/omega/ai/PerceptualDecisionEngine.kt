@@ -19,12 +19,20 @@ class PerceptualDecisionEngine {
     fun evaluate(snapshot: PerceptualSnapshot): DSPDecision {
         val fatigueFactor = snapshot.fatigue.coerceIn(0f, 1f)
         val immersionFactor = snapshot.immersion.coerceIn(0f, 1f)
-        val loudnessIso226 = snapshot.iso226LoudnessDb
+        // FIX (2026-08-29, escala de unidades): iso226LoudnessDb tenía DOS
+        // escalas incompatibles según el productor — PerceptualCortex lo
+        // alimenta con LUFS reales (BS.1770, negativo, ~-60..0) y
+        // PerceptualBrainEngine con pseudo-dBSPL positivo (80+rms*20).
+        // Las fórmulas de abajo estaban calibradas para dBSPL (-84f,
+        // coerceIn(0f,100f)) y con LUFS producían absurdos: envNoise=0 y
+        // targetLoudness pegado al máximo -8 LUFS → el motor siempre subía
+        // el volumen. El contrato queda normalizado a LUFS (la medición
+        // real del pipeline); ver PerceptualBrainEngine/PerceptualCortex.
+        val loudnessLufs = snapshot.iso226LoudnessDb.coerceIn(-70f, 0f)
         val maskingEff = snapshot.maskingEfficiency
         val dynRange = snapshot.dynamicRangeDb
         val confidence = snapshot.convNextConfidence.coerceIn(0f, 1f)
         val mood = snapshot.emotion.coerceIn(0f, 1f)
-        val envNoise = snapshot.iso226LoudnessDb.coerceIn(0f, 100f)
         // Duración real de la sesión en minutos — contribuye a la fatiga temporal.
         // El modelo de fatiga ITU-R BS.1770 considera que la fatiga auditiva
         // crece con el tiempo de exposición continua a niveles altos.
@@ -43,9 +51,13 @@ class PerceptualDecisionEngine {
         // HRTF Spatial Width
         val spatialWidth = (immersionFactor * currentProfile.spatialPreference * (1.0f - fatigueWeight * 0.25f)).coerceIn(0.5f, 2.0f)
         
-        // Environment Noise & ISO 226 Loudness target (LUFS)
-        val noiseBoost = (envNoise - 40f).coerceAtLeast(0f) * 0.1f
-        val targetLoudness = (currentProfile.preferredLoudnessTarget + (loudnessIso226 - 84f) * 0.08f + maskingEff * 1.5f + noiseBoost).coerceIn(-24.0f, -8.0f)
+        // Environment Noise & ISO 226 Loudness target (LUFS).
+        // loudnessLufs: nivel integrado real del contenido (BS.1770).
+        // Referencia de programa musical típico ≈ -20 LUFS: por encima hay
+        // margen para subir, por debajo el contenido ya es ruidoso y el
+        // target baja para no amplificar un programa ya caliente.
+        val loudnessHeadroom = (-20f - loudnessLufs) * 0.08f   // >0 si el contenido está por debajo de -20
+        val targetLoudness = (currentProfile.preferredLoudnessTarget + loudnessHeadroom + maskingEff * 1.5f).coerceIn(-24.0f, -8.0f)
         
         val moodColoration = (mood * 0.5f + (1f - fatigueWeight) * 0.5f).coerceIn(0f, 1f)
         val harmonicGain = ((1.0f - exciterRed) * (1.0f + currentProfile.treblePreferenceDb * 0.05f)).coerceIn(0.2f, 1.5f)
