@@ -74,6 +74,26 @@ if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
     cd "$MODPATH"
 fi
 
+
+# ── SOFA dataset deployment ───────────────────────────────────────────────────
+# FIX (v2.3.0): los archivos SOFA viven en system/etc/ivanna_omega/sofa/ como
+# overlay del sistema pero audioserver (proceso separado de la app) no siempre
+# puede leerlos por SELinux + DAC desde el overlay. Se despliegan también a
+# /data/adb/ivanna_omega/sofa/ con permisos 0644, igual que HRTF e RIR.
+# Incluye: 7 HRTF FreeField, 3 HRTF CIPIC, 14 HpIR (ecualizacion auricular).
+ui_print "- Deploying SOFA dataset (FreeField + HpIR)..."
+SOFA_SRC="$MODPATH/system/etc/ivanna_omega/sofa"
+SOFA_DEST="$SAF_DIR/sofa"
+if [ -d "$SOFA_SRC" ] && ls "$SOFA_SRC"/*.sofa >/dev/null 2>&1; then
+    mkdir -p "$SOFA_DEST"
+    cp -f "$SOFA_SRC"/*.sofa "$SOFA_DEST/" 2>/dev/null
+    set_perm_recursive "$SOFA_DEST" root root 0755 0644
+    SOFA_COUNT=$(ls "$SOFA_DEST"/*.sofa 2>/dev/null | wc -l)
+    ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69)"
+else
+    ui_print "  ! SOFA dataset no encontrado en $SOFA_SRC — HRTF usará solo datasets IHR1"
+fi
+
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
 
