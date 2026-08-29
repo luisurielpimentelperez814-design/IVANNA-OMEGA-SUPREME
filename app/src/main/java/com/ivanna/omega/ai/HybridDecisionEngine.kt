@@ -14,24 +14,44 @@ enum class SpatialMode {
 
 class QLearningAgent {
 
-    private val qTable = Array(6) { FloatArray(5) { 0.0f } }
+    // FIX (2026-08-29, agente roto):
+    //  a) El bootstrap usaba el Q ACTUAL como si fuera max Q(s',·) —
+    //     Q+α(r+γQ−Q) no es Q-learning, es un filtro con auto-decaimiento.
+    //     Los callers no proveen estado siguiente, así que el modelo honesto
+    //     es bandido contextual: Q(s,a) += α·(r − Q(s,a)).
+    //  b) fatigueBucket se calculaba en el engine pero NUNCA indexaba la
+    //     tabla — la mitad del estado se descartaba. Ahora el estado es
+    //     (emoción × fatiga) = 6×5 = 30 contextos.
+    //  c) Argmax puro con tabla a ceros = acción 0 para siempre; jamás se
+    //     exploraban las acciones 1-4. Ahora ε-greedy (ε = 10%).
+    private val numEmotions = 6
+    private val numFatigueBuckets = 5
+    private val numActions = 5
+    private val qTable = Array(numEmotions * numFatigueBuckets) { FloatArray(numActions) }
     private val learningRate = 0.1f
-    private val discountFactor = 0.9f
+    private val epsilon = 0.10f
+
+    private fun stateIdx(emotion: EmotionalState, fatigueBucket: Int): Int {
+        val fb = fatigueBucket.coerceIn(0, numFatigueBuckets - 1)
+        return emotion.ordinal * numFatigueBuckets + fb
+    }
 
     fun selectAction(emotion: EmotionalState, fatigueBucket: Int): Int {
-        val emotionIdx = emotion.ordinal
-        val actions = qTable[emotionIdx]
+        val actions = qTable[stateIdx(emotion, fatigueBucket)]
+
+        // ε-greedy: explorar una acción uniforme al azar con prob. ε
+        if (kotlin.random.Random.nextFloat() < epsilon) {
+            return kotlin.random.Random.nextInt(numActions)
+        }
 
         var maxAction = 0
         var maxQ = actions[0]
-
         for (i in 1 until actions.size) {
             if (actions[i] > maxQ) {
                 maxQ = actions[i]
                 maxAction = i
             }
         }
-
         return maxAction
     }
 
@@ -41,13 +61,13 @@ class QLearningAgent {
         action: Int,
         reward: Float
     ) {
-        val eIdx = emotion.ordinal
-        val currentQ = qTable[eIdx][action]
-
-        val newQ =
-            currentQ + learningRate * (reward + discountFactor * currentQ - currentQ)
-
-        qTable[eIdx][action] = newQ
+        if (action < 0 || action >= numActions) return
+        val s = stateIdx(emotion, fatigueBucket)
+        val currentQ = qTable[s][action]
+        // Bandido contextual: recompensa inmediata como target (sin bootstrap
+        // falso). Converge al valor esperado de la recompensa del usuario
+        // para esa acción en ese contexto (emoción, fatiga).
+        qTable[s][action] = currentQ + learningRate * (reward - currentQ)
     }
 }
 
