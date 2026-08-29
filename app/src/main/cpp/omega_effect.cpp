@@ -349,6 +349,15 @@ static void omega_rir_worker_loop() {
         int sr = 0;
         const bool ok = ds->loadImpulseResponse((size_t)idx, irL, irR, sr)
                         && !irL.empty();
+        if (ok) {
+            // FIX (2026-08-29): resamplear la IR (16 kHz en disco) a la SR
+            // real de la sesión — sin esto la reverb sonaba comprimida 3×+
+            // y las reflexiones llegaban mal posicionadas (mismo fix Ruta A).
+            const uint32_t srSession = (ctx->config.outputCfg.samplingRate != 0)
+                                     ? ctx->config.outputCfg.samplingRate : 48000u;
+            Ivanna::RirDataset::resampleLinear(irL, sr, (int)srSession);
+            Ivanna::RirDataset::resampleLinear(irR, sr, (int)srSession);
+        }
         lk.lock();
         // Fase rápida CON el mutex: entregar solo si el ctx sigue vivo
         // (release_effect des-registra bajo el mismo mutex -> sin UAF).

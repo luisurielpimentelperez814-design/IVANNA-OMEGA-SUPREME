@@ -295,4 +295,27 @@ bool RirDataset::loadImpulseResponse(size_t idx, std::vector<float>& outL,
     return true;
 }
 
+void RirDataset::resampleLinear(std::vector<float>& channel, int irSr,
+                                int sessionSr) {
+    // No-op: sin datos, SR inválida, o ya a la tasa de sesión.
+    if (channel.empty() || irSr <= 0 || sessionSr <= 0 || irSr == sessionSr)
+        return;
+
+    const double ratio = (double)sessionSr / (double)irSr;   // p.ej. 3.0 (16k→48k)
+    const size_t srcN = channel.size();
+    const size_t dstN = (size_t)((double)srcN * ratio + 0.5);
+    if (dstN < 2) return;
+
+    std::vector<float> out(dstN);
+    const double step = (double)(srcN - 1) / (double)(dstN - 1);
+    for (size_t i = 0; i < dstN; ++i) {
+        const double pos = (double)i * step;
+        const size_t i0 = (size_t)pos;
+        const size_t i1 = (i0 + 1 < srcN) ? i0 + 1 : i0;
+        const float frac = (float)(pos - (double)i0);
+        out[i] = channel[i0] + frac * (channel[i1] - channel[i0]);
+    }
+    channel.swap(out);
+}
+
 } // namespace Ivanna

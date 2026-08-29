@@ -137,6 +137,13 @@ static void rirWorkerLoop() {
         std::vector<float> irL, irR;
         int sr = 0;
         if (ds->loadImpulseResponse((size_t)idx, irL, irR, sr) && !irL.empty()) {
+            // FIX (2026-08-29): las IRs del dataset están a 16 kHz y se
+            // convolucionaban sin remuestrear — a 48k la reverb sonaba 3× más
+            // corta y con reflexiones mal posicionadas; a 96/192/384k peor.
+            // Resampleo lineal a la SR de sesión AQUÍ (hilo worker, no RT).
+            const int sessionSr = (int)g_params.sampleRate;
+            Ivanna::RirDataset::resampleLinear(irL, sr, sessionSr);
+            Ivanna::RirDataset::resampleLinear(irR, sr, sessionSr);
             int irLen = (int)irL.size();
             if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
             conv->load(irL.data(), irR.data(), irLen);

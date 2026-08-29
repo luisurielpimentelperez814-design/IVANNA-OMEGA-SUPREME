@@ -110,6 +110,17 @@ public:
     bool loadImpulseResponse(size_t idx, std::vector<float>& outL,
                               std::vector<float>& outR, int& outSampleRate) const;
 
+    /**
+     * Resampleo lineal de una IR a la sample rate de la sesión.
+     * Los WAV del dataset están a 16 kHz; convolverlos sin remuestrear a una
+     * sesión de 48/96/192/384 kHz dejaba la reverb 3×/6×/12×/24× más corta
+     * (RT60 comprimido) y las reflexiones mal posicionadas en el tiempo.
+     * Interpolación lineal: suficiente para una IR (ruido decorrelado, sin
+     * aliasing audible de imagen), y corre en el hilo de carga (no RT).
+     * No-op si irSr == sessionSr o irSr <= 0.
+     */
+    static void resampleLinear(std::vector<float>& channel, int irSr, int sessionSr);
+
 private:
     std::string dir_;
     std::vector<RirRoomMeta> rooms_;
