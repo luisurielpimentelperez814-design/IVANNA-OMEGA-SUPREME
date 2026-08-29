@@ -562,7 +562,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_comp.setParams(g_params);
     g_exciter.setParams(g_params);
     g_widener.setParams(g_params);
-    g_gain.setParams(g_params);
+    // FIX (headroom EQ en el arranque): nativeInit era el único sitio de los
+    // cuatro que llamaba a g_gain.setParams() SIN restar la compensación de
+    // stack de bandas (nativeSetEQParams ~linea 670, el bloque con mutex
+    // ~linea 714 y nativeInitDirect ~linea 1246 ya lo hacen). Con boosts
+    // grandes (Agudos +8.4 dB + shelf + presencia) el EQ puede apilar >6 dB y
+    // el SafetyLimiter arrancaba trabajando en modo pared desde la primera
+    // muestra — el "truena al aplicar ISO" en cold-start venía de aquí.
+    // Misma forma que los otros sitios: resta temporal, setParams, restaurar.
+    { const float mDb = g_params.master;
+      const float c   = g_eq.getOutputCompensationDb();
+      g_params.master = std::clamp(mDb - c, -60.0f, 6.0f);
+      g_gain.setParams(g_params);
+      g_params.master = mDb; }
     g_pd.init((uint32_t)sr);
     g_pd.start_evo_thread();
     g_loudnessMeter.init((float)sr);
