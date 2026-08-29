@@ -59,26 +59,39 @@ float SafetyLimiter::computeGainForPeak(float peakLin) const {
 }
 
 float SafetyLimiter::limitSample(float x) {
-    // Camino escalar de respaldo (tail). El comportamiento audible vive en
-    // process() (lookahead + release); esto solo garantiza que una muestra
-    // aislada nunca salga del rango [-1, 1].
+    // Camino escalar de respaldo (tail del proceso de bloque). El comportamiento
+    // audible vive en process() (lookahead + release); esto solo garantiza que
+    // una muestra aislada nunca salga del rango [-m_ceiling, m_ceiling].
+    //
+    // FIX: el clamp final era std::clamp(x, -1.0f, 1.0f) en vez de ±m_ceiling.
+    // m_ceiling default = 0.98855 ≈ -0.1 dBFS. La inconsistencia de 0.1 dB
+    // entre process() (que satura con softCeil al ceiling) y limitSample()
+    // (que cortaba a 1.0, 0.1dB más alto) significaba que el path escalar
+    // podía dejar 0.1dB más de señal que el path de bloque — audible como
+    // diferencia de nivel en material con muchos transientes (fade-in, etc.).
     if (!std::isfinite(x)) {
         m_clipCount.fetch_add(1, std::memory_order_relaxed);
         return 0.0f;
     }
-    const float ax = std::fabs(x);
-    if (ax <= m_threshold) return std::clamp(x, -1.0f, 1.0f);
-    const float sign  = x < 0.0f ? -1.0f : 1.0f;
-    float excess = ax - m_threshold;
+    const float ax  = std::fabs(x);
+    // Retorno directo (sin saturación) para señal dentro del threshold.
+    // El clamp a ±1.0 anterior aquí era innecesario — si ax ≤ threshold
+    // (≤ 0.63096 por defecto) no puede exceder ±1.0 de todos modos.
+    if (ax <= m_threshold) return x;
 
-    float limited = m_threshold +
-                    excess / (1.0f + excess * 8.0f);
+    const float sign  = x < 0.0f ? -1.0f : 1.0f;
+    const float excess = ax - m_threshold;
+    float limited = m_threshold + excess / (1.0f + excess * 8.0f);
 
     if (limited > m_ceiling) {
         limited = m_ceiling;
         m_clipCount.fetch_add(1, std::memory_order_relaxed);
     }
-    return std::clamp(sign * limited, -1.0f, 1.0f);
+    // FIX: clamp con m_ceiling, no 1.0f
+    const float out = sign * limited;
+    if (out >  m_ceiling) return  m_ceiling;
+    if (out < -m_ceiling) return -m_ceiling;
+    return out;
 }
 
 void SafetyLimiter::process(float* L, float* R, int frames) {
