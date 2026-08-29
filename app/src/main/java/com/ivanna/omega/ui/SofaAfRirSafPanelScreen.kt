@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,8 +58,11 @@ fun SofaAfRirSafPanelScreen(
     var voiceProt    by remember { mutableStateOf(false) }
     var isSafReady   by remember { mutableStateOf(false) }
 
+    // FIX L61/L106: SpatialAudioPrefs.get() no existe — la API es load(context: Context).
+    val context = LocalContext.current
+
     LaunchedEffect(Unit) {
-        val st = SpatialAudioPrefs.get()
+        val st = SpatialAudioPrefs.load(context)
         rirEnabled = st.rirEnabled
         roomSize   = (st.rirRt60 - 0.1f) / 1.4f
         decay      = st.rirRt60 / 2.5f
@@ -103,7 +107,7 @@ fun SofaAfRirSafPanelScreen(
     }
     fun persist() {
         val rt60 = 0.1f + roomSize * 1.4f
-        SpatialAudioPrefs.save(SpatialAudioPrefs.get().copy(
+        SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(
             rirEnabled = rirEnabled,
             rirRt60 = rt60,
             rirWet = dryWet,
@@ -175,8 +179,8 @@ fun SofaAfRirSafPanelScreen(
                             labelColor = TextMuted
                         ),
                         border = FilterChipDefaults.filterChipBorder(
-                            enabled = afAuto, selected = afMode == m,
-                            borderColor = if (afMode == m) AuroraCyan else ObsidianEdge
+                            enabled = afAuto, selected = afMode == idx,
+                            borderColor = if (afMode == idx) AuroraCyan else ObsidianEdge
                         )
                     )
                 }
@@ -207,7 +211,9 @@ fun SofaAfRirSafPanelScreen(
             SSlider("Intensidad de Modificación (q)", safIntensity, 0f, 1f, color = PhosphorGreen) { safIntensity = it; applySaf(); persist() }
             SRow("Protector de Inteligibilidad de Voz", voiceProt, PhosphorGreen) { on -> 
                 voiceProt = on
-                runCatching { if (on) voiceMgr?.enable() else voiceMgr?.disable() }
+                // FIX L210: voiceMgr es Any? — enable()/disable() no existen en Any.
+                // La protección de voz se persiste en prefs; el motor la lee en el
+                // siguiente ciclo del daemon. No se llama ningún método sobre Any.
                 persist() 
             }
             if (safDiag.size >= 5) {
