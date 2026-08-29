@@ -173,8 +173,7 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
 
     int osIdx = 0;
     for (int i = 0; i < frames; ++i) {
-        float l = left[i];   // ORIGINAL — para el dry path
-        float r = right[i];
+        // dry path usa left[i]/right[i] directamente (evitar variable sin usar)
 
         // OS buffer usa la señal pre-filtrada (≤8kHz) para el softclip
         osLeft_[osIdx]  = preFiltL[i];

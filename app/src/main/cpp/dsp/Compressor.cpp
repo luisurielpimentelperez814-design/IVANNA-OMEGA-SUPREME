@@ -29,7 +29,7 @@ void Compressor::recomputeMakeup() noexcept {
 
     makeupGain_ = std::pow(10.0f, makeupDb_ / 20.0f);
 
-    slope_ = 1.0f - 1.0f / ratio_;
+    // slope_ eliminado del header (era dead state — nunca leído en process())
 }
 
 void Compressor::setParams(const DSPParams& p) {
@@ -49,8 +49,7 @@ void Compressor::setParams(const DSPParams& p) {
 
     recomputeMakeup();
 
-    inv_atk_ = 1.0f - attackCoef_;
-    inv_rel_ = 1.0f - releaseCoef_;
+    // inv_atk_/inv_rel_ eliminados del header (dead state)
 
     runtimeCoef_ = 0.0f;  // forzar recálculo si cambió sr_ (ver process())
 
@@ -91,13 +90,13 @@ void Compressor::setRatio(float ratio) {
 void Compressor::setAttack(float ms) {
     attackCoef_ =
         std::exp(-1.0f / (sr_ * ms * 0.001f));
-    inv_atk_ = 1.0f - attackCoef_;
+    // inv_atk_ eliminado del header
 }
 
 void Compressor::setRelease(float ms) {
     releaseCoef_ =
         std::exp(-1.0f / (sr_ * ms * 0.001f));
-    inv_rel_ = 1.0f - releaseCoef_;
+    // inv_rel_ eliminado del header
 }
 
 
