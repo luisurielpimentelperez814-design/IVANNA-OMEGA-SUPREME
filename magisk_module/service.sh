@@ -107,6 +107,48 @@ else
     echo "[$(date)] WARN: hrtf_dataset.ihr1 NO encontrado en $HRTF_ASSET — HRTF usará fallback sintético" >> "$LOGFILE"
 fi
 
+# ── HRTF multi-subject dataset restore on boot ────────────────────────────────
+# FIX (v2.3.0): service.sh solo restauraba hrtf_dataset.ihr1 (legacy path).
+# Los 12 sujetos reales viven en system/etc/ivanna_omega/hrtf/*.ihr1 y se
+# despliegan en instalación a /data/adb/ivanna_omega/hrtf/. Si ese directorio
+# se borra (limpieza manual, OTA, reset parcial), service.sh no los restauraba.
+# El HRTF engine caía al fallback sintético sin aviso en pantalla ni log.
+HRTF_MODULE_SRC="$MODDIR/system/etc/ivanna_omega/hrtf"
+HRTF_DATA_DEST="/data/adb/ivanna_omega/hrtf"
+if [ -d "$HRTF_MODULE_SRC" ] && [ -f "$HRTF_MODULE_SRC/hrtf_index.json" ]; then
+    HRTF_MISSING=0
+    for F in "$HRTF_MODULE_SRC"/*.ihr1; do
+        BASE=$(basename "$F")
+        [ ! -f "$HRTF_DATA_DEST/$BASE" ] && HRTF_MISSING=1 && break
+    done
+    if [ "$HRTF_MISSING" = "1" ]; then
+        mkdir -p "$HRTF_DATA_DEST"
+        cp -f "$HRTF_MODULE_SRC"/*.ihr1 "$HRTF_MODULE_SRC/hrtf_index.json" "$HRTF_DATA_DEST/" 2>/dev/null
+        chmod 644 "$HRTF_DATA_DEST"/*.ihr1 "$HRTF_DATA_DEST/hrtf_index.json" 2>/dev/null
+        HRTF_N=$(ls "$HRTF_DATA_DEST"/*.ihr1 2>/dev/null | wc -l)
+        echo "[$(date)] HRTF datasets restaurados → $HRTF_DATA_DEST ($HRTF_N sujetos)" >> "$LOGFILE"
+    else
+        echo "[$(date)] HRTF: $( ls "$HRTF_DATA_DEST"/*.ihr1 2>/dev/null | wc -l ) sujetos ya presentes — sin restauración necesaria" >> "$LOGFILE"
+    fi
+else
+    echo "[$(date)] WARN: hrtf src no encontrado en $HRTF_MODULE_SRC" >> "$LOGFILE"
+fi
+
+# ── RIR dataset restore on boot ───────────────────────────────────────────────
+RIR_MODULE_SRC="$MODDIR/system/etc/ivanna_omega/rir"
+RIR_DATA_DEST="/data/adb/ivanna_omega/rir"
+if [ -d "$RIR_MODULE_SRC" ] && [ -f "$RIR_MODULE_SRC/metadata.csv" ]; then
+    RIR_DEST_COUNT=$(ls "$RIR_DATA_DEST"/*.wav 2>/dev/null | wc -l)
+    RIR_SRC_COUNT=$(ls "$RIR_MODULE_SRC"/*.wav 2>/dev/null | wc -l)
+    if [ "$RIR_DEST_COUNT" -lt "$RIR_SRC_COUNT" ]; then
+        mkdir -p "$RIR_DATA_DEST"
+        cp -f "$RIR_MODULE_SRC"/*.wav "$RIR_MODULE_SRC/metadata.csv" "$RIR_DATA_DEST/" 2>/dev/null
+        chmod 644 "$RIR_DATA_DEST"/*.wav "$RIR_DATA_DEST/metadata.csv" 2>/dev/null
+        echo "[$(date)] RIR: $(ls "$RIR_DATA_DEST"/*.wav 2>/dev/null | wc -l) salas restauradas → $RIR_DATA_DEST" >> "$LOGFILE"
+    fi
+fi
+
+
 # ── Verificar binario ─────────────────────────────────────────────────────────
 # FIX (panel muestra DETENIDO con módulo ACTIVO):
 #   Si el zip instalado es anterior al fix de CI que stagea el binario,
@@ -151,6 +193,15 @@ chmod 755 "$DAEMON_BIN"
 #        aguanta encendido mas de 30 s.
 BACKOFF=2
 BACKOFF_MAX=60
+# Session crash counter: si el daemon crashea ≥10 veces en el mismo boot
+# sin lograr 30s de uptime, es un fallo estructural (ELF incompatible con
+# la ROM, SELinux bloqueando el bind inicial, socket ya tomado por otra
+# instancia que no se detectó). En ese caso, en vez de un bucle agresivo
+# cada 60s que consume batería y llena el log, dormimos 600s para que el
+# usuario pueda diagnosticar antes del reboot. El contador se resetea
+# si el daemon alcanza 30s de uptime (boot estable).
+SESSION_CRASH_COUNT=0
+SESSION_CRASH_MAX=10
 PID_FILE=/data/adb/ivanna_daemon.pid
 # FIX Foco #2 (auditoría 2026-08-09): rastrear MQA_PID vía PID file en disco
 # en lugar de la variable de shell. Antes MQA_PID se limpiaba con MQA_PID=""
@@ -260,7 +311,7 @@ while true; do
     # Ahora se espera que @omega_daemon_socket aparezca en /proc/net/unix.
     SOCK_READY=0
     SOCK_TRIES=0
-    while [ $SOCK_TRIES -lt 6 ]; do
+    while [ $SOCK_TRIES -lt 10 ]; do  # 10×0.5s = 5s — más margen para SHM init lento
         sleep 0.5
         kill -0 "$DAEMON_PID" 2>/dev/null || break
         grep -q " @omega_daemon_socket$" /proc/net/unix 2>/dev/null && { SOCK_READY=1; break; }
@@ -314,6 +365,17 @@ while true; do
     else
         BACKOFF=$(( BACKOFF * 2 )); [ "$BACKOFF" -gt "$BACKOFF_MAX" ] && BACKOFF=$BACKOFF_MAX
     fi
-    echo "[$(date)] Daemon PID=$DAEMON_PID terminó (código=$EXIT_CODE, uptime=${UPTIME}s). Reiniciando en ${BACKOFF}s..." >> "$LOGFILE"
+    if [ "$UPTIME" -ge 30 ]; then
+        SESSION_CRASH_COUNT=0
+    else
+        SESSION_CRASH_COUNT=$((SESSION_CRASH_COUNT + 1))
+        if [ "$SESSION_CRASH_COUNT" -ge "$SESSION_CRASH_MAX" ]; then
+            echo "[$(date)] WARN: $SESSION_CRASH_MAX crashes consecutivos sin 30s de uptime — esperando 600s para diagnóstico. Ver $LOGFILE" >> "$LOGFILE"
+            echo "[$(date)] Diagnóstico: ivanna_control.sh probe | health_check.sh" >> "$LOGFILE"
+            SESSION_CRASH_COUNT=0
+            BACKOFF=600
+        fi
+    fi
+    echo "[$(date)] Daemon PID=$DAEMON_PID terminó (código=$EXIT_CODE, uptime=${UPTIME}s, crashes_sesión=$SESSION_CRASH_COUNT). Reiniciando en ${BACKOFF}s..." >> "$LOGFILE"
     sleep "$BACKOFF"
 done
