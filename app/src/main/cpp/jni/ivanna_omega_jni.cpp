@@ -1,9 +1,5 @@
 #include "saf_runtime.h"
 
-extern float evo_best_fitness();
-extern int evo_save_state();
-extern int evo_load_state();
-extern void evo_set_save_path(const char*);
 /*
  * ivanna_omega_jni.cpp — IVANNA OMEGA SUPREME
  * © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
