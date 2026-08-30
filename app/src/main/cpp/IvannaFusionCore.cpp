@@ -1,3 +1,4 @@
+#include "IvannaTinyML.hpp"
 #include "IvannaFusionCore.hpp"
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
