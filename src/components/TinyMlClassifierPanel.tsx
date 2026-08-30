@@ -29,7 +29,7 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
               </h2>
             </div>
             <p className="text-xs text-[#64748B] mt-1.5 max-w-3xl">
-              Native C++17 <code className="text-[#38BDF8]">IvannaAudioClassifier</code> executing 32-band Log-Mel filterbanks, depthwise-separable 1D convolutions, and quantized INT8 softmax in under 8.2 microseconds.
+              Native C++17 <code className="text-[#38BDF8]">IvannaTinyML</code> executing 32-band Log-Mel filterbanks, depthwise-separable 1D convolutions, and quantized INT8 softmax in under 8.2 microseconds.
             </p>
           </div>
 
