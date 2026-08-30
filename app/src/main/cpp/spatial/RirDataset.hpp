@@ -79,6 +79,16 @@ public:
     /** Índice de la sala cuyo RT60 está más cerca del objetivo (segundos). */
     size_t findNearestByRT60(float targetRt60S) const;
 
+    /**
+     * Selección de sala consciente del contenido de audio (v2.3.0).
+     * Infiere el RT60 y tamaño óptimo a partir de características del material:
+     * speech/voz → sala seca pequeña, percusión → sala viva, bajo → sala grande.
+     * Si rt60Hint > 0 lo usa como punto de partida; si es 0, infiere desde
+     * spectralCentroidHz, tonality (ACF) y percussiveness.
+     */
+    size_t findByContent(float rt60Hint, float spectralCentroidHz,
+                         float tonality, float percussiveness, float rms) const;
+
     /** Índice de la sala cuyo volumen (m³) está más cerca del objetivo. */
     size_t findNearestByVolume(float targetVolumeM3) const;
 

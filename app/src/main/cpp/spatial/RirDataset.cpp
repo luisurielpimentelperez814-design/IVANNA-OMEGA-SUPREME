@@ -259,6 +259,59 @@ size_t RirDataset::findNearestSmart(float targetRt60S,
     return best;
 }
 
+
+// ── Content-aware room selection (v2.3.0) ───────────────────────────────────
+// Selección inteligente basada en características del contenido de audio
+// provenientes de AdaptiveEngineV2. Cada tipo de contenido tiene su
+// "acoustic fingerprint" ideal:
+//   Voz/Speech:      sala pequeña, seca (RT60 < 0.4s) — inteligibilidad
+//   Música tonal:    sala mediana (RT60 0.6-1.2s) — profundidad armónica
+//   Percusivo/Drums: sala viva (RT60 0.8-1.8s) — ataque natural
+//   Bass-heavy:      sala grande (RT60 > 1.0s) — soporte de graves
+//   Ambient/Noise:   sala grande y difusa (RT60 > 1.5s) — inmersión
+// Si ningún criterio de contenido es dominante, cae a findNearestSmart().
+size_t RirDataset::findByContent(float rt60Hint, float spectralCentroidHz,
+                                  float tonality, float percussiveness,
+                                  float rms) const {
+    if (rooms_.empty()) return 0;
+
+    // Derivar RT60 objetivo desde el contenido si el hint es neutro (0)
+    float targetRt60 = rt60Hint;
+    float targetVol  = -1.f;  // -1 = auto
+    float targetDist = -1.f;  // -1 = mediana
+
+    if (targetRt60 < 0.1f) {
+        // Sin hint explícito — inferir desde características del contenido
+        if (tonality < 0.3f && percussiveness < 0.3f && rms < 0.1f) {
+            // Silencio / ambiente → sala grande inmersiva
+            targetRt60 = 1.8f;
+            targetVol  = 500.f; // sala grande
+        } else if (percussiveness > 0.65f) {
+            // Drum kit, percusión → sala viva y reflectante
+            targetRt60 = 1.2f;
+            targetDist = 3.0f;
+        } else if (tonality > 0.7f && spectralCentroidHz < 1500.f) {
+            // Música con mucho bajo (bass-heavy + tonal) → sala grande
+            targetRt60 = 1.4f;
+            targetVol  = 400.f;
+        } else if (tonality > 0.7f) {
+            // Música tonal balanceada → sala de concierto mediana
+            targetRt60 = 0.9f;
+            targetVol  = 200.f;
+        } else if (spectralCentroidHz > 2500.f && tonality < 0.4f) {
+            // Voz / speech (centroide alto, poco tonal)
+            targetRt60 = 0.35f;
+            targetVol  = 80.f;   // sala de reuniones
+            targetDist = 1.5f;   // microfóno cercano
+        } else {
+            // Neutro
+            targetRt60 = 0.72f;  // mediana del dataset
+        }
+    }
+
+    return findNearestSmart(targetRt60, targetVol, targetDist);
+}
+
 bool RirDataset::loadImpulseResponse(size_t idx, std::vector<float>& outL,
                                       std::vector<float>& outR, int& outSampleRate) const {
     outL.clear();
