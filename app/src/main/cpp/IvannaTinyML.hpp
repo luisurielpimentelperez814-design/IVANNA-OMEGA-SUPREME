@@ -45,6 +45,9 @@ public:
     // Get current context in O(1) wait-free time
     AIModelOutput GetCurrentContext() const;
 
+    // Compatibility API for omega_effect legacy path
+    uint8_t getDominantClass() const noexcept;
+
 private:
     void InferenceLoop();
     void ExtractFeatures(const float* audio_frame, std::vector<int8_t>& features_out);

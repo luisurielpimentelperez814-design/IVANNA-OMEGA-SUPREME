@@ -124,3 +124,9 @@ void TinyMLAudioEngine::InferenceLoop() {
 }
 
 } // namespace Ivanna
+
+
+uint8_t Ivanna::TinyMLAudioEngine::getDominantClass() const noexcept {
+    AIModelOutput output = GetCurrentContext();
+    return static_cast<uint8_t>(output.dominant_class);
+}
