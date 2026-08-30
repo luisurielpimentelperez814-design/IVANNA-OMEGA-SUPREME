@@ -52,7 +52,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
             }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
-    m_classifier = new IvannaTinyML();
+    m_classifier = new TinyMLAudioEngine();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
