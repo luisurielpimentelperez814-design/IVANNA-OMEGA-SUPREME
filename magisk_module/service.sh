@@ -59,6 +59,9 @@ while true; do
         self_healing_framework
     fi
 
+    # Telemetría OEM: snapshot por ciclo (rotación interna, costo despreciable)
+    [ -x "$MODDIR/core/ivanna_diag.sh" ] && "$MODDIR/core/ivanna_diag.sh" 2>/dev/null || true
+
     # Detectar caídas súbitas
     if component_crashed "DAEMON"; then
         setprop persist.ivanna.daemon_active 0 2>/dev/null
