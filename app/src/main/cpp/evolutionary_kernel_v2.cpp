@@ -279,6 +279,10 @@ void evo_evolve_generation() {
 
 float evo_best_fitness() { return g_population.bestFitness; }
 
+int evo_get_generation() {
+    return g_population.generation;
+}
+
 void evo_get_best_genome(uint8_t* out, int len) {
     if (!out || len < 1) return;
     std::memcpy(out, g_population.individuals[0].genome,

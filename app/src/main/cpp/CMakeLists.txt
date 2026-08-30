@@ -66,6 +66,7 @@ add_library(ivanna_omega SHARED
     spatial/RirConvolver.cpp
     # v2.3.0: HRTFInterpolator real (antes era stub vacío — cero interpolación)
     spatial/HRTFInterpolator.cpp
+    spatial/HRTFDatabase.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
@@ -286,6 +287,7 @@ add_library(omega_effect SHARED
     spatial/ivanna_head_tracker.cpp
     # v2.3.0: HRTFInterpolator real (IDW bilinear)
     spatial/HRTFInterpolator.cpp
+    spatial/HRTFDatabase.cpp
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
     daemon/core/omega_control_bus.cpp
