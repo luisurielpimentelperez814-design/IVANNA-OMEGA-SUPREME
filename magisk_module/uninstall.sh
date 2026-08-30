@@ -34,7 +34,9 @@ rm -f /data/adb/ivanna_omega.log \
       /data/adb/ivanna_daemon.log.old \
       /data/adb/ivanna_mqa.log \
       /data/adb/ivanna_concert.log \
-      /data/adb/ivanna_control.log 2>/dev/null
+      /data/adb/ivanna_control.log \
+      /data/adb/ivanna_omega/diag.log \
+      /data/adb/ivanna_omega/diag.log.old 2>/dev/null
 
 echo " "
 echo " █▀▀ █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀█ ▀▀█▀▀ █▀▀ █▀▀▄ "
