@@ -22,6 +22,10 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(OemState())
     val state: StateFlow<OemState> = _state.asStateFlow()
+    private val _expertMode = MutableStateFlow(false)
+
+    val expertMode: StateFlow<Boolean> = _expertMode.asStateFlow()
+
 
     init {
         viewModelScope.launch {
@@ -156,5 +160,25 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
     fun safReset() = runCatching {
         SaFRoomBridge.reset()
         SaFBridge.nativeSaFReset()
+    }
+
+    fun setExpertMode(on: Boolean) {
+        _expertMode.value = on
+    }
+
+    fun measureLatency() {
+        // dummy or restore
+    }
+
+    fun resetClips() {
+        resetClipCount()
+    }
+
+    fun setSpatialAngle(deg: Float) {
+        // runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(Math.toRadians(deg.toDouble()).toFloat()) }
+    }
+
+    fun setSpatialWidth(w: Float) {
+        // runCatching { IvannaNativeLib.nativeSetSpatialWidthDirect(w) }
     }
 }
