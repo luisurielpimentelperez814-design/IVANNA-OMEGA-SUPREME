@@ -2,182 +2,157 @@
 
 # ⬡ IVANNA OMEGA SUPREME
 
-### Sistema de audio Android de grado OEM++ con DSP nativo, IA adaptativa y procesamiento espacial binaural
+### El motor de audio Android de grado OEM++ — DSP nativo C++17/NEON, IA adaptativa en tiempo real, y espacialización binaural medida
 
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![Android](https://img.shields.io/badge/Android-14%2B-3DDC84?style=for-the-badge&logo=android)](https://developer.android.com)
-[![Root](https://img.shields.io/badge/Root-Magisk%20%2F%20KSU-FF3E86?style=for-the-badge)](https://github.com/topjohnwu/Magisk)
-[![Language](https://img.shields.io/badge/C%2B%2B17-NEON%20ARM64-6FF3FF?style=for-the-badge)](https://developer.android.com/ndk)
+[![Android](https://img.shields.io/badge/Android-10%20%E2%86%92%2015-3DDC84?style=for-the-badge&logo=android)](https://developer.android.com)
+[![Module](https://img.shields.io/badge/Magisk%20Module-v2.3.0-FF3E86?style=for-the-badge&logo=magisk)](magisk_module/)
+[![DSP](https://img.shields.io/badge/DSP-C%2B%2B17%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
+[![Tests](https://img.shields.io/badge/CTest-27%2F27%20verdes-F7B733?style=for-the-badge)](app/src/main/cpp/tests/)
+[![License](https://img.shields.io/badge/%C2%A9-2026%20GORE%20TNS-57708F?style=for-the-badge)](LICENSE)
+
+**No es un ecualizador. Es un motor de audio de sistema completo.**
 
 </div>
 
 ---
 
-## ¿Qué es IVANNA?
+## ✦ ¿Qué es IVANNA?
 
-**IVANNA** no es un ecualizador. Es un motor de procesamiento de audio de sistema que corre a nivel de kernel con privilegios Magisk, procesa cada muestra de audio que produce el dispositivo, y usa inteligencia artificial para adaptar los parámetros en tiempo real según el contenido que escuchas.
+IVANNA intercepta **cada muestra de audio** que produce tu dispositivo — Spotify, YouTube, juegos, llamadas, todo — y la procesa con una cadena DSP nativa escrita en C++17 optimizado a NEON ARM64, adaptada en tiempo real por un motor de decisión que escucha lo que suena y decide cómo debe sonar.
 
-La filosofía: **Qualcomm Hexagon DSP → NEON ARM64 → pipeline nativo → sin pasar por AudioFlinger cuando el hardware lo permite.**
+Dos rutas de procesamiento, un solo cerebro:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         TU DISPOSITIVO                               │
+│                                                                      │
+│   Spotify · YouTube · Juegos · Sistema              IVANNA App       │
+│        │                                          (Ruta A, 48 kHz)   │
+│        │ AudioFlinger                                   │            │
+│        ▼                                                ▼            │
+│  ┌──────────────────┐  SHM seqlock   ┌───────────────────────────┐   │
+│  │ omega_effect.so  │◄──────────────►│  ivanna_daemon (root, RT) │   │
+│  │ (Ruta B, sistema │   OmegaControl │  command_server · SHM mgr │   │
+│  │  global, Magisk) │   Bus 512 B    │  publish @ ~cada comando  │   │
+│  └────────┬─────────┘                └────────────┬──────────────┘   │
+│           │ IvannaFusionCore × sesión             │ Unix socket      │
+│           │ processStereo() → RIR → SAF → Limiter │ @omega_daemon    │
+│           ▼                                       ▼                  │
+│     Audífonos / Altavoz ◄──────────── libivanna_omega.so (JNI, app)  │
+│                                      EQ→Comp→Exciter→Widener→PD→Gain │
+│                                      →SafetyLimiter (−0.1 dBFS)      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Ruta A (en proceso):** la app corre la cadena DSP completa sobre su propio reproductor y sobre la captura MediaProjection. Latencia ~2.8 ms medida en LAB.
+- **Ruta B (system-wide):** `libomega_effect.so` vive dentro de `audioserver` como GlobalEffect Magisk; una instancia `IvannaFusionCore` **por sesión de audio** (aislamiento auditado y reparado), controlada cross-process vía `OmegaControlBus` — seqlock sobre SHM, 512 bytes, lock-free en el callback de audio, con CRC32 y versioning de ABI.
 
 ---
 
-## Arquitectura del motor
+## ✦ La cadena DSP — cada etapa auditada
 
-```
-Audio del sistema
-       │
-       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   omega_effect.cpp (Magisk)                 │
-│  AudioEffect HAL → SHM → Ruta A: daemon ivanna_omega RT    │
-│                        → Ruta B: DynamicsProcessing API     │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              ivanna_omega_jni.cpp  (NEON ARM64)             │
-│                                                             │
-│  Pre-EQ peak guard (−1dBFS) → ParametricEQ (8 biquads)     │
-│       → Compressor (sidechain HPF) → HarmonicExciter 2×OS  │
-│       → StereoWidener M/S → PDEngine (NHO+Spatial)         │
-│       → GainStage (output trim) → SafetyLimiter (−0.1dBFS) │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Motores en paralelo (hilo IO 500ms)            │
-│                                                             │
-│  AdaptiveDecisionEngine ←→ IA clasificadora (4 clases)      │
-│  ThermalGovernor (PowerManager API 29+, poll 2s)            │
-│  IvannaSpatialManager (HRTF + head tracking)                │
-│  RirConvolver (overlap-save FFT, crossfade 32 bloques)      │
-│  EvolutionaryEQ (CMA-ES, hilo background)                   │
-│  UsbAudioProManager (isochronous directo, 384kHz/32bit)     │
-└─────────────────────────────────────────────────────────────┘
-```
+| # | Etapa | Archivo | Qué hace | Defensas de producción |
+|---|-------|---------|----------|------------------------|
+| 1 | Pre-EQ peak guard | `ivanna_omega_jni.cpp` | Headroom antes del EQ | −1 dBFS preventivo |
+| 2 | ParametricEQ | `dsp/ParametricEQ.cpp` | 10 bandas biquad RBJ | Crossfade anti-zipper 15 ms · **compensación de headroom por stack de bandas** aplicada al master en los 4 puntos de `setParams` |
+| 3 | Compressor | `dsp/Compressor.cpp` | RMS + sidechain HPF | Envolvente suavizada, sin escalones |
+| 4 | HarmonicExciter | `dsp/HarmonicExciter.cpp` | Saturación Padé + 2ª/3ª armónica | **Oversampling 2× + LPF 14.5 kHz** · clamp Padé ±3 · techo interno `excScale_` con ataque inmediato / release 20 ms · bypass **bit-exacto** a wet=0 |
+| 5 | StereoWidener | `dsp/StereoWidener.cpp` | M/S imaging | Clamp de correlación |
+| 6 | PDEngine | `pd_engine.hpp` | NHO + BiquadEnvelopeBank + CueBasedSpatial | Motor no-lineal con inhibición lateral |
+| 7 | GainStage | `dsp/GainStage.cpp` | Trim de salida suavizado | One-pole por muestra, sin doble limitación |
+| 8 | SafetyLimiter | `dsp/SafetyLimiter.cpp` | Techo −0.1 dBFS | Soft-knee real (threshold −4 dBFS) · ataque/release recalculados por SR de sesión (8k–384k) |
+
+> **Cero asignaciones en el hot path.** Los buffers L/R de la Ruta B se preasignan en `EFFECT_CMD_SET_CONFIG` (8 192 frames, passthrough defensivo si el bloque excede). El callback nunca llama a `malloc`, nunca toma locks pesados, nunca parsea JSON.
 
 ---
 
-## Centro de control OEM++
+## ✦ Espacialización — datos medidos, no sintetizados
 
-La UI es el equivalente visual de un panel de control de fábrica. Accesible desde **SISTEMA → CENTRO DE CONTROL OEM++**.
+| Dataset | Contenido real shippeado | Formato | Dónde vive |
+|---------|--------------------------|---------|------------|
+| **HRTF** | 12 datasets IHR1 (KEMAR large/normal pinna, TU-Berlin, CIPIC, Pulse…) | `.ihr1` propio (binario, guard de integridad) | `magisk_module/…/hrtf/` |
+| **SOFA** | 39 archivos AES69 (MIT KEMAR, CIPIC, GeneralTF…) | `.sofa` estándar | `magisk_module/…/sofa/` |
+| **RIR** | **200 salas medidas** reales | WAV PCM + `metadata.csv` con RT60 | `magisk_module/…/rir/` |
+| **SAF** | Modelo total de personalización | `SAF_model_total.json` | `magisk_module/…/` |
 
-### Dashboard principal
-Estado en tiempo real del motor, backend activo (Hexagon DSP / NEON ARM64 / CPU fallback), ruta de audio, medidores de señal (RMS, Peak, GR, SAF), estado térmico y acceso a todos los módulos.
+**Cadena espacial:** `ObjectRenderer` (12 altavoces virtuales en dodecaedro) → `HRTFConvolver` por speaker con **IDW bilineal** → crossfade morfológico conducido por el vector latente `q[7]` del optimizador Φ_SAF^∞ → `RirConvolver` (overlap-save FFT Radix-2, real-time safe) → selección de sala por RT60 real desde el daemon (`SET_ROOM_RT60` / `GET_ROOM_STATUS`).
 
-### Audio Espacial · HRTF · SOFA
-Perfil HRTF activo desde dataset CIPIC/KEMAR, sujeto seleccionado, mapa 3D de posición sonora, controles de anchura y ángulo. Errores de diseño: ITD < 13.5 µs, ILD < 0.7 dB, interpolación < 0.4 dB.
-
-### Acústica SAF · RIR
-200 salas reales grabadas. Convolución overlap-save FFT con crossfade de 32 bloques en el dominio de la frecuencia — sin corte audible al cambiar de sala. No es reverberación sintética.
-
-### IA Adaptativa
-Clasificador de 4 clases (voz / música / bajos / silencio) con probabilidades en tiempo real. Ajuste automático de HRTF, RIR, ancho espacial y gestión energética. Aprendizaje on-device (bias EMA, sin modelo externo).
-
-### Control Térmico
-ThermalGovernor con política OEM de 4 niveles. Degrada proactivamente: excitador → espacialidad → compresor. El volumen nunca se toca. Nunca oculta al usuario por qué cambió el procesamiento.
-
-### Telemetría OEM
-Estado FastRPC/HAL, pipeline completo (11 métricas), latencia DSP medida (n=100 corridas CLOCK_MONOTONIC), conteo de clips, clasificador, características de audio, exportación de diagnóstico.
+**Φ_SAF^∞ cross-process (ABI v2):** el optimizador publica el morph vector completo `saf_q[7]` en el `OmegaDspSnapshot`; la Ruta B lo entrega a `setLatentParams(q)` por bloque. La personalización HRTF ya no se queda en la app: llega al audio de todo el sistema.
 
 ---
 
-## Cadena DSP — lo que se resolvió
+## ✦ Inteligencia — tres cerebros, un lazo
 
-| Bug | Síntoma audible | Fix |
-|-----|-----------------|-----|
-| `mix=0.70f` default | +2.4 dB antes del EQ siempre | `mix=0.50f` (neutro) |
-| Softclip orquestador `x/x = 1.0` | Hard clip = onda cuadrada | Saturación racional C¹ piecewise |
-| Biquad state en `float` | Ruido en tails de reverb | Estado en `double` (error uniforme) |
-| `nativeSetEQParams` master lineal→dB | Volumen mal calibrado | Conversión `20·log10(v)` con techo 6 dB |
-| EQ bands cascada sin compensación | SafetyLimiter en compresión >10 dB = pumping | `eqOutputCompensationDb_` en GainStage |
-| ISO 226 `/15f` espurio | Compensación 15× demasiado débil | Eliminada la división |
-| Pre-EQ sin peak guard | IIR diverge → NaN → tronido | Guard −1 dBFS por bloque completo |
-| `AIInferenceEngine × 1.05f` | +0.4 dB silencioso en cada bloque | Identidad (sin modelo TFLite cargado) |
-| `wetNow_` actualizado 2×N veces | Imagen estéreo se corrompe en transiciones | Un loop por par de muestras |
-| FFT twiddle recursivo en `float` | Ruido de piso en tails largos | `cos(ang·j)` directo en double |
-| Tronidos inter-bloque | Clic periódico a f=SR/BLOCK | `std::isfinite` guard + self-reset |
-| `PerceptualSnapshot` defaults altos | UI muestra 97% confianza sin señal | `dataAvailable=false` hasta audio real |
-| `durationMin = 0f` siempre | Fatiga temporal nunca contribuye | `sessionStartMs` real |
-| `SofaHRTFLoader` 4-byte signature | Acepta binarios que no son SOFA | Firma HDF5 de 8 bytes completa |
+```
+ audio crudo ──► RawMetricsBus ──► AdaptiveDecisionEngine ──► AdaptiveState
+ (Ruta A y B)      (SPSC lock-free)   (controlLoop @ 50 ms)     (seqlock)
+                                          │
+        ┌─────────────────────────────────┼──────────────────────────┐
+        ▼                                 ▼                          ▼
+  TinyML ConvNeXt INT8            CMA-ES evolutivo (512 bandas)  ISO 226:2003
+  4 clases · softmax              256 taps FIR · smooth phase     29 frecuencias
+  escena: voz/música/trans./amb.  fitness psicoacústico           equal-loudness
+```
+
+- **AdaptiveDecisionEngine:** publica `target_gain`, `comp_amount`, `exciter_reduction`, `spatial_width`, `voice_protection`, `safety_margin` — consumidos por **ambas rutas** (paridad auditada: antes las decisiones de Spotify nunca volvían a Spotify).
+- **Fatigue Mitigator:** ajusta el high-cut IIR del daemon en sesiones largas (1er orden, 16–19.5 kHz).
+- **Persistencia total:** cada control (TinyML, CMA-ES σ, Fatigue, perfiles, spatial) sobrevive cierres y reboots vía `PersistedStateRestorer` + stores dedicados.
 
 ---
 
-## Módulo Magisk
+## ✦ Daemon & IPC — el plano de control
 
-```
-/system/lib64/libomega_effect_arm64.so   → AudioEffect hook del sistema
-/system/bin/ivanna_daemon                → daemon RT con SHM
-/system/etc/ivanna/hrtf/                 → perfiles IHR1 (CIPIC/KEMAR)
-/system/etc/ivanna/rir/                  → 200 respuestas de impulso de sala
-```
-
-### Rutas de audio
-
-```
-Ruta A (root + daemon)     → latencia mínima, SHM, Hexagon DSP disponible
-Ruta A degradada (root)    → sin daemon, usa AudioEffect directo
-Ruta B (sin root)          → DynamicsProcessing API + NEON ARM64
-```
+| Pieza | Detalle |
+|-------|---------|
+| `ivanna_daemon` | PIE + RELRO + BIND_NOW + `-static-libstdc++` (arranca como root desde Magisk sin depender de libs del APK) · SCHED_FIFO 98 |
+| Socket | Unix abstracto `@omega_daemon_socket` — JSON con respuestas ricas (`applied` / `accepted_pending_consumer` / generation) |
+| SHM | `OmegaControlBus` en `/data/adb/ivanna_omega/omega_control_snapshot` — seqlock embebido, MAGIC + VERSION + CRC32 |
+| Route Arbiter | `OFF / IN_PROCESS / SYSTEM_WIDE` explícito en cada snapshot |
+| Telemetría B→A | `raw_rms`, `raw_peak`, `effect_frames` escritos por audioserver y leídos por la app — la UI sabe cuándo la Ruta B está viva |
 
 ---
 
-## Stack tecnológico
+## ✦ UI — instrumento de precisión
 
-```
-Capa nativa   C++17 · NEON ARM64 · Biquad double-precision · FFT radix-2 DIT
-Audio system  AudioEffect HAL · DynamicsProcessing · AudioFlinger bypass (Ruta A)
-IA            Clasificador 4 clases · CMA-ES · EMA bias learning · PerceptualBrain
-Espacial      HRTF CIPIC/KEMAR · overlap-save convolver · crossfade espectral
-Acústica      200 RIR reales · SAF · RT60 estimado · difusión
-Térmico       PowerManager API 29+ · 4 niveles · degradación proactiva
-UI            Jetpack Compose · Material 3 · dual mode usuario/experto
-Build         GitHub Actions · NDK CMake · artifact SHA256 determinístico
-```
+5 pestañas (CONTROL · BRAIN · ADAPTIVE · SPATIAL · SYSTEM) con tema **Aurora Obsidiana** propio, sparklines RMS en vivo, visualizador FFT de 64 bandas Bark reales, LAB de medición (THD / IMD / LUFS BS.1770-4 / SNR / True Peak), panel NEON profiler, calibración ISO 226 aplicable a EQ + DSP + daemon en un solo toque, y estados honestos: si un dataset no está desplegado, la UI lo dice en vez de simular.
 
 ---
 
-## Build
+## ✦ Calidad verificada — no declarada
 
-```bash
-# Clonar
-git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
-cd IVANNA-OMEGA-SUPREME
-
-# Build (requiere NDK r27+)
-./gradlew assembleDebug
-
-# Tests nativos DSP
-cd app/src/main/cpp && cmake -B build && cmake --build build && ./build/ivanna_dsp_tests
-```
+- **27 tests CTest** en CI host: barrido completo del exciter (11×11×6 señales de peor caso, peak ≤ 1.0), bypass bit-exacto, stress del bus de control 15 s, estabilidad del motor adaptativo, dataset RIR real contra los 200 WAV shippeados, métricas de calidad de audio, sin denormals.
+- **CI de artefactos con verificación de integridad:** el build falla si el daemon no es ARM64/PIE/RELRO/BIND_NOW, si el zip Magisk carece de `system/bin/ivanna_daemon` o `sepolicy.rule`, o si los binarios no coinciden.
+- **Historial de auditoría:** 200+ commits de reparación quirúrgica — Use-After-Free del Engine (shared_ptr atómico), aislamiento DSP por sesión AudioFlinger, eliminación de alloc en realtime, lifecycle del fusion core, JNI signatures, STL estática del daemon, crossfade EQ, headroom, bypass exacto. Cada fix: un commit, un push.
 
 ---
 
-## Estructura del proyecto
+## ✦ Instalación
 
-```
-app/src/main/
-├── cpp/
-│   ├── dsp/                    ← Compressor, HarmonicExciter, SafetyLimiter, ParametricEQ
-│   ├── spatial/                ← RirConvolver, HRTFConvolver, RirDataset
-│   ├── jni/                    ← ivanna_omega_jni.cpp (proceso principal)
-│   ├── neuromorphic/           ← NPE engine
-│   └── tests/                  ← CTest DSP regression suite
-└── java/com/ivanna/omega/
-    ├── ui/
-    │   ├── oem/                ← OemDashboard, Spatial, Acoustic, AI, Thermal, Telemetry
-    │   └── ...                 ← pantallas existentes
-    ├── audio/                  ← ThermalGovernor, RouteDspCalibrator, UsbAudioProManager
-    ├── ai/                     ← PerceptualBrainEngine, PerceptualDecisionEngine
-    └── spatial/                ← IvannaSpatialManager, HeadTrackingManager
-```
+**Requisitos:** Android 10+ · Magisk o KernelSU (Ruta B) · ARM64.
+
+1. Descarga el artefacto `ivanna-magisk-module` del último CI verde → contiene `ivanna_omega_supreme.zip` (módulo) **y el APK**.
+2. Flashea el zip en Magisk/KSU → reinicia.
+3. Instala el APK → abre IVANNA → concede permisos de captura si quieres Ruta A sobre otras apps.
+
+La app y el módulo van a la par: **v2.3.0 / 2300** en ambos.
+
+---
+
+## ✦ Lo que IVANNA no hace (honestidad de ingeniería)
+
+- Sin root, la Ruta B no existe: la app cae a `AudioEffect` por sesión (EQ/DynamicsProcessing de Android) — el DSP profundo custom requiere el módulo.
+- Los datasets SOFA/RIR ocupan espacio real en `/system/etc/ivanna_omega/` (montaje Magisk, sin tocar la partición).
+- El PMU no es accesible en la mayoría de SoCs de consumo: el throughput GFLOPS se reporta como `N/M` en vez de inventarse.
 
 ---
 
 <div align="center">
 
-**GORE TNS** · Solo developer · Moto G85 · Termux + GitHub Actions
+**© 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.**
 
-*"Más motores que pantallas — pero ya no."*
+*Construido muestra a muestra. Auditado commit a commit.*
+
+**⬡ IVANNA OMEGA SUPREME ⬡**
 
 </div>
