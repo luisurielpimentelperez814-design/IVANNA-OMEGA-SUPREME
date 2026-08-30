@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -229,13 +231,96 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
 @Composable
 private fun TelemetryTab() {
     var telemetry by remember { mutableStateOf<FloatArray?>(null) }
+    // v2.3.0: telemetría térmica + DSP tier via prop de sistema
+    var thermalTempC  by remember { mutableStateOf("--") }
+    var thermalTier   by remember { mutableStateOf("--") }
+    var dspQuality    by remember { mutableStateOf("100%") }
+    var rirActive     by remember { mutableStateOf(true) }
+
     LaunchedEffect(Unit) {
         while (true) {
             if (IvannaNativeLib.isLoaded)
                 telemetry = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
-            kotlinx.coroutines.delay(100)
+
+            // Leer estado térmico desde props de sistema (escritas por ThermalGovernor vía JNI)
+            // El ThermalGovernor escribe persist.ivanna.thermal_tier y persist.ivanna.thermal_temp
+            val tierProp = runCatching {
+                Runtime.getRuntime().exec("getprop persist.ivanna.thermal_tier")
+                    .inputStream.bufferedReader().readLine()?.trim() ?: "0"
+            }.getOrElse { "0" }
+
+            val tierInt = tierProp.toIntOrNull() ?: 0
+            thermalTier = when (tierInt) {
+                0 -> "FULL ✅"
+                1 -> "REDUCED ⚡"
+                2 -> "LIMITED 🌡️"
+                3 -> "PROTECTED 🔥"
+                4 -> "BYPASS ❌"
+                else -> "UNKNOWN"
+            }
+            thermalTempC = when (tierInt) {
+                0 -> "< 45°C"
+                1 -> "45-55°C"
+                2 -> "55-65°C"
+                3 -> "65-75°C"
+                4 -> "> 75°C"
+                else -> "--"
+            }
+            dspQuality = when (tierInt) {
+                0 -> "100%"
+                1 -> "85%"
+                2 -> "65%"
+                3 -> "40%"
+                4 -> "0% (bypass)"
+                else -> "--"
+            }
+            rirActive = tierInt < 2
+
+            kotlinx.coroutines.delay(2000) // cada 2s — mismo intervalo que ThermalGovernor
         }
     }
+
+    // ── Card térmica — estado real del SoC ───────────────────────────────────
+    val tierColor = when (thermalTier) {
+        "FULL ✅"       -> PhosphorGreen
+        "REDUCED ⚡"   -> AuroraCyan
+        "LIMITED 🌡️"  -> AmberSignal
+        "PROTECTED 🔥" -> NeonMagenta
+        else            -> Color.Red
+    }
+    GlassCard("ESTADO TÉRMICO DSP", tierColor, "ThermalGovernor v2.3.0 · polling 2s") {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("SoC Temperatura", color = TextSecondary, fontSize = 10.sp)
+                Text(thermalTempC, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Tier Térmico", color = TextSecondary, fontSize = 10.sp)
+                Text(thermalTier, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Calidad DSP", color = TextSecondary, fontSize = 10.sp)
+                Text(dspQuality, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("RIR Convolución", color = TextSecondary, fontSize = 10.sp)
+                Text(
+                    if (rirActive) "ACTIVA" else "SUSPENDIDA (calor)",
+                    color = if (rirActive) PhosphorGreen else NeonMagenta,
+                    fontSize = 10.sp, fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "FULL: DSP completo | REDUCED: sin Volterra | LIMITED: sin RIR | BYPASS: pass-through",
+                color = TextMuted, fontSize = 8.sp
+            )
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    // ── Card de telemetría de audio ───────────────────────────────────────────
     GlassCard("TELEMETRÍA EN VIVO", PhosphorGreen, "10Hz · Motor A · Pipeline completo") {
         val labels = listOf("RMS","Peak dB","GR dB","CPU %","Target","CompAmt","ExcRed","SpatW","VoiceProt","Running")
         val colors = listOf(AuroraCyan, Color.Red, NeonMagenta, PhosphorGreen,
