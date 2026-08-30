@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block
 #include "IvannaFusionCore.cpp"
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
@@ -190,6 +191,7 @@ struct omega_effect_context_t {
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
+    bool     thermalSkipRIR;        // ThermalGovernor: saltar RIR en tier ≥ LIMITED
     // FIX (distorsion digital): limiter por instancia al final de la cadena
     // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
     // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
@@ -479,6 +481,27 @@ static int32_t omega_process(effect_handle_t self,
         }
     }
 
+    // ── Thermal Governor — bypass temprano si SoC en zona peligrosa ─────────
+    // Si el SoC supera 75°C (ThermalTier::BYPASS), el audio thread ya no
+    // puede garantizar latencia — hacer pass-through limpio es mejor que
+    // tener underruns con DSP activo. La lectura es O(1) (atómica, sin syscall).
+    {
+        const auto tier = ivanna::getThermalGovernor().getCurrentTier();
+        if (tier == ivanna::ThermalTier::BYPASS) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+            return 0;
+        }
+        // Tier LIMITED o PROTECTED: desactivar RIR (la más costosa en CPU)
+        if (tier >= ivanna::ThermalTier::LIMITED && ctx->rirConvolver) {
+            // No destruir el convolver (caro recrearlo) — solo saltarlo este ciclo
+            // El flag ctrlBusOpen se mantiene — el snapshot ya tiene el room_rt60
+            // y el convolver volverá a activarse cuando el SoC se enfríe.
+            ctx->thermalSkipRIR = true;
+        } else {
+            ctx->thermalSkipRIR = false;
+        }
+    }
+
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
     // (SET_CONFIG). Si vinieran sin reservar (calloc falló en SET_CONFIG)
     // se cae a passthrough — jamás asignar en el hilo de audio.
@@ -547,7 +570,9 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // Cable RIR: aplicar reverberación de sala si está activa
-        if (ctx->rirConvolver) ctx->rirConvolver->process(L, R, chunk);
+        // ThermalGovernor: saltar RIR en LIMITED/PROTECTED/BYPASS para
+        // liberar CPU y mantener el audio thread dentro del budget térmico.
+        if (ctx->rirConvolver && !ctx->thermalSkipRIR) ctx->rirConvolver->process(L, R, chunk);
 
         // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
