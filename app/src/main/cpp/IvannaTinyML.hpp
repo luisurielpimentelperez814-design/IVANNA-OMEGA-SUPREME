@@ -7,26 +7,17 @@
 #include <thread>
 #include <mutex>
 
+// FIX (build, CI 90305341769): AudioContextClass y AIModelOutput estaban
+// DUPLICADOS aquí y en IvannaAudioClassifier.hpp (mismo namespace Ivanna,
+// mismo nombre, underlying type distinto: int vs uint8_t) → "enumeration
+// redeclared with different underlying type" + "redefinition of
+// AIModelOutput" al incluirse ambos desde IvannaFusionCore.cpp.
+// Una sola fuente de verdad: IvannaAudioClassifier.hpp (la canónica, con
+// uint8_t). Este header la incluye y NO redefine nada — misma API, cero
+// cambio funcional para TinyMLAudioEngine.
+#include "IvannaAudioClassifier.hpp"
+
 namespace Ivanna {
-
-// Audio context classes for Omega Supreme Engine
-enum class AudioContextClass {
-    UNKNOWN = 0,
-    MUSIC = 1,
-    MOVIE = 2,
-    GAME = 3,
-    VOICE = 4,
-    AMBIENT = 5
-};
-
-// Lock-free context data struct
-struct AIModelOutput {
-    std::array<float, 6> probabilities{};
-    AudioContextClass dominant_class = AudioContextClass::UNKNOWN;
-    float confidence = 0.0f;
-    float scene_energy = 0.0f; // Dynamic harmonic excitation target
-    bool is_valid = false;
-};
 
 /**
  * Kernel-level TinyML Audio Engine.
