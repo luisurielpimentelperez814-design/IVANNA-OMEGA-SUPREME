@@ -543,7 +543,10 @@ static int32_t omega_process(effect_handle_t self,
 
         // FASE 3: Integración de TinyML Asíncrono
         if (auto* classifier = fc->getClassifier()) {
-            uint8_t domClass = classifier->getDominantClass();
+            uint8_t domClass = 0;
+            if (classifier) {
+                domClass = classifier->getDominantClass();
+            }
             // 0: Speech, 1: Music, 2: Transient, 3: Noise
             // FIX (tronidos, 2026-08-27): la ganancia del side saltaba DURO
             // entre bloques cuando el clasificador cambiaba de clase
