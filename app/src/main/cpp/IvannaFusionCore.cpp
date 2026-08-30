@@ -2,7 +2,7 @@
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
-#include "IvannaAudioClassifier.hpp"
+#include "IvannaTinyML.hpp"
 #include <iostream>
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
@@ -50,7 +50,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
             }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
-    m_classifier = new IvannaAudioClassifier();
+    m_classifier = new IvannaTinyML();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {

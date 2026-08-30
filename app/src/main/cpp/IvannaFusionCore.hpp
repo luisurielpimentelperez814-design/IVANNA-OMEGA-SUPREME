@@ -37,7 +37,7 @@ public:
 class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
-class IvannaAudioClassifier;
+class IvannaTinyML;
 
 class IvannaFusionEngine : public IvannaFusionCore {
 public:
@@ -50,7 +50,7 @@ public:
     void applyGoldenEarGAN(AudioBuffer* buffer);
     void process(AudioBuffer* buffer);
 
-    IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
+    IvannaTinyML* getClassifier() const noexcept { return m_classifier; }
 
     void processBlock(AudioBuffer* buffer) override { process(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
@@ -110,7 +110,7 @@ private:
     HrtfManager*          m_hrtf       = nullptr;
     EvolutionaryEQ*       m_evoEq      = nullptr;
     Psychoacoustics*      m_psycho     = nullptr;
-    IvannaAudioClassifier* m_classifier = nullptr;
+    IvannaTinyML* m_classifier = nullptr;
 
     // ── Pre-filtro del Chebyshev (FIX tronidos de agudos) ────────────────────
     // H2(x) = 2x² − 1 duplica frecuencias: un platillo a 12 kHz genera

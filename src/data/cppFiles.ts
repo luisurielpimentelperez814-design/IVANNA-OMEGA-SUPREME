@@ -17,7 +17,7 @@ set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -O3 -mcpu=cortex-a76 -march=armv8.2-a+s
 add_executable(ivanna_fusion
     main.cpp
     IvannaFusionCore.cpp
-    IvannaAudioClassifier.cpp
+    IvannaTinyML.cpp
     Psychoacoustics.cpp
     EvolutionaryEQ.cpp
     HrtfManager.cpp
@@ -26,7 +26,7 @@ add_executable(ivanna_fusion
 target_link_libraries(ivanna_fusion m pthread)`
   },
   {
-    filename: 'IvannaAudioClassifier.hpp',
+    filename: 'IvannaTinyML.hpp',
     category: 'header',
     description: 'YAMNet Replacement: Ultra-Low Latency TinyML Depthwise-ConvNeXt INT8 Audio Scene Classifier with Lock-Free SPSC Ring Buffer',
     content: `#pragma once
@@ -101,10 +101,10 @@ private:
  * @brief YAMNet Replacement: TinyML 1D Depthwise-Separable ConvNeXt Model
  * Quantized INT8 / NEON FP16 execution engine for Android Anti-Dolby Daemon.
  */
-class alignas(64) IvannaAudioClassifier {
+class alignas(64) IvannaTinyML {
 public:
-    IvannaAudioClassifier();
-    ~IvannaAudioClassifier() = default;
+    IvannaTinyML();
+    ~IvannaTinyML() = default;
 
     // Real-time audio callback hook: zero allocation, lock-free sample push
     void ingestAudioFrame(const float* inputLeft, const float* inputRight, size_t numSamples) noexcept;
@@ -141,16 +141,16 @@ private:
 } // namespace Ivanna`
   },
   {
-    filename: 'IvannaAudioClassifier.cpp',
+    filename: 'IvannaTinyML.cpp',
     category: 'source',
     description: 'Native C++17 ARM NEON quantized INT8 TinyML inference engine replacing YAMNet with zero allocation & <8.2us latency',
-    content: `#include "IvannaAudioClassifier.hpp"
+    content: `#include "IvannaTinyML.hpp"
 #include <cmath>
 #include <algorithm>
 
 namespace Ivanna {
 
-IvannaAudioClassifier::IvannaAudioClassifier() {
+IvannaTinyML::IvannaTinyML() {
     // Initialize quantized INT8 model weights (Trained offline on AudioSet / VoxCeleb / MusicNet)
     for (size_t b = 0; b < MEL_BANDS; ++b) {
         m_convDepthwiseWeights[b] = static_cast<int8_t>((b % 7) * 18 - 50);
@@ -167,7 +167,7 @@ IvannaAudioClassifier::IvannaAudioClassifier() {
     }
 }
 
-void IvannaAudioClassifier::ingestAudioFrame(const float* inputLeft, const float* inputRight, size_t numSamples) noexcept {
+void IvannaTinyML::ingestAudioFrame(const float* inputLeft, const float* inputRight, size_t numSamples) noexcept {
     // Downmix to Mono in-place for spectral scene classification
     ALIGN_NEON float monoScratch[BLOCK_SIZE];
     
@@ -189,7 +189,7 @@ void IvannaAudioClassifier::ingestAudioFrame(const float* inputLeft, const float
     m_audioRingBuffer.push(monoScratch, numSamples);
 }
 
-void IvannaAudioClassifier::extractLogMelFilterbank(const float* frame) noexcept {
+void IvannaTinyML::extractLogMelFilterbank(const float* frame) noexcept {
     // Zero-allocation 32-Band Triangular Mel Energy accumulator
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     for (size_t band = 0; band < MEL_BANDS; ++band) {
@@ -228,7 +228,7 @@ void IvannaAudioClassifier::extractLogMelFilterbank(const float* frame) noexcept
 #endif
 }
 
-void IvannaAudioClassifier::processInference() noexcept {
+void IvannaTinyML::processInference() noexcept {
     // Pop 512 samples from lock-free ring buffer
     if (!m_audioRingBuffer.pop(m_frameBuffer, CLASSIFIER_FRAME_SIZE)) {
         return; // Insufficient samples queued yet
@@ -354,7 +354,7 @@ inline float fast_tanh_scalar(float x) {
 class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
-class IvannaAudioClassifier;
+class IvannaTinyML;
 
 class IvannaFusionEngine {
 public:
@@ -364,14 +364,14 @@ public:
     void runAcousticProfiling();
     void process(AudioBuffer* buffer);
     void setGoldenEarMode(bool enable);
-    IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
+    IvannaTinyML* getClassifier() const noexcept { return m_classifier; }
 
 private:
     bool m_goldenEarActive = false;
     HrtfManager* m_hrtf = nullptr;
     EvolutionaryEQ* m_evoEq = nullptr;
     Psychoacoustics* m_psycho = nullptr;
-    IvannaAudioClassifier* m_classifier = nullptr;
+    IvannaTinyML* m_classifier = nullptr;
 
     void applyGoldenEarGAN(AudioBuffer* buffer);
 };
@@ -386,7 +386,7 @@ private:
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
-#include "IvannaAudioClassifier.hpp"
+#include "IvannaTinyML.hpp"
 #include <iostream>
 
 namespace Ivanna {
@@ -395,7 +395,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
-    m_classifier = new IvannaAudioClassifier();
+    m_classifier = new IvannaTinyML();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
