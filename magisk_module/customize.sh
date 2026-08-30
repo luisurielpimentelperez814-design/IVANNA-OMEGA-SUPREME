@@ -101,6 +101,7 @@ fi
 
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
+set_perm_recursive "$MODPATH/core" root root 0755 0755
 
 # ── SELinux policy — aplicar en tiempo de instalación (live) ─────────────────
 # Permite que la app (untrusted_app) se conecte al socket abstracto del daemon.
