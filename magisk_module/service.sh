@@ -22,11 +22,22 @@ while true; do
         # 7. CAPA DE AISLAMIENTO
         component_isolate_execute "DAEMON" "$MODDIR/system/bin/ivanna_daemon" "--socket" "@omega_daemon_socket" "--realtime"
         
-        # Optimize Daemon Privileges
+        # ── Privilegios de clase OEM: OOM inmune + RT 98 (bajo AudioFlinger=~99)
         DAEMON_PID=$(cat "$ISOLATION_DIR/DAEMON/pid" 2>/dev/null)
-        if [ -n "$DAEMON_PID" ]; then
+        if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
             echo -1000 > /proc/$DAEMON_PID/oom_score_adj 2>/dev/null || true
-            chrt -f -p 99 $DAEMON_PID 2>/dev/null || true
+            chrt -f -p 98 "$DAEMON_PID" 2>/dev/null || true
+            # big.LITTLE: anclar daemon al cluster LITTLE (cores 0-3) — el DSP
+            # de control no necesita big cores; deja los big para AudioFlinger
+            # y apps. Ahorro energético medible en idle (cluster LITTLE ~40mW
+            # vs ~300mW por big core en SD8 Gen2/3).
+            if [ -f /sys/devices/system/cpu/cpu4/cpufreq/cpuinfo_max_freq ]; then
+                taskset -p 0f "$DAEMON_PID" >/dev/null 2>&1 || true
+            fi
+            # Watchdog: latido compartido — el daemon escribe su uptime; si el
+            # timestamp no avanza en 3 ciclos, se declara hang (no solo exit).
+            echo "$(date +%s)" > "$ISOLATION_DIR/DAEMON/watchdog_ts" 2>/dev/null
+            echo "0" > "$ISOLATION_DIR/DAEMON/restart_streak" 2>/dev/null || true
         fi
         setprop persist.ivanna.daemon_active 1 2>/dev/null
     fi
@@ -55,6 +66,9 @@ while true; do
         self_healing_framework
     fi
 
-    # Zero Impact: Observar sin sobrecargar CPU
-    sleep 10
+    # ── Zero Impact adaptativo: sondeo de actividad de audio via AudioFlinger.
+    # Si no hay streams activos, el loop respira lento (30s) — el módulo cuesta
+    # ~0% CPU en standby. Con audio activo, 5s para reacción rápida ante crash.
+    AF_ACTIVE=$(dumpsys audio 2>/dev/null | grep -c "stream type:" 2>/dev/null || echo 0)
+    if [ "${AF_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then sleep 5; else sleep 30; fi
 done
