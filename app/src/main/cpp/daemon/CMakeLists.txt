@@ -18,9 +18,8 @@ target_compile_options(ivanna_daemon PRIVATE
 
 target_link_options(ivanna_daemon PRIVATE
     -pie
-    -Wl,-z,relro
-    -Wl,-z,now
-    -Wl,--enable-new-dtags
+    "-Wl,-z,relro,-z,now"
+    "-Wl,--enable-new-dtags"
 )
 
 # FIX (daemon muere al arrancar pese a módulo activo + root OK):
