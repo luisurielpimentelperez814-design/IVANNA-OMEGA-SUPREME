@@ -331,10 +331,6 @@ int evo_load_state() {
     std::fclose(f); return ok ? 1 : 0;
 }
 
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEvoBestFitness(JNIEnv*, jclass) {
-    return g_population.bestFitness;
-}
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jclass) {
     return (jint)g_population.generation;
@@ -348,14 +344,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(JNIEnv*, jc
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(JNIEnv*, jclass, jfloat rate) {
     g_mutationRate = std::max(0.001f, std::min(0.5f, (float)rate));
-}
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSaveEvoState(JNIEnv*, jclass) {
-    evo_save_state();
-}
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadEvoState(JNIEnv*, jclass) {
-    evo_load_state();
 }
 
 } // extern "C"
