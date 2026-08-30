@@ -1,6 +1,7 @@
 #pragma once
 #include "IvannaFusionCore.hpp"
 #include "HRTFBinLoader.hpp"
+#include "hexagon/ivanna_fastrpc_client.hpp"
 #include <algorithm>  // FIX: std::clamp usado en setSafLatentQ() sin este include
 #include <atomic>
 #include <cstring>
@@ -77,5 +78,6 @@ private:
 
     // Dataset cargado (HRIRs medidos de hasta 1250 posiciones)
     HRTFBinLoader m_loader;
+    ivanna::dsp::IvannaFastRpcClient m_fastRpcClient;
 };
 } // namespace Ivanna

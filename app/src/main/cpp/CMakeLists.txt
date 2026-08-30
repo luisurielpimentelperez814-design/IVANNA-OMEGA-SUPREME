@@ -214,6 +214,9 @@ add_library(ivanna_omega SHARED
     # ============================================================================
     ivannalab/ivannalab.cpp
     #     IvannaAudioClassifier.cpp
+    hexagon/ivanna_fastrpc_client.cpp
+    hexagon/ivanna_fastrpc_client_load.cpp
+    hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     #     IvannaFusionCore.cpp
     #     EvolutionaryEQ.cpp   # AVISO 2026-08-08: 3 copias en el repo divergieron entre si;
@@ -259,6 +262,9 @@ add_library(omega_effect SHARED
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
     IvannaAudioClassifier.cpp
+    hexagon/ivanna_fastrpc_client.cpp
+    hexagon/ivanna_fastrpc_client_load.cpp
+    hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     saf_optimizer.cpp
     saf_runtime.cpp

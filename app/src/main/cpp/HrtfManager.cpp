@@ -17,6 +17,15 @@ HrtfManager::HrtfManager() {
     // Inicializar coeficientes de crossfade
     m_xfadePos  = 0;
     m_xfading   = false;
+    ivanna::dsp::HrtfConvolutionConfig cfg;
+    cfg.sample_rate_in = 48000;
+    cfg.sample_rate_out = 768000;
+    cfg.hrtf_filter_length = 512;
+    cfg.block_size = BLOCK_SIZE;
+    cfg.num_azimuth_bins = 360;
+    cfg.num_elevation_bins = 180;
+    cfg.use_fft_convolution = true;
+    m_fastRpcClient.initialize(cfg);
 }
 
 void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
@@ -69,6 +78,18 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
 }
 
 void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
+    if (m_fastRpcClient.isDSPReady()) {
+        ivanna::dsp::SpatialPosition pos;
+        pos.azimuth = 0.0f;
+        pos.elevation = 0.0f;
+        pos.distance = 1.0f;
+        m_fastRpcClient.delegateBinauralConvolution(
+            buffer->left, buffer->right,
+            buffer->left, buffer->right,
+            pos, BLOCK_SIZE
+        );
+        return;
+    }
     // ── Crossfade lock-free ──────────────────────────────────────────────────
     // Si hay un banco pendiente: inicia crossfade suave sin clic.
     // XFADE_FRAMES bloques de fundido cruzado (coseno)
