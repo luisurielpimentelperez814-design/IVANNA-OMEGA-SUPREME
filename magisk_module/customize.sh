@@ -1,4 +1,9 @@
-#!/system/bin/sh
+ui_print " "
+ui_print " █▄ █▄▄█▄ █▄▄█▄ █▄▄█ "
+ui_print " █ ▀█ ▀█ ▀█ ▀█ ▀█ ▀█ "
+ui_print " I V A N N A  O M E G A "
+ui_print " █▄ █▄▄█▄ █▄▄█▄ █▄▄█ "
+ui_print " "
 # customize.sh — IVANNA OMEGA SUPREME Magisk Module
 # Deploys DSP libs + SAF_model.json + hrtf/*.ihr1 (12 sujetos) for Φ_SAF^∞ HRTF personalisation
 

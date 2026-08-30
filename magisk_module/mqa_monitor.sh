@@ -185,7 +185,7 @@ fi
 # ── Monitor loop ──────────────────────────────────────────────────────────────
 LAST_PRESET=""
 LAST_PKG=""
-log "monitor v2.0 iniciado (dry_run=$DRY_RUN)"
+log "monitor Googleplex Perfect iniciado (dry_run=$DRY_RUN)"
 
 while true; do
     r=$(detect_preset 2>/dev/null)
