@@ -1,3 +1,4 @@
+#include "IvannaAudioClassifier.hpp"
 #include <jni.h>
 #include <android/log.h>
 #include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block

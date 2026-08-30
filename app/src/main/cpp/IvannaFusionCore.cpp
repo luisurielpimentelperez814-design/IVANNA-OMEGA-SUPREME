@@ -1,3 +1,4 @@
+#include "IvannaAudioClassifier.hpp"
 #include "IvannaTinyML.hpp"
 #include "IvannaFusionCore.hpp"
 #include "HrtfManager.hpp"
