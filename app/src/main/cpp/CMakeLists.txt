@@ -64,6 +64,8 @@ add_library(ivanna_omega SHARED
     spatial/hrtf_convolver.cpp
     spatial/RirDataset.cpp
     spatial/RirConvolver.cpp
+    # v2.3.0: HRTFInterpolator real (antes era stub vacío — cero interpolación)
+    spatial/HRTFInterpolator.cpp
 
     # DSP core
     dsp/ParametricEQ.cpp
@@ -124,7 +126,11 @@ add_library(ivanna_omega SHARED
     saf_latent_bridge.cpp
 
     # Evolutionary (OFFLINE ONLY)
-    evolutionary_kernel.cpp
+    # v2.3.0: evolutionary_kernel_v2.cpp reemplaza evolutionary_kernel.cpp
+    # con fitness psicoacústico multi-criterio (ISO 226 + resonance penalty +
+    # tonality consistency). Los símbolos JNI son 100% compatibles con la v1
+    # (mismo conjunto de funciones extern "C") — drop-in replacement.
+    evolutionary_kernel_v2.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
 
     # System audio integration
@@ -278,6 +284,8 @@ add_library(omega_effect SHARED
     spatial/ivanna_object_renderer.cpp
     spatial/hrtf_convolver.cpp
     spatial/ivanna_head_tracker.cpp
+    # v2.3.0: HRTFInterpolator real (IDW bilinear)
+    spatial/HRTFInterpolator.cpp
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
     daemon/core/omega_control_bus.cpp
