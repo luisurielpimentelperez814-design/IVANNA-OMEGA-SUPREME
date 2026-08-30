@@ -31,3 +31,26 @@ target_link_libraries(ivanna_omega_native m pthread)
 enable_testing()
 add_test(NAME ivanna_fusion_smoke COMMAND ivanna_fusion)
 set_tests_properties(ivanna_fusion_smoke PROPERTIES TIMEOUT 15)
+
+# -----------------------------------------------------------------------------
+# Ivanna Omega Daemon - ELF hardening
+# Full RELRO + BIND_NOW
+# -----------------------------------------------------------------------------
+
+if(TARGET ivanna_daemon)
+    target_link_options(ivanna_daemon PRIVATE
+        "-Wl,-z,relro,-z,now"
+        "-Wl,-z,noexecstack"
+    )
+
+    target_compile_options(ivanna_daemon PRIVATE
+        -fstack-protector-strong
+        -D_FORTIFY_SOURCE=2
+        -Wformat
+        -Wformat-security
+    )
+
+    set_target_properties(ivanna_daemon PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+endif()
