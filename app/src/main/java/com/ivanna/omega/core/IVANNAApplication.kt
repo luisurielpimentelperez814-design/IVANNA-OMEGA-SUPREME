@@ -213,6 +213,12 @@ class IVANNAApplication : Application() {
         com.ivanna.omega.audio.RouteDspCalibrator.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
 
+        // Gobernador térmico OEM: degrada carga DSP (exciter → espacial →
+        // compresor) ANTES de que el kernel haga throttling de golpe — mejor
+        // bajar calidad que producir un glitch. Inerte en API<29 o si el
+        // HAL térmico no responde (sin efecto colateral).
+        com.ivanna.omega.audio.ThermalGovernor.start(this)
+
         // FIX (root vs sin root): hasta ahora la app asumia siempre el camino
         // con root (daemon Magisk por socket). Sin root, MagiskBridge devolvia
         // "queued" y OmegaEngineBridge no conectaba: nada procesaba el audio.
