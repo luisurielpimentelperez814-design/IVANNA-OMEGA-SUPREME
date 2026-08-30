@@ -15,9 +15,16 @@ observatory_log "BOOT" "Iniciando análisis profundo de pre-montaje (post-fs-dat
 
 # 4. MEMORY CORE: Historial de Arranques
 BOOT_COUNT_FILE="$CORE_DATA/boot_streak"
+BOOT_TS_FILE="$CORE_DATA/boot_streak_ts"
 COUNT=$(cat "$BOOT_COUNT_FILE" 2>/dev/null || echo 0)
+LAST_TS=$(cat "$BOOT_TS_FILE" 2>/dev/null || echo 0)
+NOW=$(date +%s)
+# Ventana de 10 min: solo cuentan boots cercanos (crash-loop real). Un reboot
+# manual del usuario días después NO debe tripear el safe-mode.
+if [ $((NOW - LAST_TS)) -gt 600 ]; then COUNT=0; fi
 COUNT=$((COUNT + 1))
 echo "$COUNT" > "$BOOT_COUNT_FILE"
+echo "$NOW" > "$BOOT_TS_FILE"
 
 memory_core_record "BOOT_EVENT" "Inicio del sistema (Boot count actual: $COUNT)"
 
@@ -61,6 +68,11 @@ for SO in \
     fi
 done
 
+# Safe-mode recovery: si el boot anterior entró en .safe_mode y este boot
+# llegó hasta aquí sin el flag, el shield funcionó — registrar para telemetría.
+if [ -f "$MODDIR/.safe_mode" ]; then
+    memory_core_record "SAFE_MODE_HELD" "Modo preservación activo — audio_effects retirados hasta intervención del usuario"
+fi
 # Resetear el counter porque post-fs-data no crasheó
 echo "0" > "$BOOT_COUNT_FILE"
 
