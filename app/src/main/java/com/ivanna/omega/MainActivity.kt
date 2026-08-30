@@ -610,6 +610,81 @@ fun OmegaApp() {
             composable("engines_status") {
                 com.ivanna.omega.ui.EnginesStatusScreen(onBack = { nav.popBackStack() })
             }
+
+            // ── CENTRO DE CONTROL OEM++ ──────────────────────────────────────
+            // 6 pantallas nuevas cableadas a APIs nativas reales.
+            // El ViewModel comparte estado entre todas vía viewModels().
+            composable("oem_dashboard") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                val expert by vm.expertMode.collectAsState()
+                com.ivanna.omega.ui.oem.OemDashboardScreen(
+                    state           = state,
+                    expertMode      = expert,
+                    onToggleExpert  = { vm.setExpertMode(!expert) },
+                    onMeasureLatency = { vm.measureLatency() },
+                    onResetClips    = { vm.resetClips() },
+                    onOpenSpatial   = { nav.navigate("oem_spatial") },
+                    onOpenAcoustic  = { nav.navigate("oem_acoustic") },
+                    onOpenAi        = { nav.navigate("oem_ai") },
+                    onOpenThermal   = { nav.navigate("oem_thermal") },
+                    onOpenTelemetry = { nav.navigate("oem_telemetry") },
+                )
+            }
+            composable("oem_spatial") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                val expert by vm.expertMode.collectAsState()
+                com.ivanna.omega.ui.oem.OemSpatialScreen(
+                    state       = state,
+                    expertMode  = expert,
+                    onBack      = { nav.popBackStack() },
+                    onSetWidth  = { vm.setSpatialWidth(it) },
+                    onSetAngle  = { vm.setSpatialAngle(it) },
+                )
+            }
+            composable("oem_acoustic") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                com.ivanna.omega.ui.oem.OemAcousticScreen(
+                    state  = state,
+                    onBack = { nav.popBackStack() },
+                )
+            }
+            composable("oem_ai") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                val expert by vm.expertMode.collectAsState()
+                com.ivanna.omega.ui.oem.OemAiScreen(
+                    state      = state,
+                    expertMode = expert,
+                    onBack     = { nav.popBackStack() },
+                )
+            }
+            composable("oem_thermal") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                com.ivanna.omega.ui.oem.OemThermalScreen(
+                    state  = state,
+                    onBack = { nav.popBackStack() },
+                )
+            }
+            composable("oem_telemetry") {
+                val vm: com.ivanna.omega.ui.oem.OemViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val state by vm.state.collectAsState()
+                com.ivanna.omega.ui.oem.OemTelemetryScreen(
+                    state            = state,
+                    onBack           = { nav.popBackStack() },
+                    onResetClips     = { vm.resetClips() },
+                    onMeasureLatency = { vm.measureLatency() },
+                )
+            }
         }
     }
 }

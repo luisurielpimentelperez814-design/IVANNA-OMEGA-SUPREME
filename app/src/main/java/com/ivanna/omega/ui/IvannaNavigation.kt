@@ -166,7 +166,8 @@ fun MainScaffold(
                     onOpenMagisk   = { outerNav.navigate("magisk") },
                     onOpenProfiles = { outerNav.navigate("profiles") },
                     onOpenLab      = { outerNav.navigate("lab") },
-                    onOpenEngines  = { outerNav.navigate("engines_status") }
+                    onOpenEngines  = { outerNav.navigate("engines_status") },
+                    onOpenOemDash  = { outerNav.navigate("oem_dashboard") },
                 )
             }
         }
@@ -215,14 +216,18 @@ fun SystemHubScreen(
     onOpenMagisk   : () -> Unit,
     onOpenProfiles : () -> Unit,
     onOpenLab      : () -> Unit,
-    onOpenEngines  : () -> Unit = {}
+    onOpenEngines  : () -> Unit = {},
+    onOpenOemDash  : () -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HubHeader("SISTEMA", "Magisk · Perfiles · Laboratorio DSP · Motores", AmberSignal)
+        HubHeader("SISTEMA", "Control OEM · Magisk · Perfiles · Lab · Motores", AmberSignal)
+        HubCard("CENTRO DE CONTROL OEM++",
+            "Dashboard · HRTF · SAF/RIR · IA · Térmico · Telemetría",
+            AuroraCyan, onOpenOemDash)
         HubCard("MAGISK MODULE STATUS", "Daemon RT · Shared Memory · SEPolicy",         AmberSignal,   onOpenMagisk)
         HubCard("PERFILES DE USUARIO",  "Bandas auditivas · EQ precalibrado · Presets", AmberSignal,   onOpenProfiles)
         HubCard("LABORATORIO DSP",      "Sweep · LUFS · THD+N · SNR",                  PhosphorGreen, onOpenLab)
