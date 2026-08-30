@@ -87,7 +87,11 @@ object ThermalGovernor {
     }
 
     private fun tick(pm: PowerManager) {
-        val headroom = pm.thermalHeadroom
+        // getThermalHeadroom(status) disponible desde API 31; devuelve NaN si HAL no responde.
+        // PowerManager.THERMAL_STATUS_NONE = 0
+        val headroom = if (android.os.Build.VERSION.SDK_INT >= 31)
+            runCatching { pm.getThermalHeadroom(0) }.getOrDefault(Float.NaN)
+        else Float.NaN
         if (headroom.isNaN()) return  // HAL térmico no responde este ciclo
         thermalApiAvailable = true
         currentThermalLoad = headroom

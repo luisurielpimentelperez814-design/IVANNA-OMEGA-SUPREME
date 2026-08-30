@@ -37,6 +37,16 @@ data class OemState(
     val usbStreaming     : Boolean = false,
     val evoBestFitness   : Float = 0f,
     val evoGeneration    : Int = 0,
+    // Campos añadidos en OemViewModel refactored (v2.3.1)
+    val tempC          : Float = 0f,
+    val latencyMs      : Float = 0f,
+    val phaseState     : Float = 0f,
+    val hrtfLoaded     : Boolean = false,
+    val safConverged   : Boolean = false,
+    val safError       : Float = 0f,
+    val safIteration   : Int = 0,
+    val safDiag        : FloatArray = FloatArray(0),
+    val daemonStatus   : String = "",
 ) {
     enum class EngineState { UNKNOWN, ACTIVE, SUSPENDED, POWER_SAVE, RECOVERY }
     enum class AudioBackend { UNKNOWN, HEXAGON_DSP, NEON_ARM64, CPU_FALLBACK }
