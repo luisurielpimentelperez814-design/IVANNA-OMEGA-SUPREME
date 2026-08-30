@@ -71,7 +71,7 @@ void IvannaFusionEngine::setGoldenEarMode(bool enable) {
 void IvannaFusionEngine::process(AudioBuffer* buffer) {
     // FASE 1: SPSC Lock-Free Ring Buffer async push
     // Solo encolamos (ingest) sin bloquear el hilo principal de audio
-    m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
+    m_classifier->IngestAudio(buffer->left, BLOCK_SIZE, 2);
     
     // (Ya no llamamos a processInference() aquí, corre en background)
 
