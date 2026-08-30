@@ -1,5 +1,5 @@
 #include "IvannaFusionCore.hpp"
-#include "IvannaAudioClassifier.hpp"
+#include "IvannaTinyML.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -38,7 +38,7 @@ int main() {
         // Reporte periódico de clasificación TinyML cada ~1.0 segundo
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(now - lastReport).count() >= 1) {
-            IvannaAudioClassifier* classifier = engine.getClassifier();
+            IvannaTinyML* classifier = engine.getClassifier();
             if (classifier) {
                 const float* probs = classifier->getProbabilities();
                 uint8_t domClass = classifier->getDominantClass();

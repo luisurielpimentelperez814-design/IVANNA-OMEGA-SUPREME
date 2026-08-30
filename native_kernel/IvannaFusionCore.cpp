@@ -2,7 +2,7 @@
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
-#include "IvannaAudioClassifier.hpp"
+#include "IvannaTinyML.hpp"
 #include <iostream>
 
 namespace Ivanna {
@@ -11,7 +11,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
-    m_classifier = new IvannaAudioClassifier();
+    m_classifier = new IvannaTinyML();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {

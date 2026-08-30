@@ -1,6 +1,6 @@
 #include "IvannaJniBridge.hpp"
 #include "IvannaFusionCore.hpp"
-#include "IvannaAudioClassifier.hpp"
+#include "IvannaTinyML.hpp"
 #include <cstring>
 #include <algorithm>
 
@@ -93,7 +93,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_supreme_IvannaNativeBridge_nativeGe
     if (handle == 0 || outProbs == nullptr) return;
 
     IvannaFusionEngine* engine = reinterpret_cast<IvannaFusionEngine*>(handle);
-    IvannaAudioClassifier* classifier = engine->getClassifier();
+    IvannaTinyML* classifier = engine->getClassifier();
     if (!classifier) return;
 
 #if __has_include(<jni.h>)
@@ -112,7 +112,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_supreme_IvannaNativeBridge_nativeGe
 JNIEXPORT jint JNICALL Java_com_ivanna_omega_supreme_IvannaNativeBridge_nativeGetDominantClass(JNIEnv *, jclass, jlong handle) {
     if (handle == 0) return 0;
     IvannaFusionEngine* engine = reinterpret_cast<IvannaFusionEngine*>(handle);
-    IvannaAudioClassifier* classifier = engine->getClassifier();
+    IvannaTinyML* classifier = engine->getClassifier();
     return classifier ? static_cast<jint>(classifier->getDominantClass()) : 0;
 }
 
