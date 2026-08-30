@@ -23,7 +23,7 @@
 // se copia al buffer de IR del HRTFConvolver de forma thread-safe via swap.
 // ============================================================================
 #include "HRTFInterpolator.hpp"
-#include "HRTFDatabase.h"
+#include "spatial/HRTFDatabase.h"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
