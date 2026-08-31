@@ -291,9 +291,29 @@ private:
     int   histIdx_    = 0;
     float prevEnergy_ = 0.0f;
 
-    void computeAdaptiveParameters() {
+    void computeAdaptiveParameters(int aiDominantClass = -1) {
         auto& p = targetParams_;
         const auto& c = currentChar_;
+
+        // ── Fusión de IA (TinyML) con DSP (Centroid, Flux) ──────────────
+        float targetBass = 0.0f;
+        float targetMid = 0.0f;
+        float targetTreble = 0.0f;
+        float targetSpatial = 1.0f;
+        
+        if (aiDominantClass == 0) { // Speech
+            targetBass = -2.0f; targetMid = 3.0f; targetTreble = 1.0f;
+            targetSpatial = 0.8f;
+        } else if (aiDominantClass == 1) { // Music
+            targetBass = 2.5f; targetMid = 0.5f; targetTreble = 1.5f;
+            targetSpatial = 1.4f;
+        } else if (aiDominantClass == 2) { // Transient/Action
+            targetBass = 3.0f; targetMid = -1.0f; targetTreble = 2.0f;
+            targetSpatial = 1.2f;
+        } else if (aiDominantClass == 3) { // Noise
+            targetBass = -1.0f; targetMid = 0.0f; targetTreble = -3.0f;
+            targetSpatial = 0.9f;
+        }
 
         // ── Compresor adaptativo ─────────────────────────────────────────
         p.compressorThreshold = -20.0f - c.rms * 15.0f;
@@ -321,11 +341,12 @@ private:
         }
 
         // ── Ancho estéreo ─────────────────────────────────────────────────
-        p.stereoWidth = (c.tonality > 0.7f) ? 1.4f
+        float baseWidth = (c.tonality > 0.7f) ? 1.4f
                       : (c.percussiveness > 0.7f) ? 0.9f
                       : 1.15f;
+        p.stereoWidth = (aiDominantClass != -1) ? (baseWidth * 0.5f + targetSpatial * 0.5f) : baseWidth;
 
-        // ── EQ adaptativo basado en spectral centroid real ────────────────
+        // ── EQ adaptativo basado en spectral centroid y AI ────────────────
         if (c.spectralCentroid < 1500.0f) {
             p.eqBass    = 2.5f;
             p.eqMid     = 0.5f;
@@ -341,6 +362,12 @@ private:
             p.eqMid     = 0.0f;
             p.eqTreble  = 0.5f;
             p.eqPresence = 0.5f;
+        }
+        
+        if (aiDominantClass != -1) {
+            p.eqBass = p.eqBass * 0.3f + targetBass * 0.7f;
+            p.eqMid = p.eqMid * 0.3f + targetMid * 0.7f;
+            p.eqTreble = p.eqTreble * 0.3f + targetTreble * 0.7f;
         }
 
         // ── ISO 226 — volumen bajo: boost en graves/agudos ────────────────
