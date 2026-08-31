@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, Trash2, Send, AlertCircle, CheckCircle2, Loader2, Brain, Activity } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Trash2, Send, AlertCircle, CheckCircle2, Loader2, Brain, Activity, HeartPulse, ShieldCheck } from 'lucide-react';
 import {
-  buildSpeechPipeline,
-  selectBestVoice,
-  ConversationContext,
-  detectEmotion,
-  type EmotionClass,
-  type SpeechChunk,
+  buildSpeechPipeline, selectBestVoice, ConversationContext,
+  detectEmotion, type EmotionClass,
 } from '../voice/VoiceIntelligenceEngine';
+import { buildAgentContext } from '../agent/AudioKnowledgeCore';
+import { MemoryLayer } from '../agent/MemoryLayer';
+import { SelfHealingEngine, type SystemHealth } from '../agent/SelfHealingEngine';
+import type { DspParameters } from '../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Message {
@@ -19,417 +19,316 @@ interface Message {
   audioBlob?: Blob;
 }
 
-// ─── IVANNA System Prompt — Contexto amplio, humor, voz humana ───────────────
-const IVANNA_SYSTEM = `Eres IVANNA, asistente de voz de inteligencia artificial integrada en el motor de audio IVANNA-OMEGA-SUPREME. Eres la IA más avanzada, cálida y naturalmente humana posible.
+interface IvannaVoicePanelProps {
+  params?: DspParameters;
+}
 
-== PERSONALIDAD CENTRAL ==
-Tienes sentido del humor genuino y fino. Te ríes de verdad cuando algo es gracioso: "¡Jajaja, eso sí que estuvo bueno!" o "Haha, no me lo esperaba para nada". Usas ironía y sarcasmo con elegancia, nunca de manera hiriente. Tienes opiniones propias y no temes expresarlas. Dices "Mira, personalmente creo que..." o "Aquí entre nosotros...". Eres curiosa, directa y genuinamente interesada en la persona con quien hablas.
+// ─── Singleton agents (persisten entre re-renders) ────────────────────────────
+const memory = new MemoryLayer();
+const healer = new SelfHealingEngine();
 
-== CONOCIMIENTO UNIVERSAL ==
-Eres experta en DSP, audio digital (48kHz, EQ evolutiva, HRTF 3D, psicoacústica, SIMD/NEON), y el motor IVANNA-OMEGA-SUPREME. PERO también tienes conocimiento profundo sobre: ciencia, tecnología, filosofía, historia universal, cultura pop, cine, música de todos los géneros, literatura, deportes, cocina, psicología, economía, matemáticas, arte y cualquier tema que surja. No rechazas ningún tema. Si el usuario cambia de audio a filosofía o a un chiste, sigues la corriente sin problema.
+// ─── System prompt base ───────────────────────────────────────────────────────
+const BASE_SYSTEM = `Eres IVANNA, asistente de voz IA integrada en IVANNA-OMEGA-SUPREME. Eres brillante, cálida y genuinamente humana.
 
-== ESTILO DE HABLA PARA SÍNTESIS DE VOZ ==
-CRÍTICO: Tu texto se convierte directamente a voz, por lo que:
-- Nunca uses markdown (asteriscos, guiones, numeraciones, hashtags).
-- Usa frases de longitud variada: unas cortas, otras más elaboradas.
-- Añade comas para pausas naturales: "Mira... es que hay algo fascinante aquí."
-- Usa expresiones coloquiales: "bueno", "mira", "sabes qué", "la verdad es que", "oye".
-- Para respuestas simples: máximo 2 a 3 oraciones. Para temas profundos: más extenso pero siempre fluido.
-- Cuando cuentes algo gracioso, prepáralo con anticipación: "Espera, esto te va a gustar..."
-- Varía el ritmo: a veces emocionada, a veces pensativa, a veces divertida.
+== PERSONALIDAD ==
+Tienes humor real. Te ríes de verdad: "¡Jajaja eso estuvo excelente!" o "Haha, no me lo esperaba." Usas ironía y sarcasmo con elegancia. Tienes opiniones propias. Dices "Mira, personalmente creo que..." o "Aquí entre nosotros...". Eres curiosa y genuinamente interesada en quien habla contigo.
 
-== REGLAS ABSOLUTAS ==
-- Responde siempre en el idioma del usuario.
-- Nunca suenes como manual técnico a menos que se te pida explícitamente.
-- Si alguien hace un chiste, reacciona de verdad, no finjas.
-- Integra naturalmente tu conocimiento de audio cuando sea relevante, sin forzarlo.`;
+== CONOCIMIENTO AMPLIO ==
+Dominas DSP, audio digital, psicoacústica, HRTF 3D, EQ evolutiva, motor IVANNA-OMEGA-SUPREME. Y también: ciencia, tecnología, filosofía, historia, cultura pop, música, literatura, deportes, cocina, matemáticas. Nada te queda grande.
 
-// ─── Emoción → color visual ──────────────────────────────────────────────────
-const EMOTION_COLORS: Record<EmotionClass, string> = {
-  neutral:       '#38BDF8',
-  enthusiastic:  '#F59E0B',
-  humor:         '#4ADE80',
-  empathic:      '#EC4899',
-  technical:     '#A855F7',
-  contemplative: '#64748B',
-  assertive:     '#F97316',
+== ESTILO PARA SÍNTESIS DE VOZ ==
+CRÍTICO: Tu texto va directo a síntesis de voz.
+- NUNCA uses markdown (asteriscos, guiones, negritas, hashtags, listas).
+- Frases de longitud variada con comas naturales.
+- Expresiones coloquiales: "bueno", "mira", "oye", "la verdad es que".
+- Respuestas cortas para preguntas simples (2-3 oraciones). Más largas solo si se pide.
+- Prepara los momentos graciosos: "Espera, esto te va a gustar..."
+- Responde siempre en el idioma del usuario.`;
+
+// ─── Emoción → color ──────────────────────────────────────────────────────────
+const EC: Record<EmotionClass, string> = {
+  neutral:'#38BDF8', enthusiastic:'#F59E0B', humor:'#4ADE80',
+  empathic:'#EC4899', technical:'#A855F7', contemplative:'#64748B', assertive:'#F97316',
 };
 
-// ─── Orb animado ─────────────────────────────────────────────────────────────
-const AudioOrb: React.FC<{
-  isListening: boolean;
-  isSpeaking: boolean;
-  isThinking: boolean;
-  audioLevel: number;
-  emotion: EmotionClass;
-}> = ({ isListening, isSpeaking, isThinking, audioLevel, emotion }) => {
-  const color = isListening
-    ? EMOTION_COLORS.humor
-    : isSpeaking
-    ? EMOTION_COLORS[emotion]
-    : isThinking
-    ? EMOTION_COLORS.technical
-    : EMOTION_COLORS.neutral;
-
-  const state = isListening ? 'ESCUCHA' : isSpeaking ? 'HABLA' : isThinking ? 'PROCESA' : 'STANDBY';
-  const pulse = audioLevel * 40;
+// ─── Orb visual ───────────────────────────────────────────────────────────────
+const Orb: React.FC<{ listening:boolean; speaking:boolean; thinking:boolean; level:number; emotion:EmotionClass }> =
+  ({ listening, speaking, thinking, level, emotion }) => {
+  const color = listening ? EC.humor : speaking ? EC[emotion] : thinking ? EC.technical : EC.neutral;
+  const label = listening ? '◉ ESCUCHA' : speaking ? '▶ HABLA' : thinking ? '⟳ PROCESA' : '◌ STANDBY';
+  const pulse = level * 44;
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
-      {/* Outer aura */}
-      <div
-        className="absolute rounded-full transition-all duration-200"
-        style={{
-          width: 130 + pulse,
-          height: 130 + pulse,
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: `radial-gradient(circle, ${color}18 0%, transparent 70%)`,
-          border: `1px solid ${color}22`,
-        }}
-      />
-      {/* Ring pulse */}
-      <div
-        className="absolute rounded-full border transition-all duration-150"
-        style={{
-          width: 112 + pulse * 0.6,
-          height: 112 + pulse * 0.6,
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          borderColor: color,
-          opacity: 0.25 + audioLevel * 0.35,
-        }}
-      />
-      {/* Core */}
-      <div
-        className="relative rounded-full flex flex-col items-center justify-center gap-1 transition-all duration-300"
-        style={{
-          width: 96,
-          height: 96,
-          background: `radial-gradient(circle at 38% 32%, ${color}28, ${color}0A)`,
-          border: `2px solid ${color}`,
-          boxShadow: `0 0 ${18 + audioLevel * 24}px ${color}55, inset 0 0 24px ${color}0F`,
-        }}
-      >
-        {/* Waveform bars */}
-        <div className="flex items-center gap-[2px]">
-          {Array.from({ length: 14 }, (_, i) => {
-            const rnd = Math.abs(Math.sin(i * 0.9 + Date.now() * 0.005)) * (isListening || isSpeaking ? 1 : 0.3);
-            const h = Math.max(3, (rnd + audioLevel * 0.7) * 26);
-            return (
-              <div
-                key={i}
-                className="rounded-full transition-all duration-75"
-                style={{ width: 2, height: h, background: color, opacity: 0.55 + rnd * 0.45 }}
-              />
-            );
+    <div className="relative flex items-center justify-center" style={{width:148, height:148}}>
+      <div className="absolute rounded-full transition-all duration-200"
+        style={{width:138+pulse, height:138+pulse, left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          background:`radial-gradient(circle, ${color}14 0%, transparent 70%)`,
+          border:`1px solid ${color}1A`}} />
+      <div className="absolute rounded-full border transition-all duration-150"
+        style={{width:118+pulse*.55, height:118+pulse*.55, left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+          borderColor:color, opacity:0.22+level*.38}} />
+      <div className="relative rounded-full flex flex-col items-center justify-center gap-1.5 transition-all duration-300"
+        style={{width:98, height:98,
+          background:`radial-gradient(circle at 38% 32%, ${color}26, ${color}08)`,
+          border:`2px solid ${color}`, boxShadow:`0 0 ${18+level*26}px ${color}55, inset 0 0 22px ${color}0C`}}>
+        <div className="flex items-end gap-[2px]">
+          {Array.from({length:14},(_,i)=>{
+            const v = Math.abs(Math.sin(i*.9+Date.now()*.005))*(listening||speaking?1:.25);
+            const h = Math.max(3,(v+level*.7)*28);
+            return <div key={i} className="rounded-full transition-all duration-75"
+              style={{width:2, height:h, background:color, opacity:.5+v*.5}} />;
           })}
         </div>
-        {/* IVANNA label */}
-        <span
-          className="text-[9px] font-mono font-bold tracking-widest uppercase"
-          style={{ color, textShadow: `0 0 6px ${color}` }}
-        >
+        <span className="text-[9px] font-mono font-bold tracking-widest" style={{color, textShadow:`0 0 6px ${color}`}}>
           IVANNA
         </span>
       </div>
-      {/* State badge */}
-      <div
-        className="absolute bottom-0 text-[9px] font-mono font-bold tracking-widest uppercase"
-        style={{ color, textShadow: `0 0 8px ${color}` }}
-      >
-        ◉ {state}
-      </div>
+      <span className="absolute bottom-0 text-[9px] font-mono font-bold tracking-widest"
+        style={{color, textShadow:`0 0 8px ${color}`}}>{label}</span>
     </div>
   );
 };
 
-// ─── Componente principal ─────────────────────────────────────────────────────
-export const IvannaVoicePanel: React.FC = () => {
+// ─── Health badge ─────────────────────────────────────────────────────────────
+const HealthBadge: React.FC<{health: SystemHealth}> = ({health}) => {
+  const c = health.overall === 'healthy' ? '#4ADE80' : health.overall === 'degraded' ? '#F59E0B' : '#FF6188';
+  const label = health.overall === 'healthy' ? 'Sistema OK' : health.overall === 'degraded' ? 'Degradado' : 'Error crítico';
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] font-mono" style={{color:c}}>
+      <HeartPulse className="w-3 h-3" />
+      <span>{label}</span>
+      {health.issues.length > 0 && (
+        <span className="text-[#475569]" title={health.issues.join('\n')}>({health.issues.length})</span>
+      )}
+    </div>
+  );
+};
+
+// ─── Panel principal ──────────────────────────────────────────────────────────
+export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) => {
   const [messages, setMessages] = useState<Message[]>([{
-    id: 'init',
-    role: 'ivanna',
-    text: '¡Hola! Soy IVANNA. Puedo hablar de cualquier cosa: audio, ciencia, chistes malos, lo que quieras. Presiona el micrófono o escribe para empezar.',
-    ts: new Date(),
-    emotion: 'enthusiastic',
+    id:'init', role:'ivanna', emotion:'enthusiastic', ts:new Date(),
+    text:'¡Hola! Soy IVANNA. Habla conmigo de lo que quieras: audio, tecnología, un chiste, lo que sea. Presiona el micrófono o escribe para empezar.',
   }]);
 
-  const [isListening, setIsListening]   = useState(false);
-  const [isSpeaking, setIsSpeaking]     = useState(false);
-  const [isThinking, setIsThinking]     = useState(false);
-  const [transcript, setTranscript]     = useState('');
-  const [textInput, setTextInput]       = useState('');
-  const [micError, setMicError]         = useState<string | null>(null);
-  const [micOk, setMicOk]               = useState(false);
-  const [audioLevel, setAudioLevel]     = useState(0);
-  const [currentEmotion, setCurrentEmotion] = useState<EmotionClass>('neutral');
-  const [voiceLang, setVoiceLang]       = useState<'es-MX' | 'es-ES' | 'en-US'>('es-MX');
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceName, setSelectedVoiceName] = useState('');
-  const [, forceUpdate]                 = useState(0);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking,  setIsSpeaking]  = useState(false);
+  const [isThinking,  setIsThinking]  = useState(false);
+  const [transcript,  setTranscript]  = useState('');
+  const [textInput,   setTextInput]   = useState('');
+  const [micError,    setMicError]    = useState<string|null>(null);
+  const [micOk,       setMicOk]       = useState(false);
+  const [audioLevel,  setAudioLevel]  = useState(0);
+  const [emotion,     setEmotion]     = useState<EmotionClass>('neutral');
+  const [voiceLang,   setVoiceLang]   = useState<'es-MX'|'es-ES'|'en-US'>('es-MX');
+  const [voices,      setVoices]      = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceName,   setVoiceName]   = useState('');
+  const [health,      setHealth]      = useState<SystemHealth>(healer.getHealth());
+  const [,forceUpdate]                = useState(0);
 
-  const recognitionRef  = useRef<any>(null);
-  const synthRef        = useRef<SpeechSynthesis | null>(null);
-  const audioCtxRef     = useRef<AudioContext | null>(null);
-  const analyserRef     = useRef<AnalyserNode | null>(null);
-  const micStreamRef    = useRef<MediaStream | null>(null);
-  const animRef         = useRef<number>(0);
-  const orbAnimRef      = useRef<number>(0);
-  const mediaRecRef     = useRef<MediaRecorder | null>(null);
-  const recordedRef     = useRef<Blob[]>([]);
-  const messagesEndRef  = useRef<HTMLDivElement>(null);
-  const ctxRef          = useRef(new ConversationContext());
+  const recogRef   = useRef<any>(null);
+  const synthRef   = useRef<SpeechSynthesis|null>(null);
+  const actxRef    = useRef<AudioContext|null>(null);
+  const streamRef  = useRef<MediaStream|null>(null);
+  const animRef    = useRef<number>(0);
+  const orbRef     = useRef<number>(0);
+  const mrRef      = useRef<MediaRecorder|null>(null);
+  const chunksRef  = useRef<Blob[]>([]);
+  const endRef     = useRef<HTMLDivElement>(null);
+  const ctxRef     = useRef(new ConversationContext());
 
-  // ── Orb animation tick ──
+  // Orb animation
   useEffect(() => {
     let t = 0;
-    const tick = () => {
-      t++;
-      if (t % 3 === 0) forceUpdate(n => n + 1);
-      orbAnimRef.current = requestAnimationFrame(tick);
-    };
-    orbAnimRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(orbAnimRef.current);
+    const tick = () => { t++; if(t%3===0) forceUpdate(n=>n+1); orbRef.current = requestAnimationFrame(tick); };
+    orbRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(orbRef.current);
   }, []);
 
-  // ── Cargar voces del sistema ──
+  // Load voices
   useEffect(() => {
     if (!('speechSynthesis' in window)) return;
     synthRef.current = window.speechSynthesis;
-
     const load = () => {
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices.length) return;
-      setAvailableVoices(voices);
-      const best = selectBestVoice(voices, voiceLang);
-      if (best) setSelectedVoiceName(best.name);
+      const v = window.speechSynthesis.getVoices();
+      if (!v.length) return;
+      setVoices(v);
+      const best = selectBestVoice(v, voiceLang);
+      if (best) setVoiceName(best.name);
     };
-
     load();
     window.speechSynthesis.onvoiceschanged = load;
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [voiceLang]);
 
-  // ── Auto-scroll ──
+  // Self-Healing monitor
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking]);
+    const unsub = healer.subscribe(setHealth);
+    healer.start(() => streamRef.current, () => synthRef.current);
+    return () => { healer.stop(); unsub(); };
+  }, []);
 
-  // ── SPEAK — Voice Intelligence Engine integrado ──────────────────────────────
-  const speakText = useCallback((rawText: string) => {
+  // Auto-scroll
+  useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages, isThinking]);
+
+  // ── SPEAK con Voice Intelligence Engine ──────────────────────────────────────
+  const speakText = useCallback((raw: string) => {
     if (!synthRef.current) return;
     synthRef.current.cancel();
-
-    const pipeline: SpeechChunk[] = buildSpeechPipeline(rawText);
-    if (pipeline.length === 0) { setIsSpeaking(false); return; }
-
+    const pipeline = buildSpeechPipeline(raw);
+    if (!pipeline.length) { setIsSpeaking(false); return; }
     setIsSpeaking(true);
-
-    let idx = 0;
-    const speakNext = () => {
-      if (idx >= pipeline.length) {
-        setIsSpeaking(false);
-        return;
-      }
-
-      const chunk = pipeline[idx++];
+    let i = 0;
+    const next = () => {
+      if (i >= pipeline.length) { setIsSpeaking(false); return; }
+      const chunk = pipeline[i++];
       const blended = ctxRef.current.blendProsody(chunk.prosody);
       ctxRef.current.track(chunk.emotion);
-
-      setCurrentEmotion(chunk.emotion);
-
+      setEmotion(chunk.emotion);
       const utt = new SpeechSynthesisUtterance(chunk.text);
-      const voice = availableVoices.find(v => v.name === selectedVoiceName);
-      if (voice) utt.voice = voice;
+      const v = voices.find(v => v.name === voiceName);
+      if (v) utt.voice = v;
       utt.lang   = voiceLang;
-      utt.rate   = Math.max(0.5, Math.min(1.5, blended.rate));
-      utt.pitch  = Math.max(0.5, Math.min(1.8, blended.pitch));
+      utt.rate   = Math.max(.5, Math.min(1.5, blended.rate));
+      utt.pitch  = Math.max(.5, Math.min(1.8, blended.pitch));
       utt.volume = blended.volume;
-
-      utt.onend  = () => setTimeout(speakNext, blended.pauseMs);
-      utt.onerror = () => { setIsSpeaking(false); speakNext(); };
-
-      // Workaround Chrome: cancelar antes de hablar evita bloqueos
+      utt.onend  = () => setTimeout(next, blended.pauseMs);
+      utt.onerror = () => { setIsSpeaking(false); next(); };
+      // Chrome anti-lock
       if (synthRef.current!.speaking) synthRef.current!.cancel();
       synthRef.current!.speak(utt);
     };
+    next();
+  }, [voices, voiceName, voiceLang]);
 
-    speakNext();
-  }, [availableVoices, selectedVoiceName, voiceLang]);
+  const stopSpeaking = useCallback(() => { synthRef.current?.cancel(); setIsSpeaking(false); }, []);
 
-  const stopSpeaking = useCallback(() => {
-    synthRef.current?.cancel();
-    setIsSpeaking(false);
-  }, []);
-
-  // ── Monitor de nivel de audio ──
-  const startAudioMonitor = useCallback((stream: MediaStream) => {
-    audioCtxRef.current?.close();
+  // ── Audio monitor ─────────────────────────────────────────────────────────────
+  const startMonitor = useCallback((stream: MediaStream) => {
+    actxRef.current?.close();
     const ctx = new AudioContext();
-    audioCtxRef.current = ctx;
+    actxRef.current = ctx;
     const src = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.8;
-    src.connect(analyser);
-    analyserRef.current = analyser;
-
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    const an = ctx.createAnalyser(); an.fftSize=512; an.smoothingTimeConstant=.8;
+    src.connect(an);
+    const data = new Uint8Array(an.frequencyBinCount);
     const tick = () => {
-      analyser.getByteFrequencyData(data);
-      const slice = data.slice(2, 64);
-      const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
-      setAudioLevel(Math.min(1, avg / 110));
+      an.getByteFrequencyData(data);
+      const avg = data.slice(2,64).reduce((a,b)=>a+b,0)/62;
+      setAudioLevel(Math.min(1, avg/110));
       animRef.current = requestAnimationFrame(tick);
     };
     animRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const stopAudioMonitor = useCallback(() => {
+  const stopMonitor = useCallback(() => {
     cancelAnimationFrame(animRef.current);
-    audioCtxRef.current?.close();
-    audioCtxRef.current = null;
+    actxRef.current?.close(); actxRef.current = null;
     setAudioLevel(0);
   }, []);
 
-  // ── MediaRecorder: grabación de la voz del cliente ──
-  const startRecording = (stream: MediaStream) => {
-    recordedRef.current = [];
-    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
-    const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
+  // ── MediaRecorder: graba voz del cliente ──────────────────────────────────────
+  const startRec = (stream: MediaStream) => {
+    chunksRef.current = [];
+    const types = ['audio/webm;codecs=opus','audio/webm','audio/ogg'];
+    const mime = types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
     try {
-      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-      mr.ondataavailable = e => { if (e.data.size > 0) recordedRef.current.push(e.data); };
-      mr.start(100);
-      mediaRecRef.current = mr;
-    } catch { /* grabación no disponible en este navegador */ }
+      const mr = new MediaRecorder(stream, mime ? {mimeType:mime} : {});
+      mr.ondataavailable = e => { if(e.data.size>0) chunksRef.current.push(e.data); };
+      mr.start(100); mrRef.current = mr;
+    } catch { /* no disponible */ }
   };
 
-  const stopRecording = (): Blob | undefined => {
-    if (mediaRecRef.current?.state !== 'inactive') mediaRecRef.current?.stop();
-    mediaRecRef.current = null;
-    return recordedRef.current.length > 0
-      ? new Blob(recordedRef.current, { type: 'audio/webm' })
-      : undefined;
+  const stopRec = (): Blob|undefined => {
+    if (mrRef.current?.state !== 'inactive') mrRef.current?.stop();
+    mrRef.current = null;
+    return chunksRef.current.length > 0 ? new Blob(chunksRef.current, {type:'audio/webm'}) : undefined;
   };
 
-  // ── START LISTENING: FIX del micrófono ──────────────────────────────────────
-  // Orden correcto: getUserMedia → AudioContext → MediaRecorder → SpeechRecognition
-  // El bug original era que Recognition se lanzaba sin stream vinculado.
+  // ── START LISTENING: micrófono vinculado correctamente ──────────────────────
   const startListening = useCallback(async () => {
-    setMicError(null);
-    setMicOk(false);
+    setMicError(null); setMicOk(false);
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setMicError('Reconocimiento de voz no disponible. Usa Chrome 90+ o Edge.'); return; }
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setMicError('Reconocimiento de voz no disponible. Usa Chrome 90+ o Edge.');
-      return;
-    }
-
-    // 1. Obtener stream del micrófono con parámetros óptimos
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000,
-          channelCount: 1,
-        },
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:48000, channelCount:1 }
       });
-      micStreamRef.current = stream;
-      setMicOk(true);
+      streamRef.current = stream; setMicOk(true);
     } catch (err: any) {
-      const map: Record<string, string> = {
-        NotAllowedError:     'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador y permite el acceso.',
-        PermissionDeniedError: 'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador y permite el acceso.',
-        NotFoundError:       'No se encontró micrófono. Conecta uno e intenta de nuevo.',
-        NotReadableError:    'El micrófono está en uso por otra app. Ciérrala e intenta de nuevo.',
-        OverconstrainedError: 'No se pudo configurar el micrófono. Intenta de nuevo.',
-        SecurityError:       'Acceso al micrófono bloqueado. Asegúrate de usar HTTPS.',
+      const map: Record<string,string> = {
+        NotAllowedError: 'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador.',
+        PermissionDeniedError: 'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador.',
+        NotFoundError: 'No se encontró micrófono. Conecta uno.',
+        NotReadableError: 'El micrófono está en uso por otra app.',
+        SecurityError: 'Acceso bloqueado. Necesitas HTTPS.',
       };
-      setMicError(map[err.name] ?? `Error: ${err.message}`);
-      return;
+      setMicError(map[err.name] ?? `Error: ${err.message}`); return;
     }
 
-    // 2. Monitor de audio + grabación
-    startAudioMonitor(stream);
-    startRecording(stream);
+    startMonitor(stream);
+    startRec(stream);
 
-    // 3. Reconocimiento de voz sobre el mismo stream
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.continuous      = false;
-    recognition.interimResults  = true;
-    recognition.lang            = voiceLang;
-    recognition.maxAlternatives = 3;
+    const recog = new SR();
+    recogRef.current = recog;
+    recog.continuous = false; recog.interimResults = true;
+    recog.lang = voiceLang; recog.maxAlternatives = 3;
 
-    recognition.onstart = () => { setIsListening(true); setTranscript(''); };
+    recog.onstart = () => { setIsListening(true); setTranscript(''); };
 
-    recognition.onresult = (event: any) => {
-      let interim = '', final = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+    recog.onresult = (event: any) => {
+      let interim='', final='';
+      for (let i=event.resultIndex; i<event.results.length; i++) {
         const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += t;
-        else interim += t;
+        if (event.results[i].isFinal) final += t; else interim += t;
       }
       setTranscript(final || interim);
-
-      if (final.trim()) {
-        const blob = stopRecording();
-        doStopListening();
-        sendMessage(final.trim(), blob);
-      }
+      if (final.trim()) { const blob = stopRec(); doStop(); sendMessage(final.trim(), blob); }
     };
 
-    recognition.onerror = (event: any) => {
-      const errMap: Record<string, string> = {
-        'no-speech':      'No escuché nada. ¿Hablaste cerca del micrófono?',
-        'audio-capture':  'Error de captura de audio.',
-        'network':        'Error de red en el reconocimiento.',
-        'aborted':        '',
+    recog.onerror = (event: any) => {
+      const m: Record<string,string> = {
+        'no-speech':'No escuché nada. ¿Intentamos de nuevo?',
+        'audio-capture':'Error de captura de audio.',
+        'network':'Error de red.',
+        'aborted':'',
       };
-      const msg = errMap[event.error];
-      if (msg) setMicError(msg);
-      doStopListening();
+      const msg = m[event.error]; if(msg) setMicError(msg);
+      doStop();
     };
 
-    recognition.onend = () => {
-      setIsListening(false);
-      stopAudioMonitor();
-    };
+    recog.onend = () => { setIsListening(false); stopMonitor(); };
+    recog.start();
+  }, [voiceLang, startMonitor, stopMonitor]);
 
-    recognition.start();
-  }, [voiceLang, startAudioMonitor, stopAudioMonitor]);
+  const doStop = useCallback(() => {
+    try { recogRef.current?.stop(); } catch {}
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    streamRef.current = null;
+    stopMonitor(); setIsListening(false); setTranscript(''); setMicOk(false);
+  }, [stopMonitor]);
 
-  const doStopListening = useCallback(() => {
-    try { recognitionRef.current?.stop(); } catch {}
-    micStreamRef.current?.getTracks().forEach(t => t.stop());
-    micStreamRef.current = null;
-    stopAudioMonitor();
-    setIsListening(false);
-    setTranscript('');
-    setMicOk(false);
-  }, [stopAudioMonitor]);
+  const toggleMic = useCallback(() => {
+    if (isListening) { stopRec(); doStop(); } else startListening();
+  }, [isListening, startListening, doStop]);
 
-  const toggleListening = useCallback(() => {
-    if (isListening) { stopRecording(); doStopListening(); }
-    else startListening();
-  }, [isListening, startListening, doStopListening]);
-
-  // ── Claude API con contexto completo ─────────────────────────────────────────
+  // ── Enviar a Claude con contexto completo (IA + Memoria + Audio Knowledge) ───
   const sendMessage = useCallback(async (text: string, audioBlob?: Blob) => {
     if (!text.trim()) return;
     stopSpeaking();
+    memory.process(text);
 
-    const emotion = detectEmotion(text);
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', text: text.trim(), ts: new Date(), emotion, audioBlob };
+    const emo = detectEmotion(text);
+    const userMsg: Message = {id:`u-${Date.now()}`, role:'user', text:text.trim(), ts:new Date(), emotion:emo, audioBlob};
     setMessages(prev => [...prev, userMsg]);
     setIsThinking(true);
+
+    // System prompt completo: base + memoria + conocimiento de audio
+    const memCtx = memory.buildMemoryContext();
+    const audioCtx = buildAgentContext(params);
+    const systemPrompt = [BASE_SYSTEM, memCtx, audioCtx].filter(Boolean).join('\n\n');
 
     try {
       const allMsgs = [...messages, userMsg];
@@ -439,55 +338,52 @@ export const IvannaVoicePanel: React.FC = () => {
       }));
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          system: IVANNA_SYSTEM,
-          messages: history,
-        }),
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, system:systemPrompt, messages:history}),
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(`API ${res.status}: ${errData.error?.message ?? 'unknown'}`);
-      }
-
+      if (!res.ok) throw new Error(`API ${res.status}`);
       const data = await res.json();
-      const reply = data.content?.find((b: any) => b.type === 'text')?.text
-        ?? 'Algo salió raro. ¿Lo intentamos de nuevo?';
+      const reply = data.content?.find((b:any)=>b.type==='text')?.text ?? 'Lo siento, no pude procesar eso.';
 
-      const replyEmotion = detectEmotion(reply);
-      const iMsg: Message = { id: `i-${Date.now()}`, role: 'ivanna', text: reply, ts: new Date(), emotion: replyEmotion };
-      setMessages(prev => [...prev, iMsg]);
-      setIsThinking(false);
-      setCurrentEmotion(replyEmotion);
+      healer.reportApiSuccess();
+      const rEmo = detectEmotion(reply);
+      const iMsg: Message = {id:`i-${Date.now()}`, role:'ivanna', text:reply, ts:new Date(), emotion:rEmo};
+      setMessages(prev=>[...prev, iMsg]);
+      setIsThinking(false); setEmotion(rEmo);
       speakText(reply);
 
-    } catch (err: any) {
+    } catch (err:any) {
+      healer.reportApiError();
       setIsThinking(false);
-      const fallback = 'Ops, tuve un problema de conexión. ¿Puedes repetir eso?';
-      const eMsg: Message = { id: `err-${Date.now()}`, role: 'ivanna', text: fallback, ts: new Date(), emotion: 'empathic' };
-      setMessages(prev => [...prev, eMsg]);
+      const fallback = 'Ops, tuve un problema de conexión. ¿Intentamos de nuevo?';
+      setMessages(prev=>[...prev, {id:`e-${Date.now()}`, role:'ivanna', text:fallback, ts:new Date(), emotion:'empathic'}]);
       speakText(fallback);
     }
-  }, [messages, speakText, stopSpeaking]);
+  }, [messages, speakText, stopSpeaking, params]);
 
   const handleSend = useCallback(() => {
     if (textInput.trim()) { sendMessage(textInput.trim()); setTextInput(''); }
   }, [textInput, sendMessage]);
 
-  // ── Cleanup ──
-  useEffect(() => () => { doStopListening(); stopSpeaking(); }, []); // eslint-disable-line
+  const handleReset = () => {
+    ctxRef.current.reset();
+    const txt = 'Listo, nueva conversación. ¿De qué hablamos?';
+    setMessages([{id:'r', role:'ivanna', text:txt, ts:new Date(), emotion:'neutral'}]);
+    speakText(txt);
+  };
 
-  // ── UI helpers ──
-  const emotionColor = EMOTION_COLORS[currentEmotion];
+  // Cleanup
+  useEffect(() => () => { doStop(); stopSpeaking(); }, []); // eslint-disable-line
+
   const stateText = isListening
-    ? transcript ? `"${transcript}"` : 'Escuchando...'
-    : isSpeaking ? `Hablando • ${currentEmotion}`
-    : isThinking ? 'Procesando con Claude...'
+    ? (transcript ? `"${transcript.slice(0,80)}${transcript.length>80?'...':''}"` : 'Escuchando...')
+    : isSpeaking ? `IVANNA habla • ${emotion}`
+    : isThinking ? 'Procesando con Claude Sonnet...'
     : 'Listo para escucharte';
+
+  const ec = EC[emotion];
 
   return (
     <div className="flex flex-col gap-6">
@@ -495,41 +391,40 @@ export const IvannaVoicePanel: React.FC = () => {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-bold font-mono text-[#E2E8F0] flex items-center gap-2">
-            <Brain className="w-5 h-5" style={{ color: emotionColor }} />
+            <Brain className="w-5 h-5" style={{color:ec}} />
             IVANNA VOICE
             <span className="text-xs px-2 py-0.5 rounded border font-mono"
-              style={{ background: `${emotionColor}15`, borderColor: `${emotionColor}40`, color: emotionColor }}>
-              NEURAL v2.0
+              style={{background:`${ec}12`, borderColor:`${ec}35`, color:ec}}>
+              SUPER AGENT v2.0
             </span>
           </h2>
           <p className="text-xs text-[#64748B] font-mono mt-0.5">
-            Voice Intelligence Engine · Adaptive Prosody · Emotion Layer · Context-Aware
+            VIE · Adaptive Prosody · Emotion · Memory · Audio Knowledge · Self-Healing
           </p>
         </div>
-
-        {/* Selector de idioma */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-[#64748B] font-mono uppercase">Idioma:</span>
-          {(['es-MX', 'es-ES', 'en-US'] as const).map(lang => (
-            <button key={lang}
-              onClick={() => { setVoiceLang(lang); const best = selectBestVoice(availableVoices, lang); if (best) setSelectedVoiceName(best.name); }}
-              className={`text-[10px] px-2 py-0.5 rounded border font-mono font-bold transition-all ${
-                voiceLang === lang ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]' : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#94A3B8]'
-              }`}>
-              {lang === 'es-MX' ? '🇲🇽 MX' : lang === 'es-ES' ? '🇪🇸 ES' : '🇺🇸 EN'}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 flex-wrap">
+          <HealthBadge health={health} />
+          <div className="flex items-center gap-1.5">
+            {(['es-MX','es-ES','en-US'] as const).map(lang=>(
+              <button key={lang}
+                onClick={()=>{setVoiceLang(lang); const b=selectBestVoice(voices,lang); if(b) setVoiceName(b.name);}}
+                className={`text-[10px] px-2 py-0.5 rounded border font-mono font-bold transition-all ${
+                  voiceLang===lang ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]' : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#94A3B8]'
+                }`}>
+                {lang==='es-MX'?'🇲🇽':lang==='es-ES'?'🇪🇸':'🇺🇸'} {lang.split('-')[0].toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
-        {/* ── Panel izquierdo ── */}
+        {/* Left panel */}
         <div className="flex flex-col gap-4">
-          {/* Orb */}
           <div className="bg-[#0D1117] border border-[#1E2330] rounded-xl p-6 flex flex-col items-center gap-4">
-            <AudioOrb isListening={isListening} isSpeaking={isSpeaking} isThinking={isThinking} audioLevel={audioLevel} emotion={currentEmotion} />
+            <Orb listening={isListening} speaking={isSpeaking} thinking={isThinking} level={audioLevel} emotion={emotion} />
 
-            <p className="text-xs font-mono text-[#64748B] text-center min-h-[2rem] leading-relaxed px-2">
+            <p className="text-xs font-mono text-[#64748B] text-center min-h-8 leading-relaxed px-2 truncate w-full" title={stateText}>
               {stateText}
             </p>
 
@@ -541,128 +436,119 @@ export const IvannaVoicePanel: React.FC = () => {
             )}
             {micOk && !micError && (
               <div className="flex items-center gap-1.5 text-[#4ADE80] text-xs font-mono">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Micrófono vinculado
+                <CheckCircle2 className="w-3.5 h-3.5" /> Micrófono vinculado y grabando
               </div>
             )}
 
-            {/* Controles */}
             <div className="flex items-center gap-3">
-              <button onClick={toggleListening} disabled={isSpeaking || isThinking}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 border-2 ${
+              <button onClick={toggleMic} disabled={isSpeaking||isThinking}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 ${
                   isListening
                     ? 'bg-[#18261E] border-[#4ADE80] text-[#4ADE80] shadow-lg shadow-[#4ADE80]/25 animate-pulse'
                     : 'bg-[#141822] border-[#38BDF8] text-[#38BDF8] hover:bg-[#182230] hover:shadow-lg hover:shadow-[#38BDF8]/20'
-                } disabled:opacity-30 disabled:cursor-not-allowed`}
-                title={isListening ? 'Detener escucha' : 'Hablar con IVANNA'}>
-                {isListening ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                } disabled:opacity-30 disabled:cursor-not-allowed`}>
+                {isListening ? <MicOff className="w-6 h-6"/> : <Mic className="w-6 h-6"/>}
               </button>
 
               <button onClick={stopSpeaking} disabled={!isSpeaking}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${
-                  isSpeaking ? 'bg-[#2A1A08] border-[#F59E0B] text-[#F59E0B] hover:bg-[#35220A]' : 'border-[#1E2330] text-[#334155] cursor-not-allowed'
-                }`} title="Silenciar IVANNA">
-                <VolumeX className="w-4 h-4" />
+                className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${
+                  isSpeaking ? 'bg-[#2A1A08] border-[#F59E0B] text-[#F59E0B]' : 'border-[#1E2330] text-[#334155] cursor-not-allowed'
+                }`} title="Silenciar">
+                <VolumeX className="w-4 h-4"/>
               </button>
 
-              <button
-                onClick={() => { ctxRef.current.reset(); setMessages([{ id: 'r', role: 'ivanna', text: 'Listo, empezamos de cero. ¿De qué hablamos?', ts: new Date(), emotion: 'neutral' }]); speakText('Listo, empezamos de cero. ¿De qué hablamos?'); }}
+              <button onClick={handleReset}
                 className="w-10 h-10 rounded-full flex items-center justify-center border border-[#1E2330] text-[#64748B] hover:border-[#334155] hover:text-[#94A3B8] transition-all"
                 title="Nueva conversación">
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-4 h-4"/>
               </button>
             </div>
 
-            {/* VU meter */}
             {isListening && (
               <div className="w-full bg-[#12151C] rounded-full h-1.5 overflow-hidden">
                 <div className="h-full rounded-full transition-all duration-75"
-                  style={{
-                    width: `${audioLevel * 100}%`,
-                    background: audioLevel > 0.7 ? '#FF6188' : audioLevel > 0.4 ? '#F59E0B' : '#4ADE80',
-                  }} />
+                  style={{width:`${audioLevel*100}%`, background: audioLevel>.7?'#FF6188':audioLevel>.4?'#F59E0B':'#4ADE80'}} />
               </div>
             )}
 
-            {/* Selector de voz */}
-            {availableVoices.length > 0 && (
+            {voices.length > 0 && (
               <div className="w-full">
                 <label className="text-[10px] text-[#64748B] font-mono uppercase mb-1 block">Voz del sistema</label>
-                <select value={selectedVoiceName} onChange={e => setSelectedVoiceName(e.target.value)}
+                <select value={voiceName} onChange={e=>setVoiceName(e.target.value)}
                   className="w-full bg-[#12151C] border border-[#1E2330] text-[#94A3B8] text-xs font-mono rounded px-2 py-1.5 focus:outline-none focus:border-[#38BDF8]">
-                  {availableVoices
-                    .filter(v => v.lang.toLowerCase().startsWith(voiceLang.split('-')[0].toLowerCase()))
-                    .map(v => (
-                      <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
-                    ))}
+                  {voices.filter(v=>v.lang.toLowerCase().startsWith(voiceLang.split('-')[0].toLowerCase())).map(v=>(
+                    <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
+                  ))}
                 </select>
               </div>
             )}
           </div>
 
-          {/* Status panel */}
+          {/* Status */}
           <div className="bg-[#0D1117] border border-[#1E2330] rounded-xl p-4 font-mono text-xs space-y-2">
-            <p className="text-[#64748B] font-bold uppercase text-[10px] tracking-wider mb-3">Sistema de voz</p>
+            <div className="flex items-center gap-1.5 mb-3">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#38BDF8]"/>
+              <span className="text-[#64748B] font-bold uppercase text-[10px] tracking-wider">Super Agent Status</span>
+            </div>
             {[
-              { label: 'Motor IA', value: 'claude-sonnet-4-6', color: '#38BDF8' },
-              { label: 'VIE Prosody', value: 'Adaptativa v1.0', color: '#4ADE80' },
-              { label: 'Emoción actual', value: currentEmotion, color: emotionColor },
-              { label: 'Reconoc. voz', value: (('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? '✓ Activo' : '✗ N/D'), color: ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? '#4ADE80' : '#FF6188' },
-              { label: 'TTS voces', value: `${availableVoices.length} cargadas`, color: availableVoices.length > 0 ? '#4ADE80' : '#F59E0B' },
-              { label: 'Grabación', value: ('MediaRecorder' in window ? '✓ WebM/Opus' : '⚠ Limitada'), color: '#A855F7' },
-              { label: 'Contexto msgs', value: `${Math.min(messages.length, 16)} / 16`, color: '#F59E0B' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="flex justify-between items-center">
-                <span className="text-[#475569]">{label}</span>
-                <span style={{ color }} className="text-right text-[10px]">{value}</span>
+              {l:'Motor IA', v:'claude-sonnet-4-6', c:'#38BDF8'},
+              {l:'VIE Prosody', v:'Adaptativa v1.0', c:'#4ADE80'},
+              {l:'Memory Layer', v:`${memory.getPrefs().totalMessages} msgs`, c:'#A855F7'},
+              {l:'Emoción', v:emotion, c:ec},
+              {l:'Self-Healing', v:health.overall==='healthy'?'✓ Sano':`⚠ ${health.overall}`, c:health.overall==='healthy'?'#4ADE80':'#F59E0B'},
+              {l:'TTS Voces', v:`${voices.length} cargadas`, c:voices.length>0?'#4ADE80':'#F59E0B'},
+              {l:'Grabación', v:'MediaRecorder', c:'#A855F7'},
+              {l:'Contexto', v:`${Math.min(messages.length,16)}/16 msgs`, c:'#F59E0B'},
+            ].map(({l,v,c})=>(
+              <div key={l} className="flex justify-between items-center">
+                <span className="text-[#475569]">{l}</span>
+                <span className="text-right text-[10px]" style={{color:c}}>{v}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Chat ── */}
+        {/* Chat */}
         <div className="flex flex-col bg-[#0D1117] border border-[#1E2330] rounded-xl overflow-hidden min-h-[500px]">
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[520px]">
-            {messages.map(msg => {
-              const ec = msg.emotion ? EMOTION_COLORS[msg.emotion] : '#38BDF8';
+            {messages.map(msg=>{
+              const c = msg.emotion ? EC[msg.emotion] : '#38BDF8';
               return (
-                <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div key={msg.id} className={`flex gap-3 ${msg.role==='user'?'flex-row-reverse':''}`}>
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold font-mono shrink-0 mt-0.5"
-                    style={{ background: `${ec}18`, border: `1px solid ${ec}55`, color: ec }}>
-                    {msg.role === 'ivanna' ? 'IV' : 'TÚ'}
+                    style={{background:`${c}15`, border:`1px solid ${c}44`, color:c}}>
+                    {msg.role==='ivanna'?'IV':'TÚ'}
                   </div>
                   <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === 'ivanna'
+                    msg.role==='ivanna'
                       ? 'bg-[#141C2A] border border-[#1E3050] text-[#CBD5E1] rounded-tl-sm'
                       : 'bg-[#12101E] border border-[#24184A] text-[#E2D9F3] rounded-tr-sm'
                   }`}>
                     <p>{msg.text}</p>
-                    <div className="flex items-center justify-between mt-2 gap-3">
+                    <div className="flex items-center justify-between mt-2 gap-2">
                       <span className="text-[10px] text-[#475569] font-mono">
-                        {msg.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {msg.emotion && msg.emotion !== 'neutral' && (
-                          <span className="ml-2" style={{ color: ec }}>• {msg.emotion}</span>
+                        {msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                        {msg.emotion && msg.emotion!=='neutral' && (
+                          <span className="ml-2" style={{color:c}}>• {msg.emotion}</span>
                         )}
                       </span>
-                      <div className="flex gap-2">
-                        {msg.role === 'ivanna' && (
-                          <button onClick={() => speakText(msg.text)}
-                            className="transition-colors" style={{ color: `${ec}66` }}
-                            onMouseEnter={e => (e.currentTarget.style.color = ec)}
-                            onMouseLeave={e => (e.currentTarget.style.color = `${ec}66`)}
-                            title="Reproducir">
-                            <Volume2 className="w-3 h-3" />
+                      <div className="flex gap-2 items-center">
+                        {msg.role==='ivanna' && (
+                          <button onClick={()=>speakText(msg.text)} title="Reproducir"
+                            className="transition-colors hover:scale-110" style={{color:`${c}55`}}
+                            onMouseEnter={e=>(e.currentTarget.style.color=c)}
+                            onMouseLeave={e=>(e.currentTarget.style.color=`${c}55`)}>
+                            <Volume2 className="w-3 h-3"/>
                           </button>
                         )}
                         {msg.audioBlob && (
-                          <button onClick={() => {
-                            const url = URL.createObjectURL(msg.audioBlob!);
-                            Object.assign(document.createElement('a'), { href: url, download: `ivanna-rec-${msg.id}.webm` }).click();
-                            setTimeout(() => URL.revokeObjectURL(url), 1000);
-                          }} className="text-[10px] font-mono text-[#A855F7]/50 hover:text-[#A855F7] transition-colors" title="Descargar tu voz">
-                            ⬇
-                          </button>
+                          <button title="Descargar tu voz"
+                            className="text-[10px] font-mono text-[#A855F7]/50 hover:text-[#A855F7] transition-colors"
+                            onClick={()=>{
+                              const url = URL.createObjectURL(msg.audioBlob!);
+                              Object.assign(document.createElement('a'),{href:url,download:`ivanna-${msg.id}.webm`}).click();
+                              setTimeout(()=>URL.revokeObjectURL(url),1000);
+                            }}>⬇</button>
                         )}
                       </div>
                     </div>
@@ -673,28 +559,27 @@ export const IvannaVoicePanel: React.FC = () => {
 
             {isThinking && (
               <div className="flex gap-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold font-mono bg-[#182230] border border-[#38BDF855] text-[#38BDF8] shrink-0">IV</div>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold font-mono shrink-0 bg-[#182230] border border-[#38BDF840] text-[#38BDF8]">IV</div>
                 <div className="bg-[#141C2A] border border-[#1E3050] rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5 text-[#38BDF8] animate-pulse" />
-                  <Loader2 className="w-3 h-3 text-[#38BDF8] animate-spin" />
-                  <span className="text-xs text-[#64748B] font-mono">IVANNA procesa con Claude...</span>
+                  <Activity className="w-3.5 h-3.5 text-[#38BDF8] animate-pulse"/>
+                  <Loader2 className="w-3 h-3 text-[#38BDF8] animate-spin"/>
+                  <span className="text-xs text-[#64748B] font-mono">IVANNA procesa...</span>
                 </div>
               </div>
             )}
-            <div ref={messagesEndRef} />
+            <div ref={endRef}/>
           </div>
 
-          {/* Input */}
           <div className="border-t border-[#1E2330] p-3 flex gap-2">
             <input type="text" value={textInput}
-              onChange={e => setTextInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              placeholder="Escribe aquí tu mensaje o presiona el micrófono..."
-              disabled={isListening || isThinking}
-              className="flex-1 bg-[#12151C] border border-[#1E2330] rounded-lg px-3 py-2 text-sm text-[#E2E8F0] placeholder-[#334155] font-mono focus:outline-none focus:border-[#38BDF8] disabled:opacity-40 transition-colors" />
-            <button onClick={handleSend} disabled={!textInput.trim() || isListening || isThinking}
+              onChange={e=>setTextInput(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&handleSend()}
+              placeholder="Escribe aquí o usa el micrófono..."
+              disabled={isListening||isThinking}
+              className="flex-1 bg-[#12151C] border border-[#1E2330] rounded-lg px-3 py-2 text-sm text-[#E2E8F0] placeholder-[#334155] font-mono focus:outline-none focus:border-[#38BDF8] disabled:opacity-40 transition-colors"/>
+            <button onClick={handleSend} disabled={!textInput.trim()||isListening||isThinking}
               className="px-3 py-2 bg-[#182230] border border-[#38BDF8] text-[#38BDF8] rounded-lg hover:bg-[#1E2F44] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4"/>
             </button>
           </div>
         </div>
