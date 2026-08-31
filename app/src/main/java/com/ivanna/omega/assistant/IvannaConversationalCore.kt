@@ -200,7 +200,7 @@ object IvannaConversationalCore {
 
         // Patrón: "X de Y" donde X es título e Y es artista
         val dePattern = Regex(
-            """(?:pon|toca|reproduce|pon a sonar|configura|ajusta)?\s*["""]?(.+?)["""]?\s+de\s+(.+?)(?:\s+(?:y|magistralmente|magistral|épico|epico|genial|increíble|increible|como|con|para).*)?$""",
+            Regex("(?:pon|toca|reproduce|pon a sonar|configura|ajusta)?\\s*[\"“”]?(.*?)[\"“”]?\\s+de\\s+(.*?)(?:\\s+(?:y|magistralmente|magistral|épico|epico|genial|increíble|increible|como|con|para).*)?$"),
             RegexOption.IGNORE_CASE
         )
         dePattern.find(t)?.let { m ->
