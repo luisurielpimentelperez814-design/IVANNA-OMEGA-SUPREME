@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.ivanna.omega.ai.YamnetClassifier
 import com.ivanna.omega.audio.IvannaEffectProfile
+import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.dsp.ConcertMode
@@ -31,13 +32,22 @@ class VoiceController(private val context: Context) {
 
     /** Diccionario de sinónimos por comando (para cuando exista STT real). */
     private val commands: Map<String, List<String>> = mapOf(
-        "volume_up"    to listOf("louder", "increase volume", "subir volumen", "up", "más alto"),
-        "volume_down"  to listOf("softer", "decrease volume", "bajar volumen", "down", "más bajo"),
-        "cinema_mode"  to listOf("movie", "film", "cinema", "dolby", "modo cine"),
-        "music_mode"   to listOf("music", "song", "pop", "rock", "modo música"),
-        "flat_mode"    to listOf("flat", "neutral", "normal", "modo plano"),
-        "spatial_mode" to listOf("spatial", "surround", "3d", "modo espacial"),
-        "concert_mode" to listOf("concert", "live", "hall", "reverb", "modo concierto")
+        "volume_up"        to listOf("louder", "increase volume", "subir volumen", "up", "más alto"),
+        "volume_down"      to listOf("softer", "decrease volume", "bajar volumen", "down", "más bajo"),
+        "cinema_mode"      to listOf("movie", "film", "cinema", "dolby", "modo cine"),
+        "music_mode"       to listOf("music", "song", "pop", "rock", "modo música"),
+        "flat_mode"        to listOf("flat", "neutral", "normal", "modo plano"),
+        "spatial_mode"     to listOf("spatial", "surround", "3d", "modo espacial"),
+        "concert_mode"     to listOf("concert", "live", "hall", "reverb", "modo concierto"),
+        // Presets musicales avanzados (integración IvannaMusicalIntentEngine)
+        "epic_mode"        to listOf("épico", "epico", "magistral", "poderoso"),
+        "abbey_road_mode"  to listOf("abbey road", "beatles", "vintage británico"),
+        "vinyl_mode"       to listOf("vinilo", "vinyl", "tocadiscos", "lp"),
+        "concert_massive"  to listOf("concierto masivo", "estadio", "festival"),
+        "cinematic_mode"   to listOf("cinematográfico", "banda sonora", "cine épico"),
+        "analog_mode"      to listOf("analógico", "válvulas", "cinta"),
+        "studio_pro_mode"  to listOf("estudio profesional", "referencia", "mezcla"),
+        "microdetail_mode" to listOf("microdetalle", "quiero escuchar detalles")
     )
 
     /**
@@ -115,6 +125,30 @@ class VoiceController(private val context: Context) {
                 ConcertMode.enabled = true
                 Log.i(TAG, "Modo concierto activado (roomSize=0.7)")
             }
+            // Presets musicales avanzados
+            "epic_mode"       -> app.globalEffectManager.applyProfile(IvannaEffectProfile.EPIC)
+                                 .also { Log.i(TAG, "Modo ÉPICO activado") }
+            "abbey_road_mode" -> app.globalEffectManager.applyProfile(IvannaEffectProfile.ABBEY_ROAD)
+                                 .also { Log.i(TAG, "Modo ABBEY ROAD activado") }
+            "vinyl_mode"      -> app.globalEffectManager.applyProfile(IvannaEffectProfile.VINYL_PREMIUM)
+                                 .also { Log.i(TAG, "Modo VINILO PREMIUM activado") }
+            "concert_massive" -> {
+                app.globalEffectManager.applyProfile(IvannaEffectProfile.CONCERT_MASSIVE)
+                ConcertMode.shared.setRoomSize(1.0f)
+                ConcertMode.enabled = true
+                Log.i(TAG, "Modo CONCIERTO MASIVO activado")
+            }
+            "cinematic_mode"  -> app.globalEffectManager.applyProfile(IvannaEffectProfile.CINEMATIC)
+                                 .also { Log.i(TAG, "Modo CINEMATOGRÁFICO activado") }
+            "analog_mode"     -> app.globalEffectManager.applyProfile(IvannaEffectProfile.ANALOG_WARM)
+                                 .also { Log.i(TAG, "Modo ANALÓGICO activado") }
+            "studio_pro_mode" -> {
+                app.globalEffectManager.applyProfile(IvannaEffectProfile.STUDIO_PRO)
+                ConcertMode.enabled = false
+                Log.i(TAG, "Modo ESTUDIO PROFESIONAL activado")
+            }
+            "microdetail_mode" -> app.globalEffectManager.applyProfile(IvannaEffectProfile.MICRO_DETAIL)
+                                  .also { Log.i(TAG, "Modo MICRODETALLE activado") }
             "none" -> Unit
             else   -> Log.w(TAG, "Comando desconocido: $cmd")
         }
