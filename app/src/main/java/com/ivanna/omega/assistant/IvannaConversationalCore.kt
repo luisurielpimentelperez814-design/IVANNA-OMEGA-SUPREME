@@ -204,9 +204,13 @@ object IvannaConversationalCore {
             RegexOption.IGNORE_CASE
         )
         dePattern.find(t)?.let { m ->
-            val title  = m.groupValues[1].trim().ifBlank { null } ?: return@let
+            // FIX (build CI): title quedaba String? — el Elvis con
+            // `return@let` devuelve Unit (no Nothing), así que no hay
+            // smart-cast a String y `title.length` no resolvía.
+            // takeIf devuelve String? con Elvis a null-safe + length?.
+            val title  = m.groupValues[1].trim().takeIf { it.isNotBlank() }
             val artist = m.groupValues[2].trim().ifBlank { null }
-            if (title.length >= 3) {
+            if (title != null && title.length >= 3) {
                 val song = SongContext(title = title, artist = artist, userGoal = userGoal)
                 val ctx = _context.value
                 _context.value = ctx.copy(currentSong = song)
