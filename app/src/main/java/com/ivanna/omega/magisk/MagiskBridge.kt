@@ -103,6 +103,44 @@ object MagiskBridge {
     @Volatile private var everConnected = false
     private val propFallbackAllowed: Boolean get() = !everConnected
 
+    // ── Diagnóstico root del socket (última respuesta visible, no genérica) ─
+    /**
+     * Diagnóstico real del socket con root. El mensaje "Socket no disponible
+     * (daemon offline o módulo no instalado)" no distinguía nada. Esto
+     * separa las 3 causas reales:
+     *   1. socket ausente en /proc/net/unix → el daemon NUNCA bindeó
+     *      (binario faltante/crash al arrancar) → revisar daemon.log.
+     *   2. socket presente pero connect() falla → SELinux denegando
+     *      connectto (untrusted_app → dominio del daemon) → sepolicy.
+     *   3. sin root → la app no puede ni leer /proc/net/unix con verdad.
+     * Devuelve una línea de diagnóstico legible para el panel.
+     */
+    fun diagnoseSocket(): String {
+        // Primero el probe sin root (camino feliz)
+        if (isOmegaSocketAvailable()) return "OK: socket conecta sin root"
+
+        // Probe root: leer /proc/net/unix buscando el abstract socket.
+        // Los abstract sockets aparecen como "@omega_daemon_socket" (el @ es
+        // el byte NUL visualizado). grep -a porque el archivo tiene NULs.
+        val listed = runCatching {
+            val p = ProcessBuilder("su", "-c",
+                "grep -a omega_daemon_socket /proc/net/unix; echo EXIT:\$?")
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            out
+        }.getOrElse { return "FALLO: probe root imposible (${it.javaClass.simpleName}) — ¿su concedido?" }
+
+        return when {
+            listed.contains("omega_daemon_socket") ->
+                "FALLO: socket existe (daemon bindeó) pero connect() es rechazado → SELinux denial (connectto). Aplica sepolicy v2.0 y reinicia."
+            listed.contains("EXIT:1") || listed.isBlank() ->
+                "FALLO: socket ausente en /proc/net/unix → el daemon nunca bindeó (crash al arrancar o binario faltante). Revisa /data/adb/ivanna_daemon.log."
+            else ->
+                "FALLO: diagnóstico root sin salida útil: ${listed.take(120)}"
+        }
+    }
+
     // ── Envío de comandos (SIN root, LocalSocket directo) ──────────────────
     /**
      * Envía un comando de texto al daemon (abstract @omega_daemon_socket) y devuelve la respuesta.
