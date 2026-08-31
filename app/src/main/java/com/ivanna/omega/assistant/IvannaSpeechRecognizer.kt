@@ -141,7 +141,7 @@ class IvannaSpeechRecognizer(
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         // Preferir offline cuando sea posible: menos latencia, menos fuga de datos.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
         }
         // Español por defecto — la app es ES-first. El recognizer on-device
         // moderno hace auto-detección razonable si el usuario habla otro idioma.

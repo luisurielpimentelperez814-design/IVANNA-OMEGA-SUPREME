@@ -108,7 +108,7 @@ class IvannaVoiceEngine(
         runCatching {
             val voices = t.voices ?: return@runCatching
             val spanish = voices.filter {
-                it.locale.language == "es" && !it.isNetworkConnectionRequired
+                it.locale.language == "es"
             }
             val pool = if (spanish.isNotEmpty()) spanish
                        else voices.filter { it.locale.language == "es" }

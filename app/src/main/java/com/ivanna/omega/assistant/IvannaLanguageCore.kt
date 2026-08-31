@@ -31,6 +31,8 @@ object IvannaLanguageCore {
     )
 
     enum class AcousticIntent {
+        GREETING,
+        TELL_JOKE,
         // Claridad
         VOICE_CLARITY,        // "mejora las voces", "claridad vocal"
         DIALOG_ENHANCEMENT,   // "no entiendo los diálogos", "actores se escuchan mal"
@@ -83,6 +85,9 @@ object IvannaLanguageCore {
 
     /** Convierte ParsedIntent → comando canónico que VoiceController entiende. */
     fun toCommand(intent: AcousticIntent): String = when (intent) {
+        AcousticIntent.GREETING,
+        AcousticIntent.TELL_JOKE          -> "none"
+
         AcousticIntent.VOICE_CLARITY,
         AcousticIntent.DIALOG_ENHANCEMENT -> "voice_clarity"
         AcousticIntent.MOVIE_IMMERSION    -> "cinema_mode"
@@ -216,6 +221,14 @@ object IvannaLanguageCore {
         }
 
         // ── Perfil de canción: "pon X de Y y configúralo magistralmente" ─────
+        if (hits(t, "un chiste", "una broma", "hazme reír", "hazme reir", "cuéntame un chiste", "cuentame un chiste")) {
+            return AcousticIntent.TELL_JOKE to 0.95f
+        }
+
+        if (hits(t, "hola", "qué tal", "que tal", "buenos días", "buenas tardes", "buenas noches", "quién eres", "quien eres")) {
+            return AcousticIntent.GREETING to 0.95f
+        }
+
         val songKeywords = listOf("pon ", "toca ", "reproduce ", "configura ", "ajusta ",
             "quiero escuchar ", "ponme ", "pon a sonar ")
         val goalKeywords = listOf("magistralmente", "magistral", "épico", "epico",
@@ -287,6 +300,9 @@ object IvannaLanguageCore {
         AcousticIntent.DIAGNOSE            -> "Déjame revisar el estado del sistema acústico."
         AcousticIntent.EXPLAIN             -> "Te cuento la última decisión que tomé."
         AcousticIntent.OPTIMIZE            -> "Voy a revisar el sistema y optimizar el consumo."
+        AcousticIntent.GREETING            -> "¡Hola! Soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Estoy aquí para llevar tu música al siguiente nivel. ¿Qué te gustaría escuchar hoy?"
+        AcousticIntent.TELL_JOKE           -> "Jaja, claro. ¿Qué le dice un bit al otro? ¡Nos vemos en el bus! Bueno, volviendo a la música, ¿qué quieres que modifique?"
+
         AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, crear perfiles musicales como 'épico' o 'Abbey Road', o ajustar el volumen."
     }
 

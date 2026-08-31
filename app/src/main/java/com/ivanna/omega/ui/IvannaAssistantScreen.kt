@@ -400,6 +400,23 @@ private fun MicSection(
     onStopListen : () -> Unit,
     onTextSend   : (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            onStartListen()
+        }
+    }
+    
+    val handleStartListen = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            onStartListen()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     var textInput by remember { mutableStateOf("") }
     val keyboard  = LocalSoftwareKeyboardController.current
 
@@ -426,7 +443,7 @@ private fun MicSection(
             val micColor    = if (isListening) CoralWarn else AuroraCyan
 
             FilledTonalIconButton(
-                onClick  = { if (isListening) onStopListen() else onStartListen() },
+                onClick  = { if (isListening) onStopListen() else handleStartListen() },
                 modifier = Modifier.size(72.dp),
                 colors   = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = micColor.copy(alpha = 0.15f)
