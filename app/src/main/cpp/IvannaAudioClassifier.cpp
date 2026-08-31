@@ -21,7 +21,9 @@ IvannaAudioClassifier::IvannaAudioClassifier()
     std::memset(m_decimFirBuf, 0, sizeof(m_decimFirBuf));
     std::memset(m_qWeights, 0, sizeof(m_qWeights));
     
-    m_currentOutput.store(new AIModelOutput(), std::memory_order_relaxed);
+    m_cleanOutput.store(&m_outputPool[0], std::memory_order_relaxed);
+    m_readingOutput = &m_outputPool[1];
+    m_writingOutput = &m_outputPool[2];
     
     initFilterbankAndWindow();
     
@@ -39,9 +41,6 @@ IvannaAudioClassifier::~IvannaAudioClassifier() {
     if (m_inferenceThread.joinable()) {
         m_inferenceThread.join();
     }
-    
-    AIModelOutput* oldOut = m_currentOutput.exchange(nullptr, std::memory_order_acq_rel);
-    if (oldOut) delete oldOut;
 }
 
 void IvannaAudioClassifier::initFilterbankAndWindow() noexcept {
@@ -134,6 +133,7 @@ void IvannaAudioClassifier::extractLogMelFilterbank() noexcept {
 void IvannaAudioClassifier::runInt8Inference() noexcept {
     // Quantized INT8 Deep Learning Inference over the extracted Log-Mel features.
     // Replacing deprecated YAMNet with efficient context-aware MobileNetV3-Tiny-Audio.
+    // ZERO ALLOCATIONS. Wait-free Triple Buffering.
     
     // Simulate classification logic based on Log-Mel Energies
     float energy_sum = 0.0f;
@@ -141,26 +141,20 @@ void IvannaAudioClassifier::runInt8Inference() noexcept {
         energy_sum += m_melLogEnergies[i];
     }
     
-    AIModelOutput* newOut = new AIModelOutput();
-    
     if (energy_sum < -500.0f) {
-        newOut->dominant_class = AudioContextClass::AMBIENT;
-        newOut->probabilities = {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.75f};
+        m_writingOutput->dominant_class = AudioContextClass::AMBIENT;
+        m_writingOutput->probabilities = {0.05f, 0.05f, 0.05f, 0.05f, 0.05f, 0.75f};
     } else {
-        newOut->dominant_class = AudioContextClass::MUSIC;
-        newOut->probabilities = {0.05f, 0.70f, 0.10f, 0.05f, 0.05f, 0.05f};
+        m_writingOutput->dominant_class = AudioContextClass::MUSIC;
+        m_writingOutput->probabilities = {0.05f, 0.70f, 0.10f, 0.05f, 0.05f, 0.05f};
     }
     
-    newOut->confidence = 0.85f;
-    newOut->scene_energy = std::abs(energy_sum) / 1000.0f;
-    newOut->is_valid = true;
+    m_writingOutput->confidence = 0.85f;
+    m_writingOutput->scene_energy = std::abs(energy_sum) / 1000.0f;
+    m_writingOutput->is_valid = true;
     
-    // Wait-free pointer exchange
-    AIModelOutput* oldOut = m_currentOutput.exchange(newOut, std::memory_order_acq_rel);
-    if (oldOut) {
-        // En un entorno de producción estricto (cero malloc), usar hazard pointers o SMR
-        delete oldOut;
-    }
+    // Publish using Triple Buffering (Wait-free, zero allocation)
+    m_writingOutput = m_cleanOutput.exchange(m_writingOutput, std::memory_order_acq_rel);
 }
 
 void IvannaAudioClassifier::inferenceLoop() noexcept {
@@ -178,10 +172,14 @@ void IvannaAudioClassifier::inferenceLoop() noexcept {
 }
 
 void IvannaAudioClassifier::getClassProbabilities(float* outProbs) const noexcept {
-    AIModelOutput* current = m_currentOutput.load(std::memory_order_acquire);
-    if (current) {
+    AIModelOutput* fresh = m_cleanOutput.load(std::memory_order_acquire);
+    if (fresh != m_readingOutput) {
+        m_readingOutput = m_cleanOutput.exchange(m_readingOutput, std::memory_order_acq_rel);
+    }
+    
+    if (m_readingOutput && m_readingOutput->is_valid) {
         for (size_t i = 0; i < NUM_CLASSES; ++i) {
-            outProbs[i] = current->probabilities[i];
+            outProbs[i] = m_readingOutput->probabilities[i];
         }
     } else {
         std::memset(outProbs, 0, sizeof(float) * NUM_CLASSES);
@@ -189,9 +187,13 @@ void IvannaAudioClassifier::getClassProbabilities(float* outProbs) const noexcep
 }
 
 uint8_t IvannaAudioClassifier::getDominantClass() const noexcept {
-    AIModelOutput* current = m_currentOutput.load(std::memory_order_acquire);
-    if (current) {
-        return static_cast<uint8_t>(current->dominant_class);
+    AIModelOutput* fresh = m_cleanOutput.load(std::memory_order_acquire);
+    if (fresh != m_readingOutput) {
+        m_readingOutput = m_cleanOutput.exchange(m_readingOutput, std::memory_order_acq_rel);
+    }
+    
+    if (m_readingOutput && m_readingOutput->is_valid) {
+        return static_cast<uint8_t>(m_readingOutput->dominant_class);
     }
     return 0;
 }

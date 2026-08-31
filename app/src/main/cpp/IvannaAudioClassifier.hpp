@@ -137,8 +137,11 @@ private:
     ALIGN_NEON int8_t m_qWeights[8192];
     bool m_weightsLoaded;
 
-    // Atomic Output Exchange (Hazard Pointer pattern simplified)
-    std::atomic<AIModelOutput*> m_currentOutput;
+    // True wait-free, zero-allocation Triple Buffering for lock-free audio thread read
+    ALIGN_NEON mutable AIModelOutput m_outputPool[3];
+    mutable std::atomic<AIModelOutput*> m_cleanOutput;
+    mutable AIModelOutput* m_readingOutput;
+    AIModelOutput* m_writingOutput;
     
     std::atomic<bool> m_running{false};
     std::thread m_inferenceThread;
