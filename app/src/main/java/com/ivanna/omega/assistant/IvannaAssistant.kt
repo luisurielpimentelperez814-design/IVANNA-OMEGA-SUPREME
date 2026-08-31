@@ -229,12 +229,17 @@ class IvannaAssistant(context: Context) {
                     IvannaCognitiveCore.explainLastDecision()
                 }
                 !decision.execute -> {
-                    decision.warningForUser ?: agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
+                    decision.warningForUser ?: IvannaLanguageCore.spokenResponse(parsed)
                 }
                 else -> {
                     val command = decision.commandOverride
                         ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
-                    val baseReply = agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
+                    // agentReply es una respuesta no-null por diseño (Pair<String, String?>):
+                    // solo tiene sentido como texto hablado aquí si el LLM realmente detectó
+                    // este mismo comando (simulatedIntent != null); si no, es un texto de OTRA
+                    // rama y no debe pisar la respuesta específica de IvannaLanguageCore.
+                    val baseReply = if (simulatedIntent != null) agentReply
+                                    else IvannaLanguageCore.spokenResponse(parsed)
                     profile.recordAdjustment(command, scene ?: "UNKNOWN")
                     memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
                     memory.lastExplanation = baseReply
