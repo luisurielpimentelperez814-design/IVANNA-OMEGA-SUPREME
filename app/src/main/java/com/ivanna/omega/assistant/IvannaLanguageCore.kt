@@ -17,7 +17,7 @@ import android.util.Log
 object IvannaLanguageCore {
 
     private const val TAG = "IvannaLanguageCore"
-    private const val CONTEXT_WINDOW = 6  // turnos recordados
+    private const val CONTEXT_WINDOW = 12  // ventana ampliada para sesiones largas
 
     // Historial de intenciones de esta sesión (context window)
     private val intentHistory = ArrayDeque<ParsedIntent>(CONTEXT_WINDOW + 1)
@@ -48,6 +48,11 @@ object IvannaLanguageCore {
         VOLUME_DOWN,
         BASS_BOOST,           // "más bajos", "más graves"
         TREBLE_REDUCE,        // "menos agudos", "muy brillante"
+        // Intención musical avanzada (FASE 4)
+        MUSICAL_INTENT,       // "épico", "Abbey Road", "vinilo premium", "magistralmente"
+        SONG_PROFILE_REQUEST, // "pon Frankenstein de Edgar Winter y configúralo magistralmente"
+        SESSION_REPORT,       // "muéstrame qué hiciste", "¿qué cambiaste en esta canción?"
+        PROFILE_LIST,         // "¿qué perfiles puedes hacer?", "muéstrame los presets"
         // Sistema
         DIAGNOSE,             // "¿cómo estás?", "estado del sistema"
         EXPLAIN,              // "¿por qué?", "¿qué cambiaste?"
@@ -91,6 +96,10 @@ object IvannaLanguageCore {
         AcousticIntent.VOLUME_DOWN        -> "volume_down"
         AcousticIntent.BASS_BOOST         -> "bass_boost"
         AcousticIntent.TREBLE_REDUCE      -> "treble_reduce"
+        AcousticIntent.MUSICAL_INTENT     -> "musical_intent"
+        AcousticIntent.SONG_PROFILE_REQUEST -> "song_profile"
+        AcousticIntent.SESSION_REPORT     -> "session_report"
+        AcousticIntent.PROFILE_LIST       -> "profile_list"
         AcousticIntent.DIAGNOSE           -> "diagnose"
         AcousticIntent.EXPLAIN            -> "explain"
         AcousticIntent.OPTIMIZE           -> "optimize"
@@ -190,8 +199,42 @@ object IvannaLanguageCore {
             return AcousticIntent.EXPLAIN to 0.97f
         }
 
-        // Contexto: si el último intent fue spatial y el usuario dice "más",
-        // es probable que quiera más espacialidad.
+        // ── Reporte de sesión: "¿qué hiciste?", "muéstrame el perfil" ──────────
+        if (hits(t, "qué hiciste", "que hiciste con", "muéstrame qué", "muestrame que",
+                  "qué cambiaste en", "que cambiaste en", "cuéntame qué", "cuentame que",
+                  "reporte", "informe", "resumen de lo que", "qué le hiciste",
+                  "que le hiciste", "cómo quedó", "como quedo")) {
+            return AcousticIntent.SESSION_REPORT to 0.96f
+        }
+
+        // ── Lista de perfiles disponibles ────────────────────────────────────
+        if (hits(t, "qué perfiles", "que perfiles", "qué puedes hacer",
+                  "que puedes hacer", "muéstrame los presets", "muestrame los presets",
+                  "qué presets", "que presets", "qué configuraciones", "que configuraciones",
+                  "opciones disponibles", "qué estilos", "que estilos")) {
+            return AcousticIntent.PROFILE_LIST to 0.97f
+        }
+
+        // ── Perfil de canción: "pon X de Y y configúralo magistralmente" ─────
+        val songKeywords = listOf("pon ", "toca ", "reproduce ", "configura ", "ajusta ",
+            "quiero escuchar ", "ponme ", "pon a sonar ")
+        val goalKeywords = listOf("magistralmente", "magistral", "épico", "epico",
+            "genialmente", "increíble", "increible", "perfecto", "lo mejor posible",
+            "configurarlo bien", "la mejor configuración", "la mejor configuracion")
+        val hasSongKeyword = songKeywords.any { t.contains(it) }
+        val hasGoalKeyword = goalKeywords.any { t.contains(it) }
+        val hasDe = t.contains(" de ")   // "Frankenstein de Edgar Winter"
+        if ((hasSongKeyword || hasDe) && hasGoalKeyword) {
+            return AcousticIntent.SONG_PROFILE_REQUEST to 0.95f
+        }
+
+        // ── Intención musical: detectar si IvannaMusicalIntentEngine lo reconoce
+        if (IvannaMusicalIntentEngine.detect(t) != null) {
+            return AcousticIntent.MUSICAL_INTENT to 0.93f
+        }
+
+        // ── Contexto: si el último intent fue spatial y el usuario dice "más",
+        // es probable que quiera más espacialidad (encadenamiento implícito). ──
         val last = intentHistory.lastOrNull()?.acousticIntent
         if (hits(t, "más", "mas", "un poco más", "un poco mas") && last != null
             && last != AcousticIntent.UNKNOWN) {
@@ -223,10 +266,14 @@ object IvannaLanguageCore {
         AcousticIntent.VOLUME_DOWN         -> "He bajado el volumen un poco."
         AcousticIntent.BASS_BOOST          -> "He reforzado los graves."
         AcousticIntent.TREBLE_REDUCE       -> "He reducido los agudos para que suene menos brillante."
+        AcousticIntent.MUSICAL_INTENT      -> "Procesando tu intención musical..."
+        AcousticIntent.SONG_PROFILE_REQUEST -> "Analizando la canción para crear el perfil perfecto..."
+        AcousticIntent.SESSION_REPORT      -> "Aquí está el resumen de lo que hice en esta sesión."
+        AcousticIntent.PROFILE_LIST        -> IvannaMusicalIntentEngine.availablePresetsDescription()
         AcousticIntent.DIAGNOSE            -> "Déjame revisar el estado del sistema acústico."
         AcousticIntent.EXPLAIN             -> "Te cuento la última decisión que tomé."
         AcousticIntent.OPTIMIZE            -> "Voy a revisar el sistema y optimizar el consumo."
-        AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, ajustar el volumen u optimizar el sistema."
+        AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, crear perfiles musicales como 'épico' o 'Abbey Road', o ajustar el volumen."
     }
 
     fun clearHistory() { intentHistory.clear() }
