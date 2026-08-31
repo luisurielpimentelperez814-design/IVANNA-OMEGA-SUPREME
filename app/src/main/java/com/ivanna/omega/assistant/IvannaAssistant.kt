@@ -183,6 +183,36 @@ class IvannaAssistant(context: Context) {
     }
 
     /**
+     * Comprobación proactiva de fatiga auditiva (IvannaAcousticBrain).
+     *
+     * Disparada por el ViewModel desde el ciclo de IvannaAgentCore (~1 Hz),
+     * NO por algo que el usuario dijo — a diferencia de onUserSaid(), aquí
+     * no hay texto de entrada. Reutiliza exactamente la misma decisión que
+     * produce IvannaCognitiveCore.proactiveFatigueCheck() (que a su vez
+     * consulta IvannaAcousticBrain.fuse()): no hay lógica de decisión nueva
+     * en este método, solo un canal de disparo distinto — tiempo real de
+     * escucha en vez de una orden hablada.
+     */
+    fun checkProactiveFatigue() {
+        watchVoice()
+        val decision = IvannaCognitiveCore.proactiveFatigueCheck(profile) ?: return
+        if (!decision.execute) return
+        val command = decision.commandOverride ?: return
+        val scene = memory.lastScene ?: "UNKNOWN"
+        scope.launch(Dispatchers.IO) {
+            runCatching { voiceController.executeCommand(command) }
+            profile.recordAdjustment(command, scene)
+            memory.recordAdjustment(command, decision.reason, applied = true)
+            memory.lastExplanation = decision.reason
+            launch(Dispatchers.Main) {
+                val text = decision.warningForUser ?: decision.reason
+                _ui.value = _ui.value.copy(statusLine = text)
+                voice.speak(text)
+            }
+        }
+    }
+
+    /**
      * Limpia toda la memoria conversacional (FASE 13).
      *
      * Borra:

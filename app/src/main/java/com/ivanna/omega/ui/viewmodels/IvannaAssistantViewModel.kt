@@ -93,6 +93,10 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     private val _panel = MutableStateFlow(AssistantPanelState())
     val panel: StateFlow<AssistantPanelState> = _panel.asStateFlow()
 
+    // Borde ascendente del riesgo de fatiga fusionado por IvannaAcousticBrain:
+    // dispara la voz proactiva una sola vez por episodio, no en cada ciclo.
+    private var wasFatigueRisk = false
+
     init {
         // 1. Observar el estado de IvannaAssistant (ui + speech + voice)
         viewModelScope.launch {
@@ -155,6 +159,14 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                 // (~1 Hz) — así el contexto de sesión vive incluso sin que
                 // el usuario hable.
                 refreshMemoryPanel()
+
+                // Voz proactiva: si el riesgo de fatiga fusionado acaba de
+                // aparecer (borde ascendente), IVANNA habla sin que se lo
+                // pidan — misma decisión que proactiveFatigueCheck(), solo
+                // que aquí el disparo es el tiempo de escucha, no el habla.
+                val fatigueNow = IvannaAcousticBrain.insight.value.fatigueRisk
+                if (fatigueNow && !wasFatigueRisk) assistant.checkProactiveFatigue()
+                wasFatigueRisk = fatigueNow
             }
         }
 
