@@ -9,6 +9,23 @@ source "$MODDIR/core/ivanna_autonomous_core.sh"
 
 ivanna_platform_init "$MODDIR"
 
+# ── FIX (socket no conecta al daemon tras reboot, 2026-08-31) ─────────────
+# customize.sh aplica sepolicy.rule SOLO en instalación via magiskpolicy
+# --live (volátil, se pierde al reiniciar). Sin reaplicarla en cada boot,
+# SELinux enforcing vuelve a denegar el connect() de untrusted_app sobre
+# @omega_daemon_socket/@omega_command_socket → la app reporta "daemon
+# DETENIDO/DESCONECTADO" aunque el daemon esté vivo y el socket bindeado.
+# Se reaplica aquí (service.sh corre en late_start, boot completado) con
+# espera a que magiskpolicy esté disponible en el PATH del servicio.
+if [ -f "$MODDIR/sepolicy.rule" ]; then
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+        if command -v magiskpolicy >/dev/null 2>&1; then
+            magiskpolicy --live --apply "$MODDIR/sepolicy.rule" 2>/dev/null && break
+        fi
+        sleep 1
+    done
+fi
+
 set_state "ENVIRONMENT_MAPPING"
 build_device_runtime_profile
 security_intelligence_scan
