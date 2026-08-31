@@ -23,8 +23,8 @@ import java.util.Locale
 data class VoiceProfile(
     val name: String = "IVANNA",
     val locale: Locale = Locale("es", "ES"),
-    val pitch: Float = 1.08f,      // femenina, sin estridencia
-    val speechRate: Float = 0.94f, // ritmo calmado, legible
+    val pitch: Float = 1.06f,      // femenina elegante, sin estridencia
+    val speechRate: Float = 0.91f, // cadencia natural de especialista — no apurada
     val preferNeuralVoices: Boolean = true
 )
 
@@ -146,21 +146,53 @@ class IvannaVoiceEngine(
     fun speak(text: String) {
         val t = tts ?: return
         if (_state.value != VoiceState.READY && _state.value != VoiceState.SPEAKING) return
-        val id = "ivanna_${++utteranceCounter}"
+
+        // Dividir respuestas largas en segmentos naturales para flujo más humano.
+        // Los segmentos se encolan en QUEUE_ADD excepto el primero (QUEUE_FLUSH).
+        val segments = splitIntoNaturalSegments(text)
         _state.value = VoiceState.SPEAKING
-        t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+
+        val listener = object : android.speech.tts.UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { _state.value = VoiceState.READY }
+            override fun onDone(utteranceId: String?) {
+                // Solo volvemos a READY cuando termina el último segmento
+                if (utteranceId?.endsWith("_last") == true) {
+                    _state.value = VoiceState.READY
+                }
+            }
             @Deprecated("deprecated in API 21")
             override fun onError(utteranceId: String?) { _state.value = VoiceState.READY }
             override fun onError(utteranceId: String?, errorCode: Int) { _state.value = VoiceState.READY }
-        })
+        }
+        t.setOnUtteranceProgressListener(listener)
+
         runCatching {
-            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+            segments.forEachIndexed { index, segment ->
+                val isLast = index == segments.lastIndex
+                val id = "ivanna_${++utteranceCounter}${if (isLast) "_last" else ""}"
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                t.speak(segment.trim(), mode, null, id)
+            }
         }.onFailure {
             Log.w(TAG, "speak falló: ${it.message}")
             _state.value = VoiceState.READY
         }
+    }
+
+    /**
+     * Divide el texto en segmentos de pronunciación natural para que IVANNA
+     * suene más humana en respuestas largas. Las comas, dos puntos y saltos
+     * de línea crean pausas naturales que el TTS del sistema normalmente ignora.
+     *
+     * El texto ya tiene puntuación española, así que no añadimos pausas
+     * artificiales; solo lo segmentamos por frases completas para que el motor
+     * TTS pueda analizar la prosodia de cada una de forma independiente.
+     */
+    private fun splitIntoNaturalSegments(text: String): List<String> {
+        if (text.length <= 120) return listOf(text)
+        // Dividir por frases completas (punto + espacio) preservando el punto.
+        val sentences = text.split(Regex("(?<=[\\.!?])\\s+")).filter { it.isNotBlank() }
+        return if (sentences.size <= 1) listOf(text) else sentences
     }
 
     fun stop() {
