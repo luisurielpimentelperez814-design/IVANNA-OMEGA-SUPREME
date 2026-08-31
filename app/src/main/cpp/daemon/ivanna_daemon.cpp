@@ -146,8 +146,27 @@ int main(int argc, char* argv[]) {
     if (realtime) { struct sched_param p; p.sched_priority=80; sched_setscheduler(0,SCHED_FIFO,&p); }
     setup_shared_memory(rate);
     log_message("DSP sample rate configured: " + std::to_string(rate));
-    g_server_fd = create_socket_server(socket_path);
-    if (g_server_fd<0) return 1;
+    // FIX (socket DESCONECTADO con daemon CORRIENDO, 2026-08-31): si bind()
+    // falla — EADDRINUSE por una instancia zombie que aun retiene el nombre
+    // abstracto (no se puede unlink en el abstract namespace), o early-boot
+    // con el namespace no listo — el daemon moria en silencio y service.sh lo
+    // relanzaba en bucle: panel muestra "CORRIENDO" pero el socket jamas
+    // queda bindeado (ausente en /proc/net/unix). Reintentar con backoff y
+    // loguear errno al log persistente en cada intento.
+    {
+        int attempt = 0;
+        while (g_running && (g_server_fd = create_socket_server(socket_path)) < 0) {
+            int e = errno;
+            log_message("bind(" + socket_path + ") fallo: errno=" + std::to_string(e) +
+                        " (" + strerror(e) + ") — reintento " + std::to_string(attempt + 1) + "/12 en 500 ms");
+            usleep(500000);
+            if (++attempt >= 12) {
+                log_message("bind agotado — el daemon aborta para que service.sh lo relance con backlog limpio");
+                return 1;
+            }
+        }
+    }
+    if (g_server_fd < 0) return 1;
 
     CommandServer commandServer;
     commandServer.resetState();
