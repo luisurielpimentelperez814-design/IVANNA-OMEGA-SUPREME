@@ -199,8 +199,12 @@ object IvannaConversationalCore {
         val t = rawText.trim()
 
         // Patrón: "X de Y" donde X es título e Y es artista
+        // FIX (build CI, raíz): Regex(Regex(...)) no existe — Regex no
+        // acepta otro Regex como patrón. El envoltorio anidado cascaba en
+        // 'None of the following functions' + lambda sin tipo + return
+        // inválido. Patrón directo, sin anidar.
         val dePattern = Regex(
-            Regex("(?:pon|toca|reproduce|pon a sonar|configura|ajusta)?\\s*[\"“”]?(.*?)[\"“”]?\\s+de\\s+(.*?)(?:\\s+(?:y|magistralmente|magistral|épico|epico|genial|increíble|increible|como|con|para).*)?$"),
+            "(?:pon|toca|reproduce|pon a sonar|configura|ajusta)?\\s*[\"“”]?(.*?)[\"“”]?\\s+de\\s+(.*?)(?:\\s+(?:y|magistralmente|magistral|épico|epico|genial|increíble|increible|como|con|para).*)?$",
             RegexOption.IGNORE_CASE
         )
         dePattern.find(t)?.let { m ->
