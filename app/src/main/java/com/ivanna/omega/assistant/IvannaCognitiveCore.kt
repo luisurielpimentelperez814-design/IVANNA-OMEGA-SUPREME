@@ -106,6 +106,32 @@ object IvannaCognitiveCore {
                 }
             }
 
+            // Intenciones musicales avanzadas — siempre se ejecutan (FASE 4)
+            // La lógica real está en IvannaDSPOrchestrator vía IvannaAssistant.
+            // CognitiveCore solo verifica que no haya condición de riesgo crítica.
+            IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT,
+            IvannaLanguageCore.AcousticIntent.SONG_PROFILE_REQUEST -> {
+                when {
+                    thermal >= 0.85f -> CognitiveDecision(
+                        execute = true,
+                        commandOverride = "analog_mode",  // preset más ligero térmicamente
+                        reason = "Temperatura muy alta: preset analógico en vez del musical solicitado.",
+                        warningForUser = "El dispositivo está caliente. He aplicado el perfil analógico, más suave para el SoC."
+                    )
+                    else -> CognitiveDecision(
+                        execute = true,
+                        reason = "Intención musical validada — contexto acústico favorable."
+                    )
+                }
+            }
+
+            // Reportes y listas — siempre se ejecutan, no hay riesgo de audio
+            IvannaLanguageCore.AcousticIntent.SESSION_REPORT,
+            IvannaLanguageCore.AcousticIntent.PROFILE_LIST -> CognitiveDecision(
+                execute = true,
+                reason = "Solicitud informativa — sin acción sobre el audio."
+            )
+
             IvannaLanguageCore.AcousticIntent.UNKNOWN -> CognitiveDecision(
                 execute = false,
                 reason = "Intención no reconocida."
