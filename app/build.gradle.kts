@@ -12,8 +12,12 @@ android {
         applicationId = "com.ivanna.omega"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2300
-        versionName = "2.3.0"
+        // Unified Version Manager: lee de version.properties (fuente única)
+        val vp = java.util.Properties().apply {
+            rootProject.file("version.properties").inputStream().use { load(it) }
+        }
+        versionCode = vp.getProperty("versionCode").toInt()
+        versionName = vp.getProperty("versionName")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -173,3 +177,22 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-video:2.5.0")
 }
+
+// Unified Version Manager — validación: module.prop debe coincidir con
+// version.properties; si diverge, el build FALLA con mensaje claro.
+tasks.register("validateUnifiedVersion") {
+    doLast {
+        val vp = java.util.Properties().apply {
+            rootProject.file("version.properties").inputStream().use { load(it) }
+        }
+        val mp = rootProject.file("magisk_module/module.prop").readLines()
+        val moduleVersion = mp.firstOrNull { it.startsWith("version=") }?.substringAfter("=")?.removePrefix("v")
+        val moduleCode = mp.firstOrNull { it.startsWith("versionCode=") }?.substringAfter("=")
+        check(moduleVersion == vp.getProperty("versionName") && moduleCode == vp.getProperty("versionCode")) {
+            "❌ DESALINEACIÓN DE VERSIÓN: version.properties=${vp.getProperty("versionName")}(${vp.getProperty("versionCode")}) " +
+            "pero module.prop=${moduleVersion}(${moduleCode}). Edita version.properties y sincroniza module.prop."
+        }
+        logger.lifecycle("✅ Unified Version: ${vp.getProperty("versionName")} (${vp.getProperty("versionCode")}) — APK == módulo")
+    }
+}
+tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
