@@ -77,11 +77,7 @@ add_library(ivanna_omega SHARED
     dsp/SafetyLimiter.cpp
 
     # SAF Phi_SAF_infinity HRTF adaptive bridge
-    SaFOptimizer.cpp
-    SafGlobalBridge.cpp
     SafModelLoader.cpp
-    SafPcaDecoder.cpp
-    SafSpatialModifier.cpp
     # SAF Spatial Runtime (solo si existe en el checkout)
     $<$<BOOL:${EXISTS_SAF_SPATIAL_RUNTIME}>:SafSpatialRuntime.cpp>
     # NOTA (auditoria 2026-08-24): SofaHRTFLoader.cpp y SafHRTFBridge.cpp
@@ -106,28 +102,13 @@ add_library(ivanna_omega SHARED
     # FIX (build): undefined symbol ivanna_saf_apply_latent al linkear
     # libivanna_omega.so. SaFJniBridge.cpp:40 la referencia extern pero la
     # definición real vive en omega_effect.cpp (target libomega_effect.so —
-    saf_optimizer.cpp
-    saf_runtime.cpp
-    SaFOptimizer.cpp
-    SafGlobalBridge.cpp
-    SafPcaDecoder.cpp
-    SafSpatialModifier.cpp
-    SafModelLoader.cpp
     # proceso audioserver), inaccesible desde este target. Este stub define
     # el símbolo en el proceso app y publica el vector latente en un
     # snapshot seqlock (ivanna_saf_get_latent_snapshot) sin duplicar el
     # efecto. La definición de omega_effect.cpp queda intacta.
-    saf_optimizer.cpp
-    saf_runtime.cpp
-    SaFOptimizer.cpp
-    SafGlobalBridge.cpp
-    SafPcaDecoder.cpp
-    SafSpatialModifier.cpp
-    SafModelLoader.cpp
     saf_latent_bridge.cpp
 
     # Evolutionary (OFFLINE ONLY)
-    # v2.3.0: evolutionary_kernel_v2.cpp reemplaza evolutionary_kernel.cpp
     # con fitness psicoacústico multi-criterio (ISO 226 + resonance penalty +
     # tonality consistency). Los símbolos JNI son 100% compatibles con la v1
     # (mismo conjunto de funciones extern "C") — drop-in replacement.
@@ -145,7 +126,6 @@ add_library(ivanna_omega SHARED
     # arbol referencia (grep -rn confirma 0 callers cruzados). El binario
     # real que corre en Magisk es daemon/ivanna_daemon.cpp, compilado por
     # daemon/CMakeLists.txt como add_executable(ivanna_daemon
-    # daemon/CommandServer.cpp
     # daemon/OmegaShmManager.cpp) y stageado
     # a magisk_module/system/bin/. Sacar este .cpp del target NO afecta el
     # daemon en produccion — solo deja de arrastrar dead-code + un main()
@@ -215,21 +195,12 @@ add_library(ivanna_omega SHARED
     # ============================================================================
     # IvannaLab — suite de medición de calidad (THD/IMD/LUFS/LRA/SNR/TP)
     # Estado: mediciones reales (DFT+Hann para THD/IMD, K-weighting+gating
-    # BS.1770-4 para LUFS/LRA). Puente JNI en jni/ivanna_omega_jni.cpp
     # (nativeLabReset/nativeLabFeed/nativeLabMeasure/nativeLabReport,
     # expuestos en IvannaNativeLib.kt) — sin UI todavía que los invoque.
     # ============================================================================
     ivannalab/ivannalab.cpp
-    #     IvannaAudioClassifier.cpp
-    hexagon/ivanna_fastrpc_client.cpp
-    hexagon/ivanna_fastrpc_client_load.cpp
-    hexagon/ivanna_dsp.cpp
-    neuromorphic/volterra_h2_symmetric.cpp
-    #     IvannaFusionCore.cpp
     #     EvolutionaryEQ.cpp   # AVISO 2026-08-08: 3 copias en el repo divergieron entre si;
     #                          # el kernel evolutivo real es evolutionary_kernel.cpp (API en C, distinta)
-    #     HrtfManager.cpp
-    #     Psychoacoustics.cpp
 )
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
