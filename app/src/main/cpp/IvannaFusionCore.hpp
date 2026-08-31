@@ -38,6 +38,8 @@ class HrtfManager;
 class EvolutionaryEQ;
 class Psychoacoustics;
 class IvannaAudioClassifier;
+class IvannaVoiceProsodyEngine;
+class IvannaSuperAgentMemory;
 
 class IvannaFusionEngine : public IvannaFusionCore {
 public:
@@ -51,6 +53,8 @@ public:
     void process(AudioBuffer* buffer);
 
     IvannaAudioClassifier* getClassifier() const noexcept { return m_classifier; }
+    IvannaVoiceProsodyEngine* getProsodyEngine() const noexcept { return m_prosody; }
+    IvannaSuperAgentMemory* getAgentMemory() const noexcept { return m_memory; }
 
     void processBlock(AudioBuffer* buffer) override { process(buffer); }
     void setParameter(uint32_t paramId, float value) override { (void)paramId; (void)value; }
@@ -111,6 +115,8 @@ private:
     EvolutionaryEQ*       m_evoEq      = nullptr;
     Psychoacoustics*      m_psycho     = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
+    IvannaVoiceProsodyEngine* m_prosody = nullptr;
+    IvannaSuperAgentMemory* m_memory = nullptr;
 
     // ── Pre-filtro del Chebyshev (FIX tronidos de agudos) ────────────────────
     // H2(x) = 2x² − 1 duplica frecuencias: un platillo a 12 kHz genera

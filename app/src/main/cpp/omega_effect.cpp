@@ -551,8 +551,19 @@ static int32_t omega_process(effect_handle_t self,
 
         // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial)
         if (ctx->adaptiveEngine) {
+            float pitchHz = 0.0f;
+            float pitchConf = 0.0f;
+            bool isVoiced = false;
+            
+            if (auto* prosody = fc->getProsodyEngine()) {
+                auto metrics = prosody->getMetrics();
+                pitchHz = metrics.pitchFreq;
+                pitchConf = metrics.pitchConfidence;
+                isVoiced = metrics.isVoiced;
+            }
+
             ctx->adaptiveEngine->analyzeAudio(L, chunk);
-            ctx->adaptiveEngine->computeAdaptiveParameters(aiDominantClass);
+            ctx->adaptiveEngine->computeAdaptiveParameters(aiDominantClass, pitchHz, isVoiced, pitchConf);
             ctx->adaptiveEngine->smoothParameters();
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();

@@ -269,6 +269,8 @@ add_library(omega_effect SHARED
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
     IvannaAudioClassifier.cpp
+    IvannaVoiceProsodyEngine.cpp
+    IvannaSuperAgentMemory.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_fastrpc_client_load.cpp
     hexagon/ivanna_dsp.cpp

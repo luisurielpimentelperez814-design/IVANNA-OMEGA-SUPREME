@@ -291,7 +291,7 @@ private:
     int   histIdx_    = 0;
     float prevEnergy_ = 0.0f;
 
-    void computeAdaptiveParameters(int aiDominantClass = -1) {
+    void computeAdaptiveParameters(int aiDominantClass = -1, float pitchHz = 0.0f, bool isVoiced = false, float pitchConfidence = 0.0f) {
         auto& p = targetParams_;
         const auto& c = currentChar_;
 
@@ -301,9 +301,21 @@ private:
         float targetTreble = 0.0f;
         float targetSpatial = 1.0f;
         
-        if (aiDominantClass == 0) { // Speech
-            targetBass = -2.0f; targetMid = 3.0f; targetTreble = 1.0f;
-            targetSpatial = 0.8f;
+        if (aiDominantClass == 0 || isVoiced) { // Speech or VAD Active
+            // Dynamic Voice Enhancement based on fundamental pitch
+            if (isVoiced && pitchConfidence > 0.5f) {
+                // Determine if male (low F0) or female (high F0)
+                if (pitchHz > 165.0f) {
+                    // High-pitch voice (typical female) -> boost higher mids
+                    targetBass = -2.5f; targetMid = 3.5f; targetTreble = 1.0f;
+                } else {
+                    // Low-pitch voice (typical male) -> boost lower mids
+                    targetBass = -1.5f; targetMid = 2.5f; targetTreble = 1.5f;
+                }
+            } else {
+                targetBass = -2.0f; targetMid = 3.0f; targetTreble = 1.0f;
+            }
+            targetSpatial = 0.8f; // Focus center
         } else if (aiDominantClass == 1) { // Music
             targetBass = 2.5f; targetMid = 0.5f; targetTreble = 1.5f;
             targetSpatial = 1.4f;

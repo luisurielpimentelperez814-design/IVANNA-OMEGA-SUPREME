@@ -4,6 +4,8 @@
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
+#include "IvannaVoiceProsodyEngine.hpp"
+#include "IvannaSuperAgentMemory.hpp"
 #include "IvannaAudioClassifier.hpp"
 #include <iostream>
 
@@ -53,6 +55,9 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
     m_classifier = new IvannaAudioClassifier();
+    m_prosody = new IvannaVoiceProsodyEngine();
+    m_memory = new IvannaSuperAgentMemory();
+    m_memory->initialize("/data/adb/ivanna_omega/agent_memory.bin");
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
@@ -60,6 +65,8 @@ IvannaFusionEngine::~IvannaFusionEngine() {
     delete m_evoEq;
     delete m_psycho;
     delete m_classifier;
+    delete m_prosody;
+    delete m_memory;
 }
 
 void IvannaFusionEngine::runAcousticProfiling() {
@@ -74,6 +81,14 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     // FASE 1: SPSC Lock-Free Ring Buffer async push
     // Solo encolamos (ingest) sin bloquear el hilo principal de audio
     m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
+    
+    // FASE PROSODIA: Análisis en tiempo real, latencia cero
+    m_prosody->analyzeAudio(buffer->left, buffer->right, BLOCK_SIZE);
+    
+    // FASE MEMORIA AGENTE: Update context
+    auto prosodyData = m_prosody->getMetrics();
+    uint8_t domClass = m_classifier->getDominantClass();
+    m_memory->updateContext(domClass, prosodyData.pitchFreq, -14.0f); // Default loudness -14LUFS
     
     // (Ya no llamamos a processInference() aquí, corre en background)
 
