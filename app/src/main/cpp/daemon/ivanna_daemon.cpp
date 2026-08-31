@@ -1,6 +1,7 @@
 #include "control/command_server.h"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
+#include "../../IvannaSelfHealingEngine.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -183,6 +184,10 @@ int main(int argc, char* argv[]) {
         log_message("CONTROL socket ready: @omega_command_socket");
         std::thread([&controlServer](){ controlServer.acceptLoop(); }).detach();
     }
+    
+    Ivanna::IvannaSelfHealingEngine selfHealer;
+    selfHealer.startMonitoring();
+    log_message("Self-Healing Engine activated and monitoring components.");
 
     // FIX (daemon bloqueante / fd leak / buffer overflow):
     // 1. El accept loop anterior atendía clientes en el hilo principal de forma
@@ -193,6 +198,15 @@ int main(int argc, char* argv[]) {
     //    sin NUL correcto. Se aumenta a 65536 y se acumula en heap.
     // 3. reply declarado dos veces en el mismo scope (UB/shadow) — unificado.
     while (g_running) {
+        selfHealer.pingAudioEngine();
+        selfHealer.pingIpcSocket();
+        selfHealer.pingDspKernel();
+        
+        Ivanna::DiagnosticReport report = selfHealer.getDiagnosticReport();
+        if (report.restartCount > 0) {
+            log_message("Self-Healing intervention! Total recoveries: " + std::to_string(report.restartCount));
+        }
+
         fd_set readfds; FD_ZERO(&readfds); FD_SET(g_server_fd,&readfds);
         struct timeval tv{1,0};
         int activity = select(g_server_fd+1,&readfds,NULL,NULL,&tv);
@@ -285,6 +299,7 @@ int main(int argc, char* argv[]) {
     }
     if (g_server_fd>=0) close(g_server_fd);
     controlServer.stop();
+    selfHealer.stopMonitoring();
     log_message("Daemon shutdown REAL");
     return 0;
 }

@@ -9,6 +9,7 @@ add_executable(ivanna_daemon
     control/command_server.cpp
     core/shm_manager.cpp
     core/omega_control_bus.cpp
+    ../../IvannaSelfHealingEngine.cpp
 )
 
 target_compile_options(ivanna_daemon PRIVATE
