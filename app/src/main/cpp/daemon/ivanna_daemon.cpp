@@ -120,9 +120,17 @@ int create_socket_server(const std::string& socket_path) {
         strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path)-1);
         addr_len = sizeof(addr);
     }
-    if (bind(server_fd, (struct sockaddr*)&addr, addr_len) < 0) { close(server_fd); return -1; }
+    if (bind(server_fd, (struct sockaddr*)&addr, addr_len) < 0) {
+        int e = errno;
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "bind(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
+        close(server_fd); return -1;
+    }
     if (socket_path[0] != '@') chmod(socket_path.c_str(), 0666);
-    if (listen(server_fd, 16) < 0) { close(server_fd); return -1; }
+    if (listen(server_fd, 16) < 0) {
+        int e = errno;
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "listen(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
+        close(server_fd); return -1;
+    }
     log_message("Socket server active: " + socket_path);
     return server_fd;
 }
