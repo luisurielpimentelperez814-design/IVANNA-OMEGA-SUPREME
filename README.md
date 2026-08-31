@@ -114,26 +114,54 @@ No es un asistente genérico con un plugin de audio encima: es una capa de intel
  SpeechInputProvider (ASR modular — intercambiable sin tocar el núcleo)
         │
         ▼
- IvannaLanguageCore        — lenguaje natural → intención acústica estructurada
-        │
+ IvannaLanguageCore ─────────── lenguaje natural → intención acústica estructurada
+        │                        + comprensión de frases musicales ("más alma",
+        │                          "que respire", "más pegada", "sentir el escenario",
+        │                          "como disco de colección")
         ▼
- IvannaCognitiveCore       — razona la intención contra el estado real del DSP
-        │        (clipping, térmico, escena) y decide: ejecutar / adaptar / rechazar
+ IvannaMusicalIntentEngine ──── motor de comprensión musical especializado
+        │                        + 12 presets canónicos (Épico, Abbey Road, Vinilo,
+        │                          Cinematográfico, Analógico, Estudio Pro, etc.)
+        │                        + detección de intenciones combinadas ("épico + estadio")
+        │                        + traducción directa a parámetros IvannaEffectProfile
         ▼
- IvannaAcousticBrain       — fusiona percepción + salud + IvannaListenerProfile +
-        │                     duración real de la sesión de escucha en una sola
-        │                     recomendación explicable (incluso sin que el usuario
-        │                     pida nada — voz proactiva ante fatiga sostenida)
+ IvannaCognitiveCore ─────────── razona la intención contra el estado real del DSP
+        │                        (clipping, térmico, escena) y decide: ejecutar / adaptar / rechazar
         ▼
- IvannaAgentCore           — cinco agentes especializados (percepción, decisión,
-        │                     control DSP, salud, optimización) a cadencia ~1 Hz
+ IvannaDSPOrchestrator ─────── aplica el preset coordinadamente:
+        │                        1. IvannaGlobalEffectManager.applyProfile() — EQ/bass/virt/comp
+        │                        2. VoiceController.executeCommand() — concert_mode, spatial, etc.
+        │                        3. IvannaConversationalCore.recordAdjustment() — memoria de sesión
+        ▼
+ IvannaConversationalCore ───── memoria conversacional de sesión:
+        │                        · canción actual y artista (encadenamiento: "hazla más épica")
+        │                        · último preset aplicado y últimos cambios DSP
+        │                        · preferencias temporales del usuario ("no me gustan los bajos")
+        │                        · historial de ajustes para el reporte hablado
+        ▼
+ IvannaAcousticBrain ─────────── fusiona percepción + salud + IvannaListenerProfile +
+        │                         duración real de sesión en recomendación explicable
+        ▼
+ IvannaAgentCore ─────────────── cinco agentes especializados a cadencia ~1 Hz
         ▼
  OmegaEngineBridge → daemon / DSPBridge → cadena DSP nativa (ver arriba)
         │
         ▼
- IvannaVoiceEngine (TTS propio) — responde, y explica por qué
+ IvannaVoiceEngine ───────────── responde con prosodia adaptada a la intención:
+                                  · SIMPLE: confirmación directa ("He subido el volumen.")
+                                  · MUSICAL: ritmo levemente más lento, énfasis descriptivo
+                                    ("He creado una configuración épica para Frankenstein:
+                                     abrí la escena estéreo, reforcé el impacto de batería
+                                     y conservé la energía original de la grabación.")
+                                  · TECHNICAL: cadencia reducida para claridad en parámetros
+                                  · segmentación natural por frases para pausas reales entre ideas
 ```
 
+- **Musical Intent Engine.** `IvannaMusicalIntentEngine` convierte lenguaje musical humano a parámetros DSP medibles sin LLM externo. Reconoce frases naturales ("más alma", "que respire", "más pegada", "sentir el escenario", "como disco de colección") además de nombres canónicos (Abbey Road, vinilo, épico). Detecta intenciones combinadas: "Frankenstein suena brutal pero quiero más escenario" activa ÉPICO + CONCIERTO MASIVO como intenciones encadenadas.
+- **Conversational Memory.** `IvannaConversationalCore` mantiene en RAM el contexto completo de la sesión: canción actual, artista, último preset aplicado, lista de cambios DSP recientes y preferencias temporales del usuario ("no me gustan los bajos muy fuertes"). Permite encadenar órdenes sin repetir contexto: "pon Frankenstein de Edgar Winter" → "ahora hazla como si estuviera en un estadio" → IVANNA sabe que sigue hablando de la misma canción.
+- **DSP Orchestration Layer.** `IvannaDSPOrchestrator` aplica un `MusicalPreset` sobre los tres canales coordinados: perfil EQ/bass/virtualizer/compresor vía `IvannaGlobalEffectManager`, comando extra vía `VoiceController` (concert_mode, spatial, etc.), y registro inmediato en el núcleo conversacional para los reportes. Nunca toca el hilo de audio directamente; orquesta los canales existentes en el orden correcto.
+- **Voice Intelligence.** `IvannaLanguageCore` comprende frases de estado emocional ("más feeling", "que emocione"), preferencias de espacio ("que respire"), ritmo ("más pegada", "que mueva"), separación instrumental ("que se distingan") y referencias de colección ("como disco de colección"). Todas se traducen a parámetros DSP reales, sin fabricar APIs ni presets vacíos.
+- **Natural Prosody Engine.** `IvannaVoiceEngine` adapta la prosodia de cada respuesta a su complejidad: confirmaciones simples son directas y rápidas; descripciones de configuraciones musicales suenan más lentas y enfáticas para que el usuario procese los detalles técnicos. La segmentación de frases genera pausas reales entre ideas en respuestas largas — no el flujo continuo artificial del TTS estándar.
 - **Agentes acústicos, no reglas sueltas.** Percepción de escena (voz/música/dinámico/silencio) desde telemetría real, política de decisión por escena y por salud, aplicación por los mismos canales seguros que ya usa el DSP, monitoreo de salud y optimización automática reversible — todo con ring buffer de decisiones para explicabilidad.
 - **TinyML propio.** La clasificación de escena y contenido corre en el SoC (ConvNeXt INT8, 4 clases), no en la nube — la misma filosofía que la clasificación de audio de la Ruta A/B.
 - **HRTF / SOFA / SAF / RIR al servicio del oyente.** El `IvannaAudioKnowledgeBase` conoce el mismo vocabulario técnico que describe la cadena espacial (CIPIC, AES69, overlap-save FFT, RT60 medido) y lo usa para explicar decisiones en lenguaje humano, no solo para procesarlas.
