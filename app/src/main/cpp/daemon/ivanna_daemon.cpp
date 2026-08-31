@@ -1,6 +1,7 @@
 #include "control/command_server.h"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
+#include "../include/omega_control_bus.h"
 #include "../../IvannaSelfHealingEngine.hpp"
 #include <iostream>
 #include <fstream>
@@ -188,6 +189,12 @@ int main(int argc, char* argv[]) {
     Ivanna::IvannaSelfHealingEngine selfHealer;
     selfHealer.startMonitoring();
     log_message("Self-Healing Engine activated and monitoring components.");
+
+    if (!ivanna::controlBus().openWriter()) {
+        log_message("CRITICAL: Failed to open OmegaControlBus writer!");
+    } else {
+        log_message("Master Control Bus: OmegaControlBus writer opened successfully.");
+    }
 
     // FIX (daemon bloqueante / fd leak / buffer overflow):
     // 1. El accept loop anterior atendía clientes en el hilo principal de forma
