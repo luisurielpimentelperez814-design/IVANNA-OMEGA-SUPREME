@@ -271,6 +271,15 @@ class IVANNAApplication : Application() {
                 DSPBridge.init(sampleRate = hwSr)
                 Log.d(TAG, "✅ DSPBridge listo — $hwSr Hz (hardware real)")
 
+                // Capa agéntica (2026-08-31): arranca los 5 agentes sobre los
+                // canales ya inicializados (DSPBridge in-process + puente al
+                // daemon). Opera a cadencia lenta (1 s) en Dispatchers.Default,
+                // nunca en el hilo de audio; si la librería nativa aún no está
+                // lista, AcousticPerceptionAgent devuelve snapshot vacío y el
+                // ciclo no interviene (política neutral) hasta que lo esté.
+                runCatching { com.ivanna.omega.agent.IvannaAgentCore.start() }
+                    .onFailure { Log.w(TAG, "AgentCore no arrancó (no fatal): ${it.message}") }
+
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal).
                 // FIX (re-aplicado): OmegaDaemon.kt declara 18 external fun sin
                 // NINGUNA implementación JNI en C++ (verificado con grep: 0
