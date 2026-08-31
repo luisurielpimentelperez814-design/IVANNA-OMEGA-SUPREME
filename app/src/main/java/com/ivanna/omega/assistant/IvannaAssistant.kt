@@ -190,6 +190,8 @@ class IvannaAssistant(context: Context) {
      *  - IvannaContextMemory (escena, explicaciones, preferencias de sesión)
      *  - IvannaLanguageCore.intentHistory (contexto de la conversación)
      *  - IvannaCognitiveCore.lastDecision (estado de la UI de inteligencia)
+     *  - IvannaAcousticBrain (cronómetro de sesión + última recomendación
+     *    fusionada, limpiado en cascada por IvannaCognitiveCore.clearDecision())
      *
      * NO borra:
      *  - Configuración permanente de audio (DSP, perfiles de EQ, HRTF)

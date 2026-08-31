@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivanna.omega.agent.IvannaAgentCore
+import com.ivanna.omega.assistant.IvannaAcousticBrain
 import com.ivanna.omega.assistant.IvannaAssistant
 import com.ivanna.omega.assistant.IvannaCognitiveCore
 import com.ivanna.omega.assistant.IvannaContextMemory
@@ -149,6 +150,11 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                     dspStatus     = dsp,
                     lastAction    = lastAction
                 )
+                // IvannaAcousticBrain fusiona percepción + salud + perfil del
+                // oyente + duración real de sesión en cada ciclo del agente
+                // (~1 Hz) — así el contexto de sesión vive incluso sin que
+                // el usuario hable.
+                refreshMemoryPanel()
             }
         }
 
@@ -216,11 +222,15 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         val mode    = profile.labelOf(profile.preferredMode)
         val fatigue = profile.fatigueReports
         val scene   = memory.lastScene ?: "—"
+        // Fusión en vivo: percepción + salud + perfil + duración real de
+        // sesión. No ejecuta nada — solo informa el panel de memoria.
+        val brainInsight = IvannaAcousticBrain.fuse(profile)
 
         val context = buildString {
             append("Modo preferido: $mode")
             if (fatigue > 0) append("  ·  Fatiga reportada: ${fatigue}×")
             append("  ·  Escena anterior: $scene")
+            append("  ·  ${brainInsight.explanation}")
         }
         _panel.value = _panel.value.copy(
             sessionContext      = context,

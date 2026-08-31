@@ -141,6 +141,7 @@ object IvannaCognitiveCore {
      */
     fun clearDecision() {
         _lastDecision.value = null
+        IvannaAcousticBrain.clear()
         Log.d(TAG, "Decisión cognitiva limpiada por clearMemory()")
     }
 
@@ -171,12 +172,18 @@ object IvannaCognitiveCore {
     }
 
     /**
-     * Comprueba si el ListenerProfile justifica una advertencia proactiva
-     * de fatiga, independientemente de la intención actual (FASE 13 + 14).
-     * Retorna una CognitiveDecision si aplica, o null si el perfil es neutro.
+     * Comprueba si hay motivo para una advertencia proactiva de fatiga,
+     * independientemente de la intención actual (FASE 13 + 14 + AcousticBrain).
+     *
+     * Antes solo miraba profile.shouldSuggestGentle (contador de reportes).
+     * Ahora delega en IvannaAcousticBrain.fuse(), que además fusiona la
+     * duración real de la sesión de escucha — así IVANNA puede detectar
+     * fatiga incluso si el usuario nunca la reportó antes, solo por llevar
+     * mucho tiempo escuchando. Retorna null si no hay ningún riesgo fusionado.
      */
     fun proactiveFatigueCheck(profile: IvannaListenerProfile): CognitiveDecision? {
-        if (!profile.shouldSuggestGentle) return null
+        val insight = IvannaAcousticBrain.fuse(profile)
+        if (!insight.fatigueRisk) return null
         val rms = IvannaAgentCore.state.value.perception.rms
         if (rms < 0.05f) return null  // sin reproducción activa, no hay riesgo
         val fatigueKb = IvannaAudioKnowledgeBase.snippetFor(
@@ -184,11 +191,9 @@ object IvannaCognitiveCore {
         )
         return CognitiveDecision(
             execute         = true,
-            commandOverride = "gentle_mode",
-            reason          = "Perfil del oyente: ${profile.fatigueReports} reportes de fatiga " +
-                              "acumulados. Activando modo suave proactivamente. $fatigueKb",
-            warningForUser  = "He notado que reportas fatiga con frecuencia. He activado " +
-                              "el modo suave para proteger tu audición."
+            commandOverride = insight.recommendation ?: "gentle_mode",
+            reason          = "${insight.explanation} $fatigueKb",
+            warningForUser  = insight.explanation
         )
     }
 }
