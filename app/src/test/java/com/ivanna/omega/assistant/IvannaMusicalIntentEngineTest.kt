@@ -128,4 +128,88 @@ class IvannaMusicalIntentEngineTest {
         assertTrue("availablePresetsDescription debe tener contenido", desc.isNotBlank())
         assertTrue("Debe mencionar al menos 5 presets", desc.split(",").size >= 5)
     }
+
+    // ── Tests adicionales de la fase de cierre ───────────────────────────────
+
+    @Test
+    fun `concierto en vivo detecta preset CONCIERTO MASIVO`() {
+        val result = IvannaMusicalIntentEngine.detect("como concierto en vivo")
+        assertNotNull("'concierto en vivo' debe detectar preset", result)
+        assertEquals("CONCIERTO MASIVO", result!!.name)
+    }
+
+    @Test
+    fun `brutal detecta preset ÉPICO`() {
+        val result = IvannaMusicalIntentEngine.detect("suena brutal")
+        assertNotNull("'brutal' debe detectar preset ÉPICO", result)
+        assertEquals("ÉPICO", result!!.name)
+    }
+
+    @Test
+    fun `frankenstein frase compleja detecta preset valido`() {
+        // "Frankenstein de Edgar Winter suena brutal pero quiero más escenario"
+        // → "brutal" activa ÉPICO antes que "escenario" active CONCIERTO MASIVO
+        // (orden de detección del engine). Ambos son válidos como respuesta.
+        val result = IvannaMusicalIntentEngine.detect(
+            "Frankenstein de Edgar Winter suena brutal pero quiero más escenario"
+        )
+        assertNotNull("Frase compleja de Frankenstein debe detectar algún preset", result)
+        val validPresets = setOf("ÉPICO", "CONCIERTO MASIVO")
+        assertTrue(
+            "Frankenstein debe producir preset épico o de estadio, fue: ${result!!.name}",
+            result.name in validPresets
+        )
+    }
+
+    @Test
+    fun `frankenstein epico tiene spatialBoost no negativo`() {
+        val result = IvannaMusicalIntentEngine.detect("hazlo épico")
+        assertNotNull(result)
+        assertTrue(
+            "El preset épico debe tener spatialBoost >= 0",
+            result!!.spatialBoost >= 0f
+        )
+    }
+
+    @Test
+    fun `primera fila detecta preset PRIMERA FILA`() {
+        val result = IvannaMusicalIntentEngine.detect("como si estuviera ahí en primera fila")
+        assertNotNull("'primera fila' debe detectar preset", result)
+        assertEquals("PRIMERA FILA", result!!.name)
+    }
+
+    @Test
+    fun `quiero escuchar mas detalles detecta MICRODETALLE`() {
+        val result = IvannaMusicalIntentEngine.detect("quiero escuchar más detalles")
+        assertNotNull("'quiero escuchar más detalles' debe detectar preset", result)
+        assertEquals("MICRODETALLE", result!!.name)
+    }
+
+    @Test
+    fun `preset epico tiene extraCommand concert_mode`() {
+        val result = IvannaMusicalIntentEngine.detect("hazlo épico")
+        assertNotNull(result)
+        assertEquals("concert_mode", result!!.extraCommand)
+    }
+
+    @Test
+    fun `preset concierto masivo tiene spatialBoost alto`() {
+        val result = IvannaMusicalIntentEngine.detect("como un concierto gigantesco")
+        assertNotNull(result)
+        assertTrue("Concierto masivo debe tener spatialBoost >= 0.4f", result!!.spatialBoost >= 0.4f)
+    }
+
+    @Test
+    fun `preset espacial tiene spatialBoost positivo`() {
+        val result = IvannaMusicalIntentEngine.detect("hazlo más espacial")
+        assertNotNull(result)
+        assertTrue("Espacial debe tener spatialBoost > 0", result!!.spatialBoost > 0f)
+    }
+
+    @Test
+    fun `preset abbey road no tiene extraCommand`() {
+        val result = IvannaMusicalIntentEngine.detect("como Abbey Road")
+        assertNotNull(result)
+        assertNull("Abbey Road no debe tener comando extra", result!!.extraCommand)
+    }
 }
