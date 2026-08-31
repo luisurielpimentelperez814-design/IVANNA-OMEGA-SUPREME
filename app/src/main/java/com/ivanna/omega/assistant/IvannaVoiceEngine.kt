@@ -23,8 +23,8 @@ import java.util.Locale
 data class VoiceProfile(
     val name: String = "IVANNA",
     val locale: Locale = Locale("es", "ES"),
-    val pitch: Float = 1.06f,      // femenina elegante, sin estridencia
-    val speechRate: Float = 0.91f, // cadencia natural de especialista — no apurada
+    val pitch: Float = 1.15f,      // femenina elegante, sin estridencia
+    val speechRate: Float = 0.96f, // cadencia natural de especialista — no apurada
     val preferNeuralVoices: Boolean = true
 )
 
@@ -128,7 +128,7 @@ class IvannaVoiceEngine(
                 // los motores modernos: Google, Samsung, etc.).
                 if (n.contains("neural") || n.contains("natural") || n.contains("premium")) s += 3
                 // Rasgo femenino explícito cuando el motor lo expone.
-                if (n.contains("female") || n.contains("mujer") || n.contains("femenin")) s += 2
+                if (n.contains("female") || n.contains("mujer") || n.contains("femenin")) s += 10
                 // Latencia alta penaliza conversación fluida.
                 if (v.latency >= Voice.LATENCY_VERY_HIGH) s -= 2
                 // Local de la región exacta (es-ES > es-419 > es genérico).

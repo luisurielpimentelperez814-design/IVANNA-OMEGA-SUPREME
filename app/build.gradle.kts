@@ -166,6 +166,7 @@ dependencies {
     // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 }
 
 dependencies {

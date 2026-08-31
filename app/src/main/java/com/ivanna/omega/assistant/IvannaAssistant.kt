@@ -130,8 +130,36 @@ class IvannaAssistant(context: Context) {
         scope.launch(Dispatchers.IO) {
             val scene = memory.lastScene
 
+            // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
+            val (agentReply, agentCommand) = IvannaGeminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
+            
+            // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
+            val simulatedIntent = agentCommand?.let {
+                when(it) {
+                    "voice_clarity" -> IvannaLanguageCore.AcousticIntent.VOICE_CLARITY
+                    "cinema_mode"   -> IvannaLanguageCore.AcousticIntent.MOVIE_IMMERSION
+                    "music_mode"    -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
+                    "concert_mode"  -> IvannaLanguageCore.AcousticIntent.CONCERT_LIVE
+                    "spatial_mode"  -> IvannaLanguageCore.AcousticIntent.SPATIAL_EXPANSION
+                    "gentle_mode"   -> IvannaLanguageCore.AcousticIntent.GENTLE_MODE
+                    "flat_mode"     -> IvannaLanguageCore.AcousticIntent.FLAT_NEUTRAL
+                    "volume_up"     -> IvannaLanguageCore.AcousticIntent.VOLUME_UP
+                    "volume_down"   -> IvannaLanguageCore.AcousticIntent.VOLUME_DOWN
+                    "bass_boost"    -> IvannaLanguageCore.AcousticIntent.BASS_BOOST
+                    "treble_reduce" -> IvannaLanguageCore.AcousticIntent.TREBLE_REDUCE
+                    "optimize"      -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+                    "diagnose"      -> IvannaLanguageCore.AcousticIntent.DIAGNOSE
+                    "musical_intent"-> IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT
+                    else -> null
+                }
+            }
+
             // ── IVANNA Language Core → intención acústica estructurada ────────
-            val parsed = IvannaLanguageCore.parse(text, scene ?: "UNKNOWN")
+            val parsed = if (simulatedIntent != null) {
+                IvannaLanguageCore.ParsedIntent(text, simulatedIntent, 0.99f, true, "")
+            } else {
+                IvannaLanguageCore.parse(text, scene ?: "UNKNOWN")
+            }
 
             // ── Verificación proactiva de fatiga ──────────────────────────────
             val fatigueOverride = IvannaCognitiveCore.proactiveFatigueCheck(profile)
@@ -195,6 +223,18 @@ class IvannaAssistant(context: Context) {
                 return@launch
             }
 
+            // ── Si la rama LLM produjo respuesta conversacional sin comando ──
+            if (agentReply != null && agentCommand == null && simulatedIntent == null) {
+                launch(Dispatchers.Main) {
+                    _ui.value = _ui.value.copy(
+                        statusLine = agentReply,
+                        lastTurn   = ConversationTurn(userText = text, ivannaText = agentReply)
+                    )
+                    voice.speak(agentReply)
+                }
+                return@launch
+            }
+
             // ── Flujo estándar para intenciones no musicales ──────────────────
             val decision = fatigueOverride ?: IvannaCognitiveCore.reason(parsed)
 
@@ -203,12 +243,12 @@ class IvannaAssistant(context: Context) {
                     IvannaCognitiveCore.explainLastDecision()
                 }
                 !decision.execute -> {
-                    decision.warningForUser ?: IvannaLanguageCore.spokenResponse(parsed)
+                    decision.warningForUser ?: agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
                 }
                 else -> {
                     val command = decision.commandOverride
                         ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
-                    val baseReply = IvannaLanguageCore.spokenResponse(parsed)
+                    val baseReply = agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
                     profile.recordAdjustment(command, scene ?: "UNKNOWN")
                     memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
                     memory.lastExplanation = baseReply
