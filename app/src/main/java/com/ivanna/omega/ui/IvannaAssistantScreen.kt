@@ -58,8 +58,27 @@ fun IvannaAssistantScreen(
     onBack: () -> Unit = {},
     vm: IvannaAssistantViewModel = viewModel()
 ) {
-    val panel by vm.panel.collectAsState()
+    val panel  by vm.panel.collectAsState()
     val scroll = rememberScrollState()
+    val context = LocalContext.current
+
+    // ── Runtime permission para RECORD_AUDIO (Android 6+) ─────────────────
+    // Sin este check el SpeechRecognizer devuelve ERROR_INSUFFICIENT_PERMISSIONS
+    // silenciosamente y el micrófono nunca funciona.
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasAudioPermission = granted
+        // Si el usuario acaba de conceder el permiso, IVANNA lo celebra
+        if (granted) vm.onTextInput("hola")
+    }
 
     // Nota: el permiso RECORD_AUDIO en tiempo de ejecución (obligatorio desde
     // Android 6 además de declararlo en el manifiesto) ya se gestiona dentro
@@ -67,9 +86,7 @@ fun IvannaAssistantScreen(
 
     Scaffold(
         containerColor = ObsidianVoid,
-        topBar = {
-            IvannaAssistantTopBar(onBack = onBack)
-        }
+        topBar = { IvannaAssistantTopBar(onBack = onBack) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -125,11 +142,15 @@ fun IvannaAssistantScreen(
 
             // ── Controles ─────────────────────────────────────────────────
             MicSection(
-                phase       = panel.phase,
-                micAvailable = panel.micAvailable,
-                onStartListen = { vm.startListening() },
-                onStopListen  = { vm.stopListening() },
-                onTextSend    = { vm.onTextInput(it) }
+                phase            = panel.phase,
+                micAvailable     = panel.micAvailable,
+                hasAudioPermission = hasAudioPermission,
+                onRequestPermission = {
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                },
+                onStartListen    = { vm.startListening() },
+                onStopListen     = { vm.stopListening() },
+                onTextSend       = { vm.onTextInput(it) }
             )
             Spacer(Modifier.height(32.dp))
         }
@@ -377,21 +398,26 @@ private fun MemoryPanel(
             Spacer(Modifier.height(8.dp))
             Text("Preferencias aprendidas", color = TextMuted, style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(4.dp))
+            // Chips de preferencia — Surface puro para evitar variaciones de API
+            // en distintas versiones de Material3 (el border de AssistChip cambió
+            // entre 1.2.x y 1.3.x). Surface es estable en todas las versiones.
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 preferences.forEach { pref ->
-                    AssistChip(
-                        onClick    = {},
-                        label      = { Text(pref, style = MaterialTheme.typography.labelSmall) },
-                        colors     = AssistChipDefaults.assistChipColors(
-                            containerColor = PhosphorGreen.copy(alpha = 0.12f),
-                            labelColor     = PhosphorGreen
-                        ),
-                        border     = AssistChipDefaults.assistChipBorder(
-                            enabled      = true,
-                            borderColor  = PhosphorGreen.copy(alpha = 0.3f),
-                            borderWidth  = 1.dp
+                    Surface(
+                        shape  = RoundedCornerShape(50),
+                        color  = PhosphorGreen.copy(alpha = 0.10f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 1.dp,
+                            color = PhosphorGreen.copy(alpha = 0.35f)
                         )
-                    )
+                    ) {
+                        Text(
+                            text     = pref,
+                            color    = PhosphorGreen,
+                            style    = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -403,76 +429,80 @@ private fun MemoryPanel(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
+/**
+ * MicSection — controles de voz y texto del asistente.
+ *
+ * La permission para RECORD_AUDIO se gestiona en el composable padre
+ * (IvannaAssistantScreen) con rememberLauncherForActivityResult, de modo
+ * que el ciclo de vida del launcher está correctamente acotado al Screen
+ * y no se duplica aquí. MicSection recibe el estado ya resuelto.
+ */
+@Composable
 private fun MicSection(
-    phase        : AssistantPhase,
-    micAvailable : Boolean,
-    onStartListen: () -> Unit,
-    onStopListen : () -> Unit,
-    onTextSend   : (String) -> Unit
+    phase               : AssistantPhase,
+    micAvailable        : Boolean,
+    hasAudioPermission  : Boolean,
+    onRequestPermission : () -> Unit,
+    onStartListen       : () -> Unit,
+    onStopListen        : () -> Unit,
+    onTextSend          : (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            onStartListen()
-        }
-    }
-    
-    val handleStartListen = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            onStartListen()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
     var textInput by remember { mutableStateOf("") }
     val keyboard  = LocalSoftwareKeyboardController.current
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 20.dp)) {
-
-        // Mic button (con fallback visual si no hay micrófono)
-        if (!micAvailable) {
-            Row(
-                modifier          = Modifier
-                    .fillMaxWidth()
-                    .background(CoralWarn.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.MicOff, contentDescription = null, tint = CoralWarn,
-                    modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Micrófono no disponible. Usa el campo de texto.",
-                    color = CoralWarn, style = MaterialTheme.typography.bodySmall)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 20.dp)
+    ) {
+        when {
+            // ── Micrófono del dispositivo no disponible (sin STT) ──────────
+            !micAvailable -> {
+                MicWarningBanner("Micrófono no disponible. Usa el campo de texto.")
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(12.dp))
-        } else {
-            val isListening = phase == AssistantPhase.LISTENING
-            val micColor    = if (isListening) CoralWarn else AuroraCyan
-
-            FilledTonalIconButton(
-                onClick  = { if (isListening) onStopListen() else handleStartListen() },
-                modifier = Modifier.size(72.dp),
-                colors   = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = micColor.copy(alpha = 0.15f)
-                )
-            ) {
-                Icon(
-                    imageVector        = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = if (isListening) "Detener" else "Hablar",
-                    tint               = micColor,
-                    modifier           = Modifier.size(32.dp)
-                )
+            // ── Permiso RECORD_AUDIO no concedido ──────────────────────────
+            !hasAudioPermission -> {
+                MicWarningBanner("Sin acceso al micrófono.")
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick  = onRequestPermission,
+                    border   = androidx.compose.foundation.BorderStroke(1.dp, AuroraCyan),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null,
+                        tint = AuroraCyan, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Conceder acceso al micrófono",
+                        color = AuroraCyan, style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(Modifier.height(12.dp))
             }
+            // ── Micrófono disponible y con permiso ─────────────────────────
+            else -> {
+                val isListening = phase == AssistantPhase.LISTENING
+                val micColor    = if (isListening) CoralWarn else AuroraCyan
 
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (isListening) "Toca para detener" else "Toca para hablar",
-                color = TextMuted, style = MaterialTheme.typography.labelSmall
-            )
-            Spacer(Modifier.height(16.dp))
+                FilledTonalIconButton(
+                    onClick  = { if (isListening) onStopListen() else onStartListen() },
+                    modifier = Modifier.size(72.dp),
+                    colors   = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = micColor.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Icon(
+                        imageVector        = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = if (isListening) "Detener escucha" else "Hablar con IVANNA",
+                        tint               = micColor,
+                        modifier           = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (isListening) "Toca para detener" else "Toca para hablar",
+                    color = TextMuted, style = MaterialTheme.typography.labelSmall
+                )
+                Spacer(Modifier.height(16.dp))
+            }
         }
 
         // Campo de texto — accesibilidad y pruebas
@@ -513,6 +543,24 @@ private fun MicSection(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── MicWarningBanner ─────────────────────────────────────────────────────────
+
+@Composable
+private fun MicWarningBanner(message: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CoralWarn.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.MicOff, contentDescription = null,
+            tint = CoralWarn, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(message, color = CoralWarn, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
 // Utilidades compartidas
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -10,6 +10,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+// IvannaAudioKnowledgeBase y IvannaListenerProfile están en el mismo paquete
+// (com.ivanna.omega.assistant) — no requieren import explícito en Kotlin,
+// pero los declaramos como comentario de documentación para CI legibility.
 
 /**
  * IvannaCognitiveCore — capa de razonamiento de IVANNA.

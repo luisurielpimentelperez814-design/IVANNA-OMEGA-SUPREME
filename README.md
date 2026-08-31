@@ -210,6 +210,107 @@ La app y el módulo van a la par: **v2.3.0 / 2300** en ambos.
 
 ---
 
+## ✦ IVANNA Conversational Acoustic Intelligence
+
+IVANNA incluye una capa conversacional nativa — sin LLMs externos, sin servicios en la nube, especializada al 100% en audio.
+
+### Arquitectura del pipeline conversacional
+
+```
+Usuario (voz o texto)
+        ↓
+IvannaAssistantScreen   ←→   IvannaAssistantViewModel
+        ↓                              ↓
+IvannaSpeechRecognizer              AssistantPhase
+  (ASR del sistema)          IDLE / LISTENING / PROCESSING /
+        ↓                    EXECUTING / SPEAKING / ERROR
+IvannaLanguageCore
+  · Clasificador de intenciones acústicas (17 intenciones)
+  · Contexto de conversación (ventana de 6 turnos)
+  · Desambiguación por historial
+  · Integración con IvannaAudioKnowledgeBase
+        ↓
+IvannaCognitiveCore
+  · Razonamiento sobre estado real del DSP
+  · Verificación de seguridad (clipping, temperatura)
+  · Decisión: ejecutar / modificar / rechazar
+  · Explicabilidad de decisiones
+        ↓
+IvannaAgentCore (5 agentes orquestados)
+  · AcousticPerceptionAgent — escena desde telemetría JNI
+  · DecisionAgent — política por escena
+  · DspControlAgent — canales seguros existentes
+  · HealthMonitoringAgent — clips / latencia / motor / daemon
+  · OptimizationAgent — ajustes automáticos reversibles
+        ↓
+IvannaVoiceEngine
+  · TTS del sistema con selección inteligente de voz española
+  · VoiceProfile: pitch 1.08 / rate 0.94 (conversación larga sin fatiga)
+  · AudioAttributes USAGE_ASSISTANT para routing correcto
+        ↓
+Respuesta auditiva y visual al usuario
+```
+
+### Lenguaje propio (IvannaLanguageCore)
+
+IVANNA habla español acústico especializado. Comprende expresiones naturales:
+
+| Expresión del usuario | Intención detectada |
+|---|---|
+| "Mejora las voces" | `VOICE_CLARITY` |
+| "Quiero más cine" | `MOVIE_IMMERSION` |
+| "Me duele la cabeza" | `LISTENING_FATIGUE` |
+| "Más espacio" | `SPATIAL_EXPANSION` |
+| "¿Qué hiciste?" | `EXPLAIN` |
+| "Estoy cansado de escuchar" | `LISTENING_FATIGUE` |
+| "Neutro" | `FLAT_NEUTRAL` |
+
+### Razonamiento acústico (IvannaCognitiveCore)
+
+El núcleo cognitivo no ejecuta ciegamente: verifica el estado real del sistema antes de actuar:
+
+- Si hay **clipping activo** → rechaza subida de volumen o de graves
+- Si la **temperatura es alta** → limita la espacialidad al 50%
+- Si la **escena es VOICE** → redirige SPATIAL a VOICE_CLARITY
+- Toda decisión queda registrada en el `decisionLog` del AgentCore para explicabilidad
+
+### Memoria local (IvannaListenerProfile + IvannaContextMemory)
+
+100% en el dispositivo — ningún dato sale del teléfono:
+
+- **IvannaListenerProfile**: preferencias acústicas aprendidas, historial de ajustes, sensibilidad auditiva (fatiga reportada → sugerencia proactiva de modo gentle)
+- **IvannaContextMemory**: escena dominante anterior, última explicación de IVANNA, perfiles favoritos
+
+La memoria se puede borrar completamente desde la UI con `clearMemory()`.
+
+### Conocimiento acústico especializado (IvannaAudioKnowledgeBase)
+
+IVANNA no es un chatbot genérico. Su base de conocimiento cubre:
+
+- **HRTF** (Head-Related Transfer Function, dataset CIPIC)
+- **SOFA** (AES69, formato estándar para HRTFs y respuestas de sala)
+- **RIR** (Room Impulse Response — 200 salas reales)
+- **SAF** (Spatial Audio Framework — convolución overlap-save FFT)
+- **Psicoacústica**: loudness ISO 226, ITD/ILD, fatiga auditiva, masking
+- **DSP**: EQ IIR biquad 8 bandas, compresor side-chain, exciter harmónico, limiter brickwall
+
+### UI premium (IvannaAssistantScreen)
+
+La pantalla `ivanna_assistant` muestra:
+
+- **Status Orb** animado: color y pulso según la fase activa
+- **Panel de Inteligencia**: intención detectada · agente activo · última acción · explicación
+- **Panel de Audio**: escena DSP · perfil activo · estado del motor
+- **Panel de Memoria**: contexto de sesión · preferencias aprendidas
+- **Transcripción**: último turno de conversación
+- **Control**: botón de micrófono con fallback visual + campo de texto para accesibilidad
+
+### Acceso a IVANNA Assistant
+
+**Sistema** → **IVANNA ASSISTANT** (primera tarjeta del hub de sistema)
+
+---
+
 ## ✦ Lo que IVANNA no hace (honestidad de ingeniería)
 
 - Sin root, la Ruta B no existe: la app cae a `AudioEffect` por sesión (EQ/DynamicsProcessing de Android) — el DSP profundo custom requiere el módulo.
