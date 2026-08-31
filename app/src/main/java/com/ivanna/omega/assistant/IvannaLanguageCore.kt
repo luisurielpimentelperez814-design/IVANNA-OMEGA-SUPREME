@@ -228,6 +228,20 @@ object IvannaLanguageCore {
             return AcousticIntent.SONG_PROFILE_REQUEST to 0.95f
         }
 
+        // ── Lenguaje musical natural expandido ──────────────────────────────
+        // Frases que el usuario no formularía como comandos técnicos pero que
+        // expresan claramente una intención acústica.
+        if (hits(t, "más alma", "mas alma", "que tenga alma", "más emoción", "mas emocion",
+                  "más expresivo", "que emocione", "más feeling", "mas feeling",
+                  "que respire", "más aire", "mas aire", "menos amontonado",
+                  "más pegada", "mas pegada", "que pegue más", "que golpee",
+                  "quiero sentir el escenario", "sentir el escenario", "más escenario",
+                  "mas escenario", "que los instrumentos estén separados",
+                  "como disco de colección", "disco de coleccion",
+                  "que se distingan", "distinguir los instrumentos")) {
+            return AcousticIntent.MUSICAL_INTENT to 0.91f
+        }
+
         // ── Intención musical: detectar si IvannaMusicalIntentEngine lo reconoce
         if (IvannaMusicalIntentEngine.detect(t) != null) {
             return AcousticIntent.MUSICAL_INTENT to 0.93f
