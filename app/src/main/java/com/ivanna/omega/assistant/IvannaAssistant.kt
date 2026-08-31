@@ -57,6 +57,9 @@ class IvannaAssistant(context: Context) {
     private val memory = IvannaContextMemory(appContext)
     private val voiceController: VoiceController = VoiceController(appContext)
 
+    // ── Nuevas capas de inteligencia acústica (FASE 1-5) ─────────────────────
+    private val dspOrchestrator = IvannaDSPOrchestrator(appContext)
+
     // Vigilante de estado de voz para reflejar SPEAKING en la UI.
     private var voiceWatchStarted = false
 
@@ -125,35 +128,87 @@ class IvannaAssistant(context: Context) {
     fun onUserSaid(text: String) {
         _ui.value = _ui.value.copy(listening = false, statusLine = "Procesando…")
         scope.launch(Dispatchers.IO) {
-            val scene  = memory.lastScene
+            val scene = memory.lastScene
 
             // ── IVANNA Language Core → intención acústica estructurada ────────
             val parsed = IvannaLanguageCore.parse(text, scene ?: "UNKNOWN")
 
-            // ── Verificación proactiva de fatiga (FASE 13 + 14) ───────────────
+            // ── Verificación proactiva de fatiga ──────────────────────────────
             val fatigueOverride = IvannaCognitiveCore.proactiveFatigueCheck(profile)
 
-            // ── IVANNA Cognitive Core → razonamiento sobre el estado real ─────
+            // ── Rama de inteligencia musical avanzada (FASE 1-5) ─────────────
+            val musicalReply: String? = when (parsed.acousticIntent) {
+
+                IvannaLanguageCore.AcousticIntent.SONG_PROFILE_REQUEST -> {
+                    // "Pon Frankenstein de Edgar Winter y configúralo magistralmente"
+                    val songCtx = IvannaConversationalCore.extractSongContext(text, userGoal = text)
+                    val result = dspOrchestrator.createSongProfile(
+                        song = songCtx ?: IvannaConversationalCore.SongContext(
+                            title = "la canción actual", artist = null, userGoal = text),
+                        musicalGoal = text
+                    )
+                    profile.recordAdjustment(result.presetName, scene ?: "UNKNOWN")
+                    memory.recordAdjustment(result.presetName, "perfil musical para: $text", applied = result.applied)
+                    IvannaConversationalCore.recordTurn(text, "SONG_PROFILE", result.presetName, result.spokenReply)
+                    result.spokenReply
+                }
+
+                IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT -> {
+                    // "Hazla más épica", "vinilo premium", "como Abbey Road"
+                    val songCtx = IvannaConversationalCore.extractSongContext(text)
+                    val musicalPreset = IvannaMusicalIntentEngine.detect(text)
+                    if (musicalPreset != null) {
+                        val result = dspOrchestrator.applyMusicalPreset(musicalPreset, songCtx)
+                        profile.recordAdjustment(result.presetName, scene ?: "UNKNOWN")
+                        memory.recordAdjustment(result.presetName, "musical: ${musicalPreset.technicalDetail}", applied = result.applied)
+                        IvannaConversationalCore.recordTurn(text, "MUSICAL_INTENT", result.presetName, result.spokenReply)
+                        result.spokenReply
+                    } else null
+                }
+
+                IvannaLanguageCore.AcousticIntent.SESSION_REPORT -> {
+                    // "Muéstrame qué hiciste con Frankenstein"
+                    val report = IvannaConversationalCore.generateVoiceReport()
+                    IvannaConversationalCore.recordTurn(text, "SESSION_REPORT", null, report)
+                    report
+                }
+
+                IvannaLanguageCore.AcousticIntent.PROFILE_LIST -> {
+                    val list = IvannaMusicalIntentEngine.availablePresetsDescription()
+                    IvannaConversationalCore.recordTurn(text, "PROFILE_LIST", null, list)
+                    list
+                }
+
+                else -> null  // intenciones estándar siguen el flujo original
+            }
+
+            // ── Si la rama musical produjo respuesta, la usamos directamente ──
+            if (musicalReply != null) {
+                memory.lastScene = "MUSIC"
+                launch(Dispatchers.Main) {
+                    _ui.value = _ui.value.copy(
+                        statusLine = musicalReply,
+                        lastTurn   = ConversationTurn(userText = text, ivannaText = musicalReply)
+                    )
+                    voice.speak(musicalReply)
+                }
+                return@launch
+            }
+
+            // ── Flujo estándar para intenciones no musicales ──────────────────
             val decision = fatigueOverride ?: IvannaCognitiveCore.reason(parsed)
 
             val reply: String = when {
-                // Intent EXPLAIN → usa DecisionHistory + KnowledgeBase (FASE 14)
                 parsed.acousticIntent == IvannaLanguageCore.AcousticIntent.EXPLAIN -> {
                     IvannaCognitiveCore.explainLastDecision()
                 }
-
                 !decision.execute -> {
-                    // Cognitivo rechazó — informar con la advertencia específica
                     decision.warningForUser ?: IvannaLanguageCore.spokenResponse(parsed)
                 }
-
                 else -> {
-                    // Ejecutar a través de los canales existentes
                     val command = decision.commandOverride
                         ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
                     val baseReply = IvannaLanguageCore.spokenResponse(parsed)
-
-                    // Registrar en ListenerProfile y memoria
                     profile.recordAdjustment(command, scene ?: "UNKNOWN")
                     memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
                     memory.lastExplanation = baseReply
@@ -164,10 +219,8 @@ class IvannaAssistant(context: Context) {
                         IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
                         else -> scene
                     }
-
-                    // Ejecutar comando en VoiceController (canal ya existente)
                     runCatching { voiceController.executeCommand(command) }
-
+                    IvannaConversationalCore.recordTurn(text, command, command, baseReply)
                     decision.warningForUser ?: baseReply
                 }
             }
@@ -232,6 +285,7 @@ class IvannaAssistant(context: Context) {
         profile.clearAll()
         IvannaLanguageCore.clearHistory()
         IvannaCognitiveCore.clearDecision()
+        IvannaConversationalCore.clear()
         val msg = "He olvidado mis notas de esta y otras sesiones. La configuración de audio permanece intacta."
         _ui.value = _ui.value.copy(statusLine = msg, lastTurn = null)
         voice.speak(msg)
