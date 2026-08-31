@@ -105,6 +105,7 @@ object IvannaLanguageCore {
         AcousticIntent.VOLUME_DOWN        -> "volume_down"
         AcousticIntent.BASS_BOOST         -> "bass_boost"
         AcousticIntent.TREBLE_REDUCE      -> "treble_reduce"
+        else -> "Entendido. Estoy aquí para ayudarte con el audio."
         AcousticIntent.MUSICAL_INTENT     -> "musical_intent"
         AcousticIntent.SONG_PROFILE_REQUEST -> "song_profile"
         AcousticIntent.SESSION_REPORT     -> "session_report"
@@ -344,6 +345,7 @@ object IvannaLanguageCore {
         AcousticIntent.TELL_JOKE           -> IvannaJokeBank.random()
 
         AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, crear perfiles musicales como 'épico' o 'Abbey Road', o ajustar el volumen."
+        else -> "Entendido. Estoy aquí para ayudarte con el audio."
     }
 
     fun clearHistory() { intentHistory.clear() }

@@ -223,8 +223,7 @@ class IvannaAssistant(context: Context) {
 
             // ── Intenciones conversacionales (no-audio) ─────────────────────
             val conversationalReply: String? = when (parsed.acousticIntent) {
-                IvannaLanguageCore.AcousticIntent.TELL_JOKE,
-                IvannaLanguageCore.AcousticIntent.JOKE_REQUEST -> {
+                IvannaLanguageCore.AcousticIntent.TELL_JOKE -> {
                     val joke = IvannaJokeBank.random()
                     IvannaConversationalCore.recordTurn(text, "JOKE", null, joke)
                     joke
