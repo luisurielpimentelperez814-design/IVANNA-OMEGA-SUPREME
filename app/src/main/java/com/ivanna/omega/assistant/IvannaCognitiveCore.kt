@@ -132,4 +132,63 @@ object IvannaCognitiveCore {
                 append(" · Térmico: ${"%.0f".format(s.health.thermalLoad * 100)}%")
         }
     }
+
+    /**
+     * Limpia el estado cognitivo de la sesión actual (FASE 13).
+     * Llamado por IvannaAssistant.clearMemory() para garantizar que los
+     * paneles de inteligencia en la UI también se reseteen junto al
+     * ListenerProfile y al LanguageCore history.
+     */
+    fun clearDecision() {
+        _lastDecision.value = null
+        Log.d(TAG, "Decisión cognitiva limpiada por clearMemory()")
+    }
+
+    /**
+     * Explica la última decisión usando DecisionHistory + AudioKnowledgeBase (FASE 14).
+     * Se invoca cuando IvannaLanguageCore detecta el intent EXPLAIN.
+     */
+    fun explainLastDecision(): String {
+        val recent = IvannaAgentCore.recentDecisions()
+        if (recent.isEmpty()) return "Aún no he tomado ninguna decisión en esta sesión."
+
+        val last = recent.last()
+        val kbIntent = when (last.action) {
+            "voice-focus"    -> IvannaLanguageCore.AcousticIntent.VOICE_CLARITY
+            "cinematic"      -> IvannaLanguageCore.AcousticIntent.MOVIE_IMMERSION
+            "music-balanced" -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
+            "protect",
+            "clip-relief"    -> IvannaLanguageCore.AcousticIntent.GENTLE_MODE
+            "latency-relief" -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+            else             -> IvannaLanguageCore.AcousticIntent.UNKNOWN
+        }
+        val kbNote = IvannaAudioKnowledgeBase.snippetFor(kbIntent)
+        return buildString {
+            append("Mi última decisión fue «${last.action}» ")
+            append("en escena ${last.scene.name}. Razón: ${last.reason}.")
+            if (kbNote.isNotBlank()) append(" $kbNote")
+        }
+    }
+
+    /**
+     * Comprueba si el ListenerProfile justifica una advertencia proactiva
+     * de fatiga, independientemente de la intención actual (FASE 13 + 14).
+     * Retorna una CognitiveDecision si aplica, o null si el perfil es neutro.
+     */
+    fun proactiveFatigueCheck(profile: IvannaListenerProfile): CognitiveDecision? {
+        if (!profile.shouldSuggestGentle) return null
+        val rms = IvannaAgentCore.state.value.perception.rms
+        if (rms < 0.05f) return null  // sin reproducción activa, no hay riesgo
+        val fatigueKb = IvannaAudioKnowledgeBase.snippetFor(
+            IvannaLanguageCore.AcousticIntent.LISTENING_FATIGUE
+        )
+        return CognitiveDecision(
+            execute         = true,
+            commandOverride = "gentle_mode",
+            reason          = "Perfil del oyente: ${profile.fatigueReports} reportes de fatiga " +
+                              "acumulados. Activando modo suave proactivamente. $fatigueKb",
+            warningForUser  = "He notado que reportas fatiga con frecuencia. He activado " +
+                              "el modo suave para proteger tu audición."
+        )
+    }
 }

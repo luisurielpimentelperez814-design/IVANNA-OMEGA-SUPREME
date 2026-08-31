@@ -125,39 +125,51 @@ class IvannaAssistant(context: Context) {
     fun onUserSaid(text: String) {
         _ui.value = _ui.value.copy(listening = false, statusLine = "Procesando…")
         scope.launch(Dispatchers.IO) {
-            // ── IVANNA Language Core → intención acústica estructurada ────────
             val scene  = memory.lastScene
-            val parsed = IvannaLanguageCore.parse(text, scene)
+
+            // ── IVANNA Language Core → intención acústica estructurada ────────
+            val parsed = IvannaLanguageCore.parse(text, scene ?: "UNKNOWN")
+
+            // ── Verificación proactiva de fatiga (FASE 13 + 14) ───────────────
+            val fatigueOverride = IvannaCognitiveCore.proactiveFatigueCheck(profile)
 
             // ── IVANNA Cognitive Core → razonamiento sobre el estado real ─────
-            val decision = IvannaCognitiveCore.reason(parsed)
+            val decision = fatigueOverride ?: IvannaCognitiveCore.reason(parsed)
 
-            val reply: String
-            if (!decision.execute) {
-                // Cognitivo rechazó o modificó la petición — informar al usuario
-                reply = decision.warningForUser ?: parsed.raw.let { IvannaLanguageCore.spokenResponse(parsed) }
-            } else {
-                // Ejecutar a través de los canales existentes
-                val command = decision.commandOverride
-                    ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
-                val baseReply = IvannaLanguageCore.spokenResponse(parsed)
-
-                // Registrar en ListenerProfile y memoria
-                profile.recordAdjustment(command, scene)
-                memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
-                memory.lastExplanation = baseReply
-                memory.lastScene = when (parsed.acousticIntent) {
-                    IvannaLanguageCore.AcousticIntent.VOICE_CLARITY,
-                    IvannaLanguageCore.AcousticIntent.DIALOG_ENHANCEMENT -> "VOICE"
-                    IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS,
-                    IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
-                    else -> scene
+            val reply: String = when {
+                // Intent EXPLAIN → usa DecisionHistory + KnowledgeBase (FASE 14)
+                parsed.acousticIntent == IvannaLanguageCore.AcousticIntent.EXPLAIN -> {
+                    IvannaCognitiveCore.explainLastDecision()
                 }
 
-                // Ejecutar comando en VoiceController (canal ya existente)
-                runCatching { voiceController.executeCommand(command) }
+                !decision.execute -> {
+                    // Cognitivo rechazó — informar con la advertencia específica
+                    decision.warningForUser ?: IvannaLanguageCore.spokenResponse(parsed)
+                }
 
-                reply = baseReply
+                else -> {
+                    // Ejecutar a través de los canales existentes
+                    val command = decision.commandOverride
+                        ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
+                    val baseReply = IvannaLanguageCore.spokenResponse(parsed)
+
+                    // Registrar en ListenerProfile y memoria
+                    profile.recordAdjustment(command, scene ?: "UNKNOWN")
+                    memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
+                    memory.lastExplanation = baseReply
+                    memory.lastScene = when (parsed.acousticIntent) {
+                        IvannaLanguageCore.AcousticIntent.VOICE_CLARITY,
+                        IvannaLanguageCore.AcousticIntent.DIALOG_ENHANCEMENT -> "VOICE"
+                        IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS,
+                        IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
+                        else -> scene
+                    }
+
+                    // Ejecutar comando en VoiceController (canal ya existente)
+                    runCatching { voiceController.executeCommand(command) }
+
+                    decision.warningForUser ?: baseReply
+                }
             }
 
             launch(Dispatchers.Main) {
@@ -170,11 +182,25 @@ class IvannaAssistant(context: Context) {
         }
     }
 
+    /**
+     * Limpia toda la memoria conversacional (FASE 13).
+     *
+     * Borra:
+     *  - IvannaListenerProfile (preferencias aprendidas, historial de ajustes)
+     *  - IvannaContextMemory (escena, explicaciones, preferencias de sesión)
+     *  - IvannaLanguageCore.intentHistory (contexto de la conversación)
+     *  - IvannaCognitiveCore.lastDecision (estado de la UI de inteligencia)
+     *
+     * NO borra:
+     *  - Configuración permanente de audio (DSP, perfiles de EQ, HRTF)
+     *  - Preferencias de la app (tema, idioma, ajustes del sistema)
+     */
     fun clearMemory() {
         memory.clearAll()
         profile.clearAll()
         IvannaLanguageCore.clearHistory()
-        val msg = "He olvidado mis notas de esta y otras sesiones."
+        IvannaCognitiveCore.clearDecision()
+        val msg = "He olvidado mis notas de esta y otras sesiones. La configuración de audio permanece intacta."
         _ui.value = _ui.value.copy(statusLine = msg, lastTurn = null)
         voice.speak(msg)
     }
