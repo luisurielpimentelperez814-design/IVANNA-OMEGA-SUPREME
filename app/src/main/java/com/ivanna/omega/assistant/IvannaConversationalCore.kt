@@ -42,12 +42,38 @@ object IvannaConversationalCore {
 
     // ── Estado de sesión ─────────────────────────────────────────────────────
 
+    /**
+     * Preferencias que el usuario expresa durante la sesión y que IVANNA
+     * mantiene activas hasta que se contradicen o la sesión termina.
+     * Son efímeras (RAM únicamente, no se persisten en SharedPreferences).
+     *
+     * Ejemplos reales que generan preferencias temporales:
+     *   "no me gustan los bajos muy fuertes" → bassPreference = LOW
+     *   "prefiero escuchar suave" → loudnessPreference = SOFT
+     *   "que no haya mucha reverberación" → spatialPreference = DRY
+     */
+    data class TemporalPreferences(
+        val bassPreference: BassPreference = BassPreference.NEUTRAL,
+        val loudnessPreference: LoudnessPreference = LoudnessPreference.NEUTRAL,
+        val spatialPreference: SpatialPreference = SpatialPreference.NEUTRAL,
+        val warmthPreference: WarmthPreference = WarmthPreference.NEUTRAL,
+        val detailPreference: DetailPreference = DetailPreference.NEUTRAL
+    )
+
+    enum class BassPreference    { LOW, NEUTRAL, HIGH }
+    enum class LoudnessPreference { SOFT, NEUTRAL, LOUD }
+    enum class SpatialPreference  { DRY, NEUTRAL, WIDE }
+    enum class WarmthPreference   { BRIGHT, NEUTRAL, WARM }
+    enum class DetailPreference   { SMOOTH, NEUTRAL, DETAILED }
+
     data class SessionContext(
         val turns: List<ConversationTurn> = emptyList(),
         val currentSong: SongContext? = null,
         val lastAppliedPreset: String? = null,
+        val lastDSPChanges: List<String> = emptyList(),       // últimos cambios DSP aplicados
         val sessionAdjustments: List<AdjustmentSummary> = emptyList(),
-        val accumulatedIntents: List<String> = emptyList()   // para comandos encadenados
+        val accumulatedIntents: List<String> = emptyList(),   // para comandos encadenados
+        val temporalPreferences: TemporalPreferences = TemporalPreferences()
     )
 
     data class SongContext(
@@ -103,6 +129,66 @@ object IvannaConversationalCore {
             sessionAdjustments = ctx.sessionAdjustments + adj,
             lastAppliedPreset = presetName
         )
+    }
+
+    /**
+     * Registra un cambio DSP específico (e.g. "EQ banda 250Hz +180mB").
+     * Mantiene los 8 cambios más recientes.
+     */
+    fun recordDSPChange(changeDescription: String) {
+        val ctx = _context.value
+        val updated = (ctx.lastDSPChanges + changeDescription).takeLast(8)
+        _context.value = ctx.copy(lastDSPChanges = updated)
+        Log.d(TAG, "Cambio DSP registrado: $changeDescription")
+    }
+
+    /**
+     * Actualiza preferencias temporales del usuario a partir de lenguaje natural.
+     * Son activas solo durante la sesión; se pierden en [clear].
+     *
+     * Ejemplo: "no me gustan los bajos muy fuertes" → BassPreference.LOW
+     */
+    fun updateTemporalPreferences(rawText: String) {
+        val t = rawText.lowercase().trim()
+        val current = _context.value.temporalPreferences
+        var updated = current
+
+        if (hits(t, "no me gustan los bajos", "menos bajos", "bajos más suaves",
+                  "quita bajos", "bajos suaves")) {
+            updated = updated.copy(bassPreference = BassPreference.LOW)
+        } else if (hits(t, "más bajos", "más graves", "quiero más bajos")) {
+            updated = updated.copy(bassPreference = BassPreference.HIGH)
+        }
+
+        if (hits(t, "prefiero escuchar suave", "no muy fuerte", "más tranquilo", "escucha suave")) {
+            updated = updated.copy(loudnessPreference = LoudnessPreference.SOFT)
+        } else if (hits(t, "más fuerte", "más potente", "subir más")) {
+            updated = updated.copy(loudnessPreference = LoudnessPreference.LOUD)
+        }
+
+        if (hits(t, "no mucha reverberación", "sin reverb", "menos espacial",
+                  "más seco", "mas seco", "sin eco", "menos reverberación")) {
+            updated = updated.copy(spatialPreference = SpatialPreference.DRY)
+        } else if (hits(t, "más espacial", "más ancho", "más reverb", "más envolvente")) {
+            updated = updated.copy(spatialPreference = SpatialPreference.WIDE)
+        }
+
+        if (hits(t, "muy brillante", "muy agudo", "más cálido", "mas calido", "menos frío")) {
+            updated = updated.copy(warmthPreference = WarmthPreference.WARM)
+        } else if (hits(t, "más brillante", "más claridad", "más aire en los agudos")) {
+            updated = updated.copy(warmthPreference = WarmthPreference.BRIGHT)
+        }
+
+        if (hits(t, "quiero más detalle", "más detalles", "separación instrumental")) {
+            updated = updated.copy(detailPreference = DetailPreference.DETAILED)
+        } else if (hits(t, "más suave", "menos detalle", "más cómodo")) {
+            updated = updated.copy(detailPreference = DetailPreference.SMOOTH)
+        }
+
+        if (updated != current) {
+            _context.value = _context.value.copy(temporalPreferences = updated)
+            Log.d(TAG, "Preferencias temporales actualizadas: $updated")
+        }
     }
 
     /**
