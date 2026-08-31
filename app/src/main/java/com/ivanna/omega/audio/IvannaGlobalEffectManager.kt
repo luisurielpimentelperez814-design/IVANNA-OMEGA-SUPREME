@@ -110,14 +110,81 @@ data class IvannaEffectProfile(
             compThresholdDb = -14f, compRatio = 3.2f
         )
 
-        // mapa nombre → perfil para la UI (LazyRow de FilterChip)
+        // ── Presets musicales avanzados (IvannaMusicalIntentEngine) ───────────
+
+        /** Épico: grandes dinámicas, graves con autoridad, imagen dramática. */
+        val EPIC = IvannaEffectProfile(
+            eqBands = intArrayOf(260, 220, 140, 60, -20, 20, 100, 200, 240, 200),
+            bassStrength = 620, virtualizerStrength = 680, loudnessGainMb = 180,
+            compThresholdDb = -13f, compRatio = 3.6f
+        )
+
+        /** Abbey Road: calidez analógica de estudio vintage, años 60. */
+        val ABBEY_ROAD = IvannaEffectProfile(
+            eqBands = intArrayOf(200, 240, 180, 120, 60, 20, 40, 80, 60, 20),
+            bassStrength = 360, virtualizerStrength = 220, loudnessGainMb = 140,
+            compThresholdDb = -18f, compRatio = 2.4f
+        )
+
+        /** Vinilo Premium: roll-off natural en altas, calidez armónica. */
+        val VINYL_PREMIUM = IvannaEffectProfile(
+            eqBands = intArrayOf(240, 200, 160, 120, 80, 40, 0, -40, -100, -180),
+            bassStrength = 400, virtualizerStrength = 180, loudnessGainMb = 100,
+            compThresholdDb = -20f, compRatio = 2.0f
+        )
+
+        /** Concierto Masivo: escena de estadio, impacto físico. */
+        val CONCERT_MASSIVE = IvannaEffectProfile(
+            eqBands = intArrayOf(300, 260, 180, 80, -20, 0, 60, 140, 180, 160),
+            bassStrength = 700, virtualizerStrength = 900, loudnessGainMb = 240,
+            compThresholdDb = -10f, compRatio = 4.5f
+        )
+
+        /** Cinematográfico: voces potentes, graves para impacto de sala. */
+        val CINEMATIC = IvannaEffectProfile(
+            eqBands = intArrayOf(280, 220, 140, 40, 0, 40, 100, 160, 180, 140),
+            bassStrength = 500, virtualizerStrength = 760, loudnessGainMb = 200,
+            compThresholdDb = -14f, compRatio = 3.8f
+        )
+
+        /** Analógico: calor de válvulas, armónicos pares, sin frialdad digital. */
+        val ANALOG_WARM = IvannaEffectProfile(
+            eqBands = intArrayOf(180, 200, 160, 100, 60, 20, 0, -20, -60, -120),
+            bassStrength = 380, virtualizerStrength = 160, loudnessGainMb = 120,
+            compThresholdDb = -22f, compRatio = 1.8f
+        )
+
+        /** Estudio Profesional: referencia casi plana para ingenieros. */
+        val STUDIO_PRO = IvannaEffectProfile(
+            eqBands = intArrayOf(20, 10, 0, 0, 0, 0, 20, 30, 20, 10),
+            bassStrength = 60, virtualizerStrength = 80, loudnessGainMb = 0,
+            compThresholdDb = -24f, compRatio = 1.4f
+        )
+
+        /** Microdetalle: transitorios preservados, separación máxima. */
+        val MICRO_DETAIL = IvannaEffectProfile(
+            eqBands = intArrayOf(0, 0, 20, 40, 20, 40, 100, 180, 220, 200),
+            bassStrength = 100, virtualizerStrength = 400, loudnessGainMb = 60,
+            compThresholdDb = -28f, compRatio = 1.2f
+        )
+
+        // mapa nombre → perfil para la UI (LazyRow de FilterChip + comandos de voz)
         val byName: Map<String, IvannaEffectProfile> = linkedMapOf(
-            "Flat"         to FLAT,
-            "Warm"         to WARM,
-            "Rock 70s"     to ROCK_70S,
-            "Spatial"      to SPATIAL,
-            "Punch"        to PUNCH,
-            "IVANNA OMEGA" to IVANNA_OMEGA
+            "Flat"              to FLAT,
+            "Warm"              to WARM,
+            "Rock 70s"          to ROCK_70S,
+            "Spatial"           to SPATIAL,
+            "Punch"             to PUNCH,
+            "IVANNA OMEGA"      to IVANNA_OMEGA,
+            // Presets musicales avanzados
+            "ÉPICO"             to EPIC,
+            "ABBEY ROAD"        to ABBEY_ROAD,
+            "VINILO PREMIUM"    to VINYL_PREMIUM,
+            "CONCIERTO MASIVO"  to CONCERT_MASSIVE,
+            "CINEMATOGRÁFICO"   to CINEMATIC,
+            "ANALÓGICO"         to ANALOG_WARM,
+            "ESTUDIO PRO"       to STUDIO_PRO,
+            "MICRODETALLE"      to MICRO_DETAIL
         )
     }
 }
