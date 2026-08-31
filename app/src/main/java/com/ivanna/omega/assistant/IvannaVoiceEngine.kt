@@ -142,6 +142,43 @@ class IvannaVoiceEngine(
         }.onFailure { Log.w(TAG, "Selección de voz falló (uso default): ${it.message}") }
     }
 
+    /**
+     * Categoría de intención que afecta la prosodia de la respuesta.
+     * SIMPLE → respuesta corta, rate normal.
+     * MUSICAL → respuesta descriptiva, rate ligeramente más lento, mayor énfasis.
+     * TECHNICAL → respuesta detallada, rate reducido para claridad.
+     * AFFIRMATION → confirmación breve, rate normal.
+     */
+    enum class IntentTone { SIMPLE, MUSICAL, TECHNICAL, AFFIRMATION }
+
+    /**
+     * Dice [text] adaptando la prosodia al tono de la intención.
+     * Para acciones simples (volumen, flat): respuesta corta y directa.
+     * Para configuraciones musicales: ritmo levemente más lento, presencia mayor.
+     */
+    fun speakWithIntent(text: String, tone: IntentTone) {
+        val t = tts ?: return
+        if (_state.value != VoiceState.READY && _state.value != VoiceState.SPEAKING) return
+
+        // Ajustar rate/pitch transitoriamente según el tono
+        val (rate, pitch) = when (tone) {
+            IntentTone.SIMPLE      -> profile.speechRate to profile.pitch
+            IntentTone.MUSICAL     -> (profile.speechRate * 0.92f) to (profile.pitch * 1.02f)
+            IntentTone.TECHNICAL   -> (profile.speechRate * 0.87f) to profile.pitch
+            IntentTone.AFFIRMATION -> (profile.speechRate * 1.05f) to profile.pitch
+        }
+        runCatching {
+            t.setSpeechRate(rate)
+            t.setPitch(pitch)
+        }
+        speak(text)
+        // Restaurar defaults tras encolar
+        runCatching {
+            t.setSpeechRate(profile.speechRate)
+            t.setPitch(profile.pitch)
+        }
+    }
+
     /** Dice [text] con la voz de IVANNA. No-op seguro si el TTS no está listo. */
     fun speak(text: String) {
         val t = tts ?: return
@@ -180,19 +217,38 @@ class IvannaVoiceEngine(
     }
 
     /**
-     * Divide el texto en segmentos de pronunciación natural para que IVANNA
-     * suene más humana en respuestas largas. Las comas, dos puntos y saltos
-     * de línea crean pausas naturales que el TTS del sistema normalmente ignora.
+     * Divide el texto en segmentos de pronunciación natural.
      *
-     * El texto ya tiene puntuación española, así que no añadimos pausas
-     * artificiales; solo lo segmentamos por frases completas para que el motor
-     * TTS pueda analizar la prosodia de cada una de forma independiente.
+     * Reglas:
+     *   - Respuestas ≤ 100 chars → un solo segmento (acciones simples: "He subido el volumen.").
+     *   - Respuestas de 101-250 chars → dividir solo por punto final de frase.
+     *   - Respuestas > 250 chars (configuraciones complejas) → dividir también por coma
+     *     en mitad de frase y por dos puntos, para que IVANNA haga micro-pausas naturales
+     *     en las listas de características ("abrí la escena estéreo, reforcé el impacto...").
+     *
+     * No se añaden silencias artificiales; el TTS del sistema interpreta la puntuación.
      */
     private fun splitIntoNaturalSegments(text: String): List<String> {
-        if (text.length <= 120) return listOf(text)
-        // Dividir por frases completas (punto + espacio) preservando el punto.
-        val sentences = text.split(Regex("(?<=[\\.!?])\\s+")).filter { it.isNotBlank() }
-        return if (sentences.size <= 1) listOf(text) else sentences
+        if (text.length <= 100) return listOf(text)
+
+        // Siempre dividir por fin de frase completa
+        val bySentence = text.split(Regex("(?<=[\\.!?])\\s+")).filter { it.isNotBlank() }
+
+        if (text.length <= 250 || bySentence.size <= 1) {
+            return if (bySentence.size <= 1) listOf(text) else bySentence
+        }
+
+        // Para respuestas largas, subdivir adicionalmente por coma+espacio cuando
+        // el segmento tiene más de 80 chars (evita segmentos microscópicos).
+        return bySentence.flatMap { sentence ->
+            if (sentence.length > 80) {
+                sentence.split(Regex("(?<=,)\\s+|(?<=:)\\s+"))
+                    .filter { it.isNotBlank() }
+                    .takeIf { it.size > 1 } ?: listOf(sentence)
+            } else {
+                listOf(sentence)
+            }
+        }
     }
 
     fun stop() {
