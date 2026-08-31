@@ -221,7 +221,54 @@ class IvannaAssistant(context: Context) {
                 return@launch
             }
 
-            // ── Flujo estándar para intenciones no musicales ──────────────────
+            // ── Intenciones conversacionales (no-audio) ─────────────────────
+            val conversationalReply: String? = when (parsed.acousticIntent) {
+                IvannaLanguageCore.AcousticIntent.TELL_JOKE,
+                IvannaLanguageCore.AcousticIntent.JOKE_REQUEST -> {
+                    val joke = IvannaJokeBank.random()
+                    IvannaConversationalCore.recordTurn(text, "JOKE", null, joke)
+                    joke
+                }
+                IvannaLanguageCore.AcousticIntent.GREETING -> {
+                    val reply = IvannaSmallTalk.greetingResponse()
+                    IvannaConversationalCore.recordTurn(text, "GREETING", null, reply)
+                    reply
+                }
+                IvannaLanguageCore.AcousticIntent.SELF_INTRO -> {
+                    val reply = "Soy IVANNA, tu asistente de audio inteligente. Proceso el sonido en tiempo real, entiendo música, ajusto el procesador de señal y aprendo tus preferencias."
+                    IvannaConversationalCore.recordTurn(text, "SELF_INTRO", null, reply)
+                    reply
+                }
+                IvannaLanguageCore.AcousticIntent.HOW_ARE_YOU -> {
+                    val reply = IvannaSmallTalk.howAreYouResponse()
+                    IvannaConversationalCore.recordTurn(text, "HOW_ARE_YOU", null, reply)
+                    reply
+                }
+                IvannaLanguageCore.AcousticIntent.COMPLIMENT -> {
+                    val reply = IvannaSmallTalk.complimentResponse()
+                    IvannaConversationalCore.recordTurn(text, "COMPLIMENT", null, reply)
+                    reply
+                }
+                IvannaLanguageCore.AcousticIntent.GENERAL_CHAT -> {
+                    val reply = IvannaSmallTalk.generalChatResponse()
+                    IvannaConversationalCore.recordTurn(text, "GENERAL_CHAT", null, reply)
+                    reply
+                }
+                else -> null
+            }
+
+            if (conversationalReply != null) {
+                launch(Dispatchers.Main) {
+                    _ui.value = _ui.value.copy(
+                        statusLine = conversationalReply,
+                        lastTurn   = ConversationTurn(userText = text, ivannaText = conversationalReply)
+                    )
+                    voice.speak(conversationalReply)
+                }
+                return@launch
+            }
+
+                        // ── Flujo estándar para intenciones no musicales ──────────────────
             val decision = fatigueOverride ?: IvannaCognitiveCore.reason(parsed)
 
             val reply: String = when {
@@ -317,6 +364,7 @@ class IvannaAssistant(context: Context) {
         IvannaLanguageCore.clearHistory()
         IvannaCognitiveCore.clearDecision()
         IvannaConversationalCore.clear()
+        IvannaVoiceRecorder.clear()
         val msg = "He olvidado mis notas de esta y otras sesiones. La configuración de audio permanece intacta."
         _ui.value = _ui.value.copy(statusLine = msg, lastTurn = null)
         voice.speak(msg)

@@ -33,6 +33,10 @@ object IvannaLanguageCore {
     enum class AcousticIntent {
         GREETING,
         TELL_JOKE,
+        SELF_INTRO,           // "quién eres", "preséntate", "cómo te llamas"
+        HOW_ARE_YOU,          // "cómo estás tú", "qué tal te encuentras"
+        COMPLIMENT,           // "qué bien", "eres increíble", "gracias ivanna"
+        GENERAL_CHAT,         // charla general fuera del dominio de audio
         // Claridad
         VOICE_CLARITY,        // "mejora las voces", "claridad vocal"
         DIALOG_ENHANCEMENT,   // "no entiendo los diálogos", "actores se escuchan mal"
@@ -108,7 +112,15 @@ object IvannaLanguageCore {
         AcousticIntent.DIAGNOSE           -> "diagnose"
         AcousticIntent.EXPLAIN            -> "explain"
         AcousticIntent.OPTIMIZE           -> "optimize"
-        AcousticIntent.UNKNOWN            -> "none"
+        AcousticIntent.SELF_INTRO         -> "none"
+        AcousticIntent.HOW_ARE_YOU        -> "none"
+        AcousticIntent.COMPLIMENT         -> "none"
+        AcousticIntent.GENERAL_CHAT       -> "none"
+        AcousticIntent.SELF_INTRO          -> "Soy IVANNA, tu asistente de audio inteligente. Proceso el sonido en tiempo real, entiendo música, ajusto el ecualizador y aprendo tus preferencias. También me sé algunos chistes, aunque son de acústica."
+        AcousticIntent.HOW_ARE_YOU         -> IvannaSmallTalk.howAreYouResponse()
+        AcousticIntent.COMPLIMENT          -> IvannaSmallTalk.complimentResponse()
+        AcousticIntent.GENERAL_CHAT        -> IvannaSmallTalk.generalChatResponse()
+                AcousticIntent.UNKNOWN            -> "none"
     }
 
     /** Genera la respuesta hablada final, enriquecida con knowledge si procede. */
@@ -268,6 +280,34 @@ object IvannaLanguageCore {
             return last to 0.72f  // baja confianza — inferido por contexto
         }
 
+        // ── Presentación / identidad ───────────────────────────────────────
+        if (hits(t, "quién eres", "quien eres", "qué eres", "que eres",
+                  "preséntate", "presentate", "cómo te llamas", "como te llamas",
+                  "cuál es tu nombre", "cual es tu nombre", "qué puedes hacer tú",
+                  "que puedes hacer tu")) {
+            return AcousticIntent.SELF_INTRO to 0.97f
+        }
+        // ── Cómo está IVANNA ────────────────────────────────────────────────
+        if (hits(t, "cómo estás tú", "como estas tu", "tú cómo estás",
+                  "qué tal estás", "que tal estas", "cómo te encuentras",
+                  "cómo te sientes", "como te sientes")) {
+            return AcousticIntent.HOW_ARE_YOU to 0.93f
+        }
+        // ── Cumplido / retroalimentación positiva ───────────────────────────
+        if (hits(t, "qué bien", "que bien", "excelente", "genial", "perfecto",
+                  "increíble", "increible", "eres increíble", "muy bien hecho",
+                  "bien hecho", "bravo", "gracias ivanna", "gracias por",
+                  "te lo agradezco", "lo hiciste muy bien")) {
+            return AcousticIntent.COMPLIMENT to 0.91f
+        }
+        // ── Charla general ──────────────────────────────────────────────────
+        if (hits(t, "qué piensas de", "que piensas de", "cuál es tu opinión",
+                  "cual es tu opinion", "sabes algo de", "cuéntame sobre",
+                  "cuentame sobre", "platícame", "platicame", "dime algo",
+                  "algo interesante", "sabías que", "sabias que")) {
+            return AcousticIntent.GENERAL_CHAT to 0.80f
+        }
+
         return AcousticIntent.UNKNOWN to 0.0f
     }
 
@@ -301,7 +341,7 @@ object IvannaLanguageCore {
         AcousticIntent.EXPLAIN             -> "Te cuento la última decisión que tomé."
         AcousticIntent.OPTIMIZE            -> "Voy a revisar el sistema y optimizar el consumo."
         AcousticIntent.GREETING            -> "¡Hola! Soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Estoy aquí para llevar tu música al siguiente nivel. ¿Qué te gustaría escuchar hoy?"
-        AcousticIntent.TELL_JOKE           -> "Jaja, claro. ¿Qué le dice un bit al otro? ¡Nos vemos en el bus! Bueno, volviendo a la música, ¿qué quieres que modifique?"
+        AcousticIntent.TELL_JOKE           -> IvannaJokeBank.random()
 
         AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, crear perfiles musicales como 'épico' o 'Abbey Road', o ajustar el volumen."
     }

@@ -12,70 +12,49 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * SpeechInputProvider — interfaz intercambiable de entrada de voz.
- *
- * IVANNA nunca habla con un backend STT concreto: habla con esta interfaz.
- * El backend por defecto es el SpeechRecognizer del sistema (FASE 2, opción A)
- * con gestión explícita de "sin servicio / sin permiso / error del fabricante".
- * Si más adelante se integra un motor offline (Whisper TFLite / ONNX), basta
- * con añadir otra implementación de SpeechInputProvider y registrarla en
- * IvannaAssistant — ninguna otra capa cambia.
- */
 interface SpeechInputProvider {
-    /** Flujo de estado del reconocedor (para la UI: LED de escucha). */
     val state: StateFlow<SpeechState>
-
-    /** true si el backend puede funcionar en este dispositivo ahora mismo. */
     fun isAvailable(): Boolean
-
-    /** Empieza a escuchar. Resultados por [onResult]. */
     fun startListening(onResult: (String) -> Unit, onError: (String) -> Unit)
-
-    /** Detiene la escucha (idempotente, seguro en cualquier estado). */
     fun stopListening()
-
-    /** Libera recursos. Tras release() hay que crear otro provider. */
     fun release()
 }
 
 enum class SpeechState {
-    IDLE,            // en reposo
-    LISTENING,       // micrófono abierto, capturando
-    PROCESSING,      // audio capturado, reconociendo
-    UNAVAILABLE,     // sin servicio STT en el dispositivo
-    PERMISSION_DENIED,
-    ERROR
+    IDLE, LISTENING, PROCESSING, UNAVAILABLE, PERMISSION_DENIED, ERROR
 }
 
 /**
  * IvannaSpeechRecognizer — backend SpeechRecognizer del sistema Android.
  *
- * Decisiones de robustez (ROMs problemáticas):
- *  - Si SpeechRecognizer.isRecognitionAvailable() es false → UNAVAILABLE y
- *    no se intenta crear nada (evita el crash clásico de dispositivos sin
- *    Google app / sin servicio STT del fabricante).
- *  - API 31+: se prefiere createOnDeviceSpeechRecognizer() (on-device, sin
- *    red, más privado y más estable); si el sistema no lo soporta, cae al
- *    recognizer estándar con preferOffline.
- *  - Todos los callbacks vienen en el hilo principal; el provider NO hace
- *    trabajo pesado en ellos — solo emite el texto reconocido y cambia de
- *    estado. Nunca toca el hilo de audio DSP (corre en su propio mundo).
- *  - Errores del servicio (ERROR_CLIENT, ERROR_RECOGNIZER_BUSY, etc.) se
- *    traducen a mensajes accionables, nunca a excepciones.
+ * FIX MICRÓFONO: el recognizer se destruye y recrea en cada ciclo de escucha.
+ * En algunas ROMs (MediaTek, Exynos) reutilizar la instancia deja el servicio
+ * en estado zombie: onReadyForSpeech nunca dispara aunque el micrófono esté
+ * físicamente disponible. Destruir y recrear es el patrón recomendado por
+ * Android docs para reconocimiento continuo y elimina el zombie state.
+ *
+ * Reintento automático ante ERROR_CLIENT (1 intento): es el error más común
+ * en ROMs donde el servicio STT del fabricante termina abruptamente.
+ *
+ * IvannaVoiceRecorder: cada utterance exitosa se registra (append-only, RAM)
+ * para que el pipeline conversacional acceda al texto original sin mutaciones.
  */
 class IvannaSpeechRecognizer(
     private val context: Context
 ) : SpeechInputProvider {
 
-    companion object { private const val TAG = "IvannaSpeechRecognizer" }
+    companion object {
+        private const val TAG = "IvannaSpeechRecognizer"
+        private const val MAX_RETRIES = 1
+    }
 
     private val _state = MutableStateFlow(SpeechState.IDLE)
     override val state: StateFlow<SpeechState> = _state.asStateFlow()
 
-    private var recognizer: SpeechRecognizer? = null
     private var onResultCb: ((String) -> Unit)? = null
-    private var onErrorCb: ((String) -> Unit)? = null
+    private var onErrorCb:  ((String) -> Unit)? = null
+    private var recognizer: SpeechRecognizer?   = null
+    private var retryCount  = 0
 
     override fun isAvailable(): Boolean = try {
         SpeechRecognizer.isRecognitionAvailable(context)
@@ -91,94 +70,92 @@ class IvannaSpeechRecognizer(
             return
         }
         onResultCb = onResult
-        onErrorCb = onError
-        stopListeningInternal()
+        onErrorCb  = onError
+        retryCount = 0
+        startRecognizer()
+    }
+
+    private fun startRecognizer() {
+        destroyRecognizer()   // previene zombie state en ROMs problemáticas
         try {
             recognizer = createRecognizer().also { r ->
                 r.setRecognitionListener(listener)
                 r.startListening(buildIntent())
             }
             _state.value = SpeechState.LISTENING
+            Log.d(TAG, "Reconocedor iniciado (intento ${retryCount + 1})")
         } catch (t: Throwable) {
-            Log.e(TAG, "No se pudo iniciar el recognizer: ${t.message}", t)
+            Log.e(TAG, "No se pudo iniciar recognizer: ${t.message}", t)
             _state.value = SpeechState.ERROR
-            onError("No se pudo iniciar el reconocedor de voz: ${t.message}")
+            onErrorCb?.invoke("No se pudo iniciar el reconocedor: ${t.message}")
         }
     }
 
     override fun stopListening() {
-        stopListeningInternal()
+        runCatching { recognizer?.stopListening() }
         if (_state.value == SpeechState.LISTENING || _state.value == SpeechState.PROCESSING) {
             _state.value = SpeechState.IDLE
         }
     }
 
     override fun release() {
-        stopListeningInternal()
+        destroyRecognizer()
+        _state.value = SpeechState.IDLE
+        onResultCb = null
+        onErrorCb  = null
+    }
+
+    private fun destroyRecognizer() {
+        runCatching { recognizer?.stopListening() }
         runCatching { recognizer?.destroy() }
         recognizer = null
-        _state.value = SpeechState.IDLE
     }
 
-    private fun stopListeningInternal() {
-        runCatching { recognizer?.stopListening() }
-    }
-
-    private fun createRecognizer(): SpeechRecognizer {
-        // API 31+: on-device si el sistema lo soporta (privacidad + estabilidad).
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                   SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+    private fun createRecognizer(): SpeechRecognizer =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(context))
             SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-        } else {
+        else
             SpeechRecognizer.createSpeechRecognizer(context)
-        }
-    }
 
     private fun buildIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        // Preferir offline cuando sea posible: menos latencia, menos fuga de datos.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
-        // Español por defecto — la app es ES-first. El recognizer on-device
-        // moderno hace auto-detección razonable si el usuario habla otro idioma.
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-MX")
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "es-MX")
+        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("es-ES", "es-US"))
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) { _state.value = SpeechState.LISTENING }
-        override fun onBeginningOfSpeech() {}
+        override fun onReadyForSpeech(params: Bundle?) {
+            _state.value = SpeechState.LISTENING
+            Log.d(TAG, "Micrófono listo")
+        }
+        override fun onBeginningOfSpeech() { Log.d(TAG, "Inicio de habla") }
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() { _state.value = SpeechState.PROCESSING }
+        override fun onEndOfSpeech() { _state.value = SpeechState.PROCESSING; Log.d(TAG, "Fin de habla") }
         override fun onEvent(eventType: Int, params: Bundle?) {}
 
         override fun onError(error: Int) {
-            val msg = when (error) {
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                    "Permiso de micrófono denegado."
-                SpeechRecognizer.ERROR_NO_MATCH,
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
-                    "No se entendió nada — intenta de nuevo."
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
-                    "El servicio de voz está ocupado; espera un momento."
-                SpeechRecognizer.ERROR_CLIENT ->
-                    "Error del servicio de voz del dispositivo."
-                SpeechRecognizer.ERROR_NETWORK,
-                SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
-                    "Sin red y sin reconocimiento offline disponible."
-                SpeechRecognizer.ERROR_SERVER ->
-                    "El servicio de voz del fabricante falló."
-                else -> "Error de reconocimiento ($error)."
+            val msg = errorMessage(error)
+            Log.w(TAG, "Error STT $error: $msg")
+            if (error == SpeechRecognizer.ERROR_CLIENT && retryCount < MAX_RETRIES) {
+                retryCount++
+                Log.i(TAG, "Reintentando ante ERROR_CLIENT ($retryCount)")
+                startRecognizer()
+                return
             }
             _state.value = when (error) {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> SpeechState.PERMISSION_DENIED
                 SpeechRecognizer.ERROR_NO_MATCH,
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> SpeechState.IDLE
-                else -> SpeechState.ERROR
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT          -> SpeechState.IDLE
+                else                                           -> SpeechState.ERROR
             }
             onErrorCb?.invoke(msg)
         }
@@ -186,18 +163,50 @@ class IvannaSpeechRecognizer(
         override fun onResults(results: Bundle?) {
             val text = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                ?.trim()
-                .orEmpty()
+                ?.firstOrNull()?.trim().orEmpty()
             _state.value = SpeechState.IDLE
-            if (text.isNotEmpty()) onResultCb?.invoke(text)
-            else onErrorCb?.invoke("No se entendió nada — intenta de nuevo.")
+            retryCount   = 0
+            if (text.isNotEmpty()) {
+                IvannaVoiceRecorder.record(text)
+                Log.d(TAG, "Utterance: \"$text\"")
+                onResultCb?.invoke(text)
+            } else {
+                onErrorCb?.invoke("No se entendió nada — intenta de nuevo.")
+            }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            // Los parciales se ignoran a propósito: actuar sobre texto a medias
-            // dispara intenciones equivocadas ("bajar" → "bajar volumen" cuando el
-            // usuario aún estaba hablando). Solo se actúa sobre el resultado final.
+            val partial = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull() ?: return
+            Log.v(TAG, "Parcial: \"$partial\"")
         }
     }
+
+    private fun errorMessage(error: Int): String = when (error) {
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+            "Permiso de micrófono denegado. Ve a Ajustes → Permisos → Micrófono."
+        SpeechRecognizer.ERROR_NO_MATCH,
+        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No se entendió nada — intenta de nuevo."
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "El servicio de voz está ocupado; espera un momento."
+        SpeechRecognizer.ERROR_CLIENT          -> "Error interno del reconocedor. Reintentando..."
+        SpeechRecognizer.ERROR_NETWORK,
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Sin red y sin reconocimiento offline disponible."
+        SpeechRecognizer.ERROR_SERVER          -> "El servicio de voz del fabricante falló."
+        else -> "Error de reconocimiento ($error)."
+    }
+}
+
+/**
+ * IvannaVoiceRecorder — registro inmutable de utterances del usuario.
+ *
+ * Append-only, RAM únicamente (no persiste entre sesiones).
+ * Se limpia con IvannaAssistant.clearMemory().
+ */
+object IvannaVoiceRecorder {
+    private val utterances = mutableListOf<String>()
+    @Synchronized fun record(text: String) { utterances.add(text) }
+    @Synchronized fun getAll(): List<String> = utterances.toList()
+    @Synchronized fun getLast(): String? = utterances.lastOrNull()
+    @Synchronized fun clear() { utterances.clear() }
 }
