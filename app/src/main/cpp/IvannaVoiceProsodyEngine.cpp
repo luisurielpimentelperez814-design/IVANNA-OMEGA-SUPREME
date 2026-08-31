@@ -45,7 +45,7 @@ void IvannaVoiceProsodyEngine::analyzeAudio(const float* left, const float* righ
 
     if (isVoiced) {
         float pitch = computeAMDFPitch(m_monoDownmix, frames);
-        m_pitchHz.store(pitch, std::order_relaxed);
+        m_pitchHz.store(pitch, std::memory_order_relaxed);
         m_confidence.store(pitch > 50.0f ? 0.85f : 0.2f, std::memory_order_relaxed);
         
         // Pseudo spectral tilt based on zero-crossing derivative approximation

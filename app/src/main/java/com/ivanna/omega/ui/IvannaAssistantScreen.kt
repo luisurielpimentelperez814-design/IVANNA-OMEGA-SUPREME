@@ -1,5 +1,9 @@
 package com.ivanna.omega.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -29,6 +33,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -37,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ivanna.omega.ui.theme.*
 import com.ivanna.omega.ui.viewmodels.AssistantPhase
@@ -60,6 +66,32 @@ fun IvannaAssistantScreen(
 ) {
     val panel by vm.panel.collectAsState()
     val scroll = rememberScrollState()
+
+    // ── Permiso de micrófono en tiempo de ejecución ─────────────────────────
+    // El manifiesto declara RECORD_AUDIO, pero eso no basta desde Android 6:
+    // sin este launcher pidiéndolo explícitamente, SpeechRecognizer nunca
+    // recibe el permiso real y el mic queda "sin enlazar" (ERROR_INSUFFICIENT_
+    // PERMISSIONS silencioso). Se pide justo al primer intento de escuchar,
+    // no al abrir la pantalla, para no bloquear el arranque con un diálogo.
+    val context = LocalContext.current
+    var pendingListenAfterGrant by remember { mutableStateOf(false) }
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && pendingListenAfterGrant) vm.startListening()
+        pendingListenAfterGrant = false
+    }
+    fun requestListen() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            vm.startListening()
+        } else {
+            pendingListenAfterGrant = true
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     Scaffold(
         containerColor = ObsidianVoid,
@@ -123,7 +155,7 @@ fun IvannaAssistantScreen(
             MicSection(
                 phase       = panel.phase,
                 micAvailable = panel.micAvailable,
-                onStartListen = { vm.startListening() },
+                onStartListen = { requestListen() },
                 onStopListen  = { vm.stopListening() },
                 onTextSend    = { vm.onTextInput(it) }
             )

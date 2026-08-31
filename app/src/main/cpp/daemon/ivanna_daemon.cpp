@@ -2,7 +2,7 @@
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
-#include "../../IvannaSelfHealingEngine.hpp"
+#include "../IvannaSelfHealingEngine.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
