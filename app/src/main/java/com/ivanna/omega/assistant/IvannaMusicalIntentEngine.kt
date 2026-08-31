@@ -305,7 +305,146 @@ object IvannaMusicalIntentEngine {
             )
         }
 
+        // Alma / emoción / calidez expresiva
+        if (hits(t, "más alma", "mas alma", "que tenga alma", "más emoción", "mas emocion",
+                  "más expresivo", "mas expresivo", "más sentimiento", "mas sentimiento",
+                  "que llore", "que emocione", "más feeling", "mas feeling")) {
+            return MusicalPreset(
+                name = "ANALÓGICO",
+                profile = ANALOG_WARM,
+                spatialBoost = 0f,
+                explanation = "He añadido calidez expresiva: armónicos pares acentuados y " +
+                    "compresión suave que da cuerpo a cada nota. La música respira.",
+                technicalDetail = "Curva analógica, armónicos pares, compresión 1.8:1 suave"
+            )
+        }
+
+        // Que respire / más aire / menos amontonado
+        if (hits(t, "que respire", "más aire", "mas aire", "menos amontonado",
+                  "que los sonidos respiren", "más abierto", "mas abierto",
+                  "que no estén tan pegados", "separa un poco")) {
+            return MusicalPreset(
+                name = "MICRODETALLE",
+                profile = MICRO_DETAIL,
+                spatialBoost = 0.2f,
+                explanation = "He abierto la mezcla: compresión mínima para que cada instrumento " +
+                    "tenga su espacio y el sonido respire con naturalidad.",
+                technicalDetail = "Compresión -28dB/1.2:1, presencia +180mB, separación máxima"
+            )
+        }
+
+        // Más pegada / más punch / que golpee
+        if (hits(t, "más pegada", "mas pegada", "que pegue", "que golpee",
+                  "más ritmo", "mas ritmo", "más groove", "mas groove",
+                  "más swing", "más impacto rítmico", "que mueva")) {
+            return MusicalPreset(
+                name = "PUNCH",
+                profile = IvannaEffectProfile.PUNCH,
+                spatialBoost = 0f,
+                explanation = "He activado el modo Punch: sub-bass con autoridad y ataque " +
+                    "rápido en el compresor para que la batería y el bajo muevan el suelo.",
+                technicalDetail = "Sub-bass +280mB, compresor -12dB/4.0:1, loudness +300mB"
+            )
+        }
+
+        // Que los instrumentos estén separados
+        if (hits(t, "que los instrumentos estén separados", "que los instrumentos esten separados",
+                  "cada instrumento en su lugar", "que se distingan",
+                  "que se oiga cada", "distinguir los instrumentos")) {
+            return MusicalPreset(
+                name = "MICRODETALLE",
+                profile = MICRO_DETAIL,
+                spatialBoost = 0.2f,
+                explanation = "He activado separación instrumental máxima: cada instrumento " +
+                    "ocupa su lugar en la escena. Escucharás la guitarra, el bajo y la batería " +
+                    "perfectamente ubicados.",
+                technicalDetail = "Compresión mínima, presencia +180mB, virtualizer 400, separación máxima"
+            )
+        }
+
+        // Sentir el escenario / más escenario
+        if (hits(t, "quiero sentir el escenario", "sentir el escenario",
+                  "que se sienta el escenario", "escenario de verdad",
+                  "estar en el concierto", "que parezca en vivo", "en vivo de verdad",
+                  "más escenario", "mas escenario")) {
+            return MusicalPreset(
+                name = "CONCIERTO MASIVO",
+                profile = CONCERT_MASSIVE,
+                extraCommand = "concert_mode",
+                spatialBoost = 0.5f,
+                explanation = "He simulado un escenario real: reverberación de sala grande, " +
+                    "graves físicos y la amplitud espacial que sientes en un concierto de verdad.",
+                technicalDetail = "Virtualizer máximo, concierto ON, espacialidad +50%, sub-bass"
+            )
+        }
+
+        // Como disco de colección / edición especial
+        if (hits(t, "como disco de colección", "disco de coleccion", "como disco de coleccion",
+                  "edición especial", "edicion especial", "grabación histórica",
+                  "grabacion historica", "edición remasterizada", "edicion remasterizada",
+                  "colección de vinilo", "edición de oro", "edicion de oro")) {
+            return MusicalPreset(
+                name = "VINILO PREMIUM",
+                profile = VINYL_PREMIUM,
+                spatialBoost = 0f,
+                explanation = "He activado el perfil de disco de colección: la calidez de una " +
+                    "masterización analógica de alta gama, con la suavidad que tenían los " +
+                    "grandes discos antes de la digitalización.",
+                technicalDetail = "Roll-off suave >8kHz, armónicos pares, compresión analógica"
+            )
+        }
+
         return null
+    }
+
+    /**
+     * Detecta intenciones combinadas cuando el usuario mezcla varias dimensiones
+     * en una frase (e.g. "épico + escenario de estadio").
+     * Devuelve lista de presets en orden de prioridad. Si hay uno solo, equivale a [detect].
+     */
+    fun detectCombined(rawText: String): List<MusicalPreset> {
+        val t = rawText.lowercase().trim()
+        val results = mutableListOf<MusicalPreset>()
+
+        val epicHit = hits(t, "épico", "epico", "magistral", "poderoso", "impactante",
+            "épica", "epica", "potente", "grandioso", "brutal", "demoledor")
+        val stageHit = hits(t, "estadio", "escenario", "concierto", "en vivo", "festival",
+            "arena", "multitud", "sala grande", "más escenario", "mas escenario")
+        val spatialHit = hits(t, "más espacial", "mas espacial", "más amplio", "mas amplio",
+            "más ancho", "mas ancho", "abre el sonido", "3d", "surround")
+
+        if (epicHit) results.add(
+            MusicalPreset(
+                name = "ÉPICO",
+                profile = EPIC,
+                extraCommand = "concert_mode",
+                spatialBoost = 0.32f,
+                explanation = "Perfil épico: graves con autoridad, escena ampliada y presencia dramática.",
+                technicalDetail = "EQ épico, concierto activo, espacialidad +32%, compresión agresiva"
+            )
+        )
+        if (stageHit && !epicHit) results.add(
+            MusicalPreset(
+                name = "CONCIERTO MASIVO",
+                profile = CONCERT_MASSIVE,
+                extraCommand = "concert_mode",
+                spatialBoost = 0.5f,
+                explanation = "Escena de estadio: graves físicos y espacialidad extrema.",
+                technicalDetail = "Virtualizer máximo, concierto ON, espacialidad +50%, sub-bass"
+            )
+        )
+        if (spatialHit && results.isEmpty()) results.add(
+            MusicalPreset(
+                name = "ESPACIAL",
+                profile = IvannaEffectProfile.SPATIAL,
+                spatialBoost = 0.35f,
+                explanation = "Imagen estéreo extendida y aire alrededor de los instrumentos.",
+                technicalDetail = "Virtualizer +720, espacialidad +35%, presencia 2-4kHz +200mB"
+            )
+        )
+
+        if (results.isEmpty()) detect(rawText)?.let { results.add(it) }
+        return results
     }
 
     /**
@@ -315,7 +454,9 @@ object IvannaMusicalIntentEngine {
     fun availablePresetsDescription(): String =
         "Puedo crear estos perfiles musicales: Épico, Abbey Road, Vinilo Premium, " +
         "Concierto Masivo, Cinematográfico, Analógico, Estudio Profesional, " +
-        "Microdetalle, Primera Fila, Cálido, Punch y Espacial."
+        "Microdetalle, Primera Fila, Cálido, Punch y Espacial. " +
+        "También entiendo frases naturales: 'más alma', 'que respire', 'más pegada', " +
+        "'que los instrumentos estén separados', 'sentir el escenario', 'como disco de colección'."
 
     private fun hits(text: String, vararg needles: String): Boolean =
         needles.any { text.contains(it) }
