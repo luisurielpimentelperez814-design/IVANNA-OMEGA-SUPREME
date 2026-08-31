@@ -215,8 +215,13 @@ fun MagiskStatusPanel(
                     daemonRunning    = ok || MagiskBridge.isDaemonRunning
                     lastCommandOutput = if (ok)
                         "✅ Socket conectado. Latencia: ${omegaBridge.getLastLatencyMs()}ms"
-                    else
-                        "⚪ Socket no disponible (daemon offline o módulo no instalado)"
+                    else {
+                        // FIX (diagnóstico ciego): el mensaje genérico no
+                        // distinguía daemon-sin-bind de SELinux denial.
+                        // diagnoseSocket() hace probe root real de
+                        // /proc/net/unix y dice la causa exacta.
+                        "⚪ " + withContext(Dispatchers.IO) { MagiskBridge.diagnoseSocket() }
+                    }
                     actionInFlight = false
                 }
             }
