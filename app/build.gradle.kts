@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,9 +15,8 @@ android {
         minSdk = 28
         targetSdk = 35
         // Unified Version Manager: lee de version.properties (fuente única)
-        val vp = java.util.Properties().apply {
-            rootProject.file("version.properties").inputStream().use { load(it) }
-        }
+        val vp = Properties()
+        rootProject.file("version.properties").inputStream().use { stream -> vp.load(stream) }
         versionCode = vp.getProperty("versionCode").toInt()
         versionName = vp.getProperty("versionName")
 
@@ -182,9 +183,8 @@ dependencies {
 // version.properties; si diverge, el build FALLA con mensaje claro.
 tasks.register("validateUnifiedVersion") {
     doLast {
-        val vp = java.util.Properties().apply {
-            rootProject.file("version.properties").inputStream().use { load(it) }
-        }
+        val vp = Properties()
+        rootProject.file("version.properties").inputStream().use { stream -> vp.load(stream) }
         val mp = rootProject.file("magisk_module/module.prop").readLines()
         val moduleVersion = mp.firstOrNull { it.startsWith("version=") }?.substringAfter("=")?.removePrefix("v")
         val moduleCode = mp.firstOrNull { it.startsWith("versionCode=") }?.substringAfter("=")
