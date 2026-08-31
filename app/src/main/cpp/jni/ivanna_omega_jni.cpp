@@ -665,6 +665,36 @@ static std::mutex g_uiMutex;
 static ivanna::DSPParams g_params_ui;
 static std::atomic<bool> g_params_dirty{false};
 
+// ── FIX CRÍTICO (tronido al mover sliders + aplicar ISO 226) ────────────────
+// nativeSetFatigueProtection() hacía `g_params.high += comp` y
+// `g_params.mid -= protect*3`: ACUMULATIVO sobre el valor ya vigente. Cada
+// recálculo de ISO 226 / fatiga (el calibrador lo emite varias veces por
+// segundo mientras el nivel de escucha varía) sumaba otra vez la misma
+// compensación → high derivaba hacia +18 dB (tope del clamp del EQ) en pocos
+// segundos → biquads en boost extremo + GainStage + SafetyLimiter en
+// compresión de pared → golpe digital audible.
+//
+// Fix: el EQ se deriva SIEMPRE de una base absoluta (lo último que pidió el
+// usuario/curva perceptual) más los offsets vigentes de ISO/fatiga. Llamadas
+// repetidas con los mismos valores son idempotentes.
+static std::atomic<float> g_eqBaseLow {0.0f};
+static std::atomic<float> g_eqBaseMid {0.0f};
+static std::atomic<float> g_eqBaseHigh{0.0f};
+static std::atomic<float> g_fatigueIsoDb  {0.0f};   // compensación ISO 226 (dB, ±12)
+static std::atomic<float> g_fatigueProtect{0.0f};   // protección de fatiga [0..1]
+
+// Requiere g_dspProcessMutex tomado por el llamador.
+static void recomputeEqFromBaseLocked() {
+    const float iso  = g_fatigueIsoDb.load(std::memory_order_relaxed);
+    const float prot = g_fatigueProtect.load(std::memory_order_relaxed);
+    g_params.low  = std::clamp(g_eqBaseLow.load(std::memory_order_relaxed), -24.0f, 24.0f);
+    g_params.mid  = std::clamp(g_eqBaseMid.load(std::memory_order_relaxed) - prot * 3.0f,
+                               -24.0f, 24.0f);
+    g_params.high = std::clamp(g_eqBaseHigh.load(std::memory_order_relaxed)
+                                   + iso * (1.0f - prot), -24.0f, 24.0f);
+    g_eq.setParams(g_params);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     JNIEnv*, jobject,
@@ -1503,10 +1533,15 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     JNIEnv*, jobject,
     jfloat low, jfloat mid, jfloat high, jfloat master) {
+    if (!std::isfinite(low) || !std::isfinite(mid) || !std::isfinite(high)
+        || !std::isfinite(master)) return;
+    // Base absoluta del EQ manual — ISO 226 / fatiga se suman encima sin
+    // acumularse (ver recomputeEqFromBaseLocked).
+    g_eqBaseLow .store(std::clamp((float)low,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseMid .store(std::clamp((float)mid,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseHigh.store(std::clamp((float)high, -24.0f, 24.0f), std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    g_params.low    = low;
-    g_params.mid    = mid;
-    g_params.high   = high;
+    recomputeEqFromBaseLocked();
     // FIX (ganancia errónea / audio que revienta): el Kotlin pasa `master`
     // como multiplicador lineal [0.5 .. 2.0] desde el slider VOLUMEN.
     // GainStage::setParams() hace outputGain_ = dbToLin(p.master), tratándolo
@@ -1519,7 +1554,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     const float masterDb = (master <= 0.001f) ? -60.0f
         : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
     g_params.master = masterDb;
-    g_eq.setParams(g_params);
     // Aplicar compensación de headroom del EQ antes de configurar GainStage.
     // Sin esto, EQ peaks apilados (ej. high +8.4 dB × 2 bandas + presence) +
     // VOLUMEN = SafetyLimiter en trabajo extremo → pumping / "audio que revienta".
@@ -1558,6 +1592,7 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
     JNIEnv*, jobject, jfloat gain) {
     if (!std::isfinite(gain)) return;
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const float lin = std::clamp(gain, 0.0f, 2.0f);
     // 0 lineal → piso de -60 dB (silencio práctico), evita log10(0) = -inf.
     const float db  = (lin <= 0.001f) ? -60.0f
@@ -1570,6 +1605,7 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorAmount(
     JNIEnv*, jobject, jfloat amount) {
     if (!std::isfinite(amount)) return;
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const float a = std::clamp(amount, 0.0f, 1.0f);
     // Mapeo monótono sobre el rango que ya usa nativeSetCompressorParams:
     // threshold -6 dB → -30 dB, ratio 1:1 → 8:1. attack/release intactos.
@@ -1581,6 +1617,7 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetExciterReduction(
     JNIEnv*, jobject, jfloat reduction) {
     if (!std::isfinite(reduction)) return;
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const float r = std::clamp(reduction, 0.0f, 1.0f);
     g_params.wet = kExciterWetBase * (1.0f - r);
     g_exciter.setParams(g_params);
@@ -1597,10 +1634,13 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualEQ(
     JNIEnv*, jobject, jfloat lowDb, jfloat midDb, jfloat highDb) {
     if (!std::isfinite(lowDb) || !std::isfinite(midDb) || !std::isfinite(highDb)) return;
-    g_params.low  = std::clamp(lowDb,  -24.0f, 24.0f);
-    g_params.mid  = std::clamp(midDb,  -24.0f, 24.0f);
-    g_params.high = std::clamp(highDb, -24.0f, 24.0f);
-    g_eq.setParams(g_params);
+    // Nueva base absoluta del EQ perceptual; los offsets ISO/fatiga vigentes
+    // se re-aplican sobre ella (no se acumulan).
+    g_eqBaseLow .store(std::clamp(lowDb,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseMid .store(std::clamp(midDb,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseHigh.store(std::clamp(highDb, -24.0f, 24.0f), std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    recomputeEqFromBaseLocked();
 }
 
 
@@ -1613,16 +1653,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
     if (!std::isfinite(iso) || !std::isfinite(fatigue))
         return;
 
-    const float comp =
-        std::clamp(iso, -12.0f, 12.0f);
+    // IDEMPOTENTE: se guarda el offset y el EQ se recalcula desde la base.
+    // Antes esto era `g_params.high += ...` — acumulaba en cada llamada del
+    // calibrador ISO 226 hasta saturar el EQ y reventar el audio.
+    g_fatigueIsoDb  .store(std::clamp(iso,     -12.0f, 12.0f), std::memory_order_relaxed);
+    g_fatigueProtect.store(std::clamp(fatigue,   0.0f,  1.0f), std::memory_order_relaxed);
 
-    const float protect =
-        std::clamp(fatigue, 0.0f, 1.0f);
-
-    g_params.high += comp * (1.0f - protect);
-    g_params.mid  -= protect * 3.0f;
-
-    g_eq.setParams(g_params);
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    recomputeEqFromBaseLocked();
 }
 
 JNIEXPORT void JNICALL
