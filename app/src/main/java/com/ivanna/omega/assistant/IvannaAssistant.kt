@@ -73,14 +73,25 @@ class IvannaAssistant(context: Context) {
         }
     }
 
+    private val profile = IvannaListenerProfile(appContext)
+
     /** Saludo contextual al abrir el panel (usa la memoria, sin exagerar). */
     fun greet() {
         watchVoice()
         val scene = memory.lastScene
+        val top   = profile.topCommands().firstOrNull()
         val text = when {
-            scene == "MUSIC" -> "Hola. La última vez estábamos escuchando música. ¿Qué ajustamos hoy?"
-            scene == "VOICE" -> "Hola. La última vez había mucho diálogo; puedo mantener las voces claras si quieres."
-            else             -> "Hola, soy IVANNA. Puedo ajustar el sonido por ti: dime qué necesitas."
+            profile.shouldSuggestGentle ->
+                "Hola. Noto que has reportado fatiga varias veces. ¿Activo el modo suave?"
+            scene == "MUSIC" ->
+                "Hola. La última vez escuchábamos música." +
+                if (top != null) " Tu ajuste más habitual es «${profile.labelOf(top)}»." else ""
+            scene == "VOICE" ->
+                "Hola. La última vez había mucho diálogo; puedo mantener las voces claras."
+            top != null ->
+                "Hola, soy IVANNA. Tu ajuste habitual es «${profile.labelOf(top)}». ¿Lo activo?"
+            else ->
+                "Hola, soy IVANNA. Puedo ajustar el sonido por ti: dime qué necesitas."
         }
         _ui.value = _ui.value.copy(statusLine = text, voiceName = voice.selectedVoiceName ?: "")
         voice.speak(text)
@@ -114,18 +125,45 @@ class IvannaAssistant(context: Context) {
     fun onUserSaid(text: String) {
         _ui.value = _ui.value.copy(listening = false, statusLine = "Procesando…")
         scope.launch(Dispatchers.IO) {
-            val intent = IvannaIntentMapper.map(text)
-            val reply = IvannaIntentMapper.execute(appContext, intent, voiceController)
-            // Registrar en memoria (ajustes reales → explicabilidad futura).
-            if (intent.target != IvannaIntentMapper.AgentTarget.NONE &&
-                intent.command != "explain" && intent.command != "diagnose") {
-                memory.recordAdjustment(intent.command, "petición del usuario: \"$text\"", applied = true)
+            // ── IVANNA Language Core → intención acústica estructurada ────────
+            val scene  = memory.lastScene
+            val parsed = IvannaLanguageCore.parse(text, scene)
+
+            // ── IVANNA Cognitive Core → razonamiento sobre el estado real ─────
+            val decision = IvannaCognitiveCore.reason(parsed)
+
+            val reply: String
+            if (!decision.execute) {
+                // Cognitivo rechazó o modificó la petición — informar al usuario
+                reply = decision.warningForUser ?: parsed.raw.let { IvannaLanguageCore.spokenResponse(parsed) }
+            } else {
+                // Ejecutar a través de los canales existentes
+                val command = decision.commandOverride
+                    ?: IvannaLanguageCore.toCommand(parsed.acousticIntent)
+                val baseReply = IvannaLanguageCore.spokenResponse(parsed)
+
+                // Registrar en ListenerProfile y memoria
+                profile.recordAdjustment(command, scene)
+                memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
+                memory.lastExplanation = baseReply
+                memory.lastScene = when (parsed.acousticIntent) {
+                    IvannaLanguageCore.AcousticIntent.VOICE_CLARITY,
+                    IvannaLanguageCore.AcousticIntent.DIALOG_ENHANCEMENT -> "VOICE"
+                    IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS,
+                    IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
+                    else -> scene
+                }
+
+                // Ejecutar comando en VoiceController (canal ya existente)
+                runCatching { voiceController.executeCommand(command) }
+
+                reply = baseReply
             }
-            memory.lastExplanation = reply
+
             launch(Dispatchers.Main) {
                 _ui.value = _ui.value.copy(
                     statusLine = reply,
-                    lastTurn = ConversationTurn(userText = text, ivannaText = reply)
+                    lastTurn   = ConversationTurn(userText = text, ivannaText = reply)
                 )
                 voice.speak(reply)
             }
@@ -134,6 +172,8 @@ class IvannaAssistant(context: Context) {
 
     fun clearMemory() {
         memory.clearAll()
+        profile.clearAll()
+        IvannaLanguageCore.clearHistory()
         val msg = "He olvidado mis notas de esta y otras sesiones."
         _ui.value = _ui.value.copy(statusLine = msg, lastTurn = null)
         voice.speak(msg)
