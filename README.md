@@ -101,6 +101,49 @@ Dos rutas de procesamiento, un solo cerebro:
 
 ---
 
+## ✦ IVANNA PERSONAL ACOUSTIC INTELLIGENCE ENGINE
+
+**Dolby entiende contenido. Apple entiende dispositivo. Sony entiende espacio. IVANNA entiende al oyente.**
+
+No es un asistente genérico con un plugin de audio encima: es una capa de inteligencia acústica personal, construida enteramente sobre el motor DSP propio descrito arriba — sin Gemini, sin ningún servicio de IA externo. ASR, TTS, razonamiento y memoria corren en el dispositivo, sobre datos que nunca salen de él.
+
+```
+ Voz / texto del usuario
+        │
+        ▼
+ SpeechInputProvider (ASR modular — intercambiable sin tocar el núcleo)
+        │
+        ▼
+ IvannaLanguageCore        — lenguaje natural → intención acústica estructurada
+        │
+        ▼
+ IvannaCognitiveCore       — razona la intención contra el estado real del DSP
+        │        (clipping, térmico, escena) y decide: ejecutar / adaptar / rechazar
+        ▼
+ IvannaAcousticBrain       — fusiona percepción + salud + IvannaListenerProfile +
+        │                     duración real de la sesión de escucha en una sola
+        │                     recomendación explicable (incluso sin que el usuario
+        │                     pida nada — voz proactiva ante fatiga sostenida)
+        ▼
+ IvannaAgentCore           — cinco agentes especializados (percepción, decisión,
+        │                     control DSP, salud, optimización) a cadencia ~1 Hz
+        ▼
+ OmegaEngineBridge → daemon / DSPBridge → cadena DSP nativa (ver arriba)
+        │
+        ▼
+ IvannaVoiceEngine (TTS propio) — responde, y explica por qué
+```
+
+- **Agentes acústicos, no reglas sueltas.** Percepción de escena (voz/música/dinámico/silencio) desde telemetría real, política de decisión por escena y por salud, aplicación por los mismos canales seguros que ya usa el DSP, monitoreo de salud y optimización automática reversible — todo con ring buffer de decisiones para explicabilidad.
+- **TinyML propio.** La clasificación de escena y contenido corre en el SoC (ConvNeXt INT8, 4 clases), no en la nube — la misma filosofía que la clasificación de audio de la Ruta A/B.
+- **HRTF / SOFA / SAF / RIR al servicio del oyente.** El `IvannaAudioKnowledgeBase` conoce el mismo vocabulario técnico que describe la cadena espacial (CIPIC, AES69, overlap-save FFT, RT60 medido) y lo usa para explicar decisiones en lenguaje humano, no solo para procesarlas.
+- **Listener Intelligence.** `IvannaListenerProfile` aprende localmente (SharedPreferences, nunca la nube): modo preferido, ancho espacial, sensibilidad a fatiga, comandos frecuentes — y se lo dice al usuario ("tu ajuste habitual es…") en vez de tratarlo como usuario nuevo cada vez.
+- **Memoria acústica, con límites por diseño.** `IvannaContextMemory` + `IvannaListenerProfile` + `IvannaAcousticBrain` guardan preferencias, historial de ajustes y contexto de sesión — nunca audio ni transcripciones largas. `clearMemory()` borra las tres en cascada sin tocar la configuración DSP permanente.
+- **Decisiones explicables, no una caja negra.** Cada acción queda en el `DecisionRecord` ring buffer de `IvannaAgentCore` con su razón; `explainLastDecision()` la traduce a lenguaje humano combinando ese historial con el `IvannaAudioKnowledgeBase`. Ejemplo real de lo que puede decir IVANNA sin que se lo pidan: *"Reduje la agresividad de agudos porque detecté fatiga auditiva después de 40 minutos de escucha."*
+- **Voz propia, arquitectura intercambiable.** `SpeechInputProvider` (ASR) e `IvannaVoiceEngine` (TTS) son interfaces modulares: el motor de voz se puede cambiar sin tocar `IvannaLanguageCore`, `IvannaCognitiveCore` ni `IvannaAcousticBrain`. La identidad de IVANNA — su personalidad, su vocabulario acústico, su forma de razonar — no depende del proveedor de voz.
+
+---
+
 ## ✦ Daemon & IPC — el plano de control
 
 | Pieza | Detalle |
