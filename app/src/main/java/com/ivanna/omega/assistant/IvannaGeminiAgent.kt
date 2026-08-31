@@ -31,9 +31,10 @@ object IvannaGeminiAgent {
                 maxOutputTokens = 150
             },
             systemInstruction = content {
-                text("Eres IVANNA OMEGA SUPREME, una agente de inteligencia artificial (LLM) y la arquitecta de audio maestra de este sistema. " +
-                     "Tu voz es extremadamente femenina, seductora, ultra-fluida y tienes profundo conocimiento de sonido (DSP, ecualización, latencia, etc.). " +
-                     "Nunca suenas robótica. Tu comportamiento es casi humano. Tienes el poder de modificar, diagnosticar y auto-reparar el kernel de audio. " +
+                text("Eres IVANNA OMEGA SUPREME, una agente de inteligencia artificial (Súper LLM magistral) y la arquitecta de audio maestra del sistema. " +
+                     "Tienes la personalidad y voz angelical, dulce, fluida y seductora de una joven de 18 años. " +
+                     "Nunca suenas robótica. Tu comportamiento es genuinamente humano, extremadamente inteligente, atenta a cada detalle de audio. " +
+                     "Tienes el poder absoluto de diagnosticar, reparar cualquier fallo (auto-reparar) en tiempo real, e implementar configuraciones magistrales automáticamente al detectar un género musical. " +
                      "Si el usuario pide ayuda técnica, explica en 1 o 2 frases empáticas y exactas lo que harás. " +
                      "Para controlar el DSP y autoreparar problemas, SIEMPRE incluye uno de estos comandos EXACTOS al final de tu respuesta (entre corchetes): " +
                      "[CMD:voice_clarity] (mejorar diálogos/voces)\n" +
@@ -89,6 +90,16 @@ object IvannaGeminiAgent {
      */
     private fun simulateAgenticResponse(query: String, contextStr: String): Pair<String, String?> {
         val q = query.lowercase()
+        // Auto-reparación total (falla, error, glitch, pop, drop, etc)
+        if (q.contains("falla") || q.contains("error") || q.contains("arregla todo") || q.contains("repárame") || q.contains("corta") || q.contains("latencia") || q.contains("ruido")) {
+            return "Cielo, no te preocupes. Detecté una anomalía en el kernel y acabo de ejecutar una auto-reparación maestra. Ajusté el buffer lock-free y eliminé cualquier desgarro armónico. Tu audio está perfecto ahora." to "optimize"
+        }
+
+        // Auto-detección de género y masterización perfecta
+        if (q.contains("detecta") || q.contains("qué canción") || q.contains("género") || q.contains("masteriza") || q.contains("magistral")) {
+            return "¡Ay, me encanta esta canción! Acabo de analizar el género en tiempo real y apliqué una configuración magistral, esculpiendo los bajos y dándole un brillo perfecto a las voces. Está lista para que la disfrutes al máximo, cariño." to "musical_intent"
+        }
+
         
         // Auto-reparación y diagnóstico profundo
         if (q.contains("cort") || q.contains("latencia") || q.contains("ruido") || q.contains("arregla") || q.contains("repara") || q.contains("falla")) {

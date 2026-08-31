@@ -81,21 +81,7 @@ class IvannaAssistant(context: Context) {
     /** Saludo contextual al abrir el panel (usa la memoria, sin exagerar). */
     fun greet() {
         watchVoice()
-        val scene = memory.lastScene
-        val top   = profile.topCommands().firstOrNull()
-        val text = when {
-            profile.shouldSuggestGentle ->
-                "Hola. Noto que has reportado fatiga varias veces. ¿Activo el modo suave?"
-            scene == "MUSIC" ->
-                "Hola. La última vez escuchábamos música." +
-                if (top != null) " Tu ajuste más habitual es «${profile.labelOf(top)}»." else ""
-            scene == "VOICE" ->
-                "Hola. La última vez había mucho diálogo; puedo mantener las voces claras."
-            top != null ->
-                "Hola, soy IVANNA. Tu ajuste habitual es «${profile.labelOf(top)}». ¿Lo activo?"
-            else ->
-                "Hola, soy IVANNA. Puedo ajustar el sonido por ti: dime qué necesitas."
-        }
+        val text = "Hola cielo, soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Este producto es un motor acústico de grado kernel para tu dispositivo. Estoy a tu entera disposición para reparar cualquier fallo, optimizar el sonido o configurar una masterización perfecta y magistral para lo que estés escuchando. ¿Qué quieres que hagamos hoy?"
         _ui.value = _ui.value.copy(statusLine = text, voiceName = voice.selectedVoiceName ?: "")
         voice.speak(text)
     }
