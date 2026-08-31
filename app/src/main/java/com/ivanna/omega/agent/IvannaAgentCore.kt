@@ -82,6 +82,8 @@ object IvannaAgentCore {
 
     data class HealthSnapshot(
         val clipCountDelta: Int = 0,
+        val clipCount: Int = 0,          // total clips (for UI / CognitiveCore)
+        val thermalLoad: Float = 0f,     // 0..1 from ThermalGovernor
         val roundTripLatencyUs: Long = 0L,
         val adaptiveEngineRunning: Boolean = false,
         val daemonConnected: Boolean = false,
@@ -275,8 +277,14 @@ object IvannaAgentCore {
 
             degradedStreak = if (latencyUs > 2000L) degradedStreak + 1 else 0
 
+            val thermal = runCatching {
+                com.ivanna.omega.audio.ThermalGovernor.currentThermalLoad
+            }.getOrDefault(0f)
+
             return HealthSnapshot(
                 clipCountDelta = delta,
+                clipCount = clips,
+                thermalLoad = thermal,
                 roundTripLatencyUs = latencyUs,
                 adaptiveEngineRunning = engineRunning,
                 daemonConnected = daemon,

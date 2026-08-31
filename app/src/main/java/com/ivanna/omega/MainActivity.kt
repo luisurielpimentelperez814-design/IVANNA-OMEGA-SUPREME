@@ -685,6 +685,13 @@ fun OmegaApp() {
                     onMeasureLatency = { vm.measureLatency() },
                 )
             }
+
+            // ── IVANNA Conversational Acoustic Intelligence (FASE 12–19) ─────
+            composable(IvannaRoute.IVANNA_ASSISTANT) {
+                com.ivanna.omega.ui.IvannaAssistantScreen(
+                    onBack = { nav.popBackStack() }
+                )
+            }
         }
     }
 }

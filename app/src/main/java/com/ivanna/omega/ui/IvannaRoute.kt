@@ -46,4 +46,7 @@ object IvannaRoute {
     const val BINAURAL_ALIAS = "binaural"
     const val ABX_TEST = "abx_test"
     const val AUDIO_CONTROL_HUB = "audio_control_hub"  // SOFA · AF · RIR · SAF panel
+
+    // IVANNA Conversational Acoustic Intelligence (FASE 12–19)
+    const val IVANNA_ASSISTANT = "ivanna_assistant"
 }

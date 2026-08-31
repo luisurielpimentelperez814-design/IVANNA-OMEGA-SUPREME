@@ -163,11 +163,12 @@ fun MainScaffold(
             // ── SYSTEM ───────────────────────────────────────────────────
             composable(TABS[4].route) {
                 SystemHubScreen(
-                    onOpenMagisk   = { outerNav.navigate("magisk") },
-                    onOpenProfiles = { outerNav.navigate("profiles") },
-                    onOpenLab      = { outerNav.navigate("lab") },
-                    onOpenEngines  = { outerNav.navigate("engines_status") },
-                    onOpenOemDash  = { outerNav.navigate("oem_dashboard") },
+                    onOpenMagisk    = { outerNav.navigate("magisk") },
+                    onOpenProfiles  = { outerNav.navigate("profiles") },
+                    onOpenLab       = { outerNav.navigate("lab") },
+                    onOpenEngines   = { outerNav.navigate("engines_status") },
+                    onOpenOemDash   = { outerNav.navigate("oem_dashboard") },
+                    onOpenAssistant = { outerNav.navigate(IvannaRoute.IVANNA_ASSISTANT) },
                 )
             }
         }
@@ -213,18 +214,25 @@ fun SpatialHubScreen(
 // ── SystemHubScreen ───────────────────────────────────────────────────────────
 @Composable
 fun SystemHubScreen(
-    onOpenMagisk   : () -> Unit,
-    onOpenProfiles : () -> Unit,
-    onOpenLab      : () -> Unit,
-    onOpenEngines  : () -> Unit = {},
-    onOpenOemDash  : () -> Unit = {},
+    onOpenMagisk    : () -> Unit,
+    onOpenProfiles  : () -> Unit,
+    onOpenLab       : () -> Unit,
+    onOpenEngines   : () -> Unit = {},
+    onOpenOemDash   : () -> Unit = {},
+    onOpenAssistant : () -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HubHeader("SISTEMA", "Control OEM · Magisk · Perfiles · Lab · Motores", AmberSignal)
+        HubHeader("SISTEMA", "IVANNA · Control OEM · Magisk · Perfiles · Lab · Motores", AmberSignal)
+        // IVANNA primero — es la interfaz conversacional principal del producto
+        HubCard(
+            "✦ IVANNA ASSISTANT",
+            "Inteligencia acústica conversacional · Voz · Lenguaje · Agentes · Memoria",
+            AuroraCyan, onOpenAssistant
+        )
         HubCard("CENTRO DE CONTROL OEM++",
             "Dashboard · HRTF · SAF/RIR · IA · Térmico · Telemetría",
             AuroraCyan, onOpenOemDash)
