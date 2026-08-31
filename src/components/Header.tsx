@@ -1,10 +1,10 @@
 import React from 'react';
-import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw, BarChart2 } from 'lucide-react';
+import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw, BarChart2, Mic } from 'lucide-react';
 import { DspParameters } from '../types';
 
 interface HeaderProps {
-  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline';
-  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline') => void;
+  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
+  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice') => void;
   params: DspParameters;
   onParamChange: (key: keyof DspParameters, value: any) => void;
   onApplyPreset: (presetName: DspParameters['activePreset']) => void;
@@ -243,6 +243,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Zap className="w-3.5 h-3.5 text-[#F59E0B]" />
             <span>DSP Pipeline</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ivanna_voice')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'ivanna_voice'
+                ? 'bg-[#0F1A1F] border-[#4ADE80] text-[#4ADE80] font-bold shadow-sm shadow-[#4ADE80]/20'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Mic className={`w-3.5 h-3.5 ${activeTab === 'ivanna_voice' ? 'text-[#4ADE80] animate-pulse' : 'text-[#4ADE80]'}`} />
+            <span>IVANNA Voice</span>
           </button>
 
         </nav>

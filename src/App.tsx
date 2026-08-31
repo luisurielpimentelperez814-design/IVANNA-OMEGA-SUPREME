@@ -13,6 +13,7 @@ import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
 import { DspPipeline } from './components/DspPipeline';
 import { ParameterControls } from './components/ParameterControls';
 import { usePersist } from './usePersist';
+import { IvannaVoicePanel } from './components/IvannaVoicePanel';
 
 const DEFAULT_PARAMS: DspParameters = {
   masterGain: 1.0,
@@ -60,7 +61,7 @@ const DEFAULT_METRICS: BenchmarkMetrics = {
   lastCalibratedAt: new Date().toLocaleTimeString(),
 };
 
-type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline';
+type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
 
 export default function App() {
   // ── Persistencia de tab activo ──────────────────────────────────────────────
@@ -318,6 +319,9 @@ export default function App() {
             <DspPipeline params={params} />
             <ParameterControls params={params} onParamChange={handleParamChange} />
           </div>
+        )}
+        {activeTab === 'ivanna_voice' && (
+          <IvannaVoicePanel />
         )}
       </main>
 
