@@ -1,10 +1,10 @@
 #include "IvannaAudioClassifier.hpp"
-#include "IvannaTinyML.hpp"
+#include "IvannaAudioClassifier.hpp"
 #include "IvannaFusionCore.hpp"
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
 #include "Psychoacoustics.hpp"
-#include "IvannaTinyML.hpp"
+#include "IvannaAudioClassifier.hpp"
 #include <iostream>
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
@@ -52,7 +52,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
             }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();
-    m_classifier = new TinyMLAudioEngine();
+    m_classifier = new IvannaAudioClassifier();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
@@ -73,7 +73,7 @@ void IvannaFusionEngine::setGoldenEarMode(bool enable) {
 void IvannaFusionEngine::process(AudioBuffer* buffer) {
     // FASE 1: SPSC Lock-Free Ring Buffer async push
     // Solo encolamos (ingest) sin bloquear el hilo principal de audio
-    m_classifier->IngestAudio(buffer->left, BLOCK_SIZE, 2);
+    m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
     
     // (Ya no llamamos a processInference() aquí, corre en background)
 

@@ -221,7 +221,6 @@ add_library(ivanna_omega SHARED
     # ============================================================================
     ivannalab/ivannalab.cpp
     #     IvannaAudioClassifier.cpp
-        IvannaTinyML.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_fastrpc_client_load.cpp
     hexagon/ivanna_dsp.cpp
@@ -270,7 +269,6 @@ add_library(omega_effect SHARED
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
     IvannaAudioClassifier.cpp
-        IvannaTinyML.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_fastrpc_client_load.cpp
     hexagon/ivanna_dsp.cpp
