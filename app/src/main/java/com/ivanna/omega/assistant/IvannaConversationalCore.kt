@@ -204,13 +204,14 @@ object IvannaConversationalCore {
             RegexOption.IGNORE_CASE
         )
         dePattern.find(t)?.let { m ->
-            // FIX (build CI): title quedaba String? — el Elvis con
-            // `return@let` devuelve Unit (no Nothing), así que no hay
-            // smart-cast a String y `title.length` no resolvía.
-            // takeIf devuelve String? con Elvis a null-safe + length?.
-            val title  = m.groupValues[1].trim().takeIf { it.isNotBlank() }
+            // FIX (build CI): title quedaba String? porque el Elvis con
+            // return@let devuelve Unit (no Nothing) y no hay smart-cast.
+            // Segundo fallo: takeIf{it...} no resolvia 'it' en el parser
+            // del CI Linux. Solucion definitiva: ifBlank{""} devuelve
+            // String NO nulo — sin 'it', sin nullable, sin smart-cast.
+            val title  = m.groupValues[1].trim().ifBlank { "" }
             val artist = m.groupValues[2].trim().ifBlank { null }
-            if (title != null && title.length >= 3) {
+            if (title.length >= 3) {
                 val song = SongContext(title = title, artist = artist, userGoal = userGoal)
                 val ctx = _context.value
                 _context.value = ctx.copy(currentSong = song)
