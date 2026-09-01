@@ -1,27 +1,23 @@
 @@
 -    for (int i=1;i<argc;i++) {
+-        std::string arg=argv[i];
+-        if (arg=="--socket" && i+1<argc) socket_path=argv[++i];
+-        else if (arg=="--rate" && i+1<argc) { try{rate=std::stoi(argv[++i]);}catch(...){rate=48000;} }
+-        else if (arg=="--buffer" && i+1<argc) { try{buffer=std::stoi(argv[++i]);}catch(...){buffer=64;} }
+-        else if (arg=="--realtime") realtime=true;
+-    }
 +    int tcp_port = 0;
 +    for (int i=1;i<argc;i++) {
-         std::string arg=argv[i];
-         if (arg=="--socket" && i+1<argc) socket_path=argv[++i];
-         else if (arg=="--rate" && i+1<argc) { try{rate=std::stoi(argv[++i]);}catch(...){rate=48000;} }
-         else if (arg=="--buffer" && i+1<argc) { try{buffer=std::stoi(argv[++i]);}catch(...){buffer=64;} }
-         else if (arg=="--realtime") realtime=true;
++        std::string arg=argv[i];
++        if (arg=="--socket" && i+1<argc) socket_path=argv[++i];
++        else if (arg=="--rate" && i+1<argc) { try{rate=std::stoi(argv[++i]);}catch(...){rate=48000;} }
++        else if (arg=="--buffer" && i+1<argc) { try{buffer=std::stoi(argv[++i]);}catch(...){buffer=64;} }
++        else if (arg=="--realtime") realtime=true;
 +        else if (arg=="--tcp-port" && i+1<argc) { try{ tcp_port = std::stoi(argv[++i]); } catch(...) { tcp_port = 0; } }
-     }
-     g_socket_path=socket_path;
++    }
 @@
-     CommandServer commandServer;
-     commandServer.resetState();
-     CommandServer controlServer;
-@@
-     Ivanna::IvannaSelfHealingEngine selfHealer;
-     selfHealer.startMonitoring();
-     log_message("Self-Healing Engine activated and monitoring components.");
-@@
-     // FIX (daemon bloqueante / fd leak / buffer overflow):
-@@
-     while (g_running) {
+-    while (g_running) {
++    while (g_running) {
 +        // Polling the main unix socket and handling incoming clients happens in the main loop.
 +        // Additionally, if a TCP fallback port was provided, start a separate listener thread
 +        // once (detached) to accept connections on 127.0.0.1:tcp_port and dispatch JSON commands.
@@ -88,11 +84,4 @@
 +                }).detach();
 +            } catch (...) { /* swallow thread creation failures */ }
 +        }
-@@
-     }
-     if (g_server_fd>=0) close(g_server_fd);
-     controlServer.stop();
-     selfHealer.stopMonitoring();
-     log_message("Daemon shutdown REAL");
-     return 0;
- }
+***
