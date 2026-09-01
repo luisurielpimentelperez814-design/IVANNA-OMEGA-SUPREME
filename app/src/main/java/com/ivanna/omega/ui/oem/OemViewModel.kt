@@ -113,8 +113,8 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         // nativeGetAudioCharacteristics() (percussiveness/tonality/centroid/spread).
         // guardedNative con default seguro para no tumbar el poll si el .so no
         // está cargado todavía.
-        val pipe = if (loaded) runCatching {
-            IvannaNativeLib.guardedNative(FloatArray(0)) { IvannaNativeLib.nativeGetUnifiedPipelineStatus() }
+        val pipe: FloatArray = if (loaded) runCatching {
+            IvannaNativeLib.guardedNative(FloatArray(0)) { IvannaNativeLib.nativeGetUnifiedPipelineStatus() ?: FloatArray(0) }
         }.getOrDefault(FloatArray(0)) else FloatArray(0)
         val pipeOk = pipe.size >= 8
         val activeRoute    = if (pipeOk) pipe[0] else 0f
