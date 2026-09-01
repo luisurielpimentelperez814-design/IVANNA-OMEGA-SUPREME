@@ -28,6 +28,23 @@ public:
         m_intrinsicCurvature.store(curvature, std::memory_order_relaxed);
     }
 
+    // FIX (DAC USB-C): wet/dry blend — permite bypassear parcial o totalmente
+    // la convolución HRTF. Útil al conectar un DAC USB-C: llamar setWetDry(0)
+    // + flushHistory() elimina el ruido de "canal sin señal" producido por
+    // muestras residuales en el historial cuando cambia la ruta de audio.
+    // wet=0 → señal seca estéreo pura; wet=1 → binaural completo (default).
+    void setWetDry(float wet) noexcept {
+        m_wetDry.store(std::clamp(wet, 0.f, 1.f), std::memory_order_relaxed);
+    }
+    float getWetDry() const noexcept {
+        return m_wetDry.load(std::memory_order_relaxed);
+    }
+
+    // Limpia el historial de convolución overlap-save.
+    // DEBE llamarse tras setWetDry(0) cuando el DAC USB-C se conecta/desconecta
+    // para evitar que muestras cacheadas corrompan el siguiente bloque.
+    void flushHistory() noexcept;
+
     // FIX: punto de entrada del vector latente SAF q[7] en el motor HRTF.
     // q[0] modula la curvatura Riemanniana intrínseca (personalización espacial).
     // q[1..2] ajustan el azimut efectivo del banco activo.
@@ -54,6 +71,7 @@ private:
     // Carga los filtros de la posición del dataset más cercana al azimut dado
     void loadFromDatasetAtAzimuth(float azimuthDeg, int bank);
 
+    std::atomic<float> m_wetDry{1.0f};   // FIX DAC USB-C: 0=dry, 1=full HRTF
     std::atomic<int>   m_activeBank{0};
     std::atomic<int>   m_pendingBank{0};
     int                m_pendingBankLocal = 0;
