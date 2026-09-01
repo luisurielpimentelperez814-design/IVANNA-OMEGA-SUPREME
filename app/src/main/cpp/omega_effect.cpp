@@ -247,7 +247,10 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (!fc) return;
     // El route arbiter marca quién aplica DSP. Si no somos SYSTEM_WIDE,
     // ni intensity ni el resto tocan; el efecto queda enabled pero pasa.
-    if (static_cast<ivanna::RouteMode>(s.active_route) != ivanna::RouteMode::SYSTEM_WIDE) {
+    // FIX (eco/desfase con sliders altos): cuando el daemon system-wide está activo,
+    // la app NO debe procesar localmente — el audio ya pasa por el daemon global.
+    // Procesar dos veces causa eco (delay doble) y desfase (filtros IIR duplicados).
+    if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::SYSTEM_WIDE) {
         return;
     }
     // Spatial width (slider UI "Ancho espacial")
