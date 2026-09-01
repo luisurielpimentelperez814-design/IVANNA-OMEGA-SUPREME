@@ -119,10 +119,22 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
         }
     }
 
+    // FIX DAC USB-C: leer wet una sola vez por bloque (costo: 1 atomic load/bloque).
+    // wet=0 → bypass puro (señal seca), wet=1 → HRTF completo (comportamiento legacy).
+    const float wet = m_wetDry.load(std::memory_order_relaxed);
+    const float dry = 1.f - wet;
+
     // ── Ingresar muestras al historial ───────────────────────────────────────
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         m_histL[HRTF_TAPS - 1 + i] = buffer->left[i];
         m_histR[HRTF_TAPS - 1 + i] = buffer->right[i];
+    }
+
+    // Bypass completo: si wet==0 no hay nada que mezclar, la señal ya está en buffer
+    if (wet == 0.f) {
+        std::memmove(m_histL, m_histL + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
+        std::memmove(m_histR, m_histR + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
+        return;
     }
 
     // ── Convolución HRTF ─────────────────────────────────────────────────────
@@ -165,8 +177,12 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
             outR = outR * (1.0f - xfadeW) + bR * xfadeW;
         }
 
-        buffer->left[i]  = outL;
-        buffer->right[i] = outR;
+        // FIX DAC USB-C: blend wet (HRTF) + dry (original) — preserva la señal
+        // estéreo pura cuando wet < 1, evitando artefactos al cambiar ruta de audio.
+        const float dryL = m_histL[HRTF_TAPS - 1 + i];
+        const float dryR = m_histR[HRTF_TAPS - 1 + i];
+        buffer->left[i]  = wet * outL + dry * dryL;
+        buffer->right[i] = wet * outR + dry * dryR;
     }
 #else
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
@@ -188,8 +204,11 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
             outL = outL * (1.f - xfadeW) + bL * xfadeW;
             outR = outR * (1.f - xfadeW) + bR * xfadeW;
         }
-        buffer->left[i]  = outL;
-        buffer->right[i] = outR;
+        // FIX DAC USB-C: mismo blend wet/dry que el path NEON
+        const float dryL = m_histL[HRTF_TAPS - 1 + i];
+        const float dryR = m_histR[HRTF_TAPS - 1 + i];
+        buffer->left[i]  = wet * outL + dry * dryL;
+        buffer->right[i] = wet * outR + dry * dryR;
     }
 #endif
 
@@ -200,6 +219,16 @@ void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
     // bloque actual al inicio del buffer de historia.
     std::memmove(m_histL, m_histL + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
     std::memmove(m_histR, m_histR + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
+}
+
+void HrtfManager::flushHistory() noexcept {
+    // FIX DAC USB-C: limpia el historial overlap-save. Llamar inmediatamente
+    // después de setWetDry(0.f) cuando el sistema rotea al DAC USB-C.
+    // Sin esto, las muestras cacheadas en m_histL/m_histR producen ruido
+    // de correlación (sonido de "canal de TV sin señal") en el primer
+    // bloque procesado por el nuevo dispositivo de salida.
+    std::memset(m_histL, 0, sizeof(m_histL));
+    std::memset(m_histR, 0, sizeof(m_histR));
 }
 
 bool HrtfManager::loadFromDataset(const char* path) {
