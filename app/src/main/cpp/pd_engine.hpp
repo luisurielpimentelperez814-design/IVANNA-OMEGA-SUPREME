@@ -137,13 +137,38 @@ public:
         }
     }
 
-    // ── Decode output y_t = 0.6·x + 0.2·S + 0.2·tanh(mean(z)) ──────────
+    // ── Stereo state means — mitad izquierda [0..15], derecha [16..31] ────
+    // FIX: state_mean() escalar colapsaba el aporte de estado a mono: zmL==zmR.
+    // Dividimos el vector z[32] en dos mitades alineadas con compute_F():
+    //   z[0..7]  = L (loudness), z[8..15]  = T (transient)  → canal izquierdo
+    //   z[16..23]= S (spatial),  z[24..31] = R (roughness)  → canal derecho
+    // Resultado: decode() produce zmL ≠ zmR → stereo real en la salida.
+    inline float state_mean_L() const noexcept {
+        float sum = 0.f;
+        for (int i = 0; i < PD_DIM / 2; ++i) sum += z[i];
+        return sum * (2.f / PD_DIM);
+    }
+    inline float state_mean_R() const noexcept {
+        float sum = 0.f;
+        for (int i = PD_DIM / 2; i < PD_DIM; ++i) sum += z[i];
+        return sum * (2.f / PD_DIM);
+    }
+    // Compatibilidad con callers externos (evo kernel, logs)
+    inline float state_mean() const noexcept {
+        return (state_mean_L() + state_mean_R()) * 0.5f;
+    }
+
+    // ── Decode output y_t = 0.6·x + 0.2·S + 0.2·tanh(zmL/R) ────────────
+    // FIX: zmL/zmR — cada canal usa su propia media del estado en lugar del
+    // escalar global zm. Preserva la imagen estéreo generada por compute_F()
+    // y evita que el aporte de estado aplaste el campo binaural.
     inline void decode(float xL, float xR,
                        float sL, float sR,
                        float& yL, float& yR) noexcept {
-        const float zm = nho_tanh(state_mean());
-        yL = MIX_DRY * xL + MIX_SPATIAL * sL + MIX_STATE * zm;
-        yR = MIX_DRY * xR + MIX_SPATIAL * sR + MIX_STATE * zm;
+        const float zmL = nho_tanh(state_mean_L());
+        const float zmR = nho_tanh(state_mean_R());
+        yL = MIX_DRY * xL + MIX_SPATIAL * sL + MIX_STATE * zmL;
+        yR = MIX_DRY * xR + MIX_SPATIAL * sR + MIX_STATE * zmR;
     }
 
     // ── Main process block ─────────────────────────────────────────────────
