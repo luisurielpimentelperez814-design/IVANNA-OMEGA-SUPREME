@@ -283,6 +283,9 @@ public:
     }
     const AudioCharacteristics& getCharacteristics() const { return currentChar_; }
 
+    // Public accessor requested by other components (omega_effect.cpp)
+    const AdaptiveParameters& getSmoothParameters() const { return smoothParams_; }
+
 private:
     AudioCharacteristics currentChar_{};
     AdaptiveParameters   targetParams_{};
@@ -291,6 +294,7 @@ private:
     int   histIdx_    = 0;
     float prevEnergy_ = 0.0f;
 
+public: // make these callable from external code (omega_effect.cpp uses them)
     void computeAdaptiveParameters(int aiDominantClass = -1, float pitchHz = 0.0f, bool isVoiced = false, float pitchConfidence = 0.0f) {
         auto& p = targetParams_;
         const auto& c = currentChar_;
@@ -414,9 +418,8 @@ private:
         constexpr float k = 0.08f;
         auto smooth = [&](float& cur, float target) {
             cur += (target - cur) * k;
-        }
+        };
 
-    const AdaptiveParameters& getSmoothParameters() const { return smoothParams_; };
         smooth(smoothParams_.compressorThreshold, targetParams_.compressorThreshold);
         smooth(smoothParams_.compressorRatio,     targetParams_.compressorRatio);
         smooth(smoothParams_.exciterAmount,       targetParams_.exciterAmount);
