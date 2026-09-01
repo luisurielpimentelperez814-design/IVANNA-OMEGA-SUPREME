@@ -146,7 +146,18 @@ class IvannaVoiceEngine(
         return s
     }
 
-    /** Humaniza el texto para micro-pausas y pronunciación natural en TTS. */
+    /**
+     * Humaniza el texto para micro-pausas y pronunciación natural en TTS.
+     *
+     * Capas de prosodia (lo que separa "robótica" de "casi humana"):
+     *  1. Normalización de unidades a palabras hablables.
+     *  2. Respiración antes de conjunciones de arrastre (y/pero/además/
+     *     entonces/porque) cuando la frase ya va larga — el hablante real
+     *     toma aire ahí; la coma produce la pausa en el TTS.
+     *  3. Puntos suspensivos en "mira", "escucha", "fíjate" — marca de
+     *     anticipación que baja la velocidad percibida sin tocar el rate.
+     *  4. Comas respiratorias cada ~65 caracteres sin pausa (existente).
+     */
     private fun humanize(text: String): String {
         var t = text
         t = t.replace(Regex("\\.([A-ZÁÉÍÓÚÑ])"), ". $1")
@@ -158,6 +169,12 @@ class IvannaVoiceEngine(
         t = t.replace(Regex("\\((\\d+)\\s*kHz\\)")) { ", ${it.groupValues[1]} kilohercios," }
         t = t.replace(Regex("\\((\\d+)\\s*Hz\\)"))  { ", ${it.groupValues[1]} hercios," }
         t = t.replace(Regex("\\(([^)]{1,25})\\)"), "$1")
+        // Anticipación suave en marcadores de atención (solo al inicio de
+        // oración o tras pausa — no en medio de una enumeración).
+        t = t.replace(Regex("(?i)(^|[.!?]\\s+)(mira|escucha|fíjate|fijate|oye)\\b"), "$1$2… ")
+        // Respiración antes de conjunciones cuando la cláusula previa ya
+        // supera ~40 caracteres (el hablante toma aire, no encadena).
+        t = t.replace(Regex("([^,;:.!?\\n]{40,}?)\\s+(pero|además|entonces|porque|aunque|mientras)\\b"), "$1, $2")
         // Comas respiratorias en frases largas
         val words = t.split(" ")
         val sb = StringBuilder()
@@ -165,7 +182,8 @@ class IvannaVoiceEngine(
         for (word in words) {
             val hasPause = word.endsWith(",") || word.endsWith(".") ||
                            word.endsWith("!") || word.endsWith("?") ||
-                           word.endsWith(";") || word.endsWith(":")
+                           word.endsWith(";") || word.endsWith(":") ||
+                           word.endsWith("…")
             if (charsSinPausa > 65 && !hasPause && word.length > 3) {
                 sb.append("$word, "); charsSinPausa = 0
             } else {
