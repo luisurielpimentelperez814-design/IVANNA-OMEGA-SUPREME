@@ -1,5 +1,7 @@
 package com.ivanna.omega.dsp
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeLibraryLoader
@@ -17,6 +19,36 @@ object DSPBridge {
     private val loaded = NativeLibraryLoader.ensureLoaded()
 
     val isLoaded: Boolean get() = loaded
+
+    // FIX (persistencia 2026-09-01): los parámetros DSP se pierden al matar la app.
+    // Se agrega SharedPreferences para guardar/restaurar estado entre sesiones.
+    private const val PREFS_NAME = "ivanna_dsp_state_v1"
+    private var prefs: SharedPreferences? = null
+
+    fun initPreferences(context: Context) {
+        prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    fun saveState(drive: Float, wet: Float, mix: Float, master: Float, stereoWidth: Float) {
+        prefs?.edit()?.apply {
+            putFloat("drive", drive)
+            putFloat("wet", wet)
+            putFloat("mix", mix)
+            putFloat("master", master)
+            putFloat("stereoWidth", stereoWidth)
+            apply()
+        }
+    }
+
+    fun loadState(): Map<String, Float> {
+        return mapOf(
+            "drive" to (prefs?.getFloat("drive", 0.5f) ?: 0.5f),
+            "wet" to (prefs?.getFloat("wet", 0.5f) ?: 0.5f),
+            "mix" to (prefs?.getFloat("mix", 0.5f) ?: 0.5f),
+            "master" to (prefs?.getFloat("master", 1.0f) ?: 1.0f),
+            "stereoWidth" to (prefs?.getFloat("stereoWidth", 0.5f) ?: 0.5f)
+        )
+    }
 
     // FIX (auditoría 2026-08-24): el default 96000 era una trampa latente —
     // un call-site futuro que lo invocara sin argumento reintroduciría el bug
