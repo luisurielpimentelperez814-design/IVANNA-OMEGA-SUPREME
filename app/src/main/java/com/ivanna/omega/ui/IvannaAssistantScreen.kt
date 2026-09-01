@@ -436,8 +436,7 @@ private fun MemoryPanel(
  * que el ciclo de vida del launcher está correctamente acotado al Screen
  * y no se duplica aquí. MicSection recibe el estado ya resuelto.
  */
-@Composable
-private fun MicSection(
+@Composable private fun MicSection(
     phase               : AssistantPhase,
     micAvailable        : Boolean,
     hasAudioPermission  : Boolean,
