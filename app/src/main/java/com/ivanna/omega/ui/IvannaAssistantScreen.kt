@@ -428,7 +428,6 @@ private fun MemoryPanel(
 // Mic + Text input section (FASE 17 — fallbacks)
 // ─────────────────────────────────────────────────────────────────────────────
 
-@Composable
 /**
  * MicSection — controles de voz y texto del asistente.
  *
