@@ -38,10 +38,15 @@ while true; do
     if decision_evaluate "DAEMON_RUNTIME"; then
         # 7. CAPA DE AISLAMIENTO
         # Start daemon with both abstract socket and TCP loopback fallback for robustness
-        component_isolate_execute "DAEMON" "$MODDIR/system/bin/ivanna_daemon" "--socket" "@omega_daemon_socket" "--tcp-port" "12121" "--realtime"
+        if [ -x "$MODDIR/system/bin/ivanna_daemon" ]; then
+            nohup "$MODDIR/system/bin/ivanna_daemon" --socket "@omega_daemon_socket" --tcp-port 12121 --realtime > /dev/null 2>&1 &
+            echo $! > /data/adb/ivanna_omega/daemon.pid
+        else
+            log -p e -t "IVANNA" "ivanna_daemon binary missing"
+        fi
         
         # ── Privilegios de clase OEM: OOM inmune + RT 98 (bajo AudioFlinger=~99)
-        DAEMON_PID=$(cat "$ISOLATION_DIR/DAEMON/pid" 2>/dev/null)
+        DAEMON_PID=$(cat /data/adb/ivanna_omega/daemon.pid 2>/dev/null)
         if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
             echo -1000 > /proc/$DAEMON_PID/oom_score_adj 2>/dev/null || true
             chrt -f -p 98 "$DAEMON_PID" 2>/dev/null || true
