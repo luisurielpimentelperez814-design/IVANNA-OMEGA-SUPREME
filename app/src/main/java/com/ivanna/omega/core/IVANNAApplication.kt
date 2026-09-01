@@ -277,8 +277,13 @@ class IVANNAApplication : Application() {
                 // nunca en el hilo de audio; si la librería nativa aún no está
                 // lista, AcousticPerceptionAgent devuelve snapshot vacío y el
                 // ciclo no interviene (política neutral) hasta que lo esté.
-                runCatching { com.ivanna.omega.agent.IvannaAgentCore.start() }
-                    .onFailure { Log.w(TAG, "AgentCore no arrancó (no fatal): ${it.message}") }
+                // attachContext ANTES de start(): sin él el agente corría sin
+                // SharedPreferences (prefs == null) y la persistencia de
+                // decisiones/política quedaba inerte pese a estar implementada.
+                runCatching {
+                    com.ivanna.omega.agent.IvannaAgentCore.attachContext(this@IVANNAApplication)
+                    com.ivanna.omega.agent.IvannaAgentCore.start()
+                }.onFailure { Log.w(TAG, "AgentCore no arrancó (no fatal): ${it.message}") }
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal).
                 // FIX (re-aplicado): OmegaDaemon.kt declara 18 external fun sin

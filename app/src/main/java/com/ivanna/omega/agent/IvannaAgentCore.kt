@@ -1,5 +1,6 @@
 package com.ivanna.omega.agent
 
+import android.content.Context
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
@@ -61,6 +62,67 @@ object IvannaAgentCore {
 
     private var scope: CoroutineScope? = null
     @Volatile private var running = false
+
+    // ── Persistencia (2026-09-01): sin esto el agente perdía su historial de
+    // decisiones y su política activa al cerrar la app — cada arranque
+    // empezaba "sin memoria", y la explicabilidad ("¿por qué cambiaste este
+    // perfil hace un rato?") moría con el proceso. SharedPreferences
+    // (igual patrón que ParameterStore/SpatialAudioPrefs del proyecto).
+    private const val PREFS = "ivanna_agent_core"
+    private const val KEY_POLICY = "active_policy"
+    private const val KEY_LOG = "decision_log_json"
+    private var prefs: android.content.SharedPreferences? = null
+
+    /** Llamar una vez desde Application.onCreate antes de start(). */
+    fun attachContext(context: Context) {
+        if (prefs == null) {
+            prefs = context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            restoreLog()
+        }
+    }
+
+    @Synchronized
+    private fun restoreLog() {
+        val raw = prefs?.getString(KEY_LOG, null) ?: return
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                decisionLog.addLast(
+                    DecisionRecord(
+                        timestampMs = o.optLong("t"),
+                        scene = runCatching {
+                            AcousticScene.valueOf(o.optString("scene", "UNKNOWN"))
+                        }.getOrDefault(AcousticScene.UNKNOWN),
+                        action = o.optString("action"),
+                        reason = o.optString("reason"),
+                        applied = o.optBoolean("applied")
+                    )
+                )
+            }
+            while (decisionLog.size > MAX_LOG) decisionLog.removeFirst()
+            Log.i(TAG, "historial restaurado: ${decisionLog.size} decisiones")
+        }
+    }
+
+    @Synchronized
+    private fun persistLog() {
+        val p = prefs ?: return
+        runCatching {
+            val arr = JSONArray()
+            decisionLog.forEach { d ->
+                arr.put(JSONObject().apply {
+                    put("t", d.timestampMs)
+                    put("scene", d.scene.name)
+                    put("action", d.action)
+                    put("reason", d.reason)
+                    put("applied", d.applied)
+                })
+            }
+            p.edit().putString(KEY_LOG, arr.toString()).apply()
+        }
+    }
 
     // ══════════════════════════════════════════════════════════════════════
     // Modelos
@@ -325,6 +387,12 @@ object IvannaAgentCore {
     fun start() {
         if (running) return
         running = true
+        // Restaurar la última política aplicada para que el estado público
+        // refleje la realidad desde el primer ciclo (sin esto la UI mostraba
+        // "neutral" aunque el DSP ya corriera con otra política persistida).
+        prefs?.getString(KEY_POLICY, null)?.let { saved ->
+            _state.value = _state.value.copy(activePolicy = saved)
+        }
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = s
         s.launch {
@@ -357,6 +425,7 @@ object IvannaAgentCore {
         val applied = DspControlAgent.apply(policy)
 
         if (policy.name != cur.activePolicy || applied && policy.name != cur.lastAction) {
+            prefs?.edit()?.putString(KEY_POLICY, policy.name)?.apply()
             record(
                 DecisionRecord(
                     timestampMs = System.currentTimeMillis(),
@@ -382,6 +451,7 @@ object IvannaAgentCore {
     private fun record(r: DecisionRecord) {
         if (decisionLog.size >= MAX_LOG) decisionLog.removeFirst()
         decisionLog.addLast(r)
+        persistLog()   // memoria durable: el historial sobrevive al proceso
         Log.i(TAG, "decisión: ${r.action} [${r.scene}] — ${r.reason} (aplicada=${r.applied})")
     }
 
