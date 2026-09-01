@@ -285,6 +285,14 @@ class IVANNAApplication : Application() {
                     com.ivanna.omega.agent.IvannaAgentCore.start()
                 }.onFailure { Log.w(TAG, "AgentCore no arrancó (no fatal): ${it.message}") }
 
+                // Auto-reparación (2026-09-01): el SelfHealingAgent vigila el
+                // daemon, el motor adaptativo y el clipping sostenido, y actúa
+                // sin intervención humana (cooldowns anti-bucle). Con gracia
+                // inicial de 8 s interna para no diagnosticar el arranque en
+                // frío como fallo.
+                runCatching { com.ivanna.omega.agent.SelfHealingAgent.start() }
+                    .onFailure { Log.w(TAG, "SelfHealingAgent no arrancó (no fatal): ${it.message}") }
+
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal).
                 // FIX (re-aplicado): OmegaDaemon.kt declara 18 external fun sin
                 // NINGUNA implementación JNI en C++ (verificado con grep: 0
