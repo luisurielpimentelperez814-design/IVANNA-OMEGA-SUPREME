@@ -70,6 +70,14 @@ bool OmegaControlBus::openWriter(const char* path) noexcept {
 
     m_fd       = fd;
     m_region   = reinterpret_cast<SharedControlRegion*>(addr);
+
+    if (m_region == nullptr) {
+        OMEGA_CTRL_LOGW("openWriter: invalid shm region nullptr");
+        ::munmap(addr, REGION_SIZE);
+        ::close(fd);
+        return false;
+    }
+
     m_isWriter = true;
 
     // Si el SHM es nuevo (magic inválido), escribir snapshot default
@@ -123,6 +131,13 @@ bool OmegaControlBus::openReader(const char* path) noexcept {
         return false;
     }
 
+    struct stat st{};
+    if (::fstat(fd, &st) < 0 || st.st_size < REGION_SIZE) {
+        OMEGA_CTRL_LOGW("openReader: invalid shm size=%lld", (long long)st.st_size);
+        ::close(fd);
+        return false;
+    }
+
     void* addr = ::mmap(nullptr, REGION_SIZE,
                         PROT_READ, MAP_SHARED, fd, 0);
     if (addr == MAP_FAILED) {
@@ -133,6 +148,14 @@ bool OmegaControlBus::openReader(const char* path) noexcept {
 
     m_fd       = fd;
     m_region   = reinterpret_cast<SharedControlRegion*>(addr);
+
+    if (m_region == nullptr) {
+        OMEGA_CTRL_LOGW("openReader: invalid shm region nullptr");
+        ::munmap(addr, REGION_SIZE);
+        ::close(fd);
+        return false;
+    }
+
     m_isWriter = false;
 
     OMEGA_CTRL_LOGD("openReader: mapped SHM from %s (gen=%llu)",
