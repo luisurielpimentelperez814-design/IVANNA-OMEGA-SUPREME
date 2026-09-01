@@ -137,6 +137,18 @@ int create_socket_server(const std::string& socket_path) {
     return server_fd;
 }
 
+static bool validate_shm_region(void* ptr, size_t size) {
+    if (!ptr) {
+        fprintf(stderr, "[IVANNA] omega_shm mmap returned nullptr\n");
+        return false;
+    }
+    if (size < 4096) {
+        fprintf(stderr, "[IVANNA] omega_shm invalid size=%zu\n", size);
+        return false;
+    }
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     std::string socket_path = DEFAULT_SOCKET_PATH;
     int rate = 48000, buffer = 64; bool realtime = false;
