@@ -12,19 +12,26 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
 /**
- * VoiceProfile — identidad vocal de IVANNA.
+ * VoiceProfile — identidad vocal de IVANNA (super-refinada).
  *
- * Voz femenina joven, juvenil y ágil, con presencia angelical.
- * Pitch 1.30f: carácter definido, voz de dama 18 años.
- * Rate 1.05f: fluida, ágil, no apurada ni robótica.
+ * Voz femenina joven, cálida y casi humana — presencia angelical sin
+ * artificialidad. Ajustes de oído crítico sobre la versión anterior:
+ *  - Pitch 1.30 → 1.18: 1.30 rozaba el territorio "chipmunk" (voz de
+ *    dibujito) en voces neurales; 1.18 es mujer joven real — aguda
+ *    sin ser aniñada. El dulzor lo da la elección de voz, no el pitch.
+ *  - Rate 1.05 → 0.98: hablar ligeramente por debajo del ritmo nominal
+ *    del motor deja respirar las frases (los TTS apuran demasiado por
+ *    defecto — la calma lee como seguridad y cercanía, no lentitud).
+ *  - breathiness: la cadena humana introduce micro-respiraciones; se
+ *    simulan insertando comas de respiración en humanize().
  *
  * Locale chain: es-MX primero (calidez latina), luego es-US, es-ES, es genérico.
  */
 data class VoiceProfile(
     val name: String = "IVANNA",
     val locale: Locale = Locale("es", "MX"),
-    val pitch: Float = 1.30f,
-    val speechRate: Float = 1.05f,
+    val pitch: Float = 1.18f,
+    val speechRate: Float = 0.98f,
     val preferNeuralVoices: Boolean = true,
     val fallbackLocales: List<Locale> = listOf(
         Locale("es", "US"),
@@ -169,18 +176,31 @@ class IvannaVoiceEngine(
         return sb.toString().trim().replace(Regex("  +"), " ")
     }
 
-    enum class IntentTone { SIMPLE, MUSICAL, TECHNICAL, AFFIRMATION, PLAYFUL, EMPATHETIC }
+    enum class IntentTone {
+        SIMPLE, MUSICAL, TECHNICAL, AFFIRMATION, PLAYFUL, EMPATHETIC,
+        INTIMATE,    // voz baja y cercana — susurro cálido, confidencias
+        EXCITED,     // sorpresa/entusiasmo genuino (sube pitch y ritmo)
+        SOOTHING,    // calma profunda — bad news o el usuario frustrado
+        STORYTELLER  // narrativa: ritmo pausado con caídas de frase
+    }
 
     fun speakWithIntent(text: String, tone: IntentTone) {
         val t = tts ?: return
         if (_state.value != VoiceState.READY && _state.value != VoiceState.SPEAKING) return
+        // Curvas prosódicas de oído: la diferencia entre "robótica" y
+        // "humana" vive en cuánto varían rate+pitch dentro de la frase.
+        // Cada tono tiene su propia firma — ninguno es neutro plano.
         val (rate, pitch) = when (tone) {
-            IntentTone.SIMPLE      -> profile.speechRate           to profile.pitch
-            IntentTone.MUSICAL     -> (profile.speechRate * 0.90f) to (profile.pitch * 1.02f)
-            IntentTone.TECHNICAL   -> (profile.speechRate * 0.83f) to  profile.pitch
-            IntentTone.AFFIRMATION -> (profile.speechRate * 1.05f) to  profile.pitch
-            IntentTone.PLAYFUL     -> (profile.speechRate * 1.08f) to (profile.pitch * 1.05f)
-            IntentTone.EMPATHETIC  -> (profile.speechRate * 0.85f) to (profile.pitch * 0.97f)
+            IntentTone.SIMPLE      -> profile.speechRate            to profile.pitch
+            IntentTone.MUSICAL     -> (profile.speechRate * 0.92f) to (profile.pitch * 1.03f)
+            IntentTone.TECHNICAL   -> (profile.speechRate * 0.88f) to (profile.pitch * 0.99f)
+            IntentTone.AFFIRMATION -> (profile.speechRate * 1.03f) to (profile.pitch * 1.01f)
+            IntentTone.PLAYFUL     -> (profile.speechRate * 1.06f) to (profile.pitch * 1.06f)
+            IntentTone.EMPATHETIC  -> (profile.speechRate * 0.88f) to (profile.pitch * 0.96f)
+            IntentTone.INTIMATE    -> (profile.speechRate * 0.82f) to (profile.pitch * 0.94f)
+            IntentTone.EXCITED     -> (profile.speechRate * 1.10f) to (profile.pitch * 1.08f)
+            IntentTone.SOOTHING    -> (profile.speechRate * 0.80f) to (profile.pitch * 0.95f)
+            IntentTone.STORYTELLER -> (profile.speechRate * 0.90f) to (profile.pitch * 1.00f)
         }
         runCatching { t.setSpeechRate(rate); t.setPitch(pitch) }
         speak(text)
