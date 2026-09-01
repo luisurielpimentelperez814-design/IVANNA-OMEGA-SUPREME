@@ -49,6 +49,25 @@ class AudioEngine {
 
         @JvmStatic
         private external fun nativeSetRouteProfileJni(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
+
+        // FIX DAC USB-C: bypass del HRTF al cambiar ruta de audio a USB-C.
+        // Llamar nativeSetHrtfWetDryStatic(0f) + nativeFlushHrtfHistoryStatic()
+        // cuando Android rota al DAC; restaurar con nativeSetHrtfWetDryStatic(1f)
+        // tras ~150ms (History ya limpio, sin riesgo de ruido).
+        fun nativeSetHrtfWetDryStatic(wet: Float) {
+            if (!libLoaded) return
+            runCatching { nativeSetHrtfWetDryJni(wet.coerceIn(0f, 1f)) }
+                .onFailure { Log.w(TAG, "nativeSetHrtfWetDry: $it") }
+        }
+
+        fun nativeFlushHrtfHistoryStatic() {
+            if (!libLoaded) return
+            runCatching { nativeFlushHrtfHistoryJni() }
+                .onFailure { Log.w(TAG, "nativeFlushHrtfHistory: $it") }
+        }
+
+        @JvmStatic private external fun nativeSetHrtfWetDryJni(wet: Float)
+        @JvmStatic private external fun nativeFlushHrtfHistoryJni()
     }
 
     private var audioRecord: AudioRecord? = null

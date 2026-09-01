@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 
 /**
@@ -123,6 +125,7 @@ object AudioRouteManager {
 
     private fun applyRoute(route: OutputRoute) {
         if (route == currentRoute) return
+        val previousRoute = currentRoute
         currentRoute = route
         val p = profileFor(route)
         Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
@@ -136,5 +139,32 @@ object AudioRouteManager {
         com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
         )
+
+        // FIX DAC USB-C: al conectar un DAC USB-C, el historial de convolución
+        // HRTF (m_histL/m_histR) contiene muestras de la ruta anterior. La
+        // siguiente llamada a processBinauralScene() las convoluciona y produce
+        // el ruido "tssss" (canal de TV sin señal). Secuencia de fix:
+        //   1. setWetDry(0) → bypass inmediato, sin convolución esta iteración
+        //   2. flushHistory() → memset(0) del historial: corta la fuente de ruido
+        //   3. postDelayed(150ms) → restaurar wet=1.0 cuando el history esté limpio
+        //      (2–3 frames a 48kHz son ~16ms; 150ms es margen amplio para cualquier SR)
+        // Al salir del USB: restaurar wet=1.0 inmediatamente (history ya tiene
+        // muestras limpias del nuevo dispositivo de salida).
+        if (route == OutputRoute.USB) {
+            AudioEngine.nativeSetHrtfWetDryStatic(0f)
+            AudioEngine.nativeFlushHrtfHistoryStatic()
+            Handler(Looper.getMainLooper()).postDelayed({
+                // Solo restaurar si seguimos en ruta USB (el usuario no desconectó
+                // el DAC durante la ventana de 150ms).
+                if (currentRoute == OutputRoute.USB) {
+                    AudioEngine.nativeSetHrtfWetDryStatic(1f)
+                    Log.i(TAG, "HRTF restaurado a wet=1.0 tras flush DAC USB-C")
+                }
+            }, 150L)
+        } else if (previousRoute == OutputRoute.USB) {
+            // Saliendo de USB → aseguramos wet=1.0 en la nueva ruta
+            AudioEngine.nativeSetHrtfWetDryStatic(1f)
+            Log.i(TAG, "HRTF restaurado a wet=1.0 al salir de ruta USB")
+        }
     }
 }
