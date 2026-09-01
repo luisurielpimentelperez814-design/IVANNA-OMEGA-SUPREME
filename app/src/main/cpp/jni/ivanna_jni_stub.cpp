@@ -34,6 +34,9 @@ extern "C" {
     void  ivanna_set_stereo_width(float width);
     float ivanna_get_lufs();
     float ivanna_get_peak_dbfs();
+    // FIX DAC USB-C: control del wet/dry y flush del HrtfManager
+    void ivanna_set_hrtf_wet_dry(float wet);
+    void ivanna_flush_hrtf_history();
 #ifdef __cplusplus
 }
 #endif
@@ -169,5 +172,24 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetRoutePro
     ivanna_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
     LOGI("RouteProfile (companion): bass=%.2f dialog=%.2f widener=%.2f",
          bassBoostDb, dialogBoostDb, widenerMult);
+}
+
+// ── FIX DAC USB-C: JNI → ivanna_set_hrtf_wet_dry / ivanna_flush_hrtf_history ──
+// AudioEngine.kt companion los expone como nativeSetHrtfWetDryJni /
+// nativeFlushHrtfHistoryJni (@JvmStatic); AudioRouteManager los llama al detectar
+// ruta USB para silenciar el HRTF antes de que los buffers residuales generen
+// el ruido "tssss" de canal de TV sin señal.
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetHrtfWetDryJni(
+    JNIEnv* /*env*/, jclass /*clazz*/, jfloat wet
+) {
+    if (!std::isfinite(wet)) { LOGE("nativeSetHrtfWetDryJni: NaN/Inf — ignorado"); return; }
+    ivanna_set_hrtf_wet_dry(wet);
+}
+
+JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeFlushHrtfHistoryJni(
+    JNIEnv* /*env*/, jclass /*clazz*/
+) {
+    ivanna_flush_hrtf_history();
+    LOGI("HRTF history flushed via JNI");
 }
 

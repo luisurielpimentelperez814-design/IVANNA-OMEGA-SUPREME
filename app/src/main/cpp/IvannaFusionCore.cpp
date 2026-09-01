@@ -8,6 +8,13 @@
 #include "IvannaSuperAgentMemory.hpp"
 #include "IvannaAudioClassifier.hpp"
 #include <iostream>
+#include <atomic>
+
+// FIX DAC USB-C: declaraciones extern de los atomics del orchestrator.
+// ivanna_set_hrtf_wet_dry() / ivanna_flush_hrtf_history() los controlan
+// desde Kotlin vía JNI cuando el routing cambia al DAC USB-C.
+extern std::atomic<float> g_hrtf_wet_dry;
+extern std::atomic<bool>  g_hrtf_flush_req;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -95,6 +102,15 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     m_psycho->predictAndMitigateFatigue(buffer);
     m_evoEq->processNEON(buffer);
     m_psycho->applyMaskingCompensation(buffer);
+
+    // FIX DAC USB-C: aplicar wet/dry y flush antes de la convolución.
+    // g_hrtf_flush_req es un one-shot: se consume aquí y HrtfManager::setWetDry()
+    // persiste hasta que Kotlin lo cambie de nuevo (setWetDry(1f) tras ~150ms).
+    if (g_hrtf_flush_req.exchange(false, std::memory_order_acq_rel)) {
+        m_hrtf->flushHistory();
+    }
+    m_hrtf->setWetDry(g_hrtf_wet_dry.load(std::memory_order_relaxed));
+
     m_hrtf->processBinauralScene(buffer);
 
     if (m_goldenEarActive) {

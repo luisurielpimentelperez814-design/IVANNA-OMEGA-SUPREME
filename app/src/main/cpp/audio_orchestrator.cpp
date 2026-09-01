@@ -276,6 +276,30 @@ extern "C" float ivanna_get_peak_dbfs()
     return g_orch.lastPeakDbfs;
 }
 
+// ── HRTF wet/dry y flush — fix ruido DAC USB-C ────────────────────────────────
+// g_hrtf_wet_dry: mezcla wet/dry del HrtfManager. 0=bypass puro, 1=HRTF completo.
+// g_hrtf_flush_req: flag lock-free que IvannaFusionCore.cpp consume una sola vez
+// para llamar flushHistory() antes del siguiente bloque de convolución.
+// Patrón: atómicos planos visibles por ambas translation units sin mutex de audio.
+std::atomic<float> g_hrtf_wet_dry{1.0f};
+std::atomic<bool>  g_hrtf_flush_req{false};
+
+extern "C" void ivanna_set_hrtf_wet_dry(float wet)
+{
+    const float clamped = (wet < 0.f) ? 0.f : (wet > 1.f) ? 1.f : wet;
+    g_hrtf_wet_dry.store(clamped, std::memory_order_relaxed);
+    ALOG("HRTF wet/dry → %.2f", clamped);
+}
+
+extern "C" void ivanna_flush_hrtf_history()
+{
+    // Señaliza al hilo de audio que limpie m_histL/m_histR antes del
+    // próximo bloque. El flag se consume en IvannaFusionCore::process().
+    g_hrtf_flush_req.store(true, std::memory_order_release);
+    ALOG("HRTF flushHistory solicitado");
+}
+
+
 
 extern "C" void ivanna_orchestrate(
     float* buffer,
