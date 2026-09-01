@@ -414,7 +414,9 @@ private:
         constexpr float k = 0.08f;
         auto smooth = [&](float& cur, float target) {
             cur += (target - cur) * k;
-        };
+        }
+
+    const AdaptiveParameters& getSmoothParameters() const { return smoothParams_; };
         smooth(smoothParams_.compressorThreshold, targetParams_.compressorThreshold);
         smooth(smoothParams_.compressorRatio,     targetParams_.compressorRatio);
         smooth(smoothParams_.exciterAmount,       targetParams_.exciterAmount);
