@@ -241,3 +241,38 @@ allow shell adb_data_file dir read
 allow shell adb_data_file dir open
 allow shell proc_net file read
 allow shell proc_net file open
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.0 — VARIANTES untrusted_app_XX (Android 11+) — CAUSA RAIZ del socket
+# DESCONECTADO con daemon CORRIENDO:
+#   Android 11+ asigna a cada app un dominio variante segun targetSdk:
+#   untrusted_app_25/27/29/30/32/33/34. La regla base "allow untrusted_app ..."
+#   NO cubre esas variantes — son tipos distintos, no heredan las reglas del
+#   tipo base. Resultado: la app (targetSdk 34/35 → untrusted_app_32) hacia
+#   connect() a @omega_daemon_socket y SELinux lo denegaba con EACCES aunque
+#   el daemon estuviera vivo y el socket bindeado. La UI mostraba
+#   "daemon CORRIENDO / socket DESCONECTADO" — exactamente el sintoma.
+#   service.sh aplica linea por linea si --apply falla: los tipos que no
+#   existan en esta version de Android se loguean como rechazados, sin mas.
+# ═══════════════════════════════════════════════════════════════════════════════
+allow untrusted_app_25 su unix_stream_socket connectto
+allow untrusted_app_25 magisk unix_stream_socket connectto
+allow untrusted_app_27 su unix_stream_socket connectto
+allow untrusted_app_27 magisk unix_stream_socket connectto
+allow untrusted_app_29 su unix_stream_socket connectto
+allow untrusted_app_29 magisk unix_stream_socket connectto
+allow untrusted_app_30 su unix_stream_socket connectto
+allow untrusted_app_30 magisk unix_stream_socket connectto
+allow untrusted_app_32 su unix_stream_socket connectto
+allow untrusted_app_32 magisk unix_stream_socket connectto
+allow untrusted_app_33 su unix_stream_socket connectto
+allow untrusted_app_33 magisk unix_stream_socket connectto
+allow untrusted_app_34 su unix_stream_socket connectto
+allow untrusted_app_34 magisk unix_stream_socket connectto
+allow untrusted_app_25 untrusted_app_25 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_27 untrusted_app_27 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_29 untrusted_app_29 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_30 untrusted_app_30 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_32 untrusted_app_32 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_33 untrusted_app_33 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_34 untrusted_app_34 unix_stream_socket { create connect read write getopt setopt getattr shutdown }

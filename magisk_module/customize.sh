@@ -109,8 +109,20 @@ set_perm_recursive "$MODPATH/core" root root 0755 0755
 # service.sh también lo aplica en boot para sobrevivir reinicios de SELinux.
 ui_print "- Aplicando reglas SELinux (socket daemon)..."
 if command -v magiskpolicy >/dev/null 2>&1; then
-    magiskpolicy --live --apply "$MODPATH/sepolicy.rule"
-    ui_print "  ✓ SELinux rules aplicadas (live)"
+    # FIX: --apply aborta al primer error (p.ej. tipo untrusted_app_34
+    # inexistente en Android 12) y NO aplica NINGUNA regla — la app quedaba
+    # sin connectto hasta el proximo boot. Fallback linea por linea:
+    if magiskpolicy --live --apply "$MODPATH/sepolicy.rule" 2>/dev/null; then
+        ui_print "  ✓ SELinux rules aplicadas (live)"
+    else
+        ui_print "  ! --apply fallo; aplicando regla por regla..."
+        SE_OK=0; SE_FAIL=0
+        while IFS= read -r RULE; do
+            case "$RULE" in ''|'#'*) continue ;; esac
+            if magiskpolicy --live "$RULE" 2>/dev/null; then SE_OK=$((SE_OK+1)); else SE_FAIL=$((SE_FAIL+1)); fi
+        done < "$MODPATH/sepolicy.rule"
+        ui_print "  ✓ SELinux: $SE_OK reglas aplicadas, $SE_FAIL omitidas (tipos ausentes en esta version)"
+    fi
 else
     ui_print "  ! magiskpolicy no disponible — las reglas se aplicarán en el próximo boot"
 fi
