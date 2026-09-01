@@ -551,7 +551,18 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             val chunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
-                            DSPBridge.process(chunk, chunkFrames)
+                            // FIX (fase/eco con sliders al máximo): si el daemon system-wide está
+                            // conectado, el módulo YA procesa este mismo audioSessionId vía
+                            // omega_effect en AudioFlinger — procesar aquí además duplica la
+                            // cadena DSP (misma señal por dos rutas con latencias distintas →
+                            // eco/desfase, peor cuanto mayor el nivel). Con el daemon activo
+                            // el procesado local se omite; sin daemon (app standalone) corre
+                            // igual que antes. Los motores auxiliares (NPE/Volterra/Concert)
+                            // se saltan también: viven en la misma cadena local.
+                            val systemWideActive = com.ivanna.omega.magisk.OmegaEngineBridge.isConnected
+                            if (!systemWideActive) {
+                                DSPBridge.process(chunk, chunkFrames)
+                            }
                             if (com.ivanna.omega.core.IvannaNativeLib.isLoaded &&
                                 analyzeTickCounter.incrementAndGet() % 50 == 0) {
                                 runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeAnalyzeAudio(chunk) }
