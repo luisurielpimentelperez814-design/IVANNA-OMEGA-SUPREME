@@ -155,7 +155,30 @@ component_isolate_execute() {
     "${CMD[@]}" >> "$COMP_DIR/stdout.log" 2>&1 &
     local PID=$!
     echo "$PID" > "$COMP_DIR/pid"
-    
+
+    # FIX (socket ausente en /proc/net/unix — el daemon crasheaba antes del
+    # bind y el panel mostraba CORRIENDO pero DESCONECTADO): el executor solo
+    # guardaba el PID sin confirmar que el proceso sobrevivió al arranque.
+    # Ahora, para el DAEMON, espera a que el socket abstracto quede bindeado
+    # (visible en /proc/net/unix) y loguea el resultado real — si el binario
+    # murió (ELF corrupto, ENOEXEC, bind fallido), queda registrado aquí en
+    # vez de fallar en silencio y dejar el panel sin pista de la causa.
+    if [ "$COMP_ID" = "DAEMON" ]; then
+        local i=0
+        while [ $i -lt 20 ]; do
+            if grep -q "@omega_daemon_socket" /proc/net/unix 2>/dev/null; then
+                observatory_log "ISOLATION" "DAEMON bindeó @omega_daemon_socket OK (intento $i)"
+                break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+                observatory_log "ISOLATION" "FATAL: DAEMON murió antes del bind — ver $COMP_DIR/stdout.log"
+                memory_core_record "DAEMON_BIND_FAIL" "proceso muerto pre-bind, stdout.log tiene la causa"
+                break
+            fi
+            i=$((i+1)); sleep 0.5 2>/dev/null || sleep 1
+        done
+    fi
+
     memory_core_record "COMPONENT_START" "$COMP_ID PID=$PID"
 }
 
