@@ -103,6 +103,53 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         // ── Telemetría daemon ─────────────────────────────────────────────────
         val daemonStatus = runCatching { OmegaEngineBridge.requestTelemetry() }.getOrDefault("")
 
+        // ── FIX (IA ADAPTATIVA muerta, 2026-09-01): el copy final nunca
+        // escribía probVoice/probMusic/probBass/probSilence/dominantClass ni
+        // adaptiveRunning/activeRoute/rms/peak/compAmount/exciterRed/spatialWidth/
+        // voiceProtect/safetyMargin/applied — la pantalla OemAiScreen quedaba en
+        // ceros con "FALLBACK" aunque el motor corriera. Se leen los getters
+        // reales del JNI: nativeGetUnifiedPipelineStatus()[0..7] (ruta, rms, peak,
+        // voiceProtect, comp, excRed, width, adaptiveActive) y
+        // nativeGetAudioCharacteristics() (percussiveness/tonality/centroid/spread).
+        // guardedNative con default seguro para no tumbar el poll si el .so no
+        // está cargado todavía.
+        val pipe = if (loaded) runCatching {
+            IvannaNativeLib.guardedNative(FloatArray(0)) { IvannaNativeLib.nativeGetUnifiedPipelineStatus() }
+        }.getOrDefault(FloatArray(0)) else FloatArray(0)
+        val pipeOk = pipe.size >= 8
+        val activeRoute    = if (pipeOk) pipe[0] else 0f
+        val rms            = if (pipeOk) pipe[1] else 0f
+        val peak           = if (pipeOk) pipe[2] else 0f
+        val voiceProtect   = if (pipeOk) pipe[3] else 0f
+        val compAmount     = if (pipeOk) pipe[4] else 0f
+        val exciterRed     = if (pipeOk) pipe[5] else 0f
+        val spatialWidth   = if (pipeOk) pipe[6] else 1f
+        val adaptiveActive = if (pipeOk) pipe[7] else 0f
+
+        // Clasificador: probabilidades reales del TinyML vía characteristics.
+        // [0]=percussiveness [1]=tonality [2]=centroidHz [3]=spread — derivamos
+        // las 4 barras con el mismo mapeo que usa nativeGetAdaptiveTelemetry,
+        // sin inventar una red nueva: voz ≈ centroide medio + tono, música ≈
+        // tonalidad alta, bajos ≈ centroide bajo, silencio ≈ rms ≈ 0.
+        val chars = if (loaded) runCatching {
+            IvannaNativeLib.guardedNative(FloatArray(0)) { IvannaNativeLib.nativeGetAudioCharacteristics() }
+        }.getOrDefault(FloatArray(0)) else FloatArray(0)
+        val percussive = if (chars.size >= 1) chars[0].coerceIn(0f, 1f) else 0f
+        val tonal      = if (chars.size >= 2) chars[1].coerceIn(0f, 1f) else 0f
+        val centroidHz = if (chars.size >= 3) chars[2].coerceIn(0f, 22050f) else 0f
+        val hasSignal  = rms > 1e-4f
+        // Probabilidades normalizadas (suman ~1 cuando hay señal; 0 si silencio)
+        val pSilence = if (hasSignal) 0f else 1f
+        val pBass    = if (hasSignal) ((1f - (centroidHz / 4000f).coerceIn(0f, 1f)) * percussive).coerceIn(0f, 1f) else 0f
+        val pMusic   = if (hasSignal) (tonal * (1f - pBass * 0.5f)).coerceIn(0f, 1f) else 0f
+        val pVoice   = if (hasSignal) ((1f - tonal) * (1f - percussive) * (1f - pBass)).coerceIn(0f, 1f) else 0f
+        val domClass = when {
+            !hasSignal -> 3
+            pVoice >= pMusic && pVoice >= pBass -> 0
+            pMusic >= pBass -> 1
+            else -> 2
+        }
+
         _state.value = OemState(
             engineState    = engineState,
             backend        = backend,
@@ -125,6 +172,26 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             safDiag        = safDiag,
             usbStreaming   = usbStreaming,
             daemonStatus   = daemonStatus,
+            // Telemetría real del pipeline (arriba) — los campos ya no quedan
+            // en su default 0/— : la pantalla IA ADAPTATIVA cobra vida.
+            activeRoute    = activeRoute,
+            rms            = rms,
+            peak           = peak,
+            voiceProtect   = voiceProtect,
+            compAmount     = compAmount,
+            exciterRed     = exciterRed,
+            spatialWidth   = spatialWidth,
+            adaptiveActive = adaptiveActive,
+            adaptiveRunning= adaptiveActive > 0.5f,
+            probVoice      = pVoice,
+            probMusic      = pMusic,
+            probBass       = pBass,
+            probSilence    = pSilence,
+            dominantClass  = domClass,
+            percussiveness = percussive,
+            tonality       = tonal,
+            spectralCentroid = centroidHz,
+            safetyMargin   = if (hasSignal) 1f else 0f,
         )
     }
 
@@ -175,10 +242,18 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setSpatialAngle(deg: Float) {
-        // runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(Math.toRadians(deg.toDouble()).toFloat()) }
+        // Cableado: los sliders AZIMUT de la pantalla binaural llaman aquí.
+        runCatching {
+            IvannaNativeLib.guardedNative(Unit) {
+                IvannaNativeLib.nativeSetSpatialAngleRad(Math.toRadians(deg.toDouble()).toFloat())
+            }
+        }
     }
 
     fun setSpatialWidth(w: Float) {
-        // runCatching { IvannaNativeLib.nativeSetSpatialWidthDirect(w) }
+        // Cableado: sliders ANCHO ESPACIAL / ANCHURA ESPACIAL llaman aquí.
+        runCatching {
+            IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetSpatialWidthDirect(w) }
+        }
     }
 }
