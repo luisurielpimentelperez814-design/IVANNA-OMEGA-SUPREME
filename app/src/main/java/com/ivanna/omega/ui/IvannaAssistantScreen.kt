@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -164,6 +168,15 @@ fun IvannaAssistantScreen(
                 onClear     = { vm.clearMemory() }
             )
             Spacer(Modifier.height(24.dp))
+
+            // ── Conexión Gemini ────────────────────────────────────────────
+            GeminiConnectPanel(
+                connected = panel.geminiConnected,
+                status    = panel.geminiStatus,
+                onConnect = { key -> vm.setGeminiApiKey(key) },
+                onTest    = { vm.testGeminiConnection() }
+            )
+            Spacer(Modifier.height(8.dp))
 
             // ── Controles ─────────────────────────────────────────────────
             MicSection(
@@ -562,6 +575,221 @@ private fun MemoryPanel(
                 cursorColor          = AuroraCyan
             )
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GeminiConnectPanel — conexión a Gemini 1.5 Flash
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Panel de conexión a Gemini 1.5 Flash.
+ *
+ * Muestra el estado de conexión actual, un campo para ingresar la API Key
+ * y los botones Conectar / Probar. La key se persiste en SharedPreferences
+ * vía IvannaGeminiAgent.setApiKey(key, context) → sobrevive reinicios.
+ *
+ * Diseño Aurora Obsidiana: borde amarillo ámbar cuando desconectado,
+ * verde fosforescente cuando conectado.
+ */
+@Composable
+private fun GeminiConnectPanel(
+    connected: Boolean,
+    status   : String,
+    onConnect: (String) -> Unit,
+    onTest   : () -> Unit
+) {
+    var keyInput   by remember { mutableStateOf("") }
+    var showKey    by remember { mutableStateOf(false) }
+    var expanded   by remember { mutableStateOf(!connected) }
+
+    val accentColor = if (connected) PhosphorGreen else AmberSignal
+
+    // Pulso animado del indicador de estado
+    val infiniteAnim = rememberInfiniteTransition(label = "geminiPulse")
+    val pulse by infiniteAnim.animateFloat(
+        initialValue   = 0.55f,
+        targetValue    = 1.0f,
+        animationSpec  = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        color  = ObsidianSoft,
+        shape  = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.40f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+
+            // ── Header: estado + toggle ────────────────────────────────────
+            Row(
+                modifier          = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Indicador luminoso de conexión
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .alpha(if (connected) 1f else pulse)
+                        .background(accentColor, CircleShape)
+                )
+                Spacer(Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text       = "GEMINI 1.5 FLASH",
+                        color      = accentColor,
+                        style      = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    )
+                    Text(
+                        text  = status,
+                        color = if (connected) PhosphorGreen else TextSecondary,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
+                // Botón de prueba (solo cuando conectado y expandido)
+                if (connected) {
+                    OutlinedButton(
+                        onClick = onTest,
+                        border  = androidx.compose.foundation.BorderStroke(1.dp, PhosphorGreen.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text("Probar", color = PhosphorGreen,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = TextMuted,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // ── Cuerpo expandible: campo de key + botón conectar ──────────
+            if (expanded) {
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    text  = "Ingresa tu Google AI Studio API Key para activar IVANNA con " +
+                            "Gemini 1.5 Flash. Sin key, IVANNA opera en modo offline con " +
+                            "inteligencia on-device completa.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value         = keyInput,
+                    onValueChange = { keyInput = it },
+                    modifier      = Modifier.fillMaxWidth(),
+                    placeholder   = {
+                        Text("AIzaSy…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted)
+                    },
+                    singleLine            = true,
+                    visualTransformation  = if (showKey) VisualTransformation.None
+                                           else PasswordVisualTransformation(),
+                    keyboardOptions       = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction    = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (keyInput.isNotBlank()) {
+                            onConnect(keyInput)
+                            expanded = false
+                        }
+                    }),
+                    trailingIcon = {
+                        IconButton(onClick = { showKey = !showKey }) {
+                            Icon(
+                                imageVector = if (showKey) Icons.Default.VisibilityOff
+                                              else Icons.Default.Visibility,
+                                contentDescription = if (showKey) "Ocultar key" else "Mostrar key",
+                                tint = TextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = accentColor,
+                        unfocusedBorderColor = ObsidianEdge,
+                        focusedTextColor     = TextPrimary,
+                        unfocusedTextColor   = TextSecondary,
+                        cursorColor          = accentColor
+                    )
+                )
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Botón principal: Conectar
+                    Button(
+                        onClick  = {
+                            if (keyInput.isNotBlank()) {
+                                onConnect(keyInput)
+                                expanded = false
+                            }
+                        },
+                        enabled  = keyInput.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor = accentColor.copy(alpha = 0.20f),
+                            contentColor   = accentColor
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, accentColor.copy(alpha = 0.60f)
+                        )
+                    ) {
+                        Icon(Icons.Default.Link, contentDescription = null,
+                            modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text  = if (connected) "Actualizar key" else "Conectar a Gemini",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Botón: Probar conexión actual
+                    if (connected) {
+                        OutlinedButton(
+                            onClick = onTest,
+                            border  = androidx.compose.foundation.BorderStroke(
+                                1.dp, PhosphorGreen.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Text("Probar", color = PhosphorGreen,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text  = "Obtén tu key gratis en aistudio.google.com",
+                    color = TextMuted.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
     }
 }
 
