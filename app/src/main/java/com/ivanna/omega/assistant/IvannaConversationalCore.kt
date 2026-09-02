@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Stateful pero thread-safe: MutableStateFlow para el estado público, solo
  * accedido desde Dispatchers.IO en IvannaAssistant.
  *
- * No duplica IvannaContextMemory (SharedPreferences entre sesiones): este core
+ * No duplica IvannaCognitiveCore (SharedPreferences entre sesiones): este core
  * vive solo en RAM durante la sesión activa. Al terminar la sesión,
  * IvannaAssistant.clearMemory() limpia ambos.
  */

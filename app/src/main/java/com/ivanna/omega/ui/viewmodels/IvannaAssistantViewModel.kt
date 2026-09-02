@@ -7,7 +7,7 @@ import com.ivanna.omega.agent.IvannaAgentCore
 import com.ivanna.omega.assistant.IvannaAcousticBrain
 import com.ivanna.omega.assistant.IvannaAssistant
 import com.ivanna.omega.assistant.IvannaCognitiveCore
-import com.ivanna.omega.assistant.IvannaContextMemory
+import com.ivanna.omega.assistant.core.IvannaCognitiveCore
 import com.ivanna.omega.assistant.IvannaListenerProfile
 import com.ivanna.omega.assistant.SpeechState
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +82,7 @@ data class AssistantPanelState(
  *                  → IvannaAgentCore → IvannaVoiceEngine
  *
  * Integra memoria (FASE 13):
- *   IvannaListenerProfile + IvannaContextMemory → paneles de UI
+ *   IvannaListenerProfile + IvannaCognitiveCore → paneles de UI
  *
  * El ViewModel nunca escribe al hilo de audio. Toda la coordinación ocurre
  * en viewModelScope (Dispatchers.Main por defecto para flows de UI,
@@ -93,7 +93,7 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     // ── Núcleos ───────────────────────────────────────────────────────────
     private val assistant = IvannaAssistant(app)
     private val profile   = IvannaListenerProfile(app)
-    private val memory    = IvannaContextMemory(app)
+    private val memory    = com.ivanna.omega.assistant.core.IvannaCognitiveCore
 
     // ── Estado público ────────────────────────────────────────────────────
     private val _panel = MutableStateFlow(AssistantPanelState())
@@ -107,15 +107,15 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
      *  y refleja disponibilidad en el panel. El agente resuelve en cascada:
      *  setApiKey > persistida > BuildConfig — este setter es la fuente UI. */
     fun setGeminiApiKey(key: String) {
-        runCatching { com.ivanna.omega.assistant.IvannaGeminiAgent.setApiKey(key.trim()) }
-        val avail = runCatching { com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable() }.getOrDefault(false)
+        runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(key.trim()) }
+        val avail = runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.isConfigured.value }.getOrDefault(false)
         _panel.value = _panel.value.copy(geminiApiKey = key.trim(), geminiAvailable = avail)
     }
 
     init {
         // 0. Reflejar disponibilidad Gemini al abrir (key persistida o BuildConfig)
         runCatching {
-            val avail = com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable()
+            val avail = com.ivanna.omega.assistant.core.SecureConfigurationManager.isConfigured.value
             if (avail) _panel.value = _panel.value.copy(geminiAvailable = true)
         }
         // 1. Observar el estado de IvannaAssistant (ui + speech + voice)
@@ -311,13 +311,13 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
             )
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    val (reply, _) = com.ivanna.omega.assistant.IvannaGeminiAgent
+                    val (reply, _) = com.ivanna.omega.assistant.core.IvannaCognitiveCore
                         .processQuery("ping", "test")
                     reply != "error" && !reply.contains("error", ignoreCase = true)
                 }.getOrDefault(false)
             }
             val avail = runCatching {
-                com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable()
+                com.ivanna.omega.assistant.core.SecureConfigurationManager.isConfigured.value
             }.getOrDefault(false)
             _panel.value = _panel.value.copy(
                 geminiAvailable = ok && avail,

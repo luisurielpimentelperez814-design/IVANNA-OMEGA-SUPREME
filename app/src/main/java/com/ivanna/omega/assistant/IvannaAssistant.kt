@@ -54,7 +54,7 @@ class IvannaAssistant(context: Context) {
 
     private val speech: SpeechInputProvider = IvannaSpeechRecognizer(appContext)
     private val voice = IvannaVoiceEngine(appContext)
-    private val memory = IvannaContextMemory(appContext)
+    private val memory = com.ivanna.omega.assistant.core.IvannaCognitiveCore
     private val voiceController: VoiceController = VoiceController(appContext)
 
     // ── Nuevas capas de inteligencia acústica (FASE 1-5) ─────────────────────
@@ -117,7 +117,7 @@ class IvannaAssistant(context: Context) {
             val scene = memory.lastScene
 
             // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
-            val (agentReply, agentCommand) = IvannaGeminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
+            val (agentReply, agentCommand) = com.ivanna.omega.assistant.core.IvannaCognitiveCore.processQuery(text, "Escena: ${scene ?: "Normal"}")
             
             // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
             val simulatedIntent = agentCommand?.let {
@@ -347,7 +347,7 @@ class IvannaAssistant(context: Context) {
      *
      * Borra:
      *  - IvannaListenerProfile (preferencias aprendidas, historial de ajustes)
-     *  - IvannaContextMemory (escena, explicaciones, preferencias de sesión)
+     *  - IvannaCognitiveCore (escena, explicaciones, preferencias de sesión)
      *  - IvannaLanguageCore.intentHistory (contexto de la conversación)
      *  - IvannaCognitiveCore.lastDecision (estado de la UI de inteligencia)
      *  - IvannaAcousticBrain (cronómetro de sesión + última recomendación

@@ -25,7 +25,7 @@ import kotlin.coroutines.resume
  * con esta voz; si no la hay, o falla la red, o falla la síntesis por
  * cualquier razón, devuelve null/false y quien llama (IvannaVoiceEngine)
  * cae automáticamente al TTS local — el mismo patrón de fallback silencioso
- * que ya usa IvannaGeminiAgent con Gemini.
+ * que ya usa IvannaCognitiveCore con Gemini.
  *
  * NUNCA lanza excepciones hacia afuera: toda esta clase está pensada para
  * fallar en silencio y dejar que el TTS local se haga cargo.
@@ -35,7 +35,7 @@ object IvannaCloudTts {
     private const val TAG = "IvannaCloudTts"
     private const val ENDPOINT = "https://api.openai.com/v1/audio/speech"
 
-    // Placeholder — igual que IvannaGeminiAgent.apiKey, se inyecta en runtime
+    // Placeholder — igual que IvannaCognitiveCore.apiKey, se inyecta en runtime
     // (BuildConfig, Settings, etc.) y mientras no se configure, isConfigured
     // es false y esta clase nunca intenta llamar a la red.
     @Volatile private var apiKey: String = "API_KEY_PLACEHOLDER"

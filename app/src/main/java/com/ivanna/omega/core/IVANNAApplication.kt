@@ -374,7 +374,8 @@ class IVANNAApplication : Application() {
                     }
                 }
 
-                com.ivanna.omega.assistant.IvannaGeminiAgent.init(this@IVANNAApplication)
+                com.ivanna.omega.assistant.core.SecureConfigurationManager.initialize(this@IVANNAApplication)
+                com.ivanna.omega.assistant.core.DynamicContextEngine.init(this@IVANNAApplication)
                 isInitialized = true
                 Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista")
             } catch (e: UnsatisfiedLinkError) {

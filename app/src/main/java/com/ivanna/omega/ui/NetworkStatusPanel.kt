@@ -31,7 +31,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ivanna.omega.assistant.IvannaGeminiAgent
+import com.ivanna.omega.assistant.core.SecureConfigurationManager
+import com.ivanna.omega.assistant.core.IvannaCognitiveCore
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -156,7 +157,7 @@ fun NetworkStatusPanel(
     // Polling 3s de estado de red
     LaunchedEffect(Unit) {
         // Inyectar key guardada al agente al arrancar
-        if (apiKey.isNotBlank()) IvannaGeminiAgent.setApiKey(apiKey)
+        if (apiKey.isNotBlank()) com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(apiKey)
         while (true) {
             val ns = withContext(Dispatchers.IO) { readNetworkState(ctx) }
             netState = ns
@@ -361,10 +362,10 @@ fun NetworkStatusPanel(
                             return@launch
                         }
                         // Inyectar al agente y hacer un ping real
-                        IvannaGeminiAgent.setApiKey(trimmed)
+                        com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
                         val (reply, _) = withContext(Dispatchers.IO) {
                             runCatching {
-                                IvannaGeminiAgent.processQuery("ping", "test")
+                                com.ivanna.omega.assistant.core.IvannaCognitiveCore.processQuery("ping", "test")
                             }.getOrElse { "error" to null }
                         }
                         val ok = reply != "error" && !reply.toString().contains("error", ignoreCase = true)
@@ -376,7 +377,7 @@ fun NetworkStatusPanel(
                             // key inválida o cuota agotada — guardar de todas formas
                             // para que el agente use fallback simulado
                             saveGeminiKey(ctx, trimmed)
-                            IvannaGeminiAgent.setApiKey(trimmed)
+                            com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
                             agentLinked = true
                             apiStatus   = "⚠ Key guardada — el agente usará modo híbrido (simulado + Gemini)"
                         }
@@ -420,7 +421,7 @@ fun NetworkStatusPanel(
                 OutlinedButton(
                     onClick  = {
                         saveGeminiKey(ctx, "")
-                        IvannaGeminiAgent.setApiKey("API_KEY_PLACEHOLDER")
+                        com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey("API_KEY_PLACEHOLDER")
                         agentLinked = false
                         apiStatus   = "Agente desconectado — modo simulado activo"
                         apiKey      = ""
