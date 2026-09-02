@@ -99,4 +99,18 @@ class DynamicContextEngine(context: Context) {
         val dspChainActive: List<String> = emptyList(), val clipEventsLastMinute: Int = 0,
         val currentRmsDb: Float = -96f, val currentPeakDb: Float = -96f
     )
+
+    // ── Singleton pattern para acceso global ───────────────────────────────
+    companion object {
+        @Volatile
+        private var instance: DynamicContextEngine? = null
+
+        fun init(context: Context): DynamicContextEngine {
+            return instance ?: synchronized(this) {
+                instance ?: DynamicContextEngine(context).also { instance = it }
+            }
+        }
+
+        fun getInstance(): DynamicContextEngine? = instance
+    }
 }
