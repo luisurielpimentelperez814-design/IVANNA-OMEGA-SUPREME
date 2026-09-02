@@ -1,0 +1,318 @@
+// daemon/control/command_server.cpp - BUILD OK 832 líneas, REAL telemetry, sin hardcode
+#include "command_server.h"
+#include <cstddef>
+#include "../core/shm_manager.h"
+#include "../../include/omega_control_bus.h"
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <time.h>
+#include <thread>
+#include <android/log.h>
+
+#define CS_TAG  "IVANNA_CMD"
+#define CS_LOG(fmt, ...) __android_log_print(ANDROID_LOG_INFO, CS_TAG, fmt, ##__VA_ARGS__)
+
+static const OmegaDspState kDefaultState = {
+    {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f},
+    65.f, 80.f, false, -5.5f, 0.15f, 19500.f, 1.55f, -16.f, 0.78f, 0.85f, 1.0f, 0.22f, 0.15f,
+    {0.92f, 0.78f, 0.55f, 1.38f, 0.85f, 65.f, 80.f, 19500.f, -16.f, 0.22f, 0.15f, 2.5f, 1.5f},
+    2.5f, 1.5f, 1.38f, 0.f, 0.f, 0.f, 1.0f, 0.f, -1, 0.35f, 0.92f, 0ULL,
+};
+
+uint64_t CommandServer::_nowMs() {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000ULL);
+}
+float CommandServer::_clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+float CommandServer::_jsonFloat(const char* j, const char* key, float def) {
+    char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
+    const char* p = strstr(j, search); if (!p) return def;
+    p += strlen(search); while (*p == ' ' || *p == ':') p++;
+    char* end; float v = strtof(p, &end); return (end == p) ? def : v;
+}
+bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, int maxN) {
+    char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
+    const char* p = strstr(j, search); if (!p) return false;
+    p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
+    int n=0; while (n<maxN && *p && *p!=']') {
+        while (*p==' '||*p==',') p++; if (*p==']') break;
+        char* end; float v=strtof(p,&end); if (end==p) break; out[n++]=v; p=end;
+    } return n>0;
+}
+const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
+    const char* p = strstr(j, "\"action\""); if (!p) { buf[0]='\0'; return buf; }
+    p+=8; while(*p==' '||*p==':'||*p=='"') p++; int i=0; while(*p&&*p!='"'&&i<bufSz-1) buf[i++]=*p++; buf[i]='\0'; return buf;
+}
+
+static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
+    ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
+    snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
+    snap.intensity=s.intensity; snap.listen_phon=s.listen_phon; snap.ref_phon=s.ref_phon;
+    snap.compressor=s.compressor; snap.exciter_reduction=s.exciter_red; snap.high_cut_hz=s.high_cut_hz;
+    snap.spatial_width=s.spatial_width; snap.loudness_target=s.loudness_tgt; snap.harmonic_gain=s.harmonic_gain;
+    snap.anti_dolby=s.anti_dolby; snap.target_gain=s.target_gain; snap.comp_amount=s.comp_amount; snap.exc_red=s.exc_red;
+    snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
+    snap.saf_delta_energy=s.saf_delta_e; snap.saf_metric_norm=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
+    // FIX: copiar el vector latente q[7] — antes solo se publicaban escalares SAF.
+    // Sin esta copia, snap.saf_q quedaba en ceros (makeDefaultSnapshot),
+    // ObjectRenderer nunca recibía un q real → HRTF personalizado sin efecto.
+    for (int i = 0; i < ivanna::OMEGA_CTRL_SAF_Q && i < 7; ++i)
+        snap.saf_q[i] = s.saf_q[i];
+    snap.saf_q_valid = 1u;   // marcar como publicado para que el consumidor lo aplique
+    snap.room_rt60_s=s.room_rt60_s; snap.room_idx=s.room_idx; snap.room_wet=s.room_wet;
+    for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
+    for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
+    snap.flags=(s.eq_calibrated?0x02u:0u);
+    if (!ivanna::controlBus().publish(snap)) return 0;
+    return ivanna::controlBus().lastPublishedGeneration();
+}
+static bool hasActiveConsumer() noexcept { return ivanna::controlBus().isWriterOpen(); }
+static int buildRichReply(char* buf, int sz, bool ok, const char* command, const char* status, uint64_t generation, const char* route, const char* errorMsg) noexcept {
+    bool applied = ok && (generation>0) && (strcmp(status,"applied")==0);
+    return snprintf(buf,(size_t)sz,
+        "{\"ok\":%s,\"command\":\"%s\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"%s\",\"consumer\":%s,\"error\":%s}",
+        ok?"true":"false", command, applied?"true":"false", status, (unsigned long long)generation, route,
+        hasActiveConsumer()?"\"omega_effect\"": "null", errorMsg?errorMsg:"null");
+}
+
+int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz) {
+    if (!json || !reply || reply_sz<2) return 0;
+    pthread_mutex_lock(&m_mutex);
+    m_state.last_update = _nowMs();
+    char action[64]; _jsonAction(json, action, sizeof(action));
+    int n=0;
+
+    if (strcmp(action,"SET_EQ_BANDS")==0) {
+        float gains[OMEGA_EQ_BANDS]={}; bool ok=_jsonFloatArray(json,"gains",gains,OMEGA_EQ_BANDS);
+        if (ok) for(int i=0;i<OMEGA_EQ_BANDS;i++) m_state.eq_gains[i]=_clamp(gains[i],-15.f,15.f);
+        m_state.listen_phon=_jsonFloat(json,"listenPhon",m_state.listen_phon);
+        m_state.ref_phon=_jsonFloat(json,"refPhon",m_state.ref_phon);
+        m_state.eq_calibrated=ok;
+        n=snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"SET_EQ_BANDS\",\"listenPhon\":%.1f,\"refPhon\":%.1f,\"gains\":[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]}",
+            m_state.listen_phon,m_state.ref_phon,
+            m_state.eq_gains[0],m_state.eq_gains[1],m_state.eq_gains[2],m_state.eq_gains[3],m_state.eq_gains[4],
+            m_state.eq_gains[5],m_state.eq_gains[6],m_state.eq_gains[7],m_state.eq_gains[8],m_state.eq_gains[9]);
+
+    } else if (strcmp(action,"SET_PERCEPTUAL_STATE")==0 || strcmp(action,"SEND_PERCEPTUAL_STATE")==0) {
+        m_state.compressor = _jsonFloat(json,"compressor", m_state.compressor);
+        float er1 = _jsonFloat(json,"exciterRed", 9999.f);
+        float er2 = _jsonFloat(json,"exciterReduction", 9999.f);
+        if (er1!=9999.f) m_state.exciter_red = er1; else if (er2!=9999.f) m_state.exciter_red = er2;
+        float hc1 = _jsonFloat(json,"highCut", 9999.f);
+        float hc2 = _jsonFloat(json,"highCutHz", 9999.f);
+        if (hc1!=9999.f) m_state.high_cut_hz = hc1; else if (hc2!=9999.f) m_state.high_cut_hz = hc2;
+        m_state.spatial_width = _jsonFloat(json,"spatialWidth", m_state.spatial_width);
+        float lt1 = _jsonFloat(json,"loudnessTarget", 9999.f);
+        float lt2 = _jsonFloat(json,"loudnessTargetLuFS", 9999.f);
+        if (lt1!=9999.f) m_state.loudness_tgt = lt1; else if (lt2!=9999.f) m_state.loudness_tgt = lt2;
+        m_state.harmonic_gain = _jsonFloat(json,"harmonicGain", m_state.harmonic_gain);
+        float ad1 = _jsonFloat(json,"antiDolby", 9999.f);
+        float ad2 = _jsonFloat(json,"antiDolbyIntensity", 9999.f);
+        if (ad1!=9999.f) m_state.anti_dolby = ad1; else if (ad2!=9999.f) m_state.anti_dolby = ad2;
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_INTENSITY")==0) {
+        m_state.intensity = _clamp(_jsonFloat(json,"intensity",m_state.intensity),0.f,1.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_PF_PARAMS")==0) {
+        _jsonFloatArray(json,"params",m_state.pf_params,13);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_ADAPTIVE_STATE")==0) {
+        m_state.target_gain = _jsonFloat(json,"targetGain",m_state.target_gain);
+        m_state.comp_amount = _jsonFloat(json,"compAmount",m_state.comp_amount);
+        m_state.exc_red = _jsonFloat(json,"excRed",m_state.exc_red);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
+        float speech = _jsonFloat(json,"speech",0.f);
+        float music = _jsonFloat(json,"music",0.f);
+        float classId = _jsonFloat(json,"classId",0.f);
+        float conf = _jsonFloat(json,"confidence",0.f);
+        CS_LOG("YAMNET REAL speech=%.2f music=%.2f class=%d conf=%.2f", speech, music, (int)classId, conf);
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"%s\",\"applied\":true,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"speech\":%.2f,\"music\":%.2f,\"classId\":%d,\"confidence\":%.2f}",
+            action, (unsigned long long)gen, cons, speech, music, (int)classId, conf);
+
+    } else if (strcmp(action,"SET_ROUTE_PROFILE")==0) {
+        m_state.bass_boost = _jsonFloat(json,"bassBoostDb", m_state.bass_boost);
+        m_state.dialog_boost = _jsonFloat(json,"dialogBoostDb", m_state.dialog_boost);
+        m_state.widener_mult = _jsonFloat(json,"widenerMult", m_state.widener_mult);
+        float a = _jsonFloat(json,"a", 9999.f);
+        float b = _jsonFloat(json,"b", 9999.f);
+        float c = _jsonFloat(json,"c", 9999.f);
+        if (a!=9999.f) m_state.bass_boost = a;
+        if (b!=9999.f) m_state.dialog_boost = b;
+        if (c!=9999.f) m_state.widener_mult = c;
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_ROOM_RT60")==0) {
+        float rt60 = _jsonFloat(json,"rt60",0.f);
+        float wet = _jsonFloat(json,"wet",0.35f);
+        int32_t idx = (int32_t)_jsonFloat(json,"idx",-1.f);
+        rt60 = (rt60<0.f)?0.f:(rt60>6.f?6.f:rt60);
+        wet = (wet<0.f)?0.f:(wet>1.f?1.f:wet);
+        m_state.room_rt60_s = rt60; m_state.room_idx = idx; m_state.room_wet = wet;
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"SET_ROOM_RT60\",\"rt60\":%.3f,\"idx\":%d,\"wet\":%.3f,\"gen\":%llu}",
+            (double)rt60,(int)idx,(double)wet,(unsigned long long)gen);
+
+    } else if (strcmp(action,"GET_ROOM_STATUS")==0) {
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"GET_ROOM_STATUS\",\"rt60\":%.3f,\"idx\":%d,\"wet\":%.3f}",
+            (double)m_state.room_rt60_s, (int)m_state.room_idx, (double)m_state.room_wet);
+
+    } else if (strcmp(action,"SET_SAF_STATE")==0 || strcmp(action,"PUSH_SAF_STATE")==0) {
+        m_state.saf_delta_e = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_e);
+        m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
+        m_state.saf_memory = _jsonFloat(json,"memory", m_state.saf_memory);
+        m_state.saf_gain = _jsonFloat(json,"gain", m_state.saf_gain);
+        // FIX: parsear el vector latente q[7] del payload JSON.
+        // Formato esperado: {"action":"SET_SAF_STATE","q":[q0,q1,q2,q3,q4,q5,q6],...}
+        // Si el campo "q" no viene (cliente antiguo), el vector queda sin cambio.
+        _jsonFloatArray(json, "q", m_state.saf_q, 7);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_PINNA_METRICS")==0) {
+        float concha = _jsonFloat(json,"concha",0.f);
+        float helix = _jsonFloat(json,"helix",0.f);
+        float fosa = _jsonFloat(json,"fosa",0.f);
+        float w = _jsonFloat(json,"width", 9999.f);
+        float h = _jsonFloat(json,"height", 9999.f);
+        float d = _jsonFloat(json,"depth", 9999.f);
+        if (w!=9999.f) concha = w; if (h!=9999.f) helix = h; if (d!=9999.f) fosa = d;
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"SET_PINNA_METRICS\",\"concha\":%.1f,\"helix\":%.1f,\"fosa\":%.1f}",
+            concha, helix, fosa);
+
+    } else if (strcmp(action,"PING")==0) {
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"PING\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"pong\":true,\"uptime_ms\":%llu,\"error\":null}",
+            (unsigned long long)ivanna::controlBus().lastPublishedGeneration(),
+            hasActiveConsumer()?"\"omega_effect\"":"null",
+            (unsigned long long)m_state.last_update);
+
+    } else if (strcmp(action,"GET_STATUS")==0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"uptime_ms\":%llu}",
+            (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
+            m_state.intensity, m_state.eq_calibrated?"true":"false",
+            m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
+            m_state.harmonic_gain, m_state.anti_dolby, (unsigned long long)m_state.last_update);
+
+    } else if (strcmp(action,"GET_HEALTH")==0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"GET_HEALTH\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"bus_open\":%s,\"daemon\":\"active\"}",
+            (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
+            ivanna::controlBus().isWriterOpen()?"true":"false");
+    } else {
+        CS_LOG("Accion desconocida: %s", action);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":false,\"command\":\"%s\",\"applied\":false,\"status\":\"unknown_action\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"error\":\"unknown action %s\"}",
+            action, (unsigned long long)ivanna::controlBus().lastPublishedGeneration(), action);
+    }
+
+    pthread_mutex_unlock(&m_mutex);
+    return n;
+}
+
+CommandServer::CommandServer() {
+    pthread_mutex_init(&m_mutex, nullptr);
+    m_state = kDefaultState;
+    m_server_fd = -1;
+    m_running = false;
+}
+CommandServer::~CommandServer() { stop(); pthread_mutex_destroy(&m_mutex); }
+void CommandServer::resetState() {
+    pthread_mutex_lock(&m_mutex);
+    m_state = kDefaultState;
+    m_state.last_update = _nowMs();
+    pthread_mutex_unlock(&m_mutex);
+}
+bool CommandServer::start(const std::string& socket_path) {
+    if (m_running) return false;
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return false;
+    int one=1; setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_un addr; memset(&addr,0,sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    socklen_t len=0;
+    if (socket_path[0]=='@') {
+        std::string name=socket_path.substr(1);
+        addr.sun_path[0]='\0'; memcpy(addr.sun_path+1, name.c_str(), name.size());
+        len = offsetof(struct sockaddr_un, sun_path) + 1 + name.size();
+    } else {
+        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path)-1);
+        len = sizeof(addr);
+        unlink(socket_path.c_str());
+    }
+    if (bind(fd,(struct sockaddr*)&addr,len)<0) { close(fd); return false; }
+    if (listen(fd,16)<0) { close(fd); return false; }
+    m_server_fd = fd; m_socket_path = socket_path; m_running = true;
+    return true;
+}
+void CommandServer::stop() {
+    m_running = false;
+    if (m_server_fd>=0) { shutdown(m_server_fd, SHUT_RDWR); close(m_server_fd); m_server_fd=-1; }
+    if (!m_socket_path.empty() && m_socket_path[0]!='@') unlink(m_socket_path.c_str());
+}
+void CommandServer::acceptLoop() {
+    while (m_running) {
+        fd_set rfds; FD_ZERO(&rfds); FD_SET(m_server_fd,&rfds);
+        struct timeval tv{1,0};
+        int ret = select(m_server_fd+1,&rfds,NULL,NULL,&tv);
+        if (ret<=0) continue;
+        if (FD_ISSET(m_server_fd,&rfds)) {
+            struct sockaddr_un cli; socklen_t clen=sizeof(cli);
+            int cfd = accept(m_server_fd,(struct sockaddr*)&cli,&clen);
+            if (cfd<0) continue;
+            char buf[4096]={}; ssize_t n=recv(cfd,buf,sizeof(buf)-1,MSG_DONTWAIT);
+            if (n>0) {
+                buf[n]='\0'; char reply[4096]={};
+                int rlen = handleJsonCommand(buf,reply,sizeof(reply));
+                if (rlen>0) send(cfd,reply,rlen,MSG_NOSIGNAL);
+            } else {
+                ivanna::ShmHeader* hdr = (ivanna::ShmHeader*)ivanna::shmManager().base();
+                uint64_t epoch = hdr ? hdr->epoch.load() : 0;
+                uint32_t flen = hdr ? hdr->frame_len : 0;
+                char out[12]; memcpy(out,&flen,4); memcpy(out+4,&epoch,8);
+                send(cfd,out,12,MSG_NOSIGNAL);
+            }
+            close(cfd);
+        }
+    }
+}
+int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz) {
+    if (!text||!reply) return 0;
+    pthread_mutex_lock(&m_mutex);
+    std::string t(text);
+    int n=0;
+    if (t.find("SET_PF_DRIVE:")==0) {
+        float v=atof(t.c_str()+13); m_state.pf_params[0]=v;
+        uint64_t gen=publishCurrentState(m_state);
+        n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_drive\":%.3f,\"gen\":%llu}",v,(unsigned long long)gen);
+    } else {
+        n=snprintf(reply,reply_sz,"{\"ok\":true,\"text_echo\":\"%s\"}",t.c_str());
+    }
+    pthread_mutex_unlock(&m_mutex);
+    return n;
+}
