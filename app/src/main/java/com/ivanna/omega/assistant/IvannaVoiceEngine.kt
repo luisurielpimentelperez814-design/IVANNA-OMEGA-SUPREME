@@ -316,11 +316,35 @@ class IvannaVoiceEngine(
             override fun onError(utteranceId: String?, errorCode: Int) { _state.value = VoiceState.READY }
         }
         t.setOnUtteranceProgressListener(listener)
+        // Micro-prosodia por segmento (lo que separa "humana" de "plana"):
+        // la voz humana nunca sostiene pitch/rate constantes dentro de una
+        // frase. Curva natural: apertura ligeramente más alta y rápida,
+        // núcleo estable, y caída suave al cerrar. Los multiplicadores son
+        // deliberadamente sutiles (±4%) — suficiente para romper la monotonía
+        // sin sonar a caricatura. La base la fija el tono (speakWithIntentLocal).
         runCatching {
             segments.forEachIndexed { index, segment ->
                 val isLast = index == segments.lastIndex
                 val id   = "ivanna_${++utteranceCounter}${if (isLast) "_last" else ""}"
                 val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                val n = segments.size
+                val pos = if (n <= 1) 0.5f else index.toFloat() / (n - 1)  // 0..1 a lo largo de la frase
+                val pitchCurve = when {
+                    pos < 0.25f -> 1.03f          // apertura: un punto arriba
+                    pos > 0.75f -> 0.96f          // cierre: caída suave
+                    else        -> 1.00f          // núcleo: estable
+                }
+                val rateCurve = when {
+                    pos < 0.25f -> 1.02f
+                    pos > 0.75f -> 0.97f
+                    else        -> 1.00f
+                }
+                // El tono ya fijó rate/pitch base en el TTS; aquí solo se
+                // modula el segmento actual. Se reestablece al salir.
+                runCatching {
+                    t.setPitch(profile.pitch * pitchCurve)
+                    t.setSpeechRate(profile.speechRate * rateCurve)
+                }
                 t.speak(segment.trim(), mode, null, id)
             }
         }.onFailure { Log.w(TAG, "speak falló: ${it.message}"); _state.value = VoiceState.READY }
