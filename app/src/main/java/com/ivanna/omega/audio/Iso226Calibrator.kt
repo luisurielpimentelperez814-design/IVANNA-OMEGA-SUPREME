@@ -164,14 +164,31 @@ object Iso226Calibrator {
         // quedan exactamente como el usuario los tenía — cero cambio de
         // carácter, solo la curva de compensación.
         val cur = DSPStatePrefs.load(context)
+
+        // FIX (2026-09-01 — "truena al combinar EQ alto + ISO 226"):
+        // La suma delta+usuario no estaba acotada: con el EQ del usuario en
+        // +8.4 dB y compensación ISO de +5 dB se pedían >13 dB por banda,
+        // que con master alto rebasa 0 dBFS antes del limitador → clipping
+        // duro (el "golpe digital"). Ahora:
+        //   1. Cada banda TOTAL se clampa a ±12 dB (clampDbForEq).
+        //   2. Se resta headroom automático del master igual al mayor boost
+        //      positivo resultante, para que la energía pico no crezca.
+        val totLow      = clampDbForEq(low + cur.low)
+        val totMid      = clampDbForEq(mid + cur.mid)
+        val totHigh     = clampDbForEq(high + cur.high)
+        val totPresence = clampDbForEq(presence + cur.presence)
+
+        val maxBoostDb  = maxOf(0f, totLow, totMid, totHigh, totPresence)
+        val safeMaster  = (cur.master - maxBoostDb).coerceIn(-24f, cur.master)
+
         DSPBridge.setParams(
             drive = cur.drive, wet = cur.wet, mix = cur.mix,
             alpha = cur.alpha, beta = cur.beta, gamma = cur.gamma,
             freq = cur.freq, resonance = cur.resonance,
-            low = low + cur.low, mid = mid + cur.mid, high = high + cur.high,
-            presence = presence + cur.presence, master = cur.master
+            low = totLow, mid = totMid, high = totHigh,
+            presence = totPresence, master = safeMaster
         )
-        Log.i(TAG, "ISO 226 → DSPBridge (delta sobre estado actual): low=${"%.2f".format(low)}dB mid=${"%.2f".format(mid)}dB high=${"%.2f".format(high)}dB presence=${"%.2f".format(presence)}dB")
+        Log.i(TAG, "ISO 226 → DSPBridge (delta acotado + headroom): low=${"%.2f".format(totLow)}dB mid=${"%.2f".format(totMid)}dB high=${"%.2f".format(totHigh)}dB presence=${"%.2f".format(totPresence)}dB master=${"%.2f".format(safeMaster)}dB (headroom -${"%.2f".format(maxBoostDb)}dB)")
     }
 
     // ── Aplicar al daemon Magisk vía socket ───────────────────────────────────
