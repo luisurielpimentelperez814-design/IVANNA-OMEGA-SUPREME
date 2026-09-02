@@ -29,9 +29,10 @@ object OmegaEngineBridge {
         if (keepaliveStarted) return
         keepaliveStarted = true
         Thread({
-            while (true) {
+            var alive = true
+            while (alive) {
                 try { connect(); Thread.sleep(5000) }
-                catch (_: InterruptedException) { return }
+                catch (_: InterruptedException) { alive = false }  // return ilegal en lambda SAM → flag
                 catch (_: Throwable) { /* probe ya maneja sus errores */ }
             }
         }, "omega-socket-keepalive").apply { isDaemon = true }.start()

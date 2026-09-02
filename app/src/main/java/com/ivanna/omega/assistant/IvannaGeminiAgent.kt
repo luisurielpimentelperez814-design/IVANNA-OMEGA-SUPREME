@@ -124,7 +124,7 @@ object IvannaGeminiAgent {
             }
         )
         generativeModel = m
-        m
+        return m
     }
 
     /**
