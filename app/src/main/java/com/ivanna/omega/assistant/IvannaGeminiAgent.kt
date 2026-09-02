@@ -7,7 +7,7 @@ import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.ivanna.omega.assistant.core.SecretStore
+import com.ivanna.omega.assistant.core.SecureConfigurationManager
 import com.ivanna.omega.assistant.core.AIContextManager
 import com.ivanna.omega.assistant.core.ConversationMemory
 
@@ -17,15 +17,15 @@ object IvannaGeminiAgent {
 
     fun init(context: Context) {
         appContext = context.applicationContext
-        SecretStore.init(context.applicationContext)
+        SecureConfigurationManager.init(context.applicationContext)
     }
 
     fun setApiKey(key: String) {
-        SecretStore.geminiApiKey = key.trim()
+        SecureConfigurationManager.setApiKey(key.trim())
         generativeModel = null
     }
 
-    fun isAvailable(): Boolean = SecretStore.geminiApiKey.isNotBlank()
+    fun isAvailable(): Boolean = SecureConfigurationManager.isConfigured.value
 
     @Volatile
     private var generativeModel: GenerativeModel? = null
@@ -34,7 +34,7 @@ object IvannaGeminiAgent {
         generativeModel?.let { return it }
         val m = GenerativeModel(
             modelName = "gemini-2.5-flash",
-            apiKey = SecretStore.geminiApiKey,
+            apiKey = SecureConfigurationManager.getApiKey(),
             generationConfig = generationConfig {
                 temperature = 0.6f
                 maxOutputTokens = 300
