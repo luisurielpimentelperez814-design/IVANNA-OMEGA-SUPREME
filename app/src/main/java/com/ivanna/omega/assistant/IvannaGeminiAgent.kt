@@ -50,9 +50,26 @@ object IvannaGeminiAgent {
     private fun resolveApiKey(): String {
         if (apiKey.isNotBlank()) return apiKey
         val ctx = appContext ?: return ""
+        // FIX (build): línea rota por commit f9041566 — `.(GeminiKeyStore…`
+        // no es sintaxis válida y dejaba ctx/edit sin resolver. Lógica real:
+        // 1) Keystore cifrado (TEE) si tiene la key; 2) fallback a prefs en
+        //    claro (legacy) migrándola al Keystore al primer acierto.
         val fromPrefs = runCatching {
-            ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
-                .(GeminiKeyStore.load(ctx) ?: getString("gemini_api_key", "")) ?: ""
+            val secure = GeminiKeyStore.load(ctx)
+            if (!secure.isNullOrBlank()) {
+                secure
+            } else {
+                val plain = ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
+                    .getString("gemini_api_key", "") ?: ""
+                if (plain.isNotBlank()) {
+                    // Migración: guardar cifrada y borrar la versión en claro.
+                    if (GeminiKeyStore.save(ctx, plain)) {
+                        ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
+                            .edit().remove("gemini_api_key").apply()
+                    }
+                }
+                plain
+            }
         }.getOrDefault("")
         if (fromPrefs.isNotBlank()) { apiKey = fromPrefs; return apiKey }
         val fromBuild = runCatching {
@@ -76,10 +93,16 @@ object IvannaGeminiAgent {
     fun setApiKey(key: String) {
         apiKey = key.trim()
         generativeModel = null  // fuerza reconstrucción en el próximo uso
-        appContext?.let {
+        appContext?.let { ctx ->
             runCatching {
-                it.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
-                    if (!GeminiKeyStore.save(ctx, apiKey)) { .edit().putString("gemini_api_key", apiKey).apply() }
+                // FIX (build): referencia a `ctx` inexistente dentro del
+                // lambda (el parámetro era `it`) + `.edit()` suelto.
+                // Guardar cifrada; solo si el Keystore falla, caer a plano.
+                val savedSecure = GeminiKeyStore.save(ctx, apiKey)
+                if (!savedSecure) {
+                    ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
+                        .edit().putString("gemini_api_key", apiKey).apply()
+                }
             }
         }
     }
