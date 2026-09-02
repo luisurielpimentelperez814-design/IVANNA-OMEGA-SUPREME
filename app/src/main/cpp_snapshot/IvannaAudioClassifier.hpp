@@ -57,7 +57,7 @@ public:
         const size_t current_tail = m_tail.load(std::memory_order_acquire);
         
         // Prevent overflow, hard constraints on audio pipeline real-time boundaries
-        if ((current_head + count - current_tail) > Capacity) {
+        if (Capacity - (current_head - current_tail) < count) {
             return false;
         }
         
@@ -93,7 +93,7 @@ public:
     }
 
 private:
-    T m_buffer[Capacity];
+    alignas(64) T m_buffer[Capacity];
     // Cacheline isolation (64-byte padding) mitigates false sharing en arquitecturas SMP
     alignas(64) std::atomic<size_t> m_head;
     alignas(64) std::atomic<size_t> m_tail;

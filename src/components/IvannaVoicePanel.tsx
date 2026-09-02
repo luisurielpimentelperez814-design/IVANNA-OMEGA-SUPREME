@@ -333,7 +333,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
       const res = await fetch('/api/chat', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, system:systemPrompt, messages:history}),
+        body:JSON.stringify({model:'gemini-2.5-pro', max_tokens:1000, system:systemPrompt, messages:history}),
       });
 
       if (!res.ok) throw new Error(`API ${res.status}`);
@@ -484,7 +484,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               <span className="text-[#64748B] font-bold uppercase text-[10px] tracking-wider">Super Agent Status</span>
             </div>
             {[
-              {l:'Motor IA', v:'claude-sonnet-4-6', c:'#38BDF8'},
+              {l:'Motor IA', v:'gemini-2.5-pro', c:'#38BDF8'},
               {l:'VIE Prosody', v:'Adaptativa v1.0', c:'#4ADE80'},
               {l:'Memory Layer', v:`${memory.getPrefs().totalMessages} msgs`, c:'#A855F7'},
               {l:'Emoción', v:emotion, c:ec},

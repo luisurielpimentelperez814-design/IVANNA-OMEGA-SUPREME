@@ -67,7 +67,7 @@ public:
     inline bool push(const T* src, size_t count) noexcept {
         const size_t h = m_head.load(std::memory_order_relaxed);
         const size_t t = m_tail.load(std::memory_order_acquire);
-        if (h + count - t > Capacity) return false;
+        if (Capacity - (h - t) < count) return false;
         
         for (size_t i = 0; i < count; ++i)
             m_buffer[(h + i) & (Capacity - 1)] = src[i];
@@ -93,7 +93,7 @@ public:
              - m_tail.load(std::memory_order_relaxed);
     }
 private:
-    T m_buffer[Capacity];
+    alignas(64) T m_buffer[Capacity];
     alignas(64) std::atomic<size_t> m_head;
     alignas(64) std::atomic<size_t> m_tail;
 };
@@ -139,9 +139,9 @@ private:
 
     // True wait-free, zero-allocation Triple Buffering for lock-free audio thread read
     ALIGN_NEON mutable AIModelOutput m_outputPool[3];
-    mutable std::atomic<AIModelOutput*> m_cleanOutput;
-    mutable AIModelOutput* m_readingOutput;
-    AIModelOutput* m_writingOutput;
+    alignas(64) mutable std::atomic<AIModelOutput*> m_cleanOutput;
+    alignas(64) mutable AIModelOutput* m_readingOutput;
+    alignas(64) AIModelOutput* m_writingOutput;
     
     std::atomic<bool> m_running{false};
     std::thread m_inferenceThread;
