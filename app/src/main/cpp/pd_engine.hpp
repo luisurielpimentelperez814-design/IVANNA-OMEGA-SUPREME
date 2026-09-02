@@ -116,13 +116,17 @@ public:
         return absF / (absF + std::fabs(dzi) + EPS);
     }
 
-    // ── State update z_{t+1} = z_t + μ_t · F(c_t) ───────────────────────
-    inline float state_mean() const noexcept {
+    // LEGACY (mono, pre-stereo-fix): promediaba z[32] completo sin separar
+    // L/R, por eso zmL==zmR río abajo. Sustituida por state_mean_L()/R() +
+    // el wrapper state_mean() de abajo. Se conserva sin usar, no se borra
+    // (regla del proyecto), y se renombra para no chocar con la redeclaración.
+    inline float state_mean_legacy_mono() const noexcept {
         float sum = 0.f;
         for (int i = 0; i < PD_DIM; ++i) sum += z[i];
         return sum * (1.f / PD_DIM);
     }
 
+    // ── State update z_{t+1} = z_t + μ_t · F(c_t) ───────────────────────
     void update_state(const PerceptualCues& c) noexcept {
         float F[PD_DIM];
         compute_F(c, F);
