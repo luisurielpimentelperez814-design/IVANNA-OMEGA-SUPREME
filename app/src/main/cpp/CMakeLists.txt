@@ -236,6 +236,15 @@ add_library(omega_effect SHARED
     # para que el linker encuentre los símbolos que IvannaFusionCore necesita.
     # IvannaFusionCore.cpp NO se lista aquí — ya entra por el unity-include;
     # añadirlo aquí generaría ODR violation (símbolos duplicados al enlazar).
+
+    # FIX(build): g_hrtf_wet_dry / g_hrtf_flush_req son definidos en
+    # audio_orchestrator.cpp (target ivanna_omega, proceso app). libomega_effect.so
+    # corre en el proceso audioserver — address-space separado — así que el linker
+    # no puede resolverlos con --no-undefined. Este stub los define de forma
+    # independiente con los mismos valores iniciales (wet=1.0, flush=false).
+    # NO añadir a ivanna_omega: generaría ODR violation con audio_orchestrator.cpp.
+    hrtf_globals_effect.cpp
+
     HrtfManager.cpp
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
