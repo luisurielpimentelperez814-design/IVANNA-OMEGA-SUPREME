@@ -49,4 +49,7 @@ object IvannaRoute {
 
     // IVANNA Conversational Acoustic Intelligence (FASE 12–19)
     const val IVANNA_ASSISTANT = "ivanna_assistant"
+
+    // Panel de conectividad WiFi / datos / Gemini Agent
+    const val NETWORK = "network_status"
 }

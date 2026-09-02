@@ -52,6 +52,7 @@ import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.MagiskStatusPanel
+import com.ivanna.omega.ui.NetworkStatusPanel
 import com.ivanna.omega.ui.ProfileSelectorScreen
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.ParameterStore
@@ -573,6 +574,7 @@ fun OmegaApp() {
                 SystemScreen(
                     onOpenMagisk   = { nav.navigate(IvannaRoute.MAGISK) },
                     onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
+                    onOpenNetwork  = { nav.navigate(IvannaRoute.NETWORK) },
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
@@ -693,6 +695,14 @@ fun OmegaApp() {
             composable(IvannaRoute.IVANNA_ASSISTANT) {
                 com.ivanna.omega.ui.IvannaAssistantScreen(
                     onBack = { nav.popBackStack() }
+                )
+            }
+
+            // Panel de conectividad WiFi / datos / Gemini Agent
+            composable(IvannaRoute.NETWORK) {
+                NetworkStatusPanel(
+                    modifier = Modifier.fillMaxSize(),
+                    onBack   = { nav.popBackStack() }
                 )
             }
         }

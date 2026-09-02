@@ -1,19 +1,25 @@
 package com.ivanna.omega.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -28,10 +34,11 @@ import com.ivanna.omega.ui.theme.*
 fun SystemScreen(
     modifier: Modifier = Modifier,
     onOpenMagisk: () -> Unit = {},
-    onOpenProfiles: () -> Unit = {}
+    onOpenProfiles: () -> Unit = {},
+    onOpenNetwork: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("MAGISK", "PERFILES", "TELEMETRÍA")
+    val tabs = listOf("MAGISK", "PERFILES", "TELEMETRÍA", "RED")
 
     Column(modifier = modifier.background(ObsidianDeep)) {
         Text(
@@ -74,6 +81,7 @@ fun SystemScreen(
                 0 -> MagiskTab(onOpenMagisk)
                 1 -> ProfilesTab(onOpenProfiles)
                 2 -> TelemetryTab()
+                3 -> NetworkTab(onOpenNetwork)
             }
         }
     }
@@ -338,6 +346,106 @@ private fun TelemetryTab() {
                     )
                 }
             } ?: Text("Cargando...", color = TextMuted, fontSize = 11.sp)
+        }
+    }
+}
+
+// ── NetworkTab ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun NetworkTab(onOpenNetwork: () -> Unit) {
+    val ctx = LocalContext.current
+
+    val hasInternet by produceState(initialValue = false) {
+        while (true) {
+            value = runCatching {
+                val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val net = cm.activeNetwork ?: return@runCatching false
+                val caps = cm.getNetworkCapabilities(net) ?: return@runCatching false
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }.getOrElse { false }
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+
+    val isWifi by produceState(initialValue = false) {
+        while (true) {
+            value = runCatching {
+                val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return@runCatching false) ?: return@runCatching false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            }.getOrElse { false }
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+
+    val isMobile by produceState(initialValue = false) {
+        while (true) {
+            value = runCatching {
+                val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return@runCatching false) ?: return@runCatching false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            }.getOrElse { false }
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+
+    val agentLinked = runCatching {
+        ctx.getSharedPreferences("ivanna_network_prefs", Context.MODE_PRIVATE)
+            .getString("gemini_api_key", "").orEmpty().isNotBlank()
+    }.getOrElse { false }
+
+    GlassCard("RED & MOTOR GEMINI", AuroraCyan, "WiFi · Datos · API Key · Agente IVANNA") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                Triple("INTERNET",   hasInternet, if (hasInternet) "CONECTADO" else "SIN RED"),
+                Triple("WiFi",       isWifi,      if (isWifi)      "ACTIVO"    else "OFF"),
+                Triple("DATOS MOV.", isMobile,    if (isMobile)    "ACTIVO"    else "OFF")
+            ).forEach { (label, active, text) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (active) PhosphorGreen else CoralWarn))
+                    Text(label, color = TextSecondary, fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace, modifier = Modifier.width(82.dp))
+                    Text(text, color = if (active) PhosphorGreen else CoralWarn,
+                        fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (agentLinked) PhosphorGreen else AmberSignal))
+                Text("AGENTE", color = TextSecondary, fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace, modifier = Modifier.width(82.dp))
+                Text(if (agentLinked) "GEMINI ACTIVO" else "SIN API KEY",
+                    color = if (agentLinked) PhosphorGreen else AmberSignal,
+                    fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Button(
+                onClick = onOpenNetwork,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AuroraCyan.copy(alpha = 0.15f),
+                    contentColor   = AuroraCyan
+                ),
+                shape  = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AuroraCyan.copy(0.5f))
+            ) {
+                Text(
+                    if (agentLinked) "PANEL DE RED — RECONFIGURAR →" else "PANEL DE RED — CONECTAR AGENTE →",
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace
+                )
+            }
         }
     }
 }
