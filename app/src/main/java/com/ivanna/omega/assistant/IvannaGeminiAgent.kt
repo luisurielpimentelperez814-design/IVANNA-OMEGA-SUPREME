@@ -1,6 +1,10 @@
 package com.ivanna.omega.assistant
 
 import android.util.Log
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
@@ -16,6 +20,25 @@ object IvannaGeminiAgent {
 
     // Fallback/Placeholder API Key (el usuario/admin inyecta la real si es necesario)
     // En entornos integrados puede estar en BuildConfig, pero para la preview se deja paramétrico.
+    private var appContext: Context? = null
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    private fun isWifiConnected(): Boolean {
+        val cm = appContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    private fun isCellularConnected(): Boolean {
+        val cm = appContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+    }
     private var apiKey = "API_KEY_PLACEHOLDER"
 
     fun setApiKey(key: String) {
@@ -67,9 +90,18 @@ object IvannaGeminiAgent {
             return@withContext simulateAgenticResponse(query, contextStr)
         }
 
+
         try {
-            val prompt = "Contexto: $contextStr. Usuario: \"$query\""
+            var expandedContextStr = contextStr
+            if (isWifiConnected()) {
+                expandedContextStr += " [NETWORK_MODE: WIFI - SÚPER CONTEXTO HABILITADO. Puedes extender tu análisis y emplear la máxima calidad de recursos verbales.]"
+            } else if (isCellularConnected()) {
+                expandedContextStr += " [NETWORK_MODE: DATOS CELULARES - SÚPER CONTEXTO HABILITADO.]"
+            }
+
+            val prompt = "Contexto: $expandedContextStr. Usuario: \"$query\""
             val response = generativeModel.generateContent(prompt)
+
             val fullText = response.text ?: return@withContext simulateAgenticResponse(query, contextStr)
             
             // Parsear comando

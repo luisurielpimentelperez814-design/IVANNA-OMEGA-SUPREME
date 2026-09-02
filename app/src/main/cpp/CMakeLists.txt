@@ -216,8 +216,15 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/ivannalab
 )
 
-find_library(log-lib log)
-find_library(aaudio-lib aaudio)
+if(ANDROID)
+    find_library(log-lib log)
+    find_library(aaudio-lib aaudio)
+    find_library(android-lib android)
+else()
+    set(log-lib "")
+    set(aaudio-lib "")
+    set(android-lib "")
+endif()
 
 target_link_libraries(ivanna_omega
     ${log-lib}
@@ -295,7 +302,7 @@ target_include_directories(omega_effect PRIVATE
 
 target_link_libraries(omega_effect
     ${log-lib}
-    android
+    ${android-lib}
     m
     dl
 )

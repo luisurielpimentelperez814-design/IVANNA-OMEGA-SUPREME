@@ -373,6 +373,7 @@ class IVANNAApplication : Application() {
                     }
                 }
 
+                com.ivanna.omega.assistant.IvannaGeminiAgent.init(this@IVANNAApplication)
                 isInitialized = true
                 Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista")
             } catch (e: UnsatisfiedLinkError) {
