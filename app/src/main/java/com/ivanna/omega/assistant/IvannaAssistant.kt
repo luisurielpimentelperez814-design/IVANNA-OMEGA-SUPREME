@@ -296,7 +296,7 @@ class IvannaAssistant(context: Context) {
                         IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
                         else -> scene
                     }
-                    runCatching { voiceController.executeCommand(command) }
+                    runCatching { com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine.applyAdaptivePreset(command, true) }
                     IvannaConversationalCore.recordTurn(text, command, command, baseReply)
                     decision.warningForUser ?: baseReply
                 }
@@ -330,7 +330,7 @@ class IvannaAssistant(context: Context) {
         val command = decision.commandOverride ?: return
         val scene = memory.lastScene ?: "UNKNOWN"
         scope.launch(Dispatchers.IO) {
-            runCatching { voiceController.executeCommand(command) }
+            runCatching { com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine.applyAdaptivePreset(command, true) }
             profile.recordAdjustment(command, scene)
             memory.recordAdjustment(command, decision.reason, applied = true)
             memory.lastExplanation = decision.reason

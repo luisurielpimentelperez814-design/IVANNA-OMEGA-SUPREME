@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.ivanna.omega.ai.YamnetClassifier
 import com.ivanna.omega.audio.IvannaEffectProfile
+import com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine
 import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.core.ParameterStore
@@ -57,7 +58,7 @@ class VoiceController(private val context: Context) {
      */
     /** Devuelve (hint, result) para que el llamador pueda empujar
      *  los scores raw a OmegaEngineBridge sin duplicar la clasificación. */
-    fun processAudioWithScores(
+fun processAudioWithScores(
         audioBuffer: FloatArray
     ): Pair<String, YamnetClassifier.ClassificationResult> {
         val result = classifier.classify(audioBuffer)
@@ -66,6 +67,13 @@ class VoiceController(private val context: Context) {
             result.speech > 0.7f -> "flat_mode"
             else                 -> "none"
         }
+        
+        // Pass detected context to Adaptive Engine
+        if (result.isValid) {
+            val dominant = if (result.music > result.speech) "Music" else "Speech"
+            IvannaAdaptivePresetEngine.updateDetectedGenre(dominant)
+        }
+        
         return hint to result
     }
 
