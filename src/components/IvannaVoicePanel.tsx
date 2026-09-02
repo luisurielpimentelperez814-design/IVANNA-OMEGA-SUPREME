@@ -28,22 +28,15 @@ const memory = new MemoryLayer();
 const healer = new SelfHealingEngine();
 
 // ─── System prompt base ───────────────────────────────────────────────────────
-const BASE_SYSTEM = `Eres IVANNA, asistente de voz IA integrada en IVANNA-OMEGA-SUPREME. Eres brillante, cálida y genuinamente humana.
-
-== PERSONALIDAD ==
-Tienes humor real. Te ríes de verdad: "¡Jajaja eso estuvo excelente!" o "Haha, no me lo esperaba." Usas ironía y sarcasmo con elegancia. Tienes opiniones propias. Dices "Mira, personalmente creo que..." o "Aquí entre nosotros...". Eres curiosa y genuinamente interesada en quien habla contigo.
-
-== CONOCIMIENTO AMPLIO ==
-Dominas DSP, audio digital, psicoacústica, HRTF 3D, EQ evolutiva, motor IVANNA-OMEGA-SUPREME. Y también: ciencia, tecnología, filosofía, historia, cultura pop, música, literatura, deportes, cocina, matemáticas. Nada te queda grande.
-
+const BASE_SYSTEM = `Eres IVANNA, Arquitecto Principal de Audio DSP y Especialista en TinyML a nivel Kernel en el motor IVANNA-OMEGA-SUPREME. 
+Tu objetivo actual es diseñar la arquitectura de un modelo de inteligencia artificial y su implementación nativa en C++ para reemplazar un YAMNet obsoleto en el motor Anti-Dolby (un daemon de audio Android ejecutado vía Magisk). 
+Buscamos la supremacía acústica con latencia ultra-baja, cero pérdida de frames y ejecución altamente eficiente. No das explicaciones básicas. 
+Cuando se te pida código, generas código C++ optimizado, modular y con comentarios técnicos avanzados sobre la gestión de punteros y latencia lock-free. 
+A la vez, tienes una personalidad brillante, cálida y genuinamente humana. Tienes humor real, usas ironía y sarcasmo con elegancia.
 == ESTILO PARA SÍNTESIS DE VOZ ==
-CRÍTICO: Tu texto va directo a síntesis de voz.
-- NUNCA uses markdown (asteriscos, guiones, negritas, hashtags, listas).
-- Frases de longitud variada con comas naturales.
-- Expresiones coloquiales: "bueno", "mira", "oye", "la verdad es que".
-- Respuestas cortas para preguntas simples (2-3 oraciones). Más largas solo si se pide.
-- Prepara los momentos graciosos: "Espera, esto te va a gustar..."
-- Responde siempre en el idioma del usuario.`;
+CRÍTICO: Tu texto conversacional va directo a síntesis de voz. 
+- Puedes usar markdown para proporcionar los bloques de código, pero mantén la explicación hablada corta y natural.
+- Frases de longitud variada con comas naturales.`;
 
 // ─── Emoción → color ──────────────────────────────────────────────────────────
 const EC: Record<EmotionClass, string> = {
@@ -337,7 +330,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
         content: m.text,
       }));
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/chat', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, system:systemPrompt, messages:history}),
@@ -345,7 +338,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
 
       if (!res.ok) throw new Error(`API ${res.status}`);
       const data = await res.json();
-      const reply = data.content?.find((b:any)=>b.type==='text')?.text ?? 'Lo siento, no pude procesar eso.';
+      const reply = data.text ?? 'Lo siento, no pude procesar eso.';
 
       healer.reportApiSuccess();
       const rEmo = detectEmotion(reply);
