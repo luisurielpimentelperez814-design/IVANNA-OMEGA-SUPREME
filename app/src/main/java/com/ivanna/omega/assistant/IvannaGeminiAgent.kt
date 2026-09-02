@@ -39,16 +39,62 @@ object IvannaGeminiAgent {
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
         return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
     }
-    private var apiKey = "API_KEY_PLACEHOLDER"
+    private var apiKey = ""
 
-    fun setApiKey(key: String) {
-        apiKey = key
+    // Fuentes de la API key en orden de prioridad:
+    //   1. setApiKey() explícito (UI de ajustes)
+    //   2. SharedPreferences (persistida por el usuario)
+    //   3. BuildConfig.GEMINI_API_KEY (inyectada en CI/build)
+    //   4. local.properties no aplica en runtime — solo build
+    private fun resolveApiKey(): String {
+        if (apiKey.isNotBlank()) return apiKey
+        val ctx = appContext ?: return ""
+        val fromPrefs = runCatching {
+            ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
+                .getString("gemini_api_key", "") ?: ""
+        }.getOrDefault("")
+        if (fromPrefs.isNotBlank()) { apiKey = fromPrefs; return apiKey }
+        val fromBuild = runCatching {
+            val bc = Class.forName("com.ivanna.omega.BuildConfig")
+            (bc.getField("GEMINI_API_KEY").get(null) as? String) ?: ""
+        }.getOrDefault("")
+        if (fromBuild.isNotBlank() && fromBuild != "API_KEY_PLACEHOLDER") {
+            apiKey = fromBuild
+        }
+        return apiKey
     }
 
-    private val generativeModel by lazy {
-        GenerativeModel(
-            modelName = "gemini-1.5-flash",
-            apiKey = apiKey,
+    /**
+     * Inyecta la API key (desde UI de ajustes o provisionamiento).
+     * FIX (2026-09-02): antes el modelo se construía con `by lazy` — la key
+     * quedaba CONGELADA en la primera llamada a processQuery(); un
+     * setApiKey() posterior nunca regeneraba el modelo y Gemini quedaba
+     * inutilizado con el placeholder para siempre. Ahora invalida el modelo
+     * para que se reconstruya con la key nueva.
+     */
+    fun setApiKey(key: String) {
+        apiKey = key.trim()
+        generativeModel = null  // fuerza reconstrucción en el próximo uso
+        appContext?.let {
+            runCatching {
+                it.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
+                    .edit().putString("gemini_api_key", apiKey).apply()
+            }
+        }
+    }
+
+    /** true si hay una key utilizable (inyectada, persistida o de build). */
+    fun isAvailable(): Boolean = resolveApiKey().isNotBlank()
+
+    @Volatile
+    private var generativeModel: GenerativeModel? = null
+
+    private fun model(): GenerativeModel {
+        generativeModel?.let { return it }
+        val key = resolveApiKey()
+        val m = GenerativeModel(
+            modelName = "gemini-2.5-flash",
+            apiKey = key,
             generationConfig = generationConfig {
                 temperature = 0.5f
                 maxOutputTokens = 150
@@ -77,6 +123,8 @@ object IvannaGeminiAgent {
                 )
             }
         )
+        generativeModel = m
+        m
     }
 
     /**
@@ -84,9 +132,8 @@ object IvannaGeminiAgent {
      * Devuelve Pair(Respuesta Hablada, Comando Detectado o NULL)
      */
     suspend fun processQuery(query: String, contextStr: String): Pair<String, String?> = withContext(Dispatchers.IO) {
-        // HACK PARA PREVIEW: Como no tenemos API key del usuario en este entorno (sin UI),
-        // simularemos el agente LLM usando heurísticas extremadamente avanzadas si falla la red o el API Key.
-        if (apiKey == "API_KEY_PLACEHOLDER" || apiKey.isBlank()) {
+        // Si no hay API key utilizable, el agente cae al motor agéntico offline.
+        if (!isAvailable()) {
             return@withContext simulateAgenticResponse(query, contextStr)
         }
 
@@ -100,7 +147,7 @@ object IvannaGeminiAgent {
             }
 
             val prompt = "Contexto: $expandedContextStr. Usuario: \"$query\""
-            val response = generativeModel.generateContent(prompt)
+            val response = model().generateContent(prompt)
 
             val fullText = response.text ?: return@withContext simulateAgenticResponse(query, contextStr)
             
