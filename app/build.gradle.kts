@@ -120,6 +120,8 @@ android {
 }
 
 dependencies {
+    implementation("androidx.security:security-crypto-ktx:1.1.0-alpha06")
+
     implementation("androidx.compose.material:material-icons-extended")
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.media:media:1.7.0")
@@ -185,6 +187,8 @@ dependencies {
 }
 
 dependencies {
+    implementation("androidx.security:security-crypto-ktx:1.1.0-alpha06")
+
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-video:2.5.0")
 }

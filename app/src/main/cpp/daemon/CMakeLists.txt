@@ -43,7 +43,8 @@ target_link_options(ivanna_daemon PRIVATE
 #   siempre presentes en /system). No afecta a las shared libraries del
 #   APK, que siguen con c++_shared.
 if(ANDROID)
-    target_link_options(ivanna_daemon PRIVATE -static-libstdc++)
+    target_link_options(ivanna_daemon PRIVATE "-nostdlib++")
+    target_link_libraries(ivanna_daemon "-Wl,-Bstatic" c++_static c++abi "-Wl,-Bdynamic")
 endif()
 
 # FIX (CI exit 2, ld.lld: undefined symbol __android_log_print):
