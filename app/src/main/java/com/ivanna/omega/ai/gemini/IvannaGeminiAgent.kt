@@ -263,9 +263,9 @@ class IvannaGeminiAgent(
     }
 
     private fun extractDSPCommands(response: String): List<String> =
-        "\[CMD:([a-z_]+)\]".toRegex().findAll(response).map { it.groupValues[1] }.toList()
+        """\[CMD:([a-z_]+)\]""".toRegex().findAll(response).map { it.groupValues[1] }.toList()
 
-    private fun cleanResponse(response: String): String = response.replace("\[CMD:[a-z_]+\]".toRegex(), "").trim()
+    private fun cleanResponse(response: String): String = response.replace("""\[CMD:[a-z_]+\]""".toRegex(), "").trim()
 
     private fun resolveApiKey(context: Context): String {
         if (!secureConfig.state.value.isInitialized) secureConfig.initialize(context)
