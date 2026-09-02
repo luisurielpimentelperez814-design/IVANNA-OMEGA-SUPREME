@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema base. El parent original "android:Theme.Material.NoTitleBar.Fullscreen"
+        NO existe en el framework (sólo Theme.Material[.Light].NoActionBar[.Fullscreen]).
+        Compose/Material3 aplica su propio sistema visual, por lo que basta con un
+        parent neutro sin ActionBar y en modo Fullscreen.
+    -->
+    <style name="Theme.IvannaOmega" parent="android:Theme.Material.NoActionBar.Fullscreen"/>
+</resources>
