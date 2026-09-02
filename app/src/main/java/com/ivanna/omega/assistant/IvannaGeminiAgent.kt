@@ -10,6 +10,7 @@ import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.ivanna.omega.core.GeminiKeyStore
 
 /**
  * Motor Cognitivo Central de IVANNA impulsado por Gemini (Agenetic Super LLM).
@@ -51,7 +52,7 @@ object IvannaGeminiAgent {
         val ctx = appContext ?: return ""
         val fromPrefs = runCatching {
             ctx.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
-                .getString("gemini_api_key", "") ?: ""
+                .(GeminiKeyStore.load(ctx) ?: getString("gemini_api_key", "")) ?: ""
         }.getOrDefault("")
         if (fromPrefs.isNotBlank()) { apiKey = fromPrefs; return apiKey }
         val fromBuild = runCatching {
@@ -78,7 +79,7 @@ object IvannaGeminiAgent {
         appContext?.let {
             runCatching {
                 it.getSharedPreferences("ivanna_assistant", Context.MODE_PRIVATE)
-                    .edit().putString("gemini_api_key", apiKey).apply()
+                    if (!GeminiKeyStore.save(ctx, apiKey)) { .edit().putString("gemini_api_key", apiKey).apply() }
             }
         }
     }
