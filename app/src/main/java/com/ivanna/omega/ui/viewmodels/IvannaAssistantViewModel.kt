@@ -10,10 +10,12 @@ import com.ivanna.omega.assistant.IvannaCognitiveCore
 import com.ivanna.omega.assistant.IvannaContextMemory
 import com.ivanna.omega.assistant.IvannaListenerProfile
 import com.ivanna.omega.assistant.SpeechState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ── Unified state machine ──────────────────────────────────────────────────────
 
@@ -290,6 +292,42 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     fun clearMemory() {
         assistant.clearMemory()
         refreshMemoryPanel()
+    }
+
+    /**
+     * Prueba la conexión con Gemini usando la key actualmente configurada.
+     * Lanza un ping real al agente (Dispatchers.IO) y actualiza
+     * geminiAvailable + statusLine + errorMessage en el panel.
+     *
+     * FIX: IvannaAssistantScreen.kt llamaba esta función desde el botón
+     * "PROBAR CONEXIÓN" del GeminiConfigPanel, pero no existía en el
+     * ViewModel → Unresolved reference: testGeminiConnection → build roto.
+     */
+    fun testGeminiConnection() {
+        viewModelScope.launch {
+            _panel.value = _panel.value.copy(
+                statusLine   = "Probando conexión Gemini…",
+                errorMessage = null
+            )
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val (reply, _) = com.ivanna.omega.assistant.IvannaGeminiAgent
+                        .processQuery("ping", "test")
+                    reply != "error" && !reply.contains("error", ignoreCase = true)
+                }.getOrDefault(false)
+            }
+            val avail = runCatching {
+                com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable()
+            }.getOrDefault(false)
+            _panel.value = _panel.value.copy(
+                geminiAvailable = ok && avail,
+                statusLine = if (ok && avail) "Gemini: ✅ conectado"
+                             else             "Toca el micrófono y habla con IVANNA.",
+                errorMessage = if (!(ok && avail))
+                    "Gemini no respondió — verifica la API Key o la red"
+                else null
+            )
+        }
     }
 
     override fun onCleared() {
