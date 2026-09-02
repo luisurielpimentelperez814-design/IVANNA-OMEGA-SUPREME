@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -171,8 +170,10 @@ fun IvannaAssistantScreen(
 
             // ── Conexión Gemini ────────────────────────────────────────────
             GeminiConnectPanel(
-                connected = panel.geminiConnected,
-                status    = panel.geminiStatus,
+                connected = panel.geminiAvailable,
+                status    = panel.errorMessage
+                             ?: if (panel.geminiAvailable) "✅ Gemini conectado"
+                                else "Sin conexión — ingresa API Key",
                 onConnect = { key -> vm.setGeminiApiKey(key) },
                 onTest    = { vm.testGeminiConnection() }
             )
