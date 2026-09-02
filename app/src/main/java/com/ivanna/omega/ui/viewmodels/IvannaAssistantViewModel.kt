@@ -63,6 +63,10 @@ data class AssistantPanelState(
     // ── Disponibilidad ──────────────────────────────────────────────────────
     val micAvailable: Boolean = true,
     val ttsAvailable: Boolean = true,
+
+    // ── API key Gemini (cableado FASE final) ─────────────────────────────
+    val geminiApiKey: String = "",
+    val geminiAvailable: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -97,7 +101,21 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     // dispara la voz proactiva una sola vez por episodio, no en cada ciclo.
     private var wasFatigueRisk = false
 
+    /** Persiste la key vía IvannaGeminiAgent (SharedPreferences "ivanna_assistant")
+     *  y refleja disponibilidad en el panel. El agente resuelve en cascada:
+     *  setApiKey > persistida > BuildConfig — este setter es la fuente UI. */
+    fun setGeminiApiKey(key: String) {
+        runCatching { com.ivanna.omega.assistant.IvannaGeminiAgent.setApiKey(key.trim()) }
+        val avail = runCatching { com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable() }.getOrDefault(false)
+        _panel.value = _panel.value.copy(geminiApiKey = key.trim(), geminiAvailable = avail)
+    }
+
     init {
+        // 0. Reflejar disponibilidad Gemini al abrir (key persistida o BuildConfig)
+        runCatching {
+            val avail = com.ivanna.omega.assistant.IvannaGeminiAgent.isAvailable()
+            if (avail) _panel.value = _panel.value.copy(geminiAvailable = true)
+        }
         // 1. Observar el estado de IvannaAssistant (ui + speech + voice)
         viewModelScope.launch {
             assistant.ui.collect { ui ->
