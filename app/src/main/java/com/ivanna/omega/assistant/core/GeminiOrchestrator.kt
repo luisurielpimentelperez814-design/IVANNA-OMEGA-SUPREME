@@ -17,12 +17,12 @@ enum class ResponseProfile {
 object GeminiOrchestrator {
     private const val TAG = "GeminiOrchestrator"
 
-    // Model selection logic based on reasoning depth required
     private fun getBestModelName(profile: ResponseProfile): String {
         return when(profile) {
-            ResponseProfile.FAST -> "gemini-2.5-flash-8b"
-            ResponseProfile.NORMAL -> "gemini-2.5-flash"
-            ResponseProfile.DEEP_REASONING, ResponseProfile.ENGINEERING_MODE -> "gemini-2.5-pro"
+            ResponseProfile.FAST             -> "gemini-2.0-flash"
+            ResponseProfile.NORMAL           -> "gemini-2.0-flash"
+            ResponseProfile.DEEP_REASONING   -> "gemini-1.5-pro"
+            ResponseProfile.ENGINEERING_MODE -> "gemini-1.5-pro"
         }
     }
 
@@ -30,7 +30,8 @@ object GeminiOrchestrator {
         val apiKey = SecureConfigurationManager.getApiKey()
         if (apiKey.isBlank()) return null
 
-        val dynamicContext = DynamicContextEngine.buildRichContext()
+        // Usar AIContextManager (object estático) en lugar de DynamicContextEngine (instancia)
+        val dynamicContext = AIContextManager.getFullSystemPrompt()
         val targetModel = getBestModelName(profile)
 
         return GenerativeModel(
@@ -38,15 +39,15 @@ object GeminiOrchestrator {
             apiKey = apiKey,
             generationConfig = generationConfig {
                 temperature = when(profile) {
-                    ResponseProfile.FAST -> 0.3f
-                    ResponseProfile.NORMAL -> 0.6f
-                    ResponseProfile.DEEP_REASONING -> 0.4f
+                    ResponseProfile.FAST             -> 0.3f
+                    ResponseProfile.NORMAL           -> 0.6f
+                    ResponseProfile.DEEP_REASONING   -> 0.4f
                     ResponseProfile.ENGINEERING_MODE -> 0.2f
                 }
                 maxOutputTokens = when(profile) {
-                    ResponseProfile.FAST -> 150
-                    ResponseProfile.NORMAL -> 400
-                    ResponseProfile.DEEP_REASONING -> 800
+                    ResponseProfile.FAST             -> 300
+                    ResponseProfile.NORMAL           -> 800
+                    ResponseProfile.DEEP_REASONING   -> 1200
                     ResponseProfile.ENGINEERING_MODE -> 1500
                 }
             },
