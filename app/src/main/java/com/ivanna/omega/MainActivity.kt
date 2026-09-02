@@ -252,6 +252,9 @@ fun OmegaApp() {
             }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
+                    com.ivanna.omega.assistant.IvannaLaunchGreeting.greetOnce(context)
+                }
+                LaunchedEffect(Unit) {
                     if (!captureActive) {
                         projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
                     }

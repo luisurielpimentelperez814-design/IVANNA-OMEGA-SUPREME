@@ -14,7 +14,7 @@ import java.util.Locale
 /**
  * VoiceProfile — identidad vocal de IVANNA (super-refinada).
  *
- * Voz femenina joven, cálida y casi humana — presencia angelical sin
+ * Voz femenina adulta, elegante, cálida y casi humana — sofisticada sin
  * artificialidad. Ajustes de oído crítico sobre la versión anterior:
  *  - Pitch 1.30 → 1.18: 1.30 rozaba el territorio "chipmunk" (voz de
  *    dibujito) en voces neurales; 1.18 es mujer joven real — aguda
@@ -132,8 +132,12 @@ class IvannaVoiceEngine(
         if (n.contains("premium"))  s += 4
         if (n.contains("enhanced")) s += 3
         if (n.contains("female") || n.contains("mujer") || n.contains("femenin") || n.contains("woman")) s += 10
-        if (n.contains("young") || n.contains("joven") || n.contains("girl")  || n.contains("chica"))    s += 15
-        if (n.contains("sweet") || n.contains("dulce") || n.contains("angel") || n.contains("sexy"))     s += 20
+        // Elegante y cálida > "joven/niña": una voz adulta bien timbrada suena
+        // más natural y sofisticada en TTS que forzar un registro aniñado.
+        if (n.contains("elegant") || n.contains("elegante") || n.contains("warm")   ||
+            n.contains("calida")  || n.contains("cálida")   || n.contains("smooth") ||
+            n.contains("clear")   || n.contains("nova")     || n.contains("aria"))   s += 15
+        if (n.contains("sweet") || n.contains("dulce") || n.contains("soft") || n.contains("suave"))     s += 8
         if (n.contains("-f-") || n.endsWith("-f") || n.contains("_female") ||
             n.contains("lucia") || n.contains("sofia") || n.contains("mia") ||
             n.contains("valeria") || n.contains("elena")) s += 5
