@@ -26,30 +26,39 @@ set_state "OPTIMAL"
 while true; do
     if decision_evaluate "DAEMON_RUNTIME"; then
         if [ -x "$MODDIR/system/bin/ivanna_daemon" ]; then
-            # FIX: Find the APK's lib folder to use its libc++_shared.so
-            APK_PATH=$(pm path com.ivanna.omega 2>/dev/null | grep base.apk | cut -d':' -f2)
-            if [ -n "$APK_PATH" ]; then
-                APP_DIR=$(dirname "$APK_PATH")
-                export LD_LIBRARY_PATH="$APP_DIR/lib/arm64:$APP_DIR/lib/arm64-v8a:$LD_LIBRARY_PATH"
+            # HACK FALLBACK: Resolve APK path manually without `pm` for late_start execution
+            APK_DIR=$(ls -d /data/app/*/*com.ivanna.omega* 2>/dev/null | head -n 1)
+            if [ -z "$APK_DIR" ]; then
+                APK_DIR=$(ls -d /data/app/*com.ivanna.omega* 2>/dev/null | head -n 1)
+            fi
+
+            if [ -n "$APK_DIR" ]; then
+                export LD_LIBRARY_PATH="$APK_DIR/lib/arm64:$APK_DIR/lib/arm64-v8a:$LD_LIBRARY_PATH"
             fi
             
             nohup "$MODDIR/system/bin/ivanna_daemon" --socket "@omega_daemon_socket" --tcp-port 12121 --realtime > /data/adb/ivanna_omega/daemon.log 2>&1 &
-            echo $! > /data/adb/ivanna_omega/daemon.pid
-        else
-            log -p e -t "IVANNA" "ivanna_daemon binary missing"
-        fi
-        
-        DAEMON_PID=$(cat /data/adb/ivanna_omega/daemon.pid 2>/dev/null)
-        if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
-            echo -1000 > /proc/$DAEMON_PID/oom_score_adj 2>/dev/null || true
-            chrt -f -p 98 "$DAEMON_PID" 2>/dev/null || true
-            if [ -f /sys/devices/system/cpu/cpu4/cpufreq/cpuinfo_max_freq ]; then
-                taskset -p 0f "$DAEMON_PID" >/dev/null 2>&1 || true
+            DAEMON_PID=$!
+            echo $DAEMON_PID > /data/adb/ivanna_omega/daemon.pid
+            
+            # Allow some time to check if it crashed immediately
+            sleep 1
+            if kill -0 "$DAEMON_PID" 2>/dev/null; then
+                setprop persist.ivanna.daemon_active 1 2>/dev/null
+                echo -1000 > /proc/$DAEMON_PID/oom_score_adj 2>/dev/null || true
+                chrt -f -p 98 "$DAEMON_PID" 2>/dev/null || true
+                if [ -f /sys/devices/system/cpu/cpu4/cpufreq/cpuinfo_max_freq ]; then
+                    taskset -p 0f "$DAEMON_PID" >/dev/null 2>&1 || true
+                fi
+                echo "$(date +%s)" > "$ISOLATION_DIR/DAEMON/watchdog_ts" 2>/dev/null
+                echo "0" > "$ISOLATION_DIR/DAEMON/restart_streak" 2>/dev/null || true
+            else
+                log -p e -t "IVANNA" "ivanna_daemon crashed immediately on boot. Missing shared libs?"
+                setprop persist.ivanna.daemon_active 0 2>/dev/null
             fi
-            echo "$(date +%s)" > "$ISOLATION_DIR/DAEMON/watchdog_ts" 2>/dev/null
-            echo "0" > "$ISOLATION_DIR/DAEMON/restart_streak" 2>/dev/null || true
+        else
+            log -p e -t "IVANNA" "ivanna_daemon binary missing or not executable"
+            setprop persist.ivanna.daemon_active 0 2>/dev/null
         fi
-        setprop persist.ivanna.daemon_active 1 2>/dev/null
     fi
 
     if decision_evaluate "MQA_INTELLIGENCE"; then

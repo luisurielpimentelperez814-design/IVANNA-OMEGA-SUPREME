@@ -43,6 +43,7 @@ target_link_options(ivanna_daemon PRIVATE
 #   siempre presentes en /system). No afecta a las shared libraries del
 #   APK, que siguen con c++_shared.
 if(ANDROID)
+    # Force static STL for the daemon to avoid LD_LIBRARY_PATH issues in Magisk
     target_link_options(ivanna_daemon PRIVATE "-nostdlib++")
     target_link_libraries(ivanna_daemon "-Wl,-Bstatic" c++_static c++abi "-Wl,-Bdynamic")
 endif()

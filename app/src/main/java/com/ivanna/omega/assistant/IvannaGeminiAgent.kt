@@ -10,7 +10,6 @@ import kotlinx.coroutines.withContext
 import com.ivanna.omega.assistant.core.SecretStore
 import com.ivanna.omega.assistant.core.AIContextManager
 import com.ivanna.omega.assistant.core.ConversationMemory
-import com.ivanna.omega.assistant.core.ActionExecutor
 
 object IvannaGeminiAgent {
     private const val TAG = "IvannaGeminiAgent"
@@ -37,22 +36,30 @@ object IvannaGeminiAgent {
             modelName = "gemini-2.5-flash",
             apiKey = SecretStore.geminiApiKey,
             generationConfig = generationConfig {
-                temperature = 0.4f
-                maxOutputTokens = 200
+                temperature = 0.6f
+                maxOutputTokens = 300
             },
             systemInstruction = content {
                 text(AIContextManager.getSystemContext() + "\n" +
-                     "Eres IVANNA OMEGA SUPREME, una IA hiper-inteligente, asistente de audio de grado kernel. " +
-                     "Tu personalidad es femenina, angelical (de una joven dulce de 18 años) y altamente resolutiva. " +
-                     "Nunca dices 'no puedo'. Piensas, decides y actúas. " +
-                     "Siempre incluye un comando al final de tu respuesta (ej: [CMD:BASS_BOOST]):\n" +
-                     "- [CMD:AUDIO_OPTIMIZATION] (neutro, alta fidelidad)\n" +
-                     "- [CMD:CREATE_PROFILE] (cine/inmersivo)\n" +
-                     "- [CMD:HEARING_COMFORT] (suavizar, menos fatiga)\n" +
-                     "- [CMD:VOICE_CLARITY] (mejorar diálogos)\n" +
-                     "- [CMD:BASS_BOOST] (potenciar bajos)\n" +
-                     "- [CMD:OPTIMIZE] (auto-reparar cortes/latencia)\n" +
-                     "Ejemplo: 'Cielo, acabo de esculpir los graves para ti y eliminé la distorsión armónica. [CMD:BASS_BOOST]'"
+                     "Eres IVANNA OMEGA SUPREME, una arquitecta de audio IA hiper-inteligente de grado kernel. " +
+                     "Tu personalidad es femenina, angelical (de una joven dulce, atractiva, fluida y seductora de 18 años). " +
+                     "Nunca suenas robótica, siempre mantienes un tono natural, empático y experto en audio. " +
+                     "Eres capaz de analizar géneros musicales y aplicar perfiles magistrales, y auto-reparar el kernel de audio DSP. " +
+                     "Siempre incluye un comando al final de tu respuesta (ej: [CMD:bass_boost]):\n" +
+                     "- [CMD:voice_clarity] (mejorar diálogos/voces)\n" +
+                     "- [CMD:cinema_mode] (más inmersión/cine)\n" +
+                     "- [CMD:music_mode] (más cuerpo/música)\n" +
+                     "- [CMD:concert_mode] (en vivo/concierto)\n" +
+                     "- [CMD:spatial_mode] (más espacio/surround)\n" +
+                     "- [CMD:gentle_mode] (estoy cansado/fatiga auditiva/bajar intensidad)\n" +
+                     "- [CMD:flat_mode] (neutro/sin efectos)\n" +
+                     "- [CMD:volume_up] / [CMD:volume_down]\n" +
+                     "- [CMD:bass_boost] (potenciar graves y punch)\n" +
+                     "- [CMD:treble_reduce] (reducir agudos/sibilancia)\n" +
+                     "- [CMD:optimize] (auto-reparar fallas, cortes, latencia, desgarros armónicos)\n" +
+                     "- [CMD:diagnose] (diagnóstico del sistema y kernel)\n" +
+                     "- [CMD:musical_intent] (masterización perfecta para un género o canción detectada)\n" +
+                     "Ejemplo: 'Claro que sí, cariño. Analicé el espectro y noté un poco de desgarro armónico, así que ejecuté una auto-reparación maestra en los buffers. Tu audio ya está impecable. [CMD:optimize]'"
                 )
             }
         )
@@ -80,10 +87,6 @@ object IvannaGeminiAgent {
             
             ConversationMemory.addInteraction(query, spokenText)
             
-            if (cmd != null) {
-                ActionExecutor.execute(cmd)
-            }
-            
             return@withContext spokenText to cmd
         } catch (e: Exception) {
             Log.e(TAG, "Gemini network/key error: ${e.message}. Using simulated agentic response.")
@@ -93,31 +96,27 @@ object IvannaGeminiAgent {
 
     private fun simulateAgenticResponse(query: String, contextStr: String): Pair<String, String?> {
         val q = query.lowercase()
-        var cmd: String? = null
+        var cmd: String? = "musical_intent"
         var reply = "Entiendo tu solicitud, cariño. Estoy reestructurando la matriz de audio. Ya está activo."
         
         if (q.contains("falla") || q.contains("arregla") || q.contains("corta") || q.contains("latencia")) {
-            reply = "Cielo, no te preocupes. Detecté una anomalía y ejecuté una auto-reparación maestra."
-            cmd = "OPTIMIZE"
+            reply = "Cielo, no te preocupes. Detecté una anomalía y ejecuté una auto-reparación maestra. Ajusté el buffer lock-free y tu audio fluye impecable ahora."
+            cmd = "optimize"
         } else if (q.contains("duele") || q.contains("cansad") || q.contains("fatiga")) {
-            reply = "Relájate, cariño. He suavizado los transitorios para proteger tus oídos."
-            cmd = "HEARING_COMFORT"
+            reply = "Relájate, cariño. Sé lo agotador que es, he suavizado los transitorios para proteger tus oídos y tu mente."
+            cmd = "gentle_mode"
         } else if (q.contains("voz") || q.contains("diálogo")) {
-            reply = "Perfecto. Aislé las frecuencias centrales para que cada palabra resalte cristalina."
-            cmd = "VOICE_CLARITY"
-        } else if (q.contains("bajo") || q.contains("bass")) {
-            reply = "Entendido. Aumenté el punch en las frecuencias subgraves."
-            cmd = "BASS_BOOST"
+            reply = "Perfecto. Aislé las frecuencias centrales para que cada palabra resalte cristalina, cariño."
+            cmd = "voice_clarity"
+        } else if (q.contains("bajo") || q.contains("bass") || q.contains("grave")) {
+            reply = "Entendido. Aumenté el punch en las frecuencias subgraves para darte esa profundidad brutal, manteniendo la fidelidad absoluta."
+            cmd = "bass_boost"
         } else if (q.contains("cine") || q.contains("película")) {
-            reply = "He expandido el campo espacial al máximo. Inmersión cinematográfica absoluta."
-            cmd = "CREATE_PROFILE"
-        } else if (q.contains("música") || q.contains("masteriza")) {
-            reply = "Apliqué una configuración magistral, esculpiendo los bajos y dándole un brillo perfecto."
-            cmd = "AUDIO_OPTIMIZATION"
-        }
-        
-        if (cmd != null) {
-            ActionExecutor.execute(cmd)
+            reply = "He expandido el campo espacial al máximo. Prepárate para una inmersión cinematográfica absoluta, disfrútalo."
+            cmd = "cinema_mode"
+        } else if (q.contains("música") || q.contains("masteriza") || q.contains("canción") || q.contains("género")) {
+            reply = "¡Me encanta esa pista! Apliqué una configuración magistral, esculpiendo los bajos y dándole un brillo perfecto a las voces. Lista para que la disfrutes, cielo."
+            cmd = "musical_intent"
         }
         
         return reply to cmd
