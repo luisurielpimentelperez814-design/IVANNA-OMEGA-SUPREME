@@ -22,6 +22,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // FIX (2026-09-02, Gemini 2.5): inyectar la API key del asistente al
+        // build. Fuentes en cascada: propiedad -P / variable de entorno
+        // GEMINI_API_KEY (CI) → vacío en builds locales (el usuario la
+        // ingresa en Ajustes y se persiste en SharedPreferences; ver
+        // IvannaGeminiAgent.resolveApiKey()). Nunca se hardcodea una key real.
+        val geminiKey = (findProperty("GEMINI_API_KEY") as String?)
+            ?: System.getenv("GEMINI_API_KEY")
+            ?: ""
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
+
         // Solo arm64-v8a — Moto G85 es ARM64, elimina x86/armeabi-v7a del APK (~60% menos)
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
