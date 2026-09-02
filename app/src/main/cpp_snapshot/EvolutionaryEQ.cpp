@@ -1,0 +1,153 @@
+// ════════════════════════════════════════════════════════════════════════
+// AVISO (auditoria 2026-08-08): este archivo NO se compila.
+// app/src/main/cpp/CMakeLists.txt linea ~162 tiene "EvolutionaryEQ.cpp"
+// comentado dentro del bloque IvannaLab. El kernel evolutivo que SI corre
+// en produccion es app/src/main/cpp/evolutionary_kernel.cpp — una API en
+// C independiente (extern "C", evo_initialize_population/evo_evolve_generation/
+// GENOME_SIZE=256), sin relacion con la clase C++ Ivanna::EvolutionaryEQ
+// de este archivo.
+// Existen 3 copias de EvolutionaryEQ.{cpp,hpp} en el repo (raiz,
+// native_kernel/, app/src/main/cpp/) y ya DIVERGIERON entre si (diff -q
+// confirma diferencias en las 3 comparaciones cruzadas). Ninguna esta
+// enlazada al target ivanna_omega.
+// Regla de oro del proyecto — no se borra, solo se anota — asi que este
+// archivo se conserva como referencia historica. Si vas a tocar el kernel
+// evolutivo real, edita evolutionary_kernel.cpp/.h.
+// ════════════════════════════════════════════════════════════════════════
+
+#include "EvolutionaryEQ.hpp"
+#include "IvannaFusionCore.hpp"
+#include <cstddef>
+#include <cmath>
+#include <random>
+
+namespace Ivanna {
+
+static float fast_rand() {
+    static std::mt19937 gen(42);
+    static std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    return dis(gen);
+}
+
+EvolutionaryEQ::EvolutionaryEQ() : m_stepSize(0.1f) {
+    for (size_t i = 0; i < FIR_TAPS; ++i) {
+        m_firCoeffsL[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
+        m_firCoeffsR[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
+    }
+
+    for (size_t i = 0; i < BLOCK_SIZE + FIR_TAPS; ++i) {
+        m_histL[i] = 0.0f;
+        m_histR[i] = 0.0f;
+    }
+
+    for (size_t i = 0; i < BANDS_512; ++i) {
+        m_meanGenome[i] = 0.0f;
+        m_evolutionPath[i] = 0.0f;
+    }
+}
+
+float EvolutionaryEQ::calculateFitness(const float* genome) {
+    float smoothness = 0.0f;
+    for (size_t i = 1; i < BANDS_512; ++i) {
+        float diff = genome[i] - genome[i - 1];
+        smoothness += diff * diff;
+    }
+    return -smoothness; 
+}
+
+void EvolutionaryEQ::updateLM_CMA_ES() {
+    constexpr size_t lambda = 10;
+    float population[lambda][BANDS_512];
+    float fitness[lambda];
+
+    for (size_t p = 0; p < lambda; ++p) {
+        for (size_t i = 0; i < BANDS_512; ++i) {
+            population[p][i] = m_meanGenome[i] + m_stepSize * fast_rand();
+        }
+        fitness[p] = calculateFitness(population[p]);
+    }
+
+    size_t best_idx = 0;
+    float max_fit = fitness[0];
+    for (size_t p = 1; p < lambda; ++p) {
+        if (fitness[p] > max_fit) {
+            max_fit = fitness[p];
+            best_idx = p;
+        }
+    }
+
+    constexpr float cc = 0.1f;
+    for (size_t i = 0; i < BANDS_512; ++i) {
+        m_meanGenome[i] += 0.5f * (population[best_idx][i] - m_meanGenome[i]);
+        m_evolutionPath[i] = (1.0f - cc) * m_evolutionPath[i] + cc * m_meanGenome[i];
+    }
+}
+
+void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
+    updateLM_CMA_ES();
+
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        m_histL[FIR_TAPS - 1 + i] = buffer->left[i];
+        m_histR[FIR_TAPS - 1 + i] = buffer->right[i];
+    }
+
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        float l_out = 0.0f;
+        float r_out = 0.0f;
+
+        for (size_t t = 0; t < FIR_TAPS; ++t) {
+            l_out += m_firCoeffsL[t] * m_histL[i + t];
+            r_out += m_firCoeffsR[t] * m_histR[i + t];
+        }
+
+        buffer->left[i] = l_out;
+        buffer->right[i] = r_out;
+    }
+
+    for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
+        m_histL[i] = m_histL[BLOCK_SIZE + i];
+        m_histR[i] = m_histR[BLOCK_SIZE + i];
+    }
+}
+
+void EvolutionaryEQ::setParameter(uint32_t paramId, float value) {
+    if (paramId == 0) {
+        m_stepSize = value;
+    }
+}
+
+// calibrateTargetRoom() — declarado en EvolutionaryEQ.hpp, nunca implementado.
+//
+// Intención (comentario en el header): "delegar a HrtfManager::loadIhr1(path)".
+// En esta capa, calibrateTargetRoom() no tiene acceso a HrtfManager ni a un path
+// de HRTF (esos viven en IvannaFusionCore). Lo que SÍ puede hacer de forma
+// honesta es ejecutar varias iteraciones del optimizador CMA-ES ya existente
+// para converger los coeficientes FIR al estado de "sala calibrada" — que es
+// exactamente lo que significa "calibrar" para este módulo: minimizar la función
+// de fitness (suavidad espectral) sobre el genoma actual.
+//
+// N=20 iteraciones: suficiente para un paso de calibración sin bloquear
+// el hilo de llamada, congruente con las iteraciones que processNEON() haría
+// en ~200 ms de audio (BLOCK_SIZE=256 @ 48kHz → ~5ms/bloque × 40 bloques).
+void EvolutionaryEQ::calibrateTargetRoom() {
+    constexpr int kCalibrationSteps = 20;
+    for (int i = 0; i < kCalibrationSteps; ++i) {
+        updateLM_CMA_ES();
+    }
+    // Propagar el genoma convergido a los coeficientes FIR activos.
+    // m_meanGenome tiene BANDS_512 entradas; los FIR_TAPS coeficientes se
+    // toman del segmento central del genoma (posición más influente en el
+    // dominio de frecuencias) para no sobreescribir más allá del array.
+    constexpr size_t kOffset = (BANDS_512 - FIR_TAPS) / 2;
+    for (size_t t = 0; t < FIR_TAPS; ++t) {
+        float coeff = m_meanGenome[kOffset + t];
+        // Clamp a rango estable para FIR lineal de fase: evitar explosión
+        // de energía si el genoma divergió durante la calibración.
+        if (coeff >  2.0f) coeff =  2.0f;
+        if (coeff < -2.0f) coeff = -2.0f;
+        m_firCoeffsL[t] = coeff;
+        m_firCoeffsR[t] = coeff;
+    }
+}
+
+} // namespace Ivanna

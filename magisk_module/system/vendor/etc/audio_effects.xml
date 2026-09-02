@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    IVANNA OMEGA SUPREME — vendor/etc/audio_effects.xml
+    ============================================================
+    AUDIT FIX (crítico / bloqueante):
+      El archivo previo contenía el código C/C++ crudo de
+      `audio_effect_compat.h`. audioserver hacía parse del XML y,
+      al no encontrar un documento válido, rechazaba la carga
+      entera de la configuración vendor de efectos. Resultado
+      real en dispositivo: se perdía la config AOSP + OEM (Dolby,
+      Dirac, MaxxAudio, etc.) hasta el próximo boot con módulo
+      desinstalado.
+
+    Política de este archivo:
+      - Sólo declara la librería/efecto propios de IVANNA.
+      - NO redeclara post-processes de música/movie/game — el
+        motor Omega se aplica como INSERT_ANY vía el efecto
+        `omega_effect`. Con esto, cualquier post-proc OEM
+        existente (Dolby, Dirac...) permanece activo si el
+        vendor ya lo tenía cargado desde su propio XML.
+      - Prioridad NO se declara aquí; el efecto vive por su
+        UUID único y no compite con los OEM.
+      - El XML válido paralelo (magisk_module/system/etc/
+        audio_effects_ivanna.xml) sigue existiendo para el
+        canal legacy /system/etc.
+============================================================ -->
+<audio_effects_conf version="2.0"
+                    xmlns="http://schemas.android.com/audio/audio_effects_conf">
+
+    <libraries>
+        <library name="omega_effect" path="libomega_effect.so"/>
+    </libraries>
+
+    <effects>
+        <!-- UUID propio del efecto IVANNA Omega (mismo que
+             OMEGA_EFFECT_UUID en omega_effect.cpp). -->
+        <effect name="omega_effect"
+                library="omega_effect"
+                uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
+    </effects>
+
+</audio_effects_conf>

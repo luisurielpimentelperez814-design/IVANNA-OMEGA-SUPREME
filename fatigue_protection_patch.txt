@@ -1,0 +1,77 @@
+# ================================
+# DSPBridge.kt
+# ================================
+
+Dentro de applyAdaptiveState(), después de:
+
+applyPerceptualEQ(
+    state.lowEqDb,
+    state.midEqDb,
+    state.highEqDb
+)
+
+agregar:
+
+// ISO226 + protección auditiva adaptativa
+applyFatigueProtection(
+    state.iso226Compensation,
+    state.fatigueProtection
+)
+
+
+Agregar función:
+
+private fun applyFatigueProtection(
+    iso226: Float,
+    fatigue: Float
+) {
+    if (!loaded || !IvannaNativeLib.isLoaded) return
+
+    runCatching {
+        IvannaNativeLib.nativeSetFatigueProtection(
+            iso226.coerceIn(-12f, 12f),
+            fatigue.coerceIn(0f, 1f)
+        )
+    }
+}
+
+
+# ================================
+# IvannaNativeLib.kt
+# ================================
+
+Agregar:
+
+external fun nativeSetFatigueProtection(
+    iso226Compensation: Float,
+    fatigueProtection: Float
+)
+
+
+# ================================
+# ivanna_omega_jni.cpp
+# ================================
+
+Agregar:
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
+    JNIEnv*, jobject,
+    jfloat iso,
+    jfloat fatigue) {
+
+    if (!std::isfinite(iso) || !std::isfinite(fatigue))
+        return;
+
+    const float comp =
+        std::clamp(iso, -12.0f, 12.0f);
+
+    const float protect =
+        std::clamp(fatigue, 0.0f, 1.0f);
+
+    g_params.high += comp * (1.0f - protect);
+    g_params.mid  -= protect * 3.0f;
+
+    g_eq.setParams(g_params);
+}
+

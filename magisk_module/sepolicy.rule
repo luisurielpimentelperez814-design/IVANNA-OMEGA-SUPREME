@@ -1,0 +1,278 @@
+# IVANNA OMEGA SUPREME — SELinux policy rules v2.0
+#
+# Objetivo: garantizar que untrusted_app (la app) pueda hacer connect()
+# sobre @omega_daemon_socket / @omega_command_socket sin denials silenciosos
+# en Android 8..16, sea cual sea el dominio SELinux del daemon en la ROM
+# del usuario (varía entre Magisk, MagiskSU, KernelSU, Magisk Delta, APatch…).
+#
+# Regla de oro: preferimos policy amplia dentro del sandbox del módulo
+# (Magisk aísla estas rules a las apps que el módulo autoriza; NO son
+# políticas del sistema, solo se aplican en el runtime del kernel policy
+# via magiskpolicy --live). Es preferible una regla de más que un denial
+# silencioso en producción.
+#
+# ── HISTORIA ─────────────────────────────────────────────────────────────
+# v1.0: solo cubría untrusted_app→{su, magisk}. Reportes de campo con
+#       socket publicado (@omega_daemon_socket visible en /proc/net/unix,
+#       persist.ivanna.daemon_active=1) y app sin conectar aun así:
+#         * Daemon en algunas ROMs corre bajo u:r:magisk:s0 pero el
+#           accept() reporta peer como u:r:kernel:s0 (init transitivo).
+#         * Algunas OEMs (Xiaomi HyperOS, OneUI 7) inyectan un dominio
+#           propio (u:r:mihome:s0, u:r:samsung_dsp:s0) entre app y daemon.
+#         * Magisk Delta expone el daemon como u:r:zygote:s0 en su
+#           namespace.
+#       v2.0 amplía la matriz para cubrir todos los tcontext observados.
+
+# ═══════════════════════════════════════════════════════════════════════
+#  1. UNTRUSTED_APP → cualquier tcontext plausible del daemon
+# ═══════════════════════════════════════════════════════════════════════
+# connectto = permitir connect() sobre un unix_stream_socket que ya
+# está bindeado por un proceso en tcontext.
+allow untrusted_app su unix_stream_socket connectto
+allow untrusted_app magisk unix_stream_socket connectto
+allow untrusted_app kernel unix_stream_socket connectto
+allow untrusted_app init unix_stream_socket connectto
+allow untrusted_app system_server unix_stream_socket connectto
+allow untrusted_app zygote unix_stream_socket connectto
+allow untrusted_app system_app unix_stream_socket connectto
+
+# ═══════════════════════════════════════════════════════════════════════
+#  2. UNTRUSTED_APP → operaciones sobre su propio unix_stream_socket
+# ═══════════════════════════════════════════════════════════════════════
+# create/connect son obvias. read/write son las que Android 11+ audita
+# por separado. getopt/setopt aparecen cuando la app configura
+# SO_RCVTIMEO/SO_SNDTIMEO (LocalSocket.setSoTimeout hace ambos).
+# getattr/ioctl salen en algunos vendors cuando el LocalSocket pasa
+# por getsockname() interno de la JVM.
+allow untrusted_app untrusted_app unix_stream_socket create
+allow untrusted_app untrusted_app unix_stream_socket connect
+allow untrusted_app untrusted_app unix_stream_socket read
+allow untrusted_app untrusted_app unix_stream_socket write
+allow untrusted_app untrusted_app unix_stream_socket getopt
+allow untrusted_app untrusted_app unix_stream_socket setopt
+allow untrusted_app untrusted_app unix_stream_socket getattr
+allow untrusted_app untrusted_app unix_stream_socket ioctl
+allow untrusted_app untrusted_app unix_stream_socket shutdown
+
+# ═══════════════════════════════════════════════════════════════════════
+#  3. ISOLATED_APP (WebView renderer, media codecs aislados)
+# ═══════════════════════════════════════════════════════════════════════
+# Mismo tratamiento — algunas features de la app corren en proceso
+# aislado (visualizer service en Android 12+ con targetSdk 31).
+allow isolated_app su unix_stream_socket connectto
+allow isolated_app magisk unix_stream_socket connectto
+allow isolated_app kernel unix_stream_socket connectto
+allow isolated_app init unix_stream_socket connectto
+allow isolated_app zygote unix_stream_socket connectto
+allow isolated_app isolated_app unix_stream_socket create
+allow isolated_app isolated_app unix_stream_socket connect
+allow isolated_app isolated_app unix_stream_socket read
+allow isolated_app isolated_app unix_stream_socket write
+allow isolated_app isolated_app unix_stream_socket getopt
+allow isolated_app isolated_app unix_stream_socket setopt
+allow isolated_app isolated_app unix_stream_socket shutdown
+
+# ═══════════════════════════════════════════════════════════════════════
+#  4. PLATFORM_APP / PRIV_APP — cover si la app entra por firma sistema
+# ═══════════════════════════════════════════════════════════════════════
+# En ROMs custom donde la app se firma como platform (o el usuario la
+# instala como priv-app), el scontext cambia y las reglas anteriores
+# no aplican. Ampliamos.
+allow platform_app su unix_stream_socket connectto
+allow platform_app magisk unix_stream_socket connectto
+allow priv_app su unix_stream_socket connectto
+allow priv_app magisk unix_stream_socket connectto
+# FIX v2.3: platform_app y priv_app también necesitan leer /proc/net/unix
+# para que ivanna_control.sh probe y el socket-alive check del SDK funcionen
+# cuando la app se instala con firma de plataforma (ROMs custom frecuentes).
+allow platform_app proc_net file read
+allow platform_app proc_net file open
+allow platform_app proc_net file getattr
+allow priv_app proc_net file read
+allow priv_app proc_net file open
+allow priv_app proc_net file getattr
+
+# ═══════════════════════════════════════════════════════════════════════
+#  6. AUDIOSERVER → SHM del Control Plane cross-process
+#
+#  FIX CRÍTICO: OmegaControlBus escribe el snapshot en
+#  /data/adb/ivanna_omega/omega_control_snapshot (tipo adb_data_file
+#  en AOSP Android 10+). omega_effect.cpp corre en el proceso audioserver
+#  y llama openReader() → open(path, O_RDONLY) → mmap(PROT_READ).
+#
+#  Sin estas reglas, SELinux enforcing bloquea el open() con EACCES
+#  ANTES de que el DAC 0644 importe. El bus nunca abre, ctrlBusOpen=false,
+#  y omega_effect.cpp corre con defaults inmutables sin importar qué
+#  mande la app. El bug de 0660→0644 ya fue corregido; este es el segundo
+#  requisito para que la lectura funcione end-to-end.
+#
+#  adb_data_file: tipo estándar AOSP para /data/adb/ y subdirectorios.
+#  system_data_file: fallback en ROMs pre-Android-10 o custom donde el
+#    directorio hereda del tipo del parent /data/.
+#  magisk_file: en Magisk Delta y KernelSU el daemon puede crear archivos
+#    bajo su namespace con este tipo.
+#  unlabeled: para el caso de que el SHM file no tenga contexto explícito
+#    (creado por un proceso root que saltó el labeling de contexto).
+# ═══════════════════════════════════════════════════════════════════════
+
+# Leer el archivo SHM (el reader mapea en PROT_READ|MAP_SHARED)
+allow audioserver adb_data_file file read
+allow audioserver adb_data_file file open
+allow audioserver adb_data_file file getattr
+allow audioserver adb_data_file file map
+allow audioserver adb_data_file dir search
+allow audioserver adb_data_file dir getattr
+allow audioserver adb_data_file dir open
+allow audioserver adb_data_file dir read
+
+# Fallback para ROMs donde el tipo no es adb_data_file
+allow audioserver system_data_file file read
+allow audioserver system_data_file file open
+allow audioserver system_data_file file getattr
+allow audioserver system_data_file file map
+allow audioserver system_data_file dir search
+allow audioserver system_data_file dir getattr
+
+# Fallback Magisk Delta / KernelSU
+allow audioserver magisk_file file read
+allow audioserver magisk_file file open
+allow audioserver magisk_file file getattr
+allow audioserver magisk_file file map
+allow audioserver magisk_file dir search
+allow audioserver magisk_file dir getattr
+
+# Fallback sin contexto explícito (proceso root que creó sin transición)
+allow audioserver unlabeled file read
+allow audioserver unlabeled file open
+allow audioserver unlabeled file getattr
+allow audioserver unlabeled file map
+
+# media_rw_data_file: si el SHM se mueve a /sdcard/Android/data/ como
+# fallback cuando /data/adb/ no es accesible por audioserver (plan B)
+allow audioserver media_rw_data_file file read
+allow audioserver media_rw_data_file file open
+allow audioserver media_rw_data_file file getattr
+allow audioserver media_rw_data_file file map
+
+# ═══════════════════════════════════════════════════════════════════════
+#  7. AUDIOSERVER → acceso propio al socket del daemon (telemetría futura)
+#
+#  audioserver puede querer enviar acks de generation aplicada al daemon
+#  (consumer_generation en el SHM). Añadimos connect ahora para no
+#  necesitar otra iteración de sepolicy cuando se implemente el ack.
+# ═══════════════════════════════════════════════════════════════════════
+allow audioserver su unix_stream_socket connectto
+allow audioserver magisk unix_stream_socket connectto
+allow audioserver audioserver unix_stream_socket create
+allow audioserver audioserver unix_stream_socket connect
+allow audioserver audioserver unix_stream_socket read
+allow audioserver audioserver unix_stream_socket write
+allow audioserver audioserver unix_stream_socket getopt
+allow audioserver audioserver unix_stream_socket setopt
+allow audioserver audioserver unix_stream_socket shutdown
+# ═══════════════════════════════════════════════════════════════════════
+# audioserver también lee /proc/net/unix para el probe del socket
+# (OmegaEngineBridge.getRoomStatus() → socket alive check).
+allow audioserver proc_net file read
+allow audioserver proc_net file open
+allow audioserver proc_net file getattr
+# ═══════════════════════════════════════════════════════════════════════
+# ivanna_control.sh y el auto-probe de MagiskBridge leen /proc/net/unix
+# para verificar que el socket está bindeado. En SELinux enforcing
+# sysfs_read del proc no siempre está por defecto para untrusted_app.
+allow untrusted_app proc_net file read
+allow untrusted_app proc_net file open
+allow untrusted_app proc_net file getattr
+allow isolated_app proc_net file read
+allow isolated_app proc_net file open
+allow isolated_app proc_net file getattr
+
+# ═══════════════════════════════════════════════════════════════════════
+#  8. OMEGA DAEMON ISOLATED DOMAIN (AOSP STRIC POLICIES)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Transición automática desde magisk
+
+# Permisos base del daemon
+
+# IPC seguro (App -> Daemon aislado)
+
+# ═══════════════════════════════════════════════════════════════════════
+#  9. SU / MAGISK DAEMON → leer assets de /data/adb/ivanna_omega/
+#
+#  El daemon (su domain) necesita leer SAF_model.json, hrtf/*.ihr1,
+#  rir/*.wav, sofa/*.sofa en boot-time desde /data/adb/ivanna_omega/.
+#  Sin esto, open() falla con EACCES en kernels que aplican SELinux
+#  al dominio su para archivos de tipo adb_data_file.
+# ═══════════════════════════════════════════════════════════════════════
+allow su adb_data_file file read
+allow su adb_data_file file open
+allow su adb_data_file file getattr
+allow su adb_data_file dir search
+allow su adb_data_file dir read
+allow su adb_data_file dir open
+allow magisk adb_data_file file read
+allow magisk adb_data_file file open
+allow magisk adb_data_file file getattr
+allow magisk adb_data_file dir search
+allow magisk adb_data_file dir read
+allow magisk adb_data_file dir open
+
+# ═══════════════════════════════════════════════════════════════════════
+#  10. SOFA files — audioserver lee /data/adb/ivanna_omega/sofa/
+#
+#  El HRTFBinLoader abre *.sofa como lector de archivos planos.
+#  En Android 12+ con targetSdk 31, el open() pasa por SELinux
+#  aunque sea PROT_READ. Con adb_data_file cubierto en sección 6,
+#  esta sección añade el dir-level traversal explícito para sofa/.
+# ═══════════════════════════════════════════════════════════════════════
+allow audioserver adb_data_file dir read
+allow audioserver adb_data_file dir open
+allow audioserver adb_data_file dir search
+
+# ═══════════════════════════════════════════════════════════════════════
+#  11. SHELL (adb shell) → health_check.sh puede leer el estado
+# ═══════════════════════════════════════════════════════════════════════
+allow shell adb_data_file file read
+allow shell adb_data_file file open
+allow shell adb_data_file file getattr
+allow shell adb_data_file dir search
+allow shell adb_data_file dir read
+allow shell adb_data_file dir open
+allow shell proc_net file read
+allow shell proc_net file open
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.0 — VARIANTES untrusted_app_XX (Android 11+) — CAUSA RAIZ del socket
+# DESCONECTADO con daemon CORRIENDO:
+#   Android 11+ asigna a cada app un dominio variante segun targetSdk:
+#   untrusted_app_25/27/29/30/32/33/34. La regla base "allow untrusted_app ..."
+#   NO cubre esas variantes — son tipos distintos, no heredan las reglas del
+#   tipo base. Resultado: la app (targetSdk 34/35 → untrusted_app_32) hacia
+#   connect() a @omega_daemon_socket y SELinux lo denegaba con EACCES aunque
+#   el daemon estuviera vivo y el socket bindeado. La UI mostraba
+#   "daemon CORRIENDO / socket DESCONECTADO" — exactamente el sintoma.
+#   service.sh aplica linea por linea si --apply falla: los tipos que no
+#   existan en esta version de Android se loguean como rechazados, sin mas.
+# ═══════════════════════════════════════════════════════════════════════════════
+allow untrusted_app_25 su unix_stream_socket connectto
+allow untrusted_app_25 magisk unix_stream_socket connectto
+allow untrusted_app_27 su unix_stream_socket connectto
+allow untrusted_app_27 magisk unix_stream_socket connectto
+allow untrusted_app_29 su unix_stream_socket connectto
+allow untrusted_app_29 magisk unix_stream_socket connectto
+allow untrusted_app_30 su unix_stream_socket connectto
+allow untrusted_app_30 magisk unix_stream_socket connectto
+allow untrusted_app_32 su unix_stream_socket connectto
+allow untrusted_app_32 magisk unix_stream_socket connectto
+allow untrusted_app_33 su unix_stream_socket connectto
+allow untrusted_app_33 magisk unix_stream_socket connectto
+allow untrusted_app_34 su unix_stream_socket connectto
+allow untrusted_app_34 magisk unix_stream_socket connectto
+allow untrusted_app_25 untrusted_app_25 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_27 untrusted_app_27 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_29 untrusted_app_29 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_30 untrusted_app_30 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_32 untrusted_app_32 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_33 untrusted_app_33 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_34 untrusted_app_34 unix_stream_socket { create connect read write getopt setopt getattr shutdown }

@@ -1,0 +1,127 @@
+[
+  {
+    "model": "Sennheiser HD650",
+    "shelf": {
+      "freq": 100.0,
+      "gainDb": 6.0,
+      "q": 0.71
+    },
+    "bands": [
+      {
+        "freq": 6433.6,
+        "gainDb": 2.95,
+        "q": 3.02
+      },
+      {
+        "freq": 7646.5,
+        "gainDb": 6.0,
+        "q": 1.77
+      },
+      {
+        "freq": 12316.4,
+        "gainDb": -4.87,
+        "q": 2.82
+      }
+    ]
+  },
+  {
+    "model": "Beyerdynamic DT770 Pro",
+    "shelf": {
+      "freq": 100.0,
+      "gainDb": 6.0,
+      "q": 0.71
+    },
+    "bands": [
+      {
+        "freq": 269.5,
+        "gainDb": 6.0,
+        "q": 0.66
+      },
+      {
+        "freq": 3222.7,
+        "gainDb": 6.0,
+        "q": 1.79
+      },
+      {
+        "freq": 8015.6,
+        "gainDb": 6.0,
+        "q": 3.5
+      }
+    ]
+  },
+  {
+    "model": "Beyerdynamic DT990 Pro",
+    "shelf": {
+      "freq": 100.0,
+      "gainDb": 6.0,
+      "q": 0.71
+    },
+    "bands": [
+      {
+        "freq": 5103.5,
+        "gainDb": -5.78,
+        "q": 2.99
+      },
+      {
+        "freq": 7148.4,
+        "gainDb": 5.52,
+        "q": 3.01
+      },
+      {
+        "freq": 13523.4,
+        "gainDb": -6.0,
+        "q": 1.97
+      }
+    ]
+  },
+  {
+    "model": "AKG K271 MKII",
+    "shelf": {
+      "freq": 100.0,
+      "gainDb": 6.0,
+      "q": 0.71
+    },
+    "bands": [
+      {
+        "freq": 269.5,
+        "gainDb": 6.0,
+        "q": 1.81
+      },
+      {
+        "freq": 4130.9,
+        "gainDb": 5.55,
+        "q": 0.81
+      },
+      {
+        "freq": 11818.4,
+        "gainDb": 6.0,
+        "q": 1.45
+      }
+    ]
+  },
+  {
+    "model": "AKG K272 HD",
+    "shelf": {
+      "freq": 100.0,
+      "gainDb": 6.0,
+      "q": 0.71
+    },
+    "bands": [
+      {
+        "freq": 269.5,
+        "gainDb": 6.0,
+        "q": 1.81
+      },
+      {
+        "freq": 4130.9,
+        "gainDb": 5.55,
+        "q": 0.81
+      },
+      {
+        "freq": 11818.4,
+        "gainDb": 6.0,
+        "q": 1.45
+      }
+    ]
+  }
+]

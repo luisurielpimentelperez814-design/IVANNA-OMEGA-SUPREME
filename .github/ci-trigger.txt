@@ -1,0 +1,5 @@
+CI run trigger
+
+Trigger trivial para re-ejecutar el workflow.
+
+Note: this file exists only to create a trivial commit and start the workflow.

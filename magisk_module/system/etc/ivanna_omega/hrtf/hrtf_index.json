@@ -1,0 +1,104 @@
+{
+  "version": "2.0",
+  "format": "IHR1",
+  "sampleRate": 48000,
+  "taps": 512,
+  "subjects": [
+    {
+      "id": "kemar",
+      "file": "kemar.ihr1",
+      "label": "KEMAR \u2014 pinna normal (MIT 1994)",
+      "positions": 710,
+      "sourceSampleRate": 44100.0,
+      "sha256": "32d1b30a62bc59813ea498234a79d4cc0bd19cc1bb3f3c50be2d5f5b851134ad"
+    },
+    {
+      "id": "kemar_large",
+      "file": "kemar_large.ihr1",
+      "label": "KEMAR \u2014 pinna grande (MIT 1994)",
+      "positions": 710,
+      "sourceSampleRate": 44100.0,
+      "sha256": "4582ff2cf80b5fa1718acd202e317cb32a3bcbb7a4be9cc131969f945a50fdcf"
+    },
+    {
+      "id": "tu_berlin_kemar",
+      "file": "tu_berlin_kemar.ihr1",
+      "label": "TU Berlin QU KEMAR anecoico",
+      "positions": 360,
+      "sourceSampleRate": 44100.0,
+      "sha256": "7fc7fe0b3b6bafac883b9c95e5bca8a3618275850f9a318c97a41b8ff56e2e23"
+    },
+    {
+      "id": "cipic_003",
+      "file": "cipic_003.ihr1",
+      "label": "CIPIC sujeto 003",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "ca1481ead2938bb11d7936d5682e3922dcf8ca8c655d38d8becb3cbcb7f3f3a8"
+    },
+    {
+      "id": "cipic_008",
+      "file": "cipic_008.ihr1",
+      "label": "CIPIC sujeto 008",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "36bfd71a42b691c1e117409edce73b9530cfe3cce63efbd2d17a222a07923ca4"
+    },
+    {
+      "id": "cipic_009",
+      "file": "cipic_009.ihr1",
+      "label": "CIPIC sujeto 009",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "fd3644f29ac5028d4a25613119b3f6d1e6ecf3e1ed046f633975c44fc64d2b4f"
+    },
+    {
+      "id": "cipic_010",
+      "file": "cipic_010.ihr1",
+      "label": "CIPIC sujeto 010",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "4c9267d57db3b2c336a206437e9bb5d9fb8e2a811ed13260a18ee25d267ba8d8"
+    },
+    {
+      "id": "cipic_011",
+      "file": "cipic_011.ihr1",
+      "label": "CIPIC sujeto 011",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "30cf56eb8eb465446219949811fbc49fca1edd928ff408e0360b317eaa7094d1"
+    },
+    {
+      "id": "cipic_012",
+      "file": "cipic_012.ihr1",
+      "label": "CIPIC sujeto 012",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "17e1bf1e8cdd4132663ac705ba327683a3bc96461630d99b8d60ac7f20b022e9"
+    },
+    {
+      "id": "cipic_165",
+      "file": "cipic_165.ihr1",
+      "label": "CIPIC sujeto 165",
+      "positions": 1250,
+      "sourceSampleRate": 44100.0,
+      "sha256": "56ab21a3e18660349e55ae6168d26e5dbd1b7da4ea84fa8440936da82f9c0c38"
+    },
+    {
+      "id": "pulse",
+      "file": "pulse.ihr1",
+      "label": "Pulse HRTF",
+      "positions": 1250,
+      "sourceSampleRate": 48000.0,
+      "sha256": "c8b742dc7aad82b03823ecc1a1a65fd3cdc61df76910813e0545309031fcbf95"
+    },
+    {
+      "id": "freefield_demo",
+      "file": "freefield_demo.ihr1",
+      "label": "FreeField HRTF (demo, 1 IR)",
+      "positions": 2354,
+      "sourceSampleRate": 48000.0,
+      "sha256": "282883ff27d08a63d66d6b9ab6e37c07df0d19ccc27217e51eceeeaa98255b84"
+    }
+  ]
+}

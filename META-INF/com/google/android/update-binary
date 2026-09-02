@@ -1,0 +1,125 @@
+#!/sbin/sh
+# IVANNA FUSION DSP — Magisk Module Installer
+# Compatible: Magisk v24+, KernelSU, APatch
+# Target:     Snapdragon 4 Gen 2 / Android 14-15
+
+SKIPUNZIP=1
+MODDIR="$NVBASE/modules/$MODID"
+
+# ─── UI helpers ───────────────────────────────────────────────────────────────
+print_modname() {
+  ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ui_print "  IVANNA FUSION DSP  v1.0  — GORE TNS"
+  ui_print "  Real DSP: PEQ + Compressor + Exciter"
+  ui_print "  ARM NEON SIMD | Snapdragon 4 Gen 2"
+  ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# ─── Check architecture ───────────────────────────────────────────────────────
+if [ "$ARCH" != "arm64" ]; then
+  ui_print "! ERROR: Este módulo requiere ARM64 (arm64-v8a)"
+  ui_print "! Dispositivo detectado: $ARCH"
+  abort
+fi
+
+ui_print "- Arquitectura: arm64-v8a ✓"
+ui_print "- Android API: $API"
+
+# ─── Extract files ────────────────────────────────────────────────────────────
+ui_print "- Extrayendo módulo..."
+unzip -o "$ZIPFILE" 'system/*' -d "$MODDIR" >/dev/null 2>&1
+unzip -o "$ZIPFILE" 'sepolicy/*' -d "$MODDIR" >/dev/null 2>&1
+unzip -o "$ZIPFILE" 'module.prop' -d "$MODDIR" >/dev/null 2>&1
+unzip -o "$ZIPFILE" 'service.sh' -d "$MODDIR" >/dev/null 2>&1
+
+# ─── Verify .so was extracted ─────────────────────────────────────────────────
+SO_PATH="$MODDIR/system/lib64/soundfx/libivanna_fusion.so"
+if [ ! -f "$SO_PATH" ]; then
+  ui_print "! ERROR: libivanna_fusion.so no encontrado en el zip."
+  ui_print "! Necesitas compilar primero via GitHub Actions."
+  ui_print "! Ver: https://github.com/goretns63-cpu/IVANNA-FUSION"
+  abort
+fi
+ui_print "- libivanna_fusion.so ✓ ($(du -h $SO_PATH | cut -f1))"
+
+# ─── Detect effects config format ─────────────────────────────────────────────
+ui_print "- Detectando configuración de efectos de audio..."
+
+EFFECTS_XML_PATHS="
+  /vendor/etc/audio_effects.xml
+  /system/etc/audio_effects.xml
+  /odm/etc/audio_effects.xml
+"
+
+EFFECTS_CONF_PATHS="
+  /vendor/etc/audio_effects.conf
+  /system/etc/audio_effects.conf
+"
+
+FOUND_XML=""
+for p in $EFFECTS_XML_PATHS; do
+  if [ -f "$p" ]; then
+    FOUND_XML="$p"
+    ui_print "  → Encontrado XML: $p"
+    break
+  fi
+done
+
+FOUND_CONF=""
+for p in $EFFECTS_CONF_PATHS; do
+  if [ -f "$p" ]; then
+    FOUND_CONF="$p"
+    ui_print "  → Encontrado CONF: $p"
+    break
+  fi
+done
+
+# ─── Patch effects config ──────────────────────────────────────────────────────
+if [ -n "$FOUND_XML" ]; then
+  # Determinar ruta de overlay en el módulo
+  REL_XML="${FOUND_XML#/}"
+  OVERLAY_DIR="$MODDIR/${REL_XML%/*}"
+  mkdir -p "$OVERLAY_DIR"
+  
+  # Copiar original y parchear
+  cp "$FOUND_XML" "$OVERLAY_DIR/$(basename $FOUND_XML)"
+  PATCHED="$OVERLAY_DIR/$(basename $FOUND_XML)"
+  
+  # Inyectar library si no existe ya
+  if ! grep -q "ivanna_fusion" "$PATCHED"; then
+    # Insertar <library> en sección libraries
+    sed -i 's|<libraries>|<libraries>\n        <library name="ivanna_fusion" path="/system/lib64/soundfx/libivanna_fusion.so"/>|' "$PATCHED"
+    # Insertar <effect> en sección effects
+    sed -i 's|<effects>|<effects>\n        <effect name="ivanna_fusion_dsp" library="ivanna_fusion" uuid="7b3be4ec-c23c-4e6e-8c6d-49e5f4d54ea3"/>|' "$PATCHED"
+    # Insertar en postprocess music stream
+    sed -i 's|<stream type="music">|<stream type="music">\n            <apply effect="ivanna_fusion_dsp"/>|' "$PATCHED" 2>/dev/null || true
+    ui_print "  → Parcheado XML ✓"
+  else
+    ui_print "  → Ya parcheado, skipping"
+  fi
+
+elif [ -n "$FOUND_CONF" ]; then
+  REL_CONF="${FOUND_CONF#/}"
+  OVERLAY_DIR="$MODDIR/${REL_CONF%/*}"
+  mkdir -p "$OVERLAY_DIR"
+  cp "$FOUND_CONF" "$OVERLAY_DIR/$(basename $FOUND_CONF)"
+  PATCHED="$OVERLAY_DIR/$(basename $FOUND_CONF)"
+  
+  if ! grep -q "ivanna_fusion" "$PATCHED"; then
+    # Agregar library
+    printf '\nlibraries {\n  ivanna_fusion {\n    path /system/lib64/soundfx/libivanna_fusion.so\n  }\n}\n\neffects {\n  ivanna_fusion_dsp {\n    library ivanna_fusion\n    uuid 7b3be4ec-c23c-4e6e-8c6d-49e5f4d54ea3\n  }\n}\n' >> "$PATCHED"
+    ui_print "  → Parcheado CONF ✓"
+  fi
+else
+  ui_print "! WARNING: No se encontró audio_effects.xml/conf"
+  ui_print "! El efecto puede no activarse automáticamente"
+fi
+
+# ─── Permissions ──────────────────────────────────────────────────────────────
+set_perm "$MODDIR/system/lib64/soundfx/libivanna_fusion.so" root root 0644
+set_perm "$MODDIR/service.sh" root root 0755
+
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ui_print "  Instalación completa."
+ui_print "  Reinicia el dispositivo para activar."
+ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,575 @@
+name: IVANNA-OMEGA-SUPREME CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omega-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_COMPILE_SDK: "35"
+  ANDROID_BUILD_TOOLS: "35.0.0"
+  ANDROID_NDK_VERSION: "26.1.10909125"
+  ANDROID_CMAKE_VERSION: "3.22.1"
+  CMDLINE_TOOLS_VERSION: "11076708"
+  GRADLE_VERSION: "8.9"
+
+jobs:
+
+  test-native-dsp:
+    name: DSP Native Tests (host, CTest)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - name: Configure (Release)
+        run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-tests -j
+      - name: Run tests
+        run: ctest --test-dir build-tests --output-on-failure
+
+  build-apk:
+    name: Build APK & Native Binaries (artifact integrity enforced)
+    runs-on: ubuntu-22.04
+    needs: [test-native-dsp]
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ═══════════════════════════════════════════════════════════════════
+      # ARTIFACT INTEGRITY (auditoría 2026-08-16)
+      # El zip Magisk distribuido contenía un ivanna_daemon ARM32 / NDK r25b
+      # antiguo (BuildID 7a92e8...) en lugar del ARM64 recién compilado.
+      # Causa: staging condicional ("if [ -f ] cp") que copiaba binarios
+      # versionados/residuales cuando la compilación no dejaba el artefacto
+      # en la ruta esperada. Política nueva:
+      #   1. PURGA total antes de compilar (ningún binario preexistente).
+      #   2. Compilación obligatoria desde fuente — si no produce binario,
+      #      el job FALLA (test -f || exit 1). Nunca se copia "lo que haya".
+      #   3. Validación estricta: file → 64-bit LSB arm64, readelf →
+      #      AArch64 + DYN (PIE), sha256 registrado.
+      #   4. Manifiesto BUILD_INFO dentro del módulo.
+      #   5. Validación post-zip: el daemon extraído del zip debe tener
+      #      hash idéntico al compilado.
+      #   6. Artefacto versionado por SHA: ivanna-magisk-module-arm64-<sha>.
+      # ═══════════════════════════════════════════════════════════════════
+
+      - name: Purge any prebuilt/committed binaries (anti-contamination)
+        run: |
+          set -euo pipefail
+          rm -f magisk_module/system/bin/ivanna_daemon
+          rm -f ivanna_daemon
+          rm -f extracted_daemon
+          # FIX (CI exit 1): GNU find con -delete activa -depth implicitamente,
+          # y con -depth activo el -prune deja de funcionar -> find aborta con
+          # "The -delete action automatically turns on -depth, but -prune does
+          # nothing when -depth is in effect" y el job moria ANTES de compilar.
+          # La exclusion de .git se hace con -not -path (no requiere prune).
+          find . -not -path "./.git/*" -name "*.so" -type f -print -delete
+          find . -not -path "./.git/*" -name "ivanna_daemon" -type f -print -delete
+          echo "Purge OK — repo contiene solo fuentes"
+
+      - name: Cache Gradle distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper/dists
+          key: gradle-${{ env.GRADLE_VERSION }}-${{ runner.os }}
+
+      - name: Provision Gradle (retry + mirror)
+        run: |
+          set -euo pipefail
+          GRADLE_HOME_DIR="$HOME/.gradle-dist"
+          mkdir -p "$GRADLE_HOME_DIR"
+          ZIP="$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}-bin.zip"
+          URLS=(
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+            "https://downloads.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+            "https://releases.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          )
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            for url in "${URLS[@]}"; do
+              echo "[gradle-provision] attempt $attempt → $url"
+              if curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+                       --connect-timeout 30 --max-time 300 -o "$ZIP" "$url"; then
+                ok=1; break
+              fi
+              sleep $((attempt * 2))
+            done
+            [ "$ok" = "1" ] && break
+          done
+          [ "$ok" = "1" ] || { echo "ERROR: no se pudo descargar Gradle"; exit 1; }
+          unzip -q -o "$ZIP" -d "$GRADLE_HOME_DIR"
+          echo "GRADLE_HOME=$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}" >> "$GITHUB_ENV"
+          echo "$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}/bin"          >> "$GITHUB_PATH"
+
+      - name: Install Android SDK + NDK (manual)
+        run: |
+          set -euo pipefail
+          export ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          cd "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+               -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
+          unzip -q tools.zip && rm tools.zip && mv cmdline-tools latest
+          SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" \
+                    "build-tools;${ANDROID_BUILD_TOOLS}" \
+                    "ndk;${ANDROID_NDK_VERSION}" \
+                    "cmake;${ANDROID_CMAKE_VERSION}"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"     >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
+
+      - name: Generate local.properties
+        run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Remove Termux aapt2 override from Gradle cache
+        run: |
+          GRADLE_PROPS="$HOME/.gradle/gradle.properties"
+          if [ -f "$GRADLE_PROPS" ]; then
+            sed -i '/aapt2FromMavenOverride/d' "$GRADLE_PROPS"
+          fi
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
+
+      # ── COMPILACIÓN DEL DAEMON (obligatoria, desde fuente) ────────────
+      - name: Compile ivanna_daemon from source (NDK r26, arm64-v8a)
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_NDK_HOME"
+          TC="$NDK/build/cmake/android.toolchain.cmake"
+          test -f "$TC" || { echo "ERROR: toolchain NDK no encontrado en $TC"; exit 1; }
+          cmake -B build-daemon -S app/src/main/cpp/daemon \
+            -DCMAKE_TOOLCHAIN_FILE="$TC" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-27 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          cmake --build build-daemon -j --config Release
+          # Localizar el binario producido — DEBE existir, nunca copiar otra cosa
+          DAEMON_BIN_PATH=$(find build-daemon -name "ivanna_daemon" -type f | head -1)
+          test -n "$DAEMON_BIN_PATH" || { echo "ERROR: la compilación no produjo ivanna_daemon"; exit 1; }
+          cp "$DAEMON_BIN_PATH" ./ivanna_daemon
+          chmod 755 ./ivanna_daemon
+
+      - name: Compile ivanna_client (NDK r26, arm64-v8a)
+        run: |
+          set -euo pipefail
+          CXX="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+          test -x "$CXX" || { echo "ERROR: clang NDK no encontrado"; exit 1; }
+          "$CXX" -std=c11 -O2 -pie -fPIE -fstack-protector-strong \
+            -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,--build-id=sha1 \
+            app/src/main/cpp/daemon/ivanna_client.c -o ivanna_client
+          chmod 755 ivanna_client
+          file ivanna_client | grep -qiE "aarch64|arm64" || { echo "ERROR: no ARM64"; exit 1; }
+          sha256sum ivanna_client
+          mkdir -p magisk_module/system/bin
+          cp ivanna_client magisk_module/system/bin/ivanna_client
+          echo "ivanna_client OK"
+
+      # ── VALIDACIÓN ESTRICTA DEL BINARIO COMPILADO ──────────────────────
+      - name: Validate daemon ELF (arm64 / AArch64 / PIE / hash)
+        run: |
+          set -euo pipefail
+          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon ausente tras compilar"; exit 1; }
+          FILE_OUT="$(file ivanna_daemon)"
+          echo "$FILE_OUT"
+          echo "$FILE_OUT" | grep -q "64-bit"  || { echo "ERROR: daemon no es 64-bit"; exit 1; }
+          echo "$FILE_OUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon no es ARM64"; exit 1; }
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          [ -x "$READELF" ] || READELF=readelf
+          HDR="$("$READELF" -h ivanna_daemon)"
+          echo "$HDR"
+          echo "$HDR" | grep -q "AArch64"          || { echo "ERROR: readelf no reporta AArch64"; exit 1; }
+          echo "$HDR" | grep -qE "Type:.*DYN"       || { echo "ERROR: daemon no es PIE (Type != DYN)"; exit 1; }
+          # Hardening: RELRO + BIND_NOW (segmento GNU_RELRO + flag BIND_NOW)
+          "$READELF" -lW ivanna_daemon | grep -q "GNU_RELRO" || { echo "ERROR: sin RELRO"; exit 1; }
+          "$READELF" -dW ivanna_daemon | grep -qE "BIND_NOW|FLAGS.*NOW" || { echo "ERROR: sin BIND_NOW"; exit 1; }
+          sha256sum ivanna_daemon | tee daemon_sha256.txt
+
+      - name: Build APK (Gradle provisionado)
+        run: |
+          chmod +x gradlew
+          gradle assembleDebug --no-daemon --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
+            -Dorg.gradle.caching=true -Dorg.gradle.parallel=true
+
+      # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
+      - name: Validate Gradle APK CRC before staging
+        run: |
+          set -euo pipefail
+
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+
+          test -n "$APK_PATH" || {
+            echo "ERROR: no existe APK generado por Gradle"
+            exit 1
+          }
+
+          echo "APK generado:"
+          ls -lh "$APK_PATH"
+
+          echo "Validando ZIP interno:"
+          unzip -t "$APK_PATH"
+
+          echo "Validación APK completada"
+
+      # ── STAGING + VALIDACIÓN DEL APK (auditoría 2026-08-16) ────────────
+      # FIX: gradle assembleDebug SÍ generaba el APK en app/build/outputs/apk/
+      # pero ningún step posterior lo copiaba, validaba, ni lo incluía en
+      # el path: del Upload artifacts de más abajo — se compilaba y se
+      # descartaba en silencio. Nadie podía descargar un APK actualizado
+      # desde un run de CI exitoso pese a que Gradle no fallaba nunca.
+      # Mismo nivel de validación que ya se le exige a ivanna_daemon y
+      # libomega_effect.so — no "cp si existe", el job muere si falta.
+      - name: Stage + validate APK artifact
+        run: |
+          set -euo pipefail
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          test -n "$APK_PATH" || { echo "ERROR: gradle assembleDebug no produjo ningún .apk en app/build/outputs/apk/"; exit 1; }
+          test -s "$APK_PATH" || { echo "ERROR: $APK_PATH existe pero está vacío (0 bytes)"; exit 1; }
+          # Validación real de que es un APK válido, no un archivo corrupto:
+          # todo APK es un ZIP y DEBE contener AndroidManifest.xml en la raíz.
+          unzip -l "$APK_PATH" | grep -q "AndroidManifest.xml" || { echo "ERROR: $APK_PATH no contiene AndroidManifest.xml — APK corrupto"; exit 1; }
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK_PATH" "./$APK_NAME"
+          sha256sum "./$APK_NAME" | tee apk_sha256.txt
+          ls -lh "./$APK_NAME"
+          echo "APK_ARTIFACT_NAME=$APK_NAME" >> "$GITHUB_ENV"
+
+      # ── STAGING OBLIGATORIO: prohibido copiar "si existe", siempre ────
+      # ── se copia el binario recién validado o el job muere. ────────────
+      - name: Stage daemon + effect lib into Magisk module (no legacy copy)
+        run: |
+          set -euo pipefail
+          # REGLA: nunca "if [ -f ] cp" — el binario validado DEBE existir.
+          test -f ivanna_daemon || { echo "ERROR: ivanna_daemon no compilado"; exit 1; }
+          rm -f magisk_module/system/bin/ivanna_daemon
+          mkdir -p magisk_module/system/bin
+          cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
+          chmod 755 magisk_module/system/bin/ivanna_daemon
+          # libomega_effect.so desde la salida de Gradle — obligatoria también
+          EFFECT_SO=$(find app/build -path "*arm64-v8a*" -name "libomega_effect.so" | head -1)
+          test -n "$EFFECT_SO" || { echo "ERROR: libomega_effect.so no encontrada en app/build"; exit 1; }
+          mkdir -p magisk_module/system/vendor/lib64/soundfx
+          rm -f magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          cp "$EFFECT_SO" magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
+          cp "$EFFECT_SO" ./libomega_effect_arm64.so
+          file libomega_effect_arm64.so
+
+      # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
+      - name: Generate BUILD_INFO manifest
+        run: |
+          set -euo pipefail
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "run=$GITHUB_RUN_NUMBER"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "daemon_sha256=$(sha256sum ivanna_daemon | awk '{print $1}')"
+            echo "daemon_file=$(file ivanna_daemon)"
+            echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | awk '{print $1}')"
+            echo "ndk=${ANDROID_NDK_VERSION}"
+          } > magisk_module/BUILD_INFO
+          cat magisk_module/BUILD_INFO
+
+      # ── EMPAQUETADO + VALIDACIÓN DEL ZIP FINAL ─────────────────────────
+      - name: Package Magisk module + verify zip integrity
+        run: |
+          set -euo pipefail
+          test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
+          if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|typeattribute|allowxperm|neverallow|require)[[:space:]]'; then
+            echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
+          fi
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" )
+          # El zip DEBE contener el daemon
+          unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"               || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
+          # Extracción + validación del daemon DENTRO del zip
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "64-bit" || { echo "ERROR: daemon del zip no es 64-bit"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon del zip no es ARM64"; exit 1; }
+          H_ZIP=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_SRC=$(sha256sum ivanna_daemon    | awk '{print $1}')
+          echo "zip_daemon_sha256=$H_ZIP"
+          echo "src_daemon_sha256=$H_SRC"
+          [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
+          echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          ls -lh "$ZIPNAME"
+
+      # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
+      # FIX: los pasos "Verify APK integrity before upload" y
+      # "Package APK deterministically" aparecían DOS veces. El segundo
+      # intento de `zip -T ivanna-apk-package.zip *` incluía el propio
+      # .zip en sí mismo → APK bundle corrupto, no descomprimible.
+      # También: `sha256sum -c apk_sha256.txt` fallaba porque en ese
+      # punto apk_sha256.txt tenía la ruta de Gradle (app/build/…), no
+      # el nombre canónico ivanna-omega-supreme-SHA.apk.
+      # Solución: un único bloque ordenado con hash canónico desde el inicio.
+
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Localizar el APK producido por Gradle — debe existir, tamaño >0
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          [ -n "$APK" ] || { echo "ERROR: Gradle no produjo ningún APK"; exit 1; }
+          [ -s "$APK" ] || { echo "ERROR: APK existe pero está vacío"; exit 1; }
+
+          echo "APK origen: $APK  ($(du -h "$APK" | cut -f1))"
+          file "$APK"
+
+          # Validación ZIP — todo APK es un ZIP; debe contener AndroidManifest.xml
+          unzip -t "$APK"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml" \
+            || { echo "ERROR: APK sin AndroidManifest.xml — corrupto"; exit 1; }
+
+          # Renombrar al nombre canónico versionado por SHA
+          APK_FINAL="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK" "./$APK_FINAL"
+
+          # Hash del archivo canónico (este es el que viaja como artefacto)
+          sha256sum "./$APK_FINAL" | tee apk_sha256.txt
+          echo "APK_ARTIFACT_NAME=$APK_FINAL" >> "$GITHUB_ENV"
+
+          # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
+          sha256sum -c apk_sha256.txt
+
+          # Empaquetado determinístico en directorio limpio
+          rm -rf artifact && mkdir artifact
+          cp "./$APK_FINAL"  artifact/
+          cp apk_sha256.txt  artifact/
+          # -j: sin paths internos; -X: sin metadatos extra; sin incluir el zip en sí
+          ( cd artifact && zip -jX ivanna-apk-package.zip "$APK_FINAL" apk_sha256.txt )
+          # Validar el zip producido
+          unzip -t artifact/ivanna-apk-package.zip
+          unzip -l artifact/ivanna-apk-package.zip | grep -q "$(basename "$APK_FINAL")" \
+            || { echo "ERROR: APK no encontrado dentro del package zip"; exit 1; }
+          sha256sum artifact/ivanna-apk-package.zip | tee artifact/package_sha256.txt
+
+          echo "✓ APK empaquetado y verificado: $APK_FINAL"
+
+      - name: Upload Magisk module (zip + daemon + effect lib)
+        uses: actions/upload-artifact@v4
+        with:
+          name: magisk-module-bundle-${{ github.sha }}
+          path: |
+            ivanna-magisk-module-arm64-${{ github.sha }}.zip
+            ivanna_daemon
+            libomega_effect_arm64.so
+            daemon_sha256.txt
+          if-no-files-found: error
+          overwrite: false
+
+      - name: Upload APK (separate artifact — never collides with module zip name)
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-build-${{ github.sha }}
+          compression-level: 0
+          path: |
+            ivanna-omega-supreme-${{ github.sha }}.apk
+            apk_sha256.txt
+            artifact/ivanna-apk-package.zip
+            artifact/package_sha256.txt
+          if-no-files-found: error
+          overwrite: false
+
+
+  # ── JOB FINAL: verificación independiente del artefacto publicado ──────
+  verify-release:
+    name: Verify published artifact (download → extract → validate)
+    runs-on: ubuntu-22.04
+    needs: [build-apk]
+    steps:
+      # FIX (CI rojo, 2026-08-28): este job nunca hacía checkout del repo —
+      # solo descargaba artefactos. Los pasos OEM/IAEL llaman a scripts en
+      # tools/ (iael_audio_certification.py, dashboard/*, telemetry/*) que
+      # no existían en el runner → "[Errno 2] No such file or directory"
+      # en 6 pasos seguidos. Checkout primero, artefactos después.
+      - uses: actions/checkout@v5
+
+      - name: Download module bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: magisk-module-bundle-${{ github.sha }}
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-build-${{ github.sha }}
+
+      - name: Validate downloaded zip end-to-end
+        run: |
+          set -euo pipefail
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
+          test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
+          test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+          # FIX (auditoría 2026-08-16): el APK nunca se publicaba, así que
+          # tampoco se verificaba aquí — agregado con el mismo rigor.
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
+          test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
+          test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
+          H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          H_APK_MANIFEST=$(awk '{print $1}' apk_sha256.txt)
+          [ "$H_APK_PUBLISHED" = "$H_APK_MANIFEST" ] || { echo "ERROR FATAL: hash APK publicado != manifiesto apk_sha256.txt"; exit 1; }
+          echo "APK OK: $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "ELF"               || { echo "ERROR: no es ELF"; exit 1; }
+          echo "$FOUT" | grep -q "64-bit"            || { echo "ERROR: ARM32 o no-64 detectado"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64"   || { echo "ERROR: no es AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
+          H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
+          H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
+          echo "extracted=$H_EXTRACT"
+          echo "published=$H_PUBLISHED"
+          echo "recorded =$H_RECORDED"
+          [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
+          [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+          # Datasets HRTF: los 12 IHR1 + índice deben viajar en el zip
+          # (sin ellos el selector de pinna cae al sintético en silencio).
+          N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
+          echo "ihr1_en_zip=$N_IHR1"
+          [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          # Verificación de integridad de un IHR1 extraído (magic + tamaño)
+          unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
+          MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
+          [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
+          # BUILD_INFO debe estar dentro del zip y apuntar a ESTE commit
+          unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
+          grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
+          grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+          echo "════════════════════════════════════════════════════════"
+          echo " VERIFY-RELEASE OK"
+          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
+          echo " hash idéntico: compilación → zip → artefacto → módulo"
+          echo "════════════════════════════════════════════════════════"
+      - name: Generate OEM stability report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate_oem_report.sh
+          .github/scripts/generate_oem_report.sh
+
+
+      - name: Upload OEM certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-stability-report
+          path: ivanna_oem_stability_report.txt
+
+      - name: Run OEM certification gate
+        if: always()
+        run: |
+          chmod +x .github/scripts/oem_certification_gate.sh
+          .github/scripts/oem_certification_gate.sh
+
+
+      - name: Upload certification gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-certification-gate-report
+          path: ivanna_oem_certification_gate.txt
+
+      - name: Collect OEM performance telemetry
+        if: always()
+        run: |
+          chmod +x tools/telemetry/collect_oem_metrics.sh
+          tools/telemetry/collect_oem_metrics.sh
+
+
+      - name: Upload OEM telemetry metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-performance-metrics
+          path: ivanna_oem_metrics.json
+
+      - name: Store OEM metrics history
+        if: always()
+        run: |
+          chmod +x .github/scripts/store_metrics_history.sh
+          .github/scripts/store_metrics_history.sh
+
+      - name: Generate OEM dashboard
+        if: always()
+        run: |
+          python3 tools/dashboard/generate_dashboard.py
+
+
+      - name: Upload OEM dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-dashboard
+          path: ivanna_oem_dashboard.html
+
+      - name: Compare OEM performance regression
+        if: always()
+        run: |
+          python3 tools/dashboard/compare_history.py
+
+
+      - name: Upload OEM regression report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-oem-regression-report
+          path: ivanna_oem_delta_report.html
+
+      - name: Run OEM performance quality gate
+        if: always()
+        run: |
+          python3 tools/dashboard/oem_quality_gate.py
+
+      - name: Run IVANNA IAEL Audio Certification
+        if: always()
+        run: |
+          python3 tools/iael/iael_audio_certification.py
+
+
+      - name: Upload IAEL Certification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivanna-iael-certification
+          path: |
+            ivanna_iael_report.html
+            telemetry/iael/latest_certification.json
+
+

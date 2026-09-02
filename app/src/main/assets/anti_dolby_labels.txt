@@ -1,0 +1,4 @@
+Voz
+Musica
+Bajos
+Silencio
