@@ -17,6 +17,25 @@ object OmegaEngineBridge {
     @Volatile var isConnected = false; private set
     @Volatile private var lastLatencyMs = 0f
     private val reconnecting = AtomicBoolean(false)
+
+    // ── Keepalive: probe suave cada 5 s ──────────────────────────────────
+    // Sin esto isConnected solo se refresca cuando la UI pulsa un boton —
+    // tras un boot o una caida del daemon el panel quedaba DESCONECTADO
+    // hasta intervencion manual. Un hilo daemon ligero hace probeSocket()
+    // periodico (1 probe/5s, timeout 2s — coste despreciable) y la UI
+    // siempre refleja el estado real del socket.
+    @Volatile private var keepaliveStarted = false
+    fun startKeepalive() {
+        if (keepaliveStarted) return
+        keepaliveStarted = true
+        Thread({
+            while (true) {
+                try { connect(); Thread.sleep(5000) }
+                catch (_: InterruptedException) { return }
+                catch (_: Throwable) { /* probe ya maneja sus errores */ }
+            }
+        }, "omega-socket-keepalive").apply { isDaemon = true }.start()
+    }
     // Canal persistente abstracto: funciona igual sobre LocalSocket (Unix
     // abstracto) o Socket (TCP loopback 127.0.0.1) — la app elige la primera
     // vía que conecte. Así el daemon sigue alcanzable aunque SELinux o la

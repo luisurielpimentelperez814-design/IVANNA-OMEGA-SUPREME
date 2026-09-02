@@ -333,7 +333,8 @@ class IVANNAApplication : Application() {
 
                 // FIX (descableado): Todos los sliders/switches persistidos en UI pero nunca
                 // inyectados al Engine en el arranque, ahora se inyectan a la perfeccion.
-                runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
+                runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication)
+                runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() } }
 
                 // ── PRIMER LANZAMIENTO: preset magistral de entrada ──────────────
                 // En el primer uso (o si el usuario nunca guardó preferencias),
