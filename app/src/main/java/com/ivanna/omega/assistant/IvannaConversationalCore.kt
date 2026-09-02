@@ -28,7 +28,10 @@ import kotlinx.coroutines.flow.asStateFlow
 object IvannaConversationalCore {
 
     private const val TAG = "IvannaConversationalCore"
-    private const val MAX_TURNS = 12
+    // Diálogo extenso: 12 turnos se agotaban en una conversación de 6
+    // intercambios (ida+vuelta). 32 turnos cubren una sesión larga real
+    // sin crecer la RAM de forma apreciable (cada turno son 4 strings).
+    private const val MAX_TURNS = 32
 
     // ── Turno de conversación ────────────────────────────────────────────────
 
@@ -73,8 +76,21 @@ object IvannaConversationalCore {
         val lastDSPChanges: List<String> = emptyList(),       // últimos cambios DSP aplicados
         val sessionAdjustments: List<AdjustmentSummary> = emptyList(),
         val accumulatedIntents: List<String> = emptyList(),   // para comandos encadenados
-        val temporalPreferences: TemporalPreferences = TemporalPreferences()
+        val temporalPreferences: TemporalPreferences = TemporalPreferences(),
+        // Memoria de temas: sustantivos/temas que el usuario ha tocado,
+        // para que IVANNA pueda referenciar "lo que hablamos antes" sin
+        // releer todo el historial. Ej: ["rock progresivo", "audífonos"].
+        val topicsDiscussed: List<String> = emptyList(),
+        // Tono emocional dominante de la sesión (se recalcula por turno).
+        // IVANNA adapta su IntentTone de respuesta a este estado.
+        val dominantMood: SessionMood = SessionMood.NEUTRAL,
+        // Marca de cuándo empezó la sesión — para saludos conscientes de
+        // duración ("llevamos un rato afinando esto").
+        val sessionStartMs: Long = System.currentTimeMillis()
     )
+
+    /** Estado emocional agregado de la sesión (no del turno aislado). */
+    enum class SessionMood { NEUTRAL, EXPLORING, FRUSTRATED, SATISFIED, PLAYFUL }
 
     data class SongContext(
         val title: String,
@@ -114,9 +130,60 @@ object IvannaConversationalCore {
         val newTurns = (ctx.turns + turn).takeLast(MAX_TURNS)
         _context.value = ctx.copy(
             turns = newTurns,
-            lastAppliedPreset = appliedProfile ?: ctx.lastAppliedPreset
+            lastAppliedPreset = appliedProfile ?: ctx.lastAppliedPreset,
+            topicsDiscussed = mergeTopics(ctx.topicsDiscussed, extractTopics(userText)),
+            dominantMood = detectSessionMood(userText, newTurns)
         )
         Log.d(TAG, "Turno registrado: [$intentName] → ${appliedProfile ?: "sin preset"}")
+    }
+
+    // ── Memoria de temas ─────────────────────────────────────────────────────
+
+    /** Temas musicales/técnicos reconocibles en lenguaje natural. */
+    private val TOPIC_LEXICON = listOf(
+        "rock", "metal", "clásica", "clasica", "jazz", "electrónica", "electronica",
+        "hip hop", "pop", "reguetón", "regueton", "salsa", "bolero", "cumbia",
+        "audífonos", "audifonos", "auriculares", "altavoz", "bocina", "bluetooth",
+        "cable", "usb", "cine", "película", "pelicula", "juego", "gaming",
+        "podcast", "voz", "voces", "bajos", "graves", "agudos", "medios",
+        "espacial", "envolvente", "reverberación", "reverberacion", "sala"
+    )
+
+    /** Extrae temas del texto del usuario (dedup, min 4 chars para evitar ruido). */
+    private fun extractTopics(text: String): List<String> {
+        val t = text.lowercase()
+        return TOPIC_LEXICON.filter { t.contains(it) }
+    }
+
+    /** Fusiona temas nuevos sin duplicar, tope 12 (los más recientes ganan). */
+    private fun mergeTopics(existing: List<String>, fresh: List<String>): List<String> {
+        if (fresh.isEmpty()) return existing
+        return (existing + fresh).distinct().takeLast(12)
+    }
+
+    // ── Tono emocional de sesión ─────────────────────────────────────────────
+
+    /**
+     * Detecta el tono dominante de la sesión. Señales léxicas del turno
+     * actual ponderadas sobre el historial — la frustración reciente manda,
+     // pero un "perfecto" posterior la limpia.
+     */
+    private fun detectSessionMood(userText: String, turns: List<ConversationTurn>): SessionMood {
+        val t = userText.lowercase()
+        val frustrated = hits(t, "no funciona", "malo", "horrible", "terrible", "no sirve",
+            "me duele", "cansa", "fatiga", "mal", "error", "falla", "no escucho")
+        val satisfied = hits(t, "perfecto", "increíble", "increible", "excelente",
+            "me encanta", "genial", "magistral", "quedó bien", "quedo bien", "así está bien")
+        val playful = hits(t, "jaja", "jeje", "wow", "brutal", "épico", "epico", "locura")
+        val exploring = hits(t, "prueba", "qué pasa si", "que pasa si", "cómo suena",
+            "como suena", "ajusta", "cambia", "otra vez", "diferente")
+        return when {
+            frustrated -> SessionMood.FRUSTRATED
+            satisfied  -> SessionMood.SATISFIED
+            playful    -> SessionMood.PLAYFUL
+            exploring  -> SessionMood.EXPLORING
+            else       -> _context.value.dominantMood  // conservar el previo
+        }
     }
 
     /**
