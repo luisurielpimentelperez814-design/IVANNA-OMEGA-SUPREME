@@ -68,11 +68,6 @@ fun processAudioWithScores(
             else                 -> "none"
         }
         
-        // Pass detected context to Adaptive Engine
-        if (result.isValid) {
-            val dominant = if (result.music > result.speech) "Music" else "Speech"
-            IvannaAdaptivePresetEngine.updateDetectedGenre(dominant)
-        }
         
         return hint to result
     }
