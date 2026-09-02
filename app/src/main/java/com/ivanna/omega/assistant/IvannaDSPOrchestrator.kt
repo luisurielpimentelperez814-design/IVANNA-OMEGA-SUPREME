@@ -5,6 +5,8 @@ import android.util.Log
 import com.ivanna.omega.VoiceController
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.core.IVANNAApplication
+import com.ivanna.omega.ai.gemini.IvannaGeminiAgent
+import com.ivanna.omega.assistant.IvannaIntentMapper
 
 /**
  * IvannaDSPOrchestrator — ejecutor de intención musical sobre el motor DSP.
@@ -176,4 +178,64 @@ class IvannaDSPOrchestrator(private val context: Context) {
             }
         )
     }
+}
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // INTEGRACIÓN GEMINI — Ejecución de comandos DSP desde IA
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ejecuta un comando DSP crudo proveniente de Gemini.
+     * Valida contra whitelist y mapea a acciones reales del motor.
+     */
+    fun executeCommand(cmd: String): Boolean {
+        // Validar contra whitelist global
+        if (cmd !in IvannaGeminiAgent.VALID_DSP_COMMANDS) {
+            Log.w(TAG, "Comando DSP rechazado (no en whitelist): $cmd")
+            return false
+        }
+
+        return runCatching {
+            val result = when (cmd) {
+                "voice_clarity" -> applyNamedProfile("Vocal Clarity")
+                "cinema_mode" -> applyNamedProfile("Cinematic")
+                "music_mode" -> applyNamedProfile("IVANNA OMEGA")
+                "concert_mode" -> applyNamedProfile("Concert Massive")
+                "spatial_mode" -> { voiceController.executeCommand("spatial_boost"); OrchestrationResult(true, "spatial", "Modo espacial activado", "spatial_boost") }
+                "gentle_mode" -> applyNamedProfile("Abbey Road")
+                "flat_mode" -> applyNamedProfile("Flat")
+                "volume_up" -> { voiceController.executeCommand("volume_up"); OrchestrationResult(true, "volume", "Volumen aumentado", "volume_up") }
+                "volume_down" -> { voiceController.executeCommand("volume_down"); OrchestrationResult(true, "volume", "Volumen reducido", "volume_down") }
+                "bass_boost" -> { voiceController.executeCommand("bass_boost"); OrchestrationResult(true, "bass", "Graves potenciados", "bass_boost") }
+                "treble_reduce" -> { voiceController.executeCommand("treble_reduce"); OrchestrationResult(true, "treble", "Agudos reducidos", "treble_reduce") }
+                "auto_optimize" -> { voiceController.executeCommand("auto_optimize"); OrchestrationResult(true, "auto", "Audio optimizado automáticamente", "auto_optimize") }
+                "studio_reference" -> applyNamedProfile("Studio Reference")
+                "bass_boost_preset" -> applyNamedProfile("Bass Boost")
+                "vocal_clarity_preset" -> applyNamedProfile("Vocal Clarity")
+                "live_room_preset" -> applyNamedProfile("Live Room")
+                "cinematic_preset" -> applyNamedProfile("Cinematic")
+                "electronic_preset" -> applyNamedProfile("Electronic")
+                "acoustic_preset" -> applyNamedProfile("Acoustic")
+                "rock_preset" -> applyNamedProfile("Rock 70s")
+                "podcast_preset" -> applyNamedProfile("Podcast")
+                else -> {
+                    Log.w(TAG, "Comando conocido pero no mapeado: $cmd")
+                    OrchestrationResult(false, cmd, "Comando no implementado", "unmapped")
+                }
+            }
+            result.applied
+        }.getOrElse {
+            Log.e(TAG, "Error ejecutando comando '$cmd': ${it.message}")
+            false
+        }
+    }
+
+    /**
+     * Ejecuta una acción DSP desde el CognitiveCore.
+     * Wrapper tipado sobre executeCommand().
+     */
+    fun executeAction(action: IvannaIntentMapper.DSPAction): Boolean {
+        return executeCommand(action.command)
+    }
+
 }
