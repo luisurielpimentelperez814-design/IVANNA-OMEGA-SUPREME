@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Audio permissions -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT"
+        tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Voz en la nube (IvannaCloudTts) y agente Gemini necesitan salir a internet -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
+    <!-- Módulo Magisk: leer metadata de sesiones de audio activas (Spotify, Tidal, etc.) -->
+    <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL"/>
+    <!-- Estadísticas de uso de apps para detectar qué app produce audio -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"/>
+    <!-- Leer propiedades de sistema seteadas por el módulo Magisk -->
+    <uses-permission android:name="android.permission.READ_LOGS"
+        tools:ignore="ProtectedPermissions"/>
+    <!-- Vibración para feedback en cambio de preset desde el módulo -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <!-- FIX: AudioEffect global session broadcast (como Wavelet/Poweramp) -->
+    <uses-permission android:name="android.permission.BIND_AUDIO_EFFECT_SERVICE"
+        tools:ignore="ProtectedPermissions"/>
+
+    <!-- Red: Gemini API + panel de conectividad -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+
+    <application
+        android:name=".core.IVANNAApplication"
+        android:allowBackup="false"
+        android:label="IVANNA-OMEGA"
+        android:supportsRtl="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.IvannaOmega"
+        android:extractNativeLibs="false">
+        <!-- FIX (APK corrupto): extractNativeLibs=false instruye al package manager
+             a mapear las .so directamente desde el APK sin extraerlas a disco.
+             Requiere que las .so estén sin comprimir en el APK (useLegacyPackaging=false
+             en build.gradle.kts). Sin este atributo, el comportamiento depende de la
+             versión del OS: API 23-27 extraía siempre; API 28+ respeta el flag del APK
+             pero si las .so van sin comprimir Y extractNativeLibs no está declarado,
+             algunos OEM (Motorola/Qualcomm) vuelven al modo extracción y producen
+             el APK corrupto visto en campo. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Playback capture service (MediaProjection) -->
+        <service
+            android:name=".audio.PlaybackCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+
+        <!-- FIX: Receptor de sesiones de audio globales (Global Effect Manager) -->
+        <!-- Permite capturar el broadcast de Android cuando cualquier app abre audio -->
+        <receiver
+            android:name=".audio.AudioSessionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION"/>
+                <action android:name="android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- FIX (persistencia): el manifest pedia RECEIVE_BOOT_COMPLETED pero
+             no habia receiver para ese broadcast: el permiso no hacia nada y
+             los ajustes del usuario no volvian tras reiniciar. -->
+        <receiver
+            android:name=".audio.BootRestoreReceiver"
+            android:exported="false"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- FIX (sub-entorno desconectado): CognitiveDashboardActivity existia
+             como ComponentActivity completa pero no estaba en el manifest ni la
+             lanzaba nadie -> pantalla inalcanzable. Se registra como actividad
+             interna (exported=false) para poder abrirla desde la app. -->
+        <activity
+            android:name=".ui.CognitiveDashboardActivity"
+            android:exported="false"
+            android:label="IVANNA Cognitive"/>
+
+    </application>
+
+</manifest>
