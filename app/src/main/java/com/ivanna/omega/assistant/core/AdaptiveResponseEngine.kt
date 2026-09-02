@@ -20,7 +20,7 @@ class AdaptiveResponseEngine {
         val q = query.lowercase()
 
         // Señales de ENGINEERING_MODE
-        val engineeringSignals = listOf("código", "code", "implementa", "debug", "error log", "stack trace", "cmake", "gradle", "compila", "build", "fix", "arregla", "corrige", "optimiza algoritmo", "complejidad O(", "kotlin", "cpp", "jni", "native")
+        val engineeringSignals = listOf("código", "code", "implementa", "debug", "error log", "stack trace", "cmake", "gradle", "compila", "build", "fix", "arregla", "corrige", "optimiza algoritmo", "complejidad O", "kotlin", "cpp", "jni", "native")
         if (engineeringSignals.any { q.contains(it) }) {
             Log.d(TAG, "Selected ENGINEERING_MODE for: ${query.take(40)}")
             return ResponseProfile.ENGINEERING_MODE
