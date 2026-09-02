@@ -18,6 +18,15 @@ import android.media.audiofx.AudioEffect
 import com.ivanna.omega.audio.AudioSessionReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.ivanna.omega.ai.memory.IvannaMemoryArchitecture
+import com.ivanna.omega.ai.gemini.IvannaGeminiAgent
+import com.ivanna.omega.assistant.core.IvannaCognitiveCore
+import com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine
+import com.ivanna.omega.assistant.IvannaDSPOrchestrator
+import com.ivanna.omega.assistant.IvannaIntentMapper
+import com.ivanna.omega.assistant.IvannaMusicalIntentEngine
+import com.ivanna.omega.core.OEMTelemetry
+
 
 /**
  * IVANNAApplication — Punto de entrada de la aplicación.
@@ -376,6 +385,42 @@ class IVANNAApplication : Application() {
 
                 com.ivanna.omega.assistant.core.SecureConfigurationManager.initialize(this@IVANNAApplication)
                 com.ivanna.omega.assistant.core.DynamicContextEngine.init(this@IVANNAApplication)
+
+                // ── IVANNA OMEGA SUPREME AI CORE ───────────────────────────────
+                val memoryArchitecture = IvannaMemoryArchitecture(this@IVANNAApplication)
+                val dynamicContextEngine = com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
+                    ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(this@IVANNAApplication)
+                val geminiAgent = IvannaGeminiAgent(
+                    context = this@IVANNAApplication,
+                    memory = memoryArchitecture,
+                    contextEngine = dynamicContextEngine
+                )
+                val adaptivePresetEngine = IvannaAdaptivePresetEngine(
+                    context = this@IVANNAApplication,
+                    memory = memoryArchitecture
+                )
+                val dspOrchestrator = IvannaDSPOrchestrator(this@IVANNAApplication)
+                val cognitiveCore = IvannaCognitiveCore(
+                    memory = memoryArchitecture,
+                    contextEngine = dynamicContextEngine,
+                    geminiAgent = geminiAgent,
+                    intentMapper = IvannaIntentMapper,
+                    musicalEngine = IvannaMusicalIntentEngine,
+                    dspOrchestrator = dspOrchestrator,
+                    agentCore = com.ivanna.omega.agent.IvannaAgentCore
+                )
+
+                // Iniciar telemetría OEM
+                OEMTelemetry.start(this@IVANNAApplication)
+
+                // Esperar a que la memoria esté cargada
+                appScope.launch {
+                    memoryArchitecture.isLoaded.collect { loaded ->
+                        if (loaded) Log.i(TAG, "✅ IvannaMemoryArchitecture lista")
+                    }
+                }
+
+                Log.i(TAG, "✅ IVANNA OMEGA SUPREME AI CORE inicializado")
                 isInitialized = true
                 Log.i(TAG, "✅ IVANNA-OMEGA-SUPREME lista")
             } catch (e: UnsatisfiedLinkError) {
