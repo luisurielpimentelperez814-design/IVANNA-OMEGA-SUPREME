@@ -37,6 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ivanna.omega.ui.theme.*
 import com.ivanna.omega.ui.viewmodels.AssistantPhase
@@ -95,6 +99,27 @@ fun IvannaAssistantScreen(
                 .verticalScroll(scroll),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+        // ── API key Gemini (cableado FASE final) ────────────────────────────
+        // Campo persistente: escribe al ViewModel -> IvannaGeminiAgent.setApiKey()
+        // (SharedPreferences + invalida el modelo). Reactivo: geminiAvailable.
+        val panelState by vm.panel.collectAsState()
+        OutlinedTextField(
+            value = panelState.geminiApiKey,
+            onValueChange = { vm.setGeminiApiKey(it) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            label = { Text("API Key de Gemini") },
+            placeholder = { Text("Pega tu key para habilitar el asistente") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            trailingIcon = {
+                Text(
+                    if (panelState.geminiAvailable) "● Lista" else "○ Requerida",
+                    color = if (panelState.geminiAvailable) Color(0xFF4ADE80) else Color(0xFFF87171),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        )
             Spacer(Modifier.height(16.dp))
 
             // ── Orb de estado ─────────────────────────────────────────────
