@@ -6,9 +6,15 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
@@ -45,9 +51,23 @@ enum class VoiceState { IDLE, INITIALIZING, READY, SPEAKING, UNAVAILABLE }
 /**
  * IvannaVoiceEngine — motor de síntesis de voz ultra-refinado de IVANNA.
  *
+ * Arquitectura híbrida (nube + local), transparente para quien llama:
+ *  - speak()/speakWithIntent() intentan primero IvannaCloudTts (voz
+ *    neuronal, igualando la naturalidad de ChatGPT) cuando hay API key
+ *    configurada.
+ *  - Si no hay key, no hay red, o la síntesis/reproducción falla por
+ *    cualquier razón, caen automáticamente al motor local
+ *    (android.speech.tts.TextToSpeech) sin que el llamador tenga que saber
+ *    ni importarle cuál de los dos habló.
+ *  - Todo el trabajo de "casi humana, no robótica" que ya vivía aquí
+ *    (scoreVoice, humanize, segmentación natural, curvas de pitch/rate por
+ *    IntentTone) se conserva intacto como el motor local — y como el
+ *    fallback universal, sigue siendo el único camino que garantiza que
+ *    IVANNA siempre pueda hablar, con o sin internet.
+ *
  * Mejoras sobre la versión anterior:
  *  - Locale chain es-MX → es-US → es-ES → es (voz más cálida y latina).
- *  - scoreVoice() con WaveNet/Studio/neural + joven/angelical/femenino.
+ *  - scoreVoice() con WaveNet/Studio/neural + elegante/cálida/femenino.
  *  - humanize(): post-procesado de texto para micro-pausas naturales.
  *  - IntentTone.PLAYFUL y EMPATHETIC para chistes y respuestas empáticas.
  */
@@ -57,6 +77,10 @@ class IvannaVoiceEngine(
 ) {
 
     companion object { private const val TAG = "IvannaVoiceEngine" }
+
+    private val appContext = context.applicationContext
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var currentSpeechJob: Job? = null
 
     private val _state = MutableStateFlow(VoiceState.IDLE)
     val state: StateFlow<VoiceState> = _state.asStateFlow()
@@ -69,7 +93,7 @@ class IvannaVoiceEngine(
 
     init {
         _state.value = VoiceState.INITIALIZING
-        tts = TextToSpeech(context.applicationContext) { status ->
+        tts = TextToSpeech(appContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 configureVoice()
                 _state.value = VoiceState.READY
@@ -206,9 +230,55 @@ class IvannaVoiceEngine(
         STORYTELLER  // narrativa: ritmo pausado con caídas de frase
     }
 
+    /**
+     * Punto de entrada público: habla [text] con tono neutro. Intenta la voz
+     * en la nube primero (ver clase doc); si no aplica o falla, usa el TTS
+     * local automáticamente.
+     */
+    fun speak(text: String) = speakWithIntent(text, IntentTone.SIMPLE)
+
+    /**
+     * Punto de entrada público con matiz emocional/estilístico. Un solo
+     * método para ambos motores: en la nube, [tone] se traduce a una
+     * instrucción de estilo (IvannaCloudTts.instructionsFor); en local, a
+     * curvas de pitch/rate (ver [speakWithIntentLocal]).
+     */
     fun speakWithIntent(text: String, tone: IntentTone) {
-        val t = tts ?: return
         if (_state.value != VoiceState.READY && _state.value != VoiceState.SPEAKING) return
+        if (text.isBlank()) return
+        // Solo una elocución a la vez: cancela cualquier intento anterior
+        // (nube o local) antes de arrancar el nuevo, para que nunca se
+        // solapen dos voces ni queden jobs colgados.
+        currentSpeechJob?.cancel()
+        currentSpeechJob = engineScope.launch {
+            val spokenByCloud = trySpeakCloud(text, tone)
+            if (!spokenByCloud) speakWithIntentLocal(text, tone)
+        }
+    }
+
+    /**
+     * Intenta la voz en la nube. Devuelve true si de verdad llegó a
+     * reproducir audio; false ante cualquier fallo (sin key, sin red,
+     * error HTTP, MediaPlayer, etc.) — nunca lanza, siempre deja la puerta
+     * abierta al fallback local.
+     */
+    private suspend fun trySpeakCloud(text: String, tone: IntentTone): Boolean {
+        if (!IvannaCloudTts.isConfigured) return false
+        val processed = humanize(text)
+        val file = IvannaCloudTts.synthesize(appContext, processed, tone) ?: return false
+        _state.value = VoiceState.SPEAKING
+        val ok = runCatching { IvannaCloudTts.play(file) }.getOrDefault(false)
+        _state.value = VoiceState.READY
+        return ok
+    }
+
+    /**
+     * Habla con el motor local (android.speech.tts), aplicando la curva de
+     * pitch/rate del [tone] alrededor de la elocución. Es el fallback
+     * universal — siempre disponible, sin red.
+     */
+    private fun speakWithIntentLocal(text: String, tone: IntentTone) {
+        val t = tts ?: return
         // Curvas prosódicas de oído: la diferencia entre "robótica" y
         // "humana" vive en cuánto varían rate+pitch dentro de la frase.
         // Cada tono tiene su propia firma — ninguno es neutro plano.
@@ -225,11 +295,12 @@ class IvannaVoiceEngine(
             IntentTone.STORYTELLER -> (profile.speechRate * 0.90f) to (profile.pitch * 1.00f)
         }
         runCatching { t.setSpeechRate(rate); t.setPitch(pitch) }
-        speak(text)
+        speakLocal(text)
         runCatching { t.setSpeechRate(profile.speechRate); t.setPitch(profile.pitch) }
     }
 
-    fun speak(text: String) {
+    /** Elocución local cruda, sin ajuste de tono (usada por speakWithIntentLocal). */
+    private fun speakLocal(text: String) {
         val t = tts ?: return
         if (_state.value != VoiceState.READY && _state.value != VoiceState.SPEAKING) return
         val processed = humanize(text)
@@ -270,12 +341,14 @@ class IvannaVoiceEngine(
     }
 
     fun stop() {
+        currentSpeechJob?.cancel()
         runCatching { tts?.stop() }
         if (_state.value == VoiceState.SPEAKING) _state.value = VoiceState.READY
     }
 
     fun release() {
         stop()
+        engineScope.cancel()
         runCatching { tts?.shutdown() }
         tts = null
         _state.value = VoiceState.IDLE
