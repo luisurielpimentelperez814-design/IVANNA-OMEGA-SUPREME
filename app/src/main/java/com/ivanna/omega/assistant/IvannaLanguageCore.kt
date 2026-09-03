@@ -177,6 +177,19 @@ object IvannaLanguageCore {
             return AcousticIntent.FLAT_NEUTRAL to 0.97f
         }
 
+        // Graves / agudos (ANTES de Volumen: 'más bajos'/'mas bajos' de
+        // BASS_BOOST es más específico que 'más bajo'/'mas bajo' de
+        // VOLUME_DOWN — sin este orden, pedir más graves ("más bajos") se
+        // interpretaba como bajar el volumen, dos intenciones opuestas)
+        if (hits(t, "más bajos", "mas bajos", "más graves", "mas graves",
+                  "refuerza los bajos", "bass")) {
+            return AcousticIntent.BASS_BOOST to 0.94f
+        }
+        if (hits(t, "menos agudos", "mas agudos menos", "muy brillante",
+                  "treble", "demasiado brillante", "corta los agudos")) {
+            return AcousticIntent.TREBLE_REDUCE to 0.93f
+        }
+
         // Volumen
         if (hits(t, "sube", "subir", "más alto", "mas alto", "más fuerte",
                   "mas fuerte", "louder")) {
@@ -187,14 +200,36 @@ object IvannaLanguageCore {
             return AcousticIntent.VOLUME_DOWN to 0.96f
         }
 
-        // Graves / agudos
-        if (hits(t, "más bajos", "mas bajos", "más graves", "mas graves",
-                  "refuerza los bajos", "bass")) {
-            return AcousticIntent.BASS_BOOST to 0.94f
+        // ── Presentación / identidad (ANTES de Sistema/GREETING: sus claves
+        // son más específicas — 'cómo estás tú', 'qué tal estás' — y sin este
+        // orden, 'cómo estás' de DIAGNOSE o 'qué tal' de GREETING las
+        // interceptaban antes por substring; 'cómo estás tú' jamás llegaba
+        // a HOW_ARE_YOU) ──────────────────────────────────────────────────
+        if (hits(t, "quién eres", "quien eres", "qué eres", "que eres",
+                  "preséntate", "presentate", "cómo te llamas", "como te llamas",
+                  "cuál es tu nombre", "cual es tu nombre", "qué puedes hacer tú",
+                  "que puedes hacer tu")) {
+            return AcousticIntent.SELF_INTRO to 0.97f
         }
-        if (hits(t, "menos agudos", "mas agudos menos", "muy brillante",
-                  "treble", "demasiado brillante", "corta los agudos")) {
-            return AcousticIntent.TREBLE_REDUCE to 0.93f
+        // ── Cómo está IVANNA ────────────────────────────────────────────────
+        if (hits(t, "cómo estás tú", "como estas tu", "tú cómo estás",
+                  "qué tal estás", "que tal estas", "cómo te encuentras",
+                  "cómo te sientes", "como te sientes")) {
+            return AcousticIntent.HOW_ARE_YOU to 0.93f
+        }
+        // ── Cumplido / retroalimentación positiva ───────────────────────────
+        if (hits(t, "qué bien", "que bien", "excelente", "genial", "perfecto",
+                  "increíble", "increible", "eres increíble", "muy bien hecho",
+                  "bien hecho", "bravo", "gracias ivanna", "gracias por",
+                  "te lo agradezco", "lo hiciste muy bien")) {
+            return AcousticIntent.COMPLIMENT to 0.91f
+        }
+        // ── Charla general ──────────────────────────────────────────────────
+        if (hits(t, "qué piensas de", "que piensas de", "cuál es tu opinión",
+                  "cual es tu opinion", "sabes algo de", "cuéntame sobre",
+                  "cuentame sobre", "platícame", "platicame", "dime algo",
+                  "algo interesante", "sabías que", "sabias que")) {
+            return AcousticIntent.GENERAL_CHAT to 0.80f
         }
 
         // Sistema
@@ -207,22 +242,25 @@ object IvannaLanguageCore {
                   "diagnóstico", "diagnostico")) {
             return AcousticIntent.DIAGNOSE to 0.95f
         }
-        if (hits(t, "por qué", "por que", "qué cambiaste", "que cambiaste",
-                  "explícame", "explicame", "qué hiciste", "que hiciste")) {
-            return AcousticIntent.EXPLAIN to 0.97f
-        }
-
-        // ── Reporte de sesión: "¿qué hiciste?", "muéstrame el perfil" ──────────
+        // ── Reporte de sesión: "¿qué hiciste?", "muéstrame el perfil" (ANTES
+        // de EXPLAIN: 'qué cambiaste en'/'que hiciste con' son más
+        // específicas que 'qué cambiaste'/'que hiciste' de EXPLAIN — sin
+        // este orden, preguntar por una canción concreta caía siempre en
+        // la respuesta genérica de EXPLAIN) ──────────────────────────────
         if (hits(t, "qué hiciste", "que hiciste con", "muéstrame qué", "muestrame que",
                   "qué cambiaste en", "que cambiaste en", "cuéntame qué", "cuentame que",
                   "reporte", "informe", "resumen de lo que", "qué le hiciste",
                   "que le hiciste", "cómo quedó", "como quedo")) {
             return AcousticIntent.SESSION_REPORT to 0.96f
         }
+        if (hits(t, "por qué", "por que", "qué cambiaste", "que cambiaste",
+                  "explícame", "explicame", "qué hiciste", "que hiciste")) {
+            return AcousticIntent.EXPLAIN to 0.97f
+        }
 
         // ── Lista de perfiles disponibles ────────────────────────────────────
-        if (hits(t, "qué perfiles", "que perfiles", "qué puedes hacer",
-                  "que puedes hacer", "muéstrame los presets", "muestrame los presets",
+        if (hits(t, "qué perfiles", "que perfiles", "qué puedes hacer con el audio",
+                  "que puedes hacer con el audio", "muéstrame los presets", "muestrame los presets",
                   "qué presets", "que presets", "qué configuraciones", "que configuraciones",
                   "opciones disponibles", "qué estilos", "que estilos")) {
             return AcousticIntent.PROFILE_LIST to 0.97f
@@ -233,7 +271,7 @@ object IvannaLanguageCore {
             return AcousticIntent.TELL_JOKE to 0.95f
         }
 
-        if (hits(t, "hola", "qué tal", "que tal", "buenos días", "buenas tardes", "buenas noches", "quién eres", "quien eres")) {
+        if (hits(t, "hola", "qué tal", "que tal", "buenos días", "buenas tardes", "buenas noches")) {
             return AcousticIntent.GREETING to 0.95f
         }
 
@@ -274,34 +312,6 @@ object IvannaLanguageCore {
         if (hits(t, "más", "mas", "un poco más", "un poco mas") && last != null
             && last != AcousticIntent.UNKNOWN) {
             return last to 0.72f  // baja confianza — inferido por contexto
-        }
-
-        // ── Presentación / identidad ───────────────────────────────────────
-        if (hits(t, "quién eres", "quien eres", "qué eres", "que eres",
-                  "preséntate", "presentate", "cómo te llamas", "como te llamas",
-                  "cuál es tu nombre", "cual es tu nombre", "qué puedes hacer tú",
-                  "que puedes hacer tu")) {
-            return AcousticIntent.SELF_INTRO to 0.97f
-        }
-        // ── Cómo está IVANNA ────────────────────────────────────────────────
-        if (hits(t, "cómo estás tú", "como estas tu", "tú cómo estás",
-                  "qué tal estás", "que tal estas", "cómo te encuentras",
-                  "cómo te sientes", "como te sientes")) {
-            return AcousticIntent.HOW_ARE_YOU to 0.93f
-        }
-        // ── Cumplido / retroalimentación positiva ───────────────────────────
-        if (hits(t, "qué bien", "que bien", "excelente", "genial", "perfecto",
-                  "increíble", "increible", "eres increíble", "muy bien hecho",
-                  "bien hecho", "bravo", "gracias ivanna", "gracias por",
-                  "te lo agradezco", "lo hiciste muy bien")) {
-            return AcousticIntent.COMPLIMENT to 0.91f
-        }
-        // ── Charla general ──────────────────────────────────────────────────
-        if (hits(t, "qué piensas de", "que piensas de", "cuál es tu opinión",
-                  "cual es tu opinion", "sabes algo de", "cuéntame sobre",
-                  "cuentame sobre", "platícame", "platicame", "dime algo",
-                  "algo interesante", "sabías que", "sabias que")) {
-            return AcousticIntent.GENERAL_CHAT to 0.80f
         }
 
         return AcousticIntent.UNKNOWN to 0.0f
