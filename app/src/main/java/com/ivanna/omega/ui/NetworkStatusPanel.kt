@@ -365,7 +365,13 @@ fun NetworkStatusPanel(
                         com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
                         val (reply, _) = withContext(Dispatchers.IO) {
                             runCatching {
-                                com.ivanna.omega.assistant.core.IvannaCognitiveCore.processQuery("ping", "test")
+                                com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
+    context = context,
+    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(context),
+    contextEngine =
+        com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
+        ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(context)
+).processQuery("ping")
                             }.getOrElse { "error" to null }
                         }
                         val ok = reply != "error" && !reply.toString().contains("error", ignoreCase = true)

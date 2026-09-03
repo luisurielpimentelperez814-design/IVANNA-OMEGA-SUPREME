@@ -104,7 +104,7 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         geminiAgent
     )
     private val profile   = IvannaListenerProfile(app)
-    private val memory    = com.ivanna.omega.assistant.core.IvannaCognitiveCore
+    private val cognitiveCore: com.ivanna.omega.assistant.core.IvannaCognitiveCore? = null
 
     // ── Estado público ────────────────────────────────────────────────────
     private val _panel = MutableStateFlow(AssistantPanelState())
