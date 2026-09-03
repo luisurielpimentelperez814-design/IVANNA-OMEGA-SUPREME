@@ -66,8 +66,14 @@ object SecureConfigurationManager {
 
     fun getApiKey(): String {
         requireInitialized()
-        return if (isUsingFallback) loadEncryptedFallback(KEY_GEMINI_API) ?: "" else securePrefs?.getString(KEY_GEMINI_API, "") ?: ""
+        return rawApiKey()
     }
+
+    /** Lectura interna sin el guard de requireInitialized(): la usa validateConfiguration()
+     *  durante el propio bootstrap de initialize()/recoverFromFailure(), momento en el que
+     *  _state.value.isInitialized aún es false por diseño (se marca true recién al final). */
+    private fun rawApiKey(): String =
+        if (isUsingFallback) loadEncryptedFallback(KEY_GEMINI_API) ?: "" else securePrefs?.getString(KEY_GEMINI_API, "") ?: ""
 
     fun clearApiKey() {
         requireInitialized()
@@ -151,7 +157,7 @@ object SecureConfigurationManager {
     }
 
     private fun getFallbackPrefs(): SharedPreferences = context().getSharedPreferences(FALLBACK_PREFS, Context.MODE_PRIVATE)
-    private fun validateConfiguration() { val key = getApiKey(); _state.value = _state.value.copy(isConfigured = key.isNotBlank() && isValidKeyFormat(key)) }
+    private fun validateConfiguration() { val key = rawApiKey(); _state.value = _state.value.copy(isConfigured = key.isNotBlank() && isValidKeyFormat(key)) }
     private fun isValidKeyFormat(key: String): Boolean = key.startsWith("AIza") && key.length >= 20
     private fun requireInitialized() { check(_state.value.isInitialized) { "Call initialize() first" } }
     private fun context(): Context = appContext ?: throw IllegalStateException("No context")
