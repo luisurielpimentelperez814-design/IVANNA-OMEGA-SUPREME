@@ -321,7 +321,7 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     fun testGeminiConnection() {
         viewModelScope.launch {
             _panel.value = _panel.value.copy(
-                statusLine   = "Probando conexión Gemini…",
+                statusLine   = "Probando conexión…",
                 errorMessage = null
             )
             val ok = withContext(Dispatchers.IO) {
@@ -343,10 +343,10 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrDefault(false)
             _panel.value = _panel.value.copy(
                 geminiAvailable = ok && avail,
-                statusLine = if (ok && avail) "Gemini: ✅ conectado"
+                statusLine = if (ok && avail) "IVANNA: ✅ conectada"
                              else             "Toca el micrófono y habla con IVANNA.",
                 errorMessage = if (!(ok && avail))
-                    "Gemini no respondió — verifica la API Key o la red"
+                    "IVANNA no respondió — verifica la API Key o la red"
                 else null
             )
         }

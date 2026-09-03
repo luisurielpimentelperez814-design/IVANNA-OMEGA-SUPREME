@@ -111,7 +111,7 @@ fun IvannaAssistantScreen(
             value = panelState.geminiApiKey,
             onValueChange = { vm.setGeminiApiKey(it) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            label = { Text("API Key de Gemini") },
+            label = { Text("API Key (Google AI Studio)") },
             placeholder = { Text("Pega tu key para habilitar el asistente") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
@@ -172,7 +172,7 @@ fun IvannaAssistantScreen(
             GeminiConnectPanel(
                 connected = panel.geminiAvailable,
                 status    = panel.errorMessage
-                             ?: if (panel.geminiAvailable) "✅ Gemini conectado"
+                             ?: if (panel.geminiAvailable) "✅ IVANNA conectada"
                                 else "Sin conexión — ingresa API Key",
                 onConnect = { key -> vm.setGeminiApiKey(key) },
                 onTest    = { vm.testGeminiConnection() }
@@ -646,7 +646,7 @@ private fun GeminiConnectPanel(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text       = "GEMINI 1.5 FLASH",
+                        text       = "IVANNA · INTELIGENCIA EXTENDIDA",
                         color      = accentColor,
                         style      = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
@@ -686,9 +686,9 @@ private fun GeminiConnectPanel(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text  = "Ingresa tu Google AI Studio API Key para activar IVANNA con " +
-                            "Gemini 2.5 Flash. Sin key, IVANNA opera en modo offline con " +
-                            "inteligencia on-device completa.",
+                    text  = "Ingresa tu Google AI Studio API Key para activar la " +
+                            "inteligencia extendida de IVANNA. Sin key, IVANNA opera en " +
+                            "modo offline con inteligencia on-device completa.",
                     color = TextMuted,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -763,7 +763,7 @@ private fun GeminiConnectPanel(
                             modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text  = if (connected) "Actualizar key" else "Conectar a Gemini",
+                            text  = if (connected) "Actualizar key" else "Conectar IVANNA",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )

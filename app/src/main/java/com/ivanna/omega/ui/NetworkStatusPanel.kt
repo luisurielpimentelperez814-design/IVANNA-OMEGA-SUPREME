@@ -227,7 +227,7 @@ fun NetworkStatusPanel(
         // ── Test de latencia ───────────────────────────────────────────────
         SectionCard(title = "DIAGNÓSTICO", accentColor = NeonMagenta) {
             Text(
-                lastTest.ifBlank { "Toca TEST para medir latencia y alcanzabilidad Gemini." },
+                lastTest.ifBlank { "Toca TEST para medir latencia y alcanzabilidad de IVANNA." },
                 color      = if (lastTest.startsWith("✅")) PhosphorGreen
                              else if (lastTest.startsWith("❌") || lastTest.startsWith("⚠")) CoralWarn
                              else TextSecondary,
@@ -249,23 +249,23 @@ fun NetworkStatusPanel(
                         netState = netState.copy(pingMs = ping, geminiReachable = gemini)
                         lastTest = buildString {
                             append(if (ping >= 0) "✅ Ping Google: ${ping}ms\n" else "❌ Ping Google: timeout\n")
-                            append(if (gemini) "✅ Gemini API: alcanzable" else "❌ Gemini API: no alcanzable")
+                            append(if (gemini) "✅ IVANNA: alcanzable" else "❌ IVANNA: no alcanzable")
                         }
                         connecting = false
                     }
                 }
                 NetActionButton(
-                    label   = "TEST GEMINI",
+                    label   = "PROBAR IVANNA",
                     enabled = !connecting,
                     modifier = Modifier.weight(1f)
                 ) {
                     scope.launch {
                         connecting = true
-                        lastTest   = "Comprobando Gemini…"
+                        lastTest   = "Comprobando IVANNA…"
                         val ok = checkGeminiReachable()
                         netState = netState.copy(geminiReachable = ok)
-                        lastTest = if (ok) "✅ Gemini API: servidor alcanzable"
-                                   else    "❌ Gemini API: sin acceso (¿red bloqueada?)"
+                        lastTest = if (ok) "✅ IVANNA: servidor alcanzable"
+                                   else    "❌ IVANNA: sin acceso (¿red bloqueada?)"
                         connecting = false
                     }
                 }
@@ -273,7 +273,7 @@ fun NetworkStatusPanel(
         }
 
         // ── Gemini API key + conectar al agente ────────────────────────────
-        SectionCard(title = "MOTOR GEMINI (IVANNA AGENT)", accentColor = NeonMagenta) {
+        SectionCard(title = "MOTOR IVANNA (AGENTE)", accentColor = NeonMagenta) {
             // Indicador de vinculación
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -288,7 +288,7 @@ fun NetworkStatusPanel(
                         .background(if (agentLinked) PhosphorGreen else CoralWarn)
                 )
                 Text(
-                    if (agentLinked) "AGENTE CONECTADO — Gemini activo"
+                    if (agentLinked) "AGENTE CONECTADO — IVANNA activa"
                     else             "AGENTE DESCONECTADO — ingresa API Key",
                     color      = if (agentLinked) PhosphorGreen else CoralWarn,
                     fontFamily = FontFamily.Monospace,
@@ -303,7 +303,7 @@ fun NetworkStatusPanel(
             OutlinedTextField(
                 value         = apiKey,
                 onValueChange = { apiKey = it },
-                label         = { Text("API Key de Gemini", fontSize = 11.sp) },
+                label         = { Text("API Key (Google AI Studio)", fontSize = 11.sp) },
                 placeholder   = { Text("AIzaSy…", fontSize = 11.sp, color = TextMuted) },
                 singleLine    = true,
                 visualTransformation = if (keyVisible) VisualTransformation.None
@@ -356,10 +356,10 @@ fun NetworkStatusPanel(
                     }
                     scope.launch {
                         connecting  = true
-                        apiStatus   = "⏳ Validando key con Gemini…"
+                        apiStatus   = "⏳ Validando key…"
                         val reachable = withContext(Dispatchers.IO) { checkGeminiReachable() }
                         if (!reachable) {
-                            apiStatus   = "❌ Gemini no alcanzable — revisa tu red"
+                            apiStatus   = "❌ IVANNA no alcanzable — revisa tu red"
                             connecting  = false
                             agentLinked = false
                             return@launch
@@ -372,13 +372,26 @@ fun NetworkStatusPanel(
                                 // desde contexto @Composable — dentro de este lambda
                                 // (Button.onClick → scope.launch) no lo es. Se reutiliza
                                 // `ctx`, ya capturado en el composable padre (línea ~141).
-                                com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
+                                //
+                                // FIX (leak): este agente es desechable — solo sirve
+                                // para el ping de prueba. Su GeminiOrchestrator interno
+                                // corre un health-check loop en el MISMO scope del
+                                // agente (CoroutineScope propio, no ligado a la UI); sin
+                                // shutdown() explícito ese loop llamaba a la API de
+                                // Gemini cada 30s PARA SIEMPRE — uno nuevo por cada tap
+                                // en "Conectar". Se cierra en el finally.
+                                val probeAgent = com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
                                     context = ctx,
                                     memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(ctx),
                                     contextEngine =
                                         com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
                                             ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(ctx)
-                                ).processQuery("ping")
+                                )
+                                try {
+                                    probeAgent.processQuery("ping")
+                                } finally {
+                                    probeAgent.shutdown()
+                                }
                             }.getOrNull()
                         }
 
@@ -386,14 +399,14 @@ fun NetworkStatusPanel(
                         if (ok) {
                             saveGeminiKey(ctx, trimmed)
                             agentLinked = true
-                            apiStatus   = "✅ Agente IVANNA vinculado — Gemini respondió OK"
+                            apiStatus   = "✅ Agente IVANNA vinculado y respondiendo"
                         } else {
                             // key inválida o cuota agotada — guardar de todas formas
                             // para que el agente use fallback simulado
                             saveGeminiKey(ctx, trimmed)
                             com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
                             agentLinked = true
-                            apiStatus   = "⚠ Key guardada — el agente usará modo híbrido (simulado + Gemini)"
+                            apiStatus   = "⚠ Key guardada — el agente usará modo híbrido (simulado + IVANNA)"
                         }
                         connecting = false
                     }
@@ -461,7 +474,7 @@ fun NetworkStatusPanel(
             SectionCard(title = "ÚLTIMO DIAGNÓSTICO", accentColor = AuroraCyan) {
                 if (netState.pingMs >= 0)
                     DetailRow("Ping 8.8.8.8",  "${netState.pingMs} ms")
-                DetailRow("Gemini API",
+                DetailRow("IVANNA (motor)",
                     if (netState.geminiReachable) "✅ Alcanzable" else "❌ Sin acceso")
             }
         }
