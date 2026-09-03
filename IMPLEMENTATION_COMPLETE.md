@@ -46,7 +46,7 @@ git push origin main
 **REVOCAR EL TOKEN INMEDIATAMENTE DESPUÉS DE USAR:**
 
 1. Ve a GitHub → Settings → Developer settings → Personal access tokens
-2. Busca el token que empieza con `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`
+2. Busca el token que empieza con `ghp_...REDACTADO-REVOCAR...`
 3. Click en **Delete** o **Revoke**
 4. Genera un nuevo token con permisos mínimos si es necesario
 

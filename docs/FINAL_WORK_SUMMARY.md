@@ -186,7 +186,7 @@ fbd771f - merge: Resolver conflicto en SpatialAudioEngineV2.kt
 
 ### Token Usado
 ```
-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
+ghp_...REDACTADO-COMPROMETIDO...
 ```
 
 ### Status
@@ -272,7 +272,7 @@ Combinado:   2 → 9    (85% mejora promedio)
 ## 🎯 PRÓXIMAS ACCIONES
 
 ### Hoy (Julio 7)
-1. ✅ Revoca token GitHub (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)
+1. ✅ Revoca token GitHub (ghp_...REDACTADO-COMPROMETIDO...)
 
 ### Esta semana
 1. Build APK: `./gradlew clean assembleDebug`

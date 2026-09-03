@@ -190,7 +190,7 @@ object OmegaEngineBridge {
 BRIDGE_EOF
 
 echo "=== [5/5] Sincronización Git, Rebase, Commit y Push Directo ==="
-GITHUB_TOKEN="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"
+GITHUB_TOKEN="${GITHUB_TOKEN}"
 REMOTE_URL="https://${GITHUB_TOKEN}@github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git"
 
 # Limpieza de bloqueos o índices corruptos
