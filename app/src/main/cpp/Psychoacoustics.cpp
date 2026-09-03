@@ -37,7 +37,7 @@ Psychoacoustics::Psychoacoustics() {
 //    con curva de rodilla blanda para que no haya borde audible.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
+void Psychoacoustics::applyMaskingCompensation(Ivanna::AudioBuffer* buffer) {
 
     // Coeficientes de envolvente para 48 kHz, bloque de 128 muestras
     // Attack:  5 ms  → exp(-1 / (0.005 * 48000)) ≈ 0.99583
@@ -114,7 +114,7 @@ void Psychoacoustics::applyMaskingCompensation(AudioBuffer* buffer) {
 //    que elimine presencia vocal (f_-3dB mínima ~7 kHz a SR=48k).
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Psychoacoustics::predictAndMitigateFatigue(AudioBuffer* buffer) {
+void Psychoacoustics::predictAndMitigateFatigue(Ivanna::AudioBuffer* buffer) {
 
     // RMS del bloque izquierdo como indicador de nivel
     float rms = 0.0f;

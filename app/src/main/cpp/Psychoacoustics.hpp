@@ -9,8 +9,8 @@ constexpr size_t LSTM_UNITS = 8; // Ultra-fast int8 matrix execution tuned for L
 class Psychoacoustics {
 public:
     Psychoacoustics();
-    void applyMaskingCompensation(AudioBuffer* buffer);
-    void predictAndMitigateFatigue(AudioBuffer* buffer);
+    void applyMaskingCompensation(Ivanna::AudioBuffer* buffer);
+    void predictAndMitigateFatigue(Ivanna::AudioBuffer* buffer);
 
 private:
     // Quantized int8_t LSTM Weights

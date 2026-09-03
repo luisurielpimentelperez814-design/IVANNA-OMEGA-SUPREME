@@ -10,7 +10,7 @@ public:
     EvolutionaryEQ();
     ~EvolutionaryEQ() = default;
 
-    void processNEON(AudioBuffer* buffer);
+    void processNEON(Ivanna::AudioBuffer* buffer);
     void updateLM_CMA_ES();
 
 private:

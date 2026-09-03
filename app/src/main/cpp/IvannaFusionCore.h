@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AudioBuffer.h"
 #include <cstdint>
+#include "IvannaFusionCore.hpp"
 
 class IvannaFusionEngine {
 public:
@@ -10,13 +10,13 @@ public:
 
     ~IvannaFusionEngine();
 
-    void process(AudioBuffer* buffer);
+    void process(Ivanna::AudioBuffer* buffer);
 
     void runAcousticProfiling();
 
     void setGoldenEarMode(bool enable);
 
-    void applyGoldenEarGAN(AudioBuffer* buffer);
+    void applyGoldenEarGAN(Ivanna::AudioBuffer* buffer);
 
     void setSafLatentParams(const float q[7]) noexcept;
 

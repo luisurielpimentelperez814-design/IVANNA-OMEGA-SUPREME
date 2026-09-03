@@ -67,7 +67,7 @@ void EvolutionaryEQ::updateLM_CMA_ES() {
     }
 }
 
-void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
+void EvolutionaryEQ::processNEON(Ivanna::AudioBuffer* buffer) {
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         m_histL[FIR_TAPS - 1 + i] = buffer->left[i];
         m_histR[FIR_TAPS - 1 + i] = buffer->right[i];

@@ -77,7 +77,7 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
     m_xfadeTrigger.store(true,  std::memory_order_release);
 }
 
-void HrtfManager::processBinauralScene(AudioBuffer* buffer) {
+void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
     if (m_fastRpcClient.isDSPReady()) {
         ivanna::dsp::SpatialPosition pos;
         pos.azimuth = 0.0f;

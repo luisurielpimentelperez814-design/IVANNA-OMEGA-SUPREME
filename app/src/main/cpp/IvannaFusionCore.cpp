@@ -85,7 +85,7 @@ void IvannaFusionEngine::setGoldenEarMode(bool enable) {
     m_goldenEarActive = enable;
 }
 
-void IvannaFusionEngine::process(AudioBuffer* buffer) {
+void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // FASE 1: SPSC Lock-Free Ring Buffer async push
     // Solo encolamos (ingest) sin bloquear el hilo principal de audio
     m_classifier->ingestAudioFrame(buffer->left, buffer->right, BLOCK_SIZE);
@@ -139,7 +139,7 @@ void IvannaFusionEngine::process(AudioBuffer* buffer) {
     }
 }
 
-void IvannaFusionEngine::applyGoldenEarGAN(AudioBuffer* buffer) {
+void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
     // ────────────────────────────────────────────────────────────────────────
     // FIX (tronidos de agudos — causa raíz): el Chebyshev H2 duplica frecuencias.
     // Sin pre-filtro, platillos a 8-16 kHz generaban armónicos a 16-32 kHz que

@@ -22,7 +22,7 @@ public:
 
     bool hasDataset() const noexcept { return m_datasetLoaded; }
 
-    void processBinauralScene(AudioBuffer* buffer);
+    void processBinauralScene(Ivanna::AudioBuffer* buffer);
     void setHeadPose(float yaw, float pitch, float roll);
     void setRiemannianCurvature(float curvature) {
         m_intrinsicCurvature.store(curvature, std::memory_order_relaxed);
