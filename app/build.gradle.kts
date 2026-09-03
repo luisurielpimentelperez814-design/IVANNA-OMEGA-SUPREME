@@ -72,7 +72,7 @@ android {
         }
     }
 
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "26.1.10909125"
 
     androidResources {
         noCompress += listOf("tflite")
