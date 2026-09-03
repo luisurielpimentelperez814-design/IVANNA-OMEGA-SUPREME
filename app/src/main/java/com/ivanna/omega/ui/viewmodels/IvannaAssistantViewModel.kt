@@ -264,7 +264,10 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         val topCmds = profile.topCommands().map { profile.labelOf(it) }
         val mode    = profile.labelOf(profile.preferredMode)
         val fatigue = profile.fatigueReports
-        val scene   = memory.lastScene ?: "—"
+        // FIX (CI rojo): `memory` no existe en el ViewModel (esa propiedad vive
+        // en IvannaAssistant). La escena actual se lee de la misma fuente viva
+        // que usa assistant.IvannaCognitiveCore: IvannaAgentCore.state.
+        val scene   = IvannaAgentCore.state.value.perception.scene.name
         // Fusión en vivo: percepción + salud + perfil + duración real de
         // sesión. No ejecuta nada — solo informa el panel de memoria.
         val brainInsight = IvannaAcousticBrain.fuse(profile)
