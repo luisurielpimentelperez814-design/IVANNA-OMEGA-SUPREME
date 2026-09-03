@@ -49,6 +49,8 @@ private fun loadGeminiKey(ctx: Context): String =
         .getString(KEY_GEMINI_API, "") ?: ""
 
 private fun saveGeminiKey(ctx: Context, key: String) {
+
+    val context = LocalContext.current
     ctx.getSharedPreferences(PREFS_NETWORK, Context.MODE_PRIVATE)
         .edit().putString(KEY_GEMINI_API, key).apply()
 }
