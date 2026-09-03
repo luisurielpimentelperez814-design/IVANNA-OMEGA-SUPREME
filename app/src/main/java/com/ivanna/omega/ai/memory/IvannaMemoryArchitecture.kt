@@ -98,12 +98,16 @@ class IvannaMemoryArchitecture(context: Context) {
     }
 
     private suspend fun saveEpisodicToDisk() = withContext(Dispatchers.IO) {
-        runCatching { writeEncryptedFile(EPISODIC_FILE, json.encodeToString(episodicMemory.getAllRecords())) }
+        // FIX (CI rojo): tipos explícitos — la inferencia sobre la lambda
+        // onChange + el genérico de encodeToString producía "recursive problem".
+        val records: List<EpisodicRecord> = episodicMemory.getAllRecords()
+        runCatching { writeEncryptedFile(EPISODIC_FILE, json.encodeToString<List<EpisodicRecord>>(records)) }
             .onFailure { Log.e(TAG, "Save episodic error: ${it.message}") }
     }
 
     private suspend fun saveSemanticToDisk() = withContext(Dispatchers.IO) {
-        runCatching { writeEncryptedFile(SEMANTIC_FILE, json.encodeToString(semanticMemory.getAllRecords())) }
+        val records: List<SemanticRecord> = semanticMemory.getAllRecords()
+        runCatching { writeEncryptedFile(SEMANTIC_FILE, json.encodeToString<List<SemanticRecord>>(records)) }
             .onFailure { Log.e(TAG, "Save semantic error: ${it.message}") }
     }
 

@@ -297,8 +297,13 @@ class IvannaAssistant(
                     // solo tiene sentido como texto hablado aquí si el LLM realmente detectó
                     // este mismo comando (simulatedIntent != null); si no, es un texto de OTRA
                     // rama y no debe pisar la respuesta específica de IvannaLanguageCore.
-                    val baseReply = if (simulatedIntent != null) agentReply
-                                    else IvannaLanguageCore.spokenResponse(parsed)
+                    // FIX (CI rojo): agentReply es String? tras el cambio a
+                    // AgentResponse — se resuelve con fallback determinista para
+                    // que baseReply sea String no-nulo en todo el flujo.
+                    val baseReply: String = if (simulatedIntent != null)
+                        agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
+                    else
+                        IvannaLanguageCore.spokenResponse(parsed)
                     profile.recordAdjustment(command, scene ?: "UNKNOWN")
                     memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
                     memory.lastExplanation = baseReply
