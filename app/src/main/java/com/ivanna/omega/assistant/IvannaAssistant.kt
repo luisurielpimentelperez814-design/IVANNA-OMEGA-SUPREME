@@ -54,7 +54,7 @@ class IvannaAssistant(context: Context) {
 
     private val speech: SpeechInputProvider = IvannaSpeechRecognizer(appContext)
     private val voice = IvannaVoiceEngine(appContext)
-    private val memory = com.ivanna.omega.assistant.core.IvannaCognitiveCore
+    private val memory = IvannaContextMemory(appContext)
     private val voiceController: VoiceController = VoiceController(appContext)
 
     // ── Nuevas capas de inteligencia acústica (FASE 1-5) ─────────────────────
@@ -117,7 +117,7 @@ class IvannaAssistant(context: Context) {
             val scene = memory.lastScene
 
             // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
-            val (agentReply, agentCommand) = com.ivanna.omega.assistant.core.IvannaCognitiveCore.processQuery(text, "Escena: ${scene ?: "Normal"}")
+            val (agentReply, agentCommand) = IvannaGeminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
             
             // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
             val simulatedIntent = agentCommand?.let {
@@ -296,7 +296,7 @@ class IvannaAssistant(context: Context) {
                         IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
                         else -> scene
                     }
-                    runCatching { com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine.applyAdaptivePreset(command, true) }
+                    runCatching { dspOrchestrator.executeCommand(command) }
                     IvannaConversationalCore.recordTurn(text, command, command, baseReply)
                     decision.warningForUser ?: baseReply
                 }
@@ -330,7 +330,7 @@ class IvannaAssistant(context: Context) {
         val command = decision.commandOverride ?: return
         val scene = memory.lastScene ?: "UNKNOWN"
         scope.launch(Dispatchers.IO) {
-            runCatching { com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine.applyAdaptivePreset(command, true) }
+            runCatching { dspOrchestrator.executeCommand(command) }
             profile.recordAdjustment(command, scene)
             memory.recordAdjustment(command, decision.reason, applied = true)
             memory.lastExplanation = decision.reason
