@@ -6,6 +6,15 @@
 #include <memory>
 #include <cmath>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
+#ifndef ALIGN_NEON
+#define ALIGN_NEON alignas(16)
+#endif
+
+
 namespace Ivanna {
 
 constexpr size_t BLOCK_SIZE = 128;
