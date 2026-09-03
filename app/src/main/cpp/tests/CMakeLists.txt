@@ -98,6 +98,20 @@ endif()
 add_test(NAME test_adaptive_engine COMMAND test_adaptive_engine)
 set_tests_properties(test_adaptive_engine PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 
+# ── test_ihr1_format: barrera de regresion del lector IHR1 ──────────────────
+# Vive en <root>/tests/hrtf/ (fuera de este dir) y antes NO se compilaba en
+# ningun target: la regresion que cubre (dataset denso rechazado, IHR1
+# truncado publicado a ceros) podia volver sin que CI se enterara.
+add_executable(test_ihr1_format
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../tests/hrtf/test_ihr1_format.cpp
+)
+target_include_directories(test_ihr1_format PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+target_compile_options(test_ihr1_format PRIVATE -Wall -Wextra)
+add_test(NAME test_ihr1_format COMMAND test_ihr1_format)
+set_tests_properties(test_ihr1_format PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL")
+
 # RIR dataset (200 salas medidas, integrado 2026-08-12): valida el loader
 # contra el CSV+WAV reales shippeados en magisk_module/, no fixtures
 # inventados. La ruta se pasa como macro de compilación, resuelta en
