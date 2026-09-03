@@ -120,7 +120,17 @@ class IvannaAssistant(
             val scene = memory.lastScene
 
             // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
-            val (agentReply, agentCommand) = geminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
+            // FIX (CI rojo): processQuery() devuelve AgentResponse (sealed class),
+            // no un Pair — el destructuring y el 2º argumento String no existen.
+            // Se extrae texto y primer comando DSP validado desde Success.
+            val agentResponse = geminiAgent.processQuery(text)
+            val agentReply: String? = when (agentResponse) {
+                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success -> agentResponse.text
+                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline -> agentResponse.cachedResponse
+                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Error -> null
+            }
+            val agentCommand: String? = (agentResponse as? com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success)
+                ?.commands?.firstOrNull()
             
             // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
             val simulatedIntent = agentCommand?.let {
