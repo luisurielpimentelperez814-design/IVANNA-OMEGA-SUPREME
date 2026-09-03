@@ -40,11 +40,13 @@ class IvannaMemoryArchitecture(context: Context) {
     }
 
     val workingMemory = WorkingMemory()
-    // FIX (CI rojo): se declaraban como MutableList<String> pero son los motores
-    // reales — el tipo erróneo rompía record()/learn()/pruneOld()/loadRecords()
-    // y el constructor de MemoryRetrievalEngine (type mismatch abajo).
-    val episodicMemory = EpisodicMemory { saveEpisodicToDisk() }
-    val semanticMemory = SemanticMemory { saveSemanticToDisk() }
+    // FIX (CI rojo): tipos EXPLÍCITOS obligatorios. La lambda onChange llama a
+    // saveEpisodicToDisk()/saveSemanticToDisk(), que a su vez leen estas mismas
+    // propiedades — con tipo inferido el chequeo de tipos cae en un ciclo
+    // ("Type checking has run into a recursive problem"). El tipo explícito
+    // rompe el ciclo.
+    val episodicMemory: EpisodicMemory = EpisodicMemory { saveEpisodicToDisk() }
+    val semanticMemory: SemanticMemory = SemanticMemory { saveSemanticToDisk() }
     val systemMemory = SystemMemory()
     val retrievalEngine = MemoryRetrievalEngine(workingMemory, episodicMemory, semanticMemory, systemMemory)
 
