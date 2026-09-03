@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.ivanna.omega.assistant.core.IvannaCognitiveCore
 
 // ── Unified state machine ──────────────────────────────────────────────────────
 
@@ -105,7 +104,6 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         geminiAgent
     )
     private val profile   = IvannaListenerProfile(app)
-    private val cognitiveCore: com.ivanna.omega.assistant.core.IvannaCognitiveCore? = null
 
     // ── Estado público ────────────────────────────────────────────────────
     private val _panel = MutableStateFlow(AssistantPanelState())
@@ -119,7 +117,18 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
      *  y refleja disponibilidad en el panel. El agente resuelve en cascada:
      *  setApiKey > persistida > BuildConfig — este setter es la fuente UI. */
     fun setGeminiApiKey(key: String) {
-        runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(key.trim()) }
+        runCatching {
+            // FIX (leak/race real): Application.onCreate() inicializa esto
+            // dentro de un coroutine async (appScope.launch) — si el usuario
+            // abre esta pantalla y guarda su key ANTES de que ese launch
+            // termine, requireInitialized() lanzaba IllegalStateException,
+            // el runCatching la tragaba en silencio y la key JAMÁS se
+            // persistía (bug de "preferencias que no persisten"). initialize()
+            // ya es idempotente (early-return si isInitialized), así que
+            // llamarla aquí también es seguro y cierra la ventana de carrera.
+            com.ivanna.omega.assistant.core.SecureConfigurationManager.initialize(getApplication())
+            com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(key.trim())
+        }
         val avail = runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.state.value.isConfigured }.getOrDefault(false)
         _panel.value = _panel.value.copy(geminiApiKey = key.trim(), geminiAvailable = avail)
     }
