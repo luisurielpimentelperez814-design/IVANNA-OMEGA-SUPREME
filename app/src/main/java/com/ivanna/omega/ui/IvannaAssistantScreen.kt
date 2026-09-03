@@ -580,11 +580,11 @@ private fun MemoryPanel(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GeminiConnectPanel — conexión a Gemini 1.5 Flash
+// GeminiConnectPanel — conexión a Gemini 2.5 Flash
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Panel de conexión a Gemini 1.5 Flash.
+ * Panel de conexión a Gemini 2.5 Flash.
  *
  * Muestra el estado de conexión actual, un campo para ingresar la API Key
  * y los botones Conectar / Probar. La key se persiste en SharedPreferences
@@ -687,7 +687,7 @@ private fun GeminiConnectPanel(
 
                 Text(
                     text  = "Ingresa tu Google AI Studio API Key para activar IVANNA con " +
-                            "Gemini 1.5 Flash. Sin key, IVANNA opera en modo offline con " +
+                            "Gemini 2.5 Flash. Sin key, IVANNA opera en modo offline con " +
                             "inteligencia on-device completa.",
                     color = TextMuted,
                     style = MaterialTheme.typography.bodySmall

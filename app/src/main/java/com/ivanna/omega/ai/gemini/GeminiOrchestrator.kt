@@ -70,9 +70,9 @@ class GeminiOrchestrator(
     )
 
     private val registry = listOf(
-        ModelEntry("gemini-1.5-pro-latest", "Gemini 1.5 Pro", 1_000_000, 8192, true, true, true, ModelEntry.CostTier.PREMIUM, ModelEntry.LatencyProfile.MODERATE),
-        ModelEntry("gemini-1.5-flash-latest", "Gemini 1.5 Flash", 1_000_000, 8192, true, true, true, ModelEntry.CostTier.STANDARD, ModelEntry.LatencyProfile.FAST),
-        ModelEntry("gemini-1.5-flash-8b-latest", "Gemini 1.5 Flash 8B", 1_000_000, 8192, true, false, true, ModelEntry.CostTier.ECONOMY, ModelEntry.LatencyProfile.VERY_FAST)
+        ModelEntry("gemini-2.5-pro", "Gemini 2.5 Pro", 1_000_000, 8192, true, true, true, ModelEntry.CostTier.PREMIUM, ModelEntry.LatencyProfile.MODERATE),
+        ModelEntry("gemini-2.5-flash", "Gemini 2.5 Flash", 1_000_000, 8192, true, true, true, ModelEntry.CostTier.STANDARD, ModelEntry.LatencyProfile.FAST),
+        ModelEntry("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", 1_000_000, 8192, true, false, true, ModelEntry.CostTier.ECONOMY, ModelEntry.LatencyProfile.VERY_FAST)
     )
 
     private val healthState = ConcurrentHashMap<String, ModelHealth>()
