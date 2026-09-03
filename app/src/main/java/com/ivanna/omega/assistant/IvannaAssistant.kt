@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.ivanna.omega.assistant.core.IvannaCognitiveCore
 
 /**
  * IvannaAssistant — orquestador de la capa conversacional.
