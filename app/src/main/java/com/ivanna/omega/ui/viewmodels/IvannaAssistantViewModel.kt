@@ -90,7 +90,7 @@ data class AssistantPanelState(
 class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Núcleos ───────────────────────────────────────────────────────────
-    private val memoryArchitecture = com.ivanna.omega.ai.memoryArchitecture.IvannaMemoryArchitecture(app)
+    private val memoryArchitecture = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(app)
 
     private val geminiAgent = com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
         context = app,
@@ -264,7 +264,7 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         val topCmds = profile.topCommands().map { profile.labelOf(it) }
         val mode    = profile.labelOf(profile.preferredMode)
         val fatigue = profile.fatigueReports
-        val scene   = memoryArchitecture.lastScene ?: "—"
+        val scene   = memory.lastScene ?: "—"
         // Fusión en vivo: percepción + salud + perfil + duración real de
         // sesión. No ejecuta nada — solo informa el panel de memoria.
         val brainInsight = IvannaAcousticBrain.fuse(profile)

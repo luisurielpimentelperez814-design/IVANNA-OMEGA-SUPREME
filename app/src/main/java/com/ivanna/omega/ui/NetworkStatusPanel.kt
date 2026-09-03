@@ -368,11 +368,11 @@ fun NetworkStatusPanel(
                         val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
-                                    context = context,
-                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(context),
+                                    context = androidx.compose.ui.platform.LocalContext.current,
+                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(androidx.compose.ui.platform.LocalContext.current),
                                     contextEngine =
                                         com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
-                                            ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(context)
+                                            ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(androidx.compose.ui.platform.LocalContext.current)
                                 ).processQuery("ping")
                             }.getOrNull()
                         }
