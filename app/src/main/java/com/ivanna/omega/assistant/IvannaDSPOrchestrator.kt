@@ -178,11 +178,14 @@ class IvannaDSPOrchestrator(private val context: Context) {
             }
         )
     }
-}
 
     // ═══════════════════════════════════════════════════════════════════════
     // INTEGRACIÓN GEMINI — Ejecución de comandos DSP desde IA
     // ═══════════════════════════════════════════════════════════════════════
+    // FIX (CI rojo): una llave prematura cerraba la clase aquí y dejaba
+    // executeCommand()/executeAction() FUERA del cuerpo → "Expecting a top
+    // level declaration" y, en cascada, "Unresolved reference: executeCommand"
+    // en assistant/core/IvannaCognitiveCore.
 
     /**
      * Ejecuta un comando DSP crudo proveniente de Gemini.
@@ -234,7 +237,9 @@ class IvannaDSPOrchestrator(private val context: Context) {
      * Ejecuta una acción DSP desde el CognitiveCore.
      * Wrapper tipado sobre executeCommand().
      */
-    fun executeAction(action: IvannaIntentMapper.DSPAction): Boolean {
+    fun executeAction(action: IvannaIntentMapper.Intent): Boolean {
+        // FIX (CI rojo): IvannaIntentMapper no define DSPAction — el tipo
+        // real es Intent (data class con `command: String`).
         return executeCommand(action.command)
     }
 
