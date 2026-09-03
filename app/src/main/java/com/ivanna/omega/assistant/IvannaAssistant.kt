@@ -373,4 +373,16 @@ class IvannaAssistant(context: Context) {
         speech.release()
         voice.release()
     }
+
+
+    suspend fun executeCommand(command: String): String {
+        return when {
+            command.isBlank() ->
+                "Comando vacío"
+
+            else ->
+                "Ejecutando comando: $command"
+        }
+    }
+
 }

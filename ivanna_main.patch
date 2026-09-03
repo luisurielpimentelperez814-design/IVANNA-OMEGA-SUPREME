@@ -1,0 +1,882 @@
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/MainActivity.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/MainActivity.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/MainActivity.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/MainActivity.kt	2026-07-24 18:47:50.742885563 +0000
+@@ -5,6 +5,8 @@
+ import com.ivanna.omega.audio.IvannaAntiDolbyParams
+ import com.ivanna.omega.audio.IvannaNeuromorphicParams
+ import com.ivanna.omega.audio.IvannaRouteParams
++import com.ivanna.omega.audio.IvannaProfileMetadata
++import com.ivanna.omega.audio.ProfilesLoader
+ 
+ import android.Manifest
+ import android.app.Activity
+@@ -103,6 +105,8 @@
+     private lateinit var bridgePlayer: IvannaBridgePlayer
+     private val bridgePlayerState = mutableStateOf(IvannaBridgePlayer.State.IDLE)
+     private val bridgePlayerUri  = mutableStateOf<Uri?>(null)
++    private var loadedAudioProfiles: List<IvannaAudioProfile> = emptyList()
++    private var loadedAudioProfileMetadata: IvannaProfileMetadata? = null
+ 
+     // Picker de archivo (ActivityResultContracts.OpenDocument, filtrado a audio/*).
+     private val openAudioLauncher = registerForActivityResult(
+@@ -285,6 +289,8 @@
+             compRatio = compRatioSliderToRatio(parameterStore.getCompRatio())
+         )
+         bridgePlayer = IvannaBridgePlayer(applicationContext)
++        loadedAudioProfiles = ProfilesLoader.load(applicationContext)
++        loadedAudioProfileMetadata = ProfilesLoader.loadMetadata(applicationContext)
+         learningBias = LearningBias(applicationContext).also { it.load() }
+         realtimeLearningController = RealtimeLearningController(
+             applicationContext,
+@@ -396,6 +402,9 @@
+         metadataListener.startListening()
+         // Aplicar perfil inteligente
+         profileManager.applySmartProfile(application as IVANNAApplication)
++        parameterStore.getCurrentAudioProfileId()?.let { savedProfileId ->
++            loadedAudioProfiles.firstOrNull { it.id == savedProfileId }?.let { applyIvannaAudioProfile(it) }
++        }
+         // sin esperar RECORD_AUDIO (ver comentario ahí).
+ 
+         setContent {
+@@ -574,47 +583,11 @@
+                         }
+                     } else if (showProfiles) {
+                           ProfileSelectorScreen(
+-                              profiles = audioProfileManager.getAllProfiles().map { profile ->
+-    IvannaAudioProfile(
+-        id = profile.id,
+-        name = profile.name,
+-        description = profile.description,
+-        category = profile.category,
+-        priority = profile.priority,
+-        audioEngine = IvannaAudioEngineParams(
+-            gain = profile.audioEngine.gain,
+-            exciterAmount = profile.audioEngine.exciterAmount,
+-            eqGain = profile.audioEngine.eqGain,
+-            widthAmount = profile.audioEngine.widthAmount,
+-            bypass = profile.audioEngine.bypass
+-        ),
+-        antiDolby = IvannaAntiDolbyParams(
+-            speechThreshold = profile.antiDolby.speechThreshold,
+-            bassThreshold = profile.antiDolby.bassThreshold,
+-            eqBoost2k4k = profile.antiDolby.eqBoost2k4k,
+-            exciterLowOnly = profile.antiDolby.exciterLowOnly,
+-            widenerMultiplier = profile.antiDolby.widenerMultiplier
+-        ),
+-        neuromorphic = IvannaNeuromorphicParams(
+-            harmonicGain = profile.neuromorphic.harmonicGain,
+-            lateralInhibition = profile.neuromorphic.lateralInhibition,
+-            ohcCompression = profile.neuromorphic.ohcCompression,
+-            masterGainDb = profile.neuromorphic.masterGainDb,
+-            cochlearBandwidth = profile.neuromorphic.cochlearBandwidth
+-        ),
+-        route = IvannaRouteParams(
+-            bassBoostDb = profile.route.bassBoostDb,
+-            dialogBoostDb = profile.route.dialogBoostDb,
+-            widenerMult = profile.route.widenerMult
+-        ),
+-        tags = profile.tags,
+-        recommendedFor = profile.recommendedFor
+-    )
+-},
+-                              metadata = null,
+-                              currentId = parameterStore.getCurrentPreset(),
++                              profiles = loadedAudioProfiles,
++                              metadata = loadedAudioProfileMetadata,
++                              currentId = parameterStore.getCurrentAudioProfileId(),
+                               onApply = { profile ->
+-                                    audioProfileManager.applyProfile(profile.id)
++                                  applyIvannaAudioProfile(profile)
+                                   showProfiles = false
+                               },
+                               onClose = { showProfiles = false },
+@@ -1036,6 +1009,65 @@
+         }
+     }
+ 
++    private fun mapAudioProfileToEffectProfile(profile: IvannaAudioProfile): Pair<String, IvannaEffectProfile> {
++        return when (profile.category.lowercase()) {
++            "progressive_rock" -> "Spatial" to IvannaEffectProfile.SPATIAL
++            "hard_rock" -> "Punch" to IvannaEffectProfile.PUNCH
++            else -> "Warm" to IvannaEffectProfile.WARM
++        }
++    }
++
++    private fun applyIvannaAudioProfile(profile: IvannaAudioProfile) {
++        parameterStore.setCurrentAudioProfileId(profile.id)
++        parameterStore.setExciter(profile.audioEngine.exciterAmount)
++        parameterStore.setEqGain(profile.audioEngine.eqGain)
++        parameterStore.setWidth(profile.audioEngine.widthAmount)
++
++        val mappedEffect = mapAudioProfileToEffectProfile(profile)
++        parameterStore.setCurrentPreset(mappedEffect.first)
++        (application as? IVANNAApplication)?.globalEffectManager?.applyProfile(mappedEffect.second)
++
++        audioEngine.setGain(profile.audioEngine.gain)
++        audioEngine.setExciter(profile.audioEngine.exciterAmount)
++        audioEngine.setEqGain(profile.audioEngine.eqGain)
++        audioEngine.setWidth(profile.audioEngine.widthAmount)
++        audioEngine.setBypass(profile.audioEngine.bypass)
++
++        AudioEngine.nativeSetRouteProfileStatic(
++            profile.route.bassBoostDb,
++            profile.route.dialogBoostDb,
++            profile.route.widenerMult
++        )
++
++        parameterStore.setNpeNeuroParams(
++            profile.neuromorphic.harmonicGain,
++            profile.neuromorphic.lateralInhibition,
++            profile.neuromorphic.ohcCompression,
++            profile.neuromorphic.masterGainDb
++        )
++        IvannaNpeEngine.setNeuroParams(
++            profile.neuromorphic.harmonicGain,
++            profile.neuromorphic.lateralInhibition,
++            profile.neuromorphic.ohcCompression,
++            profile.neuromorphic.masterGainDb
++        )
++
++        updateDspState { current ->
++            current.copy(
++                drive = profile.audioEngine.exciterAmount.coerceIn(0f, 1f),
++                low = profile.audioEngine.eqGain,
++                mid = profile.audioEngine.eqGain,
++                high = profile.audioEngine.eqGain,
++                presence = profile.audioEngine.eqGain,
++                stereoWidth = profile.audioEngine.widthAmount.coerceIn(0f, 2f),
++                master = profile.audioEngine.gain,
++                bypass = profile.audioEngine.bypass
++            )
++        }
++
++        Log.i(TAG, "Audio profile aplicado: ${profile.id} -> ${profile.name}")
++    }
++
+     private fun updateDspState(transform: (DSPState) -> DSPState) {
+         dspState = transform(dspState)
+         dspPushJob?.cancel()
+@@ -1191,7 +1223,7 @@
+         try { controlFrameJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling controlFrameJob", e) }
+         try { adaptiveTelemetryJob?.cancel() } catch (e: Exception) { Log.e(TAG, "Error canceling adaptiveTelemetryJob", e) }
+         try { realtimeLearningController.release() } catch (e: Exception) { Log.e(TAG, "Error releasing realtimeLearningController", e) }
+-        try { bridgePlayer.stop() } catch (e: Exception) { Log.e(TAG, "Error stopping bridgePlayer", e) }
++        try { bridgePlayer.release() } catch (e: Exception) { Log.e(TAG, "Error releasing bridgePlayer", e) }
+         try {
+             autoPresetJob?.cancel()
+         } catch (e: Exception) {
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt	2026-07-24 18:47:50.741214824 +0000
+@@ -1,24 +1,13 @@
+ package com.ivanna.omega.audio
+ 
+-import android.content.Context
+ import android.media.AudioFormat
+ import android.media.AudioRecord
+-import android.media.MediaRecorder
+ import android.util.Log
+ import com.ivanna.omega.core.NativeLibraryLoader
+ import kotlinx.coroutines.*
+-import kotlin.math.*
+ 
+ /**
+  * AudioEngine v1.5 — Motor de audio DSP.
+- *
+- * FIXES DE CONECTIVIDAD:
+- *   1. nativeSetAntiDolbyScores() expuesta como companion method estático
+- *      para que AudioPipeline pueda llamarla sin instancia.
+- *   2. Se añade nativeSetAntiDolbyScores a las declaraciones external
+- *      (faltaba — el orquestador C++ la implementa pero Kotlin no la declaraba
+- *      en esta clase, solo en el JNI stub).
+- *   3. companion init carga la librería UNA sola vez (idempotente).
+  */
+ class AudioEngine {
+     companion object {
+@@ -35,10 +24,6 @@
+             return (n + mu * omega) / (1.0f + mu)
+         }
+ 
+-        /**
+-         * FIX: método estático para que AudioPipeline envíe los scores
+-         * YAMNet al orquestador nativo sin necesitar una instancia de AudioEngine.
+-         */
+         fun nativeSetAntiDolbyScoresStatic(speech: Float, music: Float, bass: Float) {
+             if (!libLoaded) return
+             try {
+@@ -51,13 +36,6 @@
+         @JvmStatic
+         private external fun nativeSetAntiDolbyScoresJni(speech: Float, music: Float, bass: Float)
+ 
+-        /**
+-         * FIX: método estático para que AudioRouteManager envíe el perfil de
+-         * compensación (BT/AUX/USB) al orquestador nativo.
+-         * Nota: se nombra con sufijo Static para no colisionar con el
+-         * external fun de instancia `nativeSetRouteProfile` (sin implementación
+-         * JNI, declarado más abajo, no usado directamente).
+-         */
+         fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
+             if (!libLoaded) return
+             try {
+@@ -97,6 +75,10 @@
+         if (libLoaded) nativeSetGain(gain)
+     }
+ 
++    fun setMasterGain(gain: Float) {
++        if (libLoaded) nativeSetGain(gain)
++    }
++
+     fun setBypass(bypass: Boolean) {
+         if (libLoaded) nativeSetBypass(bypass)
+     }
+@@ -107,7 +89,6 @@
+     }
+ 
+     fun setWidth(width: Float) {
+-    fun setMasterGain(gain: Float) { if (libLoaded) nativeSetGain(gain) }
+         widthAmount = width.coerceIn(0f, 1f)
+         if (libLoaded) nativeSetWidth(widthAmount)
+     }
+@@ -120,7 +101,6 @@
+         scope.cancel()
+     }
+ 
+-    // ── JNI natives ─────────────────────────────────────────────────────────────
+     private external fun nativeInit(sampleRate: Int)
+     private external fun nativeSetGain(gain: Float)
+     private external fun nativeSetExciter(amount: Float)
+@@ -137,7 +117,5 @@
+     )
+     private external fun nativeGetLufs(): Float
+     private external fun nativeGetPeakDbfs(): Float
+-
+-    // FIX: declarada aquí también para instancias (el JNI la implementa)
+     private external fun nativeSetAntiDolbyScores(speech: Float, music: Float, bass: Float)
+ }
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt	2026-07-24 18:47:50.741307344 +0000
+@@ -1,10 +1,3 @@
+-// AudioStateManager.kt
+-// ============================================================================
+-// CENTRALIZADO STATE MANAGER — Fuente única de verdad para todo el estado de audio
+-// LiveData/StateFlow basado para reactividad sin callbacks directos
+-// © 2026 Luis Uriel Pimentel Pérez
+-// ============================================================================
+-
+ package com.ivanna.omega.audio
+ 
+ import androidx.lifecycle.LiveData
+@@ -14,40 +7,26 @@
+ import android.util.Log
+ 
+ data class AudioState(
+-    // Modo y intensidad del motor adaptativo
+     val adaptiveMode: AdaptiveMode = AdaptiveMode.NATURAL,
+-    val adaptiveIntensity: Float = 0.7f,  // 0..1
+-    
+-    // Parámetros de compressor
+-    val compressorThreshold: Float = -20f,  // dB
++    val adaptiveIntensity: Float = 0.7f,
++    val compressorThreshold: Float = -20f,
+     val compressorRatio: Float = 2.0f,
+-    val compressorAttack: Float = 10f,      // ms
+-    val compressorRelease: Float = 100f,    // ms
+-    
+-    // Parámetros de exciter
+-    val exciterAmount: Float = 0.5f,        // 0..1
+-    val exciterFreq: Float = 4000f,         // Hz
+-    
+-    // Parámetros espaciales
+-    val spatialWidth: Float = 1.0f,         // 0..2
+-    val spatialIntensity: Float = 0.7f,     // 0..1
++    val compressorAttack: Float = 10f,
++    val compressorRelease: Float = 100f,
++    val exciterAmount: Float = 0.5f,
++    val exciterFreq: Float = 4000f,
++    val spatialWidth: Float = 1.0f,
++    val spatialIntensity: Float = 0.7f,
+     val binaural: Boolean = true,
+     val manifold: Boolean = false,
+-    
+-    // Protección de voz
+     val voiceProtectionEnabled: Boolean = false,
+-    
+-    // EQ dinámico
+-    val eqBass: Float = 0f,                 // dB
++    val eqBass: Float = 0f,
+     val eqMid: Float = 0f,
+     val eqTreble: Float = 0f,
+-    
+-    // Master
+     val masterGain: Float = 1.0f,
+     val safetyMargin: Float = 0.9f,
+-    
+-    // Flags
+-    val isDirty: Boolean = false,           // Si hay cambios sin aplicar
++    val manualModeEnabled: Boolean = false,
++    val isDirty: Boolean = false,
+     val isAudioRunning: Boolean = false
+ )
+ 
+@@ -57,42 +36,30 @@
+ 
+ object AudioStateManager {
+     private const val TAG = "AudioStateManager"
+-    
++
+     private val _audioState = MutableStateFlow(AudioState())
+     val audioState: StateFlow<AudioState> = _audioState
+-    
+-    // LiveData para observadores legacy
++
+     private val _audioStateLive = MutableLiveData(AudioState())
+     val audioStateLive: LiveData<AudioState> = _audioStateLive
+-    
+-    // Histórico para detectar cambios (delta updates)
++
+     private var previousState = AudioState()
+-    
+-    /**
+-     * Actualizar estado con validación y coherencia
+-     */
++
+     fun updateState(block: (AudioState) -> AudioState) {
+         val newState = block(_audioState.value)
+-        
+-        // Validar coherencia
+         val validatedState = validateState(newState)
+-        
+-        // Actualizar si cambió
+         if (validatedState != _audioState.value) {
+             _audioState.value = validatedState
+             _audioStateLive.value = validatedState
+-            Log.d(TAG, "🎚️ Estado actualizado: mode=${validatedState.adaptiveMode}, intensity=${validatedState.adaptiveIntensity}")
++            Log.d(TAG, "🎚️ Estado actualizado: mode=${validatedState.adaptiveMode}, intensity=${validatedState.adaptiveIntensity}, manual=${validatedState.manualModeEnabled}")
+         }
+     }
+-    
+-    /**
+-     * Obtener solo los parámetros que cambiaron (para delta updates)
+-     */
++
+     fun getDeltaChanges(): Map<String, Float> {
+         val current = _audioState.value
+         val deltas = mutableMapOf<String, Float>()
+-        
+-        if (current.compressorThreshold != previousState.compressorThreshold) 
++
++        if (current.compressorThreshold != previousState.compressorThreshold)
+             deltas["compressor_threshold"] = current.compressorThreshold
+         if (current.compressorRatio != previousState.compressorRatio)
+             deltas["compressor_ratio"] = current.compressorRatio
+@@ -108,23 +75,18 @@
+             deltas["eq_treble"] = current.eqTreble
+         if (current.masterGain != previousState.masterGain)
+             deltas["master_gain"] = current.masterGain
+-        
++
+         previousState = current.copy()
+         return deltas
+     }
+-    
+-    /**
+-     * Validar que el estado sea coherente (ej: no ambos binaural y manifold activos)
+-     */
++
+     private fun validateState(state: AudioState): AudioState {
+-        // Exclusión mutua: binaural y manifold no pueden estar ambos activos
+         var validated = state
+         if (state.binaural && state.manifold) {
+             Log.w(TAG, "⚠️ Binaural y Manifold no pueden estar ambos activos. Desactivando Manifold.")
+             validated = validated.copy(manifold = false)
+         }
+-        
+-        // Rango de valores
++
+         validated = validated.copy(
+             adaptiveIntensity = validated.adaptiveIntensity.coerceIn(0f, 1f),
+             spatialWidth = validated.spatialWidth.coerceIn(0f, 2f),
+@@ -132,22 +94,16 @@
+             masterGain = validated.masterGain.coerceIn(0.1f, 2f),
+             safetyMargin = validated.safetyMargin.coerceIn(0.5f, 1f)
+         )
+-        
++
+         return validated
+     }
+-    
+-    /**
+-     * Revertir a estado anterior (para rollback)
+-     */
++
+     fun revertState() {
+         _audioState.value = previousState
+         _audioStateLive.value = previousState
+         Log.d(TAG, "↩️ Estado revertido")
+     }
+-    
+-    /**
+-     * Reset a valores por defecto
+-     */
++
+     fun resetToDefaults() {
+         updateState { AudioState() }
+         Log.d(TAG, "🔄 Reset a valores por defecto")
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt	2026-07-24 18:47:50.741098078 +0000
+@@ -38,16 +38,19 @@
+  *   escribe el resultado a un AudioTrack propio. Es la única forma real
+  *   de que todo el motor suene con música de verdad, no con el micrófono.
+  *
+- * ALCANCE DE ESTA PRIMERA VERSIÓN:
+- *   Reproducción simple (play/pause/stop) de un archivo local por URI.
+- *   Sin seek, sin cola de reproducción, sin notificación media-session
+- *   todavía — eso se agrega encima de esta base, no se rediseña.
++ * FIXES v3.6:
++ *   - pausa/reanudación reales en AudioTrack (sin seguir drenando buffer)
++ *   - soporte correcto para salida PCM_FLOAT y PCM_16BIT del decoder
++ *   - buffers reutilizables para evitar allocs por chunk
++ *   - release() explícito del clasificador de Voice Protection
+  */
+ class IvannaBridgePlayer(private val context: Context) {
+ 
+     companion object {
+         private const val TAG = "IVANNA.BridgePlayer"
+         private const val TIMEOUT_US = 10_000L
++        private const val TARGET_SAMPLE_RATE = 96_000
++        private const val MAX_CHUNK_FRAMES = 2048
+     }
+ 
+     enum class State { IDLE, PLAYING, PAUSED, STOPPED, ERROR }
+@@ -58,26 +61,22 @@
+     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+     private var job: Job? = null
+     private var audioTrack: AudioTrack? = null
++    @Volatile private var voiceProtectionEnabled = true
+ 
+     @Volatile private var pauseRequested = false
+     @Volatile private var stopRequested = false
+ 
+-    // FEATURE (Voice Protection): lazy para no cargar YamnetClassifier
+-    // (modelo TFLite) hasta la primera reproducción real.
+     private val voiceProtection: VoiceProtectionController? by lazy {
+-        try { VoiceProtectionController(context) } catch (e: Exception) {
+-            Log.w(TAG, "Voice Protection no disponible: ${e.message}"); null
++        try {
++            VoiceProtectionController(context).also { it.enabled = voiceProtectionEnabled }
++        } catch (e: Exception) {
++            Log.w(TAG, "Voice Protection no disponible: ${e.message}")
++            null
+         }
+     }
+ 
+-    /**
+-     * Control real (no cosmético) de Voice Protection — delega a
+-     * VoiceProtectionController.enabled, que ya gatea feed() de verdad
+-     * (ver VoiceProtectionController.kt: `if (!enabled) return` al inicio
+-     * de feed()). Antes era una propiedad `private`, sin forma de
+-     * controlarla desde la UI.
+-     */
+     fun setVoiceProtectionEnabled(enabled: Boolean) {
++        voiceProtectionEnabled = enabled
+         voiceProtection?.enabled = enabled
+         if (!enabled) DSPBridge.setVoiceProtectScore(0f)
+     }
+@@ -90,26 +89,42 @@
+         job = scope.launch { runDecodeLoop(uri) }
+     }
+ 
+-    fun pause() { pauseRequested = true; state = State.PAUSED }
++    fun pause() {
++        pauseRequested = true
++        runCatching { audioTrack?.pause() }
++        state = State.PAUSED
++    }
+ 
+-    fun resume() { pauseRequested = false; state = State.PLAYING }
++    fun resume() {
++        pauseRequested = false
++        runCatching { audioTrack?.play() }
++        state = State.PLAYING
++    }
+ 
+     fun stop() {
+         stopRequested = true
++        pauseRequested = false
+         job?.cancel()
+         job = null
+         releaseTrack()
+         state = State.STOPPED
+     }
+ 
++    fun release() {
++        stop()
++        runCatching { voiceProtection?.release() }
++        scope.cancel()
++    }
++
+     private fun releaseTrack() {
+-        // Desregistrar la sesion de AudioEffect antes de liberar
+         runCatching {
+             audioTrack?.audioSessionId?.let { sid ->
+                 (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
+                     ?.globalEffectManager?.closeSession(sid)
+             }
+         }
++        try { audioTrack?.pause() } catch (_: Throwable) {}
++        try { audioTrack?.flush() } catch (_: Throwable) {}
+         try { audioTrack?.stop() } catch (_: Throwable) {}
+         try { audioTrack?.release() } catch (_: Throwable) {}
+         audioTrack = null
+@@ -129,73 +144,65 @@
+                 if (mime.startsWith("audio/")) { trackIndex = i; format = f; break }
+             }
+             if (trackIndex < 0 || format == null) {
+-                Log.e(TAG, "Sin pista de audio en $uri"); state = State.ERROR; return@withContext
++                Log.e(TAG, "Sin pista de audio en $uri")
++                state = State.ERROR
++                return@withContext
+             }
+             extractor.selectTrack(trackIndex)
+ 
+             val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+-            val sampleRate = 96000
++            val sampleRate = TARGET_SAMPLE_RATE
+             val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+             val mime = format.getString(MediaFormat.KEY_MIME)!!
+ 
+-            // Reinicializa el DSP nativo con el sample rate REAL del archivo.
+-            // Los filtros (biquads, HRTF, NHO) dependen de fs; usar siempre
+-            // 96000 fijo desalinearía las frecuencias de corte con archivos
+-            // a 44100/22050/etc.
+-            val resampler = StereoAudioResampler(96000)
++            val resampler = StereoAudioResampler(TARGET_SAMPLE_RATE)
+             resampler.setInputSampleRate(inputSampleRate)
+-
+             DSPBridge.init(sampleRate)
+ 
+-            // IvannaNpeEngine, en cambio, se inicializa UNA sola vez en
+-            // MainActivity.onCreate() a un sample rate fijo (no se puede
+-            // reinicializar por archivo sin destruir y recrear el handle
+-            // nativo — no implementado). Si el archivo actual no coincide,
+-            // sus filtros internos (calculados para la fs de init) sonarían
+-            // desafinados. Se salta el procesamiento en ese caso, en vez de
+-            // procesar mal en silencio — misma fs es el caso común (los
+-            // presets de referencia del proyecto son 96000).
+             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
+             if (npeSampleRateMismatch) {
+-                Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, archivo es ${sampleRate}Hz — NPE desactivado para esta reproducción")
++                Log.w(TAG, "NPE inicializado a ${IvannaNpeEngine.sampleRate}Hz, salida bridge=$sampleRate Hz — NPE desactivado para esta reproducción")
+             }
+ 
+-            // FIX: DSPBridge.nativeProcess asume SIEMPRE 2ch intercalado
+-            // (L0,R0,L1,R1,...) — no soporta mono. Se fuerza salida estéreo
+-            // real y, si la fuente es mono, se upmixea (L=R) antes de
+-            // pasar por el DSP. Así no hay dos formatos de buffer
+-            // compitiendo con el mismo motor nativo.
+             val channelMask = AudioFormat.CHANNEL_OUT_STEREO
+             val minBuf = AudioTrack.getMinBufferSize(
+-                sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT)
++                sampleRate, channelMask, AudioFormat.ENCODING_PCM_FLOAT
++            )
+             if (minBuf <= 0) {
+-                Log.e(TAG, "AudioTrack no soporta $sampleRate Hz"); state = State.ERROR; return@withContext
++                Log.e(TAG, "AudioTrack no soporta $sampleRate Hz")
++                state = State.ERROR
++                return@withContext
+             }
+ 
+             val track = AudioTrack.Builder()
+-                .setAudioAttributes(AudioAttributes.Builder()
+-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+-                .setAudioFormat(AudioFormat.Builder()
+-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+-                    .setSampleRate(sampleRate)
+-                    .setChannelMask(channelMask).build())
++                .setAudioAttributes(
++                    AudioAttributes.Builder()
++                        .setUsage(AudioAttributes.USAGE_MEDIA)
++                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
++                        .build()
++                )
++                .setAudioFormat(
++                    AudioFormat.Builder()
++                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
++                        .setSampleRate(sampleRate)
++                        .setChannelMask(channelMask)
++                        .build()
++                )
+                 .setBufferSizeInBytes(minBuf * 4)
+                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+-                    .setTransferMode(AudioTrack.MODE_STREAM)
++                .setTransferMode(AudioTrack.MODE_STREAM)
+                 .build()
+             if (track.state != AudioTrack.STATE_INITIALIZED) {
+-                Log.e(TAG, "AudioTrack no inicializó"); state = State.ERROR; return@withContext
++                Log.e(TAG, "AudioTrack no inicializó")
++                state = State.ERROR
++                return@withContext
+             }
+-            // FIX (controles desconectados): registrar la sesion del AudioTrack
+-            // en IvannaGlobalEffectManager para que adjustLiveParams() tenga
+-            // al menos una sesion real sobre la que aplicar EQ/Virtualizer/Comp.
+-            // Sin esto, activeSessions esta vacio y los sliders no afectan nada.
++
+             runCatching {
+                 (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
+                     ?.globalEffectManager
+                     ?.openSession(track.audioSessionId, context.packageName)
+-            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: \${it.message}") }
++            }.onFailure { Log.w(TAG, "No se pudo registrar sesion AudioTrack: ${it.message}") }
+             audioTrack = track
+ 
+             codec = MediaCodec.createDecoderByType(mime)
+@@ -208,9 +215,12 @@
+             var sawInputEOS = false
+             var sawOutputEOS = false
+ 
++            val spatialInL = FloatArray(MAX_CHUNK_FRAMES)
++            val spatialInR = FloatArray(MAX_CHUNK_FRAMES)
++            val spatialOutL = FloatArray(MAX_CHUNK_FRAMES)
++            val spatialOutR = FloatArray(MAX_CHUNK_FRAMES)
++
+             while (isActive && !sawOutputEOS && !stopRequested) {
+-                // Backpressure simple para pausa: no alimentamos ni drenamos
+-                // mientras esté en pausa, pero mantenemos el codec vivo.
+                 while (pauseRequested && !stopRequested) delay(50)
+                 if (stopRequested) break
+ 
+@@ -220,12 +230,10 @@
+                         val inBuf = codec.getInputBuffer(inIndex)!!
+                         val sampleSize = extractor.readSampleData(inBuf, 0)
+                         if (sampleSize < 0) {
+-                            codec.queueInputBuffer(inIndex, 0, 0, 0,
+-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM)
++                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                             sawInputEOS = true
+                         } else {
+-                            codec.queueInputBuffer(inIndex, 0, sampleSize,
+-                                extractor.sampleTime, 0)
++                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
+                             extractor.advance()
+                         }
+                     }
+@@ -237,68 +245,25 @@
+                     if (bufferInfo.size > 0) {
+                         outBuf.position(bufferInfo.offset)
+                         outBuf.limit(bufferInfo.offset + bufferInfo.size)
+-                        val floats = pcm16ToFloat(outBuf, bufferInfo.size)
++                        val floats = pcmToFloat(
++                            outBuf,
++                            bufferInfo.size,
++                            codec.outputFormat.getIntegerOrDefault(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
++                        )
+                         val stereo = if (channelCount == 1) monoToStereo(floats) else floats
+-
+-                        // El motor nativo clampea internamente a 2048 frames
+-                        // por llamada; no hay garantía de que el buffer de
+-                        // salida del decoder respete ese límite en todos los
+-                        // codecs/dispositivos, así que se trocea aquí para
+-                        // que nunca se escriba audio sin procesar.
+-                        // Buffers reutilizables para IvannaSpatialEngine
+-                        // (opera sobre canales separados, no intercalados —
+-                        // se declaran una vez fuera del loop para no
+-                        // reasignar memoria en cada chunk).
+-                        val spatialInL = FloatArray(2048)
+-                        val spatialInR = FloatArray(2048)
+-                        val spatialOutL = FloatArray(2048)
+-                        val spatialOutR = FloatArray(2048)
+-
+                         val totalFrames = stereo.size / 2
+                         var offset = 0
+                         while (offset < totalFrames) {
+-                            val chunkFrames = minOf(2048, totalFrames - offset)
++                            val chunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
+                             val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
+-                            // FEATURE (Voice Protection): clasifica el audio
+-                            // CRUDO (antes del DSP) — clasificar después
+-                            // sería sobre una señal ya coloreada por
+-                            // Exciter/EQ, menos fiel a lo que YAMNet espera.
+                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
+                             DSPBridge.process(chunk, chunkFrames)
+-                            // FIX (motor NPE nunca sonaba): IvannaNpeEngine
+-                            // (NHO+LIF+BiquadEnvelopeBank+AutonomousBrain,
+-                            // el motor detrás de los sliders de Inhibición
+-                            // Lateral/Compresión OHC/Master Gain/AGC/HRTF/
+-                            // Coclear/Adapt/Manifold en la UI) solo se
+-                            // llamaba desde PlaybackCaptureService, cuyo
+-                            // resultado se descarta siempre (esa ruta es
+-                            // captura+análisis del sistema, sin salida de
+-                            // audio real — ver auditoría). Este es el único
+-                            // lugar de toda la app que escribe a un
+-                            // AudioTrack real, así que es el único lugar
+-                            // donde procesar aquí tiene efecto audible.
+-                            // isReady evita el costo si el motor no
+-                            // inicializó (ver IvannaNpeEngine.init).
+                             if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
+                                 IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames)
+                             }
+-                            // FIX (control sin efecto real): "modo concierto"
+-                            // por voz encendía parámetros de un motor que
+-                            // nadie ejecutaba nunca. Ahora sí se aplica, acá,
+-                            // el único lugar con salida de audio audible real.
+                             if (com.ivanna.omega.dsp.ConcertMode.enabled) {
+                                 com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
+                             }
+-                            // FIX (toggle conectado al motor equivocado —
+-                            // auditoría de cableado): "MOTOR BINAURAL · 32
+-                            // OBJETOS" en la UI describe textualmente a
+-                            // IvannaSpatialEngine (upmixer+VBAP+HRTF+head-
+-                            // tracking) pero estaba wireado a
+-                            // SpatialAudioEngineV2, que es solo telemetría
+-                            // (se deja para el HUD). Se aplica acá el motor
+-                            // real, sobre canales deinterleaved — este sí
+-                            // preserva la separación estéreo (dos fuentes
+-                            // virtuales L/R, no un downmix a mono).
+                             if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
+                                 for (i in 0 until chunkFrames) {
+                                     spatialInL[i] = chunk[i * 2]
+@@ -335,14 +300,22 @@
+         }
+     }
+ 
+-    /** Mono intercalado (M0,M1,...) → estéreo intercalado (M0,M0,M1,M1,...). */
+     private fun monoToStereo(mono: FloatArray): FloatArray {
+         val out = FloatArray(mono.size * 2)
+-        for (i in mono.indices) { out[2 * i] = mono[i]; out[2 * i + 1] = mono[i] }
++        for (i in mono.indices) {
++            out[2 * i] = mono[i]
++            out[2 * i + 1] = mono[i]
++        }
+         return out
+     }
+ 
+-    /** PCM16 little-endian intercalado → Float [-1,1] intercalado (mismo layout que espera DSPBridge). */
++    private fun pcmToFloat(buf: ByteBuffer, byteSize: Int, encoding: Int): FloatArray {
++        return when (encoding) {
++            AudioFormat.ENCODING_PCM_FLOAT -> pcmFloatToFloat(buf, byteSize)
++            else -> pcm16ToFloat(buf, byteSize)
++        }
++    }
++
+     private fun pcm16ToFloat(buf: ByteBuffer, byteSize: Int): FloatArray {
+         val bb = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+         val sampleCount = byteSize / 2
+@@ -352,4 +325,18 @@
+         }
+         return out
+     }
++
++    private fun pcmFloatToFloat(buf: ByteBuffer, byteSize: Int): FloatArray {
++        val bb = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
++        val sampleCount = byteSize / 4
++        val out = FloatArray(sampleCount)
++        for (i in 0 until sampleCount) {
++            out[i] = bb.float.coerceIn(-1f, 1f)
++        }
++        return out
++    }
++
++    private fun MediaFormat.getIntegerOrDefault(key: String, defaultValue: Int): Int {
++        return if (containsKey(key)) getInteger(key) else defaultValue
++    }
+ }
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/core/ParameterStore.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/core/ParameterStore.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/core/ParameterStore.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/core/ParameterStore.kt	2026-07-24 18:47:50.741487706 +0000
+@@ -64,6 +64,8 @@
+         private const val KEY_ADAPTIVE_MODE = "adaptive_mode"
+         private const val KEY_ADAPTIVE_INTENSITY = "adaptive_intensity"
+         private const val KEY_VOICE_PROTECTION = "voice_protection"
++        private const val KEY_AUDIO_PROFILE_ID = "audio_profile_id"
++        private const val KEY_ADAPTIVE_MANUAL_MODE = "adaptive_manual_mode"
+     }
+ 
+     fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
+@@ -158,6 +160,12 @@
+     fun isVoiceProtectionEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_PROTECTION, true)
+     fun setVoiceProtectionEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_VOICE_PROTECTION, enabled).apply()
+ 
++    fun getCurrentAudioProfileId(): String? = prefs.getString(KEY_AUDIO_PROFILE_ID, null)
++    fun setCurrentAudioProfileId(id: String?) = prefs.edit().putString(KEY_AUDIO_PROFILE_ID, id).apply()
++
++    fun isAdaptiveManualModeEnabled(): Boolean = prefs.getBoolean(KEY_ADAPTIVE_MANUAL_MODE, false)
++    fun setAdaptiveManualModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ADAPTIVE_MANUAL_MODE, enabled).apply()
++
+     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
+         prefs.edit()
+             .putFloat("${name}_exciter", exciter)
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt
+--- original_main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt	2026-07-24 18:47:50.741672053 +0000
+@@ -35,21 +35,22 @@
+     val backend = remember { AdaptiveBackend(context) }
+     val telemetry by backend.telemetry.collectAsState()
+     val audioState by AudioStateManager.audioState.collectAsState()
+-    var manualModeEnabled by remember { mutableStateOf(false) }
++    var manualModeEnabled by remember { mutableStateOf(audioState.manualModeEnabled) }
+ 
+     // Iniciar/parar telemetría con el ciclo de vida de la pantalla
+     DisposableEffect(Unit) {
+         backend.startTelemetry()
+-        // Restaurar estado persistido
+         backend.restoreState()?.let { saved ->
+             AudioStateManager.updateState { saved }
++            manualModeEnabled = saved.manualModeEnabled
++            if (saved.manualModeEnabled) {
++                try { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(false) }
++                catch (_: Throwable) { }
++                backend.forceManualState(saved)
++            }
+         }
+         onDispose {
+             backend.stopTelemetry()
+-            if (manualModeEnabled) {
+-                try { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(true) }
+-                catch (_: Throwable) { }
+-            }
+         }
+     }
+ 
+@@ -220,12 +221,14 @@
+                     checked = manualModeEnabled,
+                     onCheckedChange = { enabled ->
+                         manualModeEnabled = enabled
++                        val updatedState = AudioStateManager.audioState.value.copy(manualModeEnabled = enabled)
++                        AudioStateManager.updateState { updatedState }
+                         try {
+                             IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled)
+                         } catch (_: Throwable) { }
+                         if (enabled) {
+                             backend.resetModulator()
+-                            backend.forceManualState(audioState)
++                            backend.forceManualState(updatedState)
+                         }
+                     },
+                     accent = PhosphorGreen
+Binary files original_main/IVANNA-OMEGA-SUPREME-main/magisk_module/system/bin/ivanna_daemon and main/IVANNA-OMEGA-SUPREME-main/magisk_module/system/bin/ivanna_daemon differ
+diff -ruN original_main/IVANNA-OMEGA-SUPREME-main/push_to_github.sh main/IVANNA-OMEGA-SUPREME-main/push_to_github.sh
+--- original_main/IVANNA-OMEGA-SUPREME-main/push_to_github.sh	2026-07-24 18:10:01.000000000 +0000
++++ main/IVANNA-OMEGA-SUPREME-main/push_to_github.sh	2026-07-24 18:47:50.743054245 +0000
+@@ -9,7 +9,7 @@
+ 
+ REPO_URL="${REPO_URL:-https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git}"
+ BRANCH="${BRANCH:-main}"
+-COMMIT_MESSAGE="${COMMIT_MESSAGE:-fix: stabilize app startup and magisk module wiring}"
++COMMIT_MESSAGE="${COMMIT_MESSAGE:-feat: integrate daemon binary and wire bridge/manual/voice/profile fixes}"
+ 
+ printf '\n[IVANNA] Verificando herramientas...\n'
+ command -v git >/dev/null || { echo "Falta git. En Termux: pkg install git"; exit 1; }
+@@ -56,7 +56,7 @@
+         magisk_module/customize.sh magisk_module/service.sh magisk_module/post-fs-data.sh magisk_module/uninstall.sh \
+         magisk_module/module.prop module.prop update.json \
+         vendor_base magisk_module/vendor_base system magisk_module/system \
+-        IVANNA-OMEGA-SUPREME-v1.8.1-magisk.zip push_to_github.sh
++        magisk_module/system/bin/ivanna_daemon IVANNA-OMEGA-SUPREME-v1.8.1-magisk.zip push_to_github.sh || git add -A
+ 
+ if git diff --cached --quiet; then
+   echo "No hay cambios para commitear."
+Binary files original_main/IVANNA-OMEGA-SUPREME-main/system/bin/ivanna_daemon and main/IVANNA-OMEGA-SUPREME-main/system/bin/ivanna_daemon differ

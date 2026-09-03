@@ -1,3 +1,4 @@
+#include "IvannaFusionCore.h"
 #include "IvannaAudioClassifier.hpp"
 #include "IvannaAudioClassifier.hpp"
 #include "IvannaFusionCore.hpp"

@@ -1,0 +1,550 @@
+diff --git a/app/src/main/java/com/ivanna/omega/core/RootAccess.kt b/app/src/main/java/com/ivanna/omega/core/RootAccess.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/core/RootAccess.kt
+@@ -0,0 +1,104 @@
++package com.ivanna.omega.core
++
++import android.content.Context
++import android.util.Log
++import java.io.File
++
++/**
++ * RootAccess — deteccion real de root/Magisk, cacheada.
++ *
++ * PROBLEMA QUE ARREGLA:
++ *   En todo el repo NO existia ni una sola comprobacion de root
++ *   (grep de "su", "isRoot", "Runtime.getRuntime" en *.kt = 0 hits).
++ *   Lo unico parecido era NoRootAudioProcessor.hasMagisk(), que mira
++ *   /data/adb/magisk y /sbin/magisk: rutas que una app sin root NO puede
++ *   stat() (EACCES) -> exists() devuelve false SIEMPRE, incluso en un
++ *   dispositivo rooteado. Resultado: la app no sabia nunca en que modo
++ *   estaba corriendo y el camino "sin root" quedaba muerto.
++ *
++ * ESTRATEGIA (de mas fiable a menos):
++ *   1. Probe real: ejecutar `su -c id` con timeout y comprobar uid=0.
++ *      Es el unico testigo que no miente. Se hace UNA vez por proceso.
++ *   2. Binario `su` visible en el PATH tipico (no requiere root para stat).
++ *   3. App de gestion de Magisk/KernelSU instalada (PackageManager).
++ *   4. Props del modulo (persist.ivanna.magisk_active) via MagiskBridge.
++ *
++ * NOTA: probeSu() puede tardar (dialogo de concesion de Magisk). NUNCA
++ * llamarla desde el hilo principal — de ahi los @WorkerThread implicitos y
++ * el cache: la UI consulta `cachedRoot`, que es no-bloqueante.
++ */
++object RootAccess {
++
++    private const val TAG = "IVANNA-RootAccess"
++    private const val SU_TIMEOUT_MS = 3_000L
++
++    private val SU_PATHS = listOf(
++        "/system/bin/su", "/system/xbin/su", "/sbin/su",
++        "/su/bin/su", "/system/sbin/su", "/vendor/bin/su",
++        "/debug_ramdisk/su"
++    )
++
++    private val MANAGER_PACKAGES = listOf(
++        "com.topjohnwu.magisk",
++        "io.github.huskydg.magisk",
++        "me.weishu.kernelsu",
++        "com.kernelsu.manager",
++        "eu.chainfire.supersu"
++    )
++
++    @Volatile private var probed = false
++    @Volatile private var probeResult = false
++
++    /** Ultimo resultado conocido, no bloqueante. false hasta que se hace probe. */
++    val cachedRoot: Boolean get() = probeResult
++
++    /** true si ya se ejecuto el probe real en este proceso. */
++    val isProbed: Boolean get() = probed
++
++    /** Binario su presente en una ruta legible sin privilegios. */
++    fun suBinaryVisible(): Boolean = SU_PATHS.any { runCatching { File(it).exists() }.getOrDefault(false) }
++
++    /** Gestor de root instalado (pista, no prueba). */
++    fun managerInstalled(context: Context): Boolean {
++        val pm = context.packageManager
++        return MANAGER_PACKAGES.any { pkg ->
++            runCatching { pm.getPackageInfo(pkg, 0) != null }.getOrDefault(false)
++        }
++    }
++
++    /**
++     * Probe real y bloqueante. Lanza `su -c id`, espera con timeout y
++     * comprueba uid=0. Cachea el resultado para el resto del proceso.
++     * DEBE llamarse en un hilo de background.
++     */
++    fun probeSu(force: Boolean = false): Boolean {
++        if (probed && !force) return probeResult
++        val ok = runCatching {
++            val proc = ProcessBuilder("su", "-c", "id")
++                .redirectErrorStream(true)
++                .start()
++            val deadline = System.currentTimeMillis() + SU_TIMEOUT_MS
++            while (proc.isAlive && System.currentTimeMillis() < deadline) {
++                Thread.sleep(50)
++            }
++            if (proc.isAlive) {
++                proc.destroy()
++                false
++            } else {
++                val out = proc.inputStream.bufferedReader().use { it.readText() }
++                proc.exitValue() == 0 && out.contains("uid=0")
++            }
++        }.getOrElse { false }
++        probed = true
++        probeResult = ok
++        Log.i(TAG, if (ok) "root disponible (su probe OK)" else "sin root (su probe fallo)")
++        return ok
++    }
++
++    /** Resumen legible para la UI/telemetria. */
++    fun describe(context: Context): String = buildString {
++        append(if (cachedRoot) "ROOT" else if (probed) "NO-ROOT" else "ROOT?")
++        append(" | su=").append(suBinaryVisible())
++        append(" | manager=").append(managerInstalled(context))
++    }
++}
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AudioBackendSelector.kt b/app/src/main/java/com/ivanna/omega/audio/AudioBackendSelector.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/audio/AudioBackendSelector.kt
+@@ -0,0 +1,110 @@
++package com.ivanna.omega.audio
++
++import android.content.Context
++import android.util.Log
++import com.ivanna.omega.core.RootAccess
++import com.ivanna.omega.magisk.MagiskBridge
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.launch
++
++/**
++ * AudioBackendSelector — elige y arranca el backend de audio segun el
++ * entorno real del dispositivo, y lo re-evalua si el entorno cambia.
++ *
++ * PROBLEMA QUE ARREGLA (sub-entorno desconectado):
++ *   NoRootAudioProcessor.kt existia pero NO estaba referenciado en NINGUN
++ *   archivo del repo (grep NoRootAudioProcessor = 0 hits fuera de su propio
++ *   archivo). Es decir: en un dispositivo SIN root la app cargaba, la UI se
++ *   pintaba y los sliders escribian a un daemon que no existe
++ *   (MagiskBridge.sendCommand -> "queued", OmegaEngineBridge no conectado),
++ *   sin ningun camino de procesado alternativo. La app "funcionaba" en
++ *   pantalla y no hacia absolutamente nada al audio.
++ *
++ * MODOS:
++ *   ROOT_DAEMON  — root + daemon del modulo Magisk respondiendo por socket.
++ *                  Procesado system-wide en libomega_effect (camino elite).
++ *   ROOT_NO_DAEMON — hay root pero el daemon no responde (modulo no instalado
++ *                  o late_start pendiente): se usa el camino AudioEffect y se
++ *                  sigue reintentando el socket.
++ *   NO_ROOT      — sin root: AudioEffect por sesion (IvannaGlobalEffectManager)
++ *                  + NoRootAudioProcessor (DynamicsProcessing API 28+).
++ */
++object AudioBackendSelector {
++
++    private const val TAG = "IVANNA-BackendSel"
++
++    enum class Mode { UNKNOWN, ROOT_DAEMON, ROOT_NO_DAEMON, NO_ROOT }
++
++    private val _mode = MutableStateFlow(Mode.UNKNOWN)
++    val mode: StateFlow<Mode> = _mode.asStateFlow()
++
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++
++    @Volatile private var noRoot: NoRootAudioProcessor? = null
++    @Volatile private var started = false
++
++    val isNoRootFallbackActive: Boolean get() = noRoot?.isActive() == true
++
++    /** Idempotente: seguro llamarlo varias veces. */
++    fun start(context: Context) {
++        if (started) return
++        started = true
++        val app = context.applicationContext
++        scope.launch {
++            evaluate(app)
++            // Re-evaluacion periodica: el daemon del modulo puede subir tarde
++            // (Magisk late_start_service) o caerse en caliente. Sin esto, un
++            // dispositivo rooteado que arranca la app antes del daemon se
++            // quedaba clavado en el fallback para toda la sesion.
++            while (true) {
++                delay(10_000L)
++                evaluate(app)
++            }
++        }
++    }
++
++    private fun evaluate(app: Context) {
++        val daemon = runCatching { MagiskBridge.isDaemonRunning }.getOrDefault(false)
++        val root = if (daemon) true else RootAccess.probeSu()
++        val next = when {
++            root && daemon -> Mode.ROOT_DAEMON
++            root -> Mode.ROOT_NO_DAEMON
++            else -> Mode.NO_ROOT
++        }
++        if (next == _mode.value) return
++        Log.i(TAG, "modo de audio: ${_mode.value} -> $next (root=$root daemon=$daemon)")
++        _mode.value = next
++        applyMode(app, next)
++    }
++
++    private fun applyMode(app: Context, mode: Mode) {
++        when (mode) {
++            Mode.NO_ROOT, Mode.ROOT_NO_DAEMON -> {
++                if (noRoot == null) noRoot = NoRootAudioProcessor(app)
++                val ok = runCatching { noRoot?.start() == true }.getOrDefault(false)
++                Log.i(TAG, if (ok) "NoRootAudioProcessor activo (DynamicsProcessing)"
++                           else "NoRootAudioProcessor no disponible en este dispositivo")
++            }
++            Mode.ROOT_DAEMON -> {
++                // El daemon procesa system-wide: el fallback local solo
++                // duplicaria compresion/EQ sobre el mismo audio.
++                runCatching { noRoot?.stop() }
++                Log.i(TAG, "daemon system-wide activo — fallback local detenido")
++            }
++            Mode.UNKNOWN -> Unit
++        }
++    }
++
++    fun stop() {
++        runCatching { noRoot?.stop() }
++        noRoot = null
++        started = false
++        _mode.value = Mode.UNKNOWN
++    }
++}
+diff --git a/app/src/main/java/com/ivanna/omega/audio/BootRestoreReceiver.kt b/app/src/main/java/com/ivanna/omega/audio/BootRestoreReceiver.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/audio/BootRestoreReceiver.kt
+@@ -0,0 +1,47 @@
++package com.ivanna.omega.audio
++
++import android.content.BroadcastReceiver
++import android.content.Context
++import android.content.Intent
++import android.util.Log
++import com.ivanna.omega.dsp.DSPBridge
++import com.ivanna.omega.dsp.DSPStatePrefs
++
++/**
++ * BootRestoreReceiver — restaura el estado DSP persistido tras reiniciar.
++ *
++ * PROBLEMA QUE ARREGLA (persistencia):
++ *   El manifest ya pedia android.permission.RECEIVE_BOOT_COMPLETED pero NO
++ *   habia ningun receiver declarado para ese broadcast: el permiso no hacia
++ *   nada. Tras un reinicio, el modulo Magisk levantaba el daemon con sus
++ *   valores por defecto y los ajustes del usuario no volvian hasta que abria
++ *   la app a mano.
++ *
++ * No arranca servicios en primer plano (Android 12+ lo prohibe desde
++ * BOOT_COMPLETED): solo re-empuja los parametros al DSP nativo y, a traves
++ * de DSPState.pushToNative(), al daemon por socket si esta disponible.
++ */
++class BootRestoreReceiver : BroadcastReceiver() {
++
++    override fun onReceive(context: Context, intent: Intent) {
++        val action = intent.action ?: return
++        if (action != Intent.ACTION_BOOT_COMPLETED &&
++            action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
++            action != "android.intent.action.QUICKBOOT_POWERON"
++        ) return
++
++        val pending = goAsync()
++        Thread {
++            try {
++                runCatching { DSPBridge.init(48_000) }
++                val state = DSPStatePrefs.load(context)
++                runCatching { state.pushToNative() }
++                Log.i("IVANNA-BootRestore", "estado DSP restaurado tras boot (bypass=${state.bypass})")
++                // Backend correcto para este arranque (root vs sin root).
++                runCatching { AudioBackendSelector.start(context) }
++            } finally {
++                pending.finish()
++            }
++        }.start()
++    }
++}
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index fa3d300..e30b77c 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -68,9 +68,31 @@
+             <intent-filter>
+                 <action android:name="android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION"/>
+                 <action android:name="android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION"/>
+             </intent-filter>
+         </receiver>
+ 
++        <!-- FIX (persistencia): el manifest pedia RECEIVE_BOOT_COMPLETED pero
++             no habia receiver para ese broadcast: el permiso no hacia nada y
++             los ajustes del usuario no volvian tras reiniciar. -->
++        <receiver
++            android:name=".audio.BootRestoreReceiver"
++            android:exported="false"
++            android:directBootAware="false">
++            <intent-filter>
++                <action android:name="android.intent.action.BOOT_COMPLETED"/>
++                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
++            </intent-filter>
++        </receiver>
++
++        <!-- FIX (sub-entorno desconectado): CognitiveDashboardActivity existia
++             como ComponentActivity completa pero no estaba en el manifest ni la
++             lanzaba nadie -> pantalla inalcanzable. Se registra como actividad
++             interna (exported=false) para poder abrirla desde la app. -->
++        <activity
++            android:name=".ui.CognitiveDashboardActivity"
++            android:exported="false"
++            android:label="IVANNA Cognitive"/>
++
+     </application>
+ 
+ </manifest>
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index 5a16897..b184675 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -57,12 +57,13 @@ import com.ivanna.omega.ui.AdaptiveEngineScreen
+ import com.ivanna.omega.ui.IvannaControlPanel
+ import com.ivanna.omega.audio.AntiDolbyController
+ import com.ivanna.omega.core.IvannaNativeLib
+ import com.ivanna.omega.core.OmegaEngine
+ import com.ivanna.omega.dsp.DSPBridge
+ import com.ivanna.omega.dsp.DSPState
++import com.ivanna.omega.dsp.DSPStatePrefs
+ import android.app.Activity
+ import android.content.Intent
+ import android.media.projection.MediaProjectionManager
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
+ import com.ivanna.omega.audio.PlaybackCaptureService
+@@ -74,12 +75,13 @@ import com.ivanna.omega.ui.IvannaRoute
+ import com.ivanna.omega.ui.SoundScreen
+ import com.ivanna.omega.ui.BrainScreen
+ import com.ivanna.omega.ui.SystemScreen
+ import com.ivanna.omega.ui.BridgePlayerCard
+ import kotlin.math.log10
+ import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.collectLatest
+ import com.ivanna.omega.magisk.ShmManager
+ import com.ivanna.omega.core.PresetManager
+ import com.ivanna.omega.audio.AudioRoutingManager
+ import com.ivanna.omega.audio.ParameterValidator
+ import com.ivanna.omega.ai.RealtimeLearningController
+ import com.ivanna.omega.audio.AudioPipeline
+@@ -164,12 +166,16 @@ class MainActivity : ComponentActivity() {
+         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
+         DSPBridge.init(sr)
+         if (IvannaNativeLib.isLoaded) {
+             runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+             IvannaNativeLib.nativeStartEvoThread()
+         }
++        // FIX (root / sin root): elige el backend real de procesado. En
++        // dispositivos sin root arranca el camino AudioEffect +
++        // DynamicsProcessing en vez de escribir a un daemon inexistente.
++        com.ivanna.omega.audio.AudioBackendSelector.start(applicationContext)
+         setContent { OmegaApp() }
+     }
+ 
+     override fun onDestroy() {
+         super.onDestroy()
+         if (IvannaNativeLib.isLoaded) {
+@@ -179,13 +185,27 @@ class MainActivity : ComponentActivity() {
+     }
+ }
+ 
+ @Composable
+ fun OmegaApp() {
+     val nav = rememberNavController()
+-    val dsp = remember { mutableStateOf(DSPState()) }
++    val appContext = LocalContext.current.applicationContext
++    // FIX (persistencia): DSPStatePrefs.load/save existian pero NADIE los
++    // llamaba en todo el repo (grep DSPStatePrefs = 0 hits fuera de su
++    // archivo). El estado arrancaba SIEMPRE en DSPState() por defecto y todo
++    // lo que el usuario ajustaba se perdia al cerrar la app. Ahora se carga
++    // al entrar y se guarda con debounce en cada cambio.
++    val dsp = remember { mutableStateOf(DSPStatePrefs.load(appContext)) }
++    LaunchedEffect(Unit) {
++        // Re-aplicar al DSP nativo/daemon lo que se acaba de restaurar.
++        runCatching { dsp.value.pushToNative() }
++        snapshotFlow { dsp.value }.collectLatest { state ->
++            delay(400)  // debounce: los sliders emiten decenas de valores/seg
++            runCatching { DSPStatePrefs.save(appContext, state) }
++        }
++    }
+     MaterialTheme(colorScheme = darkColorScheme(background = Carbon, surface = Surface1)) {
+         val context = LocalContext.current
+         var captureRequested by remember { mutableStateOf(false) }
+         val captureActive by PlaybackCaptureService.isCapturing.collectAsState()
+         val projectionManager = context.getSystemService(MediaProjectionManager::class.java)
+         val projectionLauncher = rememberLauncherForActivityResult(
+diff --git a/app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt b/app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt
+index db4f63a..139ea95 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/NoRootAudioProcessor.kt
+@@ -4,13 +4,13 @@ import android.content.Context
+ import android.media.AudioAttributes
+ import android.media.AudioFormat
+ import android.media.AudioTrack
+ import android.media.audiofx.DynamicsProcessing
+ import android.os.Build
+ import android.util.Log
+-import java.io.File
++import com.ivanna.omega.core.RootAccess
+ 
+ /**
+  * NoRootAudioProcessor — Fallback cuando no hay Magisk/root.
+  * Usa AudioTrack interno + DynamicsProcessing API 28+.
+  * FIX v1.5: detecta ausencia de Magisk y procesa sin privilegios.
+  */
+@@ -25,29 +25,31 @@ class NoRootAudioProcessor(private val context: Context) {
+ 
+     private var audioTrack: AudioTrack? = null
+     private var dynamicsProcessing: DynamicsProcessing? = null
+     private var isRunning = false
+ 
+     /**
+-     * Verifica si el dispositivo tiene root/Magisk activo.
++     * FIX: la version anterior hacia File("/data/adb/magisk").exists() y
++     * File("/sbin/magisk").exists(). Una app sin privilegios NO puede
++     * stat() esas rutas (EACCES) -> exists() devolvia false SIEMPRE, tambien
++     * en dispositivos rooteados. Ahora delega en RootAccess, que hace probe
++     * real de `su`. Se conserva el nombre por compatibilidad.
+      */
+-    fun hasMagisk(): Boolean {
+-        return File("/data/adb/magisk").exists() ||
+-               File("/sbin/magisk").exists() ||
+-               File("/system/bin/magisk").exists()
+-    }
++    @Deprecated("Usa RootAccess.probeSu()/AudioBackendSelector", ReplaceWith("RootAccess.probeSu()"))
++    fun hasMagisk(): Boolean = RootAccess.cachedRoot
+ 
+     /**
+      * Inicia el procesamiento en modo no-root.
+      * Usa DynamicsProcessing si está disponible (API 28+).
+      */
+     fun start(): Boolean {
+-        if (hasMagisk()) {
+-            Log.i(TAG, "Magisk detectado — modo no-root no necesario")
+-            return false
+-        }
++        // FIX: antes esto retornaba false si "detectaba Magisk", con una
++        // deteccion que nunca funcionaba, y ademas nadie llamaba a start()
++        // en todo el repo. Quien decide el modo es AudioBackendSelector;
++        // aqui solo se comprueba idempotencia y soporte de API.
++        if (isRunning) return true
+ 
+         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+             Log.w(TAG, "DynamicsProcessing requiere API 28+ (Android 9+)")
+             return false
+         }
+ 
+@@ -71,26 +73,29 @@ class NoRootAudioProcessor(private val context: Context) {
+                         .build()
+                 )
+                 .setBufferSizeInBytes(minBuffer.coerceAtLeast(BUFFER_SIZE * 4))
+                 .setTransferMode(AudioTrack.MODE_STREAM)
+                 .build()
+ 
+-            // Configurar DynamicsProcessing como fallback
+-            setupDynamicsProcessing()
++            // Configurar DynamicsProcessing sobre la sesion del propio
++            // AudioTrack (antes se creaba con sessionId=0, una sesion que
++            // este AudioTrack no usa: el efecto quedaba colgado sin ruta de
++            // audio y el fallback no tocaba ni una muestra).
++            setupDynamicsProcessing(audioTrack?.audioSessionId ?: 0)
+ 
+             audioTrack?.play()
+             isRunning = true
+             Log.i(TAG, "NoRootAudioProcessor iniciado (DynamicsProcessing fallback)")
+             return true
+         } catch (e: Exception) {
+             Log.e(TAG, "Error iniciando NoRootAudioProcessor: ${e.message}")
+             return false
+         }
+     }
+ 
+-    private fun setupDynamicsProcessing() {
++    private fun setupDynamicsProcessing(sessionId: Int) {
+         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+ 
+         try {
+             // Crear configuración de DynamicsProcessing usando Builder
+             val config = DynamicsProcessing.Config.Builder(
+                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+@@ -102,25 +107,25 @@ class NoRootAudioProcessor(private val context: Context) {
+                 true, // postEqEnabled
+                 4, // postEqBands
+                 true // limiterEnabled
+             ).build()
+ 
+             // Crear DynamicsProcessing con la configuración
+-            val dp = DynamicsProcessing(0, 2, config)
++            val dp = DynamicsProcessing(0, sessionId, config)
+ 
+             // Configurar bandas PostEQ para preset Anti-Dolby básico
+             // EqBand(enabled, frequency, gain) - SIN parámetro Q
+             dp.setPostEqBandAllChannelsTo(0, DynamicsProcessing.EqBand(true, 200f, 2.0f))
+             dp.setPostEqBandAllChannelsTo(1, DynamicsProcessing.EqBand(true, 1000f, 0.0f))
+             dp.setPostEqBandAllChannelsTo(2, DynamicsProcessing.EqBand(true, 4000f, 2.0f))
+             dp.setPostEqBandAllChannelsTo(3, DynamicsProcessing.EqBand(true, 8000f, 1.5f))
+ 
+             dp.enabled = true
+             dynamicsProcessing = dp
+ 
+-            Log.i(TAG, "DynamicsProcessing configurado con preset Anti-Dolby básico")
++            Log.i(TAG, "DynamicsProcessing configurado en sesion $sessionId (preset Anti-Dolby basico)")
+         } catch (e: Exception) {
+             Log.w(TAG, "DynamicsProcessing no disponible: ${e.message}")
+         }
+     }
+ 
+     fun stop() {
+diff --git a/app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt b/app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt
+index e69c9e0..b9c33d6 100644
+--- a/app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt
++++ b/app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt
+@@ -187,12 +187,19 @@ class IVANNAApplication : Application() {
+         // IO no tiene Looper preparado, lo que puede fallar en tiempo de
+         // ejecución. Application.onCreate() corre garantizado en el hilo
+         // principal (con Looper), por eso va aquí y no más abajo.
+         com.ivanna.omega.audio.AudioRouteManager.start(this)
+         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
+ 
++        // FIX (root vs sin root): hasta ahora la app asumia siempre el camino
++        // con root (daemon Magisk por socket). Sin root, MagiskBridge devolvia
++        // "queued" y OmegaEngineBridge no conectaba: nada procesaba el audio.
++        // AudioBackendSelector hace el probe real de `su` en background y
++        // levanta el fallback AudioEffect/DynamicsProcessing cuando toca.
++        com.ivanna.omega.audio.AudioBackendSelector.start(this)
++
+         // ── Arrancar cerebro perceptual ───────────────────────────────────
+         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
+         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+             runCatching {
+                 perceptualBrainEngine.start()
+                 Log.i(TAG, "✅ PerceptualBrainEngine activo — polling 10Hz")
+@@ -333,12 +340,13 @@ class IVANNAApplication : Application() {
+             try {
+                 IvannaNativeLib.nativeSaveEvoState()
+             } catch (e: Exception) {
+                 Log.e(TAG, "⚠️ No se pudo guardar evo state en onTerminate: ${e.message}")
+             }
+         }
++        runCatching { com.ivanna.omega.audio.AudioBackendSelector.stop() }
+         globalEffectManager.releaseAll()
+         omegaBridge.disconnect()
+         OmegaDaemon.stop()
+         com.ivanna.omega.audio.AudioRouteManager.stop()
+         runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.release() }
+         super.onTerminate()

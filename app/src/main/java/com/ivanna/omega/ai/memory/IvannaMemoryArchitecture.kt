@@ -40,8 +40,8 @@ class IvannaMemoryArchitecture(context: Context) {
     }
 
     val workingMemory = WorkingMemory()
-    val episodicMemory = EpisodicMemory { saveEpisodicToDisk() }
-    val semanticMemory = SemanticMemory { saveSemanticToDisk() }
+    val episodicMemory: MutableList<String> = EpisodicMemory { saveEpisodicToDisk() }
+    val semanticMemory: MutableList<String> = SemanticMemory { saveSemanticToDisk() }
     val systemMemory = SystemMemory()
     val retrievalEngine = MemoryRetrievalEngine(workingMemory, episodicMemory, semanticMemory, systemMemory)
 

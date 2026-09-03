@@ -1,0 +1,229 @@
+From 20c6da07a0f5846a3445fb7e9092491d7b87240b Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Sun, 26 Jul 2026 06:27:46 +0000
+Subject: [PATCH 1/2] feat(player): add currentPositionMs, durationMs
+ StateFlows and seekTo()
+
+---
+ .../ivanna/omega/audio/IvannaBridgePlayer.kt  | 49 ++++++++++++++++++-
+ 1 file changed, 48 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt b/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt
+index 376cc9c..5ff19c3 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt
+@@ -12,6 +12,9 @@ import android.util.Log
+ import com.ivanna.omega.dsp.DSPBridge
+ import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+ import kotlinx.coroutines.*
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ import java.nio.ByteBuffer
+ import java.nio.ByteOrder
+ 
+@@ -96,6 +99,16 @@ class IvannaBridgePlayer(private val context: Context) {
+     @Volatile private var pauseRequested = false
+     @Volatile private var stopRequested = false
+ 
++    // --- Posición y duración reales para la barra de progreso ---
++    private val _currentPositionMs = MutableStateFlow(0L)
++    val currentPositionMs: StateFlow<Long> = _currentPositionMs.asStateFlow()
++
++    private val _durationMs = MutableStateFlow(0L)
++    val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
++
++    // seekTarget: -1 = sin seek pendiente. seekTo() escribe aquí; el loop lo consume.
++    @Volatile private var seekTargetUs = -1L
++
+     // FIX (reproducción consecutiva): cola real. play() sigue soportando
+     // un solo Uri (comportamiento previo intacto); playQueue() agrega
+     // avance automático real cuando el track termina por EOS natural
+@@ -154,6 +167,21 @@ class IvannaBridgePlayer(private val context: Context) {
+         state = State.PLAYING
+     }
+ 
++    /**
++     * Solicita un salto a [positionMs] milisegundos.
++     * El decode loop lo consume en la próxima iteración:
++     *   - llama extractor.seekTo() en modo SEEK_TO_PREVIOUS_SYNC
++     *   - vacía el codec (flush + restart)
++     *   - actualiza currentPositionMs
++     * Si el reproductor estaba en PAUSED sigue en PAUSED (el caller de UI
++     * puede llamar resume() si lo desea tras el seek).
++     */
++    fun seekTo(positionMs: Long) {
++        val clamped = positionMs.coerceIn(0L, _durationMs.value)
++        _currentPositionMs.value = clamped
++        seekTargetUs = clamped * 1_000L
++    }
++
+     fun stop() {
+         stopRequested = true
+         pauseRequested = false
+@@ -200,6 +228,14 @@ class IvannaBridgePlayer(private val context: Context) {
+             }
+             extractor.selectTrack(trackIndex)
+ 
++            // Duración real del archivo (µs → ms). KEY_DURATION puede no existir en
++            // streams sin cabecera; si es así se deja en 0 (barra indeterminada en UI).
++            val rawDurationUs = if (format.containsKey(MediaFormat.KEY_DURATION))
++                format.getLong(MediaFormat.KEY_DURATION) else 0L
++            _durationMs.value = rawDurationUs / 1_000L
++            _currentPositionMs.value = 0L
++            seekTargetUs = -1L
++
+             val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+             val sampleRate = TARGET_SAMPLE_RATE
+             val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+@@ -279,6 +315,15 @@ class IvannaBridgePlayer(private val context: Context) {
+                 while (pauseRequested && !stopRequested) delay(50)
+                 if (stopRequested) break
+ 
++                // --- Seek pendiente ---
++                val pendingSeekUs = seekTargetUs
++                if (pendingSeekUs >= 0L) {
++                    seekTargetUs = -1L
++                    sawInputEOS = false
++                    extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
++                    codec.flush()
++                }
++
+                 if (!sawInputEOS) {
+                     val inIndex = codec.dequeueInputBuffer(TIMEOUT_US)
+                     if (inIndex >= 0) {
+@@ -288,7 +333,9 @@ class IvannaBridgePlayer(private val context: Context) {
+                             codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                             sawInputEOS = true
+                         } else {
+-                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
++                            val sampleTimeUs = extractor.sampleTime
++                            codec.queueInputBuffer(inIndex, 0, sampleSize, sampleTimeUs, 0)
++                            _currentPositionMs.value = sampleTimeUs / 1_000L
+                             extractor.advance()
+                         }
+                     }
+-- 
+2.43.0
+
+
+From d67832d542904f4f70775bded22c09216b4ba02c Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Sun, 26 Jul 2026 06:29:10 +0000
+Subject: [PATCH 2/2] feat(ui): seekable progress bar in BridgePlayerCard with
+ mm:ss labels
+
+---
+ .../java/com/ivanna/omega/MainActivity.kt     |  9 +++
+ .../com/ivanna/omega/ui/BridgePlayerCard.kt   | 61 +++++++++++++++++++
+ 2 files changed, 70 insertions(+)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index 6534a5a..1aeb56b 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -395,6 +395,9 @@ fun DashboardScreen(
+     var currentUri  by remember { mutableStateOf<Uri?>(null) }
+     var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
+     var queueIdx    by remember { mutableStateOf(-1) }
++    val playerPositionMs by player.currentPositionMs.collectAsState()
++    val playerDurationMs by player.durationMs.collectAsState()
++
+     LaunchedEffect(player) {
+         player.onQueueAdvance = { nextUri ->
+             currentUri = nextUri
+@@ -559,6 +562,12 @@ fun DashboardScreen(
+             onPause  = { player.pause() },
+             onResume = { player.resume() },
+             onStop   = { player.stop() },
++            currentPositionMs = playerPositionMs,
++            durationMs        = playerDurationMs,
++            onSeek = { ms ->
++                player.seekTo(ms)
++                // Si estaba pausado, mantenerlo pausado; el seek ya actualizó el extractor.
++            },
+             queue    = queue,
+             queueIndex = queueIdx,
+             onPickQueue = { queuePicker.launch("audio/*") },
+diff --git a/app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt b/app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt
+index 54c5b87..a390884 100644
+--- a/app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt
++++ b/app/src/main/java/com/ivanna/omega/ui/BridgePlayerCard.kt
+@@ -40,6 +40,9 @@ fun BridgePlayerCard(
+     onPause: () -> Unit,
+     onResume: () -> Unit,
+     onStop: () -> Unit,
++    currentPositionMs: Long = 0L,
++    durationMs: Long = 0L,
++    onSeek: (Long) -> Unit = {},
+     // FIX (reproducción consecutiva): cola opcional. Con queue.size <= 1 la
+     // tarjeta se comporta exactamente igual que antes (compatibilidad hacia
+     // atrás total); con queue.size > 1 aparece la fila de navegación y el
+@@ -164,6 +167,64 @@ fun BridgePlayerCard(
+                     ) { Text("⏭") }
+                 }
+             }
++
++            // --- Barra de progreso con seeking ---
++            if (durationMs > 0L) {
++                Spacer(Modifier.height(10.dp))
++
++                // Estado local para el drag: mientras el usuario arrastra,
++                // mostramos el valor del thumb sin que _currentPositionMs lo
++                // pise, y ejecutamos el seek solo al soltar.
++                var isDragging by remember { mutableStateOf(false) }
++                var dragValueMs by remember { mutableFloatStateOf(0f) }
++
++                val displayMs = if (isDragging) dragValueMs.toLong() else currentPositionMs
++
++                Row(
++                    verticalAlignment = Alignment.CenterVertically,
++                    modifier = Modifier.fillMaxWidth()
++                ) {
++                    Text(
++                        text = formatMmSs(displayMs),
++                        color = Color(0xFFB8C0CC),
++                        fontFamily = FontFamily.Monospace,
++                        fontSize = 10.sp
++                    )
++                    Slider(
++                        value = displayMs.toFloat(),
++                        onValueChange = { v ->
++                            isDragging = true
++                            dragValueMs = v
++                        },
++                        onValueChangeFinished = {
++                            onSeek(dragValueMs.toLong())
++                            isDragging = false
++                        },
++                        valueRange = 0f..durationMs.toFloat(),
++                        colors = SliderDefaults.colors(
++                            thumbColor = AuroraCyan,
++                            activeTrackColor = AuroraCyan,
++                            inactiveTrackColor = Color(0x44B8C0CC)
++                        ),
++                        modifier = Modifier
++                            .weight(1f)
++                            .padding(horizontal = 8.dp)
++                    )
++                    Text(
++                        text = formatMmSs(durationMs),
++                        color = Color(0xFFB8C0CC),
++                        fontFamily = FontFamily.Monospace,
++                        fontSize = 10.sp
++                    )
++                }
++            }
+         }
+     }
+ }
++
++private fun formatMmSs(ms: Long): String {
++    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
++    val minutes = totalSeconds / 60
++    val seconds = totalSeconds % 60
++    return "%d:%02d".format(minutes, seconds)
++}
+-- 
+2.43.0
+

@@ -1,0 +1,32 @@
+From 298e18cc4b50765418ac956e607911ea41336930 Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Mon, 27 Jul 2026 02:38:05 +0000
+Subject: [PATCH] =?UTF-8?q?fix(ci):=20quitar=20-fvisibility=3Dhidden=20del?=
+ =?UTF-8?q?=20daemon=20=E2=80=94=20suprime=20PT=5FINTERP=20en=20ejecutable?=
+ =?UTF-8?q?=20PIE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .github/workflows/build.yml | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 56d8f4c..039392d 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -240,8 +240,9 @@ jobs:
+           test -f "$DAEMON_SRC"
+ 
+           "$CXX" -std=c++17 -O3 \
+-            -fPIE -fvisibility=hidden \
++            -fPIE \
+             -pie \
++            -rtlib=compiler-rt \
+             -Wl,-z,relro,-z,now \
+             "$DAEMON_SRC" \
+             -llog \
+-- 
+2.43.0
+

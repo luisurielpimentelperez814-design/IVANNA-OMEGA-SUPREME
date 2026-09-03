@@ -184,7 +184,7 @@ class GeminiOrchestrator(
     }
 
     private fun createModel(entry: ModelEntry, systemInstruction: String?): GenerativeModel {
-        val builder = GenerativeModel.builder().modelName(entry.name).apiKey(apiKeyProvider())
+        val builder = GenerativeModel.Builder().modelName(entry.name).apiKey(apiKeyProvider())
         systemInstruction?.let { builder.systemInstruction(content { text(it) }) }
         return builder.build()
     }

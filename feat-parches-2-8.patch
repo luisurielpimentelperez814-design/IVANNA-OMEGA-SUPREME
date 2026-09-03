@@ -1,0 +1,182 @@
+From f60475b85eac61b3cb18de4673728c1f15bd52d4 Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Mon, 27 Jul 2026 02:18:53 +0000
+Subject: [PATCH] =?UTF-8?q?feat(metrics):=20parches=202-8=20=E2=80=94=20ya?=
+ =?UTF-8?q?mnetResult,=20voiceScore,=20omegaMetrics,=20IvannaDspManager,?=
+ =?UTF-8?q?=20telemetrySnapshot?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../java/com/ivanna/omega/MainActivity.kt     | 21 ++++++++++++++++++-
+ .../com/ivanna/omega/audio/AdaptiveBackend.kt |  6 +++++-
+ .../com/ivanna/omega/audio/AudioPipeline.kt   |  9 ++++++++
+ .../omega/audio/VoiceProtectionController.kt  |  8 +++++++
+ .../com/ivanna/omega/ui/AdaptiveEngineCard.kt | 16 ++++++++++++++
+ 5 files changed, 58 insertions(+), 2 deletions(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index f869e56..136b3af 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -39,6 +39,8 @@ import androidx.navigation.compose.NavHost
+ import androidx.navigation.compose.composable
+ import androidx.navigation.compose.rememberNavController
+ import com.ivanna.omega.audio.AdaptiveBackend
++import com.ivanna.omega.neuromorphic.IvannaDspManager
++import com.ivanna.omega.ui.AdaptiveTelemetrySnapshot
+ import com.ivanna.omega.audio.toSnapshot
+ import com.ivanna.omega.audio.ProfilesLoader
+ import com.ivanna.omega.neuromorphic.PiLstmBridge
+@@ -376,11 +378,28 @@ fun DashboardScreen(
+     }
+     DisposableEffect(Unit) {
+         adaptiveBackend.startTelemetry()
+-        onDispose { adaptiveBackend.stopTelemetry() }
++        // Parche 6: iniciar cDSP Hexagon si disponible (no-op si no hay hardware)
++        try {
++            if (IvannaDspManager.open()) IvannaDspManager.enable()
++        } catch (_: Throwable) {}
++        onDispose {
++            adaptiveBackend.stopTelemetry()
++            try { IvannaDspManager.close() } catch (_: Throwable) {}
++        }
+     }
+     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
+     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
+ 
++    // Parche 5a: métricas agregadas del BridgePlayer
++    val playerPositionMs by player.currentPositionMs.collectAsState()
++    val playerDurationMs by player.durationMs.collectAsState()
++    val omegaMetrics by player.omegaMetrics.collectAsState()
++
++    // Parche 5c: snapshot tipado para el control panel
++    val telemetrySnapshot = remember(adaptiveTelemetryRaw) {
++        AdaptiveTelemetrySnapshot.fromAdaptiveTelemetry(adaptiveTelemetryRaw)
++    }
++
+     val paramStore = remember { ParameterStore(context) }
+ 
+     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt b/app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt
+index 2e4c613..5e3fdb3 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/AdaptiveBackend.kt
+@@ -49,6 +49,10 @@ class AdaptiveBackend(context: Context) {
+     private val _telemetry = MutableStateFlow(AdaptiveTelemetry())
+     val telemetry: StateFlow<AdaptiveTelemetry> = _telemetry
+ 
++    // Parche 8: score real de VoiceProtectionController
++    @Volatile private var voiceProtectionScore: Float = 0f
++    fun setVoiceProtectionScore(score: Float) { voiceProtectionScore = score }
++
+     private var telemetryRunnable: Runnable? = null
+     private var manualModeActive = false
+ 
+@@ -93,7 +97,7 @@ class AdaptiveBackend(context: Context) {
+                 excReduction = src[5],
+                 spatialWidth = src[6],
+                 safetyMargin = src[7],
+-                voiceProtect = src[8],
++                voiceProtect = if (src[8] == 0f && voiceProtectionScore > 0f) voiceProtectionScore else src[8],
+                 motorRunning = motorActive
+             )
+         } catch (e: Throwable) {
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt b/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
+index bb933dc..659c264 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/AudioPipeline.kt
+@@ -10,6 +10,9 @@ import android.util.Log
+ import com.ivanna.omega.dsp.DSPBridge
+ import com.ivanna.omega.dsp.DSPState
+ import kotlinx.coroutines.*
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ import kotlin.math.sqrt
+ 
+ /**
+@@ -51,6 +54,11 @@ class AudioPipeline {
+     @Volatile private var lastRms = 0f
+     @Volatile private var lastLatencyMs = 0f
+ 
++    // Parche 3b: resultado de clasificación Yamnet observable desde el exterior
++    data class YamnetResult(val speech: Float = 0f, val music: Float = 0f, val bass: Float = 0f, val valid: Boolean = false)
++    private val _yamnetResult = MutableStateFlow(YamnetResult())
++    val yamnetResult: StateFlow<YamnetResult> = _yamnetResult.asStateFlow()
++
+     // FIX: buffer para downsample 48kHz→16kHz para YAMNet
+     private val yamnetBuffer = FloatArray(15600)  // 0.975s @ 16kHz
+     private var yamnetWritePos = 0
+@@ -238,6 +246,7 @@ class AudioPipeline {
+             // FIX: enviar scores al orquestador nativo
+             try {
+                 AudioEngine.nativeSetAntiDolbyScoresStatic(speechScore, musicScore, bassScore)
++                _yamnetResult.value = YamnetResult(speechScore, musicScore, bassScore, true)
+             } catch (_: Exception) {}
+         }
+     }
+diff --git a/app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt b/app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt
+index afe5963..74a4ed1 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt
+@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.launch
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ 
+ /**
+  * VoiceProtectionController — protege la inteligibilidad de la voz en el
+@@ -53,6 +56,10 @@ class VoiceProtectionController(context: Context) {
+     private var bufferFill = 0
+     private var smoothedScore = 0f
+ 
++    // Parche 4: score de voice protection observable desde el exterior
++    private val _voiceScore = MutableStateFlow(0f)
++    val voiceScore: StateFlow<Float> = _voiceScore.asStateFlow()
++
+     @Volatile var enabled = true
+ 
+     // ── Modo manual (mejora pedida: activación sin depender de servicios
+@@ -126,6 +133,7 @@ class VoiceProtectionController(context: Context) {
+                             val raw = if (result.speech > SPEECH_THRESHOLD) result.speech else 0f
+                             smoothedScore += EMA_ALPHA * (raw - smoothedScore)
+                             DSPBridge.setVoiceProtectScore(smoothedScore)
++                            _voiceScore.value = smoothedScore
+                         }
+                     } catch (e: Exception) {
+                         Log.w(TAG, "Error clasificando: ${e.message}")
+diff --git a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
+index 4c6619a..dc6c9da 100644
+--- a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
++++ b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
+@@ -79,6 +79,22 @@ data class AdaptiveTelemetrySnapshot(
+                 appliedCount = t[9].toLong()
+             )
+         }
++
++        /** Conversión directa desde AdaptiveTelemetry (datos en vivo del motor). */
++        fun fromAdaptiveTelemetry(t: com.ivanna.omega.audio.AdaptiveTelemetry, appliedCount: Long = 0L) =
++            AdaptiveTelemetrySnapshot(
++                running              = t.motorRunning,
++                rms                  = t.rms,
++                peak                 = t.peakDb,
++                gainReductionDb      = t.grDb,
++                targetGain           = t.targetGain,
++                compressorAmount     = t.compAmount,
++                exciterReduction     = t.excReduction,
++                spatialWidth         = t.spatialWidth,
++                safetyMargin         = t.safetyMargin,
++                voiceProtectionAmount= t.voiceProtect,
++                appliedCount         = appliedCount
++            )
+     }
+ }
+ 
+-- 
+2.43.0
+

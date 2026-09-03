@@ -1,0 +1,38 @@
+diff --git a/app/src/main/cpp/include/omega_shared.h b/app/src/main/cpp/include/omega_shared.h
+index 43b9279..c53c82d 100644
+--- a/app/src/main/cpp/include/omega_shared.h
++++ b/app/src/main/cpp/include/omega_shared.h
+@@ -177,6 +177,18 @@ struct OmegaSharedState {
+     std::atomic<float> route_dialog_boost_db;   // [0..6] dB — BT SBC/AAC 2-4kHz
+     std::atomic<float> route_widener_mult;      // [0.4..1.4] — 1.0 = sin cambio
+ 
++    // FIX (fusion OmegaDaemonV8 -> CommandServer, ver control/command_server.cpp):
++    // OmegaDaemonV8.cpp (huerfano, retirado) traia su propio ecualizador ISO 226
++    // de 10 bandas en un struct paralelo (OmegaDspState) que nadie mas leia.
++    // Se migra aqui, al struct canonico que ya vive en omega_shm y que Ruta A
++    // consume via JNI -- una sola fuente de verdad para el EQ, sin importar
++    // si el comando llega por el bridge in-process o por el socket del daemon.
++    static constexpr int OMEGA_EQ_BANDS = 10; // 31/63/125/250/500/1k/2k/4k/8k/12.5k Hz
++    std::atomic<float> eq_gains[OMEGA_EQ_BANDS];
++    std::atomic<float> eq_listen_phon;   // curva ISO 226 objetivo
++    std::atomic<float> eq_ref_phon;      // curva ISO 226 de referencia
++    std::atomic<bool>  eq_calibrated;    // false hasta el primer SET_EQ_BANDS valido
++
+     // ── Ring buffers ──────────────────────────────────────────────────────────
+     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_in;
+     LockFreeRing<float, OMEGA_BUFFER_SLOTS> ring_out;
+@@ -208,7 +220,13 @@ struct OmegaSharedState {
+           ai_voice_score(0.0f), ai_music_score(0.0f),
+           route_bass_boost_db(0.0f), route_dialog_boost_db(0.0f),
+           route_widener_mult(1.0f),
+-          write_pos(0), read_pos(0) {}
++          eq_listen_phon(60.0f), eq_ref_phon(80.0f), eq_calibrated(false),
++          write_pos(0), read_pos(0) {
++        // Arrays de std::atomic no admiten inicializador de miembro con valor
++        // en C++17 (agregado, sin constructor de elemento) -- se ponen a 0
++        // explicitamente aqui para no dejar el EQ con basura del mmap viejo.
++        for (int i = 0; i < OMEGA_EQ_BANDS; ++i) eq_gains[i] = 0.0f;
++    }
+ };
+ 
+ #endif // OMEGA_SHARED_H

@@ -1,0 +1,272 @@
+diff --git a/app/src/main/cpp/CMakeLists.txt b/app/src/main/cpp/CMakeLists.txt
+index 28e3016..361c37f 100644
+--- a/app/src/main/cpp/CMakeLists.txt
++++ b/app/src/main/cpp/CMakeLists.txt
+@@ -71,6 +71,13 @@ add_library(ivanna_omega SHARED
+     neuromorphic/ivanna_neural_upmixer.cpp
+ 
+     # System audio integration
++    # SAF adaptive field (estado + matemática + feedback) — faltaban en el
++    # target, así que g_saf_state/g_saf_full/g_saf_metrics quedaban sin
++    # definir al enlazar.
++    saf_runtime.cpp
++    saf_full_math.cpp
++    saf_feedback.cpp
++
+     shm_hyperplane.cpp
+     omega_daemon.cpp
+ 
+diff --git a/app/src/main/cpp/include/omega_shared.h b/app/src/main/cpp/include/omega_shared.h
+index ab2bf66..d5878d7 100644
+--- a/app/src/main/cpp/include/omega_shared.h
++++ b/app/src/main/cpp/include/omega_shared.h
+@@ -1,4 +1,3 @@
+-#include "include/saf_math_engine.h"
+ #ifndef OMEGA_SHARED_H
+ #define OMEGA_SHARED_H
+ 
+@@ -7,6 +6,8 @@
+ 
+ #include "saf_runtime.h"
+ #include "saf_full_math.h"
++#include "saf_math_engine.h"
++#include "saf_feedback.h"
+ 
+ #include <cstdint>
+ #include <cstring>
+@@ -108,37 +109,13 @@ struct OmegaSharedState {
+     // ai_runtime_gain_mul es el canal de vuelta: la app escribe acá el
+     // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
+     // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
+-    // daemon lo aplica como multiplicador adicional en 
+-
+-inline float applySAFGain(float sample)
+-{
+-    return sample * g_saf_state.gain.load(std::memory_order_relaxed);
+-}
+-
+-
+-
+-// SAF FULL MATHEMATICS
+-// Φ_SAF = ΠS(p + factor * G^-1 * Δ)
+-
+-float safCurrent =
+-    g_saf_state.gain.load(std::memory_order_relaxed);
+-
+-
+-float safTarget = 1.0f;
+-
+-
+-float safGain =
+-    SAFUpdate(
+-        safCurrent,
+-        safTarget
+-    );
+-
+-
+-
+-
+- 
++    // daemon lo aplica como multiplicador adicional en el gain stage
+     // en el hot-path. Semántica idéntica a Ruta A.
+-    std::atomic<float> ai_runtime_gain_mul;
++    // (ai_runtime_gain_mul se declara al inicio del struct.)
++    // Decisiones del AdaptiveDecisionEngine aplicadas en processLoop():
++    // g_comp_b.setRuntimeAmount() y g_exciter_b.setRuntimeReduction().
++    std::atomic<float> ai_runtime_comp_amount;   // [0..1] — 0 = sin ajuste
++    std::atomic<float> ai_runtime_exciter_red;   // [0..1] — 0 = sin reducción
+     // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
+     // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
+     // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
+@@ -235,6 +212,38 @@ float safGain =
+           write_pos(0), read_pos(0) {}
+ };
+ 
++// ── SAF adaptive field helpers ───────────────────────────────────────────────
++// Estos helpers vivían por error DENTRO de OmegaSharedState (sentencias a
++// nivel de clase) y rompían la compilación del target NDK. Se conservan
++// íntegros aquí, ya como funciones inline utilizables desde el hot-path.
++
++inline float applySAFGain(float sample)
++{
++    return sample * static_cast<float>(
++        g_saf_state.gain.load(std::memory_order_relaxed));
++}
++
++
++// SAF FULL MATHEMATICS
++// Φ_SAF = ΠS(p + factor * G^-1 * Δ)
++inline float safTick(float safTarget = 1.0f)
++{
++    float safCurrent =
++        static_cast<float>(g_saf_state.gain.load(std::memory_order_relaxed));
++
++
++    float safGain =
++        SAFUpdate(
++            safCurrent,
++            safTarget
++        );
++
++
++    g_saf_state.gain.store(safGain, std::memory_order_relaxed);
++
++    return safGain;
++}
++
+ #endif // OMEGA_SHARED_H
+ 
+ 
+@@ -243,5 +252,5 @@ float safGain =
+ 
+ 
+ 
+-SAFState g_saf_state;
++// (definición real en saf_runtime.cpp — declarada extern en saf_runtime.h)
+ 
+diff --git a/app/src/main/cpp/include/saf_math_engine.h b/app/src/main/cpp/include/saf_math_engine.h
+index 21ade8c..9e7f998 100644
+--- a/app/src/main/cpp/include/saf_math_engine.h
++++ b/app/src/main/cpp/include/saf_math_engine.h
+@@ -15,7 +15,7 @@ struct SAFMathState {
+     double lambda;
+     double epsilon;
+ 
+-    SAFState():
++    SAFMathState():
+         gain(1.0),
+         deltaE(0.0),
+         metricNorm(0.0),
+diff --git a/app/src/main/cpp/include/saf_runtime.h b/app/src/main/cpp/include/saf_runtime.h
+index 564bd09..c85a955 100644
+--- a/app/src/main/cpp/include/saf_runtime.h
++++ b/app/src/main/cpp/include/saf_runtime.h
+@@ -3,15 +3,25 @@
+ #include <cmath>
+ #include <atomic>
+ 
++// SAF adaptive field runtime state (Φ_SAF).
++// Todos los campos son atómicos: se escriben desde el hilo de socket /
++// JNI y se leen desde el hot-path de audio.
+ struct SAFState {
+ 
+-    double gain = 1.0;
++    std::atomic<double> gain{1.0};
+ 
+-    double deltaE = 0.0;
++    std::atomic<double> deltaE{0.0};
+ 
+-    double metricNorm = 0.0;
++    std::atomic<double> metricNorm{0.0};
+ 
+-    double memory = 0.0;
++    std::atomic<double> memory{0.0};
++
++    // Espejo de los valores que llegan por socket (updateSAFFromJson).
++    std::atomic<double> compressor{0.0};
++
++    std::atomic<double> exciter{0.0};
++
++    std::atomic<double> spatial{1.0};
+ 
+ };
+ 
+@@ -26,33 +36,42 @@ inline double SAFUpdate(
+         targetGain - currentGain;
+ 
+ 
+-    state.deltaE =
++    double dE =
+         delta * delta;
+ 
++    state.deltaE.store(dE, std::memory_order_relaxed);
++
+ 
+-    state.metricNorm =
++    double norm =
+         delta * delta;
+ 
++    state.metricNorm.store(norm, std::memory_order_relaxed);
++
+ 
+     double lambda = 0.05;
+     double eps = 0.00001;
+ 
+ 
++    double mem =
++        state.memory.load(std::memory_order_relaxed);
++
++
+     double denominator =
+-        state.deltaE +
+-        state.metricNorm +
+-        lambda * state.memory +
++        dE +
++        norm +
++        lambda * mem +
+         eps;
+ 
+ 
+     double step =
+-        state.deltaE /
++        dE /
+         denominator;
+ 
+ 
+-    state.memory =
+-        0.9 * state.memory +
+-        0.1 * std::abs(delta);
++    state.memory.store(
++        0.9 * mem +
++        0.1 * std::abs(delta),
++        std::memory_order_relaxed);
+ 
+ 
+     return currentGain + step * delta;
+diff --git a/app/src/main/cpp/jni/ivanna_omega_jni.cpp b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+index 2006f6f..9b07488 100644
+--- a/app/src/main/cpp/jni/ivanna_omega_jni.cpp
++++ b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+@@ -69,14 +69,19 @@ using namespace ivanna;
+ // El hilo JNI/UI publica ControlFrame nuevos aquí; el hilo de audio los
+ // consume vía ControlFrameBus::consumeIfNewer().
+ namespace ivanna {
+-
+-        // SAF FULL ADAPTIVE UPDATE
+-        // Phi_SAF infinity
+-        g_saf_state.gain.store((float)SAFUpdate(g_saf_state, g_saf_state.gain.load(), 1.0));
+-
+     ControlFrameBus g_control_bus;
+     ControlFrame    g_staging_frame;
+ }
++
++// SAF FULL ADAPTIVE UPDATE — Phi_SAF infinity.
++// Estaba escrito como sentencia suelta dentro de `namespace ivanna` (no
++// compilaba). Se conserva la misma matemática, ahora invocable desde el
++// hilo puente (audioRouteBridgeLoop), que corre a ~1 bloque de audio.
++static inline void safAdaptiveTick() {
++    g_saf_state.gain.store(
++        SAFUpdate(g_saf_state, g_saf_state.gain.load(std::memory_order_relaxed), 1.0),
++        std::memory_order_relaxed);
++}
+ // ── Engine singletons (static storage — zero allocations) ────────────────────
+ static ParametricEQ   g_eq;
+ static Compressor     g_comp;
+@@ -342,6 +347,7 @@ static void audioRouteBridgeLoop() {
+             shared->ai_runtime_exciter_red.store(
+                 std::clamp(st.exciter_reduction, 0.0f, 1.0f), std::memory_order_release);
+         }
++        safAdaptiveTick();
+         ++frameCounter;
+         // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
+         // seguro (a diferencia de dentro de Effect_Process/nativeProcess).
+diff --git a/app/src/main/cpp/saf_runtime.cpp b/app/src/main/cpp/saf_runtime.cpp
+new file mode 100644
+index 0000000..9e3fd51
+--- /dev/null
++++ b/app/src/main/cpp/saf_runtime.cpp
+@@ -0,0 +1,4 @@
++#include "include/saf_runtime.h"
++
++// SAF adaptive field state (definición única; antes estaba en omega_shared.h).
++SAFState g_saf_state;

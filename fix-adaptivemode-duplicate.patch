@@ -1,0 +1,95 @@
+From 819b8fcc04f8d6b5c220dc9451d8cc246e78ec87 Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Mon, 27 Jul 2026 23:24:04 +0000
+Subject: [PATCH] =?UTF-8?q?fix(build):=20eliminar=20AdaptiveMode=20duplica?=
+ =?UTF-8?q?do=20en=20ui=20=E2=80=94=20unificar=20en=20audio.AdaptiveMode?=
+ =?UTF-8?q?=20con=20label?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/src/main/java/com/ivanna/omega/MainActivity.kt          | 6 +++---
+ .../main/java/com/ivanna/omega/audio/AudioStateManager.kt   | 4 ++--
+ app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt | 4 +---
+ .../main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt   | 1 +
+ app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt | 4 ++--
+ 5 files changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index be1a85d..504958c 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -540,9 +540,9 @@ fun DashboardScreen(
+             onOpenAdaptiveEngineManual = { nav.navigate("adaptive") },
+             onOpenMagisk = { nav.navigate("magisk") },
+             onOpenProfiles = { nav.navigate("profiles") },
+-            adaptiveMode = com.ivanna.omega.ui.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
+-            onAdaptiveModeChange = { uiMode ->
+-                val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
++            adaptiveMode = audioState.adaptiveMode,
++            onAdaptiveModeChange = { mode ->
++                val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(mode.name)
+                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
+                 if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
+                     com.ivanna.omega.audio.AudioStateManager.audioState.value
+diff --git a/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt b/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt
+index 23bd917..19da5b0 100644
+--- a/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt
++++ b/app/src/main/java/com/ivanna/omega/audio/AudioStateManager.kt
+@@ -30,8 +30,8 @@ data class AudioState(
+     val isAudioRunning: Boolean = false
+ )
+ 
+-enum class AdaptiveMode {
+-    OFF, NATURAL, STUDIO, EXTREME
++enum class AdaptiveMode(val label: String) {
++    OFF("OFF"), NATURAL("NATURAL"), STUDIO("STUDIO"), EXTREME("EXTREME")
+ }
+ 
+ object AudioStateManager {
+diff --git a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
+index dc6c9da..0fab0f5 100644
+--- a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
++++ b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineCard.kt
+@@ -98,9 +98,7 @@ data class AdaptiveTelemetrySnapshot(
+     }
+ }
+ 
+-enum class AdaptiveMode(val label: String) {
+-    OFF("OFF"), NATURAL("NATURAL"), STUDIO("STUDIO"), EXTREME("EXTREME")
+-}
++import com.ivanna.omega.audio.AdaptiveMode
+ 
+ // ── Tarjeta de estado + telemetría (Fase 2) ─────────────────────────────────
+ 
+diff --git a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt
+index 1f24d8a..33e0410 100644
+--- a/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt
++++ b/app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt
+@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.ivanna.omega.audio.AdaptiveBackend
+ import com.ivanna.omega.audio.AdaptiveMode
++import com.ivanna.omega.audio.AudioState
+ import com.ivanna.omega.audio.AudioStateManager
+ import com.ivanna.omega.audio.VoiceProtectionManager
+ import com.ivanna.omega.core.IvannaNativeLib
+diff --git a/app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt b/app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt
+index a78abbc..1b0e1d2 100644
+--- a/app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt
++++ b/app/src/main/java/com/ivanna/omega/ui/IvannaControlPanel.kt
+@@ -106,8 +106,8 @@ fun IvannaControlPanel(
+     metrics: OmegaMetrics = OmegaMetrics(),
+     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
+     adaptiveTelemetry: com.ivanna.omega.ui.AdaptiveTelemetrySnapshot = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(),
+-    adaptiveMode: com.ivanna.omega.ui.AdaptiveMode = com.ivanna.omega.ui.AdaptiveMode.NATURAL,
+-    onAdaptiveModeChange: (com.ivanna.omega.ui.AdaptiveMode) -> Unit = {},
++    adaptiveMode: com.ivanna.omega.audio.AdaptiveMode = com.ivanna.omega.audio.AdaptiveMode.NATURAL,
++    onAdaptiveModeChange: (com.ivanna.omega.audio.AdaptiveMode) -> Unit = {},
+     adaptiveIntensity: Float = 50f,
+     onAdaptiveIntensityChange: (Float) -> Unit = {},
+     voiceProtectionEnabled: Boolean = true,
+-- 
+2.43.0
+

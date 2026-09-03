@@ -1,0 +1,44 @@
+From 2c5d6c87f8110aced669b633332d09d8053574ab Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Mon, 27 Jul 2026 02:27:51 +0000
+Subject: [PATCH] =?UTF-8?q?fix(build):=20mover=20colecci=C3=B3n=20de=20pla?=
+ =?UTF-8?q?yer=20StateFlows=20despu=C3=A9s=20de=20val=20player?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/src/main/java/com/ivanna/omega/MainActivity.kt | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/app/src/main/java/com/ivanna/omega/MainActivity.kt b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+index 136b3af..be1a85d 100644
+--- a/app/src/main/java/com/ivanna/omega/MainActivity.kt
++++ b/app/src/main/java/com/ivanna/omega/MainActivity.kt
+@@ -390,11 +390,6 @@ fun DashboardScreen(
+     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
+     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
+ 
+-    // Parche 5a: métricas agregadas del BridgePlayer
+-    val playerPositionMs by player.currentPositionMs.collectAsState()
+-    val playerDurationMs by player.durationMs.collectAsState()
+-    val omegaMetrics by player.omegaMetrics.collectAsState()
+-
+     // Parche 5c: snapshot tipado para el control panel
+     val telemetrySnapshot = remember(adaptiveTelemetryRaw) {
+         AdaptiveTelemetrySnapshot.fromAdaptiveTelemetry(adaptiveTelemetryRaw)
+@@ -405,6 +400,11 @@ fun DashboardScreen(
+     // ── BridgePlayer — hoisted antes del Column ──────────────────────────────
+     val player = remember { IvannaBridgePlayer(context) }
+     DisposableEffect(player) { onDispose { player.release() } }
++
++    // Parche 5a: métricas agregadas del BridgePlayer (después de player)
++    val playerPositionMs by player.currentPositionMs.collectAsState()
++    val playerDurationMs by player.durationMs.collectAsState()
++    val omegaMetrics by player.omegaMetrics.collectAsState()
+     var playerState by remember { mutableStateOf(player.state) }
+     var currentUri  by remember { mutableStateOf<Uri?>(null) }
+     var queue       by remember { mutableStateOf<List<Uri>>(emptyList()) }
+-- 
+2.43.0
+

@@ -1,0 +1,75 @@
+From 807891e0967fc36a5d6d5e11f363bffdd989b109 Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Tue, 28 Jul 2026 23:57:43 +0000
+Subject: [PATCH] =?UTF-8?q?fix(native):=20separar=20nho=5Fwet=20en=203=20a?=
+ =?UTF-8?q?t=C3=B3micos=20=E2=80=94=20eliminar=20competencia=20exciter/spa?=
+ =?UTF-8?q?tial/eta?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/src/main/cpp/jni/ivanna_omega_jni.cpp | 26 ++++++++++++++++++++---
+ 1 file changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/main/cpp/jni/ivanna_omega_jni.cpp b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+index 23e5c99..e3182f1 100644
+--- a/app/src/main/cpp/jni/ivanna_omega_jni.cpp
++++ b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+@@ -75,6 +75,24 @@ static ivanna::IvannaLab g_lab(96000, 4096);
+ static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
+ static DSPParams      g_params;
+ static std::atomic<bool> g_initialized{false};
++
++// ── FIX: nho_wet tenía 3 escritores compitiendo (nativeSetParams,
++//    nativeSetSpatialWet, nativeSetEta) sobreescribiéndose mutuamente.
++//    Se separa en 3 fuentes independientes; la función applyNhoWet()
++//    combina las 3 multiplicativamente y escribe el resultado una sola vez.
++//    nho_wet_exciter: fracción del exciter DSP (wet*0.5, de nativeSetParams)
++//    nho_wet_spatial: gate binario ON/OFF del cochlear (de nativeSetSpatialWet)
++//    nho_wet_eta:     η neuromorfico del LSTM  (de nativeSetEta)
++static std::atomic<float> g_nho_wet_exciter{0.16f};  // wet=0.32 * 0.5
++static std::atomic<float> g_nho_wet_spatial{1.0f};   // por defecto ON
++static std::atomic<float> g_nho_wet_eta    {0.5f};   // neutro
++
++static inline void applyNhoWet() {
++    float combined = g_nho_wet_exciter.load() *
++                     g_nho_wet_spatial.load() *
++                     g_nho_wet_eta.load();
++    g_pd.set_nho_wet(std::clamp(combined, 0.f, 1.f));
++}
+ // FEATURE (Voice Protection): 0..1, cuánta voz detecta YamnetClassifier en
+ // el bloque actual. Protege la inteligibilidad de la voz mezclando de
+ // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
+@@ -441,7 +459,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
+     // NHO parameters mapped from DSP params
+     g_pd.set_nho_alpha(alpha);
+     g_pd.set_nho_beta(beta);
+-    g_pd.set_nho_wet(wet * 0.5f);
++    g_nho_wet_exciter.store(wet * 0.5f);
++    applyNhoWet();
+ }
+ 
+ // FIX (tuning magistral): DSPState.stereoWidth (Kotlin) nunca llegaba al
+@@ -1012,7 +1031,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(JNIEnv*,jobject,jfloat v)  { g_pd.set_nho_beta(v); }
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetGamma(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_angle(v * 90.f); }
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_width(v); }
+-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_pd.set_nho_wet(v); }
++JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_nho_wet_eta.store(std::clamp(v,0.f,1.f)); applyNhoWet(); }
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*,jobject,jfloat v) { g_pd.set_nho_harmonic(v); }
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*,jobject,jboolean en) { g_pd.set_mode(en ? 2 : 0); }
+ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*,jobject,jboolean) {}
+@@ -1065,7 +1084,8 @@ JNIEXPORT void JNICALL
+ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
+     JNIEnv*, jobject, jfloat v) {
+     if (!std::isfinite(v)) return;
+-    g_pd.set_nho_wet(std::clamp(v, 0.0f, 1.0f));
++    g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f));
++    applyNhoWet();
+ }
+ 
+ // ═══════════════════════════════════════════════════════════════════════════════
+-- 
+2.43.0
+

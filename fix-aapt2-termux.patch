@@ -1,0 +1,42 @@
+From fff69c87f94a670d3d3778f9ed1d204b37394d40 Mon Sep 17 00:00:00 2001
+From: IVANNA CI <ci@ivanna-omega.dev>
+Date: Sat, 1 Aug 2026 01:27:52 +0000
+Subject: [PATCH] =?UTF-8?q?fix(ci):=20eliminar=20aapt2FromMavenOverride=20?=
+ =?UTF-8?q?de=20Termux=20=E2=80=94=20rompe=20processDebugResources=20en=20?=
+ =?UTF-8?q?GitHub=20Actions?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .github/workflows/build.yml | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 3585f1f..4f2376f 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -84,6 +84,20 @@ jobs:
+       - name: Generate local.properties
+         run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+ 
++      - name: Remove Termux aapt2 override from Gradle cache
++        run: |
++          # Elimina la propiedad aapt2FromMavenOverride que Termux deja en
++          # ~/.gradle/gradle.properties y rompe el build en CI (la ruta
++          # /data/data/com.termux/ no existe en el runner de GitHub Actions).
++          GRADLE_PROPS="$HOME/.gradle/gradle.properties"
++          if [ -f "$GRADLE_PROPS" ]; then
++            sed -i '/aapt2FromMavenOverride/d' "$GRADLE_PROPS"
++            echo "Cleaned aapt2FromMavenOverride from $GRADLE_PROPS"
++          fi
++          # También limpiar del gradle.properties del proyecto por si acaso
++          sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
++          sed -i '/aapt2FromMavenOverride/d' app/gradle.properties 2>/dev/null || true
++
+       - name: Create debug keystore
+         run: |
+           mkdir -p ~/.android
+-- 
+2.43.0
+

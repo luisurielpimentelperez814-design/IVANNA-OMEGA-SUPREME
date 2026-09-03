@@ -1,0 +1,26 @@
+diff --git a/app/src/main/cpp/daemon/ivanna_daemon.cpp b/app/src/main/cpp/daemon/ivanna_daemon.cpp
+index 0000000..0000000 100644
+--- a/app/src/main/cpp/daemon/ivanna_daemon.cpp
++++ b/app/src/main/cpp/daemon/ivanna_daemon.cpp
+@@ -263,7 +263,7 @@
+ 
+ CommandServer commandServer;
+ 
+-if(commandServer.start("@omega_command_socket"))
++if(commandServer.start("@omega_command_socket", g_shared_state))
+ {
+     log_message("CONTROL socket ready: @omega_command_socket");
+ }
+@@ -348,6 +348,12 @@
+         unlink(socket_path.c_str());
+     }
+ 
++    // FIX: sin esto, el hilo del accept-loop de CommandServer (ver
++    // control/command_server.cpp) queda bloqueado en accept() y el proceso
++    // no termina limpio al recibir SIGTERM -- se quedaba colgado hasta que
++    // Magisk/init lo mataran con SIGKILL.
++    commandServer.stop();
++
+     log_message("Socket resources released.");
+     log_message("IVANNA OMEGA Daemon shutdown complete.");
+     return 0;

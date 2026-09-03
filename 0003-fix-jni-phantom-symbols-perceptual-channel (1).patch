@@ -1,0 +1,189 @@
+diff --git a/app/src/main/cpp/jni/ivanna_omega_jni.cpp b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+index 7c0b984..91b439f 100644
+--- a/app/src/main/cpp/jni/ivanna_omega_jni.cpp
++++ b/app/src/main/cpp/jni/ivanna_omega_jni.cpp
+@@ -1019,6 +1019,81 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
+     g_eq.setParams(g_params);
+     g_gain.setParams(g_params);
+ }
++// ═══════════════════════════════════════════════════════════════════════════════
++// Canal PERCEPTUAL (DSPBridge.applyPerceptualGain / applyCompressorAmount /
++// applyExciterReduction / applySpatialWidth / applyPerceptualEQ)
++//
++// FIX (UnsatisfiedLinkError en producción): IvannaNativeLib.kt declaraba estos
++// 5 `external fun` y IvannaBridgePlayer.kt:368-372 los llama en CADA update
++// perceptual del player, pero NO existía ningún símbolo JNI correspondiente en
++// la .so — el primer update perceptual tiraba UnsatisfiedLinkError y mataba el
++// loop de reproducción. Se implementan REALES sobre el mismo control plane que
++// ya usa nativeSetEQParams / nativeSetCompressorParams (g_params + g_eq/g_comp/
++// g_exciter/g_gain/g_pd), sin tocar nativeSetParams (que reescribe TODO g_params).
++//
++// Semántica de entrada (fijada por DSPBridge, que ya hace el clamp):
++//   gain        [0..2]    lineal   → g_params.master en dB
++//   amount      [0..1]    0=sin compresión … 1=compresión máxima
++//   reduction   [0..1]    0=exciter al default … 1=exciter apagado
++//   width       [0.5..2]  ancho estéreo directo (misma unidad que
++//                         nativeSetSpatialWidthDirect)
++//   low/mid/high  dB      idéntico a nativeSetEQParams (master intacto)
++namespace {
++// Wet del exciter por defecto — DSPParams::wet en include/dsp_types.h.
++// La reducción es relativa a esta base, no acumulativa sobre g_params.wet,
++// para que llamadas repetidas con el mismo valor sean idempotentes.
++constexpr float kExciterWetBase = 0.32f;
++} // namespace
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
++    JNIEnv*, jobject, jfloat gain) {
++    if (!std::isfinite(gain)) return;
++    const float lin = std::clamp(gain, 0.0f, 2.0f);
++    // 0 lineal → piso de -60 dB (silencio práctico), evita log10(0) = -inf.
++    const float db  = (lin <= 0.001f) ? -60.0f
++                                      : std::clamp(20.0f * std::log10(lin), -60.0f, 6.0f);
++    g_params.master = db;
++    g_gain.setParams(g_params);
++}
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorAmount(
++    JNIEnv*, jobject, jfloat amount) {
++    if (!std::isfinite(amount)) return;
++    const float a = std::clamp(amount, 0.0f, 1.0f);
++    // Mapeo monótono sobre el rango que ya usa nativeSetCompressorParams:
++    // threshold -6 dB → -30 dB, ratio 1:1 → 8:1. attack/release intactos.
++    g_comp.setThreshold(-6.0f - 24.0f * a);
++    g_comp.setRatio(1.0f + 7.0f * a);
++}
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetExciterReduction(
++    JNIEnv*, jobject, jfloat reduction) {
++    if (!std::isfinite(reduction)) return;
++    const float r = std::clamp(reduction, 0.0f, 1.0f);
++    g_params.wet = kExciterWetBase * (1.0f - r);
++    g_exciter.setParams(g_params);
++}
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidth(
++    JNIEnv*, jobject, jfloat width) {
++    if (!std::isfinite(width)) return;
++    g_pd.set_spatial_width(std::clamp(width, 0.0f, 2.0f));
++}
++
++JNIEXPORT void JNICALL
++Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualEQ(
++    JNIEnv*, jobject, jfloat lowDb, jfloat midDb, jfloat highDb) {
++    if (!std::isfinite(lowDb) || !std::isfinite(midDb) || !std::isfinite(highDb)) return;
++    g_params.low  = std::clamp(lowDb,  -24.0f, 24.0f);
++    g_params.mid  = std::clamp(midDb,  -24.0f, 24.0f);
++    g_params.high = std::clamp(highDb, -24.0f, 24.0f);
++    g_eq.setParams(g_params);
++}
++
+ JNIEXPORT void JNICALL
+ Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+     g_pd.stop_evo_thread();
+diff --git a/app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt b/app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt
+index cf6c1f7..fa5ca99 100644
+--- a/app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt
++++ b/app/src/main/java/com/ivanna/omega/ai/PerceptualCortex.kt
+@@ -7,6 +7,10 @@ import kotlin.math.abs
+ import kotlin.math.max
+ import kotlin.math.min
+ 
++// λ_t adaptativo: API nativa retirada (ver IvannaNativeLib). Sentinela negativa
++// = "no disponible", exactamente el contrato que devolvía el external fun.
++private const val ADAPTIVE_LAMBDA_T_UNAVAILABLE = -1f
++
+ /**
+  * PerceptualCortex
+  *
+@@ -299,7 +303,9 @@ class PerceptualCortex {
+         try {
+             if (!IvannaNativeLib.isLoaded) return baseFatigue
+ 
+-            val lambdaT = IvannaNativeLib.nativeGetAdaptiveLambdaT()
++            // API retirada (ver IvannaNativeLib): el motor nativo no expone λ_t.
++            // Mismo comportamiento que el camino "λ_t no disponible" de antes.
++            val lambdaT = ADAPTIVE_LAMBDA_T_UNAVAILABLE
+             if (lambdaT < 0) return baseFatigue  // No disponible
+ 
+             Log.d("PerceptualCortex", "applyAdaptiveLambdaT: λ_t=$lambdaT")
+diff --git a/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt b/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
+index bbb4c0b..ba04cc6 100644
+--- a/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
++++ b/app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt
+@@ -224,26 +224,19 @@ external fun nativeGetUnifiedPipelineStatus(): FloatArray?
+     /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
+     external fun nativeLabReport(): String
+ 
+-    // ── AUDIT FIX PR 7: Exportar λ_t adaptativo desde C++ ──────────────────
+-    /**
+-     * Obtener el factor de adaptación λ_t calculado por AdaptiveDecisionEngine.
+-     * Se usa para ajustar dinámicamente fatiga y feedback en PerceptualCortex.
+-     * Rango típico: 0.0 (sin adaptación) a 1.0 (máxima adaptación).
+-     *
+-     * @return λ_t calculado, o -1 si no está disponible
+-     */
+-    external fun nativeGetAdaptiveLambdaT(): Float
+-
+-    // ── AUDIT FIX PR 8: Setear RT60 dinámico en AdaptiveDecisionEngine ──────
+-    /**
+-     * Establecer el RT60 acústico medido por RoomSimulator en el
+-     * AdaptiveDecisionEngine nativo. Esto permite que λ_t se calcule
+-     * con información real del environment acústico.
+-     * Rango: 0.1 (sala muy seca) a 3.0 (sala muy reverberante, segundos).
+-     *
+-     * @param rt60 RT60 acústico del entorno (segundos)
+-     */
+-    external fun nativeSetAdaptiveEnvironmentRT60(rt60: Float)
++    // ── API RETIRADA (λ_t / RT60 adaptativo) ───────────────────────────────
++    // `nativeGetAdaptiveLambdaT()` y `nativeSetAdaptiveEnvironmentRT60()` estaban
++    // declaradas como `external fun` sin NINGÚN símbolo JNI en la .so, y además
++    // AdaptiveDecisionEngine (app/src/main/cpp/experimental/adaptive_engine/
++    // adaptive_decision_engine.hpp:266) no tiene concepto de λ_t ni de RT60: su
++    // API pública es computeTargetGain/CompressorAmount/ExciterReduction/
++    // SpatialWidth/SafetyMargin/VoiceProtection. No hay motor real detrás.
++    //
++    // DECISIÓN: se retira la API fantasma en vez de inventar DSP. Los dos
++    // callers (PerceptualCortex.applyAdaptiveLambdaT y
++    // AdaptiveEnvironmentBridge.updateEnvironmentRT60) quedan en la misma
++    // semántica que ya tenían cuando λ_t no estaba disponible (< 0 → no-op),
++    // pero sin riesgo de UnsatisfiedLinkError.
+ 
+         // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
+         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
+diff --git a/app/src/main/java/com/ivanna/omega/spatial/AdaptiveEnvironmentBridge.kt b/app/src/main/java/com/ivanna/omega/spatial/AdaptiveEnvironmentBridge.kt
+index 69b9097..ec9dbda 100644
+--- a/app/src/main/java/com/ivanna/omega/spatial/AdaptiveEnvironmentBridge.kt
++++ b/app/src/main/java/com/ivanna/omega/spatial/AdaptiveEnvironmentBridge.kt
+@@ -1,8 +1,6 @@
+ package com.ivanna.omega.spatial
+ 
+ import android.util.Log
+-import com.ivanna.omega.core.IvannaNativeLib
+-
+ /**
+  * AdaptiveEnvironmentBridge
+  *
+@@ -32,14 +30,11 @@ object AdaptiveEnvironmentBridge {
+         }
+         lastRT60 = clampedRT60
+         
+-        try {
+-            if (IvannaNativeLib.isLoaded) {
+-                Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 segundos")
+-                IvannaNativeLib.nativeSetAdaptiveEnvironmentRT60(clampedRT60)
+-            }
+-        } catch (e: Exception) {
+-            Log.e(TAG, "Error actualizando RT60 en native: ${e.message}")
+-        }
++        // El puente nativo de RT60 era API fantasma (external fun sin símbolo JNI
++        // y sin RT60 en AdaptiveDecisionEngine) — ver IvannaNativeLib. El RT60 se
++        // conserva en memoria para los consumidores Kotlin (getCurrentRT60), sin
++        // llamada nativa que pueda tirar UnsatisfiedLinkError.
++        Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 s (cacheado, sin puente nativo)")
+     }
+ 
+     /**
