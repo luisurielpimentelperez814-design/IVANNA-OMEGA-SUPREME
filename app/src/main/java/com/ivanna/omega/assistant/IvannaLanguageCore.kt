@@ -116,11 +116,7 @@ object IvannaLanguageCore {
         AcousticIntent.HOW_ARE_YOU        -> "none"
         AcousticIntent.COMPLIMENT         -> "none"
         AcousticIntent.GENERAL_CHAT       -> "none"
-        AcousticIntent.SELF_INTRO          -> "Soy IVANNA, tu asistente de audio inteligente. Proceso el sonido en tiempo real, entiendo música, ajusto el ecualizador y aprendo tus preferencias. También me sé algunos chistes, aunque son de acústica."
-        AcousticIntent.HOW_ARE_YOU         -> IvannaSmallTalk.howAreYouResponse()
-        AcousticIntent.COMPLIMENT          -> IvannaSmallTalk.complimentResponse()
-        AcousticIntent.GENERAL_CHAT        -> IvannaSmallTalk.generalChatResponse()
-                AcousticIntent.UNKNOWN            -> "none"
+        AcousticIntent.UNKNOWN            -> "none"
     }
 
     /** Genera la respuesta hablada final, enriquecida con knowledge si procede. */
