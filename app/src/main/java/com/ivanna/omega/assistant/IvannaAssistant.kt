@@ -27,7 +27,10 @@ import kotlinx.coroutines.launch
  * Ciclo de vida: init() desde la UI (el recognizer necesita hilo principal),
  * release() al salir de la pantalla. start()/stop() controlan la escucha.
  */
-class IvannaAssistant(context: Context) {
+class IvannaAssistant(
+    context: Context,
+    private val geminiAgent: com.ivanna.omega.ai.gemini.IvannaGeminiAgent
+) {
 
     companion object { private const val TAG = "IvannaAssistant" }
 
@@ -117,7 +120,7 @@ class IvannaAssistant(context: Context) {
             val scene = memory.lastScene
 
             // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
-            val (agentReply, agentCommand) = IvannaGeminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
+            val (agentReply, agentCommand) = geminiAgent.processQuery(text, "Escena: ${scene ?: "Normal"}")
             
             // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
             val simulatedIntent = agentCommand?.let {
