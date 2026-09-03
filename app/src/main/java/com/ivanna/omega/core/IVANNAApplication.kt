@@ -404,8 +404,6 @@ class IVANNAApplication : Application() {
                     memory = memoryArchitecture,
                     contextEngine = dynamicContextEngine,
                     geminiAgent = geminiAgent,
-                    intentMapper = IvannaIntentMapper,
-                    musicalEngine = IvannaMusicalIntentEngine,
                     dspOrchestrator = dspOrchestrator,
                     agentCore = com.ivanna.omega.agent.IvannaAgentCore
                 )
