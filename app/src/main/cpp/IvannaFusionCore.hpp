@@ -17,7 +17,7 @@ struct AudioBuffer {
     alignas(16) float right[BLOCK_SIZE];
 };
 
-inline float fast_tanh_neon(float x) {
+inline float fast_tanh_scalar(float x) {
     float x2 = x * x;
     float a = x * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
     float b = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));

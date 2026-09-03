@@ -82,8 +82,8 @@ void EvolutionaryEQ::processNEON(AudioBuffer* buffer) {
             r_out += m_firCoeffsR[t] * m_histR[i + t];
         }
 
-        buffer->left[i] = fast_tanh_neon(l_out);
-        buffer->right[i] = fast_tanh_neon(r_out);
+        buffer->left[i] = fast_tanh_scalar(l_out);
+        buffer->right[i] = fast_tanh_scalar(r_out);
     }
 
     for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
