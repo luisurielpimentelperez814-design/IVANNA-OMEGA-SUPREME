@@ -19,10 +19,6 @@ import com.ivanna.omega.audio.AudioSessionReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.ivanna.omega.ai.memory.IvannaMemoryArchitecture
-import com.ivanna.omega.ai.gemini.IvannaGeminiAgent
-import com.ivanna.omega.assistant.core.IvannaCognitiveCore
-import com.ivanna.omega.assistant.core.IvannaAdaptivePresetEngine
-import com.ivanna.omega.assistant.IvannaDSPOrchestrator
 import com.ivanna.omega.assistant.IvannaIntentMapper
 import com.ivanna.omega.assistant.IvannaMusicalIntentEngine
 import com.ivanna.omega.core.OEMTelemetry
@@ -387,26 +383,21 @@ class IVANNAApplication : Application() {
                 com.ivanna.omega.assistant.core.DynamicContextEngine.init(this@IVANNAApplication)
 
                 // ── IVANNA OMEGA SUPREME AI CORE ───────────────────────────────
+                // NOTA (auditoría): geminiAgent/cognitiveCore/adaptivePresetEngine/
+                // dspOrchestrator se creaban aquí como locals y NUNCA se
+                // almacenaban en ninguna propiedad accesible (ni companion, ni
+                // singleton) — quedaban huérfanos en cuanto este bloque
+                // terminaba. El daño real: GeminiOrchestrator (dentro de
+                // geminiAgent) arranca un coroutine propio con su PROPIO
+                // CoroutineScope (no ligado al ciclo de vida de nada) que
+                // llama a la API de Gemini cada 30s para health-checks, PARA
+                // SIEMPRE, sin que ninguna pantalla lo consumiera — batería,
+                // datos y cuota de API gastados en un agente que nadie usa.
+                // El agente real que sí llega al usuario es el que crea
+                // IvannaAssistantViewModel. Se deja solo memoryArchitecture,
+                // que sí se usa abajo (isLoaded.collect) y cuyo constructor
+                // no tiene efectos colaterales continuos.
                 val memoryArchitecture = IvannaMemoryArchitecture(this@IVANNAApplication)
-                val dynamicContextEngine = com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
-                    ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(this@IVANNAApplication)
-                val geminiAgent = IvannaGeminiAgent(
-                    context = this@IVANNAApplication,
-                    memory = memoryArchitecture,
-                    contextEngine = dynamicContextEngine
-                )
-                val adaptivePresetEngine = IvannaAdaptivePresetEngine(
-                    context = this@IVANNAApplication,
-                    memory = memoryArchitecture
-                )
-                val dspOrchestrator = IvannaDSPOrchestrator(this@IVANNAApplication)
-                val cognitiveCore = IvannaCognitiveCore(
-                    memory = memoryArchitecture,
-                    contextEngine = dynamicContextEngine,
-                    geminiAgent = geminiAgent,
-                    dspOrchestrator = dspOrchestrator,
-                    agentCore = com.ivanna.omega.agent.IvannaAgentCore
-                )
 
                 // Iniciar telemetría OEM
                 OEMTelemetry.start(this@IVANNAApplication)
