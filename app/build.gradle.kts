@@ -184,11 +184,9 @@ dependencies {
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
-}
 
-dependencies {
-    implementation("androidx.security:security-crypto-ktx:1.1.0-alpha06")
-
+    // Carga de imagenes/video en Compose (antes en un segundo bloque
+    // dependencies {} duplicado que redeclaraba security-crypto-ktx).
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-video:2.5.0")
 }
