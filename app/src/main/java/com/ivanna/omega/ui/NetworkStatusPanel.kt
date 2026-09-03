@@ -365,18 +365,19 @@ fun NetworkStatusPanel(
                         }
                         // Inyectar al agente y hacer un ping real
                         com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
-                        val (reply, _) = withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
-    context = context,
-    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(context),
-    contextEngine =
-        com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
-        ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(context)
-).processQuery("ping")
-                            }.getOrElse { "error" to null }
+                                    context = context,
+                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(context),
+                                    contextEngine =
+                                        com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
+                                            ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(context)
+                                ).processQuery("ping")
+                            }.getOrNull()
                         }
-                        val ok = reply != "error" && !reply.toString().contains("error", ignoreCase = true)
+
+                        val ok = result is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success
                         if (ok) {
                             saveGeminiKey(ctx, trimmed)
                             agentLinked = true
