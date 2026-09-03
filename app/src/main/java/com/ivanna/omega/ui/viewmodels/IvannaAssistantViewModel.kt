@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.ivanna.omega.agent.IvannaAgentCore
 import com.ivanna.omega.assistant.IvannaAcousticBrain
 import com.ivanna.omega.assistant.IvannaAssistant
-import com.ivanna.omega.assistant.IvannaCognitiveCore
+import com.ivanna.omega.assistant.IvannaCognitiveCore as IvannaStaticCore
 import com.ivanna.omega.assistant.IvannaListenerProfile
 import com.ivanna.omega.assistant.SpeechState
 import kotlinx.coroutines.Dispatchers
@@ -204,11 +204,11 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
 
         // 4. Observar IvannaCognitiveCore → panel de inteligencia
         viewModelScope.launch {
-            IvannaCognitiveCore.lastDecision.collect { decision ->
+            IvannaStaticCore.lastDecision.collect { decision ->
                 if (decision != null) {
                     _panel.value = _panel.value.copy(
                         activeAgent = if (decision.execute) "IvannaAgentCore"
-                                      else "IvannaCognitiveCore (bloqueó)",
+                                      else "IvannaStaticCore (bloqueó)",
                         explanation = decision.warningForUser ?: decision.reason
                     )
                 }
