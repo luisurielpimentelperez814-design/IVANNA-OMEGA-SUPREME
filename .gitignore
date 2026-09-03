@@ -1,2 +1,43 @@
+# ── Builds generados ─────────────────────────────────────────────
 dist/
+build/
+**/build/
+*.apk
+*.aab
+*.aar
+*.so
+
+# ── Node / Vite / tooling JS ─────────────────────────────────────
 node_modules/
+*.tsbuildinfo
+.vite/
+
+# ── Gradle / Android Studio ──────────────────────────────────────
+.gradle/
+local.properties
+.cxx/
+*.iml
+.idea/
+.externalNativeBuild/
+captures/
+output.json
+
+# ── Firmas y secretos (NUNCA trackear) ───────────────────────────
+*.keystore
+*.jks
+*.pem
+*.key
+.env
+.env.local
+.env.*.local
+google-services.json
+
+# ── Parches temporales y artefactos de misión ────────────────────
+# (los históricos ya trackeados se conservan; no añadir nuevos)
+*.orig
+*.rej
+
+# ── SO / editor ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
