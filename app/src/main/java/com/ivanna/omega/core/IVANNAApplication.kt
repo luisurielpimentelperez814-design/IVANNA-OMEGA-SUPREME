@@ -18,9 +18,6 @@ import android.media.audiofx.AudioEffect
 import com.ivanna.omega.audio.AudioSessionReceiver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.ivanna.omega.ai.memory.IvannaMemoryArchitecture
-import com.ivanna.omega.assistant.IvannaIntentMapper
-import com.ivanna.omega.assistant.IvannaMusicalIntentEngine
 import com.ivanna.omega.core.OEMTelemetry
 
 
@@ -394,20 +391,30 @@ class IVANNAApplication : Application() {
                 // SIEMPRE, sin que ninguna pantalla lo consumiera — batería,
                 // datos y cuota de API gastados en un agente que nadie usa.
                 // El agente real que sí llega al usuario es el que crea
-                // IvannaAssistantViewModel. Se deja solo memoryArchitecture,
-                // que sí se usa abajo (isLoaded.collect) y cuyo constructor
-                // no tiene efectos colaterales continuos.
-                val memoryArchitecture = IvannaMemoryArchitecture(this@IVANNAApplication)
+                // IvannaAssistantViewModel.
+                //
+                // FIX (leak real, mismo patrón que geminiAgent arriba):
+                // memoryArchitecture SÍ tenía efecto colateral continuo — su
+                // constructor arranca su PROPIO CoroutineScope(SupervisorJob()
+                // + Dispatchers.IO) y un init{} que lanza loadFromDisk(). Esta
+                // instancia de nivel Application:
+                //   1. Nunca se cerraba (sin shutdown() en onTerminate) — scope
+                //      huérfano para siempre, igual que el geminiAgent de antes.
+                //   2. Competía por el MISMO archivo EncryptedFile en disco
+                //      (ivanna_episodic_memory.json / ivanna_semantic_memory.json)
+                //      con la instancia REAL que crea IvannaAssistantViewModel —
+                //      riesgo de escritura concurrente/corrupción si ambas
+                //      persistían a la vez.
+                //   3. Su único consumidor era un log de isLoaded — cero valor
+                //      funcional real, ningún componente del producto la leía
+                //      ni escribía en ella.
+                // Se elimina por completo: la memoria real vive donde el
+                // usuario realmente interactúa (IvannaAssistantViewModel), y
+                // esa instancia ahora cierra su scope correctamente al salir
+                // de la pantalla vía IvannaGeminiAgent.shutdown() → memory.shutdown().
 
                 // Iniciar telemetría OEM
                 OEMTelemetry.start(this@IVANNAApplication)
-
-                // Esperar a que la memoria esté cargada
-                appScope.launch {
-                    memoryArchitecture.isLoaded.collect { loaded ->
-                        if (loaded) Log.i(TAG, "✅ IvannaMemoryArchitecture lista")
-                    }
-                }
 
                 Log.i(TAG, "✅ IVANNA OMEGA SUPREME AI CORE inicializado")
                 isInitialized = true

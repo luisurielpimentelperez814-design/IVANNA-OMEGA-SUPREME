@@ -290,5 +290,21 @@ class IvannaGeminiAgent(
     fun shutdown() {
         scope.cancel()
         orchestrator.shutdown()
+        // FIX (leak real): memory es una dependencia inyectada por constructor
+        // que este agente es el único dueño funcional de aquí — antes solo se
+        // cancelaba scope/orchestrator y la IvannaMemoryArchitecture inyectada
+        // (con su PROPIO CoroutineScope + EncryptedFile) quedaba viva para
+        // siempre. Impacto real:
+        //   1. NetworkStatusPanel crea un probeAgent desechable en cada tap de
+        //      "Conectar" con `IvannaMemoryArchitecture(ctx)` nueva — sin este
+        //      fix, cada tap dejaba un CoroutineScope de memoria huérfano
+        //      corriendo para siempre (mismo patrón de leak ya documentado
+        //      para geminiAgent en IVANNAApplication, pero sin cerrar aquí).
+        //   2. IvannaAssistantViewModel: la memoria real de la sesión nunca
+        //      se persistía/cancelaba al salir de la pantalla (onCleared()).
+        // shutdown() ya guarda a disco antes de cancelar su scope (ver
+        // IvannaMemoryArchitecture.shutdown()), así que esto también cierra
+        // en falso el caso de "memoria de sesión no se guarda al cerrar".
+        memory.shutdown()
     }
 }
