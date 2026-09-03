@@ -8,6 +8,7 @@ import com.ivanna.omega.BuildConfig
 import com.ivanna.omega.ai.memory.IvannaMemoryArchitecture
 import com.ivanna.omega.assistant.core.AdaptiveResponseEngine
 import com.ivanna.omega.assistant.core.DynamicContextEngine
+import com.ivanna.omega.assistant.IvannaConversationalCore
 import com.ivanna.omega.assistant.core.SecureConfigurationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -245,6 +246,17 @@ class IvannaGeminiAgent(
             if (memoryContext.isNotBlank()) {
                 appendLine("=== MEMORIA RELEVANTE ===")
                 appendLine(memoryContext)
+                appendLine()
+            }
+            // Contexto vivo de la sesión conversacional (canción actual, preset
+            // aplicado, cambios DSP, temas, ánimo y preferencias temporales que
+            // el usuario expresó hablando). Sin esto, IvannaConversationalCore
+            // guardaba estado que nunca llegaba al motor cognitivo.
+            val sessionContext = IvannaConversationalCore.contextSummary()
+            if (sessionContext.isNotBlank()) {
+                appendLine("=== CONTEXTO DE SESIÓN ===")
+                appendLine(sessionContext)
+                appendLine("Respeta las preferencias activas del usuario al proponer o aplicar ajustes.")
                 appendLine()
             }
             appendLine("=== PROTOCOLO DE COMANDOS (WHITELIST) ===")

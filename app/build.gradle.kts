@@ -84,6 +84,12 @@ android {
         buildConfig = true
     }
 
+    // Las clases de la capa conversacional usan android.util.Log; sin esto los
+    // tests JVM fallan con "not mocked" en vez de ejercitar la lógica real.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }

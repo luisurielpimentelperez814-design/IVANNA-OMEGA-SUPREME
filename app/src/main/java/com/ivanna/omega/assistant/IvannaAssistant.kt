@@ -6,6 +6,7 @@ import com.ivanna.omega.VoiceController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -154,6 +155,18 @@ class IvannaAssistant(
         _ui.value = _ui.value.copy(listening = false, statusLine = "Procesando…")
         scope.launch(Dispatchers.IO) {
             val scene = memory.lastScene
+
+            // ── Memoria de sesión: escritura ANTES del motor cognitivo ───────
+            // El texto del usuario puede contener preferencias persistentes de
+            // sesión ("no me gustan los bajos", "prefiero escuchar suave").
+            // Se actualizan aquí, antes de processQuery(), porque
+            // IvannaGeminiAgent.buildSystemPrompt() lee
+            // IvannaConversationalCore.contextSummary() — que ya incluye
+            // preferencesSummary() — para construir el prompt de este mismo
+            // turno. Si se actualizaran después, la preferencia solo influiría
+            // a partir del turno siguiente.
+            IvannaConversationalCore.updateTemporalPreferences(text)
+            IvannaConversationalCore.extractSongContext(text)
 
             // ── Súper ÑLM (Agentic Gemini LLM) Interceptor ────────
             // FIX (CI rojo): processQuery() devuelve AgentResponse (sealed class),
@@ -431,6 +444,13 @@ class IvannaAssistant(
         // cada vez que esta pantalla se recrea (rotación, navegación) queda
         // otro loop más corriendo para siempre, además del anterior.
         geminiAgent.shutdown()
+        // Leak de lifecycle real: watchVoice() deja un collect infinito sobre
+        // voice.state dentro de este scope. Sin cancelarlo, cada recreación de
+        // la pantalla dejaba un collector vivo reteniendo el IvannaAssistant
+        // (y con él Context de aplicación, TTS y recognizer) para siempre.
+        handsFreeActive = false
+        voiceWatchStarted = false
+        scope.cancel()
     }
 
 

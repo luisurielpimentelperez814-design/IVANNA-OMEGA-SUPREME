@@ -379,10 +379,56 @@ object IvannaConversationalCore {
         return buildString {
             ctx.currentSong?.let { append("Canción actual: ${it.title}${it.artist?.let { a -> " de $a" } ?: ""}. ") }
             ctx.lastAppliedPreset?.let { append("Último preset: $it. ") }
+            if (ctx.lastDSPChanges.isNotEmpty()) {
+                append("Cambios DSP recientes: ${ctx.lastDSPChanges.takeLast(3).joinToString("; ")}. ")
+            }
+            if (ctx.topicsDiscussed.isNotEmpty()) {
+                append("Temas tratados: ${ctx.topicsDiscussed.joinToString(", ")}. ")
+            }
+            append("Ánimo de la sesión: ${ctx.dominantMood.name.lowercase()}. ")
+            val prefs = preferencesSummary()
+            if (prefs.isNotBlank()) append("$prefs ")
             if (ctx.turns.isNotEmpty()) {
                 append("Historial reciente: ${ctx.turns.takeLast(3).joinToString(" → ") { it.detectedIntent }}.")
             }
         }.trim()
+    }
+
+    /**
+     * Resumen legible de las preferencias temporales activas — se inyecta en
+     * el prompt del motor cognitivo para que las respuestas y los ajustes
+     * respeten lo que el usuario ya pidió en esta sesión. Devuelve "" si el
+     * usuario no ha expresado ninguna preferencia (todo NEUTRAL).
+     */
+    fun preferencesSummary(): String {
+        val p = _context.value.temporalPreferences
+        val parts = mutableListOf<String>()
+        when (p.bassPreference) {
+            BassPreference.LOW  -> parts += "prefiere menos graves"
+            BassPreference.HIGH -> parts += "prefiere más graves"
+            BassPreference.NEUTRAL -> {}
+        }
+        when (p.loudnessPreference) {
+            LoudnessPreference.SOFT -> parts += "prefiere volumen suave"
+            LoudnessPreference.LOUD -> parts += "prefiere volumen alto"
+            LoudnessPreference.NEUTRAL -> {}
+        }
+        when (p.spatialPreference) {
+            SpatialPreference.DRY  -> parts += "prefiere sonido seco, poca reverberación"
+            SpatialPreference.WIDE -> parts += "prefiere sonido amplio y envolvente"
+            SpatialPreference.NEUTRAL -> {}
+        }
+        when (p.warmthPreference) {
+            WarmthPreference.WARM   -> parts += "prefiere timbre cálido"
+            WarmthPreference.BRIGHT -> parts += "prefiere timbre brillante"
+            WarmthPreference.NEUTRAL -> {}
+        }
+        when (p.detailPreference) {
+            DetailPreference.DETAILED -> parts += "prefiere más detalle y separación"
+            DetailPreference.SMOOTH   -> parts += "prefiere sonido suave, menos detalle"
+            DetailPreference.NEUTRAL -> {}
+        }
+        return if (parts.isEmpty()) "" else "Preferencias activas del usuario: ${parts.joinToString(", ")}."
     }
 
     /** Limpia el estado de sesión al llamar a clearMemory(). */
