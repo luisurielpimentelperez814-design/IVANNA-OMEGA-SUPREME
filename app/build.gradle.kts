@@ -32,7 +32,8 @@ android {
             ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
 
-        // Solo arm64-v8a — Moto G85 es ARM64, elimina x86/armeabi-v7a del APK (~60% menos)
+        // ABIs soportados: arm64-v8a (principal, Moto G85) + armeabi-v7a (legado 32-bit).
+        // x86/x86_64 excluidos: sin target emulador/Intel, ahorra ~40% de tamaño nativo.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
