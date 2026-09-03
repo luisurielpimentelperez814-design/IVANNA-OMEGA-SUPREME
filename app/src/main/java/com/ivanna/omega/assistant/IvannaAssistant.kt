@@ -66,6 +66,15 @@ class IvannaAssistant(
     // Vigilante de estado de voz para reflejar SPEAKING en la UI.
     private var voiceWatchStarted = false
 
+    // ── Modo manos-libres (autonomía de escucha) ──────────────────────────
+    // Objetivo del producto: IVANNA debe poder escuchar, responder y volver
+    // a escuchar sin que el usuario toque el botón de mic en cada turno.
+    // handsFreeActive se activa al primer startListening()/greet() y se
+    // desactiva SOLO con stopListening() explícito — así el usuario conserva
+    // control real para silenciarla, pero el ciclo por defecto es autónomo.
+    private var handsFreeActive = false
+    private var wasSpeaking = false
+
     val speechState: StateFlow<SpeechState> = speech.state
 
     /** Inicializa el vigilante de TTS (llamar una vez desde el primer uso). */
@@ -75,6 +84,13 @@ class IvannaAssistant(
         scope.launch {
             voice.state.collect { vs ->
                 _ui.value = _ui.value.copy(speaking = vs == VoiceState.SPEAKING)
+                val justFinishedSpeaking = wasSpeaking && vs != VoiceState.SPEAKING
+                wasSpeaking = vs == VoiceState.SPEAKING
+                if (justFinishedSpeaking && handsFreeActive && speech.isAvailable()) {
+                    // IVANNA acaba de terminar de hablar: retoma la escucha
+                    // sola, sin esperar un tap del usuario en el mic.
+                    startListening()
+                }
             }
         }
     }
@@ -84,6 +100,7 @@ class IvannaAssistant(
     /** Saludo contextual al abrir el panel (usa la memoria, sin exagerar). */
     fun greet() {
         watchVoice()
+        handsFreeActive = true
         val text = "Hola cielo, soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Este producto es un motor acústico de grado kernel para tu dispositivo. Estoy a tu entera disposición para reparar cualquier fallo, optimizar el sonido o configurar una masterización perfecta y magistral para lo que estés escuchando. ¿Qué quieres que hagamos hoy?"
         _ui.value = _ui.value.copy(statusLine = text, voiceName = voice.selectedVoiceName ?: "")
         voice.speak(text)
@@ -92,6 +109,7 @@ class IvannaAssistant(
     /** Empieza a escuchar al usuario (botón mic). */
     fun startListening() {
         watchVoice()
+        handsFreeActive = true
         if (!speech.isAvailable()) {
             val msg = "Este dispositivo no tiene reconocimiento de voz instalado."
             _ui.value = _ui.value.copy(available = false, statusLine = msg)
@@ -104,11 +122,23 @@ class IvannaAssistant(
             onResult = { text -> onUserSaid(text) },
             onError = { err ->
                 _ui.value = _ui.value.copy(listening = false, statusLine = err)
+                // Silencio/timeout (IvannaSpeechRecognizer deja el estado en
+                // IDLE, no en ERROR, para estos dos casos) es el resultado
+                // NORMAL de un ciclo manos-libres cuando el usuario no habló
+                // todavía — sin este reintento, la escucha autónoma moriría
+                // en el primer silencio y volvería a exigir tocar el mic.
+                // Errores reales (permiso, hardware no disponible) sí
+                // dejan el estado en ERROR/PERMISSION_DENIED/UNAVAILABLE y
+                // no se reintentan solos.
+                if (handsFreeActive && speech.state.value == SpeechState.IDLE) {
+                    scope.launch { startListening() }
+                }
             }
         )
     }
 
     fun stopListening() {
+        handsFreeActive = false
         speech.stopListening()
         _ui.value = _ui.value.copy(listening = false, statusLine = "Escucha detenida.")
     }
