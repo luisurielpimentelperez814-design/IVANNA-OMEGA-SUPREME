@@ -1,4 +1,5 @@
 package com.ivanna.omega.ui.viewmodels
+import com.ivanna.omega.core.IvannaCognitiveCore
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
