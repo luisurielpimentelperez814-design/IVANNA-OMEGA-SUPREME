@@ -1,6 +1,4 @@
 #include "IvannaFusionCore.h"
-#include "IvannaAudioClassifier.hpp"
-#include "IvannaAudioClassifier.hpp"
 #include "IvannaFusionCore.hpp"
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"
@@ -78,7 +76,18 @@ IvannaFusionEngine::~IvannaFusionEngine() {
 }
 
 void IvannaFusionEngine::runAcousticProfiling() {
-    m_evoEq->calibrateTargetRoom();
+    // EvolutionaryEQ no expone calibrateTargetRoom(): su paso de calibración
+    // real es updateLM_CMA_ES() (optimización CMA-ES sobre el genoma FIR).
+    if (m_evoEq) m_evoEq->updateLM_CMA_ES();
+}
+
+bool IvannaFusionEngine::loadCustomHrtf(const char* path) noexcept {
+    if (!path || !m_hrtf) return false;
+    return m_hrtf->loadFromDataset(path);
+}
+
+void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) noexcept {
+    if (m_hrtf) m_hrtf->setHeadPose(yaw, pitch, roll);
 }
 
 void IvannaFusionEngine::setGoldenEarMode(bool enable) {
