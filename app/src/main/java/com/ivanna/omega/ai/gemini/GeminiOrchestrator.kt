@@ -184,9 +184,14 @@ class GeminiOrchestrator(
     }
 
     private fun createModel(entry: ModelEntry, systemInstruction: String?): GenerativeModel {
-        val builder = GenerativeModel.Builder().modelName(entry.name).apiKey(apiKeyProvider())
-        systemInstruction?.let { builder.systemInstruction(content { text(it) }) }
-        return builder.build()
+        // FIX (CI rojo): el SDK generativeai:0.9.0 no expone GenerativeModel.Builder;
+        // GenerativeModel se instancia por constructor (mismo patrón que
+        // assistant/core/GeminiOrchestrator.createAdaptiveModel).
+        return GenerativeModel(
+            modelName = entry.name,
+            apiKey = apiKeyProvider(),
+            systemInstruction = systemInstruction?.let { content { text(it) } }
+        )
     }
 
     private fun updateHealth(modelName: String, success: Boolean, latencyMs: Long) {
