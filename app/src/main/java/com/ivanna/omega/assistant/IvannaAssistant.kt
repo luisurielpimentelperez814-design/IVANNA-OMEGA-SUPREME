@@ -390,6 +390,11 @@ class IvannaAssistant(
     fun release() {
         speech.release()
         voice.release()
+        // El GeminiOrchestrator interno de geminiAgent corre su health-check
+        // loop en el CoroutineScope propio del agente — sin shutdown() aquí,
+        // cada vez que esta pantalla se recrea (rotación, navegación) queda
+        // otro loop más corriendo para siempre, además del anterior.
+        geminiAgent.shutdown()
     }
 
 
