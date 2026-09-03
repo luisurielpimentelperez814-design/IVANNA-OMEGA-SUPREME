@@ -130,8 +130,14 @@ class IvannaAssistant(
                 // Errores reales (permiso, hardware no disponible) sí
                 // dejan el estado en ERROR/PERMISSION_DENIED/UNAVAILABLE y
                 // no se reintentan solos.
+                // Backoff corto (no bloquea UI, corre en Dispatchers.Main del
+                // scope): evita un tight-loop de reinicios del recognizer si
+                // el usuario deja el modo manos-libres activo en silencio
+                // prolongado — cada ciclo real de STT ya tarda >300ms, así
+                // que esto no introduce latencia perceptible en el turno
+                // normal, solo protege el caso de fallos consecutivos.
                 if (handsFreeActive && speech.state.value == SpeechState.IDLE) {
-                    scope.launch { startListening() }
+                    scope.launch { delay(300); startListening() }
                 }
             }
         )
