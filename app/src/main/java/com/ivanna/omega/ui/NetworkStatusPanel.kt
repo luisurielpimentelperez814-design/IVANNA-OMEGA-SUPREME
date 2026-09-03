@@ -49,8 +49,9 @@ private fun loadGeminiKey(ctx: Context): String =
         .getString(KEY_GEMINI_API, "") ?: ""
 
 private fun saveGeminiKey(ctx: Context, key: String) {
-
-    val context = LocalContext.current
+    // FIX (CI rojo): la línea `val context = LocalContext.current` quedó huérfana
+    // dentro de una función top-level NO composable (Compose invocable solo desde
+    // @Composable) y la variable ni siquiera se usaba — se elimina.
     ctx.getSharedPreferences(PREFS_NETWORK, Context.MODE_PRIVATE)
         .edit().putString(KEY_GEMINI_API, key).apply()
 }
@@ -367,12 +368,16 @@ fun NetworkStatusPanel(
                         com.ivanna.omega.assistant.core.SecureConfigurationManager.setApiKey(trimmed)
                         val result = withContext(Dispatchers.IO) {
                             runCatching {
+                                // FIX (CI rojo): LocalContext.current solo es invocable
+                                // desde contexto @Composable — dentro de este lambda
+                                // (Button.onClick → scope.launch) no lo es. Se reutiliza
+                                // `ctx`, ya capturado en el composable padre (línea ~141).
                                 com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
-                                    context = androidx.compose.ui.platform.LocalContext.current,
-                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(androidx.compose.ui.platform.LocalContext.current),
+                                    context = ctx,
+                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(ctx),
                                     contextEngine =
                                         com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
-                                            ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(androidx.compose.ui.platform.LocalContext.current)
+                                            ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(ctx)
                                 ).processQuery("ping")
                             }.getOrNull()
                         }
