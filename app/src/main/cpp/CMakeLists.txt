@@ -37,6 +37,7 @@ add_library(ivanna_omega SHARED
     # audioRouteBridgeLoop() no podía abrir OMEGA_EFFECT_LOCAL_BUS_PATH.
     daemon/core/omega_control_bus.cpp
     saf_optimizer.cpp
+        neuromorphic/AntiDolbyAI.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
     SafGlobalBridge.cpp
@@ -263,6 +264,7 @@ add_library(omega_effect SHARED
     hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     saf_optimizer.cpp
+        neuromorphic/AntiDolbyAI.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
     SafGlobalBridge.cpp
