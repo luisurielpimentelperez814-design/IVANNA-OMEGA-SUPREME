@@ -40,8 +40,11 @@ class IvannaMemoryArchitecture(context: Context) {
     }
 
     val workingMemory = WorkingMemory()
-    val episodicMemory: MutableList<String> = EpisodicMemory { saveEpisodicToDisk() }
-    val semanticMemory: MutableList<String> = SemanticMemory { saveSemanticToDisk() }
+    // FIX (CI rojo): se declaraban como MutableList<String> pero son los motores
+    // reales — el tipo erróneo rompía record()/learn()/pruneOld()/loadRecords()
+    // y el constructor de MemoryRetrievalEngine (type mismatch abajo).
+    val episodicMemory = EpisodicMemory { saveEpisodicToDisk() }
+    val semanticMemory = SemanticMemory { saveSemanticToDisk() }
     val systemMemory = SystemMemory()
     val retrievalEngine = MemoryRetrievalEngine(workingMemory, episodicMemory, semanticMemory, systemMemory)
 
