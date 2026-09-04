@@ -58,7 +58,9 @@ class IvannaAssistant(
 
     private val speech: SpeechInputProvider = IvannaSpeechRecognizer(appContext)
     private val voice = IvannaVoiceEngine(appContext)
-    private val memory = IvannaContextMemory(appContext)
+    private val memory = com.ivanna.omega.ai.memory.IvannaContextMemory(
+        com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(appContext)
+    )
     private val voiceController: VoiceController = VoiceController(appContext)
 
     // ── Nuevas capas de inteligencia acústica (FASE 1-5) ─────────────────────
