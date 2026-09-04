@@ -1757,6 +1757,25 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
     JNIEnv*, jobject, jfloat rad) {
     g_pd.set_spatial_angle(rad * 57.29578f); // rad → deg
 }
+
+// ── FASE 8 paso 4: binaural real ────────────────────────────────────────
+// Símbolos propios — NO reusan nativeSetSpatialWidth/nativeSetSpatialAngleRad
+// (esos gobiernan CueBasedSpatial y ya tienen su propio arreglo anti-colisión
+// térmico/IA de FASE 7; mezclar ambos parámetros en el mismo setter
+// reproduciría exactamente ese bug para un caso nuevo).
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBinauralEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    g_pd.set_binaural_enabled(enabled == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBinauralPositionRad(
+    JNIEnv*, jobject, jfloat azimuthRad, jfloat aggressiveness) {
+    if (!std::isfinite(azimuthRad) || !std::isfinite(aggressiveness)) return;
+    g_pd.set_binaural_position(azimuthRad * 57.29578f,
+                                std::clamp(aggressiveness, 0.0f, 1.0f));
+}
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
     JNIEnv*, jobject, jfloat width) {

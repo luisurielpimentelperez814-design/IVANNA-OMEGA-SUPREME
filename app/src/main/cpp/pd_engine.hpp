@@ -34,6 +34,7 @@
 #include "neuromorphic/nho_engine.hpp"
 #include "neuromorphic/biquad_envelope_bank.hpp"
 #include "spatial/cue_based_spatial.hpp"
+#include "spatial/hrtf_convolver.hpp"
 #include "audio_control_plane.hpp"
 #include <cmath>
 #include <algorithm>
@@ -41,6 +42,7 @@
 #include <thread>
 #include <chrono>
 #include <pthread.h>
+#include <vector>
 
 // Forward declarations from evolutionary_kernel.cpp (C linkage)
 #ifdef __cplusplus
@@ -73,6 +75,21 @@ public:
     NHOEngine           nho;
     BiquadEnvelopeBank  cue_bank;   // incluye refinamiento PhaseOracle (T_refined)
     CueBasedSpatial     spatial;
+
+    // ── FASE 8 paso 4: binaural real (HRTFConvolver) ───────────────────────
+    // Bandera PROPIA — NO reemplaza `mode` (ese sigue gobernando si
+    // CueBasedSpatial corre o no). Precedencia explícita: binaural solo
+    // aplica cuando mode>=2, porque necesita las cues perceptuales de
+    // CueBasedSpatial ya activas como base de la rampa (ver decode/process_block).
+    HRTFConvolver        hrtf;
+    std::atomic<bool>    binauralEnabled_{false};
+    float                binauralRamp_{0.f};   // one-pole COMPARTIDO L/R (anti-click,
+                                                // mismo patrón que wetNow_ en RirConvolver —
+                                                // dos independientes desalinean fase y
+                                                // colapsan la imagen estéreo, no repetir eso)
+    static constexpr float kBinauralRampCoeff = 0.01f;
+    std::vector<float>   hrtfBufL_, hrtfBufR_; // reusados entre bloques; resize
+                                                // solo si cambia n, nunca allocar por bloque
 
     // ── Parameters ───────────────────────────────────────────────────────────
     std::atomic<int>   mode{0};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
@@ -231,6 +248,16 @@ public:
     void set_nho_beta(float v)      noexcept { nho.set_beta(v); }
     void set_nho_wet(float v)       noexcept { nho.set_wet(v); }
     void set_nho_harmonic(float v)  noexcept { nho.set_harmonic_gain(v); }
+
+    // ── FASE 8 paso 4: setters propios del binaural, no reusan los de
+    // CueBasedSpatial (mismo criterio "sin colisión de parámetro" que ya
+    // se aplicó en FASE 7 para spatial_width térmico vs. IA). ──────────────
+    void set_binaural_enabled(bool v) noexcept {
+        binauralEnabled_.store(v, std::memory_order_relaxed);
+    }
+    void set_binaural_position(float azimuthDeg, float aggressiveness) noexcept {
+        hrtf.set_position(azimuthDeg, aggressiveness);
+    }
 
     // ── EvolutionaryKernel background integration ─────────────────────────
     //
