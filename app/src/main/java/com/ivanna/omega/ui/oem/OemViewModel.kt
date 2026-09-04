@@ -234,7 +234,13 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun measureLatency() {
-        // dummy or restore
+        // FIX: era un stub vacío ("dummy or restore") — el botón "MEDIR" de
+        // la card LATENCIA DSP no hacía nada. La medición real ya existe
+        // (OmegaDaemon.getLatency(), con caché de 250 ms) y poll() ya la
+        // consume cada 500 ms automáticamente; forzar poll() aquí solo
+        // adelanta el refresh al toque del botón en vez de esperar el
+        // siguiente tick, sin reinventar ninguna medición nueva.
+        poll()
     }
 
     fun resetClips() {
