@@ -380,9 +380,19 @@ fun NetworkStatusPanel(
                                 // shutdown() explícito ese loop llamaba a la API de
                                 // Gemini cada 30s PARA SIEMPRE — uno nuevo por cada tap
                                 // en "Conectar". Se cierra en el finally.
+                                // FIX (mismo patrón de leak, ahora en la memoria del probe):
+                                // el fix anterior cerró probeAgent.shutdown() pero la
+                                // IvannaMemoryArchitecture(ctx) que se le inyecta se
+                                // construía inline y quedaba sin referencia — cada tap
+                                // en "Conectar" abría otro handle sobre el mismo archivo
+                                // cifrado sin cerrarlo nunca (la misma clase de bug que
+                                // c3c65037 ya cerró para las instancias de sesión/Application,
+                                // reapareciendo aquí en la ruta del probe). Se extrae a
+                                // variable para poder cerrarla en el mismo finally.
+                                val probeMemory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(ctx)
                                 val probeAgent = com.ivanna.omega.ai.gemini.IvannaGeminiAgent(
                                     context = ctx,
-                                    memory = com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(ctx),
+                                    memory = probeMemory,
                                     contextEngine =
                                         com.ivanna.omega.assistant.core.DynamicContextEngine.getInstance()
                                             ?: com.ivanna.omega.assistant.core.DynamicContextEngine.init(ctx)
@@ -391,6 +401,7 @@ fun NetworkStatusPanel(
                                     probeAgent.processQuery("ping")
                                 } finally {
                                     probeAgent.shutdown()
+                                    probeMemory.shutdown()
                                 }
                             }.getOrNull()
                         }
