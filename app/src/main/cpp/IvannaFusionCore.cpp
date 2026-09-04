@@ -33,6 +33,12 @@ static inline float32x4_t fast_tanh_neon(float32x4_t x) {
 #else
 #endif
 
+// FIX (CI 2026-09-04): la clase IvannaFusionEngine se declara dentro de
+// namespace Ivanna (IvannaFusionCore.h) pero sus metodos se definian aqui
+// en ambito global -> "use of undeclared identifier" x11. Se envuelve el
+// cuerpo de definiciones en el namespace correcto.
+namespace Ivanna {
+
 IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();
     // Cierra el hueco SOFA/IHR1: HrtfManager::loadFromDataset() existía
@@ -212,3 +218,5 @@ void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
         m_hrtf->setSafLatentQ(q, 7);
     }
 }
+
+} // namespace Ivanna
