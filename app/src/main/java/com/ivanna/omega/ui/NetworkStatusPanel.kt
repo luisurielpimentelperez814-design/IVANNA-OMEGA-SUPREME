@@ -32,7 +32,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.assistant.core.SecureConfigurationManager
-import com.ivanna.omega.assistant.core.IvannaCognitiveCore
+
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

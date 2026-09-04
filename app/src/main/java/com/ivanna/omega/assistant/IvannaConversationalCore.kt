@@ -372,7 +372,14 @@ object IvannaConversationalCore {
 
     /**
      * Devuelve el resumen de contexto actual para enriquecer el prompt
-     * de IvannaCognitiveCore — qué se ha hecho recientemente.
+     * de Gemini (IvannaGeminiAgent.buildSystemPrompt) y el razonamiento
+     * local — qué se ha hecho recientemente y qué preferencias expresó
+     * el usuario en esta sesión.
+     *
+     * Incluye preferencesSummary() — preferencias temporales no neutrales
+     * expresadas por el usuario en esta sesión (graves, volumen, espacialidad,
+     * timbre, detalle) — para que Gemini y el razonamiento local las respeten
+     * en el mismo turno en que se detectan, no solo en el siguiente.
      */
     fun contextSummary(): String {
         val ctx = _context.value

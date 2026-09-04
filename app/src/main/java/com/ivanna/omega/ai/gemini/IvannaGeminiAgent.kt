@@ -235,6 +235,15 @@ class IvannaGeminiAgent(
     private suspend fun buildSystemPrompt(userQuery: String): String {
         val memoryContext = memory.buildContextForGemini(userQuery)
         val deviceContext = contextEngine.buildFullContext()
+        // FIX (integración incompleta): IvannaConversationalCore.contextSummary()
+        // existía y estaba correctamente documentado como fuente de contexto
+        // para el prompt, pero ningún llamador lo invocaba — Gemini nunca veía
+        // la canción actual, el último preset aplicado, ni las preferencias
+        // temporales expresadas en esta sesión (in-RAM, no las de memoryContext,
+        // que es memoria PERSISTENTE entre sesiones). Sin esto, "no me gustan
+        // los bajos muy fuertes" dicho hace dos turnos se perdía por completo
+        // al construir la siguiente consulta a Gemini.
+        val sessionContext = com.ivanna.omega.assistant.IvannaConversationalCore.contextSummary()
 
         return buildString {
             appendLine("Eres IVANNA OMEGA SUPREME, asistente de inteligencia acústica OEM.")
@@ -243,6 +252,11 @@ class IvannaGeminiAgent(
             appendLine("=== CONTEXTO DEL DISPOSITIVO ===")
             appendLine(deviceContext)
             appendLine()
+            if (sessionContext.isNotBlank()) {
+                appendLine("=== CONTEXTO DE LA SESIÓN ACTUAL ===")
+                appendLine(sessionContext)
+                appendLine()
+            }
             if (memoryContext.isNotBlank()) {
                 appendLine("=== MEMORIA RELEVANTE ===")
                 appendLine(memoryContext)
