@@ -201,6 +201,7 @@ fun IvannaAssistantScreen(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 private fun IvannaAssistantTopBar(onBack: () -> Unit) {
     TopAppBar(
