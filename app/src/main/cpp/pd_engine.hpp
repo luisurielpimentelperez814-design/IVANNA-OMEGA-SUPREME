@@ -207,6 +207,22 @@ public:
             return;
         }
 
+        // FASE 8 paso 4 (b/3): procesar el bloque completo por HRTFConvolver
+        // de una sola llamada (es autocontenida — acumula en su ring buffer
+        // interno y drena a exactamente n muestras, confirmado por lectura
+        // directa de hrtf_convolver.cpp). binauralEnabled_ arranca en false
+        // por defecto (commit a/3); esta llamada YA se ejecuta cuando está
+        // activo pero decode() todavía NO consume hrtfBufL_/R_ — eso es el
+        // commit c/3. Resize solo si n cambia, nunca allocar dentro del loop.
+        const bool binauralOn = binauralEnabled_.load(std::memory_order_relaxed);
+        if (binauralOn) {
+            if (hrtfBufL_.size() != static_cast<size_t>(n)) {
+                hrtfBufL_.resize(n);
+                hrtfBufR_.resize(n);
+            }
+            hrtf.process(inL, inR, hrtfBufL_.data(), hrtfBufR_.data(), n);
+        }
+
         // Extract perceptual cues from block
         const PerceptualCues cues = cue_bank.process_block(inL, inR, n);
 
