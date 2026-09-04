@@ -66,25 +66,11 @@ class AudioCallbackManager(
         // otro consumidor de audio focus tumbaba la reproducción sin aviso.
     }
 
-    fun muteUnwantedNoise() {
-        try {
-            @Suppress("DEPRECATION")
-            audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error", e)
-        }
-    }
-
-    fun restoreAudioStreams() {
-        try {
-            val maxNotif = audioManager.getStreamMaxVolume(AudioManager.STREAM_NOTIFICATION)
-            @Suppress("DEPRECATION")
-            audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, maxNotif / 2, 0)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error", e)
-        }
-    }
-
+    // FIX (separación de rutas): muteUnwantedNoise()/restoreAudioStreams()
+    // llamaban AudioManager.setStreamVolume() — IVANNA escribía en el mixer de
+    // Android (volumen del sistema, el mismo que Tidal y los botones físicos).
+    // Nadie las consumía: código muerto con efecto global. IVANNA solo procesa
+    // DSP espacial; el volumen del sistema pertenece a Android.
     fun getAudioState(): String {
         return try {
             val vol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)

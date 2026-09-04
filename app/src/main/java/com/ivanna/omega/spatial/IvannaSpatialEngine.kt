@@ -83,10 +83,27 @@ class IvannaSpatialEngine private constructor() {
         modPhase = 0f
         itdWriteIndex = 0; crossfeedWriteIndex = 0
         fadeGain = 1.0f; targetEnabled = true
+        normGain = 1.0f
     }
 
     fun release() { reset() }
 
+    /** Estado de la normalización constant-power (suavizado entre bloques). */
+    private var normGain = 1.0f
+
+    /**
+     * FIX (ruta de volumen): la cadena espacial alteraba el nivel percibido.
+     *   1. ILD usaba sqrt((1±cos az)/2) con clamp a 0.3 — en azimut 0 daba
+     *      L=1.0 / R=0.3 (desbalance + caída de nivel) en vez de centro unitario.
+     *   2. El ancho M/S (mid + side*w) sumaba energía al subir w.
+     *   3. Las reflexiones tempranas se SUMABAN a la señal directa con ganancia
+     *      ~0.5 → copia retardada audible = el eco al subir la intensidad.
+     *   4. focusGain se calculaba y no se usaba.
+     * Ahora: paneo constant-power unitario en el centro, ancho normalizado en
+     * energía, reflexiones/crossfeed en mezcla wet/dry (no aditivas) y
+     * normalización final constant-power contra el nivel de entrada. IVANNA
+     * solo cambia la POSICIÓN espacial; el volumen es de Android/AudioManager.
+     */
     fun processStereoInput(
         inL: FloatArray, inR: FloatArray,
         outL: FloatArray, outR: FloatArray,
@@ -104,9 +121,34 @@ class IvannaSpatialEngine private constructor() {
         }
 
         val n = minOf(numFrames, maxBlockSize)
-        val azimuth = azimuthRad; val width = widthFactor; val dist = distance
+        // Cola sin procesar si el bloque excede el buffer máximo (antes la
+        // condición `numFrames < n` era inalcanzable y dejaba basura en la cola).
+        if (n < numFrames) {
+            System.arraycopy(inL, n, outL, n, numFrames - n)
+            System.arraycopy(inR, n, outR, n, numFrames - n)
+        }
+
+        val azimuth = azimuthRad
+        val width = widthFactor.coerceIn(0f, 1.5f)
+        val dist = distance
         val itdMax = maxItdSamples
-        val cosAzimuth = cos(azimuth); val sinAzimuth = sin(azimuth)
+        val sinAzimuth = sin(azimuth)
+
+        // Paneo constant-power: pan = sin(az) ∈ [-1,1]; en el centro ambos
+        // canales quedan exactamente a 1.0 (0 dB) — sin caída de nivel.
+        val pan = sinAzimuth.coerceIn(-1f, 1f)
+        val theta = (PI.toFloat() / 4f) * (1f + pan)
+        val ildL = (sqrt(2f) * cos(theta)).coerceIn(0.25f, 1.42f)
+        val ildR = (sqrt(2f) * sin(theta)).coerceIn(0.25f, 1.42f)
+
+        // Ancho normalizado en energía: w = 1 → 1.0 (neutro).
+        val widthNorm = sqrt(2f / (1f + width * width))
+        // Reflexiones tempranas + crossfeed como mezcla wet/dry acotada.
+        val erWet = 0.12f
+        val distGain = 1f / sqrt(dist)
+
+        var dryPow = 0.0
+        var wetPow = 0.0
         val modAmount = if (abs(azimuth) > 0.1f) sin(modPhase) * 0.5f else 0f
         modPhase += 0.0003f
 
@@ -121,49 +163,52 @@ class IvannaSpatialEngine private constructor() {
             val delayedSampleL = delayedL[readIdxL]
             val delayedSampleR = delayedR[readIdxR]
 
-            val ildL = sqrt((1f + cosAzimuth) / 2f).coerceIn(0.3f, 1f)
-            val ildR = sqrt((1f - cosAzimuth) / 2f).coerceIn(0.3f, 1f)
-            var sampleL = inL[i] * ildL
-            var sampleR = inR[i] * ildR
+            dryPow += (inL[i] * inL[i] + inR[i] * inR[i]).toDouble()
 
-            delayedL[itdWriteIndex] = sampleL
-            delayedR[itdWriteIndex] = sampleR
-            sampleL = delayedSampleL; sampleR = delayedSampleR
+            delayedL[itdWriteIndex] = inL[i] * ildL
+            delayedR[itdWriteIndex] = inR[i] * ildR
             itdWriteIndex = (itdWriteIndex + 1) % itdMax
+
+            var sampleL = delayedSampleL
+            var sampleR = delayedSampleR
 
             val mid = (sampleL + sampleR) * 0.5f
             val side = (sampleL - sampleR) * 0.5f
-            val widenedSide = side * width.coerceIn(0f, 1.5f)
-            val focusGain = if (width < 0.3f) 0.7f else 1f
-            sampleL = mid + widenedSide; sampleR = mid - widenedSide
+            sampleL = (mid + side * width) * widthNorm
+            sampleR = (mid - side * width) * widthNorm
 
-            var erL = 0f; var erR = 0f
+            var er = 0f
             for (j in 0 until 4) {
                 val delaySamples = (earlyReflectionTimes[j] * sampleRate / 1000f).toInt() % maxBlockSize
                 val readIdx = (earlyWriteIndices[j] - delaySamples + maxBlockSize) % maxBlockSize
                 var reflected = earlyReflectionBuffers[j][readIdx] * earlyReflectionGains[j]
                 erLowpassState[j] += 0.3f * (reflected - erLowpassState[j])
                 reflected = erLowpassState[j]
-                erL += reflected * 0.7f; erR += reflected * 0.7f
+                er += reflected
             }
+            er *= 0.25f  // normaliza la suma de los 4 taps
 
             val xfeedFactor = 0.15f / dist
-            val xfeedReadIdx = (crossfeedWriteIndex - crossfeedDelaySamples + crossfeedDelaySamples) % crossfeedDelaySamples
-            val crossL = crossfeedBufferR[xfeedReadIdx] * xfeedFactor * focusGain
-            val crossR = crossfeedBufferL[xfeedReadIdx] * xfeedFactor * focusGain
+            val xfeedReadIdx = crossfeedWriteIndex % crossfeedDelaySamples
+            val crossL = crossfeedBufferR[xfeedReadIdx] * xfeedFactor
+            val crossR = crossfeedBufferL[xfeedReadIdx] * xfeedFactor
 
-            val distGain = 1f / sqrt(dist)
-            var outSampleL = ((sampleL + erL + crossL) * distGain)
-            var outSampleR = ((sampleR + erR + crossR) * distGain)
+            // Mezcla wet/dry acotada: reflexiones y crossfeed NO añaden energía
+            // sobre la señal directa (fuente real del eco reportado).
+            var outSampleL = (sampleL * (1f - erWet) + (er + crossL) * erWet) * distGain
+            var outSampleR = (sampleR * (1f - erWet) + (er + crossR) * erWet) * distGain
 
             outSampleL = outSampleL * fadeGain + inL[i] * (1f - fadeGain)
             outSampleR = outSampleR * fadeGain + inR[i] * (1f - fadeGain)
 
-            outL[i] = outSampleL.coerceIn(-1f, 1f)
-            outR[i] = outSampleR.coerceIn(-1f, 1f)
+            wetPow += (outSampleL * outSampleL + outSampleR * outSampleR).toDouble()
 
+            outL[i] = outSampleL
+            outR[i] = outSampleR
+
+            val erFeed = (sampleL + sampleR) * 0.5f
             for (j in 0 until 4) {
-                earlyReflectionBuffers[j][earlyWriteIndices[j]] = sampleL + sampleR
+                earlyReflectionBuffers[j][earlyWriteIndices[j]] = erFeed
                 earlyWriteIndices[j] = (earlyWriteIndices[j] + 1) % maxBlockSize
             }
             crossfeedBufferL[crossfeedWriteIndex] = sampleL
@@ -171,8 +216,18 @@ class IvannaSpatialEngine private constructor() {
             crossfeedWriteIndex = (crossfeedWriteIndex + 1) % crossfeedDelaySamples
         }
 
-        if (numFrames < n) {
-            for (i in numFrames until n) { outL[i] = 0f; outR[i] = 0f }
+        // Normalización constant-power: iguala la energía de salida a la de
+        // entrada, suavizada entre bloques. Ninguna posición espacial puede
+        // subir ni bajar el volumen percibido.
+        if (dryPow > 1e-9 && wetPow > 1e-9) {
+            val target = sqrt(dryPow / wetPow).toFloat().coerceIn(0.5f, 2f)
+            normGain += 0.25f * (target - normGain)
+        } else {
+            normGain += 0.25f * (1f - normGain)
+        }
+        for (i in 0 until n) {
+            outL[i] = (outL[i] * normGain).coerceIn(-1f, 1f)
+            outR[i] = (outR[i] * normGain).coerceIn(-1f, 1f)
         }
     }
 }
