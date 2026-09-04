@@ -444,6 +444,79 @@ class IvannaGlobalEffectManager(
         }
     }
 
+    // ── SAF sin root: modulador continuo de espacialidad ──────────────────────
+    /**
+     * Convierte el estado del optimizador Φ_SAF-Room^∞ en un pequeño ajuste
+     * continuo sobre los efectos Android stock ya abiertos (Virtualizer/EQ),
+     * para las sesiones que no tienen el módulo Magisk (sin root).
+     *
+     * FIX (discrepancia verificada contra la API real): el diagnóstico
+     * original de esta tarea pedía leer "q[7]" de getDiagnostics(). Se
+     * verificó SaFRoomBridge.getDiagnostics() — devuelve FloatArray(5):
+     * [0]=α* [1]=E_t [2]=λ_t [3]=σ(R,H,S) [4]=iteration. No existe índice 7
+     * en ningún array real de SaFRoomBridge ni SaFBridge (el "vector q[7]"
+     * documentado en SaFBridge.kt se refiere al vector de 7 ELEMENTOS
+     * [0..6] de getParams()/nativeSaFGetParams(), no a una posición 7).
+     * Leer diagnostics[7] aquí sería un ArrayIndexOutOfBoundsException real
+     * la primera vez que se llame. Se usa diagnostics[3] (σ — acoplamiento
+     * sala/HRTF/campo, [0,1] por su propia documentación): es la única señal
+     * de las 5 que representa literalmente "cuánta optimización espacial
+     * está en juego ahora mismo", que es lo que esta función necesita.
+     *
+     * FIX (colisión de parámetro — mismo patrón ya encontrado y corregido
+     * dos veces en este repo: compresor y widening por correlación): si esta
+     * función escribiera un valor ABSOLUTO de Virtualizer/EQ, competiría
+     * directamente con adjustLiveParams() (que ya escribe ambos desde los
+     * sliders de la UI) — quien corra último gana y el otro se pierde en
+     * silencio. adjustLiveParams() corre on-demand (slider tocado);
+     * applySafState() corre cada 500ms desde OemViewModel.poll(). Sin
+     * coordinación, la posición del slider del usuario podía revertirse
+     * sola cada medio segundo. Solución: applySafState() NUNCA fija un
+     * valor absoluto — lee el valor EN VIVO del efecto (getStrength()/
+     * getBandLevel()) y aplica un desplazamiento pequeño y acotado sobre
+     * ese valor, siempre relativo a lo último que el usuario o el perfil
+     * activo hayan fijado.
+     *
+     * No modifica activeProfile ni llama a applyProfile*() — solo toca las
+     * instancias AudioEffect ya abiertas de cada sesión, igual que
+     * adjustLiveParams().
+     *
+     * @param diagnostics FloatArray de SaFRoomBridge.getDiagnostics(). Se
+     *                    tolera cualquier tamaño (incluido vacío si SaF no
+     *                    cargó) — si no trae al menos 4 elementos, no-op.
+     */
+    fun applySafState(diagnostics: FloatArray) {
+        if (diagnostics.size < 4) return
+        val sigma = diagnostics[3].takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: return
+        // Rango de nudge deliberadamente pequeño: esto es modulación de
+        // fondo, no un control directo. ±80 sobre 1000 (Virtualizer) y
+        // ±1.2 dB (EQ) son inaudibles como salto pero perceptibles como
+        // "aire" cuando el optimizador detecta más acoplamiento espacial.
+        val virtNudge = ((sigma - 0.5f) * 160f)          // -80..+80 (short range)
+        val eqNudgeMb = ((sigma - 0.5f) * 240f).toInt()  // -120..+120 mB ≈ ±1.2 dB
+
+        activeSessions.forEach { (sessionId, fx) ->
+            runCatching {
+                fx.virtualizer?.let { v ->
+                    if (!v.strengthSupported) return@let
+                    val current = runCatching { v.roundedStrength.toInt() }.getOrDefault(0)
+                    val next = (current + virtNudge).toInt().coerceIn(0, 1000)
+                    v.setStrength(next.toShort())
+                }
+                fx.equalizer?.let { eq ->
+                    if (!eq.enabled) return@let
+                    val numBands = eq.numberOfBands.toInt()
+                    for (band in 0 until numBands) {
+                        val currentMb = runCatching { eq.getBandLevel(band.toShort()).toInt() }
+                            .getOrDefault(0)
+                        val nextMb = (currentMb + eqNudgeMb).coerceIn(-1500, 1500)
+                        eq.setBandLevel(band.toShort(), nextMb.toShort())
+                    }
+                }
+            }.onFailure { Log.w(TAG, "applySafState sesion $sessionId: ${it.message}") }
+        }
+    }
+
     // ── Cierra todas las sesiones ─────────────────────────────────────────────
 
     /** Libera todos los AudioEffect activos. Llamar en onTerminate(). */

@@ -7,11 +7,13 @@ import com.ivanna.omega.audio.AudioBackendSelector
 import com.ivanna.omega.audio.ThermalGovernor
 import com.ivanna.omega.audio.UsbAudioProManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.magisk.OmegaDaemon
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.saf.SaFBridge
 import com.ivanna.omega.saf.SaFRoomBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +96,26 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val safError      = runCatching { SaFBridge.nativeSaFGetError()     }.getOrDefault(0f)
         val safIteration  = runCatching { SaFBridge.nativeSaFGetIteration() }.getOrDefault(0)
         val safDiag       = runCatching { SaFRoomBridge.getDiagnostics()    }.getOrDefault(FloatArray(0))
+
+        // FIX (SAF sin root no alimentaba ningún efecto real): safDiag ya se
+        // leía y se mostraba en la UI (ver OemState más abajo), pero nunca
+        // llegaba al DSP — omega_effect.cpp (el único consumidor real de SAF
+        // hasta ahora) es root-only. En NO_ROOT, IvannaGlobalEffectManager
+        // (AudioEffect por sesión: Equalizer/Virtualizer) es la única vía de
+        // procesamiento real disponible — mismo mecanismo que ya usa
+        // DSPState.pushToNative() para los sliders manuales. Solo en
+        // NO_ROOT: en ROOT_DAEMON/ROOT_NO_DAEMON el DSP nativo ya procesa
+        // SAF por su cuenta (o lo hará al activarse) y esto interferiría
+        // por duplicado sobre la misma sesión de audio.
+        // Despachado a IO: applySafState() itera sesiones y hace llamadas
+        // Binder (getBandLevel/setBandLevel/setStrength) al audio HAL — igual
+        // que adjustLiveParams(), nunca debe correr síncrono en el hilo de
+        // poll() (viewModelScope.launch usa Main.immediate por defecto).
+        if (backendMode == AudioBackendSelector.Mode.NO_ROOT) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { DSPState.globalEffectManager?.applySafState(safDiag) }
+            }
+        }
 
         // ── USB ───────────────────────────────────────────────────────────────
         val usbStreaming = runCatching {
