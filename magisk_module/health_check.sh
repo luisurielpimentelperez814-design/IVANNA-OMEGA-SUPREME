@@ -44,7 +44,7 @@ fi
 
 # ── 3. PID files ──────────────────────────────────────────────────────────────
 section "PID FILES"
-PID_FILE=/data/adb/ivanna_daemon.pid
+PID_FILE=/data/adb/ivanna_omega/daemon.pid
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE" 2>/dev/null)
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
