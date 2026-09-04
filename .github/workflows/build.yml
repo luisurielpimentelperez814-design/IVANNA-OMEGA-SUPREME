@@ -573,3 +573,82 @@ jobs:
             telemetry/iael/latest_certification.json
 
 
+
+  # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
+  # FIX (socket @omega_daemon_socket nunca conecta en dispositivo):
+  # CI compilaba, empaquetaba y verificaba el módulo con hash idéntico
+  # end-to-end, pero JAMÁS lo publicaba en ningún sitio alcanzable por
+  # Magisk. magisk_module/update.json apunta a un Release "v2.3.0" con
+  # asset "ivanna_omega_supreme_v2.3.0.zip" que nunca existió — solo se
+  # subían workflow artifacts (requieren login en GitHub y expiran; el
+  # updater de Magisk no puede leerlos). Resultado: el fix de enlazado
+  # estático de libc++ para ivanna_daemon, ya presente en
+  # app/src/main/cpp/daemon/CMakeLists.txt, nunca podía llegar a un
+  # dispositivo real. Los teléfonos quedan atascados en el build viejo
+  # (v2.2.1) donde el daemon muere antes de main() y el socket nunca
+  # bindea. Este job publica exactamente el asset que update.json espera.
+  publish-release:
+    name: Publish GitHub Release (asset que Magisk update.json espera)
+    runs-on: ubuntu-22.04
+    needs: [verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download module bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: magisk-module-bundle-${{ github.sha }}
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-build-${{ github.sha }}
+
+      - name: Derivar versión desde module.prop (fuente única de verdad)
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
+          UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
+          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
+            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
+            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versión detectada: $VERSION"
+
+      - name: Rename module zip al nombre canónico que espera update.json
+        run: |
+          set -euo pipefail
+          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$SRC" || { echo "ERROR: module zip no encontrado en el artifact"; exit 1; }
+          cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+          ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+
+      - name: Crear o actualizar el Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.version }}"
+          ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "$ZIP_NAME" \
+              "$APK_NAME" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" \
+              "$ZIP_NAME" \
+              "$APK_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "IVANNA OMEGA SUPREME $TAG" \
+              --notes "Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER}). Incluye el fix de enlazado estatico de libc++ para ivanna_daemon (app/src/main/cpp/daemon/CMakeLists.txt): el daemon lanzado por Magisk service.sh como root ya no depende de libc++_shared.so fuera del sandbox del APK, asi que @omega_daemon_socket bindea correctamente. Verificado end-to-end en el job verify-release (hash identico compilacion -> zip -> artefacto)."
+          fi
+          echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
