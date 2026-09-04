@@ -22,9 +22,11 @@
  *   El DSP de convolución profunda (PI-LSTM + Cochlear Manifold) NO puede
  *   inyectarse en el proceso de audio de otra app sin privilegios de sistema.
  *   Lo que sí se aplica globalmente son: EQ paramétrico 10 bandas, BassBoost,
- *   Virtualizer estéreo, LoudnessEnhancer y DynamicsProcessing (compresor).
- *   Para IvannaBridgePlayer (reproductor propio), el pipeline IVANNA completo
- *   sigue activo en toda su profundidad.
+ *   Virtualizer estéreo, LoudnessEnhancer, DynamicsProcessing (compresor) y
+ *   EnvironmentalReverb (sala/RIR aproximada — no convolución con IR medida,
+ *   pero mismos parámetros conceptuales: nivel de sala, decay RT60-equivalente,
+ *   primeras reflexiones). Para IvannaBridgePlayer (reproductor propio), el
+ *   pipeline IVANNA completo sigue activo en toda su profundidad.
  */
 package com.ivanna.omega.audio
 
@@ -36,6 +38,7 @@ import java.util.Locale
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
+import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.os.Build
@@ -55,14 +58,24 @@ data class IvannaEffectProfile(
     val loudnessGainMb: Int = 80,
     // Compresor (DynamicsProcessing): threshold dBFS, ratio
     val compThresholdDb: Float = -15f,
-    val compRatio: Float = 3.0f
+    val compRatio: Float = 3.0f,
+    // FIX (RIR sin root): EnvironmentalReverb — sala/reverb sin necesidad de
+    // root, análogo a los presets de sala del daemon (SET_ROOM_RT60) pero
+    // con el efecto estándar de Android en vez de convolución RIR medida.
+    // roomLevel: mB, nivel general de la sala (-9000 silencio..0 máximo)
+    // decayTimeMs: ms, tiempo de decaimiento RT60-equivalente (100..20000)
+    // reflectionsLevel: mB, nivel de primeras reflexiones (-9000..1000)
+    val reverbRoomLevelMb: Int = -9000,      // por defecto: sin reverb (seco)
+    val reverbDecayTimeMs: Int = 1000,
+    val reverbReflectionsLevelMb: Int = -9000
 ) {
     companion object {
         // ── FLAT — referencia limpia ────────────────────────────────────────────
         val FLAT = IvannaEffectProfile(
             eqBands = intArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
             bassStrength = 0, virtualizerStrength = 0, loudnessGainMb = 0,
-            compThresholdDb = -24f, compRatio = 1.5f
+            compThresholdDb = -24f, compRatio = 1.5f,
+            reverbRoomLevelMb = -9000, reverbDecayTimeMs = 500, reverbReflectionsLevelMb = -9000
         )
 
         // ── WARM — calidez analógica, vocales en primer plano ──────────────────
@@ -71,7 +84,8 @@ data class IvannaEffectProfile(
         val WARM = IvannaEffectProfile(
             eqBands = intArrayOf(180, 160, 120, 80, 40, 0, 0, 30, 70, 90),
             bassStrength = 420, virtualizerStrength = 280, loudnessGainMb = 160,
-            compThresholdDb = -16f, compRatio = 2.8f
+            compThresholdDb = -16f, compRatio = 2.8f,
+            reverbRoomLevelMb = -2600, reverbDecayTimeMs = 900, reverbReflectionsLevelMb = -3200
         )
 
         // ── ROCK 70s — cuerpo, punch, presencia de guitarra ───────────────────
@@ -80,7 +94,8 @@ data class IvannaEffectProfile(
         val ROCK_70S = IvannaEffectProfile(
             eqBands = intArrayOf(160, 200, 160, 100, 40, 60, 180, 240, 170, 100),
             bassStrength = 560, virtualizerStrength = 460, loudnessGainMb = 200,
-            compThresholdDb = -14f, compRatio = 3.2f
+            compThresholdDb = -14f, compRatio = 3.2f,
+            reverbRoomLevelMb = -2000, reverbDecayTimeMs = 1300, reverbReflectionsLevelMb = -2600
         )
 
         // ── SPATIAL — escenario headphone, imagen stereo magistral ─────────────
@@ -89,7 +104,8 @@ data class IvannaEffectProfile(
         val SPATIAL = IvannaEffectProfile(
             eqBands = intArrayOf(80, 60, 40, 0, -40, 20, 120, 200, 230, 190),
             bassStrength = 280, virtualizerStrength = 720, loudnessGainMb = 0,
-            compThresholdDb = -16f, compRatio = 2.5f
+            compThresholdDb = -16f, compRatio = 2.5f,
+            reverbRoomLevelMb = -1600, reverbDecayTimeMs = 1800, reverbReflectionsLevelMb = -2000
         )
 
         // ── PUNCH — EDM / Hip-hop / Trap / Reggaetón ──────────────────────────
@@ -98,7 +114,8 @@ data class IvannaEffectProfile(
         val PUNCH = IvannaEffectProfile(
             eqBands = intArrayOf(280, 240, 160, 60, 0, 0, 60, 120, 150, 110),
             bassStrength = 680, virtualizerStrength = 200, loudnessGainMb = 300,
-            compThresholdDb = -12f, compRatio = 4.0f
+            compThresholdDb = -12f, compRatio = 4.0f,
+            reverbRoomLevelMb = -9000, reverbDecayTimeMs = 400, reverbReflectionsLevelMb = -9000
         )
 
         // ── IVANNA OMEGA — preset firma prodigio magistral ─────────────────────
@@ -107,7 +124,8 @@ data class IvannaEffectProfile(
         val IVANNA_OMEGA = IvannaEffectProfile(
             eqBands = intArrayOf(200, 160, 100, 40, 0, 0, 80, 160, 200, 160),
             bassStrength = 540, virtualizerStrength = 460, loudnessGainMb = 120,
-            compThresholdDb = -14f, compRatio = 3.2f
+            compThresholdDb = -14f, compRatio = 3.2f,
+            reverbRoomLevelMb = -2200, reverbDecayTimeMs = 1200, reverbReflectionsLevelMb = -2800
         )
 
         // ── Presets musicales avanzados (IvannaMusicalIntentEngine) ───────────
@@ -116,56 +134,64 @@ data class IvannaEffectProfile(
         val EPIC = IvannaEffectProfile(
             eqBands = intArrayOf(260, 220, 140, 60, -20, 20, 100, 200, 240, 200),
             bassStrength = 620, virtualizerStrength = 680, loudnessGainMb = 180,
-            compThresholdDb = -13f, compRatio = 3.6f
+            compThresholdDb = -13f, compRatio = 3.6f,
+            reverbRoomLevelMb = -1400, reverbDecayTimeMs = 2200, reverbReflectionsLevelMb = -1800
         )
 
         /** Abbey Road: calidez analógica de estudio vintage, años 60. */
         val ABBEY_ROAD = IvannaEffectProfile(
             eqBands = intArrayOf(200, 240, 180, 120, 60, 20, 40, 80, 60, 20),
             bassStrength = 360, virtualizerStrength = 220, loudnessGainMb = 140,
-            compThresholdDb = -18f, compRatio = 2.4f
+            compThresholdDb = -18f, compRatio = 2.4f,
+            reverbRoomLevelMb = -2400, reverbDecayTimeMs = 1600, reverbReflectionsLevelMb = -2200
         )
 
         /** Vinilo Premium: roll-off natural en altas, calidez armónica. */
         val VINYL_PREMIUM = IvannaEffectProfile(
             eqBands = intArrayOf(240, 200, 160, 120, 80, 40, 0, -40, -100, -180),
             bassStrength = 400, virtualizerStrength = 180, loudnessGainMb = 100,
-            compThresholdDb = -20f, compRatio = 2.0f
+            compThresholdDb = -20f, compRatio = 2.0f,
+            reverbRoomLevelMb = -9000, reverbDecayTimeMs = 700, reverbReflectionsLevelMb = -9000
         )
 
         /** Concierto Masivo: escena de estadio, impacto físico. */
         val CONCERT_MASSIVE = IvannaEffectProfile(
             eqBands = intArrayOf(300, 260, 180, 80, -20, 0, 60, 140, 180, 160),
             bassStrength = 700, virtualizerStrength = 900, loudnessGainMb = 240,
-            compThresholdDb = -10f, compRatio = 4.5f
+            compThresholdDb = -10f, compRatio = 4.5f,
+            reverbRoomLevelMb = -1000, reverbDecayTimeMs = 2800, reverbReflectionsLevelMb = -1400
         )
 
         /** Cinematográfico: voces potentes, graves para impacto de sala. */
         val CINEMATIC = IvannaEffectProfile(
             eqBands = intArrayOf(280, 220, 140, 40, 0, 40, 100, 160, 180, 140),
             bassStrength = 500, virtualizerStrength = 760, loudnessGainMb = 200,
-            compThresholdDb = -14f, compRatio = 3.8f
+            compThresholdDb = -14f, compRatio = 3.8f,
+            reverbRoomLevelMb = -1200, reverbDecayTimeMs = 2400, reverbReflectionsLevelMb = -1600
         )
 
         /** Analógico: calor de válvulas, armónicos pares, sin frialdad digital. */
         val ANALOG_WARM = IvannaEffectProfile(
             eqBands = intArrayOf(180, 200, 160, 100, 60, 20, 0, -20, -60, -120),
             bassStrength = 380, virtualizerStrength = 160, loudnessGainMb = 120,
-            compThresholdDb = -22f, compRatio = 1.8f
+            compThresholdDb = -22f, compRatio = 1.8f,
+            reverbRoomLevelMb = -9000, reverbDecayTimeMs = 600, reverbReflectionsLevelMb = -9000
         )
 
         /** Estudio Profesional: referencia casi plana para ingenieros. */
         val STUDIO_PRO = IvannaEffectProfile(
             eqBands = intArrayOf(20, 10, 0, 0, 0, 0, 20, 30, 20, 10),
             bassStrength = 60, virtualizerStrength = 80, loudnessGainMb = 0,
-            compThresholdDb = -24f, compRatio = 1.4f
+            compThresholdDb = -24f, compRatio = 1.4f,
+            reverbRoomLevelMb = -9000, reverbDecayTimeMs = 300, reverbReflectionsLevelMb = -9000
         )
 
         /** Microdetalle: transitorios preservados, separación máxima. */
         val MICRO_DETAIL = IvannaEffectProfile(
             eqBands = intArrayOf(0, 0, 20, 40, 20, 40, 100, 180, 220, 200),
             bassStrength = 100, virtualizerStrength = 400, loudnessGainMb = 60,
-            compThresholdDb = -28f, compRatio = 1.2f
+            compThresholdDb = -28f, compRatio = 1.2f,
+            reverbRoomLevelMb = -4200, reverbDecayTimeMs = 500, reverbReflectionsLevelMb = -4800
         )
 
         // mapa nombre → perfil para la UI (LazyRow de FilterChip + comandos de voz)
@@ -261,6 +287,9 @@ class IvannaGlobalEffectManager(
         val virtualizer:       Virtualizer?,
         val loudness:          LoudnessEnhancer?,
         val dynamics:          DynamicsProcessing?,
+        // FIX (RIR sin root): EnvironmentalReverb por sesión — mismo patrón
+        // que los demás efectos stock, sin root.
+        val reverb:            EnvironmentalReverb? = null,
         // AUDIT FIX: instancia del efecto Omega custom (libomega_effect.so).
         // Solo no-null cuando el módulo Magisk está instalado y AudioFlinger
         // tiene la librería registrada en soundfx; en no-root el constructor
@@ -280,6 +309,7 @@ class IvannaGlobalEffectManager(
         runCatching { fx.virtualizer?.release() }
         runCatching { fx.loudness?.release() }
         runCatching { fx.dynamics?.release() }
+        runCatching { fx.reverb?.release() }
         runCatching { fx.omega?.release() }
     }
     
@@ -345,12 +375,13 @@ class IvannaGlobalEffectManager(
         val virt = createVirtualizer(audioSession)
         val loud = createLoudness(audioSession)
         val dyn  = createDynamics(audioSession)
+        val rev  = createEnvironmentalReverb(audioSession)
 
-        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, omega)
+        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega)
         applyProfileToSession(audioSession, activeProfile)
 
         Log.i(TAG, "Sesión $audioSession activa: Omega=${omega != null} EQ=${eq != null} BB=${bb != null} " +
-                   "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null}")
+                   "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null} Rev=${rev != null}")
     }
 
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
@@ -448,6 +479,11 @@ class IvannaGlobalEffectManager(
                 if (v.strengthSupported) v.setStrength(profile.virtualizerStrength)
             }
             fx.loudness?.setTargetGain(profile.loudnessGainMb)
+            fx.reverb?.let { rev ->
+                rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
+                rev.setDecayTime(profile.reverbDecayTimeMs)
+                rev.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
+            }
             applyDynamicsProfile(fx.dynamics, profile)
         }.onFailure { Log.w(TAG, "Error aplicando perfil a sesión $sessionId", it) }
     }
@@ -513,6 +549,15 @@ class IvannaGlobalEffectManager(
 
     private fun createVirtualizer(session: Int): Virtualizer? = runCatching {
         Virtualizer(Int.MAX_VALUE, session).also { it.enabled = true }
+    }.getOrNull()
+
+    // FIX (RIR sin root): EnvironmentalReverb es el equivalente estándar de
+    // Android a una respuesta de sala — sin convolución con IR medida real
+    // (eso vive solo en el motor nativo del daemon, root-only), pero con los
+    // mismos parámetros conceptuales: nivel de sala, decaimiento RT60,
+    // primeras reflexiones. Disponible sin root desde API 9.
+    private fun createEnvironmentalReverb(session: Int): EnvironmentalReverb? = runCatching {
+        EnvironmentalReverb(Int.MAX_VALUE, session).also { it.enabled = true }
     }.getOrNull()
 
     private fun createLoudness(session: Int): LoudnessEnhancer? = runCatching {
