@@ -402,8 +402,21 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
                 float targL = reL_[outIdx] * scale;
                 float targR = reR_[outIdx] * scale;
 
-                float finalL = (1.0f - progress) * currL + progress * targL;
-                float finalR = (1.0f - progress) * currR + progress * targR;
+                // FIX (auditoría FASE 8, paso 2): crossfade de amplitud LINEAL
+                // entre el filtro HRTF actual y el destino. currL/R y targL/R
+                // son la misma fuente pasada por dos respuestas al impulso
+                // DISTINTAS (ángulo actual vs. ángulo destino) — están
+                // decorrelacionadas entre sí, no son la misma señal escalada.
+                // Con pesos lineales (1-progress)/progress, la suma de
+                // potencias en progress=0.5 es 0.5²+0.5²=0.5 (-3dB) en vez de
+                // 1 → caída de volumen audible a mitad de cualquier giro de
+                // azimuth, más notoria cuanto más rápido el giro (más
+                // crossfades encadenados). Ley de potencia constante:
+                // sqrt(1-progress)²+sqrt(progress)²=1 en todo el rango.
+                const float wCurr = std::sqrt(1.0f - progress);
+                const float wTarg = std::sqrt(progress);
+                float finalL = wCurr * currL + wTarg * targL;
+                float finalR = wCurr * currR + wTarg * targR;
 
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = finalL;
