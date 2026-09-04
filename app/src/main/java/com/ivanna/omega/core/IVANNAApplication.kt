@@ -335,8 +335,21 @@ class IVANNAApplication : Application() {
 
                 // FIX (descableado): Todos los sliders/switches persistidos en UI pero nunca
                 // inyectados al Engine en el arranque, ahora se inyectan a la perfeccion.
-                runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication)
-                runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() } }
+                //
+                // FIX (socket nunca reconecta): estaban anidados — restore() y
+                // startKeepalive() compartian el MISMO runCatching, asi que si
+                // restore() lanzaba (muy plausible: toca sliders/switches de
+                // engines que han cambiado de forma en el resto del arbol),
+                // la ejecucion nunca llegaba a startKeepalive(). Resultado real:
+                // connect() inicial fallaba (daemon aun en su ventana de bind
+                // retry, ver ivanna_daemon.cpp) y el loop de reintento cada 5s
+                // JAMAS arrancaba -> isConnected se quedaba en false para
+                // siempre, y con el todo lo que depende de el (paneles de
+                // telemetria incluidos). Se separan para que cada uno aisle
+                // su propio fallo, tal como ya hace cada runCatching en el
+                // resto de este bloque.
+                runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
+                runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() }
 
                 // ── PRIMER LANZAMIENTO: preset magistral de entrada ──────────────
                 // En el primer uso (o si el usuario nunca guardó preferencias),
