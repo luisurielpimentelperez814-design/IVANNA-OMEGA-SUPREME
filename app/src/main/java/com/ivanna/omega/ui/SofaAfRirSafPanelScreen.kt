@@ -291,7 +291,17 @@ fun SofaAfRirSafPanelScreen(
                     "RELOAD HRTF",
                     AuroraCyan,
                     Modifier.weight(1f)
-                ) { runCatching { IvannaSpatialManager.resumeHeadTracking() } }
+                ) {
+                    // FIX: este botón llamaba a resumeHeadTracking() (reanudar
+                    // el sensor de movimiento), no a recargar el HRTF — un
+                    // efecto secundario distinto al que la etiqueta anuncia.
+                    // reloadHrtf() existe y hace exactamente lo que el botón
+                    // promete (vuelve a activar HrtfSubjectSelector), pero
+                    // nunca tenía llamador real en la UI.
+                    runCatching { IvannaSpatialManager.reloadHrtf(ctx) }
+                    hrtfSubject = IvannaSpatialManager.activeSubject
+                    hrtfLoaded  = IvannaSpatialManager.isHrtfDatasetLoaded()
+                }
             }
         }
 
