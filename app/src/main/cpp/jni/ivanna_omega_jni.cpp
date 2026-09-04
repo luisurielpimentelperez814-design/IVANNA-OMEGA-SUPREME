@@ -683,6 +683,47 @@ static std::atomic<float> g_eqBaseHigh{0.0f};
 static std::atomic<float> g_fatigueIsoDb  {0.0f};   // compensación ISO 226 (dB, ±12)
 static std::atomic<float> g_fatigueProtect{0.0f};   // protección de fatiga [0..1]
 
+// ── Colisión compresor/spatial_width: ThermalGovernor vs decisión IA ────────
+// FIX (auditoría FASE 7): nativeSetCompressorAmount (ThermalGovernor, tick
+// periódico por temperatura) y nativeSetCompressorParams (DspStateUpdater,
+// decisión de IA/usuario) escribían AMBAS, de forma absoluta y sin
+// coordinarse, sobre g_comp.threshold/ratio — igual nativeSetSpatialWidth
+// (ThermalGovernor) y nativeSetSpatialWidthDirect (IA) sobre
+// g_pd.spatial_width. Cada tick de cualquiera de los dos lados pisaba al
+// otro; con ambos activos, el parámetro final dependía de quién escribió
+// último, no de intención real (mismo tipo de bug ya resuelto para el EQ
+// con recomputeEqFromBaseLocked — ver arriba). Se replica ese patrón: el
+// lado IA fija una BASE, el lado térmico fija una ESCALA multiplicativa
+// [0..1] (que es exactamente lo que ThermalGovernor.kt ya calculaba como
+// "1f - cut" antes de esta corrección — su semántica era de escala, solo
+// el receptor nativo la trataba como valor absoluto). Térmico nunca
+// sustituye la intención de la IA, solo la atenúa; ninguno de los dos
+// escritores queda ciego al otro.
+static std::atomic<float> g_compBaseThresholdDb{-6.0f};
+static std::atomic<float> g_compBaseRatio      {1.0f};
+static std::atomic<float> g_thermalCompScale   {1.0f};   // 1 = sin recorte térmico
+static std::atomic<float> g_spatialBaseWidth   {1.0f};
+static std::atomic<float> g_thermalSpatialScale{1.0f};   // 1 = sin recorte térmico
+
+// Requiere g_dspProcessMutex tomado por el llamador.
+static void recomputeCompressorLocked() {
+    const float scale = std::clamp(g_thermalCompScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    const float baseThr   = g_compBaseThresholdDb.load(std::memory_order_relaxed);
+    const float baseRatio = g_compBaseRatio.load(std::memory_order_relaxed);
+    // scale=1 → compresor exactamente como lo pidió la IA/usuario.
+    // scale→0 → threshold migra hacia 0 dB (deja de engancharse) y ratio
+    // hacia 1:1 (sin compresión) — mismo efecto que perseguía el escritor
+    // térmico original, pero componiendo sobre la base en vez de pisarla.
+    g_comp.setThreshold(baseThr * scale);
+    g_comp.setRatio(1.0f + (baseRatio - 1.0f) * scale);
+}
+
+static void recomputeSpatialWidthLocked() {
+    const float scale = std::clamp(g_thermalSpatialScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    const float base  = g_spatialBaseWidth.load(std::memory_order_relaxed);
+    g_pd.set_spatial_width(std::clamp(base * scale, 0.0f, 2.0f));
+}
+
 // Requiere g_dspProcessMutex tomado por el llamador.
 static void recomputeEqFromBaseLocked() {
     const float iso  = g_fatigueIsoDb.load(std::memory_order_relaxed);
@@ -1606,11 +1647,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorAmount(
     JNIEnv*, jobject, jfloat amount) {
     if (!std::isfinite(amount)) return;
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    const float a = std::clamp(amount, 0.0f, 1.0f);
-    // Mapeo monótono sobre el rango que ya usa nativeSetCompressorParams:
-    // threshold -6 dB → -30 dB, ratio 1:1 → 8:1. attack/release intactos.
-    g_comp.setThreshold(-6.0f - 24.0f * a);
-    g_comp.setRatio(1.0f + 7.0f * a);
+    // amount es la escala térmica [0..1] (ThermalGovernor ya la calcula como
+    // "1f - cut"), no un valor absoluto — ver recomputeCompressorLocked().
+    g_thermalCompScale.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    recomputeCompressorLocked();
 }
 
 JNIEXPORT void JNICALL
@@ -1627,7 +1667,10 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidth(
     JNIEnv*, jobject, jfloat width) {
     if (!std::isfinite(width)) return;
-    g_pd.set_spatial_width(std::clamp(width, 0.0f, 2.0f));
+    // width aquí es la escala térmica [0..1] que ya calcula ThermalGovernor.kt
+    // ("1f - spatialCut"), no el ancho final — ver recomputeSpatialWidthLocked().
+    g_thermalSpatialScale.store(std::clamp(width, 0.0f, 1.0f), std::memory_order_relaxed);
+    recomputeSpatialWidthLocked();
 }
 
 JNIEXPORT void JNICALL
@@ -1695,10 +1738,15 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILS
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs) {
-    g_comp.setThreshold(thresholdDb);
-    g_comp.setRatio(ratio);
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    // Base de la IA/usuario — el escritor térmico (nativeSetCompressorAmount)
+    // la escala, nunca la sustituye. attack/release no los toca el térmico,
+    // se aplican directo.
+    g_compBaseThresholdDb.store(thresholdDb, std::memory_order_relaxed);
+    g_compBaseRatio.store(ratio, std::memory_order_relaxed);
     g_comp.setAttack(attackMs);
     g_comp.setRelease(releaseMs);
+    recomputeCompressorLocked();
 }
 // NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo,
 // y mezcla wet del efecto espacial NHO.
@@ -1712,7 +1760,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
     JNIEnv*, jobject, jfloat width) {
-    g_pd.set_spatial_width(width);
+    if (!std::isfinite(width)) return;
+    // Base de la IA/usuario — el escritor térmico la escala, nunca la sustituye.
+    g_spatialBaseWidth.store(std::clamp(width, 0.0f, 2.0f), std::memory_order_relaxed);
+    recomputeSpatialWidthLocked();
 }
 // ── nativeSetSpatialWet — nivel wet del efecto NHO/espacial [0..1] ───────────
 // Faltaba: IvannaNativeLib.kt declara este external fun sin símbolo JNI.
