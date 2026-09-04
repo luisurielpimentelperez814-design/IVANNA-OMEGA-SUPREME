@@ -89,7 +89,8 @@ RIR_N=$(ls "$DATA_DIR/rir/"*.wav 2>/dev/null | wc -l)
     || ([ "$RIR_N" -gt 0 ] && warn "RIR: solo $RIR_N salas (esperadas 200)" \
         || fail "RIR: directorio $DATA_DIR/rir/ vacío o inexistente")
 
-SOFA_N=$(ls "$DATA_DIR/sofa/"*.sofa 2>/dev/null | wc -l)
+# Recursivo: incluye el bloque ARI de HpIR (sofa/ari/*.sofa) integrado 2026-09.
+SOFA_N=$(find "$DATA_DIR/sofa" -name '*.sofa' 2>/dev/null | wc -l)
 [ "$SOFA_N" -ge 10 ] && pass "SOFA: $SOFA_N archivos AES69 presentes" \
     || ([ "$SOFA_N" -gt 0 ] && warn "SOFA: solo $SOFA_N archivos (esperados ≥20)" \
         || fail "SOFA: directorio $DATA_DIR/sofa/ vacío (customize.sh puede necesitar reinstalar)")

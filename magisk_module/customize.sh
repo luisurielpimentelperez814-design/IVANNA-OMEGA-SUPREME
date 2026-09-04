@@ -85,16 +85,21 @@ fi
 # overlay del sistema pero audioserver (proceso separado de la app) no siempre
 # puede leerlos por SELinux + DAC desde el overlay. Se despliegan también a
 # /data/adb/ivanna_omega/sofa/ con permisos 0644, igual que HRTF e RIR.
-# Incluye: 7 HRTF FreeField, 3 HRTF CIPIC, 14 HpIR (ecualizacion auricular).
-ui_print "- Deploying SOFA dataset (FreeField + HpIR)..."
+# Incluye: 7 HRTF FreeField, 3 HRTF CIPIC, y el bloque ARI completo de HpIR
+# (ecualización de auriculares, sofa/ari/*.sofa — 200 mediciones sanas).
+# FIX (integración ARI): el despliegue original usaba cp no recursivo, así que
+# el subdirectorio sofa/ari/ NO llegaba al dispositivo. Se copia recursivo y se
+# cuentan los .sofa en todos los niveles.
+ui_print "- Deploying SOFA dataset (FreeField + HpIR + ARI headphones)..."
 SOFA_SRC="$MODPATH/system/etc/ivanna_omega/sofa"
 SOFA_DEST="$SAF_DIR/sofa"
-if [ -d "$SOFA_SRC" ] && ls "$SOFA_SRC"/*.sofa >/dev/null 2>&1; then
+if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
     mkdir -p "$SOFA_DEST"
-    cp -f "$SOFA_SRC"/*.sofa "$SOFA_DEST/" 2>/dev/null
+    cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
     set_perm_recursive "$SOFA_DEST" root root 0755 0644
-    SOFA_COUNT=$(ls "$SOFA_DEST"/*.sofa 2>/dev/null | wc -l)
-    ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69)"
+    SOFA_COUNT=$(find "$SOFA_DEST" -name '*.sofa' 2>/dev/null | wc -l)
+    ARI_COUNT=$(find "$SOFA_DEST/ari" -name '*.sofa' 2>/dev/null | wc -l)
+    ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69, $ARI_COUNT HpIR ARI)"
 else
     ui_print "  ! SOFA dataset no encontrado en $SOFA_SRC — HRTF usará solo datasets IHR1"
 fi
