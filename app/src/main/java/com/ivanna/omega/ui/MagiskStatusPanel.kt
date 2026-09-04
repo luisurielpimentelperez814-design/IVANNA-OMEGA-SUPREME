@@ -188,7 +188,10 @@ fun MagiskStatusPanel(
                 modifier = Modifier.weight(1f)) {
                 actionInFlight = true
                 scope.launch {
-                    val result = withContext(Dispatchers.IO) { omegaBridge.requestTelemetry() }
+                    val result = withContext(Dispatchers.IO) {
+                        val fromDaemon = runCatching { MagiskBridge.getTelemetry() }.getOrDefault("")
+                        if (fromDaemon.isNotBlank()) fromDaemon else omegaBridge.requestTelemetry()
+                    }
                     lastCommandOutput = result
                     actionInFlight = false
                 }
