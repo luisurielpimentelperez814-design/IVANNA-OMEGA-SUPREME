@@ -13,3 +13,4 @@
 *.zip   -text -diff binary
 *.png   -text -diff binary
 *.jpg   -text -diff binary
+*.sofa  -text -diff binary
