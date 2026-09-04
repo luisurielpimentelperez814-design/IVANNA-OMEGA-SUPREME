@@ -158,7 +158,18 @@ object SecureConfigurationManager {
 
     private fun getFallbackPrefs(): SharedPreferences = context().getSharedPreferences(FALLBACK_PREFS, Context.MODE_PRIVATE)
     private fun validateConfiguration() { val key = rawApiKey(); _state.value = _state.value.copy(isConfigured = key.isNotBlank() && isValidKeyFormat(key)) }
-    private fun isValidKeyFormat(key: String): Boolean = key.startsWith("AIza") && key.length >= 20
+    // FIX (key rechazada en silencio, 2026-09-04): Google AI Studio migro las
+    // keys nuevas del prefijo "AIza" a un formato "AQ." (Authentication Key).
+    // Muchas cuentas YA solo generan "AQ." — startsWith("AIza") las descartaba
+    // sin avisar al usuario, y "conectado" solo significaba "el formato parece
+    // correcto". Se aceptan ambos prefijos y se loguea el motivo del rechazo
+    // (antes era un Log.w sin detalle). La verdad real la da la llamada a
+    // Gemini en el ViewModel — aqui solo filtramos lo claramente invalido.
+    private fun isValidKeyFormat(key: String): Boolean {
+        val ok = (key.startsWith("AIza") || key.startsWith("AQ.")) && key.length >= 20
+        if (!ok) Log.w(TAG, "API key format rejected: prefix=${key.take(4)}… len=${key.length}")
+        return ok
+    }
     private fun requireInitialized() { check(_state.value.isInitialized) { "Call initialize() first" } }
     private fun context(): Context = appContext ?: throw IllegalStateException("No context")
 }
