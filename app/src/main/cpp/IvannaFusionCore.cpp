@@ -33,8 +33,6 @@ static inline float32x4_t fast_tanh_neon(float32x4_t x) {
 #else
 #endif
 
-namespace Ivanna {
-
 IvannaFusionEngine::IvannaFusionEngine() {
     m_hrtf = new HrtfManager();
     // Cierra el hueco SOFA/IHR1: HrtfManager::loadFromDataset() existía
@@ -206,9 +204,8 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
     // a través del auto-vectorizador de Clang.
 }
 
-} // namespace Ivanna
 
-void Ivanna::IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
+void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
     if (!q) return;
 
     if (m_hrtf) {
