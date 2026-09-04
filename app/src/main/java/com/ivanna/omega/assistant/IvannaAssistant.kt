@@ -44,6 +44,7 @@ class IvannaAssistant(
     data class AssistantUiState(
         val listening: Boolean = false,
         val speaking: Boolean = false,
+        val processing: Boolean = false,
         val available: Boolean = true,
         val statusLine: String = "Toca el micrófono y habla conmigo.",
         val lastTurn: ConversationTurn? = null,
@@ -154,7 +155,7 @@ class IvannaAssistant(
 
     /** También acepta texto escrito (pruebas / accesibilidad). */
     fun onUserSaid(text: String) {
-        _ui.value = _ui.value.copy(listening = false, statusLine = "Procesando…")
+        _ui.value = _ui.value.copy(listening = false, processing = true, statusLine = "Procesando…")
         scope.launch(Dispatchers.IO) {
             val scene = memory.lastScene
 
@@ -265,6 +266,7 @@ class IvannaAssistant(
                 memory.lastScene = "MUSIC"
                 launch(Dispatchers.Main) {
                     _ui.value = _ui.value.copy(
+                        processing = false,
                         statusLine = musicalReply,
                         lastTurn   = ConversationTurn(userText = text, ivannaText = musicalReply)
                     )
@@ -277,6 +279,7 @@ class IvannaAssistant(
             if (agentReply != null && agentCommand == null && simulatedIntent == null) {
                 launch(Dispatchers.Main) {
                     _ui.value = _ui.value.copy(
+                        processing = false,
                         statusLine = agentReply,
                         lastTurn   = ConversationTurn(userText = text, ivannaText = agentReply)
                     )
@@ -323,6 +326,7 @@ class IvannaAssistant(
             if (conversationalReply != null) {
                 launch(Dispatchers.Main) {
                     _ui.value = _ui.value.copy(
+                        processing = false,
                         statusLine = conversationalReply,
                         lastTurn   = ConversationTurn(userText = text, ivannaText = conversationalReply)
                     )
@@ -373,6 +377,7 @@ class IvannaAssistant(
 
             launch(Dispatchers.Main) {
                 _ui.value = _ui.value.copy(
+                    processing = false,
                     statusLine = reply,
                     lastTurn   = ConversationTurn(userText = text, ivannaText = reply)
                 )
@@ -405,7 +410,7 @@ class IvannaAssistant(
             memory.lastExplanation = decision.reason
             launch(Dispatchers.Main) {
                 val text = decision.warningForUser ?: decision.reason
-                _ui.value = _ui.value.copy(statusLine = text)
+                _ui.value = _ui.value.copy(processing = false, statusLine = text)
                 voice.speak(text)
             }
         }

@@ -232,11 +232,11 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     // ── Helpers privados ──────────────────────────────────────────────────
 
     private fun derivePhase(ui: IvannaAssistant.AssistantUiState): AssistantPhase = when {
-        !ui.available           -> AssistantPhase.ERROR
-        ui.listening            -> AssistantPhase.LISTENING
-        ui.speaking             -> AssistantPhase.SPEAKING
-        ui.statusLine == "Procesando…" -> AssistantPhase.PROCESSING
-        else                    -> AssistantPhase.IDLE
+        !ui.available            -> AssistantPhase.ERROR
+        ui.listening             -> AssistantPhase.LISTENING
+        ui.speaking               -> AssistantPhase.SPEAKING
+        ui.processing            -> AssistantPhase.PROCESSING
+        else                     -> AssistantPhase.IDLE
     }
 
     private fun buildDspStatus(h: IvannaAgentCore.HealthSnapshot): String = buildString {
