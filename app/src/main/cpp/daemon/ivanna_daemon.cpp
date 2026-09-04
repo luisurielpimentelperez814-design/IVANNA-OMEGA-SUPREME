@@ -168,7 +168,13 @@ int main(int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
     log_message("IVANNA-OMEGA Daemon v1.8 REAL TELEMETRY - Starting");
     if (realtime) { struct sched_param p; p.sched_priority=80; sched_setscheduler(0,SCHED_FIFO,&p); }
-    setup_shared_memory(rate);
+    // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
+    // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
+    // falla y (antes) el socket nacía paralizado. El daemon DEBE bindear el
+    // socket aunque la SHM falle — el panel usa el socket para telemetría.
+    if (setup_shared_memory(rate) < 0) {
+        log_message("WARN: SHM no disponible — el daemon sigue sirviendo el socket de comandos (modo degradado).");
+    }
     log_message("DSP sample rate configured: " + std::to_string(rate));
     // FIX (socket DESCONECTADO con daemon CORRIENDO, 2026-08-31): si bind()
     // falla — EADDRINUSE por una instancia zombie que aun retiene el nombre
@@ -198,14 +204,22 @@ int main(int argc, char* argv[]) {
     if (controlServer.start("@omega_command_socket")) {
         log_message("CONTROL socket ready: @omega_command_socket");
         std::thread([&controlServer](){ controlServer.acceptLoop(); }).detach();
+    } else {
+        // FIX: antes este fallo era SILENCIOSO. El socket de control es
+        // secundario — no abortamos el daemon principal, solo lo logueamos.
+        log_message("WARN: no se pudo bindear @omega_command_socket (secundario) — el daemon principal sigue activo.");
     }
-    
+
     Ivanna::IvannaSelfHealingEngine selfHealer;
     selfHealer.startMonitoring();
     log_message("Self-Healing Engine activated and monitoring components.");
 
     if (!ivanna::controlBus().openWriter()) {
-        log_message("CRITICAL: Failed to open OmegaControlBus writer!");
+        // FIX: degradado, no fatal. El socket de comandos sigue sirviendo
+        // STATUS/TELEMETRY aunque el bus DSP no abra (p.ej. sin consumidor
+        // omega_effect aún). Antes este fallo dejaba el socket funcional
+        // pero el panel interpretaba silencio como muerte.
+        log_message("WARN: OmegaControlBus writer no abrió — modo degradado, socket de comandos sigue sirviendo.");
     } else {
         log_message("Master Control Bus: OmegaControlBus writer opened successfully.");
     }

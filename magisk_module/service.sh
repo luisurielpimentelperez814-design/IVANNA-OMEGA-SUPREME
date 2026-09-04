@@ -25,7 +25,21 @@ set_state "OPTIMAL"
 
 while true; do
     if decision_evaluate "DAEMON_RUNTIME"; then
-        if [ -x "$MODDIR/system/bin/ivanna_daemon" ]; then
+        # FIX (socket "nunca bindeó" + daemons duplicados): NO relanzar si ya
+        # hay un daemon vivo. Linux permite bind() duplicado sobre el mismo
+        # nombre en el abstract namespace (no devuelve EADDRINUSE), así que
+        # cada vuelta del bucle levantaba OTRO daemon compitiendo por
+        # "@omega_daemon_socket": el panel veía CORRIENDO (prop) pero el
+        # socket quedaba intermitente o en manos de un zombie moribundo.
+        DAEMON_PID=""
+        [ -f /data/adb/ivanna_omega/daemon.pid ] && DAEMON_PID=$(cat /data/adb/ivanna_omega/daemon.pid 2>/dev/null)
+        if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+            : # daemon vivo — nada que hacer, no duplicar
+        elif [ -x "$MODDIR/system/bin/ivanna_daemon" ]; then
+            # El directorio DEBE existir antes del redirect de nohup: si falta,
+            # "> daemon.log" falla y el daemon ni siquiera arranca (socket
+            # ausente en /proc/net/unix con log vacío — el síntoma exacto).
+            mkdir -p /data/adb/ivanna_omega 2>/dev/null
             # HACK FALLBACK: Resolve APK path manually without `pm` for late_start execution
             APK_DIR=$(ls -d /data/app/*/*com.ivanna.omega* 2>/dev/null | head -n 1)
             if [ -z "$APK_DIR" ]; then
@@ -57,6 +71,11 @@ while true; do
             fi
         else
             log -p e -t "IVANNA" "ivanna_daemon binary missing or not executable"
+            setprop persist.ivanna.daemon_active 0 2>/dev/null
+        fi
+        # FIX: si el pid apunta a un proceso muerto, bajar la prop AHORA — la
+        # prop es persistente y la UI mostraba "CORRIENDO" sobre un cadáver.
+        if [ -n "$DAEMON_PID" ] && ! kill -0 "$DAEMON_PID" 2>/dev/null; then
             setprop persist.ivanna.daemon_active 0 2>/dev/null
         fi
     fi

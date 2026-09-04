@@ -163,7 +163,91 @@ object OmegaEngineBridge {
     fun setRoom(rt60S: Float, wet: Float = 0.35f, roomIdx: Int = -1): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S); put("wet",wet); put("idx",roomIdx) })
     fun disableRoom(): Boolean = setRoom(0f,0f)
     fun getRoomStatus(): JSONObject? = requestCommand(JSONObject().apply { put("action","GET_ROOM_STATUS") })
-    fun requestTelemetry(): String { val r = requestCommand(JSONObject().apply { put("action","GET_STATUS") }); return if (r!=null) "Omega OK latency=${"%.1f".format(lastLatencyMs)}ms $r" else "Omega OFFLINE" }
+    /**
+     * FIX (botón TELEMETRY muerto): antes reutilizaba el canal persistente con
+     * requestCommand(). Si ese canal se había quedado medio-abierto (daemon
+     * reiniciado, conexión stale) el read() se bloqueaba hasta el timeout y el
+     * botón parecía no hacer nada. Además un JSON de respuesta >4096 B o una
+     * respuesta partida en 2 recv() dejaba el JSON truncado → JSONObject() lanzaba
+     * y devolvía null → "Omega OFFLINE" aunque el daemon estuviera vivo.
+     *
+     * Ahora: canal EFÍMERO dedicado por consulta (sin estado stale), lectura en
+     * bucle hasta '}' balanceado o EOF, timeout generoso, y fallback a PING si
+     * GET_STATUS no parsea. Devuelve SIEMPRE una cadena legible con la causa.
+     */
+    fun requestTelemetry(): String {
+        val reply = queryDaemonEphemeral(JSONObject().apply { put("action","GET_STATUS") })
+            ?: queryDaemonEphemeral(JSONObject().apply { put("action","PING") })
+        return if (reply != null) {
+            isConnected = true
+            "Omega OK latency=${"%.1f".format(lastLatencyMs)}ms $reply"
+        } else {
+            isConnected = false
+            // Diagnóstico honesto: distingue daemon-sin-bind de rechazo SELinux
+            // para que el usuario sepa qué mirar, en vez del genérico "OFFLINE".
+            "Omega OFFLINE — " + runCatching { MagiskBridge.diagnoseSocket() }.getOrDefault("sin diagnóstico")
+        }
+    }
+
+    /**
+     * Abre una conexión NUEVA (Unix abstracto, luego TCP fallback), envía un
+     * comando JSON y lee la respuesta completa balanceando llaves. Sin canal
+     * persistente → imposible que quede stale. Cierra siempre.
+     */
+    @Synchronized
+    private fun queryDaemonEphemeral(payload: JSONObject): String? {
+        val t0 = System.nanoTime()
+        val channel: Channel = runCatching {
+            val sock = LocalSocket()
+            sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
+            sock.soTimeout = 3000
+            UnixChannel(sock)
+        }.getOrElse {
+            runCatching {
+                val s = Socket()
+                s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), 3000)
+                s.soTimeout = 3000
+                s.tcpNoDelay = true
+                TcpChannel(s)
+            }.getOrNull()
+        } ?: return null
+        try {
+            channel.output.write(payload.toString().toByteArray(Charsets.UTF_8))
+            channel.output.flush()
+            val buf = ByteArray(8192)
+            val sb = StringBuilder()
+            var depth = 0
+            var started = false
+            var inStr = false
+            var esc = false
+            while (true) {
+                val n = try { channel.input.read(buf) } catch (_: Exception) { -1 }
+                if (n <= 0) break
+                for (i in 0 until n) {
+                    val c = buf[i].toChar()
+                    sb.append(c)
+                    if (inStr) { if (esc) esc = false else if (c == '\\') esc = true else if (c == '"') inStr = false; continue }
+                    when (c) {
+                        '"' -> inStr = true
+                        '{' -> { depth++; started = true }
+                        '}' -> if (started && --depth == 0) {
+                            lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+                            return sb.toString()
+                        }
+                    }
+                }
+                if (sb.length > 65536) break
+            }
+            val raw = sb.toString().trim()
+            lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+            return if (raw.isNotEmpty()) raw else null
+        } catch (e: Exception) {
+            Log.w(TAG, "queryDaemonEphemeral error: ${e.message}")
+            return null
+        } finally {
+            runCatching { channel.close() }
+        }
+    }
 
     fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
     fun setIntensity(intensity: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })

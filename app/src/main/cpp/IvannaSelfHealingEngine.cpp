@@ -59,6 +59,15 @@ void IvannaSelfHealingEngine::diagnoseAndRepair(ComponentState& state, const cha
         
         std::cerr << "[IVANNA-HEALER] ✅ Repair completed for " << componentName << ".\n";
         state = ComponentState::OK;
+        // FIX (falso positivo): tras la reparación el timestamp del componente
+        // DEBE refrescarse. Sin esto, el monitor volvía a detectar "deadlock"
+        // a los 500 ms siguientes (el ping viejo seguía expirado) y disparaba
+        // re-repairs en bucle — restartCount crecía sin que nada estuviera roto
+        // y el daemon logueaba "Self-Healing intervention!" permanentemente,
+        // ensuciando el diagnóstico real del socket.
+        if (m_audioEngineLastPing.load() + DEADLOCK_THRESHOLD_MS < getNowMs()) pingAudioEngine();
+        if (m_ipcSocketLastPing.load()   + DEADLOCK_THRESHOLD_MS < getNowMs()) pingIpcSocket();
+        if (m_dspKernelLastPing.load()   + DEADLOCK_THRESHOLD_MS < getNowMs()) pingDspKernel();
     }
 }
 

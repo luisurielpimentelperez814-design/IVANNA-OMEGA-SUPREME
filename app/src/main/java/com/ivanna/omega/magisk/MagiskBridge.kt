@@ -119,12 +119,28 @@ object MagiskBridge {
         // Primero el probe sin root (camino feliz)
         if (isOmegaSocketAvailable()) return "OK: socket conecta sin root"
 
+        // FIX (falso diagnóstico): antes se declaraba "nunca bindeó" mirando
+        // SOLO /proc/net/unix — pero el daemon también abre un fallback TCP en
+        // 127.0.0.1:12121 (--tcp-port en service.sh) precisamente para ROMs
+        // donde SELinux bloquea el abstracto. Si el TCP responde, el daemon
+        // está vivo: el problema es SELinux sobre el abstracto, no el binario.
+        val tcpOk = runCatching {
+            java.net.Socket().use { s ->
+                s.connect(java.net.InetSocketAddress("127.0.0.1", 12121), 1500)
+                true
+            }
+        }.getOrDefault(false)
+        if (tcpOk) {
+            everConnected = true
+            return "OK parcial: daemon vivo vía TCP 127.0.0.1:12121 — el abstracto está bloqueado por SELinux. Aplica sepolicy.rule y reinicia."
+        }
+
         // Probe root: leer /proc/net/unix buscando el abstract socket.
         // Los abstract sockets aparecen como "@omega_daemon_socket" (el @ es
         // el byte NUL visualizado). grep -a porque el archivo tiene NULs.
         val listed = runCatching {
             val p = ProcessBuilder("su", "-c",
-                "grep -a omega_daemon_socket /proc/net/unix; echo EXIT:\$?")
+                "grep -a omega_daemon_socket /proc/net/unix; echo EXIT:\$?; tail -5 /data/adb/ivanna_omega/daemon.log 2>/dev/null")
                 .redirectErrorStream(true).start()
             val out = p.inputStream.bufferedReader().readText()
             p.waitFor()
@@ -134,8 +150,10 @@ object MagiskBridge {
         return when {
             listed.contains("omega_daemon_socket") ->
                 "FALLO: socket existe (daemon bindeó) pero connect() es rechazado → SELinux denial (connectto). Aplica sepolicy v2.0 y reinicia."
+            listed.contains("bind(") ->
+                "FALLO: el daemon arrancó pero bind() falló — últimas líneas del log:\n${listed.substringAfter("EXIT:1").take(200)}"
             listed.contains("EXIT:1") || listed.isBlank() ->
-                "FALLO: socket ausente en /proc/net/unix → el daemon nunca bindeó (crash al arrancar o binario faltante). Revisa /data/adb/ivanna_daemon.log."
+                "FALLO: socket ausente en /proc/net/unix → el daemon nunca bindeó (crash al arrancar o binario faltante). Revisa /data/adb/ivanna_omega/daemon.log y reinstala el módulo v2.3.0."
             else ->
                 "FALLO: diagnóstico root sin salida útil: ${listed.take(120)}"
         }
@@ -230,6 +248,18 @@ object MagiskBridge {
             }
         }.getOrDefault(false)
         if (abstractOk) { everConnected = true; return true }
-        return false
+        // FIX: el daemon publica también TCP loopback 127.0.0.1:12121
+        // (--tcp-port en service.sh). Sin este segundo probe, isDaemonRunning
+        // devolvía false en ROMs donde SELinux bloquea el abstracto aunque el
+        // daemon estuviera perfectamente vivo por TCP.
+        val tcpOk = runCatching {
+            java.net.Socket().use { s ->
+                s.soTimeout = SOCKET_READ_TIMEOUT_MS
+                s.connect(java.net.InetSocketAddress("127.0.0.1", 12121), SOCKET_READ_TIMEOUT_MS)
+                true
+            }
+        }.getOrDefault(false)
+        if (tcpOk) everConnected = true
+        return tcpOk
     }
 }

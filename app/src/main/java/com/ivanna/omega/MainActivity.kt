@@ -185,6 +185,12 @@ class MainActivity : ComponentActivity() {
         // dispositivos sin root arranca el camino AudioEffect +
         // DynamicsProcessing en vez de escribir a un daemon inexistente.
         com.ivanna.omega.audio.AudioBackendSelector.start(applicationContext)
+        // FIX (socket DESCONECTADO tras boot): startKeepalive() existía pero
+        // NADIE lo invocaba — el hilo de probe cada 5 s nunca arrancaba y el
+        // panel Magisk quedaba en DESCONECTADO hasta pulsar RECONECTAR a mano.
+        // Se arranca aquí: el bridge se auto-reconecta en cuanto el daemon
+        // bindea, sin intervención del usuario.
+        OmegaEngineBridge.startKeepalive()
         setContent { OmegaApp() }
     }
 
