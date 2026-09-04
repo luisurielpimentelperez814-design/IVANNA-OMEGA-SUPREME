@@ -269,6 +269,14 @@ allow untrusted_app_33 su unix_stream_socket connectto
 allow untrusted_app_33 magisk unix_stream_socket connectto
 allow untrusted_app_34 su unix_stream_socket connectto
 allow untrusted_app_34 magisk unix_stream_socket connectto
+# FIX: targetSdk=35 (Android 15, ver app/build.gradle.kts) corre bajo
+# untrusted_app_35 — variante faltante en la matriz original (solo
+# llegaba a _34). Es el mismo patrón que esta sección ya documenta como
+# causa raíz del síntoma "daemon CORRIENDO / socket DESCONECTADO": la
+# app real (con este targetSdk) nunca estuvo cubierta por ninguna regla
+# de esta lista.
+allow untrusted_app_35 su unix_stream_socket connectto
+allow untrusted_app_35 magisk unix_stream_socket connectto
 allow untrusted_app_25 untrusted_app_25 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_27 untrusted_app_27 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_29 untrusted_app_29 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
@@ -276,3 +284,4 @@ allow untrusted_app_30 untrusted_app_30 unix_stream_socket { create connect read
 allow untrusted_app_32 untrusted_app_32 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_33 untrusted_app_33 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_34 untrusted_app_34 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+allow untrusted_app_35 untrusted_app_35 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
