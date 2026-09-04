@@ -24,6 +24,18 @@ public:
 
     void processBinauralScene(Ivanna::AudioBuffer* buffer);
     void setHeadPose(float yaw, float pitch, float roll);
+
+    // FIX (cableado binaural, FASE 8): pose de cabeza actual expuesta como
+    // grados azimuth/elevation — mismo valor que setHeadPose() ya calcula
+    // internamente para el dataset medido (yaw*(180/pi) + safBias), pero
+    // aquí queda accesible para cualquier consumidor que necesite la
+    // posición real vigente (p.ej. el path FastRPC/Hexagon DSP).
+    float getCurrentAzimuthDeg() const noexcept {
+        return m_currentAzimuthDeg.load(std::memory_order_relaxed);
+    }
+    float getCurrentElevationDeg() const noexcept {
+        return m_currentElevationDeg.load(std::memory_order_relaxed);
+    }
     void setRiemannianCurvature(float curvature) {
         m_intrinsicCurvature.store(curvature, std::memory_order_relaxed);
     }
@@ -85,6 +97,14 @@ private:
     std::atomic<bool>  m_safQValid{false};
     float              m_safQ[7]{};               // vector latente completo
     bool               m_datasetLoaded = false;
+
+    // FIX (cableado binaural, FASE 8): última pose de cabeza real recibida
+    // por setHeadPose(), en grados — la misma conversión que ya se aplica
+    // para posicionar el banco HRTF sintetizado/medido, pero conservada
+    // aquí para que processBinauralScene() (path FastRPC/Hexagon) pueda
+    // leer la posición real en vez de un valor fijo en cero.
+    std::atomic<float> m_currentAzimuthDeg{0.f};
+    std::atomic<float> m_currentElevationDeg{0.f};
 
     ALIGN_NEON float m_hrtfLL[2][HRTF_TAPS]; // L → oído izquierdo
     ALIGN_NEON float m_hrtfLR[2][HRTF_TAPS]; // L → oído derecho (crosstalk)

@@ -62,12 +62,22 @@ void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
 }
 
 void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
+    // FIX (cableado binaural, FASE 8): persistir la pose real en grados,
+    // incondicionalmente — antes solo se calculaba azDeg dentro del branch
+    // m_datasetLoaded para posicionar el dataset medido, y se perdía justo
+    // después de usarse. Cualquier consumidor de la posición real vigente
+    // (p.ej. el path FastRPC/Hexagon en processBinauralScene) necesita
+    // poder leerla sin importar si hay dataset cargado o síntesis analítica.
+    constexpr float kRadToDeg = 180.f / 3.14159265f;
+    const float safBias = m_safAzimuthBias.load(std::memory_order_relaxed);
+    m_currentAzimuthDeg.store((yaw * kRadToDeg) + safBias, std::memory_order_relaxed);
+    m_currentElevationDeg.store(pitch * kRadToDeg, std::memory_order_relaxed);
+
     // FIX (clic en banco-switch): prepara el banco inactivo y activa crossfade.
     // processBinauralScene mezcla los dos bancos durante XFADE_FRAMES bloques.
     const int inactive = 1 - m_activeBank.load(std::memory_order_relaxed);
     if (m_datasetLoaded) {
-        const float safBias = m_safAzimuthBias.load(std::memory_order_relaxed);
-        const float azDeg   = (yaw * (180.f / 3.14159265f)) + safBias;
+        const float azDeg = (yaw * kRadToDeg) + safBias;
         loadFromDatasetAtAzimuth(azDeg, inactive);
     } else {
         synthesizeHrtf(yaw, pitch, roll, inactive);
@@ -79,10 +89,17 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
 
 void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
     if (m_fastRpcClient.isDSPReady()) {
+        // FIX (cableado binaural, FASE 8): azimuth/elevation ya NO se
+        // envían fijos en cero — se leen de la última pose real recibida
+        // por setHeadPose() (yaw/pitch del sensor + sesgo SAF), la misma
+        // fuente de verdad que usa el path CPU de más abajo. Sin este fix,
+        // en cualquier dispositivo con Hexagon DSP activo el binaural
+        // quedaba congelado siempre al centro, sin importar movimiento de
+        // cabeza ni ajuste espacial del optimizer SAF.
         ivanna::dsp::SpatialPosition pos;
-        pos.azimuth = 0.0f;
-        pos.elevation = 0.0f;
-        pos.distance = 1.0f;
+        pos.azimuth = m_currentAzimuthDeg.load(std::memory_order_relaxed);
+        pos.elevation = m_currentElevationDeg.load(std::memory_order_relaxed);
+        pos.distance = 1.0f;  // sin modelo de distancia en el motor actual — campo lejano de referencia
         m_fastRpcClient.delegateBinauralConvolution(
             buffer->left, buffer->right,
             buffer->left, buffer->right,
