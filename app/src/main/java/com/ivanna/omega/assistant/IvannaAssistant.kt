@@ -58,7 +58,7 @@ class IvannaAssistant(
 
     private val speech: SpeechInputProvider = IvannaSpeechRecognizer(appContext)
     private val voice = IvannaVoiceEngine(appContext)
-    private val memory = com.ivanna.omega.ai.memory.IvannaContextMemory(
+    private val memory = IvannaContextMemory(appContext)
         com.ivanna.omega.ai.memory.IvannaMemoryArchitecture(appContext)
     )
     private val voiceController: VoiceController = VoiceController(appContext)
