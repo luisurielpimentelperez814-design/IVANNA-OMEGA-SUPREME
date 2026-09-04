@@ -243,11 +243,28 @@ public:
                 float sL, sR;
                 spatial.process_sample(nhL, nhR, sL, sR, sample_rate);
 
+                // FASE 8 paso 4 (c/3): reemplazo real, nunca suma. binaural
+                // solo aplica si m>=2 (precedencia explícita — necesita las
+                // cues perceptuales de CueBasedSpatial ya activas como base
+                // de la rampa). Un solo one-pole compartido entre L y R
+                // (kBinauralRampCoeff) — replicar el patrón de wetNow_ en
+                // RirConvolver; dos one-pole independientes desalinean fase
+                // entre canales y colapsan la imagen estéreo (bug ya
+                // corregido ahí una vez, no repetirlo aquí).
+                const float target = binauralOn ? 1.f : 0.f;
+                binauralRamp_ += (target - binauralRamp_) * kBinauralRampCoeff;
+
+                float finalL = sL, finalR = sR;
+                if (binauralRamp_ > 0.0005f) {   // evita indexar hrtfBufL_ vacío si nunca se activó
+                    finalL = sL * (1.f - binauralRamp_) + hrtfBufL_[i] * binauralRamp_;
+                    finalR = sR * (1.f - binauralRamp_) + hrtfBufR_[i] * binauralRamp_;
+                }
+
                 // State update with cues
                 update_state(cues);
 
                 // Decode: y = 0.6·x + 0.2·S + 0.2·tanh(mean(z))
-                decode(xL, xR, sL, sR, outL[i], outR[i]);
+                decode(xL, xR, finalL, finalR, outL[i], outR[i]);
             } else {
                 // Mode 1: NHO only, no spatial
                 update_state(cues);
