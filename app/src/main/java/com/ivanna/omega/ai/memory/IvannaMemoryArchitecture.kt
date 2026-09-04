@@ -40,6 +40,7 @@ class IvannaMemoryArchitecture(context: Context) {
     }
 
     val workingMemory = WorkingMemory()
+<<<<<<< HEAD
     // FIX (CI rojo): tipos EXPLÍCITOS obligatorios. La lambda onChange llama a
     // saveEpisodicToDisk()/saveSemanticToDisk(), que a su vez leen estas mismas
     // propiedades — con tipo inferido el chequeo de tipos cae en un ciclo
@@ -47,6 +48,10 @@ class IvannaMemoryArchitecture(context: Context) {
     // rompe el ciclo.
     val episodicMemory: EpisodicMemory = EpisodicMemory { saveEpisodicToDisk() }
     val semanticMemory: SemanticMemory = SemanticMemory { saveSemanticToDisk() }
+=======
+    val episodicMemory = EpisodicMemory { saveEpisodicToDisk() }
+    val semanticMemory = SemanticMemory { saveSemanticToDisk() }
+>>>>>>> 806062fc (refactor: unify Ivanna context memory architecture)
     val systemMemory = SystemMemory()
     val retrievalEngine = MemoryRetrievalEngine(workingMemory, episodicMemory, semanticMemory, systemMemory)
 
