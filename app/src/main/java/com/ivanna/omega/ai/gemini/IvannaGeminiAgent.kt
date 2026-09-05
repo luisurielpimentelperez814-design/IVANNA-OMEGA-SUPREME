@@ -51,6 +51,13 @@ class IvannaGeminiAgent(
     private val adaptiveEngine = AdaptiveResponseEngine()
     private val secureConfig = SecureConfigurationManager
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    init {
+        // Migración Firebase AI Logic (ver comentario grande en
+        // GeminiOrchestrator.kt): reusa la MISMA inicialización manual de
+        // Firebase que ya usa CloudSyncManager para sync de perfiles — no-op
+        // seguro mientras las 3 constantes FIREBASE_* sigan como placeholder.
+        com.ivanna.omega.core.CloudSyncManager.ensureFirebaseAppReady(context)
+    }
 
     private val orchestrator by lazy {
         GeminiOrchestrator(

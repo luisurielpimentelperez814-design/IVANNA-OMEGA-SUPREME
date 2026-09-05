@@ -191,6 +191,13 @@ dependencies {
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    // Firebase AI Logic (migración Gemini, ver GeminiOrchestrator.kt) — versión
+    // explícita, SIN el BoM de arriba a propósito: ese BoM está fijado en
+    // 33.1.2 solo por los módulos "-ktx" de Firestore/Auth (ver comentario en
+    // esa sección); firebase-ai es un artefacto independiente y no necesita
+    // ese BoM ni el plugin com.google.gms.google-services (init manual, ver
+    // CloudSyncManager.ensureFirebaseAppReady()).
+    implementation("com.google.firebase:firebase-ai:17.12.1")
 
     // Carga de imagenes/video en Compose (antes en un segundo bloque
     // dependencies {} duplicado que redeclaraba security-crypto-ktx).

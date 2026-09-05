@@ -1,7 +1,6 @@
 package com.ivanna.omega.ai.gemini
 
 import android.util.Log
-import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import com.ivanna.omega.assistant.core.AdaptiveResponseEngine.ResponseProfile
 import kotlinx.coroutines.*
@@ -9,6 +8,43 @@ import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
+// MIGRACIÓN FIREBASE AI LOGIC (2026-09-04) — motivo: Google retira las API
+// keys "AIza" tradicionales este mes y las nuevas "AQ." (Auth key) están
+// confirmadas, con múltiples fuentes independientes recientes (incluido el
+// propio foro de Google), rotas contra el endpoint REST simple sin importar
+// header/SDK — no es arreglable del lado cliente. Firebase AI Logic evita
+// el problema por completo: el proyecto ya tiene un patrón establecido
+// (CloudSyncManager.kt) de inicializar Firebase manualmente vía
+// FirebaseOptions.Builder — 3 constantes, sin el plugin
+// com.google.gms.google-services ni google-services.json. Se reusa esa
+// MISMA inicialización (CloudSyncManager.ensureFirebaseAppReady(), llamada
+// desde IvannaGeminiAgent al construirse) en vez de duplicar otro camino de
+// setup — es el mismo proyecto Firebase, AI Logic es solo otro producto
+// sobre él, no otro proyecto.
+//
+// GenerativeModel de Firebase AI Logic (com.google.firebase.ai) es API-
+// compatible con el SDK viejo en el único punto que usa este archivo:
+// generateContent(prompt).text y generateContentStream(prompt) con .text
+// por chunk — mismo shape, mismo nombre de método. Por eso el circuit
+// breaker/registry/retry de abajo NO se toca: solo generateWith()/streamWith()
+// deciden, en cada llamada, cuál de los dos construir y usar.
+//
+// PENDIENTE DEL LADO DEL USUARIO (no lo puedo hacer yo): rellenar las 3
+// constantes FIREBASE_* en CloudSyncManager.kt con los valores reales de su
+// proyecto Firebase (Project ID, App ID, Web API Key — los 3 se sacan de
+// Configuración del proyecto → Tus apps, sin descargar ningún archivo).
+// Mientras isConfigured sea false, firebaseAvailable() da false y se sigue
+// usando el SDK legacy con la key que haya en SecureConfigurationManager
+// (AIza restringida como mitigación, per conversación previa) — cero
+// regresión para quien no haya migrado todavía.
+import com.google.firebase.Firebase
+import com.google.firebase.ai.GenerativeModel as FirebaseGenerativeModel
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.content as firebaseContent
+import com.google.firebase.FirebaseApp
+import com.google.ai.client.generativeai.GenerativeModel as LegacyGenerativeModel
 
 /**
  * GeminiOrchestrator — Gestión inteligente de modelos con circuit breaker.
@@ -99,9 +135,8 @@ class GeminiOrchestrator(
             return@withContext tryFallback(model, prompt, responseProfile, systemInstruction, imageData != null)
         }
 
-        val modelInstance = createModel(model, systemInstruction)
         val startTime = System.currentTimeMillis()
-        val result = runCatching { modelInstance.generateContent(prompt).text ?: "" }
+        val result = runCatching { generateWith(model, systemInstruction, prompt) }
         val latency = System.currentTimeMillis() - startTime
         updateHealth(model.name, result.isSuccess, latency)
 
@@ -125,9 +160,8 @@ class GeminiOrchestrator(
                 return Result.failure(Exception("All models circuit OPEN"))
             }
 
-            val fbInstance = createModel(fallback, systemInstruction)
             val fbStart = System.currentTimeMillis()
-            val fbResult = runCatching { fbInstance.generateContent(prompt).text ?: "" }
+            val fbResult = runCatching { generateWith(fallback, systemInstruction, prompt) }
             updateHealth(fallback.name, fbResult.isSuccess, System.currentTimeMillis() - fbStart)
 
             fbResult.onSuccess {
@@ -145,12 +179,10 @@ class GeminiOrchestrator(
         if (healthState[model.name]?.circuitState == ModelHealth.CircuitState.OPEN) {
             throw Exception("Circuit OPEN for ${model.name}")
         }
-        val instance = createModel(model, systemInstruction)
         val startTime = System.currentTimeMillis()
         try {
             var acc = ""
-            instance.generateContentStream(prompt).collect { chunk ->
-                val text = chunk.text ?: ""
+            streamWith(model, systemInstruction, prompt).collect { text ->
                 acc += text
                 emit(acc)
             }
@@ -183,16 +215,47 @@ class GeminiOrchestrator(
         }
     }
 
-    private fun createModel(entry: ModelEntry, systemInstruction: String?): GenerativeModel {
+    /** true si el FirebaseApp por defecto ya fue inicializado (ver CloudSyncManager.ensureFirebaseAppReady()). */
+    private fun firebaseAvailable(): Boolean =
+        runCatching { FirebaseApp.getInstance(); true }.getOrDefault(false)
+
+    private fun createLegacyModel(entry: ModelEntry, systemInstruction: String?): LegacyGenerativeModel {
         // FIX (CI rojo): el SDK generativeai:0.9.0 no expone GenerativeModel.Builder;
         // GenerativeModel se instancia por constructor (mismo patrón que
         // assistant/core/GeminiOrchestrator.createAdaptiveModel).
-        return GenerativeModel(
+        return LegacyGenerativeModel(
             modelName = entry.name,
             apiKey = apiKeyProvider(),
             systemInstruction = systemInstruction?.let { content { text(it) } }
         )
     }
+
+    private fun createFirebaseModel(entry: ModelEntry, systemInstruction: String?): FirebaseGenerativeModel {
+        // Backend "Gemini Developer API" vía Firebase — mismo backend gratuito
+        // que el SDK legacy usaba directo con key, ahora autenticado por
+        // App Check en vez de una API key viajando por la red.
+        return Firebase.ai(backend = GenerativeBackend.googleAI())
+            .generativeModel(
+                modelName = entry.name,
+                systemInstruction = systemInstruction?.let { firebaseContent { text(it) } }
+            )
+    }
+
+    /** Genera texto con el backend que esté realmente disponible ahora mismo. */
+    private suspend fun generateWith(entry: ModelEntry, systemInstruction: String?, prompt: String): String =
+        if (firebaseAvailable()) {
+            createFirebaseModel(entry, systemInstruction).generateContent(prompt).text ?: ""
+        } else {
+            createLegacyModel(entry, systemInstruction).generateContent(prompt).text ?: ""
+        }
+
+    /** Streaming con el backend que esté realmente disponible ahora mismo. */
+    private fun streamWith(entry: ModelEntry, systemInstruction: String?, prompt: String): Flow<String> =
+        if (firebaseAvailable()) {
+            createFirebaseModel(entry, systemInstruction).generateContentStream(prompt).map { it.text ?: "" }
+        } else {
+            createLegacyModel(entry, systemInstruction).generateContentStream(prompt).map { it.text ?: "" }
+        }
 
     private fun updateHealth(modelName: String, success: Boolean, latencyMs: Long) {
         val current = healthState[modelName] ?: ModelHealth(modelName = modelName)
@@ -223,8 +286,7 @@ class GeminiOrchestrator(
     }
 
     private suspend fun runHealthChecks() {
-        val key = apiKeyProvider()
-        if (key.isBlank()) return
+        if (!firebaseAvailable() && apiKeyProvider().isBlank()) return
         registry.forEach { model ->
             val health = healthState[model.name] ?: return@forEach
 
@@ -241,7 +303,7 @@ class GeminiOrchestrator(
             val start = System.currentTimeMillis()
             val result = runCatching {
                 withTimeout(HEALTH_CHECK_TIMEOUT_MS) {
-                    createModel(model, null).generateContent("OK")
+                    generateWith(model, null, "OK")
                 }
             }
             updateHealth(model.name, result.isSuccess, System.currentTimeMillis() - start)

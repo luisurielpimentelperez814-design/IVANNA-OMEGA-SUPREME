@@ -84,6 +84,33 @@ object CloudSyncManager {
     @Volatile
     var firebaseOptIn: Boolean = false // OPT-IN EXPLÍCITO
 
+    /**
+     * Inicializa solo el FirebaseApp por defecto (project/app id + api key),
+     * SIN tocar Firestore/Auth ni el opt-in de sync — usado también por
+     * GeminiOrchestrator (vía IvannaGeminiAgent) para AI Logic, que es un
+     * producto Firebase distinto sobre el MISMO proyecto y no debe quedar
+     * atado al flag firebaseOptIn de sync de perfiles. Idempotente y seguro
+     * de llamar aunque isConfigured sea false (placeholders sin rellenar):
+     * en ese caso no hace nada y devuelve false, igual que antes.
+     */
+    fun ensureFirebaseAppReady(context: Context): Boolean {
+        if (!isConfigured) return false
+        return try {
+            if (FirebaseApp.getApps(context).isEmpty()) {
+                val options = FirebaseOptions.Builder()
+                    .setProjectId(FIREBASE_PROJECT_ID)
+                    .setApplicationId(FIREBASE_APP_ID)
+                    .setApiKey(FIREBASE_API_KEY)
+                    .build()
+                FirebaseApp.initializeApp(context, options)
+            }
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "ensureFirebaseAppReady falló", t)
+            false
+        }
+    }
+
     private fun ensureInit(context: Context): Boolean {
         if (!firebaseOptIn) return false
         if (!isFirebaseOptInEnabled) {
@@ -96,14 +123,7 @@ object CloudSyncManager {
         }
         if (initialized) return true
         try {
-            val options = FirebaseOptions.Builder()
-                .setProjectId(FIREBASE_PROJECT_ID)
-                .setApplicationId(FIREBASE_APP_ID)
-                .setApiKey(FIREBASE_API_KEY)
-                .build()
-            if (FirebaseApp.getApps(context).isEmpty()) {
-                FirebaseApp.initializeApp(context, options)
-            }
+            if (!ensureFirebaseAppReady(context)) return false
             firestore = FirebaseFirestore.getInstance().apply {
                 // Cache local offline-first: si no hay red, los reads sirven
                 // el ultimo valor conocido y los writes se encolan.
