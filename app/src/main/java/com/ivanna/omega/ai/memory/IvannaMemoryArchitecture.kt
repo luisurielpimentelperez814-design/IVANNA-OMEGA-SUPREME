@@ -26,7 +26,15 @@ class IvannaMemoryArchitecture(context: Context) {
         private const val EPISODIC_FILE = "ivanna_episodic_memory.json"
         private const val SEMANTIC_FILE = "ivanna_semantic_memory.json"
         private const val MAX_EPISODIC_RECORDS = 500
-        private const val MAX_WORKING_TURNS = 32
+        // FIX (2026-09-05, "contexto gigante" pedido, nunca entregado):
+        // 32 ya era razonable como tope de RAM, pero buildRichContext()
+        // solo pedía los últimos 6 turnos de aquí (ver ese método) — el
+        // cuello de botella real estaba ahí, no acá. Se sube igual a 200
+        // porque cada Interaction es texto simple (role+text+timestamp),
+        // trivial en memoria para un dispositivo móvil, y así el
+        // presupuesto de tokens real (maxTokensEstimate, ahora sí
+        // aplicado) tiene de dónde tomar turnos largos sin quedarse corto.
+        private const val MAX_WORKING_TURNS = 200
     }
 
     private val appContext = context.applicationContext
@@ -299,7 +307,7 @@ class IvannaMemoryArchitecture(context: Context) {
         private val semanticMemory: SemanticMemory,
         private val systemMemory: SystemMemory
     ) {
-        suspend fun buildRichContext(query: String, maxTokensEstimate: Int = 4000): String {
+        suspend fun buildRichContext(query: String, maxTokensEstimate: Int = 24000): String {
             val builder = StringBuilder()
             val sys = systemMemory.snapshot()
             if (sys.isNotBlank()) { builder.appendLine("[SISTEMA]"); builder.appendLine(sys); builder.appendLine() }
@@ -312,8 +320,39 @@ class IvannaMemoryArchitecture(context: Context) {
                 if (episodes.isNotEmpty()) { builder.appendLine("[HISTORIAL]"); episodes.forEach { builder.appendLine("- ${it.summary}") }; builder.appendLine() }
             }
 
-            val working = workingMemory.getRecent(6)
-            if (working.isNotEmpty()) { builder.appendLine("[CONVERSACIÓN]"); working.forEach { builder.appendLine("${it.role}: ${it.text}") } }
+            // FIX (2026-09-05, "contexto gigante" pedido, nunca entregado):
+            // dos bugs juntos. (1) maxTokensEstimate era un parámetro
+            // declarado que esta función jamás leía — se construía el
+            // string completo sin truncar nada, el nombre prometía un
+            // presupuesto que no existía. (2) aunque WorkingMemory ya
+            // guardaba hasta MAX_WORKING_TURNS turnos reales, aquí se
+            // pedían fijo los últimos 6 (getRecent(6)) — el resto se
+            // descartaba en cada llamada sin ningún motivo. Gemini 2.5
+            // soporta contextos de cientos de miles de tokens; 6 turnos es
+            // memoria de pez dorado, no "contexto gigante". Ahora se toma
+            // TODA la memoria de trabajo disponible y se aplica el
+            // presupuesto de verdad, recortando por los turnos MÁS VIEJOS
+            // primero (la continuidad reciente importa más que el
+            // principio de la charla). ~4 caracteres por token es la
+            // aproximación estándar para texto en la mayoría de idiomas.
+            val headerLen = builder.length
+            val approxCharsPerToken = 4
+            val budgetChars = (maxTokensEstimate * approxCharsPerToken) - headerLen
+            val allTurns = workingMemory.getAll()
+            if (allTurns.isNotEmpty() && budgetChars > 0) {
+                val kept = ArrayDeque<WorkingMemory.Interaction>()
+                var used = 0
+                for (turn in allTurns.asReversed()) {
+                    val lineLen = turn.role.length + turn.text.length + 3
+                    if (used + lineLen > budgetChars && kept.isNotEmpty()) break
+                    kept.addFirst(turn)
+                    used += lineLen
+                }
+                if (kept.isNotEmpty()) {
+                    builder.appendLine("[CONVERSACIÓN]")
+                    kept.forEach { builder.appendLine("${it.role}: ${it.text}") }
+                }
+            }
 
             return builder.toString().trim()
         }
