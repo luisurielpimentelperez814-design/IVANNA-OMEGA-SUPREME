@@ -2,6 +2,7 @@ package com.ivanna.omega.ai.gemini
 
 import android.util.Log
 import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
 import com.ivanna.omega.assistant.core.AdaptiveResponseEngine.ResponseProfile
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -43,6 +44,7 @@ import com.google.firebase.ai.GenerativeModel as FirebaseGenerativeModel
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.content as firebaseContent
+import com.google.firebase.ai.type.generationConfig as firebaseGenerationConfig
 import com.google.ai.client.generativeai.GenerativeModel as LegacyGenerativeModel
 
 /**
@@ -221,9 +223,18 @@ class GeminiOrchestrator(
         // FIX (CI rojo): el SDK generativeai:0.9.0 no expone GenerativeModel.Builder;
         // GenerativeModel se instancia por constructor (mismo patrón que
         // assistant/core/GeminiOrchestrator.createAdaptiveModel).
+        //
+        // FIX (2026-09-04, límite de tokens nunca aplicado): entry.maxOutputTokens
+        // (8192, declarado arriba en el registry por cada ModelEntry) nunca
+        // llegaba a la petición real — este constructor no pasaba
+        // generationConfig, así que el SDK usaba su propio default interno
+        // en vez del límite declarado por modelo. Verificado leyendo el código,
+        // no asumido: generateContent()/generateContentStream() solo pasan
+        // el prompt a modelInstance.generateContent(prompt), sin config.
         return LegacyGenerativeModel(
             modelName = entry.name,
             apiKey = apiKeyProvider(),
+            generationConfig = generationConfig { maxOutputTokens = entry.maxOutputTokens },
             systemInstruction = systemInstruction?.let { content { text(it) } }
         )
     }
@@ -232,9 +243,19 @@ class GeminiOrchestrator(
         // Backend "Gemini Developer API" vía Firebase — mismo backend gratuito
         // que el SDK legacy usaba directo con key, ahora autenticado por
         // App Check en vez de una API key viajando por la red.
+        //
+        // FIX (2026-09-04): mismo hueco que createLegacyModel() tenía — sin
+        // generationConfig aquí, entry.maxOutputTokens tampoco llegaba a la
+        // petición real vía Firebase, que es la ruta primaria ahora que
+        // firebaseAvailable() es true. No verificado por compilación (sin
+        // Android SDK en este sandbox): el nombre firebaseGenerationConfig
+        // sigue el mismo patrón exacto que firebaseContent (misma clase de
+        // paquete com.google.firebase.ai.type, mismo estilo DSL) pero
+        // confírmalo contra el resultado real de CI antes de darlo por bueno.
         return Firebase.ai(backend = GenerativeBackend.googleAI())
             .generativeModel(
                 modelName = entry.name,
+                generationConfig = firebaseGenerationConfig { maxOutputTokens = entry.maxOutputTokens },
                 systemInstruction = systemInstruction?.let { firebaseContent { text(it) } }
             )
     }
