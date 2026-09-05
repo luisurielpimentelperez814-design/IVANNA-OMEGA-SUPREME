@@ -330,33 +330,44 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
     fun testGeminiConnection() {
         viewModelScope.launch {
             _panel.value = _panel.value.copy(
-                statusLine   = "Probando conexión…",
+                statusLine   = "Probando conexión real a Gemini…",
                 errorMessage = null
             )
-            val ok = withContext(Dispatchers.IO) {
+            // FIX (conectado ≠ formato correcto, 2026-09-04): antes esto solo
+            // comprobaba que la key tuviera un formato plausible y que el
+            // agente respondiera localmente. Con las keys "AQ." de AI Studio
+            // eso no basta: pueden tener el prefijo correcto y aun asi fallar
+            // con 401 en la llamada REST ?key= (son tokens estilo OAuth, no
+            // keys tradicionales). La unica prueba confiable es una llamada
+            // HTTP real al endpoint de modelos de Gemini con la key actual.
+            val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val result =
-                        geminiAgent.processQuery("ping")
-
-                    when(result) {
-                        is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success ->
-                            true
-
-                        else ->
-                            false
+                    val key = com.ivanna.omega.assistant.core.SecureConfigurationManager.getApiKey()
+                    if (key.isBlank()) return@runCatching Pair(false, "API key vacía")
+                    // Endpoint minimo: lista de modelos — si responde 200 la key
+                    // es valida y tiene acceso; 401/403 = key rechazada; otro =
+                    // red o endpoint. No se envia audio ni datos del usuario.
+                    val url = java.net.URL(
+                        "https://generativelanguage.googleapis.com/v1beta/models?key=$key"
+                    )
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000; readTimeout = 8000
+                        requestMethod = "GET"
                     }
-                }.getOrDefault(false)
+                    val code = try { conn.responseCode } finally { conn.disconnect() }
+                    when (code) {
+                        200 -> Pair(true, "OK")
+                        401, 403 -> Pair(false, "Key rechazada por Google (HTTP $code) — verifica que sea una key válida de AI Studio")
+                        else -> Pair(false, "Sin respuesta válida (HTTP $code) — revisa la red")
+                    }
+                }.getOrElse { Pair(false, "Error de red: ${it.message}") }
             }
-            val avail = runCatching {
-                com.ivanna.omega.assistant.core.SecureConfigurationManager.state.value.isConfigured
-            }.getOrDefault(false)
+            val (ok, detail) = result
             _panel.value = _panel.value.copy(
-                geminiAvailable = ok && avail,
-                statusLine = if (ok && avail) "IVANNA: ✅ conectada"
-                             else             "Toca el micrófono y habla con IVANNA.",
-                errorMessage = if (!(ok && avail))
-                    "IVANNA no respondió — verifica la API Key o la red"
-                else null
+                geminiAvailable = ok,
+                statusLine = if (ok) "IVANNA: ✅ conectada a Gemini"
+                             else      "Toca el micrófono y habla con IVANNA.",
+                errorMessage = if (ok) null else "IVANNA no conectó — $detail"
             )
         }
     }
