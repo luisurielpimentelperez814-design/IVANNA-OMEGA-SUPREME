@@ -63,9 +63,9 @@ object CloudSyncManager {
     private const val TAG = "CloudSyncManager"
 
     // ── Rellenar con los valores reales de tu proyecto Firebase (ver setup arriba) ──
-    private const val FIREBASE_PROJECT_ID = "FIREBASE_PROJECT_ID"
-    private const val FIREBASE_APP_ID = "FIREBASE_APP_ID"
-    private const val FIREBASE_API_KEY = "FIREBASE_API_KEY"
+    private const val FIREBASE_PROJECT_ID = "flutter-ai-playground-89c24"
+    private const val FIREBASE_APP_ID = "1:118674222955:android:2805fd4661585b6537662e"
+    private const val FIREBASE_API_KEY = "AIzaSyBX02UqDp1ro9fxdLSkg9icj4-ZKJcPF7g"
 
     val isConfigured: Boolean
         get() = FIREBASE_PROJECT_ID != "FIREBASE_PROJECT_ID" &&
