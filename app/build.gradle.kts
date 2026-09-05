@@ -127,7 +127,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.security:security-crypto-ktx:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto-ktx:1.1.0")
 
     implementation("androidx.compose.material:material-icons-extended")
     testImplementation("junit:junit:4.13.2")
