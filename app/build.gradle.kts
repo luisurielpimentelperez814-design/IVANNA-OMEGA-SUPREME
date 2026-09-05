@@ -190,6 +190,20 @@ dependencies {
     // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+    // FIX (build rojo, ronda 3 — evidencia exacta del log de CI 2026-09-05T18:26-18:31):
+    // pese al force() en resolutionStrategy más abajo, el log mostraba
+    // literalmente qué jar se estaba cargando:
+    //   .gradle/caches/.../kotlinx-coroutines-core-jvm/1.11.0/.../kotlinx-coroutines-core-jvm-1.11.0.jar
+    // — la 1.11.0 (metadata Kotlin 2.2.0), no la 1.7.1 forzada. Esto indica
+    // que algo en el grafo (con toda probabilidad firebase-ai:17.12.1)
+    // declara esa versión como restricción de mínimo vía Gradle Module
+    // Metadata, que Gradle puede priorizar sobre un force() de consumidor
+    // en resolutionStrategy. Una declaración implementation DIRECTA de
+    // primer nivel es la señal más fuerte que Gradle respeta para resolver
+    // conflictos de versión — se declara aquí explícitamente además de
+    // mantener el force() como refuerzo.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     // Firebase AI Logic (migración Gemini, ver GeminiOrchestrator.kt) — versión
     // explícita, SIN el BoM de arriba a propósito: ese BoM está fijado en
@@ -197,7 +211,30 @@ dependencies {
     // esa sección); firebase-ai es un artefacto independiente y no necesita
     // ese BoM ni el plugin com.google.gms.google-services (init manual, ver
     // CloudSyncManager.ensureFirebaseAppReady()).
-    implementation("com.google.firebase:firebase-ai:17.12.1")
+    implementation("com.google.firebase:firebase-ai:17.12.1") {
+        // FIX (build rojo, ronda 4 — evidencia exacta, dos intentos previos
+        // fallidos ya documentados arriba): firebase-ai:17.12.1 declara
+        // kotlinx-coroutines-core y kotlinx-serialization-json como
+        // transitivas con una restricción de versión (Gradle Module
+        // Metadata) que Gradle prioriza por encima de force() en
+        // resolutionStrategy Y de una implementation directa de primer
+        // nivel — confirmado porque el jar real cargado seguía siendo
+        // 1.11.0 en ambos casos. Se cortan esas dos transitivas en el
+        // origen: las implementation explícitas ya declaradas arriba
+        // (kotlinx-coroutines-core:1.7.1 y el force() de
+        // kotlinx-serialization-json:1.6.3) ganan porque ya no compiten
+        // contra ninguna restricción. La API pública de firebase-ai que
+        // este proyecto usa (generateContent, GenerativeModel) no depende
+        // de una versión específica de Coroutines/Serialization más allá
+        // de Flow/suspend, estables entre 1.7.x y 1.11.x.
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
+    }
 
     // Carga de imagenes/video en Compose (antes en un segundo bloque
     // dependencies {} duplicado que redeclaraba security-crypto-ktx).
