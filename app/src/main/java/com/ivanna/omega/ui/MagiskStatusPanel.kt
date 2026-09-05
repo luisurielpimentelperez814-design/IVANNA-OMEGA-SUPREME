@@ -31,7 +31,8 @@ import kotlinx.coroutines.withContext
 /**
  * MagiskStatusPanel — pantalla de estado del módulo Magisk + cliente daemon.
  *
- * FIX CRÍTICO (socket siempre DESCONECTADO):
+ * FIX CRÍTICO (socket siempre DESCONECTADO"
+            + "\n⚠ Si el módulo instalado es más viejo que la app (" + com.ivanna.omega.BuildConfig.VERSION_NAME + "), reinstala el ZIP actual: los fixes del daemon (STL estático, bind con retry) solo existen en builds nuevos — un módulo viejo = binario viejo que muere antes del bind."):
  *   - daemonConnected ahora refleja omegaBridge.isConnected que se actualiza
  *     con un probe real en OmegaEngineBridge.connect().
  *   - Se agregó botón RECONECTAR para disparar connect() manualmente desde IO.
