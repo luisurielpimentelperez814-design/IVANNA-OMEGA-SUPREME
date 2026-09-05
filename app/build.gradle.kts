@@ -4,6 +4,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // FIX (CI rojo): obligatorio desde Kotlin 2.0 cuando compose = true.
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -90,9 +92,10 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
-    }
+    // FIX (CI rojo): composeOptions.kotlinCompilerExtensionVersion quedó
+    // obsoleto en Kotlin 2.x — la versión del compilador Compose la gestiona
+    // el plugin org.jetbrains.kotlin.plugin.compose (ligada a Kotlin 2.2.21).
+    // Mantener el bloque con 1.5.15 forzaría un compilador incompatible.
 
     packaging {
         jniLibs {
