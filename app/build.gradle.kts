@@ -231,7 +231,16 @@ dependencies {
     // esa sección); firebase-ai es un artefacto independiente y no necesita
     // ese BoM ni el plugin com.google.gms.google-services (init manual, ver
     // CloudSyncManager.ensureFirebaseAppReady()).
-    implementation("com.google.firebase:firebase-ai:17.12.1") {
+    implementation("com.google.firebase:firebase-ai:17.12.1")
+    // App Check (migración Gemini/Firebase AI Logic) — desde julio 2026,
+    // Firebase exige App Check para AI Logic automáticamente; sin instalar
+    // un proveedor, TODAS las llamadas se bloquean sin importar que el resto
+    // esté bien configurado. firebase-appcheck-debug es el proveedor para
+    // desarrollo/depuración (bypassa la atestación real manteniendo el
+    // enforcement) — para producción hace falta además Play Integrity,
+    // pendiente de decisión del usuario (requiere configurarlo en la consola
+    // de Firebase, no solo en código).
+    implementation("com.google.firebase:firebase-appcheck-debug:19.4.0") {
         // FIX (build rojo, ronda 4 — evidencia exacta, dos intentos previos
         // fallidos ya documentados arriba): firebase-ai:17.12.1 declara
         // kotlinx-coroutines-core y kotlinx-serialization-json como

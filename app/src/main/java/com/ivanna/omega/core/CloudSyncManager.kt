@@ -2,8 +2,11 @@ package com.ivanna.omega.core
 
 import android.content.Context
 import android.util.Log
+import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import com.google.firebase.appcheck.appCheck
+import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestoreSettings
@@ -103,6 +106,23 @@ object CloudSyncManager {
                     .setApiKey(FIREBASE_API_KEY)
                     .build()
                 FirebaseApp.initializeApp(context, options)
+                // FIX (Gemini vía Firebase no enlazaba): desde jul-2026 Firebase
+                // exige App Check para AI Logic automáticamente en cuanto el
+                // proyecto pasó por el flujo "AI Logic" de la consola — sin
+                // instalar un proveedor aquí, TODAS las llamadas a Gemini se
+                // bloquean con error de atestación, sin importar que el resto
+                // esté perfecto. Debug provider = bypass de atestación real
+                // manteniendo el enforcement, correcto para desarrollo/pruebas.
+                // Para producción hace falta Play Integrity como proveedor
+                // real (pendiente: requiere configurarse en la consola de
+                // Firebase, no solo en código — decisión del usuario).
+                try {
+                    Firebase.appCheck.installAppCheckProviderFactory(
+                        DebugAppCheckProviderFactory.getInstance()
+                    )
+                } catch (t: Throwable) {
+                    Log.w(TAG, "No se pudo instalar AppCheck debug provider — AI Logic puede seguir bloqueado", t)
+                }
             }
             true
         } catch (t: Throwable) {
