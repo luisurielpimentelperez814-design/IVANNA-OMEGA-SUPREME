@@ -111,6 +111,15 @@ object CloudSyncManager {
         }
     }
 
+    /**
+     * true si el FirebaseApp por defecto ya está inicializado ahora mismo —
+     * chequeo puro sin efectos, para UI/diagnóstico (NetworkStatusPanel,
+     * GeminiOrchestrator.firebaseAvailable()) que solo necesitan saber el
+     * estado actual, no disparar la inicialización.
+     */
+    fun isFirebaseAppReady(): Boolean =
+        runCatching { FirebaseApp.getInstance(); true }.getOrDefault(false)
+
     private fun ensureInit(context: Context): Boolean {
         if (!firebaseOptIn) return false
         if (!isFirebaseOptInEnabled) {

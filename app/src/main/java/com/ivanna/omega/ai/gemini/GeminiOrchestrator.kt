@@ -43,7 +43,6 @@ import com.google.firebase.ai.GenerativeModel as FirebaseGenerativeModel
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.content as firebaseContent
-import com.google.firebase.FirebaseApp
 import com.google.ai.client.generativeai.GenerativeModel as LegacyGenerativeModel
 
 /**
@@ -216,8 +215,7 @@ class GeminiOrchestrator(
     }
 
     /** true si el FirebaseApp por defecto ya fue inicializado (ver CloudSyncManager.ensureFirebaseAppReady()). */
-    private fun firebaseAvailable(): Boolean =
-        runCatching { FirebaseApp.getInstance(); true }.getOrDefault(false)
+    private fun firebaseAvailable(): Boolean = com.ivanna.omega.core.CloudSyncManager.isFirebaseAppReady()
 
     private fun createLegacyModel(entry: ModelEntry, systemInstruction: String?): LegacyGenerativeModel {
         // FIX (CI rojo): el SDK generativeai:0.9.0 no expone GenerativeModel.Builder;

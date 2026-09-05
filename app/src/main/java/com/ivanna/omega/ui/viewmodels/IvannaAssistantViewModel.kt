@@ -227,6 +227,16 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         // Saludo inicial + snapshot de memoria
         assistant.greet()
         refreshMemoryPanel()
+        // FIX: con Firebase ya activo, el panel debe reflejarlo desde que se
+        // abre la pantalla, no solo cuando el usuario toca "TEST GEMINI"
+        // manualmente — la conexión real ya es automática, el indicador debe
+        // serlo también.
+        if (com.ivanna.omega.core.CloudSyncManager.isFirebaseAppReady()) {
+            _panel.value = _panel.value.copy(
+                geminiAvailable = true,
+                statusLine = "IVANNA: ✅ conectada (Firebase AI Logic)"
+            )
+        }
     }
 
     // ── Helpers privados ──────────────────────────────────────────────────
@@ -333,6 +343,23 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                 statusLine   = "Probando conexión real a Gemini…",
                 errorMessage = null
             )
+            // FIX (panel desactualizado tras la migración a Firebase AI Logic,
+            // 2026-09-05): este test seguía probando SOLO el endpoint REST
+            // legacy con ?key=, completamente ajeno a GeminiOrchestrator.
+            // Desde que se activó Firebase (CloudSyncManager.isFirebaseAppReady),
+            // la conversación real ya no pasa por esa key en absoluto — pero
+            // este panel seguía pudiendo decir "no conectado" con Firebase
+            // funcionando perfecto, o viceversa. Firebase se comprueba primero;
+            // el test de key legacy queda solo como respaldo para quien no
+            // haya migrado.
+            if (com.ivanna.omega.core.CloudSyncManager.isFirebaseAppReady()) {
+                _panel.value = _panel.value.copy(
+                    geminiAvailable = true,
+                    statusLine = "IVANNA: ✅ conectada (Firebase AI Logic)",
+                    errorMessage = null
+                )
+                return@launch
+            }
             // FIX (conectado ≠ formato correcto, 2026-09-04): antes esto solo
             // comprobaba que la key tuviera un formato plausible y que el
             // agente respondiera localmente. Con las keys "AQ." de AI Studio
