@@ -163,7 +163,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // FIX (bb4fa6b): com/ivanna/omega/audio/ParameterStore.kt (el nuevo,
     // NO el de core/) usa com.google.gson.Gson para serializar AudioState —
     // no estaba declarada, mismo tipo de bug que rompió el resample() antes.
@@ -189,7 +189,7 @@ dependencies {
     // Necesaria para el .await() de kotlinx.coroutines.tasks sobre
     // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
     // FIX (build rojo, ronda 3 — evidencia exacta del log de CI 2026-09-05T18:26-18:31):
     // pese al force() en resolutionStrategy más abajo, el log mostraba
     // literalmente qué jar se estaba cargando:
@@ -202,8 +202,8 @@ dependencies {
     // primer nivel es la señal más fuerte que Gradle respeta para resolver
     // conflictos de versión — se declara aquí explícitamente además de
     // mantener el force() como refuerzo.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     // Firebase AI Logic (migración Gemini, ver GeminiOrchestrator.kt) — versión
     // explícita, SIN el BoM de arriba a propósito: ese BoM está fijado en
@@ -300,12 +300,12 @@ tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
 configurations.all {
     resolutionStrategy {
         force(
-            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3",
-            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3",
+            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0",
+            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0",
             "org.jetbrains.kotlin:kotlin-stdlib:1.9.24",
             "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
+            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0"
         )
     }
 }
