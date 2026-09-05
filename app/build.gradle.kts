@@ -91,7 +91,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = "1.5.15"
     }
 
     packaging {
@@ -302,8 +302,8 @@ configurations.all {
         force(
             "org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3",
             "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3",
-            "org.jetbrains.kotlin:kotlin-stdlib:1.9.24",
-            "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24",
+            "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
+            "org.jetbrains.kotlin:kotlin-stdlib-common:2.2.21",
             "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1",
             "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
         )
