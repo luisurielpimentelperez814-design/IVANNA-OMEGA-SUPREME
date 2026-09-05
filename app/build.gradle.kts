@@ -222,3 +222,29 @@ tasks.register("validateUnifiedVersion") {
     }
 }
 tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
+
+// FIX (build rojo, 2026-09-05): compileDebugKotlin fallaba en 4 archivos
+// (IvannaMemoryArchitecture.kt, IvannaAdaptivePresetEngine.kt,
+// ProfileManager.kt, ProfilesLoader.kt) con "Your current Kotlin version
+// is 1.9.24, while kotlinx.serialization core runtime 1.7.3 requires at
+// least Kotlin 2.0.0-RC1" — verificado leyendo el log real de Gradle
+// (compileDebugKotlin FAILED), no adivinado.
+//
+// kotlinx-serialization-json ESTÁ declarado explícito arriba en 1.6.3
+// (compatible con Kotlin 1.9.24), pero Gradle resuelve por defecto a la
+// versión MÁS ALTA solicitada por cualquier dependencia del grafo —
+// firebase-ai:17.12.1 (agregado en la migración de Gemini a Firebase AI
+// Logic) trae kotlinx-serialization-core 1.7.3 transitivamente y le gana
+// a la versión explícita. Forzar el downgrade a 1.6.3 en TODO el grafo
+// de dependencias es el fix correcto: no requiere subir Kotlin a 2.0+
+// (cambio de compilador K2 con blast radius enorme sobre 188+ archivos
+// .kt, no justificado solo para esto) y no toca la línea que ya declara
+// 1.6.3 explícitamente arriba — solo evita que otra dependencia la pise.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3",
+            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3"
+        )
+    }
+}

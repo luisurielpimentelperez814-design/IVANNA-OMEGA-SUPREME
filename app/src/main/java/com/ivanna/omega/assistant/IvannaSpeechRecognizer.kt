@@ -91,7 +91,14 @@ class IvannaSpeechRecognizer(
 
     private fun startRecognizer(delayMs: Long = 0) {
         destroyRecognizer()   // previene zombie state en ROMs problemáticas
-        val start = {
+        // FIX (build rojo): sin tipo explícito, Kotlin infería () -> Any para
+        // este lambda (Log.d del try devuelve Int, no Unit — el catch termina
+        // en un Unit? por el safe-call — el supertipo común no es Unit).
+        // postDelayed() exige Runnable y la conversión automática de un
+        // lambda no-Unit requiere la feature experimental "unit conversions
+        // on arbitrary expressions". Anotar : () -> Unit fija el tipo sin
+        // tocar ninguna línea del cuerpo ni el comportamiento real.
+        val start: () -> Unit = {
             try {
                 recognizer = createRecognizer().also { r ->
                     r.setRecognitionListener(listener)
