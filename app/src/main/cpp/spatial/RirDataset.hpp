@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <cstdint>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -132,6 +133,9 @@ public:
     static void resampleLinear(std::vector<float>& channel, int irSr, int sessionSr);
 
 private:
+    /** Parsea metadata.csv (ya abierto) hacia rooms_; dir_ ya debe estar fijado. */
+    bool loadFromCsv(std::ifstream& f);
+
     std::string dir_;
     std::vector<RirRoomMeta> rooms_;
     std::vector<std::string> warnings_;

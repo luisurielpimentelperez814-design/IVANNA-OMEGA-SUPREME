@@ -119,14 +119,41 @@ WavRaw readWavPcm16(const std::string& path) {
 bool RirDataset::load(const std::string& dir) {
     rooms_.clear();
     warnings_.clear();
-    dir_ = dir;
 
-    const std::string csvPath = dir_ + "/metadata.csv";
-    std::ifstream f(csvPath);
-    if (!f.good()) {
-        warnings_.push_back("No se pudo abrir metadata.csv en " + csvPath);
-        return false;
+    // FIX (RIR sin root, 2026-09-04): las 4 llamadas existentes a load() pasan
+    // siempre "/data/adb/ivanna_omega/rir" — solo accesible con Magisk. Sin
+    // root, metadata.csv nunca se encuentra y el caller cae a passthrough en
+    // silencio (comportamiento previo, no fatal, pero el dataset de 200 salas
+    // medidas nunca se usa en un dispositivo no rooteado aunque vaya
+    // empaquetado en el APK). Se prueba primero la ruta pedida tal cual —
+    // cero riesgo para quien ya tiene root, mismo resultado exacto — y solo
+    // si falla se intenta la carpeta privada de la app (sin root, sandbox
+    // normal de Android), que es exactamente donde
+    // IvannaAssetProvider.rirDir(context) en Kotlin extrae el mismo dataset
+    // desde assets/ivanna_omega/rir/ la primera vez que se necesita.
+    // "com.ivanna.omega" es el applicationId real (ver todos los símbolos
+    // JNI Java_com_ivanna_omega_*); /data/data/<pkg> es el path estable que
+    // usa el propio framework de Android para Context.getFilesDir().
+    static const char* kNoRootFallbackDir =
+        "/data/data/com.ivanna.omega/files/ivanna_omega/rir";
+
+    std::vector<std::string> candidates = {dir};
+    if (dir != kNoRootFallbackDir) candidates.push_back(kNoRootFallbackDir);
+
+    for (const auto& candidateDir : candidates) {
+        const std::string csvPath = candidateDir + "/metadata.csv";
+        std::ifstream f(csvPath);
+        if (!f.good()) {
+            warnings_.push_back("No se pudo abrir metadata.csv en " + csvPath);
+            continue;
+        }
+        dir_ = candidateDir;
+        return loadFromCsv(f);
     }
+    return false;
+}
+
+bool RirDataset::loadFromCsv(std::ifstream& f) {
 
     std::string header;
     if (!std::getline(f, header)) {

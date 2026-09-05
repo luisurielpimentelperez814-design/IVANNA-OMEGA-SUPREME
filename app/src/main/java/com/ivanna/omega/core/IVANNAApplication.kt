@@ -267,6 +267,25 @@ class IVANNAApplication : Application() {
                 // PROPERTY_OUTPUT_SAMPLE_RATE reporta la tasa REAL del mix
                 // del HAL (48/96/192k según el dispositivo y la ruta activa);
                 // 48000 solo como último fallback defensivo.
+                // FIX (SAF/SOFA/HRTF/RIR nunca se usaban sin root, 2026-09-04):
+                // los 371 MB de datasets ya iban empaquetados en assets/ pero
+                // IvannaAssetProvider —la clase que los extrae a filesDir para
+                // acceso sin root— no tenía ningún caller en todo el proyecto
+                // (verificado con grep). Y aunque se llamara, TODO loader nativo
+                // (RirDataset, HrtfManager, SaFOptimizer, ivanna_object_renderer,
+                // omega_effect) solo conocía rutas root: /data/adb/ivanna_omega
+                // y /system/etc/ivanna_omega. RirDataset::load() ya prueba ahora
+                // /data/data/com.ivanna.omega/files/ivanna_omega/rir como
+                // segundo candidato — esta llamada es la que efectivamente pone
+                // los ficheros ahí ANTES de que DSPBridge.init() intente leerlos.
+                // Debe ir antes de DSPBridge.init(): correr en Dispatchers.IO
+                // porque copia ficheros (potencialmente grandes) la primera vez.
+                runCatching {
+                    kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                        com.ivanna.omega.core.IvannaAssetProvider.modelDir(this@IVANNAApplication)
+                    }
+                }.onFailure { Log.w(TAG, "Extracción de assets SAF/SOFA/HRTF/RIR falló (no fatal): ${it.message}") }
+
                 val hwSr = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager)
                     .getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
                     ?.toIntOrNull() ?: 48000
