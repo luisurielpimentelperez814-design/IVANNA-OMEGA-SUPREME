@@ -700,7 +700,7 @@ private fun GeminiConnectPanel(
                     onValueChange = { keyInput = it },
                     modifier      = Modifier.fillMaxWidth(),
                     placeholder   = {
-                        Text("AIzaSy…",
+                        Text("AIzaSy… o AQ.…",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted)
                     },

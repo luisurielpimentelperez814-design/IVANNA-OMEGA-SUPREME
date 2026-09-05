@@ -304,7 +304,7 @@ fun NetworkStatusPanel(
                 value         = apiKey,
                 onValueChange = { apiKey = it },
                 label         = { Text("API Key (Google AI Studio)", fontSize = 11.sp) },
-                placeholder   = { Text("AIzaSy…", fontSize = 11.sp, color = TextMuted) },
+                placeholder   = { Text("AIzaSy… o AQ.…", fontSize = 11.sp, color = TextMuted) },
                 singleLine    = true,
                 visualTransformation = if (keyVisible) VisualTransformation.None
                                        else PasswordVisualTransformation(),
