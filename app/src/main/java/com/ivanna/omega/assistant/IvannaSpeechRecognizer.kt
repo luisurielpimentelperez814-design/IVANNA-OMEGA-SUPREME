@@ -36,6 +36,20 @@ enum class SpeechState {
  * Reintento automático ante ERROR_CLIENT (1 intento): es el error más común
  * en ROMs donde el servicio STT del fabricante termina abruptamente.
  *
+ * FIX MICRÓFONO (2026-09-05, errores 11/12 reportados en uso real): el modo
+ * manos-libres de IvannaAssistant reinicia startListening() automáticamente
+ * tras cada respuesta y tras cada silencio — mucho más seguido que el botón
+ * manual de antes. Eso expuso dos causas raíz reales, no solo mensajes feos:
+ *  - ERROR_SERVER_DISCONNECTED (11): destruir y recrear el recognizer SIN
+ *    ninguna pausa es la causa documentada más común de este error en varios
+ *    fabricantes — el servicio no llega a desvincularse antes del nuevo
+ *    bind. Ahora reintenta una vez con 300ms de respiro.
+ *  - ERROR_LANGUAGE_NOT_SUPPORTED (12): el idioma estaba forzado a "es-MX"
+ *    fijo; varios motores STT de fabricante no traen esa variante regional
+ *    exacta instalada. Ahora usa el locale ACTUAL del dispositivo como
+ *    primario (siempre soportado, es el que el usuario ya tiene configurado)
+ *    y es-MX/es-ES/es-US como preferencia adicional.
+ *
  * IvannaVoiceRecorder: cada utterance exitosa se registra (append-only, RAM)
  * para que el pipeline conversacional acceda al texto original sin mutaciones.
  */
@@ -75,19 +89,35 @@ class IvannaSpeechRecognizer(
         startRecognizer()
     }
 
-    private fun startRecognizer() {
+    private fun startRecognizer(delayMs: Long = 0) {
         destroyRecognizer()   // previene zombie state en ROMs problemáticas
-        try {
-            recognizer = createRecognizer().also { r ->
-                r.setRecognitionListener(listener)
-                r.startListening(buildIntent())
+        val start = {
+            try {
+                recognizer = createRecognizer().also { r ->
+                    r.setRecognitionListener(listener)
+                    r.startListening(buildIntent())
+                }
+                _state.value = SpeechState.LISTENING
+                Log.d(TAG, "Reconocedor iniciado (intento ${retryCount + 1})")
+            } catch (t: Throwable) {
+                Log.e(TAG, "No se pudo iniciar recognizer: ${t.message}", t)
+                _state.value = SpeechState.ERROR
+                onErrorCb?.invoke("No se pudo iniciar el reconocedor: ${t.message}")
             }
-            _state.value = SpeechState.LISTENING
-            Log.d(TAG, "Reconocedor iniciado (intento ${retryCount + 1})")
-        } catch (t: Throwable) {
-            Log.e(TAG, "No se pudo iniciar recognizer: ${t.message}", t)
-            _state.value = SpeechState.ERROR
-            onErrorCb?.invoke("No se pudo iniciar el reconocedor: ${t.message}")
+        }
+        // FIX MICRÓFONO (error 11, ERROR_SERVER_DISCONNECTED): destruir y
+        // recrear el recognizer EN EL MISMO ciclo de ejecución, sin ninguna
+        // pausa, es la causa documentada más común de este error en varios
+        // fabricantes (el servicio STT no llega a desvincularse antes de que
+        // se le pida un nuevo bind) — y el modo manos-libres (que reinicia la
+        // escucha automáticamente tras cada respuesta y tras cada silencio)
+        // multiplica la frecuencia de estos ciclos comparado con el botón
+        // manual de antes. Un respiro de 300ms entre destruir y recrear es
+        // el fix ampliamente documentado para esto.
+        if (delayMs > 0) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(start, delayMs)
+        } else {
+            start()
         }
     }
 
@@ -126,9 +156,18 @@ class IvannaSpeechRecognizer(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-MX")
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "es-MX")
-        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("es-ES", "es-US"))
+        // FIX MICRÓFONO (error 12, ERROR_LANGUAGE_NOT_SUPPORTED): antes se
+        // forzaba "es-MX" sin importar qué locale tenga instalado el motor
+        // STT del fabricante — varios solo traen "es-ES" genérico o el
+        // locale exacto del sistema, no todas las variantes regionales. El
+        // locale ACTUAL del dispositivo siempre está soportado (es el que el
+        // usuario ya tiene configurado en el sistema), así que se usa como
+        // primario; es-MX/es-ES/es-US quedan como preferencia adicional para
+        // motores que sí soporten elegir entre variantes.
+        val deviceLocale = java.util.Locale.getDefault().toLanguageTag()
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, deviceLocale)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, deviceLocale)
+        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("es-MX", "es-ES", "es-US"))
     }
 
     private val listener = object : RecognitionListener {
@@ -149,6 +188,16 @@ class IvannaSpeechRecognizer(
                 retryCount++
                 Log.i(TAG, "Reintentando ante ERROR_CLIENT ($retryCount)")
                 startRecognizer()
+                return
+            }
+            // FIX MICRÓFONO (error 11): a diferencia de ERROR_CLIENT,
+            // ERROR_SERVER_DISCONNECTED sí necesita el respiro de 300ms
+            // (ver startRecognizer) o el reintento inmediato puede volver a
+            // desconectar el mismo servicio que recién se cayó.
+            if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && retryCount < MAX_RETRIES) {
+                retryCount++
+                Log.i(TAG, "Reintentando ante ERROR_SERVER_DISCONNECTED ($retryCount)")
+                startRecognizer(delayMs = 300)
                 return
             }
             _state.value = when (error) {
@@ -193,6 +242,11 @@ class IvannaSpeechRecognizer(
         SpeechRecognizer.ERROR_NETWORK,
         SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Sin red y sin reconocimiento offline disponible."
         SpeechRecognizer.ERROR_SERVER          -> "El servicio de voz del fabricante falló."
+        SpeechRecognizer.ERROR_SERVER_DISCONNECTED ->
+            "El servicio de voz se desconectó — reintentando..."
+        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ->
+            "El idioma de este dispositivo no está soportado por el motor de voz instalado. " +
+            "Instala/actualiza \"Reconocimiento de voz\" de Google en Play Store."
         else -> "Error de reconocimiento ($error)."
     }
 }
