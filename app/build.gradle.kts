@@ -240,11 +240,35 @@ tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
 // (cambio de compilador K2 con blast radius enorme sobre 188+ archivos
 // .kt, no justificado solo para esto) y no toca la línea que ya declara
 // 1.6.3 explícitamente arriba — solo evita que otra dependencia la pise.
+// FIX (build rojo, continuación de 2026-09-05, verificado en log de CI
+// POSTERIOR al fix anterior — 2026-09-05T18:04-18:08): el force() de abajo
+// solo cubría kotlinx-serialization-*, pero el mismo síntoma ("Class X was
+// compiled with an incompatible version of Kotlin") reapareció para TODO
+// el árbol base de Kotlin — kotlin.Unit, kotlinx.coroutines.flow.StateFlow,
+// kotlin.coroutines.CoroutineContext, kotlin.reflect.KProperty,
+// kotlin.enums.EnumEntries — en prácticamente cada archivo .kt del módulo
+// (metadata real 2.2.0/2.3.0, compilador 1.9.0 solo lee hasta 2.0.0).
+//
+// Misma causa raíz que la ya diagnosticada: firebase-ai:17.12.1 no declara
+// BOM propio y arrastra transitivamente kotlin-stdlib y
+// kotlinx-coroutines-core en versiones más nuevas que el Kotlin 1.9.24
+// declarado en build.gradle.kts raíz, y Gradle resuelve por defecto a la
+// más alta solicitada por cualquier dependencia del grafo.
+//
+// Se extiende el mismo force() (no se reemplaza) a los dos artefactos que
+// el log real señala: kotlin-stdlib a la versión exacta del plugin Kotlin
+// del proyecto (1.9.24), y kotlinx-coroutines-core a 1.7.1 — la misma
+// serie que kotlinx-coroutines-play-services ya declarado explícito arriba,
+// compatible con Kotlin 1.9.x sin requerir subir a K2/2.0+.
 configurations.all {
     resolutionStrategy {
         force(
             "org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3",
-            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3"
+            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3",
+            "org.jetbrains.kotlin:kotlin-stdlib:1.9.24",
+            "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
         )
     }
 }
