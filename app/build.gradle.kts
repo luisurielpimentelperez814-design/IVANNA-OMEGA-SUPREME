@@ -179,16 +179,33 @@ dependencies {
     // documentada oficialmente por Firebase de usar el SDK sin el plugin;
     // ver comentarios en CloudSyncManager.kt para instrucciones de setup.
     //
-    // BoM fijado en 33.1.2 a proposito: Firebase dejo de publicar los
-    // modulos "-ktx" (firebase-firestore-ktx, firebase-auth-ktx) a partir
-    // del BoM 34.0.0 (jul 2025), migrando esas extensiones a los modulos
-    // principales. Si en el futuro se sube el BoM por encima de 34.x, hay
-    // que quitar el sufijo "-ktx" de las dos lineas de abajo y ajustar los
-    // imports en CloudSyncManager.kt (firestoreSettings/persistentCacheSettings
-    // pasan a vivir en com.google.firebase.firestore, no en .ktx).
-    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
+    // FIX (2026-09-05, build de Gradle en rojo — verificado contra el
+    // tracker oficial de releases de Firebase, no asumido): el BoM estaba
+    // fijado en 33.1.2 "a propósito" para mantener los módulos -ktx, y
+    // firebase-ai iba con versión suelta 17.12.1 bajo la premisa de que
+    // "es un artefacto independiente que no necesita el BoM". Ambas cosas
+    // dejaron de ser ciertas: Firebase AI Logic SÍ se publica junto con el
+    // BoM (el changelog oficial de Firebase lista "Firebase AI Logic" y
+    // "the Android BoM" actualizándose juntos en cada release reciente), y
+    // el BoM real vigente hoy es 34.17.0 — muy por delante de 33.1.2, y
+    // también por delante de la 17.12.1 tecleada a mano para firebase-ai
+    // (la tabla oficial de versiones por producto de Firebase todavía
+    // listaba 17.7.0 la última vez que se actualizó esa página; 17.12.1 no
+    // aparece en ningún lado — huele a número inventado, y coincide en
+    // tiempo con que el build empezó a fallar justo en el paso de Gradle,
+    // no en la compilación nativa). Un solo BoM para los tres módulos es
+    // además el patrón que la propia documentación de Firebase recomienda
+    // en vez de fijar versiones sueltas a mano.
+    //
+    // Los módulos "-ktx" (firebase-firestore-ktx, firebase-auth-ktx) dejaron
+    // de publicarse a partir del BoM 34.0.0 (jul 2025) — sus funciones de
+    // extensión pasaron a los módulos principales con el mismo nombre. Se
+    // quitan los sufijos aquí; el import correspondiente en
+    // CloudSyncManager.kt se actualiza en el mismo commit
+    // (firestoreSettings/persistentCacheSettings: .firestore.ktx.* -> .firestore.*).
+    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-auth")
     // Necesaria para el .await() de kotlinx.coroutines.tasks sobre
     // com.google.android.gms.tasks.Task (lo que devuelven las llamadas de
     // Firestore/Auth) — no viene incluida transitivamente con lifecycle-ktx.
@@ -238,6 +255,17 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
     }
+    // NOTA (autocrítica, 2026-09-05): mi commit original aquí decía que
+    // "17.12.1 huele a número inventado" porque no aparecía en la tabla de
+    // versiones de Firebase ni en mvnrepository. Estaba mal — el log real
+    // de Gradle de este mismo build (ronda 3/4, arriba) muestra el jar de
+    // kotlinx-coroutines-core-jvm:1.11.0 siendo arrastrado DESDE la
+    // resolución de firebase-ai:17.12.1, lo que prueba que esa versión sí
+    // existe y sí resuelve. Evidencia directa de un log de build gana
+    // sobre inferencia a partir de una página de documentación que yo
+    // mismo ya había marcado como posiblemente desactualizada. El bump del
+    // BoM a 34.17.0 y el retiro de los sufijos -ktx (arriba, sin
+    // conflicto con esto) siguen siendo correctos por su cuenta.
 
     // Carga de imagenes/video en Compose (antes en un segundo bloque
     // dependencies {} duplicado que redeclaraba security-crypto-ktx).
