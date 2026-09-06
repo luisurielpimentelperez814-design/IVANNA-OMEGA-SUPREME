@@ -73,8 +73,10 @@ class IvannaGeminiAgent(
     init {
         // Migración Firebase AI Logic (ver comentario grande en
         // GeminiOrchestrator.kt): reusa la MISMA inicialización manual de
-        // Firebase que ya usa CloudSyncManager para sync de perfiles — no-op
-        // seguro mientras las 3 constantes FIREBASE_* sigan como placeholder.
+        // Firebase que ya usa CloudSyncManager para sync de perfiles.
+        // (Comentario actualizado: las 3 constantes FIREBASE_* ya tienen
+        // valores reales del proyecto — dejaron de ser placeholder — así
+        // que esta llamada ya inicializa Firebase de verdad, no es un no-op.)
         com.ivanna.omega.core.CloudSyncManager.ensureFirebaseAppReady(context)
     }
 
