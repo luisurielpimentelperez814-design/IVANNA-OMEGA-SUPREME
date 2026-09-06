@@ -52,7 +52,8 @@ struct alignas(8) ShmHeader {
 // Contrato de layout fijado: Kotlin lee el frame de control en
 // base+sizeof(ShmHeader). Si esta estructura cambia de tamaño, el build FALLA
 // aquí en vez de desalinear silenciosamente al reader.
-static_assert(sizeof(ShmHeader) == 16, "ShmHeader debe medir 16 bytes (contrato SHM con Kotlin)");
+static_assert(sizeof(ShmHeader) == 32,
+              "ShmHeader ABI mismatch: expected 32 bytes");
 
 // ABI SHM v2:
 // El header nativo ARM64 mide 32 bytes.
