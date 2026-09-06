@@ -269,17 +269,11 @@ class IvannaGeminiAgent(
                 appendLine(memoryContext)
                 appendLine()
             }
-            // Contexto vivo de la sesión conversacional (canción actual, preset
-            // aplicado, cambios DSP, temas, ánimo y preferencias temporales que
-            // el usuario expresó hablando). Sin esto, IvannaConversationalCore
-            // guardaba estado que nunca llegaba al motor cognitivo.
-            val sessionContext = IvannaConversationalCore.contextSummary()
-            if (sessionContext.isNotBlank()) {
-                appendLine("=== CONTEXTO DE SESIÓN ===")
-                appendLine(sessionContext)
-                appendLine("Respeta las preferencias activas del usuario al proponer o aplicar ajustes.")
-                appendLine()
-            }
+            // El bloque "CONTEXTO DE LA SESIÓN ACTUAL" de arriba ya inyecta
+            // sessionContext; este segundo bloque redeclaraba la misma val en
+            // el mismo scope (Conflicting declarations → compile error) y
+            // duplicaba el contenido en el prompt. Eliminado: la memoria viva
+            // de sesión entra una sola vez.
             appendLine("=== PROTOCOLO DE COMANDOS (WHITELIST) ===")
             appendLine("Cuando el usuario pida un ajuste de audio, emite EXACTAMENTE: [CMD:nombre_comando]")
             appendLine("Comandos válidos:")
