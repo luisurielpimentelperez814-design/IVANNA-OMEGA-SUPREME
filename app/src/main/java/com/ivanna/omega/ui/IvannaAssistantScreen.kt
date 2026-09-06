@@ -664,6 +664,7 @@ private fun GeminiConnectPanel(
                 if (connected) {
                     OutlinedButton(
                         onClick = onTest,
+                        enabled  = keyInput.isNotBlank() || savedKeyPresent,
                         border  = androidx.compose.foundation.BorderStroke(1.dp, PhosphorGreen.copy(alpha = 0.5f)),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.height(30.dp)
