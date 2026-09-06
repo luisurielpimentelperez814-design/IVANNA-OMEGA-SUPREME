@@ -608,6 +608,19 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [verify-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # FIX (release en estado a medias: existia, luego desaparecio sin
+    # volver a crearse): el concurrency group del workflow completo
+    # (omega-${{ github.ref }}, cancel-in-progress: true, linea 13) mata
+    # CUALQUIER job en vuelo — incluido este — en cuanto llega un push
+    # nuevo a main. Con multiples pushes seguidos (frecuente en este
+    # repo) eso puede cortar la secuencia delete+create A MITAD: el
+    # release queda borrado y el create nunca llega a correr. Se le da
+    # a este job su PROPIO grupo de concurrencia, independiente del de
+    # build/test (esos SI queremos que se cancelen rapido en cada push;
+    # publicar un release no debe interrumpirse nunca a medio camino).
+    concurrency:
+      group: omega-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
