@@ -177,14 +177,15 @@ object ShmManager {
             // Layout v2: el daemon trunca el backing a ivanna::SHM_SIZE (constante unica C++).
             // La app NO duplica ese numero: mapea con la longitud real del archivo
             // recibido (stat del fd), con minimo del fallback v1 si no es legible.
-            // FIX (CI rojo, dos errores de tipo): Os.fstat() de android.system
-            // exige java.io.FileDescriptor, no ParcelFileDescriptor ni Int —
-            // se hace stat sobre el FileDescriptor del PFD duplicado.
-            val dupPfd = android.os.ParcelFileDescriptor.dup(rawFd)
+            // FIX (CI rojo): ParcelFileDescriptor.dup() NO acepta un Int crudo
+            // (rawFd de detachFd()) — solo FileDescriptor/PFD. Se adopta el fd
+            // UNA vez y se duplica desde esa instancia para el fstat de tamaño,
+            // sin fuga (se cierra el duplicado) ni doble-adopción del mismo fd.
+            val nativeFd = ParcelFileDescriptor.adoptFd(rawFd)
+            val dupPfd = ParcelFileDescriptor.dup(nativeFd.fileDescriptor)
             val realSize = runCatching { android.system.Os.fstat(dupPfd.fileDescriptor).st_size.toInt() }
                 .also { runCatching { dupPfd.close() } }
                 .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
-            val nativeFd = ParcelFileDescriptor.adoptFd(rawFd)
             val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
             if (buf == null) {
                 Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
