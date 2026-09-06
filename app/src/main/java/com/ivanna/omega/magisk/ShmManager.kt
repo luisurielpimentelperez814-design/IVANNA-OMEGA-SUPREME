@@ -52,6 +52,10 @@ object ShmManager {
     // en cuanto el daemon crea el backing se usa su longitud real.
     private const val SHM_SIZE_FALLBACK_V1 = 65536
 
+    // sizeof(ivanna::ShmHeader) — única fuente: daemon/core/shm_manager.h
+    // (static_assert(sizeof(ShmHeader)==16) hace fallar el build si cambia).
+    private const val SHM_HEADER_BYTES = 16
+
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
 
@@ -214,21 +218,28 @@ object ShmManager {
         // solo gastaria ciclos a 10 Hz.
         if (!mappedFromDaemon) return false
         return try {
-            // Leer epoch (seqlock: verificar antes y después)
-            val HEADER_BYTES = 16
+            // Offset del frame = sizeof(ivanna::ShmHeader), fijado por
+            // static_assert en daemon/core/shm_manager.h (el build C++ falla
+            // si diverge — no es un literal inventado).
+            val HEADER_BYTES = SHM_HEADER_BYTES
             if (buf.capacity() < HEADER_BYTES + 16) return false
 
+            // Endianness: ByteBuffer Java nace BIG_ENDIAN; el SHM nativo es
+            // little-endian (ARM64). Sin forzarlo, getLong/getFloat leían los
+            // bytes invertidos — el reader nunca validaba un frame real.
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
             // epoch está en bytes 0..7 (ShmHeader::epoch, std::atomic<uint64_t>)
-            val epochBefore = buf.getLong(0)
+            val epochBefore = le.getLong(0)
             if (epochBefore % 2L != 0L) return false   // escritura en curso
 
             // SAF frame: [gain:f][compressor:f][exciter:f][spatial:f]
-            val gain       = buf.getFloat(HEADER_BYTES + 0)
-            val compressor = buf.getFloat(HEADER_BYTES + 4)
-            val exciter    = buf.getFloat(HEADER_BYTES + 8)
-            val spatial    = buf.getFloat(HEADER_BYTES + 12)
+            val gain       = le.getFloat(HEADER_BYTES + 0)
+            val compressor = le.getFloat(HEADER_BYTES + 4)
+            val exciter    = le.getFloat(HEADER_BYTES + 8)
+            val spatial    = le.getFloat(HEADER_BYTES + 12)
 
-            val epochAfter = buf.getLong(0)
+            val epochAfter = le.getLong(0)
             if (epochAfter != epochBefore) return false  // torn read — reintentar después
 
             // Validar rango (datos plausibles)

@@ -49,6 +49,10 @@ struct alignas(8) ShmHeader {
     uint32_t              state_size;// sizeof(OmegaSharedState) esperado
     uint32_t              reserved;
 };
+// Contrato de layout fijado: Kotlin lee el frame de control en
+// base+sizeof(ShmHeader). Si esta estructura cambia de tamaño, el build FALLA
+// aquí en vez de desalinear silenciosamente al reader.
+static_assert(sizeof(ShmHeader) == 16, "ShmHeader debe medir 16 bytes (contrato SHM con Kotlin)");
 
 class OmegaShmManager {
 public:
