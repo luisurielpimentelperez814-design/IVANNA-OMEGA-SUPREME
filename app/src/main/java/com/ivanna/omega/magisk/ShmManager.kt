@@ -43,10 +43,14 @@ object ShmManager {
     private const val SHM_NAME = "ivanna_omega_hyperplane"
 
     // FIX: 4096 era una suposicion ("no hay contrato de tamano documentado").
-    // Si lo hay: daemon/core/shm_manager.h declara `SHM_SIZE = 65536`
+    // El tamano YA NO es un literal compartido: se deriva del backing file
+    // (fstat/length), que el daemon trunca a ivanna::SHM_SIZE (constante unica
+    // en daemon/core/shm_manager.h = 4096 + sizeof(OmegaSharedState) + 16KiB).
     // (64 KiB = 16 UnifiedControlFrames). Mapear 4 KiB contra una region de
     // 64 KiB dejaba 15/16 del hyperplane invisible para la app.
-    private const val SHM_SIZE_BYTES = 65536
+    // Fallback historico (layout v1, 64KiB). Solo se usa si el archivo no existe aun;
+    // en cuanto el daemon crea el backing se usa su longitud real.
+    private const val SHM_SIZE_FALLBACK_V1 = 65536
 
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
@@ -107,7 +111,7 @@ object ShmManager {
             return
         }
         try {
-            val shm = SharedMemory.create(SHM_NAME, SHM_SIZE_BYTES)
+            val shm = SharedMemory.create(SHM_NAME, SHM_SIZE_FALLBACK_V1)
             val buf = shm.mapReadWrite()
             if (!buf.isDirect) {
                 Log.e(TAG, "mapReadWrite() devolvió un buffer no-direct; abortando mlock")
@@ -122,7 +126,7 @@ object ShmManager {
             sharedMemory = shm
             mappedBuffer = buf
             mappedFromDaemon = false
-            Log.i(TAG, "SHM local '$SHM_NAME' mapeada (${SHM_SIZE_BYTES}B), mlock=${mlockResult == 0}")
+            Log.i(TAG, "SHM local '$SHM_NAME' mapeada (${SHM_SIZE_FALLBACK_V1}B), mlock=${mlockResult == 0}")
         } catch (e: Exception) {
             Log.e(TAG, "Fallo creando/mapeando SharedMemory: ${e.message}", e)
             initialized.set(false)
@@ -156,7 +160,12 @@ object ShmManager {
             // nativeMapSharedFd() hace close() tras el mmap.
             val pfd = ParcelFileDescriptor.dup(fds[0])
             val rawFd = pfd.detachFd()
-            val buf = nativeMapSharedFd(rawFd, SHM_SIZE_BYTES)
+            // Layout v2: el daemon trunca el backing a ivanna::SHM_SIZE (constante unica C++).
+            // La app NO duplica ese numero: mapea con la longitud real del archivo
+            // recibido (stat del fd), con minimo del fallback v1 si no es legible.
+            val realSize = runCatching { android.system.Os.fstat(android.os.ParcelFileDescriptor.dup(rawFd)).st_size.toInt() }
+                .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
+            val buf = nativeMapSharedFd(rawFd, realSize)
             if (buf == null) {
                 Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
             }

@@ -83,6 +83,9 @@ bool OmegaShmManager::init(const std::string& path) {
     auto* hdr = static_cast<ShmHeader*>(m_base);
     hdr->epoch.store(0, std::memory_order_release);
     hdr->frame_len  = 0;
+    hdr->magic      = OMEGA_SHM_MAGIC;
+    hdr->version    = OMEGA_SHM_VERSION;
+    hdr->state_size = static_cast<uint32_t>(sizeof(OmegaSharedState));
     hdr->reserved   = 0;
 
       SHM_LOG("SHM listo: %s (%llu bytes, mapeado en %p)",
@@ -109,7 +112,7 @@ bool OmegaShmManager::write(const void* src, size_t len) noexcept {
     if (!m_base || !src) return false;
 
     constexpr size_t kHeaderSize = sizeof(ShmHeader);
-    if (len > SHM_SIZE - kHeaderSize) return false;
+    if (len > SHM_STATE_OFFSET - kHeaderSize) return false; // frames SOLO en la pagina de control: nunca solapan OmegaSharedState @ SHM_STATE_OFFSET
 
     auto* hdr  = static_cast<ShmHeader*>(m_base);
     auto* data = static_cast<uint8_t*>(m_base) + kHeaderSize;

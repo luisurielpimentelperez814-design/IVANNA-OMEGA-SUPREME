@@ -22,16 +22,31 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include "omega_shared.h"  // sizeof(OmegaSharedState): fuente unica de tamano
 
 namespace ivanna {
 
-// Tamaño de la región SHM (64 KiB — 16 frames × ~4 KiB)
-inline constexpr size_t SHM_SIZE = 65536;
+// ── Layout unificado de la region SHM ──────────────────────────────────────
+// [ ShmHeader (16B, seqlock de control) | OmegaSharedState | frames | margen ]
+// Antes: SHM_SIZE=65536 pero sizeof(OmegaSharedState)=131272 -> el placement-new
+// del daemon escribia ~64KB FUERA del mmap (overflow real). Ahora la constante
+// unica deriva del tipo y se alinea a pagina con margen para frames de control.
+inline constexpr uint32_t OMEGA_SHM_MAGIC   = 0x4F4D4547u;  // "OMEG"
+inline constexpr uint32_t OMEGA_SHM_VERSION = 2u;           // layout v2
+inline constexpr size_t   SHM_STATE_OFFSET  = 4096;         // pagina 0: control
+inline constexpr size_t   SHM_CONTROL_BYTES = 16384;        // reserva p/ frames
+inline constexpr size_t   SHM_SIZE_RAW      = SHM_STATE_OFFSET + sizeof(OmegaSharedState) + SHM_CONTROL_BYTES;
+inline constexpr size_t   SHM_SIZE          = (SHM_SIZE_RAW + 4095) & ~size_t(4095); // alineado a pagina
+static_assert(SHM_SIZE >= SHM_STATE_OFFSET + sizeof(OmegaSharedState),
+              "SHM_SIZE no cubre OmegaSharedState");
 
 // Layout de los primeros 16 bytes (seqlock header)
 struct alignas(8) ShmHeader {
     std::atomic<uint64_t> epoch;     // seqlock epoch: par = estable, impar = escribiendo
     uint32_t              frame_len; // longitud del frame serializado en bytes
+    uint32_t              magic;     // OMEGA_SHM_MAGIC — detecta memoria incompatible
+    uint32_t              version;   // OMEGA_SHM_VERSION — layout del protocolo
+    uint32_t              state_size;// sizeof(OmegaSharedState) esperado
     uint32_t              reserved;
 };
 

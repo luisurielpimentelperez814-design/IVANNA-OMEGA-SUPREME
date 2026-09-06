@@ -44,7 +44,12 @@ private:
     std::atomic<int> m_tail{0};
 };
 
+inline constexpr uint32_t OMEGA_STATE_MAGIC = 0x53544154u; // "STAT"
+
 struct OmegaSharedState {
+    // Guardia de inicializacion: el daemon la escribe tras el placement-new;
+    // si al rearrancar coincide, se reutiliza el estado vivo sin reinicializar.
+    std::atomic<uint32_t> state_magic{0};
     std::atomic<float> ai_runtime_gain_mul{1.0f};
     // ── Control básico ────────────────────────────────────────────────────────
     std::atomic<float> intensity;

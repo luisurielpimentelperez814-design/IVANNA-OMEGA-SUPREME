@@ -85,18 +85,37 @@ int setup_shared_memory(int sampleRate) {
     void* base = ivanna::shmManager().base();
 
     if (base != nullptr) {
+        // Estado en offset fijo SHM_STATE_OFFSET (pagina 1): desacoplado de
+        // sizeof(ShmHeader) y jamas solapa la pagina de control (seqlock+frames).
+        auto* hdr = static_cast<ivanna::ShmHeader*>(base);
         auto* state =
             reinterpret_cast<OmegaSharedState*>(
                 static_cast<uint8_t*>(base)
-                + sizeof(ivanna::ShmHeader)
+                + ivanna::SHM_STATE_OFFSET
             );
 
-        new(state) OmegaSharedState();
+        const bool layout_ok =
+            hdr->magic      == ivanna::OMEGA_SHM_MAGIC &&
+            hdr->version    == ivanna::OMEGA_SHM_VERSION &&
+            hdr->state_size == static_cast<uint32_t>(sizeof(OmegaSharedState)) &&
+            state->state_magic.load(std::memory_order_acquire) == OMEGA_STATE_MAGIC;
+
+        if (layout_ok) {
+            // Daemon reiniciado con la app viva: reattach SIN placement-new
+            // destructivo sobre el estado compartido.
+            log_message("OmegaSharedState: magic OK - reattach sin reinicializar");
+        } else {
+            log_message("OmegaSharedState: init (primer arranque o layout incompatible)");
+            new(state) OmegaSharedState();
+            state->state_magic.store(OMEGA_STATE_MAGIC, std::memory_order_release);
+        }
 
         state->is_processing.store(true);
         state->current_latency_ms.store(0.0f);
 
-        log_message("OmegaSharedState inicializado dentro de SHM");
+        log_message("OmegaSharedState listo (offset=4096, sizeof=" +
+                    std::to_string(sizeof(OmegaSharedState)) + ", SHM_SIZE=" +
+                    std::to_string(ivanna::SHM_SIZE) + ")");
     }
 
     log_message("Shared Memory listo fd=" + std::to_string(ivanna::shmManager().fd()));

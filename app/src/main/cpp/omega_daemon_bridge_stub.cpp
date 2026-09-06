@@ -42,7 +42,7 @@ OmegaSharedState* omega_daemon_get_shared_state() {
         return nullptr;
     }
 
-    g_map_size = 65536;
+    g_map_size = ivanna::SHM_SIZE; // constante unica (era literal 65536 desincronizado)
 
     g_map = mmap(
         nullptr,
@@ -74,7 +74,7 @@ OmegaSharedState* omega_daemon_get_shared_state() {
     auto* state =
         reinterpret_cast<OmegaSharedState*>(
             static_cast<uint8_t*>(g_map)
-            + sizeof(ivanna::ShmHeader)
+            + ivanna::SHM_STATE_OFFSET // mismo offset que el daemon (era sizeof(ShmHeader): desalineado)
         );
 
     g_shared = state;
