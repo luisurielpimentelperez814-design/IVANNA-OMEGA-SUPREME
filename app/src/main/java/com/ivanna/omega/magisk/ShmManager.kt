@@ -60,7 +60,7 @@ object ShmManager {
     private const val HANDSHAKE_TIMEOUT_MS = 1500
 
     private external fun nativeMlockBuffer(buffer: ByteBuffer): Int
-    private external fun nativeMapSharedFd(fd: Int, size: Int): ByteBuffer?
+    private external fun nativeMapSharedFd(fd: FileDescriptor, size: Int): ByteBuffer?
     private external fun nativeUnmapSharedFd(buffer: ByteBuffer): Int
 
     private val loaded = NativeLibraryLoader.ensureLoaded()
@@ -169,7 +169,8 @@ object ShmManager {
             // recibido (stat del fd), con minimo del fallback v1 si no es legible.
             val realSize = runCatching { android.system.Os.fstat(android.os.ParcelFileDescriptor.dup(rawFd)).st_size.toInt() }
                 .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
-            val buf = nativeMapSharedFd(rawFd, realSize)
+            val nativeFd = ParcelFileDescriptor.adoptFd(rawFd)
+            val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
             if (buf == null) {
                 Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
             }
