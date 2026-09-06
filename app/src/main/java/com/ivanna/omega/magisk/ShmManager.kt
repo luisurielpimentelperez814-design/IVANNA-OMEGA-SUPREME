@@ -11,6 +11,7 @@ import android.os.SharedMemory
 import android.util.Log
 import com.ivanna.omega.core.NativeLibraryLoader
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -173,6 +174,22 @@ object ShmManager {
             val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
             if (buf == null) {
                 Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
+            } else {
+                // FIX (endianness, verificado — NewDirectByteBuffer en JNI
+                // siempre crea el buffer en el orden por defecto de Java,
+                // BIG_ENDIAN, sin importar el layout real de la memoria
+                // nativa). El daemon escribe ShmHeader.epoch y el frame SAF
+                // con enteros/floats nativos de ARM64, que es little-endian
+                // en todo dispositivo Android actual. Sin esto, epoch (el
+                // seqlock) y los 4 floats de readAndApplySafFrame() se leían
+                // con los bytes invertidos — el chequeo de paridad de epoch
+                // quedaba comprobando bits sin relación con la escritura
+                // real, y un float little-endian reinterpretado como
+                // big-endian da un patrón de bits esencialmente aleatorio,
+                // casi nunca dentro de gain !in 0.1f..4.0f. Explica por qué
+                // esa función probablemente nunca validaba un frame real
+                // incluso con el fd ya recibido correctamente.
+                buf.order(ByteOrder.LITTLE_ENDIAN)
             }
             return buf
         } catch (t: Throwable) {
