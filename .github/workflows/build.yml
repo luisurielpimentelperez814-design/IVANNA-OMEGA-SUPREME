@@ -668,32 +668,48 @@ jobs:
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
-          create_release() {
-            gh release create "$TAG" \
-              "$ZIP_NAME" \
-              "$APK_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "IVANNA OMEGA SUPREME $TAG" \
-              --notes "$NOTES"
-          }
+          # FIX (HTTP 422 "Cannot delete asset from an immutable release",
+          # recurrente en v2.3.2 y v2.3.4): un intento previo aqui borraba
+          # la release completa y la recreaba con el MISMO tag al toparse
+          # con el 422 — eso NO funciona: la documentacion oficial de
+          # GitHub confirma que el tag de una immutable release queda
+          # protegido (no se puede mover/borrar) INCLUSO despues de borrar
+          # la release en si; "gh release create" con ese mismo tag vuelve
+          # a fallar. Immutable Releases (GA oct-2025) sella assets Y tag
+          # para siempre en cuanto el release queda PUBLICADO, sin
+          # excepcion, aunque luego se desactive la opcion a nivel repo.
+          #
+          # La correccion real documentada por GitHub: crear como DRAFT,
+          # subir los assets mientras es draft (los drafts SI son mutables
+          # bajo Immutable Releases), y publicar (--draft=false) al final
+          # — asi nunca hace falta agregar/modificar assets sobre un
+          # release ya publicado. Si el tag YA quedo publicado e inmutable
+          # de una corrida anterior, la unica salida real es una version
+          # nueva (ver mensaje de error mas abajo) — no hay forma de
+          # reparar ESE tag.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # FIX (release rojo: "Cannot delete asset from an immutable
-            # release"): --clobber intenta BORRAR el asset existente antes
-            # de resubirlo. GitHub puede marcar una release como inmutable
-            # (protección de cadena de suministro) una vez publicada, y esa
-            # operación de borrado falla con HTTP 422 aunque el upload en sí
-            # sería válido. No hay forma de "desinmutabilizar" un asset —
-            # la única salida real es borrar la RELEASE completa (sí
-            # permitido) y recrearla desde cero con el mismo tag.
-            if ! gh release upload "$TAG" \
-              "$ZIP_NAME" \
-              "$APK_NAME" \
-              --repo "$GITHUB_REPOSITORY" --clobber; then
-              echo "clobber de asset fallo (release inmutable) — borrando release completa y recreando con el mismo tag"
-              gh release delete "$TAG" --yes --repo "$GITHUB_REPOSITORY"
-              create_release
+            IS_DRAFT=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
+            if [ "$IS_DRAFT" = "true" ]; then
+              gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" \
+                --repo "$GITHUB_REPOSITORY" --clobber
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+            else
+              echo "ERROR: el release $TAG ya existe PUBLICADO — casi seguro"
+              echo "inmutable (GitHub Immutable Releases). Assets y tag"
+              echo "quedan sellados para siempre, sin excepcion; borrar y"
+              echo "recrear con el mismo tag NO es una salida real."
+              echo "Sube versionName/versionCode en version.properties (y"
+              echo "module.prop/update.json en sync) a un valor NUEVO,"
+              echo "nunca antes usado, y vuelve a pushear."
+              exit 1
             fi
           else
-            create_release
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "IVANNA OMEGA SUPREME $TAG" \
+              --draft \
+              --notes "$NOTES"
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           fi
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
