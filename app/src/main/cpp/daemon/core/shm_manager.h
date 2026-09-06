@@ -54,6 +54,12 @@ struct alignas(8) ShmHeader {
 // aquí en vez de desalinear silenciosamente al reader.
 static_assert(sizeof(ShmHeader) == 16, "ShmHeader debe medir 16 bytes (contrato SHM con Kotlin)");
 
+// ABI SHM v2:
+// El header nativo ARM64 mide 32 bytes.
+// Kotlin debe mantener SHM_HEADER_BYTES sincronizado.
+static_assert(sizeof(ShmHeader) == 32,
+              "ShmHeader ABI mismatch: expected 32 bytes");
+
 class OmegaShmManager {
 public:
     // ── Lifecycle ─────────────────────────────────────────────────────────────
