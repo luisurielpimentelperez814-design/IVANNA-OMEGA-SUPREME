@@ -267,6 +267,23 @@ fun IvannaControlPanel(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(800)
         while (true) {
+            // FIX (HUD "en vivo" mostraba datos congelados de la última
+            // sesión de captura, para siempre, incluso con MediaProjection
+            // ya terminado): sin este guard, npeGenre/npeRmsDb/etc. nunca se
+            // reseteaban al morir la captura — el título dice "tiempo real"
+            // pero el estado era "último valor conocido, sin caducidad".
+            if (!com.ivanna.omega.audio.PlaybackCaptureService.isCapturing.value) {
+                npeGenre = "\u2014"
+                npeRmsDb = -60f
+                npeAgcGainDb = 0f
+                npeClassifyConfidence = 0f
+                npeClassifyThd = 0f
+                npeInferenceUs = -1L
+                rmsHistory.removeAt(0)
+                rmsHistory.add(-60f)
+                kotlinx.coroutines.delay(750)
+                continue
+            }
             npeGenre = IvannaNpeEngine.getDetectedGenre()
             val m = IvannaNpeEngine.getMetrics()
             val rmsLin = m.getOrElse(1) { 0f }
