@@ -38,13 +38,32 @@ class IvannaGeminiAgent(
         private const val HEALTH_CHECK_TIMEOUT_MS = 10_000L
 
         // Comandos DSP validados — whitelist estricta
+        // FIX (2026-09-05, "no logra mover parámetros" — verificado leyendo
+        // el código real, no adivinado): comparado contra el when() que de
+        // verdad dispara el DSP en IvannaAssistant.kt (líneas ~183-201),
+        // esta lista y esa lógica llevaban tiempo desincronizadas:
+        //   - "auto_optimize" pasaba esta validación pero el when() solo
+        //     reconocía el string "optimize" (sin "auto_") — nunca
+        //     coincidía, caía a else->null, no pasaba nada. Corregido en
+        //     IvannaAssistant.kt (mismo commit).
+        //   - Los 9 "*_preset" de abajo pasaban esta validación, Gemini
+        //     los devolvía creyendo que hacían algo, se registraban como
+        //     "comando validado" en persistSession()... y el when() no
+        //     tiene ninguna rama para ellos: caían a else->null igual.
+        //     Peor que no tener la función: parecía funcionar (se
+        //     validaba, se guardaba en el historial) pero el audio nunca
+        //     cambiaba. Se quitan de aquí hasta que exista una rama real
+        //     en el when() Y un AcousticIntent que los respalde — hoy
+        //     ninguno de los dos existe (revisado enum AcousticIntent
+        //     completo en IvannaLanguageCore.kt). Si el objetivo es que
+        //     Ivanna aplique perfiles con nombre, MUSICAL_INTENT +
+        //     SONG_PROFILE_REQUEST ya existen para eso por lenguaje
+        //     natural ("suena épico", "como Abbey Road") — decidir si
+        //     estos 9 deberían mapear ahí en vez de ser comandos nuevos.
         val VALID_DSP_COMMANDS = setOf(
             "voice_clarity", "cinema_mode", "music_mode", "concert_mode",
             "spatial_mode", "gentle_mode", "flat_mode", "volume_up",
-            "volume_down", "bass_boost", "treble_reduce", "auto_optimize",
-            "studio_reference", "bass_boost_preset", "vocal_clarity_preset",
-            "live_room_preset", "cinematic_preset", "electronic_preset",
-            "acoustic_preset", "rock_preset", "podcast_preset"
+            "volume_down", "bass_boost", "treble_reduce", "auto_optimize"
         )
     }
 
