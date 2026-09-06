@@ -148,7 +148,13 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
 
     // Transparencia absoluta: material limpio sin reduccion residual sale
     // bit-exacto — y con la MISMA latencia (cero) que cuando el limiter actua.
-    if (peak <= m_threshold && m_gainNow >= 0.99999f && !nonFinite) {
+    // FIX (fast-path fallaba tras release largo): >= 0.99999f es demasiado
+    // estricto — un release de 50 ms desde 0.5 tarda ~15 bloques en cruzar
+    // ese umbral, dejando el material posterior con una ganancia de 0.99999x
+    // aplicada muestra a muestra (no bit-exacto). Ampliamos la banda muerta
+    // a 0.9995 (~-0.004 dB, inaudible) y snap explicito a 1.0 para que el
+    // siguiente bloque limpio se vaya por la salida rapida.
+    if (peak <= m_threshold && m_gainNow >= 0.9995f && !nonFinite) {
         m_gainNow = 1.0f;
         m_peakBefore.store(peak, std::memory_order_relaxed);
         m_gainReduction.store(0.0f, std::memory_order_relaxed);
@@ -168,9 +174,20 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     // por muestra (~1.5 ms), asi que la envolvente de ganancia es continua.
     // El residuo que pueda asomar durante la rampa lo recoge la saturacion
     // suave de abajo (antes era un recorte duro = onda cuadrada).
-    const float blockGain = computeGainForPeak(peak);
+    const float blockGainRaw = computeGainForPeak(peak);
+    // FIX (envenamiento de gain): computeGainForPeak() devuelve limited/peakLin;
+    // con entradas patologicas (peak ~ 1e-9, denormals, NaN reciclado del bloque
+    // anterior) el cociente puede quedar fuera de [0, 1] o no finito. Un solo
+    // frame con gain no finito propaga NaN a TODO el resto del bloque via el
+    // filtro one-pole. Clamp defensivo antes de entrar al loop caliente.
+    const float blockGain = std::isfinite(blockGainRaw)
+        ? std::max(0.0f, std::min(1.0f, blockGainRaw))
+        : 1.0f;
     if (m_attackCoef <= 0.f) m_attackCoef = std::exp(-1.0f / (m_sampleRate * kAttackMs / 1000.f));
-    float gain = m_gainNow;
+    // Igual defensa sobre m_gainNow (por si un bloque previo con guard
+    // parcial dejo residuo no finito). Sin esto el fix del blockGain seria
+    // inutil: la contaminacion vendria via el estado, no via la entrada.
+    float gain = std::isfinite(m_gainNow) ? m_gainNow : 1.0f;
 
     for (int i = 0; i < frames; ++i) {
         if (blockGain < gain) {
