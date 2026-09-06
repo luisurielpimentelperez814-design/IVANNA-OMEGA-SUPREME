@@ -205,6 +205,22 @@ jobs:
           # Hardening: RELRO + BIND_NOW (segmento GNU_RELRO + flag BIND_NOW)
           "$READELF" -lW ivanna_daemon | grep -q "GNU_RELRO" || { echo "ERROR: sin RELRO"; exit 1; }
           "$READELF" -dW ivanna_daemon | grep -qE "BIND_NOW|FLAGS.*NOW" || { echo "ERROR: sin BIND_NOW"; exit 1; }
+          # FIX (comprobacion real, no supuesta): el daemon lo lanza Magisk
+          # service.sh como root FUERA del sandbox del APK, sin el
+          # directorio de librerias nativas en LD_LIBRARY_PATH. Si queda
+          # NEEDED contra libc++_shared.so, el proceso muere antes de
+          # main() sin escribir ni una linea de log (exactamente el
+          # sintoma reportado: modulo ACTIVO, daemon nunca bindea,
+          # daemon.log vacio). CMakeLists.txt del daemon fuerza c++_static
+          # via -nostdlib++, pero "file" reportando "dynamically linked"
+          # NO lo confirma - eso es normal en CUALQUIER PIE (usa
+          # /system/bin/linker64 para cargarse a si mismo aunque su C++
+          # runtime este estatico). La unica prueba real es el NEEDED
+          # explicito de la seccion dinamica:
+          NEEDED="$("$READELF" -dW ivanna_daemon | grep -i 'NEEDED')"
+          echo "$NEEDED"
+          echo "$NEEDED" | grep -qi "libc++_shared" && { echo "ERROR: ivanna_daemon depende de libc++_shared.so — se ejecuta fuera del sandbox del APK via Magisk y NO puede resolverla, el proceso moriria antes de bindear el socket"; exit 1; }
+          echo "OK: sin dependencia de libc++_shared.so — daemon autocontenido para ejecucion fuera del APK"
           sha256sum ivanna_daemon | tee daemon_sha256.txt
 
       - name: Build APK (Gradle provisionado)
