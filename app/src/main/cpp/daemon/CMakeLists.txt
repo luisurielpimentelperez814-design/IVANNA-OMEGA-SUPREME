@@ -12,6 +12,23 @@ add_executable(ivanna_daemon
     ../IvannaSelfHealingEngine.cpp
 )
 
+# FIX (CI exit 1, "fatal error: 'omega_shared.h' file not found"):
+#   El parche SHM (ae6588c) hizo que shm_manager.h incluya "omega_shared.h"
+#   (que vive en ../include/). El build de la APP resolvia ese include porque
+#   app/src/main/cpp/CMakeLists.txt declara ${CMAKE_CURRENT_SOURCE_DIR}/include
+#   en target_include_directories(ivanna_omega ...). Pero este CMakeLists se
+#   configura STANDALONE en CI (paso "Compile ivanna_daemon from source") con
+#   -S daemon/ — ahi CMAKE_CURRENT_SOURCE_DIR es daemon/, no cpp/, asi que
+#   ../include/ no estaba en la ruta de busqueda y el header no se encontraba.
+#   Se declara explicitamente el include dir del cpp/ padre para que el daemon
+#   compile igual en standalone (CI) y dentro del build de la app (AGP).
+set(IVANNA_CPP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+target_include_directories(ivanna_daemon PRIVATE
+    "${IVANNA_CPP_ROOT}/include"
+    "${IVANNA_CPP_ROOT}"
+)
+
 target_compile_options(ivanna_daemon PRIVATE
     -std=c++17 -O3 -fPIE
     -Wall -Wno-unused-parameter -Wno-unused-function
