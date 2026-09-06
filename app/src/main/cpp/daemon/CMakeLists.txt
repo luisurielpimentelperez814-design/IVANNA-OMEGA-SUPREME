@@ -34,10 +34,29 @@ target_compile_options(ivanna_daemon PRIVATE
     -Wall -Wno-unused-parameter -Wno-unused-function
 )
 
+# FIX (CI: "ERROR: sin RELRO" en Validate daemon ELF): las opciones de
+# linker de PIE/RELRO/BIND_NOW y las de libc++ estático vivían en DOS
+# llamadas separadas a target_link_options()/target_link_libraries() más
+# abajo. No hay garantía documentada de orden entre múltiples llamadas de
+# CMake 3.22 combinadas con "-Wl,-Bstatic ... -Wl,-Bdynamic" de
+# target_link_libraries en el mismo target — sin NDK/CMake real disponible
+# en este entorno para reproducir la línea de link exacta que generaba,
+# la corrección robusta es consolidar TODO el hardening en una sola
+# llamada y reforzarlo también vía CMAKE_EXE_LINKER_FLAGS (variable que
+# CMake añade directo a la línea de link final, independiente de cómo se
+# combinen target_link_options/target_link_libraries).
+set(IVANNA_DAEMON_HARDENING_FLAGS "-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IVANNA_DAEMON_HARDENING_FLAGS}")
+
+# -nostdlib++ consolidado aquí (antes en una segunda llamada a
+# target_link_options() más abajo, bajo el guard ANDROID) — una sola
+# llamada para todo el target, sin depender del orden entre llamadas.
 target_link_options(ivanna_daemon PRIVATE
     -pie
-    "-Wl,-z,relro,-z,now"
-    "-Wl,--enable-new-dtags"
+    -Wl,-z,relro
+    -Wl,-z,now
+    -Wl,--enable-new-dtags
+    $<$<BOOL:${ANDROID}>:-nostdlib++>
 )
 
 # FIX (daemon muere al arrancar pese a módulo activo + root OK):
@@ -60,8 +79,8 @@ target_link_options(ivanna_daemon PRIVATE
 #   siempre presentes en /system). No afecta a las shared libraries del
 #   APK, que siguen con c++_shared.
 if(ANDROID)
-    # Force static STL for the daemon to avoid LD_LIBRARY_PATH issues in Magisk
-    target_link_options(ivanna_daemon PRIVATE "-nostdlib++")
+    # -nostdlib++ ya consolidado arriba en la única llamada a
+    # target_link_options(); aquí solo el linkeo estático real de la STL.
     target_link_libraries(ivanna_daemon "-Wl,-Bstatic" c++_static c++abi "-Wl,-Bdynamic")
 endif()
 
