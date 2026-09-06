@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import android.os.SharedMemory
 import android.util.Log
 import com.ivanna.omega.core.NativeLibraryLoader
+import java.io.FileDescriptor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -176,7 +177,12 @@ object ShmManager {
             // Layout v2: el daemon trunca el backing a ivanna::SHM_SIZE (constante unica C++).
             // La app NO duplica ese numero: mapea con la longitud real del archivo
             // recibido (stat del fd), con minimo del fallback v1 si no es legible.
-            val realSize = runCatching { android.system.Os.fstat(android.os.ParcelFileDescriptor.dup(rawFd)).st_size.toInt() }
+            // FIX (CI rojo, dos errores de tipo): Os.fstat() de android.system
+            // exige java.io.FileDescriptor, no ParcelFileDescriptor ni Int —
+            // se hace stat sobre el FileDescriptor del PFD duplicado.
+            val dupPfd = android.os.ParcelFileDescriptor.dup(rawFd)
+            val realSize = runCatching { android.system.Os.fstat(dupPfd.fileDescriptor).st_size.toInt() }
+                .also { runCatching { dupPfd.close() } }
                 .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
             val nativeFd = ParcelFileDescriptor.adoptFd(rawFd)
             val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
