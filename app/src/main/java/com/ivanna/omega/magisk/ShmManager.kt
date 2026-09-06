@@ -54,8 +54,16 @@ object ShmManager {
     private const val SHM_SIZE_FALLBACK_V1 = 65536
 
     // sizeof(ivanna::ShmHeader) — única fuente: daemon/core/shm_manager.h
-    // (static_assert(sizeof(ShmHeader)==16) hace fallar el build si cambia).
-    private const val SHM_HEADER_BYTES = 16
+    // (static_assert(sizeof(ShmHeader)==32) hace fallar el build si cambia).
+    //
+    // FIX (ABI desincronizado, verificado leyendo el struct real): el C++ ya
+    // tiene epoch:u64(8) + frame_len/magic/version/state_size/reserved:u32×4(16)
+    // = 28 bytes, redondeado a 32 por alignas(8) — y su propio static_assert
+    // ya dice 32 (cambiado de 16 en un commit reciente). Esta constante se
+    // había quedado en 16: cada lectura de readAndApplySafFrame() apuntaba
+    // 16 bytes ANTES de donde el daemon realmente escribe el frame SAF,
+    // leyendo la cola del propio ShmHeader como si fueran floats de audio.
+    private const val SHM_HEADER_BYTES = 32
 
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
