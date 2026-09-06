@@ -3,7 +3,8 @@
 //
 // Responsabilidades de este módulo vs ivanna_daemon.cpp:
 //   · ivanna_daemon.cpp — crea el archivo SHM en initialize_shared_memory()
-//     y lo expone vía SCM_RIGHTS a la app. Sigue siendo correcto y no se
+//     y la app lo mapea por ruta fija. NOTA: el comentario histórico sobre
+//     SCM_RIGHTS era falso — nunca existió sendmsg en el daemon. No se
 //     modifica: ese path existía antes de este módulo.
 //   · shm_manager.cpp — añade una API de alto nivel reutilizable para
 //     escritura seqlock que el servidor de comandos (command_server.cpp)

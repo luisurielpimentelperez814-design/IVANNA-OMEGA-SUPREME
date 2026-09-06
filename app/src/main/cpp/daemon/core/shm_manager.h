@@ -7,7 +7,7 @@
 // El daemon crea un archivo backing en OMEGA_SHM_PATH, lo trunca a SHM_SIZE,
 // lo mapea con MAP_SHARED y mlockea la región para evitar swapping en el
 // hilo de audio. La app Kotlin la accede vía android.os.SharedMemory (API 27+)
-// recibiendo el fd por SCM_RIGHTS.
+// mapeando el mismo backing file por ruta fija (/data/adb/ivanna_omega/omega_shm). NOTA: no existe sendmsg/SCM_RIGHTS en el daemon — cualquier referencia a paso de fd por socket es obsoleta.
 //
 // Diseño intencional:
 //   · Un solo buffer lineal de 64 KiB (16 UnifiedControlFrames de ~4 KiB c/u).

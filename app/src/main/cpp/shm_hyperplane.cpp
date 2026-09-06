@@ -57,7 +57,8 @@ Java_com_ivanna_omega_magisk_ShmManager_nativeMlockBuffer(JNIEnv* env, jobject, 
 }
 
 // ── NUEVO (fix "SHM nunca conecta"): mapear el fd que el daemon entrega por
-// SCM_RIGHTS. Antes ShmManager.kt creaba su PROPIA region con
+// el backing file por ruta (nunca hubo sendmsg en el daemon — referencia
+// histórica obsoleta). Antes ShmManager.kt creaba su PROPIA region con
 // android.os.SharedMemory: dos regiones distintas, cero memoria compartida con
 // el daemon. android.os.SharedMemory no puede envolver un fd ajeno, asi que el
 // mmap() tiene que hacerse aqui y devolverse como DirectByteBuffer.
