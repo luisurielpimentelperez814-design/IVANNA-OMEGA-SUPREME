@@ -265,8 +265,22 @@ bool CommandServer::start(const std::string& socket_path) {
         len = sizeof(addr);
         unlink(socket_path.c_str());
     }
-    if (bind(fd,(struct sockaddr*)&addr,len)<0) { close(fd); return false; }
-    if (listen(fd,16)<0) { close(fd); return false; }
+    // FIX (socket de control muerto en silencio): bind/listen cerraban el fd
+    // sin loguear errno — si @omega_command_socket quedaba retenido por una
+    // instancia zombie o el namespace no estaba listo en early-boot, el
+    // daemon arrancaba sin socket de control y nadie sabía por qué.
+    if (bind(fd,(struct sockaddr*)&addr,len)<0) {
+        int e = errno;
+        __android_log_print(ANDROID_LOG_WARN, "IVANNA_CMD",
+            "bind(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
+        close(fd); return false;
+    }
+    if (listen(fd,16)<0) {
+        int e = errno;
+        __android_log_print(ANDROID_LOG_WARN, "IVANNA_CMD",
+            "listen(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
+        close(fd); return false;
+    }
     m_server_fd = fd; m_socket_path = socket_path; m_running = true;
     return true;
 }
