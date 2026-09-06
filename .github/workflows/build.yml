@@ -638,17 +638,33 @@ jobs:
           TAG="${{ steps.ver.outputs.version }}"
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              "$ZIP_NAME" \
-              "$APK_NAME" \
-              --repo "$GITHUB_REPOSITORY" --clobber
-          else
+          NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          create_release() {
             gh release create "$TAG" \
               "$ZIP_NAME" \
               "$APK_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --title "IVANNA OMEGA SUPREME $TAG" \
-              --notes "Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER}). Incluye el fix de enlazado estatico de libc++ para ivanna_daemon (app/src/main/cpp/daemon/CMakeLists.txt): el daemon lanzado por Magisk service.sh como root ya no depende de libc++_shared.so fuera del sandbox del APK, asi que @omega_daemon_socket bindea correctamente. Verificado end-to-end en el job verify-release (hash identico compilacion -> zip -> artefacto)."
+              --notes "$NOTES"
+          }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # FIX (release rojo: "Cannot delete asset from an immutable
+            # release"): --clobber intenta BORRAR el asset existente antes
+            # de resubirlo. GitHub puede marcar una release como inmutable
+            # (protección de cadena de suministro) una vez publicada, y esa
+            # operación de borrado falla con HTTP 422 aunque el upload en sí
+            # sería válido. No hay forma de "desinmutabilizar" un asset —
+            # la única salida real es borrar la RELEASE completa (sí
+            # permitido) y recrearla desde cero con el mismo tag.
+            if ! gh release upload "$TAG" \
+              "$ZIP_NAME" \
+              "$APK_NAME" \
+              --repo "$GITHUB_REPOSITORY" --clobber; then
+              echo "clobber de asset fallo (release inmutable) — borrando release completa y recreando con el mismo tag"
+              gh release delete "$TAG" --yes --repo "$GITHUB_REPOSITORY"
+              create_release
+            fi
+          else
+            create_release
           fi
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
