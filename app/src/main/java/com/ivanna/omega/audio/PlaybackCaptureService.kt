@@ -48,6 +48,26 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         const val CHANNEL_ID    = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
+        // Notificación de "me rindo" — ID distinto para no reemplazar la
+        // notificación foreground en curso mientras el servicio aún se
+        // está deteniendo.
+        private const val GIVEUP_NOTIFICATION_ID = 3
+
+        // FIX (bucle infinito de reintentos condenados a fallar): scheduleRestart()
+        // reintentaba startEngine(savedProj) para siempre, con backoff creciente,
+        // pero savedProj es la MISMA MediaProjection que Android acaba de invalidar
+        // (eso es literalmente lo que dispara onStop()/onProjLost() en primer
+        // lugar). Una vez que el sistema invalida una MediaProjection, ese objeto
+        // específico queda inservible para siempre — hace falta un Intent NUEVO
+        // con consentimiento del usuario, no el mismo objeto reciclado. Sin este
+        // límite, el servicio consumía batería/CPU indefinidamente en un ciclo
+        // que matemáticamente nunca podía tener éxito, sin avisar nunca al
+        // usuario que necesitaba volver a conceder el permiso manualmente.
+        // 6 intentos: coincide con el último escalón ya existente de la propia
+        // escalera de backoff (retryAttempts < 6 -> 5_000L) — tras agotar esa
+        // escalera, en vez de caer en un "else -> 30_000L" para siempre, se
+        // rinde honestamente.
+        private const val MAX_RESTART_ATTEMPTS = 6
 
         private const val VOICE_DECIMATION    = 3
         private const val VOICE_WINDOW_SAMPLES = 15600
@@ -180,6 +200,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         val savedProj = projRef.get() ?: run {
             Log.e(TAG, "Sin proyección — imposible reiniciar"); stopSelf(); return
         }
+        // FIX: más allá de MAX_RESTART_ATTEMPTS, savedProj sigue siendo el
+        // mismo objeto ya invalidado por el sistema — seguir reintentando
+        // es un ciclo garantizado a fallar para siempre. Rendirse aquí,
+        // avisar al usuario, y detener el servicio limpio en vez de seguir
+        // consumiendo batería sin poder recapturar audio jamás.
+        if (retryAttempts >= MAX_RESTART_ATTEMPTS) {
+            Log.w(TAG, "Reintentos agotados ($retryAttempts) — MediaProjection " +
+                "invalidada de forma permanente, requiere nuevo consentimiento " +
+                "del usuario. Deteniendo el servicio.")
+            notifyCaptureGaveUp()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         val delayMs = when {
             retryAttempts < 3 -> 1_000L
             retryAttempts < 6 -> 5_000L
@@ -188,6 +222,35 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         retryAttempts++
         Log.i(TAG, "Reinicio #$retryAttempts en ${delayMs}ms")
         retryHandler?.postDelayed({ startEngine(savedProj) }, delayMs)
+    }
+
+    /**
+     * Notificación honesta cuando el servicio se rinde: la captura de audio
+     * del sistema (Tidal/Qobuz/YouTube → DSP) dejó de funcionar y necesita
+     * que el usuario vuelva a abrir IVANNA y conceda el permiso de nuevo —
+     * MediaProjection nunca puede auto-otorgarse por diseño de seguridad
+     * de Android, así que esto no es algo que el propio servicio pueda
+     * resolver solo. Notificación aparte (GIVEUP_NOTIFICATION_ID) — no
+     * reemplaza a la del foreground mientras este termina de detenerse.
+     */
+    private fun notifyCaptureGaveUp() {
+        runCatching {
+            val pi = PendingIntent.getActivity(
+                this, 0,
+                Intent(this, Class.forName("com.ivanna.omega.MainActivity")),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            val n = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("IVANNA dejó de procesar el audio")
+                .setContentText("Toca para volver a activar la captura del sistema.")
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentIntent(pi)
+                .setOngoing(false)
+                .setAutoCancel(true)
+                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(GIVEUP_NOTIFICATION_ID, n)
+        }.onFailure { Log.w(TAG, "notifyCaptureGaveUp: ${it.message}") }
     }
 
     private fun acquireWakeLock() {
