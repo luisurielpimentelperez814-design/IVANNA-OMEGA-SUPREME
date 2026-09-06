@@ -48,6 +48,7 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     if (m_h2) memset(m_h2, 0, h2_size * sizeof(float));
 
     m_delay_lines = static_cast<float**>(malloc(m_channels * sizeof(float*)));
+    if (!m_delay_lines) { m_channels = 0; return; } // OOM: degradar a no-op seguro en lugar de crash RT
     m_delay_indices = static_cast<uint32_t*>(malloc(m_channels * sizeof(uint32_t)));
 
     for (uint32_t ch = 0; ch < m_channels; ++ch) {
