@@ -220,6 +220,7 @@ fun IvannaControlPanel(
     var npeClassifyConfidence by remember { mutableFloatStateOf(0f) }
     var npeClassifyThd by remember { mutableFloatStateOf(0f) }
     var npeInferenceUs by remember { mutableLongStateOf(-1L) }
+    var lastAutoAppliedGenre by remember { mutableStateOf<String?>(null) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
 
     
@@ -296,6 +297,32 @@ fun IvannaControlPanel(
             npeInferenceUs = IvannaNpeEngine.lastInferenceUs
             rmsHistory.removeAt(0)
             rmsHistory.add(npeRmsDb)
+
+            // FIX ("presets automáticos" nunca existía pese a que autoMode ya
+            // prometía "Auto IA seleccionando" en el subtítulo — solo subía
+            // un multiplicador visual (omniLevel) y bloqueaba los controles
+            // manuales; ningún código seleccionaba realmente un preset).
+            // Mapeo honesto a los 8 géneros reales que autonomous_brain.hpp
+            // puede devolver (ratios espectrales medidos, no adivinados),
+            // sobre el catálogo de 14 presets ya construido — con debounce
+            // para no recargar el mismo preset en cada bloque de 750ms.
+            if (autoMode && npeGenre != lastAutoAppliedGenre && npeGenre != "\u2014") {
+                val profile = when (npeGenre) {
+                    "Hip-Hop / EDM"    -> com.ivanna.omega.audio.IvannaEffectProfile.PUNCH
+                    "Pop"              -> com.ivanna.omega.audio.IvannaEffectProfile.IVANNA_OMEGA
+                    "Reggaet\u00f3n"   -> com.ivanna.omega.audio.IvannaEffectProfile.PUNCH
+                    "Rock / Metal"     -> com.ivanna.omega.audio.IvannaEffectProfile.ROCK_70S
+                    "Jazz / Cl\u00e1sica" -> com.ivanna.omega.audio.IvannaEffectProfile.STUDIO_PRO
+                    "Ac\u00fastica"    -> com.ivanna.omega.audio.IvannaEffectProfile.ABBEY_ROAD
+                    "Electr\u00f3nica" -> com.ivanna.omega.audio.IvannaEffectProfile.SPATIAL
+                    else               -> com.ivanna.omega.audio.IvannaEffectProfile.WARM  // "Mixto"
+                }
+                runCatching {
+                    com.ivanna.omega.dsp.DSPState.globalEffectManager?.applyProfile(profile)
+                }
+                lastAutoAppliedGenre = npeGenre
+            }
+
             kotlinx.coroutines.delay(750)
         }
     }
