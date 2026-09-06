@@ -96,6 +96,7 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val safError      = runCatching { SaFBridge.nativeSaFGetError()     }.getOrDefault(0f)
         val safIteration  = runCatching { SaFBridge.nativeSaFGetIteration() }.getOrDefault(0)
         val safDiag       = runCatching { SaFRoomBridge.getDiagnostics()    }.getOrDefault(FloatArray(0))
+        val healLog       = runCatching { com.ivanna.omega.agent.SelfHealingAgent.log.value }.getOrDefault(emptyList())
 
         // FIX (SAF sin root no alimentaba ningún efecto real): safDiag ya se
         // leía y se mostraba en la UI (ver OemState más abajo), pero nunca
@@ -192,6 +193,7 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             safError       = safError,
             safIteration   = safIteration,
             safDiag        = safDiag,
+            healLog        = healLog,
             usbStreaming   = usbStreaming,
             daemonStatus   = daemonStatus,
             // Telemetría real del pipeline (arriba) — los campos ya no quedan

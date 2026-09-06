@@ -47,6 +47,12 @@ data class OemState(
     val safIteration   : Int = 0,
     val safDiag        : FloatArray = FloatArray(0),
     val daemonStatus   : String = "",
+    // FIX (autodiagnóstico invisible): SelfHealingAgent ya repara fallos
+    // reales en silencio (daemon desconectado, motor nativo muerto,
+    // clipping sostenido) — pero su log público (SelfHealingAgent.log)
+    // nunca se leía desde ninguna UI. El usuario nunca veía evidencia de
+    // que algo se hubiera reparado.
+    val healLog        : List<com.ivanna.omega.agent.SelfHealingAgent.HealRecord> = emptyList(),
 ) {
     enum class EngineState { UNKNOWN, ACTIVE, SUSPENDED, POWER_SAVE, RECOVERY }
     enum class AudioBackend { UNKNOWN, HEXAGON_DSP, NEON_ARM64, CPU_FALLBACK }

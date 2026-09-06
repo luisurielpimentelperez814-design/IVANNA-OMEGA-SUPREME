@@ -104,6 +104,21 @@ fun OemDashboardScreen(
                 indicatorOk = state.thermalLevel == OemState.ThermalLevel.NORMAL,
                 onClick = onOpenThermal)
 
+            // FIX (autodiagnóstico invisible): SelfHealingAgent ya repara
+            // fallos reales en silencio — el usuario nunca veía evidencia.
+            val lastHeal = state.healLog.lastOrNull()
+            NavModuleCard(
+                "AUTO-REPARACIÓN",
+                lastHeal?.let {
+                    "${if (it.success) "✓" else "✗"} ${it.fault} → ${it.detail}"
+                } ?: "Sin incidencias — sistema estable",
+                Icons.Default.HealthAndSafety,
+                if (lastHeal == null || lastHeal.success) PhosphorGreen else AmberSignal,
+                indicator = "${state.healLog.size} eventos",
+                indicatorOk = lastHeal == null || lastHeal.success,
+                onClick = onOpenTelemetry
+            )
+
             if (expertMode) {
                 NavModuleCard("TELEMETRÍA OEM · DIAGNÓSTICO",
                     "FastRPC · HAL · XRuns · Watchdog · Threads DSP",
