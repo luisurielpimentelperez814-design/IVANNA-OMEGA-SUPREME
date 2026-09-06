@@ -187,6 +187,17 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // Formato esperado: {"action":"SET_SAF_STATE","q":[q0,q1,q2,q3,q4,q5,q6],...}
         // Si el campo "q" no viene (cliente antiguo), el vector queda sin cambio.
         _jsonFloatArray(json, "q", m_state.saf_q, 7);
+        // Publicar el frame SAF también al SHM de OmegaShmManager (canal A).
+        // publishCurrentState() escribe al OmegaControlBus (canal B), pero el
+        // reader Kotlin (ShmManager.readAndApplySafFrame) lee el canal A en
+        // base+sizeof(ShmHeader) — antes nadie escribía ahí: la app nunca veía
+        // los valores SAF procesados por el daemon. Contrato fijo 16 bytes:
+        //   [gain][compressor][exciter][spatial] ← [saf_gain][saf_memory][saf_delta_e][saf_metric]
+        // write() aplica el seqlock (epoch impar→memcpy→par) que el reader valida.
+        {
+            float frame[4] = { m_state.saf_gain, m_state.saf_memory, m_state.saf_delta_e, m_state.saf_metric };
+            ivanna::shmManager().write(frame, sizeof(frame));
+        }
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
