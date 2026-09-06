@@ -354,9 +354,57 @@ int main(int argc, char* argv[]) {
                 std::string pending;
                 pending.reserve(16384);
                 char chunk[8192];
+                bool first_read = true;
                 while (g_running) {
                     ssize_t nbytes = recv(client_fd, chunk, sizeof(chunk), 0);
-                    if (nbytes<=0) break;
+                    if (nbytes<=0) {
+                        // FIX (handshake SHM real — "Modo B" detectaba el
+                        // timeout pero nunca enviaba el fd, solo colgaba):
+                        // ShmManager.kt (mapFromDaemon) conecta y a propósito
+                        // NO escribe nada durante el timeout de 150ms de
+                        // arriba, precisamente para que el daemon lo
+                        // distinga de un cliente de comandos de texto/JSON.
+                        // Antes ambos casos (timeout silencioso y EOF real)
+                        // caían al mismo break sin diferenciarse — el fd de
+                        // ivanna::shmManager().fd() nunca salía del daemon
+                        // aunque la SHM ya estuviera lista. Se distingue
+                        // timeout real (EAGAIN/EWOULDBLOCK, nbytes<0) de EOF
+                        // (nbytes==0, el cliente cerró la conexión): solo el
+                        // timeout en el PRIMER recv (nada recibido aún)
+                        // dispara el envío del fd por SCM_RIGHTS.
+                        if (first_read && nbytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                            int shm_fd = ivanna::shmManager().fd();
+                            if (shm_fd >= 0) {
+                                char one = 0;
+                                struct iovec io;
+                                io.iov_base = &one;
+                                io.iov_len  = 1;
+                                char cmsgbuf[CMSG_SPACE(sizeof(int))];
+                                std::memset(cmsgbuf, 0, sizeof(cmsgbuf));
+                                struct msghdr msg;
+                                std::memset(&msg, 0, sizeof(msg));
+                                msg.msg_iov        = &io;
+                                msg.msg_iovlen      = 1;
+                                msg.msg_control     = cmsgbuf;
+                                msg.msg_controllen  = sizeof(cmsgbuf);
+                                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                                cmsg->cmsg_level = SOL_SOCKET;
+                                cmsg->cmsg_type  = SCM_RIGHTS;
+                                cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+                                std::memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
+                                ssize_t sent = sendmsg(client_fd, &msg, MSG_NOSIGNAL);
+                                if (sent < 0) {
+                                    log_message(std::string("Modo B: sendmsg(SCM_RIGHTS) fallo errno=") + std::to_string(errno));
+                                } else {
+                                    log_message("Modo B: fd de omega_shm entregado por SCM_RIGHTS");
+                                }
+                            } else {
+                                log_message("Modo B: cliente silencioso pero shmManager().fd() invalido (SHM aun no inicializada)");
+                            }
+                        }
+                        break;
+                    }
+                    first_read = false;
                     pending.append(chunk, (size_t)nbytes);
 
                     // Descarta whitespace inter-mensaje.
