@@ -170,7 +170,7 @@ dependencies {
     // FIX (bb4fa6b): com/ivanna/omega/audio/ParameterStore.kt (el nuevo,
     // NO el de core/) usa com.google.gson.Gson para serializar AudioState —
     // no estaba declarada, mismo tipo de bug que rompió el resample() antes.
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.code.gson:gson:2.14.0")
 
     // Firebase (sync de perfiles en la nube) — inicializado manualmente via
     // FirebaseOptions.Builder en CloudSyncManager.kt, SIN el plugin
