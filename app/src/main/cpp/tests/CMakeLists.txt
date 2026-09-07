@@ -74,6 +74,7 @@ endfunction()
 
 ivanna_add_test(gammatone_numerical_stability)
 ivanna_add_test(no_denormals_low_level)
+ivanna_add_test(test_phase_oracle_kalman)
 ivanna_add_test(dsp_core_stability)
 
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
