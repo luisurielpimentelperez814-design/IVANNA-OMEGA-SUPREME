@@ -190,10 +190,17 @@ struct AudioThreadState {
     float guardExcLimit        = 1.0f;
     float widthSmooth          = 1.0f;
     uint64_t lastAdaptiveSeq   = 0;
+    // FIX (tronido "metralleta" al subir volumen): estado persistente del
+    // pre-EQ peak guard para poder rampear en vez de saltar de bloque a
+    // bloque. Separado en dos campos por el mismo motivo que blkTgSmooth
+    // ya está separado de targetGainSmooth arriba: nativeProcess y
+    // nativeProcessBlock pueden correr en hilos distintos.
+    float peakGuardScale       = 1.0f;
     // nativeProcessBlock path (puede correr en thread distinto a nativeProcess)
     float blkTgSmooth          = 1.0f;
     float blkCaSmooth          = 0.0f;
     float blkErSmooth          = 0.0f;
+    float blkPeakGuardScale    = 1.0f;
 };
 static AudioThreadState g_ats;
 
@@ -896,10 +903,28 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             if (al > pk) pk = al;
             if (ar > pk) pk = ar;
         }
-        if (pk > 0.89f && pk > 1e-9f) {
-            const float sc = 0.89f / pk;
-            for (int i = 0; i < n; ++i) { g_ats.chL[i] *= sc; g_ats.chR[i] *= sc; }
+        // FIX (tronido "metralleta" al subir volumen, verificado contra el
+        // código real antes de tocarlo): este guard aplicaba sc=0.89/pk al
+        // bloque COMPLETO de golpe, sin memoria del bloque anterior. Con la
+        // señal rondando el umbral — justo lo que pasa al subir volumen
+        // hacia niveles donde los picos empiezan a rozar el techo — sc
+        // alternaba 1.0<->reducido de un bloque al siguiente: cada cambio
+        // es un salto de ganancia instantáneo. GainStage ya tiene rampa
+        // propia para su multiplicador; este guard, separado, no tenía
+        // ninguna. El target se calcula SIEMPRE (1.0 si no hace falta
+        // reducir, 0.89/pk si sí — no solo al activarse) y se interpola
+        // muestra a muestra desde g_ats.peakGuardScale (donde terminó el
+        // bloque anterior) hasta ese target: sin discontinuidad ni al
+        // activarse ni al soltar, en ninguna de las dos direcciones.
+        const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
+        const float startSc = g_ats.peakGuardScale;
+        for (int i = 0; i < n; ++i) {
+            const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
+            const float sc = startSc + (targetSc - startSc) * t;
+            g_ats.chL[i] *= sc;
+            g_ats.chR[i] *= sc;
         }
+        g_ats.peakGuardScale = targetSc;
     }
     g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
@@ -1437,10 +1462,20 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             if (al > pk) pk = al;
             if (ar > pk) pk = ar;
         }
-        if (pk > 0.89f && pk > 1e-9f) {
-            const float sc = 0.89f / pk;
-            for (int i = 0; i < n; ++i) { lBuf[i] *= sc; rBuf[i] *= sc; }
+        // FIX (tronido "metralleta"): mismo fix que el sitio equivalente en
+        // nativeProcess (ver ese comentario) — rampa muestra a muestra en
+        // vez de salto de bloque completo. Campo separado
+        // (blkPeakGuardScale) porque este path puede correr en un hilo
+        // distinto, mismo patrón que blkTgSmooth vs targetGainSmooth.
+        const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
+        const float startSc = g_ats.blkPeakGuardScale;
+        for (int i = 0; i < n; ++i) {
+            const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
+            const float sc = startSc + (targetSc - startSc) * t;
+            lBuf[i] *= sc;
+            rBuf[i] *= sc;
         }
+        g_ats.blkPeakGuardScale = targetSc;
     }
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
