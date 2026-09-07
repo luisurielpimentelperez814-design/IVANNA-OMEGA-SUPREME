@@ -81,7 +81,14 @@ object IvannaNativeLib {
     //  Evolutionary Kernel (evolutionary_kernel.cpp)
     // ═══════════════════════════════════════════════════════════════════════
     external fun nativeInitializeEvolution(populationSize: Int, generations: Int): Boolean
-    external fun nativeGetBestFitness(): Double
+    // FIX: nativeGetBestFitness()/nativeGetGeneration()(jobject) declaraban
+    // JNI respaldado únicamente por evolutionary_kernel.cpp (v1) — archivo
+    // excluido del CMakeLists activo (evolutionary_kernel_v2.cpp lo
+    // reemplazó como "drop-in replacement", ver su propio comentario de
+    // cabecera). UnsatisfiedLinkError garantizado en cada llamada; los dos
+    // call sites reales (IvannaControlPanel.kt, CmaEsFitnessPanel.kt) ya
+    // migraron a nativeGetEvoBestFitness(), respaldada por v2. Eliminada
+    // para no dejar otra declaración-trampa para el próximo caller.
     external fun nativeGetGeneration(): Int
     external fun nativeEvolveStep(): Boolean
     external fun nativeSetMutationRate(rate: Float)

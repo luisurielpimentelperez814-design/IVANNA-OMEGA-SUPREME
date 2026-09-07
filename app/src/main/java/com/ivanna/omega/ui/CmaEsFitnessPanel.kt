@@ -59,7 +59,17 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
         while (isActive) {
             if (IvannaNativeLib.isLoaded) {
                 runCatching {
-                    val bf  = IvannaNativeLib.nativeGetBestFitness()
+                    // FIX (kernel evolutivo "no jalaba" — este panel es
+                    // exactamente donde se veía el síntoma): nativeGetBestFitness()
+                    // solo existía en evolutionary_kernel.cpp (v1), archivo
+                    // excluido del CMakeLists activo — UnsatisfiedLinkError en
+                    // cada tick, atrapado por este mismo runCatching, que además
+                    // aborta TODO el bloque desde la primera línea: generation,
+                    // isRunning, y el historial de la curva quedaban congelados
+                    // para siempre pese a que el kernel v2 SÍ evolucionaba en
+                    // background (ver pd_engine.hpp::start_evo_thread). Fix:
+                    // usar la función real, respaldada por evolutionary_kernel_v2.cpp.
+                    val bf  = IvannaNativeLib.nativeGetEvoBestFitness().toDouble()
                     val gen = IvannaNativeLib.nativeGetGeneration()
                     val run = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
                     bestFitness = bf; currentGen = gen; isRunning = run

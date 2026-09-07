@@ -345,7 +345,17 @@ fun IvannaControlPanel(
         kotlinx.coroutines.delay(1200)
         while (true) {
             try {
-                evoFitness = IvannaNativeLib.nativeGetBestFitness().toFloat()
+                // FIX (kernel evolutivo "no jalaba"): nativeGetBestFitness()
+                // solo tenía implementación nativa en evolutionary_kernel.cpp
+                // (v1) — archivo excluido del CMakeLists activo desde hace
+                // tiempo. El símbolo JNI no existe en el .so real: esta
+                // llamada lanzaba UnsatisfiedLinkError en CADA tick, atrapado
+                // aquí y logueado como "no disponible todavía" para siempre.
+                // El kernel v2 (evolutionary_kernel_v2.cpp, el que SÍ compila
+                // y SÍ evoluciona en background via pd_engine.hpp) expone su
+                // fitness real por nativeGetEvoBestFitness() — ya usado
+                // correctamente más abajo en este mismo archivo (línea ~820).
+                evoFitness = IvannaNativeLib.nativeGetEvoBestFitness()
                 evoGeneration = IvannaNativeLib.nativeGetGeneration()
             } catch (e: Throwable) {
                 Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
