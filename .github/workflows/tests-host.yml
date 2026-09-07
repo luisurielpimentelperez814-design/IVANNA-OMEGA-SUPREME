@@ -29,13 +29,15 @@ permissions:
 
 jobs:
   ctest:
-    name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || 'CTest' }}
+    name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || matrix.san == 'tsan' && 'CTest (TSan)' || 'CTest' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        san: ['', 'asan']
+        # Las 3 patas están verificadas en local (60/60 PASS cada una):
+        # '' normal, 'asan' ASan+UBSan, 'tsan' ThreadSanitizer.
+        san: ['', 'asan', 'tsan']
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: ${{ matrix.san }}
