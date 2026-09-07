@@ -246,6 +246,24 @@ rápido a propósito.
 
 ---
 
+
+---
+
+### Laboratorio IAEL — certificación y telemetría de calidad de audio
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-07.
+**Alcance exacto — no editar mientras esté aquí:**
+- `tools/iael/`, `tools/iael_v2/`, `tools/iael_v3/`, `tools/iael_v4/` (motor de medición)
+- `telemetry/` (`iael/`, `iael_v2/`, `iael_v4/`)
+- `tools/telemetry/` (`collect_oem_metrics.sh`, `compare_oem_metrics.py`, `history/`)
+- `tools/dashboard/` (`generate_dashboard.py`, `compare_history.py`)
+- `tools/reports/`, `docs/FLANCO_IAEL.md`, `docs/performance/IVANNA_CERTIFICATION_TEMPLATE.md`
+
+**Explícitamente NO toca:** DSP nativo (cadena de señal), daemon/Magisk/SHM, UI/UX Compose, conversación/Gemini/memoria, SAF-HRTF.
+
+**Por qué este frente:** es el LABORATORIO que certifica la calidad del DSP — sin él, "world-class" no se defiende con datos. Las generaciones actuales son decorativas: SNR falsa (referencia de ruido fija 1e-6), "spectral_balance" que divide por índice temporal en vez de frecuencia real, y un stress test que no mide la cadena real. De raíz: motor de medición serio (THD+N, SNR, IMD, balance espectral por bandas ISO, correlación estéreo, transitorios, validez, bit-exactness), reproducible y con tolerancias documentadas.
+
+**Estado:** trabajando — sesión larga, un commit individual breve por cada mejora, push por ciclo.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
