@@ -291,12 +291,18 @@ ningún otro flanco puede demostrar que su DSP/daemon no rompe nada.
 - CMAKE_BUILD_TYPE=Release por defecto en run_ctest.sh; suite estable 5/5 corridas (cero flakiness)
 - TSan verificado 60/60 en local, pero en CI necesita >45 min en runners de 2 núcleos (2 cancelaciones medidas: 20m15s y 45m15s, corridas 34166260673 y 34167465625) → movido a carril semanal+manual con timeout 90 min; la puerta por-push (CTest + ASan+UBSan, ~1 min cada pata) quedó VERDE en la corrida real 34170101339: success/success/skipped
 
+**Ciclo 3 — avance adicional (mismo día, commits 6e4c5efa..7bf53a92):**
+- concurrency group con cancel-in-progress (push nuevo cancela la corrida anterior del mismo ref) — corrida real 34170280449: success/success/skipped
+- CTest ejecuta en paralelo (-j4; sin colisiones verificadas a -j4/-j8) + timeout por test (300s/900s TSan) — suite ~21s → ~15s; corrida real 34170484627: success/success/skipped
+- README de cpp/tests reescrito: vía canónica run_ctest.sh, tabla de 12 ejecutables/60 tests, huérfanos y estabilidad documentados (7d4ad617)
+- Estabilidad paralelo -j8: 3/3 corridas limpias adicionales
+
 **Pendiente para la siguiente sesión de este flanco:** auditar los 3 objetivos
 del CMakeLists del daemon que solo corren en NDK (líneas ~341+, territorio
 compartido con el flanco Daemon — coordinar antes de mover), y evaluar
 rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
 
-**Estado:** entregado — puerta de tests host verde, rápida (~1 min) y vigilada en CI; TSan con carril propio. Si lo tomas, actualiza esta entrada.
+**Estado:** entregado — puerta de tests host verde, rápida (~1 min por pata en CI), paralela, con timeout por test, badge real y TSan en carril semanal. Si lo tomas, actualiza esta entrada.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
