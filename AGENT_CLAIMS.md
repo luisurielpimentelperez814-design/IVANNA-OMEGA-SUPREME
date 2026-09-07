@@ -264,6 +264,23 @@ rápido a propósito.
 
 **Estado:** trabajando — sesión larga, un commit individual breve por cada mejora, push por ciclo.
 
+---
+
+### Tests nativos host (CTest) + integración en CI
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-07. Detalle completo y protocolo en [CLAIMS/tests-host-ctest.md](CLAIMS/tests-host-ctest.md).
+**Alcance exacto — no editar mientras esté aquí:**
+- `CMakePresets.json` (raíz, nuevo), `scripts/run_ctest.sh`
+- `app/src/main/cpp/tests/CMakeLists.txt` (solo targets/CTest, no fuentes DSP)
+- `tests/hrtf/` y `app/src/main/cpp/tests/*.cpp` — SOLO fixes de compilación o fallos reales que los tests saquen a la luz
+- `.github/workflows/tests-host.yml` — workflow NUEVO dedicado; NO se toca build.yml ni supply-chain.yml
+
+**Por qué este flanco:** verificado hoy: `bash scripts/run_ctest.sh` falla con
+`CMake Error: Could not read presets ... File not found: CMakePresets.json`
+— la puerta de tests host está muerta tal cual está. Sin tests host corriendo,
+ningún otro flanco puede demostrar que su DSP/daemon no rompe nada.
+
+**Estado:** trabajando — commits individuales breves, push por ciclo.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
