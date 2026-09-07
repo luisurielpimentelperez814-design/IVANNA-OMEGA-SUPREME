@@ -13,6 +13,8 @@
 
 ### El motor de inteligencia de audio para Android — DSP nativo C++17/NEON, IA adaptativa en tiempo real, espacialización binaural con datos medidos y asistente cognitivo con Gemini 2.5
 
+> 🤖 Este repo recibe trabajo de múltiples sesiones de IA en paralelo — antes de emprender trabajo sustancial, revisa **[AGENT_WORK_CLAIMS.md](AGENT_WORK_CLAIMS.md)**.
+
 <br>
 
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
