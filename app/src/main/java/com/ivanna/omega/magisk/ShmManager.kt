@@ -66,6 +66,16 @@ object ShmManager {
     // leyendo la cola del propio ShmHeader como si fueran floats de audio.
     private const val SHM_HEADER_BYTES = 32
 
+    // FIX (compileKotlin roto: "unresolved reference: SHM_HEARTBEAT_OFF"):
+    // ac741f1 introdujo daemonHeartbeatMs()/isDaemonAlive() usando este offset
+    // pero nunca declaro la constante — el commit solo valido sintaxis C++
+    // (g++ -fsyntax-only), no Kotlin, y el error llego a main. Valor ABSOLUTO:
+    // el daemon escribe el heartbeat con writeControl(SHM_HEARTBEAT_OFFSET=16),
+    // que copia en base + sizeof(ShmHeader)=32 + 16 = byte 48 del mmap.
+    // Debe coincidir con SHM_HEADER_BYTES(32) + SHM_HEARTBEAT_OFFSET(16) del
+    // C++ (daemon/core/shm_manager.h). Cambio exige bump coordinado de ABI.
+    private const val SHM_HEARTBEAT_OFF = SHM_HEADER_BYTES + 16
+
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
 
