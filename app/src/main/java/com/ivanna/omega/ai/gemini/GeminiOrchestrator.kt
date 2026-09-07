@@ -63,6 +63,13 @@ class GeminiOrchestrator(
     companion object {
         private const val TAG = "GeminiOrchestrator"
         private const val HEALTH_CHECK_INTERVAL_MS = 30_000L
+        // FIX (costo real de cuota, no bug de código roto): sin actividad
+        // real del usuario, el intervalo se multiplica — sigue vigilando el
+        // circuito (nunca se detiene del todo) pero deja de gastar un
+        // generateContent("OK") real cada 30s en una sesión donde la
+        // pantalla está abierta pero nadie está escribiendo.
+        private const val INACTIVITY_THRESHOLD_MS = 180_000L   // 3 min
+        private const val INACTIVITY_BACKOFF_MULTIPLIER = 4
         private const val HEALTH_CHECK_TIMEOUT_MS = 10_000L
         private const val MAX_CONSECUTIVE_FAILURES = 3
         private const val CIRCUIT_COOLDOWN_MS = 30_000L
@@ -117,12 +124,22 @@ class GeminiOrchestrator(
     private val _state = MutableStateFlow(OrchestratorState())
     val state: StateFlow<OrchestratorState> = _state.asStateFlow()
 
+    // FIX (costo real de cuota): timestamp de la última consulta real del
+    // usuario — inicializado a "ahora" para que una sesión recién creada
+    // arranque con el intervalo normal (30s), no ya en modo inactivo.
+    @Volatile private var lastRealActivityAt = System.currentTimeMillis()
+
+    /** Llamar en cada consulta real del usuario — reactiva el intervalo
+     *  normal de health-check si estaba en modo inactividad. */
+    fun notifyRealActivity() { lastRealActivityAt = System.currentTimeMillis() }
+
     init {
         registry.forEach { healthState[it.name] = ModelHealth(modelName = it.name) }
         scope.launch {
             while (isRunning.get()) {
                 runHealthChecks()
-                delay(HEALTH_CHECK_INTERVAL_MS)
+                val idle = System.currentTimeMillis() - lastRealActivityAt > INACTIVITY_THRESHOLD_MS
+                delay(if (idle) HEALTH_CHECK_INTERVAL_MS * INACTIVITY_BACKOFF_MULTIPLIER else HEALTH_CHECK_INTERVAL_MS)
             }
         }
     }

@@ -136,6 +136,7 @@ class IvannaGeminiAgent(
         onPartialResponse: ((String) -> Unit)? = null
     ): AgentResponse = withContext(Dispatchers.IO) {
         _metrics.update { it.copy(totalRequests = it.totalRequests + 1) }
+        orchestrator.notifyRealActivity()
 
         // 1. Verificar conectividad
         if (!isNetworkAvailable()) {
