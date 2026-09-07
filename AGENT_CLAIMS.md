@@ -46,10 +46,18 @@ usuario. Es literalmente la raíz de la que cuelga todo lo demás.
 - Fix de RELRO/hardening del binario (`ERROR: sin RELRO` en CI)
 - Fix del pipeline de release (Immutable Releases de GitHub —
   patrón draft→publish en vez de clobber/recrear el mismo tag)
-- Pendiente activo ahora mismo: build de Gradle rojo en el paso
-  posterior a estos fixes (causa aún no diagnosticada — no relacionada
-  con los cambios de este frente, ver historial de commits recientes
-  de otras sesiones en `app/src/main/java/`)
+- **`v2.3.6` (2026-09-07T06:54Z): primer release de TODA esta sesión
+  que pasó las 4 fases completas — build, validación de ELF, empaquetado
+  y publicación — confirmado con `gh release view` real, no supuesto.**
+  El zip real ya está en
+  https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.3.6
+  y es lo que el usuario puede instalar para probar si el daemon bindea
+  en dispositivo real — pendiente de confirmación en dispositivo, que
+  es la prueba definitiva más allá de lo que CI puede validar
+  estáticamente (formato ELF, independencia de libc++_shared, RELRO).
+- Pendiente activo ahora mismo: confirmar en dispositivo real que el
+  socket bindea con este build; si no, seguir diagnosticando desde
+  daemon.log real del dispositivo, no solo desde CI.
 
 **Si eres otra sesión leyendo esto:** no toques los archivos de arriba
 por ahora. Vas a ver este frente avanzar commit por commit con mensajes
