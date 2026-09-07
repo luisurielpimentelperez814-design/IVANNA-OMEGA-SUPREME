@@ -32,6 +32,13 @@ constexpr int BLOCK                    = 256;
 constexpr int IR_LEN                   = 512;
 constexpr int RING_BUFFER_SIZE         = 16384;
 constexpr int XFADE_DURATION_SAMPLES   = 1024;
+// ITD (interaural time difference): la pista de localizacion lateral mas
+// fuerte (~0.7 ms max a 90 deg). El HRTF de magnitud sola no la transmite
+// con suficiente precision en medios tonos; se aplica como delay fraccional
+// explícito por oido, alineado con el modelo esferico de Woodworth.
+constexpr int   kMaxItdSamples         = 64;   // ~0.67 ms @ 96 kHz
+constexpr float kItdHeadRadiusM        = 0.0875f;
+constexpr float kItdSpeedOfSoundMps    = 343.0f;
 
 // Declaraciones adelantadas
 class FFTRadix2;

@@ -16,6 +16,26 @@
  */
 
 #include "hrtf_convolver.hpp"
+
+// ── Anti-denormales (estado del arte DSP en tiempo real) ──────────────────
+// Las colas IIR/FIR del convolver decaen a valores subnormales (~1e-38), donde
+// la CPU degrada 10-100x por microcode assist. Se activa FTZ/DAZ por hilo.
+#if defined(__x86_64__) || defined(__i386__)
+  #include <immintrin.h>
+  static inline void enableDenormalGuard() noexcept {
+      _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+      _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+  }
+#elif defined(__aarch64__) || defined(__arm__)
+  #include <cstdint>
+  static inline void enableDenormalGuard() noexcept {
+      uint64_t fpcr; __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+      fpcr |= (1ULL << 24); // FZ — flush-to-zero en NEON/AArch64
+      __asm__ volatile("msr fpcr, %0" :: "r"(fpcr));
+  }
+#else
+  static inline void enableDenormalGuard() noexcept {}
+#endif
 #if defined(__aarch64__) || defined(__arm__)
 #include <arm_neon.h>
 #endif
@@ -236,6 +256,7 @@ void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness
 void HRTFConvolver::process(const float* inputL, const float* inputR,
                             float* outputL, float* outputR,
                             uint32_t numSamples) noexcept {
+    enableDenormalGuard();
     if (!filterInitialized_ || !inputL || !inputR || !outputL || !outputR || numSamples == 0) {
         // FIX defensivo: antes se hacía memcpy incondicional aquí, pero si la
         // razón de entrar a este bypass era justamente inputL/inputR nulos
