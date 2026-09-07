@@ -7,8 +7,8 @@
 #     "Could not read presets ... File not found: CMakePresets.json".
 #   - Ahora: configura directamente el proyecto de tests host
 #     (app/src/main/cpp/tests — GoogleTest vendoreado, cero red) sin
-#     depender de presets inexistentes. ASan/UBSan opcional via
-#     IVANNA_SAN=1.
+#     depender de presets inexistentes. Sanitizadores opcionales via
+#     IVANNA_SAN=asan (ASan+UBSan) o IVANNA_SAN=tsan (ThreadSanitizer).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/app/src/main/cpp/tests"
