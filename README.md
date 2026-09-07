@@ -13,7 +13,7 @@
 
 ### El motor de inteligencia de audio para Android — DSP nativo C++17/NEON, IA adaptativa en tiempo real, espacialización binaural con datos medidos y asistente cognitivo con Gemini 2.5
 
-> 🤖 Este repo recibe trabajo de múltiples sesiones de IA en paralelo — antes de emprender trabajo sustancial, revisa **[AGENT_WORK_CLAIMS.md](AGENT_WORK_CLAIMS.md)**.
+> 🤖 Este repo recibe trabajo de múltiples sesiones de IA en paralelo — antes de emprender trabajo sustancial, revisa **[AGENT_CLAIMS.md](AGENT_CLAIMS.md)**.
 
 <br>
 

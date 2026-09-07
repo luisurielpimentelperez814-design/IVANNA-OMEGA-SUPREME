@@ -128,6 +128,33 @@ confusa para un usuario final.
 
 ---
 
+### UI/UX Compose — paneles de diagnóstico y asistente
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/java/com/ivanna/omega/ui/` completo: `IvannaAssistantScreen.kt`,
+  `NetworkStatusPanel.kt`, `MagiskStatusPanel.kt`, y demás Composables
+  de presentación/paneles.
+- Información arquitectónica de estos paneles: qué se muestra, cómo se
+  organiza, si el mismo dato aparece duplicado/contradictorio entre
+  paneles distintos (ej. estado de conexión del daemon mostrado de
+  forma diferente en dos sitios).
+- ViewModels que alimentan ESTOS paneles (`IvannaAssistantViewModel.kt`)
+  únicamente en la parte de exposición de estado a la UI — no la lógica
+  de negocio de Gemini/memoria que vive ahí (eso sigue siendo de quien
+  toque conversación/memoria).
+
+**Explícitamente NO toca:** lógica de Gemini/Firebase, DSP nativo,
+daemon/Magisk/CI, memoria del asistente. Si un fix de UI requiere tocar
+uno de esos, se limita al mínimo indispensable y se nota en el commit.
+
+**Por qué este frente:** ya señalado arriba en este mismo archivo como
+necesitando una pasada de diseño real, y nadie lo había reclamado
+todavía — evita chocar con los dos frentes nativos ya tomados arriba.
+
+**Estado:** iniciando — primer commit en curso.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
