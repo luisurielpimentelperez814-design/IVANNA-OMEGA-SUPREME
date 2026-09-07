@@ -164,6 +164,88 @@ en categorías claras (Red / IA / Sistema) en vez de solo renombrar.
 
 ---
 
+### Conversación / IA / Memoria — el cerebro conversacional de IVANNA
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/java/com/ivanna/omega/ai/gemini/` completo
+  (`IvannaGeminiAgent.kt`, `GeminiOrchestrator.kt`, `AdaptiveResponseEngine.kt`)
+- `app/src/main/java/com/ivanna/omega/assistant/` completo: clasificador
+  de intención (`IvannaLanguageCore.kt`), motor cognitivo
+  (`IvannaCognitiveCore.kt`), memoria de sesión (`IvannaContextMemory.kt`,
+  `IvannaConversationalCore.kt`), charla casual (`IvannaSmallTalk.kt`,
+  `IvannaJokeBank.kt`), orquestador de audio conversacional
+  (`IvannaAssistant.kt`, `IvannaDSPOrchestrator.kt` en su rol de
+  ejecutar comandos de voz — no la cadena DSP de señal en sí, eso es
+  del frente "DSP nativo")
+- `app/src/main/java/com/ivanna/omega/assistant/core/` completo
+  (`SecureConfigurationManager.kt`, `DynamicContextEngine.kt`,
+  `AIContextManager.kt`)
+- `app/src/main/java/com/ivanna/omega/ai/memory/` completo
+  (`IvannaMemoryArchitecture.kt` — persistencia cifrada episódica/semántica)
+- Lógica de negocio de estos ViewModels (no su exposición de estado a
+  Compose, eso es del frente "UI/UX"): la parte de `IvannaAssistantViewModel.kt`
+  que orquesta Gemini/memoria/intención.
+
+**Explícitamente NO toca:** DSP nativo/audio real (frente ya tomado),
+daemon/Magisk/SHM/socket (frente ya tomado), paneles Compose y su
+exposición visual de estado (frente ya tomado) — salvo el mínimo
+indispensable si un fix de esta capa lo exige, notado en el commit.
+
+**Por qué este frente:** es el tercer pilar real del producto (junto a
+DSP nativo y Daemon/runtime) y estaba genuinamente libre — ambos
+frentes vecinos lo excluyen explícitamente en su propia delimitación
+("NO toca: Gemini/Firebase, capa de conversación/memoria" en DSP
+nativo; "NO toca: lógica de Gemini/Firebase" en UI/UX). Ya tiene bugs
+reales confirmados con evidencia (no solo sospecha) de sesiones previas
+de esta misma conversación: 5 colisiones de precedencia por substring
+en el clasificador de intención (`GREETING` interceptando `SELF_INTRO`,
+`DIAGNOSE` interceptando `HOW_ARE_YOU`, etc. — frases enteras del
+usuario quedaban inalcanzables), una función `toCommand()` con 4 ramas
+duplicadas que rompía la compilación, y funciones completas construidas
+pero sin ningún llamador real (`updateTemporalPreferences`,
+`contextSummary()`) — exactamente el patrón de integración incompleta
+que define el estado actual del repo en varios frentes.
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. El clasificador de intención resuelve correctamente cada frase de
+   usuario documentada en los comentarios del propio enum
+   `AcousticIntent` — sin colisiones de precedencia nuevas introducidas
+   ni remanentes.
+2. Cada pieza de contexto que el sistema construye (memoria de sesión,
+   preferencias temporales, estado de escena) realmente llega al
+   prompt que Gemini recibe — sin islas de estado calculado y nunca
+   leído.
+3. El fallback offline (`simulateAgenticResponse`) cubre con calidad
+   real las intenciones más comunes cuando no hay red/API key, no solo
+   como relleno.
+4. Reintentos, timeouts y manejo de error de la llamada a Gemini son
+   robustos ante fallos reales de red — comparable a cómo un asistente
+   comercial (Siri, Google Assistant) se degrada con gracia sin perder
+   la conversación.
+5. Sin dos implementaciones paralelas del mismo concepto (ya se
+   encontró y limpió una vez esta sesión: un `IvannaCognitiveCore`
+   duplicado en `assistant/core/` sin callers reales, eliminado por
+   otra sesión — vigilar que no reaparezca el patrón).
+
+**Avance verificable hasta ahora (de sesiones previas de esta misma
+conversación, antes de que existiera este archivo de coordinación):**
+- `IvannaLanguageCore.toCommand()`: 4 ramas duplicadas con texto hablado
+  en vez de comando canónico, rompía la compilación — reparado.
+- 5 colisiones de precedencia por substring en el clasificador
+  (`classify()`) reordenadas para que la clave más específica gane.
+- `IvannaConversationalCore.updateTemporalPreferences()` y
+  `contextSummary()`: funciones completas sin ningún llamador real —
+  conectadas al pipeline de `IvannaAssistant`/`buildSystemPrompt`.
+- `IvannaGeminiAgent.shutdown()`: no cerraba la `IvannaMemoryArchitecture`
+  inyectada — leak de `CoroutineScope` en cada sesión de prueba de
+  conexión (`NetworkStatusPanel`) y en el ViewModel real al salir de
+  pantalla.
+
+**Estado:** trabajando — sesión larga, multi-turno, no se cierra
+rápido a propósito.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
