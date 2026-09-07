@@ -28,4 +28,14 @@ fi
 
 cmake -S "$SRC" -B "$BUILD" -G "$GEN" -DCMAKE_BUILD_TYPE=Release "${SAN_FLAGS[@]}"
 cmake --build "$BUILD" -j"$JOBS"
-ctest --test-dir "$BUILD" --output-on-failure
+# Paralelismo de EJECUCIÓN (no solo de compilación): verificado sin
+# colisiones a -j4 y -j8 (test_shm_lifecycle usa backing file propio en /tmp).
+# TIMEOUT_PER_TEST: un test colgado hoy devoraría el timeout del job entero
+# sin decir cuál fue; con 300 s por test, ctest mata al culpable y lo nombra.
+# El más lento en la práctica: test_control_frame_bus_stress (~15 s normal,
+# minutos bajo TSan — por eso el default escala con IVANNA_SAN).
+CTEST_JOBS="${CTEST_JOBS:-4}"
+if [[ -z "${TIMEOUT_PER_TEST:-}" ]]; then
+  if [[ "${IVANNA_SAN:-0}" == "tsan" ]]; then TIMEOUT_PER_TEST=900; else TIMEOUT_PER_TEST=300; fi
+fi
+ctest --test-dir "$BUILD" --output-on-failure -j"$CTEST_JOBS" --timeout "$TIMEOUT_PER_TEST"
