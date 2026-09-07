@@ -22,27 +22,30 @@ on:
       - 'tests/**'
       - 'scripts/run_ctest.sh'
       - '.github/workflows/tests-host.yml'
+  # TSan no cabe en la puerta por-push: 2 cancelaciones medidas (corridas
+  # 34166260673 y 34167465625 — jobs cancelados exactamente a los 20m15s y
+  # 45m15s, ambos en pleno CTest) demuestran que en los runners de 2 núcleos
+  # TSan necesita más de 45 min. Sale semanal y a demanda; el resto del
+  # tiempo la regresión de concurrencia queda vigilada por los tests de
+  # stress ya incluidos en la pata normal (test_control_frame_bus_stress,
+  # test_audio_bus, DaemonThreadStress).
+  schedule:
+    - cron: '23 4 * * 1'   # lunes 04:23 UTC — evita la hora pico de GitHub
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # ── PUERTA por push/PR: normal + ASan+UBSan (verificadas ~1 min cada una) ──
   ctest:
-    name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || matrix.san == 'tsan' && 'CTest (TSan)' || 'CTest' }}
+    name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || 'CTest' }}
     runs-on: ubuntu-latest
-    # Timeout diferenciado VERIFICADO con datos reales de la corrida
-    # 34166260673: TSan fue cancelado exactamente a los 20m15s (el timeout de
-    # 20 min aplicaba a todo el job) mientras TSan seguía corriendo CTest —
-    # TSan ralentiza 5-15x y el runner de 2 núcleos agrava el stress test de
-    # 15 s. 45 min dan 2.2x de margen sobre el punto de cancelación.
-    timeout-minutes: ${{ matrix.san == 'tsan' && 45 || 20 }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # Las 3 patas están verificadas en local (60/60 PASS cada una):
-        # '' normal, 'asan' ASan+UBSan, 'tsan' ThreadSanitizer.
-        san: ['', 'asan', 'tsan']
+        san: ['', 'asan']
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: ${{ matrix.san }}
@@ -69,3 +72,33 @@ jobs:
       - name: Resumen
         if: always()
         run: echo "Puerta de tests host ejecutada (san=${IVANNA_SAN:-none}). Cualquier fallo aquí es una regresión DSP real o un test roto — no se ignora."
+
+  # ── CARRIL TSan: semanal + manual — NO bloquea pushes ──────────────────────
+  # Evidencia de por qué NO va en la matriz de la puerta: corridas
+  # 34166260673 y 34167465625 — cancelado a los 20m15s (timeout 20) y luego a
+  # los 45m15s (timeout 45), en pleno CTest. 90 min = 2x el peor caso medido.
+  ctest-tsan:
+    name: CTest (TSan, carril semanal)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      IVANNA_SAN: 'tsan'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cmake
+        run: |
+          cmake --version || { sudo apt-get update -qq && sudo apt-get install -y -qq cmake; }
+          cmake --version | head -1
+
+      - name: Pre-flight — sin presets fantasma
+        run: bash -n scripts/run_ctest.sh
+
+      - name: CTest completo con ThreadSanitizer
+        run: bash scripts/run_ctest.sh
+
+      - name: Resumen
+        if: always()
+        run: echo "Carril TSan ejecutado. Un fallo aquí = data race real en el DSP — prioridad máxima de investigación."
