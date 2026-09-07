@@ -279,7 +279,19 @@ rápido a propósito.
 — la puerta de tests host está muerta tal cual está. Sin tests host corriendo,
 ningún otro flanco puede demostrar que su DSP/daemon no rompe nada.
 
-**Estado:** trabajando — commits individuales breves, push por ciclo.
+**Avance verificable (ver commits):**
+- run_ctest.sh reparado y verificado desde build limpio (antes: CMake Error garantizado por CMakePresets.json inexistente)
+- 2 suites huérfanas rescatadas (test_audio_regression 677 líneas, test_oem_stability_suite) → 33→60 tests
+- 2 tests corregidos con causa raíz verificada por repro aislado (TransientBurstNoTronido: arnés con fase reiniciada; EQStatePerisists: umbral calibrado a -115 dBFS medido)
+- Workflow dedicado .github/workflows/tests-host.yml (matriz normal + ASan/UBSan) — build.yml y supply-chain.yml intactos
+- Suite completa: 60/60 PASS, también con ASan+UBSan
+
+**Pendiente para la siguiente sesión de este flanco:** badges de CI en README
+(hay que esperar la primera corrida real de tests-host.yml para la URL del
+badge), auditar los 3 objetivos del CMakeLists del daemon que solo corren en
+NDK, y evaluar rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
+
+**Estado:** entregado — flanco deja la puerta de tests host verde y vigilada en CI. Si lo tomas, actualiza esta entrada.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"

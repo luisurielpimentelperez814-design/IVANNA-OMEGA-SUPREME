@@ -14,6 +14,8 @@
 ### El motor de inteligencia de audio para Android — DSP nativo C++17/NEON, IA adaptativa en tiempo real, espacialización binaural con datos medidos y asistente cognitivo con Gemini 2.5
 
 > 🤖 Este repo recibe trabajo de múltiples sesiones de IA en paralelo — antes de emprender trabajo sustancial, revisa **[AGENT_CLAIMS.md](AGENT_CLAIMS.md)**.
+>
+> 🧪 Puerta de regresión DSP en host: `bash scripts/run_ctest.sh` (60 tests, GTest vendoreado, offline; `IVANNA_SAN=asan` para ASan+UBSan) — corre en CI via [tests-host.yml](.github/workflows/tests-host.yml).
 
 <br>
 

@@ -1,0 +1,64 @@
+name: Tests host (CTest)
+
+# Flanco: Tests nativos host (CTest) — ver CLAIMS/tests-host-ctest.md.
+# Workflow dedicado y aislado: NO reemplaza ni toca build.yml (daemon/Magisk)
+# ni supply-chain.yml. Su única razón de existir: la puerta de regresión de
+# todo el DSP en host, que antes no existía en ninguna parte.
+#
+# Historial: scripts/run_ctest.sh invocaba `cmake --preset host-release` con
+# CMakePresets.json inexistente → fallaba garantizado. Hoy esa puerta corre
+# en cada push/PR sobre las rutas que puede romper.
+
+on:
+  push:
+    paths:
+      - 'app/src/main/cpp/**'
+      - 'tests/**'
+      - 'scripts/run_ctest.sh'
+      - '.github/workflows/tests-host.yml'
+  pull_request:
+    paths:
+      - 'app/src/main/cpp/**'
+      - 'tests/**'
+      - 'scripts/run_ctest.sh'
+      - '.github/workflows/tests-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ctest:
+    name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || 'CTest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        san: ['', 'asan']
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      IVANNA_SAN: ${{ matrix.san }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cmake (verificación explícita de versión)
+        run: |
+          cmake --version || { sudo apt-get update -qq && sudo apt-get install -y -qq cmake; }
+          cmake --version | head -1
+
+      # Verificación de no-regresión de la causa raíz corregida hoy:
+      # CMakePresets.json NO debe reaparecer apuntando a nada muerto.
+      - name: Pre-flight — sin presets fantasma
+        run: |
+          if [ -f CMakePresets.json ]; then
+            echo "CMakePresets.json reapareció — run_ctest.sh ya no depende de él, pero revisa que no vuelva a romper la puerta de tests."; exit 1
+          fi
+          bash -n scripts/run_ctest.sh
+
+      - name: Configurar, compilar y correr CTest (33→60 targets, GTest vendoreado, offline)
+        run: bash scripts/run_ctest.sh
+
+      - name: Resumen
+        if: always()
+        run: echo "Puerta de tests host ejecutada (san=${IVANNA_SAN:-none}). Cualquier fallo aquí es una regresión DSP real o un test roto — no se ignora."
