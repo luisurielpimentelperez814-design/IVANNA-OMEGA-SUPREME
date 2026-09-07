@@ -249,7 +249,7 @@ fun NetworkStatusPanel(
                         netState = netState.copy(pingMs = ping, geminiReachable = gemini)
                         lastTest = buildString {
                             append(if (ping >= 0) "✅ Ping Google: ${ping}ms\n" else "❌ Ping Google: timeout\n")
-                            append(if (gemini) "✅ IVANNA: alcanzable" else "❌ IVANNA: no alcanzable")
+                            append(if (gemini) "✅ Servidor Gemini: alcanzable" else "❌ Servidor Gemini: no alcanzable")
                         }
                         connecting = false
                     }
@@ -264,8 +264,8 @@ fun NetworkStatusPanel(
                         lastTest   = "Comprobando IVANNA…"
                         val ok = checkGeminiReachable()
                         netState = netState.copy(geminiReachable = ok)
-                        lastTest = if (ok) "✅ IVANNA: servidor alcanzable"
-                                   else    "❌ IVANNA: sin acceso (¿red bloqueada?)"
+                        lastTest = if (ok) "✅ Servidor Gemini: alcanzable"
+                                   else    "❌ Servidor Gemini: sin acceso (¿red bloqueada?)"
                         connecting = false
                     }
                 }
@@ -273,7 +273,7 @@ fun NetworkStatusPanel(
         }
 
         // ── Gemini API key + conectar al agente ────────────────────────────
-        SectionCard(title = "MOTOR IVANNA (AGENTE)", accentColor = NeonMagenta) {
+        SectionCard(title = "IA CONVERSACIONAL (GEMINI)", accentColor = NeonMagenta) {
             // Indicador de vinculación
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -288,8 +288,8 @@ fun NetworkStatusPanel(
                         .background(if (agentLinked) PhosphorGreen else CoralWarn)
                 )
                 Text(
-                    if (agentLinked) "AGENTE CONECTADO — IVANNA activa"
-                    else             "AGENTE DESCONECTADO — ingresa API Key",
+                    if (agentLinked) "GEMINI CONECTADO — IVANNA piensa con IA generativa"
+                    else             "GEMINI SIN CONFIGURAR — ingresa API Key",
                     color      = if (agentLinked) PhosphorGreen else CoralWarn,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -359,7 +359,7 @@ fun NetworkStatusPanel(
                         apiStatus   = "⏳ Validando key…"
                         val reachable = withContext(Dispatchers.IO) { checkGeminiReachable() }
                         if (!reachable) {
-                            apiStatus   = "❌ IVANNA no alcanzable — revisa tu red"
+                            apiStatus   = "❌ Servidor Gemini no alcanzable — revisa tu red"
                             connecting  = false
                             agentLinked = false
                             return@launch
@@ -445,7 +445,7 @@ fun NetworkStatusPanel(
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
-                    if (agentLinked) "✓ AGENTE VINCULADO — RECONECTAR" else "CONECTAR AL AGENTE IVANNA",
+                    if (agentLinked) "✓ GEMINI VINCULADO — RECONECTAR" else "CONECTAR CON GEMINI",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize   = 12.sp
@@ -468,7 +468,7 @@ fun NetworkStatusPanel(
                     colors   = ButtonDefaults.outlinedButtonColors(contentColor = CoralWarn),
                     shape    = RoundedCornerShape(10.dp),
                     border   = androidx.compose.foundation.BorderStroke(1.dp, CoralWarn.copy(0.5f))
-                ) { Text("DESCONECTAR AGENTE", fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+                ) { Text("DESCONECTAR GEMINI", fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
             }
 
             Spacer(Modifier.height(8.dp))
