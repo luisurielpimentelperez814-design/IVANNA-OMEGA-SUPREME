@@ -34,10 +34,24 @@ android {
             ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
 
-        // ABIs soportados: arm64-v8a (principal, Moto G85) + armeabi-v7a (legado 32-bit).
-        // x86/x86_64 excluidos: sin target emulador/Intel, ahorra ~40% de tamaño nativo.
+        // ABI soportado: arm64-v8a únicamente (Moto G85 y prácticamente todo
+        // dispositivo real de los últimos años).
+        //
+        // FIX (build roto en armeabi-v7a, verificado con el log real de CI):
+        // hrtf_convolver.cpp:32-39 falla con "invalid operand for instruction"
+        // en el asm inline de FPCR/FPSCR al compilar para armeabi-v7a. Pero
+        // arreglar ese asm para 32-bit no tenía sentido: ivanna_daemon e
+        // ivanna_client — TODO lo que hace root vía Magisk (ver
+        // .github/workflows/build.yml, "NDK r26, arm64-v8a") — ya se compila
+        // exclusivamente para arm64-v8a. Un dispositivo armeabi-v7a jamás
+        // podría usar la parte root de este producto de todas formas; el
+        // comentario anterior lo llamaba "legado 32-bit" — hoy activamente
+        // rompía el build sin dar ninguna función real a cambio. Se quita en
+        // vez de parchear asm que nadie puede aprovechar.
+        // x86/x86_64 también excluidos: sin target emulador/Intel, ahorra
+        // tamaño nativo.
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
