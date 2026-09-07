@@ -6,6 +6,17 @@
 
 #define OMEGA_EQ_BANDS 10
 
+// ── Version del protocolo del socket de control (HELLO handshake) ────────────
+// Distinta de OMEGA_SHM_VERSION (layout del mmap) y de OMEGA_CTRL_VERSION
+// (layout del snapshot del bus): esta cubre el CONTRATO DE COMANDOS del socket
+// (acciones JSON soportadas y su payload). El cliente la negocia con
+// {"action":"HELLO","proto":N} al conectar; el daemon responde con la suya y
+// compatible=true si puede servir a N (hoy: N <= OMEGA_PROTO_VERSION).
+// Bump cuando se anadan/eliminen acciones o cambie un payload. El reader
+// Kotlin (OmegaEngineBridge) la usa para degradar con ruido en vez de fallar
+// en silencio cuando habla con un daemon de otra epoca.
+inline constexpr uint32_t OMEGA_PROTO_VERSION = 1u;
+
 struct OmegaDspState {
     float eq_gains[OMEGA_EQ_BANDS];
     float listen_phon;

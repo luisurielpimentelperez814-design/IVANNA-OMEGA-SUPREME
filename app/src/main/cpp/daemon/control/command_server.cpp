@@ -220,6 +220,25 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             hasActiveConsumer()?"\"omega_effect\"":"null",
             (unsigned long long)m_state.last_update);
 
+    } else if (strcmp(action,"HELLO")==0) {
+        // Handshake de version de protocolo (roadmap flanco control-plane item 1).
+        // El cliente declara su version con {"action":"HELLO","proto":N}; el
+        // daemon responde la suya y si puede servirla. Aditivo: los clientes
+        // que no envian HELLO siguen funcionando exactamente igual — solo
+        // pierden la deteccion temprana de mismatch.
+        const int clientProto = (int)_jsonFloat(json, "proto", 0.f);
+        const bool compatible = clientProto >= 1 &&
+                                clientProto <= (int)OMEGA_PROTO_VERSION;
+        if (!compatible && clientProto > 0)
+            CS_LOG("HELLO: cliente con proto=%d > daemon proto=%u — mismatch",
+                   clientProto, OMEGA_PROTO_VERSION);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"HELLO\",\"proto\":%u,\"shm_version\":%u,\"ctrl_version\":%u,\"compatible\":%s,\"status\":\"%s\"}",
+            OMEGA_PROTO_VERSION, ivanna::OMEGA_SHM_VERSION,
+            (unsigned)ivanna::OMEGA_CTRL_VERSION,
+            compatible?"true":"false",
+            compatible?"ready":"proto_mismatch");
+
     } else if (strcmp(action,"GET_STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
