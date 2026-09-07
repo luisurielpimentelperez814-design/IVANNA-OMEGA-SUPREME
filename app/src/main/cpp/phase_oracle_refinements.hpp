@@ -1,5 +1,16 @@
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
-#pragma once
+#ifndef IVANNA_PHASE_ORACLE_REFINEMENTS_HPP
+#define IVANNA_PHASE_ORACLE_REFINEMENTS_HPP
+
+// AUDITORÍA (flanco PhaseOracle, 2026-09-07): antes el archivo terminaba
+// en un `#endif  // PHASE_ORACLE_REFINEMENTS_HPP` SIN ningún `#ifndef` que
+// lo abriera — la macro nunca se definía y el primer include del header
+// reventaba la compilación. Ahora es un guard doble correcto.
+// Además se eliminó el `struct BiquadEnvelopeBank` duplicado que había
+// aquí: colisionaba con la clase real `ivanna::BiquadEnvelopeBank` de
+// neuromorphic/biquad_envelope_bank.hpp (dos implementaciones del mismo
+// concepto — prohibido por el criterio del repo). Este header queda solo
+// con KalmanPhasePredictor, que es lo único propio de refinamientos.
 
 #include <atomic>
 #include <cmath>
@@ -59,8 +70,12 @@ struct KalmanPhasePredictor {
         // T_vel no cambia (constant velocity model)
         T_pos = T_new;
 
-        // Covarianza: P = F·P·F^T + Q (Q = process noise)
-        const float P_00_new = P_00 + 2.f * P_00 * dt + P_11 * dt2 + sigma_process;
+        // Covarianza: P = F·P·F^T + Q con F = [[1, dt],[0, 1]]:
+        //   P00' = P00 + 2·dt·P01 + dt²·P11 + Q00   (P01=0 en este modelo diag)
+        //   P11' = P11 + Q11
+        // (el término `2·P00·dt` previo era espurio: el único cruce de F
+        //  entra por P01; corregido a la raíz del cuadrado real)
+        const float P_00_new = P_00 + dt * dt * P_11 + sigma_process;
         const float P_11_new = P_11 + sigma_process;
 
         P_00 = P_00_new;
@@ -106,66 +121,4 @@ struct KalmanPhasePredictor {
     }
 };
 
-// ============================================================
-// BiquadEnvelopeBank — Integración con Phase Oracle
-// ============================================================
-
-struct BiquadEnvelopeBank {
-    static constexpr int NUM_BANDS = 8;  // 8 biquad filters
-
-    struct BiquadFilter {
-        float b0 = 0.f, b1 = 0.f, b2 = 0.f;  // coef. numerador
-        float a1 = 0.f, a2 = 0.f;            // coef. denominador
-        float z1 = 0.f, z2 = 0.f;            // estado (delay line)
-    } bands[NUM_BANDS];
-
-    KalmanPhasePredictor phase_predictor;
-    float T_refined_smoothed = 0.f;      // período refinado suavizado
-    float phase_refinement_gain = 0.f;   // ganancia aplicada a envelopes
-
-    void init(float sample_rate) noexcept {
-        phase_predictor.init(sample_rate);
-    }
-
-    // ── Inyectar predicción del Phase Oracle ────────────────────────────
-    void set_phase_refinement(float T_refined, float coherence) noexcept {
-        // Smooth T_refined: 95% old + 5% new
-        T_refined_smoothed = 0.95f * T_refined_smoothed + 0.05f * T_refined;
-
-        // Coherence → refinement gain (0..1)
-        phase_refinement_gain = coherence * 0.5f;
-
-        // Aplica ajuste en envelope timing
-        // (Los coeficientes de los biquads se ajustan según T_refined_smoothed)
-    }
-
-    // ── Process block con refinamiento de fase ──────────────────────────
-    float process(float x, int band_idx) noexcept {
-        if (band_idx < 0 || band_idx >= NUM_BANDS) return x;
-
-        BiquadFilter& b = bands[band_idx];
-
-        // IIR biquad: y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2
-        float y = b.b0 * x + b.z1;
-        b.z1 = b.b1 * x - b.a1 * y + b.z2;
-        b.z2 = b.b2 * x - b.a2 * y;
-
-        // Aplica fase refinement: modula ligeramente la salida según coherencia
-        if (phase_refinement_gain > 0.f) {
-            y = y * (1.f + phase_refinement_gain * 0.1f);
-        }
-
-        return y;
-    }
-
-    void reset() noexcept {
-        for (int i = 0; i < NUM_BANDS; ++i) {
-            bands[i].z1 = bands[i].z2 = 0.f;
-        }
-        phase_predictor.reset();
-        T_refined_smoothed = 0.f;
-        phase_refinement_gain = 0.f;
-    }
-};
-
-#endif  // PHASE_ORACLE_REFINEMENTS_HPP
+#endif  // IVANNA_PHASE_ORACLE_REFINEMENTS_HPP
