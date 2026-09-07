@@ -26,6 +26,6 @@ elif [[ "${IVANNA_SAN:-0}" == "tsan" ]]; then
   SAN_FLAGS=(-DIVANNA_TEST_ENABLE_TSAN=ON)
 fi
 
-cmake -S "$SRC" -B "$BUILD" -G "$GEN" "${SAN_FLAGS[@]}"
+cmake -S "$SRC" -B "$BUILD" -G "$GEN" -DCMAKE_BUILD_TYPE=Release "${SAN_FLAGS[@]}"
 cmake --build "$BUILD" -j"$JOBS"
 ctest --test-dir "$BUILD" --output-on-failure
