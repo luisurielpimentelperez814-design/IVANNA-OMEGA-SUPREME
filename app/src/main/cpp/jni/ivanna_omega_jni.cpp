@@ -911,20 +911,34 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // alternaba 1.0<->reducido de un bloque al siguiente: cada cambio
         // es un salto de ganancia instantáneo. GainStage ya tiene rampa
         // propia para su multiplicador; este guard, separado, no tenía
-        // ninguna. El target se calcula SIEMPRE (1.0 si no hace falta
-        // reducir, 0.89/pk si sí — no solo al activarse) y se interpola
-        // muestra a muestra desde g_ats.peakGuardScale (donde terminó el
-        // bloque anterior) hasta ese target: sin discontinuidad ni al
-        // activarse ni al soltar, en ninguna de las dos direcciones.
+        // ninguna.
+        //
+        // Ataque instantáneo, release en rampa (diseño estándar de
+        // limitadores, no una rampa simétrica): este guard existe para que
+        // el EQ nunca reciba >~1.0 y diverja — es seguridad, no estética,
+        // así que la reducción se aplica COMPLETA de inmediato en cuanto
+        // hace falta (idéntico al comportamiento original: cero regresión
+        // en la protección). Rampear el ataque dejaría justo la muestra
+        // que causó el pico con menos reducción de la necesaria mientras
+        // la rampa se pone al día — inaceptable para un guard de
+        // seguridad. Al soltar (targetSc > startSc) sí se rampea muestra
+        // a muestra: ahí no hay riesgo de divergencia (siempre se viene
+        // de una reducción hacia menos reducción), y es exactamente donde
+        // vivía el escalón audible al bajar la protección de golpe.
         const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
         const float startSc = g_ats.peakGuardScale;
-        for (int i = 0; i < n; ++i) {
-            const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
-            const float sc = startSc + (targetSc - startSc) * t;
-            g_ats.chL[i] *= sc;
-            g_ats.chR[i] *= sc;
+        if (targetSc < startSc) {
+            for (int i = 0; i < n; ++i) { g_ats.chL[i] *= targetSc; g_ats.chR[i] *= targetSc; }
+            g_ats.peakGuardScale = targetSc;
+        } else if (targetSc > startSc) {
+            for (int i = 0; i < n; ++i) {
+                const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
+                const float sc = startSc + (targetSc - startSc) * t;
+                g_ats.chL[i] *= sc;
+                g_ats.chR[i] *= sc;
+            }
+            g_ats.peakGuardScale = targetSc;
         }
-        g_ats.peakGuardScale = targetSc;
     }
     g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
@@ -1463,19 +1477,26 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             if (ar > pk) pk = ar;
         }
         // FIX (tronido "metralleta"): mismo fix que el sitio equivalente en
-        // nativeProcess (ver ese comentario) — rampa muestra a muestra en
-        // vez de salto de bloque completo. Campo separado
-        // (blkPeakGuardScale) porque este path puede correr en un hilo
-        // distinto, mismo patrón que blkTgSmooth vs targetGainSmooth.
+        // nativeProcess (ver ese comentario extenso) — ataque instantáneo
+        // (nunca comprometer la protección del EQ), release en rampa
+        // muestra a muestra (elimina el escalón audible al soltar, sin
+        // riesgo porque ahí siempre se va hacia menos reducción). Campo
+        // separado (blkPeakGuardScale) porque este path puede correr en un
+        // hilo distinto, mismo patrón que blkTgSmooth vs targetGainSmooth.
         const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
         const float startSc = g_ats.blkPeakGuardScale;
-        for (int i = 0; i < n; ++i) {
-            const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
-            const float sc = startSc + (targetSc - startSc) * t;
-            lBuf[i] *= sc;
-            rBuf[i] *= sc;
+        if (targetSc < startSc) {
+            for (int i = 0; i < n; ++i) { lBuf[i] *= targetSc; rBuf[i] *= targetSc; }
+            g_ats.blkPeakGuardScale = targetSc;
+        } else if (targetSc > startSc) {
+            for (int i = 0; i < n; ++i) {
+                const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
+                const float sc = startSc + (targetSc - startSc) * t;
+                lBuf[i] *= sc;
+                rBuf[i] *= sc;
+            }
+            g_ats.blkPeakGuardScale = targetSc;
         }
-        g_ats.blkPeakGuardScale = targetSc;
     }
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
