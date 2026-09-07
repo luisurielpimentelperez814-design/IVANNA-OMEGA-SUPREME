@@ -286,12 +286,17 @@ ningún otro flanco puede demostrar que su DSP/daemon no rompe nada.
 - Workflow dedicado .github/workflows/tests-host.yml (matriz normal + ASan/UBSan) — build.yml y supply-chain.yml intactos
 - Suite completa: 60/60 PASS, también con ASan+UBSan
 
-**Pendiente para la siguiente sesión de este flanco:** badges de CI en README
-(hay que esperar la primera corrida real de tests-host.yml para la URL del
-badge), auditar los 3 objetivos del CMakeLists del daemon que solo corren en
-NDK, y evaluar rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
+**Ciclo 2 — avance adicional (mismo día, commits 15d36a72..4042aded):**
+- Badge real en README (primera corrida de tests-host.yml: success, run 34165846942)
+- CMAKE_BUILD_TYPE=Release por defecto en run_ctest.sh; suite estable 5/5 corridas (cero flakiness)
+- TSan verificado 60/60 en local, pero en CI necesita >45 min en runners de 2 núcleos (2 cancelaciones medidas: 20m15s y 45m15s, corridas 34166260673 y 34167465625) → movido a carril semanal+manual con timeout 90 min; la puerta por-push (CTest + ASan+UBSan, ~1 min cada pata) quedó VERDE en la corrida real 34170101339: success/success/skipped
 
-**Estado:** entregado — flanco deja la puerta de tests host verde y vigilada en CI. Si lo tomas, actualiza esta entrada.
+**Pendiente para la siguiente sesión de este flanco:** auditar los 3 objetivos
+del CMakeLists del daemon que solo corren en NDK (líneas ~341+, territorio
+compartido con el flanco Daemon — coordinar antes de mover), y evaluar
+rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
+
+**Estado:** entregado — puerta de tests host verde, rápida (~1 min) y vigilada en CI; TSan con carril propio. Si lo tomas, actualiza esta entrada.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
