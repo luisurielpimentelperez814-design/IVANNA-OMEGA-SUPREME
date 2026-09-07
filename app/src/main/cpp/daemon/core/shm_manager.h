@@ -27,7 +27,7 @@
 namespace ivanna {
 
 // ── Layout unificado de la region SHM ──────────────────────────────────────
-// [ ShmHeader (16B, seqlock de control) | OmegaSharedState | frames | margen ]
+// [ ShmHeader (32B, seqlock de control) | OmegaSharedState @4096 | frames | margen ]
 // Antes: SHM_SIZE=65536 pero sizeof(OmegaSharedState)=131272 -> el placement-new
 // del daemon escribia ~64KB FUERA del mmap (overflow real). Ahora la constante
 // unica deriva del tipo y se alinea a pagina con margen para frames de control.
@@ -46,7 +46,7 @@ inline constexpr size_t   SHM_SIZE          = (SHM_SIZE_RAW + 4095) & ~size_t(40
 static_assert(SHM_SIZE >= SHM_STATE_OFFSET + sizeof(OmegaSharedState),
               "SHM_SIZE no cubre OmegaSharedState");
 
-// Layout de los primeros 16 bytes (seqlock header)
+// Layout de los primeros 32 bytes (seqlock header)
 struct alignas(8) ShmHeader {
     std::atomic<uint64_t> epoch;     // seqlock epoch: par = estable, impar = escribiendo
     uint32_t              frame_len; // longitud del frame serializado en bytes
@@ -55,15 +55,10 @@ struct alignas(8) ShmHeader {
     uint32_t              state_size;// sizeof(OmegaSharedState) esperado
     uint32_t              reserved;
 };
-// Contrato de layout fijado: Kotlin lee el frame de control en
+// Contrato de layout fijado (ABI SHM v2): Kotlin lee el frame de control en
 // base+sizeof(ShmHeader). Si esta estructura cambia de tamaño, el build FALLA
-// aquí en vez de desalinear silenciosamente al reader.
-static_assert(sizeof(ShmHeader) == 32,
-              "ShmHeader ABI mismatch: expected 32 bytes");
-
-// ABI SHM v2:
-// El header nativo ARM64 mide 32 bytes.
-// Kotlin debe mantener SHM_HEADER_BYTES sincronizado.
+// aquí en vez de desalinear silenciosamente al reader. ShmManager.kt debe
+// mantener SHM_HEADER_BYTES=32 sincronizado con este assert.
 static_assert(sizeof(ShmHeader) == 32,
               "ShmHeader ABI mismatch: expected 32 bytes");
 
