@@ -66,41 +66,60 @@ CI real) — no asumido. Elige uno de los frentes abiertos abajo.
 
 ---
 
-## 🟢 Frentes abiertos, sin dueño (elige uno y anótalo arriba)
+### DSP nativo — cadena de señal completa (incluye espacial/HRTF)
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/cpp/` — todo lo que procesa muestras de audio reales:
+  peak guard, GainStage, limitador, EQ paramétrico/evolutivo,
+  `spatial/` completo (HRTFConvolver, RirDataset, psicoacústica),
+  `jni/ivanna_omega_jni.cpp` en las funciones `nativeProcess*` que
+  transforman buffers de audio (no el resto del JNI de IPC/SHM, eso es
+  del frente "Daemon nativo").
+- Config de build específica de estos targets nativos (`abiFilters`,
+  flags de compilación de estas libs) cuando un fix de DSP lo exige.
+- Absorbe los dos frentes que estaban abiertos abajo ("Binaural real"
+  y "DSP adaptativo") — es el mismo dominio, separarlos solo generaría
+  más coordinación, no menos.
 
-### Binaural real (HRTFConvolver → pipeline audible)
-Investigado a fondo (ver commits de "FASE 8" en el historial). El
-crossfade de azimuth ya se corrigió a ley de potencia constante. Lo
-que falta: `PdEngine::process_block()` procesa muestra-a-muestra;
-`HRTFConvolver` procesa por bloque/FFT — sí se puede llamar
-`hrtf.process()` una vez por bloque sin acumulador externo (ya
-verificado leyendo el código completo), pero falta el cableado real
-con su propio flag de activación, coexistiendo con `CueBasedSpatial`
-sin reemplazarlo por defecto, con rampa anti-click al alternar entre
-ambos. Trabajo grande, dividir en commits por sub-paso.
+**Explícitamente NO toca:** Gemini/Firebase, capa de conversación/
+memoria, UI de Kotlin, el daemon Magisk y su socket/SHM (JNI de IPC
+en sí), CI/release — salvo lo estrictamente necesario para compilar
+cambios de DSP.
 
-### Capa conversacional / Gemini / Firebase AI Logic
-Migración base ya hecha: Firebase AI Logic cableado (evita el
-problema de keys `AQ.`/`AIza` retiradas por Google), App Check
-instalado, 3 fugas de recursos cerradas, errores de mic 11/12
-corregidos, modo manos-libres funcional, estado PROCESSING formal.
-Pendiente real: el límite de tokens de salida está declarado en el
-registry de modelos (`maxOutputTokens`) pero **nunca se aplica** —
-no hay `generationConfig` real en la llamada. Falta verificar
-end-to-end si "auto-repararse" (`IvannaSelfHealingEngine`) y el
-agente conversacional están realmente conectados o es otro caso de
-pieza-bien-construida-pero-huérfana (patrón que se repitió varias
-veces en este repo — verificar con grep de llamadores reales, no
-asumir por el nombre del archivo).
+**Por qué este frente:** es lo que el nombre del producto promete
+("Conversational Acoustic Intelligence") y donde ya hasta ahora se
+encontraron bugs reales y no cosméticos con impacto audible directo
+(peak guard sin rampa = tronido tipo metralleta al subir volumen,
+arreglado con ataque instantáneo/release en rampa, no una rampa
+simétrica ingenua — la protección real no se puede debilitar por
+suavidad).
 
-### DSP adaptativo / algoritmos de audio
-`ThermalGovernor` vs. decisión de IA ya no colisiona sobre compresor/
-spatial_width (FASE 7, patrón de base+escala igual que el EQ). Vale
-la pena una auditoría de precisión numérica y casos límite en el
-resto de la cadena (exciter, EQ perceptual, peak guard — este último
-recién tocado por otra sesión, revisar si sigue coherente).
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. Cada etapa de la cadena compila para el target real, de forma
+   consistente, no solo "a veces".
+2. Cada etapa tiene justificación de diseño explícita — no solo
+   "código que compila" — comparable a por qué un limitador
+   profesional usa ataque rápido/release lento, no al revés.
+3. Sin discontinuidades de bloque audibles en ninguna etapa (el
+   tronido de hoy era una instancia; puede haber más sin encontrar).
+4. Sin implementaciones duplicadas de la misma etapa.
+5. Recién ahí: comparación seria contra Dolby/DTS/iZotope en términos
+   que importen (THD+N, artefactos, no solo "cantidad de features").
 
-### UI Compose del panel de asistente
+**Avance verificable hasta ahora:**
+- Peak guard: ataque instantáneo + release en rampa en los 2 sitios
+  (nativeProcess/nativeProcessBlock), reemplazando un salto de bloque
+  completo sin memoria entre bloques.
+- Build roto en armeabi-v7a (asm inline de FPCR/FPSCR inválido en
+  hrtf_convolver.cpp, confirmado con log real de CI) — se quita ese
+  ABI en vez de parchear asm de 32-bit que nadie puede aprovechar: el
+  daemon (todo lo que hace root) ya es arm64-v8a exclusivo, así que
+  v7a no daba ninguna función real, solo rompía el build.
+
+**Estado:** trabajando — sesión larga, multi-turno, no se cierra
+rápido a propósito.
+
+
 Varios bugs puntuales ya arreglados (estado PROCESSING, manos-libres,
 imports duplicados). No ha habido una pasada de diseño/UX real, solo
 correcciones — el panel de red (`NetworkStatusPanel`) en particular
