@@ -121,10 +121,17 @@ void VolterraH2Symmetric::processInterleaved(
     // 1. ESCUDO DE HARDWARE: Forzar modo Flush-to-Zero (FTZ) en la arquitectura ARM de Android
     // Evita que la CPU degrade su rendimiento procesando números infinitesimales (Elimina el desvanecimiento)
 #if defined(__arm64__) || defined(__aarch64__)
+    #if defined(__aarch64__)
     uint64_t fpcr;
     asm volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= (1 << 24); // Habilitar bit de redondeo rápido a cero por hardware
+    fpcr |= (1 << 24);
     asm volatile("msr fpcr, %0" :: "r"(fpcr));
+#elif defined(__arm__)
+    uint32_t fpscr;
+    asm volatile("vmrs %0, fpscr" : "=r"(fpscr));
+    fpscr |= (1u << 24);
+    asm volatile("vmsr fpscr, %0" :: "r"(fpscr));
+#endif
 #endif
 
     for (uint32_t n = 0; n < num_frames; ++n) {

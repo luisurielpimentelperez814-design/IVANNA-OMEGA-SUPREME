@@ -29,12 +29,19 @@
 #elif defined(__aarch64__) || defined(__arm__)
   #include <cstdint>
   static inline void enableDenormalGuard() noexcept {
+#if defined(__aarch64__)
       uint64_t fpcr; __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-      fpcr |= (1ULL << 24); // FZ — flush-to-zero en NEON/AArch64
+      fpcr |= (1ULL << 24); // FZ flush-to-zero
       __asm__ volatile("msr fpcr, %0" :: "r"(fpcr));
+#elif defined(__arm__) || defined(__ARM_ARCH_7A__)
+      uint32_t fpscr; __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
+      fpscr |= (1U << 24); // FZ
+      __asm__ volatile("vmsr fpscr, %0" :: "r"(fpscr));
+#endif
   }
 #else
   static inline void enableDenormalGuard() noexcept {}
+
 #endif
 #if defined(__aarch64__) || defined(__arm__)
 #include <arm_neon.h>
