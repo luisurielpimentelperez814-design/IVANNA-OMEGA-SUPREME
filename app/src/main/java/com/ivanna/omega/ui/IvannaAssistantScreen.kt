@@ -172,7 +172,7 @@ fun IvannaAssistantScreen(
             GeminiConnectPanel(
                 connected = panel.geminiAvailable,
                 status    = panel.errorMessage
-                             ?: if (panel.geminiAvailable) "✅ IVANNA conectada"
+                             ?: if (panel.geminiAvailable) "✅ Gemini conectado"
                                 else "Sin conexión — ingresa API Key",
                 onConnect = { key -> vm.setGeminiApiKey(key) },
                 onTest    = { vm.testGeminiConnection() }
@@ -647,7 +647,7 @@ private fun GeminiConnectPanel(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text       = "IVANNA · INTELIGENCIA EXTENDIDA",
+                        text       = "GEMINI · INTELIGENCIA EXTENDIDA",
                         color      = accentColor,
                         style      = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
@@ -765,7 +765,7 @@ private fun GeminiConnectPanel(
                             modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text  = if (connected) "Actualizar key" else "Conectar IVANNA",
+                            text  = if (connected) "Actualizar key" else "Conectar Gemini",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
