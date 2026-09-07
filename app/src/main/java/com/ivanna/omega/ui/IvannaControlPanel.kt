@@ -146,6 +146,20 @@ fun IvannaControlPanel(
     // Persistencia inmediata en cada cambio para todos los controles del panel.
     // FIX: phaseOracleIntensity y omegaMode sólo se guardaban en DisposableEffect
     // ON_STOP — si la app crasheaba o era matada por el sistema, el valor se perdía.
+    // FIX (evo kernel descableado + sin persistencia, 2026-09-07): el toggle
+    // KERNEL EVOLUTIVO persistía en AdaptiveControlsPrefs y cambiaba el hilo
+    // nativo en caliente (onEvoEnabledChange → nativeStart/StopEvoThread),
+    // pero al reabrir la app el panel restauraba initialEvoEnabled SIN
+    // reaplicarlo al nativo — si el usuario lo apagó y reinició, el hilo
+    // corría (init llama start_evo_thread) mientras la UI mostraba OFF, y
+    // el estado persistido nunca llegaba al motor. Se reaplica una vez al
+    // componer: OFF persistido → stop explícito; ON → no-op (ya corre).
+    LaunchedEffect(Unit) {
+        if (!initialEvoEnabled && IvannaNativeLib.isLoaded) {
+            runCatching { IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeStopEvoThread() } }
+        }
+    }
+
     LaunchedEffect(antiDolbyThreshold, spatialSuppression, spscRingFactor, tinymlInferenceGain) {
         val cur = AdaptiveControlsPrefs.load(context)
         AdaptiveControlsPrefs.save(context, cur.copy(
