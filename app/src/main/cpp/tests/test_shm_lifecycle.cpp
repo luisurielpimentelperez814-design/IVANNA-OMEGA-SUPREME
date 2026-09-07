@@ -107,6 +107,10 @@ int main() {
     std::memcpy(saf_read, static_cast<uint8_t*>(mgr.base()) + 32, sizeof(saf_read));
     CHECK(std::memcmp(saf, saf_read, sizeof(saf)) == 0,
           "writeControl: heartbeat no pisa el frame SAF adyacente");
+    // frame_len documenta el frame de DATOS (SAF, 16B). El heartbeat (len=8)
+    // NO debe sobrescribirlo — invariante fijado tras el fix de semantica.
+    CHECK(hdr->frame_len == (uint32_t)sizeof(saf),
+          "writeControl: frame_len sigue siendo la del frame SAF (16), no la del heartbeat (8)");
 
     // ── 6. Overflow rechazado: nunca solapa OmegaSharedState ──
     const size_t over = (SHM_STATE_OFFSET - sizeof(ShmHeader)) + 1;

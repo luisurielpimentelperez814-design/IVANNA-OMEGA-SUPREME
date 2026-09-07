@@ -142,7 +142,15 @@ bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) n
     __sync_synchronize();
 
     std::memcpy(data + offset, src, len);
-    hdr->frame_len = static_cast<uint32_t>(len);
+    // frame_len documenta la longitud del frame de DATOS (canal SAF, offset 0).
+    // FIX (semantica): el heartbeat (offset SHM_HEARTBEAT_OFFSET, len=8) tambien
+    // pasaba por aqui y sobrescribia frame_len con 8 cada segundo, dejando el
+    // campo mintiendo sobre la longitud del frame SAF (16B) que es lo unico que
+    // los lectores del header interpretan como "frame". Solo el canal de datos
+    // (offset 0) actualiza frame_len; los frames auxiliares (heartbeat, futuros)
+    // llevan su longitud implicita en su offset fijo del ABI.
+    if (offset == 0)
+        hdr->frame_len = static_cast<uint32_t>(len);
 
     __sync_synchronize();
     hdr->epoch.store(seq + 2ULL, std::memory_order_release);  // par (+2)
