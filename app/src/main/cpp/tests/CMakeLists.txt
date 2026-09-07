@@ -112,6 +112,27 @@ target_compile_options(test_ihr1_format PRIVATE -Wall -Wextra)
 add_test(NAME test_ihr1_format COMMAND test_ihr1_format)
 set_tests_properties(test_ihr1_format PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL")
 
+# ── test_shm_lifecycle: barrera de regresion del plano de control SHM ───────
+# Roadmap flanco control-plane item 4. Compila el shm_manager.cpp REAL del
+# daemon en host (su log degrada a stderr sin __ANDROID__) y ejercita el
+# ciclo completo contra un backing file en /tmp: layout/ABI (ShmHeader==32,
+# offsets SAF=32/heartbeat=48 en sync con Kotlin), init idempotente, seqlock,
+# aislamiento de offsets, rechazo de overflow y reattach tras restart.
+# Es la guardia que habria cazado el overflow sizeof(OmegaSharedState)>64KiB
+# y el SHM_HEARTBEAT_OFF sin definir ANTES de llegar al dispositivo.
+add_executable(test_shm_lifecycle
+  test_shm_lifecycle.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/shm_manager.cpp
+)
+target_include_directories(test_shm_lifecycle PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+target_compile_options(test_shm_lifecycle PRIVATE -Wall -Wextra)
+target_link_libraries(test_shm_lifecycle PRIVATE Threads::Threads)
+add_test(NAME test_shm_lifecycle COMMAND test_shm_lifecycle)
+set_tests_properties(test_shm_lifecycle PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL")
+
 # RIR dataset (200 salas medidas, integrado 2026-08-12): valida el loader
 # contra el CSV+WAV reales shippeados en magisk_module/, no fixtures
 # inventados. La ruta se pasa como macro de compilación, resuelta en

@@ -27,10 +27,18 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <android/log.h>
 
-#define SHM_TAG "IVANNA_SHM"
-#define SHM_LOG(fmt, ...)     __android_log_print(ANDROID_LOG_INFO, SHM_TAG, fmt, ##__VA_ARGS__)
+// Log portátil: android/log.h solo existe bajo NDK. En host (tests CTest del
+// CI, sondas de layout) se degrada a stderr — mismo patrón que
+// include/omega_control_bus.h (OMEGA_CTRL_LOGD), sin tocar el código vivo.
+#if defined(__ANDROID__)
+#  include <android/log.h>
+#  define SHM_TAG "IVANNA_SHM"
+#  define SHM_LOG(fmt, ...) __android_log_print(ANDROID_LOG_INFO, SHM_TAG, fmt, ##__VA_ARGS__)
+#else
+#  include <cstdio>
+#  define SHM_LOG(fmt, ...) std::fprintf(stderr, "[IVANNA_SHM] " fmt "\n", ##__VA_ARGS__)
+#endif
 
 namespace ivanna {
 
