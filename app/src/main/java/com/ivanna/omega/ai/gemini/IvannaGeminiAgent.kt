@@ -37,6 +37,10 @@ class IvannaGeminiAgent(
         private const val STREAM_TIMEOUT_MS = 30_000L
         private const val HEALTH_CHECK_TIMEOUT_MS = 10_000L
 
+        // FIX (cache offline nunca se escribía — ver processQuery/
+        // generateWithRetry abajo): clave fija única, no crece sin cota.
+        private const val LAST_GEMINI_RESPONSE_KEY = "last_gemini_response"
+
         // Comandos DSP validados — whitelist estricta
         // FIX (2026-09-05, "no logra mover parámetros" — verificado leyendo
         // el código real, no adivinado): comparado contra el when() que de
@@ -138,7 +142,7 @@ class IvannaGeminiAgent(
             _agentState.value = AgentState.OFFLINE
             _metrics.update { it.copy(offlineFallbacks = it.offlineFallbacks + 1) }
             return@withContext AgentResponse.Offline(
-                cachedResponse = memory.getUserPreference("last_response_$userQuery")
+                cachedResponse = memory.getUserPreference(LAST_GEMINI_RESPONSE_KEY)
             )
         }
 
@@ -176,6 +180,27 @@ class IvannaGeminiAgent(
                         // Persistir interacción
                         memory.recordInteraction("user", userQuery)
                         memory.recordInteraction("assistant", cleanText)
+
+                        // FIX (cache de respuesta offline nunca se escribía,
+                        // y el diseño original de clave por-pregunta habría
+                        // crecido sin cota — SemanticMemory.learn() no tiene
+                        // límite de capacidad ni expiración, confirmado
+                        // leyendo su implementación): se usa una clave fija
+                        // única que siempre sobrescribe el mismo registro —
+                        // captura la intención real (repetir la última
+                        // respuesta real de Gemini ante una desconexión
+                        // momentánea) sin inflar la memoria semántica
+                        // persistida en disco con una entrada por cada
+                        // pregunta distinta que el usuario haya hecho jamás.
+                        scope.launch {
+                            runCatching {
+                                memory.learnFact(
+                                    key = LAST_GEMINI_RESPONSE_KEY,
+                                    value = cleanText,
+                                    category = IvannaMemoryArchitecture.SemanticRecord.SemanticCategory.LEARNED_FACT
+                                )
+                            }
+                        }
 
                         scope.launch {
                             memory.persistSession(
