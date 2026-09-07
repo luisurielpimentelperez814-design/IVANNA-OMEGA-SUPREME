@@ -36,6 +36,14 @@ on:
 permissions:
   contents: read
 
+# Un push nuevo cancela la corrida del push anterior que aún esté corriendo:
+# la única corrida que importa es la del HEAD de main. Ahorra minutos de
+# runner y evita colas cuando se encadenan pushes (patrón de este repo:
+# commit breve + push por ciclo).
+concurrency:
+  group: tests-host-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── PUERTA por push/PR: normal + ASan+UBSan (verificadas ~1 min cada una) ──
   ctest:
