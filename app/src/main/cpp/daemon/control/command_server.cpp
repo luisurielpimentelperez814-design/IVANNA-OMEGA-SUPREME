@@ -196,7 +196,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // write() aplica el seqlock (epoch impar→memcpy→par) que el reader valida.
         {
             float frame[4] = { m_state.saf_gain, m_state.saf_memory, m_state.saf_delta_e, m_state.saf_metric };
-            ivanna::shmManager().write(frame, sizeof(frame));
+            ivanna::shmManager().writeControl(ivanna::SHM_SAF_FRAME_OFFSET, frame, sizeof(frame));
         }
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);

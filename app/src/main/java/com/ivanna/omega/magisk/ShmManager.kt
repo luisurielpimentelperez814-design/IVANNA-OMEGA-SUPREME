@@ -244,6 +244,24 @@ object ShmManager {
     // optimizador Kotlin en sync con el daemon C++.
     //
     // Llamar periódicamente desde AdaptiveBackend.pollTelemetry() (10 Hz).
+    /** Último heartbeat del daemon (ms monotónicos) o -1 si el SHM no es del daemon. */
+    fun daemonHeartbeatMs(): Long {
+        val buf = buffer ?: return -1L
+        if (!isReady || !mappedFromDaemon) return -1L
+        if (buf.capacity() < SHM_HEARTBEAT_OFF + 8) return -1L
+        return runCatching {
+            buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN).getLong(SHM_HEARTBEAT_OFF)
+        }.getOrDefault(-1L)
+    }
+
+    /** true si el daemon escribió heartbeat en los últimos [maxAgeMs] ms. */
+    fun isDaemonAlive(maxAgeMs: Long = 2000L): Boolean {
+        val hb = daemonHeartbeatMs()
+        if (hb <= 0L) return false
+        val now = android.os.SystemClock.elapsedRealtime()
+        return (now - hb) in 0..maxAgeMs
+    }
+
     fun readAndApplySafFrame(): Boolean {
         val buf = buffer ?: return false
         if (!isReady) return false

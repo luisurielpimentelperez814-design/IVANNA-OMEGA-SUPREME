@@ -34,6 +34,12 @@ namespace ivanna {
 inline constexpr uint32_t OMEGA_SHM_MAGIC   = 0x4F4D4547u;  // "OMEG"
 inline constexpr uint32_t OMEGA_SHM_VERSION = 2u;           // layout v2
 inline constexpr size_t   SHM_STATE_OFFSET  = 4096;         // pagina 0: control
+// Layout de la página de control (pagina 0), tras ShmHeader:
+//   [+0  ] SAF frame 16B (gain/compressor/exciter/spatial)
+//   [+16 ] heartbeat 8B — monotonic ms, escrito por el daemon en cada iteración
+// Offsets FIJOS: los lee ShmManager.kt. Cambiarlos exige bump coordinado.
+inline constexpr size_t   SHM_SAF_FRAME_OFFSET   = 0;   // relativo a base+sizeof(ShmHeader)
+inline constexpr size_t   SHM_HEARTBEAT_OFFSET   = 16;  // idem
 inline constexpr size_t   SHM_CONTROL_BYTES = 16384;        // reserva p/ frames
 inline constexpr size_t   SHM_SIZE_RAW      = SHM_STATE_OFFSET + sizeof(OmegaSharedState) + SHM_CONTROL_BYTES;
 inline constexpr size_t   SHM_SIZE          = (SHM_SIZE_RAW + 4095) & ~size_t(4095); // alineado a pagina
@@ -97,6 +103,8 @@ public:
      * @return false si la región no está lista o @p len > SHM_SIZE - sizeof(ShmHeader).
      */
     bool write(const void* src, size_t len) noexcept;
+    /** write() con offset dentro de la zona de control (seqlock igual que write). */
+    bool writeControl(size_t offset, const void* src, size_t len) noexcept;
 
     ~OmegaShmManager() { close(); }
 

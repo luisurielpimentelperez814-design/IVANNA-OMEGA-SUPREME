@@ -316,6 +316,14 @@ int main(int argc, char* argv[]) {
     //    sin NUL correcto. Se aumenta a 65536 y se acumula en heap.
     // 3. reply declarado dos veces en el mismo scope (UB/shadow) — unificado.
     while (g_running) {
+        // Heartbeat daemon→app: timestamp monotónico en la página de control
+        // del SHM (offset fijo SHM_HEARTBEAT_OFFSET). ShmManager lo lee y
+        // detecta daemon zombi en <2 s sin depender del socket.
+        {
+            const uint64_t hb = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ivanna::shmManager().writeControl(ivanna::SHM_HEARTBEAT_OFFSET, &hb, sizeof(hb));
+        }
         selfHealer.pingAudioEngine();
         selfHealer.pingIpcSocket();
         selfHealer.pingDspKernel();

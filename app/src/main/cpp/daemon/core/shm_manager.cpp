@@ -110,10 +110,14 @@ void OmegaShmManager::close() {
 }
 
 bool OmegaShmManager::write(const void* src, size_t len) noexcept {
+    return writeControl(0, src, len);
+}
+
+bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) noexcept {
     if (!m_base || !src) return false;
 
     constexpr size_t kHeaderSize = sizeof(ShmHeader);
-    if (len > SHM_STATE_OFFSET - kHeaderSize) return false; // frames SOLO en la pagina de control: nunca solapan OmegaSharedState @ SHM_STATE_OFFSET
+    if (offset + len > SHM_STATE_OFFSET - kHeaderSize) return false; // frames SOLO en la pagina de control: nunca solapan OmegaSharedState @ SHM_STATE_OFFSET
 
     auto* hdr  = static_cast<ShmHeader*>(m_base);
     auto* data = static_cast<uint8_t*>(m_base) + kHeaderSize;
@@ -129,7 +133,7 @@ bool OmegaShmManager::write(const void* src, size_t len) noexcept {
     hdr->epoch.store(seq | 1ULL, std::memory_order_release);  // impar
     __sync_synchronize();
 
-    std::memcpy(data, src, len);
+    std::memcpy(data + offset, src, len);
     hdr->frame_len = static_cast<uint32_t>(len);
 
     __sync_synchronize();
