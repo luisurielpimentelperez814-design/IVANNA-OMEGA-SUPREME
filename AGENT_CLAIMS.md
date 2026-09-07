@@ -151,7 +151,16 @@ uno de esos, se limita al mínimo indispensable y se nota en el commit.
 necesitando una pasada de diseño real, y nadie lo había reclamado
 todavía — evita chocar con los dos frentes nativos ya tomados arriba.
 
-**Estado:** iniciando — primer commit en curso.
+**Estado:** trabajando — primer fix real ya en main (`c2826986`): la
+palabra "IVANNA"/"AGENTE" se usaba para 3 conceptos distintos sin
+diferenciar (alcanzabilidad del servidor Gemini, si hay API key
+configurada, y el SOCKET del daemon en MagiskStatusPanel) — renombrado
+a terminología específica ("GEMINI"/"Servidor Gemini") en las 3
+apariciones dentro de mi alcance (`NetworkStatusPanel.kt`). No tocado
+`MagiskStatusPanel.kt` (fuera de mi alcance).
+Pendiente: revisar si `IvannaAssistantScreen.kt` tiene el mismo tipo de
+colisión terminológica; evaluar si los paneles deberían reorganizarse
+en categorías claras (Red / IA / Sistema) en vez de solo renombrar.
 
 ---
 
