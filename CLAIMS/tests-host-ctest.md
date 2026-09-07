@@ -38,3 +38,34 @@ host-release`, pero `CMakePresets.json` no existe en el repo → la puerta de
 tests host está muerta tal cual está. Además hay tests que no están enganchados
 a ningún target y otros objetivos huérfanos que este flanco va a auditar uno a
 uno.
+
+---
+
+## Auditoría NDK-only (cerrada, read-only — el CMakeLists del daemon NO es mío)
+
+Verificado hoy leyendo `app/src/main/cpp/CMakeLists.txt` (líneas 339-358):
+
+- El target `test_oem_stability_suite` del árbol NDK compila el MISMO
+  `tests/regression/test_oem_stability_suite.cpp` que ya corre en el proyecto
+  host (mi target, línea 305 del CMakeLists de tests). Es un duplicado: la
+  suite corre 2 veces por build de APK.
+- Recomendación para el flanco Daemon (no actuar yo): eliminar el target del
+  CMakeLists del daemon y dejar solo el host-side — gana ~10-20 s de build de
+  release sin perder cobertura, porque la puerta host corre la suite en cada
+  push (verificado: corridas 34170101339, 34170280449, 34170484627 verdes).
+- Los otros objetivos del CMakeLists del daemon (`ivanna_omega`, `omega_effect`,
+  `stage_omega_effect`, `add_subdirectory(daemon)`) son productos reales del
+  release — sin duplicación detectada.
+- `AdaptiveEQ` sigue inexistente en el árbol; `test_adaptive_eq_stress.cpp`
+  permanece documentado como irrecuperable hasta que el flanco DSP decida.
+
+## Estado final del flanco (cerrado)
+
+- Puerta host: 60/60 PASS (Release y ASan+UBSan), ~15 s local, ~1 min por
+  pata en CI, paralela, con timeout por test y concurrency con cancelación.
+- CI: corridas reales verificadas success — 34165846942, 34170101339,
+  34170280449, 34170484627 (última en HEAD).
+- TSan: carril semanal (cron lunes 04:23 UTC) + manual, timeout 90 min,
+  justificado con 2 cancelaciones medidas (>45 min en runner de 2 núcleos).
+- Documentación: README principal (badge + puerta), README de cpp/tests
+  (tabla completa), este archivo (protocolo + auditoría NDK + cierre).
