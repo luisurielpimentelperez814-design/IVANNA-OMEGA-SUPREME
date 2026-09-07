@@ -31,7 +31,12 @@ jobs:
   ctest:
     name: ${{ matrix.san == 'asan' && 'CTest (ASan+UBSan)' || matrix.san == 'tsan' && 'CTest (TSan)' || 'CTest' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Timeout diferenciado VERIFICADO con datos reales de la corrida
+    # 34166260673: TSan fue cancelado exactamente a los 20m15s (el timeout de
+    # 20 min aplicaba a todo el job) mientras TSan seguía corriendo CTest —
+    # TSan ralentiza 5-15x y el runner de 2 núcleos agrava el stress test de
+    # 15 s. 45 min dan 2.2x de margen sobre el punto de cancelación.
+    timeout-minutes: ${{ matrix.san == 'tsan' && 45 || 20 }}
     strategy:
       fail-fast: false
       matrix:
