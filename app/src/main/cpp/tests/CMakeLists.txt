@@ -289,3 +289,31 @@ ivanna_add_test(test_harmonic_exciter_overshoot)
 # release 400 ms -> clipping en transientes + bombeo). 4 tests miden el
 # comportamiento temporal real del limiter a 48k y 384k.
 ivanna_add_test(test_limiter_hires_timing)
+
+# ── Rescatados del olvido (flanco Tests host): huérfanos sin target ──────────
+# test_audio_regression.cpp (677 líneas): cada TEST_F documenta un bug real de
+# campo (tronidos, clipping, inestabilidad) con commit, síntoma y condición de
+# reproducción. Dependía solo de include/*.h + dsp/*.cpp — ya todo en
+# ivanna_dsp_under_test. Nunca tuvo target: la suite completa de regresión
+# auditiva no se ejecutaba en ninguna parte.
+ivanna_add_test(test_audio_regression)
+
+# test_oem_stability_suite.cpp: suite de regresión OEM (transparencia de mix,
+# estabilidad IIR, peak guard, smoothing, stress de hilos del daemon). Solo
+# depende de gtest — corre en host sin tocar el CMakeLists del daemon (NDK),
+# que es de otro flanco.
+add_executable(test_oem_stability_suite regression/test_oem_stability_suite.cpp)
+target_link_libraries(test_oem_stability_suite PRIVATE GTest::gtest_main)
+target_compile_options(test_oem_stability_suite PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_oem_stability_suite PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_oem_stability_suite PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_oem_stability_suite)
+
+# NOTA de auditoría (flanco Tests host): test_adaptive_eq_stress.cpp NO se
+# engancha — incluye "../dsp/AdaptiveEQ.h" que NO existe en el árbol
+# (verificado con find; ninguna clase/struct AdaptiveEQ en el repo). Es un
+# test de un módulo que fue eliminado sin borrar su test. Queda documentado
+# aquí para que nadie lo "rescate" a ciegas: rescatarlo implica primero
+# decidir si AdaptiveEQ vuelve al DSP (flanco DSP nativo, no este).
