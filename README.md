@@ -15,6 +15,8 @@
 
 > 🤖 Este repo recibe trabajo de múltiples sesiones de IA en paralelo — antes de emprender trabajo sustancial, revisa **[AGENT_CLAIMS.md](AGENT_CLAIMS.md)**.
 >
+> 🪝 Hooks: `bash scripts/setup-hooks.sh` (una vez por clon, idempotente) — el pre-commit corre la puerta de tests en cada commit; se salta puntualmente con `--no-verify`.
+>
 > 🧪 Puerta de regresión DSP en host: `bash scripts/run_ctest.sh` (60 tests, GTest vendoreado, offline; `IVANNA_SAN=asan` para ASan+UBSan; 74 tests) — corre en CI via [tests-host.yml](.github/workflows/tests-host.yml).
 
 <br>
