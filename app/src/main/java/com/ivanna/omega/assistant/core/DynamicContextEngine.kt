@@ -23,7 +23,33 @@ class DynamicContextEngine(context: Context) {
 
     init {
         scope.launch {
-            while (isActive) { _systemContext.value = captureSystemContext(); delay(5000) }
+            while (isActive) {
+                _systemContext.value = captureSystemContext()
+                // FIX (audio context nunca se actualizaba en producción):
+                // updateAudioContext() no tenía ningún llamador real —
+                // buildFullContext() (que SÍ llega al prompt real de
+                // Gemini) siempre mostraba el lado de audio en sus
+                // defaults ("Ruta: unknown", "Preset: default", clips=0,
+                // RMS=-96dB fijo), mientras el lado de sistema sí se
+                // auto-medía real. Se puebla con OmegaMetrics.shared (la
+                // fuente reactiva ya usada en el dashboard visual) — solo
+                // los campos con mapeo real disponible; presetName/
+                // eqProfile/dspChainActive no los expone OmegaMetrics,
+                // quedan en su default honesto en vez de inventarlos.
+                runCatching {
+                    val m = com.ivanna.omega.audio.OmegaMetrics.shared.value
+                    val current = _audioContext.value
+                    _audioContext.value = current.copy(
+                        sampleRate = m.sampleRate,
+                        audioRoute = m.audioRoute,
+                        hrtfActive = if (m.hrtfActive) "active" else "none",
+                        clipEventsLastMinute = m.clipCount,
+                        currentRmsDb = m.rmsLevel,
+                        currentPeakDb = m.peakLevel
+                    )
+                }
+                delay(5000)
+            }
         }
     }
 
