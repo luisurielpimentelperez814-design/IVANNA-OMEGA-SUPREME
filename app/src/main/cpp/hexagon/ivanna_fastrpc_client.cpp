@@ -233,12 +233,22 @@ bool IvannaFastRpcClient::delegateBinauralConvolution(
         return false;
     }
 
-    if (m_dma_buffer_in && num_frames <= m_config.block_size) {
+    // FIX(heap corruption): antes, si num_frames > block_size se ALIASABA
+    // m_dma_buffer_in al buffer del llamador (input_left) y teardown() luego
+    // hacia free() sobre memoria que no era nuestra -> free() ilegal /
+    // corrupción de heap. Además el memcpy al buffer DMA era trabajo muerto:
+    // la llamada g_dsp_hrtf_convolve() de abajo nunca consume m_dma_buffer_in.
+    // Regla ahora: el DSP procesa bloques acotados a block_size; si el bloque
+    // es mayor se rechaza limpio (false) y el llamador trocea o va por CPU.
+    // m_dma_buffer_in/out quedan como scratch propio (reservado para la ruta
+    // FastRPC real con buffers ION/DMA-contiguous); nunca se aliasan.
+    if (num_frames > m_config.block_size) {
+        return false;
+    }
+    if (m_dma_buffer_in) {
         memcpy(m_dma_buffer_in, input_left, num_frames * sizeof(float));
-        memcpy((char*)m_dma_buffer_in + num_frames * sizeof(float),
+        memcpy(static_cast<char*>(m_dma_buffer_in) + num_frames * sizeof(float),
                input_right, num_frames * sizeof(float));
-    } else {
-        m_dma_buffer_in = (void*)input_left;
     }
 
     int ret = g_dsp_hrtf_convolve(
