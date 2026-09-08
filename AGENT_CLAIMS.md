@@ -656,6 +656,28 @@ corrida de referencia REPRODUCIBLE. Puerta intacta 74/74; CI verde
 reproducible por primera vez. Pendiente solo el protocolo on-device Moto G85
 (requiere hardware — documentado en docs/BENCHMARKS.md). Si lo tomas,
 actualiza esta entrada.
+---
+
+### Pipeline de herramientas HRTF (tools/sofa_convert.py + tools/hrtf/ + tools/hpir/)
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08. Detalle y evidencia en [CLAIMS/hrtf-tools.md](CLAIMS/hrtf-tools.md).
+**Alcance exacto — no editar mientras esté aquí:**
+- `tools/sofa_convert.py`, `tools/hrtf/`, `tools/hpir/`, `docs/HRTF_DATASET.md`
+- Herramienta NUEVA `tools/hrtf/verify_dataset.py` (validación de datasets)
+
+**Explícitamente NO toca:** `app/src/main/assets/saf/**` y
+`app/src/main/cpp/spatial/**` (flanco SAF-HRTF — el hallazgo sobre su asset se
+le notifica aquí para que lo regenere él).
+
+**Por qué este flanco (verificado hoy con evidencia binaria):** el asset
+distribuido `hrtf_database.bin` es INCONSISTENTE con su propia herramienta
+escritora — su cabecera declara dirs=45,989,871/channels=131,072/taps=33,554,432
+(implicaría ~8×10¹⁹ bytes; el archivo pesa 2.9 MB): o lo escribió otra
+herramienta con otro layout, o está corrupto. `sofa_convert.py` es una
+variante muerta y peligrosa: sin CLI (rutas hardcodeadas), sin resampleo
+(escribe 44100 que el motor corre a 48000) y sin azimuts. Cero validación
+post-conversión en todo el pipeline.
+
+**Estado:** trabajando — commits individuales breves, push por ciclo.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
