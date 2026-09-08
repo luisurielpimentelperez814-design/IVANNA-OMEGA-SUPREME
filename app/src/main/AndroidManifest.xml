@@ -96,6 +96,13 @@
         <!-- FIX (persistencia): el manifest pedia RECEIVE_BOOT_COMPLETED pero
              no habia receiver para ese broadcast: el permiso no hacia nada y
              los ajustes del usuario no volvian tras reiniciar. -->
+        <!-- LOCKED_BOOT_COMPLETED NO se declara a proposito: con
+             directBootAware="false" (correcto — el restore lee prefs del
+             almacenamiento cifrado por credencial, inaccesible antes del
+             primer desbloqueo) el sistema nunca lo entregaria; el codigo
+             del receiver lo escucha defensivamente pero desde el manifest
+             seria un action muerto. La restauracion ocurre en
+             BOOT_COMPLETED, cuando las prefs ya son legibles. -->
         <receiver
             android:name=".audio.BootRestoreReceiver"
             android:exported="false"

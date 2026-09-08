@@ -328,8 +328,17 @@ class UsbAudioProManager private constructor(context: Context) {
             if (iface.interfaceClass == USB_AUDIO_CLASS && 
                 iface.interfaceSubclass == USB_SUBCLASS_AUDIOSTREAMING) {
 
+                // claimInterface devuelve false si otra app tiene el DAC
+                // ocupado (p.ej. un player USB dedicado). Antes el retorno se
+                // ignoraba: se seguia como si la interfaz fuera nuestra y el
+                // primer URB reventaba contra usbfs con EBUSY.
+                if (!connection.claimInterface(iface, true)) {
+                    Log.e(TAG, "claimInterface fallo — DAC ocupado por otra app " +
+                        "o permiso revocado a mitad de secuencia")
+                    teardown()
+                    return false
+                }
                 audioInterface = iface
-                connection.claimInterface(iface, true)
 
                 // Busca endpoint isochronous OUT
                 for (e in 0 until iface.endpointCount) {
@@ -350,8 +359,18 @@ class UsbAudioProManager private constructor(context: Context) {
             return false
         }
 
-        // Obtiene file descriptor raw para bypass nativo
-        fileDescriptor = connection.fileDescriptor?.let { ParcelFileDescriptor.adoptFd(it) }
+        // File descriptor para bypass nativo. fromFd() hace dup(2): obtenemos
+        // una copia propia SIN robar la propiedad del fd de la conexion.
+        // Antes era adoptFd(): el mismo fd quedaba con DOS duenos, y teardown()
+        // lo cerraba dos veces (connection.close() + fileDescriptor.close()) —
+        // doble close: si entre medias el kernel reasigna ese numero de fd a
+        // otro hilo, el segundo close cierra un descriptor ajeno.
+        fileDescriptor = connection.fileDescriptor?.let { rawFd ->
+            runCatching { ParcelFileDescriptor.fromFd(rawFd) }.getOrElse {
+                Log.w(TAG, "fromFd($rawFd) fallo: ${it.message} — bypass nativo sin fd")
+                null
+            }
+        }
 
         // Inicializa triple buffer lock-free
         ringBuffer = TripleBufferS32(
@@ -393,7 +412,21 @@ class UsbAudioProManager private constructor(context: Context) {
 
         // Delega al hilo nativo via JNI; el hilo URB entrega al DAC en modo
         // asíncrono (el DAC marca el reloj, nosotros seguimos su cadencia).
-        nativeStartAsyncEngine(nativeHandle, fileDescriptor?.fd ?: -1)
+        // Guard de enlace: si libivanna_omega no cargo (perfil sin root, ABI
+        // no cubierta), el external fun lanza UnsatisfiedLinkError y antes
+        // tumbaba al llamador (openDirectPath). Ahora degrada con telemetria
+        // honesta: la ruta USB existe pero el motor isocrono NO — el audio
+        // sigue por el triple buffer/AudioTrack, y isIsochronous() lo dice.
+        try {
+            nativeStartAsyncEngine(nativeHandle, fileDescriptor?.fd ?: -1)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Motor nativo isocrono NO disponible (${t.javaClass.simpleName}: " +
+                "${t.message}) — la ruta directa queda sin consumidor URB; " +
+                "el audio NO esta yendo al DAC por bypass")
+            isStreaming.set(false)
+            isAsyncSlave.set(false)
+            return false
+        }
 
         Log.i(TAG, "Modo USB Asíncrono activado. DAC es master de reloj.")
         return true
