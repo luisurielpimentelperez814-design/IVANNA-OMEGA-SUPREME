@@ -85,6 +85,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     if (!json || !reply || reply_sz<2) return 0;
     pthread_mutex_lock(&m_mutex);
     m_state.last_update = _nowMs();
+    ivanna::shmManager().bumpHealthCounter(3); // comandos_procesados
     char action[64]; _jsonAction(json, action, sizeof(action));
     int n=0;
 
@@ -196,7 +197,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // write() aplica el seqlock (epoch impar→memcpy→par) que el reader valida.
         {
             float frame[4] = { m_state.saf_gain, m_state.saf_memory, m_state.saf_delta_e, m_state.saf_metric };
-            ivanna::shmManager().writeControl(ivanna::SHM_SAF_FRAME_OFFSET, frame, sizeof(frame));
+            if (ivanna::shmManager().writeControl(ivanna::SHM_SAF_FRAME_OFFSET, frame, sizeof(frame)))
+                ivanna::shmManager().bumpHealthCounter(0); // saf_frames_publicados
         }
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);

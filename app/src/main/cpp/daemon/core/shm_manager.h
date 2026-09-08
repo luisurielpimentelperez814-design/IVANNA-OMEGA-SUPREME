@@ -169,6 +169,16 @@ public:
     /** write() con offset dentro de la zona de control (seqlock igual que write). */
     bool writeControl(size_t offset, const void* src, size_t len) noexcept;
 
+    // ── Métricas de salud del canal (bloque SHM_HEALTH_OFFSET) ─────────────
+    /** Incrementa en 1 el contador @p index (0..4) del bloque de salud.
+     *  Atómico y barato: un único fetch_add relajado sobre la página de
+     *  control ya mapeada — sin seqlock (cada contador se lee por delta,
+     *  no como dato coherente con los demás). Seguro desde cualquier hilo
+     *  del daemon. No-op si la región no está lista o el índice es inválido. */
+    void bumpHealthCounter(uint32_t index) noexcept;
+    /** Cuenta una escritura de control rechazada (writeControl devolvió false). */
+    void noteRejectedWrite() noexcept { bumpHealthCounter(2); }
+
     ~OmegaShmManager() { close(); }
 
     // No copyable

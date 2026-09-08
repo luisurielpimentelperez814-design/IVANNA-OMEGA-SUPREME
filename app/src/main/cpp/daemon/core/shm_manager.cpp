@@ -121,11 +121,21 @@ bool OmegaShmManager::write(const void* src, size_t len) noexcept {
     return writeControl(0, src, len);
 }
 
+void OmegaShmManager::bumpHealthCounter(uint32_t index) noexcept {
+    if (!m_base || index > 4) return; // 5 contadores + 1 reservado en el bloque
+    auto* counter = reinterpret_cast<std::atomic<uint32_t>*>(
+        static_cast<uint8_t*>(m_base) + sizeof(ShmHeader) + SHM_HEALTH_OFFSET + index * 4);
+    counter->fetch_add(1u, std::memory_order_relaxed);
+}
+
 bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) noexcept {
-    if (!m_base || !src) return false;
+    if (!m_base || !src) { noteRejectedWrite(); return false; }
 
     constexpr size_t kHeaderSize = sizeof(ShmHeader);
-    if (offset + len > SHM_STATE_OFFSET - kHeaderSize) return false; // frames SOLO en la pagina de control: nunca solapan OmegaSharedState @ SHM_STATE_OFFSET
+    if (offset + len > SHM_STATE_OFFSET - kHeaderSize) { // frames SOLO en la pagina de control: nunca solapan OmegaSharedState @ SHM_STATE_OFFSET
+        noteRejectedWrite();
+        return false;
+    }
 
     auto* hdr  = static_cast<ShmHeader*>(m_base);
     auto* data = static_cast<uint8_t*>(m_base) + kHeaderSize;
