@@ -117,7 +117,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
   const [health,      setHealth]      = useState<SystemHealth>(healer.getHealth());
   const [,forceUpdate]                = useState(0);
 
-  const recogRef   = useRef<any>(null);
+  const recogRef   = useRef<SpeechRecognition|null>(null);
   const synthRef   = useRef<SpeechSynthesis|null>(null);
   const actxRef    = useRef<AudioContext|null>(null);
   const streamRef  = useRef<MediaStream|null>(null);
@@ -239,7 +239,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
   // ── START LISTENING: micrófono vinculado correctamente ──────────────────────
   const startListening = useCallback(async () => {
     setMicError(null); setMicOk(false);
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SR) { setMicError('Reconocimiento de voz no disponible. Usa Chrome 90+ o Edge.'); return; }
 
     let stream: MediaStream;
@@ -248,7 +248,9 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
         audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:48000, channelCount:1 }
       });
       streamRef.current = stream; setMicOk(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const name = err instanceof DOMException ? err.name : '';
+      const message = err instanceof Error ? err.message : String(err);
       const map: Record<string,string> = {
         NotAllowedError: 'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador.',
         PermissionDeniedError: 'Permiso denegado. Haz clic en el ícono de micrófono en tu navegador.',
@@ -256,7 +258,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
         NotReadableError: 'El micrófono está en uso por otra app.',
         SecurityError: 'Acceso bloqueado. Necesitas HTTPS.',
       };
-      setMicError(map[err.name] ?? `Error: ${err.message}`); return;
+      setMicError(map[name] ?? `Error: ${message}`); return;
     }
 
     startMonitor(stream);
@@ -269,7 +271,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
 
     recog.onstart = () => { setIsListening(true); setTranscript(''); };
 
-    recog.onresult = (event: any) => {
+    recog.onresult = (event: SpeechRecognitionEvent) => {
       let interim='', final='';
       for (let i=event.resultIndex; i<event.results.length; i++) {
         const t = event.results[i][0].transcript;
@@ -279,7 +281,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
       if (final.trim()) { const blob = stopRec(); doStop(); sendMessage(final.trim(), blob); }
     };
 
-    recog.onerror = (event: any) => {
+    recog.onerror = (event: SpeechRecognitionErrorEvent) => {
       const m: Record<string,string> = {
         'no-speech':'No escuché nada. ¿Intentamos de nuevo?',
         'audio-capture':'Error de captura de audio.',
