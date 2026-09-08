@@ -3,7 +3,8 @@
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
 #include "../IvannaSelfHealingEngine.hpp"
-#include <iostream>\n#include <filesystem>
+#include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -72,7 +73,7 @@ void ensure_directory_exists(const char* path) {
 int setup_shared_memory(int sampleRate) {
     ensure_directory_exists(OMEGA_DIR_PATH);
 
-    log_message("// omega_shm recovery: eliminar estado incompleto de una ejecución anterior
+    // omega_shm recovery: eliminar estado incompleto de una ejecución anterior
     try {
         if (std::filesystem::exists("/data/adb/ivanna_omega/omega_shm")) {
             // El gestor SHM valida contenido posteriormente.
@@ -82,7 +83,7 @@ int setup_shared_memory(int sampleRate) {
         std::cerr << "[IVANNA-DAEMON] omega_shm recovery check failed" << std::endl;
     }
 
-    Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
+    log_message("Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
 
     if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
         log_message("Error: OmegaShmManager::init() fallo");
@@ -176,6 +177,13 @@ static bool validate_shm_region(void* ptr, size_t size) {
 }
 
 int main(int argc, char* argv[]) {
+    // FIX (corrupción real, commit 37b30e12): este try{} faltaba por completo
+    // — el catch de más abajo (fatal exception / fatal unknown exception) se
+    // había agregado SIN su try correspondiente, error de sintaxis genuino
+    // ("expected expression" / "expected '}'" en CI). Se envuelve todo el
+    // cuerpo de main() para que ambos catch atrapen cualquier excepción no
+    // manejada del daemon completo, tal como indica su intención original.
+    try {
     std::string socket_path = DEFAULT_SOCKET_PATH;
     int rate = 48000, buffer = 64; bool realtime = false;
     ensure_directory_exists(OMEGA_DIR_PATH);
@@ -482,6 +490,7 @@ int main(int argc, char* argv[]) {
     controlServer.stop();
     selfHealer.stopMonitoring();
     log_message("Daemon shutdown REAL");
+    }
     catch (const std::exception& e) {
         std::cerr << "[IVANNA-DAEMON] fatal exception: " << e.what() << std::endl;
         return 1;
