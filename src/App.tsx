@@ -88,15 +88,15 @@ export default function App() {
   // Sincroniza los campos persisted cuando cambia el state runtime
   useEffect(() => {
     setClipCount(metrics.clipCount);
-  }, [metrics.clipCount]); // eslint-disable-line
+  }, [metrics.clipCount, setClipCount]);
 
   useEffect(() => {
     if (metrics.lastCalibratedAt) setLastCalibratedAt(metrics.lastCalibratedAt);
-  }, [metrics.lastCalibratedAt]); // eslint-disable-line
+  }, [metrics.lastCalibratedAt, setLastCalibratedAt]);
 
   useEffect(() => {
     if (metrics.calibrationLog.length > 0) setCalibrationLog(metrics.calibrationLog);
-  }, [metrics.calibrationLog]); // eslint-disable-line
+  }, [metrics.calibrationLog, setCalibrationLog]);
 
   // ── Clasificación TinyML (no persiste — live-only) ──────────────────────────
   const [classification, setClassification] = useState<TinyMlClassification>({
