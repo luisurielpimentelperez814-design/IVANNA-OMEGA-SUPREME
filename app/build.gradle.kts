@@ -78,10 +78,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -361,5 +357,17 @@ configurations.all {
             "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1",
             "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
         )
+    }
+}
+
+// FIX (CI rojo 2026-09-07): "Using 'jvmTarget: String' is an error" —
+// desde que el plugin de Kotlin subió a 2.2.21 (ver build.gradle.kts raíz),
+// el bloque android.kotlinOptions { jvmTarget = "17" } (String) ya no es
+// un warning, es un error de compilación del propio script de Gradle.
+// La migración oficial (kotl.in/u1r8ln) es este bloque kotlin{} de nivel
+// de módulo con compilerOptions y el enum tipado JvmTarget, no un string.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
