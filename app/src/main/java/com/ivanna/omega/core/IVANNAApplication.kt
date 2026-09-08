@@ -228,6 +228,22 @@ class IVANNAApplication : Application() {
         // levanta el fallback AudioEffect/DynamicsProcessing cuando toca.
         com.ivanna.omega.audio.AudioBackendSelector.start(this)
 
+        // FIX (entrada tipo C / ruta libre DAC): hasta hoy UsbAudioProManager
+        // tenia el path OTG directo completo pero NADIE lo arrancaba — sin
+        // receiver de hotplug, sin permiso UAC, sin escaneo en frio. Aqui se
+        // resuelve el caso "DAC ya conectado al abrir la app" (deviceList);
+        // el caso "DAC conectado a mitad de sesion" lo cubre
+        // UsbDacAttachReceiver (manifest) + el monitor dinamico que este
+        // arranque deja vivo. En background: deviceList puede tardar decenas
+        // de ms en dispositivos con muchos USB colgados y onCreate tiene
+        // presupuesto de arranque estricto.
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.ivanna.omega.audio.UsbAudioProManager.getInstance(this@IVANNAApplication)
+                    .openAttachedDacIfPresent()
+            }.onFailure { Log.w(TAG, "USB DAC cold-scan: ${it.message}") }
+        }
+
         // ── Arrancar cerebro perceptual ───────────────────────────────────
         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {

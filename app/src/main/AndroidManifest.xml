@@ -33,6 +33,14 @@
     <uses-permission android:name="android.permission.BIND_AUDIO_EFFECT_SERVICE"
         tools:ignore="ProtectedPermissions"/>
 
+    <!-- FIX (entrada tipo C / ruta libre DAC): sin este uses-feature la app ni
+         siquiera se lista como compatible con accesorios USB y el sistema no
+         le entrega ACTION_USB_DEVICE_ATTACHED cuando el usuario conecta el DAC
+         DESPUES de arrancar la app. required=false porque la app tambien debe
+         instalarse y funcionar (con fallback AudioTrack) en telefonos sin
+         host USB — la ruta directa se degrada con aviso, no con exclusion. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
+
     <!-- Red: Gemini API + panel de conectividad -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -96,6 +104,23 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
+        </receiver>
+
+        <!-- FIX (entrada tipo C): receiver de hotplug USB para el path DAC
+             directo. Solo escucha ATTACHED (DETACHED no se entrega a receivers
+             de manifest desde API 12+; la desconexion se cubre con el receiver
+             dinamico de UsbAudioProManager). El meta-data device_filter limita
+             el disparo a dispositivos de clase AUDIO (UAC1/UAC2) para no
+             despertar la app con cualquier pendrive o raton. -->
+        <receiver
+            android:name=".audio.UsbDacAttachReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_audio_device_filter"/>
         </receiver>
 
         <!-- FIX (sub-entorno desconectado): CognitiveDashboardActivity existia
