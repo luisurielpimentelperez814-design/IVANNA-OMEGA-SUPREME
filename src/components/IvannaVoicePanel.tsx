@@ -334,8 +334,10 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
         body:JSON.stringify({model:'gemini-2.5-pro', max_tokens:1000, system:systemPrompt, messages:history}),
       });
 
-      if (!res.ok) throw new Error(`API ${res.status}`);
-      const data = await res.json();
+      // Lee el cuerpo siempre: el servidor devuelve { error } con el motivo real
+      // (sin API key, body inválido, fallo del modelo) — mucho más útil que el status.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `API ${res.status}`);
       const reply = data.text ?? 'Lo siento, no pude procesar eso.';
 
       healer.reportApiSuccess();
