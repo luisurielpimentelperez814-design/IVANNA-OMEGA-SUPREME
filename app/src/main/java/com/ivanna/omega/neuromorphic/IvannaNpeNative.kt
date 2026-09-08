@@ -124,10 +124,14 @@ object IvannaNpeNative {
     //   5. nativeDspClose()            → cerrar al destruir el motor
 
     /**
-     * Abre el handle FastRPC al cDSP y pre-asigna buffers ION para zero-copy.
-     * @param sampleRate Frecuencia de muestreo en Hz (típicamente 96000)
-     * @param nNeurons   Número de neuronas LIF en el DSP (≤ 256, pot. de 2)
-     * @param blockSize  Frames por bloque (≤ 512, pot. de 2)
+     * Abre el handle FastRPC al cDSP.
+     * NOTA (doc corregido): la versión anterior decía "pre-asigna buffers ION
+     * para zero-copy" — el lado nativo NO asigna buffers ION hoy; eso queda
+     * para la integración QAIC real. La apertura actual solo resuelve el
+     * loader dlopen (libcdsprpc/libadsprpc) y abre el handle IDL.
+     * @param sampleRate Frecuencia de muestreo en Hz (reservado para el skel QAIC)
+     * @param nNeurons   Número de neuronas LIF en el DSP (reservado)
+     * @param blockSize  Frames por bloque (reservado)
      * @return true si el DSP fue abierto exitosamente
      */
     @JvmStatic external fun nativeDspOpen(
@@ -162,9 +166,11 @@ object IvannaNpeNative {
 
     /**
      * Métricas del último bloque procesado por el cDSP.
-     * @return FloatArray(8): [cpuLoad, rmsOut, agcGain, spectralEntropy,
+     * @return FloatArray(8): [cpuLoad, peakAmp, agcGain, spectralEntropy,
      *                         lifFireRateHz, hvxCycles, vtcmBytesUsed, reserved]
      *         null si el DSP no está activo.
+     *         El IDL actual solo llena [0]=cpuLoad y [1]=peakAmp con valores
+     *         reales del DSP; el resto llega en 0 (sin fuente real aún).
      */
     @JvmStatic external fun nativeDspGetMetrics(): FloatArray?
 

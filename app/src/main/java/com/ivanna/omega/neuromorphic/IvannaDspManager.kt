@@ -92,8 +92,17 @@ object IvannaDspManager {
             return
         }
         IvannaNpeNative.nativeDspSetActive(true)
-        _state.value = _state.value.copy(active = true)
-        Log.i(TAG, "DSP offloading HABILITADO")
+        // FIX (estado honesto): antes marcaba active=true sin verificar — si el
+        // nativo rechazaba (handle cerrado por otro hilo), la UI quedaba
+        // mostrando "DSP activo" sobre un fallback CPU. Ahora se confirma con
+        // el estado real del loader.
+        val realActive = IvannaNpeNative.nativeDspIsAvailable()
+        _state.value = _state.value.copy(active = realActive)
+        if (realActive) {
+            Log.i(TAG, "DSP offloading HABILITADO")
+        } else {
+            Log.w(TAG, "nativeDspSetActive(true) no surtió efecto — DSP sigue en CPU fallback")
+        }
     }
 
     /** Deshabilita el offloading (audio vuelve a CPU en el siguiente bloque). */
@@ -145,9 +154,14 @@ object IvannaDspManager {
                 delay(100L) // 10 Hz de actualización de métricas
                 val raw = IvannaNpeNative.nativeDspGetMetrics()
                 val m = if (raw != null && raw.size >= 8) {
+                    // FIX (etiquetas honestas): el IDL actual del DSP solo
+                    // reporta cpu_load y peak_amp. raw[1] es PEAK de amplitud
+                    // (no RMS) y raw[5]/raw[6] (HVX/VTCM) llegan en 0 hasta
+                    // que el skel QAIC extendido los exponga — se mapean tal
+                    // cual sin inventar valores.
                     DspMetrics(
                         cpuLoadRatio    = raw[0],
-                        rmsOut          = raw[1],
+                        rmsOut          = raw[1],  // realmente peak_amp (ver nota)
                         agcGain         = raw[2],
                         spectralEntropy = raw[3],
                         lifFireRateHz   = raw[4],
