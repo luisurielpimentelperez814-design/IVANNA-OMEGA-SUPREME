@@ -71,10 +71,21 @@ class UsbAudioProManager private constructor(context: Context) {
         private const val USB_AUDIO_CLASS = 1
         private const val USB_SUBCLASS_AUDIOCONTROL = 1
         private const val USB_SUBCLASS_AUDIOSTREAMING = 2
-        private const val SAMPLE_RATE = 384000
         private const val CHANNELS = 2
         private const val BIT_DEPTH = 32
         private const val FRAME_SIZE_BYTES = (BIT_DEPTH / 8) * CHANNELS
+
+        // Techo de diseno (UAC2 high-speed): 384kHz S32_LE estereo.
+        // NO es lo que se negocia — es el limite superior. La SR real se
+        // deriva del maxPacketSize del endpoint en negotiateSampleRate().
+        private const val MAX_SAMPLE_RATE = 384000
+        private const val MIN_SAMPLE_RATE = 44100
+
+        // Tasas estandar UAC en orden descendente — se elige la mayor que
+        // quepa en el presupuesto de paquete del endpoint.
+        private val STANDARD_SAMPLE_RATES = intArrayOf(
+            384000, 352800, 192000, 176400, 96000, 88200, 48000, 44100
+        )
 
         /** Accion del PendingIntent de permiso USB (unica por paquete). */
         const val ACTION_USB_PERMISSION =
@@ -110,6 +121,13 @@ class UsbAudioProManager private constructor(context: Context) {
 
     private val isStreaming = AtomicBoolean(false)
     private val isAsyncSlave = AtomicBoolean(false)
+
+    // SR negociada con ESTE endpoint (ver negotiateSampleRate). 0 = aun no
+    // negociada. Antes era una constante de 384kHz para todos los DACs: un
+    // UAC1 full-speed (maxPacketSize tipico 1023B => ~85 frames de S32_LE
+    // estereo por microtrama => ~85kHz de techo) recibia una configuracion
+    // que fisicamente no cabe en su bus.
+    @Volatile private var negotiatedSampleRate = 0
 
     // Buffer lock-free de triple buffering para evitar jitter del GC de Android
     private lateinit var ringBuffer: TripleBufferS32
@@ -359,6 +377,20 @@ class UsbAudioProManager private constructor(context: Context) {
             return false
         }
 
+        // Negociacion de capacidades REALES: la SR se deriva del presupuesto
+        // de paquete del endpoint, no de una constante. Si ninguna tasa
+        // estandar cabe (endpoint truncado por hub, descriptor raro), se
+        // aborta con telemetria honesta en vez de configurar basura.
+        val ep = audioEndpoint!!
+        negotiatedSampleRate = negotiateSampleRate(ep)
+        if (negotiatedSampleRate == 0) {
+            Log.e(TAG, "Endpoint isoc sin presupuesto para ninguna SR estandar " +
+                "(maxPacketSize=${ep.maxPacketSize}, interval=${ep.interval}) — " +
+                "ruta directa no viable con este DAC")
+            teardown()
+            return false
+        }
+
         // File descriptor para bypass nativo. fromFd() hace dup(2): obtenemos
         // una copia propia SIN robar la propiedad del fd de la conexion.
         // Antes era adoptFd(): el mismo fd quedaba con DOS duenos, y teardown()
@@ -378,8 +410,50 @@ class UsbAudioProManager private constructor(context: Context) {
             channels = CHANNELS
         )
 
-        Log.i(TAG, "USB OTG Directo establecido: ${targetDevice.deviceName} @ ${SAMPLE_RATE}Hz S32_LE")
+        Log.i(TAG, "USB OTG Directo establecido: ${targetDevice.deviceName} " +
+            "@ ${negotiatedSampleRate}Hz S32_LE (endpoint maxPacket=${ep.maxPacketSize}B, " +
+            "bInterval=${ep.interval})")
         return true
+    }
+
+    /**
+     * Deriva la mayor SR estandar que cabe en el endpoint isocrono:
+     *
+     *   framesPorPaquete = maxPacketSize / FRAME_SIZE_BYTES
+     *   paquetesPorSegundo = 1000 / (2^(bInterval-1))   (FS: bInterval en ms)
+     *
+     * En high-speed (UAC2) bInterval N significa 2^(N-1) microtramas de
+     * 125us; en full-speed (UAC1) significa N tramas de 1ms. La API de
+     * Android no expone la velocidad del bus directamente en UsbEndpoint,
+     * asi que se usa la heuristica documentada: maxPacketSize > 1023 implica
+     * high-speed (FS no puede superar 1023B por paquete isocrono).
+     *
+     * Devuelve 0 si ninguna tasa estandar cabe — el llamador aborta con
+     * telemetria en vez de configurar una SR imposible.
+     */
+    private fun negotiateSampleRate(ep: UsbEndpoint): Int {
+        val framesPerPacket = ep.maxPacketSize / FRAME_SIZE_BYTES
+        if (framesPerPacket <= 0) return 0
+        val highSpeed = ep.maxPacketSize > 1023
+        val intervalMs = if (highSpeed) {
+            // 2^(bInterval-1) microtramas de 0.125ms
+            (1 shl (ep.interval.coerceIn(1, 4) - 1)) * 0.125f
+        } else {
+            ep.interval.coerceIn(1, 8).toFloat()
+        }
+        val packetsPerSecond = 1000f / intervalMs
+        val maxSr = (framesPerPacket * packetsPerSecond).toInt()
+            .coerceAtMost(MAX_SAMPLE_RATE)
+        val chosen = STANDARD_SAMPLE_RATES.firstOrNull { it <= maxSr } ?: 0
+        if (chosen == 0) {
+            Log.w(TAG, "Presupuesto del endpoint: ~${maxSr}Hz < ${MIN_SAMPLE_RATE}Hz " +
+                "(frames/paquete=$framesPerPacket, intervalo=${intervalMs}ms, " +
+                "highSpeed=$highSpeed)")
+        } else if (chosen < MAX_SAMPLE_RATE) {
+            Log.i(TAG, "SR negociada por endpoint: ${chosen}Hz " +
+                "(techo fisico ~${maxSr}Hz, highSpeed=$highSpeed)")
+        }
+        return chosen
     }
 
     /**
@@ -404,7 +478,7 @@ class UsbAudioProManager private constructor(context: Context) {
                 epAddress     = ep.address,
                 maxPacketSize = ep.maxPacketSize,
                 interval      = ep.interval.coerceAtLeast(1),
-                sampleRate    = SAMPLE_RATE,
+                sampleRate    = negotiatedSampleRate,
                 channels      = CHANNELS,
                 bitDepth      = BIT_DEPTH
             )
