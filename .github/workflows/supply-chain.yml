@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (no upload)'
+        description: 'Dry run (no requiere artefactos de build.yml)'
         type: boolean
         default: false
 
@@ -15,29 +15,99 @@ permissions:
   id-token: write       # Cosign keyless OIDC
   attestations: write   # GitHub SLSA attestations
 
+# ── FIX ESTRUCTURAL (flanco Supply chain + hooks, ver CLAIMS/supply-chain-hooks.md) ──
+# Este workflow estuvo MUERTO desde su creación, por tres roturas encadenadas:
+#   1. Descargaba artefactos con nombres que NUNCA existieron:
+#      `ivanna-omega-apks` / `ivanna-magisk-module` — los reales subidos por
+#      build.yml son `apk-build-<sha>` / `magisk-module-bundle-<sha>`.
+#   2. `download-artifact@v4` NO ve artefactos de otra corrida: supply-chain
+#      corre en un run separado (trigger por tag) que build.yml → aunque los
+#      nombres hubieran coincidido, la descarga habría fallado.
+#   3. `continue-on-error: true` convertía ambos fallos en saltos SILENCIOSOS:
+#      el SBOM del APK/Módulo, la firma Cosign de esos binarios y la
+#      verificación de integridad del módulo NO SE EJECUTABAN en ningún
+#      release — exactamente lo contrario de lo que este workflow promete.
+# Solución: localizar por API la corrida exitosa de build.yml para el MISMO
+# commit SHA (build.yml también corre en tags v*), esperarla si sigue en
+# progreso, y descargar con run-id + github-token (descarga cross-run válida).
+# Un artefacto faltante en la ruta de release ahora es ERROR, no salto.
+
 jobs:
   sbom-and-sign:
     name: SBOM + Sign + SLSA
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── Descargar APK y módulo del job anterior ──────────────────────────────
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ivanna-omega-apks
-          path: artifacts/apk
-        continue-on-error: true  # no existe en dry_run / run manual
+      # ── Modo: release (tag) requiere artefactos; dry_run no ─────────────────
+      - name: Determinar modo
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry=1" >> "$GITHUB_OUTPUT"
+            echo "MODO: dry_run — SBOM del repo sin artefactos de build.yml"
+          else
+            echo "dry=0" >> "$GITHUB_OUTPUT"
+            echo "MODO: release — requiere corrida exitosa de build.yml para ${{ github.sha }}"
+          fi
 
-      - name: Download Magisk module artifact
+      # ── Localizar corrida exitosa de build.yml para este SHA (con espera) ────
+      # En un push de tag, build.yml arranca al mismo tiempo que este workflow:
+      # se le espera hasta 40 min (su build completo tarda menos históricamente).
+      - name: Localizar corrida exitosa de build.yml para este SHA
+        id: buildrun
+        if: steps.mode.outputs.dry == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          for i in $(seq 1 40); do
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/build.yml/runs?head_sha=${SHA}&per_page=20" \
+              --jq '[.workflow_runs[] | select(.conclusion=="success")] | sort_by(.created_at) | last | .id // empty')
+            if [ -n "$RUN_ID" ]; then
+              echo "Corrida exitosa de build.yml encontrada: $RUN_ID (intento $i)"
+              echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # ¿Corre still in progress? informar y reintentar; ¿falló? fallar ya.
+            STATE=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-suites" --jq '.check_suites | length' 2>/dev/null || echo 0)
+            echo "intento $i/40: build.yml aún sin corrida exitosa para ${SHA:0:8} (check-suites: $STATE)"
+            sleep 60
+          done
+          echo "::error::No apareció una corrida EXITOSA de build.yml para ${SHA} en 40 min — supply chain de un release sin build validado es inaceptable."
+          exit 1
+
+      # ── Descarga cross-run VÁLIDA: run-id + github-token ────────────────────
+      - name: Download APK artifact (cross-run por SHA)
+        if: steps.mode.outputs.dry == '0'
         uses: actions/download-artifact@v4
         with:
-          name: ivanna-magisk-module
+          name: apk-build-${{ github.sha }}
+          run-id: ${{ steps.buildrun.outputs.id }}
+          github-token: ${{ github.token }}
+          path: artifacts/apk
+
+      - name: Download Magisk module artifact (cross-run por SHA)
+        if: steps.mode.outputs.dry == '0'
+        uses: actions/download-artifact@v4
+        with:
+          name: magisk-module-bundle-${{ github.sha }}
+          run-id: ${{ steps.buildrun.outputs.id }}
+          github-token: ${{ github.token }}
           path: artifacts/magisk
-        continue-on-error: true
+
+      # Verificación dura: en la ruta de release, sin APK o sin módulo NO se sigue.
+      - name: Verificar que los artefactos del release están presentes
+        if: steps.mode.outputs.dry == '0'
+        run: |
+          ls -lhR artifacts/ || true
+          APK=$(find artifacts/apk -name "*.apk" 2>/dev/null | head -1 || true)
+          MOD=$(find artifacts/magisk -name "*.zip" 2>/dev/null | head -1 || true)
+          [ -n "$APK" ] || { echo "::error::APK ausente en el run de build — release bloqueado"; exit 1; }
+          [ -n "$MOD" ] || { echo "::error::Módulo Magisk ausente en el run de build — release bloqueado"; exit 1; }
 
       # ── SBOM con Syft ─────────────────────────────────────────────────────────
       - name: Install Syft
@@ -45,10 +115,9 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
             | sh -s -- -b /usr/local/bin v1.4.1
 
-      - name: Generate SBOM (SPDX JSON)
+      - name: Generate SBOM (SPDX + CycloneDX)
         run: |
           mkdir -p sbom
-          # SBOM del APK (dependencias empaquetadas)
           APK=$(find artifacts/apk -name "*.apk" 2>/dev/null | head -1 || true)
           if [ -n "$APK" ]; then
             syft "$APK" -o spdx-json=sbom/ivanna-omega-apk.spdx.json
@@ -108,11 +177,12 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           mkdir -p signatures
+          # FIX: globs reales — los artefactos llegan con el nombre versionado
+          # por SHA de build.yml (apk-build-<sha> / magisk-module-bundle-<sha>),
+          # no los nombres fijos que nunca existieron.
           for f in \
             artifacts/apk/*.apk \
-            artifacts/magisk/ivanna_omega_supreme.zip \
-            artifacts/magisk/ivanna_daemon \
-            artifacts/magisk/libomega_effect_arm64.so; do
+            artifacts/magisk/*.zip; do
             [ -f "$f" ] || continue
             echo "Signing: $f"
             cosign sign-blob \
@@ -124,25 +194,28 @@ jobs:
 
       # ── SLSA Attestation (GitHub nativo) ─────────────────────────────────────
       - name: Attest APK provenance (SLSA L2)
+        if: steps.mode.outputs.dry == '0'
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: |
             artifacts/apk/*.apk
-            artifacts/magisk/ivanna_omega_supreme.zip
+            artifacts/magisk/*.zip
         continue-on-error: true  # requiere permisos de repositorio configurados
 
       # ── Verificación de integridad del módulo Magisk ─────────────────────────
       - name: Verify Magisk module integrity
+        if: steps.mode.outputs.dry == '0'
         run: |
-          MODULE=artifacts/magisk/ivanna_omega_supreme.zip
-          [ -f "$MODULE" ] || { echo "Módulo no encontrado — skip"; exit 0; }
+          MODULE=$(find artifacts/magisk -name "*.zip" 2>/dev/null | head -1)
+          [ -n "$MODULE" ] || { echo "::error::Módulo Magisk ausente — no debería llegar aquí (verificación previa)"; exit 1; }
           echo "=== Checksums de artefactos de release ==="
-          sha256sum artifacts/apk/*.apk 2>/dev/null || true
-          sha256sum "$MODULE" 2>/dev/null || true
-          sha256sum artifacts/magisk/ivanna_daemon 2>/dev/null || true
-          sha256sum artifacts/magisk/libomega_effect_arm64.so 2>/dev/null || true
-          # Validar que el ZIP tiene los archivos críticos
-          unzip -l "$MODULE" | grep -E "module.prop|service.sh|sepolicy.rule|system/bin/ivanna_daemon" || true
+          sha256sum artifacts/apk/*.apk
+          sha256sum "$MODULE"
+          echo "=== Validar que el ZIP tiene los archivos críticos ==="
+          unzip -l "$MODULE" | grep -E "module.prop|service.sh|sepolicy.rule|ivanna_daemon" || {
+            echo "::error::El módulo Magisk no contiene los archivos críticos esperados"
+            exit 1
+          }
 
       # ── Upload de artefactos de seguridad ────────────────────────────────────
       - name: Upload SBOM + signatures
