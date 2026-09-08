@@ -509,6 +509,78 @@ tras ciclo hasta dejar el flanco magistral. No se cierra rapido a proposito.
 
 ---
 
+### Suite de tests C++ huérfana y falsificada — `app/src/test/cpp/`
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/test/cpp/` completo (48 archivos .cpp + `certification/`) —
+  directorio DISTINTO de `app/src/main/cpp/tests/` (ese es el flanco de
+  Genspark, ya excelente: 60/60 con ASan/UBSan, no se toca).
+- Cualquier `CMakeLists.txt`/workflow NUEVO que decida crear para
+  compilar/correr lo que sobreviva de este directorio — verificado hoy
+  que `app/src/test/cpp/` no está referenciado por ningún workflow ni
+  CMakeLists existente: son 48 archivos totalmente desconectados, no se
+  compilan ni corren por nada ahora mismo.
+
+**Explícitamente NO toca:** `app/src/main/cpp/tests/` ni ninguno de sus
+archivos, `CMakePresets.json`, `scripts/run_ctest.sh`,
+`.github/workflows/tests-host.yml` (todo eso es de Genspark). Tampoco
+`tools/reports/`/`docs/FLANCO_IAEL.md` (flanco Laboratorio IAEL — mide
+telemetría end-to-end del motor real; este flanco mide/repara unit
+tests C++ aislados). Si algo de aquí resulta genuinamente valioso,
+se coordina con Genspark para integrarlo a SU suite real en vez de
+crear una tercera infraestructura de tests paralela.
+
+**Por qué este flanco — verificado leyendo los 48 archivos completos,
+no por el nombre:** cada uno de los 48 (9 a 82 líneas) es una
+simulación de test, no un test:
+- `certification/test_audio_certification_metrics.cpp`: `snr_db =
+  96.0f`, `thdn_db = -90.0f` — **literales locales**, no medidos de
+  ninguna señal real. `test_frequency_response.cpp`,
+  `test_latency_report.cpp`, `test_cpu_profile_report.cpp`: mismo
+  patrón — números inventados verificando que son mayores/menores que
+  un umbral, sin llamar a `ParametricEQ`, `nativeMeasureRoundTripLatencyUs()`,
+  ni ningún profiling real. Nunca pueden fallar.
+- `peak_guard_regression_test.cpp`, `stereo_phase_regression_test.cpp`,
+  `dsp_nan_inf_regression_test.cpp`: aplican `std::tanh()` de la
+  librería estándar sobre vectores de constantes — **cero conexión con
+  el peak guard/DSP real de IVANNA** que otra sesión y yo acabamos de
+  corregir para el tronido "metralleta". Pasarían igual si el código
+  real no existiera.
+- `AdaptiveEQStressTest.cpp` (el más elaborado, 82 líneas, genera señal
+  real tono+ruido): contiene literalmente el comentario **"Punto de
+  integración: llamar aquí AdaptiveEQ real del motor Ivanna"** — y
+  después de esa línea, nada. Mide la energía de la señal SIN PROCESAR
+  contra sí misma.
+- `grep -l '#include "'` sobre los 48 archivos: **cero resultados**.
+  Ninguno incluye un solo header real de IVANNA.
+
+Esto es más peligroso que no tener tests: un badge "N/N passed" que no
+verifica nada del código real invita a confiar en una garantía que no
+existe — exactamente lo que este mismo archivo de coordinación describe
+como el patrón que ya causó daño en este repo.
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. Cada archivo de este directorio queda en uno de tres estados,
+   documentado en el commit: (a) reescrito para llamar código real de
+   IVANNA con aserciones que puedan fallar de verdad, (b) migrado a la
+   suite real de Genspark si es genuinamente redundante con algo que
+   ya cubren mejor, o (c) eliminado con la razón exacta en el mensaje
+   de commit — nunca dejado como está.
+2. Ningún test futuro en este directorio compara un número inventado
+   contra un umbral — toda métrica de calidad (SNR, THD+N, latencia,
+   CPU) se deriva de ejecutar código real.
+3. Si algo termina compilándose/corriendo en CI, es una puerta nueva y
+   explícita, coordinada con Genspark — no una resurrección accidental
+   de infraestructura muerta que compita con la suya.
+
+**Estado:** trabajando — recién reclamado. Verificado en los 48: conteo
+de líneas y ausencia de includes reales (estructural, los 48). Leídos
+completos: 7 representativos (los citados arriba) + el más largo
+(`AdaptiveEQStressTest.cpp`). Quedan 40 por leer antes de decidir su
+destino individual — sin cambios de código todavía.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
