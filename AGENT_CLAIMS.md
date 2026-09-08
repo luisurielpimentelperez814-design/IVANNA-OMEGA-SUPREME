@@ -608,3 +608,17 @@ con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
 agrégalo a "tomados" con tu alcance exacto y la razón — así la
 siguiente sesión no vuelve a chocar. Este archivo es la memoria
 compartida que este repo no tenía.
+
+---
+
+### PhaseOracle — motor de predicción de fase (Kalman)
+**Entregado por:** sesión Genspark (chat), 2026-09-08. **CERRADO.**
+**UPSTREAM CERRADO — NO reabrir sin releer OWNERSHIP_PHASE_ORACLE.md.**
+Ámbito: `phase_oracle.cpp`, `phase_oracle_engine.hpp`, `phase_oracle_bridge.hpp`,
+`phase_oracle_refinements.hpp`, `phase_oracle_kalman.hpp` (nuevo),
+`tests/test_phase_oracle_kalman.cpp` (nuevo) y solo la línea de registro en
+tests/CMakeLists.txt. Núcleo Kalman cúbico correcto de raíz (PhaseKalman3),
+suite host 7 tests + 67/67 global, migración JNI completa y eliminación de
+código decorativo. Pendiente no bloqueante: decidir el modo de look-ahead de
+predictSamples() con el flanco DSP (la firma C phase_oracle_velocity() NO
+cambió; el bridge recalibró su escala interna).
