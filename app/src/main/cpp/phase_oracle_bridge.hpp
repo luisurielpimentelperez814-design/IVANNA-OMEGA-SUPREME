@@ -17,12 +17,16 @@ namespace ivanna {
 // Declarado extern; la definición está en phase_oracle.cpp (g_kalman.state)
 struct PhaseOracleBridge {
     // Devuelve |state[1]| normalizado [0,1] como proxy de transient energy.
-    // Normalización empírica: velocidad pico ~5000 a 48kHz con señal ±1
+    // Normalización CALIBRADA (medición host, PhaseKalman3 @ 96 kHz):
+    //   ataque 0→0.8  → |vel| pico ≈ 39  (cue ≈ 0.97)
+    //   seno 440 Hz @ 0.4 → |vel| ≈ 8.5  (cue ≈ 0.21)
+    // La escala vieja 1/5000 venía del filtro anterior (DT=1/384000 con
+    // state[1]=1000 fantasma) y mataba el detector: ataque real daba 0.008.
     static inline float transient_cue() noexcept {
         const float vel = phase_oracle_velocity();
         const float abs_vel = vel < 0.f ? -vel : vel;
         // Soft-clip via tanh aproximado para evitar saturación
-        constexpr float SCALE = 1.0f / 5000.0f;
+        constexpr float SCALE = 1.0f / 40.0f;
         const float x = abs_vel * SCALE;
         // fast tanh approx: x*(27+x*x)/(27+9*x*x)
         const float x2 = x * x;

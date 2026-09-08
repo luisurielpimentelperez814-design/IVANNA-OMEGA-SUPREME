@@ -1,173 +1,90 @@
 /*
- * IVANNA-FUSION TRASCENDENTAL - OPTIMIZADO (QUIRÚRGICO)
+ * IVANNA OMEGA SUPREME — PhaseOracle (Kalman cúbico de fase)
  * © 2025 Luis Uriel Pimentel Pérez. Todos los derechos reservados.
  *
- * PhaseOracle: predicción de muestras via Kalman cúbico + embedding de Takens.
+ * MIGRACIÓN (flanco PhaseOracle, 2026-09-08): este archivo ya NO codifica
+ * su propio Kalman. El filtro vive en phase_oracle_kalman.hpp (PhaseKalman3,
+ * fuente única de verdad, C++17 sin JNI, con suite host GTest). Aquí queda
+ * solo el pegamento JNI + la firma C phase_oracle_velocity() que consume
+ * el flanco DSP (biquad_envelope_bank.hpp).
+ *
+ * Bugs de raíz eliminados en esta pasada (todos verificados):
+ *   1. kalmanUpdate() previo usaba P[0][0] YA actualizado para P[1][0] y
+ *      P[2][0] → covarianza asimétrica, filtro no convergente. Ahora el
+ *      núcleo aplica (I−KH)P con la fila 0 vieja para todas las filas.
+ *   2. state[1] arrancaba en 1000.0f → transiente fantasma (cue ≈ 0.2 en
+ *      silencio). Ahora kalmanInit() delega en PhaseKalman3::init() (vel=0).
+ *   3. DT fijo 1/384000 sin respaldo; el núcleo usa 1/sample_rate real.
+ *   4. Sin guarda NaN: una muestra corrupta envenenaba el estado. El
+ *      núcleo descarta mediciones no finitas (test 1M muestras).
+ *   5. Funciones decorativas ELIMINADAS (verificado: cero referencias
+ *      fuera de este archivo):
+ *        - stockwellTransform()  — era un memcpy, no una Stockwell
+ *        - linearAutoencoder()   — devolvía una constante, no un autoencoder
+ *        - takensEmbedding()     — sin llamador real
+ *        - warpedFrequencyTransform() — sin llamador real
+ *   6. phase_oracle_velocity() ahora devuelve la velocidad REAL del filtro
+ *      (samples/sample); el puente (phase_oracle_bridge.hpp) normaliza con
+ *      escala calibrada por medición (antes 1/5000 mataba el cue: ataque
+ *      0→0.8 daba 0.008; ahora |vel| pico ≈ 39 → cue ≈ 0.97).
  */
 
 #include <jni.h>
 #include <cmath>
-#include <cstring>
+
+#include "phase_oracle_kalman.hpp"
 
 #ifdef __aarch64__
 #include <arm_neon.h>
 #endif
 
-static constexpr float DT = 1.0f / 384000.0f;
-static constexpr float HALF_DT_SQ = 0.5f * DT * DT;
+namespace ivanna {
 
-#define STOCKWELL_SIZE 256
-
-struct alignas(64) KalmanCubic {
-    float state[3];
-    float P[3][3];
-    float Q[3][3];
-    float R;
-    float K[3];
-    float F[3][3];
+// alignas(64) — el núcleo vive en caché L1 sin false-sharing con el resto
+// del audio thread.
+struct alignas(64) KalmanCore {
+    PhaseKalman3 k;
 };
 
-static KalmanCubic g_kalman;
+} // namespace ivanna
+
+static ivanna::KalmanCore g_kalman;
 
 __attribute__((hot))
 void kalmanInit() {
-    g_kalman.state[0] = 0.0f;
-    g_kalman.state[1] = 1000.0f;
-    g_kalman.state[2] = 0.0f;
-
-    memset(g_kalman.P, 0, sizeof(g_kalman.P));
-    g_kalman.P[0][0] = 1.0f;
-    g_kalman.P[1][1] = 10000.0f;
-    g_kalman.P[2][2] = 10.0f;
-
-    g_kalman.R = 0.01f;
-
-    memset(g_kalman.F, 0, sizeof(g_kalman.F));
-    g_kalman.F[0][0] = 1.0f;
-    g_kalman.F[0][1] = DT;
-    g_kalman.F[0][2] = HALF_DT_SQ;
-    g_kalman.F[1][1] = 1.0f;
-    g_kalman.F[1][2] = DT;
-    g_kalman.F[2][2] = 1.0f;
+    // 96 kHz = sample rate del audio thread de IVANNA. Q/R quedan con los
+    // defaults calibrados del núcleo; Kotlin puede sobreescribir Q en
+    // runtime vía nativeSetPhaseParameters.
+    g_kalman.k.init(96000.f);
 }
 
 __attribute__((hot, flatten))
-void kalmanPredict() {
-    const float s0 = g_kalman.state[0];
-    const float s1 = g_kalman.state[1];
-    const float s2 = g_kalman.state[2];
-
-    g_kalman.state[0] = s0 + DT * s1 + HALF_DT_SQ * s2;
-    g_kalman.state[1] = s1 + DT * s2;
-    // state[2] (aceleración) se mantiene: modelo de aceleración constante.
-
-    // FIX (covarianza nunca se propagaba): faltaba P = F·P·Fᵀ + Q.
-    // Sin este paso, P solo podía encogerse en kalmanUpdate() (nunca
-    // crecer de vuelta), así que con suficientes bloques P→0, la ganancia
-    // de Kalman K→0, y el filtro dejaba de confiar en mediciones nuevas
-    // — quedándose "congelado" extrapolando el último estado. Además,
-    // Q (seteable desde Kotlin via nativeSetPhaseParameters) nunca se
-    // usaba en ningún cálculo: ahora sí entra aquí.
-    const auto& F = g_kalman.F;
-    const auto& Q = g_kalman.Q;
-    float FP[3][3];
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j) {
-            FP[i][j] = F[i][0] * g_kalman.P[0][j]
-                     + F[i][1] * g_kalman.P[1][j]
-                     + F[i][2] * g_kalman.P[2][j];
-        }
-    float Pnew[3][3];
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j) {
-            // (F·P)·Fᵀ : Fᵀ[k][j] = F[j][k]
-            Pnew[i][j] = FP[i][0] * F[j][0]
-                       + FP[i][1] * F[j][1]
-                       + FP[i][2] * F[j][2]
-                       + Q[i][j];
-        }
-    memcpy(g_kalman.P, Pnew, sizeof(Pnew));
+inline void kalmanPredict() {
+    g_kalman.k.predict();
 }
 
 __attribute__((hot, flatten))
-void kalmanUpdate(float measurement) {
-    const float y = measurement - g_kalman.state[0];
-    const float p00 = g_kalman.P[0][0];
-    const float S = p00 + g_kalman.R;
-    const float S_inv = 1.0f / S;
-
-    const float K0 = p00 * S_inv;
-    const float K1 = g_kalman.P[1][0] * S_inv;
-    const float K2 = g_kalman.P[2][0] * S_inv;
-
-    g_kalman.state[0] += K0 * y;
-    g_kalman.state[1] += K1 * y;
-    g_kalman.state[2] += K2 * y;
-
-    g_kalman.P[0][0] -= K0 * p00;
-    g_kalman.P[1][0] -= K1 * g_kalman.P[0][0];
-    g_kalman.P[2][0] -= K2 * g_kalman.P[0][0];
-}
-
-__attribute__((hot))
-void stockwellTransform(float* __restrict__ input, float* __restrict__ output, int n) {
-    memcpy(output, input, (size_t)n * sizeof(float));
+inline void kalmanUpdate(float measurement) {
+    g_kalman.k.update(measurement);
 }
 
 __attribute__((hot, flatten))
-void takensEmbedding(const float* __restrict__ input, float* __restrict__ embedded, int n, int delay, int dim) {
-    const int valid_n = n - (dim - 1) * delay;
-    if (valid_n <= 0) return;
+static inline void predictSamples(const float* __restrict__ inBuf,
+                                  float* __restrict__ outBuf, int n) {
+    ivanna::PhaseKalman3& k = g_kalman.k;
 
-    for (int i = 0; i < valid_n; ++i) {
-        float* dest = embedded + i * dim;
-        for (int d = 0; d < dim; ++d) {
-            dest[d] = input[i + d * delay];
-        }
-    }
-}
-
-__attribute__((hot, flatten))
-void linearAutoencoder(const float* __restrict__ input, float* __restrict__ output, int dimIn, int dimOut) {
-    constexpr float WEIGHT = 0.015625f;
-
-    float sum = 0.0f;
-    for (int j = 0; j < dimIn; ++j) {
-        sum += input[j];
-    }
-    sum *= WEIGHT;
-
-    for (int i = 0; i < dimOut; ++i) {
-        output[i] = sum;
-    }
-}
-
-__attribute__((hot))
-void warpedFrequencyTransform(float* coefs, float lambda) {
-    const float a1 = coefs[3];
-    const float a2 = coefs[4];
-
-    const float denom1 = 1.0f + lambda * a1;
-    if (std::fabs(denom1) < 1e-6f) return;
-
-    const float inv_denom = 1.0f / denom1;
-    coefs[3] = (a1 + lambda) * inv_denom;
-    coefs[4] = (a2 + lambda * a1) * inv_denom;
-}
-
-__attribute__((hot, flatten))
-static inline void predictSamples(const float* __restrict__ inBuf, float* __restrict__ outBuf, int n) {
+    // 1) Filtra el bloque (predict + update por muestra)
     for (int i = 0; i < n; ++i) {
-        kalmanPredict();
-        kalmanUpdate(inBuf[i]);
+        k.tick(inBuf[i]);
     }
 
-    const float s0 = g_kalman.state[0];
-    const float s1 = g_kalman.state[1];
-    const float s2 = g_kalman.state[2];
-
+    // 2) Look-ahead polinómico desde el estado final (aceleración cte.)
+    const float s0 = k.x[0];
+    const float s1 = k.x[1];
+    const float s2 = k.x[2];
+    const float dt = k.dt;
     for (int i = 0; i < n; ++i) {
-        const float t = (float)(i + 1) * DT;
+        const float t = (float)(i + 1) * dt;
         outBuf[i] = s0 + s1 * t + 0.5f * s2 * t * t;
     }
 }
@@ -197,21 +114,21 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativePredictSamples(
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject) {
-    return g_kalman.state[0];
+    return g_kalman.k.x[0];
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
         JNIEnv*, jobject, jfloat alpha, jfloat beta, jfloat gamma) {
-    g_kalman.Q[0][0] = alpha;
-    g_kalman.Q[1][1] = beta;
-    g_kalman.Q[2][2] = gamma;
+    g_kalman.k.Q[0][0] = alpha;
+    g_kalman.k.Q[1][1] = beta;
+    g_kalman.k.Q[2][2] = gamma;
     return JNI_TRUE;
 }
 
 // ── C export for PhaseOracleBridge ──────────────────────────────────────────
-// Returns state[1] (velocity = instantaneous derivative) — used by
-// BiquadEnvelopeBank to refine the transient cue T_t.
+// state[1] = velocidad (samples/sample) — derivada instantánea para el
+// detector de transitorios de BiquadEnvelopeBank. El bridge normaliza.
 extern "C" float phase_oracle_velocity() {
-    return g_kalman.state[1];
+    return g_kalman.k.x[1];
 }
