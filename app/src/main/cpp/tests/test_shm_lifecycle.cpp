@@ -130,6 +130,37 @@ int main() {
         mgr2.close();
     }
 
+    // ── 8. Validación de header (FASE 5/8): magic/version/state_size/bounds ──
+    // El validador canónico es la guardia que un reader ejecuta ANTES de
+    // reinterpretar el mmap como OmegaSharedState vivo. Aquí se ejercitan
+    // todos sus rechazos contra la region REAL ya inicializada.
+    CHECK(validateShmHeader(mgr.base(), mgr.size()),
+          "validate: region sana y completa pasa");
+    CHECK(!validateShmHeader(nullptr, mgr.size()),
+          "validate: base nula rechazada");
+    CHECK(!validateShmHeader(mgr.base(), sizeof(ShmHeader) - 1),
+          "validate: mmap truncado (< sizeof header) rechazado");
+    {
+        // Corrupciones sobre una copia a nivel de BYTES del header (ShmHeader
+        // contiene std::atomic -> no es copiable por valor; el reader Kotlin
+        // tambien opera sobre bytes crudos, asi que este es el nivel correcto).
+        // Cada campo malo debe rechazar por separado (no basta con uno solo).
+        alignas(8) uint8_t bad[sizeof(ShmHeader)];
+        auto setField = [&](size_t off, uint32_t v) {
+            std::memcpy(bad, hdr, sizeof(bad));
+            std::memcpy(bad + off, &v, sizeof(v));
+        };
+        setField(offsetof(ShmHeader, magic), 0xDEADBEEFu);
+        CHECK(!validateShmHeader(bad, sizeof(bad)),
+              "validate: magic incorrecto rechazado");
+        setField(offsetof(ShmHeader, version), OMEGA_SHM_VERSION + 1u);
+        CHECK(!validateShmHeader(bad, sizeof(bad)),
+              "validate: version incompatible rechazada");
+        setField(offsetof(ShmHeader, state_size), (uint32_t)sizeof(OmegaSharedState) - 4u);
+        CHECK(!validateShmHeader(bad, sizeof(bad)),
+              "validate: state_size divergente rechazado");
+    }
+
     mgr.close();
     ::unlink(path.c_str());
 

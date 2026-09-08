@@ -61,6 +61,32 @@ struct alignas(8) ShmHeader {
 // mantener SHM_HEADER_BYTES=32 sincronizado con este assert.
 static_assert(sizeof(ShmHeader) == 32,
               "ShmHeader ABI mismatch: expected 32 bytes");
+// Offsets exactos que el reader Kotlin hardcodea (ShmManager.kt):
+// magic@12, version@16, state_size@20. Si el struct se reordena, estos
+// asserts truenan en build en vez de desalinear silenciosamente al reader.
+static_assert(offsetof(ShmHeader, magic)      == 12, "ShmHeader.magic debe estar en +12");
+static_assert(offsetof(ShmHeader, version)    == 16, "ShmHeader.version debe estar en +16");
+static_assert(offsetof(ShmHeader, state_size) == 20, "ShmHeader.state_size debe estar en +20");
+
+// ── Validación canónica del header (FASE 5: magic/version/state_size/bounds) ──
+// UNICA fuente de verdad para "¿este mmap es una region SHM nuestra y sana?".
+// La usan el bridge C++ de la app (omega_daemon_bridge_stub.cpp), los tests
+// host y cualquier futuro reader. Kotlin replica la misma lógica con los
+// offsets absolutos de arriba (no puede incluir este header).
+//
+// Por qué existe: mapear un backing file viejo, truncado o de otra versión
+// y reinterpretarlo como OmegaSharedState vivo producía lecturas de basura
+// indistinguibles de telemetría real. Todo reader debe validar ANTES de
+// confiar en cualquier byte de la región.
+inline bool validateShmHeader(const void* base, size_t mappedLen) noexcept {
+    if (base == nullptr || mappedLen < sizeof(ShmHeader)) return false;
+    const auto* hdr = static_cast<const ShmHeader*>(base);
+    if (hdr->magic   != OMEGA_SHM_MAGIC)   return false;  // backing ajeno/corrupto
+    if (hdr->version != OMEGA_SHM_VERSION) return false;  // layout de otra época
+    if (hdr->state_size != static_cast<uint32_t>(sizeof(OmegaSharedState)))
+        return false;                                     // struct de otro build
+    return true;
+}
 
 class OmegaShmManager {
 public:
