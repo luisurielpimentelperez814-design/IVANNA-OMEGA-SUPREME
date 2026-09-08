@@ -164,13 +164,12 @@ uno de esos, se limita al mínimo indispensable y se nota en el commit.
 necesitando una pasada de diseño real, y nadie lo había reclamado
 todavía — evita chocar con los dos frentes nativos ya tomados arriba.
 
-**Estado:** trabajando — 4 fixes reales en main:
+**Estado:** trabajando — 3 fixes reales en main + 1 revertido:
 1. `c2826986` — desambiguación GEMINI vs daemon/socket en NetworkStatusPanel.
 2. `8ae1fc04` — mismo fix en IvannaAssistantScreen.kt.
 3. `703cb6d7` — advertencia de módulo desactualizado, real (antes atrapada en comentario muerto).
-4. `f80e6293` — SystemScreen leía un SharedPreferences muerto para el estado de Gemini ("sin configurar" aunque estuviera enlazado) — corregido a SecureConfigurationManager.state real.
-Navegación (IvannaRoute/MainActivity) auditada: sin pantallas huérfanas, sin duplicación real entre SystemScreen y MagiskStatusPanel (hub→detalle, no reemplazo).
-Pendiente: seguir por el resto de los 38 archivos en ui/ (cubiertos: IvannaAssistantScreen, NetworkStatusPanel, MagiskStatusPanel, SystemScreen).
+4. `f80e6293` (REVERTIDO en `54951df7`) — el bug de SystemScreen leyendo un SharedPreferences muerto para el estado de Gemini SIGUE SIENDO REAL (verificado con grep, sin escritor en todo el codebase), pero mi fix rompió compileDebugKotlin sin causa identificable por lectura estática (imports, anotación @Composable, tipos, firma de initialize() — todo correcto). Revertido para no dejar el build rojo mientras se obtiene el log real del compilador. Pendiente: reintentar con evidencia del log, no a ciegas.
+Navegación (IvannaRoute/MainActivity) auditada: sin pantallas huérfanas, sin duplicación real entre SystemScreen y MagiskStatusPanel.
 
 ---
 
