@@ -1,0 +1,52 @@
+{
+  "system": "IVANNA OMEGA SUPREME IAEL v4 — StabilityStress",
+  "version": "4.0.0",
+  "timestamp": "2026-09-08 23:45:18 UTC",
+  "certification": "PASS",
+  "failures": [],
+  "checks": [
+    [
+      "validez",
+      0,
+      "PASS",
+      "0 esperado (tolerancia 0)"
+    ],
+    [
+      "pico",
+      0.295387,
+      "PASS",
+      "<= 1.0"
+    ],
+    [
+      "throughput",
+      123.695,
+      "PASS",
+      ">= 1.0x tiempo real"
+    ],
+    [
+      "drift_energia_db",
+      0.2289,
+      "PASS",
+      "<= 0.5 dB"
+    ]
+  ],
+  "metrics": {
+    "duration_seconds": 8.0,
+    "processed_blocks": 98957,
+    "throughput_x_realtime": 123.695,
+    "audio_seconds_equivalent": 989.6,
+    "invalid_samples": 0,
+    "peak": 0.295387,
+    "crest": 1.051,
+    "energy_drift_db": 0.2289,
+    "seed": 200209831,
+    "block_size_frames": 480,
+    "sample_rate": 48000
+  },
+  "tolerances": {
+    "max_invalid_samples": 0,
+    "max_peak": 1.0,
+    "min_throughput_x_rts": 1.0,
+    "max_energy_drift_db": 0.5
+  }
+}
