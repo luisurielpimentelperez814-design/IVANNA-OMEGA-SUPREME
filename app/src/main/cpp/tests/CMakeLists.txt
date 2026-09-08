@@ -331,3 +331,23 @@ gtest_discover_tests(test_oem_stability_suite)
 # los 7 tests (Peak/True Peak, THD, IMD SMPTE, SNR estadístico, LUFS con
 # gates, LRA, estado vacío) corren ahora en la puerta y en CI.
 ivanna_add_test(test_ivannalab)
+
+# ── ivanna_benchmark: benchmark de CPU/latencia del DSP — OPCIONAL, fuera de la puerta ──
+# Flanco Benchmarks (CLAIMS/benchmarks.md): benchmark_suite.cpp llevaba CERO
+# referencias y NUNCA compiló (llamaba HarmonicExciter::setAmount(), API
+# inexistente). Corregido y enganchado como target manual: NO corre en la
+# puerta de tests (no es un test, es medición de rendimiento — un lento runner
+# de CI o una máquina cargada daría números falsos). Se corre a demanda:
+#   cmake --build build/tests-host --target ivanna_benchmark
+#   ./build/tests-host/ivanna_benchmark 48000 256 15
+add_executable(ivanna_benchmark EXCLUDE_FROM_ALL
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../tools/benchmark_suite.cpp
+)
+target_include_directories(ivanna_benchmark PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../visualizer
+)
+target_link_libraries(ivanna_benchmark PRIVATE ivanna_dsp_under_test)
+target_compile_options(ivanna_benchmark PRIVATE -O2 -Wall -Wextra)

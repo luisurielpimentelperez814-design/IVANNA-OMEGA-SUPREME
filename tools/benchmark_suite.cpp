@@ -58,7 +58,13 @@ Stats runBenchmark(int sampleRate, int blockFrames, int seconds) {
 
     ivanna::ParametricEQ eq; eq.setParams(p);
     ivanna::Compressor comp; comp.setParams(p); comp.setThreshold(-18.0f); comp.setRatio(3.0f); comp.setAttack(5.0f); comp.setRelease(80.0f);
-    ivanna::HarmonicExciter exciter; exciter.setParams(p); exciter.setAmount(0.45f);
+    // FIX (flanco Benchmarks): setAmount(0.45f) NO existe en HarmonicExciter
+    // (verificado con g++: 'has no member named setAmount') — este benchmark
+    // NUNCA compiló y por eso quedó huérfano de todo CMake/CI. La cantidad del
+    // excitador se gobierna por setParams(): se le pasa su propia copia de
+    // DSPParams con wet=0.45 (la intención original del 0.45).
+    ivanna::DSPParams pe = p; pe.wet = 0.45f;
+    ivanna::HarmonicExciter exciter; exciter.setParams(pe);
     ivanna::StereoWidener widener; widener.setParams(p); widener.setWidth(1.25f);
     ivanna::GainStage gain; gain.setParams(p);
     ivanna::vis::GammatoneFilterBank13 fb; fb.init(static_cast<float>(sampleRate));

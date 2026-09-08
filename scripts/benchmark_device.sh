@@ -40,11 +40,13 @@ DAEMON_PID=$(cat /data/adb/ivanna_daemon.pid 2>/dev/null || \
 CPU_AVG="null"
 if [ -n "$DAEMON_PID" ] && [ -d "/proc/$DAEMON_PID" ]; then
     SUM=0; COUNT=0
-    for i in 1 2 3 4 5; do
-        T1=$(cut -d' ' -f14,15 /proc/$DAEMON_PID/stat 2>/dev/null | awk '{print $1+$2}')
+    # FIX (flanco Benchmarks, shellcheck SC2034): el bucle mide 5 veces; la
+    # variable de control no se usa — _ documenta la intención.
+    for _ in 1 2 3 4 5; do
+        T1=$(cut -d' ' -f14,15 "/proc/$DAEMON_PID/stat" 2>/dev/null | awk '{print $1+$2}')
         U1=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)
         sleep 1
-        T2=$(cut -d' ' -f14,15 /proc/$DAEMON_PID/stat 2>/dev/null | awk '{print $1+$2}')
+        T2=$(cut -d' ' -f14,15 "/proc/$DAEMON_PID/stat" 2>/dev/null | awk '{print $1+$2}')
         U2=$(cut -d' ' -f1 /proc/uptime 2>/dev/null)
         PCT=$(awk "BEGIN{dt=($U2-$U1)*100; if(dt>0) printf \"%.2f\",($T2-$T1)/dt*100; else print 0}")
         SUM=$(awk "BEGIN{print $SUM + $PCT}"); COUNT=$((COUNT+1))
@@ -59,7 +61,7 @@ fi
 log "3/8 RAM daemon..."
 RAM_KB="null"
 if [ -n "$DAEMON_PID" ] && [ -d "/proc/$DAEMON_PID" ]; then
-    RAM_KB=$(grep VmRSS /proc/$DAEMON_PID/status 2>/dev/null | awk '{print $2}')
+    RAM_KB=$(grep VmRSS "/proc/$DAEMON_PID/status" 2>/dev/null | awk '{print $2}')
     log "   VmRSS: ${RAM_KB} kB"
 fi
 
