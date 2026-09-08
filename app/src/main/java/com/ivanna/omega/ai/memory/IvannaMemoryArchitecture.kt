@@ -61,6 +61,14 @@ class IvannaMemoryArchitecture(context: Context) {
             loadFromDisk()
             _isLoaded.value = true
             Log.i(TAG, "Memory architecture loaded")
+            // FIX (poda por antigüedad nunca se ejecutaba en producción):
+            // pruneOldMemories() solo tenía un llamador real, el test
+            // unitario — en la app, la memoria episódica solo se limitaba
+            // por volumen (MAX_EPISODIC_RECORDS=500), nunca por
+            // antigüedad. Registros de hace años vivirían en disco
+            // indefinidamente mientras nunca se alcance ese tope. Poda
+            // real, una vez por sesión de arranque, tras cargar el disco.
+            runCatching { pruneOldMemories() }
         }
     }
 
