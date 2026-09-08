@@ -140,9 +140,21 @@ class IvannaMemoryArchitecture(context: Context) {
 
     private fun writeEncryptedFile(filename: String, data: String) {
         val file = File(appContext.filesDir, filename)
-        if (file.exists()) file.delete()
-        val ef = EncryptedFile.Builder(appContext, file, masterKey, EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
+        // FIX (riesgo real de pérdida de datos): borrar el archivo real
+        // antes de escribir el nuevo contenido deja una ventana donde, si
+        // el proceso se interrumpe (crash, kill del sistema) entre el
+        // delete y el write completo, el archivo queda borrado sin el
+        // nuevo contenido — pérdida total de la memoria cifrada. Se
+        // escribe primero a un archivo temporal; solo si esa escritura
+        // completa con éxito se reemplaza el archivo real. Si algo falla
+        // a mitad de camino, el archivo original (intacto) sigue
+        // disponible para el próximo intento de guardado.
+        val tempFile = File(appContext.filesDir, "$filename.tmp")
+        if (tempFile.exists()) tempFile.delete()
+        val ef = EncryptedFile.Builder(appContext, tempFile, masterKey, EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
         ef.openFileOutput().use { it.write(data.toByteArray(StandardCharsets.UTF_8)) }
+        if (file.exists()) file.delete()
+        tempFile.renameTo(file)
     }
 
     class WorkingMemory {
