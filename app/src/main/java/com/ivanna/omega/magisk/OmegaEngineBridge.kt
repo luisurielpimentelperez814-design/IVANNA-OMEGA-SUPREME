@@ -121,7 +121,8 @@ object OmegaEngineBridge {
         return try {
             val t0 = System.nanoTime()
             val socket = ensureSocket()?: return false
-            socket.output.write(payload.toString().toByteArray(Charsets.UTF_8))
+            val frame = payload.toString() + "\n"
+            socket.output.write(frame.toByteArray(Charsets.UTF_8))
             socket.output.flush()
             val buffer = ByteArray(4096)
             val bytesRead = socket.input.read(buffer)
@@ -142,7 +143,8 @@ object OmegaEngineBridge {
         return try {
             val t0 = System.nanoTime()
             val socket = ensureSocket()?: return null
-            socket.output.write(payload.toString().toByteArray(Charsets.UTF_8))
+            val frame = payload.toString() + "\n"
+            socket.output.write(frame.toByteArray(Charsets.UTF_8))
             socket.output.flush()
             val buffer = ByteArray(4096)
             val bytesRead = socket.input.read(buffer)

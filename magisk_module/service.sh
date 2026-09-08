@@ -34,7 +34,11 @@ while true; do
         DAEMON_PID=""
         [ -f /data/adb/ivanna_omega/daemon.pid ] && DAEMON_PID=$(cat /data/adb/ivanna_omega/daemon.pid 2>/dev/null)
         if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
-            : # daemon vivo — nada que hacer, no duplicar
+            if [ -r "/proc/$DAEMON_PID/cmdline" ] && grep -aq "ivanna_daemon" "/proc/$DAEMON_PID/cmdline"; then
+                : # daemon real vivo
+            else
+                DAEMON_PID=""
+            fi
         elif [ -x "$MODDIR/system/bin/ivanna_daemon" ]; then
             # El directorio DEBE existir antes del redirect de nohup: si falta,
             # "> daemon.log" falla y el daemon ni siquiera arranca (socket
@@ -56,7 +60,12 @@ while true; do
             
             # Allow some time to check if it crashed immediately
             sleep 1
-            if kill -0 "$DAEMON_PID" 2>/dev/null; then
+
+            # Validación adicional: proceso vivo y socket publicado
+            SOCKET_OK=0
+            grep -q "@omega_daemon_socket" /proc/net/unix 2>/dev/null && SOCKET_OK=1
+
+            if kill -0 "$DAEMON_PID" 2>/dev/null && [ "$SOCKET_OK" -eq 1 ]; then
                 setprop persist.ivanna.daemon_active 1 2>/dev/null
                 echo -1000 > /proc/$DAEMON_PID/oom_score_adj 2>/dev/null || true
                 chrt -f -p 98 "$DAEMON_PID" 2>/dev/null || true
