@@ -1,7 +1,7 @@
 # cpp/tests/ — suite host-side del DSP (flanco Tests host/CTest)
 
 Suite host-side que valida estabilidad numérica y regresión auditiva del motor
-nativo sin depender del APK. **60 tests** en 10 ejecutables (GoogleTest
+nativo sin depender del APK. **74 tests** en 13 ejecutables (GoogleTest
 vendoreado en `third_party/googletest` — cero red, determinista en CI).
 
 ## Vía canónica: `scripts/run_ctest.sh`
@@ -35,11 +35,13 @@ núcleos necesita >45 min — medido, no estimado).
 | `test_audio_regression` | **regresión auditiva de campo**: cada TEST_F documenta un bug real (tronidos, clipping, NaN) con commit, síntoma y condición de reproducción |
 | `test_ihr1_format` | barrera de regresión del lector IHR1 (datasets densos, ficheros truncados) |
 | `test_shm_lifecycle` | ciclo completo del plano de control SHM contra backing file en `/tmp` |
+| `test_ivannalab` | laboratorio de medición: Peak/True Peak, THD (frecuencia coherente), IMD SMPTE, SNR estadístico, LUFS con gates, LRA, estado vacío |
 | `test_oem_stability_suite` | regresión OEM: transparencia de mix, IIR estable, peak guard, stress de hilos |
 | `test_adaptive_engine` / `test_rir_dataset` / `test_close_loop` / `test_stability` / `test_control_frame_bus_stress` / `test_audio_bus` | motor adaptativo, RIR, cierre de lazo, estabilidad y buses de control |
 
 Huérfanos rescatados por el flanco Tests host: `test_audio_regression` (677
-líneas) y `test_oem_stability_suite` no tenían target — la regresión más
+líneas), `test_oem_stability_suite` y `test_ivannalab` (coordinación con el
+flanco IvannaLab, commit 487b1b69) no tenían target — la regresión más
 importante del repo no se ejecutaba en ninguna parte. `test_adaptive_eq_stress`
 sigue sin target deliberadamente: incluye `dsp/AdaptiveEQ.h` que no existe en
 el árbol (ver nota en `CMakeLists.txt`).

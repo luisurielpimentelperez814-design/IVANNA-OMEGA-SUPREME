@@ -10,5 +10,7 @@
 6. Carreras de lectura eliminadas: framesAccumulated()/hasEnoughData() con mutex (tombstone SIGSEGV documentado en la clase).
 7. Compilacion host de ivannalab.cpp: verificada (g++ -fsyntax-only, exit 0). Puerta global: 67/67.
 
-## NO CONFIRMADO (pendiente de coordinacion)
-- test_ivannalab.cpp (7 tests con senales sinteticas: THD 1.118%, IMD SMPTE 2.0%, SNR 56.99 dB, LUFS -23.7, LRA 12 LU, peak/true peak, estado vacio) fue CORREGIDO (12 lambdas -> float) pero NO enganchado en CI: engancharlo exige anadir ivannalab.cpp al target ivanna_dsp_under_test del flanco Tests host (otro agente, cerrado). NO ejecutado — marcado unconfirmed.
+## CONFIRMADO (coordinacion resuelta por el flanco Tests host, commit 487b1b69, 2026-09-08)
+- test_ivannalab.cpp ENGANCHADO a la puerta host por el dueno del flanco Tests host: ivannalab.cpp anadido a ivanna_dsp_under_test y ivanna_add_test(test_ivannalab) registrado. Corre en CI en cada push.
+- Ademas se corrigieron con causa raiz verificada: (1) BUG REAL de produccion — el FIR de interpolacion 4x del true peak tenia +1.14 dB de ganancia DC (suma de coeficientes 1.14) y sobrestimaba el true peak de todo el audio; normalizado a ganancia unitaria. (2) test THD movido a frecuencia coherente 750 Hz (bin 32 exacto a 96k/4096; 1 kHz era bin 42.67 con leakage). (3) test EmptyState alineado a la convencion del header (-1 = no medido). (4) 3 lambdas corruptos ([[&](...) residuos de la conversion) — el test nunca compilo hasta hoy.
+- Verificado: puerta completa 74/74 PASS en local y CI real (corrida 34290247024: success/success/skipped).
