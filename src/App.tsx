@@ -1,19 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { MasterControlPlane } from './components/MasterControlPlane';
 import { TinyMlClassifierPanel } from './components/TinyMlClassifierPanel';
 import { EvolutionaryEqPanel } from './components/EvolutionaryEqPanel';
 import { SpatialHrtfPanel } from './components/SpatialHrtfPanel';
 import { GoldenEarPanel } from './components/GoldenEarPanel';
-import { AudioVisualizer } from './components/AudioVisualizer';
 import { NeonProfiler } from './components/NeonProfiler';
-import { CodeExporter } from './components/CodeExporter';
 import { DspParameters, BenchmarkMetrics, TinyMlClassification } from './types';
 import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
 import { DspPipeline } from './components/DspPipeline';
 import { ParameterControls } from './components/ParameterControls';
 import { usePersist } from './usePersist';
 import { IvannaVoicePanel } from './components/IvannaVoicePanel';
+
+// Code-splitting: estos dos tabs se cargan bajo demanda.
+// CodeExporter arrastra todas las fuentes C++ del DSP (imports ?raw) y
+// AudioVisualizer el motor de canvas/Web Audio — diferirlos reduce el chunk
+// inicial y acelera el primer render del dashboard.
+const AudioVisualizer = lazy(() =>
+  import('./components/AudioVisualizer').then((m) => ({ default: m.AudioVisualizer }))
+);
+const CodeExporter = lazy(() =>
+  import('./components/CodeExporter').then((m) => ({ default: m.CodeExporter }))
+);
+
+// Fallback mínimo mientras se descarga el chunk diferido.
+const TabFallback = () => (
+  <div className="flex items-center justify-center py-16 text-[#64748B] font-mono text-xs animate-pulse">
+    Cargando módulo...
+  </div>
+);
 
 const DEFAULT_PARAMS: DspParameters = {
   masterGain: 1.0,
@@ -308,9 +324,17 @@ export default function App() {
         {activeTab === 'golden_ear' && (
           <GoldenEarPanel params={params} onParamChange={handleParamChange} />
         )}
-        {activeTab === 'visualizer' && <AudioVisualizer params={params} />}
+        {activeTab === 'visualizer' && (
+          <Suspense fallback={<TabFallback />}>
+            <AudioVisualizer params={params} />
+          </Suspense>
+        )}
         {activeTab === 'benchmarks' && <NeonProfiler metrics={metrics} />}
-        {activeTab === 'code' && <CodeExporter />}
+        {activeTab === 'code' && (
+          <Suspense fallback={<TabFallback />}>
+            <CodeExporter />
+          </Suspense>
+        )}
         {activeTab === 'iso226' && (
           <Iso226CalibrationPanel params={params} onParamChange={handleParamChange} />
         )}
