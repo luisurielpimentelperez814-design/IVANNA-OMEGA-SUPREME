@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,15 +32,37 @@ import kotlinx.coroutines.withContext
 /**
  * MagiskStatusPanel — pantalla de estado del módulo Magisk + cliente daemon.
  *
- * FIX CRÍTICO (socket siempre DESCONECTADO"
-            + "\n⚠ Si el módulo instalado es más viejo que la app (" + com.ivanna.omega.BuildConfig.VERSION_NAME + "), reinstala el ZIP actual: los fixes del daemon (STL estático, bind con retry) solo existen en builds nuevos — un módulo viejo = binario viejo que muere antes del bind."):
+ * FIX CRÍTICO (socket siempre desconectado con daemon "corriendo"):
  *   - daemonConnected ahora refleja omegaBridge.isConnected que se actualiza
  *     con un probe real en OmegaEngineBridge.connect().
  *   - Se agregó botón RECONECTAR para disparar connect() manualmente desde IO.
  *   - El polling cada 2s también dispara connect() si no está conectado
  *     (descarga extra ligera: solo un probe de socket, no un comando completo).
  *   - Estado SOCKET: muestra N/A cuando Magisk no está instalado (no error).
+ *   - FIX (UI, este commit): la advertencia "módulo instalado más viejo que
+ *     la app" existía como texto suelto atrapado dentro de ESTE MISMO
+ *     comentario KDoc desde hacía varios turnos — nunca fue código, nunca se
+ *     mostró a nadie. Se implementa de verdad más abajo, con comparación
+ *     semántica real (moduleVersion trae el prefijo "v" de module.prop,
+ *     BuildConfig.VERSION_NAME no — y "2.3.10" no debe leerse como menor
+ *     que "2.3.9" por comparación de texto plano).
  */
+private fun parseSemver(raw: String): List<Int> =
+    raw.removePrefix("v").split(".").mapNotNull { it.trim().toIntOrNull() }
+
+/** true si [installed] es estrictamente menor que [current], por componentes numéricos. */
+private fun isOlderVersion(installed: String, current: String): Boolean {
+    val a = parseSemver(installed)
+    val b = parseSemver(current)
+    if (a.isEmpty() || b.isEmpty()) return false // no comparamos "unknown" ni formatos raros
+    for (i in 0 until maxOf(a.size, b.size)) {
+        val ai = a.getOrElse(i) { 0}
+        val bi = b.getOrElse(i) { 0 }
+        if (ai != bi) return ai < bi
+    }
+    return false
+}
+
 @Composable
 fun MagiskStatusPanel(
     omegaBridge: OmegaEngineBridge,
@@ -123,6 +146,28 @@ fun MagiskStatusPanel(
         StatusRow("VERSIÓN",
             moduleVersion.isNotEmpty() && moduleVersion != "unknown",
             moduleVersion, "—")
+
+        if (isOlderVersion(moduleVersion, com.ivanna.omega.BuildConfig.VERSION_NAME)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                color = AmberSignal.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, AmberSignal.copy(alpha = 0.4f))
+            ) {
+                Text(
+                    "⚠ Módulo instalado ($moduleVersion) más viejo que la app " +
+                    "(${com.ivanna.omega.BuildConfig.VERSION_NAME}) — reinstala el ZIP " +
+                    "actual: los fixes del daemon (STL estático, bind con retry) solo " +
+                    "existen en builds nuevos. Un módulo viejo = binario viejo que " +
+                    "muere antes de bindear el socket.",
+                    color = AmberSignal,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
         StatusRow("DAEMON",  daemonRunning, "CORRIENDO", "DETENIDO")
 
         Spacer(Modifier.height(6.dp))
