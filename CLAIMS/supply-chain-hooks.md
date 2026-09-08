@@ -39,3 +39,28 @@
    workflow_dispatch dry_run) → push inmediato.
 2. Nunca escribir tokens en archivos/commits/logs.
 3. Al terminar o abandonar: actualizar AGENT_CLAIMS.md.
+
+## Verificación real en GitHub Actions (cierre del flanco)
+
+Corrida `dry_run` 34290736908 (commit 449ef608, workflow_dispatch): **success**.
+- Generate SBOM (SPDX + CycloneDX) -> success (Syft v1.4.1)
+- Vulnerability scan -> success (Trivy, SBOM-based)
+- Sign artifacts with Cosign -> success (keyless OIDC)
+- Upload security-artifacts -> success
+- Pasos de release (descarga cross-run, verificación dura, SLSA) -> skipped,
+  correcto en dry_run — quedarán activos en el primer push de tag v*.
+- La ruta de release (tag) no se dispara artificialmente: crear un tag
+  dispararía build.yml completo + release real — eso lo decide el flanco
+  Daemon cuando toque el próximo release; la lógica quedó probada por
+  construcción (misma máquina de pasos, gated por steps.mode.outputs.dry).
+
+## Entregado
+
+1. supply-chain.yml reescrito de raíz (commit 1ed2f6ed) — muerto desde su
+   creación por 3 roturas encadenadas, ahora: localiza corrida exitosa de
+   build.yml por SHA (espera 40 min), descarga cross-run válida
+   (run-id + github-token), artefacto faltante = ERROR duro, globs de firma
+   reales, dry_run para SBOM del repo.
+2. Hooks de git conectados (commit 449ef608): scripts/setup-hooks.sh
+   idempotente + verificación real (el propio commit pasó por el pre-commit
+   que corrió la puerta de 74 tests) + documentado en README.

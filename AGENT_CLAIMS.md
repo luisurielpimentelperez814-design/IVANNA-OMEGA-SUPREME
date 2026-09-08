@@ -621,7 +621,15 @@ corre por tag en un run separado de build.yml) → doble rotura estructural.
 (3) `.githooks/pre-commit` (que corre la puerta `run_ctest.sh`) está
 desconectado: `core.hooksPath` sin configurar.
 
-**Estado:** trabajando — commits individuales breves, push por ciclo.
+**Verificado en CI real:** corrida dry_run 34290736908 (449ef608) = success —
+Syft SBOM, Trivy scan, Cosign sign y upload de security-artifacts ejecutados
+de verdad por primera vez en la historia del workflow. Hooks verificados con
+el propio commit 449ef608 pasando por el pre-commit (puerta 74 tests, 15 s).
+
+**Estado:** entregado — supply chain viva y probada (dry_run), release-path
+corregida y endurecida (artefacto faltante = ERROR), hooks conectados. La
+ruta de tag se probará con el próximo release real (flanco Daemon). Si lo
+tomas, actualiza esta entrada.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
