@@ -1,0 +1,82 @@
+{
+  "system": "IVANNA OMEGA SUPREME IAEL v4",
+  "version": "4.0.0",
+  "timestamp": "2026-09-08 23:56:25 UTC",
+  "seed": 12648430,
+  "sample_rate": 48000,
+  "mode": "captura real",
+  "elapsed_seconds": 0.019,
+  "certification": "PASS",
+  "failures": [],
+  "checks": [
+    [
+      "bit_exact",
+      true,
+      "PASS",
+      "bypass exacto (error < 1e-9)"
+    ],
+    [
+      "thd_n",
+      null,
+      "PASS",
+      "bit-exact supera límite"
+    ]
+  ],
+  "metrics": {
+    "latency_ms": 0.0,
+    "max_sample_error": 0.0,
+    "bit_exact": true,
+    "error_rms": 0.0,
+    "thd_n_997": 5.051494494615072,
+    "thd_n_60": 6.28389491607002,
+    "snr_997": -5.051494494615074,
+    "imd_db": 6.748117551739428,
+    "spectral": {
+      "bands_db_spl": {
+        "31": -133.56,
+        "63": -20.282,
+        "125": -125.041,
+        "250": -20.282,
+        "500": -116.982,
+        "1000": -19.313,
+        "2000": -111.906,
+        "4000": -20.282,
+        "8000": -20.282,
+        "16000": -102.773
+      },
+      "mean_db": -26.1,
+      "delta_db_vs_mean": {
+        "31": -107.46,
+        "63": 5.818,
+        "125": -98.941,
+        "250": 5.818,
+        "500": -90.882,
+        "1000": 6.787,
+        "2000": -85.806,
+        "4000": 5.818,
+        "8000": 5.818,
+        "16000": -76.673
+      },
+      "worst_band_hz": 31,
+      "worst_delta_db": -107.46,
+      "flatness_pp_db": 114.247
+    },
+    "crest": 3.1233606515573995,
+    "invalid_samples": 0,
+    "clipping_events": 0,
+    "peak": 0.799957275390625,
+    "stereo": {
+      "valid": true,
+      "pearson": 1.0
+    }
+  },
+  "tolerances": {
+    "thd_n_db": -60.0,
+    "snr_db": 60.0,
+    "imd_db": -60.0,
+    "flatness_pp_db": 6.0,
+    "overshoot_pct": 5.0,
+    "latency_ms_max": 10.0,
+    "bit_error_max": 1e-09
+  }
+}

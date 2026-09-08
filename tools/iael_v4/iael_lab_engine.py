@@ -488,15 +488,42 @@ def certify(results, tolerances):
     return certification, failures, checks
 
 
+def gen_test_wavs(sr=48000, dur=1.0, outdir="telemetry/iael_v4/samples"):
+    """Genera WAV estereo de referencia (multitone 60..10kHz + 997Hz) para
+    captura en dispositivo (Ruta A/B): ref_in.wav (entrada) y
+    ref_out_passthrough.wav (identidad) para validar bit-exact + latencia 0."""
+    import wave
+    os.makedirs(outdir, exist_ok=True)
+    t = np.arange(int(sr * dur)) / sr
+    r = _rng()
+    mix = np.zeros_like(t)
+    for f in (60, 250, 1000, 4000, 10000):
+        mix += 0.2 * np.sin(2 * math.pi * f * t + r.uniform(0, 2 * math.pi))
+    mix += 0.1 * np.sin(2 * math.pi * 997 * t)
+    mix = mix / float(np.max(np.abs(mix))) * 0.8
+    stereo = np.stack([mix, mix], axis=1)
+    pcm = (stereo * 32767).astype(np.int16)
+    for name, arr in (("ref_in.wav", pcm), ("ref_out_passthrough.wav", pcm)):
+        with wave.open(os.path.join(outdir, name), "wb") as w:
+            w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr)
+            w.writeframes(arr.tobytes())
+    print("WAV de referencia generados en", outdir)
+
 def main():
     ap = argparse.ArgumentParser(description="IAEL v4 — Laboratorio de Certificación de Audio")
     ap.add_argument("--mode", choices=["self", "wav"], default="self")
     ap.add_argument("--sr", type=int, default=48000)
     ap.add_argument("--in", dest="wav_in")
     ap.add_argument("--out", dest="wav_out")
+    ap.add_argument("--gen-samples", action="store_true", help="genera WAV estéreo de referencia (Ruta A/B)")
+    ap.add_argument("--gen-sr", type=int, default=48000)
     ap.add_argument("--out-json", default=None)
     ap.add_argument("--report-md", default=None)
     args = ap.parse_args()
+
+    if args.gen_samples:
+        gen_test_wavs(args.gen_sr)
+        return 0
 
     results, elapsed = run(args.mode, args.sr, args.wav_in, args.wav_out)
     certification, failures, checks = certify(results, TOLERANCES)
