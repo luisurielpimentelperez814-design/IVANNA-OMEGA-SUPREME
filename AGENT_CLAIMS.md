@@ -630,6 +630,21 @@ el propio commit 449ef608 pasando por el pre-commit (puerta 74 tests, 15 s).
 corregida y endurecida (artefacto faltante = ERROR), hooks conectados. La
 ruta de tag se probará con el próximo release real (flanco Daemon). Si lo
 tomas, actualiza esta entrada.
+---
+
+### Benchmarks — tools/benchmark_suite.cpp + scripts/benchmark_device.sh + docs/BENCHMARKS.md
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08. Detalle en [CLAIMS/benchmarks.md](CLAIMS/benchmarks.md).
+**Alcance exacto — no editar mientras esté aquí:**
+- `tools/benchmark_suite.cpp`, `scripts/benchmark_device.sh`, `docs/BENCHMARKS.md`
+- Target CMake NUEVO y OPCIONAL (`ivanna_benchmark`) en el CMakeLists de tests host,
+  FUERA de la puerta (la puerta `ivanna_add_test(...)` no cambia)
+
+**Por qué este flanco (verificado hoy, no asumido):** `benchmark_suite.cpp`
+tiene CERO referencias en ningún CMakeLists/workflow/script (grep verificado)
+— no compila ni corre en ninguna parte. Y de hecho NUNCA compiló: llama
+`HarmonicExciter::setAmount()`, API que no existe (error verificado con g++).
+
+**Estado:** trabajando — commits individuales breves, push por ciclo.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
