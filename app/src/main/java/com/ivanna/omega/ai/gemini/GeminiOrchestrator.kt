@@ -3,6 +3,7 @@ package com.ivanna.omega.ai.gemini
 import android.util.Log
 import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
+import com.ivanna.omega.assistant.core.AdaptiveResponseEngine
 import com.ivanna.omega.assistant.core.AdaptiveResponseEngine.ResponseProfile
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
