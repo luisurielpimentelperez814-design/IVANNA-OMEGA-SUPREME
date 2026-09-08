@@ -31,6 +31,11 @@ add_library(ivanna_dsp_under_test STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/GainStage.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../anti_dolby.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../neuromorphic/volterra_h2_symmetric.cpp
+  # IvannaLab (coordinación con flanco IvannaLab, commit 2c0826c3): su sesión
+  # dejó test_ivannalab.cpp listo pero sin target — engancharlo exigía tocar
+  # este archivo (flanco Tests host). Enganchado por el dueño del flanco:
+  # medidores reales (LUFS BS.1770-4 con gates, SNR estadístico, LRA) bajo CI.
+  ${CMAKE_CURRENT_SOURCE_DIR}/../ivannalab/ivannalab.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaAudioClassifier.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaFusionCore.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../EvolutionaryEQ.cpp
@@ -318,3 +323,11 @@ gtest_discover_tests(test_oem_stability_suite)
 # test de un módulo que fue eliminado sin borrar su test. Queda documentado
 # aquí para que nadie lo "rescate" a ciegas: rescatarlo implica primero
 # decidir si AdaptiveEQ vuelve al DSP (flanco DSP nativo, no este).
+
+# ── test_ivannalab: suite host del laboratorio de medición IvannaLab ────────
+# Coordinación pendiente del flanco IvannaLab (commit 2c0826c3, marcado
+# unconfirmed): engancharlo exigía añadir ivannalab.cpp a ivanna_dsp_under_test,
+# que es de este flanco. Resuelto por el dueño del flanco Tests host —
+# los 7 tests (Peak/True Peak, THD, IMD SMPTE, SNR estadístico, LUFS con
+# gates, LRA, estado vacío) corren ahora en la puerta y en CI.
+ivanna_add_test(test_ivannalab)

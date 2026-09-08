@@ -53,15 +53,21 @@ TEST(IvannaLab, PeakAndTruePeak) {
 TEST(IvannaLab, ThdWithKnownHarmonics) {
     // h2 = 1e-3 (1%), h3 = 5e-4 (0.5%) sobre fundamental 0.1
     // THD esperado = 100 * sqrt(0.001² + 0.0005²) / 0.1 = 1.118 %
+    // FIX (flanco Tests host, coordinación con IvannaLab): 1000 Hz a 96k/4096
+    // cae en el bin 42.67 — muestreo NO coherente con DFT rectangular →
+    // leakage contamina h1/h2/h3 (medido: 0.844% vs 1.118%, fuera de
+    // tolerancia). Metrología correcta: frecuencia coherente — 750 Hz = bin
+    // 32 exacto; h2/h3/h4 = bins 64/96/128 exactos, leakage nulo.
+    constexpr float kF1 = 750.f;   // bin 32 exacto a 96k/4096
     const int frames = static_cast<int>(1.2f * kFs);
     const auto buf = genStereo(frames,
         [](int i) -> float {
-            const double w = 2.0 * M_PI * 1000.0 * i / kFs;
+            const double w = 2.0 * M_PI * kF1 * i / kFs;
             return static_cast<float>(0.1 * std::sin(w) + 0.001 * std::sin(2 * w) +
                                       0.0005 * std::sin(3 * w));
         },
         [](int i) -> float {
-            const double w = 2.0 * M_PI * 1000.0 * i / kFs;
+            const double w = 2.0 * M_PI * kF1 * i / kFs;
             return static_cast<float>(0.1 * std::sin(w) + 0.001 * std::sin(2 * w) +
                                       0.0005 * std::sin(3 * w));
         });
@@ -111,12 +117,12 @@ TEST(IvannaLab, SnrWithRealNoiseFloor) {
     const int onFrames    = static_cast<int>(0.4f * kFs);
     const int frames      = 3 * cycleFrames;
     const auto buf = genStereo(frames,
-        [[&](int i) {](int i) -> float {
+        [&](int i) -> float {
             const int m = i % cycleFrames;
             if (m < onFrames) return 0.1f * std::sin(2.0 * M_PI * 1000.0 * i / kFs);
             return 1e-4f;   // piso de ruido (DC)
         },
-        [[&](int i) {](int i) -> float {
+        [&](int i) -> float {
             const int m = i % cycleFrames;
             if (m < onFrames) return 0.1f * std::sin(2.0 * M_PI * 1000.0 * i / kFs);
             return 1e-4f;
@@ -153,12 +159,12 @@ TEST(IvannaLab, LraDynamicRange) {
     const int hiFrames    = static_cast<int>(0.4f * kFs);
     const int frames      = 2 * cycleFrames;
     const auto buf = genStereo(frames,
-        [[&](int i) {](int i) -> float {
+        [&](int i) -> float {
             const int m = i % cycleFrames;
             const float amp = (m < hiFrames) ? 0.2f : 0.05f;
             return amp * std::sin(2.0 * M_PI * 1000.0 * i / kFs);
         },
-        [[&](int i) {](int i) -> float {
+        [&](int i) -> float {
             const int m = i % cycleFrames;
             const float amp = (m < hiFrames) ? 0.2f : 0.05f;
             return amp * std::sin(2.0 * M_PI * 1000.0 * i / kFs);
@@ -170,17 +176,22 @@ TEST(IvannaLab, LraDynamicRange) {
     EXPECT_NEAR(r.luRange, 12.f, 1.5f) << "LRA ≈ 12 LU para 12 dB de dinámica";
 }
 
-// ── 7. Estado vacío: sin datos → campos -1 / -144 ─────────────────────────
+// ── 7. Estado vacío: sin datos → convención del header: -1 = no medido ────
 TEST(IvannaLab, EmptyState) {
     IvannaLab lab(static_cast<uint32_t>(kFs), 4096);
     const auto r = lab.measure();
 
+    // FIX (flanco Tests host): el test esperaba -144 en integratedLUFS y
+    // peakDBFS, pero la convención documentada en ivannalab.h (struct
+    // LabResult, todos los campos) es "-1 = no medido"; -144 es el valor de
+    // una MEDICIÓN de silencio real (ampToDb de amplitud ~0), no del estado
+    // vacío — measure() con framesAcc<=0 retorna LabResult{} (todo -1).
     EXPECT_EQ(r.thdPercent, -1.f);
     EXPECT_EQ(r.imdPercent, -1.f);
-    EXPECT_EQ(r.integratedLUFS, -144.f);
+    EXPECT_EQ(r.integratedLUFS, -1.f);
     EXPECT_EQ(r.luRange, -1.f);
     EXPECT_EQ(r.snrDB, -1.f);
-    EXPECT_EQ(r.peakDBFS, -144.f);
+    EXPECT_EQ(r.peakDBFS, -1.f);
     EXPECT_EQ(r.truepeakDBTP, -1.f);
 }
 

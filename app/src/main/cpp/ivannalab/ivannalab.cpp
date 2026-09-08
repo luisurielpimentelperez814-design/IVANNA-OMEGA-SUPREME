@@ -272,6 +272,13 @@ struct IvannaLab::Impl {
     float measureTruePeak() const {
         if (historyL.empty()) return -1.f;
         static constexpr int kOS = 4;
+        // FIX (raíz, flanco Tests host por coordinación con IvannaLab): ΣkFir =
+        // 1.14 → el interpolador tenía +1.14 dB de ganancia DC y SOBRESTIMABA
+        // el true peak de todo el audio (medido: seno con pico exactamente en
+        // muestra daba -18.84 dBTP en vez de -20.00 → +1.155 dB, la ganancia
+        // del filtro más ripple). Un interpolador debe ser de ganancia
+        // unitaria: se normaliza por su suma.
+        static constexpr float kFirGain = 1.f / 1.14f;
         static constexpr std::array<float, 16> kFir = {
             -0.001246f, -0.003098f,  0.006866f,  0.031409f,
              0.071902f,  0.119712f,  0.160748f,  0.183707f,
@@ -287,8 +294,8 @@ struct IvannaLab::Impl {
                 if ((srcUp % kOS) != 0) continue;
                 const int src = srcUp / kOS;
                 if (src >= 0 && src < static_cast<int>(historyL.size())) {
-                    yL += historyL.get(src) * kFir[t] * kOS;
-                    yR += historyR.get(src) * kFir[t] * kOS;
+                    yL += historyL.get(src) * kFir[t] * kFirGain * kOS;
+                    yR += historyR.get(src) * kFirGain * kFir[t] * kOS;
                 }
             }
             peak = std::max({peak, static_cast<float>(std::fabs(yL)), static_cast<float>(std::fabs(yR))});
