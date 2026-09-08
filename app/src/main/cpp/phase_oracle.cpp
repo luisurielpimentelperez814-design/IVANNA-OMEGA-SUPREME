@@ -120,6 +120,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject)
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
         JNIEnv*, jobject, jfloat alpha, jfloat beta, jfloat gamma) {
+    // Guarda de raíz (auditoría del flanco): Q negativa rompe la PSD de
+    // la covarianza → el filtro divergiría. NaN/Inf también se rechazan
+    // (la comparación `>= 0.f` es falsa para ambos). Clamp a 0 no basta:
+    // Q≡0 congelaría el filtro igual. La llamada se rechaza entera.
+    if (!(alpha >= 0.f) || !(beta >= 0.f) || !(gamma >= 0.f)) return JNI_FALSE;
     g_kalman.k.Q[0][0] = alpha;
     g_kalman.k.Q[1][1] = beta;
     g_kalman.k.Q[2][2] = gamma;
