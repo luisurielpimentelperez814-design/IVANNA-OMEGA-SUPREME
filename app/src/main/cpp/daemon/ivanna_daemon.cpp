@@ -45,21 +45,18 @@ void log_message(const std::string& msg) {
     if (log_file.is_open()) {
         auto now = std::chrono::system_clock::now();
         auto in_time_t = std::chrono::system_clock::to_time_t(now);
-        log_file << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d %H:%M:%S")
+        struct tm tm_buf{};
+        localtime_r(&in_time_t, &tm_buf);
+        log_file << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S")
                  << " [IVANNA-DAEMON] " << msg << std::endl;
     }
 }
 
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        log_message("Signal " + std::to_string(signal) + " received. Stopping...");
+        // Signal handler seguro: no hacer IO, malloc, mutex ni logging aquí.
+        // El loop principal detecta g_running y realiza el cierre ordenado.
         g_running = 0;
-        if (g_server_fd >= 0) {
-            shutdown(g_server_fd, SHUT_RDWR);
-            close(g_server_fd);
-            g_server_fd = -1;
-        }
-        if (!g_socket_path.empty() && g_socket_path[0] != '@') unlink(g_socket_path.c_str());
     }
 }
 
