@@ -196,11 +196,16 @@ struct AudioThreadState {
     // ya está separado de targetGainSmooth arriba: nativeProcess y
     // nativeProcessBlock pueden correr en hilos distintos.
     float peakGuardScale       = 1.0f;
+    // Diagnóstico: cuántas muestras tuvieron que sanearse por NaN/Inf. Debe
+    // quedarse en 0 en operación normal — si sube, hay una etapa divergiendo
+    // de verdad río arriba (ver el saneo final antes del re-intercalado).
+    uint64_t nanRecoveries     = 0;
     // nativeProcessBlock path (puede correr en thread distinto a nativeProcess)
     float blkTgSmooth          = 1.0f;
     float blkCaSmooth          = 0.0f;
     float blkErSmooth          = 0.0f;
     float blkPeakGuardScale    = 1.0f;
+    uint64_t blkNanRecoveries  = 0;
 };
 static AudioThreadState g_ats;
 
@@ -1351,10 +1356,28 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
         g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
     }
+    // FIX (safety net — NaN/Inf nunca saneado en la señal real, verificado
+    // con grep completo del archivo: los isfinite() existentes solo cubren
+    // los SETTERS de parámetros desde Kotlin/UI, ninguno cubre las MUESTRAS
+    // de audio en sí). Los biquads IIR de este motor pueden divergir — es
+    // el motivo explícito por el que existe el pre-EQ peak guard más
+    // arriba — pero ese guard compara pk > 0.89f, y toda comparación con
+    // NaN da falso: un NaN nunca dispara el guard y pasa intacto hasta
+    // acá. Multiplicar NaN por cualquier escala sigue siendo NaN. Última
+    // red antes de que la señal salga de esta función — si algo divergió
+    // en cualquier etapa entre el peak guard y aquí, se reemplaza por
+    // silencio en vez de dejar pasar NaN/Inf al HAL de audio.
+    // g_ats.nanRecoveries es diagnóstico: en operación normal debe quedarse
+    // en 0; si sube de verdad, hay una etapa divergiendo y hace falta
+    // investigarla en su origen, no acá — esto es la red, no el arreglo.
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
-        data[2 * i]     = g_ats.pdOutL[i];
-        data[2 * i + 1] = g_ats.pdOutR[i];
+        float l = g_ats.pdOutL[i];
+        float r = g_ats.pdOutR[i];
+        if (!std::isfinite(l)) { l = 0.f; g_ats.nanRecoveries++; }
+        if (!std::isfinite(r)) { r = 0.f; g_ats.nanRecoveries++; }
+        data[2 * i]     = l;
+        data[2 * i + 1] = r;
     }
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
@@ -1539,6 +1562,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
     g_safety_limiter.process(oL, oR, n);
+    // FIX (safety net — mismo motivo que en nativeProcess, ver ese
+    // comentario extenso): NaN/Inf nunca se saneaba en esta ruta tampoco.
+    // Campo separado (blkNanRecoveries) por el mismo motivo que el resto
+    // del estado de este path está separado — puede correr en otro hilo.
+    for (int i = 0; i < n; ++i) {
+        if (!std::isfinite(oL[i])) { oL[i] = 0.f; g_ats.blkNanRecoveries++; }
+        if (!std::isfinite(oR[i])) { oR[i] = 0.f; g_ats.blkNanRecoveries++; }
+    }
     jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
