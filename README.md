@@ -76,7 +76,7 @@ Dos rutas de procesamiento, un solo cerebro:
 
 | # | Etapa | Archivo | Qué hace | Defensas de producción |
 |---|-------|---------|----------|------------------------|
-| 1 | Pre-EQ peak guard | `ivanna_omega_jni.cpp` | Headroom antes del EQ | −1 dBFS preventivo |
+| 1 | Pre-EQ peak guard | `ivanna_omega_jni.cpp` | Headroom antes del EQ | −1 dBFS preventivo · **ataque instantáneo / release en rampa** (no simétrico — un guard de seguridad no puede rampear su reacción sin debilitarse; la vuelta a la normalidad sí se suaviza) |
 | 2 | ParametricEQ | `dsp/ParametricEQ.cpp` | 10 bandas biquad RBJ | Crossfade anti-zipper 15 ms · compensación de headroom por stack de bandas |
 | 3 | Compressor | `dsp/Compressor.cpp` | RMS + sidechain HPF | Envolvente suavizada, sin escalones |
 | 4 | HarmonicExciter | `dsp/HarmonicExciter.cpp` | Saturación Padé + 2ª/3ª armónica | Oversampling 2× + LPF 14.5 kHz · clamp Padé ±3 · bypass bit-exacto a wet=0 |
@@ -84,6 +84,7 @@ Dos rutas de procesamiento, un solo cerebro:
 | 6 | PDEngine | `pd_engine.hpp` | NHO + BiquadEnvelopeBank + CueBasedSpatial | Motor no-lineal con inhibición lateral |
 | 7 | GainStage | `dsp/GainStage.cpp` | Trim de salida suavizado | One-pole por muestra, sin doble limitación |
 | 8 | SafetyLimiter | `dsp/SafetyLimiter.cpp` | Techo −0.1 dBFS | Soft-knee real · ataque/release recalculados por sample rate de sesión (8k–384k) |
+| 9 | Saneo NaN/Inf | `ivanna_omega_jni.cpp` | Última red antes de `data`/DAC | Plegado en el re-intercalado final — si un IIR diverge en cualquier etapa 2-8, la muestra se reemplaza por silencio en vez de propagar NaN/Inf al HAL. Contador diagnóstico separado por ruta (`nanRecoveries`/`blkNanRecoveries`); debe quedarse en 0 en operación normal |
 
 **Anti-artefactos auditados en producción:** cambio de sala RIR con crossfade en frecuencia (~43 ms, la cola vieja muere sola en vez de cortarse en seco), carga de IR fuera del hot path (worker de control con condition variable — la lectura de WAV de disco no ocurre nunca en el callback de audio), mezcla de protección de voz con EMA por muestra, y la alocación del DSP por instancia de sesión (sin estado global compartido entre sesiones de AudioFlinger).
 
@@ -185,6 +186,7 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 - **Supply chain:** workflow dedicado con SBOM, firma Cosign keyless y attestations SLSA en cada tag `v*`.
 - **Versionado unificado:** `version.properties` es la fuente única de verdad; el build **falla** si `module.prop` diverge de él.
 - **Historial de auditoría:** 250+ commits de reparación quirúrgica — Use-After-Free del Engine, aislamiento DSP por sesión AudioFlinger, eliminación de alloc en realtime, lifecycle del fusion core, JNI signatures, STL estática del daemon, crossfade EQ, headroom, bypass exacto, race UAF en NPE, trust region del optimizador SAF, espectro Bark real. Cada fix: un commit, un push.
+- **Frente DSP nativo (en curso, ver `AGENT_CLAIMS.md`):** peak guard rediseñado a ataque instantáneo/release en rampa (eliminaba un salto de ganancia audible por bloque, tipo metralleta, al subir volumen cerca del umbral); red de saneo NaN/Inf agregada al final de la cadena (no existía — los `isfinite()` previos solo cubrían parámetros de UI, no la señal); `armeabi-v7a` retirado del build (asm inline inválido y sin función real: el daemon que hace root ya es arm64-v8a exclusivo). No cerrado: quedan las 5 condiciones propias del flanco en `AGENT_CLAIMS.md` sin cumplir todavía — esta nota se actualiza cuando se cumplan, no antes.
 
 ---
 
