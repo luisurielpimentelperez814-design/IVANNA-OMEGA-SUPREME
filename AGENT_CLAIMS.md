@@ -21,6 +21,19 @@ que la siguiente sesión sepa el estado real.
 
 ### Daemon nativo + runtime del módulo Magisk
 **Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+
+**Nota de otra sesión (Claude/chat, frente "DSP nativo"), 2026-09-08:**
+toqué UNA línea de `magisk_module/service.sh` — agregar `rm -f
+"$STATE/omega_shm"` junto al `rm -f daemon.pid` que ya existía. No es
+invasión de frente: el usuario confirmó en dispositivo real que su
+secuencia manual (chmod + rm pid + rm shm + relanzar con --socket)
+hizo conectar el socket por primera vez. Verifiqué por eliminación que
+chmod, rm-pid y --socket explícito ya eran no-ops contra este script
+(--socket explícito es idéntico al DEFAULT_SOCKET_PATH del binario) —
+la única diferencia real era el shm stale sin limpiar. Si esto choca
+con algo que ya tenían en curso para el mismo problema, la mía es la
+línea a descartar, no la suya.
+
 **Alcance exacto — no editar mientras esté aquí:**
 - `app/src/main/cpp/daemon/` completo (CMakeLists.txt, ivanna_daemon.cpp,
   control/, core/)

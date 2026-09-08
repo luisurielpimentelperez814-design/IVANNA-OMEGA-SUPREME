@@ -17,6 +17,15 @@ if pidof ivanna_daemon >/dev/null 2>&1; then
 fi
 
 rm -f "$STATE/daemon.pid"
+# FIX (socket nunca conectaba, confirmado en dispositivo real por el usuario):
+# un daemon anterior muerto sin cleanup podía dejar omega_shm corrupto o con
+# tamaño viejo. El siguiente arranque de service.sh nunca lo limpiaba, así
+# que el daemon nuevo podía fallar al recrear/mapear la SHM esperada por la
+# app. Verificado por eliminación contra el resto de su secuencia manual:
+# chmod 755 y "rm daemon.pid" ya los hacía este script; --socket explícito
+# es idéntico al default (DEFAULT_SOCKET_PATH="@omega_daemon_socket" en
+# ivanna_daemon.cpp) — ninguna de esas tres cambiaba nada. Esta línea sí.
+rm -f "$STATE/omega_shm"
 
 echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 
