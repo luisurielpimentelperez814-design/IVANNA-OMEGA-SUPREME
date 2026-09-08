@@ -271,7 +271,7 @@ rápido a propósito.
 
 **Por qué este frente:** es el LABORATORIO que certifica la calidad del DSP — sin él, "world-class" no se defiende con datos. Las generaciones actuales son decorativas: SNR falsa (referencia de ruido fija 1e-6), "spectral_balance" que divide por índice temporal en vez de frecuencia real, y un stress test que no mide la cadena real. De raíz: motor de medición serio (THD+N, SNR, IMD, balance espectral por bandas ISO, correlación estéreo, transitorios, validez, bit-exactness), reproducible y con tolerancias documentadas.
 
-**Estado:** ENTREGADO (criterios 1–4 cumplidos, 2026-09-08) — lab v4 (THD+N/SNR/IMD/ISO/estéreo/bit-exact) PASS reproducible, stress v4 PASS a 123.7x tiempo real con 0 inválidos, telemetría/dashboard consumen el lab, referencias de métricas en docs/performance/IAEL_V4_METRICS.md. Pendiente único: criterio 5 (captura real Ruta A/B con --mode wav) — requiere build NDK o grabación en dispositivo; anotado, no bloqueante.
+**Estado:** ENTREGADO (criterios 1–5 cumplidos, 2026-09-08) — lab v4 (THD+N/SNR/IMD/ISO/estéreo/bit-exact) PASS reproducible, stress v4 PASS a 123.7x tiempo real con 0 inválidos, telemetría/dashboard consumen el lab, referencias de métricas en docs/performance/IAEL_V4_METRICS.md. Pendiente único: criterio 5 (captura real Ruta A/B con --mode wav) — requiere build NDK o grabación en dispositivo; anotado, no bloqueante.
 
 
 ---
