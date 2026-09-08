@@ -31,7 +31,8 @@ object PiLstmBridge {
     fun setBeta(v: Float)         { if (ready) nativeSetBeta(v) }
     fun setGamma(v: Float)        { if (ready) nativeSetGamma(v) }
     fun setDelta(v: Float)        { if (ready) nativeSetDelta(v) }
-    fun setHarmonicGain(v: Float) { if (ready) nativeSetHarmonicGain(v) }
+    private var lastHarmonicGain = 0.2f
+    fun setHarmonicGain(v: Float) { if (ready) { lastHarmonicGain = v; nativeSetHarmonicGain(v) } }
     fun setHrtfEnabled(en: Boolean) { if (ready) nativeSetHrtfEnabled(en) }
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f
     fun getError(): Float = if (ready) nativeGetError() else 0f
@@ -59,7 +60,32 @@ object PiLstmBridge {
 
     // === NUEVOS PARÁMETROS NEURO-COCHLEAR ===
     // ── NPE completo ────────────────────────────────────────────────
-    fun setMasterGain(db: Float)  { if (ready) nativeSetEta(db / 18f + 0.5f) }  // -18..18 dB → 0..1
+    /**
+     * FIX (semántica cruzada): antes enrutaba el master gain (dB) a
+     * nativeSetEta, que es el AMORTIGUAMIENTO η de la ODE (rango 0..5) —
+     * el slider de ganancia maestra estaba deformando la dinámica del
+     * integrador, no el volumen. El motor PI-LSTM no expone ganancia de
+     * salida; la ruta honesta es el escalado de salida del player
+     * (mismo mecanismo que setAgc): gain_lin = 10^(dB/20).
+     * η queda expuesto con su nombre real en setOdeDamping().
+     */
+    fun setMasterGain(db: Float) {
+        if (!ready) return
+        val safeDb = if (db.isFinite()) db.coerceIn(-18f, 18f) else 0f
+        val gainLin = Math.pow(10.0, safeDb / 20.0).toFloat()
+        val inst = com.ivanna.omega.audio.IvannaBridgePlayer.activeInstance
+        if (inst != null) {
+            runCatching { inst.updateNpeKotlinParams(outputScaling = gainLin) }
+                .onFailure { Log.w(TAG, "setMasterGain updateNpe: ${it.message}") }
+        }
+        lastMasterGainLin = gainLin
+    }
+
+    /** Amortiguamiento η de la ODE (rango 0..5) — su propósito REAL. */
+    fun setOdeDamping(eta: Float) { if (ready) nativeSetEta(eta.coerceIn(0f, 5f)) }
+
+    /** Techo neuroplástico NP_max (rango 0.1..10) — invalida la semilla residual. */
+    fun setNeuroplasticityMax(npMax: Float) { if (ready) nativeSetNPMax(npMax.coerceIn(0.1f, 10f)) }
     fun setAgc(targetDb: Float, rate: Float) {
         if (!ready) return
         try {
@@ -85,11 +111,22 @@ object PiLstmBridge {
         // Cochlear → spatial wet: on=1.0, off=0.0
         if (ready) IvannaNativeLib.nativeSetSpatialWet(if (en) 1f else 0f)
     }
+    // Estado para restaurar tras bypass (FIX: antes harmonicGain se ponía a 0
+    // al entrar en bypass y JAMÁS se restauraba al salir — el ajuste del
+    // usuario se perdía en silencio tras un ciclo bypass on→off).
+    private var savedHarmonicGain = 0.2f
+    private var lastMasterGainLin = 1.0f
+
     fun setBypass(bypass: Boolean) {
         // Bypass NPE: deshabilita motor adaptativo y fuerza ganancia neutra
         if (ready) {
             IvannaNativeLib.nativeSetAdaptEnabled(!bypass)
-            if (bypass) nativeSetHarmonicGain(0f)
+            if (bypass) {
+                savedHarmonicGain = lastHarmonicGain
+                nativeSetHarmonicGain(0f)
+            } else {
+                nativeSetHarmonicGain(savedHarmonicGain)
+            }
         }
     }
 
@@ -97,18 +134,22 @@ object PiLstmBridge {
     private external fun nativeSetNPMax(v: Float)
 
     fun setClarity(clarity: Float) {
+        // FIX (UnsatisfiedLinkError latente): llamaba external fun sin guard
+        // 'ready' — crasheaba si la librería nativa no cargó.
+        if (!ready) return
         // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition
-        val harmonicGain = 0.1f + clarity * 0.8f
-        val lateralInhib = 0.2f + clarity * 0.6f
-        nativeSetHarmonicGain(harmonicGain)
-        nativeSetBeta(lateralInhib)
+        val c = clarity.coerceIn(0f, 1f)
+        setHarmonicGain(0.1f + c * 0.8f)
+        nativeSetBeta(0.2f + c * 0.6f)
     }
 
     fun setWarmth(warmth: Float) {
+        // FIX: mismo guard 'ready' que el resto del objeto.
+        if (!ready) return
         // Mapear calidez (0-1) a compresión OHC y gamma
-        val ohcComp = 0.1f + warmth * 0.7f
-        val gamma = 0.5f + warmth * 0.5f
-        nativeSetGamma(gamma)
+        val w = warmth.coerceIn(0f, 1f)
+        val ohcComp = 0.1f + w * 0.7f
+        nativeSetGamma(0.5f + w * 0.5f)
         // Nota: nativeSetOhcCompression se añadiría en C++ si existiera,
         // pero usamos nativeSetAlpha como proxy (ajuste de ganancia maestra)
         nativeSetAlpha(ohcComp)
