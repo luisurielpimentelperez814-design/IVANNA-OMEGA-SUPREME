@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import com.ivanna.omega.assistant.core.SecureConfigurationManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -391,10 +392,19 @@ private fun NetworkTab(onOpenNetwork: () -> Unit) {
         }
     }
 
-    val agentLinked = runCatching {
-        ctx.getSharedPreferences("ivanna_network_prefs", Context.MODE_PRIVATE)
-            .getString("gemini_api_key", "").orEmpty().isNotBlank()
-    }.getOrElse { false }
+    // FIX (frente UI/UX, AGENT_CLAIMS.md): agentLinked leia
+    // getSharedPreferences("ivanna_network_prefs")/"gemini_api_key" en texto
+    // plano — un archivo que NADIE escribe. La key real se guarda cifrada
+    // via SecureConfigurationManager (EncryptedSharedPreferences, archivo
+    // "ivanna_secure_v2"). Esta fila siempre mostraba "SIN CONFIGURAR"
+    // sin importar si Gemini estaba realmente enlazado — mismo patron de
+    // bug que la advertencia de version atrapada en un comentario
+    // (703cb6d7): la señal correcta existia en otro lado del codebase,
+    // esta pantalla nunca la consulto.
+    val secureState by SecureConfigurationManager.state.collectAsState()
+    val agentLinked = secureState.isConfigured
+
+    LaunchedEffect(Unit) { SecureConfigurationManager.initialize(ctx.applicationContext) }
 
     GlassCard("RED & MOTOR GEMINI", AuroraCyan, "WiFi · Datos · API Key · Agente IVANNA") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
