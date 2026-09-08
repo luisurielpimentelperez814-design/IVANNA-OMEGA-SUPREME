@@ -88,6 +88,33 @@ inline bool validateShmHeader(const void* base, size_t mappedLen) noexcept {
     return true;
 }
 
+// ── FASE 3: atomicidad cross-process (respuesta formal de la auditoría) ──────
+// placement-new de std::atomic sobre memoria mmap compartida es válido SOLO si
+// el atómico es lock-free: un atómico no-lock-free puede llevar un mutex
+// interno cuyo estado vive en la memoria compartida, y pthread_mutex en mmap
+// sin PTHREAD_PROCESS_SHARED es UB entre procesos. En ARM64/ARMv8.1 (LSE) y
+// ARMv7 con KUSER helpers, los atómicos de <=64 bits son lock-free — pero eso
+// es una propiedad del TARGET, no del código. Si alguien compila para un ABI
+// donde deje de cumplirse (o añade un atómico más grande, p.ej. u128), el
+// seqlock se volvería UB inter-proceso EN SILENCIO. Estos asserts lo convierten
+// en error de build.
+static_assert(std::atomic<uint64_t>::is_always_lock_free,
+              "epoch (u64) debe ser lock-free: seqlock inter-proceso depende de ello");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "atomicos u32 del estado compartido deben ser lock-free");
+static_assert(std::atomic<float>::is_always_lock_free,
+              "atomicos float del estado compartido deben ser lock-free");
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "atomicos bool del estado compartido deben ser lock-free");
+static_assert(std::atomic<int>::is_always_lock_free,
+              "atomicos int del estado compartido deben ser lock-free");
+// Alineación explícita del estado compartido: los atómicos lock-free de ARM64
+// exigen alineación natural; SHM_STATE_OFFSET (4096) la garantiza por página,
+// y este assert blinda que el struct no introduzca padding de alineación
+// incompatible entre compilaciones (daemon NDK vs app NDK).
+static_assert(alignof(OmegaSharedState) <= 16,
+              "OmegaSharedState no debe requerir alineacion > 16 (el mmap la garantiza)");
+
 class OmegaShmManager {
 public:
     // ── Lifecycle ─────────────────────────────────────────────────────────────
