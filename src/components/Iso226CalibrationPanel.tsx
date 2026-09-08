@@ -186,7 +186,7 @@ const CurveChart: React.FC<CurveChartProps> = ({ listenPhon, refPhon, compensati
 // ──────────────────────────────────────────────────────────────────────────────
 interface Iso226CalibrationPanelProps {
   params: DspParameters;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
 export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({

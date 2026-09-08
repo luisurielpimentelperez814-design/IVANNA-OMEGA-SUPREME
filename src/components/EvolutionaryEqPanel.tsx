@@ -13,7 +13,7 @@ declare global {
 interface EvolutionaryEqPanelProps {
   params: DspParameters;
   metrics: BenchmarkMetrics;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
 export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({

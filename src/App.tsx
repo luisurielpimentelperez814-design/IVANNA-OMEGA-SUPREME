@@ -169,7 +169,7 @@ export default function App() {
   }, [params]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
-  const handleParamChange = (key: keyof DspParameters, value: any) => {
+  const handleParamChange = <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => {
     setParams((prev) => ({ ...prev, [key]: value, activePreset: 'custom' }));
   };
 

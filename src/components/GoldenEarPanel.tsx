@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react';
 
 interface GoldenEarPanelProps {
   params: DspParameters;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
 export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamChange }) => {

@@ -5,7 +5,7 @@ import { ShieldAlert, BarChart2 } from 'lucide-react';
 interface TinyMlClassifierPanelProps {
   params: DspParameters;
   classification: TinyMlClassification;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
 export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({

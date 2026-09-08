@@ -6,7 +6,7 @@ interface HeaderProps {
   activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
   setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice') => void;
   params: DspParameters;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
   onApplyPreset: (presetName: DspParameters['activePreset']) => void;
 }
 

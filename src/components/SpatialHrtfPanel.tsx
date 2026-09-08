@@ -4,7 +4,7 @@ import { Compass } from 'lucide-react';
 
 interface SpatialHrtfPanelProps {
   params: DspParameters;
-  onParamChange: (key: keyof DspParameters, value: any) => void;
+  onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
 export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onParamChange }) => {
