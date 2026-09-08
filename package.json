@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "ivanna-omega-supreme-dashboard",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.3.6",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -32,5 +32,7 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "@types/express": "^4.17.21"
-  }
+  },
+  "description": "Control Dashboard web de IVANNA-OMEGA-SUPREME: motor de audio DSP nativo Android/Magisk con asistente Gemini",
+  "license": "UNLICENSED"
 }
