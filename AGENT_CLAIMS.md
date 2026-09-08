@@ -271,7 +271,7 @@ rápido a propósito.
 
 **Por qué este frente:** es el LABORATORIO que certifica la calidad del DSP — sin él, "world-class" no se defiende con datos. Las generaciones actuales son decorativas: SNR falsa (referencia de ruido fija 1e-6), "spectral_balance" que divide por índice temporal en vez de frecuencia real, y un stress test que no mide la cadena real. De raíz: motor de medición serio (THD+N, SNR, IMD, balance espectral por bandas ISO, correlación estéreo, transitorios, validez, bit-exactness), reproducible y con tolerancias documentadas.
 
-**Estado:** trabajando — sesión larga, un commit individual breve por cada mejora, push por ciclo. Avance 2026-09-08: + stress determinista v4 (PASS), benchmark_suite reparado (C1), modo captura WAV disponible; pendiente validar captura real del pipeline nativo (requiere build NDK).
+**Estado:** ENTREGADO (criterios 1–4 cumplidos, 2026-09-08) — lab v4 (THD+N/SNR/IMD/ISO/estéreo/bit-exact) PASS reproducible, stress v4 PASS a 123.7x tiempo real con 0 inválidos, telemetría/dashboard consumen el lab, referencias de métricas en docs/performance/IAEL_V4_METRICS.md. Pendiente único: criterio 5 (captura real Ruta A/B con --mode wav) — requiere build NDK o grabación en dispositivo; anotado, no bloqueante.
 
 
 ---
@@ -287,7 +287,7 @@ rápido a propósito.
 
 **Por qué este frente:** es el panel maestro del ecosistema (11 pestañas) y estaba libre. Auditado: identidad genérica (package.json: "react-example"), server Express sin validación de entrada ni rate-limit. De raíz: identidad correcta y seguridad básica del endpoint /api/chat.
 
-**Estado:** trabajando — primera pasada aplicada (rename + rate-limit/validación); faltan auth completa, despliegue y lockfile dedicado (anotado en la doc del flanco).
+**Estado:** reclamado — nota de coordinación 2026-09-08: otra sesión edita package.json (renombrado a 'ivanna-omega-supreme-dashboard') y server.ts en remoto; mis mejoras (rate-limit 30/min + validación messages/system) se descartaron en conflicto respetando protocolo. Falta definir dueño real de server.ts antes de aplicar el endurecimiento (hallazgo de la auditoría).
 
 ---
 
@@ -694,6 +694,26 @@ variante muerta y peligrosa: sin CLI (rutas hardcodeadas), sin resampleo
 post-conversión en todo el pipeline.
 
 **Estado:** trabajando — commits individuales breves, push por ciclo.
+
+
+---
+
+### Tests host nativos (CTest) — calidad de pruebas
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/cpp/tests/` (gammatone_numerical_stability, regression/test_oem_stability_suite, CMakeLists)
+- `tests/hrtf/` (test_ihr1_format.cpp), `scripts/run_ctest.sh`
+
+**Explícitamente NO toca:** `tools/benchmark_suite.cpp` + `docs/BENCHMARKS.md` (flanco Benchmarks),
+DSP nativo, daemon/Magisk/SHM, UI/UX, conversación/Gemini, SAF-HRTF, IAEL, Web Dashboard.
+
+**Por qué este frente:** la auditoría verificó (C2) que los tests C++ de host no compilan
+standalone: `test_ihr1_format.cpp` no encuentra `spatial/ihr1_format.hpp`, los tests de
+adaptive_engine fallan al enlazar (undefined refs) y los de GTest no encuentran `gtest/gtest.h`
+(includes vendored sin conectar). Objetivo: `run_ctest.sh` compila y ejecuta la suite completa
+sin errores, con el job `test-native-dsp` del CI usando el mismo camino (sin tocar sus jobs de daemon).
+
+**Estado:** reclamado — primera pasada en la próxima sesión de este flanco.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
