@@ -524,6 +524,24 @@ class IVANNAApplication : Application() {
         }
     }
 
+    /**
+     * Punto REAL donde el sistema avisa antes de matar el proceso (a
+     * diferencia de onTerminate, que en dispositivos reales casi nunca se
+     * llama). TRIM_MEMORY_UI_HIDDEN = la app ya no es visible: el siguiente
+     * paso del sistema es recortarla bajo presion de memoria. Aqui se
+     * fuerza a disco cualquier ajuste de slider con debounce pendiente —
+     * sin este flush, el ultimo toque del usuario (<500ms) se perdia en
+     * silencio si el proceso moria antes de que corriera el runnable.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_UI_HIDDEN) {
+            runCatching {
+                com.ivanna.omega.audio.ParameterStore.flushAllPending()
+            }.onFailure { Log.w(TAG, "flushAllPending: ${it.message}") }
+        }
+    }
+
     override fun onTerminate() {
         // Best-effort: onTerminate() no está garantizado en dispositivos reales,
         // pero el autosave periódico en evolveGeneration() ya cubre el caso de

@@ -35,6 +35,11 @@ class ParameterStore(context: Context) {
     private val gson = Gson()
     private val handler = Handler(Looper.getMainLooper())
     private var debounceRunnable: Runnable? = null
+
+    // Ultimo estado solicitado via debounce. Sin retenerlo, un flush de
+    // emergencia (flushPendingSave) no tendria QUE escribir: el runnable
+    // cancelado se lleva su captura de `state` a la tumba.
+    @Volatile private var lastRequestedState: AudioState? = null
     
     companion object {
         private const val TAG = "ParameterStore"
@@ -42,9 +47,37 @@ class ParameterStore(context: Context) {
         private const val AUDIO_STATE_KEY = "audio_state"
         private const val CURRENT_SCHEMA_VERSION = 2
         private const val DEBOUNCE_DELAY_MS = 500L
+
+        // Instancias vivas con debounce pendiente potencial. AudioStateManager
+        // y AdaptiveBackend crean CADA UNO su propio ParameterStore (verificado
+        // por grep) — un flush llamado sobre una sola instancia dejaria la
+        // ventana de 500ms de la otra abierta. Se registran todas y el flush
+        // de ciclo de vida barre el conjunto. WeakReference: la instancia vive
+        // lo que viva su duena (manager singleton), sin leaks si alguna se
+        // recolecta.
+        private val instances = java.util.Collections.synchronizedList(
+            java.util.ArrayList<java.lang.ref.WeakReference<ParameterStore>>()
+        )
+
+        /**
+         * Flush global de emergencia: escribe a disco TODO estado con debounce
+         * pendiente en cualquier instancia viva. Llamar desde onTrimMemory /
+         * ON_STOP del proceso — si el sistema mata la app dentro de la ventana
+         * de 500ms, sin esto el ultimo ajuste del slider se pierde en silencio.
+         */
+        fun flushAllPending() {
+            synchronized(instances) {
+                val it = instances.iterator()
+                while (it.hasNext()) {
+                    val ref = it.next().get()
+                    if (ref == null) it.remove() else ref.flushPendingSave()
+                }
+            }
+        }
     }
     
     init {
+        instances.add(java.lang.ref.WeakReference(this))
         // Verificar versión de esquema y migrar si es necesario
         val savedVersion = prefs.getInt(SCHEMA_VERSION_KEY, 0)
         if (savedVersion < CURRENT_SCHEMA_VERSION) {
@@ -60,6 +93,7 @@ class ParameterStore(context: Context) {
     fun saveParametersDebounced(state: AudioState) {
         // Cancelar guardar anterior si existe
         debounceRunnable?.let { handler.removeCallbacks(it) }
+        lastRequestedState = state
         
         // Programar nuevo guardar con debounce
         debounceRunnable = Runnable {
@@ -68,6 +102,23 @@ class ParameterStore(context: Context) {
         handler.postDelayed(debounceRunnable!!, DEBOUNCE_DELAY_MS)
         Log.d(TAG, "💾 Guardar programado con debounce (500ms)")
     }
+
+    /**
+     * Escribe a disco el ultimo estado solicitado AHORA, cancelando el
+     * debounce pendiente. Sin este flush, si el proceso moria dentro de la
+     * ventana de 500ms (usuario ajusta un slider y el sistema mata la app al
+     * ir a background, p.ej. por presion de memoria), el ultimo ajuste se
+     * perdia en silencio: el runnable nunca corrio y la RAM muere con el
+     * proceso. Idempotente y seguro de llamar aunque no haya nada pendiente.
+     */
+    fun flushPendingSave() {
+        debounceRunnable?.let { handler.removeCallbacks(it) }
+        debounceRunnable = null
+        lastRequestedState?.let {
+            Log.d(TAG, "💾 Flush de emergencia: escribiendo estado pendiente")
+            saveParametersNow(it)
+        }
+    }
     
     /**
      * Guardar parámetros INMEDIATAMENTE
@@ -75,10 +126,16 @@ class ParameterStore(context: Context) {
     fun saveParametersNow(state: AudioState) {
         try {
             val json = gson.toJson(state)
-            prefs.edit()
+            // commit() sincrono, no apply(): el blob es UN string pequeno, el
+            // coste de disco es despreciable, y con apply() un kill del proceso
+            // antes del flush perdia el cambio sin aviso (mismo bug ya visto y
+            // corregido en DSPStatePrefs). commit() devuelve Boolean: si falla,
+            // queda log — el llamante ya no "miente" al usuario.
+            val ok = prefs.edit()
                 .putString(AUDIO_STATE_KEY, json)
                 .putLong("last_save", System.currentTimeMillis())
-                .apply()
+                .commit()
+            if (!ok) Log.w(TAG, "⚠️ commit() devolvio false — el blob puede no haber llegado a disco")
             mirrorToCore(state)
             Log.d(TAG, "✅ Parámetros guardados: mode=${state.adaptiveMode}, intensity=${state.adaptiveIntensity}")
         } catch (e: Exception) {
@@ -110,7 +167,8 @@ class ParameterStore(context: Context) {
      * Borrar todos los parámetros guardados
      */
     fun clearAll() {
-        prefs.edit().clear().apply()
+        val ok = prefs.edit().clear().commit()
+        if (!ok) Log.w(TAG, "⚠️ clearAll: commit() devolvio false")
         Log.d(TAG, "🗑️ Todos los parámetros borrados")
     }
     
