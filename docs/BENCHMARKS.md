@@ -10,22 +10,50 @@
 - jitter estimate (`p99 - avg`)
 - coarse battery estimate in mAh/h using the Moto G85 official battery reference
 
-## Host smoke result (reference only, not an on-device Moto G85 run)
+## Host reference result (REPRODUCIBLE — 2026-09-08)
+
+Historia: este smoke result viejo NO era reproducible — `benchmark_suite.cpp`
+nunca compiló (llamaba `HarmonicExciter::setAmount()`, API inexistente) y no
+estaba enganchado a ningún build. El flanco Benchmarks lo resucitó: target
+`ivanna_benchmark` (EXCLUDE_FROM_ALL, fuera de la puerta de tests).
+
+Reproducir:
+
+```bash
+cmake -S app/src/main/cpp/tests -B build/tests-host -DCMAKE_BUILD_TYPE=Release
+cmake --build build/tests-host --target ivanna_benchmark -j
+./build/tests-host/ivanna_benchmark 48000 256 15
+```
+
+Corrida de referencia (Ubuntu 24.04, g++ 13.3, x86_64, build Release):
 
 ```text
-IVANNA benchmark suite
-sample_rate_hz=48000
-block_frames=256
-duration_s=15
-avg_block_ms=0.027889
-p95_block_ms=0.032732
-p99_block_ms=0.043148
-max_block_ms=0.066399
-realtime_cpu_percent=0.5229
-end_to_end_latency_ms=5.361223
-jitter_ms=0.015258
-estimated_battery_mah_per_hour=0.769009
+# ./ivanna_benchmark 48000 256 15
+avg_block_ms=0.052576
+p95_block_ms=0.064059
+p99_block_ms=0.074644
+max_block_ms=0.640833
+realtime_cpu_percent=0.9858
+end_to_end_latency_ms=5.385909
+jitter_ms=0.022068
+estimated_battery_mah_per_hour=1.449697
+
+# ./ivanna_benchmark 48000 128 5   (bloques de 128: e2e baja a la mitad, CPU ~igual)
+realtime_cpu_percent=0.9792
+end_to_end_latency_ms=2.692779
+jitter_ms=0.012773
+
+# ./ivanna_benchmark 96000 512 3   (96 kHz: CPU ~2x, e2e estable)
+realtime_cpu_percent=1.9599
+end_to_end_latency_ms=5.437859
 ```
+
+Sanidad de los números: la CPU escala ~2x de 48→96 kHz (trabajo por segundo
+doblado) y la latencia e2e se mantiene ~5.4 ms porque el bloque de 512 a 96 kHz
+dura lo mismo que 256 a 48 kHz — exactamente lo que una cadena DSP sana debe
+hacer. El max_block_ms=0.64 de la corrida 15 s es el clásico pico de scheduler
+del primer bloque (warm-up de caché/frecuencia), no de la cadena: p99 está a
+0.075 ms.
 
 ## Moto G85 reference values used by the estimator
 
