@@ -304,6 +304,52 @@ rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
 
 **Estado:** entregado — puerta de tests host verde, rápida (~1 min por pata en CI), paralela, con timeout por test, badge real y TSan en carril semanal. Si lo tomas, actualiza esta entrada.
 
+---
+
+### Control Dashboard web — stack TypeScript/React + servidor Express
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
+**Alcance exacto — no editar mientras esté aquí:**
+- `src/` completo (todo el frontend React: `main.tsx`, `App.tsx`, `components/`,
+  `agent/`, `voice/`, `data/`, `usePersist.ts`, `types.ts`, `index.css`)
+- `server.ts` (backend Express + proxy Gemini)
+- `vite.config.ts`, `index.html`, `tsconfig.json`, `package.json`,
+  `package-lock.json` (raíz, los del stack web)
+
+**Explícitamente NO toca:** app Android (Kotlin/Compose), DSP nativo C++,
+daemon/Magisk/SHM/socket, tests host CTest, Laboratorio IAEL, `tools/`,
+workflows de CI — salvo el mínimo indispensable si un fix del dashboard
+lo exige, notado en el commit.
+
+**Por qué este frente:** es el único flanco sustancial genuinamente libre
+(24 archivos TS/TSX, ~6.1k líneas) y el propio historial de este archivo
+documenta su riesgo: "un stack TypeScript/React agregado por una sesión y
+borrado por otra horas después". Está huérfano, sin dueño, sin typecheck
+verificado en CI y con deuda real visible a simple vista (nombre
+`react-example` en package.json, wildcard `app.get('*')` frágil en Express,
+sin lint configurado más allá de `tsc --noEmit`).
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. `tsc --noEmit` pasa limpio desde cero, con configuración estricta real.
+2. El servidor Express maneja errores/edge cases con robustez comercial
+   (validación de body, fallback de rutas SPA correcto, sin crash ante
+   payload malformado).
+3. El frontend refleja fielmente el producto real (terminología coherente
+   con la app Android: daemon, DSP, Gemini — sin colisiones como las que
+   el frente UI/UX encontró en Kotlin).
+4. Sin código muerto ni implementaciones duplicadas del mismo concepto.
+5. Build de producción (`npm run build`) funciona y produce artefacto servible.
+
+**Modo de trabajo:** sesión larga multi-turno, un commit breve individual
+por cada cambio con push inmediato, refinamiento de raíz hasta dejarlo
+magistral. No se cierra rápido a propósito.
+
+**Si eres otra sesión leyendo esto:** NO toques los archivos de arriba
+mientras esta entrada esté en "tomados". Elige cualquier otro flanco libre.
+Este flanco se trabaja así por decisión del propietario del repo: un solo
+agente por flanco, refinamiento de raíz sin importar cuántas sesiones tome.
+
+**Estado:** trabajando — sesión larga, multi-turno.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
