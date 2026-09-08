@@ -76,6 +76,17 @@ object ShmManager {
     // C++ (daemon/core/shm_manager.h). Cambio exige bump coordinado de ABI.
     private const val SHM_HEARTBEAT_OFF = SHM_HEADER_BYTES + 16
 
+    // ── ABI del ShmHeader (espejo de daemon/core/shm_manager.h) ─────────────
+    // validateShmHeader() en C++ es la fuente de verdad; aquí se replica la
+    // misma lógica con los offsets absolutos del struct (blindados allá por
+    // static_assert de offsetof): epoch:u64@0, frame_len:u32@8, magic:u32@12,
+    // version:u32@16, state_size:u32@20. Cualquier cambio exige bump
+    // coordinado de OMEGA_SHM_VERSION en ambos lados.
+    private const val SHM_OFF_MAGIC = 12
+    private const val SHM_OFF_VERSION = 16
+    private const val SHM_MAGIC_OMEG = 0x4F4D4547   // "OMEG"
+    private const val SHM_VERSION_EXPECTED = 2
+
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
 
@@ -121,12 +132,21 @@ object ShmManager {
         // por eso el hyperplane estaba muerto aunque el daemon lo publicara.
         val daemonBuf = runCatching { mapFromDaemon() }.getOrNull()
         if (daemonBuf != null) {
-            mappedBuffer = daemonBuf
-            mappedFromDaemon = true
-            Log.i(TAG, "SHM del daemon mapeada via SCM_RIGHTS (${daemonBuf.capacity()}B)")
-            return
+            // FASE 5: validar magic/version ANTES de aceptar el mapeo. Un
+            // backing de otra época (actualización Magisk con app vieja, o
+            // al revés) se rechaza aquí y se degrada a región local en vez
+            // de leer basura como si fuera telemetría del daemon.
+            if (isDaemonHeaderValid(daemonBuf)) {
+                mappedBuffer = daemonBuf
+                mappedFromDaemon = true
+                Log.i(TAG, "SHM del daemon mapeada via SCM_RIGHTS (${daemonBuf.capacity()}B, header OK)")
+                return
+            }
+            Log.e(TAG, "SHM del daemon con header inválido (magic/version) — rechazada, fallback a local")
+            runCatching { nativeUnmapSharedFd(daemonBuf) }
+        } else {
+            Log.w(TAG, "Daemon no entrego el fd de omega_shm — fallback a region local")
         }
-        Log.w(TAG, "Daemon no entrego el fd de omega_shm — fallback a region local")
 
         // ── 2) Fallback sin root: region local propia ─────────────────────────
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) {
@@ -254,6 +274,22 @@ object ShmManager {
     // optimizador Kotlin en sync con el daemon C++.
     //
     // Llamar periódicamente desde AdaptiveBackend.pollTelemetry() (10 Hz).
+    /**
+     * Valida el ShmHeader de una región recién mapeada del daemon:
+     * magic == "OMEG" y version soportada. Es el espejo Kotlin de
+     * validateShmHeader() (daemon/core/shm_manager.h). Lectura LITTLE_ENDIAN
+     * explícita — el daemon escribe en LE (ARM64) y el ByteBuffer JNI nace
+     * en BIG_ENDIAN por defecto de Java.
+     */
+    private fun isDaemonHeaderValid(buf: ByteBuffer): Boolean {
+        if (buf.capacity() < SHM_HEADER_BYTES) return false
+        return runCatching {
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            le.getInt(SHM_OFF_MAGIC) == SHM_MAGIC_OMEG &&
+            le.getInt(SHM_OFF_VERSION) == SHM_VERSION_EXPECTED
+        }.getOrDefault(false)
+    }
+
     /** Último heartbeat del daemon (ms monotónicos) o -1 si el SHM no es del daemon. */
     fun daemonHeartbeatMs(): Long {
         val buf = buffer ?: return -1L
