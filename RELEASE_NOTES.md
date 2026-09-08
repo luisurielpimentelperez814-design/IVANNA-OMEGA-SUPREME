@@ -1,6 +1,15 @@
 # IVANNA OMEGA SUPREME — Release Candidate v2.0
 
-## Qué cambia respecto a v1.8 (verificado con evidencia de código, no solo mensajes de commit)
+## 2026-09-08 — Sesión de agentes (refinamiento de calidad)
+- Laboratorio IAEL v4: motor de certificación real (THD+N IEC, SNR medido,
+  IMD SMPTE, bandas ISO, estéreo, bit-exact) — PASS reproducible.
+- Stress determinista v4 (seed fija, señal compuesta 60Hz+1kHz+ruido rosa):
+  PASS a 123.7x tiempo real, 0 inválidos.
+- Puerta de tests host `run_ctest.sh` operativa (plantilla reproducible).
+- Telemetría OEM y dashboard consumen el lab; referencias de métricas en
+  docs/performance/IAEL_V4_METRICS.md.
+- Coordinación multi-agente: AGENT_CLAIMS.md con flancos reclamados/entregados.
+Qué cambia respecto a v1.8 (verificado con evidencia de código, no solo mensajes de commit)
 
 ### Loop adaptativo — cerrado de punta a punta, en las dos rutas
 - ✅ `AdaptiveDecisionEngine`: métricas reales → decisión → actuador DSP

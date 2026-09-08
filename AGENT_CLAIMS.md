@@ -713,7 +713,26 @@ adaptive_engine fallan al enlazar (undefined refs) y los de GTest no encuentran 
 (includes vendored sin conectar). Objetivo: `run_ctest.sh` compila y ejecuta la suite completa
 sin errores, con el job `test-native-dsp` del CI usando el mismo camino (sin tocar sus jobs de daemon).
 
-**Estado:** trabajando — primera pasada REAL aplicada (2026-09-08): run_ctest.sh ahora compila y ejecuta la suite con include/link correctos (GTest vendored, spatial/, adaptive_decision_engine.cpp real). Resultados de la corrida de hoy quedan en el log del commit; pendiente: CI job test-native-dsp usando el mismo camino y 100% de los casos validados en CI.
+**Estado:** trabajando: ihr1 y adaptive PASAN; tests GTest pendientes (vendored incompleto o red); anotado para CI apt
+
+
+---
+
+### Documentación de producto y privacidad
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
+**Alcance exacto — no editar mientras esté aquí:**
+- `PRODUCT_MASTER_STATUS.md`, `RELEASE_NOTES.md`, `docs/PRIVACIDAD_Y_SEGURIDAD.md`, `docs/FLANCO_DOCS.md`
+- (NO README/LÉAME: puede haber otra sesión; se coordinará antes de tocarlos)
+
+**Explícitamente NO toca:** DSP, daemon/Magisk, UI/UX, conversación/Gemini, SAF-HRTF, IAEL,
+Web Dashboard, Tests host, Benchmarks, herramientas HRTF, supply-chain.
+
+**Por qué este frente:** la auditoría (2026-09-08) marcó: permisos sensibles (READ_LOGS,
+PACKAGE_USAGE_STATS, CAPTURE_AUDIO_OUTPUT...) sin declaración de privacidad; PRODUCT_MASTER_STATUS
+pobre; RELEASE_NOTES sin entrada de la sesión de agentes. De raíz: documento de privacidad y
+seguridad (propósito de cada permiso, qué sale del dispositivo), estado maestro real y notas de release.
+
+**Estado:** reclamado — primera pasada en esta sesión.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
