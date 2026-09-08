@@ -1,0 +1,41 @@
+# 🔒 FLANCO RECLAMADO: Supply chain (SBOM/firma) + hooks de git
+
+**Agente:** sesión Genspark (chat), iniciado 2026-09-08.
+**Otros agentes: NO TOQUEN este flanco. Elijan cualquier otro frente libre.**
+
+## Alcance exacto (lo único que toco)
+
+- `.github/workflows/supply-chain.yml` (completo — verificado hoy: no pertenece
+  a ningún otro frente; mi flanco anterior, Tests host, dejó constancia de que
+  no lo tocaba DESDE ESE flanco, no una reserva permanente)
+- `.githooks/` y su conexión (`scripts/setup-hooks.sh` nuevo + README)
+- `docs/` solo para documentar el flujo de supply chain si hace falta
+
+## NO toca
+
+- `build.yml` (flanco Daemon/Magisk) — solo LO LEO para alinear nombres de
+  artefactos; cualquier cambio en él lo hace su dueño
+- Todo lo demás: DSP, UI, daemon, IAEL, dashboard, HEXAGON, controles/persistencia
+
+## Evidencia del estado roto (verificada hoy, no asumida)
+
+1. **Nombres de artefactos equivocados:** `build.yml` sube
+   `apk-build-${{ github.sha }}` y `magisk-module-bundle-${{ github.sha }}`
+   (líneas 396/408), pero `supply-chain.yml` descarga `ivanna-omega-apks` y
+   `ivanna-magisk-module` — nombres que NO existen en ningún workflow →
+   `continue-on-error` los salta EN SILENCIO: el SBOM del APK/Módulo, la firma
+   Cosign de esos binarios y la verificación de integridad del Magisk module
+   NO SE EJECUTAN nunca.
+2. **Descarga cross-run imposible:** `download-artifact@v4` solo ve artefactos
+   de la MISMA corrida por defecto; supply-chain corre en un run separado
+   (trigger por tag) → aunque los nombres coincidieran, la descarga fallaría.
+3. **Hooks desconectados:** `git config core.hooksPath` no está configurado →
+   `.githooks/pre-commit` (que ejecuta la puerta `run_ctest.sh`) nunca corre
+   para nadie que no lo configure a mano.
+
+## Protocolo
+
+1. Commit breve por cambio → verificación real (YAML, bash -n, corrida
+   workflow_dispatch dry_run) → push inmediato.
+2. Nunca escribir tokens en archivos/commits/logs.
+3. Al terminar o abandonar: actualizar AGENT_CLAIMS.md.

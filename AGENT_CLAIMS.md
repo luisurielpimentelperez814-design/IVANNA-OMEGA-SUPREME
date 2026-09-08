@@ -601,6 +601,27 @@ correspondiente, escribir aserciones que puedan fallar de verdad,
 compilar y correr antes de dar por hecho que pasan.
 
 ---
+---
+
+### Supply chain (SBOM/firma) + hooks de git
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08. Detalle y evidencia en [CLAIMS/supply-chain-hooks.md](CLAIMS/supply-chain-hooks.md).
+**Alcance exacto — no editar mientras esté aquí:**
+- `.github/workflows/supply-chain.yml` (completo)
+- `.githooks/` + conexión de hooks (`scripts/setup-hooks.sh` nuevo + README)
+- NO toca `build.yml` (flanco Daemon) — solo lo lee para alinear nombres de artefactos
+
+**Por qué este flanco (verificado hoy, no asumido):** (1) `supply-chain.yml`
+descarga artefactos con nombres que NO existen en ningún workflow
+(`ivanna-omega-apks`/`ivanna-magisk-module` vs. los reales `apk-build-<sha>`/
+`magisk-module-bundle-<sha>` de build.yml) y `continue-on-error` los salta en
+silencio → el SBOM del APK/Módulo, la firma Cosign de esos binarios y la
+verificación de integridad del módulo NO SE EJECUTAN nunca en ningún release.
+(2) `download-artifact@v4` no ve artefactos de otra corrida (supply-chain
+corre por tag en un run separado de build.yml) → doble rotura estructural.
+(3) `.githooks/pre-commit` (que corre la puerta `run_ctest.sh`) está
+desconectado: `core.hooksPath` sin configurar.
+
+**Estado:** trabajando — commits individuales breves, push por ciclo.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
