@@ -1,6 +1,84 @@
-/* ivanna_dsp.idl — Hexagon DSP IDL stub */
+/* ============================================================================
+ * ivanna_dsp.idl — CONTRATO CANONICO del DSP Hexagon (FastRPC/QAIC)
+ * © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+ *
+ * UNICA fuente de verdad de la interfaz DSP. Los otros .idl del directorio
+ * fueron eliminados: declaraban contratos divergentes (init/process/deinit)
+ * que NO coincidian con los simbolos que el runtime resuelve via dlsym.
+ *
+ * Regla: el nombre de cada metodo aqui ES el simbolo que
+ * ivanna_dsp.cpp (loader ivanna::hexagon::rt) resuelve con dlsym() sobre
+ * libcdsprpc.so / libadsprpc.so. Si cambias esta interfaz, regenera con:
+ *   qaic -mdll -I${HEXAGON_SDK}/incs dsp/ivanna_dsp.idl
+ * y actualiza en el mismo commit:
+ *   - ivanna_dsp_rt.hpp  (firmas C de los punteros)
+ *   - ivanna_dsp.cpp     (nombres dlsym en load_once())
+ *   - jni/ivanna_npe_jni.cpp (mapeo nativeDsp*)
+ *
+ * Convencion de retorno: 0 = exito; <0 = error (el caller conmuta a CPU).
+ * ============================================================================
+ */
+
 interface IvannaDsp {
-    long init(in unsigned long sample_rate);
-    long process(in sequence<float> pcm, rout sequence<float> out);
-    long deinit();
+
+    /* Ciclo de vida del handle DSP (singleton por proceso en el loader). */
+    long ivanna_dsp_open(out unsigned long handle);
+    long ivanna_dsp_close(in unsigned long handle);
+
+    /* Procesamiento estereo: planar float32, frames muestras por canal.
+     * frames <= block_size pactado en la apertura; bloques mayores se
+     * rechazan (-EINVAL) para nunca sobreescribir buffers del caller. */
+    long ivanna_dsp_process_stereo(
+        in unsigned long handle,
+        in sequence<float> in_l,
+        in sequence<float> in_r,
+        rout sequence<float> out_l,
+        rout sequence<float> out_r,
+        in long frames);
+
+    /* Parametros neuro compactos (alpha/beta/gamma/delta). Los 4 parametros
+     * extendidos que Kotlin envia (eta/lateralInhib/ohcCompression/
+     * masterGainDb) requieren ampliar esta firma en una revision futura del
+     * skel QAIC — hoy el JNI solo reenvia estos 4. */
+    long ivanna_dsp_set_neuro_params(
+        in unsigned long handle,
+        in float alpha, in float beta, in float gamma, in float delta);
+
+    /* Metricas reales del DSP. Los campos HVX/VTCM que la UI muestra NO
+     * existen en esta revision del contrato — no fingirlos en el ARM side. */
+    long ivanna_dsp_get_metrics(
+        in unsigned long handle,
+        out float cpu_load,
+        out float peak_amp);
+
+    /* ── Simbolos extendidos (cliente FastRPC de alto nivel) ───────────────
+     * Opcionales: el loader los resuelve pero no exige su presencia. */
+
+    long ivanna_dsp_hrtf_init(
+        in unsigned long handle,
+        in unsigned long sample_rate_in,
+        in unsigned long sample_rate_out,
+        in unsigned long hrtf_filter_len,
+        in unsigned long block_size);
+
+    long ivanna_dsp_hrtf_convolve(
+        in unsigned long handle,
+        in sequence<float> in_l,
+        in sequence<float> in_r,
+        rout sequence<float> out_l,
+        rout sequence<float> out_r,
+        in float azimuth,
+        in float elevation,
+        in unsigned long num_frames);
+
+    long ivanna_dsp_fir_init(
+        in unsigned long handle,
+        in unsigned long upsampling_factor,
+        in unsigned long filter_len);
+
+    long ivanna_dsp_fir_upsample(
+        in unsigned long handle,
+        in sequence<float> input,
+        rout sequence<float> output,
+        in unsigned long input_frames);
 };
