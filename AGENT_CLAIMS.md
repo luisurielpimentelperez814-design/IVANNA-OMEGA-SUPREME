@@ -164,11 +164,13 @@ uno de esos, se limita al mínimo indispensable y se nota en el commit.
 necesitando una pasada de diseño real, y nadie lo había reclamado
 todavía — evita chocar con los dos frentes nativos ya tomados arriba.
 
-**Estado:** trabajando — 3 fixes reales en main:
+**Estado:** trabajando — 4 fixes reales en main:
 1. `c2826986` — desambiguación GEMINI vs daemon/socket en NetworkStatusPanel.
-2. `8ae1fc04` — mismo fix aplicado en IvannaAssistantScreen.kt (mismo composable, otro archivo).
-3. `703cb6d7` — advertencia de módulo desactualizado que estaba atrapada dentro de un comentario KDoc (nunca fue código ejecutable) implementada de verdad, con comparación semver real, en MagiskStatusPanel.
-Pendiente: seguir revisando IvannaAssistantScreen.kt (700+ líneas, solo cubrí el panel de Gemini) y evaluar la reorganización de paneles en categorías.
+2. `8ae1fc04` — mismo fix en IvannaAssistantScreen.kt.
+3. `703cb6d7` — advertencia de módulo desactualizado, real (antes atrapada en comentario muerto).
+4. `f80e6293` — SystemScreen leía un SharedPreferences muerto para el estado de Gemini ("sin configurar" aunque estuviera enlazado) — corregido a SecureConfigurationManager.state real.
+Navegación (IvannaRoute/MainActivity) auditada: sin pantallas huérfanas, sin duplicación real entre SystemScreen y MagiskStatusPanel (hub→detalle, no reemplazo).
+Pendiente: seguir por el resto de los 38 archivos en ui/ (cubiertos: IvannaAssistantScreen, NetworkStatusPanel, MagiskStatusPanel, SystemScreen).
 
 ---
 
