@@ -40,7 +40,22 @@ inline constexpr size_t   SHM_STATE_OFFSET  = 4096;         // pagina 0: control
 // Offsets FIJOS: los lee ShmManager.kt. Cambiarlos exige bump coordinado.
 inline constexpr size_t   SHM_SAF_FRAME_OFFSET   = 0;   // relativo a base+sizeof(ShmHeader)
 inline constexpr size_t   SHM_HEARTBEAT_OFFSET   = 16;  // idem
+// Bloque de salud del canal (roadmap flanco control-plane item 3): métricas
+// que el daemon actualiza y la app lee para observabilidad real del canal.
+// Layout fijo, todo u32 little-endian, relativo a base+sizeof(ShmHeader):
+//   [+24] saf_frames_publicados   — frames SAF escritos desde el arranque
+//   [+28] heartbeats_emitidos     — iteraciones del loop principal del daemon
+//   [+32] writes_rechazados       — writeControl() que devolvieron false
+//   [+36] comandos_procesados     — comandos JSON/texto atendidos
+//   [+40] clientes_conectados     — conexiones aceptadas acumuladas
+//   [+44] _reservado              — futuro (latencia de comando, torn-reads)
+// Los contadores u32 envuelven a los ~4e9 — aceptable para métricas de salud
+// (la app los muestrea a baja frecuencia y compara deltas, no valores).
+inline constexpr size_t   SHM_HEALTH_OFFSET      = 24;  // inicio del bloque
+inline constexpr size_t   SHM_HEALTH_BYTES       = 24;  // 6 x u32 (24..47)
 inline constexpr size_t   SHM_CONTROL_BYTES = 16384;        // reserva p/ frames
+static_assert(SHM_HEALTH_OFFSET + SHM_HEALTH_BYTES <= 48,
+              "el bloque de salud debe terminar antes del byte de control 48");
 inline constexpr size_t   SHM_SIZE_RAW      = SHM_STATE_OFFSET + sizeof(OmegaSharedState) + SHM_CONTROL_BYTES;
 inline constexpr size_t   SHM_SIZE          = (SHM_SIZE_RAW + 4095) & ~size_t(4095); // alineado a pagina
 static_assert(SHM_SIZE >= SHM_STATE_OFFSET + sizeof(OmegaSharedState),
