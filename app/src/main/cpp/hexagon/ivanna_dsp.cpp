@@ -16,15 +16,15 @@
 //    4. Es thread-safe: la carga se hace una única vez con std::call_once.
 //    5. Nunca lanza excepciones; nunca aborta si el DSP no está disponible.
 //
-//  Nota: el header ivanna_dsp.h del repo declara wrappers inline con
-//  "return -1". Este .cpp NO redefine esos símbolos — expone en su lugar el
-//  namespace ivanna::hexagon::rt que el resto del código (fastrpc_client,
-//  integration) debe consultar. Cuando el SDK real esté disponible y qaic
-//  regenere ivanna_dsp.h, basta con eliminar los wrappers inline: este
-//  loader los reemplaza en runtime sin recompilar.
+//  Nota: la API de bajo nivel (namespace ivanna::hexagon::rt) está declarada
+//  en ivanna_dsp_rt.hpp, que es la fuente de verdad de este loader. La
+//  fachada pública de alto nivel (namespace ivanna::hexagon) declarada en
+//  hexagon_dsp_integration.hpp se implementa al final de este archivo y
+//  delega en rt:: — así el símbolo ensure_available() que consume
+//  npe_engine queda definido (antes era un símbolo indefinido: crash/break).
 // ============================================================================
 
-#include "ivanna_dsp.hpp"
+#include "ivanna_dsp_rt.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -215,3 +215,29 @@ int dsp_get_metrics(void* handle, float* cpu_load, float* peak_amp) noexcept {
 }
 
 }}} // namespace ivanna::hexagon::rt
+
+// ── Fachada pública de alto nivel (ivanna::hexagon) ─────────────────────────
+// Implementa el contrato declarado en hexagon_dsp_integration.hpp delegando
+// en el loader rt de arriba. Sin estas definiciones, ensure_available() era
+// un símbolo declarado-pero-no-definido: cualquier TU que lo llamara (p.ej.
+// npe_engine) fallaba al enlazar (build -z defs) o al primer uso (lazy
+// binding). Ahora la cadena pública está cerrada.
+namespace ivanna { namespace hexagon {
+
+bool ensure_available() noexcept {
+    return rt::ensure_loaded();
+}
+
+bool is_available() noexcept {
+    return rt::is_available();
+}
+
+const char* active_library() noexcept {
+    return rt::active_library();
+}
+
+void release() noexcept {
+    rt::release();
+}
+
+}} // namespace ivanna::hexagon
