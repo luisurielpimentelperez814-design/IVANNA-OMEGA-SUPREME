@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * AudioRouteManager — detecta la ruta de salida de audio activa
@@ -34,6 +35,15 @@ object AudioRouteManager {
     private var audioManager: AudioManager? = null
     private var deviceCallback: AudioDeviceCallback? = null
     private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
+
+    // Handler unico del hilo main + generacion monotona para invalidar el
+    // callback de "restaurar wet=1" si la ruta cambia antes de que expire la
+    // ventana de 150ms. Sin esto: si el usuario desconecta el DAC dentro de
+    // esos 150ms, el postDelayed anterior seguia vivo y pisaba wet=1 sobre un
+    // history recien flusheado de una ruta que ya no era USB — tronido audible.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val hrtfRestoreToken = AtomicLong(0L)
+    private var pendingHrtfRestore: Runnable? = null
 
     fun start(context: Context) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
@@ -151,20 +161,47 @@ object AudioRouteManager {
         // Al salir del USB: restaurar wet=1.0 inmediatamente (history ya tiene
         // muestras limpias del nuevo dispositivo de salida).
         if (route == OutputRoute.USB) {
+            // Cancela cualquier restore pendiente de una rotacion previa (p.ej.
+            // usuario que hace USB->AUX->USB rapido) y adquiere token nuevo:
+            // solo el runnable que porte este token podra restaurar wet=1.
+            cancelPendingHrtfRestore()
+            val myToken = hrtfRestoreToken.incrementAndGet()
             AudioEngine.nativeSetHrtfWetDryStatic(0f)
             AudioEngine.nativeFlushHrtfHistoryStatic()
-            Handler(Looper.getMainLooper()).postDelayed({
-                // Solo restaurar si seguimos en ruta USB (el usuario no desconectó
-                // el DAC durante la ventana de 150ms).
-                if (currentRoute == OutputRoute.USB) {
+            val r = Runnable {
+                // Doble guard: seguimos en USB Y el token no fue invalidado por
+                // una rotacion posterior (dentro de la ventana de 150ms).
+                if (currentRoute == OutputRoute.USB &&
+                    hrtfRestoreToken.get() == myToken) {
                     AudioEngine.nativeSetHrtfWetDryStatic(1f)
-                    Log.i(TAG, "HRTF restaurado a wet=1.0 tras flush DAC USB-C")
+                    Log.i(TAG, "HRTF restaurado a wet=1.0 tras flush DAC USB-C (token=$myToken)")
                 }
-            }, 150L)
+                pendingHrtfRestore = null
+            }
+            pendingHrtfRestore = r
+            mainHandler.postDelayed(r, 150L)
         } else if (previousRoute == OutputRoute.USB) {
-            // Saliendo de USB → aseguramos wet=1.0 en la nueva ruta
+            // Saliendo de USB: cancelar el restore pendiente antes de tocar
+            // wet=1 en la nueva ruta — evita doble escritura y elimina la
+            // ventana en la que el runnable viejo podria haberse ejecutado
+            // *entre* este set y una siguiente rotacion.
+            cancelPendingHrtfRestore()
             AudioEngine.nativeSetHrtfWetDryStatic(1f)
             Log.i(TAG, "HRTF restaurado a wet=1.0 al salir de ruta USB")
         }
+    }
+
+    /**
+     * Cancela el restore pendiente de wet=1 tras un flush por rotacion a USB.
+     * Se llama tanto al entrar de nuevo a USB (nueva secuencia empieza limpia)
+     * como al salir de USB (evita que un runnable atrasado pise el wet=1 que
+     * ya escribio la rama de salida). Ademas invalida el token monotono para
+     * que un runnable ya encolado que consiga entrar antes del removeCallbacks
+     * detecte la invalidacion y no toque el motor.
+     */
+    private fun cancelPendingHrtfRestore() {
+        pendingHrtfRestore?.let { mainHandler.removeCallbacks(it) }
+        pendingHrtfRestore = null
+        hrtfRestoreToken.incrementAndGet()
     }
 }
