@@ -68,6 +68,22 @@ OmegaSharedState* omega_daemon_get_shared_state() {
         return nullptr;
     }
 
+    // FASE 5: validar el header ANTES de reinterpretar el mmap como estado
+    // vivo. Un backing viejo (actualización Magisk con app sin actualizar),
+    // truncado o corrupto se rechaza aquí en vez de devolver un puntero a
+    // basura que el hot path DSP leería como telemetría real.
+    if (!ivanna::validateShmHeader(g_map, g_map_size)) {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "SHM con header invalido (magic/version/state_size) — rechazando mapeo"
+        );
+        munmap(g_map, g_map_size);
+        g_map = nullptr;
+        g_map_size = 0;
+        return nullptr;
+    }
+
     auto* header =
         reinterpret_cast<ivanna::ShmHeader*>(g_map);
 
