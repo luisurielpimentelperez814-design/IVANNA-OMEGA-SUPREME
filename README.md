@@ -212,6 +212,22 @@ La app y el módulo van a la par: **v2.3.2 / 2302** en ambos — garantizado por
 
 ---
 
+## ✦ Controles, Persistencia y Ruta DAC (entrada tipo C)
+
+**Persistencia que sobrevive al proceso.** Todos los controles escriben con `commit()` síncrono (no `apply()` — un kill antes del flush ya no pierde el último ajuste), con esquema versionado y migraciones idempotentes. Los ~40 getters de la SSOT (`core/ParameterStore`) y el blob `AudioState` tienen invariante de tipo: una clave corrupta devuelve su default con log, jamás `ClassCastException` en el hilo de arranque. Si el sistema mata la app con un ajuste en la ventana de debounce (500 ms), `onTrimMemory(UI_HIDDEN)` fuerza el flush a disco antes. La restauración post-boot es idempotente (una sola vez por proceso, watchdog de 8 s bajo el límite ANR) y la carga de disco pasa por la misma validación de rangos que la UI.
+
+**Ruta libre para DAC (bypass del mezclador Android).** Al conectar un DAC USB-C (UAC1/UAC2), el sistema despierta la app vía `USB_DEVICE_ATTACHED` (receiver de manifest filtrado a clase de dispositivo AUDIO — no despierta con pendrives), se solicita el permiso UAC real y se abre el endpoint isócrono OUT directo por `usbfs`: 8 URBs en vuelo con `USBDEVFS_SUBMITURB/REAPURBNDELAY`, anillo SPSC lock-free, modo asíncrono (el DAC es master de reloj) y parada limpia con `DISCARDURB` + drenado. El AudioTrack del pipeline además se ancla al DAC vía `setPreferredDevice()` — sin pisar `isSpeakerphoneOn`/`isBluetoothA2dpOn` globales (esas APIs deprecadas cambiaban la ruta de *otras* apps).
+
+**Capacidades negociadas, no asumidas.** La frecuencia de muestreo se deriva del presupuesto real del endpoint (`maxPacketSize` / `bInterval`, con distinción full-speed vs high-speed), eligiendo la mayor tasa estándar que cabe (384k→44.1k) — un DAC UAC1 full-speed ya no recibe una configuración de 384 kHz que físicamente no cabe en su bus. Si ninguna tasa cabe, la apertura se aborta con telemetría explícita.
+
+Qué requiere cada cosa, sin fantasmas:
+- **Bypass isócrono directo:** DAC con endpoint isoc OUT + permiso USB concedido por el usuario. `isIsochronous()` reporta si el motor URB real está activo; si el ioctl no es viable, hay fallback a `write()` con pacing — y la telemetría dice cuál de los dos está corriendo.
+- **Hotplug a mitad de sesión:** cubierto por receiver dinámico (ATTACHED/DETACHED/permiso, `RECEIVER_NOT_EXPORTED`); si el DAC ya estaba conectado al abrir la app, se detecta por escaneo en frío de `deviceList`.
+- **Desconexión del DAC:** cierra la sesión directa al instante (sin sesión zombie con fd muerto) y la ventana de 150 ms del flush HRTF se cancela si la ruta cambia antes de expirar — sin el tronido "tssss" sobre el historial de la ruta anterior.
+- **Sin DAC USB o permiso denegado:** el audio sigue por la ruta normal de Android y el log lo dice explícitamente.
+
+---
+
 ## ✦ Lo que IVANNA no hace (honestidad de ingeniería)
 
 - **Sin root, la Ruta B no existe:** la app cae a `AudioEffect` por sesión (EQ/DynamicsProcessing de Android) — el DSP profundo custom requiere el módulo.
