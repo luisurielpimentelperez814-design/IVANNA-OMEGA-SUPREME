@@ -11,6 +11,16 @@
 #include <atomic>
 #include <cstddef>
 
+// C linkage: phase_oracle.cpp exporta esta funcion. Declarada ANTES del
+// struct para que este header sea autocontenido (compilable standalone).
+#ifdef __cplusplus
+extern "C" {
+#endif
+float phase_oracle_velocity();
+#ifdef __cplusplus
+}
+#endif
+
 namespace ivanna {
 
 // Interfaz read-only al KalmanCubic global de phase_oracle.cpp
@@ -38,10 +48,3 @@ struct PhaseOracleBridge {
 } // namespace ivanna
 
 // C linkage: phase_oracle.cpp exporta esto
-#ifdef __cplusplus
-extern "C" {
-#endif
-float phase_oracle_velocity();
-#ifdef __cplusplus
-}
-#endif
