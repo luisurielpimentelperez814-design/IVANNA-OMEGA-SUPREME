@@ -348,6 +348,59 @@ mientras esta entrada esté en "tomados". Elige cualquier otro flanco libre.
 Este flanco se trabaja así por decisión del propietario del repo: un solo
 agente por flanco, refinamiento de raíz sin importar cuántas sesiones tome.
 
+
+**Avance verificable (ciclo 1, 2026-09-08, commits 72e1c61a..40fdddf0):**
+- **Bug crítico encontrado y resuelto: el servidor de producción NO arrancaba.**
+  `esbuild` bundleaba `vite` entero dentro de `dist/server.cjs` → `TypeError:
+  Invalid URL` en runtime al leer `../../package.json`. Reproducido con
+  `NODE_ENV=production node dist/server.cjs` real. Fix: `--packages=external`
+  (node_modules se resuelven en runtime). Efecto medible: `server.cjs` de
+  6.9 MB → 5.3 KB, arranque confirmado y 6/6 edge cases pasando vía curl real:
+  SPA fallback 200, ruta profunda 200, API desconocida 404 JSON, chat sin key
+  503, JSON malformado 400 (antes tumba potencial del proceso), schema
+  inválido 503.
+- **Hardening de Express** (`server.ts` reescrito): validación de body
+  (1–100 mensajes, content 1–32k chars), límite de payload 256kb, headers de
+  seguridad (nosniff/frame/referrer), fallback SPA por middleware final en vez
+  de `app.get('*')` (patrón que rompe en Express 5), 404 explícito para
+  `/api/*`, manejador de errores final, caché inmutable para assets
+  fingerprinted, arranque degradado limpio sin API key (503 en chat, UI viva).
+- **TypeScript modo strict activado y limpio** (`strict`,
+  `noUnusedLocals/Parameters`, `noFallthroughCasesInSwitch`): al activarlo
+  saltaron 2052 líneas de errores latentes que el modo laxo ocultaba. Causa
+  raíz dominante: faltaban `@types/react` y `@types/react-dom` (todo el JSX
+  era `any` implícito). Tras instalarlos: 28 errores reales restantes, todos
+  código muerto (imports de iconos nunca usados, campos escritos pero jamás
+  leídos como `lastApiSuccess`, vars `phase`/`found`/`CHART_COLORS`) —
+  eliminados. Resultado: `tsc --noEmit` exit 0 con strict.
+- **Cero `any` en el flanco**: el último foco era la Web Speech API
+  (`SpeechRecognition`, ausente de la lib DOM de TS) — se declararon los tipos
+  mínimos en `src/types/speech-recognition.d.ts` (spec WICG + prefijo webkit)
+  y `catch (err: any)` → `unknown` con narrowing `DOMException`.
+- **`handleParamChange` genérico type-safe**: la firma `(key, value: any)`
+  desactivaba strict en los 8 paneles de parámetros DSP — ahora
+  `<K extends keyof DspParameters>(key: K, value: DspParameters[K])`.
+- **`usePersist` corregido de raíz**: la escritura a localStorage ocurría
+  dentro del updater de setState, que React StrictMode (activo en main.tsx)
+  ejecuta dos veces — los updaters deben ser puros. Ahora el side effect va
+  fuera del updater vía ref; setters memoizados con useCallback. Esto permitió
+  eliminar los 5 `eslint-disable` de efectos del flanco (deps completas).
+- **Coherencia de producto**: versión del dashboard unificada a 2.3.6 (fuente
+  única `version.properties` — mostraba v2.0 hardcodeado en Header y footer);
+  estado de chat decía "Claude Sonnet" pero el backend usa Gemini 2.5 Pro —
+  corregido; identidad real en package.json (`react-example` →
+  `ivanna-omega-supreme-dashboard`); cliente de chat propaga `data.error` del
+  servidor en vez de solo el status HTTP; mojibake de doble encoding
+  (C3A2C280C294) corregido en vite.config.ts y escaneado en todo el flanco
+  (0 restantes).
+
+**Pendiente para el siguiente ciclo de este flanco:** `npm run dev` end-to-end
+con GEMINI_API_KEY real (verificar round-trip completo del chat), auditar
+`src/data/cppFiles.ts` (996 líneas de C++ embebido — su CMakeLists declara
+proyecto "IvannaFusion 2.0.0", divergente del árbol real de fuentes), y
+code-splitting del bundle (AudioVisualizer/CodeExporter son candidatos a
+React.lazy por uso esporádico).
+
 **Estado:** trabajando — sesión larga, multi-turno.
 
 ## Cómo actualizar este archivo
