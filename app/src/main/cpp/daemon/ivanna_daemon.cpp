@@ -3,7 +3,7 @@
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
 #include "../IvannaSelfHealingEngine.hpp"
-#include <iostream>
+#include <iostream>\n#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -72,7 +72,17 @@ void ensure_directory_exists(const char* path) {
 int setup_shared_memory(int sampleRate) {
     ensure_directory_exists(OMEGA_DIR_PATH);
 
-    log_message("Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
+    log_message("// omega_shm recovery: eliminar estado incompleto de una ejecución anterior
+    try {
+        if (std::filesystem::exists("/data/adb/ivanna_omega/omega_shm")) {
+            // El gestor SHM valida contenido posteriormente.
+            // No se elimina automáticamente para preservar estado válido.
+        }
+    } catch (...) {
+        std::cerr << "[IVANNA-DAEMON] omega_shm recovery check failed" << std::endl;
+    }
+
+    Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
 
     if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
         log_message("Error: OmegaShmManager::init() fallo");
@@ -472,5 +482,14 @@ int main(int argc, char* argv[]) {
     controlServer.stop();
     selfHealer.stopMonitoring();
     log_message("Daemon shutdown REAL");
+    catch (const std::exception& e) {
+        std::cerr << "[IVANNA-DAEMON] fatal exception: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (...) {
+        std::cerr << "[IVANNA-DAEMON] fatal unknown exception" << std::endl;
+        return 1;
+    }
+
     return 0;
 }
