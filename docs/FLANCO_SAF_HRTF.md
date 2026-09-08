@@ -15,6 +15,13 @@ explicito, crossfade de potencia constante, cero denormales en el hilo DSP.
 3. Crossfade de potencia constante ya existente (auditado, correcto).
 
 ## Roadmap del flanco (siguientes sesiones)
+## Sesion 2 (2026-09-08): ITD interaural IMPLEMENTADO
+- computeItdSamples(): Woodworth (r/c)(sin+theta), clamp a kMaxItdSamples=64.
+- applyItd(): delay fraccional (interp. lineal) por oido al final de process(),
+  one-pole ~1.5 ms anti-zipper, camino rapido sin-delay, reset() limpia estado.
+- Convencion: azimuth>0 = fuente a la derecha -> oido izquierdo retrasado.
+
+## Roadmap del flanco (siguientes sesiones)
 - Convolucion particionada no uniforme (latency-0 head + tail) para RIR largos.
 - BRIR con reverberacion tardia decorrelada.
 - Personalizacion HRTF desde SAF latente (q_t) -> seleccion de dataset por usuario.

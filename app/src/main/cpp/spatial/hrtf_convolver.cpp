@@ -80,6 +80,10 @@ uint32_t HRTFConvolver::next_pow2(uint32_t v) {
 
 // -----------------------------------------------------------------------------
 void HRTFConvolver::init(uint32_t sampleRate) {
+    sampleRateF_ = static_cast<float>(sampleRate);
+    itdLineL_.assign(256, 0.0f);
+    itdLineR_.assign(256, 0.0f);
+    itdWrite_ = 0; itdSmoothed_ = 0.0f;
     sr_ = sampleRate;
     hrtf_.init(sampleRate, IR_LEN);
 
@@ -153,6 +157,9 @@ void HRTFConvolver::init(uint32_t sampleRate) {
 // FFTRadix2 ni reinicia SyntheticHRTF (no tienen estado dependiente de la
 // posición). Usado por ObjectRenderer::reset() al soltar un virtual speaker.
 void HRTFConvolver::reset() noexcept {
+    std::fill(itdLineL_.begin(), itdLineL_.end(), 0.0f);
+    std::fill(itdLineR_.begin(), itdLineR_.end(), 0.0f);
+    itdWrite_ = 0; itdSmoothed_ = 0.0f;
     if (!filterInitialized_) return;
 
     std::fill(histL_.begin(), histL_.end(), 0.0f);
@@ -256,6 +263,45 @@ void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness
         std::memcpy(H_ReR_targ_.data(), irR.data(), IR_LEN * sizeof(float));
         fft_->forward(H_ReL_targ_.data(), H_ImL_targ_.data());
         fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+float HRTFConvolver::computeItdSamples(float azimuthDeg) const noexcept {
+    if (sampleRateF_ <= 0.0f) return 0.0f;
+    // Woodworth (cabeza esferica): ITD = (r/c) * (sin(theta) + theta),
+    // theta en radianes limitado al hemisferio frontal |theta| <= pi/2.
+    const float theta = std::clamp(azimuthDeg * 0.01745329252f, -1.5707963f, 1.5707963f);
+    const float itdSec = (kItdHeadRadiusM / kItdSpeedOfSoundMps) * (std::sin(theta) + theta);
+    return std::clamp(itdSec * sampleRateF_, -(float)kMaxItdSamples, (float)kMaxItdSamples);
+}
+
+void HRTFConvolver::applyItd(float* outputL, float* outputR, uint32_t n) noexcept {
+    if (sampleRateF_ <= 0.0f || itdLineL_.empty()) return;
+    const float target = computeItdSamples(targetAzimuth_.load(std::memory_order_relaxed));
+    // One-pole ~1.5 ms: los movimientos de cabeza/fuente no producen zipper noise
+    const float kSmooth = 1.0f - std::exp(-1.0f / (0.0015f * sampleRateF_));
+    const uint32_t N = static_cast<uint32_t>(itdLineL_.size());
+    for (uint32_t i = 0; i < n; ++i) {
+        itdSmoothed_ += (target - itdSmoothed_) * kSmooth;
+        const float dL = itdSmoothed_ > 0.0f ?  itdSmoothed_ : 0.0f;
+        const float dR = itdSmoothed_ < 0.0f ? -itdSmoothed_ : 0.0f;
+        itdLineL_[itdWrite_] = outputL[i];
+        itdLineR_[itdWrite_] = outputR[i];
+        const int32_t w = static_cast<int32_t>(itdWrite_);
+        auto readFrac = [&](const std::vector<float>& line, float d) -> float {
+            if (d < 0.001f) return line[itdWrite_]; // camino rapido: sin delay
+            const float rp = static_cast<float>(w) - d;
+            int32_t i0 = static_cast<int32_t>(std::floor(rp));
+            const float frac = rp - static_cast<float>(i0);
+            i0 = ((i0 % static_cast<int32_t>(N)) + N) % N;
+            const int32_t i1 = (i0 + 1) % static_cast<int32_t>(N);
+            return line[i0] * (1.0f - frac) + line[i1] * frac;
+        };
+        outputL[i] = readFrac(itdLineL_, dL);
+        outputR[i] = readFrac(itdLineR_, dR);
+        itdWrite_ = (itdWrite_ + 1) % N;
     }
 }
 
@@ -493,7 +539,10 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         uint32_t missing = numSamples - samplesToDeliver;
         std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
         std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
-    }
+    
+    // 3. ITD interaural: delay fraccional por oido (post-convolucion)
+    applyItd(outputL, outputR, numSamples);
+}
 }
 
 } // namespace ivanna

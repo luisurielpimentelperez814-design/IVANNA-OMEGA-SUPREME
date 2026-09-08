@@ -114,6 +114,11 @@ public:
 
 private:
     void updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept;
+    // ITD: diferencia de tiempo interaural (Woodworth esferico) aplicada como
+    // delay fraccional (interp. lineal) por oido, con one-pole smoothing
+    // anti-zipper. La magnitud HRTF sola no transmite lateralizacion <1.5 kHz.
+    float computeItdSamples(float azimuthDeg) const noexcept;
+    void  applyItd(float* outputL, float* outputR, uint32_t n) noexcept;
     static uint32_t next_pow2(uint32_t v);
 
     // Configuración
@@ -159,6 +164,12 @@ private:
     // asignar en la ruta caliente.
     std::vector<float> customIrL_, customIrR_;
     std::atomic<bool>  customHrirActive_{false};
+
+    // Estado ITD (solo hilo de audio): lineas de delay por oido + suavizado
+    std::vector<float> itdLineL_, itdLineR_;
+    uint32_t itdWrite_   = 0;
+    float    itdSmoothed_ = 0.0f;  // muestras: >0 = fuente a la derecha (oido izq. retrasado)
+    float    sampleRateF_ = 0.0f;
 };
 
 } // namespace ivanna
