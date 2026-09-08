@@ -34,3 +34,13 @@
    corrida real del benchmark) → push inmediato.
 2. Nunca escribir tokens en archivos/commits/logs.
 3. Al terminar o abandonar: actualizar AGENT_CLAIMS.md.
+
+## Entregado (2026-09-08)
+
+- benchmark_suite.cpp compila y corre por primera vez (fix setAmount→setParams wet=0.45)
+- Target `ivanna_benchmark` (EXCLUDE_FROM_ALL) en tests/CMakeLists.txt — fuera de la puerta
+- Corridas verificadas: 48k/256/15s → 0.99% CPU, e2e 5.39 ms; 48k/128 → e2e 2.69 ms; 96k/512 → 1.96% CPU, e2e 5.44 ms
+- benchmark_device.sh: shellcheck limpio (SC2034, 3×SC2086 corregidos)
+- docs/BENCHMARKS.md: corrida de referencia reproducible con comandos exactos
+- Puerta de tests intacta (74/74) y CI verde (corrida 34291175045)
+- Pendiente externo: protocolo on-device Moto G85 (requiere hardware físico)

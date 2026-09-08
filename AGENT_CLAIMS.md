@@ -644,7 +644,18 @@ tiene CERO referencias en ningún CMakeLists/workflow/script (grep verificado)
 — no compila ni corre en ninguna parte. Y de hecho NUNCA compiló: llama
 `HarmonicExciter::setAmount()`, API que no existe (error verificado con g++).
 
-**Estado:** trabajando — commits individuales breves, push por ciclo.
+**Entregado (commits 3e9fbb7a, f3569419):** benchmark resucitado de raíz
+(setAmount->setParams con wet=0.45), target `ivanna_benchmark` nuevo
+(EXCLUDE_FROM_ALL, fuera de la puerta), corridas reales verificadas
+(48k/256: 0.99% CPU, e2e 5.39 ms; 96k/512: 1.96% — CPU escala 2x con la tasa,
+e2e estable), shellcheck limpio en benchmark_device.sh, BENCHMARKS.md con
+corrida de referencia REPRODUCIBLE. Puerta intacta 74/74; CI verde
+(corrida 34291175045).
+
+**Estado:** entregado — benchmark host compila, corre y documentado de forma
+reproducible por primera vez. Pendiente solo el protocolo on-device Moto G85
+(requiere hardware — documentado en docs/BENCHMARKS.md). Si lo tomas,
+actualiza esta entrada.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
