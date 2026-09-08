@@ -107,6 +107,16 @@ fun processAudioWithScores(
                 params.setMasterVolume((vol + 0.05f).coerceAtMost(1f))
                 Log.i(TAG, "Volumen: ${params.getMasterVolume()}")
             }
+            // FIX (mitigación de seguridad fantasma): override real que
+            // IvannaCognitiveCore genera al detectar temperatura alta —
+            // antes no existía en ningún ejecutor, la subida "segura y
+            // limitada" que el sistema decía haber aplicado nunca ocurría
+            // en la práctica. Mitad del incremento normal (0.025 vs 0.05).
+            "volume_up_safe" -> {
+                val vol = params.getMasterVolume().coerceIn(0f, 1f)
+                params.setMasterVolume((vol + 0.025f).coerceAtMost(1f))
+                Log.i(TAG, "Volumen (modo seguro, térmico alto): ${params.getMasterVolume()}")
+            }
             "volume_down" -> {
                 val vol = params.getMasterVolume().coerceIn(0f, 1f)
                 params.setMasterVolume((vol - 0.05f).coerceAtLeast(0f))
@@ -123,6 +133,14 @@ fun processAudioWithScores(
             }
             "spatial_mode" -> app.globalEffectManager.applyProfile(IvannaEffectProfile.SPATIAL)
                               .also { Log.i(TAG, "Modo espacial (SPATIAL) activado") }
+            // FIX (mitigación de seguridad fantasma): override real de
+            // IvannaCognitiveCore ante temperatura alta durante
+            // SPATIAL_EXPANSION — antes no existía en ningún ejecutor, la
+            // espacialidad "reducida" que el sistema decía haber aplicado
+            // nunca ocurría. IVANNA_OMEGA (virtualizerStrength=460, ~64%
+            // de SPATIAL=720) como variante real de menor intensidad.
+            "spatial_mode_lite" -> app.globalEffectManager.applyProfile(IvannaEffectProfile.IVANNA_OMEGA)
+                                   .also { Log.i(TAG, "Modo espacial reducido (térmico alto) activado") }
             "concert_mode" -> {
                 ConcertMode.shared.setRoomSize(0.7f)
                 ConcertMode.enabled = true

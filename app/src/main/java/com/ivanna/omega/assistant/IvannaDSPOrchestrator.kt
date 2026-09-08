@@ -204,7 +204,7 @@ class IvannaDSPOrchestrator(private val context: Context) {
                 "cinema_mode" -> applyNamedProfile("Cinematic")
                 "music_mode" -> applyNamedProfile("IVANNA OMEGA")
                 "concert_mode" -> applyNamedProfile("Concert Massive")
-                "spatial_mode" -> { voiceController.executeCommand("spatial_boost"); OrchestrationResult(true, "spatial", "Modo espacial activado", "spatial_boost") }
+                "spatial_mode" -> { voiceController.executeCommand("spatial_mode"); OrchestrationResult(true, "spatial", "Modo espacial activado", "spatial_mode") }
                 "gentle_mode" -> applyNamedProfile("Abbey Road")
                 "flat_mode" -> applyNamedProfile("Flat")
                 "volume_up" -> { voiceController.executeCommand("volume_up"); OrchestrationResult(true, "volume", "Volumen aumentado", "volume_up") }

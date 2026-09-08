@@ -67,7 +67,13 @@ class IvannaGeminiAgent(
         val VALID_DSP_COMMANDS = setOf(
             "voice_clarity", "cinema_mode", "music_mode", "concert_mode",
             "spatial_mode", "gentle_mode", "flat_mode", "volume_up",
-            "volume_down", "bass_boost", "treble_reduce", "auto_optimize"
+            "volume_down", "bass_boost", "treble_reduce", "auto_optimize",
+            // FIX (mitigación de seguridad fantasma): overrides reales que
+            // IvannaCognitiveCore genera ante clipping/temperatura alta —
+            // sin estar aquí, se rechazaban en la whitelist antes de poder
+            // llegar a ningún ejecutor, sin importar que ya tuvieran
+            // implementación real en VoiceController.executeCommand().
+            "volume_up_safe", "spatial_mode_lite"
         )
     }
 
