@@ -30,7 +30,13 @@ inline float softCeil(float x, float ceil_) {
 } // namespace
 
 void SafetyLimiter::setParams(float threshold, float ceiling) {
-    m_threshold = threshold;
+    if (!std::isfinite(threshold) || threshold <= 0.0f)
+        threshold = 0.630957f; // -4 dBFS aprox
+
+    if (!std::isfinite(ceiling) || ceiling <= 0.0f)
+        ceiling = 0.988553f; // -0.1 dBFS aprox
+
+    m_threshold = std::min(threshold, ceiling);
     m_ceiling   = ceiling;
 }
 
@@ -194,8 +200,10 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
             gain = m_attackCoef * gain + (1.0f - m_attackCoef) * blockGain;
             if (gain < blockGain) gain = blockGain;
         } else {
-            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef);
+            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef) * 1.0f;
+            if (!std::isfinite(gain)) gain = 1.0f;
             if (gain > 1.0f) gain = 1.0f;
+            if (gain < 0.0f) gain = 0.0f;
         }
 
         float outL = L[i] * gain;
