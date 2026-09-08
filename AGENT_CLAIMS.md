@@ -587,11 +587,18 @@ como el patrón que ya causó daño en este repo.
    explícita, coordinada con Genspark — no una resurrección accidental
    de infraestructura muerta que compita con la suya.
 
-**Estado:** trabajando — recién reclamado. Verificado en los 48: conteo
-de líneas y ausencia de includes reales (estructural, los 48). Leídos
-completos: 7 representativos (los citados arriba) + el más largo
-(`AdaptiveEQStressTest.cpp`). Quedan 40 por leer antes de decidir su
-destino individual — sin cambios de código todavía.
+**Estado:** trabajando. Los 48 leídos completos (100%, sin excepción —
+confirma el patrón de arriba en todos). Primer lote reparado y
+**verificado por ejecución real**, no leído-y-asumido: compilé y enlacé
+`safety_limiter_and_exciter_real_test.cpp` contra `SafetyLimiter.cpp`/
+`HarmonicExciter.cpp` reales (g++ directo, sin NDK — son C++ puro sin
+dependencias de Android) y corrí el binario — **8/8 passing real**.
+Reemplaza 3 fakes eliminados (`peak_guard_regression_test.cpp`,
+`test_peak_guard_regression.cpp`, `harmonic_exciter_overshoot_regression_test.cpp`).
+Quedan 44 archivos por resolver (reescribir/migrar/eliminar según el
+criterio de arriba) — mismo método: leer, verificar el archivo real
+correspondiente, escribir aserciones que puedan fallar de verdad,
+compilar y correr antes de dar por hecho que pasan.
 
 ---
 
