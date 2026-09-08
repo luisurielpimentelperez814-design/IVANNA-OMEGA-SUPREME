@@ -154,7 +154,7 @@ class GeminiOrchestrator(
         }
 
         val startTime = System.currentTimeMillis()
-        val result = runCatching { generateWith(model, systemInstruction, prompt) }
+        val result = runCatching { generateWith(model, systemInstruction, prompt, responseProfile) }
         val latency = System.currentTimeMillis() - startTime
         updateHealth(model.name, result.isSuccess, latency)
 
@@ -179,7 +179,7 @@ class GeminiOrchestrator(
             }
 
             val fbStart = System.currentTimeMillis()
-            val fbResult = runCatching { generateWith(fallback, systemInstruction, prompt) }
+            val fbResult = runCatching { generateWith(fallback, systemInstruction, prompt, profile) }
             updateHealth(fallback.name, fbResult.isSuccess, System.currentTimeMillis() - fbStart)
 
             fbResult.onSuccess {
@@ -200,7 +200,7 @@ class GeminiOrchestrator(
         val startTime = System.currentTimeMillis()
         try {
             var acc = ""
-            streamWith(model, systemInstruction, prompt).collect { text ->
+            streamWith(model, systemInstruction, prompt, responseProfile).collect { text ->
                 acc += text
                 emit(acc)
             }
@@ -236,7 +236,7 @@ class GeminiOrchestrator(
     /** true si el FirebaseApp por defecto ya fue inicializado (ver CloudSyncManager.ensureFirebaseAppReady()). */
     private fun firebaseAvailable(): Boolean = com.ivanna.omega.core.CloudSyncManager.isFirebaseAppReady()
 
-    private fun createLegacyModel(entry: ModelEntry, systemInstruction: String?): LegacyGenerativeModel {
+    private fun createLegacyModel(entry: ModelEntry, systemInstruction: String?, profile: ResponseProfile): LegacyGenerativeModel {
         // FIX (CI rojo): el SDK generativeai:0.9.0 no expone GenerativeModel.Builder;
         // GenerativeModel se instancia por constructor (mismo patrón que
         // assistant/core/GeminiOrchestrator.createAdaptiveModel).
@@ -248,15 +248,28 @@ class GeminiOrchestrator(
         // en vez del límite declarado por modelo. Verificado leyendo el código,
         // no asumido: generateContent()/generateContentStream() solo pasan
         // el prompt a modelInstance.generateContent(prompt), sin config.
+        //
+        // FIX (2026-09-07, perfil adaptativo huérfano): AdaptiveResponseEngine
+        // calculaba maxTokens/temperature por ResponseProfile con buena
+        // heurística (FAST=256tok/0.3temp para "hola", ENGINEERING_MODE=
+        // 8192tok/0.2temp para preguntas técnicas) pero nunca llegaba aquí —
+        // se usaba solo entry.maxOutputTokens (fijo, 8192 para los 3 modelos
+        // del registry, sin importar el perfil). El propio límite fijo del
+        // modelo sigue siendo el techo real (nunca se excede), pero ahora el
+        // perfil decide el límite efectivo por debajo de ese techo.
+        val effectiveMaxTokens = minOf(entry.maxOutputTokens, AdaptiveResponseEngine.getMaxTokens(profile))
         return LegacyGenerativeModel(
             modelName = entry.name,
             apiKey = apiKeyProvider(),
-            generationConfig = generationConfig { maxOutputTokens = entry.maxOutputTokens },
+            generationConfig = generationConfig {
+                maxOutputTokens = effectiveMaxTokens
+                temperature = AdaptiveResponseEngine.getTemperature(profile)
+            },
             systemInstruction = systemInstruction?.let { content { text(it) } }
         )
     }
 
-    private fun createFirebaseModel(entry: ModelEntry, systemInstruction: String?): FirebaseGenerativeModel {
+    private fun createFirebaseModel(entry: ModelEntry, systemInstruction: String?, profile: ResponseProfile): FirebaseGenerativeModel {
         // Backend "Gemini Developer API" vía Firebase — mismo backend gratuito
         // que el SDK legacy usaba directo con key, ahora autenticado por
         // App Check en vez de una API key viajando por la red.
@@ -269,28 +282,35 @@ class GeminiOrchestrator(
         // sigue el mismo patrón exacto que firebaseContent (misma clase de
         // paquete com.google.firebase.ai.type, mismo estilo DSL) pero
         // confírmalo contra el resultado real de CI antes de darlo por bueno.
+        //
+        // FIX (2026-09-07, perfil adaptativo huérfano): mismo fix que
+        // createLegacyModel() — ver ese comentario para el detalle completo.
+        val effectiveMaxTokens = minOf(entry.maxOutputTokens, AdaptiveResponseEngine.getMaxTokens(profile))
         return Firebase.ai(backend = GenerativeBackend.googleAI())
             .generativeModel(
                 modelName = entry.name,
-                generationConfig = firebaseGenerationConfig { maxOutputTokens = entry.maxOutputTokens },
+                generationConfig = firebaseGenerationConfig {
+                    maxOutputTokens = effectiveMaxTokens
+                    temperature = AdaptiveResponseEngine.getTemperature(profile)
+                },
                 systemInstruction = systemInstruction?.let { firebaseContent { text(it) } }
             )
     }
 
     /** Genera texto con el backend que esté realmente disponible ahora mismo. */
-    private suspend fun generateWith(entry: ModelEntry, systemInstruction: String?, prompt: String): String =
+    private suspend fun generateWith(entry: ModelEntry, systemInstruction: String?, prompt: String, profile: ResponseProfile): String =
         if (firebaseAvailable()) {
-            createFirebaseModel(entry, systemInstruction).generateContent(prompt).text ?: ""
+            createFirebaseModel(entry, systemInstruction, profile).generateContent(prompt).text ?: ""
         } else {
-            createLegacyModel(entry, systemInstruction).generateContent(prompt).text ?: ""
+            createLegacyModel(entry, systemInstruction, profile).generateContent(prompt).text ?: ""
         }
 
     /** Streaming con el backend que esté realmente disponible ahora mismo. */
-    private fun streamWith(entry: ModelEntry, systemInstruction: String?, prompt: String): Flow<String> =
+    private fun streamWith(entry: ModelEntry, systemInstruction: String?, prompt: String, profile: ResponseProfile): Flow<String> =
         if (firebaseAvailable()) {
-            createFirebaseModel(entry, systemInstruction).generateContentStream(prompt).map { it.text ?: "" }
+            createFirebaseModel(entry, systemInstruction, profile).generateContentStream(prompt).map { it.text ?: "" }
         } else {
-            createLegacyModel(entry, systemInstruction).generateContentStream(prompt).map { it.text ?: "" }
+            createLegacyModel(entry, systemInstruction, profile).generateContentStream(prompt).map { it.text ?: "" }
         }
 
     private fun updateHealth(modelName: String, success: Boolean, latencyMs: Long) {
@@ -339,7 +359,7 @@ class GeminiOrchestrator(
             val start = System.currentTimeMillis()
             val result = runCatching {
                 withTimeout(HEALTH_CHECK_TIMEOUT_MS) {
-                    generateWith(model, null, "OK")
+                    generateWith(model, null, "OK", ResponseProfile.NORMAL)
                 }
             }
             updateHealth(model.name, result.isSuccess, System.currentTimeMillis() - start)

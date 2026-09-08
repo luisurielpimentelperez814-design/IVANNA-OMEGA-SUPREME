@@ -12,7 +12,23 @@ import android.util.Log
  *   ENGINEERING_MODE: código/técnico extenso, <8192 tokens
  */
 class AdaptiveResponseEngine {
-    companion object { private const val TAG = "AdaptiveResponseEngine" }
+    companion object {
+        private const val TAG = "AdaptiveResponseEngine"
+
+        fun getMaxTokens(profile: ResponseProfile): Int = when (profile) {
+            ResponseProfile.FAST -> 256
+            ResponseProfile.NORMAL -> 1024
+            ResponseProfile.DEEP_REASONING -> 4096
+            ResponseProfile.ENGINEERING_MODE -> 8192
+        }
+
+        fun getTemperature(profile: ResponseProfile): Float = when (profile) {
+            ResponseProfile.FAST -> 0.3f
+            ResponseProfile.NORMAL -> 0.7f
+            ResponseProfile.DEEP_REASONING -> 0.5f
+            ResponseProfile.ENGINEERING_MODE -> 0.2f
+        }
+    }
 
     enum class ResponseProfile { FAST, NORMAL, DEEP_REASONING, ENGINEERING_MODE }
 
@@ -42,19 +58,5 @@ class AdaptiveResponseEngine {
 
         Log.d(TAG, "Selected NORMAL for: ${query.take(40)}")
         return ResponseProfile.NORMAL
-    }
-
-    fun getMaxTokens(profile: ResponseProfile): Int = when (profile) {
-        ResponseProfile.FAST -> 256
-        ResponseProfile.NORMAL -> 1024
-        ResponseProfile.DEEP_REASONING -> 4096
-        ResponseProfile.ENGINEERING_MODE -> 8192
-    }
-
-    fun getTemperature(profile: ResponseProfile): Float = when (profile) {
-        ResponseProfile.FAST -> 0.3f
-        ResponseProfile.NORMAL -> 0.7f
-        ResponseProfile.DEEP_REASONING -> 0.5f
-        ResponseProfile.ENGINEERING_MODE -> 0.2f
     }
 }
