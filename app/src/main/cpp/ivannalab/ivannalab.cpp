@@ -64,23 +64,41 @@ struct Biquad {
     void reset() noexcept { x1 = x2 = y1 = y2 = 0.f; }
 };
 
-static Biquad makeKWeightStage1_48k() noexcept {
+// Pre-filter del K-weighting BS.1770-4: high-shelf +4 dB @ 1681.974 Hz, Q=0.7071.
+// Diseñado PARA LA SAMPLE RATE dada (los coeficientes fijos eran de 48 kHz;
+// reutilizarlos a 96 kHz doblaba la esquina del shelf y sesgaba el LUFS).
+static Biquad makeKWeightStage1(float sr) noexcept {
+    const float f0 = 1681.974f, gainDb = 4.f, Q = 0.7071f;
+    const float A = std::pow(10.f, gainDb / 40.f);
+    const float w0 = 2.f * static_cast<float>(M_PI) * f0 / sr;
+    const float cw = std::cos(w0), sw = std::sin(w0);
+    const float alpha = sw / (2.f * Q);
+    const float tsa = 2.f * std::sqrt(A) * alpha;
+    const float a0 = (A + 1.f) - (A - 1.f) * cw + tsa;
+    const float a1 = 2.f * ((A - 1.f) - (A + 1.f) * cw);
+    const float a2 = (A + 1.f) - (A - 1.f) * cw - tsa;
     Biquad b;
-    b.b0 =  1.53512485958697f;
-    b.b1 = -2.69169618940638f;
-    b.b2 =  1.19839281085285f;
-    b.a1 = -1.69065929318241f;
-    b.a2 =  0.73248077421585f;
+    b.b0 = (A * ((A + 1.f) + (A - 1.f) * cw + tsa)) / a0;
+    b.b1 = (-2.f * A * ((A - 1.f) + (A + 1.f) * cw)) / a0;
+    b.b2 = (A * ((A + 1.f) + (A - 1.f) * cw - tsa)) / a0;
+    b.a1 = a1 / a0;
+    b.a2 = a2 / a0;
     return b;
 }
 
-static Biquad makeKWeightStage2_48k() noexcept {
+// RLB del K-weighting BS.1770-4: high-pass 2º orden @ 38.135 Hz, Q=0.5003.
+static Biquad makeKWeightStage2(float sr) noexcept {
+    const float f0 = 38.135f, Q = 0.5003f;
+    const float w0 = 2.f * static_cast<float>(M_PI) * f0 / sr;
+    const float cw = std::cos(w0), sw = std::sin(w0);
+    const float alpha = sw / (2.f * Q);
+    const float a0 = 1.f + alpha;
     Biquad b;
-    b.b0 =  1.0f;
-    b.b1 = -2.0f;
-    b.b2 =  1.0f;
-    b.a1 = -1.99004745483398f;
-    b.a2 =  0.99007225036621f;
+    b.b0 = (1.f + cw) * 0.5f / a0;
+    b.b1 = -(1.f + cw) / a0;
+    b.b2 = (1.f + cw) * 0.5f / a0;
+    b.a1 = (-2.f * cw) / a0;
+    b.a2 = (1.f - alpha) / a0;
     return b;
 }
 
@@ -151,7 +169,10 @@ struct IvannaLab::Impl {
     LabRingBuffer<float, 512> gatedBlocks;
     LabRingBuffer<float, 16384> historyL;
     LabRingBuffer<float, 16384> historyR;
-    float lufsSnapshot = -144.f;
+    // SNR estadístico: energías medias por bloque de 100 ms (señal cruda);
+    // los bloques de menor energía actúan como ventana de silencio real.
+    LabRingBuffer<float, 512> blockEnergy;
+    double blockSqL = 0.0, blockSqR = 0.0;
 
     // FIX (SIGSEGV en measure(), tombstone 2026-08-08 17:24, proceso
     // com.ivanna.omega, hilo "DefaultDispatch"): feed() corre en el hilo
@@ -168,14 +189,11 @@ struct IvannaLab::Impl {
     explicit Impl(uint32_t sr, int fft)
         : sampleRate(sr), fftSize(std::max(2048, fft))
     {
-        if (sr == 96000) {
-            kw1L = makeKWeightStage1_48k();  kw2L = makeKWeightStage2_48k();
-            kw1R = makeKWeightStage1_48k();  kw2R = makeKWeightStage2_48k();
-        } else {
-            kw1L = makeGenericHighPass(100.f, 0.7071f, (float)sr);
-            kw2L = makeGenericHighPass(38.f,  0.5f,    (float)sr);
-            kw1R = kw1L; kw2R = kw2L;
-        }
+        // K-weighting BS.1770-4 diseñado PARA ESTA sample rate (fix de raíz:
+        // los coeficientes fijos de 48 kHz se reutilizaban a 96 kHz, doblando
+        // la esquina del shelf y sesgando la medición LUFS).
+        kw1L = makeKWeightStage1((float)sr);  kw2L = makeKWeightStage2((float)sr);
+        kw1R = kw1L; kw2R = kw2L;
 
         winFrames  = std::max(1, static_cast<int>(sr * 0.4f));
         stepFrames = std::max(1, static_cast<int>(sr * 0.1f));
@@ -200,7 +218,8 @@ struct IvannaLab::Impl {
         gatedBlocks.clear();
         historyL.clear();
         historyR.clear();
-        lufsSnapshot = -144.f;
+        blockEnergy.clear();
+        blockSqL = blockSqR = 0.0;
     }
 
     void feed(const float* buf, int frames) {
@@ -215,6 +234,8 @@ struct IvannaLab::Impl {
             if (absR > peakAbs) peakAbs = absR;
             sumSqL += (double)(l * l);
             sumSqR += (double)(r * r);
+            blockSqL += (double)(l * l);
+            blockSqR += (double)(r * r);
             historyL.push(l);
             historyR.push(r);
 
@@ -225,6 +246,10 @@ struct IvannaLab::Impl {
             ++stepFill;
 
             if (stepFill >= stepFrames) {
+                // Energía media del bloque de 100 ms (señal cruda, sin K-weight)
+                blockEnergy.push(static_cast<float>((blockSqL + blockSqR) / (2.0 * stepFrames)));
+                blockSqL = blockSqR = 0.0;
+
                 kwBufL[kwBufHead] = static_cast<float>(stepSumSqKwL / stepFrames);
                 kwBufR[kwBufHead] = static_cast<float>(stepSumSqKwR / stepFrames);
                 kwBufHead = (kwBufHead + 1) % kwBufSize;
@@ -236,14 +261,8 @@ struct IvannaLab::Impl {
                     double sumL = 0.0, sumR = 0.0;
                     for (int k = 0; k < kwBufSize; ++k) { sumL += kwBufL[k]; sumR += kwBufR[k]; }
                     const double meanSq = (sumL + sumR) / kwBufSize; // ITU-R BS.1770
-                    constexpr double kAbsGateLinear = 1.584893e-7;
-                    if (meanSq > kAbsGateLinear) {
-                        gatedBlocks.push(static_cast<float>(meanSq));
-                        double sumGated = 0.0;
-                        for (size_t i = 0; i < gatedBlocks.size(); ++i) sumGated += gatedBlocks.get(i);
-                        const double avgGated = sumGated / gatedBlocks.size();
-                        lufsSnapshot = static_cast<float>(-0.691 + 10.0 * std::log10(avgGated + 1e-30));
-                    }
+                    constexpr double kAbsGateLinear = 1.584893e-7;   // gate absoluto -70 LUFS
+                    if (meanSq > kAbsGateLinear) gatedBlocks.push(static_cast<float>(meanSq));
                 }
             }
         }
@@ -362,14 +381,64 @@ struct IvannaLab::Impl {
         return percentile(0.95f) - percentile(0.10f);
     }
 
+    // SNR estadístico real: piso de ruido = p10 de las energías de bloque
+    // (los bloques más silenciosos actúan como ventana de silencio real),
+    // señal = p90. Reproducible y sin depender de silencios anotados. FIX de
+    // raíz: antes snrDB era el RMS global de la señal en dBFS (no una SNR).
+    float measureSNR() const {
+        if (blockEnergy.size() < 4) return -1.f;
+        std::vector<float> e(blockEnergy.size());
+        for (size_t i = 0; i < blockEnergy.size(); ++i) e[i] = blockEnergy.get(i);
+        std::sort(e.begin(), e.end());
+        auto pct = [&](float p) -> float {
+            const float idx = p * static_cast<float>(e.size() - 1);
+            const int lo = static_cast<int>(std::floor(idx));
+            const int hi = static_cast<int>(std::ceil(idx));
+            if (lo == hi) return e[lo];
+            const float frac = idx - lo;
+            return e[lo] * (1.f - frac) + e[hi] * frac;
+        };
+        const float floorE = std::max(1e-18f, pct(0.10f));
+        const float sigE   = std::max(floorE, pct(0.90f));
+        if (sigE <= floorE * 1.01f) return -144.f;   // sin señal distinguible del piso
+        const float db = 10.f * std::log10(sigE / floorE);
+        return db > 200.f ? 200.f : db;
+    }
+
+    // Loudness integrada BS.1770-4 COMPLETA: gate absoluto (-70 LUFS, ya
+    // aplicado en feed()) + gate relativo (-20 LU bajo la media no gateada).
+    // FIX de raíz: la versión previa usaba un snapshot sin gate relativo
+    // (sesgo ante pasajes largos de silencio relativo).
+    float measureIntegratedLUFS() const {
+        if (gatedBlocks.empty()) return -144.f;
+        std::vector<float> ms(gatedBlocks.size());
+        double sumLoud = 0.0;
+        for (size_t i = 0; i < gatedBlocks.size(); ++i) {
+            ms[i] = gatedBlocks.get(i);
+            sumLoud += -0.691 + 10.0 * std::log10((double)ms[i] + 1e-30);
+        }
+        const float meanLoud = static_cast<float>(sumLoud / ms.size());
+        const float relGate  = meanLoud - 20.f;
+        double sumMs = 0.0;
+        int cnt = 0;
+        for (float m : ms) {
+            const float lu = -0.691f + 10.f * std::log10((double)m + 1e-30);
+            if (lu >= relGate) { sumMs += m; ++cnt; }
+        }
+        if (cnt == 0) { for (float m : ms) sumMs += m; cnt = static_cast<int>(ms.size()); }
+        return static_cast<float>(-0.691 + 10.0 * std::log10(sumMs / cnt + 1e-30));
+    }
+
     LabResult measure() const {
         std::lock_guard<std::mutex> lock(mtx);
         LabResult res{};
         if (framesAcc <= 0) return res;
         res.peakDBFS = ampToDb(peakAbs);
-        const double rmsLinear = std::sqrt((sumSqL + sumSqR) / (2.0 * framesAcc + 1e-30));
-        res.snrDB = rmsLinear > 1e-9 ? static_cast<float>(20.0 * std::log10(rmsLinear)) : -144.f;
-        if (!gatedBlocks.empty()) res.integratedLUFS = lufsSnapshot;
+        // FIX (raíz): antes snrDB era el RMS global en dBFS (no una SNR).
+        // Ahora es SNR estadístico real con ventana de silencio estadística.
+        res.snrDB = measureSNR();
+        // FIX (raíz): LUFS con gate absoluto + relativo (BS.1770-4 completo).
+        if (!gatedBlocks.empty()) res.integratedLUFS = measureIntegratedLUFS();
         res.luRange = measureLRA();
         res.truepeakDBTP = measureTruePeak();
         res.thdPercent = measureTHD();
@@ -449,8 +518,14 @@ std::string IvannaLab::generateReport() const {
     return os.str();
 }
 
-int IvannaLab::framesAccumulated() const { return static_cast<int>(pImpl->framesAcc); }
+int IvannaLab::framesAccumulated() const {
+    std::lock_guard<std::mutex> lock(pImpl->mtx);
+    return static_cast<int>(pImpl->framesAcc);
+}
 
-bool IvannaLab::hasEnoughData() const { return pImpl->hasEnough(); }
+bool IvannaLab::hasEnoughData() const {
+    std::lock_guard<std::mutex> lock(pImpl->mtx);
+    return pImpl->hasEnough();
+}
 
 } // namespace ivanna
