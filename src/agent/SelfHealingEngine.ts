@@ -59,7 +59,6 @@ export function repairTts(synth: SpeechSynthesis): boolean {
 export class SelfHealingEngine {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private consecutiveApiErrors = 0;
-  private lastApiSuccess = Date.now();
   private health: SystemHealth = {
     tts: 'healthy',
     mic: 'healthy',
@@ -137,7 +136,6 @@ export class SelfHealingEngine {
   // ── Registrar resultado de llamada API ────────────────────────────────────────
   reportApiSuccess() {
     this.consecutiveApiErrors = 0;
-    this.lastApiSuccess = Date.now();
   }
 
   reportApiError() {

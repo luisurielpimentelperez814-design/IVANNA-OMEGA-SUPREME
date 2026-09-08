@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, RotateCcw, BarChart2, Mic } from 'lucide-react';
+import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, BarChart2, Mic } from 'lucide-react';
 import { DspParameters } from '../types';
 
 interface HeaderProps {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BenchmarkMetrics } from '../types';
-import { Cpu, ShieldCheck, Terminal, Activity, CheckCircle2 } from 'lucide-react';
+import { Cpu, ShieldCheck, Terminal, CheckCircle2 } from 'lucide-react';
 
 interface NeonProfilerProps {
   metrics: BenchmarkMetrics;

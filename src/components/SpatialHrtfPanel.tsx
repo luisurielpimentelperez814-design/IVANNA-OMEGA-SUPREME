@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { DspParameters } from '../types';
-import { Layers, Cpu, Compass, Radio, Activity, Sparkles } from 'lucide-react';
+import { Compass } from 'lucide-react';
 
 interface SpatialHrtfPanelProps {
   params: DspParameters;

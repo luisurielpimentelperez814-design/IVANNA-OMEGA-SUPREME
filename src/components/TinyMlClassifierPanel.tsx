@@ -1,6 +1,6 @@
 import React from 'react';
 import { DspParameters, TinyMlClassification } from '../types';
-import { Activity, ShieldAlert, Cpu, Layers, ShieldCheck, Zap, Radio, BarChart2 } from 'lucide-react';
+import { ShieldAlert, BarChart2 } from 'lucide-react';
 
 interface TinyMlClassifierPanelProps {
   params: DspParameters;

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { DspParameters } from '../types';
-import { Sparkles, Zap, Sliders, Cpu, Activity } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 interface GoldenEarPanelProps {
   params: DspParameters;

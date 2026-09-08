@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { DspParameters, BenchmarkMetrics } from '../types';
-import { Waves, Play, Square, Cpu, Activity, Sliders } from 'lucide-react';
+import { Waves, Play, Square } from 'lucide-react';
 import { usePersist } from '../usePersist';
 
 // Declaración global para evitar error TS con window.cefQuery (WebView bridge)

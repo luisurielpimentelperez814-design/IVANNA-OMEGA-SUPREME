@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { usePersist } from '../usePersist';
 import { CPP_FILES, generateFullTermuxScript } from '../data/cppFiles';
-import { Terminal, Copy, Check, Download, FileCode, Package, Cpu } from 'lucide-react';
+import { Terminal, Copy, Check, Download, FileCode } from 'lucide-react';
 
 export const CodeExporter: React.FC = () => {
   const [selectedFilename, setSelectedFilename] = usePersist<string>('code_selectedFilename', 'IvannaFusionCore.hpp');

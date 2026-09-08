@@ -81,7 +81,6 @@ const EQ_BANDS = [
 // Minigrafica SVG de curvas ISO 226
 // ──────────────────────────────────────────────────────────────────────────────
 const ISO226_CHART_PHONS = [20, 40, 60, 80];
-const CHART_COLORS = ['#1E2D45', '#1A3A5C', '#1E4A7A', '#38BDF8'];
 const CHART_ACCENT = ['#334155', '#1E40AF', '#0369A1', '#38BDF8'];
 
 interface CurveChartProps {

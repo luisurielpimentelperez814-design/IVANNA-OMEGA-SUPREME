@@ -1,6 +1,6 @@
 import React from 'react';
 import { usePersist } from '../usePersist';
-import { Shield, Cpu, Terminal, Database } from 'lucide-react';
+import { Shield, Terminal, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const MagiskIntegrationPanel: React.FC = () => {

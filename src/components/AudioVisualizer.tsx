@@ -64,9 +64,6 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
   // Canvas Oscilloscope & Spectrum Simulation Loop
   useEffect(() => {
     let animId: number;
-    let phase = 0;
-
-    
     const render = () => {
       const oscCanvas = oscCanvasRef.current;
       const analyser = analyserRef.current;
@@ -131,14 +128,12 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
                 // Map the i-th bark band to an FFT bin
                 const barkTarget = (i / bars) * 24; // 24 Bark bands approx
                 let bin = 0;
-                let found = false;
                 const fs = audioCtxRef.current?.sampleRate || 48000;
                 for(let b=0; b<analyser.frequencyBinCount; b++) {
                     const f = b * fs / analyser.fftSize;
                     const z = 13 * Math.atan(0.00076 * f) + 3.5 * Math.atan(Math.pow(f / 7500, 2));
                     if (z >= barkTarget) {
                         bin = b;
-                        found = true;
                         break;
                     }
                 }
