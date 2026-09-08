@@ -235,11 +235,28 @@ class IvannaAssistant(
                     val songCtx = IvannaConversationalCore.extractSongContext(text)
                     val musicalPreset = IvannaMusicalIntentEngine.detect(text)
                     if (musicalPreset != null) {
-                        val result = dspOrchestrator.applyMusicalPreset(musicalPreset, songCtx)
+                        // FIX (hueco real de seguridad térmica): este flujo
+                        // nunca consultaba IvannaCognitiveCore.reason() —
+                        // iba directo a applyMusicalPreset() sin ninguna
+                        // verificación térmica propia. El diseño original
+                        // (ver el comentario de reason() para este mismo
+                        // AcousticIntent) esperaba sustituir por un preset
+                        // analógico más ligero ante temperatura crítica,
+                        // pero esa rama era código muerto: nunca se
+                        // ejecutaba porque este flujo real la evitaba por
+                        // completo. Mismo umbral (0.85), verificado aquí.
+                        val thermal = com.ivanna.omega.agent.IvannaAgentCore.state.value.health.thermalLoad
+                        val effectivePreset = if (thermal >= 0.85f) {
+                            IvannaMusicalIntentEngine.detect("analógico suave") ?: musicalPreset
+                        } else musicalPreset
+                        val result = dspOrchestrator.applyMusicalPreset(effectivePreset, songCtx)
                         profile.recordAdjustment(result.presetName, scene ?: "UNKNOWN")
-                        memory.recordAdjustment(result.presetName, "musical: ${musicalPreset.technicalDetail}", applied = result.applied)
+                        memory.recordAdjustment(result.presetName, "musical: ${effectivePreset.technicalDetail}", applied = result.applied)
                         IvannaConversationalCore.recordTurn(text, "MUSICAL_INTENT", result.presetName, result.spokenReply)
-                        result.spokenReply
+                        val spokenWithWarning = if (thermal >= 0.85f)
+                            "El dispositivo está caliente. He aplicado el perfil analógico, más suave para el SoC, en vez de '${musicalPreset.name}'."
+                        else result.spokenReply
+                        spokenWithWarning
                     } else null
                 }
 
