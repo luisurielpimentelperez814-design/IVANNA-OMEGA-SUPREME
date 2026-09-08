@@ -17,6 +17,43 @@ class ParameterStore(context: Context) {
         PREFS_NAME, Context.MODE_PRIVATE
     )
 
+    // ── Guarda de tipo per-clave ────────────────────────────────────────────
+    // El crash anti_dolby Float-vs-Boolean ya ocurrio una vez (ver FIX en
+    // applySignaturePresetIfFirstRun): una escritura con tipo equivocado, un
+    // restore de backup de una version vieja o un blob de otra app con el
+    // mismo nombre de fichero deja la clave con tipo distinto al que el getter
+    // espera, y getFloat/getBoolean lanzan ClassCastException EN EL GETTER —
+    // potencialmente en el hilo de arranque. Estas lecturas seguras aplican el
+    // invariante: la clave tiene el tipo esperado o se usa el default, con
+    // log. Mismo patron ya aplicado en DSPStatePrefs.
+    private fun safeGetFloat(key: String, def: Float): Float = try {
+        prefs.getFloat(key, def)
+    } catch (e: ClassCastException) {
+        android.util.Log.w("ParameterStore", "clave '$key' con tipo distinto a Float — usando default $def")
+        def
+    }
+
+    private fun safeGetBoolean(key: String, def: Boolean): Boolean = try {
+        prefs.getBoolean(key, def)
+    } catch (e: ClassCastException) {
+        android.util.Log.w("ParameterStore", "clave '$key' con tipo distinto a Boolean — usando default $def")
+        def
+    }
+
+    private fun safeGetInt(key: String, def: Int): Int = try {
+        prefs.getInt(key, def)
+    } catch (e: ClassCastException) {
+        android.util.Log.w("ParameterStore", "clave '$key' con tipo distinto a Int — usando default $def")
+        def
+    }
+
+    private fun safeGetString(key: String, def: String?): String? = try {
+        prefs.getString(key, def)
+    } catch (e: ClassCastException) {
+        android.util.Log.w("ParameterStore", "clave '$key' con tipo distinto a String — usando default $def")
+        def
+    }
+
     companion object {
         private const val PREFS_NAME = "ivanna_omega_params"
 
@@ -81,10 +118,10 @@ class ParameterStore(context: Context) {
         private const val KEY_ANTI_DOLBY_INTENSITY = "anti_dolby_intensity"
     }
 
-    fun getExciter(): Float = prefs.getFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
+    fun getExciter(): Float = safeGetFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
     fun setExciter(value: Float) = prefs.edit().putFloat(KEY_EXCITER, value).apply()
 
-    fun getEqGain(): Float = prefs.getFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
+    fun getEqGain(): Float = safeGetFloat(KEY_EQ_GAIN, 1.5f) // TUNED v3.1: 0.0→1.5 dB (treble/presence boost)
     fun setEqGain(value: Float) = prefs.edit().putFloat(KEY_EQ_GAIN, value).apply()
 
     /**
@@ -127,50 +164,50 @@ class ParameterStore(context: Context) {
         return true
     }
 
-    fun getWidth(): Float = prefs.getFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
+    fun getWidth(): Float = safeGetFloat(KEY_WIDTH, 0.75f) // TUNED v3.1: 0.5→0.75 (stereo más evidente en headphones)
     fun setWidth(value: Float) = prefs.edit().putFloat(KEY_WIDTH, value).apply()
 
-    fun getMasterVolume(): Float = prefs.getFloat("master_volume", 0.8f)
+    fun getMasterVolume(): Float = safeGetFloat("master_volume", 0.8f)
     fun setMasterVolume(value: Float) = prefs.edit().putFloat("master_volume", value.coerceIn(0f, 1f)).apply()
 
-    fun isAntiDolbyEnabled(): Boolean = prefs.getBoolean(KEY_ANTI_DOLBY, false)
+    fun isAntiDolbyEnabled(): Boolean = safeGetBoolean(KEY_ANTI_DOLBY, false)
     fun setAntiDolbyEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ANTI_DOLBY, enabled).apply()
 
-    fun getCurrentPreset(): String = prefs.getString(KEY_PRESET, "Warm") ?: "Warm"
+    fun getCurrentPreset(): String = safeGetString(KEY_PRESET, "Warm") ?: "Warm"
     fun setCurrentPreset(name: String) = prefs.edit().putString(KEY_PRESET, name).apply()
 
-    fun getOmegaMode(): Int = prefs.getInt(KEY_OMEGA_MODE, 0)
+    fun getOmegaMode(): Int = safeGetInt(KEY_OMEGA_MODE, 0)
     fun setOmegaMode(value: Int) = prefs.edit().putInt(KEY_OMEGA_MODE, value).apply()
 
-    fun isAutoModeEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_MODE, false)
+    fun isAutoModeEnabled(): Boolean = safeGetBoolean(KEY_AUTO_MODE, false)
     fun setAutoModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_AUTO_MODE, enabled).apply()
 
-    fun getCompThreshold(): Float = prefs.getFloat(KEY_COMP_THRESHOLD, 0.32f) // RESOLUCIÓN v3.4: 0.375→0.32 (-12dB, comprime menos material, más dinámicas)
-    fun getCompRatio(): Float = prefs.getFloat(KEY_COMP_RATIO, 0.042f) // RESOLUCIÓN v3.4: 0.105→0.042 | 3.0:1→1.8:1 (micro-transientes libres)
+    fun getCompThreshold(): Float = safeGetFloat(KEY_COMP_THRESHOLD, 0.32f) // RESOLUCIÓN v3.4: 0.375→0.32 (-12dB, comprime menos material, más dinámicas)
+    fun getCompRatio(): Float = safeGetFloat(KEY_COMP_RATIO, 0.042f) // RESOLUCIÓN v3.4: 0.105→0.042 | 3.0:1→1.8:1 (micro-transientes libres)
     fun setCompParams(threshold: Float, ratio: Float) = prefs.edit()
         .putFloat(KEY_COMP_THRESHOLD, threshold)
         .putFloat(KEY_COMP_RATIO, ratio)
         .apply()
 
-    fun getNhoHarmonic(): Float = prefs.getFloat(KEY_NHO_HARMONIC, 0.18f) // TUNED v3.3: 0.0→0.18 (NHO activo — 2ª/3ª armónica, calidez analógica)
+    fun getNhoHarmonic(): Float = safeGetFloat(KEY_NHO_HARMONIC, 0.18f) // TUNED v3.3: 0.0→0.18 (NHO activo — 2ª/3ª armónica, calidez analógica)
     fun setNhoHarmonic(value: Float) = prefs.edit().putFloat(KEY_NHO_HARMONIC, value).apply()
 
-    fun getSpatialAngle(): Float = prefs.getFloat(KEY_SPATIAL_ANGLE, 0.5f)
+    fun getSpatialAngle(): Float = safeGetFloat(KEY_SPATIAL_ANGLE, 0.5f)
     fun setSpatialAngle(value: Float) = prefs.edit().putFloat(KEY_SPATIAL_ANGLE, value).apply()
 
-    fun getSpatialWidth(): Float = prefs.getFloat(KEY_SPATIAL_WIDTH, 0.5f)
+    fun getSpatialWidth(): Float = safeGetFloat(KEY_SPATIAL_WIDTH, 0.5f)
     fun setSpatialWidth(value: Float) = prefs.edit().putFloat(KEY_SPATIAL_WIDTH, value).apply()
 
-    fun isEvoEnabled(): Boolean = prefs.getBoolean(KEY_EVO_ENABLED, true)
+    fun isEvoEnabled(): Boolean = safeGetBoolean(KEY_EVO_ENABLED, true)
     fun setEvoEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_EVO_ENABLED, enabled).apply()
 
-    fun isNpeBypass(): Boolean = prefs.getBoolean(KEY_NPE_BYPASS, false)
+    fun isNpeBypass(): Boolean = safeGetBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
-    fun getNpeHarmonic(): Float = prefs.getFloat(KEY_NPE_HARMONIC, 0.60f) // RESOLUCIÓN v3.4: 0.58→0.60 (más color armónico para sabor analógico)
-    fun getNpeLateralInhib(): Float = prefs.getFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // RESOLUCIÓN v3.4: 0.56→0.50 (menos inhibición = menos artificioso, más natural)
-    fun getNpeOhcCompression(): Float = prefs.getFloat(KEY_NPE_OHC_COMPRESSION, 0.40f) // RESOLUCIÓN v3.4: 0.60→0.40 — CRÍTICO: OHC alta aplana micro-dinámicas que dan textura
-    fun getNpeMasterGain(): Float = prefs.getFloat(KEY_NPE_MASTER_GAIN, 2.5f) // TUNED v3.3: 2.0→2.5 dB (volumen percibido NPE óptimo)
+    fun getNpeHarmonic(): Float = safeGetFloat(KEY_NPE_HARMONIC, 0.60f) // RESOLUCIÓN v3.4: 0.58→0.60 (más color armónico para sabor analógico)
+    fun getNpeLateralInhib(): Float = safeGetFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // RESOLUCIÓN v3.4: 0.56→0.50 (menos inhibición = menos artificioso, más natural)
+    fun getNpeOhcCompression(): Float = safeGetFloat(KEY_NPE_OHC_COMPRESSION, 0.40f) // RESOLUCIÓN v3.4: 0.60→0.40 — CRÍTICO: OHC alta aplana micro-dinámicas que dan textura
+    fun getNpeMasterGain(): Float = safeGetFloat(KEY_NPE_MASTER_GAIN, 2.5f) // TUNED v3.3: 2.0→2.5 dB (volumen percibido NPE óptimo)
     fun setNpeNeuroParams(harmonic: Float, lateralInhib: Float, ohc: Float, masterGain: Float) =
         prefs.edit()
             .putFloat(KEY_NPE_HARMONIC, harmonic)
@@ -179,44 +216,44 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_NPE_MASTER_GAIN, masterGain)
             .apply()
 
-    fun getNpeAgcTarget(): Float = prefs.getFloat(KEY_NPE_AGC_TARGET, -14.0f) // TUNED v3.3: -15→-14 dB (AGC menos restrictivo, dinámica real conservada)
-    fun getNpeAgcRate(): Float = prefs.getFloat(KEY_NPE_AGC_RATE, 0.62f) // TUNED v3.3: 0.55→0.62 (respuesta AGC más ágil, sigue transientes musicales)
+    fun getNpeAgcTarget(): Float = safeGetFloat(KEY_NPE_AGC_TARGET, -14.0f) // TUNED v3.3: -15→-14 dB (AGC menos restrictivo, dinámica real conservada)
+    fun getNpeAgcRate(): Float = safeGetFloat(KEY_NPE_AGC_RATE, 0.62f) // TUNED v3.3: 0.55→0.62 (respuesta AGC más ágil, sigue transientes musicales)
     fun setNpeAgc(target: Float, rate: Float) = prefs.edit()
         .putFloat(KEY_NPE_AGC_TARGET, target)
         .putFloat(KEY_NPE_AGC_RATE, rate)
         .apply()
 
-    fun getNpeHrtf(): Boolean = prefs.getBoolean(KEY_NPE_HRTF, true)
-    fun getNpeCochlear(): Boolean = prefs.getBoolean(KEY_NPE_COCHLEAR, true)
-    fun getNpeAdapt(): Boolean = prefs.getBoolean(KEY_NPE_ADAPT, true)
+    fun getNpeHrtf(): Boolean = safeGetBoolean(KEY_NPE_HRTF, true)
+    fun getNpeCochlear(): Boolean = safeGetBoolean(KEY_NPE_COCHLEAR, true)
+    fun getNpeAdapt(): Boolean = safeGetBoolean(KEY_NPE_ADAPT, true)
     fun setNpeFlags(hrtf: Boolean, cochlear: Boolean, adapt: Boolean) = prefs.edit()
         .putBoolean(KEY_NPE_HRTF, hrtf)
         .putBoolean(KEY_NPE_COCHLEAR, cochlear)
         .putBoolean(KEY_NPE_ADAPT, adapt)
         .apply()
 
-    fun isNpeManifoldEnabled(): Boolean = prefs.getBoolean(KEY_NPE_MANIFOLD, false)
+    fun isNpeManifoldEnabled(): Boolean = safeGetBoolean(KEY_NPE_MANIFOLD, false)
     fun setNpeManifoldEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_NPE_MANIFOLD, enabled).apply()
 
-    fun isSpatialEnabled(): Boolean = prefs.getBoolean(KEY_SPATIAL_ENABLED, false)
+    fun isSpatialEnabled(): Boolean = safeGetBoolean(KEY_SPATIAL_ENABLED, false)
     fun setSpatialEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_ENABLED, enabled).apply()
 
-    fun isSpatialInitPending(): Boolean = prefs.getBoolean(KEY_SPATIAL_INIT_PENDING, false)
+    fun isSpatialInitPending(): Boolean = safeGetBoolean(KEY_SPATIAL_INIT_PENDING, false)
     fun setSpatialInitPending(pending: Boolean) = prefs.edit().putBoolean(KEY_SPATIAL_INIT_PENDING, pending).apply()
 
-    fun getAdaptiveModeOrdinal(): Int = prefs.getInt(KEY_ADAPTIVE_MODE, 1) // NATURAL por defecto
+    fun getAdaptiveModeOrdinal(): Int = safeGetInt(KEY_ADAPTIVE_MODE, 1) // NATURAL por defecto
     fun setAdaptiveModeOrdinal(value: Int) = prefs.edit().putInt(KEY_ADAPTIVE_MODE, value.coerceIn(0, 3)).apply()
 
-    fun getAdaptiveIntensity(): Float = prefs.getFloat(KEY_ADAPTIVE_INTENSITY, 50f)
+    fun getAdaptiveIntensity(): Float = safeGetFloat(KEY_ADAPTIVE_INTENSITY, 50f)
     fun setAdaptiveIntensity(value: Float) = prefs.edit().putFloat(KEY_ADAPTIVE_INTENSITY, value.coerceIn(0f, 100f)).apply()
 
-    fun isVoiceProtectionEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_PROTECTION, true)
+    fun isVoiceProtectionEnabled(): Boolean = safeGetBoolean(KEY_VOICE_PROTECTION, true)
     fun setVoiceProtectionEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_VOICE_PROTECTION, enabled).apply()
 
-    fun getCurrentAudioProfileId(): String? = prefs.getString(KEY_AUDIO_PROFILE_ID, null)
+    fun getCurrentAudioProfileId(): String? = safeGetString(KEY_AUDIO_PROFILE_ID, null)
     fun setCurrentAudioProfileId(id: String?) = prefs.edit().putString(KEY_AUDIO_PROFILE_ID, id).apply()
 
-    fun isAdaptiveManualModeEnabled(): Boolean = prefs.getBoolean(KEY_ADAPTIVE_MANUAL_MODE, false)
+    fun isAdaptiveManualModeEnabled(): Boolean = safeGetBoolean(KEY_ADAPTIVE_MANUAL_MODE, false)
     fun setAdaptiveManualModeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_ADAPTIVE_MANUAL_MODE, enabled).apply()
 
     fun savePreset(name: String, exciter: Float, eq: Float, width: Float) {
@@ -229,9 +266,9 @@ class ParameterStore(context: Context) {
 
     fun loadPreset(name: String): Triple<Float, Float, Float> {
         return Triple(
-            prefs.getFloat("${name}_exciter", 0.3f),
-            prefs.getFloat("${name}_eq", 0.0f),
-            prefs.getFloat("${name}_width", 0.5f)
+            safeGetFloat("${name}_exciter", 0.3f),
+            safeGetFloat("${name}_eq", 0.0f),
+            safeGetFloat("${name}_width", 0.5f)
         )
     }
 
@@ -246,11 +283,11 @@ class ParameterStore(context: Context) {
             .apply()
     }
 
-    fun loadIso226ListenPhon(): Float  = prefs.getFloat(KEY_ISO226_LISTEN_PHON,  60f)
-    fun loadIso226RefPhon(): Float     = prefs.getFloat(KEY_ISO226_REF_PHON,     80f)
-    fun loadIso226Calibrated(): Boolean = prefs.getBoolean(KEY_ISO226_CALIBRATED, false)
+    fun loadIso226ListenPhon(): Float  = safeGetFloat(KEY_ISO226_LISTEN_PHON,  60f)
+    fun loadIso226RefPhon(): Float     = safeGetFloat(KEY_ISO226_REF_PHON,     80f)
+    fun loadIso226Calibrated(): Boolean = safeGetBoolean(KEY_ISO226_CALIBRATED, false)
     fun loadIso226Gains(): FloatArray {
-        val s = prefs.getString(KEY_ISO226_GAINS, "") ?: return FloatArray(10)
+        val s = safeGetString(KEY_ISO226_GAINS, "") ?: return FloatArray(10)
         return if (s.isBlank()) FloatArray(10)
         else s.split(",").mapNotNull { it.trim().toFloatOrNull() }.toFloatArray()
     }
@@ -279,13 +316,13 @@ class ParameterStore(context: Context) {
     // signature al AudioState (y de ahí, vía restoreToNative(), al DSP nativo).
     fun hasSignatureSeed(): Boolean = prefs.contains(KEY_WIDTH) &&
             prefs.contains(KEY_EQ_GAIN) && prefs.contains(KEY_EXCITER)
-    fun getAntiDolbyIntensity(): Float = prefs.getFloat(KEY_ANTI_DOLBY_INTENSITY, 0.85f)
+    fun getAntiDolbyIntensity(): Float = safeGetFloat(KEY_ANTI_DOLBY_INTENSITY, 0.85f)
 
     // ── Primer lanzamiento ────────────────────────────────────────────────────
     // Controla si el preset magistral de entrada ya fue enviado al daemon.
     // Se marca una sola vez; las preferencias del usuario prevalecen después.
     fun hasAppliedFirstLaunchPreset(): Boolean =
-        prefs.getBoolean("first_launch_preset_applied", false)
+        safeGetBoolean("first_launch_preset_applied", false)
 
     fun markFirstLaunchPresetApplied() {
         prefs.edit().putBoolean("first_launch_preset_applied", true).apply()
@@ -297,5 +334,5 @@ class ParameterStore(context: Context) {
     fun saveNativeSampleRate(sr: Int) {
         prefs.edit().putInt(KEY_NATIVE_SR, sr).apply()
     }
-    fun loadNativeSampleRate(): Int = prefs.getInt(KEY_NATIVE_SR, 48000)
+    fun loadNativeSampleRate(): Int = safeGetInt(KEY_NATIVE_SR, 48000)
 }
