@@ -328,7 +328,7 @@ export default function App() {
       <footer className="border-t border-[#1E2330] bg-[#0A0C10]/90 py-6 mt-12 font-mono text-xs text-[#64748B]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <span>IVANNA-OMEGA-SUPREME v2.0 • Android Magisk Neural Audio DSP Engine</span>
+            <span>IVANNA-OMEGA-SUPREME v2.3.6 • Android Magisk Neural Audio DSP Engine</span>
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-[#4ADE80]">● Zero-Alloc Heap</span>

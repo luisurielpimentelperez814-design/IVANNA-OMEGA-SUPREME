@@ -109,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-base font-bold text-white font-mono tracking-wide flex items-center gap-2">
-                IVANNA-OMEGA-SUPREME <span className="text-[#38BDF8] text-xs">v2.0</span>
+                IVANNA-OMEGA-SUPREME <span className="text-[#38BDF8] text-xs">v2.3.6</span>
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded bg-[#182230] text-[#38BDF8] border border-[#243346] font-mono font-bold">
                 Lock-Free SPSC DSP Kernel
