@@ -47,6 +47,7 @@
 #include "../neuromorphic/biquad_envelope_bank.hpp"
 #include "../neuromorphic/autonomous_brain.hpp"
 #include "../hexagon/ivanna_fastrpc_client.hpp"
+#include "../hexagon/ivanna_dsp_rt.hpp"
 
 // ── Motor coclear completo (Volterra H2 + upsampling) — opt-in, paralelo ────
 // Free functions definidas en neuromorphic/neuro_cochlear_manifold.cpp.
@@ -702,30 +703,114 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeGetBuildTag(
     return env->NewStringUTF("IVANNA-NPE-v2.0-NHO-LIF-BEB");
 }
 
-// ── Hexagon DSP API — no implementado en esta build (CPU-only) ───────────────
+// ── Hexagon DSP API — cableado REAL al loader canonico ivanna::hexagon::rt ──
+// AUDIT FIX (honestidad): estas 6 funciones eran stubs que retornaban
+// JNI_FALSE/null sin consultar el loader — la UI (IvannaDspManager) mostraba
+// "DSP no disponible" incluso en dispositivos con cDSP funcional, y
+// nativeDspSetActive/SetNeuroParams eran no-ops silenciosos. Ahora consultan
+// el loader real (dlopen de libcdsprpc/libadsprpc) y reportan el estado
+// verdadero. Si el Hexagon SDK/QAIC no esta instalado el loader falla con
+// log claro y la API reporta no-disponible — nunca finge exito.
+namespace {
+
+// Estado del handle DSP a nivel JNI (la API Kotlin no porta handle — es
+// singleton por proceso, coherente con el loader rt que tambien lo es).
+std::mutex          g_jni_dsp_mtx;
+void*               g_jni_dsp_handle   = nullptr;  // guarded por g_jni_dsp_mtx
+std::atomic<bool>   g_jni_dsp_active{false};
+
+} // namespace
+
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspOpen(
-    JNIEnv*, jclass, jint, jint, jint) { return JNI_FALSE; }
+    JNIEnv*, jclass, jint sampleRate, jint nNeurons, jint blockSize) {
+    // sampleRate/nNeurons/blockSize se conservan para el contrato; el stub
+    // IDL actual (ivanna_dsp_open) no los consume — lo hara el skel QAIC real.
+    (void)sampleRate; (void)nNeurons; (void)blockSize;
+    std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+    if (g_jni_dsp_handle != nullptr) return JNI_TRUE;  // idempotente
+    if (!ivanna::hexagon::rt::ensure_loaded()) {
+        LOGW("nativeDspOpen: Hexagon DSP no disponible en este dispositivo");
+        return JNI_FALSE;
+    }
+    void* h = nullptr;
+    if (ivanna::hexagon::rt::dsp_open(&h) != 0 || h == nullptr) {
+        LOGW("nativeDspOpen: dsp_open fallo (lib=%s)",
+             ivanna::hexagon::rt::active_library());
+        return JNI_FALSE;
+    }
+    g_jni_dsp_handle = h;
+    LOGI("nativeDspOpen: cDSP abierto via %s",
+         ivanna::hexagon::rt::active_library());
+    return JNI_TRUE;
+}
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspClose(
-    JNIEnv*, jclass) {}
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+    g_jni_dsp_active.store(false, std::memory_order_release);
+    if (g_jni_dsp_handle != nullptr) {
+        ivanna::hexagon::rt::dsp_close(g_jni_dsp_handle);
+        g_jni_dsp_handle = nullptr;
+    }
+}
 
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspIsAvailable(
-    JNIEnv*, jclass) { return JNI_FALSE; }
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+    return (g_jni_dsp_handle != nullptr &&
+            ivanna::hexagon::rt::is_available()) ? JNI_TRUE : JNI_FALSE;
+}
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspSetActive(
-    JNIEnv*, jclass, jboolean) {}
+    JNIEnv*, jclass, jboolean active) {
+    // Solo tiene efecto si el handle esta abierto; si no, queda en false
+    // para que nativeDspGetMetrics siga devolviendo null (estado honesto).
+    std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+    const bool ok = (active == JNI_TRUE) && (g_jni_dsp_handle != nullptr);
+    g_jni_dsp_active.store(ok, std::memory_order_release);
+}
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspSetNeuroParams(
-    JNIEnv*, jclass, jfloat, jfloat, jfloat, jfloat, jfloat,
-    jfloat, jfloat, jfloat) {}
+    JNIEnv*, jclass, jfloat alpha, jfloat beta, jfloat gamma, jfloat delta,
+    jfloat, jfloat, jfloat, jfloat) {
+    // El IDL actual (ivanna_dsp_set_neuro_params) solo transporta 4 params
+    // (alpha/beta/gamma/delta); los 4 restantes (eta/lateralInhib/
+    // ohcCompression/masterGainDb) los aplicara el skel QAIC extendido.
+    std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+    if (g_jni_dsp_handle == nullptr) return;
+    ivanna::hexagon::rt::dsp_set_neuro_params(g_jni_dsp_handle,
+                                              alpha, beta, gamma, delta);
+}
 
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeDspGetMetrics(
-    JNIEnv*, jclass) { return nullptr; }
+    JNIEnv* env, jclass) {
+    // Layout FloatArray(8) pactado con IvannaDspManager.kt:
+    //   [0]=cpuLoadRatio  [1]=rmsOut  [2]=agcGain  [3]=spectralEntropy
+    //   [4]=lifFireRateHz [5]=hvxCycles [6]=vtcmBytesUsed [7]=reserved
+    // El IDL actual solo expone cpu_load y peak_amp del DSP. Los campos sin
+    // fuente real quedan en 0 (NUNCA valores inventados): hvxCycles y
+    // vtcmBytesUsed requieren el skel QAIC extendido; agcGain/entropy/
+    // lifFireRate son del motor CPU (nativeGetMetrics), no del DSP.
+    if (!g_jni_dsp_active.load(std::memory_order_acquire)) return nullptr;
+    float cpu_load = 0.f, peak_amp = 0.f;
+    {
+        std::lock_guard<std::mutex> lk(g_jni_dsp_mtx);
+        if (g_jni_dsp_handle == nullptr) return nullptr;
+        if (ivanna::hexagon::rt::dsp_get_metrics(g_jni_dsp_handle,
+                                                 &cpu_load, &peak_amp) != 0) {
+            return nullptr;
+        }
+    }
+    float m[8] = { cpu_load, peak_amp, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+    jfloatArray arr = env->NewFloatArray(8);
+    if (arr) env->SetFloatArrayRegion(arr, 0, 8, m);
+    return arr;
+}
 
 } // extern "C"
