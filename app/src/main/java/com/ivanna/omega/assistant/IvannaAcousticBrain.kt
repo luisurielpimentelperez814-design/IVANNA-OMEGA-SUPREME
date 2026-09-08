@@ -107,7 +107,7 @@ object IvannaAcousticBrain {
                 "después de $minutes minutos de escucha continua."
             fatigueByProfile -> "gentle_mode" to
                 "Activo el modo suave: has reportado fatiga ${profile.fatigueReports} veces antes."
-            clippingRisk -> "clip-relief" to
+            clippingRisk -> "volume_down" to
                 "Hay clipping sostenido en la señal actual — bajo ganancia para proteger el audio."
             thermalRisk -> null to
                 "El dispositivo está caliente (${"%.0f".format(s.health.thermalLoad * 100)}%); " +
