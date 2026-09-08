@@ -143,7 +143,7 @@ class ParameterStore(context: Context) {
      * @return true si se aplicó (primer inicio), false si ya existía.
      */
     fun applySignaturePresetIfFirstRun(): Boolean {
-        if (prefs.getBoolean(KEY_SIGNATURE_APPLIED, false)) return false
+        if (safeGetBoolean(KEY_SIGNATURE_APPLIED, false)) return false
         prefs.edit()
             .putFloat(KEY_WIDTH, 1.30f)
             .putFloat(KEY_EQ_GAIN, 1.8f)
