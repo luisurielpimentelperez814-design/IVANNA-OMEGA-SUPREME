@@ -713,7 +713,7 @@ adaptive_engine fallan al enlazar (undefined refs) y los de GTest no encuentran 
 (includes vendored sin conectar). Objetivo: `run_ctest.sh` compila y ejecuta la suite completa
 sin errores, con el job `test-native-dsp` del CI usando el mismo camino (sin tocar sus jobs de daemon).
 
-**Estado:** reclamado — primera pasada en la próxima sesión de este flanco.
+**Estado:** trabajando — primera pasada REAL aplicada (2026-09-08): run_ctest.sh ahora compila y ejecuta la suite con include/link correctos (GTest vendored, spatial/, adaptive_decision_engine.cpp real). Resultados de la corrida de hoy quedan en el log del commit; pendiente: CI job test-native-dsp usando el mismo camino y 100% de los casos validados en CI.
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
