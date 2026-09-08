@@ -75,6 +75,10 @@ class UsbAudioProManager private constructor(context: Context) {
         private const val BIT_DEPTH = 32
         private const val FRAME_SIZE_BYTES = (BIT_DEPTH / 8) * CHANNELS
 
+        // Capacidad del triple buffer Java (frames). Nombrada para que
+        // writeAudio pueda acotar el bloque sin hardcodear el 4096 dos veces.
+        private const val RING_CAPACITY_FRAMES = 4096
+
         // Techo de diseno (UAC2 high-speed): 384kHz S32_LE estereo.
         // NO es lo que se negocia — es el limite superior. La SR real se
         // deriva del maxPacketSize del endpoint en negotiateSampleRate().
@@ -406,7 +410,7 @@ class UsbAudioProManager private constructor(context: Context) {
 
         // Inicializa triple buffer lock-free
         ringBuffer = TripleBufferS32(
-            capacityFrames = 4096,
+            capacityFrames = RING_CAPACITY_FRAMES,
             channels = CHANNELS
         )
 
@@ -517,14 +521,24 @@ class UsbAudioProManager private constructor(context: Context) {
      *
      * FIX (cableado real): antes esta clase no tenía ningún método para
      * recibir audio del pipeline — quedaba huérfana pese a tener el path
-     * USB OTG completo. `nativeStartAsyncEngine` en el lado C++ sigue
-     * siendo un stub de logging (no hace poll() real del endpoint
-     * isochronous todavía) — esto conecta el productor, no inventa el
-     * consumidor nativo que falta.
+     * USB OTG completo.
+     *
+     * NOTA DE ESTADO (verificado 2026-09-08 leyendo usb_audio_pro_manager.cpp):
+     * el motor nativo YA es real, no un stub — URBs isocronos via
+     * USBDEVFS_SUBMITURB/REAPURBNDELAY con fallback a write() con pacing,
+     * anillo SPSC y parada limpia con DISCARDURB. El comentario anterior
+     * ("stub de logging") quedo obsoleto y mentia en la telemetria.
+     *
+     * El bloque se acota a la capacidad del triple buffer (RING_CAPACITY_FRAMES):
+     * antes solo se acotaba al tamano del array de entrada, y un bloque mayor
+     * que el buffer lanzaba BufferOverflowException en el hilo de audio.
      */
     fun writeAudio(samples: FloatArray, frameCount: Int) {
         if (!isStreaming.get() || !::ringBuffer.isInitialized) return
-        val n = frameCount.coerceAtMost(samples.size / CHANNELS)
+        val n = frameCount
+            .coerceAtMost(samples.size / CHANNELS)
+            .coerceAtMost(RING_CAPACITY_FRAMES)
+        if (n <= 0) return
         val buf = ringBuffer.getWriteBuffer()
         buf.clear()
         for (i in 0 until n * CHANNELS) {
