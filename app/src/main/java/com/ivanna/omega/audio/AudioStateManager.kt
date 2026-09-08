@@ -134,8 +134,11 @@ object AudioStateManager {
         if (persistenceAttached) return
         persistenceAttached = true
         val store = ParameterStore(context.applicationContext)
-        // Cargar estado previo al arranque
-        val restored = store.loadParameters()
+        // Cargar estado previo al arranque. Pasa por validateState(): antes
+        // la asignacion era directa y un JSON de disco con valores fuera de
+        // rango (editado a mano, o escrito por una version futura con otra
+        // escala) entraba sin validar y se empujaba al nativo tal cual.
+        val restored = validateState(store.loadParameters())
         _audioState.value = restored
         _audioStateLive.postValue(restored)
 
