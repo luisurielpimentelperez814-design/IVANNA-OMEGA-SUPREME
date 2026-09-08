@@ -452,6 +452,68 @@ individual por cada cambio con push inmediato.
 
 ---
 
+### Controles y Persistencia de todos los entornos/sub-entornos + Entrada tipo C y ruta libre para DAC
+**Tomado por:** sesion Genspark (chat), iniciado 2026-09-08. EXCLUSIVO.
+**Alcance exacto — no editar mientras esta aqui:**
+- `app/src/main/java/com/ivanna/omega/core/ParameterStore.kt` (SSOT de parametros)
+- `app/src/main/java/com/ivanna/omega/audio/ParameterStore.kt` (blob AudioState + reconciliacion)
+- `app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt` (deteccion + perfil por ruta)
+- `app/src/main/java/com/ivanna/omega/audio/AudioRoutingManager.kt` (routing USB-DAC / A2DP / wired)
+- `app/src/main/java/com/ivanna/omega/audio/RouteDspCalibrator.kt` (calibracion DSP por ruta)
+- `app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt` (Type-C / USB OTG directo)
+- `app/src/main/java/com/ivanna/omega/audio/AudioBackendSelector.kt` (root/no-root/entorno)
+- `app/src/main/java/com/ivanna/omega/audio/BootRestoreReceiver.kt` (restauracion tras boot)
+- `app/src/main/java/com/ivanna/omega/audio/AudioSessionReceiver.kt` (sesiones globales)
+- `app/src/main/java/com/ivanna/omega/core/PersistedStateRestorer.kt` (arranque en caliente)
+- `app/src/main/cpp/usb_audio_pro_manager.cpp` (JNI USB OTG isoc real, solo la parte que
+  expone a Kotlin — no toca el pipeline DSP)
+- Rama del manifest relativa a USB HOST / permisos de dispositivo Type-C y receivers de
+  arranque/sesion cuando un fix del flanco lo exija (notado en el commit).
+
+**Explicitamente NO toca:** DSP nativo (cadena de senal), daemon/Magisk/SHM/socket, UI/UX
+Compose (paneles), conversacion/Gemini/memoria, tests host CTest, Laboratorio IAEL,
+dashboard web, flanco HEXAGON. Todos ya tomados.
+
+**MENSAJE A OTROS AGENTES (asi se trabajara):** este flanco se trabaja en MODO EXCLUSIVO,
+una sola sesion, de raiz, magistral, sin importar cuantas sesiones tome. NO toquen los
+archivos de arriba mientras esta entrada este en "tomados"; elijan cualquier OTRO flanco
+libre. Si terminan/abandonan el suyo, muevanlo a "abiertos" con nota concreta. Yo hare
+lo mismo cuando cierre este. Regla del propietario del repo: un solo agente por flanco,
+refinamiento de raiz sin importar cuantas sesiones tome.
+
+**Por que este flanco:** los controles del usuario y su persistencia son la promesa
+minima del producto — si tras reiniciar el usuario pierde su configuracion, o si al
+conectar un DAC Type-C la ruta no se sanea, la app se percibe rota aunque el DSP nativo
+funcione. Riesgos reales detectados antes de comenzar: split-brain audio.ParameterStore
+vs core.ParameterStore parcheado v1->v2 pero sin invariantes formales; restauracion boot
+por Thread cruda sin cancelacion; sin flag RECEIVER_EXPORTED explicito en el receiver de
+BOOT_COMPLETED (Android 13+); UsbAudioProManager sin registro dinamico de
+USB_DEVICE_ATTACHED/DETACHED (queda inerte si el usuario conecta el DAC despues de
+arrancar); sin permiso USB HOST / uses-feature en manifest; ruta USB-C gobernando HRTF
+con race window de 150ms sin cancelacion si el usuario desconecta.
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. Persistencia atomica y versionada: escritura por commit(), migraciones idempotentes,
+   ninguna clave se pierde tras crash, ClassCastException imposible por invariante de tipo.
+2. SSOT unico verificable: audio.ParameterStore y core.ParameterStore convergen siempre,
+   con propiedad "espejar+recargar = identidad" documentada en el commit.
+3. Restauracion post-boot y post-crash idempotente, con cancelacion limpia y sin race con
+   la UI (BootRestoreReceiver y PersistedStateRestorer no colisionan).
+4. Entrada Type-C: registro dinamico ATTACHED/DETACHED, solicitud de permiso UAC real,
+   deteccion de DAC UAC1/UAC2 con capacidades reales (SR/BPS soportadas), y "ruta libre
+   para DAC" — bypass del mezclador Android verificable, con fallback transparente si el
+   dispositivo no soporta isoc directo. Sin fantasmas: si el motor nativo es stub, se
+   dice explicitamente en telemetria.
+5. Sin race del HRTF al rotar a USB: la ventana de 150ms se cancela si el DAC se
+   desconecta antes de completarse (hoy pisa wet=1 sobre history vacio de otra ruta).
+6. Documentado en README (seccion nueva "Controles, Persistencia y Ruta DAC") lo que es
+   real vs. lo que requiere hardware/root/UAC.
+
+**Modo de trabajo:** un commit individual breve por cada cambio, push inmediato, ciclo
+tras ciclo hasta dejar el flanco magistral. No se cierra rapido a proposito.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
