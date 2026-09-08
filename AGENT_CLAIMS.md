@@ -622,3 +622,8 @@ suite host 7 tests + 67/67 global, migración JNI completa y eliminación de
 código decorativo. Pendiente no bloqueante: decidir el modo de look-ahead de
 predictSamples() con el flanco DSP (la firma C phase_oracle_velocity() NO
 cambió; el bridge recalibró su escala interna).
+
+---
+
+### IvannaLab — laboratorio de medicion de calidad de audio
+**Sesion Genspark, 2026-09-08.** ENTREGADO PARCIAL: fixes reales en ivannalab.cpp (compilacion verificada, puerta 67/67); test_ivannalab.cpp CORREGIDO y guardado pero SIN enganchar (requiere coordinar con flanco Tests host para enlazar ivannalab.cpp al target). Coordinacion necesaria para cerrar 100%.
