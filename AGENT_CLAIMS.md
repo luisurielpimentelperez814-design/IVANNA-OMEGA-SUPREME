@@ -271,7 +271,23 @@ rápido a propósito.
 
 **Por qué este frente:** es el LABORATORIO que certifica la calidad del DSP — sin él, "world-class" no se defiende con datos. Las generaciones actuales son decorativas: SNR falsa (referencia de ruido fija 1e-6), "spectral_balance" que divide por índice temporal en vez de frecuencia real, y un stress test que no mide la cadena real. De raíz: motor de medición serio (THD+N, SNR, IMD, balance espectral por bandas ISO, correlación estéreo, transitorios, validez, bit-exactness), reproducible y con tolerancias documentadas.
 
-**Estado:** trabajando — sesión larga, un commit individual breve por cada mejora, push por ciclo.
+**Estado:** trabajando — sesión larga, un commit individual breve por cada mejora, push por ciclo. Avance 2026-09-08: + stress determinista v4 (PASS), benchmark_suite reparado (C1), modo captura WAV disponible; pendiente validar captura real del pipeline nativo (requiere build NDK).
+
+
+---
+
+### Dashboard Web de control (React/Vite + server Express)
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
+**Alcance exacto — no editar mientras esté aquí:**
+- `src/` completo (App.tsx, components/, agent/, voice/, data/, types.ts, usePersist.ts)
+- `server.ts`, `index.html`, `package.json`, `vite.config.ts`, `tsconfig.json`, `.env.example`
+- `docs/FLANCO_WEB_DASHBOARD.md`
+
+**Explícitamente NO toca:** DSP nativo, daemon/Magisk/SHM, UI/UX Compose, conversación/Gemini del APK, SAF-HRTF, lab IAEL (tools/iael*, telemetry/, tools/telemetry, tools/dashboard).
+
+**Por qué este frente:** es el panel maestro del ecosistema (11 pestañas) y estaba libre. Auditado: identidad genérica (package.json: "react-example"), server Express sin validación de entrada ni rate-limit. De raíz: identidad correcta y seguridad básica del endpoint /api/chat.
+
+**Estado:** trabajando — primera pasada aplicada (rename + rate-limit/validación); faltan auth completa, despliegue y lockfile dedicado (anotado en la doc del flanco).
 
 ---
 
