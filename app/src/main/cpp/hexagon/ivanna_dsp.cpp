@@ -64,6 +64,13 @@ using fn_set_neuro_params_t  = int (*)(ivanna_dsp_handle_t,
                                        float, float, float, float);
 using fn_get_metrics_t       = int (*)(ivanna_dsp_handle_t, float*, float*);
 
+// Firmas HRTF/FIR idénticas a las declaradas en ivanna_dsp_rt.hpp (extern "C").
+using dsp_hrtf_init_fn     = int (*)(void*, uint32_t, uint32_t, uint32_t, uint32_t);
+using dsp_hrtf_convolve_fn = int (*)(void*, const float*, int, const float*, int,
+                                     float*, int, float*, int, float, float, uint32_t);
+using dsp_fir_init_fn      = int (*)(void*, uint32_t, uint32_t);
+using dsp_fir_upsample_fn  = int (*)(void*, const float*, int, float*, int, uint32_t);
+
 // ── Estado global del loader (opaco al resto del código) ─────────────────────
 namespace {
 
@@ -73,6 +80,11 @@ struct DspVTable {
     fn_process_stereo_t   process_stereo    = nullptr;
     fn_set_neuro_params_t set_neuro_params  = nullptr;
     fn_get_metrics_t      get_metrics       = nullptr;
+    // Símbolos opcionales del cliente FastRPC de alto nivel.
+    dsp_hrtf_init_fn      hrtf_init         = nullptr;
+    dsp_hrtf_convolve_fn  hrtf_convolve     = nullptr;
+    dsp_fir_init_fn       fir_init          = nullptr;
+    dsp_fir_upsample_fn   fir_upsample      = nullptr;
 };
 
 std::once_flag           g_load_once;
@@ -119,6 +131,10 @@ static void load_once() {
         vt.process_stereo   = resolve<fn_process_stereo_t>  (h, "ivanna_dsp_process_stereo");
         vt.set_neuro_params = resolve<fn_set_neuro_params_t>(h, "ivanna_dsp_set_neuro_params");
         vt.get_metrics      = resolve<fn_get_metrics_t>     (h, "ivanna_dsp_get_metrics");
+        vt.hrtf_init        = resolve<dsp_hrtf_init_fn>     (h, "ivanna_dsp_hrtf_init");
+        vt.hrtf_convolve    = resolve<dsp_hrtf_convolve_fn> (h, "ivanna_dsp_hrtf_convolve");
+        vt.fir_init         = resolve<dsp_fir_init_fn>      (h, "ivanna_dsp_fir_init");
+        vt.fir_upsample     = resolve<dsp_fir_upsample_fn>  (h, "ivanna_dsp_fir_upsample");
 
         // Contrato mínimo: open + close + al menos una operación útil.
         const bool minimum_ok =
@@ -213,6 +229,13 @@ int dsp_get_metrics(void* handle, float* cpu_load, float* peak_amp) noexcept {
     if (peak_amp) *peak_amp = 0.0f;
     return g_vt.get_metrics(handle, cpu_load, peak_amp);
 }
+
+// ── Símbolos IDL extendidos (cliente FastRPC) — fuerzan la carga y devuelven
+// el puntero resuelto, o nullptr si el DSP / símbolo no está disponible.
+dsp_hrtf_init_fn     dsp_hrtf_init_sym() noexcept     { return ensure_loaded() ? g_vt.hrtf_init     : nullptr; }
+dsp_hrtf_convolve_fn dsp_hrtf_convolve_sym() noexcept { return ensure_loaded() ? g_vt.hrtf_convolve : nullptr; }
+dsp_fir_init_fn      dsp_fir_init_sym() noexcept      { return ensure_loaded() ? g_vt.fir_init      : nullptr; }
+dsp_fir_upsample_fn  dsp_fir_upsample_sym() noexcept  { return ensure_loaded() ? g_vt.fir_upsample  : nullptr; }
 
 }}} // namespace ivanna::hexagon::rt
 

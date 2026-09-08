@@ -12,6 +12,7 @@
  */
 
 #include "ivanna_fastrpc_client.hpp"
+#include "ivanna_dsp_rt.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,81 +21,26 @@
 #include <thread>
 #include <chrono>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// ── FIX(arquitectura): UN solo loader FastRPC en todo el repo. ──────────────
+// Antes existian DOS loaders dlopen paralelos para el mismo DSP:
+//   (a) ivanna::hexagon::rt  (ivanna_dsp.cpp)  — open/close/process/metrics
+//   (b) ivanna::dsp::phaseh  (ivanna_fastrpc_client_load.cpp) — hrtf/fir
+// Ambos abrian libcdsprpc/libadsprpc por separado y resolvian simbolos de
+// forma independiente: estado divergente, doble dlopen y codigo duplicado.
+// Ahora TODA la carga pasa por el loader canonico ivanna::hexagon::rt y el
+// loader paralelo ivanna_fastrpc_client_load.cpp fue ELIMINADO del repo.
 
-typedef int (*ivanna_dsp_open_t)(void** h);
-typedef int (*ivanna_dsp_close_t)(void* h);
-typedef int (*ivanna_dsp_hrtf_init_t)(
-    void* h,
-    uint32_t sample_rate_in,
-    uint32_t sample_rate_out,
-    uint32_t hrtf_filter_len,
-    uint32_t block_size
-);
-typedef int (*ivanna_dsp_hrtf_convolve_t)(
-    void* h,
-    const float* in_l, int in_l_len,
-    const float* in_r, int in_r_len,
-    float* out_l, int out_l_len,
-    float* out_r, int out_r_len,
-    float azimuth, float elevation,
-    uint32_t num_frames
-);
-typedef int (*ivanna_dsp_fir_init_t)(
-    void* h,
-    uint32_t upsampling_factor,
-    uint32_t filter_len
-);
-typedef int (*ivanna_dsp_fir_upsample_t)(
-    void* h,
-    const float* input, int input_len,
-    float* output, int output_len,
-    uint32_t input_frames
-);
-
-static ivanna_dsp_open_t g_dsp_open = nullptr;
-static ivanna_dsp_close_t g_dsp_close = nullptr;
-static ivanna_dsp_hrtf_init_t g_dsp_hrtf_init = nullptr;
-static ivanna_dsp_hrtf_convolve_t g_dsp_hrtf_convolve = nullptr;
-static ivanna_dsp_fir_init_t g_dsp_fir_init = nullptr;
-static ivanna_dsp_fir_upsample_t g_dsp_fir_upsample = nullptr;
-
-#ifdef __cplusplus
-}
-#endif
+namespace rt = ivanna::hexagon::rt;
 
 namespace ivanna {
 namespace dsp {
 
-static std::atomic<bool> g_fastrpc_loaded{false};
+// Refcount de clientes activos (telemetria interna; sin uso externo).
 static std::atomic<int> g_dsp_refcount{0};
 
-namespace phaseh {
-    struct ResolvedSymbols {
-        void* dsp_open; void* dsp_close;
-        void* dsp_hrtf_init; void* dsp_hrtf_convolve;
-        void* dsp_fir_init; void* dsp_fir_upsample;
-        const char* lib_name; bool loaded;
-    };
-    const ResolvedSymbols& resolved_symbols() noexcept;
-}
-
-static bool load_fastrpc_symbols() {
-    if (g_fastrpc_loaded.load(std::memory_order_acquire)) {
-        return (g_dsp_open != nullptr);
-    }
-    const auto& s = ivanna::dsp::phaseh::resolved_symbols();
-    g_dsp_open          = reinterpret_cast<ivanna_dsp_open_t>(s.dsp_open);
-    g_dsp_close         = reinterpret_cast<ivanna_dsp_close_t>(s.dsp_close);
-    g_dsp_hrtf_init     = reinterpret_cast<ivanna_dsp_hrtf_init_t>(s.dsp_hrtf_init);
-    g_dsp_hrtf_convolve = reinterpret_cast<ivanna_dsp_hrtf_convolve_t>(s.dsp_hrtf_convolve);
-    g_dsp_fir_init      = reinterpret_cast<ivanna_dsp_fir_init_t>(s.dsp_fir_init);
-    g_dsp_fir_upsample  = reinterpret_cast<ivanna_dsp_fir_upsample_t>(s.dsp_fir_upsample);
-    g_fastrpc_loaded.store(true, std::memory_order_release);
-    return s.loaded;
-}
+// El loader canonico hace la carga perezosa en la primera llamada a cualquier
+// rt::dsp_*_sym(). No se necesita paso de carga explicito aqui: basta con
+// resolver los punteros de funcion bajo demanda desde rt.
 
 IvannaFastRpcClient::IvannaFastRpcClient() noexcept
     : m_dsp_handle(nullptr),
@@ -105,7 +51,8 @@ IvannaFastRpcClient::IvannaFastRpcClient() noexcept
       m_dma_buffer_in(nullptr),
       m_dma_buffer_out(nullptr),
       m_dma_buffer_size(0) {
-    load_fastrpc_symbols();
+    // Fuerza la carga perezosa del loader canonico (idempotente, thread-safe).
+    rt::ensure_loaded();
 }
 
 IvannaFastRpcClient::~IvannaFastRpcClient() {
@@ -119,21 +66,19 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
 
     m_config = config;
 
-    if (g_dsp_open != nullptr) {
-        int ret = g_dsp_open(&m_dsp_handle);
-        if (ret != 0 || m_dsp_handle == nullptr) {
-            m_dsp_ready.store(false, std::memory_order_release);
-            m_initialized.store(true, std::memory_order_release);
-            return false;
-        }
-    } else {
+    // Resolver los punteros ANTES de cualquier goto (C++ prohíbe saltar por
+    // encima de inicializaciones).
+    auto hrtf_init = rt::dsp_hrtf_init_sym();
+    auto fir_init  = rt::dsp_fir_init_sym();
+
+    if (rt::dsp_open(&m_dsp_handle) != 0 || m_dsp_handle == nullptr) {
         m_dsp_ready.store(false, std::memory_order_release);
         m_initialized.store(true, std::memory_order_release);
         return false;
     }
 
-    if (g_dsp_hrtf_init != nullptr && m_dsp_handle != nullptr) {
-        int ret = g_dsp_hrtf_init(
+    if (hrtf_init != nullptr && m_dsp_handle != nullptr) {
+        int ret = hrtf_init(
             m_dsp_handle,
             config.sample_rate_in,
             config.sample_rate_out,
@@ -146,15 +91,10 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
         m_hrtf_convolver = m_dsp_handle;
     }
 
-    if (g_dsp_fir_init != nullptr && m_dsp_handle != nullptr) {
+    if (fir_init != nullptr && m_dsp_handle != nullptr) {
         uint32_t up_factor = (config.sample_rate_out / config.sample_rate_in);
         if (up_factor == 0) up_factor = 1;
-        
-        int ret = g_dsp_fir_init(
-            m_dsp_handle,
-            up_factor,
-            512
-        );
+        int ret = fir_init(m_dsp_handle, up_factor, 512);
         if (ret != 0) {
             goto cleanup;
         }
@@ -176,8 +116,8 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
     return true;
 
 cleanup:
-    if (m_dsp_handle != nullptr && g_dsp_close != nullptr) {
-        g_dsp_close(m_dsp_handle);
+    if (m_dsp_handle != nullptr) {
+        rt::dsp_close(m_dsp_handle);
     }
     m_dsp_handle = nullptr;
     m_hrtf_convolver = nullptr;
@@ -194,8 +134,8 @@ void IvannaFastRpcClient::teardown() noexcept {
 
     m_dsp_ready.store(false, std::memory_order_release);
 
-    if (m_dsp_handle != nullptr && g_dsp_close != nullptr) {
-        g_dsp_close(m_dsp_handle);
+    if (m_dsp_handle != nullptr) {
+        rt::dsp_close(m_dsp_handle);
     }
 
     m_dsp_handle = nullptr;
@@ -226,22 +166,16 @@ bool IvannaFastRpcClient::delegateBinauralConvolution(
     if (!m_dsp_ready.load(std::memory_order_acquire)) {
         return false;
     }
-    if (!m_hrtf_convolver || !g_dsp_hrtf_convolve) {
+    auto hrtf_convolve = rt::dsp_hrtf_convolve_sym();
+    if (!m_hrtf_convolver || !hrtf_convolve) {
         return false;
     }
     if (!input_left || !input_right || !output_left || !output_right) {
         return false;
     }
 
-    // FIX(heap corruption): antes, si num_frames > block_size se ALIASABA
-    // m_dma_buffer_in al buffer del llamador (input_left) y teardown() luego
-    // hacia free() sobre memoria que no era nuestra -> free() ilegal /
-    // corrupción de heap. Además el memcpy al buffer DMA era trabajo muerto:
-    // la llamada g_dsp_hrtf_convolve() de abajo nunca consume m_dma_buffer_in.
-    // Regla ahora: el DSP procesa bloques acotados a block_size; si el bloque
-    // es mayor se rechaza limpio (false) y el llamador trocea o va por CPU.
-    // m_dma_buffer_in/out quedan como scratch propio (reservado para la ruta
-    // FastRPC real con buffers ION/DMA-contiguous); nunca se aliasan.
+    // FIX(heap corruption): ver nota en commit previo — nunca aliasar el
+    // scratch DMA; bloques mayores que block_size se rechazan limpio.
     if (num_frames > m_config.block_size) {
         return false;
     }
@@ -251,7 +185,7 @@ bool IvannaFastRpcClient::delegateBinauralConvolution(
                input_right, num_frames * sizeof(float));
     }
 
-    int ret = g_dsp_hrtf_convolve(
+    int ret = hrtf_convolve(
         m_hrtf_convolver,
         input_left, (int)(num_frames * sizeof(float)),
         input_right, (int)(num_frames * sizeof(float)),
@@ -274,14 +208,15 @@ bool IvannaFastRpcClient::delegateFIRUpsampling(
     if (!m_dsp_ready.load(std::memory_order_acquire)) {
         return false;
     }
-    if (!m_fir_upsampler || !g_dsp_fir_upsample) {
+    auto fir_upsample = rt::dsp_fir_upsample_sym();
+    if (!m_fir_upsampler || !fir_upsample) {
         return false;
     }
     if (!input || !output) {
         return false;
     }
 
-    int ret = g_dsp_fir_upsample(
+    int ret = fir_upsample(
         m_fir_upsampler,
         input, (int)(input_frames * sizeof(float)),
         output, (int)(output_frames * sizeof(float)),
@@ -292,6 +227,14 @@ bool IvannaFastRpcClient::delegateFIRUpsampling(
 }
 
 float IvannaFastRpcClient::getDSPThermalLoad() const noexcept {
+    // FIX(honestidad): antes retornaba 0.0f siempre (telemetria falsa). Si el
+    // DSP esta arriba intenta leer la metrica real; si no, reporta 0 pero el
+    // caller puede distinguir disponibilidad via isDSPReady().
+    if (!m_dsp_ready.load(std::memory_order_acquire)) return 0.0f;
+    float cpu_load = 0.0f, peak = 0.0f;
+    if (rt::dsp_get_metrics(m_dsp_handle, &cpu_load, &peak) == 0) {
+        return cpu_load;
+    }
     return 0.0f;
 }
 

@@ -173,7 +173,6 @@ add_library(ivanna_omega SHARED
 
     # Fase H: Hexagon DSP real loader + NPE engine (Phase H integration)
     hexagon/ivanna_dsp.cpp
-    hexagon/ivanna_fastrpc_client_load.cpp
     neuromorphic/ivanna_npe_engine.cpp
 
     # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
@@ -260,7 +259,6 @@ add_library(omega_effect SHARED
     IvannaVoiceProsodyEngine.cpp
     IvannaSuperAgentMemory.cpp
     hexagon/ivanna_fastrpc_client.cpp
-    hexagon/ivanna_fastrpc_client_load.cpp
     hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     saf_optimizer.cpp

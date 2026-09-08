@@ -53,4 +53,35 @@ int dsp_set_neuro_params(void* handle,
                          float alpha, float beta, float gamma, float delta) noexcept;
 int dsp_get_metrics(void* handle, float* cpu_load, float* peak_amp) noexcept;
 
+// ── Símbolos IDL extendidos para el cliente FastRPC de alto nivel ────────────
+// Firmas C puras (extern "C") resueltas por dlopen/dlsym. Puntero nulo si el
+// símbolo no existe en la librería cargada. Estas funciones las consume
+// ivanna_fastrpc_client.cpp; antes vivían en un segundo loader paralelo
+// (ivanna::dsp::phaseh) que hacía su propio dlopen — ahora hay UNO SOLO.
+extern "C" {
+
+using dsp_hrtf_init_fn = int (*)(void* handle,
+                                 uint32_t sample_rate_in, uint32_t sample_rate_out,
+                                 uint32_t hrtf_filter_len, uint32_t block_size);
+using dsp_hrtf_convolve_fn = int (*)(void* handle,
+                                     const float* in_l, int in_l_len,
+                                     const float* in_r, int in_r_len,
+                                     float* out_l, int out_l_len,
+                                     float* out_r, int out_r_len,
+                                     float azimuth, float elevation,
+                                     uint32_t num_frames);
+using dsp_fir_init_fn = int (*)(void* handle,
+                                uint32_t upsampling_factor, uint32_t filter_len);
+using dsp_fir_upsample_fn = int (*)(void* handle,
+                                    const float* input, int input_len,
+                                    float* output, int output_len,
+                                    uint32_t input_frames);
+
+dsp_hrtf_init_fn     dsp_hrtf_init_sym() noexcept;
+dsp_hrtf_convolve_fn dsp_hrtf_convolve_sym() noexcept;
+dsp_fir_init_fn      dsp_fir_init_sym() noexcept;
+dsp_fir_upsample_fn  dsp_fir_upsample_sym() noexcept;
+
+} // extern "C"
+
 }}} // namespace ivanna::hexagon::rt
