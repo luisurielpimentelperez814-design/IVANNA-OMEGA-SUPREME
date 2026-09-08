@@ -33,7 +33,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
     setBestFitness((prev) =>
       metrics.evolutionFitness < prev ? metrics.evolutionFitness : prev
     );
-  }, [metrics.evolutionFitness]); // eslint-disable-line
+  }, [metrics.evolutionFitness, setBestFitness]);
 
   // ── Animación canvas ────────────────────────────────────────────────────────
   useEffect(() => {

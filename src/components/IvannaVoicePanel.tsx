@@ -370,12 +370,12 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
   };
 
   // Cleanup
-  useEffect(() => () => { doStop(); stopSpeaking(); }, []); // eslint-disable-line
+  useEffect(() => () => { doStop(); stopSpeaking(); }, [doStop, stopSpeaking]);
 
   const stateText = isListening
     ? (transcript ? `"${transcript.slice(0,80)}${transcript.length>80?'...':''}"` : 'Escuchando...')
     : isSpeaking ? `IVANNA habla • ${emotion}`
-    : isThinking ? 'Procesando con Claude Sonnet...'
+    : isThinking ? 'Procesando con Gemini 2.5 Pro...'
     : 'Listo para escucharte';
 
   const ec = EC[emotion];
