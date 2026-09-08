@@ -592,6 +592,21 @@ class UsbAudioProManager private constructor(context: Context) {
 
     /**
      * Triple buffer lock-free S32_LE para evitar pausas del GC.
+     *
+     * Patron clasico de tres indices:
+     *   - writeIndex: el que el productor esta llenando AHORA
+     *   - readyIndex: el ultimo completo, listo para el consumidor
+     *   - readIndex:  el que el consumidor esta leyendo AHORA
+     * commitWrite() intercambia write<->ready (publica el bloque);
+     * swapRead() intercambia read<->ready (el consumidor toma el listo).
+     *
+     * ESTADO REAL (verificado 2026-09-08): el consumidor de audio NO lee de
+     * este buffer — el camino vivo es nativeWriteFrames() hacia el anillo
+     * SPSC nativo de usb_audio_pro_manager.cpp. getReadBuffer()/swapRead()
+     * quedan como API correcta para un futuro consumidor Java (p.ej. un
+     * visualizador de onda), ya con la semantica arreglada: antes swapRead()
+     * intercambiaba writeIndex<->readIndex, y un consumidor que lo usara
+     * habria leido el buffer A MEDIO ESCRIBIR por el productor.
      */
     private class TripleBufferS32(capacityFrames: Int, channels: Int) {
         private val frameSize = channels * 4
@@ -623,9 +638,13 @@ class UsbAudioProManager private constructor(context: Context) {
         }
 
         fun swapRead() {
-            val oldWrite = writeIndex
-            writeIndex = readIndex
-            readIndex = oldWrite
+            // read <-> ready: el consumidor toma el ultimo bloque publicado.
+            // (Antes intercambiaba write<->read: semantica rota — el
+            // consumidor habria leido el buffer que el productor esta
+            // escribiendo en este instante.)
+            val oldReady = readyIndex
+            readyIndex = readIndex
+            readIndex = oldReady
         }
     }
 
