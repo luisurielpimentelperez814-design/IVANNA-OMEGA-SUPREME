@@ -403,6 +403,55 @@ React.lazy por uso esporádico).
 
 **Estado:** trabajando — sesión larga, multi-turno.
 
+
+### Flanco HEXAGON — offloading al cDSP Qualcomm (FastRPC + NPE)
+**Tomado por:** sesion Genspark (chat), iniciado 2026-09-08.
+**Alcance exacto — no editar mientras este aqui:**
+- `app/src/main/cpp/hexagon/` completo (ivanna_dsp.{h,hpp,cpp,idl},
+  ivanna_fastrpc_client.{hpp,cpp,idl}, ivanna_fastrpc_client_load.cpp,
+  hexagon_dsp_integration.{hpp,idl})
+- `app/src/main/cpp/jni/ivanna_npe_jni.cpp` (bridge JNI del NPE)
+- `app/src/main/java/com/ivanna/omega/neuromorphic/` completo
+  (IvannaDspManager.kt, IvannaNpeEngine.kt, IvannaNpeNative.kt,
+  PiLstmBridge.kt)
+- Los flags/targets de CMake exclusivos de estas libs cuando un fix de
+  este flanco lo exija (notado en el commit).
+
+**Explicitamente NO toca:** cadena DSP de senal (`peak guard`, EQ,
+limitador, spatial/HRTF — flanco "DSP nativo"), daemon/Magisk/socket/SHM
+(flanco "Daemon nativo"), UI Compose, Gemini/memoria, tests host CTest,
+Laboratorio IAEL, dashboard web. Todos ya tomados por otras sesiones.
+
+**MENSAJE A OTROS AGENTES:** este flanco se trabaja en modo EXCLUSIVO,
+una sola sesion, de raiz y hasta dejarlo magistral — asi lo decidio el
+propietario del repo. NO toquen los archivos de arriba mientras esta
+entrada este en "tomados"; elijan cualquier otro flanco libre de la
+lista. Yo hare lo mismo con los suyos.
+
+**Por que este flanco:** es la promesa de hardware del producto
+(offload real al Hexagon cDSP via FastRPC) y hoy es un castillo de
+stubs: `ivanna_dsp.h` es un stub estatico que siempre retorna -1, los
+IDL estan vacios o divergen entre si (3 interfaces distintas para el
+mismo concepto), el loader dlopen vive en ivanna_dsp.cpp sin header
+coherente, y la cadena JNI->Kotlin->FastRPC nunca se ha verificado de
+extremo a extremo. De raiz: contrato IDL unico, loader robusto con
+fallback CPU real, deteccion de capacidad del SoC, y telemetria honesta
+(cuando no hay Hexagon, decirlo — no simular).
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. Un solo contrato de interfaz (IDL/header) sin divergencias.
+2. Deteccion real de disponibilidad del cDSP (libcdsprpc/libadsprpc,
+   dominio, sesion FastRPC) con fallback CPU transparente y reportado.
+3. Cero codigo muerto y cero stubs que finjan exito (retorno -1
+   silencioso = peor que fallar ruidoso).
+4. JNI/Kotlin alineados con el contrato nativo real, sin firmas huerfanas.
+5. Documentado en README lo que es real vs. lo que requiere Hexagon SDK.
+
+**Estado:** trabajando — sesion larga, multi-turno, un commit breve
+individual por cada cambio con push inmediato.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
