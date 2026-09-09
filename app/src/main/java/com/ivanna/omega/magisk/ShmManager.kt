@@ -310,7 +310,15 @@ object ShmManager {
     fun isDaemonAlive(maxAgeMs: Long = 2000L): Boolean {
         val hb = daemonHeartbeatMs()
         if (hb <= 0L) return false
-        val now = android.os.SystemClock.elapsedRealtime()
+        // FIX (mismatch de dominio de reloj): el daemon escribe el heartbeat
+        // con std::chrono::steady_clock, que en Android/Linux mapea a
+        // CLOCK_MONOTONIC — NO avanza durante deep sleep. La comparación debe
+        // usar uptimeMillis() (también CLOCK_MONOTONIC), NO elapsedRealtime()
+        // (CLOCK_BOOTTIME, que SÍ incluye el tiempo suspendido). Con
+        // elapsedRealtime(), tras cualquier suspensión del dispositivo la app
+        // reportaba daemon zombi estando vivo: now avanzaba las horas dormidas
+        // pero hb no, así que (now - hb) superaba maxAgeMs siempre.
+        val now = android.os.SystemClock.uptimeMillis()
         return (now - hb) in 0..maxAgeMs
     }
 
