@@ -76,6 +76,12 @@ object ShmManager {
     // C++ (daemon/core/shm_manager.h). Cambio exige bump coordinado de ABI.
     private const val SHM_HEARTBEAT_OFF = SHM_HEADER_BYTES + 16
 
+    // ── Bloque de salud del canal (espejo de SHM_HEALTH_OFFSET del C++) ──────
+    // Offset absoluto del inicio del bloque: sizeof(ShmHeader)=32 + SHM_HEALTH_OFFSET=24.
+    // Layout interno (u32 LE cada uno): +0 safFrames, +4 heartbeats,
+    // +8 writesRechazados, +12 comandos, +16 clientes, +20 reservado.
+    private const val SHM_HEALTH_ABS = SHM_HEADER_BYTES + 24
+
     // ── ABI del ShmHeader (espejo de daemon/core/shm_manager.h) ─────────────
     // validateShmHeader() en C++ es la fuente de verdad; aquí se replica la
     // misma lógica con los offsets absolutos del struct (blindados allá por
@@ -306,6 +312,39 @@ object ShmManager {
         if (hb <= 0L) return false
         val now = android.os.SystemClock.elapsedRealtime()
         return (now - hb) in 0..maxAgeMs
+    }
+
+    /**
+     * Métricas de salud del canal daemon↔app (roadmap control-plane item 3).
+     * Contadores u32 monotónicos escritos por el daemon (pueden envolver a
+     * ~4e9 — interpretar por delta entre muestreos, nunca como absolutos).
+     * Devuelve null si la región no es la del daemon o es demasiado corta.
+     */
+    data class ChannelHealth(
+        val safFramesPublished: Long,
+        val heartbeatsEmitted: Long,
+        val writesRejected: Long,
+        val commandsProcessed: Long,
+        val clientsConnected: Long,
+    )
+
+    fun channelHealth(): ChannelHealth? {
+        val buf = buffer ?: return null
+        if (!isReady || !mappedFromDaemon) return null
+        if (buf.capacity() < SHM_HEALTH_ABS + 24) return null
+        return runCatching {
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            // u32 sin signo -> Long (máscara 0xFFFFFFFF) para no devolver
+            // negativos cuando el contador supera Int.MAX_VALUE.
+            fun u32(absOff: Int) = le.getInt(absOff).toLong() and 0xFFFFFFFFL
+            ChannelHealth(
+                safFramesPublished = u32(SHM_HEALTH_ABS + 0),
+                heartbeatsEmitted  = u32(SHM_HEALTH_ABS + 4),
+                writesRejected     = u32(SHM_HEALTH_ABS + 8),
+                commandsProcessed  = u32(SHM_HEALTH_ABS + 12),
+                clientsConnected   = u32(SHM_HEALTH_ABS + 16),
+            )
+        }.getOrNull()
     }
 
     fun readAndApplySafFrame(): Boolean {
