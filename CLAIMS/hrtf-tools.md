@@ -46,3 +46,60 @@
    validación de binarios generados) → push inmediato.
 2. Nunca escribir tokens en archivos/commits/logs.
 3. Al terminar o abandonar: actualizar AGENT_CLAIMS.md.
+
+---
+
+## CIERRE DEL RELEVO (2026-09-09, sesión Genspark) — flanco ENTREGADO
+
+Los 4 puntos de la evidencia rota, cerrados con commits verificables:
+
+1. **Asset corrupto → RESTAURADO byte-perfecto** (`73812665`). Forense nuevo
+   sobre la evidencia: el archivo no tenía "otro layout" — estaba mutilado por
+   una pasada de codec UTF-8 (lleno de U+FFFD `ef bf bd`; cada byte inválido
+   reescrito como 3 bytes con pérdida irreversible). Commit corruptor:
+   `bde62755` (único que lo tocó tras su creación). Restauración = checkout
+   de `996a6259` (creador): verificado byte a byte (2,908,184 B =
+   24 + 710×2×512×4 exacto, sr=44100, datos float sanos, cero U+FFFD).
+   NO se regeneró con herramientas: habría producido un dataset distinto.
+   Notificación formal al flanco DSP/SAF en AGENT_CLAIMS.md: `loadIVHRTF01()`
+   hace resize() sin validación de rango (OOM demostrado como posible);
+   `ihr1_format.hpp` sí acota — el fix del lector es suyo, no mío.
+
+2. **`sofa_convert.py` → shim seguro** (`97faa76c`). Ya no escribe binarios:
+   redirige a `tools/hrtf/sofa_to_ihr1.py` conservando args y exit code; sin
+   argumentos muestra la ayuda y sale con código 2 (ningún CI heredado puede
+   fingir éxito). Verificado por ejecución real. Grep verificado: ningún
+   workflow/script/doc lo invocaba como herramienta de generación.
+
+3. **Puerta de validación creada** (`5eb5fe22`): `tools/hrtf/verify_dataset.py`
+   — replica las reglas de AMBOS lectores C++ (IHR1 AZ/AZEL por tamaño exacto,
+   IVHRTF01 legacy; rangos acotados aunque el lector legacy no acote; datos sin
+   NaN/Inf, energía no nula, |x|≤4; ángulos en dominio físico — NO una
+   convención: primera versión rechazó los .ihr1 del módulo por reglas
+   inventadas, la lectura directa de los archivos corrigió la regla).
+   Verificada: 13/13 datasets del repo PASS + casos negativos sintéticos FAIL
+   con causa nombrada (réplica exacta del corrupto real incluida).
+
+4. **Pipeline end-to-end verificado por primera vez**: SOFA KEMAR real (44.1k)
+   → `sofa_to_ihr1.py` (resampleo polifásico a 48k, dedupe por azimut) →
+   72 direcciones → `verify_dataset.py` PASS. La cadena completa que nunca se
+   había verificado, verificada.
+
+5. **Bonus HpIR** (`4d6d0d6d`, `7c43a509`): `extract_hpir_profiles.py` deja de
+   depender de rutas absolutas de una máquina (argparse + defaults relativos;
+   ya no escribe `[]` con éxito aparente si falta toda la entrada) y excluye
+   la región del shelf de la detección de bandas — los 5 perfiles llevaban una
+   banda artefacto idéntica a 23.4 Hz +8 dB solapando con el shelf (doble
+   compensación de graves; el JSON publicado la curaba a mano). JSON
+   regenerado reproducible. `AutoEqManager` (perfiles embebidos) NO tocado:
+   territorio del flanco espacial.
+
+6. **Documentación alineada** (`8437dc1c`): `docs/HRTF_DATASET.md` — nueva §6
+   (formato IVHRTF01 legacy documentado por primera vez + lección UTF-8),
+   divergencia de límites entre los dos lectores IHR1 documentada (1024 vs
+   8192), y §7: la puerta de validación como paso obligatorio.
+
+**Queda libre.** Pendiente no bloqueante para quien lo retome: enganchar
+`verify_dataset.py` al CI (territorio del flanco Tests host — notificado en
+AGENT_CLAIMS.md) y regenerar el dataset embarcado del módulo si algún día se
+quiere uno distinto del actual.
