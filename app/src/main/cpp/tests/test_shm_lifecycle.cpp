@@ -130,6 +130,43 @@ int main() {
         mgr2.close();
     }
 
+    // ── 7b. Bloque de salud del canal (roadmap item 3): contadores u32 ──
+    // bumpHealthCounter(i) debe escribir en base + sizeof(ShmHeader) +
+    // SHM_HEALTH_OFFSET + i*4 — los mismos bytes absolutos que lee la app.
+    {
+        auto* base = static_cast<uint8_t*>(mgr.base());
+        auto readCounter = [&](uint32_t i) -> uint32_t {
+            uint32_t v = 0;
+            std::memcpy(&v, base + sizeof(ShmHeader) + SHM_HEALTH_OFFSET + i * 4, 4);
+            return v;
+        };
+        const uint32_t before0 = readCounter(0);
+        const uint32_t before1 = readCounter(1);
+        mgr.bumpHealthCounter(0); // saf_frames_publicados
+        mgr.bumpHealthCounter(1); // heartbeats_emitidos
+        mgr.bumpHealthCounter(1);
+        CHECK(readCounter(0) == before0 + 1,
+              "salud: bumpHealthCounter(0) incrementa saf_frames_publicados en base+56");
+        CHECK(readCounter(1) == before1 + 2,
+              "salud: bumpHealthCounter(1) incrementa heartbeats_emitidos en base+60 (x2)");
+        mgr.bumpHealthCounter(5);  // indice invalido: no-op, no corrupts
+        mgr.bumpHealthCounter(99); // idem
+        CHECK(true, "salud: indices invalidos de bumpHealthCounter son no-op (sin crash)");
+        // El frame SAF y el heartbeat adyacentes NO deben haberse tocado.
+        std::memcpy(saf_read, base + 32, sizeof(saf_read));
+        CHECK(std::memcmp(saf, saf_read, sizeof(saf)) == 0,
+              "salud: contadores no pisan el frame SAF adyacente");
+        uint64_t hb_check = 0;
+        std::memcpy(&hb_check, base + 48, sizeof(hb_check));
+        CHECK(hb_check == hb,
+              "salud: contadores no pisan el heartbeat adyacente");
+        // noteRejectedWrite(): el overflow rechazado debe contarse en indice 2.
+        const uint32_t beforeRej = readCounter(2);
+        const size_t over2 = (SHM_STATE_OFFSET - sizeof(ShmHeader)) + 1;
+        CHECK(!mgr.write(saf, over2) && readCounter(2) == beforeRej + 1,
+              "salud: write rechazado incrementa writes_rechazados (indice 2)");
+    }
+
     // ── 8. Validación de header (FASE 5/8): magic/version/state_size/bounds ──
     // El validador canónico es la guardia que un reader ejecuta ANTES de
     // reinterpretar el mmap como OmegaSharedState vivo. Aquí se ejercitan
