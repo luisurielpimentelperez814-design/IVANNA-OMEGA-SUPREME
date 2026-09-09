@@ -241,6 +241,15 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             compatible?"true":"false",
             compatible?"ready":"proto_mismatch");
 
+    } else if (strcmp(action,"HELLO")==0) {
+        // Handshake de protocolo: el bridge lo envía al conectar y exige que
+        // la versión del daemon sea compatible. Responde la versión real y
+        // el estado, para que la app rechaze un daemon viejo/incompatible en
+        // vez de asumir que el socket abierto implica contrato válido.
+        n = snprintf(reply,(size_t)reply_sz,
+            "{\"ok\":true,\"action\":\"HELLO\",\"proto\":%d,\"daemon\":\"2.3.6\",\"status\":\"ready\"}",
+            OMEGA_PROTO_VERSION);
+
     } else if (strcmp(action,"GET_STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
