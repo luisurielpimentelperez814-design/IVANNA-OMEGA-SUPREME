@@ -285,3 +285,41 @@ allow untrusted_app_32 untrusted_app_32 unix_stream_socket { create connect read
 allow untrusted_app_33 untrusted_app_33 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_34 untrusted_app_34 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
 allow untrusted_app_35 untrusted_app_35 unix_stream_socket { create connect read write getopt setopt getattr shutdown }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.1 — APP → omega_shm (canal A, fallback por ruta directa)
+#
+# El handshake principal entrega el fd por SCM_RIGHTS (sin acceso a fichero),
+# pero omega_daemon_bridge_stub.cpp mantiene el fallback historico:
+#   open("/data/adb/ivanna_omega/omega_shm", O_RDWR) + mmap(PROT_READ|PROT_WRITE)
+# Ese path exige permisos de FICHERO SELinux para el dominio de la app — las
+# reglas de socket (connectto) no los cubren y la seccion 6 solo autoriza a
+# audioserver (canal B). Sin esta seccion, el fallback moria con EACCES en
+# enforcing aunque el daemon y el socket estuvieran perfectamente sanos:
+# mismo sintoma "CORRIENDO pero sin datos" que el bug de sockets, un nivel
+# mas abajo. Se cubre la base y las variantes por targetSdk (25..35), igual
+# que la seccion v3.0 de sockets. write/map son necesarios porque el bridge
+# mapea PROT_WRITE (la app escribe parametros DSP en OmegaSharedState).
+# ═══════════════════════════════════════════════════════════════════════════════
+allow untrusted_app adb_data_file file { read write open getattr map }
+allow untrusted_app adb_data_file dir { search getattr open read }
+allow untrusted_app system_data_file file { read write open getattr map }
+allow untrusted_app system_data_file dir { search getattr }
+allow untrusted_app magisk_file file { read write open getattr map }
+allow untrusted_app magisk_file dir { search getattr }
+allow untrusted_app_25 adb_data_file file { read write open getattr map }
+allow untrusted_app_25 adb_data_file dir { search getattr open read }
+allow untrusted_app_27 adb_data_file file { read write open getattr map }
+allow untrusted_app_27 adb_data_file dir { search getattr open read }
+allow untrusted_app_29 adb_data_file file { read write open getattr map }
+allow untrusted_app_29 adb_data_file dir { search getattr open read }
+allow untrusted_app_30 adb_data_file file { read write open getattr map }
+allow untrusted_app_30 adb_data_file dir { search getattr open read }
+allow untrusted_app_32 adb_data_file file { read write open getattr map }
+allow untrusted_app_32 adb_data_file dir { search getattr open read }
+allow untrusted_app_33 adb_data_file file { read write open getattr map }
+allow untrusted_app_33 adb_data_file dir { search getattr open read }
+allow untrusted_app_34 adb_data_file file { read write open getattr map }
+allow untrusted_app_34 adb_data_file dir { search getattr open read }
+allow untrusted_app_35 adb_data_file file { read write open getattr map }
+allow untrusted_app_35 adb_data_file dir { search getattr open read }
