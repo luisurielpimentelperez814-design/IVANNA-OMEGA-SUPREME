@@ -276,20 +276,6 @@ rápido a propósito.
 
 ---
 
-### Dashboard Web de control (React/Vite + server Express)
-**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
-**Alcance exacto — no editar mientras esté aquí:**
-- `src/` completo (App.tsx, components/, agent/, voice/, data/, types.ts, usePersist.ts)
-- `server.ts`, `index.html`, `package.json`, `vite.config.ts`, `tsconfig.json`, `.env.example`
-- `docs/FLANCO_WEB_DASHBOARD.md`
-
-**Explícitamente NO toca:** DSP nativo, daemon/Magisk/SHM, UI/UX Compose, conversación/Gemini del APK, SAF-HRTF, lab IAEL (tools/iael*, telemetry/, tools/telemetry, tools/dashboard).
-
-**Por qué este frente:** es el panel maestro del ecosistema (11 pestañas) y estaba libre. Auditado: identidad genérica (package.json: "react-example"), server Express sin validación de entrada ni rate-limit. De raíz: identidad correcta y seguridad básica del endpoint /api/chat.
-
-**Estado:** reclamado — nota de coordinación 2026-09-08: otra sesión edita package.json (renombrado a 'ivanna-omega-supreme-dashboard') y server.ts en remoto; mis mejoras (rate-limit 30/min + validación messages/system) se descartaron en conflicto respetando protocolo. Falta definir dueño real de server.ts antes de aplicar el endurecimiento (hallazgo de la auditoría).
-
----
 
 ### Tests nativos host (CTest) + integración en CI
 **Tomado por:** sesión Genspark (chat), iniciado 2026-09-07. Detalle completo y protocolo en [CLAIMS/tests-host-ctest.md](CLAIMS/tests-host-ctest.md).
@@ -338,7 +324,14 @@ rescatar AdaptiveEQ si el flanco DSP decide reincorporarlo.
   `agent/`, `voice/`, `data/`, `usePersist.ts`, `types.ts`, `index.css`)
 - `server.ts` (backend Express + proxy Gemini)
 - `vite.config.ts`, `index.html`, `tsconfig.json`, `package.json`,
-  `package-lock.json` (raíz, los del stack web)
+  `package-lock.json` (raíz, los del stack web), `.env.example`
+- `docs/FLANCO_WEB_DASHBOARD.md` (memoria viva del flanco)
+
+**Titularidad consolidada:** otra sesión Genspark había reclamado este mismo
+flanco ("Dashboard Web de control") pero se retiró por protocolo al ver mi
+trabajo ya publicado (su entrada dejaba "falta definir dueño real de
+server.ts"). Yo soy ese dueño: mi reclamo es anterior y mis commits ya están
+en main. Su auditoría se integra abajo (rate-limit era su hallazgo pendiente).
 
 **Explícitamente NO toca:** app Android (Kotlin/Compose), DSP nativo C++,
 daemon/Magisk/SHM/socket, tests host CTest, Laboratorio IAEL, `tools/`,
