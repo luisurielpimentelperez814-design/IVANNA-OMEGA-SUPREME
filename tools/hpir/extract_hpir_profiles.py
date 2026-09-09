@@ -74,9 +74,32 @@ def measure_profile(path, name):
     # Compensación = inversa, clamped a ±8 dB (más de eso suena artificial)
     comp = np.clip(-resp, -8.0, 8.0)
 
+    # Low-shelf se mide sobre la compensacion ORIGINAL (ver mas abajo: la
+    # region de graves se excluye SOLO de la deteccion de bandas peaking).
+    low = (fr >= 20) & (fr <= 120)
+    shelfGain = float(np.clip(comp[low].mean(), -8.0, 8.0))
+    shelf = None
+    if abs(shelfGain) >= 0.8:
+        shelf = {'freq': 105.0, 'gainDb': round(shelfGain, 2), 'q': 0.71}
+
+    # ── Excluir la region del shelf de la deteccion de bandas ─────────────
+    # Verificado 2026-09-09 ejecutando sobre los 5 HpIR del repo: TODOS
+    # producian una banda identica a 23.4 Hz +8.0 dB (clamped) — artefacto
+    # de los SOFA HpIR bajo ~50 Hz (la FFT acumula energia de borde en el
+    # primer bin; ninguna medida de auricular es fiable ahi) que ADEMAS
+    # solapa con el low-shelf de 105 Hz: doble compensacion de los mismos
+    # graves (shelf +6..8 dB y encima un peaking +8 dB = graves hinchados
+    # audibles). El JSON publicado (bc986a93) ya curaba esto a mano — cero
+    # bandas bajo 120 Hz. Esa curaduria manual ahora es parte de la
+    # herramienta: el peaking vive por encima del shelf, el shelf solo en
+    # graves. Se trabaja sobre una COPIA: comp original se conserva para el
+    # shelf (ya calculado) y para futura inspeccion.
+    compPeaking = comp.copy()
+    compPeaking[fr < 120.0] = 0.0
+
     # Bandas: picos y valles prominentes de la curva de compensación
     bands = []
-    work = comp.copy()
+    work = compPeaking
     for _ in range(4):
         idx = int(np.argmax(np.abs(work)))
         g = work[idx]
@@ -97,13 +120,6 @@ def measure_profile(path, name):
         work[max(0,lo-50):min(len(work),hi+50)] = 0   # suprimir vecindario
 
     bands.sort(key=lambda b: b['freq'])
-
-    # Low-shelf: nivel medio 20–120 Hz vs target
-    low = (fr >= 20) & (fr <= 120)
-    shelfGain = float(np.clip(comp[low].mean(), -8.0, 8.0))
-    shelf = None
-    if abs(shelfGain) >= 0.8:
-        shelf = {'freq': 105.0, 'gainDb': round(shelfGain, 2), 'q': 0.71}
 
     return {'model': name, 'sourceFile': os.path.basename(path),
             'shelf': shelf, 'bands': bands}

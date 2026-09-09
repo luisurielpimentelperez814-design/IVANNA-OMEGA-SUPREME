@@ -1,126 +1,156 @@
 [
   {
     "model": "Sennheiser HD650",
+    "sourceFile": "hpir_SennheiserHD650_nh831.sofa",
     "shelf": {
-      "freq": 100.0,
-      "gainDb": 6.0,
+      "freq": 105.0,
+      "gainDb": 6.08,
       "q": 0.71
     },
     "bands": [
       {
-        "freq": 6433.6,
-        "gainDb": 2.95,
-        "q": 3.02
+        "freq": 4728.5,
+        "gainDb": -3.26,
+        "q": 1.15
       },
       {
-        "freq": 7646.5,
-        "gainDb": 6.0,
-        "q": 1.77
+        "freq": 6498.0,
+        "gainDb": 2.73,
+        "q": 2.98
       },
       {
-        "freq": 12316.4,
-        "gainDb": -4.87,
-        "q": 2.82
+        "freq": 7810.5,
+        "gainDb": 8.0,
+        "q": 1.83
+      },
+      {
+        "freq": 17232.4,
+        "gainDb": 6.01,
+        "q": 4.0
       }
     ]
   },
   {
     "model": "Beyerdynamic DT770 Pro",
+    "sourceFile": "hpir_BeyerdynamicDT770PRO_nh831.sofa",
     "shelf": {
-      "freq": 100.0,
-      "gainDb": 6.0,
+      "freq": 105.0,
+      "gainDb": 8.0,
       "q": 0.71
     },
     "bands": [
       {
-        "freq": 269.5,
-        "gainDb": 6.0,
-        "q": 0.66
+        "freq": 123.0,
+        "gainDb": 8.0,
+        "q": 0.71
       },
       {
-        "freq": 3222.7,
-        "gainDb": 6.0,
-        "q": 1.79
+        "freq": 8121.1,
+        "gainDb": 8.0,
+        "q": 3.97
       },
       {
-        "freq": 8015.6,
-        "gainDb": 6.0,
-        "q": 3.5
+        "freq": 13148.4,
+        "gainDb": -7.79,
+        "q": 3.17
+      },
+      {
+        "freq": 16669.9,
+        "gainDb": 8.0,
+        "q": 4.0
       }
     ]
   },
   {
     "model": "Beyerdynamic DT990 Pro",
+    "sourceFile": "hpir_BeyerdynamicDT990PRO_nh830.sofa",
     "shelf": {
-      "freq": 100.0,
-      "gainDb": 6.0,
+      "freq": 105.0,
+      "gainDb": 6.52,
       "q": 0.71
     },
     "bands": [
       {
-        "freq": 5103.5,
-        "gainDb": -5.78,
-        "q": 2.99
+        "freq": 673.8,
+        "gainDb": 3.92,
+        "q": 0.4
       },
       {
-        "freq": 7148.4,
-        "gainDb": 5.52,
-        "q": 3.01
+        "freq": 5074.2,
+        "gainDb": -6.57,
+        "q": 2.76
       },
       {
-        "freq": 13523.4,
-        "gainDb": -6.0,
-        "q": 1.97
+        "freq": 7154.3,
+        "gainDb": 5.41,
+        "q": 2.93
+      },
+      {
+        "freq": 10201.2,
+        "gainDb": 3.64,
+        "q": 4.0
       }
     ]
   },
   {
     "model": "AKG K271 MKII",
+    "sourceFile": "hpir_AKGK271MKII_nh719.sofa",
     "shelf": {
-      "freq": 100.0,
-      "gainDb": 6.0,
+      "freq": 105.0,
+      "gainDb": 7.58,
       "q": 0.71
     },
     "bands": [
       {
-        "freq": 269.5,
-        "gainDb": 6.0,
-        "q": 1.81
+        "freq": 199.2,
+        "gainDb": 6.48,
+        "q": 0.7
       },
       {
-        "freq": 4130.9,
-        "gainDb": 5.55,
-        "q": 0.81
+        "freq": 4212.9,
+        "gainDb": 3.95,
+        "q": 1.64
       },
       {
-        "freq": 11818.4,
-        "gainDb": 6.0,
-        "q": 1.45
+        "freq": 7617.2,
+        "gainDb": -5.53,
+        "q": 1.65
+      },
+      {
+        "freq": 11759.8,
+        "gainDb": 8.0,
+        "q": 1.41
       }
     ]
   },
   {
     "model": "AKG K272 HD",
+    "sourceFile": "hpir_AKGK272HD_nh719.sofa",
     "shelf": {
-      "freq": 100.0,
-      "gainDb": 6.0,
+      "freq": 105.0,
+      "gainDb": 7.58,
       "q": 0.71
     },
     "bands": [
       {
-        "freq": 269.5,
-        "gainDb": 6.0,
-        "q": 1.81
+        "freq": 199.2,
+        "gainDb": 6.48,
+        "q": 0.7
       },
       {
-        "freq": 4130.9,
-        "gainDb": 5.55,
-        "q": 0.81
+        "freq": 4212.9,
+        "gainDb": 3.95,
+        "q": 1.64
       },
       {
-        "freq": 11818.4,
-        "gainDb": 6.0,
-        "q": 1.45
+        "freq": 7617.2,
+        "gainDb": -5.53,
+        "q": 1.65
+      },
+      {
+        "freq": 11759.8,
+        "gainDb": 8.0,
+        "q": 1.41
       }
     ]
   }
