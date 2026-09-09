@@ -295,6 +295,37 @@ class IvannaGeminiAgent(
     private suspend fun buildSystemPrompt(userQuery: String): String {
         val memoryContext = memory.buildContextForGemini(userQuery)
         val deviceContext = contextEngine.buildFullContext()
+
+        // FIX (mismo bug que el ya reparado para AudioContext, ver commit
+        // hermano): SystemMemory.snapshot() SÍ llega al prompt real
+        // (MemoryRetrievalEngine.buildRichContext lo lee), pero
+        // updateSystemSnapshot() solo tenía el test como llamador — el
+        // bloque [SISTEMA] que Gemini recibía siempre mostraba
+        // daemonConnected=false, batteryLevel=100, thermalTier=nominal
+        // fijos. Se reutilizan las fuentes reales ya confirmadas en vez de
+        // remedir batería/térmico por segunda vez: DynamicContextEngine.
+        // systemContext (ya real), OmegaMetrics.shared (audio/DSP),
+        // OmegaEngineBridge.isConnected/RootAccess.cachedRoot (daemon/root).
+        runCatching {
+            val sc = contextEngine.systemContext.value
+            val m = com.ivanna.omega.audio.OmegaMetrics.shared.value
+            memory.updateSystemSnapshot(
+                com.ivanna.omega.ai.memory.IvannaMemoryArchitecture.SystemMemory.SystemSnapshot(
+                    audioRoute = m.audioRoute,
+                    sampleRate = m.sampleRate,
+                    hrtfActive = if (m.hrtfActive) "active" else "none",
+                    cpuLoad = m.cpuPercent / 100f,
+                    thermalTier = sc.thermalStatus,
+                    batteryLevel = sc.batteryPercent,
+                    isCharging = sc.isCharging,
+                    androidVersion = sc.androidVersion,
+                    deviceModel = sc.deviceModel,
+                    clipEventsLastMinute = m.clipCount,
+                    daemonConnected = com.ivanna.omega.magisk.OmegaEngineBridge.isConnected,
+                    magiskActive = com.ivanna.omega.core.RootAccess.cachedRoot
+                )
+            )
+        }
         // FIX (integración incompleta): IvannaConversationalCore.contextSummary()
         // existía y estaba correctamente documentado como fuente de contexto
         // para el prompt, pero ningún llamador lo invocaba — Gemini nunca veía
