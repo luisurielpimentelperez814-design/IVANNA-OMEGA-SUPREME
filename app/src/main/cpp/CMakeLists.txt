@@ -337,6 +337,15 @@ add_subdirectory(daemon)
 
 
 # OEM stability regression suite
+add_executable(test_spatial_perception_suite
+    tests/regression/test_spatial_perception_suite.cpp
+)
+target_include_directories(test_spatial_perception_suite PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_spatial_perception_suite PRIVATE gtest gtest_main)
+add_test(NAME spatial_perception COMMAND test_spatial_perception_suite)
+
 add_executable(test_oem_stability_suite
     tests/regression/test_oem_stability_suite.cpp
 )
