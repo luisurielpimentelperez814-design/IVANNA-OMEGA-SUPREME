@@ -3,13 +3,13 @@
 //
 // Responsabilidades de este módulo vs ivanna_daemon.cpp:
 //   · ivanna_daemon.cpp — crea el archivo SHM en initialize_shared_memory()
-//     y la app lo mapea por ruta fija. NOTA: el comentario histórico sobre
-//     SCM_RIGHTS era falso — nunca existió sendmsg en el daemon. No se
-//     modifica: ese path existía antes de este módulo.
-//   · shm_manager.cpp — añade una API de alto nivel reutilizable para
-//     escritura seqlock que el servidor de comandos (command_server.cpp)
-//     y futuros módulos del daemon pueden usar sin duplicar el boilerplate
-//     de mmap/mlock/seqlock.
+//     y entrega su fd a la app por SCM_RIGHTS (handshake "Modo B", real
+//     desde commit 78aed525: cliente que conecta a @omega_daemon_socket y
+//     calla 150 ms recibe el fd por sendmsg). No se modifica aquí.
+//   · shm_manager.cpp — API de alto nivel reutilizable para escritura
+//     seqlock (write/writeControl) y métricas de salud del canal
+//     (bumpHealthCounter) que command_server.cpp y el loop principal del
+//     daemon usan sin duplicar el boilerplate de mmap/mlock/seqlock.
 //
 // Por qué dos implementaciones coexisten:
 //   initialize_shared_memory() en ivanna_daemon.cpp mapea el mismo archivo
