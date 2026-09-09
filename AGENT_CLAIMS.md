@@ -141,35 +141,73 @@ confusa para un usuario final.
 
 ---
 
-### UI/UX Compose — paneles de diagnóstico y asistente
-**Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+### UI COMPLETA y sus sub-entornos — Compose principal + OEM + theme + viewmodels de UI + visualizadores
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-09. EXCLUSIVO.
+Relevo del reclamo previo de Claude (2026-09-07, alcance menor): sin commits
+suyos a `ui/` desde el 2026-09-08 y con su pendiente documentado abajo. Por
+instrucción directa del propietario del repo, el flanco se expande a TODA la
+UI y sus sub-entornos.
+
 **Alcance exacto — no editar mientras esté aquí:**
-- `app/src/main/java/com/ivanna/omega/ui/` completo: `IvannaAssistantScreen.kt`,
-  `NetworkStatusPanel.kt`, `MagiskStatusPanel.kt`, y demás Composables
-  de presentación/paneles.
-- Información arquitectónica de estos paneles: qué se muestra, cómo se
-  organiza, si el mismo dato aparece duplicado/contradictorio entre
-  paneles distintos (ej. estado de conexión del daemon mostrado de
-  forma diferente en dos sitios).
-- ViewModels que alimentan ESTOS paneles (`IvannaAssistantViewModel.kt`)
-  únicamente en la parte de exposición de estado a la UI — no la lógica
-  de negocio de Gemini/memoria que vive ahí (eso sigue siendo de quien
-  toque conversación/memoria).
+- `app/src/main/java/com/ivanna/omega/ui/` COMPLETO: las ~40 pantallas y
+  paneles Compose (`SystemScreen`, `SoundScreen`, `IvannaAssistantScreen`,
+  `NetworkStatusPanel`, `MagiskStatusPanel`, `AdaptiveEngineScreen`,
+  `BrainScreen`, `SpatialAudioPanel`, `SaFCalibrationScreen`,
+  `BenchmarkScreen`, `IvannaLabScreen`, visualizadores
+  `Bark64VisualizerPanel`/`FftOscilloscopePanel`...), la navegación
+  (`IvannaNavigation.kt`, `IvannaRoute.kt`, `CognitiveDashboardActivity.kt`),
+  los prefs de UI (`AdaptiveControlsPrefs.kt`, `SpatialAudioPrefs.kt`).
+- Sub-entorno OEM: `ui/oem/` COMPLETO (OemDashboard/Acoustic/Ai/Spatial/
+  Telemetry/Thermal, OemShared, OemState, OemViewModel).
+- Sub-entorno theme: `ui/theme/IvannaTheme.kt` (sistema de diseño, tokens,
+  color, tipografía).
+- ViewModels que alimentan la UI (`ui/viewmodels/`: `IvannaAssistantViewModel`,
+  `PerceptualViewModel`) ÚNICAMENTE en su parte de exposición de estado a la
+  UI — la lógica Gemini/memoria que viva ahí sigue siendo del flanco de
+  conversación; si un fix de UI requiere tocarla, se limita al mínimo
+  indispensable y se nota en el commit.
+- Recursos visuales de la app que la UI consuma (`res/values/themes.xml`,
+  `strings.xml`) cuando un fix de UI lo exija (notado en el commit).
 
-**Explícitamente NO toca:** lógica de Gemini/Firebase, DSP nativo,
-daemon/Magisk/CI, memoria del asistente. Si un fix de UI requiere tocar
-uno de esos, se limita al mínimo indispensable y se nota en el commit.
+**Explícitamente NO toca:** DSP nativo C++, daemon/Magisk/SHM/socket, CI/
+release, conversación/Gemini/memoria (lógica), IAEL, dashboard web, Hexagon,
+Controles/Persistencia (ParameterStore/ruta DAC), tests, documentación de
+producto, herramientas HRTF, benchmarks, supply-chain. Todos ya tomados.
 
-**Por qué este frente:** ya señalado arriba en este mismo archivo como
-necesitando una pasada de diseño real, y nadie lo había reclamado
-todavía — evita chocar con los dos frentes nativos ya tomados arriba.
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco se trabaja en
+MODO EXCLUSIVO, una sola sesión, de raíz, magistral, sin importar cuántas
+sesiones tome. NO toquen los archivos de arriba mientras esta entrada esté
+en "tomados"; elijan cualquier OTRO flanco libre. Si terminan/abandonan el
+suyo, muévanlo a "abiertos" con nota concreta. Yo haré lo mismo al cerrar
+este. Regla del propietario: un solo agente por flanco, refinamiento de raíz
+sin importar cuántas sesiones tome.
 
-**Estado:** trabajando — 3 fixes reales en main + 1 revertido:
-1. `c2826986` — desambiguación GEMINI vs daemon/socket en NetworkStatusPanel.
-2. `8ae1fc04` — mismo fix en IvannaAssistantScreen.kt.
-3. `703cb6d7` — advertencia de módulo desactualizado, real (antes atrapada en comentario muerto).
-4. `f80e6293` (REVERTIDO en `54951df7`) — el bug de SystemScreen leyendo un SharedPreferences muerto para el estado de Gemini SIGUE SIENDO REAL (verificado con grep, sin escritor en todo el codebase), pero mi fix rompió compileDebugKotlin sin causa identificable por lectura estática (imports, anotación @Composable, tipos, firma de initialize() — todo correcto). Revertido para no dejar el build rojo mientras se obtiene el log real del compilador. Pendiente: reintentar con evidencia del log, no a ciegas.
-Navegación (IvannaRoute/MainActivity) auditada: sin pantallas huérfanas, sin duplicación real entre SystemScreen y MagiskStatusPanel.
+**Por qué este frente:** la UI es la cara del producto — ~40 pantallas Compose
+más el sub-entorno OEM que nunca recibieron una pasada de diseño/robustez real,
+solo fixes puntuales. El propietario pidió este flanco por nombre.
+
+**Pendiente heredado del reclamo previo (sesión Claude, 2026-09-07..08, sin
+actividad desde el 08):** 3 fixes ya en main (`c2826986`, `8ae1fc04`,
+`703cb6d7`). El bug REAL sigue abierto: SystemScreen lee un SharedPreferences
+muerto para el estado de Gemini (verificado con grep, sin escritor en todo el
+codebase); su fix `f80e6293` se revistió en `54951df7` por romper
+compileDebugKotlin sin causa identificada por lectura estática. Pendiente:
+reintentar CON el log real del compilador, no a ciegas — es mi primer
+objetivo. Navegación auditada por él: sin pantallas huérfanas.
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. `compileDebugKotlin` verde en host con cualquier cambio de UI — sin fix a
+   ciegas, siempre con log real.
+2. Ningún estado mostrado al usuario leído de una fuente muerta o
+   contradictoria entre paneles (el bug Gemini es el caso canónico).
+3. Sistema de diseño único: tokens de tema usados de forma consistente, sin
+   colores/tamaños hardcodeados divergentes entre pantallas del mismo dominio.
+4. Pantallas sin estado colgante tras rotación/proceso-death: ViewModels con
+   estado sobreviviente, prefs re-aplicados al recomponer.
+5. Sub-entorno OEM coherente con la UI principal (mismo lenguaje visual).
+
+**Modo de trabajo:** un commit individual breve por cada cambio, push
+inmediato, ciclo tras ciclo hasta dejar el flanco magistral.
 
 ---
 
