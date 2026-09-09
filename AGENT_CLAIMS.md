@@ -804,7 +804,13 @@ actualiza esta entrada.
 ---
 
 ### Pipeline de herramientas HRTF (tools/sofa_convert.py + tools/hrtf/ + tools/hpir/)
-**Tomado por:** sesión Genspark (chat), iniciado 2026-09-08. Detalle y evidencia en [CLAIMS/hrtf-tools.md](CLAIMS/hrtf-tools.md).
+**Tomado por:** sesión Genspark (chat), RELEVO iniciado 2026-09-09. EXCLUSIVO.
+Detalle y evidencia en [CLAIMS/hrtf-tools.md](CLAIMS/hrtf-tools.md).
+**Relevo:** el reclamo original (2026-09-08) quedó obsoleto — esa sesión migró
+al flanco UI COMPLETA y `tools/hrtf/` no recibió ningún commit desde entonces
+(verificado: `git log --since=2026-09-08 -- tools/hrtf tools/sofa_convert.py`
+= vacío). Lo tomo bajo la regla del propietario: una sola sesión por flanco,
+refinamiento de raíz.
 **Alcance exacto — no editar mientras esté aquí:**
 - `tools/sofa_convert.py`, `tools/hrtf/`, `tools/hpir/`, `docs/HRTF_DATASET.md`
 - Herramienta NUEVA `tools/hrtf/verify_dataset.py` (validación de datasets)
@@ -813,14 +819,18 @@ actualiza esta entrada.
 `app/src/main/cpp/spatial/**` (flanco SAF-HRTF — el hallazgo sobre su asset se
 le notifica aquí para que lo regenere él).
 
-**Por qué este flanco (verificado hoy con evidencia binaria):** el asset
-distribuido `hrtf_database.bin` es INCONSISTENTE con su propia herramienta
-escritora — su cabecera declara dirs=45,989,871/channels=131,072/taps=33,554,432
-(implicaría ~8×10¹⁹ bytes; el archivo pesa 2.9 MB): o lo escribió otra
-herramienta con otro layout, o está corrupto. `sofa_convert.py` es una
-variante muerta y peligrosa: sin CLI (rutas hardcodeadas), sin resampleo
-(escribe 44100 que el motor corre a 48000) y sin azimuts. Cero validación
-post-conversión en todo el pipeline.
+**Evidencia RE-VERIFICADA HOY (2026-09-09) con lectura binaria directa:**
+`hrtf_database.bin` (2,936,993 bytes) — magic `IVHRTF01` VÁLIDO, pero la
+cabecera declara sr=44100 dirs=45,989,871 ch=131,072 taps=33,554,432
+(implicaría ~8×10²⁰ bytes). El resto (size-24) mod (2·taps·4) es 137 bytes
+CONSTANTE para taps∈{64,128,256,512} → hay ~137 bytes de estructura no
+declarada por el formato escritor (probable tabla de azimuts/cabecera
+extendida) o los campos están en otro orden. En cualquier caso NINGÚN lector
+del formato documentado puede cargarlo: el asset que se distribuye en el APK
+es, a día de hoy, un archivo que ningún código del repo puede leer sanamente.
+`sofa_convert.py` sigue siendo variante muerta (sin CLI, sin resampleo, sin
+azimuts); `sofa_to_ihr1.py` tiene CLI real (verificado: argparse + struct
+pack `<i` rows/ir_len/out_sr + azimuts `<f` por fila).
 
 **Estado:** trabajando — commits individuales breves, push por ciclo.
 
