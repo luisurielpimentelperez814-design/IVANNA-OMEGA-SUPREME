@@ -214,6 +214,19 @@ const char* active_library() noexcept {
 }
 
 void release() noexcept {
+    // FIX(carrera de liberacion): antes se hacia dlclose(g_lib_handle) con la
+    // vtable aun poblada y g_dsp_available aun en true. Un hilo de audio que
+    // entrara a dsp_process_stereo() en ese instante podia leer un puntero de
+    // funcion valido y saltar a codigo de una libreria YA descargada
+    // (use-after-free / salto a memoria liberada). Orden correcto:
+    //   1) marcar no-disponible primero (los wrappers empiezan a devolver -1),
+    //   2) invalidar la vtable (ningun puntero de funcion queda alcanzable),
+    //   3) SOLO ENTONCES dlclose del handle.
+    // No elimina toda ventana (un hilo ya DENTRO de una llamada al DSP no es
+    // interrumpible sin mas sincronizacion), pero cierra la de entrada: ningun
+    // hilo NUEVO puede resolver un puntero tras el paso 2.
+    g_dsp_available.store(false, std::memory_order_release);
+    g_vt = DspVTable{};
 #if IVANNA_HAS_DLOPEN
     if (g_lib_handle != nullptr) {
         dlclose(g_lib_handle);
@@ -221,8 +234,6 @@ void release() noexcept {
         g_lib_loaded = nullptr;
     }
 #endif
-    g_vt = DspVTable{};
-    g_dsp_available.store(false, std::memory_order_release);
 }
 
 int dsp_open(void** out_handle) noexcept {
