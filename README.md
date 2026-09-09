@@ -159,7 +159,7 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 | Route Arbiter | `OFF / IN_PROCESS / SYSTEM_WIDE` explícito en cada snapshot |
 | Telemetría B→A | `raw_rms`, `raw_peak`, `effect_frames` escritos por audioserver y leídos por la app — la UI sabe cuándo la Ruta B está viva |
 | ThermalGovernor | 5 niveles de degradación elegante: reduce orden Ambisonics / longitud RIR ante throttling térmico |
-| Offloading | Selector Hexagon DSP / FastRPC (Snapdragon) con fallback NEON/CPU instantáneo |
+| Offloading | Hexagon cDSP via FastRPC: loader runtime `dlopen` de `libcdsprpc/libadsprpc` (`hexagon/ivanna_dsp.cpp`, contrato IDL único en `ivanna_dsp.idl`), API JNI real (`nativeDsp*`) y telemetría honesta — reporta no-disponible en vez de fingir. **Pendiente:** el skel QAIC del Hexagon SDK (propietario) y el despacho de audio por la ruta DSP en el callback — hoy el audio siempre corre por la cadena CPU/NEON |
 | SELinux | `sepolicy.rule` (278 reglas) aplicada en instalación **y reaplicada en cada boot** desde `service.sh` — el socket sobrevive reinicios |
 
 ---
@@ -189,6 +189,7 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 - **Versionado unificado:** `version.properties` es la fuente única de verdad; el build **falla** si `module.prop` diverge de él.
 - **Historial de auditoría:** 250+ commits de reparación quirúrgica — Use-After-Free del Engine, aislamiento DSP por sesión AudioFlinger, eliminación de alloc en realtime, lifecycle del fusion core, JNI signatures, STL estática del daemon, crossfade EQ, headroom, bypass exacto, race UAF en NPE, trust region del optimizador SAF, espectro Bark real. Cada fix: un commit, un push.
 - **Frente DSP nativo (en curso, ver `AGENT_CLAIMS.md`):** peak guard rediseñado a ataque instantáneo/release en rampa (eliminaba un salto de ganancia audible por bloque, tipo metralleta, al subir volumen cerca del umbral); red de saneo NaN/Inf agregada al final de la cadena (no existía — los `isfinite()` previos solo cubrían parámetros de UI, no la señal); `armeabi-v7a` retirado del build (asm inline inválido y sin función real: el daemon que hace root ya es arm64-v8a exclusivo). No cerrado: quedan las 5 condiciones propias del flanco en `AGENT_CLAIMS.md` sin cumplir todavía — esta nota se actualiza cuando se cumplan, no antes.
+- **Frente Hexagon (auditado y reparado, ver `AGENT_CLAIMS.md`):** el offloading al cDSP era un castillo de stubs que mentían. Reparado de raíz — la fachada `ivanna::hexagon::ensure_available()` era un símbolo declarado-pero-no-definido (crash en runtime / break con `-z defs`); había DOS loaders `dlopen` paralelos para el mismo DSP (ahora UNO canónico); `delegateBinauralConvolution` hacía `free()` de memoria ajena (heap corruption); los 3 IDL divergían entre sí (ahora UN contrato); la API JNI `nativeDsp*` era un no-op silencioso que siempre decía "no disponible"; y el slider de "ganancia maestra" deformaba el damping de la ODE en vez del volumen. Verificado: el flanco enlaza como `.so` con `-z defs` (la forma estricta de Android) sin símbolos indefinidos. **Lo que NO está (honestidad):** el skel QAIC del Hexagon SDK (propietario, requerido para el DSP real en silicio) y el despacho de audio por la ruta DSP — el audio corre por CPU/NEON hasta que el SDK esté integrado.
 
 ---
 
