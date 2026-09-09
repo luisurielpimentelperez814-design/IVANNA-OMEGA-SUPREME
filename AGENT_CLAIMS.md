@@ -416,10 +416,25 @@ agente por flanco, refinamiento de raíz sin importar cuántas sesiones tome.
 con GEMINI_API_KEY real (verificar round-trip completo del chat), auditar
 `src/data/cppFiles.ts` (996 líneas de C++ embebido — su CMakeLists declara
 proyecto "IvannaFusion 2.0.0", divergente del árbol real de fuentes), y
-code-splitting del bundle (AudioVisualizer/CodeExporter son candidatos a
-React.lazy por uso esporádico).
+(Los pendientes anteriores quedaron RESUELTOS en el ciclo 2: el exportador
+ya lee las fuentes C++ reales vía ?raw y el code-splitting ya está aplicado.)
 
-**Estado:** trabajando — sesión larga, multi-turno.
+**Estado:** ENTREGADO (2026-09-09) — criterio world-class cumplido 5/5, ver
+`docs/FLANCO_WEB_DASHBOARD.md` (memoria viva con los 14 hallazgos y su commit
+de resolución). Resumen verificable: servidor de producción resucitado (bug
+crítico: esbuild bundleaba vite → Invalid URL en runtime; fix packages=external,
+server.cjs 6.9MB→5.3KB), hardening Express completo (validación body, 404 API,
+manejador de errores, headers seguridad, rate-limit 30/min verificado con
+ráfaga real 30x503+5x429), TS strict limpio (era 2052 líneas de errores),
+cero `any` (speech-recognition.d.ts), handler de parámetros genérico
+type-safe, usePersist sin side effect en updater (StrictMode-safe), cero
+eslint-disable, exportador C++ lee fuentes reales vía ?raw (el snapshot
+embebido mostraba código inexistente), coherencia de versión 2.3.6 y modelo
+Gemini 2.5 Pro, code-splitting (chunk inicial 544K→468K).
+Commits: 72e1c61a..44f7e1bd (14 commits atómicos, cada uno con push).
+**Pendiente no bloqueante si alguien lo retoma:** round-trip de chat con
+GEMINI_API_KEY real, auth para endpoints de control, guía de despliegue.
+**Flanco libre a partir de este commit.**
 
 
 ### Flanco HEXAGON — offloading al cDSP Qualcomm (FastRPC + NPE)
