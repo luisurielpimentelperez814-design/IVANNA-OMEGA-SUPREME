@@ -626,6 +626,46 @@ con race window de 150ms sin cancelacion si el usuario desconecta.
 **Modo de trabajo:** un commit individual breve por cada cambio, push inmediato, ciclo
 tras ciclo hasta dejar el flanco magistral. No se cierra rapido a proposito.
 
+**ESTADO 2026-09-09 — ENTREGADO (6/6 criterios, 13 commits atomicos verificables
+en main, `4ed1a7d8..17d772f7` + `a6dbda95..0b9521b2` anteriores). El flanco queda
+LIBRE para mantenimiento.** Evidencia por criterio:
+1. ✅ Persistencia atomica: `a6dbda95` (commit() sincrono + flushAllPending en
+   onTrimMemory, WeakReference sweep de las 2 instancias vivas — verificado por grep
+   que AudioStateManager y AdaptiveBackend crean cada una la suya), `2dad9102` +
+   `8387d4b3` (invariante de tipo safeGet* en los ~40 getters — verificado por grep:
+   las unicas lecturas crudas restantes son las 4 internas de los helpers).
+2. ✅ SSOT: espejo+reconciliacion ya existentes; `0b9521b2` cierra el agujero de
+   validacion en la carga (loadParameters ahora pasa por validateState — un JSON de
+   disco fuera de rango ya no entra crudo al nativo).
+3. ✅ Boot: BootRestoreReceiver ya traia executor unico + watchdog 8s + flag
+   idempotente (commit previo `76abdd15`); `81c993e7` documenta en manifest por que
+   LOCKED_BOOT_COMPLETED no se declara (era codigo muerto: directBootAware=false).
+4. ✅ Entrada tipo C COMPLETA — antes INERTE (verificado: requestDirectAccess sin
+   ningun llamador, grep=0): `4ed1a7d8` (receiver manifest filtrado clase AUDIO +
+   uses-feature usb.host + monitor dinamico ATTACHED/DETACHED/permiso NOT_EXPORTED +
+   permiso UAC via PendingIntent FLAG_MUTABLE + escaneo en frio deviceList desde
+   IVANNAApplication), `81c993e7` (fd con fromFd/dup — elimina doble close real;
+   claimInterface verificado; guard UnsatisfiedLinkError con telemetria honesta),
+   `4d741068` (SR NEGOCIADA del endpoint real — maxPacketSize/bInterval con
+   heuristica FS/HS documentada; 384kHz ya no se asume a ciegas), `39d37d06`
+   (writeAudio acotado al ring — BufferOverflowException imposible en hilo de audio;
+   comentario que mentia 'motor stub' corregido tras leer los 536 LOC del cpp:
+   el motor isocrono ES real), `172341e2` (swapRead write<->read → read<->ready:
+   un consumidor habria leido el buffer a medio escribir), `17d772f7` (apertura
+   @Synchronized contra doble open desde manifest receiver + escaneo en frio;
+   detach solo si deviceId coincide — desconectar un raton ya no cierra la sesion;
+   teardown resetea openDeviceId).
+5. ✅ Race HRTF 150ms: resuelto en commit previo de esta misma linea de trabajo
+   (AudioRouteManager con token monotono + cancelacion — ver `1c88e2dc` y
+   AudioRouteManager.kt:39-46).
+6. ✅ README: seccion 'Controles, Persistencia y Ruta DAC' (`f2a0f280`) — que es
+   real vs. que requiere hardware/permiso UAC, fallback declarado, sin fantasmas.
+Pendiente no bloqueante para quien lo retome: prueba en dispositivo real con DAC
+UAC1 y UAC2 (la negociacion SR esta derivada de la espec pero no se ha podido
+ejecutar contra hardware desde este entorno), y el motor isocrono aun no usa el
+endpoint de feedback UAC2 (sincronizacion fina — hoy absorbe drift variando ±1
+frame/paquete, igual que hace el driver estandar de Linux sin feedback).
+
 ---
 
 ### Suite de tests C++ huérfana y falsificada — `app/src/test/cpp/`
