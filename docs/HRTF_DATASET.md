@@ -201,3 +201,67 @@ Tamaño resultante: `16 + numDirs × (4 + 8 × irLen)` bytes.
 
 Las direcciones se ordenan por azimut al cargarse, y el renderizado
 interpola linealmente entre los dos azimuts adyacentes.
+
+> **Hay DOS lectores IHR1 con límites distintos (verificado 2026-09-09):**
+> `spatial/synthetic_hrtf.hpp` (el cargador histórico del efecto) rechaza
+> `numDirs > 1024`, mientras `spatial/ihr1_format.hpp` (lector único con
+> discriminación de layout por tamaño) acota `numPos` y `irLen` a `8192`.
+> `sofa_to_ihr1.py` aplica el límite más estricto (1024) para que el dataset
+> sirva a ambos. Si generas algo que solo acepta el lector nuevo, documéntalo.
+
+---
+
+## 6. Formato binario IVHRTF01 (legacy — solo lectura)
+
+El APK embarca además `assets/saf/processed/hrtf_database.bin` en el formato
+legacy `IVHRTF01`, que lee `HRTFBinLoader.cpp`:
+
+```
+[8B  magic  "IVHRTF01"]
+[f32 sampleRate]
+[u32 positions]
+[u32 channels]            ← debe ser 2
+[u32 taps]
+  por cada posición: [f32 × taps L][f32 × taps R]   (SIN tabla az/el)
+```
+
+Tamaño exacto: `24 + positions × channels × taps × 4` bytes. El asset actual
+(verificado): 710 posiciones × 512 taps × 2 canales @ 44100 Hz = 2 908 184
+bytes.
+
+**No generes IVHRTF01 nuevo.** No trae tabla angular y el motor no lo
+prioriza; para datasets nuevos usa §1 (IHR1). La herramienta que lo escribía
+(`tools/sofa_convert.py`) era una variante sin CLI, sin resampleo y sin
+azimuts, y hoy es un *shim* que redirige a `sofa_to_ihr1.py`.
+
+> **Lección de producción (2026-09-09, commit 73812665):** este asset estuvo
+> **corrupto en `main` durante semanas** — pasado por un códec de texto
+> UTF-8 con `errors=replace`, que reescribió cada byte inválido como U+FFFD
+> (`ef bf bd`) destruyendo la información original. La cabecera resultante
+> declaraba 45.9M posiciones × 33.5M taps (~8×10²⁰ bytes); de haberlo
+> cargado, `loadIVHRTF01()` habría hecho OOM en el dispositivo. Se restauró
+> byte-perfecto desde el commit creador `996a6259`. **Nunca pases un binario
+> por un editor/herramienta de texto** — y valida siempre antes de publicar
+> (ver §7).
+
+---
+
+## 7. Puerta de validación (obligatoria antes de publicar un dataset)
+
+Todo dataset que vaya al repo, al APK o al módulo pasa por:
+
+```bash
+python3 tools/hrtf/verify_dataset.py <archivo.ihr1|archivo.bin> [...]
+```
+
+Replica las reglas de los lectores C++ (la fuente de verdad es lo que el
+motor acepta): magic, rangos de cabecera (acotados aunque el lector legacy
+no lo haga), **tamaño exacto** del fichero contra la cabecera (es lo que
+distingue los layouts IHR1 AZ/AZEL), datos sin NaN/Inf, energía no nula,
+`|x| ≤ 4` (caza basura binaria) y ángulos en el dominio físico de la esfera
+(az en `[0,360)` o `[-180,180]` — ambas convenciones existen en el repo —,
+el ∈ `[-90,+90]`; CIPIC llega a +90 exacto). Exit `0`/`1`, apto para CI.
+
+Estado actual verificado con ella: **13/13 datasets del repo PASS** (el asset
+IVHRTF01 restaurado y los 12 IHR1/AZEL del módulo: kemar, cipic_*,
+tu_berlin_kemar, freefield_demo de 2354 posiciones).
