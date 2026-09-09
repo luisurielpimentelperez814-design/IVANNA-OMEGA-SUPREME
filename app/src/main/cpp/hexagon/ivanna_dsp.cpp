@@ -88,7 +88,13 @@ struct DspVTable {
     dsp_fir_upsample_fn   fir_upsample      = nullptr;
 };
 
-std::once_flag           g_load_once;
+// FIX(call_once quemado): antes se usaba std::call_once + once_flag. Eso hace
+// la carga UNA sola vez para siempre — tras release() (que descarga la lib),
+// ensure_loaded() nunca reintentaba: release->re-open quedaba permanentemente
+// muerto. Se reemplaza por un mutex + estado, que permite reintentar la carga
+// tras release() y es igual de thread-safe para la carga perezosa.
+std::mutex               g_load_mtx;
+std::atomic<bool>        g_load_attempted{false};
 std::atomic<bool>        g_dsp_available{false};
 DspVTable                g_vt{};
 void*                    g_lib_handle = nullptr;   // dlopen handle (cDSP o aDSP)
@@ -201,7 +207,13 @@ static void load_once() {
 // ── API pública consumida por fastrpc_client / npe_engine ────────────────────
 
 bool ensure_loaded() noexcept {
-    std::call_once(g_load_once, load_once);
+    // Doble-chequeo: ruta rapida sin lock si ya esta cargado y disponible.
+    if (g_dsp_available.load(std::memory_order_acquire)) return true;
+    std::lock_guard<std::mutex> lk(g_load_mtx);
+    // Re-chequear bajo lock: otro hilo pudo cargarlo mientras esperabamos.
+    if (g_dsp_available.load(std::memory_order_acquire)) return true;
+    load_once();
+    g_load_attempted.store(true, std::memory_order_release);
     return g_dsp_available.load(std::memory_order_acquire);
 }
 
@@ -214,17 +226,18 @@ const char* active_library() noexcept {
 }
 
 void release() noexcept {
-    // FIX(carrera de liberacion): antes se hacia dlclose(g_lib_handle) con la
-    // vtable aun poblada y g_dsp_available aun en true. Un hilo de audio que
-    // entrara a dsp_process_stereo() en ese instante podia leer un puntero de
-    // funcion valido y saltar a codigo de una libreria YA descargada
-    // (use-after-free / salto a memoria liberada). Orden correcto:
+    // FIX(carrera de liberacion): orden correcto bajo el MISMO mutex que
+    // ensure_loaded() para que ningun hilo cargue mientras se libera:
     //   1) marcar no-disponible primero (los wrappers empiezan a devolver -1),
     //   2) invalidar la vtable (ningun puntero de funcion queda alcanzable),
-    //   3) SOLO ENTONCES dlclose del handle.
+    //   3) dlclose del handle,
+    //   4) resetear g_load_attempted para que un futuro ensure_loaded() PUEDA
+    //      reintentar la carga (con call_once esto era imposible: quedaba
+    //      quemado para siempre tras el primer release).
     // No elimina toda ventana (un hilo ya DENTRO de una llamada al DSP no es
     // interrumpible sin mas sincronizacion), pero cierra la de entrada: ningun
     // hilo NUEVO puede resolver un puntero tras el paso 2.
+    std::lock_guard<std::mutex> lk(g_load_mtx);
     g_dsp_available.store(false, std::memory_order_release);
     g_vt = DspVTable{};
 #if IVANNA_HAS_DLOPEN
@@ -234,6 +247,7 @@ void release() noexcept {
         g_lib_loaded = nullptr;
     }
 #endif
+    g_load_attempted.store(false, std::memory_order_release);
 }
 
 int dsp_open(void** out_handle) noexcept {
