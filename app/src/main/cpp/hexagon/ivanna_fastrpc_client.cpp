@@ -66,10 +66,16 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
 
     m_config = config;
 
-    // Resolver los punteros ANTES de cualquier goto (C++ prohíbe saltar por
-    // encima de inicializaciones).
+    // Resolver los punteros y precomputar el tamaño ANTES de cualquier goto
+    // (C++ prohíbe saltar por encima de inicializaciones).
     auto hrtf_init = rt::dsp_hrtf_init_sym();
     auto fir_init  = rt::dsp_fir_init_sym();
+    // FIX(alineacion): aligned_alloc(alineacion, size) exige size multiplo de
+    // la alineacion (C11/POSIX) — con block_size impar, block_size*32 no es
+    // multiplo de 64 y la reserva fallaba con NULL espurio en Bionic.
+    // Se redondea al multiplo de 64 superior.
+    const size_t raw_size = static_cast<size_t>(config.block_size) * 4 * 2 * sizeof(float);
+    const size_t dma_size = (raw_size + 63u) & ~static_cast<size_t>(63u);
 
     if (rt::dsp_open(&m_dsp_handle) != 0 || m_dsp_handle == nullptr) {
         m_dsp_ready.store(false, std::memory_order_release);
@@ -101,7 +107,7 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
         m_fir_upsampler = m_dsp_handle;
     }
 
-    m_dma_buffer_size = config.block_size * 4 * 2 * sizeof(float);
+    m_dma_buffer_size = dma_size;
     m_dma_buffer_in = aligned_alloc(64, m_dma_buffer_size);
     m_dma_buffer_out = aligned_alloc(64, m_dma_buffer_size);
 
@@ -116,6 +122,18 @@ bool IvannaFastRpcClient::initialize(const HrtfConvolutionConfig& config) noexce
     return true;
 
 cleanup:
+    // FIX(fuga): si fallaba la reserva del segundo buffer DMA, el primero ya
+    // estaba reservado y aqui NO se liberaba -> fuga por cada initialize()
+    // fallido. El cleanup libera TODO lo parcialmente adquirido.
+    if (m_dma_buffer_in != nullptr) {
+        free(m_dma_buffer_in);
+        m_dma_buffer_in = nullptr;
+    }
+    if (m_dma_buffer_out != nullptr) {
+        free(m_dma_buffer_out);
+        m_dma_buffer_out = nullptr;
+    }
+    m_dma_buffer_size = 0;
     if (m_dsp_handle != nullptr) {
         rt::dsp_close(m_dsp_handle);
     }
