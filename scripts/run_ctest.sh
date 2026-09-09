@@ -9,9 +9,16 @@ FAIL=0
 run() { echo "── $1"; "$@"; }
 
 echo "== Build GTest vendored =="
-g++ -std=c++17 -O2 -I"$GT/googletest/include" -I"$GT/googlemock/include" -c "$GT/googletest/src/gtest-all.cc" -o /tmp/ivanna_gtest-all.o || FAIL=1
-g++ -std=c++17 -O2 -I"$GT/googletest/include" -I"$GT/googlemock/include" -c "$GT/googlemock/src/gmock-all.cc" -o /tmp/ivanna_gmock-all.o || FAIL=1
-ar rcs /tmp/ivanna_libgtest.a /tmp/ivanna_gtest-all.o /tmp/ivanna_gmock-all.o || FAIL=1
+# gtest-all.cc / gmock-all.cc hacen #include "src/gtest-*.cc" relativo a la
+# RAIZ de cada modulo (googletest/, googlemock/), no a su include/. Sin esos
+# dos -I la compilacion del amalgama falla con "src/...cc: No such file" y
+# /tmp/ivanna_libgtest.a nunca se crea, tumbando toda la suite por link.
+g++ -std=c++17 -O2 -I"$GT/googletest" -I"$GT/googletest/include" -I"$GT/googlemock" -I"$GT/googlemock/include" -c "$GT/googletest/src/gtest-all.cc" -o /tmp/ivanna_gtest-all.o || FAIL=1
+g++ -std=c++17 -O2 -I"$GT/googlemock" -I"$GT/googlemock/include" -I"$GT/googletest" -I"$GT/googletest/include" -c "$GT/googlemock/src/gmock-all.cc" -o /tmp/ivanna_gmock-all.o || FAIL=1
+# gtest_main.cc aporta el main() que los tests con TEST()/TEST_F() esperan;
+# sin el, cada binario falla al link con "undefined reference to `main`".
+g++ -std=c++17 -O2 -I"$GT/googletest" -I"$GT/googletest/include" -I"$GT/googlemock/include" -c "$GT/googletest/src/gtest_main.cc" -o /tmp/ivanna_gtest_main.o || FAIL=1
+ar rcs /tmp/ivanna_libgtest.a /tmp/ivanna_gtest-all.o /tmp/ivanna_gmock-all.o /tmp/ivanna_gtest_main.o || FAIL=1
 
 echo "== test_ihr1_format =="
 run g++ -std=c++17 -O2 -I"$CPP" -o /tmp/ivanna_ihr1 tests/hrtf/test_ihr1_format.cpp || FAIL=1
