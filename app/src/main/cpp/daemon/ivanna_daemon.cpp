@@ -337,7 +337,8 @@ int main(int argc, char* argv[]) {
         {
             const uint64_t hb = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            ivanna::shmManager().writeControl(ivanna::SHM_HEARTBEAT_OFFSET, &hb, sizeof(hb));
+            if (ivanna::shmManager().writeControl(ivanna::SHM_HEARTBEAT_OFFSET, &hb, sizeof(hb)))
+                ivanna::shmManager().bumpHealthCounter(1); // heartbeats_emitidos
         }
         selfHealer.pingAudioEngine();
         selfHealer.pingIpcSocket();
@@ -356,6 +357,7 @@ int main(int argc, char* argv[]) {
             struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
             if (client_fd<0) continue;
+            ivanna::shmManager().bumpHealthCounter(4); // clientes_conectados
 
             // FIX (concurrencia): antes el bucle principal atendia a UN cliente
             // en un recv-loop bloqueante. El bridge Kotlin mantiene su socket
