@@ -480,6 +480,49 @@ fallback CPU real, deteccion de capacidad del SoC, y telemetria honesta
 4. JNI/Kotlin alineados con el contrato nativo real, sin firmas huerfanas.
 5. Documentado en README lo que es real vs. lo que requiere Hexagon SDK.
 
+**Avance verificable hasta ahora (ciclo 1, commits 138d6f84..2a9303dd):**
+- **Simbolo indefinido critico cerrado:** `ivanna::hexagon::ensure_available()`
+  estaba declarado en hexagon_dsp_integration.hpp pero NADIE lo implementaba
+  (el loader usaba rt::ensure_loaded sin header). Crash en runtime (lazy
+  binding) / break con -z defs al llamarlo desde npe_engine. Ahora hay header
+  canonico ivanna_dsp_rt.hpp + fachada publica implementada; verificado con
+  nm: simbolo exportado (T) y el flanco enlaza como .so con -z defs sin
+  simbolos indefinidos.
+- **Heap corruption:** delegateBinauralConvolution aliasaba m_dma_buffer_in al
+  buffer del caller cuando num_frames>block_size y teardown() hacia free() de
+  memoria ajena. Ahora se rechaza bloque>block_size limpio, scratch DMA propio
+  nunca se aliasa, y el cleanup de initialize() libera TODO lo parcialmente
+  adquirido (antes fuga por init fallido).
+- **DOS loaders dlopen paralelos -> UNO canonico:** eliminado
+  ivanna_fastrpc_client_load.cpp (loader phaseh duplicado) y sus 2 entradas
+  CMake; el cliente FastRPC resuelve open/close/hrtf/fir via rt::.
+- **UN solo contrato IDL:** ivanna_dsp.idl ahora declara los 9 simbolos que el
+  loader resuelve por dlsym (alineado con el header); eliminados
+  hexagon_dsp_integration.idl (0 bytes) e ivanna_fastrpc_client.idl
+  (contrato divergente).
+- **API JNI nativeDsp* cableada REAL:** antes 6 stubs (false/null/no-op) que
+  decian "no disponible" incluso con cDSP funcional; ahora open/close manejan
+  handle singleton con mutex, isAvailable reporta estado real, getMetrics
+  devuelve cpuLoad/peak reales y deja en 0 los campos sin fuente (nunca
+  valores inventados).
+- **Kotlin honesto:** setMasterGain enrutaba dB al damping de la ODE
+  (nativeSetEta) — ahora escala salida con 10^(dB/20); setClarity/setWarmth
+  sin guard ready (UnsatisfiedLinkError latente); setBypass perdia
+  harmonicGain tras ciclo on->off (ahora se restaura).
+- **Ruta DSP del manifold (consumidor vivo):** 3 bugs — overflow latente de
+  heap (canal R en buffer+N*up_N), retorno de delegateBinauralConvolution
+  ignorado (fallo DSP = basura procesada), y contaminacion cruzada L/R en el
+  upsampler (estado anti-aliasing compartido sin ch=1).
+- **Codigo muerto:** retirada la fachada NpeEngine 'Fase H' (~210 LOC, CERO
+  consumidores, duplicaba la seleccion DSP/CPU del manifold vivo).
+- **Logs honestos por SoC:** deteccion Qualcomm via /proc/cpuinfo — no spamea
+  WARN de dlopen en dispositivos sin Hexagon (esperado, no fallo).
+
+**Lo que NO esta (honestidad, bloqueado por propietario):** el skel QAIC del
+Hexagon SDK (propietario Qualcomm) que pondria el DSP real en silicio, y el
+despacho de audio por la ruta DSP en el callback. Sin el SDK, el audio corre
+por CPU/NEON — la app lo reporta, no lo finge.
+
 **Estado:** trabajando — sesion larga, multi-turno, un commit breve
 individual por cada cambio con push inmediato.
 
