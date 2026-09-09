@@ -722,6 +722,23 @@ documentado, nunca fingido como verificado.
 EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
 elijan cualquier otro flanco libre de la lista.
 
+**NOTA — sesión Genspark (chat), 2026-09-09.** El propietario me pidió
+retomar este mismo flanco "sin detenerse". Al hacer fast-forward encontré
+que el flanco YA fue reclamado por sesión Claude/chat en este mismo día
+(línea 702), con revisión activa en curso. Regla del propio repo (línea 26
+de este archivo, y la que yo mismo escribí en el bloque de arriba): un
+solo agente por flanco. Irrumpir aquí generaría exactamente el daño
+histórico documentado en el encabezado — dos sesiones editando los
+mismos archivos sin coordinarse. Por respeto a esa regla NO he tocado
+ninguno de los 11 archivos del alcance en esta sesión. El README ya
+refleja el flanco como terminado (sección 'Controles, Persistencia y Ruta
+DAC' en README.md:220-232, sembrada por el cierre 6/6 previo). Ceder aquí
+es la única acción coherente con "trabajaremos así" — cualquier otra
+cosa rompería el pacto que este archivo hace cumplir. Si el propietario
+quiere que retome, que retire manualmente el bloque "RETOMADO" de la
+sesión Claude y avise; hasta entonces esta sesión queda en espera sobre
+este flanco y libre para cualquier otro que decida asignarme.
+
 ---
 
 ### Suite de tests C++ huérfana y falsificada — `app/src/test/cpp/`
