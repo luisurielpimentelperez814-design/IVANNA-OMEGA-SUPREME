@@ -18,12 +18,15 @@ static float computeItdSamples(float azimuthDeg, float sr) {
 TEST(ItdInteraural, CeroAlCentro) {
     EXPECT_NEAR(computeItdSamples(0.0f, 96000.f), 0.0f, 1e-4f);
 }
-TEST(ItdInteraural, SimetricoYSaturado) {
+TEST(ItdInteraural, SimetricoYFisicamenteCorrecto) {
     const float pos = computeItdSamples( 90.f, 96000.f);
     const float neg = computeItdSamples(-90.f, 96000.f);
     EXPECT_NEAR(pos, -neg, 1e-3f);                 // simetria perfecta
     EXPECT_LE(std::abs(pos), 64.0f);               // nunca supera kMaxItdSamples
-    EXPECT_NEAR(std::abs(pos), 64.0f, 1.0f);       // a 90 deg esta saturado (~0.67ms)
+    // A 90deg Woodworth da (r/c)*(sin+th)*sr = (0.0875/343)*(1+pi/2)*96000 = 62.9 muestras
+    // (~0.655 ms) — el ITD maximo fisico de una cabeza de 87.5 mm. El clamp de 64
+    // es el techo de interpolacion, no el valor esperado a 90deg.
+    EXPECT_NEAR(std::abs(pos), 62.9f, 0.5f);
 }
 TEST(ItdInteraural, MonotonoCreciente) {
     float prev = computeItdSamples(-90.f, 96000.f);
