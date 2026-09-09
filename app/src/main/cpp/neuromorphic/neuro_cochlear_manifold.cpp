@@ -126,13 +126,23 @@ void neuro_cochlear_process_block(
 
     if (ch < 2) return;
 
+    // FIX(overflow latente + retorno ignorado):
+    //  1) La ruta DSP escribía el canal R en `buffer_post_hrtf + up_N`, pero
+    //     ese buffer tiene N*2 floats — con up_factor > 1 desbordaba el heap.
+    //     El puntero correcto del canal R es `buffer_post_hrtf + N` (planar).
+    //  2) El retorno de delegateBinauralConvolution se ignoraba: si el DSP
+    //     falla en runtime (p.ej. sesion FastRPC caida), buffer_post_hrtf
+    //     quedaba con basura que seguía por el pipeline como si fuera audio.
+    //     Ahora: fallo del DSP => fallback al copy planar en el mismo bloque.
+    bool hrtf_ok = false;
     if (g_manifold.dsp_client && g_manifold.dsp_client->isDSPReady()) {
-        g_manifold.dsp_client->delegateBinauralConvolution(
+        hrtf_ok = g_manifold.dsp_client->delegateBinauralConvolution(
             input_left, input_right,
-            g_manifold.buffer_post_hrtf,
-            g_manifold.buffer_post_hrtf + up_N,
+            g_manifold.buffer_post_hrtf,        // L planar [0, N)
+            g_manifold.buffer_post_hrtf + N,    // R planar [N, 2N)
             position, N);
-    } else {
+    }
+    if (!hrtf_ok) {
         memcpy(g_manifold.buffer_post_hrtf, input_left, N * sizeof(float));
         memcpy(g_manifold.buffer_post_hrtf + N, input_right, N * sizeof(float));
     }
@@ -142,14 +152,19 @@ void neuro_cochlear_process_block(
         // FACTOR=4 hardcodeado sin importar up_factor real, desbordando
         // buffer_post_up (dimensionado con up_factor, hoy =1). Ver
         // fir_upsampler_engine.hpp.
+        // FIX(contaminación cruzada L/R): la 2ª llamada no pasaba ch=1, así
+        // que el estado del anti-aliasing (prev_) era compartido: la cola del
+        // filtro del canal IZQUIERDO contaminaba el primer sample del canal
+        // DERECHO en cada bloque (bleed audible inter-canal a frecuencia de
+        // bloque). Ahora cada canal mantiene su propio estado de filtro.
         g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf, 
             g_manifold.buffer_post_up, 
-            N, static_cast<int>(up_factor));
+            N, static_cast<int>(up_factor), /*ch=*/0);
         g_manifold.upsampler->process(
             g_manifold.buffer_post_hrtf + N, 
             g_manifold.buffer_post_up + up_N, 
-            N, static_cast<int>(up_factor));
+            N, static_cast<int>(up_factor), /*ch=*/1);
     }
 
     if (g_manifold.volterra) {
