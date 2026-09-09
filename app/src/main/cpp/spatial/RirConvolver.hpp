@@ -28,8 +28,18 @@ namespace Ivanna {
 class RirConvolver {
 public:
     static constexpr int BLOCK    = 512;
-    static constexpr int MAX_IR   = 512;
+    static constexpr int MAX_IR   = 512;   // particion 0 (head, latencia cero)
     static constexpr int FFT_SIZE = 1024;  // BLOCK + MAX_IR - 1, redondeado a pot2
+
+    // ── Convolucion particionada no uniforme (estado del arte) ─────────────
+    // Un RIR de sala real dura 0.3-2 s (>= 96k muestras @48k). Con un solo
+    // segmento la latencia seria inaceptable. Solucion de referencia
+    // (Gardner / Wefers): particionar el IR en head corto (latencia 0,
+    // procesado en el bloque actual) + cola larga (overlap-save por bloques,
+    // latencia de 1 bloque, inaudible en el rango de reverb).
+    static constexpr int MAX_IR_TAIL  = 16384;            // ~341 ms @48k de cola
+    static constexpr int TAIL_PARTS   = MAX_IR_TAIL / BLOCK; // 32 particiones de cola
+    static constexpr int MAX_IR_TOTAL = MAX_IR + MAX_IR_TAIL;
 
     RirConvolver();
 
@@ -37,6 +47,8 @@ public:
     // Se puede llamar desde el hilo de control (no durante process()).
     // Thread-safe con process() vía flag atómico pending_.
     void load(const float* irL, const float* irR, int irLen) noexcept;
+    // Carga con IR larga: hasta MAX_IR_TOTAL muestras. Las primeras MAX_IR van
+    // al camino head (latencia cero); el resto a las particiones de cola.
 
     // Descarga la IR — vuelve a bypass puro.
     void unload() noexcept;
@@ -65,6 +77,12 @@ private:
     float overlapL_[MAX_IR] = {};  // Cola overlap-save canal L
     float overlapR_[MAX_IR] = {};
     int   overlapLen_ = 0;
+
+    // Cola particionada: espectros de cada particion + FDL (frequency delay line)
+    std::vector<float> tailIrReL_, tailIrImL_, tailIrReR_, tailIrImR_; // [TAIL_PARTS][FFT_SIZE]
+    std::vector<float> fdlReL_, fdlImL_, fdlReR_, fdlImR_;             // espectros de entrada
+    int tailPartsActive_ = 0;   // cuantas particiones de cola tienen energia
+    int fdlIndex_ = 0;          // puntero circular del FDL
 
     float workRe_[FFT_SIZE] = {};  // Buffers de trabajo — sin malloc en process()
     float workIm_[FFT_SIZE] = {};

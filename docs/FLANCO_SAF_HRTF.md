@@ -22,7 +22,15 @@ explicito, crossfade de potencia constante, cero denormales en el hilo DSP.
 - Convencion: azimuth>0 = fuente a la derecha -> oido izquierdo retrasado.
 
 ## Roadmap del flanco (siguientes sesiones)
-- Convolucion particionada no uniforme (latency-0 head + tail) para RIR largos.
+## Sesion 3 (2026-09-09): convolucion particionada no uniforme IMPLEMENTADA
+- RirConvolver: head (512, latencia 0) + cola (hasta 16384 muestras = 341 ms @48k)
+  en 32 particiones con FDL (frequency-delay-line) y suma espectral por bloque.
+- load() segmenta el IR en hilo de control (fft seguro fuera de process()).
+- La reverb de sala real ya no esta limitada a 512 muestras (era inutilizable
+  para espacios reales: 512 @48k = 10.7 ms).
+
+## Roadmap del flanco (siguientes sesiones)
+- (HECHO) Convolucion particionada no uniforme (latency-0 head + tail).
 - BRIR con reverberacion tardia decorrelada.
 - Personalizacion HRTF desde SAF latente (q_t) -> seleccion de dataset por usuario.
 - Validacion: medicion de ILD/ITD contra base CIPIC/KEMAR de referencia.

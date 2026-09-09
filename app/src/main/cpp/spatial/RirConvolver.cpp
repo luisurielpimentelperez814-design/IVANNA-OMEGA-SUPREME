@@ -60,6 +60,35 @@ RirConvolver::RirConvolver() {
 }
 
 void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept {
+    // ── Particionado no uniforme: head (latencia 0) + cola (overlap-save) ──
+    const int headLen = irLen < MAX_IR ? irLen : MAX_IR;
+    const int tailLen = (irLen > MAX_IR) ? (irLen - MAX_IR) : 0;
+    tailPartsActive_ = tailLen > 0 ? (tailLen + BLOCK - 1) / BLOCK : 0;
+    if (tailPartsActive_ > TAIL_PARTS) tailPartsActive_ = TAIL_PARTS;
+    if (tailPartsActive_ > 0 && tailIrReL_.size() < (size_t)(TAIL_PARTS * FFT_SIZE)) {
+        tailIrReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        tailIrImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        tailIrReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        tailIrImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        fdlReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        fdlImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        fdlReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+        fdlImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+    }
+    // Espectro de cada particion de cola (hilo de control — seguro usar fft aqui)
+    for (int p = 0; p < tailPartsActive_; ++p) {
+        const int off = MAX_IR + p * BLOCK;
+        const int plen = (off + BLOCK <= irLen) ? BLOCK : (irLen - off);
+        float* tre = &tailIrReL_[(size_t)p * FFT_SIZE]; float* tim = &tailIrImL_[(size_t)p * FFT_SIZE];
+        std::memset(tre, 0, FFT_SIZE * sizeof(float)); std::memset(tim, 0, FFT_SIZE * sizeof(float));
+        for (int i = 0; i < plen; ++i) tre[i] = irL[off + i];
+        fftReal(tre, tim, FFT_SIZE, false);
+        float* rre = &tailIrReR_[(size_t)p * FFT_SIZE]; float* rim = &tailIrImR_[(size_t)p * FFT_SIZE];
+        std::memset(rre, 0, FFT_SIZE * sizeof(float)); std::memset(rim, 0, FFT_SIZE * sizeof(float));
+        for (int i = 0; i < plen; ++i) rre[i] = irR[off + i];
+        fftReal(rre, rim, FFT_SIZE, false);
+    }
+    (void)headLen; // el camino head existente consume las primeras MAX_IR muestras
     if (!irL || !irR || irLen <= 0) return;
     const int len = std::min(irLen, MAX_IR);
 
@@ -208,7 +237,32 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
 
         offset    += n;
         remaining -= n;
+    
+    // ── Cola particionada (overlap-save, latencia de 1 bloque, inaudible) ──
+    if (tailPartsActive_ > 0 && loaded_.load(std::memory_order_acquire)) {
+        // Espectro del bloque de entrada actual (workRe_/workIm_ ya lo contienen
+        // al salir del camino head); almacenarlo en el FDL y acumular colas.
+        std::memcpy(&fdlReL_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
+        std::memcpy(&fdlImL_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+        float accRe[FFT_SIZE]; float accIm[FFT_SIZE];
+        std::memset(accRe, 0, sizeof accRe); std::memset(accIm, 0, sizeof accIm);
+        for (int p = 0; p < tailPartsActive_; ++p) {
+            const int src = (fdlIndex_ - p + TAIL_PARTS) % TAIL_PARTS;
+            const float* xr = &fdlReL_[(size_t)src * FFT_SIZE];
+            const float* xi = &fdlImL_[(size_t)src * FFT_SIZE];
+            const float* hr = &tailIrReL_[(size_t)p * FFT_SIZE];
+            const float* hi = &tailIrImL_[(size_t)p * FFT_SIZE];
+            for (int k = 0; k < FFT_SIZE; ++k) {
+                accRe[k] += xr[k] * hr[k] - xi[k] * hi[k];
+                accIm[k] += xr[k] * hi[k] + xi[k] * hr[k];
+            }
+        }
+        fftReal(accRe, accIm, FFT_SIZE, true);
+        const float w = wetDry_.load(std::memory_order_relaxed);
+        for (int i = 0; i < BLOCK; ++i) L[i] += accRe[i] * w;  // cola humeda se suma al head
+        fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
     }
+}
 }
 
 } // namespace Ivanna
