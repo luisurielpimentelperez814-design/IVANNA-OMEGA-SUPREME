@@ -171,7 +171,7 @@ object IvannaConversationalCore {
     private fun detectSessionMood(userText: String, turns: List<ConversationTurn>): SessionMood {
         val t = userText.lowercase()
         val frustrated = hits(t, "no funciona", "malo", "horrible", "terrible", "no sirve",
-            "me duele", "cansa", "fatiga", "mal", "error", "falla", "no escucho")
+            "me duele", "cansa", "fatiga", "error", "falla", "no escucho")
         val satisfied = hits(t, "perfecto", "increíble", "increible", "excelente",
             "me encanta", "genial", "magistral", "quedó bien", "quedo bien", "así está bien")
         val playful = hits(t, "jaja", "jeje", "wow", "brutal", "épico", "epico", "locura")
