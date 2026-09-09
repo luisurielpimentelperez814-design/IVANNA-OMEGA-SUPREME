@@ -91,7 +91,35 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfterSec: number }
   return { allowed: true, retryAfterSec: 0 };
 }
 
+const authToken = process.env.DASHBOARD_AUTH_TOKEN;
+if (!authToken) {
+  // Sin token configurado: el endpoint queda abierto (comportamiento actual,
+  // pensado para localhost/desarrollo). Se avisa explícitamente para que
+  // nadie lo exponga fuera de localhost sin darse cuenta.
+  console.warn('[server] DASHBOARD_AUTH_TOKEN no definida — /api/chat queda SIN auth (ok en localhost, no exponer así)');
+}
+
+/** Comparación en tiempo constante — evita timing attack sobre el token. */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function checkAuth(req: Request): boolean {
+  if (!authToken) return true; // sin token configurado = sin auth exigida
+  const header = req.headers['authorization'];
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false;
+  return timingSafeEqual(header.slice('Bearer '.length), authToken);
+}
+
 app.post('/api/chat', async (req: Request, res: Response) => {
+  if (!checkAuth(req)) {
+    res.status(401).json({ error: 'No autorizado. Requiere header Authorization: Bearer <token>.' });
+    return;
+  }
+
   const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
   const { allowed, retryAfterSec } = checkRateLimit(clientIp);
   if (!allowed) {
