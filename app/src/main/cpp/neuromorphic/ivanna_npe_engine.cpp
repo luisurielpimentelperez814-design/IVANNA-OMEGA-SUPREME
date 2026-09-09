@@ -91,6 +91,18 @@ public:
     // input: input_frames muestras @ Fs
     // output: input_frames * UPSAMPLE_FACTOR muestras @ Fs*16
     // Retorna false si buffers/estado inválidos.
+    //
+    // FIX(auditoría): la descomposición polifásica exige que cada fase tenga
+    // exactamente FIR_TAPS/UPSAMPLE_FACTOR coeficientes — es decir, que
+    // FIR_TAPS sea múltiplo de UPSAMPLE_FACTOR (1024/16 = 64 taps/fase).
+    // Antes había una guarda `if (tap_div >= FIR_TAPS) break;` trivialmente
+    // FALSA siempre (tap < FIR_TAPS implica tap/16 < 64 << FIR_TAPS): código
+    // muerto que daba la falsa impresión de proteger un caso que no cubría.
+    // Se reemplaza por el invariante real, verificado en compile time.
+    static_assert(FIR_TAPS % UPSAMPLE_FACTOR == 0,
+                  "FIR polifasico: FIR_TAPS debe ser multiplo de UPSAMPLE_FACTOR");
+    static constexpr uint32_t TAPS_PER_PHASE = FIR_TAPS / UPSAMPLE_FACTOR;
+
     bool process(const float* input, float* output, uint32_t input_frames) noexcept {
         if (!input || !output || input_frames == 0 || !m_delay_line) return false;
         const float* coeff = g_fir_coefficients_storage.data;
@@ -101,14 +113,12 @@ public:
 
             for (uint32_t phase = 0; phase < UPSAMPLE_FACTOR; ++phase) {
                 float acc = 0.0f;
-                uint32_t tap = phase;
                 const uint32_t d0 = m_delay_index;
-                while (tap < FIR_TAPS) {
-                    const uint32_t tap_div = tap / UPSAMPLE_FACTOR;
-                    if (tap_div >= FIR_TAPS) break;
-                    const uint32_t d = (d0 + FIR_TAPS - tap_div - 1) % FIR_TAPS;
+                // TAPS_PER_PHASE coeficientes por fase, stride UPSAMPLE_FACTOR.
+                for (uint32_t k = 0; k < TAPS_PER_PHASE; ++k) {
+                    const uint32_t tap = phase + k * UPSAMPLE_FACTOR;
+                    const uint32_t d = (d0 + FIR_TAPS - k - 1) % FIR_TAPS;
                     acc += m_delay_line[d] * coeff[tap];
-                    tap += UPSAMPLE_FACTOR;
                 }
                 output[n * UPSAMPLE_FACTOR + phase] = acc;
             }
