@@ -173,7 +173,6 @@ add_library(ivanna_omega SHARED
 
     # Fase H: Hexagon DSP real loader + NPE engine (Phase H integration)
     hexagon/ivanna_dsp.cpp
-    neuromorphic/ivanna_npe_engine.cpp
 
     # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
     # (header-only, no .cpp necesario)
