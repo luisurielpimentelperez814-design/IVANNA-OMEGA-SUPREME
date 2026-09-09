@@ -13,9 +13,19 @@ Metodología:
   5. Low-shelf de graves si la región 20–120 Hz difiere del target
 Salida: JSON con los perfiles para integrar en AutoEqManager.kt
 """
-import h5py, numpy as np, json, os, sys
+import h5py, numpy as np, json, os, sys, argparse
 
-SOFA_DIR = '/home/user/IVANNA-OMEGA-SUPREME/magisk_module/system/etc/ivanna_omega/sofa'
+# Por defecto: los HpIR del modulo Magisk, resueltos RELATIVOS a este
+# script (antes: ruta absoluta /home/user/IVANNA-OMEGA-SUPREME/... — solo
+# existia en una maquina concreta; en cualquier otra el script no encontraba
+# ni un solo .sofa y escribia un JSON vacio sin error). Igual para la
+# salida, que iba a /home/user/hpir_profiles.json aunque el README y el
+# consumidor (AutoEqManager) esperan tools/hpir/hpir_profiles_measured.json.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+DEFAULT_SOFA_DIR = os.path.join(REPO_ROOT, 'magisk_module', 'system', 'etc',
+                                'ivanna_omega', 'sofa')
+DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'hpir_profiles_measured.json')
 
 # Solo HpIR con modelo de auricular identificable
 MODELS = {
@@ -98,17 +108,40 @@ def measure_profile(path, name):
     return {'model': name, 'sourceFile': os.path.basename(path),
             'shelf': shelf, 'bands': bands}
 
-profiles = []
-for fn, name in MODELS.items():
-    p = os.path.join(SOFA_DIR, fn)
-    if not os.path.exists(p):
-        print(f'  FALTA: {fn}', file=sys.stderr)
-        continue
-    prof = measure_profile(p, name)
-    profiles.append(prof)
-    print(f"OK {name}: {len(prof['bands'])} bandas + shelf={prof['shelf']}")
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument('--sofa-dir', default=DEFAULT_SOFA_DIR,
+                    help='directorio con los HpIR .sofa medidos')
+    ap.add_argument('-o', '--out', default=DEFAULT_OUT,
+                    help='JSON de salida (por defecto hpir_profiles_measured.json '
+                         'junto a este script — el que consume AutoEqManager)')
+    args = ap.parse_args()
 
-out = '/home/user/hpir_profiles.json'
-with open(out, 'w') as f:
-    json.dump(profiles, f, indent=2)
-print(f"\nEscrito: {out}")
+    profiles = []
+    missing = 0
+    for fn, name in MODELS.items():
+        p = os.path.join(args.sofa_dir, fn)
+        if not os.path.exists(p):
+            print(f'  FALTA: {fn}', file=sys.stderr)
+            missing += 1
+            continue
+        prof = measure_profile(p, name)
+        profiles.append(prof)
+        print(f"OK {name}: {len(prof['bands'])} bandas + shelf={prof['shelf']}")
+
+    # Escribir un JSON vacio como si fuera exito era el fallo silencioso
+    # original: si falta TODA la entrada, es un error (ruta equivocada),
+    # no un perfil vacio legitimo. Faltan parciales: avisar y continuar.
+    if not profiles:
+        print(f'ERROR: ningun HpIR encontrado en {args.sofa_dir} — '
+              f'nada que escribir', file=sys.stderr)
+        return 1
+    with open(args.out, 'w') as f:
+        json.dump(profiles, f, indent=2)
+    print(f"\nEscrito: {args.out} ({len(profiles)} perfiles"
+          + (f", {missing} faltantes" if missing else "") + ")")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
