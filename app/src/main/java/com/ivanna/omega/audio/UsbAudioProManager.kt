@@ -118,6 +118,11 @@ class UsbAudioProManager private constructor(context: Context) {
 
     // Dispositivo pendiente de permiso (el usuario aun no respondio el dialogo).
     @Volatile private var pendingPermissionDevice: UsbDevice? = null
+
+    // Identidad del DAC con sesion abierta (deviceId es estable por conexion).
+    // Sin esto, onDeviceDetached cerraba la sesion ante la desconexion de
+    // CUALQUIER USB (un raton, un pendrive) si habia una abierta.
+    @Volatile private var openDeviceId: Int = -1
     private var usbConnection: UsbDeviceConnection? = null
     private var audioEndpoint: UsbEndpoint? = null
     private var audioInterface: UsbInterface? = null
@@ -164,11 +169,30 @@ class UsbAudioProManager private constructor(context: Context) {
         }
     }
 
+    @Synchronized
     private fun onDeviceDetached(device: UsbDevice) {
-        // Solo actua si la desconexion es del DAC que estamos usando (el
-        // monitor dinamico ve TODOS los USB del sistema, no solo audio).
+        // Solo actua si la desconexion es EXACTAMENTE del DAC en uso (el
+        // monitor dinamico ve TODOS los USB del sistema: un raton o un
+        // pendrive desconectado NO debe cerrar la sesion de audio).
+        // Se compara por deviceId (estable durante la conexion) y, como
+        // respaldo, por vid/pid — el deviceId puede reasignarse si el DAC
+        // se reconecta muy rapido dentro de la misma ventana de eventos.
         val inUse = usbConnection != null
-        if (!inUse) return
+        if (!inUse) {
+            // Sin sesion abierta: si era el dispositivo pendiente de permiso,
+            // el dialogo queda obsoleto (usuario desconecto antes de decidir).
+            if (pendingPermissionDevice?.deviceId == device.deviceId) {
+                pendingPermissionDevice = null
+                Log.i(TAG, "DAC pendiente de permiso desconectado antes de decidir")
+            }
+            return
+        }
+        val isOurDac = device.deviceId == openDeviceId ||
+            (openDeviceId < 0 && hasAudioStreamingInterface(device))
+        if (!isOurDac) {
+            Log.d(TAG, "DETACHED de otro USB (${device.productName ?: device.deviceName}) — sesion intacta")
+            return
+        }
         Log.i(TAG, "DAC USB desconectado (${device.productName ?: device.deviceName}) " +
             "— cerrando ruta directa")
         if (isStreaming.get()) {
@@ -330,10 +354,29 @@ class UsbAudioProManager private constructor(context: Context) {
      * Solicita acceso USB OTG Directo al dispositivo de audio USB.
      * Escanea interfaces de clase AUDIO y abre conexión raw al endpoint de streaming.
      */
+    // @Synchronized: el receiver de manifest, el receiver dinamico y el
+    // escaneo en frio pueden disparar openDirectPath desde hilos distintos
+    // casi a la vez; sin serializacion, dos de ellos pasaban el guard de
+    // sesion antes de que cualquiera la marcara -> doble openDevice +
+    // doble claimInterface sobre el mismo DAC (EBUSY o estado incoherente).
+    @Synchronized
     fun requestDirectAccess(targetDevice: UsbDevice?): Boolean {
         if (targetDevice == null) {
             Log.e(TAG, "Dispositivo USB nulo")
             return false
+        }
+
+        // Re-apertura sobre una sesion ya abierta con el MISMO dispositivo:
+        // teardown previo para no apilar conexiones ni fds duplicados.
+        if (usbConnection != null) {
+            if (openDeviceId == targetDevice.deviceId) {
+                Log.i(TAG, "Re-apertura del mismo DAC — teardown previo")
+                teardown()
+            } else {
+                Log.w(TAG, "Ya hay sesion con otro DAC — la nueva solicitud espera " +
+                    "a que se cierre la actual")
+                return false
+            }
         }
 
         if (!usbManager.hasPermission(targetDevice)) {
@@ -343,6 +386,7 @@ class UsbAudioProManager private constructor(context: Context) {
 
         val connection = usbManager.openDevice(targetDevice) ?: return false
         usbConnection = connection
+        openDeviceId = targetDevice.deviceId
 
         // Itera interfaces buscando AUDIOSTREAMING
         for (i in 0 until targetDevice.interfaceCount) {
@@ -588,6 +632,10 @@ class UsbAudioProManager private constructor(context: Context) {
         audioEndpoint = null
         audioInterface = null
         fileDescriptor = null
+        // Sin este reset, el id quedaba fantasma: una reconexion del mismo
+        // DAC con deviceId reasignado por el kernel podia no reconocerse
+        // como 'nuestro' en el siguiente ciclo de attach/detach.
+        openDeviceId = -1
     }
 
     /**

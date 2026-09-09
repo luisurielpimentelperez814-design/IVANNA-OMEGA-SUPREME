@@ -154,12 +154,19 @@ fun MagiskStatusPanel(
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, AmberSignal.copy(alpha = 0.4f))
             ) {
+                // El aviso incluye la URL directa del ZIP de ESTA version
+                // (derivada de update.json, que es la fuente que Magisk usa
+                // para actualizar): antes decia "reinstala el ZIP actual" sin
+                // decir cual ni donde — el usuario tenia que adivinar la URL.
                 Text(
                     "⚠ Módulo instalado ($moduleVersion) más viejo que la app " +
-                    "(${com.ivanna.omega.BuildConfig.VERSION_NAME}) — reinstala el ZIP " +
-                    "actual: los fixes del daemon (STL estático, bind con retry) solo " +
-                    "existen en builds nuevos. Un módulo viejo = binario viejo que " +
-                    "muere antes de bindear el socket.",
+                    "(${com.ivanna.omega.BuildConfig.VERSION_NAME}) — el daemon y el " +
+                    "socket pueden responder, pero con el binario VIEJO (sin STL " +
+                    "estático ni bind con retry: puede morir antes de bindear tras " +
+                    "un reinicio). Flashea el ZIP de esta versión desde Magisk:\n" +
+                    "github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME" +
+                    "/releases/download/v${com.ivanna.omega.BuildConfig.VERSION_NAME}" +
+                    "/ivanna_omega_supreme_v${com.ivanna.omega.BuildConfig.VERSION_NAME}.zip",
                     color = AmberSignal,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
