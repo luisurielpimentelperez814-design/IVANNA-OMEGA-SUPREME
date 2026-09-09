@@ -699,6 +699,29 @@ ejecutar contra hardware desde este entorno), y el motor isocrono aun no usa el
 endpoint de feedback UAC2 (sincronizacion fina — hoy absorbe drift variando ±1
 frame/paquete, igual que hace el driver estandar de Linux sin feedback).
 
+**RETOMADO 2026-09-09 (sesión Claude, chat).** Seguía libre (sin commits desde
+el cierre 6/6); lo tomo para el siguiente ciclo bajo la misma regla del
+propietario: un solo agente por flanco, refinamiento de raíz sin importar
+cuántas sesiones tome.
+
+**Alcance exacto — no editar mientras esté aquí:** el mismo de arriba (los 11
+archivos/rutas ya listados: ParameterStore x2, AudioRouteManager,
+AudioRoutingManager, RouteDspCalibrator, UsbAudioProManager,
+AudioBackendSelector, BootRestoreReceiver, AudioSessionReceiver,
+PersistedStateRestorer, usb_audio_pro_manager.cpp, manifest USB HOST/Type-C).
+
+**Plan de este ciclo:** cerrar el pendiente heredado que sí es código y no
+solo prueba en hardware — endpoint de feedback UAC2 en el motor isócrono, hoy
+absorbiendo drift a ciegas (±1 frame/paquete) sin leer el feedback real del
+dispositivo — y auditar el resto del flanco con ojo nuevo, sin asumir que
+"6/6 entregado" significa "sin nada que mejorar". Este entorno no tiene
+hardware DAC real: lo que dependa de eso queda igual de pendiente y
+documentado, nunca fingido como verificado.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
+EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
+elijan cualquier otro flanco libre de la lista.
+
 ---
 
 ### Suite de tests C++ huérfana y falsificada — `app/src/test/cpp/`
