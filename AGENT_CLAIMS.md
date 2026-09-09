@@ -68,6 +68,25 @@ usuario. Es literalmente la raíz de la que cuelga todo lo demás.
   en dispositivo real — pendiente de confirmación en dispositivo, que
   es la prueba definitiva más allá de lo que CI puede validar
   estáticamente (formato ELF, independencia de libc++_shared, RELRO).
+- `v2.3.7`: publica el fix de jvmTarget/Kotlin 2.2.21 (bloqueaba TODO
+  el pipeline, no solo el daemon — fix puntual fuera de mi alcance
+  declarado, aplicado por ser mecánico y bloqueante global).
+- `service.sh`: agregado detección de daemon colgado sin socket
+  (pidof encontraba el proceso pero /proc/net/unix no tenía el socket
+  — coincide exacto con el síntoma DAEMON=verde + SOCKET=rojo del
+  panel). Colisión menor con otra sesión que tocó el mismo archivo en
+  paralelo (omega_shm cleanup) — resuelta sin conflicto, la otra
+  sesión respetó el reclamo y anotó su cambio correctamente.
+- **`ivanna_daemon.cpp`: corrupción de sintaxis real encontrada y
+  reparada** (commit 37b30e12 de otra sesión introdujo literales `\n`
+  como texto en vez de saltos de línea reales, dejando código C++
+  atrapado dentro de un string sin cerrar + un catch sin try
+  correspondiente). Verificado con g++ -fsyntax-only real, no solo
+  lectura visual.
+- **`v2.3.8` (2026-09-09T04:53Z): release completo con el fix de
+  corrupción del daemon + todo el trabajo acumulado de otras sesiones
+  (pipeline HRTF/SOFA verificado end-to-end).**
+  https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.3.8
 - Pendiente activo ahora mismo: confirmar en dispositivo real que el
   socket bindea con este build; si no, seguir diagnosticando desde
   daemon.log real del dispositivo, no solo desde CI.
