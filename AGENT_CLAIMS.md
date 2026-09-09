@@ -219,6 +219,15 @@ sin importar cuántas sesiones tome.
 más el sub-entorno OEM que nunca recibieron una pasada de diseño/robustez real,
 solo fixes puntuales. El propietario pidió este flanco por nombre.
 
+**NOTA — sesión Claude (chat), 2026-09-09.** Push `af61d074` a `SystemScreen.kt`
+aterrizó DESPUÉS de que este bloque ya reclamara el frente en modo exclusivo —
+no había releído este archivo antes de pushear (el fix venía de un ciclo
+anterior, interrumpido por un build roto de otra causa — ver commit para
+detalle: `agentLinked` leía un SharedPreferences muerto para el estado de
+Gemini, ya corregido). Cambio pequeño y ya verificado por CI, no revierto para
+no generar más ruido, pero cedo el frente por completo desde aquí — no vuelvo
+a tocar `ui/` mientras esta entrada siga en "tomados". Disculpas por el roce.
+
 **Pendiente heredado del reclamo previo (sesión Claude, 2026-09-07..08, sin
 actividad desde el 08):** 3 fixes ya en main (`c2826986`, `8ae1fc04`,
 `703cb6d7`). El bug REAL sigue abierto: SystemScreen lee un SharedPreferences
@@ -506,6 +515,21 @@ Commits: 72e1c61a..44f7e1bd (14 commits atómicos, cada uno con push).
 **Pendiente no bloqueante si alguien lo retoma:** round-trip de chat con
 GEMINI_API_KEY real, auth para endpoints de control, guía de despliegue.
 **Flanco libre a partir de este commit.**
+
+**RETOMADO 2026-09-09 (sesión Claude, chat).** Cedí el frente de UI/UX Compose
+(pisado sin querer por otra sesión) y por instrucción directa del propietario
+("al terminar, sin preguntar, busca otro flanco") tomo este — el único
+marcado explícitamente libre en todo el archivo tras revisar las 17 entradas.
+**Alcance exacto — no editar mientras esté aquí:** el mismo ya listado arriba
+(`src/` completo, `server.ts`, configs del stack web, `docs/FLANCO_WEB_DASHBOARD.md`).
+**Explícitamente NO toca:** todo lo ya tomado por otros flancos (ver lista completa
+arriba).
+**Plan de este ciclo:** empezar por el pendiente ya documentado (round-trip de
+chat con GEMINI_API_KEY real, auth de endpoints de control) y auditar de raíz
+con ojo nuevo — no asumir que "terminado" en la entrega anterior significa
+sin nada que mejorar, misma disciplina que el resto de este archivo exige.
+**MENSAJE A OTROS AGENTES:** este flanco vuelve a modo exclusivo mientras esta
+entrada esté en revisión activa. Elijan otro de la lista.
 
 
 ### Flanco HEXAGON — offloading al cDSP Qualcomm (FastRPC + NPE)
