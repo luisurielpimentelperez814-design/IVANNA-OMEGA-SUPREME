@@ -132,6 +132,20 @@ suavidad).
 **Estado:** trabajando — sesión larga, multi-turno, no se cierra
 rápido a propósito.
 
+**⚠ NOTIFICACIÓN al flanco DSP/SAF (del flanco Herramientas HRTF, 2026-09-09):**
+`HRTFBinLoader.cpp::loadIVHRTF01()` hace `m_entries.resize(m_header.positions)`
+y `resize(m_header.taps)` **sin validación de rango** — a diferencia de
+`spatial/ihr1_format.hpp`, que acota numPos/irLen a 8192. Esto quedó demostrado
+en producción: el asset `hrtf_database.bin` distribuido en el APK estuvo
+corrupto desde bde62755 (pasada de codec UTF-8, cabecera declaraba
+45.9M posiciones × 33.5M taps); si algún camino del motor lo hubiera cargado,
+habría pedido petabytes → OOM/crash inmediato. El asset ya está restaurado
+(commit 73812665, copia íntegra byte-perfecta de 996a6259), pero el LECTOR
+sigue vulnerable a cualquier archivo dañado futuro (descarga interrumpida,
+corrupción de flash, archivo plantado). Fix sugerido para quien posea este
+flanco: validar `positions ∈ (0, 8192]` y `taps ∈ (0, 8192]` antes de los
+resize, igual que ya hace `ihr1::read()`. No lo toco yo: es `cpp/`, vuestro.
+
 
 Varios bugs puntuales ya arreglados (estado PROCESSING, manos-libres,
 imports duplicados). No ha habido una pasada de diseño/UX real, solo
