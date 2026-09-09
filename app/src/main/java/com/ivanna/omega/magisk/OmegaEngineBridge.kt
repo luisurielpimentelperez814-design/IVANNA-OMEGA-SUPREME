@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
     private const val SOCKET_PRIMARY = "omega_daemon_socket"
+    private const val MIN_PROTO_VERSION = 3   // exigido en el handshake HELLO al conectar
     private const val TCP_FALLBACK_PORT = 12121   // mismo que --tcp-port en service.sh
     private const val CONNECT_TIMEOUT = 2000
     @Volatile var isConnected = false; private set
@@ -117,6 +118,31 @@ object OmegaEngineBridge {
         return null
     }
     @Synchronized
+    /**
+     * Handshake de protocolo: envía HELLO y exige que el daemon responda una
+     * versión >= MIN_PROTO_VERSION. Si el daemon no responde o es más viejo,
+     * la conexión se considera inválida (isConnected=false) aunque el socket
+     * esté abierto — un socket vivo no implica contrato compatible.
+     */
+    fun handshake(): Boolean {
+        return try {
+            val resp = requestCommand(JSONObject().apply { put("action", "HELLO") })
+            val proto = resp?.optInt("proto", -1) ?: -1
+            val okProto = proto >= MIN_PROTO_VERSION
+            if (!okProto) {
+                Log.w(TAG, "Handshake HELLO: proto=$proto < mínimo $MIN_PROTO_VERSION — daemon incompatible")
+                isConnected = false
+            } else {
+                Log.i(TAG, "Handshake HELLO OK — proto=$proto daemon=${resp?.optString("daemon","?")}")
+            }
+            okProto
+        } catch (e: Exception) {
+            Log.w(TAG, "Handshake HELLO falló: ${e.message}")
+            isConnected = false
+            false
+        }
+    }
+
     fun sendCommand(payload: JSONObject): Boolean {
         return try {
             val t0 = System.nanoTime()
