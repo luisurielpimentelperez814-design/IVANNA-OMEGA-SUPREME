@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 
@@ -100,6 +101,32 @@ constexpr const char* kFastRpcLibs[] = {
     "libadsprpc.so",
 };
 
+// FIX(diagnostico honesto): detecta si el SoC es Qualcomm leyendo el campo
+// Hardware de /proc/cpuinfo. Si NO es Qualcomm, el Hexagon cDSP no puede
+// existir y el loader evita spamear WARN por cada dlopen fallido — es
+// esperado, no un fallo. Si es Qualcomm pero las libs no cargan, SÍ se
+// advierte (el DSP debería estar).
+static bool is_qualcomm_soc() {
+#if IVANNA_HAS_DLOPEN
+    FILE* f = std::fopen("/proc/cpuinfo", "r");
+    if (!f) return true;  // sin info -> asumir posible (no silenciar warnings)
+    char line[256];
+    bool qc = false;
+    while (std::fgets(line, sizeof(line), f)) {
+        if (std::strstr(line, "Qualcomm") || std::strstr(line, "qcom") ||
+            std::strstr(line, "SM") || std::strstr(line, "Snapdragon") ||
+            std::strstr(line, "Hexagon")) {
+            qc = true;
+            break;
+        }
+    }
+    std::fclose(f);
+    return qc;
+#else
+    return true;
+#endif
+}
+
 template <typename FnPtr>
 static FnPtr resolve(void* lib, const char* sym) {
 #if IVANNA_HAS_DLOPEN
@@ -118,10 +145,14 @@ static FnPtr resolve(void* lib, const char* sym) {
 
 static void load_once() {
 #if IVANNA_HAS_DLOPEN
+    const bool qc = is_qualcomm_soc();
+    if (!qc) {
+        IVLOGI("SoC no-Qualcomm detectado — Hexagon cDSP no existe aqui, fallback CPU");
+    }
     for (const char* name : kFastRpcLibs) {
         void* h = dlopen(name, RTLD_NOW | RTLD_LOCAL);
         if (h == nullptr) {
-            IVLOGW("dlopen('%s') fallo: %s", name, dlerror());
+            if (qc) IVLOGW("dlopen('%s') fallo: %s", name, dlerror());
             continue;
         }
 
@@ -143,7 +174,7 @@ static void load_once() {
             (vt.process_stereo != nullptr || vt.set_neuro_params != nullptr);
 
         if (!minimum_ok) {
-            IVLOGW("libreria '%s' cargada pero sin simbolos IDL — descartando", name);
+            if (qc) IVLOGW("libreria '%s' cargada pero sin simbolos IDL — descartando", name);
             dlclose(h);
             continue;
         }
@@ -158,7 +189,7 @@ static void load_once() {
                reinterpret_cast<void*>(vt.process_stereo));
         return;
     }
-    IVLOGI("Hexagon DSP no disponible — usando fallback CPU");
+    if (qc) IVLOGI("Hexagon DSP no disponible en SoC Qualcomm — usando fallback CPU");
 #else
     IVLOGI("dlopen no soportado en esta plataforma — fallback CPU");
 #endif
