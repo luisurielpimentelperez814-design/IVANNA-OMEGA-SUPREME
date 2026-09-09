@@ -474,16 +474,4 @@ class IvannaAssistant(
         voiceWatchStarted = false
         scope.cancel()
     }
-
-
-    suspend fun executeCommand(command: String): String {
-        return when {
-            command.isBlank() ->
-                "Comando vacío"
-
-            else ->
-                "Ejecutando comando: $command"
-        }
-    }
-
 }
