@@ -52,7 +52,56 @@ function isValidMessages(value: unknown): value is ChatMessage[] {
   );
 }
 
+// ─── Rate-limit por IP para /api/chat ────────────────────────────────────────
+// El endpoint da acceso directo al modelo Gemini (cada llamada cuesta créditos
+// de la API key del servidor). Sin límite, cualquier cliente podría drenar la
+// cuota. Ventana deslizante en memoria: máx. RATE_LIMIT_MAX peticiones por IP
+// por ventana de RATE_LIMIT_WINDOW_MS. Suficiente para un panel de control de
+// un solo usuario; un despliegue multi-instancia usaría un store compartido.
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minuto
+const RATE_LIMIT_MAX = 30; // 30 req/min por IP
+
+interface RateBucket {
+  count: number;
+  windowStart: number;
+}
+const rateBuckets = new Map<string, RateBucket>();
+
+// Limpieza periódica de buckets expirados para no acumular IPs en memoria.
+const rateCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) rateBuckets.delete(ip);
+  }
+}, RATE_LIMIT_WINDOW_MS);
+rateCleanup.unref?.(); // no mantiene el proceso vivo por sí solo
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfterSec: number } {
+  const now = Date.now();
+  const bucket = rateBuckets.get(ip);
+  if (!bucket || now - bucket.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateBuckets.set(ip, { count: 1, windowStart: now });
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  if (bucket.count >= RATE_LIMIT_MAX) {
+    const retryAfterSec = Math.ceil((bucket.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+    return { allowed: false, retryAfterSec };
+  }
+  bucket.count += 1;
+  return { allowed: true, retryAfterSec: 0 };
+}
+
 app.post('/api/chat', async (req: Request, res: Response) => {
+  const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  const { allowed, retryAfterSec } = checkRateLimit(clientIp);
+  if (!allowed) {
+    res.setHeader('Retry-After', String(retryAfterSec));
+    res.status(429).json({
+      error: `Demasiadas peticiones. Límite ${RATE_LIMIT_MAX}/min — reintenta en ${retryAfterSec}s.`,
+    });
+    return;
+  }
+
   if (!ai) {
     res.status(503).json({ error: 'Chat no disponible: GEMINI_API_KEY no configurada en el servidor.' });
     return;
