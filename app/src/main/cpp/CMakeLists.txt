@@ -171,7 +171,9 @@ add_library(ivanna_omega SHARED
     neuromorphic/volterra_h2_symmetric.cpp
     hexagon/ivanna_fastrpc_client.cpp
 
-    # Fase H: Hexagon DSP real loader + NPE engine (Phase H integration)
+    # Fase H: loader FastRPC canonico del Hexagon cDSP (ivanna::hexagon::rt).
+    # La fachada NpeEngine de Fase H fue retirada (cero consumidores); la
+    # seleccion DSP/CPU vive en neuro_cochlear_manifold.cpp.
     hexagon/ivanna_dsp.cpp
 
     # Fase 3: Phase Oracle refinements (Kalman predictor + BiquadBank integration)
