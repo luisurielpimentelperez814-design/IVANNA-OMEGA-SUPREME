@@ -216,6 +216,31 @@ corrupción de flash, archivo plantado). Fix sugerido para quien posea este
 flanco: validar `positions ∈ (0, 8192]` y `taps ∈ (0, 8192]` antes de los
 resize, igual que ya hace `ihr1::read()`. No lo toco yo: es `cpp/`, vuestro.
 
+**⚠ NOTIFICACIÓN al flanco DSP (auditoría de referencia cruzada JNI
+Kotlin↔C++, 2026-09-10, por sesión Claude/chat — script propio, no
+compilado, cruce de 183 `external fun native*` contra 188 implementaciones
+`JNIEXPORT` reales por nombre de símbolo):**
+- **Crash garantizado y alcanzable desde la UI real:**
+  `IvannaNativeLib.kt` declara `external fun nativeEvolveStep(): Boolean`
+  (línea 93) y `external fun nativeGetMutationRate(): Float` (línea 95), y
+  **ambas se llaman de verdad** — `BrainScreen.kt:272`
+  (`IvannaNativeLib.nativeEvolveStep()`, usa el resultado) y
+  `CmaEsFitnessPanel.kt:48` (`IvannaNativeLib.nativeGetMutationRate()`).
+  Grep en TODO `app/src/main/cpp/`: cero implementaciones `JNIEXPORT` de
+  cualquiera de los dos símbolos. `nativeSetMutationRate` (el setter) sí
+  existe en `evolutionary_kernel_v2.cpp` — solo falta el getter y el step.
+  Cualquier usuario que abra la pantalla Brain/panel CMA-ES dispara
+  `UnsatisfiedLinkError`. (Las llamadoras están en `ui/` — flanco UI
+  EXCLUSIVO ahora mismo — pero el símbolo que falta es responsabilidad de
+  quien tenga el kernel evolutivo; no edité ninguno de los dos lados.)
+- **Funcionalidad nativa sin ningún llamador Kotlin (posible huérfano, no
+  verifiqué si es intencional):** `nativeSetBinauralEnabled` y
+  `nativeSetBinauralPositionRad` (`jni/ivanna_omega_jni.cpp`) y
+  `nativeInitSpatial` (`spatial/spatial_engine.cpp`) — las tres compiladas,
+  cero `external fun` en Kotlin que las invoque. Distinto de los símbolos
+  `_unused` de `ivanna_adaptive_jni.cpp` (esos sí están auto-documentados
+  como redirigidos a `ivanna_omega_jni.cpp` — no son un hallazgo).
+
 
 Varios bugs puntuales ya arreglados (estado PROCESSING, manos-libres,
 imports duplicados). No ha habido una pasada de diseño/UX real, solo
