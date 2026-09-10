@@ -1068,6 +1068,37 @@ con 2 hallazgos documentados (docs/COORDINACION_UUID_OMEGA_EFFECT.md, commits
 namespace de esquema incorrecto quedan en manos del flanco Daemon (su
 territorio — evidencia y fix exacto copy-paste listos). **Flanco libre.**
 
+---
+
+### Configuración Gradle raíz — build, settings, properties y wrapper
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-10.
+**Alcance exacto — no editar mientras esté aquí:**
+- `build.gradle.kts` (raíz), `settings.gradle.kts`, `gradle.properties`
+- `gradle/wrapper/` (gradle-wrapper.properties), `gradlew`, `gradlew.bat`
+- Coherencia de versiones de plugins entre raíz y settings (AGP/Kotlin/Compose)
+
+**Explícitamente NO toca:** `app/build.gradle.kts` (territorio de los flancos
+Android/DSP si lo tienen), workflows de CI, código fuente. Solo la
+configuración Gradle de nivel raíz y su coherencia interna.
+
+**Por qué este frente:** libre (0 reclamos) y es la puerta de entrada de todo
+build. Auditoría inicial: ya hay divergencias de versión documentadas entre
+raíz y settings (AGP 8.5.1→8.5.2). Un build raíz inconsistente rompe TODOS los
+demás flancos (DSP, daemon, UI no compilan si el build raíz falla).
+
+**Criterio de "terminado, world-class":**
+1. Versiones de plugins coherentes entre build.gradle.kts y settings.gradle.kts
+   (cero divergencias AGP/Kotlin/Compose).
+2. gradle.properties sin flags obsoletos/contradictorios, documentados.
+3. Wrapper con distribución verificable (URL + checksum).
+4. Config raíz que un auditor externo pueda leer y entender de un vistazo.
+
+**Modo de trabajo:** un commit breve individual por cambio, push inmediato.
+
+**Si eres otra sesión:** este flanco está tomado. Elige otro libre.
+
+**Estado:** trabajando — sesión larga, multi-turno.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
