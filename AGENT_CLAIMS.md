@@ -1093,7 +1093,17 @@ adaptive_engine fallan al enlazar (undefined refs) y los de GTest no encuentran 
 (includes vendored sin conectar). Objetivo: `run_ctest.sh` compila y ejecuta la suite completa
 sin errores, con el job `test-native-dsp` del CI usando el mismo camino (sin tocar sus jobs de daemon).
 
-**Estado:** trabajando: ihr1 y adaptive PASAN; tests GTest pendientes (vendored incompleto o red); anotado para CI apt
+**Estado:** CONCILIADO con el flanco "Tests nativos host (CTest)" (mismo
+territorio, ya ENTREGADO y en CI verde — ver entrada homónima más arriba y
+CLAIMS/tests-host-ctest.md). Los bloqueos que esta entrada anotaba están
+resueltos y verificados en corridas reales: GTest vendoreado offline (sin
+red, cero FetchContent), run_ctest.sh reparable y reparado (CMakePresets
+fantasma eliminado), test_ihr1_format y adaptive enganchados, suite completa
+74/74 PASS en local y CI (corridas 34170101339/34170280449/34170484627/
+34543739972: success), con paralelismo, timeout por test, ASan/UBSan por
+push, TSan en carril semanal y job de validación de datasets HRTF. No abrir
+esta línea de nuevo sin un hallazgo NUEVO (un test roto real, no la puerta:
+la puerta está viva).
 
 
 ---
