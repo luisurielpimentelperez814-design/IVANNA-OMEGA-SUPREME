@@ -144,3 +144,26 @@ cada una es una decisión de diseño distinta, no un defecto):**
 **Acción:** ningún cambio de código. La "ambigüedad" era documental: el script
 no estaba en ningún CLAIM y parecía huérfano. Queda registrado aquí como
 herramienta de producción del pipeline batch de los 12 sujetos.
+
+## Ciclo hpir (2026-09-10) — drift datos↔consumidor reconciliado
+
+- Verificación de campo: los SOFA hpir_*.sofa fuente NO están en el repo
+  (los 40 de magisk_module/.../sofa son HRTF/KEMAR) → el JSON medido
+  (7c43a509, 2026-09-09) es la única verdad de medición disponible, y era
+  MÁS RECIENTE que AutoEqManager.kt (baseline 2026-09-03): el Kotlin quedó
+  con el extractor viejo (4 bandas, clamp ±6 dB) mientras el actual produce
+  5 bandas con ±8 dB (verificado en extract_hpir_profiles.py:74-80).
+- AutoEqManager.kt: PROFILES regenerado PROGRAMÁTICAMENTE desde el JSON
+  (sin transcripción manual), 5×5=25 bandas, comentario de cabecera
+  alineado a ±8 dB, nota anti-drift en el bloque. Balance de llaves/
+  paréntesis verificado (0/0). Commit 8aa5ba03.
+- Correctivo propio: mi diagnóstico anterior de "drift AZ vs AZEL" en
+  make_test_ihr1.py era ERRÓNEO — spatial/ihr1_format.hpp soporta ambos
+  layouts por tamaño (AZ y AZEL son válidos). El fix que perdí con el
+  reset NO se restaura: el generador original era correcto para el lector
+  de producción. La divergencia real está en HRTFBinLoader::loadIHR1
+  (solo entiende AZEL) — nota para su dueño, no lo toco.
+- Correctivo de hooks: .githooks/pre-commit estaba 100644 en el tree (git
+  ignora hooks no ejecutables — el commit 8aa5ba03 pasó sin puerta, con
+  advice.ignoredHook). Corregido a 100755 en git (commit 09fc1559, que
+  pasó por el hook activo). Un clon fresco ya funciona sin setup manual.
