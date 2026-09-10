@@ -981,6 +981,40 @@ seguridad (propósito de cada permiso, qué sale del dispositivo), estado maestr
 
 **Estado:** reclamado — primera pasada en esta sesión.
 
+### AdaptiveDecisionEngine — capa de control lento (experimental/adaptive_engine)
+**Tomado por:** sesion Genspark (chat, misma que cerro HEXAGON), iniciado
+2026-09-10. EXCLUSIVO. Candidato sin dueno segun el MAPA DE FLANCOS
+2026-09-10, con la condicion anotada de coordinar con el dueno DSP.
+
+**NOTA DE COORDINACION al flanco DSP cadena:** este modulo vive en
+`experimental/` y su propio header declara que NO esta consumido por
+nativeProcess() ni la cadena de senal — trabajarlo NO toca ningun archivo
+del flanco DSP (peak guard, EQ, limitador, spatial). Solo se toca el
+directorio experimental/adaptive_engine/. El cableado futuro a la cadena
+de senal queda EXPLICITAMENTE fuera de este reclamo (eso si seria del
+dueno DSP o requeriria su OK).
+
+**Alcance exacto — no editar mientras este aqui:**
+- `app/src/main/cpp/experimental/adaptive_engine/` completo
+  (adaptive_decision_engine.{hpp,cpp}, tests/, README.md, FASE3_REPORT.md)
+
+**Por que este flanco:** es el unico sin dueno en el mapa. El header anuncia
+un diseno serio (seqlock buses, hilo de control no-RT, sin malloc en caliente)
+pero nadie ha auditado si la implementacion cumple lo que el header promete:
+tests/ esta VACIO (0 archivos), y el comentario de CMake decia que
+"DSPBridge.nativeProcess() lo consume" mientras el header dice que NADIE lo
+consume — contradiccion documental a resolver. De raiz: auditoria del
+seqlock, correccion de bugs, tests reales del bus, y doc coherente.
+
+**Criterio de entregado:** (1) seqlock publish/consume correcto (sin torn
+reads, orden de campos, seq impar/par), (2) cero UB en el hilo de control,
+(3) doc CMake/header/README coherentes entre si, (4) tests host del bus,
+(5) nada de codigo que finja estar conectado a produccion si no lo esta.
+
+**Estado:** trabajando — commits breves individuales, push por ciclo.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
