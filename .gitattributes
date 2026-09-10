@@ -14,3 +14,13 @@
 *.png   -text -diff binary
 *.jpg   -text -diff binary
 *.sofa  -text -diff binary
+
+# Flanco Gradle raiz (2026-09-10): mismo riesgo de autocrlf que los WAVs —
+# gradle-wrapper.jar se ejecuta en cada build; un byte convertido lo corrompe.
+*.jar   -text -diff binary
+# Y los scripts del wrapper necesitan fin de linea fijo: gradlew con CRLF rompe
+# en Linux ("bad interpreter: /bin/sh^M"), gradlew.bat con LF rompe en Windows.
+gradlew       text eol=lf
+*.sh          text eol=lf
+gradlew.bat   text eol=crlf
+*.bat         text eol=crlf
