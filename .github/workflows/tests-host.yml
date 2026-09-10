@@ -123,6 +123,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # FIX (corrida 34543348492): la versión vigente de verify_dataset.py
+      # (del relevo HRTF-tools) usa numpy a nivel de módulo y el runner
+      # ubuntu-latest no lo trae — ModuleNotFoundError. numpy es dependencia
+      # oficial del propio script (pip install sofar numpy, como sofa_to_ihr1).
+      - name: Instalar numpy (dependencia del validador)
+        run: pip install --quiet numpy
+
       - name: Validar los 13 datasets IHR1 contra el layout del lector C++
         run: |
           set -o pipefail
