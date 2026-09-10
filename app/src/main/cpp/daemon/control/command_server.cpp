@@ -352,26 +352,28 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
     pthread_mutex_lock(&m_mutex);
     std::string t(text);
     int n=0;
+    // GET_TELEMETRY (2026-09-04): el boton TELEMETRY del panel enviaba este
+    // comando de texto y no existia handler (solo el JSON GET_STATUS) ->
+    // boton "muerto". FIX (este commit): el bloque original quedo escrito
+    // DESPUES de un "return n;" incondicional en handleTextCommand -> 100%
+    // inalcanzable, ningun compilador lo ejecutaba jamas pese a compilar sin
+    // error (dead code tras return es warning, no error). Movido a una rama
+    // real de la cadena if/else, normalizando a mayusculas para el match
+    // case-insensitive que ya intentaba el codigo original. Devuelve
+    // key=value real parseable por MagiskBridge.parseField. Metricas sin
+    // fuente cableada devuelven sentinela (-1.0/0), nunca datos inventados.
+    std::string tUpper=t; for(char&c:tUpper){ if(c>='a'&&c<='z') c=(char)(c-'a'+'A'); }
     if (t.find("SET_PF_DRIVE:")==0) {
         float v=atof(t.c_str()+13); m_state.pf_params[0]=v;
         uint64_t gen=publishCurrentState(m_state);
         n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_drive\":%.3f,\"gen\":%llu}",v,(unsigned long long)gen);
+    } else if (tUpper=="GET_TELEMETRY" || tUpper=="TELEMETRY") {
+        n=snprintf(reply,(size_t)reply_sz,
+            "temp=%.1f latency=%.3f frames=%llu bypass=%d samplerate=%d version=2.3.1",
+            -1.0f, 0.0, 0ULL, 0, 48000);
     } else {
         n=snprintf(reply,reply_sz,"{\"ok\":true,\"text_echo\":\"%s\"}",t.c_str());
     }
     pthread_mutex_unlock(&m_mutex);
     return n;
-
-    // GET_TELEMETRY (2026-09-04): el boton TELEMETRY enviaba este comando de
-    // texto y no existia handler (solo el JSON GET_STATUS) -> boton "muerto".
-    // Devuelve key=value real parseable por MagiskBridge.parseField. Metricas
-    // sin fuente cableada devuelven sentinela (-1.0/0), nunca datos inventados.
-    {
-        std::string tt=t; for(char&c:tt){ if(c>='a'&&c<='z') c=(char)(c-'a'+'A'); }
-        if (tt=="GET_TELEMETRY" || tt=="TELEMETRY") {
-            return snprintf(reply,(size_t)reply_sz,
-                "temp=%.1f latency=%.3f frames=%llu bypass=%d samplerate=%d version=2.3.1",
-                -1.0f, 0.0, 0ULL, 0, 48000);
-        }
-    }
 }
