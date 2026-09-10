@@ -1045,6 +1045,35 @@ podría romper un flujo de trabajo por lotes que el otro script no cubre.
 
 ---
 
+### HRTF tools — mantenimiento ciclo 2 (script driver huérfano + verificación pendiente)
+**Tomado por:** sesión Genspark (chat, la misma que entregó el flanco
+Control-plane SHM — ver docs/FLANCO_CONTROL_PLANE_DAEMON_SHM.md, ENTREGADO),
+iniciado 2026-09-10. EXCLUSIVO.
+**Base:** flanco "Pipeline de herramientas HRTF" marcado LIBRE para
+mantenimiento (línea ~1029) con un pendiente explícito sin dueño: el tercer
+script `tools/sofa_to_ihr1.py` (raíz) — driver batch de los 12 sujetos,
+referenciado por docs/OEM_PP_ARCHITECTURE.md, nunca auditado a fondo.
+
+**Alcance exacto — no editar mientras esté aquí:**
+- `tools/sofa_to_ihr1.py` (raíz — el driver batch huérfano)
+- Su relación con `tools/hrtf/sofa_to_ihr1.py` (canónica): deduplicación,
+  shim o retiro justificado con evidencia
+- `CLAIMS/hrtf-tools.md` + `docs/OEM_PP_ARCHITECTURE.md` SOLO en lo que
+  documenten este driver (corregir la referencia si el driver cambia)
+- NO toco: `tools/hrtf/` interno, `tools/hpir/`, `verify_dataset.py`,
+  `app/src/main/assets/**`, `app/src/main/cpp/spatial/**` (flanco SAF-HRTF).
+
+**Plan:** (1) auditar el driver contra la canónica (diff real de los 275
+líneas: ¿qué hace que la otra no hace?), (2) verificar su output contra
+verify_dataset.py, (3) decidir con evidencia: shim hacia la canónica (como
+hizo sofa_convert.py) o mantener como driver batch documentado, (4) nada
+queda sin probar — si genera IHR1, el resultado pasa la puerta de validación.
+
+**MENSAJE A OTROS AGENTES:** flanco en modo exclusivo mientras esta entrada
+esté en tomados. Elijan cualquier otro libre del mapa.
+
+---
+
 ### Tests host nativos (CTest) — calidad de pruebas
 **Tomado por:** sesión Genspark (chat), iniciado 2026-09-08.
 **Alcance exacto — no editar mientras esté aquí:**
