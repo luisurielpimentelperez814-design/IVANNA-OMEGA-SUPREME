@@ -87,23 +87,38 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     sr_ = sampleRate;
     hrtf_.init(sampleRate, IR_LEN);
 
-    // Carga HRTF medido MIT KEMAR desde dataset binario.
-    // Si no existe, SyntheticHRTF mantiene el fallback sintético.
-    const char* hrtfPath =
-        "/data/adb/ivanna_omega/hrtf_database.bin";
+    // Carga HRTF medido. FIX (2026-09-10, verificado por grep contra
+    // magisk_module/customize.sh): la ruta anterior
+    // (/data/adb/ivanna_omega/hrtf_database.bin) NUNCA existio en el
+    // dispositivo — customize.sh despliega los sujetos IHR1 en
+    // /data/adb/ivanna_omega/hrtf/*.ihr1 con indice SHA-256, y no hay
+    // ningun .bin en el modulo. Este camino caia SIEMPRE al sintetico:
+    // el HRTF medido (la promesa central de espacializacion) nunca
+    // llegaba al audio por este convolver. Se adopta la misma cadena de
+    // busqueda que IvannaFusionCore.cpp:62 ya usa con exito: dataset
+    // personalizado del usuario primero, KEMAR medido del modulo despues.
+    // El bridge (ya endurecido) valida cabecera/tamano antes de reservar.
+    const char* hrtfCandidates[] = {
+        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",  // custom del usuario
+        "/data/adb/ivanna_omega/hrtf/kemar.ihr1"     // KEMAR medido del modulo
+    };
 
-    bool hrtfLoaded =
-        Ivanna::SafHRTFDatasetBridge::load(
-            hrtf_,
-            hrtfPath,
-            sampleRate
-        );
+    bool hrtfLoaded = false;
+    const char* hrtfLoadedFrom = nullptr;
+    for (const char* candidate : hrtfCandidates) {
+        if (Ivanna::SafHRTFDatasetBridge::load(hrtf_, candidate, sampleRate)) {
+            hrtfLoaded = true;
+            hrtfLoadedFrom = candidate;
+            break;
+        }
+    }
 
     if (hrtfLoaded) {
         __android_log_print(
                 ANDROID_LOG_INFO,
                 "IVANNA_HRTF",
-                "HRTF: custom dataset loaded"
+                "HRTF: custom dataset loaded from %s",
+                hrtfLoadedFrom
             );
     } else {
         __android_log_print(
