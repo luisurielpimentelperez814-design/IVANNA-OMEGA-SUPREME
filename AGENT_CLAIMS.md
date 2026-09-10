@@ -940,7 +940,17 @@ es, a día de hoy, un archivo que ningún código del repo puede leer sanamente.
 azimuts); `sofa_to_ihr1.py` tiene CLI real (verificado: argparse + struct
 pack `<i` rows/ir_len/out_sr + azimuts `<f` por fila).
 
-**Estado:** trabajando — commits individuales breves, push por ciclo.
+**Estado:** ENTREGADO (2026-09-09, relevo cerrado) — evidencia completa en
+[CLAIMS/hrtf-tools.md](CLAIMS/hrtf-tools.md): asset hrtf_database.bin
+restaurado byte-perfecto desde 996a6259 (estaba mutilado por codec UTF-8
+desde bde62755 — crash/OOM garantizado si el motor lo cargaba),
+sofa_convert.py convertido en shim seguro hacia la canonica, puerta
+verify_dataset.py creada (13/13 datasets del repo PASS + casos negativos
+FAIL con causa), pipeline end-to-end verificado por primera vez (SOFA KEMAR
+44.1k -> IHR1 48k -> PASS), extractor HpIR sin rutas de una sola maquina y
+sin la banda artefacto de 23.4 Hz (JSON regenerado reproducible), doc
+alineada. Pendiente no bloqueante: enganchar verify_dataset.py al CI
+(flanco Tests host). Flanco LIBRE para mantenimiento.
 
 
 ---
