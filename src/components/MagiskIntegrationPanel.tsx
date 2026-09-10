@@ -11,25 +11,34 @@ export const MagiskIntegrationPanel: React.FC = () => {
     setLogs(prev => [...prev, `[${new Date().toISOString().substring(11, 19)}] ${msg}`].slice(-6));
   };
 
+  // FIX (auditoría 2026-09-10, flanco Dashboard web): este panel corre en un
+  // navegador — NO hay forma técnica de que una página web ejecute `su -c id`
+  // ni consulte el daemon real de un teléfono. El texto original ("Executing
+  // su -c id probe...", "GRANTED") daba la impresión de una verificación
+  // real cuando siempre era un timeout con éxito garantizado. Se deja
+  // explícito como simulación ilustrativa del flujo que SÍ es real en la app
+  // Android (MagiskStatusPanel.kt: botones ROOT PING/RECONECTAR) — el
+  // dashboard web no tiene bridge a un dispositivo real, así que fingir lo
+  // contrario es peor que no mostrar nada.
   const handleRootPing = () => {
     setStatus('checking');
-    addLog('Executing `su -c id` probe...');
-    addLog('Waiting for Magisk daemon response...');
-    
+    addLog('[SIMULACIÓN] su -c id (no es un dispositivo real)');
+    addLog('[SIMULACIÓN] esperando respuesta del daemon…');
+
     setTimeout(() => {
       setStatus('granted');
-      addLog('Magisk/KernelSU root permission GRANTED.');
-      addLog('IVANNA-OMEGA-SUPREME daemon IPC bridge established.');
-      addLog('Audio subsystem hooked successfully.');
+      addLog('[SIMULACIÓN] permiso root GRANTED (ilustrativo)');
+      addLog('[SIMULACIÓN] puente IPC del daemon establecido (ilustrativo)');
+      addLog('[SIMULACIÓN] subsistema de audio enlazado (ilustrativo)');
     }, 1500);
   };
 
   const handleRestartDaemon = () => {
-    addLog('Restarting Omega Audio Daemon...');
+    addLog('[SIMULACIÓN] reiniciando Omega Audio Daemon…');
     setStatus('checking');
     setTimeout(() => {
       setStatus('granted');
-      addLog('Daemon rebooted. IPC reconnected.');
+      addLog('[SIMULACIÓN] daemon reiniciado. IPC reconectado (ilustrativo)');
     }, 1200);
   };
 
@@ -39,6 +48,7 @@ export const MagiskIntegrationPanel: React.FC = () => {
         <div className="flex items-center gap-2">
           <Shield className={`w-4 h-4 ${status === 'granted' ? 'text-green-500' : status === 'denied' ? 'text-red-500' : 'text-[#EF4444]'}`} />
           <h3 className="font-bold text-white uppercase text-xs">Kernel & Magisk IPC</h3>
+          <span className="text-[9px] text-[#475569] italic">(simulación ilustrativa)</span>
         </div>
         <div className="flex items-center gap-2">
           {status === 'granted' && <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">HOOKED</span>}
@@ -50,6 +60,8 @@ export const MagiskIntegrationPanel: React.FC = () => {
         <div className="flex-1 space-y-3">
           <p className="text-xs text-[#94A3B8] leading-relaxed">
             IVANNA-OMEGA-SUPREME requires root access via Magisk, KernelSU, or APatch to inject the C++ daemon into the Android audio surfaceflinger.
+            Este panel web no tiene bridge a un dispositivo real — el botón simula
+            el flujo de la app Android para referencia visual, no ejecuta nada.
           </p>
           <div className="flex gap-2">
             <button
