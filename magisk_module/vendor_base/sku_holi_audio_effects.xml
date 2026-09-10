@@ -95,7 +95,7 @@
         <effect name="voice_helper" library="volume_listener" uuid="0ace5c08-0590-11e5-ae9e-0025b32654a0"/>
         <effect name="notification_helper" library="volume_listener" uuid="0b776dde-0590-11e5-81ba-0025b32654a0"/>
         <effect name="audiosphere" library="audiosphere" uuid="184e62ab-2d19-4364-9d1b-c0a40733866c"/>
-        <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
+        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>
     </effects>
     <postprocess>
         <stream type="music">

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<audio_effects_conf version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+<audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">
   <libraries>
     <library name="omega_effect" path="libomega_effect.so"/>
   </libraries>
   <effects>
     <effect name="omega_effect" library="omega_effect"
-            uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
+            uuid="4956414e-4e41-4f4d-4547-415355505245"/>
   </effects>
   <postprocess>
     <stream type="music">

@@ -51,7 +51,7 @@
         <!--DOLBY GAME-->
         <effect name="gamedap" library="gamedap" uuid="3783c334-d3a0-4d13-874f-0032e5fb80e2"/>
         <!--DOLBY END-->
-        <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e" priority="1000"/>
+        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245" priority="1000"/>
 </effects>
     <postprocess>
         <stream type="music">

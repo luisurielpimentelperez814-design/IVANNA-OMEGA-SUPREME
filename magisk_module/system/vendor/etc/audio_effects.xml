@@ -25,7 +25,7 @@
         canal legacy /system/etc.
 ============================================================ -->
 <audio_effects_conf version="2.0"
-                    xmlns="http://schemas.android.com/audio/audio_effects_conf">
+                    xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">
 
     <libraries>
         <library name="omega_effect" path="libomega_effect.so"/>
@@ -36,7 +36,7 @@
              OMEGA_EFFECT_UUID en omega_effect.cpp). -->
         <effect name="omega_effect"
                 library="omega_effect"
-                uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"/>
+                uuid="4956414e-4e41-4f4d-4547-415355505245"/>
     </effects>
 
 </audio_effects_conf>

@@ -25,7 +25,7 @@
 ============================================================ -->
 <!-- IVANNA-OMEGA-SUPREME v1.5 — audio_effects.xml -->
 <!-- FIX v1.5: prioridad 1000 para desplazar Dolby a prioridad 50 -->
-<audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf">
+<audio_effects_conf version="2.0" xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">
 
     <!-- Librería Omega Effect -->
     <libraries>
@@ -35,7 +35,7 @@
     <!-- Efectos -->
     <effects>
         <!-- OMEGA Effect — prioridad 1000 (máxima, desplaza Dolby) -->
-        <effect name="omega_effect" library="omega_effect" uuid="8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e"
+        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"
                 priority="1000"/>
     </effects>
 
