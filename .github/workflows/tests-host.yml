@@ -110,3 +110,31 @@ jobs:
       - name: Resumen
         if: always()
         run: echo "Carril TSan ejecutado. Un fallo aquí = data race real en el DSP — prioridad máxima de investigación."
+
+  # ── Validación de datasets HRTF distribuidos (pipeline HRTF-tools + Tests host) ──
+  # Pendiente heredado del relevo HRTF-tools: verify_dataset.py existía pero
+  # nadie lo corría en CI — un dataset mutilado (como hrtf_database.bin, que
+  # estuvo roto por codec UTF-8) podía volver a colarse en un release sin que
+  # nadie se enterara. Layout derivado línea a línea de HRTFBinLoader.cpp.
+  hrtf-datasets:
+    name: Datasets HRTF (13 distribuidos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar los 13 datasets IHR1 contra el layout del lector C++
+        run: |
+          set -o pipefail
+          python3 tools/hrtf/verify_dataset.py \
+            app/src/main/assets/ivanna_omega/hrtf/*.ihr1 \
+            magisk_module/system/etc/ivanna_omega/hrtf/*.ihr1 \
+            --engine-sr 48000 | tee /tmp/hrtf-validation.log
+          COUNT=$(grep -c "^PASS" /tmp/hrtf-validation.log || true)
+          [ "$COUNT" = "13" ] || {
+            echo "::error::Se esperaban exactamente 13 datasets PASS, hay $COUNT — dataset faltante o ilegible: no se publica"; exit 1
+          }
+
+      - name: Resumen
+        if: always()
+        run: echo "Puerta de datasets HRTF: cualquier FAIL impide que un binario ilegible por HRTFBinLoader llegue al APK — no se ignora."
