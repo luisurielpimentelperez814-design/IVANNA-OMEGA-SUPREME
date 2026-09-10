@@ -11,7 +11,7 @@ public:
     UnifiedEngine(); ~UnifiedEngine();
     bool initialize();
     void processBlock(float* data,int frames,int channels);
-    UnifiedControlFrame readControlFrame() const;
+    const UnifiedControlFrame& readControlFrame() const;
 private: class Impl; Impl* pImpl;
 };
 }
