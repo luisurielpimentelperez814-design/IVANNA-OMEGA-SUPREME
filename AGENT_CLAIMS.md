@@ -1130,6 +1130,41 @@ flags obsoletos y documentado, wrapper con distribución verificable
 `gradlew help` en una máquina con Android SDK para validación end-to-end.
 **Flanco libre a partir de este commit.**
 
+---
+
+### Capa de agente Kotlin — agent/ + supreme/ + preferences/
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-10.
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/java/com/ivanna/omega/agent/` completo
+  (AgentApi.kt, IvannaAgentCore.kt, SelfHealingAgent.kt — 759 líneas)
+- `app/src/main/java/com/ivanna/omega/supreme/IvannaNativeBridge.java`
+- `app/src/main/java/com/ivanna/omega/preferences/PerceptualBrainPrefs.kt`
+
+**Explícitamente NO toca:** `dsp/` (adyacente al flanco DSP; incluye
+PhaseOracle.kt cuyo flanco C++ está CERRADO), `assistant/` y `ai/` (flanco
+Conversación), `ui/` (flanco UI COMPLETA), `magisk/` (flanco Daemon),
+`saf/`/`spatial/` (reclamados), `visualizer/` (flanco UI). Si un fix requiere
+tocar uno de esos, se limita al mínimo indispensable y se nota en el commit.
+
+**Por qué este frente:** verificado con grep sobre AGENT_CLAIMS.md — ningún
+flanco activo lista estos directorios (Conversación cubre ai/+assistant/,
+no agent/; UI COMPLETA cubre ui/). Es la capa de orquestación del agente
+(IvannaAgentCore es referenciada por ViewModels, OEM dashboard, application
+class y assistant) — si tiene bugs, se propagan a todos esos consumidores.
+
+**Criterio de "terminado, world-class":**
+1. Cada clase con justificación de diseño clara (responsabilidad única).
+2. Sin fugas de recursos (scopes de corrutinas cancelables, listeners con
+   registro/desregistro pareado).
+3. Sin estados inconsistentes observables por los consumidores.
+4. Sin código muerto ni APIs públicas sin consumidor.
+
+**Modo de trabajo:** un commit breve individual por cambio, push inmediato.
+
+**Si eres otra sesión:** este flanco está tomado. Elige otro libre.
+
+**Estado:** trabajando — sesión larga, multi-turno.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
