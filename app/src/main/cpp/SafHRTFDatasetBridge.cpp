@@ -1,7 +1,22 @@
 #include "SafHRTFDatasetBridge.hpp"
 
 #include <vector>
+#include <cstring>
 #include <cmath>
+#include <cstdio>
+
+// Log al logcat en dispositivo; printf en host (los tests host compilan este
+// archivo y no tienen liblog). Antes era printf siempre: en Android stdout
+// no va a ninguna parte visible — la telemetria del camino de carga del HRTF
+// medido era invisible en dispositivo.
+#ifdef __ANDROID__
+#include <android/log.h>
+#define BRIDGE_LOGI(...) __android_log_print(ANDROID_LOG_INFO,  "SafHRTFBridge", __VA_ARGS__)
+#define BRIDGE_LOGW(...) __android_log_print(ANDROID_LOG_WARN,  "SafHRTFBridge", __VA_ARGS__)
+#else
+#define BRIDGE_LOGI(...) do { std::printf(__VA_ARGS__); std::printf("\n"); } while (0)
+#define BRIDGE_LOGW(...) do { std::printf(__VA_ARGS__); std::printf("\n"); } while (0)
+#endif
 
 namespace Ivanna {
 
@@ -15,30 +30,24 @@ bool SafHRTFDatasetBridge::load(
     HRTFBinLoader loader;
 
     if (!loader.load(path)) {
-        printf("BRIDGE: loader FAILED path=%s\n", path);
+        BRIDGE_LOGW("loader FAILED path=%s", path ? path : "(null)");
         return false;
     }
-
-    printf("BRIDGE: loader OK\n");
 
 
     const auto& header = loader.header();
 
 
-    if (header.positions == 0 ||
-        header.taps == 0) {
-        printf("BRIDGE: invalid header pos=%u taps=%u\n",
-               header.positions,
-               header.taps);
+    // Defensa en profundidad (el loader ya valida, pero este bridge es una
+    // frontera publica: si alguien lo llama con otro loader, no NaN aqui).
+    if (header.positions == 0 || header.taps == 0) {
+        BRIDGE_LOGW("invalid header pos=%u taps=%u", header.positions, header.taps);
         return false;
     }
 
-    printf(
-    "BRIDGE: header pos=%u taps=%u rate=%.1f\n",
-    header.positions,
-    header.taps,
-    header.sampleRate
-);
+    BRIDGE_LOGI("header pos=%u taps=%u rate=%.1f fmt=%s",
+                header.positions, header.taps, header.sampleRate,
+                loader.isIHR1Format() ? "IHR1" : "IVHRTF01");
 
 
     std::vector<float> azimuths;
@@ -66,23 +75,29 @@ bool SafHRTFDatasetBridge::load(
         //   - IVHRTF01: no trae tabla de ángulos (formato legacy, solo
         //     HRIRs consecutivas) — fallback: rejilla uniforme
         //     -180..+180 como aproximación documentada.
-        float az = loader.isIHR1Format()
-            ? e.azimuthDeg
-            : (-180.0f + (360.0f * (float)i / (float)(header.positions - 1)));
+        // FIX (division por cero): con un dataset legal de UNA sola posicion
+        // (positions==1 esta dentro del rango que el loader acepta), el
+        // fallback legacy hacia 360*i/(1-1) = i/0 -> azimut NaN -> el
+        // convolver interpolaba con NaN y el HRTF medido moria en silencio.
+        // Con una posicion la unica respuesta honesta es azimut 0 (frente).
+        float az;
+        if (loader.isIHR1Format()) {
+            az = e.azimuthDeg;
+        } else if (header.positions > 1) {
+            az = -180.0f + (360.0f * (float)i / (float)(header.positions - 1));
+        } else {
+            az = 0.0f;
+        }
 
         azimuths[i] = az;
 
-
-        for(uint32_t k=0;k<header.taps;k++)
-        {
-            left[
-                (size_t)i*header.taps+k
-            ] = e.left[k];
-
-            right[
-                (size_t)i*header.taps+k
-            ] = e.right[k];
-        }
+        // memcpy por fila: e.left/e.right son vectores contiguos. Antes era
+        // un bucle float a float — 727,040 copias individuales (710x512x2)
+        // en el arranque del efecto, puro desperdicio medible.
+        std::memcpy(left.data()  + (size_t)i * header.taps,
+                    e.left.data(),  (size_t)header.taps * sizeof(float));
+        std::memcpy(right.data() + (size_t)i * header.taps,
+                    e.right.data(), (size_t)header.taps * sizeof(float));
     }
 
 
@@ -100,12 +115,8 @@ bool SafHRTFDatasetBridge::load(
         header.taps
     );
 
-    printf(
-        "BRIDGE: dirs=%u taps=%u result=%d\n",
-        header.positions,
-        header.taps,
-        result
-    );
+    BRIDGE_LOGI("dirs=%u taps=%u result=%d",
+                header.positions, header.taps, (int)result);
 
     return result;
 }
