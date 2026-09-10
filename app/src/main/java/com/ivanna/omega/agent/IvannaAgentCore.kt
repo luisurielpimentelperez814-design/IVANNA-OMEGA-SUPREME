@@ -8,6 +8,7 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -408,6 +409,16 @@ object IvannaAgentCore {
     @Synchronized
     fun stop() {
         running = false
+        // FIX (auditoria 2026-09-10, flanco capa de agente): antes solo se
+        // hacia `scope = null` SIN cancelar. El SupervisorJob quedaba huerfano
+        // y la corrutina vieja seguia activa (isActive=true porque su job
+        // nunca se cancelaba). Si start() se llamaba justo despues (toggle
+        // rapido), el `while (isActive && running)` de la corrutina vieja
+        // volvia a ser true (running es compartido y @Volatile) y quedaban
+        // DOS bucles cycle() concurrentes pisando el mismo estado. Se cancela
+        // explicitamente: la corrutina termina en su proximo punto de
+        // suspension aunque running vuelva a true.
+        scope?.cancel()
         scope = null
         DspControlAgent.resetHysteresis()
     }
