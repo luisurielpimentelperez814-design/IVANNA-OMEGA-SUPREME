@@ -47,5 +47,13 @@ else
   FAIL=1
 fi
 
+echo "== test_evolutionary_kernel =="
+# Kernel evolutivo v2: nativeEvolveStep()/nativeGetMutationRate() estaban
+# declaradas y llamadas desde la UI sin implementacion nativa. Esta puerta
+# ejerce el motor C que las respalda (init, elitismo, clamp de mutacion).
+run g++ -std=c++17 -O2 -I"$CPP" -I"$CPP/include" -I"$GT/googletest/include" -I"$GT/googlemock/include" \
+    "$CPP/tests/test_evolutionary_kernel.cpp" "$CPP/evolutionary_kernel_v2.cpp" /tmp/ivanna_libgtest.a -lpthread -o /tmp/ivanna_evo || FAIL=1
+[ -x /tmp/ivanna_evo ] && run timeout 60 /tmp/ivanna_evo || FAIL=1
+
 if [ "$FAIL" -eq 0 ]; then echo "CTEST HOST: TODOS LOS TESTS OK"; else echo "CTEST HOST: HUBO FALLOS"; fi
 exit "$FAIL"

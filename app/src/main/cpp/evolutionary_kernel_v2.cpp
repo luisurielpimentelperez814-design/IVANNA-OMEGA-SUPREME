@@ -21,7 +21,13 @@
 //   TonalConsistency   = coherencia ACF a lag de período fundamental
 // ============================================================================
 
-#include <jni.h>
+// jni.h sólo existe en el build de Android. Se incluye condicionalmente para
+// que este kernel también pueda compilarse y probarse en el host (CTest), que
+// es donde vive la barrera de regresión de nativeEvolveStep/mutation rate.
+#if __has_include(<jni.h>)
+#  define IVANNA_HAVE_JNI 1
+#  include <jni.h>
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -75,7 +81,22 @@ struct Population {
 
 static Population g_population;
 static std::mt19937 g_rng(42);
-static float g_mutationRate = 0.01f;
+// Tasa base de mutación. Atómica: la escribe el hilo de UI vía
+// nativeSetMutationRate mientras evo_evolve_generation() la lee desde el
+// hilo evolutivo — antes era un float plano (data race real).
+static std::atomic<float> g_mutationRate {0.01f};
+
+// La población sólo es válida tras evo_initialize_population(). Sin esto,
+// un evolve_generation() sobre memoria estática cero produce una población
+// degenerada y fitness sin sentido.
+static std::atomic<bool> g_initialized {false};
+
+// Detección de convergencia: generaciones consecutivas sin mejora
+// significativa del mejor fitness. La UI la usa para detener el bucle.
+static constexpr float EVO_CONVERGENCE_EPS   = 1e-5f;
+static constexpr int   EVO_CONVERGENCE_STALL = 25;
+static float g_lastBestFitness = 0.0f;
+static int   g_stallCount      = 0;
 
 // Audio cues — actualizados desde el audio thread vía evo_update_audio_cues
 static std::atomic<float> g_loudness  {0.0f};
@@ -222,6 +243,9 @@ void evo_initialize_population() {
               [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
     g_population.generation  = 0;
     g_population.bestFitness = g_population.individuals[0].fitness;
+    g_lastBestFitness = g_population.bestFitness;
+    g_stallCount = 0;
+    g_initialized.store(true, std::memory_order_release);
 }
 
 void evo_evolve_generation() {
@@ -237,7 +261,8 @@ void evo_evolve_generation() {
     float popVar = 0.0f;
     for (int i = 0; i < gen; ++i)
         popVar += g_population.individuals[i].fitness - g_population.bestFitness;
-    const float adaptiveMutation = g_mutationRate * (1.0f + 5.0f * std::exp(-popVar));
+    const float adaptiveMutation =
+        g_mutationRate.load(std::memory_order_relaxed) * (1.0f + 5.0f * std::exp(-popVar));
 
     for (int i = elites; i < gen; ++i) {
         // Selección por torneo de 3 padres
@@ -306,6 +331,16 @@ void evo_update_audio_cues_v2(float loudness, float transient, float spatial,
     g_dynamicRange    .store(dynamicRange,  std::memory_order_relaxed);
 }
 
+void evo_set_mutation_rate(float rate) {
+    if (!std::isfinite(rate)) return;
+    g_mutationRate.store(std::max(0.001f, std::min(0.5f, rate)),
+                         std::memory_order_relaxed);
+}
+
+float evo_get_mutation_rate(void) {
+    return g_mutationRate.load(std::memory_order_relaxed);
+}
+
 void evo_set_save_path(const char* path) {
     std::lock_guard<std::mutex> lk(g_saveMutex);
     g_savePath = path ? std::string(path) : std::string();
@@ -335,19 +370,61 @@ int evo_load_state() {
     std::fclose(f); return ok ? 1 : 0;
 }
 
+#ifdef IVANNA_HAVE_JNI
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jclass) {
     return (jint)g_population.generation;
 }
-JNIEXPORT void JNICALL
+
+// FIX: declarada en Kotlin como `external fun nativeInitializeEvolution(...): Boolean`
+// pero implementada aquí como `void` — la JVM leía basura del registro de
+// retorno, así que "Error al inicializar" aparecía de forma aleatoria aunque
+// la población quedara bien creada. Ahora devuelve jboolean real.
+JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(JNIEnv*, jclass,
         jint popSize, jint generations) {
     (void)popSize; (void)generations;
     evo_initialize_population();
+    return g_initialized.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
 }
+
+// FIX: `nativeEvolveStep()` estaba declarada en IvannaNativeLib y llamada desde
+// el botón "PASO" de BrainScreen, pero NINGÚN .cpp la implementaba →
+// UnsatisfiedLinkError garantizado al pulsar el botón. Implementada sobre el
+// motor v2: una generación por llamada, y devuelve false cuando el mejor
+// fitness deja de mejorar (convergencia), que es exactamente lo que la UI
+// interpreta para detener el bucle.
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jclass) {
+    if (!g_initialized.load(std::memory_order_acquire)) {
+        evo_initialize_population();
+    }
+    const float before = g_population.bestFitness;
+    evo_evolve_generation();
+    const float after = g_population.bestFitness;
+
+    if (after - before > EVO_CONVERGENCE_EPS) {
+        g_stallCount = 0;
+    } else {
+        ++g_stallCount;
+    }
+    g_lastBestFitness = after;
+    return (g_stallCount >= EVO_CONVERGENCE_STALL) ? JNI_FALSE : JNI_TRUE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(JNIEnv*, jclass, jfloat rate) {
-    g_mutationRate = std::max(0.001f, std::min(0.5f, (float)rate));
+    evo_set_mutation_rate((float)rate);
 }
+
+// FIX: `nativeGetMutationRate()` también estaba declarada y llamada
+// (CmaEsFitnessPanel, al abrir el panel) sin implementación nativa →
+// UnsatisfiedLinkError al entrar en la pantalla.
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(JNIEnv*, jclass) {
+    return (jfloat)evo_get_mutation_rate();
+}
+
+#endif // IVANNA_HAVE_JNI
 
 } // extern "C"

@@ -351,3 +351,22 @@ target_include_directories(ivanna_benchmark PRIVATE
 )
 target_link_libraries(ivanna_benchmark PRIVATE ivanna_dsp_under_test)
 target_compile_options(ivanna_benchmark PRIVATE -O2 -Wall -Wextra)
+
+# ── Kernel evolutivo v2: barrera de regresión de las entradas JNI ─────────────
+# nativeEvolveStep()/nativeGetMutationRate() estaban declaradas en Kotlin y
+# llamadas desde la UI sin implementación nativa (UnsatisfiedLinkError seguro),
+# y nativeInitializeEvolution devolvía void contra una firma Boolean. Este test
+# ejerce el motor C que respalda esas entradas: init, avance de generación con
+# elitismo, y round-trip/clamping de la tasa de mutación.
+add_executable(test_evolutionary_kernel
+  test_evolutionary_kernel.cpp
+  ../evolutionary_kernel_v2.cpp
+)
+target_link_libraries(test_evolutionary_kernel PRIVATE GTest::gtest_main)
+target_include_directories(test_evolutionary_kernel PRIVATE .. ../include)
+target_compile_options(test_evolutionary_kernel PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_evolutionary_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_evolutionary_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_evolutionary_kernel COMMAND test_evolutionary_kernel)
