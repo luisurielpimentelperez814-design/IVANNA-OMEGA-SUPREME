@@ -61,7 +61,9 @@
 #include <atomic>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <thread>
+#include <type_traits>
 
 namespace ivanna::experimental {
 
@@ -167,8 +169,25 @@ public:
 
         // Seqlock POR SLOT — mismo patrón de siempre, pero ahora sin
         // ningún otro escritor posible tocando este slot en particular.
+        //
+        // FIX (UB formal detectado por ThreadSanitizer — 9 warnings en
+        // test_stability): antes se hacia `slot.snapshot = m` (copia de
+        // struct NO atómica) entre los guard. TSan la marcaba como data race
+        // contra la lectura `snap = slot.snapshot` del consumidor: aunque el
+        // guard impar/par descarta las lecturas rasgadas y ninguna sale, la
+        // lectura/escritura no-atómica concurrente es undefined behavior
+        // formal según el modelo de memoria de C++ — el compilador podría en
+        // teoría optimizarla de forma inválida. Se elimina el UB accediendo
+        // al snapshot palabra por palabra con atomics relaxed bajo el guard
+        // (la corrección la da el guard; los atomics quitan la carrera del
+        // modelo de memoria). TSan queda limpio, semántica idéntica.
         slot.guard.fetch_add(1, std::memory_order_acq_rel);
-        slot.snapshot = m;
+        // Buffer de paso local (memcpy del struct, trivially copyable) —
+        // evita reinterpretar el struct como atomic* (strict aliasing).
+        uint32_t buf[Slot::kWords];
+        std::memcpy(buf, &m, sizeof(m));
+        for (size_t i = 0; i < Slot::kWords; ++i)
+            slot.words[i].store(buf[i], std::memory_order_relaxed);
         slot.guard.fetch_add(1, std::memory_order_release);
     }
 
@@ -202,7 +221,14 @@ public:
             for (;;) {
                 g1 = slot.guard.load(std::memory_order_acquire);
                 if (g1 & 1u) continue;  // escritura en curso, reintentar de verdad
-                snap = slot.snapshot;
+                // Lectura palabra por palabra con atomics relaxed a un
+                // buffer de paso local (ver FIX TSan en publish) — elimina
+                // el UB de la copia de struct no atómica concurrente y el
+                // strict-aliasing de reinterpretar el struct como atomic*.
+                uint32_t buf[Slot::kWords];
+                for (size_t i = 0; i < Slot::kWords; ++i)
+                    buf[i] = slot.words[i].load(std::memory_order_relaxed);
+                std::memcpy(&snap, buf, sizeof(snap));
                 g2 = slot.guard.load(std::memory_order_acquire);
                 if (g1 == g2) break;  // lectura consistente confirmada
             }
@@ -221,9 +247,21 @@ public:
 
 private:
     struct Slot {
-        alignas(64) RawAudioMetrics snapshot{};
-        std::atomic<uint32_t>       guard{0};
+        // Snapshot como palabras atómicas (32-bit) — tamaño del struct
+        // garantizado múltiplo de 4 por el static_assert de abajo. El guard
+        // seqlock protege la coherencia; las palabras atómicas eliminan la
+        // carrera formal del modelo de memoria C++ (ver FIX en publish).
+        static constexpr size_t kWords =
+            sizeof(RawAudioMetrics) / sizeof(uint32_t);
+        alignas(64) std::array<std::atomic<uint32_t>, kWords> words;
+        std::atomic<uint32_t> guard{0};
+        Slot() noexcept { for (auto& w : words) w.store(0, std::memory_order_relaxed); }
     };
+
+    static_assert(sizeof(RawAudioMetrics) % sizeof(uint32_t) == 0,
+                  "RawAudioMetrics debe ser múltiplo de 4 bytes para el seqlock atómico");
+    static_assert(std::is_trivially_copyable<RawAudioMetrics>::value,
+                  "RawAudioMetrics debe ser trivially copyable");
 
     std::array<Slot, static_cast<size_t>(Source::kMaxSources)> slots_{};
     std::atomic<uint64_t> globalSeq_{0};
@@ -242,7 +280,15 @@ public:
                             // Si se necesita tiempo de pared, debe ser un
                             // campo aparte; 'timestamp' es el seq del bus.
         guard_.fetch_add(1, std::memory_order_acq_rel);
-        snapshot_ = s;
+        // FIX (mismo UB formal que RawMetricsBus — TSan: 4 warnings aquí):
+        // `snapshot_ = s` era una copia de struct NO atómica entre los guard,
+        // carrera formal contra la lectura del consumidor. Se escribe palabra
+        // por palabra con atomics relaxed (buffer de paso + memcpy, sin
+        // reinterpretar el struct como atomic* — strict aliasing).
+        uint32_t buf[kWords];
+        std::memcpy(buf, &s, sizeof(s));
+        for (size_t i = 0; i < kWords; ++i)
+            words_[i].store(buf[i], std::memory_order_relaxed);
         guard_.fetch_add(1, std::memory_order_release);
     }
 
@@ -257,7 +303,10 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
-            snap = snapshot_;
+            uint32_t buf[kWords];
+            for (size_t i = 0; i < kWords; ++i)
+                buf[i] = words_[i].load(std::memory_order_relaxed);
+            std::memcpy(&snap, buf, sizeof(snap));
             g2 = guard_.load(std::memory_order_acquire);
             if (g1 == g2) break;
         }
@@ -269,9 +318,21 @@ public:
     }
 
 private:
-    alignas(64) AdaptiveState   snapshot_{};
+    // Snapshot como palabras atómicas (32-bit) bajo el guard seqlock —
+    // elimina el UB de la copia de struct no atómica concurrente (ver FIX
+    // TSan en publish). Mismo patrón que RawMetricsBus::Slot.
+    static constexpr size_t kWords = sizeof(AdaptiveState) / sizeof(uint32_t);
+    alignas(64) std::array<std::atomic<uint32_t>, kWords> words_;
     std::atomic<uint32_t>       guard_{0};
     std::atomic<uint64_t>       seqCounter_{0};
+
+    static_assert(sizeof(AdaptiveState) % sizeof(uint32_t) == 0,
+                  "AdaptiveState debe ser múltiplo de 4 bytes para el seqlock atómico");
+    static_assert(std::is_trivially_copyable<AdaptiveState>::value,
+                  "AdaptiveState debe ser trivially copyable");
+
+public:
+    AdaptiveStateBus() noexcept { for (auto& w : words_) w.store(0, std::memory_order_relaxed); }
 };
 
 // ── El "cerebro lento" ──────────────────────────────────────────────────
