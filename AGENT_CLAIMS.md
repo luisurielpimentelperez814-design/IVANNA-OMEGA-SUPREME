@@ -1280,6 +1280,94 @@ class y assistant) — si tiene bugs, se propagan a todos esos consumidores.
 
 **Estado:** trabajando — sesión larga, multi-turno.
 
+### Motor SAF de calibración HRTF — tonos de prueba binaurales + persistencia magistral
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-10. EXCLUSIVO.
+
+**Por qué se abre este flanco (auditoría del propietario, 2026-09-10):**
+La pantalla `SaFCalibrationScreen` pinta "Escucharás 5 tonos de prueba" y
+avanza las 5 direcciones (FRENTE/DERECHA/IZQUIERDA/ARRIBA/ATRÁS) sin
+reproducir NINGÚN estímulo — el usuario ve la flecha y el hint pero no oye
+nada, así que el botón CORRECTO/INCORRECTO se convierte en una encuesta
+ciega y `Φ_SAF^∞` converge sobre ruido humano en vez de sobre la respuesta
+real del oyente. Además la persistencia del vector latente `q[7]` solo
+existe en el camino JNI (`nativeSaFSaveState`/`LoadState`), pero:
+  - No se dispara en `onStop`/`onPause` del ciclo de vida — se pierde si el
+    usuario cierra la app sin llegar a `DONE`.
+  - No se propaga al `IvannaGlobalEffectManager` ni al daemon system-wide,
+    así que la calibración vive dentro del proceso y no afecta al DSP real.
+  - No se reconcilia con `SpatialAudioPrefs` (el flanco UI/Persistencia
+    guarda `hrtfSubject` y `hrtfEnabled` pero no el vector latente).
+
+**Alcance exacto — no editar mientras esté aquí:**
+- `app/src/main/java/com/ivanna/omega/saf/SaFEngine.kt` (motor + persistencia)
+- `app/src/main/java/com/ivanna/omega/saf/SaFBridge.kt` (JNI SAF — sin tocar firma)
+- `app/src/main/java/com/ivanna/omega/saf/SaFRoomBridge.kt` (JNI Room-SAF)
+- NUEVO: `app/src/main/java/com/ivanna/omega/saf/SaFStimulusPlayer.kt`
+  (reproductor de tonos binaurales de calibración — módulo aislado).
+- NUEVO: `app/src/main/java/com/ivanna/omega/saf/SaFCalibrationPrefs.kt`
+  (persistencia magistral del vector q[7], iteración, timestamp y checksum).
+
+**NOTIFICACIÓN al flanco UI/UX Compose (dueño de `ui/SaFCalibrationScreen.kt`):**
+Intervengo el motor SAF porque el propietario del repo lo solicitó
+explícitamente al ver que la pantalla no emite tonos. Para que no dupliques
+trabajo: he añadido dos módulos NUEVOS en `saf/` (`SaFStimulusPlayer.kt` y
+`SaFCalibrationPrefs.kt`) y he ampliado `SaFEngine` con `playStimulus()` +
+`onLifecyclePause()` + `restoreOrDefault()`. **NO he tocado
+`ui/SaFCalibrationScreen.kt`.** Si decides cablearlo desde la UI, el
+contrato del engine ya está listo: `engine.playCurrentStimulus()` y
+`engine.stopStimulus()` son idempotentes y seguros de invocar desde
+Compose. Tu flanco sigue intacto — solo el motor detrás cambió.
+
+**Explícitamente NO toca:** `ui/SaFCalibrationScreen.kt` (flanco UI), DSP
+nativo C++, `cpp/spatial/**` (flanco SAF-HRTF nativo), daemon/Magisk,
+CI/release, controles/persistencia general (`core/ParameterStore`, ruta
+DAC), IAEL, Hexagon, conversación/Gemini.
+
+**MENSAJE A OTROS AGENTES:** este flanco (motor SAF Kotlin + tonos +
+persistencia magistral del vector q[7]) se trabaja en MODO EXCLUSIVO. No
+tocar `saf/SaFEngine.kt`, `saf/SaFBridge.kt`, `saf/SaFRoomBridge.kt`,
+`saf/SaFStimulusPlayer.kt` ni `saf/SaFCalibrationPrefs.kt` mientras esta
+entrada esté en "tomados". Elijan cualquier OTRO flanco libre.
+
+**Criterio de "terminado, world-class" (no cerrar antes de esto):**
+1. Al pulsar INICIAR CALIBRACIÓN se emite un tono binaural REAL en la
+   dirección indicada (pan+ITD+ILD), usando `AudioTrack` en modo estéreo
+   float, con envolvente ADSR sin clicks (attack 8 ms, decay a −60 dBFS en
+   release 40 ms — matemática, no arbitraria).
+2. El estímulo es un chirp logarítmico 300 Hz→8 kHz (500 ms), no un
+   sinusoide puro — un tono puro no discrimina elevación (ARRIBA vs
+   FRENTE) porque no contiene el rango espectral de las notches pinnales
+   (~6-10 kHz).
+3. La espacialización usa la aproximación de Woodworth para ITD (radio de
+   cabeza 8.75 cm) e ILD sombra dependiente de frecuencia — no un pan L/R
+   ingenuo. FRENTE y ATRÁS reciben el mismo ITD (0) pero difieren en el
+   filtrado espectral (ATRÁS con atenuación 6-10 kHz que emula sombra
+   pinnal), única forma de que ese par sea distinguible por auriculares
+   sin HRTF real cargado.
+4. Persistencia atómica: `q[7]` + iteración + timestamp + checksum SHA-256
+   guardados con `commit()` síncrono en un archivo binario propio
+   (`saf_calibration_v2.bin`), con carga tolerante a corrupción
+   (checksum inválido → defaults + log, no crash). El JNI
+   `nativeSaFSaveState/LoadState` se mantiene como backend nativo, y el
+   nuevo `SaFCalibrationPrefs` es la fuente de verdad Kotlin que espeja al
+   nativo y al `SpatialAudioPrefs`.
+5. Se dispara `save()` en `feedFeedback()`, `startCalibration()`,
+   `finalizeCalibration()` y en un helper `onLifecyclePause()` que la UI
+   puede invocar desde `DisposableEffect` — sin depender de que el flanco
+   UI lo cablee.
+6. `AudioTrack` liberado siempre en `stopStimulus()`, `release()`, y en el
+   finalizer — sin fugas de tracks (patrón ya visto en otros players del
+   repo). Reproducción cancelable a mitad si el usuario pulsa
+   CORRECTO/INCORRECTO antes de que termine.
+
+**Modo de trabajo:** commit individual breve por cada cambio, push
+inmediato. Cierre solo cuando los 6 criterios estén verificables en el
+código, con nota explícita de qué requiere hardware auditivo real (o sea,
+lo que este entorno no puede probar) vs. lo que sí queda demostrado por
+inspección estática.
+
+---
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
