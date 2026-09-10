@@ -12,3 +12,5 @@
 3. IvannaTinyML/SelfHealing compilan OK; SelfHealing.hpp es incluido por daemon/ivanna_daemon.cpp — rol real del daemon PENDIENTE de confirmar (no toco daemon/CMakeLists: flanco Daemon).
 
 ## Estado: baseline documentado; borrado de muertos requiere OK del dueno DSP/Daemon (unconfirmed).
+
+ACTUALIZACIÓN 2026-09-10: tras verificar referencias fuera de cpp/ (src/), IvannaTinyML.{cpp,hpp} se restauraron a su ruta original — son consumidos por el Control Dashboard web (src/data/cppFiles.ts, imports raw). Quedan archivados SOLO ivanna_unified_engine.{hpp,cpp} e ivanna_jni_unified.cpp (cero consumidores verificados: apenas menciones históricas en docs/). Puerta de tests tras el movimiento: NO verificada (unconfirmed).
