@@ -2,6 +2,15 @@ package com.ivanna.omega.preferences
 
 import android.content.Context
 
+/**
+ * Configuración del "cerebro perceptual" — intensidades 0.0..1.0 por eje.
+ *
+ * Los defaults viven UNA sola vez aquí (fuente única de verdad). Antes estaban
+ * duplicados literalmente en esta data class y en PerceptualBrainPrefs.load():
+ * cambiar uno y olvidar el otro dejaba al sistema inconsistente (la data class
+ * decía X pero load() devolvía Y). Ahora load() lee los defaults de la propia
+ * data class — es imposible que diverjan.
+ */
 data class PerceptualBrainConfig(
     val perceptualIntelligence: Float = 0.85f,
     val neuralAdaptation: Float = 0.80f,
@@ -15,36 +24,41 @@ object PerceptualBrainPrefs {
 
     private const val PREFS_NAME = "perceptual_brain_prefs"
 
+    // Instancia con todos los defaults — única fuente de verdad.
+    private val DEFAULTS = PerceptualBrainConfig()
+
     fun load(context: Context): PerceptualBrainConfig {
         val prefs = context.getSharedPreferences(
             PREFS_NAME,
             Context.MODE_PRIVATE
         )
 
+        // Cada getFloat usa como default el valor de la propia data class —
+        // no un literal duplicado que pueda quedar desactualizado.
         return PerceptualBrainConfig(
             perceptualIntelligence = prefs.getFloat(
                 "perceptualIntelligence",
-                0.85f
+                DEFAULTS.perceptualIntelligence
             ),
             neuralAdaptation = prefs.getFloat(
                 "neuralAdaptation",
-                0.80f
+                DEFAULTS.neuralAdaptation
             ),
             spatialImmersion = prefs.getFloat(
                 "spatialImmersion",
-                0.90f
+                DEFAULTS.spatialImmersion
             ),
             harmonicReconstruction = prefs.getFloat(
                 "harmonicReconstruction",
-                0.75f
+                DEFAULTS.harmonicReconstruction
             ),
             antiDolbyBlend = prefs.getFloat(
                 "antiDolbyBlend",
-                1.00f
+                DEFAULTS.antiDolbyBlend
             ),
             humanLoudnessCompensation = prefs.getFloat(
                 "humanLoudnessCompensation",
-                0.82f
+                DEFAULTS.humanLoudnessCompensation
             )
         )
     }
