@@ -186,10 +186,15 @@ add_library(ivanna_omega SHARED
     # (lado Kotlin, no .cpp aquí)
 
     # ============================================================================
-    # Fase 4B: AdaptiveDecisionEngine (cierre del lazo adaptativo en producción)
-    # Antes vivía aislado en experimental/, ahora entra al .so real para que
-    # DSPBridge.nativeProcess() pueda publicar RawAudioMetrics y consumir
-    # AdaptiveState. NO se crea una segunda implementación — único target.
+    # Fase 4B: AdaptiveDecisionEngine (capa de control lento, experimental)
+    # COMPILA en el .so real (está en este target), pero NADIE lo consume aún:
+    # ningún archivo llama a RawMetricsBus::publish() ni a
+    # AdaptiveStateBus::consumeIfNewer() fuera de experimental/ (verificado
+    # por grep 2026-09-10). El comentario anterior decía que
+    # DSPBridge.nativeProcess() publicaba métricas y consumía AdaptiveState —
+    # era la INTENCIÓN de Fase 4, nunca se cableó. Cablearlo requiere decidir
+    # dónde se calculan RawAudioMetrics en el hot-path (no existe hoy) y es
+    # una fase separada que requiere OK del dueño del flanco DSP cadena.
     # ============================================================================
     experimental/adaptive_engine/adaptive_decision_engine.cpp
 

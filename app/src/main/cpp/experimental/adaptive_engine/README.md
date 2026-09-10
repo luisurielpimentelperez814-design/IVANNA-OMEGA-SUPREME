@@ -1,7 +1,13 @@
 # AdaptiveDecisionEngine (experimental)
 
-**Estado: EXPERIMENTAL, no enlazado a ningún target de producción, no consumido por
-`nativeProcess()`. No hacer merge a `main` todavía.**
+**Estado: EXPERIMENTAL. COMPILA dentro del `.so` real (está listado en
+`app/src/main/cpp/CMakeLists.txt`), pero NO es consumido por nadie fuera de este
+directorio** — ningún archivo llama a `RawMetricsBus::publish()` ni a
+`AdaptiveStateBus::consumeIfNewer()` en producción (verificado por grep, 2026-09-10).
+El header y este README lo dicen; el comentario de CMakeLists que decía que
+`DSPBridge.nativeProcess()` lo consumía era la intención de Fase 4, nunca cableada —
+corregido 2026-09-10. **No hacer merge del wiring a `main` sin las 3 decisiones de
+la sección "Por qué no está wireado" (abajo).**
 
 Fase 3 del plan de arquitectura (`IVANNA_ARCHITECTURE_DECISION_REPORT.md`, Prioridad 1.5).
 Capa de "cerebro lento" — analiza métricas de audio ya resumidas y publica sugerencias de
