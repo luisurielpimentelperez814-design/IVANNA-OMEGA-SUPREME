@@ -533,7 +533,7 @@ entrada esté en revisión activa. Elijan otro de la lista.
 
 
 ### Flanco HEXAGON — offloading al cDSP Qualcomm (FastRPC + NPE)
-**Tomado por:** sesion Genspark (chat), iniciado 2026-09-08.
+**Tomado por:** sesion Genspark (chat), iniciado 2026-09-08. **ENTREGADO 2026-09-10 — criterio 5/5 cumplido, auditoria de cabo a rabo limpia.**
 **Alcance exacto — no editar mientras este aqui:**
 - `app/src/main/cpp/hexagon/` completo (ivanna_dsp.{h,hpp,cpp,idl},
   ivanna_fastrpc_client.{hpp,cpp,idl}, ivanna_fastrpc_client_load.cpp,
@@ -618,8 +618,19 @@ Hexagon SDK (propietario Qualcomm) que pondria el DSP real en silicio, y el
 despacho de audio por la ruta DSP en el callback. Sin el SDK, el audio corre
 por CPU/NEON — la app lo reporta, no lo finge.
 
-**Estado:** trabajando — sesion larga, multi-turno, un commit breve
-individual por cada cambio con push inmediato.
+**Auditoria final verificada (2026-09-10):** los 9 simbolos del IDL canonico
+coinciden 1:1 con los dlsym del loader y con las firmas del header rt (diff
+vacio); las 24 firmas external de IvannaNpeNative.kt coinciden 1:1 con los
+exports JNI (diff vacio); el flanco compila y enlaza como .so con -z defs
+(forma estricta de Android) con cero simbolos indefinidos. Ciclo adicional
+de endurecimiento: carrera de liberacion en release() (orden flag->vtable->
+dlclose), call_once quemado -> mutex reintentable (release->re-open ya no
+queda muerto), cabecera del loader actualizada (9 simbolos, no 5).
+
+**Estado:** ENTREGADO. Lo unico no resoluble sin decision del propietario:
+el skel QAIC del Hexagon SDK (propietario Qualcomm, requiere licencia/SDK
+fisico) y el despacho de audio por la ruta DSP. Todo lo demas — contrato,
+loader, JNI, Kotlin, manifold, documentacion — esta de raiz y verificado.
 
 ---
 
