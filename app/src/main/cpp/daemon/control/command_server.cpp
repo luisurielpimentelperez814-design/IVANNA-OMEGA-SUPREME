@@ -350,6 +350,7 @@ void CommandServer::acceptLoop() {
 int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz) {
     if (!text||!reply) return 0;
     pthread_mutex_lock(&m_mutex);
+    ivanna::shmManager().bumpHealthCounter(3); // comandos_procesados (canal texto)
     std::string t(text);
     int n=0;
     // GET_TELEMETRY (2026-09-04): el boton TELEMETRY del panel enviaba este
