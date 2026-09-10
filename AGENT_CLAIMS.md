@@ -1025,8 +1025,12 @@ verify_dataset.py creada (13/13 datasets del repo PASS + casos negativos
 FAIL con causa), pipeline end-to-end verificado por primera vez (SOFA KEMAR
 44.1k -> IHR1 48k -> PASS), extractor HpIR sin rutas de una sola maquina y
 sin la banda artefacto de 23.4 Hz (JSON regenerado reproducible), doc
-alineada. Pendiente no bloqueante: enganchar verify_dataset.py al CI
-(flanco Tests host). Flanco LIBRE para mantenimiento.
+alineada. Pendiente no bloqueante CERRADO (2026-09-10, flanco Tests host/HRTF-tools,
+commits dd49bbd9..141017af): verify_dataset.py corre en CI — job
+`hrtf-datasets` en tests-host.yml valida los 24 datasets IHR1 distribuidos
+(12 assets + 12 módulo) contra el layout de HRTFBinLoader.cpp con conteo
+dinámico (0 FAIL y PASS==presentes); gate VERDE verificado en corrida real
+34543739972 (success/success/success). Flanco LIBRE para mantenimiento.
 
 **Nota para quien retome (sesión Claude/chat, 2026-09-10, no verificado a
 fondo — no lo toqué):** existe un TERCER script, `tools/sofa_to_ihr1.py`
