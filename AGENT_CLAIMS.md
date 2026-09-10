@@ -1114,8 +1114,21 @@ demás flancos (DSP, daemon, UI no compilan si el build raíz falla).
 - org.gradle.caching=true activado (build cache local, seguro por-contenido);
   org.gradle.parallel documentado por qué queda OFF (proyecto mono-módulo
   :app — parallel solo paraleliza entre módulos, sería cargo cult) (7d19ae41).
+- gradlew con bit ejecutable correcto en git (100755); gradlew.bat validado
+  como script estándar genuino de Gradle (cabecera Apache, invoca
+  GradleWrapperMain). .gitattributes endurecido: *.jar protegido como binary
+  (mismo riesgo autocrlf que los WAVs del incidente documentado) y eol fijo
+  para gradlew(lf)/gradlew.bat(crlf), verificado con git check-attr (fec2941e).
 
-**Estado:** trabajando — sesión larga, multi-turno.
+**Estado:** ENTREGADO (2026-09-10) — criterio world-class 4/4: versiones de
+plugins coherentes (fuente única build.gradle.kts), gradle.properties sin
+flags obsoletos y documentado, wrapper con distribución verificable
+(URL + SHA256 oficial + jar validado), config legible. Commits:
+83493e27, c8ab3a76, dd2c2c21, 7d19ae41, 23bf9c3d, fec2941e.
+**Pendiente no bloqueante si alguien lo retoma:** evaluar version catalog
+(gradle/libs.versions.toml) si el proyecto crece a multi-módulo, y probar
+`gradlew help` en una máquina con Android SDK para validación end-to-end.
+**Flanco libre a partir de este commit.**
 
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
