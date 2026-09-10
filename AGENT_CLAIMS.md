@@ -1482,6 +1482,21 @@ bugs solo se documentan en la notificación al flanco Daemon de arriba).
 **Estado:** ENTREGADO. Flanco cerrado — era un barrido puntual, no una
 línea de trabajo continua.
 
+**Barrido posterior (2026-09-10, mismo método, flanco libre de raíz):**
+2 hallazgos más, corregidos (commit cae939e9): (1) `config.json` huérfano
+confirmado — cero referencias en *.ts/*.kt/*.sh/*.yml/*.py — y ENGAÑOSO
+(socket `/dev/socket/ivanna_omega` y "versión 6.0" que contradicen al daemon
+real: `@omega_daemon_socket` en ivanna_daemon.cpp:36, versiones v2.3.x de
+version.properties) → archivado como
+`legacy_no_build/config.json.orphan`; (2) `.gitattributes` sin `*.bin` —
+los 2 binarios de producción (pca_basis_V.bin, hrtf_database.bin) son del
+mismo tipo de asset que ya se corrompió una vez por fin-de-línea → protegido
+`binary -text -diff`. Verificación negativa adicional: notebook de training
+(anti_dolby_features.ipynb) EJECUTA y produce el tensor exacto de producción
+([32,40], filterbank 40×257) — sin drift funcional contra
+AntiDolbyCrnnClassifier.kt; YAMNET_README.md reescrito (describía el modelo
+yamnet.tflite muerto, commit 320a033b).
+
 ---
 
 ### MAPA DE FLANCOS 2026-09-10 (por el agente de PhaseOracle/IvannaLab)
