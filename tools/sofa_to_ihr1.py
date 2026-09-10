@@ -20,8 +20,17 @@
 #   · CIPIC/SOFA usan coordenadas esféricas interaural (az -180..+180,
 #     el -90..+90) — se mantienen tal cual; el interpolador angular del
 #     motor (spatial/HRTFInterpolator.hpp) las consume directamente.
-import sys, os, json, hashlib, struct
+import sys, os, json, hashlib, struct, tempfile, traceback
 import numpy as np
+
+def sha256_file(path):
+    """SHA-256 en streaming (64 KiB/bloque) — no carga el fichero entero en RAM
+    (los IHR1 de produccion miden hasta ~9.7 MB; irrelevante aqui pero gratis)."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(65536), b''):
+            h.update(block)
+    return h.hexdigest()
 
 def load_sofa(path):
     """Lee SOFA vía h5py (SOFA = HDF5). Devuelve (DataIR [M,R,N], SourcePosition [M,3], sr_hz)."""
@@ -94,17 +103,45 @@ if __name__ == "__main__":
     src_dir, dst_dir = sys.argv[1], sys.argv[2]
     os.makedirs(dst_dir, exist_ok=True)
     index = {"version": "2.0", "format": "IHR1", "sampleRate": 48000, "taps": 512, "subjects": []}
+    failed = 0
     for sofa, ihr1, label in DATASETS:
         sp = os.path.join(src_dir, sofa)
         if not os.path.exists(sp):
             print(f"SKIP {sofa} (no existe)"); continue
         op = os.path.join(dst_dir, ihr1)
-        M, sr_orig = to_ihr1(sp, op)
-        sha = hashlib.sha256(open(op, 'rb').read()).hexdigest()
+        # Un SOFA corrupto/corto/1-canal NO debe matar el batch: antes una
+        # excepcion aqui abortaba el proceso y hrtf_index.json jamas se
+        # escribia — se perdian todos los datasets ya convertidos con exito
+        # y el modulo quedaba con binarios nuevos pero indice viejo/ausente
+        # (inconsistencia silenciosa entre sha256 publicado y fichero real).
+        try:
+            M, sr_orig = to_ihr1(sp, op)
+        except Exception as e:
+            failed += 1
+            print(f"FAIL {sofa}: {e} (continua el batch)", file=sys.stderr)
+            if os.environ.get("SOFA_DEBUG"):
+                traceback.print_exc()
+            if os.path.exists(op):
+                os.remove(op)  # nunca dejar un .ihr1 a medio escribir
+            continue
+        sha = sha256_file(op)
         index["subjects"].append({"id": ihr1.replace(".ihr1",""), "file": ihr1,
                                   "label": label, "positions": M,
                                   "sourceSampleRate": sr_orig, "sha256": sha})
         print(f"OK  {sofa} → {ihr1}  ({M} pos, {sr_orig}→48000 Hz, sha256={sha[:12]}…)")
-    with open(os.path.join(dst_dir, "hrtf_index.json"), "w") as f:
-        json.dump(index, f, indent=2)
-    print(f"INDEX hrtf_index.json — {len(index['subjects'])} sujetos")
+    # Escritura ATOMICA del indice: json.dump directo sobre el destino dejaba
+    # un hrtf_index.json truncado si el proceso moria a mitad (disco lleno,
+    # SIGKILL). tmp + rename es atomico en el mismo filesystem.
+    index_path = os.path.join(dst_dir, "hrtf_index.json")
+    fd, tmp = tempfile.mkstemp(dir=dst_dir, prefix=".hrtf_index.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(index, f, indent=2)
+        os.replace(tmp, index_path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    print(f"INDEX hrtf_index.json — {len(index['subjects'])} sujetos"
+          + (f", {failed} fallidos" if failed else ""))
+    sys.exit(1 if failed else 0)  # CI/script llamante debe enterarse
