@@ -1097,6 +1097,24 @@ demás flancos (DSP, daemon, UI no compilan si el build raíz falla).
 
 **Si eres otra sesión:** este flanco está tomado. Elige otro libre.
 
+**Avance verificable (2026-09-10):**
+- Comentario de suppressUnsupportedCompileSdk decía AGP 8.5.1 pero el proyecto
+  ya está en 8.5.2 — documentación sincronizada (commit 83493e27).
+- ELIMINADA duplicación de versiones de plugins: settings.gradle.kts tenía un
+  bloque plugins{} dentro de pluginManagement{} que solo aplica plugins al
+  script de settings (no fija versiones de proyectos) y era la fuente de las 2
+  divergencias AGP documentadas. Fuente única de verdad: build.gradle.kts raíz.
+  Validado con gradlew help real: configura :app correctamente, falla solo por
+  ANDROID_HOME ausente en sandbox (commit c8ab3a76).
+- Wrapper endurecido: anclado distributionSha256Sum (checksum oficial
+  d725d707... de services.gradle.org) — sin él un zip comprometido pasaba
+  inadvertido. gradlew arranca con la validación activa (commit dd2c2c21).
+- gradle-wrapper.jar validado genuino: ZIP íntegro, 14 clases org/gradle/
+  wrapper/, GradleWrapperMain.class presente.
+- org.gradle.caching=true activado (build cache local, seguro por-contenido);
+  org.gradle.parallel documentado por qué queda OFF (proyecto mono-módulo
+  :app — parallel solo paraleliza entre módulos, sería cargo cult) (7d19ae41).
+
 **Estado:** trabajando — sesión larga, multi-turno.
 
 ## Cómo actualizar este archivo
