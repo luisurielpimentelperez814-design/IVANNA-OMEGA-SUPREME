@@ -62,7 +62,11 @@ static float computeAWeight(float freqHz) {
     const float d4 = f2 + 544355.41f;  // (f+737.9)²
     const float den = d1 * d2 * std::sqrt(d3 * d4);
     if (den < 1e-30f) return -100.0f;
-    return 20.0f * std::log10f(num / den) + 2.0f; // +2.0 normaliza a 0dB@1kHz
+    // FIX (build rojo CI #34534011357): std::log10f NO es miembro de std::
+    // en libstdc++ actual (Ubuntu 22.04). El resto del codebase usa log10f
+    // NO-calificado (visualizer/*.hpp, system_audio_capture.cpp). num/den > 0
+    // garantizado por la guard den<1e-30f de arriba; sin log(0) que filtre.
+    return 20.0f * log10f(num / den) + 2.0f; // +2.0 normaliza a 0dB@1kHz
 }
 
 #define POPULATION_SIZE 128
@@ -155,12 +159,11 @@ static float computePsychoacousticFitness(const uint8_t* genome, int len) {
     // sensibilidad del oído. Un genoma que booste frecuencias donde el oído
     // ya es muy sensible (2-5kHz) debe tener menor peso.
     float loudCorr = 0.0f;
-    float centroid = g_spectralCentroid.load(std::memory_order_relaxed);
-
+    // FIX (warnings CI #34534011357): centroid y 'f' declarados pero no
+    // leídos → -Wunused-variable. El loop solo necesita aw (precomputada);
+    // eliminamos las cargas inútiles que ensuciaban el test host.
     for (int k = 0; k < std::min(len/2, GENOME_SIZE/2); ++k) {
-        const float f = k * 48000.0f / GENOME_SIZE;
         const float aw = s_aWeightTable[k];
-        // Penalizar boost excesivo en zonas de alta sensibilidad bajo centroide bajo
         loudCorr += spectrum[k] * aw;
     }
     loudCorr /= (len / 2);
