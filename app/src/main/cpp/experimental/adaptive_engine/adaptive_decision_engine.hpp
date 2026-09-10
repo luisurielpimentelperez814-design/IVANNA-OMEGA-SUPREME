@@ -114,6 +114,10 @@ struct RawAudioMetrics {
     // Default 0.5f (neutral) para que los tests que no lo seteen no
     // disparen el caso "voz detectada" por accidente.
     float voice_score        = 0.5f;
+    // Secuencia GLOBAL de publicación, asignada por RawMetricsBus::publish()
+    // (fetch_add sobre un contador compartido entre TODAS las fuentes). Es
+    // el criterio con el que consumeIfNewer() elige el slot más reciente y
+    // detecta novedad — NO lo rellena el productor, siempre lo pisa el bus.
     uint64_t seq             = 0;
 };
 
