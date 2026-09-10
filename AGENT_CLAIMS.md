@@ -1046,6 +1046,20 @@ No se cierra rápido; se refina de raíz.
 
 **Si eres otra sesión:** este flanco está tomado. Elige otro libre.
 
+**Avance verificable (2026-09-10):**
+- FIX CRÍTICO publicado (commit 8015b8cb): `vendor/etc/audio_effects.xml` ahora
+  registra omega_effect con uuid="4956414e-4e41-4f4d-4547-415355505245",
+  idéntico al binario nativo (omega_effect.cpp:135) y a la app Kotlin
+  (IvannaGlobalEffectManager.kt:233). Antes: 8d7d5e0a-... (mismatch →
+  EffectCreate -EINVAL → DSP inerte). XML validado con parser.
+- Auditoría estructural del XML con namespace correcto: 4/4 cruces OK
+  (0 efectos aplicados sin definir, 0 librerías sin declarar, 0 UUIDs
+  duplicados, 0 librerías sin uso; omega_effect cableado completo:
+  library → effect → apply en streams music y notification).
+- Coordinación con flanco Daemon ENTREGADA: docs/COORDINACION_UUID_OMEGA_EFFECT.md
+  (commit 6aee4a64) — evidencia + fix exacto copy-paste para los 5 XML de
+  magisk_module/ que siguen con el UUID viejo (su territorio, no lo toco).
+
 **Estado:** trabajando — sesión larga, multi-turno.
 
 ## Cómo actualizar este archivo
