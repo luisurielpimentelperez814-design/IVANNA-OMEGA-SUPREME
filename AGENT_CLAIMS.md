@@ -91,6 +91,57 @@ usuario. Es literalmente la raíz de la que cuelga todo lo demás.
   socket bindea con este build; si no, seguir diagnosticando desde
   daemon.log real del dispositivo, no solo desde CI.
 
+**⚠ NOTIFICACIÓN formal al flanco Daemon (auditoría de huérfanos + auditoría
+externa DeepWiki/Devin aportada por el propietario, 2026-09-10) — NO TOCADO,
+es vuestro territorio (SHM/IPC/Ruta B), solo diagnóstico verificado por
+lectura directa (sin NDK en este entorno, no compilado):**
+
+1. **`app/src/main/cpp/shm_hyperplane.cpp` — dos bugs reales:**
+   - `mlockAddr()` (~línea 14): tras `mlock()`, el `if (ret != 0)` tiene
+     cuerpo vacío y la función SIEMPRE termina con
+     `return mlockAddr(addr, len);` — autollamada incondicional con los
+     mismos argumentos, sin caso base. Recursión infinita garantizada en
+     TODA ejecución (éxito o fallo de mlock por igual) → stack overflow, o
+     loop infinito si el compilador aplica TCO. Se alcanza en cada
+     `nativeMapSharedFd()` exitoso, la ruta real de conexión SHM
+     (`ShmManager.kt:225`) — pudo ser (parte de) la causa de "SHM nunca
+     conecta" que el propio comentario del archivo dice arreglar.
+   - `nativeMapSharedFd`: `ShmManager.kt:100` declara
+     `external fun nativeMapSharedFd(fd: FileDescriptor, size: Int)` y
+     llama con `nativeFd.fileDescriptor` (objeto `FileDescriptor`,
+     línea 225), pero `shm_hyperplane.cpp:66` implementa
+     `(jobject, jint fd, jint size)` — un entero crudo, no `jobject`. El
+     slot JNI que la JVM llena con la referencia al objeto se lee en C++
+     como si fuera el número de fd. Encontré 2 scripts sueltos en la raíz
+     intentando arreglar cada lado por separado y en direcciones
+     opuestas, ninguno aplicado limpiamente — los archivé (no borrados)
+     en `legacy_no_build/` de la raíz, detalle completo en el commit.
+2. **`app/src/main/cpp/daemon/control/command_server.cpp:350-377`
+   (`handleTextCommand`) — código muerto confirmado por lectura línea a
+   línea:** la función retorna incondicionalmente en la línea 363
+   (`return n;`) para CUALQUIER texto de entrada; el bloque
+   `GET_TELEMETRY`/`TELEMETRY` de las líneas 365-376 queda sintácticamente
+   dentro de la función pero es inalcanzable en tiempo de ejecución —
+   confirma el hallazgo de una auditoría externa (DeepWiki/Devin) que el
+   propietario compartió. El botón TELEMETRY del panel recibe hoy
+   `{"ok":true,"text_echo":"..."}` (el echo genérico) en vez del sentinela
+   honesto (-1.0/0) que el propio comentario del bloque muerto describe.
+3. **`app/src/main/cpp/omega_effect.cpp:900-904` — `EFFECT_CMD_GET_PARAM`
+   confirmado no-op:** cae en el mismo `break;` que `SET_DEVICE`/
+   `SET_VOLUME`/`SET_AUDIO_MODE` sin escribir nada a `pReplyData`; el
+   código posterior (línea ~909) escribe status=0 igual, así que
+   `AudioEffect.getParameter()` desde Android recibe "éxito" con el
+   buffer de respuesta intacto/sin tocar. Mismo hallazgo que la auditoría
+   externa — verificado aquí por lectura directa del archivo real, no
+   solo citado.
+
+No toco ninguno de los 3 archivos — son vuestros. La auditoría externa
+trae además otros 2 hallazgos en este mismo territorio que no re-verifiqué
+línea a línea (accept() del daemon sin límite de hilos/pool en
+`ivanna_daemon.cpp:356-369`, y parser JSON de balance de llaves duplicado
+entre el handler Unix y el TCP fallback del mismo archivo) — quedan para
+que los evalúe quien tiene el contexto completo del daemon.
+
 **Si eres otra sesión leyendo esto:** no toques los archivos de arriba
 por ahora. Vas a ver este frente avanzar commit por commit con mensajes
 que empiezan con contexto verificado (grep, lectura directa, o log de
@@ -1216,6 +1267,50 @@ cambió; el bridge recalibró su escala interna).
 ### IvannaLab — laboratorio de medicion de calidad de audio
 **Sesion Genspark, 2026-09-08.** ENTREGADO PARCIAL: fixes reales en ivannalab.cpp (compilacion verificada, puerta 67/67); test_ivannalab.cpp CORREGIDO y guardado pero SIN enganchar (requiere coordinar con flanco Tests host para enlazar ivannalab.cpp al target). Coordinacion necesaria para cerrar 100%.
 
+
+---
+
+### Auditoría de artefactos huérfanos en la raíz + LÉAME.md
+**Tomado y entregado por:** sesión Claude (chat), 2026-09-10.
+**Alcance:** archivos sueltos en la raíz del repo sin dueño en ningún otro
+flanco (no código fuente de ninguna app/daemon/UI reclamada).
+
+**Por qué este flanco:** tras encontrar los 3 flancos grandes libres
+(Dashboard web, Tests host, IAEL) ya retomados por otras sesiones en el
+tiempo que tardé en leer este archivo completo, audité la raíz del repo
+buscando artefactos huérfanos — mismo método que ya usaron los flancos de
+Benchmarks/Tests host/orphan-audit de C++.
+
+**Hallazgos y resolución:**
+1. `fix_shm_fd_type.sh` + `fix_nativeMapSharedFd_signature.sh`: dos scripts
+   sueltos, nunca ejecutados (aún contienen sus propios `git commit`/`git push`
+   sin haber corrido), que intentaban arreglar la firma de `nativeMapSharedFd`
+   en direcciones CONTRARIAS (uno movía Kotlin a `FileDescriptor`, el otro
+   movía el JNI a `jint`) — ninguno se aplicó, y el bug real que describían
+   sigue vivo hoy (ver notificación al flanco Daemon arriba). Archivados
+   (no borrados) en `legacy_no_build/` de la raíz.
+2. `fix_shm_header_abi.sh`: su objetivo (`static_assert(sizeof(ShmHeader)==32)`)
+   ya está cumplido en el código actual — verificado por grep en
+   `app/src/main/cpp/daemon/core/shm_manager.h:77`. Obsoleto, archivado.
+3. `ivanna-fix-socket-telemetry.patch` (4 sep): ya no aplica limpio contra
+   ningún archivo que toca (`git apply --check` falla en los 7 archivos) —
+   superado por trabajo posterior real. Archivado.
+4. `LÉAME.md`: 226 líneas, estructura y contenido completamente
+   desincronizados de `README.md` (254 líneas) — tagline en inglés
+   ("Neural Audio Processing Engine") mientras README ya usa la tagline
+   real del producto en español, secciones genéricas de plantilla inicial
+   (roadmap/estado declarados sin relación con el estado real de 2026-09),
+   listas markdown rotas (sin guiones, todo corrido). Reescrito como
+   resumen fiel y honesto que remite a README.md como fuente de detalle —
+   evita que las dos vuelvan a divergir en vez de intentar mantener dos
+   copias completas sincronizadas a mano.
+
+**Nada de esto tocó código de ningún flanco reclamado** (no se editó
+`shm_hyperplane.cpp`, `command_server.cpp`, ni `omega_effect.cpp` — esos 3
+bugs solo se documentan en la notificación al flanco Daemon de arriba).
+
+**Estado:** ENTREGADO. Flanco cerrado — era un barrido puntual, no una
+línea de trabajo continua.
 
 ---
 
