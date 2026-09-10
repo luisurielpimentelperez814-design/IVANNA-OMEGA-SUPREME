@@ -103,3 +103,44 @@ Los 4 puntos de la evidencia rota, cerrados con commits verificables:
 `verify_dataset.py` al CI (territorio del flanco Tests host — notificado en
 AGENT_CLAIMS.md) y regenerar el dataset embarcado del módulo si algún día se
 quiere uno distinto del actual.
+
+---
+
+## Ciclo 2 (2026-09-10, sesión Genspark) — el tercer script: `tools/sofa_to_ihr1.py` (raíz)
+
+**Pregunta heredada:** ¿huérfano de la carga inicial o herramienta viva?
+
+**Veredicto con evidencia: VIVO y CANÓNICO para producción batch. No shim, no borrado.**
+
+1. **Es el productor de todos los assets distribuidos.** Sonda binaria directa
+   de los 12 `.ihr1` embarcados (app/assets + magisk_module): todos son layout
+   AZEL (tabla `[az,el]×M` + bloques IR), 512 taps, 48 kHz — exactamente el
+   formato que escribe el driver raíz, no el AZ de `tools/hrtf/sofa_to_ihr1.py`.
+2. **Los dos layouts son leídos por consumidores distintos** y el lector
+   unificado `spatial/ihr1_format.hpp` los distingue por tamaño de fichero
+   (fórmulas cerradas verificadas: AZ=16+M·(4+8·taps), AZEL=16+M·(8+8·taps)).
+   No hay ambigüedad en runtime.
+3. **La diferencia de signo de azimut NO es bug fatal**: el driver escribe la
+   convención SOFA cruda (az positivo = izquierda); la canónica invierte
+   (`az=-az`, positivo = derecha). `verify_dataset.py` documenta que el motor
+   acepta ambas convenciones (datasets reales usan [0,360) y [-180,180]).
+   El renderer del layout AZEL (ObjectRenderer) consume la tabla tal cual.
+4. **Puerta de validación ejecutada sobre la producción real:**
+   `verify_dataset.py app/src/main/assets/ivanna_omega/hrtf/*.ihr1` →
+   12/12 PASS (cipic_003..165, kemar, kemar_large, pulse, tu_berlin_kemar,
+   freefield_demo). El formato del driver queda probado end-to-end.
+
+**Diferencias reales frente a la canónica (documentadas, no corregidas —
+cada una es una decisión de diseño distinta, no un defecto):**
+- El driver conserva elevación (AZEL) y TODAS las posiciones (sin dedupe):
+  necesario para ObjectRenderer/HRTFBinLoader, que interpolan en 3D.
+- La canónica filtra al plano horizontal (--max-elev) y deduplica por azimut:
+  necesario para el interpolador 1D de synthetic_hrtf.
+- El driver no invierte azimut ni normaliza por azimut-mínimo: la convención
+  es distinta, no errónea (ver punto 3).
+- El driver escribe `hrtf_index.json` (sha256 por sujeto) para el módulo
+  Magisk — capacidad que la canónica no tiene.
+
+**Acción:** ningún cambio de código. La "ambigüedad" era documental: el script
+no estaba en ningún CLAIM y parecía huérfano. Queda registrado aquí como
+herramienta de producción del pipeline batch de los 12 sujetos.
