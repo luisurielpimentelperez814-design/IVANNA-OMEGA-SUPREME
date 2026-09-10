@@ -1015,6 +1015,39 @@ reads, orden de campos, seq impar/par), (2) cero UB en el hilo de control,
 
 ---
 
+---
+
+### Integración AudioFlinger del efecto — coherencia de UUID en audio_effects.xml
+**Tomado por:** sesión Genspark (chat), iniciado 2026-09-10.
+**Alcance exacto — no editar mientras esté aquí:**
+- `vendor/etc/audio_effects.xml` (raíz — el único archivo audio_effects LIBRE,
+  fuera de `magisk_module/` que es del flanco Daemon)
+- Documentación de la discrepancia de UUID (este claim + nota en AGENT_CLAIMS)
+
+**Explícitamente NO toca:** `magisk_module/**` (los 5 audio_effects.xml de ahí
+son territorio del flanco Daemon), `app/src/main/cpp/omega_effect.cpp` (flanco
+DSP), `IvannaGlobalEffectManager.kt` (flanco UI/routing). Mi trabajo es dejar
+documentado el bug y corregir el único archivo libre, para que el flanco
+Daemon tenga la evidencia lista y solo tenga que aplicar el mismo fix a sus XML.
+
+**Por qué este frente:** bug crítico de wiring descubierto por auditoría
+(2026-09-10). El efecto `omega_effect` se registra en TODOS los XML con UUID
+`8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e`, pero el binario nativo
+(`app/src/main/cpp/omega_effect.cpp:135`) y la app Kotlin
+(`IvannaGlobalEffectManager.kt:233`) usan `4956414e-4e41-4f4d-4547-415355505245`
+(ASCII "IVANNAOMEGASUPRE"). AudioFlinger nunca instanciaría el efecto con esa
+discrepancia (`EffectCreate` → `-EINVAL`): el DSP quedaría registrado pero
+inerte. El propio Kotlin ya dejó comentario advirtiéndolo (línea 231: "no
+coincide con el binario"). Es un bloqueador real: sin UUID coherente, ningún
+audio pasa por el motor IVANNA.
+
+**Modo de trabajo:** un commit breve individual por cambio, push inmediato.
+No se cierra rápido; se refina de raíz.
+
+**Si eres otra sesión:** este flanco está tomado. Elige otro libre.
+
+**Estado:** trabajando — sesión larga, multi-turno.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
