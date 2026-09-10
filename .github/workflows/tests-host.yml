@@ -137,4 +137,4 @@ jobs:
 
       - name: Resumen
         if: always()
-        run: echo "Puerta de datasets HRTF: cualquier FAIL impide que un binario ilegible por HRTFBinLoader llegue al APK — no se ignora."
+        run: echo "Puerta de datasets HRTF — cualquier FAIL impide que un binario ilegible por HRTFBinLoader llegue al APK (no se ignora)."
