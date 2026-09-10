@@ -7,6 +7,7 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,7 +87,15 @@ object SelfHealingAgent {
     }
 
     @Synchronized
-    fun stop() { running = false; scope = null }
+    fun stop() {
+        running = false
+        // FIX (auditoria 2026-09-10, flanco capa de agente): mismo bug que
+        // IvannaAgentCore.stop() — scope=null sin cancel() dejaba la corrutina
+        // viva; un toggle rapido start/stop/start creaba dos bucles cycle()
+        // concurrentes (ambos con isActive=true y running compartido @Volatile).
+        scope?.cancel()
+        scope = null
+    }
 
     private fun cycle() {
         val now = System.currentTimeMillis()
