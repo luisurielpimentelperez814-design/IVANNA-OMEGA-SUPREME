@@ -6,6 +6,8 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.SaFOptimizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +54,17 @@ class SaFEngine(private val context: Context) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    // Reproductor de tonos binaurales de calibración HRTF (chirp 300Hz→8kHz
+    // con ITD Woodworth + ILD por sombra de cabeza + rolloff pinnal para
+    // diferenciar FRENTE/ATRÁS por auriculares). Hasta este parche el player
+    // existía pero el motor nunca lo invocaba → encuesta ciega.
+    private val player = SaFStimulusPlayer()
+
+    // Scope dedicado para play() — SaFStimulusPlayer.play() es síncrono
+    // pero el motor principal corre en IO; mezclar los dos podía encubrir
+    // bloqueos del hardware bajo carga. Scope independiente y dedicado.
+    private val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     // ── Init ─────────────────────────────────────────────────────────────
     fun initialize() {
         scope.launch {
@@ -64,9 +77,21 @@ class SaFEngine(private val context: Context) {
                 // aunque el usuario ya hubiera calibrado en una sesión anterior.
                 val restored = runCatching { SaFBridge.nativeSaFLoadState(statePath()) }
                     .getOrDefault(false)
-                val iter   = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
-                val params = if (restored) snapshot { SaFBridge.nativeSaFGetParams() } ?: FloatArray(7) else FloatArray(7)
-                val conv   = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
+                // FIX (persistencia Kotlin): cargar también desde SaFCalibrationPrefs
+                // (formato binario IVSF v2 con SHA-256 sobre magic+version+ts+iter
+                // +converged+q[7]). Si prefs.iter > native.iter, ganamos con la
+                // versión checksum-protegida — sella contra truncado/bit-flip y
+                // es recuperable aunque el TXT nativo quede a medias.
+                val prefsSnap = SaFCalibrationPrefs.load(context)
+                val nativeIter    = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
+                val nativeParams  = if (restored) snapshot { SaFBridge.nativeSaFGetParams() } ?: FloatArray(7) else FloatArray(7)
+                val nativeConv    = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
+                // Resolución de divergencia: iteración más alta gana. En empate,
+                // el binario sellado (prefs) tiene prioridad sobre el TXT nativo.
+                val usePrefs       = prefsSnap.iteration > nativeIter
+                val iter   = if (usePrefs) prefsSnap.iteration else nativeIter
+                val params = if (usePrefs) prefsSnap.q        else nativeParams
+                val conv   = ((if (usePrefs) prefsSnap.converged else nativeConv)) && iter > 0
                 _state.value = SaFState(
                     jniLoaded   = loaded,
                     iteration   = iter,
@@ -87,13 +112,40 @@ class SaFEngine(private val context: Context) {
             // Reset también borra la calibración guardada — arrancamos limpio
             // a propósito, no queremos que loadState() la reviva en el próximo init().
             runCatching { SaFBridge.nativeSaFSaveState(statePath()) }
+            // FIX (persistencia Kotlin): borrar también la snapshot IVSF v2
+            // para que el binario sellado y el TXT nativo queden ambos en cero
+            // y la siguiente init() arranque consistentemente sin calibración.
+            runCatching { SaFCalibrationPrefs.clear(context) }
         }
         _state.value = SaFState(
             phase      = SaFPhase.CALIBRATING,
             currentDir = SaFDirection.ordered[0],
             jniLoaded  = IvannaNativeLib.isLoaded
         )
+        // FIX (tonos): emitir el primer estímulo inmediatamente al entrar a
+        // CALIBRATING. Sin esto la pantalla renderiza la flecha y el hint pero
+        // no se oye nada — el botón CORRECTO/INCORRECTO se convierte en
+        // encuesta ciega y Φ_SAF^∞ converge sobre ruido humano.
+        playStimulus(SaFDirection.ordered[0])
     }
+
+    /**
+     * Lanza la reproducción del estímulo binaural para la dirección dada en
+     * el scope dedicado. Idempotente: SaFStimulusPlayer.play() cancela el
+     * estímulo anterior si quedaba algo en vuelo (AtomicInteger de
+     * generación). Si el hardware no soporta float estéreo, el warning se
+     * loguea y el usuario sigue pudiendo responder — útil para diagnóstico.
+     */
+    private fun playStimulus(direction: SaFDirection) {
+        playerScope.launch {
+            runCatching { player.play(direction) }
+                .onFailure {
+                    android.util.Log.w(TAG, "playStimulus(${direction.label}) → ${it.message}")
+                }
+        }
+    }
+
+    private companion object { const val TAG = "SaFEngine" }
 
     // ── Feed one feedback sample ──────────────────────────────────────────
     fun feedFeedback(direction: SaFDirection, correct: Boolean) {
@@ -125,6 +177,23 @@ class SaFEngine(private val context: Context) {
             // de perder todo el progreso y volver a q=0.
             runCatching { SaFBridge.nativeSaFSaveState(statePath()) }
 
+            // FIX (persistencia Kotlin): mirror en SaFCalibrationPrefs (IVSF v2).
+            // Cualquier kill -9 entre el save nativo y este save Kotlin no puede
+            // ya corromper el binario: SHA-256 + write-then-rename con fsync.
+            // Un fallo aquí NO se propaga al motor — sólo se loguea (prefs es
+            // SSOT paralela, pero el TXT nativo ya está commiteado).
+            runCatching {
+                SaFCalibrationPrefs.save(
+                    context,
+                    SaFCalibrationPrefs.Snapshot(
+                        q           = params,
+                        iteration   = iter,
+                        converged   = conv,
+                        timestampMs = System.currentTimeMillis()
+                    )
+                )
+            }.onFailure { android.util.Log.w(TAG, "prefs.save falló: ${it.message}") }
+
             // Advance to next direction (round-robin) or finish
             val nextIdx  = (direction.ordinal + 1) % SaFDirection.ordered.size
             val nextDir  = SaFDirection.ordered[nextIdx]
@@ -139,7 +208,27 @@ class SaFEngine(private val context: Context) {
                 converged   = conv,
                 jniLoaded   = IvannaNativeLib.isLoaded
             )
+
+            // FIX (tonos): emitir el estímulo de la siguiente dirección al
+            // instante de avançar. Si ya convergió (phase=DONE), silencio.
+            // playStimulus() es asíncrono en su propio scope — el motor
+            // no espera al hardware.
+            if (phase == SaFPhase.CALIBRATING) {
+                playStimulus(nextDir)
+            }
         }
+    }
+
+    /**
+     * Libera recursos del motor. Llamar desde el componente Compose que
+     * posea el engine (DisposableEffect). Idempotente y tolerante a fallo
+     * parcial — cada cancelación va en runCatching para que una falla en el
+     * JNI no impida liberar el player.
+     */
+    fun release() {
+        runCatching { player.release() }
+        runCatching { playerScope.cancel() }
+        runCatching { scope.cancel() }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
