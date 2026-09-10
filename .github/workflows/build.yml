@@ -694,14 +694,34 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" --clobber
               gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
             else
-              echo "ERROR: el release $TAG ya existe PUBLICADO — casi seguro"
-              echo "inmutable (GitHub Immutable Releases). Assets y tag"
-              echo "quedan sellados para siempre, sin excepcion; borrar y"
-              echo "recrear con el mismo tag NO es una salida real."
-              echo "Sube versionName/versionCode en version.properties (y"
-              echo "module.prop/update.json en sync) a un valor NUEVO,"
-              echo "nunca antes usado, y vuelve a pushear."
-              exit 1
+              # FIX (CI rojo en CADA push que no traiga bump de version):
+              # un release ya PUBLICADO es inmutable — no se le pueden
+              # reemplazar assets ni mover el tag. Eso NO es un fallo del
+              # commit actual: es el estado normal de main entre releases.
+              # Antes se hacia exit 1 aqui, asi que el pipeline salia rojo
+              # en todos los commits de trabajo (fixes de DSP, UI, tests)
+              # aunque build y tests estuvieran verdes, y el rojo cronico
+              # tapaba fallos reales. Ahora es idempotente: se verifica
+              # que el asset que update.json espera EXISTA en ese release
+              # (si falta, si es un fallo real) y se sale en verde con un
+              # aviso claro de que para publicar binarios nuevos hace
+              # falta subir version.properties + module.prop + update.json.
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                   --json assets --jq '.assets[].name' | grep -qx "$ZIP_NAME"; then
+                echo "OK (idempotente): el release $TAG ya esta publicado e"
+                echo "inmutable, y ya contiene $ZIP_NAME — nada que hacer."
+                echo "AVISO: para entregar ESTOS binarios a dispositivos hay"
+                echo "que subir versionName/versionCode en version.properties"
+                echo "(con module.prop y update.json en sync) a una version"
+                echo "nueva; los releases publicados no se pueden reescribir."
+              else
+                echo "ERROR: el release $TAG existe PUBLICADO (inmutable) pero"
+                echo "NO contiene el asset $ZIP_NAME que magisk_module/update.json"
+                echo "espera — el updater de Magisk quedaria roto para esa version."
+                echo "Sube version.properties/module.prop/update.json a una version"
+                echo "nueva, nunca antes usada, y vuelve a pushear."
+                exit 1
+              fi
             fi
           else
             gh release create "$TAG" \
