@@ -1163,6 +1163,21 @@ class y assistant) — si tiene bugs, se propagan a todos esos consumidores.
 
 **Si eres otra sesión:** este flanco está tomado. Elige otro libre.
 
+**Avance verificable (2026-09-10):**
+- FIX de concurrencia en IvannaAgentCore.stop() (commit 6c3424d6): hacía
+  scope=null SIN cancel() — la corrutina vieja quedaba viva (isActive=true
+  porque su SupervisorJob nunca se cancelaba) y un toggle rápido
+  start/stop/start creaba DOS bucles cycle() concurrentes sobre el mismo
+  estado (running es compartido @Volatile). Ahora scope?.cancel() explícito.
+- Mismo bug en SelfHealingAgent.stop() (commit f4c6eebb) — mismo patrón
+  corregido.
+- PerceptualBrainPrefs: eliminada duplicación de los 6 defaults (vivían como
+  literales en la data class Y en load(); ahora load() los lee de la propia
+  data class — fuente única, commit 607dd672).
+- AgentApi.kt auditado: correcto (no-bloqueante, nunca lanza, JSON con error).
+- IvannaNativeBridge.java auditado: correcto (AutoCloseable + synchronized +
+  finalize como red de seguridad ya documentados).
+
 **Estado:** trabajando — sesión larga, multi-turno.
 
 ## Cómo actualizar este archivo
