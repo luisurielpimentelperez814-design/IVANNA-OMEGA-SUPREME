@@ -995,3 +995,16 @@ cambió; el bridge recalibró su escala interna).
 
 ### IvannaLab — laboratorio de medicion de calidad de audio
 **Sesion Genspark, 2026-09-08.** ENTREGADO PARCIAL: fixes reales en ivannalab.cpp (compilacion verificada, puerta 67/67); test_ivannalab.cpp CORREGIDO y guardado pero SIN enganchar (requiere coordinar con flanco Tests host para enlazar ivannalab.cpp al target). Coordinacion necesaria para cerrar 100%.
+
+
+---
+
+### MAPA DE FLANCOS 2026-09-10 (por el agente de PhaseOracle/IvannaLab)
+Frentes tomados por otros agentes (NO reclamar): Daemon/Magisk, DSP cadena
+(incl. espacial/HRTF), UI/UX Compose, Conversación/IA/Memoria, IAEL,
+Tests host, Dashboard web, HEXAGON (incl. NPE), Controles/Persistencia,
+tests huérfanos app/src/test/cpp. Cerrados por este agente: PhaseOracle
+(OK) e IvannaLab (OK — enganche completado por Tests host, visto en
+CMakeLists). Candidato sin dueño VISIBLE pero SIN confirmar frente al
+flanco DSP cadena: app/src/main/cpp/experimental/adaptive_engine — pedir
+OK al dueño DSP antes de reclamarlo.

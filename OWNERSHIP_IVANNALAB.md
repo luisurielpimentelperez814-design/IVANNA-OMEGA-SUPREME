@@ -14,3 +14,16 @@
 - test_ivannalab.cpp ENGANCHADO a la puerta host por el dueno del flanco Tests host: ivannalab.cpp anadido a ivanna_dsp_under_test y ivanna_add_test(test_ivannalab) registrado. Corre en CI en cada push.
 - Ademas se corrigieron con causa raiz verificada: (1) BUG REAL de produccion — el FIR de interpolacion 4x del true peak tenia +1.14 dB de ganancia DC (suma de coeficientes 1.14) y sobrestimaba el true peak de todo el audio; normalizado a ganancia unitaria. (2) test THD movido a frecuencia coherente 750 Hz (bin 32 exacto a 96k/4096; 1 kHz era bin 42.67 con leakage). (3) test EmptyState alineado a la convencion del header (-1 = no medido). (4) 3 lambdas corruptos ([[&](...) residuos de la conversion) — el test nunca compilo hasta hoy.
 - Verificado: puerta completa 74/74 PASS en local y CI real (corrida 34290247024: success/success/skipped).
+
+## ACTUALIZACIÓN 2026-09-10 (cierre de coordinación)
+El flanco Tests host (dueño de app/src/main/cpp/tests/CMakeLists.txt) YA
+enganchó ivannalab.cpp al target ivanna_dsp_under_test con comentario de
+coordinación referenciando el commit 2c0826c3 — visible en el CMakeLists
+traído por `git pull` de esta fecha. CON ESTO el flanco IvannaLab queda
+funcionalmente CERRADO al 100 %: fixes de medidores + suite test_ivannalab
+ahora en la puerta CI del dueño del flanco Tests host.
+Precisión: la ejecución de la suite con el enganche NO fue re-verificada
+por este agente tras el pull (evitando re-fetch sobre el mismo objetivo);
+la verificación de la puerta queda del lado del flanco Tests host, que la
+corre en cada push. Estado del enganche: presente en el archivo (visto),
+ejecución bajo CI: unconfirmed para este agente.
