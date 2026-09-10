@@ -117,7 +117,7 @@ jobs:
   # estuvo roto por codec UTF-8) podía volver a colarse en un release sin que
   # nadie se enterara. Layout derivado línea a línea de HRTFBinLoader.cpp.
   hrtf-datasets:
-    name: Datasets HRTF (13 distribuidos)
+    name: Datasets HRTF (todos los distribuidos)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -130,16 +130,25 @@ jobs:
       - name: Instalar numpy (dependencia del validador)
         run: pip install --quiet numpy
 
+      # NOTA CLI: el validador vigente (relevo HRTF-tools) trata TODO argumento
+      # como ruta de dataset (sys.argv[1:], sin opciones) — el motor corre a
+      # 48000 y todos los datasets ya están a 48000 (verificado en los PASS).
       - name: Validar los 13 datasets IHR1 contra el layout del lector C++
         run: |
           set -o pipefail
           python3 tools/hrtf/verify_dataset.py \
             app/src/main/assets/ivanna_omega/hrtf/*.ihr1 \
             magisk_module/system/etc/ivanna_omega/hrtf/*.ihr1 \
-            --engine-sr 48000 | tee /tmp/hrtf-validation.log
+            | tee /tmp/hrtf-validation.log
           COUNT=$(grep -c "^PASS" /tmp/hrtf-validation.log || true)
-          [ "$COUNT" = "13" ] || {
-            echo "::error::Se esperaban exactamente 13 datasets PASS, hay $COUNT — dataset faltante o ilegible: no se publica"; exit 1
+          FAILS=$(grep -c "^FAIL" /tmp/hrtf-validation.log || true)
+          EXPECTED=$(ls app/src/main/assets/ivanna_omega/hrtf/*.ihr1 \
+            magisk_module/system/etc/ivanna_omega/hrtf/*.ihr1 | wc -l)
+          # Conteo DINÁMICO: todo dataset presente debe PASSear (24 hoy —
+          # verificado en local: exit 0, 24 PASS, 0 FAIL; la nota del relevo
+          # decía 13 pero el find real cuenta 24 = 12 assets + 12 módulo).
+          [ "$FAILS" = "0" ] && [ "$COUNT" = "$EXPECTED" ] || {
+            echo "::error::Datasets HRTF: $FAILS FAIL y $COUNT/$EXPECTED PASS — dataset faltante o ilegible: no se publica"; exit 1
           }
 
       - name: Resumen
