@@ -18,12 +18,16 @@ app/src/main/cpp/experimental/adaptive_engine/
     └── test_adaptive_engine.cpp     (218 líneas — 21 assertions, 5 escenarios)
 ```
 
-`CMakeLists.txt`: **no modificado**. Decisión deliberada — el módulo compila y pasa todos los
-tests con `g++` de host (Ubuntu 13.3.0, C++17), pero eso NO valida el toolchain NDK real
-(compilador y `libc++` distintos, en particular para `<thread>` enlazado contra la libc++ de
-Android). Agregarlo al build de producción sin esa verificación arriesga introducir un problema
-de compilación que esta fase no pidió resolver. Si se quiere compilado-pero-no-enlazado dentro
-del APK real, es un paso aparte, explícito.
+`CMakeLists.txt`: **no modificado EN FASE 3** (decisión deliberada de entonces).
+
+> **ACTUALIZACIÓN 2026-09-10 (auditoría del flanco adaptive_engine):** lo
+> anterior quedó OBSOLETO. El módulo SÍ está hoy en
+> `app/src/main/cpp/CMakeLists.txt` (línea ~199: compila dentro del `.so`
+> real) y por tanto ya pasa por el toolchain NDK en cada build de CI — la
+> verificación que esta sección decía que faltaba quedó cubierta de hecho.
+> Lo que SIGUE sin existir (verificado por grep): ningún consumidor fuera de
+> `experimental/` — el wiring a `nativeProcess()` sigue siendo Fase 4,
+> pendiente de las 3 decisiones listadas en README.md.
 
 ## Evidencia — compilación y tests reales (no simulados)
 
@@ -113,7 +117,8 @@ mismo argumento de seguridad ya validado para `ControlFrameBus` en producción.
 - ✅ Módulo compila y pasa tests en aislamiento total.
 - ✅ Documentado qué falta para conectarlo a producción (ver README.md, sección "Por qué no
   está wireado a producción todavía").
-- ❌ NO verificado con el toolchain NDK real (solo g++ de host).
+- ✅ (2026-09-10) Verificado con el toolchain NDK real — el módulo compila
+  dentro del `.so` en cada build de CI desde que se agregó a CMakeLists.
 - ❌ NO hay cálculo de `RawAudioMetrics.band_*_energy` en el hot-path real — eso es trabajo
   nuevo (FFT o banco de filtros ligero), no parte de esta fase.
 - ❌ NO se decidió qué hace la cadena DSP real con un `AdaptiveState` recibido.
