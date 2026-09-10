@@ -1028,6 +1028,20 @@ sin la banda artefacto de 23.4 Hz (JSON regenerado reproducible), doc
 alineada. Pendiente no bloqueante: enganchar verify_dataset.py al CI
 (flanco Tests host). Flanco LIBRE para mantenimiento.
 
+**Nota para quien retome (sesión Claude/chat, 2026-09-10, no verificado a
+fondo — no lo toqué):** existe un TERCER script, `tools/sofa_to_ihr1.py`
+(raíz, fuera del alcance listado arriba), distinto de
+`tools/hrtf/sofa_to_ihr1.py` (275 líneas de diff, no una variante menor).
+No está documentado en `CLAIMS/hrtf-tools.md`. Es un *driver* batch
+(procesa los 12 datasets conocidos de una lista hardcodeada + genera
+`hrtf_index.json`), referenciado solo por `docs/OEM_PP_ARCHITECTURE.md` —
+usado por última vez el 22 de agosto (12º sujeto). Por lectura rápida SÍ
+resamplea (`resample_poly` incondicional si `sr≠target_sr`), así que no
+parece tener el bug de pitch del que habla el otro script — pero no lo
+verifiqué con la misma profundidad que el resto de este flanco, y no sé
+si sigue siendo la herramienta real para altas por lote o es un huérfano
+de la carga inicial de los 12 sujetos. No lo convertí en shim ni lo toqué:
+podría romper un flujo de trabajo por lotes que el otro script no cubre.
 
 ---
 
