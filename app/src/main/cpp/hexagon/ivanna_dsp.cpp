@@ -7,14 +7,19 @@
 //  Comportamiento:
 //    1. Intenta cargar dinámicamente libcdsprpc.so (cDSP) y como respaldo
 //       libadsprpc.so (aDSP) usando dlopen(..., RTLD_NOW | RTLD_LOCAL).
-//    2. Resuelve las 5 funciones IDL exportadas por el stub qaic real:
-//         ivanna_dsp_open, ivanna_dsp_close, ivanna_dsp_process_stereo,
-//         ivanna_dsp_set_neuro_params, ivanna_dsp_get_metrics
-//    3. Si cualquier símbolo no está presente marca g_dsp_available=false
-//       y todas las funciones retornan -ENOSYS de forma segura para que el
-//       llamador conmute a la ruta CPU (FIRUpsamplerEngine).
-//    4. Es thread-safe: la carga se hace una única vez con std::call_once.
+//    2. Resuelve los 9 símbolos IDL del contrato canónico (ivanna_dsp.idl):
+//       núcleo (open, close, process_stereo, set_neuro_params, get_metrics)
+//       + extendidos opcionales del cliente FastRPC (hrtf_init, hrtf_convolve,
+//       fir_init, fir_upsample).
+//    3. Si los símbolos núcleo no están presentes marca g_dsp_available=false
+//       y todas las funciones retornan -1 de forma segura para que el
+//       llamador conmute a la ruta CPU (el manifold coclear).
+//    4. Thread-safe con mutex + estado reintentable: release() descarga la
+//       librería y un ensure_loaded() posterior PUEDE reintentar la carga
+//       (con std::call_once esto era imposible — quedaba quemado).
 //    5. Nunca lanza excepciones; nunca aborta si el DSP no está disponible.
+//    6. Diagnóstico honesto por SoC: en dispositivos no-Qualcomm (sin
+//       Hexagon posible) no spamea WARN por cada dlopen fallido.
 //
 //  Nota: la API de bajo nivel (namespace ivanna::hexagon::rt) está declarada
 //  en ivanna_dsp_rt.hpp, que es la fuente de verdad de este loader. La
