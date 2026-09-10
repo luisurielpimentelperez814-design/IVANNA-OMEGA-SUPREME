@@ -76,7 +76,13 @@ struct AdaptiveState {
     // Fase 3. Pass-through directo de m.voice_score (ver comentario en
     // RawAudioMetrics) — no se computa nada nuevo acá adentro.
     float voice_protection_amount = 0.0f;  // 0..1, cuánta protección de voz sugerir
-    uint64_t timestamp      = 0;     // ms desde epoch de esta decisión
+    // FIX (doc engañosa): este campo decía "ms desde epoch", pero NUNCA
+    // contiene ms de pared — AdaptiveStateBus::publish() lo sobrescribe con
+    // el número de secuencia monotónica (ver publish() y el test de
+    // estabilidad, que verifica su monotonía). Es el seq de publicación,
+    // usado por consumeIfNewer() para detectar novedad. Renombrarlo sería
+    // un cambio de ABI de un struct publicado por bus; se documenta aquí.
+    uint64_t timestamp      = 0;     // REALMENTE: seq de publicación (no ms de pared)
 };
 
 // ── Métricas crudas que el audio thread publicaría (cálculo trivial, ya
@@ -224,7 +230,13 @@ class AdaptiveStateBus {
 public:
     void publish(AdaptiveState s) noexcept {
         const uint64_t seq = seqCounter_.fetch_add(1, std::memory_order_relaxed) + 1;
-        s.timestamp = seq;  // secuencia monotónica; el timestamp real de pared lo fija el caller
+        s.timestamp = seq;  // secuencia monotónica de publicación. El
+                            // comentario anterior decía "el timestamp real de
+                            // pared lo fija el caller" — era incorrecto: esta
+                            // línea lo sobrescribe SIEMPRE, así que el caller
+                            // nunca puede fijar un timestamp de pared aquí.
+                            // Si se necesita tiempo de pared, debe ser un
+                            // campo aparte; 'timestamp' es el seq del bus.
         guard_.fetch_add(1, std::memory_order_acq_rel);
         snapshot_ = s;
         guard_.fetch_add(1, std::memory_order_release);
