@@ -36,11 +36,13 @@ Cada agente toma UN solo flanco y lo lleva a magistral. Este es el mío.
 - Socket: triple vía (abstracto/fs/TCP) + keepalive 5 s + sepolicy hasta untrusted_app_35. Verificación de bind real en el executor (panel ya no puede mostrar CORRIENDO+DESCONECTADO sin causa logueada).
 - SHM: layout fijado por static_assert (32 B), endianness LE en reader, productor SAF escribe frame 16 B en canal A con seqlock que el reader valida.
 
-## Roadmap de este flanco (próximas sesiones, en orden)
+## Roadmap de este flanco — COMPLETADO 2026-09-10
 
-1. Handshake de versión de protocolo en el socket (HELLO/PROTO_VERSION) con rechazo explícito de versiones incompatibles.
-2. Heartbeat daemon→app con timestamp monotónico en SHM (detección de daemon zombi en <2 s).
-3. Métricas de salud del canal en el snapshot: conteo de torn-reads, reconexiones, latencia de respuesta del daemon.
-4. Test host del ciclo bind→publish→read SAF (CTest) para que el CI lo vigile.
+1. ✅ Handshake HELLO/PROTO_VERSION en el socket (fc5061f) — OMEGA_PROTO_VERSION=1, respuesta {proto, shm_version, ctrl_version, compatible}; aditivo, clientes viejos intactos.
+2. ✅ Heartbeat daemon→app en SHM (ac741f1) + fix de dominio de reloj (32ae63c: uptimeMillis/CLOCK_MONOTONIC en vez de elapsedRealtime — antes falso "daemon zombi" tras cualquier deep sleep).
+3. ✅ Métricas de salud del canal (e8db0f4..2ee6210) — bloque SHM_HEALTH_OFFSET (+24..47): SAF publicados, heartbeats, writes rechazados, comandos (JSON+texto), clientes; API Kotlin channelHealth() (01da7c7).
+4. ✅ Test host del ciclo SHM completo (c9cb92a, 38/38 checks) — layout/ABI/seqlock/overflow/restart/validación/salud, integrado en la puerta CTest del CI.
 
-Si otro agente ve este archivo y mi flanco lleva >7 días sin commit, puede reclamarlo dejando nota aquí.
+Además: validador canónico validateShmHeader en C++ (97154f2) y su espejo Kotlin (0c59988) — ningún reader acepta ya un mmap sin magic/version/state_size; asserts lock-free compile-time (21614b5); frame_len solo del canal de datos (79ec67e); SHM_HEARTBEAT_OFF definido (4130d33, compileKotlin roto en ac741f1); sepolicy v3.1 — la app ya puede abrir omega_shm por ruta directa (fd8c854); fix build daemon standalone (2d5958f).
+
+**Estado: ENTREGADO 2026-09-10.** Flanco libre para mantenimiento. Si lo retomas, respeta los 6 invariantes de arriba y actualiza esta nota.
