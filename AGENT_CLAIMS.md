@@ -833,6 +833,44 @@ documentado, nunca fingido como verificado.
 EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
 elijan cualquier otro flanco libre de la lista.
 
+**CIERRE DE CICLO 2026-09-09 (sesión Claude, chat).** Pendiente de código
+cerrado: el motor isócrono ahora detecta y lee el endpoint de feedback UAC
+(Kotlin: `UsbAudioProManager.kt` — usage-type Feedback en bmAttributes) y
+corrige activamente ±1 frame/paquete guiado por ocupación del anillo
+(acumulador fraccional, clamp a maxPacketSize real). Los bytes crudos del
+feedback se leen y quedan en telemetría (`nativeGetFeedbackInfo`) pero NO
+se decodifican a una tasa absoluta — el formato exacto (Q10.14/3B vs
+Q16.16/4B) varía por dispositivo/versión UAC y calibrarlo sin hardware
+real sería adivinar, no verificar. `fillAndSubmit` reescrito para paquetes
+ISO de longitud variable (empaquetado contiguo real, sin campo `offset`
+en `usbdevfs_iso_packet_desc` — verificado contra el header del kernel).
+Sin feedback configurado, el motor degenera exactamente al comportamiento
+anterior. Compilado y verificado a nivel de tipos con g++ -fsyntax-only
+-Wall -Wextra -Wshadow contra headers reales de Linux + jni.h de OpenJDK
+21 (cero warnings) — NO contra hardware, no se finge lo contrario.
+
+Auditoría del resto del flanco (los 10 archivos restantes, lectura
+completa): sin bugs nuevos. Dos pistas investigadas a fondo que
+resultaron NO ser bugs (para que nadie las re-investigue de cero):
+- `RouteDspCalibrator.kt:119` llama a `IvannaNativeLib.nativeSetSpatialWidthDirect` —
+  la auditoría DeepWiki que trajo el propietario lo marcaba como "símbolo
+  JNI fantasma eliminado", pero ese hallazgo era sobre una implementación
+  DISTINTA (ya removida) en `omega_effect.cpp` (Ruta B). La de Ruta A
+  (`jni/ivanna_omega_jni.cpp:1867`) existe y es real. No se toca.
+- `PersistedStateRestorer.kt:58-66` pasa a `sendPerceptualState()` 5
+  valores fijos (-5.5f/0.15f/19500f/1.55f/-16.0f) en vez de leer
+  `AdaptiveControlsPrefs` (que sí carga arriba en la misma función).
+  Parecía inconsistencia de restauración; verificado contra el call-site
+  real de `HarmonicExciterPanel.kt:89-93` (el panel de UI que SÍ expone
+  sliders al usuario) — usa los MISMOS 5 valores fijos. Es diseño
+  intencional (baseline fijo de esa función, solo harmonicGain/antiDolby
+  son ajustables ahí), no un bug de persistencia. Cambiarlo habría
+  introducido una discrepancia nueva entre boot-restore y UI en vivo.
+
+Flanco queda LIBRE de nuevo — sin pendientes de código conocidos, solo
+verificación en hardware DAC real (UAC1/UAC2, feedback endpoint) para
+quien tenga acceso a uno.
+
 **NOTA — sesión Genspark (chat), 2026-09-09.** El propietario me pidió
 retomar este mismo flanco "sin detenerse". Al hacer fast-forward encontré
 que el flanco YA fue reclamado por sesión Claude/chat en este mismo día
