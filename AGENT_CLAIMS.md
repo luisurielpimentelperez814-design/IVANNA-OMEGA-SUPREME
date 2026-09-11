@@ -429,6 +429,35 @@ rápido a propósito.
 
 **Estado:** ENTREGADO (criterios 1–5 cumplidos, 2026-09-08) — lab v4 (THD+N/SNR/IMD/ISO/estéreo/bit-exact) PASS reproducible, stress v4 PASS a 123.7x tiempo real con 0 inválidos, telemetría/dashboard consumen el lab, referencias de métricas en docs/performance/IAEL_V4_METRICS.md. Pendiente único: criterio 5 (captura real Ruta A/B con --mode wav) — requiere build NDK o grabación en dispositivo; anotado, no bloqueante.
 
+**RETOMADO 2026-09-10 (sesión Claude, chat).** El propietario me pide
+continuar de forma autónoma, sin preguntar, tomando un flanco libre tras
+cerrar el anterior (Controles y Persistencia). Elijo este por una razón
+concreta, no por ser el único disponible: una auditoría externa que el
+propietario trajo a la conversación señala — citando este mismo archivo —
+que la generación anterior del lab era decorativa, y recomienda una
+revisión independiente de v4 antes de usar sus cifras como base de
+QA/marketing definitivo. Esa revisión independiente no se ha hecho todavía.
+
+**Alcance exacto — no editar mientras esté aquí:** el mismo de arriba
+(`tools/iael_v4/`, `telemetry/iael_v4/`, `tools/telemetry/`,
+`tools/dashboard/`, `tools/reports/`, `docs/FLANCO_IAEL.md`,
+`docs/performance/IVANNA_CERTIFICATION_TEMPLATE.md`). Las generaciones
+v1/v2/v3 en `tools/` son legado — se leen solo si hace falta contexto
+histórico, no se editan.
+
+**Plan de este ciclo:** auditar v4 con la misma pregunta que mató a
+v1-v3: ¿mide de verdad, o solo parece medir? Verificar en el código real
+— no en el reporte ni en el PASS — que SNR usa una referencia de ruido
+genuina (no 1e-6 fija), que el balance espectral opera en frecuencia real
+(no índice temporal), y que el resto de métricas (THD+N, IMD, correlación
+estéreo, bit-exactness) miden contra señal real de IVANNA y no contra un
+valor sembrado. Si v4 pasa esa revisión, documentar la evidencia exacta
+línea por línea. Si no pasa, corregir de raíz.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
+EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
+elijan cualquier otro flanco libre de la lista.
+
 
 ---
 
