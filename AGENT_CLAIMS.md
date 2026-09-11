@@ -1638,6 +1638,15 @@ que ya documentaron arriba): la wiring de `DisposableEffect` en
 la pantalla sigue pendiente del lado UI — el método ya existe y es
 idempotente, solo falta que alguien con el flanco UI lo invoque.
 
+**CIERRE (sesión Claude/chat, 2026-09-11):** sin actividad de la sesión
+original desde el cableado (`34dc644b`) pese a ≥40 commits de otras
+sesiones desde entonces. Mi verificación + el fix del dominio de
+Woodworth ya cubren los 6 criterios salvo el único pendiente cruzado ya
+documentado (DisposableEffect en UI, fuera de mi alcance). Marco
+**ENTREGADO**. Flanco libre — el único hilo suelto (release del
+DisposableEffect) queda para quien tome UI o para un futuro ciclo de
+este mismo flanco.
+
 ---
 
 ## Cómo actualizar este archivo
