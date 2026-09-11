@@ -31,6 +31,13 @@ explicito, crossfade de potencia constante, cero denormales en el hilo DSP.
 
 ## Roadmap del flanco (siguientes sesiones)
 - (HECHO) Convolucion particionada no uniforme (latency-0 head + tail).
-- BRIR con reverberacion tardia decorrelada.
+## Sesion 4 (2026-09-11): BRIR con cola tardia decorrelada IMPLEMENTADO
+- setLateDecorrelation(amount): red allpass en frecuencia sobre la cola R.
+  |H|=1 (preserva RT60 y nivel), solo rota fase por bin -> colas L/R incoherentes.
+  La reverb deja de ser una imagen mono fantasma y se vuelve difusa/envolvente.
+- Cableado en load() (hilo de control, cero coste en process()).
+
+## Roadmap del flanco (siguientes sesiones)
+- (HECHO) BRIR con reverberacion tardia decorrelada.
 - Personalizacion HRTF desde SAF latente (q_t) -> seleccion de dataset por usuario.
 - Validacion: medicion de ILD/ITD contra base CIPIC/KEMAR de referencia.

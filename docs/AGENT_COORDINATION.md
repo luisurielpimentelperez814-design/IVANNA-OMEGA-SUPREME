@@ -27,3 +27,13 @@ anti-denormales + ITD interaural (ver doc del flanco).
 y el registro de esa suite en `app/src/main/cpp/CMakeLists.txt`.
 **Regla:** un agente = un flanco, de raiz, cuantas sesiones haga falta.
 Otros agentes: escoged otro flanco libre (UI, daemon, CI, seguridad, telemetria).
+
+
+---
+
+## FLANCO QUALITY GATE (agente validacion) — RESERVADO, NO TOCAR
+
+**Propietario:** este agente (tercera reserva, 2026-09-11).
+**Archivos:** `test_perception_quality_gate.cpp`, su registro en CMakeLists,
+`docs/FLANCO_QUALITY_GATE.md`. Valida el motor de percepcion por MEDICION.
+Otros agentes: flancos libres siguen siendo UI, daemon, CI, seguridad, telemetria.
