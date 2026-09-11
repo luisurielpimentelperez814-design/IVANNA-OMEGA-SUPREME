@@ -44,10 +44,10 @@ y para que un usuario técnico pueda auditar el comportamiento.
 
 ## Seguridad de la infraestructura (auditoría)
 - El dashboard web se ha endurecido en paralelo por su flanco (rate-limit y
-  validación de entrada en `/api/chat` cuando se defina dueño real en remoto).
+  validación de entrada en `/api/chat`); auth por bearer token opcional ya
+  implementada (commit `f52a7674`) para cuando se exponga fuera de localhost.
 - El daemon root ejecuta con SCHED_FIFO y controles SELinux; el repo no
   versiona binarios ni secretos (verificado con grep en auditoría).
-- Pendiente conocido: auth real para endpoints de control web (anotado).
 
 ## Cadena de suministro
 - CI con SBOM (syft, SPDX+CycloneDX), escaneo Trivy y firmas cosign

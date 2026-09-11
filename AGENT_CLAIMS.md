@@ -1319,7 +1319,15 @@ PACKAGE_USAGE_STATS, CAPTURE_AUDIO_OUTPUT...) sin declaración de privacidad; PR
 pobre; RELEASE_NOTES sin entrada de la sesión de agentes. De raíz: documento de privacidad y
 seguridad (propósito de cada permiso, qué sale del dispositivo), estado maestro real y notas de release.
 
-**Estado:** reclamado — primera pasada en esta sesión.
+**Estado:** verificado y actualizado (sesión Claude/chat, 2026-09-11) —
+`docs/PRIVACIDAD_Y_SEGURIDAD.md` ya es sustancial (tabla de permisos con
+propósito/riesgo, qué sale del dispositivo, recomendaciones pre-tienda) y
+fue corregido en 1 punto desactualizado (el auth del dashboard web ya
+existe, no es "pendiente"). **Pendiente real detectado:**
+`RELEASE_NOTES.md` sigue en el marco "v1.1" con Hexagon listado como
+pendiente cuando ya está ENTREGADO — no reescrito aquí porque hacerlo bien
+significa cubrir v2.3.6→v2.3.9 completo, no un parche de una línea; queda
+para quien retome con tiempo para eso. Flanco libre.
 
 ### AdaptiveDecisionEngine — capa de control lento (experimental/adaptive_engine)
 **Tomado por:** sesion Genspark (chat, misma que cerro HEXAGON), iniciado
