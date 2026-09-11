@@ -1500,6 +1500,38 @@ código, con nota explícita de qué requiere hardware auditivo real (o sea,
 lo que este entorno no puede probar) vs. lo que sí queda demostrado por
 inspección estática.
 
+**VERIFICACIÓN externa (sesión Claude/chat, 2026-09-10 — el propietario me
+pidió específicamente revisar este arreglo tras compartir captura de
+pantalla del bug original):** revisé `SaFStimulusPlayer.kt` y
+`SaFCalibrationPrefs.kt` línea a línea contra la matemática y el formato
+binario que documentan. Confirmado correcto por inspección: fórmula del
+chirp logarítmico (dφ/dt se resuelve a 2π·f0·r^(t/T), barre f0→f1 tal
+como se afirma), envolvente Hann sin discontinuidades, layout binario
+IVSF v2 (offsets/tamaños cuadran exactamente: 52 payload + 32 hash = 84),
+atomicidad write-then-rename+fsync, y la reconciliación en
+`SaFEngine.initialize()` (gana mayor iteración, empate a favor del
+binario con checksum). Buen trabajo, bien citado (Kuhn 1977 real, no
+inventado).
+
+**Un bug real encontrado y corregido — un solo cambio, aislado a
+`renderStereo()`:** la fórmula de Woodworth `(θ+sinθ)` solo es válida
+para |θ|≤90°. Aplicada sin plegar a ATRÁS (180°) daba un ITD de ~800µs —
+MAYOR que el máximo físico real en ±90° (~655µs) — cuando el ITD real a
+180° (sobre el plano medio, igual que a 0°) debe ser cero. Sin el pliegue,
+ATRÁS sonaba con un corrimiento temporal espurio hacia un lado, encima
+del rolloff pinnal que se documenta como la señal de discriminación
+real. Fix: azimut plegado a rango válido solo para el término ITD
+(`itdAzDeg`); el término ILD sigue usando el azimut sin plegar porque
+`sin()` ya es periódico correctamente ahí. FRENTE/DERECHA/IZQUIERDA no
+cambian (ya estaban dentro del rango válido). No toqué nada más del
+diseño — el resto ya estaba bien.
+
+**No toqué** (correctamente fuera de mi verificación, y de acuerdo con lo
+que ya documentaron arriba): la wiring de `DisposableEffect` en
+`ui/SaFCalibrationScreen.kt` para invocar `engine.release()` al salir de
+la pantalla sigue pendiente del lado UI — el método ya existe y es
+idempotente, solo falta que alguien con el flanco UI lo invoque.
+
 ---
 
 ## Cómo actualizar este archivo
