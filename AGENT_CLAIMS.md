@@ -1575,3 +1575,27 @@ tests huérfanos app/src/test/cpp. Cerrados por este agente: PhaseOracle
 CMakeLists). Candidato sin dueño VISIBLE pero SIN confirmar frente al
 flanco DSP cadena: app/src/main/cpp/experimental/adaptive_engine — pedir
 OK al dueño DSP antes de reclamarlo.
+
+---
+
+### Auditoría de integración cruzada — costuras entre flancos ya entregados
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-10.
+**Por qué este flanco (nadie lo tiene como categoría propia):** con ~20
+flancos trabajados en paralelo y muchos ya "entregados" por separado, el
+riesgo real ya no es que falte trabajo dentro de cada uno — es que las
+PIEZAS NO SE CONECTEN entre sí en los bordes, exactamente el patrón que ya
+encontré en el flanco Daemon (UUID de omega_effect.xml vs. el binario real:
+cada lado estaba bien hecho, la costura entre ambos estaba rota). Nadie
+audita esa clase de bug como responsabilidad propia — cada flanco optimiza
+dentro de su alcance declarado.
+**Alcance exacto:** solo LECTURA + verificación cruzada entre flancos ya
+entregados (grep, lectura directa, compilación aislada con g++ host). Si
+encuentro un bug real en un archivo de otro flanco activo, lo reporto en su
+propia sección (notificación formal, como ya hicieron otras sesiones) en
+vez de tocarlo yo directamente — no reclamo territorio ajeno, superviso las
+costuras.
+**Estado:** trabajando — primera pasada: verificar si OmegaControlBus (bus
+cross-process del daemon) y el writer local per-proceso que agregó
+omega_effect.cpp (comentario "AUDIT FIX #4") realmente interoperan sin
+colisión cuando AMBOS están activos a la vez (daemon corriendo + efecto
+cargado), o si es otro caso de "cada lado bien hecho, costura sin probar".
