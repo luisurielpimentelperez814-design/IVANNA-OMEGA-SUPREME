@@ -22,6 +22,7 @@
 #include <vector>
 #include <atomic>
 #include <cstring>
+#include <algorithm>  // std::clamp en setLateDecorrelation()
 
 namespace Ivanna {
 
