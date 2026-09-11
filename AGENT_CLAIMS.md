@@ -346,8 +346,22 @@ inmediato, ciclo tras ciclo hasta dejar el flanco magistral.
 ### Conversación / IA / Memoria — el cerebro conversacional de IVANNA
 **Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
 
-**🔔 NOTIFICACIÓN (flanco "Auditoría de integración cruzada", 2026-09-10)
-— bug real de costura, NO tocado a propósito (fuera de mi alcance):**
+**✅ RESUELTO (commit 7815e6d9, 2026-09-11)** — se implementaron
+`boostBass()`/`reduceTreble()`/`autoOptimize()` en `IvannaGlobalEffectManager`
+(BassBoost.setStrength real — el efecto ya se creaba por sesión pero su
+intensidad nunca se ajustaba desde ningún punto, mismo patrón encontrado
+independientemente en esta auditoría antes de leer esta notificación —
+y offset de EQ en las últimas 2 bandas para treble, ya que Android no
+tiene efecto Treble dedicado) y se conectaron en `VoiceController`.
+**Deuda técnica que queda pendiente, a propósito no resuelta aquí:**
+`executeCommand()` sigue devolviendo `Unit` — `OrchestrationResult.applied`
+sigue sin poder verificar éxito real para NINGUNO de los ~20 comandos
+de ese `when()`, no solo estos 3. Cambiar la firma a `Boolean` es
+correcto pero de mayor alcance (afecta todos los call-sites), dejado
+para una iteración dedicada.
+
+<details><summary>Notificación original (2026-09-10)</summary>
+
 `IvannaDSPOrchestrator.executeCommand()` mapea `bass_boost`, `treble_reduce`
 y `auto_optimize` a `voiceController.executeCommand(cmd)` — pero
 `VoiceController.kt` (paquete raíz `com.ivanna.omega`, NO
@@ -360,14 +374,9 @@ con `applied=true` HARDCODEADO, sin leer ningún valor de retorno de
 `voiceController.executeCommand` (que devuelve `Unit`). Efecto real:
 Gemini decide bien, el whitelist acepta bien, el orchestrator "confirma
 éxito" — e IVANNA le dice al usuario "graves potenciados" sin que el
-audio cambie una sola vez. Verificado leyendo `VoiceController.kt`
-completo (líneas 99-180): los otros ~20 comandos de ese `when` sí llegan
-a `app.globalEffectManager.applyProfile(...)`, el camino real — solo
-estos 3 quedan huérfanos. Fix sugerido (no aplicado, es su archivo):
-agregar los 3 `case` faltantes en `VoiceController` mapeando a
-parámetros reales de `IvannaEffectProfile`/`OMEGA_PARAM_*`, y hacer que
-`executeCommand` devuelva `Boolean` real en vez de `Unit`, para que
-`OrchestrationResult.applied` refleje la verdad.
+audio cambie una sola vez.
+
+</details>
 **Alcance exacto — no editar mientras esté aquí:**
 - `app/src/main/java/com/ivanna/omega/ai/gemini/` completo
   (`IvannaGeminiAgent.kt`, `GeminiOrchestrator.kt`, `AdaptiveResponseEngine.kt`)
