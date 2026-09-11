@@ -63,6 +63,21 @@ constexpr int kPacketsPerUrb   = 8;      // paquetes ISO por URB
 constexpr int kRingFrames      = 1 << 15;  // 32768 frames de holgura
 constexpr int kMaxChannels     = 8;
 
+// ── Feedback UAC (isoc IN) ───────────────────────────────────────────────
+// Profundidad mas baja que el audio: el feedback no necesita cubrir jitter
+// del scheduler de la misma forma (solo se lee cuando el dispositivo lo
+// envia, tipicamente cada pocos ms). kFeedbackBufBytes=4 cubre el caso
+// mas grande conocido (UAC2 high-speed, Q16.16); UAC1 (3B, Q10.14) usa
+// solo los primeros 3 bytes del mismo buffer.
+constexpr int kFeedbackUrbDepth  = 3;
+constexpr int kFeedbackBufBytes  = 4;
+
+// Ganancia del corrector +-1 frame/paquete guiado por ocupacion del anillo.
+// Pequena a proposito: el objetivo es una correccion gradual (decenas/
+// cientos de paquetes por ajuste de 1 frame), no una reaccion brusca al
+// jitter normal de llenado del anillo.
+constexpr double kCorrectionGain = 0.01;
+
 // ── Anillo SPSC de muestras enteras S32 intercaladas ────────────────────────
 class SpscRing {
 public:
@@ -137,6 +152,10 @@ struct UrbSlot {
     usbdevfs_urb* urb = nullptr;   // urb + iso_frame_desc[] en un bloque
     uint8_t*      buf = nullptr;
     bool          inFlight = false;
+    // true = slot de AsyncEngine::feedbackSlots[], false = de ::slots[].
+    // Sin esto, el reap loop (que comparte fd/poll con audio) no podria
+    // distinguir que hacer con cada URB completado.
+    bool          isFeedback = false;
 };
 
 struct AsyncEngine {
@@ -154,8 +173,19 @@ struct AsyncEngine {
     int  channels      = 2;
     int  bytesPerFrame = 8;      // S32_LE estéreo
 
+    // Feedback UAC (isoc IN). hasFeedback=false => comportamiento identico
+    // al motor original (fpp fijo, sin corrector) — ver nativeConfigureEndpoint.
+    bool     hasFeedback      = false;
+    int      feedbackEp       = 0;
+    int      feedbackMps      = 0;
+    int      feedbackInterval = 1;
+    double   frameBudgetError = 0.0;   // acumulador fraccional del corrector +-1
+    std::atomic<uint32_t> feedbackPacketsRx{0};
+    std::atomic<uint32_t> lastFeedbackRaw{0};  // bytes crudos LE — telemetria/calibracion futura
+
     SpscRing ring;
     UrbSlot  slots[kUrbDepth];
+    UrbSlot  feedbackSlots[kFeedbackUrbDepth];
 };
 
 AsyncEngine g_engine;
@@ -201,25 +231,127 @@ void freeSlots(AsyncEngine& e) {
     }
 }
 
-// Rellena el buffer de un URB con material del anillo (o silencio) y lo envía.
-bool fillAndSubmit(AsyncEngine& e, UrbSlot& slot, int fpp, int pktBytes) {
+// ── Feedback UAC (isoc IN) ──────────────────────────────────────────────────
+bool allocFeedbackSlots(AsyncEngine& e) {
+    size_t urbBytes = sizeof(usbdevfs_urb) + sizeof(usbdevfs_iso_packet_desc) * 1;
+    for (int i = 0; i < kFeedbackUrbDepth; ++i) {
+        e.feedbackSlots[i].urb = (usbdevfs_urb*)std::calloc(1, urbBytes);
+        e.feedbackSlots[i].buf = (uint8_t*)std::calloc(1, kFeedbackBufBytes);
+        e.feedbackSlots[i].isFeedback = true;
+        if (!e.feedbackSlots[i].urb || !e.feedbackSlots[i].buf) return false;
+        e.feedbackSlots[i].inFlight = false;
+    }
+    return true;
+}
+
+void freeFeedbackSlots(AsyncEngine& e) {
+    for (int i = 0; i < kFeedbackUrbDepth; ++i) {
+        std::free(e.feedbackSlots[i].urb);
+        std::free(e.feedbackSlots[i].buf);
+        e.feedbackSlots[i].urb = nullptr;
+        e.feedbackSlots[i].buf = nullptr;
+        e.feedbackSlots[i].inFlight = false;
+    }
+}
+
+bool submitFeedbackRead(AsyncEngine& e, UrbSlot& slot) {
     usbdevfs_urb* u = slot.urb;
     std::memset(u, 0, sizeof(usbdevfs_urb));
-    u->type            = USBDEVFS_URB_TYPE_ISO;
-    u->endpoint        = (unsigned char)(e.epAddress & 0xFF);
-    u->flags           = USBDEVFS_URB_ISO_ASAP;
-    u->buffer          = slot.buf;
-    u->buffer_length   = pktBytes * kPacketsPerUrb;
-    u->number_of_packets = kPacketsPerUrb;
-    u->usercontext     = &slot;
+    u->type              = USBDEVFS_URB_TYPE_ISO;
+    // e.feedbackEp ya trae el bit de direccion IN (0x80) tal como lo entrega
+    // UsbEndpoint.address en Kotlin — mismo patron que e.epAddress para OUT.
+    u->endpoint          = (unsigned char)(e.feedbackEp & 0xFF);
+    u->flags             = USBDEVFS_URB_ISO_ASAP;
+    u->buffer            = slot.buf;
+    u->buffer_length      = kFeedbackBufBytes;
+    u->number_of_packets = 1;
+    u->iso_frame_desc[0].length = (unsigned int)kFeedbackBufBytes;
+    u->iso_frame_desc[0].actual_length = 0;
+    u->iso_frame_desc[0].status = 0;
+    u->usercontext       = &slot;
 
+    if (ioctl(e.fd, USBDEVFS_SUBMITURB, u) < 0) return false;
+    slot.inFlight = true;
+    return true;
+}
+
+// Registra el valor crudo recibido. NO deriva una tasa absoluta: el formato
+// exacto (Q10.14/3B vs Q16.16/4B, por trama o por microtrama segun UAC1/2 y
+// full/high-speed) varia por dispositivo y no se puede calibrar con
+// confianza sin hardware real para verificarlo contra el comportamiento
+// observado — usar un escalado adivinado seria peor que no corregir nada.
+// El valor queda expuesto via nativeGetFeedbackInfo() para que una sesion
+// con DAC fisico complete la conversion exacta. La correccion activa de
+// este ciclo (nextPacketFrames) usa el nivel del anillo, una senal ya
+// verificada y fiable.
+void handleFeedbackCompletion(AsyncEngine& e, UrbSlot& slot, unsigned int actualLength) {
+    if (actualLength < 3 || actualLength > 4) return;  // paquete corto/invalido
+    uint32_t raw = 0;
+    std::memcpy(&raw, slot.buf, actualLength);
+    e.lastFeedbackRaw.store(raw, std::memory_order_relaxed);
+    e.feedbackPacketsRx.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Corrector +-1 frame/paquete guiado por ocupacion del anillo (mitad de
+// kRingFrames como objetivo). Sin feedback configurado, devuelve fppBase
+// sin tocar el acumulador: comportamiento identico al motor original, cero
+// regresion para el DAC mas simple/comun. Acotado ademas por lo que el
+// endpoint fisicamente admite (maxPacketSize) para no pedir un paquete que
+// USBDEVFS_SUBMITURB rechazaria.
+int nextPacketFrames(AsyncEngine& e, int fppBase) {
+    if (!e.hasFeedback) return fppBase;
+
+    constexpr int kMidpoint = kRingFrames / 2;
+    const int avail = e.ring.framesAvailable();
+    const double error = (double)(avail - kMidpoint) / (double)kMidpoint;  // ~[-1, 1]
+    e.frameBudgetError += error * kCorrectionGain;
+
+    int delivered = 0;  // ajuste que este paquete intenta entregar, antes de clamps
+    if (e.frameBudgetError >= 1.0)       delivered = 1;
+    else if (e.frameBudgetError <= -1.0) delivered = -1;
+
+    int frames = fppBase + delivered;
+    if (frames < 1) frames = 1;
+    const int maxF = e.maxPacketSize / (e.bytesPerFrame > 0 ? e.bytesPerFrame : 8);
+    if (maxF >= 1 && frames > maxF) frames = maxF;
+
+    // Se descuenta del acumulador lo REALMENTE entregado (frames - fppBase),
+    // no 'delivered': si un clamp por limite fisico del endpoint recorta el
+    // ajuste, el acumulador no se da por pagado de mas — el credito
+    // pendiente se reintenta en paquetes futuros en vez de perderse.
+    e.frameBudgetError -= (double)(frames - fppBase);
+    return frames;
+}
+
+// Rellena el buffer de un URB con material del anillo (o silencio) y lo
+// envía. Empaquetado CONTIGUO por longitud real: usbdevfs_iso_packet_desc
+// no tiene campo 'offset' (verificado en linux/usbdevice_fs.h) — el
+// paquete p arranca justo donde termino el p-1, segun su 'length' real, NO
+// en un stride fijo. Sin feedback (hasFeedback=false), nextPacketFrames
+// devuelve siempre fppBase y esto degenera exactamente al comportamiento
+// anterior (mismo tamano en los 8 paquetes) — cero regresion para ese caso.
+bool fillAndSubmit(AsyncEngine& e, UrbSlot& slot, int fppBase) {
+    usbdevfs_urb* u = slot.urb;
+    std::memset(u, 0, sizeof(usbdevfs_urb));
+    u->type              = USBDEVFS_URB_TYPE_ISO;
+    u->endpoint          = (unsigned char)(e.epAddress & 0xFF);
+    u->flags             = USBDEVFS_URB_ISO_ASAP;
+    u->buffer            = slot.buf;
+    u->number_of_packets = kPacketsPerUrb;
+    u->usercontext       = &slot;
+
+    int byteOffset = 0;
     for (int p = 0; p < kPacketsPerUrb; ++p) {
-        u->iso_frame_desc[p].length = (unsigned int)pktBytes;
+        const int framesThisPacket = nextPacketFrames(e, fppBase);
+        const int bytesThisPacket  = framesThisPacket * e.bytesPerFrame;
+        u->iso_frame_desc[p].length = (unsigned int)bytesThisPacket;
         u->iso_frame_desc[p].actual_length = 0;
         u->iso_frame_desc[p].status = 0;
-        int32_t* dst = (int32_t*)(slot.buf + (size_t)p * pktBytes);
-        e.ring.readFrames(dst, fpp);
+        int32_t* dst = (int32_t*)(slot.buf + byteOffset);
+        e.ring.readFrames(dst, framesThisPacket);
+        byteOffset += bytesThisPacket;
     }
+    u->buffer_length = byteOffset;
 
     if (ioctl(e.fd, USBDEVFS_SUBMITURB, u) < 0) {
         e.errors.fetch_add(1, std::memory_order_relaxed);
@@ -232,35 +364,55 @@ bool fillAndSubmit(AsyncEngine& e, UrbSlot& slot, int fpp, int pktBytes) {
 
 // ── Motor ISO real ──────────────────────────────────────────────────────────
 bool runIsoEngine(AsyncEngine& e) {
-    const int fpp      = framesPerPacket(e);
-    const int pktBytes = fpp * e.bytesPerFrame;
+    const int fpp = framesPerPacket(e);
+    // +1 de holgura: el corrector de tasa (nextPacketFrames) puede pedir
+    // fpp+1 frames en un paquete dado. Con hasFeedback=false esa holgura
+    // simplemente no se usa — el tamano real enviado sigue siendo fpp fijo.
+    const int maxPktBytes = (fpp + 1) * e.bytesPerFrame;
 
-    if (!allocSlots(e, pktBytes)) {
+    if (!allocSlots(e, maxPktBytes)) {
         LOGE("motor ISO: sin memoria para URBs");
         freeSlots(e);
         return false;
     }
 
+    // Feedback UAC: degrada con log propio si no hay memoria — el audio
+    // sigue por la ruta de tasa fija, nunca se aborta el motor por esto.
+    bool feedbackReady = false;
+    if (e.hasFeedback) {
+        if (allocFeedbackSlots(e)) {
+            feedbackReady = true;
+            for (int i = 0; i < kFeedbackUrbDepth; ++i) submitFeedbackRead(e, e.feedbackSlots[i]);
+        } else {
+            LOGE("motor ISO: sin memoria para URBs de feedback — sigue solo con fpp fijo");
+            freeFeedbackSlots(e);
+            e.hasFeedback = false;
+        }
+    }
+
     int primed = 0;
     for (int i = 0; i < kUrbDepth; ++i) {
-        if (fillAndSubmit(e, e.slots[i], fpp, pktBytes)) ++primed;
+        if (fillAndSubmit(e, e.slots[i], fpp)) ++primed;
         else break;
     }
     if (primed == 0) {
         LOGE("motor ISO: SUBMITURB falló (errno=%d) — fallback a write()", errno);
+        if (feedbackReady) freeFeedbackSlots(e);
         freeSlots(e);
         return false;
     }
     e.isoMode.store(true, std::memory_order_release);
-    LOGI("motor ISO activo: ep=0x%02x fpp=%d pkt=%dB urbs=%d fs=%dHz ch=%d",
-         e.epAddress, fpp, pktBytes, primed, e.sampleRate, e.channels);
+    LOGI("motor ISO activo: ep=0x%02x fpp=%d urbs=%d fs=%dHz ch=%d feedback=%s",
+         e.epAddress, fpp, primed, e.sampleRate, e.channels,
+         feedbackReady ? "SI" : "no");
 
     struct pollfd pfd;
     pfd.fd = e.fd;
     pfd.events = POLLOUT | POLLERR | POLLHUP;
 
     while (!e.stopRequested.load(std::memory_order_acquire)) {
-        // El host controller señaliza URBs completados en el fd usbfs.
+        // El host controller señaliza URBs completados (audio Y feedback,
+        // comparten el mismo fd usbfs) en este poll.
         pfd.revents = 0;
         int pr = poll(&pfd, 1, 50);
         if (pr < 0 && errno != EINTR) {
@@ -273,18 +425,28 @@ bool runIsoEngine(AsyncEngine& e) {
             UrbSlot* slot = (UrbSlot*)done->usercontext;
             if (!slot) break;
             slot->inFlight = false;
-            e.completed.fetch_add(1, std::memory_order_relaxed);
-            if (done->status != 0) e.errors.fetch_add(1, std::memory_order_relaxed);
-            if (!e.stopRequested.load(std::memory_order_acquire)) {
-                fillAndSubmit(e, *slot, fpp, pktBytes);
+            if (slot->isFeedback) {
+                if (done->status == 0) {
+                    handleFeedbackCompletion(e, *slot, (unsigned int)done->iso_frame_desc[0].actual_length);
+                }
+                if (!e.stopRequested.load(std::memory_order_acquire)) submitFeedbackRead(e, *slot);
+            } else {
+                e.completed.fetch_add(1, std::memory_order_relaxed);
+                if (done->status != 0) e.errors.fetch_add(1, std::memory_order_relaxed);
+                if (!e.stopRequested.load(std::memory_order_acquire)) fillAndSubmit(e, *slot, fpp);
             }
             done = nullptr;
         }
     }
 
-    // ── Parada limpia: descartar y drenar ───────────────────────────────────
+    // ── Parada limpia: descartar y drenar (audio + feedback) ───────────────
     for (int i = 0; i < kUrbDepth; ++i) {
         if (e.slots[i].inFlight) ioctl(e.fd, USBDEVFS_DISCARDURB, e.slots[i].urb);
+    }
+    if (feedbackReady) {
+        for (int i = 0; i < kFeedbackUrbDepth; ++i) {
+            if (e.feedbackSlots[i].inFlight) ioctl(e.fd, USBDEVFS_DISCARDURB, e.feedbackSlots[i].urb);
+        }
     }
     int64_t deadline = now_ns() + 500000000LL;   // 500 ms como mucho
     bool pending = true;
@@ -297,12 +459,17 @@ bool runIsoEngine(AsyncEngine& e) {
         }
         pending = false;
         for (int i = 0; i < kUrbDepth; ++i) pending = pending || e.slots[i].inFlight;
+        if (feedbackReady) {
+            for (int i = 0; i < kFeedbackUrbDepth; ++i) pending = pending || e.feedbackSlots[i].inFlight;
+        }
         if (pending) usleep(1000);
     }
+    if (feedbackReady) freeFeedbackSlots(e);
     freeSlots(e);
     e.isoMode.store(false, std::memory_order_release);
-    LOGI("motor ISO detenido: submitted=%u completed=%u errors=%u xrun=%u",
-         e.submitted.load(), e.completed.load(), e.errors.load(), e.ring.underruns());
+    LOGI("motor ISO detenido: submitted=%u completed=%u errors=%u xrun=%u feedbackPkts=%u",
+         e.submitted.load(), e.completed.load(), e.errors.load(), e.ring.underruns(),
+         e.feedbackPacketsRx.load());
     return true;
 }
 
@@ -451,7 +618,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
         JNIEnv* /*env*/, jobject /*thiz*/,
         jint epAddress, jint maxPacketSize, jint interval,
-        jint sampleRate, jint channels, jint bitDepth) {
+        jint sampleRate, jint channels, jint bitDepth,
+        jint feedbackEpAddress, jint feedbackMaxPacketSize, jint feedbackInterval) {
     if (epAddress > 0)     g_engine.epAddress     = epAddress;
     if (maxPacketSize > 0) g_engine.maxPacketSize = maxPacketSize;
     if (interval > 0)      g_engine.interval      = interval;
@@ -460,9 +628,44 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     int bytes = (bitDepth > 0 ? bitDepth : 32) / 8;
     g_engine.bytesPerFrame = g_engine.channels * (bytes > 0 ? bytes : 4);
     g_engine.ring.configure(g_engine.channels);
-    LOGI("nativeConfigureEndpoint: ep=0x%02x mps=%d bInterval=%d fs=%d ch=%d bpf=%d",
+
+    // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
+    // envia como -1 si el DAC no expone el endpoint) => hasFeedback=false y
+    // el motor se comporta exactamente igual que antes de este cambio.
+    g_engine.hasFeedback      = feedbackEpAddress > 0 && feedbackMaxPacketSize > 0;
+    g_engine.feedbackEp       = feedbackEpAddress;
+    g_engine.feedbackMps      = feedbackMaxPacketSize;
+    g_engine.feedbackInterval = feedbackInterval > 0 ? feedbackInterval : 1;
+    g_engine.frameBudgetError = 0.0;
+    g_engine.feedbackPacketsRx.store(0, std::memory_order_relaxed);
+    g_engine.lastFeedbackRaw.store(0, std::memory_order_relaxed);
+
+    LOGI("nativeConfigureEndpoint: ep=0x%02x mps=%d bInterval=%d fs=%d ch=%d bpf=%d "
+         "feedback=%s(ep=0x%02x mps=%d)",
          g_engine.epAddress, g_engine.maxPacketSize, g_engine.interval,
-         g_engine.sampleRate, g_engine.channels, g_engine.bytesPerFrame);
+         g_engine.sampleRate, g_engine.channels, g_engine.bytesPerFrame,
+         g_engine.hasFeedback ? "SI" : "no",
+         (unsigned)g_engine.feedbackEp, g_engine.feedbackMps);
+}
+
+// ── Telemetría de feedback UAC ───────────────────────────────────────────
+// [0]=hasFeedback(0/1), [1]=paquetes de feedback recibidos,
+// [2]=ultimo valor crudo LE (hasta 4B — formato Q10.14/Q16.16 sin decodificar
+// todavia, ver handleFeedbackCompletion), [3]=direccion del endpoint.
+// Metodo separado (no se mezcla con nativeGetEngineStats, que ya tiene
+// consumidores fijados a 6 ints) para no arriesgar romper a nadie mas.
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_ivanna_omega_audio_UsbAudioProManager_nativeGetFeedbackInfo(
+        JNIEnv* env, jobject /*thiz*/) {
+    jint info[4];
+    info[0] = g_engine.hasFeedback ? 1 : 0;
+    info[1] = (jint)g_engine.feedbackPacketsRx.load(std::memory_order_relaxed);
+    info[2] = (jint)g_engine.lastFeedbackRaw.load(std::memory_order_relaxed);
+    info[3] = g_engine.feedbackEp;
+    jintArray out = env->NewIntArray(4);
+    if (!out) return nullptr;
+    env->SetIntArrayRegion(out, 0, 4, info);
+    return out;
 }
 
 // ── Alimentación de audio desde el pipeline (float [-1,1] intercalado) ──────

@@ -71,6 +71,12 @@ class UsbAudioProManager private constructor(context: Context) {
         private const val USB_AUDIO_CLASS = 1
         private const val USB_SUBCLASS_AUDIOCONTROL = 1
         private const val USB_SUBCLASS_AUDIOSTREAMING = 2
+
+        // Usage Type de un endpoint isocrono (bits 5:4 de bEndpointAttributes,
+        // USB Audio spec): 00=Data, 01=Feedback, 10=Implicit-feedback-Data.
+        // Sin distinguir esto, cualquier ISOC+IN que el DAC exponga (poco
+        // comun pero legal) se confundiria con el endpoint de feedback real.
+        private const val USB_ENDPOINT_USAGE_FEEDBACK = 0x1
         private const val CHANNELS = 2
         private const val BIT_DEPTH = 32
         private const val FRAME_SIZE_BYTES = (BIT_DEPTH / 8) * CHANNELS
@@ -125,6 +131,10 @@ class UsbAudioProManager private constructor(context: Context) {
     @Volatile private var openDeviceId: Int = -1
     private var usbConnection: UsbDeviceConnection? = null
     private var audioEndpoint: UsbEndpoint? = null
+    // Endpoint de feedback UAC (isoc IN, usage-type Feedback). Null si el DAC
+    // no lo expone (valido — muchos UAC1 y algunos UAC2 simples no lo hacen):
+    // el motor nativo sigue con la ruta fija actual, sin regresion.
+    private var feedbackEndpoint: UsbEndpoint? = null
     private var audioInterface: UsbInterface? = null
     private var fileDescriptor: ParcelFileDescriptor? = null
 
@@ -406,13 +416,21 @@ class UsbAudioProManager private constructor(context: Context) {
                 }
                 audioInterface = iface
 
-                // Busca endpoint isochronous OUT
+                // Busca endpoint isochronous OUT (datos) y, si el DAC lo
+                // expone, el de feedback (isoc IN, usage-type Feedback). El
+                // 'break' original solo cortaba al hallar el OUT — con eso
+                // un feedback declarado DESPUES en la lista de endpoints
+                // nunca se habria visto. Ahora se recorren todos.
                 for (e in 0 until iface.endpointCount) {
                     val ep = iface.getEndpoint(e)
-                    if (ep.type == UsbConstants.USB_ENDPOINT_XFER_ISOC && 
-                        ep.direction == UsbConstants.USB_DIR_OUT) {
-                        audioEndpoint = ep
-                        break
+                    if (ep.type != UsbConstants.USB_ENDPOINT_XFER_ISOC) continue
+                    if (ep.direction == UsbConstants.USB_DIR_OUT) {
+                        if (audioEndpoint == null) audioEndpoint = ep
+                    } else if (ep.direction == UsbConstants.USB_DIR_IN) {
+                        val usageType = (ep.attributes shr 4) and 0x3
+                        if (usageType == USB_ENDPOINT_USAGE_FEEDBACK) {
+                            feedbackEndpoint = ep
+                        }
                     }
                 }
                 break
@@ -460,7 +478,9 @@ class UsbAudioProManager private constructor(context: Context) {
 
         Log.i(TAG, "USB OTG Directo establecido: ${targetDevice.deviceName} " +
             "@ ${negotiatedSampleRate}Hz S32_LE (endpoint maxPacket=${ep.maxPacketSize}B, " +
-            "bInterval=${ep.interval})")
+            "bInterval=${ep.interval}); feedback UAC=" +
+            (feedbackEndpoint?.let { "SI (addr=0x${it.address.toString(16)}, mps=${it.maxPacketSize}B)" }
+                ?: "no (el DAC no lo expone — sincronizacion fina no disponible)"))
         return true
     }
 
@@ -528,7 +548,13 @@ class UsbAudioProManager private constructor(context: Context) {
                 interval      = ep.interval.coerceAtLeast(1),
                 sampleRate    = negotiatedSampleRate,
                 channels      = CHANNELS,
-                bitDepth      = BIT_DEPTH
+                bitDepth      = BIT_DEPTH,
+                // Sentinelas (-1 / 0) si el DAC no expone feedback: el lado
+                // nativo los interpreta como "sin feedback" y no cambia su
+                // comportamiento actual (mismo fpp fijo de siempre).
+                feedbackEpAddress     = feedbackEndpoint?.address ?: -1,
+                feedbackMaxPacketSize = feedbackEndpoint?.maxPacketSize ?: 0,
+                feedbackInterval      = feedbackEndpoint?.interval?.coerceAtLeast(1) ?: 1
             )
         }
 
@@ -610,6 +636,16 @@ class UsbAudioProManager private constructor(context: Context) {
     /** true si el motor está entregando por URBs isócronos reales. */
     fun isIsochronous(): Boolean = try { nativeIsIsochronous() } catch (t: Throwable) { false }
 
+    /**
+     * Estado del feedback UAC: [hasFeedback(0/1), paquetesRecibidos,
+     * ultimoValorCrudoLE, direccionEndpoint]. Sin DAC con feedback (o motor
+     * no arrancado), hasFeedback=0 — no es un error, es el caso normal para
+     * la mayoria de los DAC UAC1 y varios UAC2 simples.
+     */
+    fun feedbackInfo(): IntArray = try {
+        nativeGetFeedbackInfo() ?: IntArray(4)
+    } catch (t: Throwable) { IntArray(4) }
+
     fun stopStreaming() {
         isStreaming.set(false)
         isAsyncSlave.set(false)
@@ -630,6 +666,7 @@ class UsbAudioProManager private constructor(context: Context) {
         fileDescriptor?.close()
         usbConnection = null
         audioEndpoint = null
+        feedbackEndpoint = null
         audioInterface = null
         fileDescriptor = null
         // Sin este reset, el id quedaba fantasma: una reconexion del mismo
@@ -703,9 +740,11 @@ class UsbAudioProManager private constructor(context: Context) {
     // Motor asíncrono REAL (URBs isócronos usbfs) — cableado de punta a punta
     private external fun nativeConfigureEndpoint(
         epAddress: Int, maxPacketSize: Int, interval: Int,
-        sampleRate: Int, channels: Int, bitDepth: Int
+        sampleRate: Int, channels: Int, bitDepth: Int,
+        feedbackEpAddress: Int, feedbackMaxPacketSize: Int, feedbackInterval: Int
     )
     private external fun nativeWriteFrames(samples: FloatArray, frames: Int): Int
     private external fun nativeGetEngineStats(): IntArray?
+    private external fun nativeGetFeedbackInfo(): IntArray?
     private external fun nativeIsIsochronous(): Boolean
 }
