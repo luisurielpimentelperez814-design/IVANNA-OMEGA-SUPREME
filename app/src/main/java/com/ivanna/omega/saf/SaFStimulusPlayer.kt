@@ -273,8 +273,25 @@ class SaFStimulusPlayer(
         }
 
         // ── ITD por Woodworth ───────────────────────────────────────────
-        val azRad = Math.toRadians(direction.azimuth.toDouble())
-        val itdSec = (HEAD_RADIUS_M / SPEED_OF_SOUND_MPS) * (azRad + sin(azRad))
+        // FIX (verificación, 2026-09-10): la fórmula (θ+sinθ) solo es válida
+        // para |θ|≤90° (derivada para el hemisferio frontal, Kuhn 1977). Sin
+        // plegar el ángulo, ATRÁS (180°) evaluaba θ=π directo y daba un ITD
+        // de ~800µs — MAYOR que el máximo real en ±90° (~655µs), cuando el
+        // ITD físico en 180° (justo detrás, sobre el plano medio) debe ser
+        // CERO, igual que en 0° (justo enfrente): ambos equidistantes a los
+        // dos oídos. Sin este pliegue, ATRÁS sonaba con un corrimiento
+        // temporal espurio hacia un lado además del rolloff pinnal que es
+        // la señal real de discriminación. El término ILD de abajo NO
+        // necesita este pliegue: sin(azRad) ya es periódico correctamente
+        // (sin 180°=sin 0°=0, coincide con la física real).
+        val itdAzDeg = when {
+            direction.azimuth > 90f  -> 180f - direction.azimuth
+            direction.azimuth < -90f -> -180f - direction.azimuth
+            else                     -> direction.azimuth
+        }
+        val azRad = Math.toRadians(direction.azimuth.toDouble())   // sin plegar — lo usa ILD abajo
+        val itdAzRad = Math.toRadians(itdAzDeg.toDouble())
+        val itdSec = (HEAD_RADIUS_M / SPEED_OF_SOUND_MPS) * (itdAzRad + sin(itdAzRad))
         val itdSamples = (itdSec * sr).toInt()  // signado: >0 → llega antes al oído izq
 
         // ── ILD dependiente del azimut ──────────────────────────────────
