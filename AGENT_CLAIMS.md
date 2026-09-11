@@ -345,6 +345,29 @@ inmediato, ciclo tras ciclo hasta dejar el flanco magistral.
 
 ### Conversación / IA / Memoria — el cerebro conversacional de IVANNA
 **Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
+
+**🔔 NOTIFICACIÓN (flanco "Auditoría de integración cruzada", 2026-09-10)
+— bug real de costura, NO tocado a propósito (fuera de mi alcance):**
+`IvannaDSPOrchestrator.executeCommand()` mapea `bass_boost`, `treble_reduce`
+y `auto_optimize` a `voiceController.executeCommand(cmd)` — pero
+`VoiceController.kt` (paquete raíz `com.ivanna.omega`, NO
+`assistant`/`ai`) no tiene ningún `case` para esos 3 strings: caen al
+`else -> Log.w(TAG, "Comando desconocido: $cmd")` y no tocan el audio en
+absoluto. El bug real no es solo eso — es que
+`IvannaDSPOrchestrator.executeCommand()` construye
+`OrchestrationResult(true, "bass", "Graves potenciados", "bass_boost")`
+con `applied=true` HARDCODEADO, sin leer ningún valor de retorno de
+`voiceController.executeCommand` (que devuelve `Unit`). Efecto real:
+Gemini decide bien, el whitelist acepta bien, el orchestrator "confirma
+éxito" — e IVANNA le dice al usuario "graves potenciados" sin que el
+audio cambie una sola vez. Verificado leyendo `VoiceController.kt`
+completo (líneas 99-180): los otros ~20 comandos de ese `when` sí llegan
+a `app.globalEffectManager.applyProfile(...)`, el camino real — solo
+estos 3 quedan huérfanos. Fix sugerido (no aplicado, es su archivo):
+agregar los 3 `case` faltantes en `VoiceController` mapeando a
+parámetros reales de `IvannaEffectProfile`/`OMEGA_PARAM_*`, y hacer que
+`executeCommand` devuelva `Boolean` real en vez de `Unit`, para que
+`OrchestrationResult.applied` refleje la verdad.
 **Alcance exacto — no editar mientras esté aquí:**
 - `app/src/main/java/com/ivanna/omega/ai/gemini/` completo
   (`IvannaGeminiAgent.kt`, `GeminiOrchestrator.kt`, `AdaptiveResponseEngine.kt`)
