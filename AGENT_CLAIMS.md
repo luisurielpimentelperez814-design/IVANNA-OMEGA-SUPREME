@@ -1656,3 +1656,42 @@ cross-process del daemon) y el writer local per-proceso que agregó
 omega_effect.cpp (comentario "AUDIT FIX #4") realmente interoperan sin
 colisión cuando AMBOS están activos a la vez (daemon corriendo + efecto
 cargado), o si es otro caso de "cada lado bien hecho, costura sin probar".
+
+---
+
+### Auditoría verificada de raíz + README.md (documentación pública)
+**Tomado por:** sesión Claude (chat), iniciado 2026-09-10.
+**Alcance exacto — no editar mientras esté aquí:** `README.md` únicamente,
+más verificación de solo lectura sobre el resto del árbol (API de GitHub
+para CI real, `bash scripts/run_ctest.sh`, `AGENT_CLAIMS.md`,
+`PRODUCT_MASTER_STATUS.md`, commits) para sustentar el contenido del
+README. Cero ediciones fuera de `README.md`.
+
+**Explícitamente NO toca:** todo lo demás — todos los flancos ya listados
+en este archivo, incluyendo `PRODUCT_MASTER_STATUS.md`/`RELEASE_NOTES.md`/
+`docs/PRIVACIDAD_Y_SEGURIDAD.md`/`docs/FLANCO_DOCS.md` (flanco
+"Documentación de producto y privacidad" — excluye README/LÉAME
+explícitamente en su propio alcance, así que este hueco es legítimo, no
+invasión). Distinto del flanco "Auditoría de integración cruzada" (arriba):
+ese verifica costuras técnicas entre flancos; este produce el documento
+público. Hallazgos fuera de `README.md` se reportan como notificación al
+flanco dueño, nunca se corrigen aquí.
+
+**Por qué este frente:** pedido directo del propietario — auditoría
+verificada de extremo a extremo y un README fiel y visualmente cuidado
+(diagramas). README/LÉAME es el único hueco documental sin dueño
+confirmado en todo este archivo.
+
+**Método — verificado en vivo, no asumido:** API de GitHub sobre HEAD real
+(no confiar en badges cacheados); `run_ctest.sh` ejecutado en este entorno
+(sin NDK). Nota de proceso: mi primera corrida (sobre `54dc54a8`) encontró
+`evolutionary_kernel_v2.cpp:65` con `std::log10f` sin `<cmath>` como única
+causa de fallo — antes de poder notificarlo, `origin/main` ya traía el fix
+(`04924e0b`, de otra sesión concurrente) y además `run_ctest.sh` fue
+restaurado a la suite CTest completa (`d25eff4b`) sobre el script manual de
+4 suites que yo había corrido. Repito la verificación contra el estado
+consolidado antes de escribir cualquier número en el README.
+
+**Si eres otra sesión:** este frente está tomado. Elige otro libre.
+
+**Estado:** trabajando.
