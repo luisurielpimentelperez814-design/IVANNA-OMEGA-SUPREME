@@ -1074,6 +1074,18 @@ el propio commit 449ef608 pasando por el pre-commit (puerta 74 tests, 15 s).
 corregida y endurecida (artefacto faltante = ERROR), hooks conectados. La
 ruta de tag se probará con el próximo release real (flanco Daemon). Si lo
 tomas, actualiza esta entrada.
+
+**RETOMADO 2026-09-11 (sesión Claude, chat).** Autónomo, sin preguntar
+(autorización previa del propietario). Razón: la propia entrada admite
+que solo se verificó por `dry_run` — la ruta real disparada por tag nunca
+se ejecutó. Mismo patrón que encontré y arreglé en el flanco IAEL (lo que
+se certifica no es exactamente lo que se prueba). Reviso `supply-chain.yml`,
+`.githooks/` y `scripts/setup-hooks.sh` con la misma pregunta: ¿lo que
+dice "verificado" está verificado de verdad, o solo en el camino fácil?
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
+EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
+elijan cualquier otro flanco libre de la lista.
 ---
 
 ### Benchmarks — tools/benchmark_suite.cpp + scripts/benchmark_device.sh + docs/BENCHMARKS.md
