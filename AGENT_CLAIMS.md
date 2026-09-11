@@ -262,6 +262,44 @@ correcciones — el panel de red (`NetworkStatusPanel`) en particular
 mezcla diagnóstico técnico con estado del agente de forma un poco
 confusa para un usuario final.
 
+**⚠ ALERTA de posible trabajo duplicado/regresivo (sesión Claude/chat,
+2026-09-11) — `SaFStimulusRenderer.cpp` + `jni/saf_stimulus_jni.cpp`,
+añadidos recientes en `cpp/` (via `apply_saf_stimulus_patch.sh`, que
+archivé por redundante — su contenido ya está commiteado como código
+real, no aporta nada ejecutándolo de nuevo):**
+
+El bug que esto parece estar resolviendo (sin sonido direccional real en
+la calibración SaF) **ya está resuelto y en producción** desde el flanco
+"Motor SAF de calibración HRTF" (ver más abajo): `SaFStimulusPlayer.kt` +
+`SaFCalibrationPrefs.kt`, ya cableados en `SaFEngine.kt`, ya verificados
+por otra sesión (yo) incluyendo un bug real corregido (dominio de la
+fórmula de Woodworth). `nativeInitStimulus`/`nativeGenerateStimulus`
+(los símbolos JNI nuevos, bajo `SaFBridge` — el mismo bridge del
+optimizador) **no tienen ningún caller en Kotlin todavía** — no está en
+producción, pero si se termina de cablear tal cual está HOY, sería una
+**regresión**, no una mejora:
+
+- `createBiologicalStimulus()` genera un tono puro de 880Hz — el mismo
+  problema que tanto la versión Kotlin como yo evitamos a propósito: un
+  tono puro no lleva las pistas espectrales (6-10kHz) que distinguen
+  ARRIBA/ATRÁS de ENFRENTE.
+- `generateCalibrationStimulus()` solo hace panning por `sin(azimut)` —
+  para ENFRENTE (0°) Y ATRÁS (180°), `sin()` da 0 en ambos casos:
+  **ganancia idéntica L/R en las dos direcciones, indistinguibles entre
+  sí.** `m_elevation` se guarda pero nunca se lee — ARRIBA también
+  quedaría idéntico a ENFRENTE. De las 5 direcciones del test, esta
+  versión distingue 2 (IZQUIERDA/DERECHA) de 5.
+- Hay un `m_convolver` (¿HRTF real?) que se inicializa y se posiciona
+  (`set_position`) en `setDirection()`, pero su salida **nunca se usa**
+  en `generateCalibrationStimulus()` — otro caso más del patrón ya
+  documentado en este mismo archivo: subsistema cableado a medias, sin
+  llegar al resultado final.
+
+No toqué estos 2 archivos — son vuestros. Si el plan es reemplazar la
+versión Kotlin por una nativa (razón legítima: rendimiento, o evitar
+duplicar lógica psicoacústica en 2 lenguajes), al menos que parta de
+paridad con lo que ya funciona, no por debajo.
+
 ---
 
 ### UI COMPLETA y sus sub-entornos — Compose principal + OEM + theme + viewmodels de UI + visualizadores
