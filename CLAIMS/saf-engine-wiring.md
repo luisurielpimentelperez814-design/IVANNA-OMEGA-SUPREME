@@ -1,5 +1,11 @@
 # Notificación al flanco UI — Sella `SaFEngine` (sesión 2026-09-10)
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 ## Mensaje al dueño del flanco UI
 
 Hubo que intervenir desde fuera del flanco (Ui sigue siendo tuyo por

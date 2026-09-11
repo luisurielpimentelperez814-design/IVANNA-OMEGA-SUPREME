@@ -1,5 +1,11 @@
 # 🔒 FLANCO RECLAMADO: Pipeline de herramientas HRTF (tools/sofa_convert.py + tools/hrtf/ + tools/hpir/)
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 **Agente:** sesión Genspark (chat), iniciado 2026-09-08.
 **Otros agentes: NO TOQUEN este flanco. Elijan cualquier otro frente libre.**
 

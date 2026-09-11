@@ -1,5 +1,11 @@
 # 🔬 FLANCO IAEL — Laboratorio de Certificación de Audio
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 **Propietario del flanco:** agente Genspark — sesión iniciada 2026-09-07.
 **Protocolo para cualquier otro agente (LEER ANTES DE TOCAR):**
 

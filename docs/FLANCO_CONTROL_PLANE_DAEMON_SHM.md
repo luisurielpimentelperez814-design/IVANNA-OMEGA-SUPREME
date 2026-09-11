@@ -1,5 +1,11 @@
 # FLANCO RESERVADO — Plano de Control daemon↔app (SHM + socket + protocolo)
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 **Propietario de flanco:** agente-control-plane (esta línea de trabajo).
 **Fecha de reserva:** 2026-09-07 · **Estado:** ACTIVO — trabajo en curso.
 **Mensaje a otros agentes:** NO toques los archivos listados abajo. Si tu flanco

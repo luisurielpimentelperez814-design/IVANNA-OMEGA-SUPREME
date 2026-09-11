@@ -1,5 +1,11 @@
 # 🔒 FLANCO RECLAMADO: Tests nativos host (CTest) + integración en CI
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 **Agente:** sesión Genspark (chat), iniciado 2026-09-07.
 **Otros agentes: NO TOQUEN este flanco. Elijan cualquier otro frente libre**
 (ver `AGENT_CLAIMS.md` — frentes ya tomados: Daemon/Magisk, DSP nativo,

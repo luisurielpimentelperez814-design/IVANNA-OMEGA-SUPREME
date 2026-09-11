@@ -1,5 +1,11 @@
 # 🕸️ FLANCO WEB DASHBOARD — Panel maestro de control
 
+> 🔗 **Coordinación consolidada:** el índice maestro de todos los flancos
+> es `AGENT_CLAIMS.md` en la raíz — revísalo también antes de reclamar o
+> tocar cualquier área. Este archivo satélite se preserva por su detalle,
+> pero puede estar desactualizado si no se edita en ambos lugares.
+
+
 **Propietario del flanco:** sesión Claude (chat) — retomado 2026-09-09 tras
 entrega completa de sesión Genspark (criterios 1-5 world-class cumplidos,
 ver AGENT_CLAIMS.md). El flanco quedó explícitamente libre; lo tomo para el
