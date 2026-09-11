@@ -1725,6 +1725,23 @@ omega_effect.cpp (comentario "AUDIT FIX #4") realmente interoperan sin
 colisión cuando AMBOS están activos a la vez (daemon corriendo + efecto
 cargado), o si es otro caso de "cada lado bien hecho, costura sin probar".
 
+**Estado:** trabajando — primera pasada: verificar si OmegaControlBus (bus
+cross-process del daemon) y el writer local per-proceso que agregó
+omega_effect.cpp (comentario "AUDIT FIX #4") realmente interoperan sin
+colisión cuando AMBOS están activos a la vez (daemon corriendo + efecto
+cargado), o si es otro caso de "cada lado bien hecho, costura sin probar".
+
+**Hallazgo #1 (costura CONFIRMADA SANA, no bug):** rutas SHM deliberadamente
+distintas (`OMEGA_EFFECT_LOCAL_BUS_PATH` vs. `DEFAULT_PATH` del daemon) —
+cero riesgo de colisión de seqlock por diseño. Hipótesis de "daemon arranca
+después del efecto → el efecto queda sordo para siempre" verificada FALSA:
+`ctrlBusOpen` se reintenta en cada `EFFECT_CMD_SET_CONFIG` (comentario
+explícito: "en el próximo SET_CONFIG se reintenta"). Limitación menor
+conocida y aceptable: no reconecta a mitad de una sesión de audio
+larguísima sin SET_CONFIG si el daemon arranca después — no bloqueante,
+mitigado además por mi propio fix de service.sh (daemon colgado se mata y
+relanza, no queda zombie indefinido).
+
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
