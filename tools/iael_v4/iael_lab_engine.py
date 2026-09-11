@@ -336,8 +336,8 @@ def gen_step(sr, dur=0.05, amp=0.5, step_at=0.01):
 # ----------------------------------------------------------------------------
 
 TOLERANCES = {
-    "thd_n_db": -60.0,            # peor permitido con pipeline real (auto: bit-exact)
-    "snr_db": 60.0,               # peor permitido (auto: >> límite, se marca bit-exact)
+    "thd_n_db": -60.0,             # peor THD+N permitido, siempre evaluado (ver certify())
+    "snr_db": 60.0,                # peor SNR permitido, siempre evaluado
     "imd_db": -60.0,
     "flatness_pp_db": 6.0,        # planitud 31.5 Hz–16 kHz (referencia de laboratorio)
     "overshoot_pct": 5.0,
@@ -442,7 +442,12 @@ def run(mode, sr, wav_in=None, wav_out=None):
     started = time.time()
     if mode == "self":
         metrics = certify_self(sr)
-        results = {"mode": "self-referencia (pipeline identidad)", "metrics": metrics}
+        results = {
+            "mode": "self (auto-test de las herramientas de medición — "
+                     "NO ejecuta el DSP nativo de IVANNA; ver docs/FLANCO_IAEL.md)",
+            "real_pipeline_tested": False,
+            "metrics": metrics,
+        }
     else:
         if not (wav_in and wav_out):
             raise SystemExit("--mode wav requiere --in y --out")
@@ -451,39 +456,106 @@ def run(mode, sr, wav_in=None, wav_out=None):
         if sri != sro:
             print("WARN: rates difieren (%d vs %d) — usando %d" % (sri, sro, sr), file=sys.stderr)
         metrics = analyze_capture(li, ri, lo, ro, sri)
-        results = {"mode": "captura real", "input": wav_in, "output": wav_out, "metrics": metrics}
+        results = {"mode": "wav (captura de archivos)", "input": wav_in, "output": wav_out,
+                   "real_pipeline_tested": True, "metrics": metrics}
+        # FIX (autocomparación disfrazada de captura real): si wav_in y
+        # wav_out son bytes idénticos, esto NO valida que IVANNA procesó
+        # nada — es la misma trampa tautológica de --mode self pero con
+        # ficheros. Visto en telemetry/iael_v4/wav_identity_latest.json:
+        # ref_in.wav y ref_out_passthrough.wav son el mismo archivo
+        # (sha256 idéntico) — útil como auto-test del propio --mode wav
+        # (¿detecta bit-exact y latencia 0 correctamente?), inútil como
+        # certificación de audio real. Se marca explícito, nunca se oculta.
+        import hashlib
+        def _sha256(path):
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                h.update(f.read())
+            return h.hexdigest()
+        if _sha256(wav_in) == _sha256(wav_out):
+            results["real_pipeline_tested"] = False
+            results["warning"] = (
+                "wav_in y wav_out son el MISMO archivo (sha256 idéntico) — "
+                "esta corrida es un auto-test del propio --mode wav, no una "
+                "captura real de IVANNA procesando audio."
+            )
     return results, max(time.time() - started, 1e-6)
 
 
 def certify(results, tolerances):
+    """
+    Evalúa las métricas medidas contra tolerancias. SIEMPRE evalúa los
+    valores reales — bit_exact ya NO es un atajo que salta este chequeo.
+
+    FIX (certificación decorativa vía atajo bit_exact): la versión anterior,
+    si bit_exact era True, marcaba "PASS" sin mirar thd_n/snr/imd/planitud
+    en absoluto. En --mode self, bit_exact viene de comparar `ref - ref`
+    (una resta de un array consigo mismo: SIEMPRE 0, tautológico) — así que
+    TODA corrida self pasaba sin que ninguna métrica real se evaluara jamás.
+    Peor aún: el atajo buscaba la clave "thd_n_sine_997" (solo existe en
+    certify_self()); en --mode wav, analyze_capture() produce "thd_n_997"
+    (sin "_sine") — la clave no existía, y `checks.append(("thd_n", None,
+    "PASS", ...))` marcaba PASS sobre un valor None. Reproducido y
+    verificado en vivo: correr --mode wav con telemetry/iael_v4/samples/
+    (ref_in.wav == ref_out_passthrough.wav, mismo archivo) daba
+    `[PASS] thd_n = None`. Un bit-exact real (p.ej. verificar bypass) sigue
+    pasando SIN atajo: su THD+N/SNR reales, medidos contra su propia señal
+    ya-limpia, caen naturalmente dentro de tolerancia.
+    """
     m = results["metrics"]
     failures = []
     checks = []
-    if m.get("bit_exact"):
-        checks.append(("bit_exact", True, "PASS", "bypass exacto (error < 1e-9)"))
-        checks.append(("thd_n", m.get("thd_n_sine_997"), "PASS", "bit-exact supera límite"))
-    else:
-        for key, lim in [("thd_n_sine_997", TOLERANCES["thd_n_db"]),
-                         ("snr_sine_997", TOLERANCES["snr_db"]),
-                         ("imd_db", TOLERANCES["imd_db"]),
-                         ("flatness_pp_db", TOLERANCES["flatness_pp_db"])]:
-            v = m.get(key)
-            if v is None:
-                continue
-            ok = bool((v >= lim) if key.startswith(("snr",)) else (v <= lim))
-            checks.append((key, v, "PASS" if ok else "FAIL", "límite %s" % lim))
-            if not ok:
-                failures.append(key)
-    if m.get("invalid_samples"):
-        checks.append(("validez", m["invalid_samples"], "FAIL", "NaN/Inf")
-                      if m["invalid_samples"] else ("validez", 0, "PASS", "sin NaN/Inf"))
-        if m["invalid_samples"]:
-            failures.append("validez")
-    if m.get("clipping_events"):
-        ok = bool(m["clipping_events"] == 0)
-        checks.append(("clipping", m["clipping_events"], "PASS" if ok else "FAIL", "0 esperado"))
+
+    def metric(*names):
+        """Primera clave presente — unifica el nombrado entre certify_self()
+        ('thd_n_sine_997', un valor por tono sintético) y analyze_capture()
+        ('thd_n_997', un único cálculo sobre la captura)."""
+        for name in names:
+            v = m.get(name)
+            if v is not None:
+                return v
+        return None
+
+    spectral = m.get("spectral")
+    flatness = spectral.get("flatness_pp_db") if isinstance(spectral, dict) else m.get("flatness_pp_db")
+
+    for key, value, lim, higher_is_better in [
+        ("thd_n", metric("thd_n_sine_997", "thd_n_997"), tolerances["thd_n_db"], False),
+        ("snr", metric("snr_sine_997", "snr_997"), tolerances["snr_db"], True),
+        ("imd_db", m.get("imd_db"), tolerances["imd_db"], False),
+        ("flatness_pp_db", flatness, tolerances["flatness_pp_db"], False),
+    ]:
+        if value is None:
+            continue
+        ok = bool((value >= lim) if higher_is_better else (value <= lim))
+        checks.append((key, value, "PASS" if ok else "FAIL", "límite %s" % lim))
         if not ok:
+            failures.append(key)
+
+    # Informativo únicamente — nunca vuelve a decidir el veredicto por sí
+    # solo. Útil para saber si el bypass fue realmente exacto, sin que eso
+    # sustituya mirar las métricas reales de arriba.
+    if m.get("bit_exact") is not None:
+        checks.append(("bit_exact", bool(m["bit_exact"]), "INFO",
+                       "informativo — no sustituye los límites de arriba"))
+
+    # FIX (checks omitidos en el caso limpio): antes, invalid_samples==0 o
+    # clipping_events==0 son "falsy" en Python -> el `if` ni siquiera
+    # añadía un PASS explícito. El reporte solo mostraba estos checks
+    # cuando había algo que reprobar, ocultando que sí se verificaron.
+    if "invalid_samples" in m:
+        bad = bool(m["invalid_samples"])
+        checks.append(("validez", m["invalid_samples"], "FAIL" if bad else "PASS",
+                       "0 esperado (NaN/Inf)"))
+        if bad:
+            failures.append("validez")
+    if "clipping_events" in m:
+        bad = m["clipping_events"] != 0
+        checks.append(("clipping", m["clipping_events"], "FAIL" if bad else "PASS",
+                       "0 esperado"))
+        if bad:
             failures.append("clipping")
+
     certification = "FAIL" if failures else "PASS"
     return certification, failures, checks
 
@@ -491,7 +563,12 @@ def certify(results, tolerances):
 def gen_test_wavs(sr=48000, dur=1.0, outdir="telemetry/iael_v4/samples"):
     """Genera WAV estereo de referencia (multitone 60..10kHz + 997Hz) para
     captura en dispositivo (Ruta A/B): ref_in.wav (entrada) y
-    ref_out_passthrough.wav (identidad) para validar bit-exact + latencia 0."""
+    ref_out_passthrough.wav (PLACEHOLDER — copia idéntica de ref_in.wav
+    hasta que alguien lo sobrescriba con una grabación real capturada
+    tras pasar ref_in.wav por el DSP de IVANNA en un dispositivo). Sirve
+    de partida para validar bit-exact + latencia 0 del propio --mode wav;
+    NO es una certificación de audio real mientras siga siendo la copia —
+    run() detecta este caso (sha256 idéntico) y lo marca explícitamente."""
     import wave
     os.makedirs(outdir, exist_ok=True)
     t = np.arange(int(sr * dur)) / sr
@@ -534,6 +611,7 @@ def main():
         "seed": SEED,
         "sample_rate": args.sr,
         "mode": results["mode"],
+        "real_pipeline_tested": results.get("real_pipeline_tested"),
         "elapsed_seconds": round(elapsed, 3),
         "certification": certification,
         "failures": failures,
@@ -541,6 +619,8 @@ def main():
         "metrics": results["metrics"],
         "tolerances": TOLERANCES,
     }
+    if "warning" in results:
+        report["warning"] = results["warning"]
     out_path = args.out_json or os.path.join("telemetry", "iael_v4", "latest.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -562,9 +642,13 @@ def markdown_report(r):
              "| Versión | %s |" % r["version"],
              "| Timestamp | %s |" % r["timestamp"],
              "| Modo | %s |" % r["mode"],
+             "| **¿Probó el DSP real de IVANNA?** | %s |" %
+                 ("**SÍ**" if r.get("real_pipeline_tested") else "**NO**"),
              "| Seed | %d |" % r["seed"],
-             "| Certificación | **%s** |" % r["certification"], "",
-             "## Checks", "", "| Métrica | Valor | Veredicto | Referencia |", "|---|---|---|---|"]
+             "| Certificación | **%s** |" % r["certification"], ""]
+    if r.get("warning"):
+        lines += ["> ⚠️ **%s**" % r["warning"], ""]
+    lines += ["## Checks", "", "| Métrica | Valor | Veredicto | Referencia |", "|---|---|---|---|"]
     for c in r["checks"]:
         lines.append("| %s | %s | %s | %s |" % (c[0], c[1], c[2], c[3]))
     lines += ["", "## Métricas", "", "```json", json.dumps(r["metrics"], indent=2, ensure_ascii=False, default=_json_default), "```"]
