@@ -897,7 +897,64 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 omega_local_publish_or_apply(ctx);
             }
         } break;
-        case EFFECT_CMD_GET_PARAM:
+        case EFFECT_CMD_GET_PARAM: {
+            // FIX (item MEDIO de la lista de prioridades del usuario:
+            // "EFFECT_CMD_GET_PARAM sigue no-op"): antes caía directo al
+            // "break" genérico de abajo, dejando *pReplyData sin tocar (el
+            // caller lee memoria no inicializada del buffer que reservó,
+            // no un error explícito). Reusa exactamente el mismo parser
+            // (omega_param_read_id) y la misma convención de layout
+            // psize|vsize|param[psize]|pad4|value[vsize] que ya usa
+            // EFFECT_CMD_SET_PARAM arriba — sin campo status al inicio,
+            // consistente con esta base de código, no con el
+            // effect_param_t crudo de más bajo nivel que usa AudioFlinger
+            // internamente (AOSP confirma un status(i32) ahí, pero nada en
+            // esta app llama getParameter() en este efecto hoy — se prioriza
+            // consistencia interna verificable sobre una capa de
+            // compatibilidad no ejercida por ningún caller real todavía).
+            if (!ctx || !pReplyData || !replySize) break;
+            uint32_t id = 0, vsizeIn = 0;
+            const uint8_t* dummy = nullptr;
+            if (!omega_param_read_id(pCmdData, cmdSize, id, vsizeIn, dummy)) {
+                LOGW("GET_PARAM: layout inválido (cmdSize=%u)", cmdSize);
+                break;
+            }
+            const ivanna::OmegaDspSnapshot& s = ctx->pendingSnap;
+            float fv = 0.f; int32_t iv = 0; bool isInt = false, known = true;
+            switch (id) {
+                case OMEGA_PARAM_INTENSITY:            fv = s.intensity; break;
+                case OMEGA_PARAM_SPATIAL_WIDTH:        fv = s.spatial_width; break;
+                case OMEGA_PARAM_HARMONIC_GAIN:        fv = s.harmonic_gain; break;
+                case OMEGA_PARAM_COMPRESSOR_THRESHOLD: fv = s.compressor; break;
+                case OMEGA_PARAM_COMPRESSOR_AMOUNT:    fv = s.comp_amount; break;
+                case OMEGA_PARAM_LOUDNESS_TARGET:      fv = s.loudness_target; break;
+                case OMEGA_PARAM_ANTI_DOLBY:           fv = s.anti_dolby; break;
+                case OMEGA_PARAM_HIGH_CUT_HZ:          fv = s.high_cut_hz; break;
+                case OMEGA_PARAM_BASS_BOOST_DB:        fv = s.bass_boost_db; break;
+                case OMEGA_PARAM_DIALOG_BOOST_DB:      fv = s.dialog_boost_db; break;
+                case OMEGA_PARAM_WIDENER_MULT:         fv = s.widener_mult; break;
+                case OMEGA_PARAM_ROUTE_MODE:            iv = s.active_route; isInt = true; break;
+                case OMEGA_PARAM_MASTER_BYPASS:         iv = (int32_t)(s.flags & 0x1u); isInt = true; break;
+                default: known = false; break;
+            }
+            const uint32_t vsizeOut = isInt ? sizeof(int32_t) : sizeof(float);
+            const uint32_t psizeOut = sizeof(uint32_t);
+            const uint32_t hdr = sizeof(uint32_t) * 2 + psizeOut;
+            const uint32_t valOff = (hdr + 3u) & ~uint32_t(3u);
+            const uint32_t total = valOff + vsizeOut;
+            if (!known || *replySize < total) {
+                LOGW("GET_PARAM: id=0x%08x desconocido o reply chico (replySize=%u need=%u)",
+                     id, *replySize, total);
+                break;
+            }
+            uint8_t* out = reinterpret_cast<uint8_t*>(pReplyData);
+            memcpy(out + 0, &psizeOut, sizeof(uint32_t));
+            memcpy(out + sizeof(uint32_t), &vsizeOut, sizeof(uint32_t));
+            memcpy(out + sizeof(uint32_t) * 2, &id, sizeof(uint32_t));
+            if (isInt) memcpy(out + valOff, &iv, sizeof(int32_t));
+            else       memcpy(out + valOff, &fv, sizeof(float));
+            *replySize = total;
+        } break;
         case EFFECT_CMD_SET_DEVICE:
         case EFFECT_CMD_SET_VOLUME:
         case EFFECT_CMD_SET_AUDIO_MODE:
