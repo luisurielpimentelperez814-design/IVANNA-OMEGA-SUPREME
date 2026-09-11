@@ -18,6 +18,16 @@ de calidad) por un stress reproducible con semilla fija y métricas reales:
   * Certificación: PASS solo si 0 inválidos, pico <= 1.0 y throughput >= 1.0
     (procesa en tiempo real o más rápido). Tolerancias documentadas.
 
+ALCANCE REAL — LÉASE ANTES DE CITAR EL THROUGHPUT EN NINGÚN LADO:
+  process_block() es una REIMPLEMENTACIÓN en Python/NumPy de la MISMA FORMA
+  FUNCIONAL (ganancia → saturación soft → one-pole) que usan las guardas
+  anti-NaN del DSP nativo — NO es el código C++/NDK real compilado, no
+  corre en un teléfono, no pasa por JNI ni por el motor de IVANNA. Es una
+  prueba de estabilidad NUMÉRICA del PATRÓN (¿esta forma de cadena puede
+  producir NaN/Inf/explosión bajo carga sostenida con esta semilla?), no
+  una medición de rendimiento del producto real. El "Nx tiempo real"
+  reportado es la velocidad de NumPy vectorizado en ESTE host x86, y no
+  predice ni acota el throughput del ARM/NEON real del dispositivo.
 Uso:
   python3 iael_stress_v4.py --seconds 60 [--fast] [--out-json telemetry/iael_v4/stress_latest.json]
 """
@@ -132,6 +142,10 @@ def run(seconds):
     report = {
         "system": SYSTEM,
         "version": __version__,
+        "real_native_dsp_tested": False,
+        "note": "process_block() es un proxy Python/NumPy de la forma funcional "
+                 "de las guardas anti-NaN del DSP nativo, no el código C++/NDK "
+                 "real — ver docstring del módulo.",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
         "certification": certification,
         "failures": failures,
