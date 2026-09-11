@@ -472,11 +472,35 @@ línea por línea. Si no pasa, corregir de raíz.
 EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
 elijan cualquier otro flanco libre de la lista.
 
+**CIERRE DE CICLO 2026-09-11 (sesión Claude, chat).** Auditoría
+independiente completada — detalle línea por línea, con evidencia
+reproducida en vivo (no solo leída), en `docs/FLANCO_IAEL.md`. Resumen:
 
----
+- Las correcciones específicas de v1→v4 que motivaron este flanco (SNR
+  con referencia fija, espectro por índice temporal) **son reales** —
+  verificado en código y ejecución.
+- Pero `certify()` escondía un **PASS decorativo nuevo**, en un lugar
+  distinto: un atajo por `bit_exact` (tautológico en `--mode self`, que
+  es el único modo usado hasta ahora) saltaba TODA evaluación real de
+  thd_n/snr/imd/planitud. Reproducido en vivo contra
+  `telemetry/iael_v4/wav_identity_latest.json`: `[PASS] thd_n = None`.
+- Arreglado y verificado por ejecución (no solo revisión): `certify()`
+  ya siempre evalúa las métricas reales; `run()`/`markdown_report()`
+  ahora declaran explícito si el DSP real de IVANNA fue probado o no;
+  `iael_stress_v4.py` declara explícito que es un proxy Python, no el
+  C++/NDK real. Telemetría y reporte de referencia regenerados con el
+  código ya arreglado.
+- Auditados también `tools/dashboard/` y `tools/telemetry/` (resto del
+  alcance del flanco): heredan `certification` del lab sin lógica propia
+  decorativa — el arreglo de raíz los corrige automáticamente, sin
+  tocarlos. `telemetry/history/` (usado por 2 de esos scripts) no existe
+  todavía — no es un bug, simplemente no se ha poblado nunca.
+- **Sin cambios:** criterio 5 (captura real en dispositivo) sigue
+  exactamente igual de pendiente — requiere NDK/hardware que este
+  entorno no tiene. La diferencia es que ahora el laboratorio lo dice
+  explícitamente en vez de reportar PASS por un atajo.
 
-
-### Tests nativos host (CTest) + integración en CI
+Flanco queda LIBRE de nuevo.
 **Tomado por:** sesión Genspark (chat), iniciado 2026-09-07. Detalle completo y protocolo en [CLAIMS/tests-host-ctest.md](CLAIMS/tests-host-ctest.md).
 **Alcance exacto — no editar mientras esté aquí:**
 - `CMakePresets.json` (raíz, nuevo), `scripts/run_ctest.sh`
