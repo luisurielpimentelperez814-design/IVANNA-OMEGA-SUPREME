@@ -5,7 +5,19 @@ package com.ivanna.omega.saf
  * Library loaded by IvannaNativeLib; no separate load needed.
  */
 object SaFBridge {
-    @JvmStatic external fun nativeSaFInit(jsonPath: String): Boolean
+
+    @JvmStatic
+    external fun nativeInitStimulus(): Boolean
+
+    @JvmStatic
+    external fun nativeGenerateStimulus(
+        azimuth: Float,
+        elevation: Float
+    ): FloatArray
+
+    @JvmStatic
+    external fun nativeSaFInit(jsonPath: String): Boolean
+
     @JvmStatic external fun nativeSaFFeedback(direction: Int, correct: Boolean)
     @JvmStatic external fun nativeSaFGetParams(): FloatArray?
     @JvmStatic external fun nativeSaFGetIteration(): Int

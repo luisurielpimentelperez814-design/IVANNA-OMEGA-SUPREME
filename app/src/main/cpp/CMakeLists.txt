@@ -89,7 +89,8 @@ add_library(ivanna_omega SHARED
     # repo por si se retoma la carga SOFA directa (libmysofa).
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
-    # FIX CRÍTICO (auditoría 2026-08-10): SaFJniBridge.cpp faltaba aquí.
+    SaFStimulusRenderer.cpp
+    # FIX CRÍTICO (auditoría 2026-08-10): SaFJniBridge.cpp
     # Es el ÚNICO archivo que define los símbolos JNI que SaFBridge.kt
     # declara como external (nativeSaFInit/nativeSaFFeedback/nativeSaFGetParams/
     # nativeSaFSaveState/nativeSaFLoadState/etc — verificado con grep en TODO
@@ -99,9 +100,11 @@ add_library(ivanna_omega SHARED
     # de persistencia de esta misma sesión) nunca ejecutaba código nativo real
     # en el dispositivo, pese a compilar y no dar ningún error visible.
     SaFJniBridge.cpp
+    jni/saf_stimulus_jni.cpp
 
     # FIX (build): undefined symbol ivanna_saf_apply_latent al linkear
-    # libivanna_omega.so. SaFJniBridge.cpp:40 la referencia extern pero la
+    # libivanna_omega.so. SaFJniBridge.cpp
+    # SaFJniBridge.cpp:40 mantiene la referencia extern pero la
     # definición real vive en omega_effect.cpp (target libomega_effect.so —
     # proceso audioserver), inaccesible desde este target. Este stub define
     # el símbolo en el proceso app y publica el vector latente en un

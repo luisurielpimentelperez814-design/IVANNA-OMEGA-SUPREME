@@ -1,5 +1,5 @@
 // ============================================================================
-// evolutionary_kernel_v2.cpp — CMA-ES con fitness psicoacústico real
+// evolutionary_kernel_v2.cpp — Kernel Evolutivo psicoacústico híbrido
 // ============================================================================
 // La versión anterior usaba fitness = energía_media × (1 - 0.85 × varianza)
 // — una métrica de suavidad espectral cruda. Problemas:
@@ -10,7 +10,7 @@
 //   4. Sin penalización por resonancias estrechas (Q alto → fatiga auditiva)
 //
 // v2.0 añade fitness psicoacústico multi-criterio:
-//   F = w1·SpectralFlatness + w2·LoudnessBalance + w3·(1-ResonancePenalty)
+//   Fitness evolutivo multiobjetivo: espectro + dinámica + percepción
 //       + w4·DynamicScore + w5·TonalConsistency
 //
 // Donde:
@@ -71,7 +71,24 @@ static float computeAWeight(float freqHz) {
 
 #define POPULATION_SIZE 128
 #define GENOME_SIZE     256
-#define ELITE_COUNT       4
+#define ELITE_COUNT      16
+#define EVOLUTION_PARENT_COUNT 32
+
+
+// NOTA ARQUITECTURA:
+// El genoma todavía representa parámetros abstractos.
+// El siguiente puente debe convertir:
+//
+// BestGenome
+//      ↓
+// DSP Parameter Decoder
+//      ↓
+// OmegaDspSnapshot
+//      ↓
+// OmegaControlBus
+//
+// Nunca debe ejecutarse dentro del callback de audio.
+//
 
 struct Individual {
     uint8_t genome[GENOME_SIZE];
