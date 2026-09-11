@@ -1,25 +1,61 @@
 {
   "system": "IVANNA OMEGA SUPREME IAEL v4",
   "version": "4.0.0",
-  "timestamp": "2026-09-08 23:56:25 UTC",
+  "timestamp": "2026-09-11 21:02:02 UTC",
   "seed": 12648430,
   "sample_rate": 48000,
-  "mode": "captura real",
-  "elapsed_seconds": 0.019,
-  "certification": "PASS",
-  "failures": [],
+  "mode": "wav (captura de archivos)",
+  "real_pipeline_tested": false,
+  "elapsed_seconds": 0.025,
+  "certification": "FAIL",
+  "failures": [
+    "thd_n",
+    "snr",
+    "imd_db",
+    "flatness_pp_db"
+  ],
   "checks": [
+    [
+      "thd_n",
+      5.051494494615072,
+      "FAIL",
+      "límite -60.0"
+    ],
+    [
+      "snr",
+      -5.051494494615074,
+      "FAIL",
+      "límite 60.0"
+    ],
+    [
+      "imd_db",
+      6.748117551739428,
+      "FAIL",
+      "límite -60.0"
+    ],
+    [
+      "flatness_pp_db",
+      114.247,
+      "FAIL",
+      "límite 6.0"
+    ],
     [
       "bit_exact",
       true,
-      "PASS",
-      "bypass exacto (error < 1e-9)"
+      "INFO",
+      "informativo — no sustituye los límites de arriba"
     ],
     [
-      "thd_n",
-      null,
+      "validez",
+      0,
       "PASS",
-      "bit-exact supera límite"
+      "0 esperado (NaN/Inf)"
+    ],
+    [
+      "clipping",
+      0,
+      "PASS",
+      "0 esperado"
     ]
   ],
   "metrics": {
@@ -78,5 +114,6 @@
     "overshoot_pct": 5.0,
     "latency_ms_max": 10.0,
     "bit_error_max": 1e-09
-  }
+  },
+  "warning": "wav_in y wav_out son el MISMO archivo (sha256 idéntico) — esta corrida es un auto-test del propio --mode wav, no una captura real de IVANNA procesando audio."
 }

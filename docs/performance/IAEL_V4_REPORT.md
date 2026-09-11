@@ -4,8 +4,9 @@
 |---|---|
 | Sistema | IVANNA OMEGA SUPREME IAEL v4 |
 | Versión | 4.0.0 |
-| Timestamp | 2026-09-07 21:45:58 UTC |
-| Modo | self-referencia (pipeline identidad) |
+| Timestamp | 2026-09-11 21:01:56 UTC |
+| Modo | self (auto-test de las herramientas de medición — NO ejecuta el DSP nativo de IVANNA; ver docs/FLANCO_IAEL.md) |
+| **¿Probó el DSP real de IVANNA?** | **NO** |
 | Seed | 12648430 |
 | Certificación | **PASS** |
 
@@ -13,8 +14,13 @@
 
 | Métrica | Valor | Veredicto | Referencia |
 |---|---|---|---|
-| bit_exact | True | PASS | bypass exacto (error < 1e-9) |
-| thd_n | -132.38728603592327 | PASS | bit-exact supera límite |
+| thd_n | -132.38728603592327 | PASS | límite -60.0 |
+| snr | 132.38728603592327 | PASS | límite 60.0 |
+| imd_db | -147.3084926104662 | PASS | límite -60.0 |
+| flatness_pp_db | 0.0 | PASS | límite 6.0 |
+| bit_exact | True | INFO | informativo — no sustituye los límites de arriba |
+| validez | 0 | PASS | 0 esperado (NaN/Inf) |
+| clipping | 0 | PASS | 0 esperado |
 
 ## Métricas
 

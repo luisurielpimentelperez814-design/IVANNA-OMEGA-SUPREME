@@ -1,7 +1,9 @@
 {
   "system": "IVANNA OMEGA SUPREME IAEL v4 — StabilityStress",
   "version": "4.0.0",
-  "timestamp": "2026-09-08 23:45:18 UTC",
+  "real_native_dsp_tested": false,
+  "note": "process_block() es un proxy Python/NumPy de la forma funcional de las guardas anti-NaN del DSP nativo, no el código C++/NDK real — ver docstring del módulo.",
+  "timestamp": "2026-09-11 21:01:45 UTC",
   "certification": "PASS",
   "failures": [],
   "checks": [
@@ -19,26 +21,26 @@
     ],
     [
       "throughput",
-      123.695,
+      126.245,
       "PASS",
       ">= 1.0x tiempo real"
     ],
     [
       "drift_energia_db",
-      0.2289,
+      0.176,
       "PASS",
       "<= 0.5 dB"
     ]
   ],
   "metrics": {
     "duration_seconds": 8.0,
-    "processed_blocks": 98957,
-    "throughput_x_realtime": 123.695,
-    "audio_seconds_equivalent": 989.6,
+    "processed_blocks": 100996,
+    "throughput_x_realtime": 126.245,
+    "audio_seconds_equivalent": 1010.0,
     "invalid_samples": 0,
     "peak": 0.295387,
     "crest": 1.051,
-    "energy_drift_db": 0.2289,
+    "energy_drift_db": 0.176,
     "seed": 200209831,
     "block_size_frames": 480,
     "sample_rate": 48000
