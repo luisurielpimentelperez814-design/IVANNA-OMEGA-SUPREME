@@ -124,6 +124,17 @@ fun processAudioWithScores(
             }
             "cinema_mode"  -> app.globalEffectManager.applyProfile(IvannaEffectProfile.SPATIAL)
                               .also { Log.i(TAG, "Modo cine (SPATIAL) activado") }
+            // FIX (bug real reportado por otra sesión, ver AGENT_CLAIMS.md):
+            // estos 3 comandos pasaban la whitelist y llegaban aquí, pero
+            // caían al else — IVANNA confirmaba "graves potenciados" sin
+            // tocar el audio una sola vez. Ver IvannaGlobalEffectManager.
+            // boostBass/reduceTreble/autoOptimize para el detalle completo.
+            "bass_boost"     -> app.globalEffectManager.boostBass()
+                                .also { Log.i(TAG, "Graves potenciados (BassBoost real)") }
+            "treble_reduce"  -> app.globalEffectManager.reduceTreble()
+                                .also { Log.i(TAG, "Agudos reducidos (EQ, últimas bandas)") }
+            "auto_optimize"  -> app.globalEffectManager.autoOptimize()
+                                .also { Log.i(TAG, "Auto-optimize aplicado") }
             "music_mode"   -> app.globalEffectManager.applyProfile(IvannaEffectProfile.WARM)
                               .also { Log.i(TAG, "Modo música (WARM) activado") }
             "flat_mode"    -> {

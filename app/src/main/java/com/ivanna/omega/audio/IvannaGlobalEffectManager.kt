@@ -444,6 +444,58 @@ class IvannaGlobalEffectManager(
         }
     }
 
+    // ── Ajustes puntuales de voz sin cambiar de perfil completo ────────────────
+    /**
+     * FIX (bug real reportado por el flanco de integración cruzada, ver
+     * AGENT_CLAIMS.md): "bass_boost"/"treble_reduce"/"auto_optimize" caían
+     * al else de VoiceController ("comando desconocido") mientras
+     * IvannaDSPOrchestrator.executeCommand() confirmaba applied=true
+     * hardcodeado, sin leer ningún resultado real — IVANNA le decía al
+     * usuario "graves potenciados" sin que el audio cambiara una sola vez.
+     *
+     * BassBoost.setStrength(): el efecto ya se creaba por sesión
+     * (createBassBoost) pero su intensidad nunca se ajustaba desde ningún
+     * punto del código — otro bug del mismo patrón, encontrado en esta
+     * misma auditoría (fx.bassBoost confirmado sin ningún .setStrength()
+     * real en todo el archivo antes de este fix).
+     */
+    fun boostBass(strength: Short = 700) {
+        activeSessions.forEach { (sessionId, fx) ->
+            runCatching {
+                fx.bassBoost?.let { if (it.strengthSupported) it.setStrength(strength) }
+            }.onFailure { Log.w(TAG, "boostBass sesion $sessionId: ${it.message}") }
+        }
+    }
+
+    /** Android no tiene un efecto "Treble" dedicado equivalente a BassBoost
+     *  — se usa el Equalizer real ya abierto, con offset negativo en las
+     *  últimas 2 bandas (agudas) del perfil activo, sin tocar el resto. */
+    fun reduceTreble(offsetDb: Float = -6f) {
+        val offsetMb = (offsetDb * 100f).toInt()
+        activeSessions.forEach { (sessionId, fx) ->
+            runCatching {
+                fx.equalizer?.let { eq ->
+                    if (!eq.enabled) return@let
+                    val numBands = eq.numberOfBands.toInt()
+                    if (numBands < 2) return@let
+                    for (band in maxOf(0, numBands - 2) until numBands) {
+                        val baseMb = if (band < activeProfile.eqBands.size) activeProfile.eqBands[band] else 0
+                        val range = eq.getBandLevelRange()
+                        eq.setBandLevel(band.toShort(), (baseMb + offsetMb).coerceIn(range[0].toInt(), range[1].toInt()).toShort())
+                    }
+                }
+            }.onFailure { Log.w(TAG, "reduceTreble sesion $sessionId: ${it.message}") }
+        }
+    }
+
+    /** "Optimiza el audio": vuelve al perfil activo sin ajustes en vivo
+     *  acumulados — equivalente honesto a "reset a lo que el preset ya
+     *  define como óptimo", no un análisis de IA nuevo. */
+    fun autoOptimize() {
+        applyProfile(activeProfile)
+        Log.i(TAG, "Auto-optimize: perfil '${activeProfile}' reaplicado sin offsets acumulados")
+    }
+
     // ── SAF sin root: modulador continuo de espacialidad ──────────────────────
     /**
      * Convierte el estado del optimizador Φ_SAF-Room^∞ en un pequeño ajuste
