@@ -54,6 +54,15 @@ public:
     void unload() noexcept;
 
     // Wet/dry [0,1]. 0=bypass, 1=sólo sala. Actualización atómica en tiempo real.
+
+    // ── BRIR: decorrelación de la cola tardía (estado del arte) ────────────
+    // Una reverb estéreo creíble necesita que las colas L y R NO sean copias
+    // correladas (eso suena a "reverb mono dentro de la cabeza"). Se aplica una
+    // red allpass decorreladora en frecuencia a la partición de cola de R:
+    // rota la fase por bin (allpass), preservando magnitud — mismo RT60, pero
+    // difusa y envolvente. 0.0 = correlada (legado), 1.0 = máxima difusión.
+    void setLateDecorrelation(float amount) noexcept { decorrel_.store(std::clamp(amount, 0.f, 1.f), std::memory_order_relaxed); }
+    float lateDecorrelation() const noexcept { return decorrel_.load(std::memory_order_relaxed); }
     void setWetDry(float wet) noexcept { wetDry_.store(wet, std::memory_order_relaxed); }
     float wetDry() const noexcept      { return wetDry_.load(std::memory_order_relaxed); }
 
@@ -88,6 +97,7 @@ private:
     float workIm_[FFT_SIZE] = {};
 
     std::atomic<float> wetDry_{0.f};
+    std::atomic<float> decorrel_{0.0f};   // 0=cola correlada (legado), 1=difusa
     // Anti-zipper del wet/dry: el slider se aplica por BLOQUE (escalón duro
     // de ganancia = tronido). Se suaviza por muestra con un one-pole.
     float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)

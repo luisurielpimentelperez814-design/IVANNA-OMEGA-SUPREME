@@ -87,6 +87,27 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
         std::memset(rre, 0, FFT_SIZE * sizeof(float)); std::memset(rim, 0, FFT_SIZE * sizeof(float));
         for (int i = 0; i < plen; ++i) rre[i] = irR[off + i];
         fftReal(rre, rim, FFT_SIZE, false);
+        // ── BRIR: decorrelar la cola R con red allpass en frecuencia ──
+        // H(z) allpass de primer orden por bin: |H|=1 (no cambia RT60 ni nivel),
+        // solo rota fase. Aplicado a la cola R, la hace incoherente con L ->
+        // reverb difusa envolvente en vez de una imagen mono fantasma.
+        if (decorrel_.load(std::memory_order_relaxed) > 0.001f) {
+            const float amt = decorrel_.load(std::memory_order_relaxed);
+            const float a = 0.6f * amt;             // coeficiente allpass
+            for (int k = 1; k < FFT_SIZE / 2; ++k) {
+                const float w = 2.0f * 3.14159265358979f * (float)k / (float)FFT_SIZE;
+                // Rotacion de fase allpass: phi = -2*atan(a*sin(w)/(1-a*cos(w)))
+                const float cw = std::cos(w), sw = std::sin(w);
+                const float den = 1.0f + a*a - 2.0f*a*cw;
+                const float re_h = ((1.0f+a*a)*cw - 2.0f*a) / den;
+                const float im_h = ((1.0f-a*a)*sw) / den;
+                const float re2 = rre[k]*re_h - rim[k]*im_h;
+                const float im2 = rre[k]*im_h + rim[k]*re_h;
+                rre[k] = re2; rim[k] = im2;
+                // conjugado para la mitad negativa del espectro real
+                rre[FFT_SIZE-k] = re2; rim[FFT_SIZE-k] = -im2;
+            }
+        }
     }
     (void)headLen; // el camino head existente consume las primeras MAX_IR muestras
     if (!irL || !irR || irLen <= 0) return;
