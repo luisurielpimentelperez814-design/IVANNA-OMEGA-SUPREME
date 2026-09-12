@@ -55,6 +55,28 @@ hacer. El max_block_ms=0.64 de la corrida 15 s es el clásico pico de scheduler
 del primer bloque (warm-up de caché/frecuencia), no de la cadena: p99 está a
 0.075 ms.
 
+### Re-verificación 2026-09-12 (sesión Claude, chat)
+
+Recompilado y re-ejecutado contra el código actual — 4 días y decenas de
+commits después de la entrega original (DSP, HRTF, daemon y UI cambiaron
+de forma sustancial en el intervalo). Sigue compilando y corriendo limpio
+sin tocar el benchmark en sí; números en el mismo rango, sin regresión:
+
+```text
+# ./ivanna_benchmark 48000 256 15
+realtime_cpu_percent=0.7901   (referencia: 0.9858)
+end_to_end_latency_ms=5.375472 (referencia: 5.385909)
+
+# ./ivanna_benchmark 96000 512 15
+realtime_cpu_percent=1.6743   (referencia: 1.9599)
+end_to_end_latency_ms=5.422631
+```
+
+Escalado 48→96 kHz: 2.12x (sano, coherente con la referencia). Puerta de
+75 tests también verde en el mismo checkout. Evidencia de que el
+benchmark no quedó decorativo con el tiempo — sigue midiendo la cadena
+real, no un snapshot congelado.
+
 ## Moto G85 reference values used by the estimator
 
 - Battery size: **5,000 mAh**
