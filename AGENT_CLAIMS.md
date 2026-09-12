@@ -2043,6 +2043,10 @@ autorreparó de verdad.
 **Hallazgo #5 (sana):** persistencia de memoria (`IvannaMemoryArchitecture`)
 — `init{}` sí llama `loadFromDisk()` de verdad (no huérfana). Ya incluye
 fix previo de otra sesión (poda por antigüedad).
+
+**Hallazgo #6 (sana):** `IvannaAgentCore.DecisionAgent.apply()` llega a DSP
+real por dos rutas — `OmegaEngineBridge` (daemon/root) y `DSPBridge`
+(in-process/sin root). Diseño correcto para ambos escenarios.
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
