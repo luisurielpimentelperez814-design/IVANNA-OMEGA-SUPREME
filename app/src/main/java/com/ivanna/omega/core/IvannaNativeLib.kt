@@ -241,6 +241,24 @@ object IvannaNativeLib {
     // Implementadas en ivanna_omega_jni.cpp:917-949, símbolo JNI ya apunta a
     // esta clase (Java_com_ivanna_omega_core_IvannaNativeLib_nativeLab*),
     // solo faltaban las declaraciones Kotlin.
+    // ═══ NAEL / ISO 226:2023 — Equal Loudness Compensation ═══════════
+    // Cuando activo, control_apply_frame() suma la corrección por banda
+    // (foldeada a low/mid/high) sobre el ControlFrame antes de publicarlo
+    // al bus seqlock. Sin coste en el hilo de audio: sólo lee output_lufs
+    // ya publicado por g_loudnessMeter.
+    external fun nativeSetNaelEnabled(enabled: Boolean)
+
+    /** FloatArray[10]: corrección en dB por banda ISO 1/1-oct:
+     *  31.5 / 63 / 125 / 250 / 500 / 1k / 2k / 4k / 8k / 16k Hz. */
+    external fun nativeGetNaelCorrections(): FloatArray?
+
+    // ═══ IvannaLab auto-feed (Ruta A, nativeProcess) ═════════════════
+    // Cuando enabled=true, nativeProcess llama g_lab.feed() 1 de cada
+    // 100 bloques con la salida ya procesada. Las funciones nativeLab*
+    // de abajo siguen disponibles para control manual (no se tocan).
+    external fun nativeSetLabAutoEnabled(enabled: Boolean)
+    external fun nativeIsLabAutoEnabled(): Boolean
+
     /** Reinicia el acumulador de medición de IvannaLab. */
     external fun nativeLabReset()
     /** Alimenta [frames] frames estéreo intercalados [L0,R0,L1,R1,...]. */
