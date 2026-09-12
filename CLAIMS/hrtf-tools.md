@@ -173,3 +173,48 @@ herramienta de producción del pipeline batch de los 12 sujetos.
   ignora hooks no ejecutables — el commit 8aa5ba03 pasó sin puerta, con
   advice.ignoredHook). Corregido a 100755 en git (commit 09fc1559, que
   pasó por el hook activo). Un clon fresco ya funciona sin setup manual.
+
+## Ciclo "mantenimiento 2" (2026-09-12) — el driver huérfano de la raíz SÍ era el correcto
+
+Retomado por relevo (el reclamo anterior, iniciado 2026-09-10, llevaba
+27h+ sin commits — evidencia en AGENT_CLAIMS.md). Conecta directamente
+con la nota de arriba ("la divergencia real está en HRTFBinLoader::loadIHR1,
+solo entiende AZEL — nota para su dueño, no lo toco"): esa nota identificó
+el síntoma correcto pero en otro archivo (make_test_ihr1.py); este ciclo
+rastreó el MISMO problema hasta `tools/hrtf/sofa_to_ihr1.py` (el script
+que el flanco llamaba "canónico").
+
+**Hallazgo:** `tools/hrtf/sofa_to_ihr1.py` escribía IHR1 sin el campo de
+elevación y con layout entrelazado (az+L+R por fila) — verificado contra
+`IHR1Header`/`loadIHR1()` reales en `HRTFBinLoader.hpp`/`.cpp` (no contra
+supuestos): el formato real exige layout AGRUPADO (todas las parejas
+[az,el] primero, después todos los [L,R]). Con el bug, `fileSizeMatches()`
+en el loader real habría rechazado como corrupto CUALQUIER archivo que
+este script generara — silenciosamente inutilizable, nunca crash ni dato
+corrupto cargado, solo `load()` devolviendo `false`.
+
+**El dataset ya empaquetado nunca se vio afectado** — verificado byte a
+byte, los 12 `.ihr1` reales en `app/src/main/assets/ivanna_omega/hrtf/`
+coinciden exactos con la fórmula de tamaño de `loadIHR1()`; ese dataset
+sale de `tools/sofa_to_ihr1.py` (raíz — "el huérfano"), que **siempre**
+tuvo el layout correcto. El driver que el flanco trataba como secundario/
+sospechoso era el que estaba bien; el "canónico" era el que tenía el bug.
+
+**Arreglado y verificado de punta a punta** (no solo leído): la elevación
+ya se leía del SOFA para filtrar/deduplicar, solo faltaba escribirse.
+Construido un `.sofa` sintético vía h5py con valores de muestra
+rastreables, corrido el script arreglado, simulada la secuencia de
+lectura EXACTA de `loadIHR1()` en Python (tamaño exacto, cero bytes
+sobrantes, elevación presente y con valores reales, muestras conocidas
+sobreviven el resampleo 44100→48000). Confirmado además de forma
+independiente con `tools/hrtf/verify_dataset.py` (PASS) — y con ese mismo
+verificador contra un dataset real ya empaquetado, como control de
+cordura del propio validador.
+
+**Decisión con evidencia (paso 3 del plan original):** no hacía falta
+shim ni retiro de ninguno de los dos — el driver de la raíz sigue siendo
+el pipeline batch de producción (12 sujetos, índice, hashes, atómico) y
+el de `tools/hrtf/` sigue siendo la herramienta CLI flexible de un solo
+archivo con deduplicación de azimut más sofisticada; ahora ambos escriben
+el mismo formato correcto. Commit del arreglo: ver `git log` sobre
+`tools/hrtf/sofa_to_ihr1.py`, 2026-09-12.
