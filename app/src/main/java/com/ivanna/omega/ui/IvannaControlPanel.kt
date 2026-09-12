@@ -415,6 +415,10 @@ fun IvannaControlPanel(
             evoGeneration = evoGeneration
         )
 
+        // ── NAEL / ISO 226:2023 — Equal Loudness Compensation ─────────
+        SectionLabel("NAEL · EQUAL LOUDNESS ISO 226:2023", AuroraCyan)
+        NaelCard()
+
         SectionLabel("ANTI-DOLBY TinyML & SPSC LOCK-FREE KERNEL", AuroraCyan)
         GlassCard(
             title = "MOTOR ANTI-DOLBY SUPREME (TinyML ConvNeXt)",
@@ -861,6 +865,109 @@ fun IvannaControlPanel(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// NAEL: toggle + mini gráfico de 3 barras (low/mid/high) con la corrección
+// actual en dB. El JNI devuelve FloatArray[10] (bandas ISO 1/1-oct); se
+// pliega a los tres cubos del ControlFrame (mismo folding que en
+// audio_control_plane.cpp: low=bandas 0-3, mid=4-6, high=7-9).
+// ═══════════════════════════════════════════════════════════════════════
+@Composable
+private fun NaelCard() {
+    var enabled by remember { mutableStateOf(false) }
+    var corrections by remember { mutableStateOf(FloatArray(10)) }
+
+    LaunchedEffect(enabled) {
+        while (isActive && enabled) {
+            val snap = withContext(Dispatchers.Default) {
+                runCatching {
+                    IvannaNativeLib.nativeGetNaelCorrections()
+                }.getOrNull() ?: FloatArray(10)
+            }
+            corrections = snap
+            kotlinx.coroutines.delay(400)
+        }
+    }
+
+    GlassCard(
+        title = "NAEL · ISO 226:2023",
+        accent = AuroraCyan,
+        subtitle = if (enabled)
+            "Compensación de loudness activa · timbre constante por volumen"
+        else
+            "Curva de igual sonoridad · corrige graves/agudos a bajo volumen",
+        rightSlot = {
+            ToggleSwitch(enabled, { on ->
+                enabled = on
+                runCatching { IvannaNativeLib.nativeSetNaelEnabled(on) }
+                    .onFailure { Log.w("IvannaControlPanel", "NAEL toggle falla: ${it.message}") }
+            }, AuroraCyan)
+        }
+    ) {
+        if (enabled) {
+            // Pliega bandas ISO 10 -> 3 buckets (mismo folding que C++):
+            // low=0..3 (31-250 Hz), mid=4..6 (500-2k Hz), high=7..9 (4-16k Hz).
+            val lowAdd  = if (corrections.size >= 4)
+                (corrections[0] + corrections[1] + corrections[2] + corrections[3]) * 0.25f else 0f
+            val midAdd  = if (corrections.size >= 7)
+                (corrections[4] + corrections[5] + corrections[6]) / 3f else 0f
+            val highAdd = if (corrections.size >= 10)
+                (corrections[7] + corrections[8] + corrections[9]) / 3f else 0f
+
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                NaelBar("LOW",  lowAdd,  AuroraCyan,    Modifier.weight(1f))
+                NaelBar("MID",  midAdd,  PhosphorGreen, Modifier.weight(1f))
+                NaelBar("HIGH", highAdd, NeonMagenta,   Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Rango: ±8 dB por banda · EMA τ=500ms · LUFS integrado BS.1770-4",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
+        } else {
+            Text(
+                "Activa para mantener el timbre constante entre volumen bajo y " +
+                "referencia de mastering (83 phon). Usa el LUFS integrado real " +
+                "del pipeline — sin latencia extra en el hilo de audio.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun NaelBar(label: String, db: Float, accent: Color, modifier: Modifier = Modifier) {
+    // Escalar |db| a altura 0..40dp (rango total ±8dB → 8dB = 40dp).
+    val magnitude = kotlin.math.abs(db).coerceAtMost(8f)
+    val heightDp  = (magnitude / 8f * 40f).coerceAtLeast(2f)
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        Text(
+            "%+.1f dB".format(db),
+            style = MaterialTheme.typography.labelSmall,
+            color = accent
+        )
+        Spacer(Modifier.height(2.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(heightDp.dp)
+                .background(accent.copy(alpha = 0.75f), RoundedCornerShape(3.dp))
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
 }
 
