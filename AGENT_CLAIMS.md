@@ -1768,6 +1768,18 @@ cambió; el bridge recalibró su escala interna).
 ### IvannaLab — laboratorio de medicion de calidad de audio
 **Sesion Genspark, 2026-09-08.** ENTREGADO PARCIAL: fixes reales en ivannalab.cpp (compilacion verificada, puerta 67/67); test_ivannalab.cpp CORREGIDO y guardado pero SIN enganchar (requiere coordinar con flanco Tests host para enlazar ivannalab.cpp al target). Coordinacion necesaria para cerrar 100%.
 
+**ACTUALIZACIÓN 2026-09-12 (sesión Claude, chat) — estado obsoleto, corregido.**
+La entrada de arriba seguía diciendo "SIN enganchar" pero el flanco Tests
+host ya lo hizo — verificado en el código real, no asumido:
+`app/src/main/cpp/tests/CMakeLists.txt:38` incluye `ivannalab/ivannalab.cpp`
+en `ivanna_dsp_under_test`, y `:333` tiene `ivanna_add_test(test_ivannalab)`.
+Corrí `scripts/run_ctest.sh` dos veces: los 7 tests `IvannaLab.*`
+(PeakAndTruePeak, ThdWithKnownHarmonics, ImdSMPTE, SnrWithRealNoiseFloor,
+IntegratedLufsSingleLevel, LraDynamicRange, EmptyState) están dentro de
+la puerta y **los 7 en PASS**, como parte del 75/75 verde de la suite
+completa. **Cerrado al 100% — no era necesaria coordinación adicional,
+solo actualizar esta entrada.**
+
 
 ---
 
