@@ -25,10 +25,20 @@ import com.ivanna.omega.assistant.IvannaIntentMapper
  * Seguridad: todas las llamadas envueltas en runCatching; ante cualquier
  * fallo devuelve una respuesta honesta en vez de silencio o crash.
  */
-class IvannaDSPOrchestrator(private val context: Context) {
+class IvannaDSPOrchestrator(
+    private val context: Context,
+    // FIX (dos instancias de VoiceController/YamnetClassifier viviendo a
+    // la vez): antes este orquestador creaba su propia instancia
+    // (VoiceController(appContext)), separada de la que IvannaAssistant
+    // ya tiene — dos modelos TFLite cargados simultáneamente en memoria,
+    // desperdicio real de recursos y riesgo de inconsistencia de estado
+    // entre ambas instancias. Se recibe la instancia compartida; el
+    // default construye una propia solo para no romper callers existentes
+    // que no la pasen explícitamente (tests, código legacy).
+    private val voiceController: VoiceController = VoiceController(context.applicationContext)
+) {
 
     private val appContext = context.applicationContext
-    private val voiceController = VoiceController(appContext)
 
     companion object { private const val TAG = "IvannaDSPOrchestrator" }
 

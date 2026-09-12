@@ -63,7 +63,7 @@ class IvannaAssistant(
     private val voiceController: VoiceController = VoiceController(appContext)
 
     // ── Nuevas capas de inteligencia acústica (FASE 1-5) ─────────────────────
-    private val dspOrchestrator = IvannaDSPOrchestrator(appContext)
+    private val dspOrchestrator = IvannaDSPOrchestrator(appContext, voiceController)
 
     // Vigilante de estado de voz para reflejar SPEAKING en la UI.
     private var voiceWatchStarted = false
