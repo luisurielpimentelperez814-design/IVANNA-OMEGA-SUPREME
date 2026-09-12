@@ -24,6 +24,22 @@ Notas de correccion (auditoria 2026-08-01), ambas con impacto audible:
    elevaciones diferentes dentro de poco mas de un grado, lo que produce
    filtrado en peine e imagen inestable al girar la cabeza. Se conserva,
    por cada azimut, la medida con |elevacion| minima.
+
+3. FORMATO BINARIO CORREGIDO (auditoria 2026-09-12, flanco "HRTF tools
+   mantenimiento ciclo 2"). Este script escribia el .ihr1 SIN el campo de
+   elevacion y con layout entrelazado (az+L+R por fila) — incompatible con
+   el struct real IHR1Header + loadIHR1() en HRTFBinLoader.cpp/.hpp, que
+   exige layout AGRUPADO: todas las parejas [az,el] primero, despues todos
+   los [L,R]. Verificado contra el codigo C++ real, no contra supuestos.
+   Con el formato viejo, fileSizeMatches() en el loader habria rechazado
+   CUALQUIER archivo generado por este script como corrupto (faltaban 4
+   bytes de elevacion por posicion). Nunca llego a afectar al dataset ya
+   empaquetado del producto: ese sale de tools/sofa_to_ihr1.py (raiz), que
+   siempre escribio el layout correcto — verificado byte a byte contra los
+   12 .ihr1 reales en app/src/main/assets/ivanna_omega/hrtf/. Arreglado y
+   verificado de punta a punta con un .sofa sintetico (elevacion presente,
+   tamano exacto, cero bytes sobrantes al simular la lectura real de
+   loadIHR1(), valores de muestra rastreables sobreviven el resampleo).
 """
 import argparse, struct, sys
 import numpy as np
@@ -129,6 +145,7 @@ def main():
     rows = []
     for k, i in enumerate(idx):
         az = float(az_all[i])
+        el = float(el_all[i])
         if args.flip_azimuth:
             az = -az
         # SOFA: azimut positivo = izquierda; convolver: positivo = derecha
@@ -140,7 +157,7 @@ def main():
         n = min(args.ir_len, ir_sel.shape[2])
         hrL[:n] = ir_sel[k, 0, :n]
         hrR[:n] = ir_sel[k, 1, :n]
-        rows.append((az, hrL, hrR))
+        rows.append((az, el, hrL, hrR))
 
     rows.sort(key=lambda r: r[0])
 
@@ -153,13 +170,27 @@ def main():
     if args.ir_len > 8192:
         sys.exit("--ir-len supera el limite de 8192 del cargador.")
 
+    # FIX (formato real verificado contra HRTFBinLoader.hpp/.cpp — auditoria
+    # 2026-09-12): esta escritura llevaba desde su creacion sin el campo de
+    # elevacion y con layout entrelazado (az+L+R por fila). El struct real
+    # IHR1Header + loadIHR1() (unica fuente de verdad: el propio C++, no
+    # supuestos) exige LAYOUT AGRUPADO: TODAS las parejas [az,el] primero,
+    # DESPUES todos los [L,R]; tamano esperado = 16 + numPos*(8+2*irLen*4).
+    # Con el formato viejo ese tamano no cuadraba nunca (faltaban 4 bytes de
+    # elevacion por posicion) -> fileSizeMatches() en el loader lo habria
+    # rechazado siempre como corrupto. Nunca llego a afectar al dataset ya
+    # empaquetado del producto (ese sale de tools/sofa_to_ihr1.py en la raiz,
+    # que ya escribia el layout correcto — verificado byte a byte contra los
+    # 12 .ihr1 reales en app/src/main/assets/ivanna_omega/hrtf/); afectaba a
+    # cualquiera que usara ESTE script para generar un dataset nuevo.
     with open(args.out, "wb") as f:
         f.write(b"IHR1")
         f.write(struct.pack("<i", len(rows)))
         f.write(struct.pack("<i", args.ir_len))
         f.write(struct.pack("<i", out_sr))
-        for az, hrL, hrR in rows:
-            f.write(struct.pack("<f", az))
+        for az, el, hrL, hrR in rows:
+            f.write(struct.pack("<ff", az, el))
+        for az, el, hrL, hrR in rows:
             f.write(hrL.astype("<f4").tobytes())
             f.write(hrR.astype("<f4").tobytes())
     azs = [r[0] for r in rows]
