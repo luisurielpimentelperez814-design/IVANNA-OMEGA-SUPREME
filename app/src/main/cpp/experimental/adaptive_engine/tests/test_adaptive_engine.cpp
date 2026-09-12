@@ -316,6 +316,7 @@ void testMultiProducerBusConcurrentStress() {
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> publishesA{0}, publishesB{0};
     std::atomic<bool> corruption{false};
+    std::atomic<int> reads_{0};
 
     std::thread producerA([&]() {
         float v = 0.0f;
@@ -343,11 +344,30 @@ void testMultiProducerBusConcurrentStress() {
         }
     });
 
+    // FIX (livelock real — encontrado corriendo esta suite bajo ASan de
+    // verdad, no leyendo código; reproducido: bajo -fsanitize=address,undefined
+    // el proceso no terminó, hubo que matarlo). Diseño anterior: el hilo
+    // PRINCIPAL dormía 200ms fijos y cortaba stop=true sin importar cuánto
+    // hubiera leído el consumidor; si productorA/B se ralentizaban lo
+    // suficiente bajo instrumentación pesada, el consumidor podía quedar a
+    // 1 lectura de las 10 requeridas justo cuando stop=true apagaba a
+    // ambos productores — sin productores vivos, consumeIfNewer() nunca
+    // vuelve a ver dato nuevo, y 'while(reads<10)' queda atrapado para
+    // siempre (confirmado con una corrida real: publishesA=1670559
+    // publishesB=1658684 reads=9 — a UNA lectura de distancia).
+    //
+    // Ahora el CONSUMIDOR decide cuándo parar (10 lecturas alcanzadas, la
+    // condición que de verdad importa) — y es él quien apaga a los
+    // productores, no un cronómetro externo ajeno a su progreso real. Una
+    // cota de seguridad (5s) evita que esto sea un hang genuino si el
+    // entorno es tan lento que ni así se alcanzan las 10 lecturas: en ese
+    // caso el test termina rápido con una falla clara, nunca colgado.
     std::thread consumer([&]() {
         RawAudioMetrics out{};
         uint64_t lastSeen = 0;
         int reads = 0;
-        while (!stop.load(std::memory_order_relaxed) || reads < 10) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (reads < 10 && std::chrono::steady_clock::now() < deadline) {
             if (bus.consumeIfNewer(out, lastSeen)) {
                 ++reads;
                 if (!std::isfinite(out.rms) || !std::isfinite(out.peak)) {
@@ -363,19 +383,28 @@ void testMultiProducerBusConcurrentStress() {
                 }
             }
         }
+        reads_.store(reads, std::memory_order_relaxed);
+        stop.store(true, std::memory_order_relaxed);  // el consumidor apaga a los productores
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    stop.store(true, std::memory_order_relaxed);
+    consumer.join();      // el consumidor termina solo (10 lecturas o deadline) y ya puso stop=true
     producerA.join();
     producerB.join();
-    consumer.join();
 
-    std::printf("  publishesA=%llu publishesB=%llu\n",
-                (unsigned long long)publishesA.load(), (unsigned long long)publishesB.load());
+    std::printf("  publishesA=%llu publishesB=%llu reads=%d\n",
+                (unsigned long long)publishesA.load(), (unsigned long long)publishesB.load(),
+                reads_.load());
 
     expect(publishesA.load() > 1000, "stress: RouteA publicó un volumen real de datos (>1000)");
     expect(publishesB.load() > 1000, "stress: RouteB publicó un volumen real de datos (>1000)");
+    // FIX: antes no existía este chequeo — un deadline expirado sin
+    // llegar a 10 lecturas habría pasado en silencio (el bucle
+    // simplemente termina, ninguna otra expect() lo habría notado).
+    // Ahora un timeout real se ve como una falla clara y explicada, no
+    // como un cuelgue sin diagnóstico ni como un PASS silencioso.
+    expect(reads_.load() >= 10,
+           "stress: consumidor alcanzó >=10 lecturas nuevas antes del deadline de 5s "
+           "(si falla: entorno demasiado lento, ver comentario del deadline)");
     expect(!corruption.load(),
            "stress: NUNCA se leyó una combinación inválida/torn tras 200ms de escritura concurrente real");
 }
