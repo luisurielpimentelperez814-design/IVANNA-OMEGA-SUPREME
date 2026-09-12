@@ -25,6 +25,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -101,6 +103,27 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     }
 
     enum class State { IDLE, PLAYING, PAUSED, STOPPED, ERROR }
+
+    // ── Estado explícito del ciclo de vida de MediaCodec / AudioTrack ──
+    // Independiente de State (estado lógico hacia la UI). CodecState
+    // refleja qué llamadas son LEGALES sobre los recursos nativos:
+    //   IDLE      → no hay recursos asignados
+    //   CONFIGURED→ codec.configure() ok, aún sin start()
+    //   RUNNING   → codec.start() + track.play() en curso
+    //   STOPPED   → codec ya arrancó y ahora está detenido
+    // codec.stop() sólo se invoca desde RUNNING; codec.start() sólo desde
+    // CONFIGURED/STOPPED. Toda transición va bajo codecMutex — elimina el
+    // IllegalStateException clásico al llamar play()/stop() repetido o
+    // fuera de estado válido.
+    private enum class CodecState { IDLE, CONFIGURED, RUNNING, STOPPED }
+
+    @Volatile
+    private var codecState: CodecState = CodecState.IDLE
+
+    // Serializa todas las transiciones de codecState: play()/stop()/
+    // release() concurrentes no pueden solapar un codec.start() con un
+    // codec.stop()/release() de otro hilo.
+    private val codecMutex = Mutex()
 
     @Volatile var state: State = State.IDLE
         private set
@@ -296,13 +319,25 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
     fun pause() {
         pauseRequested = true
-        runCatching { audioTrack?.pause() }
+        runCatching {
+            audioTrack?.let {
+                Log.v(TAG, "pause() prev codecState=$codecState")
+                if (codecState == CodecState.RUNNING) it.pause()
+                else Log.w(TAG, "pause() skip: codecState=$codecState")
+            }
+        }.onFailure { Log.w(TAG, "pause() falló (prev=$codecState): ${it.message}") }
         state = State.PAUSED
     }
 
     fun resume() {
         pauseRequested = false
-        runCatching { audioTrack?.play() }
+        runCatching {
+            audioTrack?.let {
+                Log.v(TAG, "resume() prev codecState=$codecState")
+                if (codecState == CodecState.RUNNING) it.play()
+                else Log.w(TAG, "resume() skip: codecState=$codecState")
+            }
+        }.onFailure { Log.w(TAG, "resume() falló (prev=$codecState): ${it.message}") }
         state = State.PLAYING
     }
 
@@ -321,12 +356,19 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         seekTargetUs = clamped * 1_000L
     }
 
+    /**
+     * stop() idempotente: sólo actúa sobre track si el estado previo lo
+     * permite. El cierre real se serializa en codecMutex para que nunca
+     * se solape con un codec.start() en curso dentro de runDecodeLoop.
+     */
     fun stop() {
         stopRequested = true
         pauseRequested = false
         job?.cancel()
         job = null
-        releaseTrack()
+        scope.launch {
+            codecMutex.withLock { releaseTrackLocked() }
+        }
         focusManager.abandonAudioFocus() // FIX: libera el foco al parar de verdad
         state = State.STOPPED
     }
@@ -387,14 +429,42 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
     private fun isPlaying(): Boolean = state == State.PLAYING
 
-    private fun releaseTrack() {
+    /**
+     * Cierre de AudioTrack con conocimiento de estado. DEBE llamarse con
+     * codecMutex ya tomado (sufijo "Locked"). Sólo ejecuta las llamadas
+     * legales para el estado previo:
+     *   RUNNING            → pause + flush + stop + release
+     *   STOPPED/CONFIGURED → sólo release
+     *   IDLE               → no-op
+     */
+    private fun releaseTrackLocked() {
         // FIX: ya no se abre sesión de efectos stock para el propio track
         // (ver comentario en runDecodeLoop) — no hay nada que cerrar aquí.
-        try { audioTrack?.pause() } catch (_: Throwable) {}
-        try { audioTrack?.flush() } catch (_: Throwable) {}
-        try { audioTrack?.stop() } catch (_: Throwable) {}
-        try { audioTrack?.release() } catch (_: Throwable) {}
+        val prev = codecState
+        when (prev) {
+            CodecState.RUNNING -> {
+                runCatching { audioTrack?.pause() }.onFailure {
+                    Log.w(TAG, "releaseTrack pause (from $prev): ${it.message}")
+                }
+                runCatching { audioTrack?.flush() }.onFailure {
+                    Log.w(TAG, "releaseTrack flush (from $prev): ${it.message}")
+                }
+                runCatching { audioTrack?.stop() }.onFailure {
+                    Log.w(TAG, "releaseTrack stop (from $prev): ${it.message}")
+                }
+                runCatching { audioTrack?.release() }.onFailure {
+                    Log.w(TAG, "releaseTrack release (from $prev): ${it.message}")
+                }
+            }
+            CodecState.STOPPED, CodecState.CONFIGURED -> {
+                runCatching { audioTrack?.release() }.onFailure {
+                    Log.w(TAG, "releaseTrack release (from $prev): ${it.message}")
+                }
+            }
+            CodecState.IDLE -> { /* nada que cerrar */ }
+        }
         audioTrack = null
+        codecState = CodecState.IDLE
     }
 
     private suspend fun runDecodeLoop(uri: Uri) = withContext(Dispatchers.Default) {
@@ -486,9 +556,35 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             audioTrack = track
 
             codec = MediaCodec.createDecoderByType(mime)
-            codec.configure(format, null, null, 0)
-            codec.start()
-            track.play()
+            // Configuración + arranque bajo codecMutex: ningún stop()/
+            // release() concurrente puede cerrar el track mientras
+            // configure()/start() están en curso (IllegalStateException).
+            codecMutex.withLock {
+                if (codecState != CodecState.IDLE) {
+                    Log.w(TAG, "runDecodeLoop con codecState=$codecState — cerrando antes de recrear")
+                    releaseTrackLocked()
+                    // audioTrack quedó en null; volver a enlazar el de esta sesión
+                    audioTrack = track
+                }
+                runCatching { codec.configure(format, null, null, 0) }
+                    .onFailure {
+                        Log.e(TAG, "codec.configure falló (prev codecState=$codecState): ${it.message}")
+                        releaseTrackLocked()
+                        state = State.ERROR
+                        return@withContext
+                    }
+                codecState = CodecState.CONFIGURED
+                runCatching {
+                    codec.start()
+                    track.play()
+                }.onFailure {
+                    Log.e(TAG, "codec.start/track.play falló (prev codecState=CONFIGURED): ${it.message}")
+                    releaseTrackLocked()
+                    state = State.ERROR
+                    return@withContext
+                }
+                codecState = CodecState.RUNNING
+            }
             state = State.PLAYING
 
             val bufferInfo = MediaCodec.BufferInfo()
@@ -510,7 +606,13 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                     seekTargetUs = -1L
                     sawInputEOS = false
                     extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                    codec.flush()
+                    // codec.flush() sólo es legal en estado Executing (nuestro
+                    // RUNNING). Guard + log del estado previo — sin guard,
+                    // flush en estado inválido lanza IllegalStateException.
+                    runCatching {
+                        if (codecState == CodecState.RUNNING) codec.flush()
+                        else Log.w(TAG, "flush skip: codecState=$codecState")
+                    }.onFailure { Log.w(TAG, "codec.flush (prev=$codecState): ${it.message}") }
                     if (npeKotlinEnabled) npeKotlin.reset()
                 }
 
@@ -632,10 +734,27 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             Log.e(TAG, "Error en decode loop", t)
             state = State.ERROR
         } finally {
-            try { codec?.stop() } catch (_: Throwable) {}
-            try { codec?.release() } catch (_: Throwable) {}
+            // Cierre SIEMPRE bajo mutex y sólo si el estado lo permite:
+            // codec.stop() es ilegal fuera de Executing → nuestro RUNNING.
+            codecMutex.withLock {
+                val prev = codecState
+                codec?.let { c ->
+                    when (prev) {
+                        CodecState.RUNNING -> {
+                            runCatching { c.stop() }.onFailure {
+                                Log.w(TAG, "codec.stop (from $prev): ${it.message}")
+                            }
+                            codecState = CodecState.STOPPED
+                        }
+                        else -> Log.v(TAG, "codec.stop skip: prev=$prev")
+                    }
+                    runCatching { c.release() }.onFailure {
+                        Log.w(TAG, "codec.release (from $codecState): ${it.message}")
+                    }
+                }
+                releaseTrackLocked() // deja codecState en IDLE
+            }
             extractor.release()
-            releaseTrack()
         }
     }
 
