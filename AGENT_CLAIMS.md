@@ -1982,6 +1982,10 @@ territorio):** `self_heal_restarts` ya está en el JSON crudo que el panel
 parsear ese campo y mostrarlo (ej. "Auto-reparaciones: N" junto a
 DAEMON/SOCKET), para que el usuario vea por primera vez cuándo IVANNA se
 autorreparó de verdad.
+
+**Hallazgo #5 (sana):** persistencia de memoria (`IvannaMemoryArchitecture`)
+— `init{}` sí llama `loadFromDisk()` de verdad (no huérfana). Ya incluye
+fix previo de otra sesión (poda por antigüedad).
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
