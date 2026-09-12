@@ -210,27 +210,34 @@ class IvannaDSPOrchestrator(
 
         return runCatching {
             val result = when (cmd) {
-                "voice_clarity" -> applyNamedProfile("Vocal Clarity")
-                "cinema_mode" -> applyNamedProfile("Cinematic")
+                // FIX (10o bug de este tipo, ver auditoría completa):
+                // "Vocal Clarity"/"Bass Boost"/"Live Room"/"Electronic"/
+                // "Acoustic"/"Podcast"/"Studio Reference" no existen en
+                // absoluto en IvannaEffectProfile.byName — mapeados al
+                // preset semánticamente más cercano del catálogo real de
+                // 14. "Cinematic"/"Concert Massive"/"Abbey Road" sí tienen
+                // equivalente real, solo con el nombre exacto distinto.
+                "voice_clarity" -> applyNamedProfile("MICRODETALLE")
+                "cinema_mode" -> applyNamedProfile("CINEMATOGRÁFICO")
                 "music_mode" -> applyNamedProfile("IVANNA OMEGA")
-                "concert_mode" -> applyNamedProfile("Concert Massive")
+                "concert_mode" -> applyNamedProfile("CONCIERTO MASIVO")
                 "spatial_mode" -> { voiceController.executeCommand("spatial_mode"); OrchestrationResult(true, "spatial", "Modo espacial activado", "spatial_mode") }
-                "gentle_mode" -> applyNamedProfile("Abbey Road")
+                "gentle_mode" -> applyNamedProfile("ABBEY ROAD")
                 "flat_mode" -> applyNamedProfile("Flat")
                 "volume_up" -> { voiceController.executeCommand("volume_up"); OrchestrationResult(true, "volume", "Volumen aumentado", "volume_up") }
                 "volume_down" -> { voiceController.executeCommand("volume_down"); OrchestrationResult(true, "volume", "Volumen reducido", "volume_down") }
                 "bass_boost" -> { voiceController.executeCommand("bass_boost"); OrchestrationResult(true, "bass", "Graves potenciados", "bass_boost") }
                 "treble_reduce" -> { voiceController.executeCommand("treble_reduce"); OrchestrationResult(true, "treble", "Agudos reducidos", "treble_reduce") }
                 "auto_optimize" -> { voiceController.executeCommand("auto_optimize"); OrchestrationResult(true, "auto", "Audio optimizado automáticamente", "auto_optimize") }
-                "studio_reference" -> applyNamedProfile("Studio Reference")
-                "bass_boost_preset" -> applyNamedProfile("Bass Boost")
-                "vocal_clarity_preset" -> applyNamedProfile("Vocal Clarity")
-                "live_room_preset" -> applyNamedProfile("Live Room")
-                "cinematic_preset" -> applyNamedProfile("Cinematic")
-                "electronic_preset" -> applyNamedProfile("Electronic")
-                "acoustic_preset" -> applyNamedProfile("Acoustic")
+                "studio_reference" -> applyNamedProfile("ESTUDIO PRO")
+                "bass_boost_preset" -> applyNamedProfile("Punch")
+                "vocal_clarity_preset" -> applyNamedProfile("MICRODETALLE")
+                "live_room_preset" -> applyNamedProfile("CONCIERTO MASIVO")
+                "cinematic_preset" -> applyNamedProfile("CINEMATOGRÁFICO")
+                "electronic_preset" -> applyNamedProfile("Spatial")
+                "acoustic_preset" -> applyNamedProfile("ABBEY ROAD")
                 "rock_preset" -> applyNamedProfile("Rock 70s")
-                "podcast_preset" -> applyNamedProfile("Podcast")
+                "podcast_preset" -> applyNamedProfile("MICRODETALLE")
                 else -> {
                     Log.w(TAG, "Comando conocido pero no mapeado: $cmd")
                     OrchestrationResult(false, cmd, "Comando no implementado", "unmapped")
