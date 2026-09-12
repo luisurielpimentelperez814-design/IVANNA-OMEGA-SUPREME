@@ -27,9 +27,16 @@
 #include "audio_control_plane.hpp"
 #include "control_frame.hpp"
 #include "phase_oracle_engine.hpp"
+#include "equal_loudness.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <android/log.h>
+
+// ── FASE 2 (NAEL): flag global de activación del compensador ISO 226:2023.
+// Definido aquí para que el JNI (ivanna_omega_jni.cpp) lo toque desde
+// nativeSetNaelEnabled sin arrastrar el header entero.
+std::atomic<bool> g_nael_enabled{false};
 
 #define ALOG(level, tag, fmt, ...) __android_log_print(level, tag, fmt, ##__VA_ARGS__)
 
@@ -189,6 +196,34 @@ int control_apply_frame() noexcept {
     // NHO harmonic gain
     f.nho_harmonic_gain = std::clamp(nho_harmonic, 0.f, 2.f);
     updates++;
+
+    // ────────────────────────────────────────────────────────────────
+    // FASE 2 (NAEL): compensación ISO 226:2023 sobre f.low/mid/high.
+    // Sólo cuando g_nael_enabled=true. Lee output_lufs del mismo
+    // UnifiedControlFrame — g_loudnessMeter la escribe cada bloque de
+    // audio dentro de nativeProcess (BS.1770-4 K-weighted).
+    // Bucket: bandas 0-3 → low (31-250 Hz), 4-6 → mid (500-2k Hz),
+    // 7-9 → high (4-16k Hz). Media aritmética por bucket → aditivo
+    // sobre los tres shelves del ControlFrame legado.
+    // ────────────────────────────────────────────────────────────────
+    if (g_nael_enabled.load(std::memory_order_relaxed)) {
+        const float lufs = g_control_frame.output_lufs.load(std::memory_order_relaxed);
+        float band_db[ivanna::NAEL_NUM_BANDS];
+        for (int b = 0; b < ivanna::NAEL_NUM_BANDS; ++b) {
+            band_db[b] = ivanna::iso226_correction_db(b, lufs, 50.f);
+        }
+        const float low_add  = (band_db[0] + band_db[1] + band_db[2] + band_db[3]) * 0.25f;
+        const float mid_add  = (band_db[4] + band_db[5] + band_db[6]) * (1.f / 3.f);
+        const float high_add = (band_db[7] + band_db[8] + band_db[9]) * (1.f / 3.f);
+        f.low  = std::clamp(f.low  + low_add,  -18.f, 18.f);
+        f.mid  = std::clamp(f.mid  + mid_add,  -18.f, 18.f);
+        f.high = std::clamp(f.high + high_add, -18.f, 18.f);
+        updates += 3;
+
+        ALOG(ANDROID_LOG_VERBOSE, TAG,
+             "NAEL: lufs=%.1f corr(low=%.2f mid=%.2f high=%.2f)",
+             lufs, low_add, mid_add, high_add);
+    }
 
     // ────────────────────────────────────────────────────────────────
     // 3b. Evolutionary genome mapping (real-time, si está activo)

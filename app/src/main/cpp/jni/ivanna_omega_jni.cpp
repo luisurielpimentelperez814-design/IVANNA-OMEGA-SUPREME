@@ -34,6 +34,7 @@
 #include "../control_frame.hpp"
 #include "../include/dc_blocker.hpp"
 #include "../audio_control_plane.hpp"
+#include "../equal_loudness.hpp"
 #include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "../perceptual_loudness.hpp"
 #include "../ivannalab/ivannalab.h"
@@ -99,6 +100,15 @@ static OmegaPerceptualGuard g_perceptualGuard;
 // IvannaLab — instancia única, alimentada bajo demanda desde nativeLabFeed().
 // No vive en el hot-path de audio de ninguna ruta.
 static ivanna::IvannaLab g_lab(96000, 4096);
+
+// FASE 2 (NAEL): flag global — definición en audio_control_plane.cpp.
+extern std::atomic<bool> g_nael_enabled;
+
+// FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
+// real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
+// bloques — contador thread_local en la función, sin golpear atomic por bloque.
+static std::atomic<bool> g_lab_auto_enabled{false};
+static std::atomic<int>  g_lab_auto_frame_count{0};
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
@@ -1370,6 +1380,32 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // g_ats.nanRecoveries es diagnóstico: en operación normal debe quedarse
     // en 0; si sube de verdad, hay una etapa divergiendo y hace falta
     // investigarla en su origen, no acá — esto es la red, no el arreglo.
+    // ═══════════════════════════════════════════════════════════
+    // FASE 3 (IvannaLab auto-feed) — g_ats.pdOutL/pdOutR es la salida
+    // final post-procesada (post-DSP, post-PDEngine, post-limiter).
+    // Throttle: 1 de cada 100 bloques → a 96 kHz / n≈1024 eso son ~1 s
+    // entre feeds, suficiente para measure() con datos reales sin
+    // saturar FFT/K-weighting. Contador thread_local para no golpear
+    // atomic en cada bloque; el atomic global sólo es el gate ON/OFF.
+    // Sin malloc en RT: buffer estático thread_local de 2*2048 floats.
+    // ═══════════════════════════════════════════════════════════
+    if (g_lab_auto_enabled.load(std::memory_order_relaxed)) {
+        static thread_local int s_labFeedCounter = 0;
+        if ((++s_labFeedCounter % 100) == 0) {
+            static thread_local float labInter[2 * 2048];
+            for (int i = 0; i < n; ++i) {
+                float l = g_ats.pdOutL[i];
+                float r = g_ats.pdOutR[i];
+                if (!std::isfinite(l)) l = 0.f;
+                if (!std::isfinite(r)) r = 0.f;
+                labInter[2 * i]     = l;
+                labInter[2 * i + 1] = r;
+            }
+            g_lab.feed(labInter, n);
+            g_lab_auto_frame_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
         float l = g_ats.pdOutL[i];
@@ -1619,6 +1655,52 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabMeasure(JNIEnv* env, jobject
 JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeLabReport(JNIEnv* env, jobject) {
     return env->NewStringUTF(g_lab.generateReport().c_str());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 2 (NAEL / ISO 226:2023) — puente JNI
+//   nativeSetNaelEnabled(boolean) : activa/desactiva compensación.
+//   nativeGetNaelCorrections()    : FloatArray[10], dB por banda ISO
+//                                   (31.5/63/125/250/500/1k/2k/4k/8k/16k).
+// ═══════════════════════════════════════════════════════════════════════════
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNaelEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_nael_enabled.store(on, std::memory_order_relaxed);
+    if (!on) ivanna::iso226_reset();
+    LOGI("NAEL (ISO 226:2023) %s", on ? "ENABLED" : "disabled");
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetNaelCorrections(
+    JNIEnv* env, jobject) {
+    jfloatArray out = env->NewFloatArray(ivanna::NAEL_NUM_BANDS);
+    if (!out) return nullptr;
+    jfloat vals[ivanna::NAEL_NUM_BANDS];
+    for (int b = 0; b < ivanna::NAEL_NUM_BANDS; ++b) {
+        vals[b] = ivanna::iso226_get_smoothed(b);
+    }
+    env->SetFloatArrayRegion(out, 0, ivanna::NAEL_NUM_BANDS, vals);
+    return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 3 (IvannaLab auto-feed) — activa medición automática desde la UI.
+// ═══════════════════════════════════════════════════════════════════════════
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLabAutoEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_lab_auto_enabled.store(on, std::memory_order_relaxed);
+    if (on) g_lab_auto_frame_count.store(0, std::memory_order_relaxed);
+    LOGI("IvannaLab auto-feed %s", on ? "ENABLED" : "disabled");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsLabAutoEnabled(
+    JNIEnv*, jobject) {
+    return g_lab_auto_enabled.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
