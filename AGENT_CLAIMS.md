@@ -1342,6 +1342,24 @@ con evidencia.
 EXCLUSIVO, ahora bajo esta sesión. No lo toquen; elijan cualquier otro
 flanco libre de la lista.
 
+**CIERRE DE CICLO 2026-09-12 (sesión Claude, chat).** El hallazgo invirtió
+la premisa del plan original. Detalle completo, con verificación de punta
+a punta, en [CLAIMS/hrtf-tools.md](CLAIMS/hrtf-tools.md#ciclo-mantenimiento-2-2026-09-12--el-driver-huérfano-de-la-raíz-sí-era-el-correcto).
+Resumen: `tools/hrtf/sofa_to_ihr1.py` (el que este flanco llamaba
+"canónico") escribía `.ihr1` sin campo de elevación — verificado contra
+`IHR1Header`/`loadIHR1()` reales, cualquier archivo suyo habría sido
+rechazado por el loader como corrupto. El driver huérfano de la raíz
+(`tools/sofa_to_ihr1.py`) siempre tuvo el formato correcto — confirmado
+byte a byte contra los 12 `.ihr1` ya empaquetados en el producto. Arreglado
+el canónico (la elevación ya se leía, solo faltaba escribirse) y verificado
+con un `.sofa` sintético + simulación exacta de `loadIHR1()` + el
+validador propio del proyecto (`verify_dataset.py`, PASS independiente).
+Ninguno de los dos scripts necesitaba shim ni retiro — ahora ambos
+escriben el mismo formato correcto y sirven propósitos distintos y
+legítimos (CLI flexible de un archivo vs. pipeline batch de producción).
+
+Flanco queda LIBRE de nuevo.
+
 ---
 
 ### Tests host nativos (CTest) — calidad de pruebas
