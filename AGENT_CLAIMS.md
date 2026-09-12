@@ -1215,6 +1215,16 @@ corrida de referencia REPRODUCIBLE. Puerta intacta 74/74; CI verde
 reproducible por primera vez. Pendiente solo el protocolo on-device Moto G85
 (requiere hardware — documentado en docs/BENCHMARKS.md). Si lo tomas,
 actualiza esta entrada.
+
+**RETOMADO 2026-09-12 (sesión Claude, chat).** Autónomo (autorización
+previa del propietario). Mucho ha cambiado en el DSP desde el 2026-09-08
+de esta entrega — plan: compilar y CORRER de verdad `ivanna_benchmark`
+contra el código actual (no asumir que sigue compilando/vigente), y
+comparar contra las cifras de referencia documentadas en BENCHMARKS.md.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
+EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
+elijan cualquier otro flanco libre de la lista.
 ---
 
 ### Pipeline de herramientas HRTF (tools/sofa_convert.py + tools/hrtf/ + tools/hpir/)
