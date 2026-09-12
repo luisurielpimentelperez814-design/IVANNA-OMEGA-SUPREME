@@ -310,6 +310,43 @@ class IvannaAssistant(
                     IvannaConversationalCore.recordTurn(text, "JOKE", null, joke)
                     joke
                 }
+                IvannaLanguageCore.AcousticIntent.OPTIMIZE -> {
+                    // FIX (mismo tipo de hallazgo que DIAGNOSE, ver arriba):
+                    // OPTIMIZE se detectaba correctamente por el clasificador
+                    // pero sin manejo real en el flujo conversacional directo
+                    // por voz — AgentApi.requestOptimization() ya existe y
+                    // es funcional.
+                    val j = runCatching { com.ivanna.omega.agent.AgentApi.requestOptimization() }.getOrNull()
+                    val reply = when {
+                        j == null -> "No pude aplicar la optimización ahora mismo."
+                        j.optString("action") == "none" -> "El sistema ya está sano; no hizo falta corregir nada."
+                        j.optBoolean("ok") -> "He aplicado una optimización: ${j.optString("reason")}."
+                        else -> "No pude aplicar la optimización ahora mismo."
+                    }
+                    IvannaConversationalCore.recordTurn(text, "OPTIMIZE", null, reply)
+                    reply
+                }
+                IvannaLanguageCore.AcousticIntent.DIAGNOSE -> {
+                    // FIX (autodiagnóstico real, no texto genérico): antes
+                    // caía al flujo estándar sin ejecutar ningún diagnóstico
+                    // — AgentApi.diagnose() ya existe, real y funcional
+                    // (delega a IvannaAgentCore.HealthMonitoringAgent.check(),
+                    // confirmado en esta misma auditoría), pero nunca se
+                    // consultaba desde la conversación por voz.
+                    val j = runCatching { com.ivanna.omega.agent.AgentApi.diagnose() }.getOrNull()
+                    val reply = if (j != null && j.optBoolean("ok")) {
+                        if (j.optBoolean("healthy")) {
+                            "Todo va bien: el motor está estable y sin problemas."
+                        } else {
+                            val issues = j.optJSONArray("issues")
+                            if (issues != null && issues.length() > 0) {
+                                "Detecté esto: ${issues.getString(0)}."
+                            } else "No pude leer el diagnóstico completo."
+                        }
+                    } else "No pude ejecutar el diagnóstico ahora mismo."
+                    IvannaConversationalCore.recordTurn(text, "DIAGNOSE", null, reply)
+                    reply
+                }
                 IvannaLanguageCore.AcousticIntent.GREETING -> {
                     val reply = IvannaSmallTalk.greetingResponse()
                     IvannaConversationalCore.recordTurn(text, "GREETING", null, reply)
