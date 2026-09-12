@@ -79,9 +79,10 @@ class IvannaDSPOrchestrator(
         // 2. Aplicar comando extra si existe (concert_mode, etc.)
         val extraApplied = preset.extraCommand?.let { cmd ->
             runCatching {
-                voiceController.executeCommand(cmd)
-                Log.i(TAG, "Comando extra '$cmd' ejecutado")
-                true
+                val ok = voiceController.executeCommand(cmd)
+                if (ok) Log.i(TAG, "Comando extra '$cmd' ejecutado")
+                else Log.w(TAG, "Comando extra '$cmd' no se ejecutó (ver executeCommand)")
+                ok
             }.getOrElse {
                 Log.w(TAG, "Comando extra '$cmd' falló: ${it.message}")
                 false
@@ -221,14 +222,14 @@ class IvannaDSPOrchestrator(
                 "cinema_mode" -> applyNamedProfile("CINEMATOGRÁFICO")
                 "music_mode" -> applyNamedProfile("IVANNA OMEGA")
                 "concert_mode" -> applyNamedProfile("CONCIERTO MASIVO")
-                "spatial_mode" -> { voiceController.executeCommand("spatial_mode"); OrchestrationResult(true, "spatial", "Modo espacial activado", "spatial_mode") }
+                "spatial_mode" -> { val ok = voiceController.executeCommand("spatial_mode"); OrchestrationResult(ok, "spatial", if (ok) "Modo espacial activado" else "No se pudo activar el modo espacial", "spatial_mode") }
                 "gentle_mode" -> applyNamedProfile("ABBEY ROAD")
                 "flat_mode" -> applyNamedProfile("Flat")
-                "volume_up" -> { voiceController.executeCommand("volume_up"); OrchestrationResult(true, "volume", "Volumen aumentado", "volume_up") }
-                "volume_down" -> { voiceController.executeCommand("volume_down"); OrchestrationResult(true, "volume", "Volumen reducido", "volume_down") }
-                "bass_boost" -> { voiceController.executeCommand("bass_boost"); OrchestrationResult(true, "bass", "Graves potenciados", "bass_boost") }
-                "treble_reduce" -> { voiceController.executeCommand("treble_reduce"); OrchestrationResult(true, "treble", "Agudos reducidos", "treble_reduce") }
-                "auto_optimize" -> { voiceController.executeCommand("auto_optimize"); OrchestrationResult(true, "auto", "Audio optimizado automáticamente", "auto_optimize") }
+                "volume_up" -> { val ok = voiceController.executeCommand("volume_up"); OrchestrationResult(ok, "volume", if (ok) "Volumen aumentado" else "No se pudo subir el volumen", "volume_up") }
+                "volume_down" -> { val ok = voiceController.executeCommand("volume_down"); OrchestrationResult(ok, "volume", if (ok) "Volumen reducido" else "No se pudo bajar el volumen", "volume_down") }
+                "bass_boost" -> { val ok = voiceController.executeCommand("bass_boost"); OrchestrationResult(ok, "bass", if (ok) "Graves potenciados" else "No se pudo potenciar los graves", "bass_boost") }
+                "treble_reduce" -> { val ok = voiceController.executeCommand("treble_reduce"); OrchestrationResult(ok, "treble", if (ok) "Agudos reducidos" else "No se pudo reducir los agudos", "treble_reduce") }
+                "auto_optimize" -> { val ok = voiceController.executeCommand("auto_optimize"); OrchestrationResult(ok, "auto", if (ok) "Audio optimizado automáticamente" else "No se pudo optimizar el audio", "auto_optimize") }
                 "studio_reference" -> applyNamedProfile("ESTUDIO PRO")
                 "bass_boost_preset" -> applyNamedProfile("Punch")
                 "vocal_clarity_preset" -> applyNamedProfile("MICRODETALLE")

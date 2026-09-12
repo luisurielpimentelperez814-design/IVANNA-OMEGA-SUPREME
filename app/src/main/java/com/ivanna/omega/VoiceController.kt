@@ -96,10 +96,25 @@ fun processAudioWithScores(
         return "none"
     }
 
-    fun executeCommand(cmd: String) {
+    /**
+     * Ejecuta un comando de voz/DSP real.
+     *
+     * FIX (bug real de costura, IvannaDSPOrchestrator hardcodeaba
+     * applied=true para spatial_mode/volume_up/volume_down/bass_boost/
+     * treble_reduce/auto_optimize sin leer ningún resultado real —
+     * "graves potenciados" se le decía al usuario incluso cuando el
+     * contexto no era IVANNAApplication y NADA se ejecutaba). Antes esta
+     * función devolvía Unit; ahora Boolean, con false en los dos únicos
+     * caminos donde de verdad no se toca el audio: contexto equivocado
+     * y comando desconocido. Verificado sin otros callers que dependan
+     * de un valor de retorno (IvannaIntentMapper.kt y
+     * PlaybackCaptureService.kt la llaman en posición de sentencia,
+     * ignorando cualquier retorno — Kotlin lo permite sin warning).
+     */
+    fun executeCommand(cmd: String): Boolean {
         val app = context.applicationContext as? IVANNAApplication ?: run {
             Log.w(TAG, "executeCommand($cmd) ignorado: context no es IVANNAApplication")
-            return
+            return false
         }
         when (cmd) {
             "volume_up" -> {
@@ -182,8 +197,12 @@ fun processAudioWithScores(
             "microdetail_mode" -> app.globalEffectManager.applyProfile(IvannaEffectProfile.MICRO_DETAIL)
                                   .also { Log.i(TAG, "Modo MICRODETALLE activado") }
             "none" -> Unit
-            else   -> Log.w(TAG, "Comando desconocido: $cmd")
+            else   -> {
+                Log.w(TAG, "Comando desconocido: $cmd")
+                return false
+            }
         }
+        return true
     }
 
     companion object { private const val TAG = "VoiceController" }
