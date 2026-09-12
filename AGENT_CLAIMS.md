@@ -1225,6 +1225,15 @@ comparar contra las cifras de referencia documentadas en BENCHMARKS.md.
 **MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
 EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
 elijan cualquier otro flanco libre de la lista.
+
+**CIERRE DE CICLO 2026-09-12 (sesión Claude, chat).** Re-verificado por
+ejecución real (compilado + corrido, no solo leído) 4 días y decenas de
+commits después de la entrega original — sigue sano, sin regresión:
+48k/256 CPU 0.79% (ref. 0.99%), e2e 5.375ms (ref. 5.386ms); 96k/512 CPU
+1.67% (ref. 1.96%), escalado 2.12x sano. Puerta 75/75 verde en el mismo
+checkout. Detalle en `docs/BENCHMARKS.md`. Sin cambios: protocolo
+on-device Moto G85 sigue pendiente (requiere hardware que este entorno
+no tiene). Flanco queda LIBRE de nuevo.
 ---
 
 ### Pipeline de herramientas HRTF (tools/sofa_convert.py + tools/hrtf/ + tools/hpir/)
