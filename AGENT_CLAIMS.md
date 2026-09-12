@@ -1448,6 +1448,25 @@ reads, orden de campos, seq impar/par), (2) cero UB en el hilo de control,
 
 **Estado:** trabajando — commits breves individuales, push por ciclo.
 
+**RELEVO 2026-09-12 (sesión Claude, chat).** El reclamo de Genspark
+quedó obsoleto — evidencia: último commit en el alcance
+(`app/src/main/cpp/experimental/adaptive_engine/`) es `f9247416` del
+`2026-09-10 01:59:28 +0000`; el commit más reciente de todo el repo al
+momento de este relevo es `c13f4ddc` del `2026-09-12 15:46:53` — más de
+61h sin actividad en el archivo reclamado, mientras el resto del proyecto
+tuvo actividad constante en esa ventana. Mismo protocolo ya usado en este
+archivo (ver Pipeline de herramientas HRTF, HRTF tools ciclo 2).
+
+El trabajo previo se ve riguroso (UB real detectado y arreglado con
+ThreadSanitizer, documentación corregida con honestidad — ver los
+últimos commits antes del corte). Retomo desde donde quedó: reviso los 5
+criterios de entregado contra el estado actual del código antes de asumir
+qué falta.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco sigue
+EXCLUSIVO, ahora bajo esta sesión. No lo toquen; elijan cualquier otro
+flanco libre de la lista.
+
 ---
 
 ---
