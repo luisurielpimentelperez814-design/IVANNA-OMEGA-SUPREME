@@ -46,6 +46,10 @@ import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.audio.PipelineState
 import com.ivanna.omega.core.IvannaNativeLib
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.log10
@@ -887,7 +891,7 @@ private fun NaelCard() {
                 }.getOrNull() ?: FloatArray(10)
             }
             corrections = snap
-            kotlinx.coroutines.delay(400)
+            delay(400)
         }
     }
 
