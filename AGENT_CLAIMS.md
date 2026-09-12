@@ -1963,6 +1963,25 @@ reales, no asumidas: `IvannaAgentCore` (~1 Hz) → `IvannaAcousticBrain.fuse()`
 `profile`/`memory` antes de hablar. Responde directamente a si IVANNA
 "se auto-ajusta de verdad" sin que el usuario pida nada: para el caso de
 fatiga auditiva, sí — confirmado, no solo bien construido en apariencia.
+
+**Hallazgo #4 (bug real, CORREGIDO — territorio propio del flanco Daemon,
+no de otro):** `IvannaSelfHealingEngine` detecta y corrige fallos reales
+(motor de audio, socket IPC, kernel DSP) — pero `getDiagnosticReport().
+restartCount` solo se escribía a `log_message()` local del daemon, nunca
+al SHM ni al socket. El "auto-repararse" que el usuario pidió
+explícitamente ocurría siendo COMPLETAMENTE INVISIBLE para el producto:
+ninguna pantalla, ningún contador, IVANNA nunca podría mencionarlo aunque
+quisiera. Corregido: nuevo campo `self_heal_restarts` en `OmegaDspState`,
+setter thread-safe en `CommandServer`, expuesto en `GET_STATUS` JSON,
+actualizado desde el loop principal del daemon (commit `ee29940c`).
+`MagiskBridge.kt` (mismo dominio `com.ivanna.omega.magisk`, sin dueño
+declarado) es passthrough puro — el campo ya fluye sin tocar ese archivo.
+**Oportunidad para el flanco UI/Compose (no tocada aquí, no es mi
+territorio):** `self_heal_restarts` ya está en el JSON crudo que el panel
+"OMEGA DAEMON BRIDGE" ya consume (`STATUS`/`GET_STATUS`) — solo falta
+parsear ese campo y mostrarlo (ej. "Auto-reparaciones: N" junto a
+DAEMON/SOCKET), para que el usuario vea por primera vez cuándo IVANNA se
+autorreparó de verdad.
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
