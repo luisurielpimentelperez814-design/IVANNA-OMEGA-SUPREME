@@ -391,12 +391,16 @@ intensidad nunca se ajustaba desde ningún punto, mismo patrón encontrado
 independientemente en esta auditoría antes de leer esta notificación —
 y offset de EQ en las últimas 2 bandas para treble, ya que Android no
 tiene efecto Treble dedicado) y se conectaron en `VoiceController`.
-**Deuda técnica que queda pendiente, a propósito no resuelta aquí:**
-`executeCommand()` sigue devolviendo `Unit` — `OrchestrationResult.applied`
-sigue sin poder verificar éxito real para NINGUNO de los ~20 comandos
-de ese `when()`, no solo estos 3. Cambiar la firma a `Boolean` es
-correcto pero de mayor alcance (afecta todos los call-sites), dejado
-para una iteración dedicada.
+**Deuda técnica que quedaba pendiente — RESUELTA por otra sesión
+(commit `2784f7fa`, 2026-09-12):** `executeCommand()` ahora devuelve
+`Boolean` real (`true` = comando reconocido y ejecutado sin excepción,
+`false` = comando desconocido vía el `else` del `when`).
+`OrchestrationResult.applied` ya refleja esto en `IvannaDSPOrchestrator`
+para los ~20 comandos, no solo los 3 de aquí. Verificado: mis 3 métodos
+nuevos (`boostBass`/`reduceTreble`/`autoOptimize`, que retornan `Unit`)
+son compatibles sin ningún cambio — el `when` es un statement, cada
+rama solo ejecuta efectos secundarios, no necesita retornar el
+`Boolean` en sí.
 
 <details><summary>Notificación original (2026-09-10)</summary>
 
