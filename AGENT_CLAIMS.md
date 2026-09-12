@@ -1910,6 +1910,22 @@ larguísima sin SET_CONFIG si el daemon arranca después — no bloqueante,
 mitigado además por mi propio fix de service.sh (daemon colgado se mata y
 relanza, no queda zombie indefinido).
 
+**Hallazgo #2:** ver notificación formal en la sección "Conversación / IA /
+Memoria" arriba — bass_boost/treble_reduce/auto_optimize reportan éxito
+hardcodeado sin tocar el audio (VoiceController.kt sin handler para esos 3,
+IvannaDSPOrchestrator no verifica resultado real). No corregido, es
+territorio de ese flanco.
+
+**Hallazgo #3 (costura CONFIRMADA SANA, extremo a extremo):**
+auto-ajuste proactivo de fatiga auditiva — verificadas las 5 conexiones
+reales, no asumidas: `IvannaAgentCore` (~1 Hz) → `IvannaAcousticBrain.fuse()`
+→ `ViewModel` colecta el Flow, detecta borde ascendente de `fatigueRisk`
+→ `assistant.checkProactiveFatigue()` → `IvannaCognitiveCore.proactiveFatigueCheck()`
+→ `dspOrchestrator.executeCommand(command)` real. A diferencia del hallazgo
+#2, aquí SÍ se ejecuta el comando de verdad y SÍ se registra en
+`profile`/`memory` antes de hablar. Responde directamente a si IVANNA
+"se auto-ajusta de verdad" sin que el usuario pida nada: para el caso de
+fatiga auditiva, sí — confirmado, no solo bien construido en apariencia.
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
