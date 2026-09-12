@@ -348,6 +348,14 @@ int main(int argc, char* argv[]) {
         if (report.restartCount > 0) {
             log_message("Self-Healing intervention! Total recoveries: " + std::to_string(report.restartCount));
         }
+        // FIX (flanco integración cruzada): antes solo se logueaba local —
+        // nunca llegaba a ningún cliente conectado (la app). Se reporta a
+        // AMBAS instancias de CommandServer (no está claro cuál sirve el
+        // socket real que consume la app hoy, así que se actualizan las dos
+        // por seguridad — costo nulo, un pthread_mutex_lock/unlock más por
+        // segundo).
+        commandServer.reportSelfHealRestarts((uint32_t)report.restartCount);
+        controlServer.reportSelfHealRestarts((uint32_t)report.restartCount);
 
         fd_set readfds; FD_ZERO(&readfds); FD_SET(g_server_fd,&readfds);
         struct timeval tv{1,0};

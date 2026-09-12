@@ -46,6 +46,15 @@ struct OmegaDspState {
     float room_wet;
     float intensity;
     uint64_t last_update;
+    // FIX (flanco integración cruzada, 2026-09-10): IvannaSelfHealingEngine
+    // ya detecta y corrige fallos reales (audio engine, socket IPC, kernel
+    // DSP) en ivanna_daemon.cpp, pero el resultado solo se escribía a
+    // log_message() local del daemon — nunca llegaba a ningún cliente
+    // conectado (la app), así que "auto-repararse" ocurría siendo
+    // completamente invisible para el usuario/producto. Este campo cierra
+    // esa costura: reportSelfHealRestarts() lo actualiza desde el loop
+    // principal, GET_STATUS lo expone real.
+    uint32_t self_heal_restarts = 0;
 };
 
 class CommandServer {
@@ -58,6 +67,13 @@ public:
     void resetState();
     int handleJsonCommand(const char* json, char* reply, int reply_sz);
     int handleTextCommand(const char* text, char* reply, int reply_sz);
+    /** Actualiza el contador de auto-reparaciones para exponerlo en GET_STATUS
+     *  (ver DiagnosticReport::restartCount en IvannaSelfHealingEngine). */
+    void reportSelfHealRestarts(uint32_t n) noexcept {
+        pthread_mutex_lock(&m_mutex);
+        m_state.self_heal_restarts = n;
+        pthread_mutex_unlock(&m_mutex);
+    }
 
 private:
     static uint64_t _nowMs();
