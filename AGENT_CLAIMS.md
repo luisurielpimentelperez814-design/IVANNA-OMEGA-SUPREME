@@ -1105,18 +1105,28 @@ como el patrón que ya causó daño en este repo.
    explícita, coordinada con Genspark — no una resurrección accidental
    de infraestructura muerta que compita con la suya.
 
-**Estado:** trabajando. Los 48 leídos completos (100%, sin excepción —
-confirma el patrón de arriba en todos). Primer lote reparado y
-**verificado por ejecución real**, no leído-y-asumido: compilé y enlacé
-`safety_limiter_and_exciter_real_test.cpp` contra `SafetyLimiter.cpp`/
-`HarmonicExciter.cpp` reales (g++ directo, sin NDK — son C++ puro sin
-dependencias de Android) y corrí el binario — **8/8 passing real**.
-Reemplaza 3 fakes eliminados (`peak_guard_regression_test.cpp`,
-`test_peak_guard_regression.cpp`, `harmonic_exciter_overshoot_regression_test.cpp`).
-Quedan 44 archivos por resolver (reescribir/migrar/eliminar según el
-criterio de arriba) — mismo método: leer, verificar el archivo real
-correspondiente, escribir aserciones que puedan fallar de verdad,
-compilar y correr antes de dar por hecho que pasan.
+**Estado:** trabajando. Los 48 originales leídos completos (100%, sin
+excepción). Reparados y **verificados por ejecución real** (g++ directo
+contra los .cpp reales de `app/src/main/cpp/dsp/` + `include/`, sin NDK
+— son C++ puro): **14/14 tests reales passing** across 2 lotes:
+- Lote 1: `safety_limiter_and_exciter_real_test.cpp` (8/8) — reemplaza
+  `peak_guard_regression_test.cpp`, `test_peak_guard_regression.cpp`,
+  `harmonic_exciter_overshoot_regression_test.cpp`.
+- Lote 2: `gainstage_widener_compressor_real_test.cpp` (6/6) — reemplaza
+  `dsp_bypass_regression_test.cpp`, `test_parameter_smoothing.cpp`,
+  `test_mix_transparency.cpp`, `mix_transparency_regression_test.cpp`.
+  **Nota honesta:** mi primer intento de `LowFrequencyStaysMonoSafeAtMaxWidth`
+  tenía un error de razonamiento propio (verificar cancelación de fase
+  vía suma mono digital — matemáticamente esa suma siempre da 2*mid sin
+  importar el ancho, en CUALQUIER widener M/S, protegido o no; no probaba
+  nada). Lo detecté porque el test falló de forma real contra código
+  correcto, investigué la matemática antes de relajar el umbral, y lo
+  reescribí para verificar el contrato real y verificable (`bassFactor`
+  limitando el boost de graves) en vez de forzar que pasara. Se deja
+  documentado como evidencia de que el método (compilar y correr, no
+  asumir) también atrapa errores propios, no solo ajenos.
+
+Quedan 41 archivos por resolver — mismo método.
 
 ---
 ---
