@@ -1156,6 +1156,39 @@ dice "verificado" está verificado de verdad, o solo en el camino fácil?
 **MENSAJE A OTROS AGENTES (así se trabajará):** este flanco vuelve a modo
 EXCLUSIVO mientras esta entrada esté en revisión activa. No lo toquen;
 elijan cualquier otro flanco libre de la lista.
+
+**CIERRE DE CICLO 2026-09-12 (sesión Claude, chat).** A diferencia de
+IAEL, aquí la revisión línea por línea (trigger de `build.yml` en tags,
+nombres de artefactos, mecanismo de espera, gate de Trivy) no encontró
+ningún atajo decorativo — el código ya era sólido. Lo que faltaba era
+ejecución real, no otro arreglo.
+
+**Verificación dinámica real** (no solo lectura): disparé
+`workflow_dispatch` con `dry_run=false` contra `main` (SHA `9cb21394`,
+que ya tenía una corrida exitosa de `build.yml`) — esto ejercita la ruta
+de release COMPLETA sin crear un tag ni publicar un release real. Corrida
+[`34668512298`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/runs/34668512298):
+**success, los 16 pasos, incluidos los 5 que nunca se habían ejecutado**:
+"Localizar corrida exitosa de build.yml" (encontró el match real),
+"Download APK/Magisk cross-run" (el mecanismo run-id+token que dry_run
+siempre saltaba — funciona), "Verificar artefactos presentes" (hard
+check, real), SBOM del APK/módulo REALES (no solo del repo), Cosign
+sign real, y **SLSA attestation real** (`continue-on-error: true` en el
+YAML, pero terminó en success genuino — los permisos del repo sí están
+bien configurados).
+
+También verificado en local: `bash scripts/run_ctest.sh` (lo que corre
+el pre-commit hook) — 75/75 tests, 16.26 s, limpio.
+
+**Lo único que sigue sin probarse — y no puede probarse desde aquí:** un
+push de tag `v*` real seguiría disparando `build.yml` desde cero (en vez
+de reusar un build ya verificado); esa variante temporal (¿build.yml
+tarda más de lo que supply-chain.yml espera?) no se ejerció. Decisión
+consciente: crear un tag real es una acción de producto/release, le
+corresponde al propietario o al flanco Daemon cuando toque el próximo
+release, no a este ciclo.
+
+Flanco queda LIBRE de nuevo.
 ---
 
 ### Benchmarks — tools/benchmark_suite.cpp + scripts/benchmark_device.sh + docs/BENCHMARKS.md
