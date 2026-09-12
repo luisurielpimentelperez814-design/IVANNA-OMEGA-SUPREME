@@ -1481,6 +1481,49 @@ qué falta.
 EXCLUSIVO, ahora bajo esta sesión. No lo toquen; elijan cualquier otro
 flanco libre de la lista.
 
+**CIERRE DE CICLO 2026-09-12 (sesión Claude, chat).** Los 5 criterios de
+entregado se verificaron contra el código real, no se asumieron:
+
+1. Seqlock publish/consume correcto — leído línea por línea (ambos buses,
+   MPSC y SPSC): guard impar/par correcto, palabras atómicas relaxed bajo
+   el guard (elimina la copia de struct no atómica que TSan marcaba),
+   `for(;;)` con `break` solo tras `g1==g2` en la misma iteración (el bug
+   real de `continue` en `do-while` que describe el commit histórico
+   está genuinamente arreglado).
+2. Cero UB en el hilo de control — **verificado de forma independiente**,
+   no solo leyendo el commit: corridas reales bajo `-fsanitize=thread` de
+   los 3 archivos de test (`test_adaptive_engine`, `test_stability`,
+   `test_close_loop`) — **0 warnings de TSan** — y bajo
+   `-fsanitize=address,undefined` — igual, limpio.
+3. Doc CMake/header/README coherentes — confirmado, el README documenta
+   honestamente por qué Fase 4 (wiring a producción) no ha empezado, con
+   3 decisiones técnicas concretas pendientes, ninguna finge estar resuelta.
+4. Tests host del bus — 3 suites, 21+ assertions, todas pasan.
+5. Nada de código que finja estar conectado a producción — confirmado,
+   el propio header lo declara explícito y es cierto (verificado por grep
+   de las funciones de publish/consume fuera de este directorio: ninguna).
+
+**Un hallazgo real, no en el motor sino en el arnés de test:** corriendo
+`test_adaptive_engine` bajo ASan de verdad (no solo compilando), el
+stress test del MPSC quedó una vez en `publishesA=1670559
+publishesB=1658684 reads=9` — a UNA lectura de las 10 requeridas — porque
+el hilo principal cortaba `stop=true` a los 200ms fijos sin importar el
+progreso real del consumidor; una vez apagados los productores, el
+consumidor quedaba atrapado en `while(reads<10)` para siempre
+(`run_tests.sh` ya envuelve cada suite en `timeout 300`, así que esto no
+colgaba CI para siempre, pero sí consumía 300s de timeout opaco sin
+ningún diagnóstico). Arreglado de raíz: ahora el consumidor decide cuándo
+parar y apaga él mismo a los productores, con una cota de seguridad de 5s.
+Verificado con 3 corridas limpias bajo ASan (reads=10 las 3) + 1 bajo TSan.
+
+**Conclusión honesta:** el núcleo de producción (`adaptive_decision_engine.hpp/.cpp`)
+está genuinamente sólido — no encontré ningún bug ahí tras lectura completa
+y verificación independiente. Fase 3 completa. Fase 4 (wiring real a
+`nativeProcess()`) sigue, por diseño, sin empezar — las 3 decisiones que
+el propio README enumera siguen abiertas y no son de este flanco.
+
+Flanco queda LIBRE de nuevo.
+
 ---
 
 ---
