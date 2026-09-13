@@ -17,14 +17,14 @@
 >
 > 🪝 Hooks: `bash scripts/setup-hooks.sh` (una vez por clon, idempotente) — el pre-commit corre la puerta de tests en cada commit; se salta puntualmente con `--no-verify`.
 >
-> 🧪 Puerta de regresión DSP en host: `bash scripts/run_ctest.sh` (60 tests, GTest vendoreado, offline; `IVANNA_SAN=asan` para ASan+UBSan; 74 tests) — corre en CI via [tests-host.yml](.github/workflows/tests-host.yml).
+> 🧪 Puerta de regresión DSP en host: `bash scripts/run_ctest.sh` (76 tests, GTest vendoreado, offline; `IVANNA_SAN=asan` para ASan+UBSan) — corre en CI via [tests-host.yml](.github/workflows/tests-host.yml).
 
 <br>
 
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=TESTS%20HOST%2074%2F74&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
+[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=TESTS%20HOST%2076%2F76&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
 [![Android](https://img.shields.io/badge/Android-9%20%E2%86%92%2015-3DDC84?style=for-the-badge&logo=android)](https://developer.android.com)
-[![Module](https://img.shields.io/badge/Magisk%20Module-v2.3.2-FF3E86?style=for-the-badge&logo=magisk)](magisk_module/)
+[![Module](https://img.shields.io/badge/Magisk%20Module-v2.3.9-FF3E86?style=for-the-badge&logo=magisk)](magisk_module/)
 [![DSP](https://img.shields.io/badge/DSP-C%2B%2B17%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![Kotlin](https://img.shields.io/badge/UI-Kotlin%20%C2%B7%20Jetpack%20Compose-A97FFF?style=for-the-badge&logo=kotlin)](app/src/main/java/)
 [![Gemini](https://img.shields.io/badge/Asistente-Gemini%202.5%20Flash-8E75FF?style=for-the-badge&logo=googlegemini)](app/src/main/java/com/ivanna/omega/ai/gemini/)
@@ -160,7 +160,7 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 | Telemetría B→A | `raw_rms`, `raw_peak`, `effect_frames` escritos por audioserver y leídos por la app — la UI sabe cuándo la Ruta B está viva |
 | ThermalGovernor | 5 niveles de degradación elegante: reduce orden Ambisonics / longitud RIR ante throttling térmico |
 | Offloading | Hexagon cDSP via FastRPC: loader runtime `dlopen` de `libcdsprpc/libadsprpc` (`hexagon/ivanna_dsp.cpp`, contrato IDL único en `ivanna_dsp.idl`), API JNI real (`nativeDsp*`) y telemetría honesta — reporta no-disponible en vez de fingir. **Pendiente:** el skel QAIC del Hexagon SDK (propietario) y el despacho de audio por la ruta DSP en el callback — hoy el audio siempre corre por la cadena CPU/NEON |
-| SELinux | `sepolicy.rule` (278 reglas) aplicada en instalación **y reaplicada en cada boot** desde `service.sh` — el socket sobrevive reinicios |
+| SELinux | `sepolicy.rule` (153 reglas `allow`) aplicada en instalación **y reaplicada en cada boot** desde `service.sh` — el socket sobrevive reinicios |
 
 ---
 
@@ -187,8 +187,8 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 - **Integridad de datasets:** los `.sofa` se validan por firma HDF5 (`894844460d0a1a0a`) en build — los 216 archivos del árbol SAF fueron reemplazados por copias verificadas tras detectarse corrupción UTF-8 en la importación original (protegido con `.gitattributes` binary).
 - **Supply chain:** workflow dedicado con SBOM, firma Cosign keyless y attestations SLSA en cada tag `v*`.
 - **Versionado unificado:** `version.properties` es la fuente única de verdad; el build **falla** si `module.prop` diverge de él.
-- **Historial de auditoría:** 250+ commits de reparación quirúrgica — Use-After-Free del Engine, aislamiento DSP por sesión AudioFlinger, eliminación de alloc en realtime, lifecycle del fusion core, JNI signatures, STL estática del daemon, crossfade EQ, headroom, bypass exacto, race UAF en NPE, trust region del optimizador SAF, espectro Bark real. Cada fix: un commit, un push.
-- **Frente DSP nativo (en curso, ver `AGENT_CLAIMS.md`):** peak guard rediseñado a ataque instantáneo/release en rampa (eliminaba un salto de ganancia audible por bloque, tipo metralleta, al subir volumen cerca del umbral); red de saneo NaN/Inf agregada al final de la cadena (no existía — los `isfinite()` previos solo cubrían parámetros de UI, no la señal); `armeabi-v7a` retirado del build (asm inline inválido y sin función real: el daemon que hace root ya es arm64-v8a exclusivo). No cerrado: quedan las 5 condiciones propias del flanco en `AGENT_CLAIMS.md` sin cumplir todavía — esta nota se actualiza cuando se cumplan, no antes.
+- **Historial de auditoría:** 1100+ commits de reparación quirúrgica (verificado: `git log --oneline | wc -l`) — Use-After-Free del Engine, aislamiento DSP por sesión AudioFlinger, eliminación de alloc en realtime, lifecycle del fusion core, JNI signatures, STL estática del daemon, crossfade EQ, headroom, bypass exacto, race UAF en NPE, trust region del optimizador SAF, espectro Bark real. Cada fix: un commit, un push.
+- **Frente DSP nativo (en curso, ver `AGENT_CLAIMS.md`):** peak guard rediseñado a ataque instantáneo/release en rampa (eliminaba un salto de ganancia audible por bloque, tipo metralleta, al subir volumen cerca del umbral); red de saneo NaN/Inf agregada al final de la cadena (no existía — los `isfinite()` previos solo cubrían parámetros de UI, no la señal); `armeabi-v7a` retirado del build (asm inline inválido y sin función real: el daemon que hace root ya es arm64-v8a exclusivo). Regresión reciente encontrada y reparada (verificado por lectura contra la firma real de `HRTFConvolver::process()`): `SaFStimulusRenderer.cpp` no pasaba el estímulo mono por el convolver HRTF (ENFRENTE/ATRÁS indistinguibles), no leía la elevación, y usaba un tono puro de 880 Hz sin energía en la banda de las notches pinnales (6–10 kHz) — las 5 direcciones de calibración ahora son audiblemente distintas por lectura de código, no solo 2 de 5. No cerrado: quedan las 5 condiciones propias del flanco en `AGENT_CLAIMS.md` sin cumplir todavía — esta nota se actualiza cuando se cumplan, no antes.
 - **Frente Hexagon (auditado y reparado, ver `AGENT_CLAIMS.md`):** el offloading al cDSP era un castillo de stubs que mentían. Reparado de raíz — la fachada `ivanna::hexagon::ensure_available()` era un símbolo declarado-pero-no-definido (crash en runtime / break con `-z defs`); había DOS loaders `dlopen` paralelos para el mismo DSP (ahora UNO canónico); `delegateBinauralConvolution` hacía `free()` de memoria ajena (heap corruption); los 3 IDL divergían entre sí (ahora UN contrato); la API JNI `nativeDsp*` era un no-op silencioso que siempre decía "no disponible"; y el slider de "ganancia maestra" deformaba el damping de la ODE en vez del volumen. Verificado: el flanco enlaza como `.so` con `-z defs` (la forma estricta de Android) sin símbolos indefinidos. **Lo que NO está (honestidad):** el skel QAIC del Hexagon SDK (propietario, requerido para el DSP real en silicio) y el despacho de audio por la ruta DSP — el audio corre por CPU/NEON hasta que el SDK esté integrado.
 
 ---
@@ -197,23 +197,23 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 
 | Componente | Stack | Función |
 |------------|-------|---------|
-| **App Android** | Kotlin · Jetpack Compose (200 archivos, ~40k LOC) | UI, Ruta A, asistente Gemini, LAB de medición |
-| **DSP nativo** | C++17 · NEON ARM64 (248 archivos, ~59k LOC) | Cadena de efectos, clasificador, convolución, motores de decisión |
-| **Módulo Magisk** | Shell · sepolicy (278 reglas) | Ruta B system-wide, daemon root, datasets (12 IHR1 + 200 RIR + SOFA + SAF) |
+| **App Android** | Kotlin · Jetpack Compose (201 archivos, ~43k LOC) | UI, Ruta A, asistente Gemini, LAB de medición |
+| **DSP nativo** | C++17 · NEON ARM64 (257 archivos, ~89k LOC) | Cadena de efectos, clasificador, convolución, motores de decisión |
+| **Módulo Magisk** | Shell · sepolicy (153 reglas `allow`) | Ruta B system-wide, daemon root, datasets (12 IHR1 + 200 RIR + SOFA + SAF) |
 | **Panel web** | React 19 · Vite · Tailwind 4 | Consola de visualización y export de parámetros |
 
 ---
 
 ## ✦ Instalación
 
-**Requisitos:** Android 9+ (minSdk 28) · ARM64 (armeabi-v7a incluido como fallback) · Magisk o KernelSU para la Ruta B.
+**Requisitos:** Android 9+ (minSdk 28) · ARM64 exclusivo (arm64-v8a — `armeabi-v7a` retirado del build, ver "Frente DSP nativo" más abajo) · Magisk o KernelSU para la Ruta B.
 
 1. Descarga el artefacto `ivanna-magisk-module` del último CI verde → contiene `ivanna_omega_supreme.zip` (módulo) **y el APK**.
 2. Flashea el zip en Magisk/KSU → reinicia.
 3. Instala el APK → abre IVANNA → concede permisos de captura si quieres Ruta A sobre otras apps.
 4. **(Opcional)** Para activar el asistente con Gemini 2.5: pega tu API key en el panel del asistente → toca **PROBAR CONEXIÓN**. Sin key, el asistente funciona con su motor offline completo.
 
-La app y el módulo van a la par: **v2.3.2 / 2302** en ambos — garantizado por el Unified Version Manager.
+La app y el módulo van a la par: **v2.3.9 / 2309** en ambos — garantizado por el Unified Version Manager.
 
 ---
 
