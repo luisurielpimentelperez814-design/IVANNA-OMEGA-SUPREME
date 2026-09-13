@@ -40,6 +40,32 @@ float EvolutionaryEQ::calculateFitness(const float* genome) {
 }
 
 void EvolutionaryEQ::updateLM_CMA_ES() {
+    // AUDITORÍA (frente DSP nativo, 2026-09-13): este método está
+    // genuinamente incompleto, no solo desconectado —documentado aquí
+    // para que quede trazable, no se conecta a ciegas:
+    //
+    //   1. Su único llamador real es runAcousticProfiling() (ver
+    //      IvannaFusionCore.cpp), que a su vez NO tiene ningún llamador
+    //      en todo el árbol — confirmado por grep exhaustivo. El
+    //      optimizador nunca corre en producción hoy.
+    //   2. calculateFitness() no evalúa nada relacionado con audio real
+    //      — solo penaliza la varianza interna del propio genoma
+    //      (diferencia entre bandas adyacentes). No hay señal de
+    //      entrada, RMS, espectro ni THD de por medio: "mejor fitness"
+    //      aquí solo significa "genoma más suave consigo mismo", no
+    //      "mejor para el sonido".
+    //   3. m_meanGenome (lo que este método sí actualiza) nunca se
+    //      copia a m_firCoeffsL/m_firCoeffsR — los coeficientes que
+    //      processNEON() realmente usa siguen siendo el filtro
+    //      identidad fijado en el constructor, para siempre.
+    //
+    // Conectar (1)+(3) sin resolver (2) primero sería peor que el
+    // estado actual: aplicaría un filtro FIR real al audio sin ningún
+    // criterio de calidad basado en la señal — filtrado esencialmente
+    // aleatorio-suavizado. Diseñar una función de fitness real (contra
+    // RMS/espectro/THD de la señal de entrada) es trabajo de mayor
+    // alcance que un fix puntual de discontinuidad; se deja fuera de
+    // este commit a propósito.
     constexpr size_t lambda = 8;
     float population[lambda][BANDS_512];
     float fitness[lambda];
