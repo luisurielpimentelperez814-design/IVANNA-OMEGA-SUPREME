@@ -2162,3 +2162,22 @@ consolidado antes de escribir cualquier número en el README.
 **Si eres otra sesión:** este frente está tomado. Elige otro libre.
 
 **Estado:** trabajando.
+
+---
+
+### EQ evolutivo 512 bandas (EvolutionaryEQ) — COMPLETADO 2026-09-13 (sesión Genspark, toma temporal por indicación directa del propietario)
+
+**Selección del frente (verificada con `git log`, no asumida):** el propietario pidió tomar, entre los frentes SIN movimiento reciente, el de MAYOR impacto en audio — sin tocar los actualizados. `git log -- app/src/main/cpp/EvolutionaryEQ.cpp`: un único commit en 11 días (`dc2ea33f`, solo documentación de auditoría "genuinamente incompleto") y antes de eso nada desde el 03-sep; y es el corazón del EQ del producto ("512-BAND GENOME ENGINE" en la propia UI). Los frentes activos (UI, Conversación/IA, Tests host, Web dashboard, Benchmarks, HRTF tools, DSP/SAF concurrente) quedaron intactos.
+
+**Los 3 defectos de la auditoría dc2ea33f, reparados y verificados de primera mano:**
+1. **Fitness ficticio → real.** `calculateFitness()` ya no mide varianza interna del genoma: mide la desviación entre la respuesta en magnitud REAL |H(ω)| del FIR diseñado desde el genoma y una curva objetivo paramétrica de 6 puntos (diseño por superposición de bases, ventana Blackman-Harris, fase lineal). Suavidad relegada a regularizador de peso bajo.
+2. **Genoma desconectado → materializado.** `rebuildFilterFromGenome()` copia el genoma a `m_firCoeffsL/R` con normalización de pico tras cada generación. Genoma neutral (0 dB) ⇒ δ exacto ⇒ identidad bit-exacta (probado).
+3. **Sin llamador ciego → gate de seguridad.** `processNEON()` es identidad bit-exacta hasta que `calibrate()` (48 generaciones acotadas) pasa auto-verificación (FIR finito, pico ≤ 1). Misma doctrina que SaFStimulusRenderer: nunca se activa un filtro sin verificación real.
+
+**Hallazgo real del propio test (metodología, a propósito):** la primera versión del algoritmo falló la barrera — la media lineal de ±1 aleatorios dejaba el genoma en punto fijo 0 dB (filtro identidad, fitness estancado) y un guard de pico en el fitness llevaba el óptimo al identidad trivial. Se corrigió a **selección elitista ponderada por fitness (softmax estable) en el dominio dB**, con convergencia monótona verificable; el guard de pico quedó SOLO como auto-verificación de `calibrate()`, nunca en el criterio de optimización.
+
+**Verificación real (ejecutada en este host, no asumida):** barrera `test_evolutionary_eq` **6/6** en build optimizado y con ASan/UBSan limpio — identidad exacta, gate bit-exacto, calibración produce FIR no-identidad acotado, fitness real mejora monótonamente, respuesta en magnitud finita en frecuencias continuas, procesado de 32 bloques finito y acotado (|salida| ≤ 1 por limitador duro). `g++ -fsyntax-only` limpio sobre `EvolutionaryEQ.cpp` y su consumidor `IvannaFusionCore.cpp`. (cmake/ctest no está instalado en este host — la suite completa correrá en CI.)
+
+**Pendiente fuera de alcance (notificación al flanco UI/integración):** cablear `calibrate()` a Kotlin/JNI — punto de entrada explícito documentado en `EvolutionaryEQ.hpp`. Sin ese cableado el módulo permanece en identidad segura: decisión deliberada, no defecto.
+
+**Estado:** ciclo cerrado. El frente queda libre para mantenimiento.
