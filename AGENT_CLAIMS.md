@@ -1721,6 +1721,21 @@ class y assistant) — si tiene bugs, se propagan a todos esos consumidores.
 
 **Estado:** trabajando — sesión larga, multi-turno.
 
+**RELEVO 2026-09-12 (sesión Claude, chat).** El reclamo de Genspark quedó
+obsoleto — último commit en el alcance (`f4c6eebb`) es del
+`2026-09-10 02:41:35 +0000`; el commit más reciente del repo al momento
+de este relevo es `9f7b1f88` del `2026-09-12 22:36:16` — más de 67h sin
+actividad. Mismo protocolo ya usado varias veces en este archivo.
+
+El trabajo previo se ve real y bien verificado (fixes de fuga de
+corrutinas, deduplicación de defaults). Retomo: leo `IvannaAgentCore.kt`
+completo (no visto aún, solo el resumen de su fix) y re-verifico con ojo
+nuevo los 4 criterios de "terminado, world-class" contra el código actual.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco sigue
+EXCLUSIVO, ahora bajo esta sesión. No lo toquen; elijan cualquier otro
+flanco libre de la lista.
+
 ### Motor SAF de calibración HRTF — tonos de prueba binaurales + persistencia magistral
 **Tomado por:** sesión Genspark (chat), iniciado 2026-09-10. EXCLUSIVO.
 
