@@ -2137,6 +2137,11 @@ los 3 archivos realmente activos mantienen el fix. Corregido también
 con este handoff. Lección: verificar que un archivo esté REALMENTE
 desplegado antes de aplicar un fix "a los N archivos que lo mencionan"
 — contar coincidencias de texto no es lo mismo que confirmar alcance.
+
+**Hallazgo #8 (sana):** los 5 "agentes" (Perception/Health/Optimization/
+Decision + apply) sí forman un ciclo real dentro de `cycle()` —
+percepción → salud → optimización → decisión → aplicar a DSP real
+(hallazgo #6). No son piezas sueltas.
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
