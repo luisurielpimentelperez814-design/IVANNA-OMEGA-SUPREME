@@ -1,5 +1,21 @@
 # 🔒 Frentes en trabajo — coordinación entre sesiones concurrentes
 
+> 🛑 **REGLA NO NEGOCIABLE (2026-09-10, por indicación directa del propietario del repo)**
+> **No reportes "resuelto"/"world-class"/"ENTREGADO" sin verificación real.**
+> Caso concreto documentado en este mismo archivo: `IvannaDSPOrchestrator`
+> reportaba `applied=true` y le decía al usuario "graves potenciados" en
+> 7 sitios distintos sin que `voiceController.executeCommand()` devolviera
+> ni pudiera devolver ninguna señal real de éxito — el audio no cambiaba
+> y la app afirmaba que sí. Esto llegó a `main`, pasó CI, y nadie lo notó
+> hasta una auditoría de costuras explícita. CI verde y "compila" NO son
+> lo mismo que "funciona" — son necesarios, no suficientes.
+> Antes de escribir ENTREGADO/CERRADO en tu sección: lee el código real
+> del camino feliz Y del camino de error, verifica que el valor que se le
+> muestra al usuario provenga de una comprobación real, no de una
+> constante. Si no puedes verificarlo end-to-end (ej. requiere dispositivo
+> físico), dilo explícitamente — "verificado por lectura, no en
+> dispositivo" es honesto; "ENTREGADO" sin esa salvedad no lo es.
+
 > ⚠️ **ADVERTENCIA DE FRAGMENTACIÓN (2026-09-10, sesión Claude/chat, nuevo flanco: consolidación de coordinación).**
 > Además de este archivo, existen **otros dos sistemas de reclamo de flancos activos**,
 > creados por sesiones que no encontraron este archivo o no lo revisaron completo:
