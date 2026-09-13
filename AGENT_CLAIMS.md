@@ -316,6 +316,20 @@ versión Kotlin por una nativa (razón legítima: rendimiento, o evitar
 duplicar lógica psicoacústica en 2 lenguajes), al menos que parta de
 paridad con lo que ya funciona, no por debajo.
 
+**⏸️ TOMA TEMPORAL (sesión Claude/chat, 2026-09-13) — por indicación
+directa del propietario:** la sesión original de este frente no puede
+activarse (problema de scroll de display reportado por el propietario).
+El propietario pidió tomar el frente con MENOS movimiento reciente y
+MAYOR impacto en audio entre los que siguen abiertos — verificado con
+`git log` real (no solo texto de este archivo, que puede estar
+desactualizado): último commit real sobre `app/src/main/cpp/spatial/`
++ `omega_effect.cpp` + `HrtfManager.cpp` fue 2026-09-11T00:41, mientras
+Daemon nativo/UI/Conversación-IA seguían activos hasta 2026-09-12
+(12-36h más recientes cada uno). Esto es una toma de continuidad, NO
+un reemplazo del propietario original — si esa sesión vuelve a
+activarse, este frente sigue siendo suyo; se documentará aquí cada
+avance real para que pueda retomarlo sin perder contexto.
+
 ---
 
 ### UI COMPLETA y sus sub-entornos — Compose principal + OEM + theme + viewmodels de UI + visualizadores
