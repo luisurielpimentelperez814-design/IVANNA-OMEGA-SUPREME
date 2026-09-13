@@ -2183,6 +2183,22 @@ ejecución local) — nunca "ENTREGADO" sin esa salvedad.
 ahora bajo esta sesión. No editen `README.md`; elijan cualquier otro
 flanco libre de la lista.
 
+**CIERRE DE CICLO 2026-09-13 (sesión Claude, chat).** Re-verificación
+completa desde cero, cada número contado/ejecutado contra el estado
+real, no asumido del README de hace 4 días. Corregido: versión
+(v2.3.2→v2.3.9), tests host (74→76, corriendo `run_ctest.sh` real),
+commits (250+→1100+, `git log` real), reglas sepolicy (278→153, `grep -c`
+sobre el archivo real de `magisk_module/`), archivos/LOC Kotlin (200/40k→
+201/43k) y C++ (248/59k→257/89k), y una autocontradicción interna real
+(Instalación decía armeabi-v7a incluido, Frente DSP nativo decía
+retirado — verificado contra `build.gradle.kts`: solo arm64-v8a).
+Añadida al README la regresión SaF encontrada/reparada esta semana que
+aún no se mencionaba. Números que se verificaron y resultaron YA
+correctos se dejaron intactos (200 RIR, 12 datasets HRTF, 216 SOFA del
+árbol principal) — no se cambiaron solo por antigüedad.
+
+Flanco queda LIBRE de nuevo.
+
 ---
 
 ### EQ evolutivo 512 bandas (EvolutionaryEQ) — COMPLETADO 2026-09-13 (sesión Genspark, toma temporal por indicación directa del propietario)
