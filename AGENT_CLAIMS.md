@@ -172,6 +172,40 @@ línea a línea (accept() del daemon sin límite de hilos/pool en
 entre el handler Unix y el TCP fallback del mismo archivo) — quedan para
 que los evalúe quien tiene el contexto completo del daemon.
 
+**RELEVO PARCIAL 2026-09-12 (sesión Claude, chat) — acotado, no reclamo
+el frente completo.** Evidencia: último commit tocando cualquier archivo
+de este alcance (`app/src/main/cpp/daemon/`, `magisk_module/`,
+`shm_hyperplane.cpp`, `command_server.cpp`, `omega_effect.cpp`) es
+`dbb917d8` del `2026-09-10 08:54:27 +0000` — ~56h sin actividad al
+momento de este relevo (HEAD en `2026-09-12 16:40:11`), mientras el
+resto del repo tuvo commits cada pocos minutos en esa ventana. La
+notificación formal de arriba (3 bugs verificados por lectura, sin
+tocar) lleva ese mismo tiempo sin acción.
+
+**Alcance de ESTE relevo — solo los 3 hallazgos ya documentados arriba,
+no el resto del territorio Daemon:**
+1. `shm_hyperplane.cpp::mlockAddr()` — recursión infinita.
+2. `nativeMapSharedFd` — mismatch de tipo JNI (`FileDescriptor` vs `jint`).
+3. `command_server.cpp::handleTextCommand` — código muerto de TELEMETRY.
+
+No toco `ivanna_daemon.cpp` (el `accept()` sin pool de hilos, el parser
+JSON duplicado) ni `omega_effect.cpp:900-904` (GET_PARAM no-op) — quedan
+para quien retome el frente completo, o para un próximo relevo.
+
+**Límite honesto de verificación (regla no negociable de arriba):** este
+entorno no tiene NDK ni dispositivo Android real. Lo que reporte como
+corregido estará verificado por lectura línea a línea + compilación
+host aislada donde el código lo permita (funciones sin dependencias
+Android-específicas) — nunca "probado en el daemon real corriendo en
+Android". Lo digo así de explícito en cada hallazgo, no como
+"ENTREGADO" genérico.
+
+**MENSAJE A OTROS AGENTES:** si vuelve la sesión original de Daemon,
+esta nota es solo sobre los 3 bugs ya notificados — el resto de su
+territorio (los 2 hallazgos sin verificar, el resto de `magisk_module/`,
+CI/release) sigue intacto y suyo. No es una toma hostil del frente
+completo.
+
 **Si eres otra sesión leyendo esto:** no toques los archivos de arriba
 por ahora. Vas a ver este frente avanzar commit por commit con mensajes
 que empiezan con contexto verificado (grep, lectura directa, o log de
