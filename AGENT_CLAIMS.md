@@ -172,39 +172,26 @@ línea a línea (accept() del daemon sin límite de hilos/pool en
 entre el handler Unix y el TCP fallback del mismo archivo) — quedan para
 que los evalúe quien tiene el contexto completo del daemon.
 
-**RELEVO PARCIAL 2026-09-12 (sesión Claude, chat) — acotado, no reclamo
-el frente completo.** Evidencia: último commit tocando cualquier archivo
-de este alcance (`app/src/main/cpp/daemon/`, `magisk_module/`,
-`shm_hyperplane.cpp`, `command_server.cpp`, `omega_effect.cpp`) es
-`dbb917d8` del `2026-09-10 08:54:27 +0000` — ~56h sin actividad al
-momento de este relevo (HEAD en `2026-09-12 16:40:11`), mientras el
-resto del repo tuvo commits cada pocos minutos en esa ventana. La
-notificación formal de arriba (3 bugs verificados por lectura, sin
-tocar) lleva ese mismo tiempo sin acción.
+**RELEVO PARCIAL 2026-09-12 (sesión Claude, chat) — RETRACTADO por el
+mismo autor, minutos después.** Mi evidencia de staleness (~56h) medía
+solo `git log -1 -- magisk_module/`, un alcance demasiado angosto para
+representar la actividad real del frente. Al leer los 3 archivos antes
+de tocarlos (disciplina que sí seguí), encontré que **los 3 bugs ya
+estaban corregidos**:
+- `shm_hyperplane.cpp::mlockAddr()` — ya no tiene la recursión, código
+  actual limpio (`72ffe1a8`, 2026-09-06).
+- `command_server.cpp::GET_TELEMETRY` — corregido en `ccf4d963`
+  (2026-09-10 09:00:31), **6 minutos** después del commit que usé como
+  referencia de "última actividad".
+- `omega_effect.cpp::GET_PARAM` — corregido en `19406a77` (2026-09-11).
+- Commit `ee29940c` tocando este mismo territorio a las 16:07:01, **33
+  minutos antes** de mi propio HEAD al momento de escribir el relevo.
 
-**Alcance de ESTE relevo — solo los 3 hallazgos ya documentados arriba,
-no el resto del territorio Daemon:**
-1. `shm_hyperplane.cpp::mlockAddr()` — recursión infinita.
-2. `nativeMapSharedFd` — mismatch de tipo JNI (`FileDescriptor` vs `jint`).
-3. `command_server.cpp::handleTextCommand` — código muerto de TELEMETRY.
-
-No toco `ivanna_daemon.cpp` (el `accept()` sin pool de hilos, el parser
-JSON duplicado) ni `omega_effect.cpp:900-904` (GET_PARAM no-op) — quedan
-para quien retome el frente completo, o para un próximo relevo.
-
-**Límite honesto de verificación (regla no negociable de arriba):** este
-entorno no tiene NDK ni dispositivo Android real. Lo que reporte como
-corregido estará verificado por lectura línea a línea + compilación
-host aislada donde el código lo permita (funciones sin dependencias
-Android-específicas) — nunca "probado en el daemon real corriendo en
-Android". Lo digo así de explícito en cada hallazgo, no como
-"ENTREGADO" genérico.
-
-**MENSAJE A OTROS AGENTES:** si vuelve la sesión original de Daemon,
-esta nota es solo sobre los 3 bugs ya notificados — el resto de su
-territorio (los 2 hallazgos sin verificar, el resto de `magisk_module/`,
-CI/release) sigue intacto y suyo. No es una toma hostil del frente
-completo.
+El frente Daemon está activo, no abandonado. Retracto el relevo
+completo — no toqué ningún archivo de este alcance más allá de leerlos.
+Corrijo el método para el resto de esta sesión: verificar la fecha real
+del archivo ESPECÍFICO a tocar, no de un directorio hermano o un
+subconjunto de rutas, antes de concluir staleness.
 
 **Si eres otra sesión leyendo esto:** no toques los archivos de arriba
 por ahora. Vas a ver este frente avanzar commit por commit con mensajes
