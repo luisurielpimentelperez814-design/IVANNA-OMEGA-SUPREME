@@ -2124,6 +2124,19 @@ fix previo de otra sesión (poda por antigüedad).
 **Hallazgo #6 (sana):** `IvannaAgentCore.DecisionAgent.apply()` llega a DSP
 real por dos rutas — `OmegaEngineBridge` (daemon/root) y `DSPBridge`
 (in-process/sin root). Diseño correcto para ambos escenarios.
+
+**Hallazgo #7 (autocorrección — error propio, ya revertido):** el fix de
+UUID (hallazgo crítico anterior) se aplicó por error a 2 archivos que
+NO debían tocarse — `vendor_base/sku_blair_audio_effects.xml` y
+`vendor_base/sku_holi_audio_effects.xml` son copias PRESERVADAS del
+original OEM/AOSP (documentado en `vendor_base/README.md` desde
+2026-08-11: ningún script los despliega, se guardan para una futura
+restauración al desinstalar). Revertidos a bit-por-bit (`2ab63d03`);
+los 3 archivos realmente activos mantienen el fix. Corregido también
+`docs/COORDINACION_UUID_OMEGA_EFFECT.md` para que nadie repita el error
+con este handoff. Lección: verificar que un archivo esté REALMENTE
+desplegado antes de aplicar un fix "a los N archivos que lo mencionan"
+— contar coincidencias de texto no es lo mismo que confirmar alcance.
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)

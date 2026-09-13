@@ -4,6 +4,20 @@
 **Para:** quien tenga tomado el flanco Daemon nativo + runtime del módulo Magisk
 **Prioridad:** CRÍTICA — sin este fix el DSP queda registrado pero inerte en dispositivo.
 
+> **⚠️ CORRECCIÓN (flanco integración cruzada, 2026-09-10, hallazgo #7):**
+> este documento lista 5 archivos, pero **solo 3 debían tocarse**.
+> `vendor_base/sku_blair_audio_effects.xml` y
+> `vendor_base/sku_holi_audio_effects.xml` son copias PRESERVADAS del
+> `audio_effects.xml` original de OEM/AOSP (ver
+> `magisk_module/vendor_base/README.md`, auditoría 2026-08-11) —
+> ningún script los despliega jamás, se guardan a propósito para una
+> futura función de restauración al desinstalar. Se aplicó el fix ahí
+> por error (commit `dbb917d8`) y ya se revirtió (`2ab63d03`). Si vas a
+> aplicar este documento a un checkout limpio: el fix real va SOLO en
+> `system/etc/audio_effects_ivanna.xml`,
+> `system/etc/audio_effects_ivanna_omega.xml` y
+> `system/vendor/etc/audio_effects.xml` — los otros dos, NO.
+
 ## El bug (con evidencia)
 
 Todos los `audio_effects*.xml` bajo `magisk_module/` registran el efecto con:
