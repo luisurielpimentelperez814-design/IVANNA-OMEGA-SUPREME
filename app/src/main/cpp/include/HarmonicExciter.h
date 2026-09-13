@@ -24,6 +24,19 @@ public:
 
 private:
     float drive_ = 1.f;
+    // FIX (discontinuidad audible real, mismo patrón que wetSmooth_ ya
+    // documentado arriba): drive_ se pasaba directo a softClip() dentro
+    // del bucle de sobremuestreo, sin ningún suavizado propio — un
+    // cambio de drive_ (usuario arrastrando el fader de "drive") saltaba
+    // el CARÁCTER de la saturación armónica de golpe en la frontera
+    // exacta de bloque, mismo patrón "escalón en la frontera de bloque"
+    // ya identificado y reparado en SafetyLimiter/ParametricEQ. Variable
+    // de estado propia (no reutiliza wetSmooth_/wetNow_) para no
+    // interferir con la separación de diseño ya documentada arriba:
+    // esto es un fix de discontinuidad, no un cambio de qué controla el
+    // motor adaptativo vs el usuario.
+    float driveNow_    = 1.f;
+    float driveSmooth_ = 0.9995f;
     float wet_   = 0.5f;
     float dry_   = 0.5f;
     float runtimeReductionMul_ = 1.f;  // 1.0 = sin reducción, 0.0 = exciter mudo

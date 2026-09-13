@@ -29,6 +29,10 @@ void HarmonicExciter::reset() {
     excScaleL_ = 1.0f;
     excScaleR_ = 1.0f;
     wetNow_ = wet_;
+    // FIX (mismo criterio que wetNow_ arriba, ver comentario del header):
+    // sin esto, tras un reset() driveNow_ quedaría a mitad de una
+    // convergencia anterior en vez de arrancar ya en el objetivo actual.
+    driveNow_ = drive_;
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
@@ -48,6 +52,10 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     {
         const double srOS = (double)p.sampleRate * (double)OS_FACTOR;
         wetSmooth_ = (float)std::exp(-1.0 / (srOS * 0.015));
+        // FIX (discontinuidad real, ver header): mismo coeficiente/tiempo
+        // que wetSmooth_ — consistencia de "sensación" entre ambos
+        // parámetros suavizados de este efecto.
+        driveSmooth_ = wetSmooth_;
     }
 
     double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
@@ -145,7 +153,13 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         return;
     }
 
-    const float drive = drive_;
+    // FIX (discontinuidad real, ver header): drive_ es ahora el objetivo
+    // fijado por setParams(); driveNow_ converge hacia él con el mismo
+    // one-pole que wetNow_/wetSmooth_ ya usa — evita el escalón de
+    // carácter de saturación en la frontera de bloque cuando el usuario
+    // mueve el fader de "drive".
+    driveNow_ = driveSmooth_ * driveNow_ + (1.0f - driveSmooth_) * drive_;
+    const float drive = driveNow_;
 
     // FIX (distorsion digital): el clamp duro final (std::clamp ±1.0) de cada
     // muestra generaba clipping de onda cuadrada cuando dry+wet*excitacion
