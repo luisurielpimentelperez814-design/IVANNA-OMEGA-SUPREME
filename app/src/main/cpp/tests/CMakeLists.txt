@@ -370,3 +370,22 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_evolutionary_kernel PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 add_test(NAME test_evolutionary_kernel COMMAND test_evolutionary_kernel)
+
+# ── EQ evolutivo 512 bandas (EvolutionaryEQ.cpp real): barrera de regresión ──
+# Sustituye la documentación pasiva de la auditoría dc2ea33f por evidencia
+# ejecutable. Enlaza contra el EvolutionaryEQ.cpp REAL (no un fake) y prueba el
+# criterio de audio de extremo a extremo: identidad estructural, gate de
+# seguridad, calibración convergente, fitness real monótono y procesado finito.
+add_executable(test_evolutionary_eq
+  test_evolutionary_eq.cpp
+  ../EvolutionaryEQ.cpp
+)
+target_link_libraries(test_evolutionary_eq PRIVATE GTest::gtest_main)
+target_include_directories(test_evolutionary_eq PRIVATE .. ../include)
+target_compile_options(test_evolutionary_eq PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_evolutionary_eq PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_evolutionary_eq PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_evolutionary_eq COMMAND test_evolutionary_eq)
+
