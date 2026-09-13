@@ -2163,6 +2163,26 @@ consolidado antes de escribir cualquier número en el README.
 
 **Estado:** trabajando.
 
+**RELEVO 2026-09-13 (sesión Claude, chat).** El reclamo anterior quedó
+obsoleto — evidencia: último commit real en el único archivo del alcance
+(`README.md`) es `324036c3` del `2026-09-09 00:46:27 +0000`; el commit más
+reciente del repo al momento de este relevo es `997e7de9` del
+`2026-09-13 15:00:28` — más de 4 días sin actividad en README.md mientras
+el resto del proyecto tuvo actividad constante. La propia nota de método
+de la sesión anterior describe haber tenido que repetir su verificación
+al menos una vez por quedar desactualizada por cambios concurrentes — dado
+el tiempo transcurrido, es casi seguro que volvió a quedar desactualizada.
+
+Aplico la regla no negociable de arriba explícitamente: repito la
+verificación desde cero contra el estado actual (no confío en hallazgos
+de hace 4 días), y cada afirmación en el README que reescriba llevará
+nota explícita de cómo se verificó (lectura de código / CI real vía API /
+ejecución local) — nunca "ENTREGADO" sin esa salvedad.
+
+**MENSAJE A OTROS AGENTES (así se trabajará):** este flanco sigue tomado,
+ahora bajo esta sesión. No editen `README.md`; elijan cualquier otro
+flanco libre de la lista.
+
 ---
 
 ### EQ evolutivo 512 bandas (EvolutionaryEQ) — COMPLETADO 2026-09-13 (sesión Genspark, toma temporal por indicación directa del propietario)
