@@ -284,7 +284,12 @@ object IvannaAgentCore {
     object DspControlAgent {
 
         // Histeresis: no reenviar la misma política en cada ciclo.
-        private var lastPolicyName: String? = null
+        // @Volatile (auditoria 2026-09-10): AgentApi.requestOptimization()
+        // invoca apply()/resetHysteresis() desde CUALQUIER hilo (su contrato
+        // dice "seguras desde cualquier hilo") — sin visibilidad garantizada,
+        // un hilo externo podia leer un lastPolicyName obsoleto de la caché
+        // de CPU y reenviar/saltar políticas de forma inconsistente.
+        @Volatile private var lastPolicyName: String? = null
 
         fun apply(policy: DecisionAgent.Policy): Boolean {
             if (policy.name == lastPolicyName) return true  // ya aplicada
@@ -317,10 +322,16 @@ object IvannaAgentCore {
     // ══════════════════════════════════════════════════════════════════════
     object HealthMonitoringAgent {
 
-        private var lastClipCount = -1
+        // @Volatile (auditoria 2026-09-10): check() lo llama el bucle del
+        // agente Y AgentApi.diagnose()/requestOptimization() desde cualquier
+        // hilo — la visibilidad debe estar garantizada. El incremento de
+        // degradedStreak no es atómico, pero el peor caso (perder un tick del
+        // streak) solo retrasa una detección de latencia un ciclo: aceptable;
+        // lo inaceptable era leer valores invisibles indefinidamente.
+        @Volatile private var lastClipCount = -1
         // Latencia round-trip > 2 ms en el bridge JNI indica saturación del
         // pipeline; se confirma solo con 3 lecturas consecutivas degradadas.
-        private var degradedStreak = 0
+        @Volatile private var degradedStreak = 0
 
         fun check(): HealthSnapshot {
             val clips = if (IvannaNativeLib.isLoaded)
