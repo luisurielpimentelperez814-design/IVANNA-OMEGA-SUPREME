@@ -2142,6 +2142,13 @@ desplegado antes de aplicar un fix "a los N archivos que lo mencionan"
 Decision + apply) sí forman un ciclo real dentro de `cycle()` —
 percepción → salud → optimización → decisión → aplicar a DSP real
 (hallazgo #6). No son piezas sueltas.
+
+**Hallazgo #9 (sana):** los 5 botones del panel MagiskStatusPanel
+(STATUS/TELEMETRY/RELOAD/RECONECTAR/ROOT PING — los de la primerísima
+captura de esta sesión) están todos cableados a handlers reales, cero
+decorativos. Este archivo ya tuvo su propia pasada de auditoría por
+otra sesión (encontró un bug del mismo patrón: aviso de versión atrapado
+en un comentario KDoc, nunca código).
 ---
 
 ### Auditoría verificada de raíz + README.md (documentación pública)
