@@ -121,13 +121,20 @@ void Compressor::process(float* __restrict__ left,
     {
         const float rc = runtimeCoef_;
         runtimeAmount_ = rc * runtimeAmount_ + (1.0f - rc) * runtimeTarget_;
+        // FIX (discontinuidad audible real): threshold_/ratio_ son ahora
+        // el objetivo fijado por setThreshold()/setRatio() — converge
+        // hacia ellos con el mismo one-pole de 20ms que runtimeAmount_ ya
+        // usa, en vez de que process() los lea directos y salte de golpe
+        // en cada actualización térmica o cambio de preset.
+        thresholdSmoothed_ = rc * thresholdSmoothed_ + (1.0f - rc) * threshold_;
+        ratioSmoothed_     = rc * ratioSmoothed_     + (1.0f - rc) * ratio_;
     }
 
     const float threshold =
-        threshold_ - runtimeAmount_ * 12.0f;
+        thresholdSmoothed_ - runtimeAmount_ * 12.0f;
 
     const float effRatio =
-        ratio_ + runtimeAmount_ * 8.0f;
+        ratioSmoothed_ + runtimeAmount_ * 8.0f;
 
     const float ratioInv =
         1.0f - 1.0f / effRatio;

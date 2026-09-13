@@ -29,8 +29,21 @@ private:
     void recomputeMakeup() noexcept;
 
     float sr_ = 96000.0f;
+    // FIX (discontinuidad audible real, mismo patrón que el peak-guard ya
+    // reparado en este frente): threshold_/ratio_ eran los valores que
+    // process() usaba DIRECTAMENTE, y setThreshold()/setRatio() los
+    // pisaban de golpe — disparado por cada actualización térmica
+    // (potencialmente varias veces por minuto durante una sesión larga)
+    // o cada cambio de preset de usuario por voz. runtimeAmount_ (el
+    // ajuste fino del motor adaptativo) YA tenía protección anti-zipper
+    // documentada explícitamente para este mismo problema; los valores
+    // BASE no la tenían. threshold_/ratio_ ahora son el OBJETIVO fijado
+    // por el llamador; *_smoothed_ son los que process() realmente usa,
+    // convergiendo con el mismo one-pole de ~20ms ya validado abajo.
     float threshold_ = -12.0f;
     float ratio_ = 4.0f;
+    float thresholdSmoothed_ = -12.0f;
+    float ratioSmoothed_ = 4.0f;
     float attackCoef_ = 0.99f;
     float releaseCoef_ = 0.999f;
 
