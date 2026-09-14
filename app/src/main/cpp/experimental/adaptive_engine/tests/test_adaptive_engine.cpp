@@ -320,7 +320,9 @@ void testMultiProducerBusConcurrentStress() {
 
     std::thread producerA([&]() {
         float v = 0.0f;
-        while (!stop.load(std::memory_order_relaxed)) {
+        // Garantía de volumen mínimo propia: no depender del scheduling.
+        while (!stop.load(std::memory_order_relaxed)
+               || publishesA.load(std::memory_order_relaxed) <= 1000) {
             RawAudioMetrics m{};
             v += 0.001f; if (v > 1.0f) v = 0.0f;
             m.rms = v; m.peak = v;  // rms==peak siempre en este productor —
@@ -332,7 +334,9 @@ void testMultiProducerBusConcurrentStress() {
 
     std::thread producerB([&]() {
         float v = 1.0f;
-        while (!stop.load(std::memory_order_relaxed)) {
+        // Ídem productor B: stop solo se obedece tras publicar >1000 veces.
+        while (!stop.load(std::memory_order_relaxed)
+               || publishesB.load(std::memory_order_relaxed) <= 1000) {
             RawAudioMetrics m{};
             v -= 0.001f; if (v < 0.0f) v = 1.0f;
             // Productor B usa un rango DISTINTO y la relación rms==-peak+1
