@@ -55,6 +55,10 @@ struct OmegaDspState {
     // esa costura: reportSelfHealRestarts() lo actualiza desde el loop
     // principal, GET_STATUS lo expone real.
     uint32_t self_heal_restarts = 0;
+    // Contador de clientes atendidos por el socket de comandos. Lo
+    // incrementa el daemon en cada accept() y se expone en GET_STATUS para
+    // que la app distinga "daemon vivo sin clientes" de "daemon muerto".
+    uint32_t clients_served = 0;
 };
 
 class CommandServer {
@@ -72,6 +76,12 @@ public:
     void reportSelfHealRestarts(uint32_t n) noexcept {
         pthread_mutex_lock(&m_mutex);
         m_state.self_heal_restarts = n;
+        pthread_mutex_unlock(&m_mutex);
+    }
+    /** Incrementa el contador de clientes aceptados (telemetria real). */
+    void bumpClientsServed() noexcept {
+        pthread_mutex_lock(&m_mutex);
+        ++m_state.clients_served;
         pthread_mutex_unlock(&m_mutex);
     }
 

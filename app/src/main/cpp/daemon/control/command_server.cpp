@@ -253,12 +253,12 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"uptime_ms\":%llu,\"self_heal_restarts\":%u}",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u}",
             (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
             m_state.harmonic_gain, m_state.anti_dolby, (unsigned long long)m_state.last_update,
-            m_state.self_heal_restarts);
+            m_state.self_heal_restarts, m_state.clients_served);
 
     } else if (strcmp(action,"GET_HEALTH")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
