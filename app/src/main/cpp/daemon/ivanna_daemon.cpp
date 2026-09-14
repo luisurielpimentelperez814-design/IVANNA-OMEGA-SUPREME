@@ -366,6 +366,7 @@ int main(int argc, char* argv[]) {
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
             if (client_fd<0) continue;
             ivanna::shmManager().bumpHealthCounter(4); // clientes_conectados
+            commandServer.bumpClientsServed(); // telemetria visible en GET_STATUS
 
             // FIX (concurrencia): antes el bucle principal atendia a UN cliente
             // en un recv-loop bloqueante. El bridge Kotlin mantiene su socket
