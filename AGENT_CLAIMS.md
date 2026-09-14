@@ -2263,3 +2263,8 @@ Flanco queda LIBRE de nuevo.
 **Pendiente fuera de alcance (notificación al flanco UI/integración):** cablear `calibrate()` a Kotlin/JNI — punto de entrada explícito documentado en `EvolutionaryEQ.hpp`. Sin ese cableado el módulo permanece en identidad segura: decisión deliberada, no defecto.
 
 **Estado:** ciclo cerrado. El frente queda libre para mantenimiento.
+
+---
+
+### Nota de coordinación — inserción de video intro en MainActivity (directo del usuario)
+**Sesión Genspark, 2026-09-14.** El usuario pidió directamente mostrar un video intro justo después del splash y antes de la petición de permisos. Cambio mínimo y quirúrgico en `MainActivity.kt` (flanco UI COMPLETA): nueva `IntroVideoScreen` (VideoView nativo de `res/raw/ivanna_intro.mp4`, auto-salto al completar + botón SALTAR) enganchada en el NavHost como ruta `introVideo` entre `splash` e `intro` (popUpTo inclusive). Sin tocar lógica de permisos, DSP ni paneles. Compilación Android no verificable en sandbox (sin SDK) — la validación queda en CI.

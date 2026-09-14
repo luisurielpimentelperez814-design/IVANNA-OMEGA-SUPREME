@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -250,7 +251,12 @@ fun OmegaApp() {
         }
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         NavHost(nav, startDestination = "splash") {
-            composable("splash") { SplashScreen { nav.navigate("intro") } }
+            composable("splash") { SplashScreen { nav.navigate("introVideo") } }
+            composable("introVideo") {
+                IntroVideoScreen {
+                    nav.navigate("intro") { popUpTo("introVideo") { inclusive = true } }
+                }
+            }
             composable("intro") {
                 IntroScreen { profileId ->
                     pendingBandProfileId = profileId
@@ -761,6 +767,40 @@ fun SplashScreen(onAccept: () -> Unit) {
                 Text("ACEPTAR E INICIAR", color = TextPri,
                     fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
             }
+        }
+    }
+}
+
+@Composable
+fun IntroVideoScreen(onContinue: () -> Unit) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().background(Carbon)
+        .windowInsetsPadding(WindowInsets.systemBars),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center) {
+        Text("IVANNA OMEGA SUPREME", color = CyanGlow, fontSize = 13.sp,
+            fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+        Spacer(Modifier.height(12.dp))
+        AndroidView(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(9f / 16f)
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp)),
+            factory = { ctx ->
+                android.widget.VideoView(ctx).apply {
+                    setVideoURI(android.net.Uri.parse(
+                        "android.resource://" + ctx.packageName + "/" + R.raw.ivanna_intro))
+                    setOnCompletionListener { onContinue() }
+                    setOnErrorListener { _, _, _ -> onContinue(); true }
+                    start()
+                }
+            }
+        )
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onContinue,
+            modifier = Modifier.padding(vertical = 8.dp)) {
+            Text("SALTAR →", color = TextSec, fontSize = 12.sp, letterSpacing = 1.sp)
         }
     }
 }
