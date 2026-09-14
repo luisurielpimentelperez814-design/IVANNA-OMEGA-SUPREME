@@ -16,7 +16,12 @@ se preserva el HRIR medido por oído en formato `IHR1` (`IR_LEN=512`,
 Artefactos embarcados en el repo:
 
 - `tools/hrtf/hrtf_KEMAR_subject165.ihr1`
-- `magisk_module/system/etc/ivanna_omega/hrtf_dataset.ihr1`
+- `magisk_module/system/etc/ivanna_omega/hrtf/*.ihr1` — **12 sujetos IHR1
+  medidos** (kemar, kemar_large, tu_berlin_kemar, cipic_003/008/009/010/011/
+  012/165, pulse, freefield_demo) + `hrtf_index.json` con SHA-256 por sujeto.
+  *(El `hrtf_dataset.ihr1` monolítico que esta sección listaba era código
+  muerto: se eliminó del módulo en 83a5e450 y `customize.sh` dejó de
+  desplegarlo el 2026-08-26.)*
 
 Conversión usada:
 
@@ -102,23 +107,28 @@ que la cadena de carga funciona; **no** sustituye a una medida real.
 
 ## 3. Instalación vía Magisk (producción)
 
-El módulo embarca su propio dataset y lo despliega en la instalación:
+El módulo embarca **12 sujetos IHR1 medidos** y los despliega en la
+instalación con verificación de integridad SHA-256 por sujeto:
 
 ```
-magisk_module/system/etc/ivanna_omega/hrtf_dataset.ihr1   (embarcado)
-                    ↓  customize.sh
-/data/adb/ivanna_omega/hrtf_dataset.ihr1                  (0644 root:root)
+magisk_module/system/etc/ivanna_omega/hrtf/*.ihr1 + hrtf_index.json
+                    ↓  customize.sh (verifica SHA-256 contra el índice)
+/data/adb/ivanna_omega/hrtf/<sujeto>.ihr1                 (0644 root:root)
 ```
 
-Esa ruta destino no es arbitraria: es exactamente la que pide
-`omega_effect.cpp` en `loadCustomHrtf()`.
+**Cadena de carga del motor (verificada 2026-09-10):** tanto
+`omega_effect.cpp` (vía `IvannaFusionCore::loadCustomHrtf`) como
+`spatial/hrtf_convolver.cpp` intentan, en este orden:
 
-> **Regla anti-sobrescritura.** Si en `/data/adb/ivanna_omega/` ya hay un
-> `.ihr1` **no vacío**, `customize.sh` **no lo pisa** y lo dice en la consola
-> de instalación (`HRTF dataset ya presente — preservando custom del
-> usuario`). Consecuencia práctica: reinstalar el módulo **no** te va a
-> devolver el dataset embarcado si ya tienes uno tuyo. Para volver al de
-> fábrica hay que borrar el archivo primero.
+1. `/data/adb/ivanna_omega/hrtf_dataset.ihr1` — **custom del usuario** (si
+   existe; el módulo ya no lo instala — es tu punto de reemplazo).
+2. `/data/adb/ivanna_omega/hrtf/kemar.ihr1` — KEMAR medido del módulo
+   (siempre presente tras una instalación sana).
+
+Si ninguno carga, el motor cae al HRTF sintético y lo dice en logcat.
+*(Antes de 2026-09-10 el convolver buscaba `hrtf_database.bin`, un archivo
+que el módulo jamás desplegó — caía al sintético siempre. Corregido en
+ab1a6766.)*
 
 ### Reemplazarlo por uno tuyo
 
@@ -145,19 +155,23 @@ sonando. El tag de logcat es **`IvannaOmegaEffect`**:
 adb logcat -s IvannaOmegaEffect:V
 ```
 
-**Dataset medido activo** (lo que quieres ver):
+**Dataset medido activo** (lo que quieres ver). Ambos caminos logean DESDE
+QUÉ archivo cargaron (telemetría honesta, 2026-09-10):
 
 ```
 I/IvannaOmegaEffect: Custom HRTF dataset loaded from
                      /data/adb/ivanna_omega/hrtf_dataset.ihr1 (measured path ACTIVE)
+I/IVANNA_HRTF: HRTF: custom dataset loaded from
+               /data/adb/ivanna_omega/hrtf/kemar.ihr1
+I/SafHRTFBridge: header pos=710 taps=512 rate=48000.0 fmt=IHR1
 ```
 
 **Fallback sintético** (algo falló):
 
 ```
-W/IvannaOmegaEffect: Failed to load custom HRTF dataset from
-                     /data/adb/ivanna_omega/hrtf_dataset.ihr1 (errno=2,
+W/IvannaOmegaEffect: Failed to load custom HRTF dataset from ... (errno=2,
                      No such file or directory). Falling back to SYNTHETIC HRTF.
+W/IVANNA_HRTF: HRTF: synthetic fallback
 ```
 
 Cómo leer el `errno`:
