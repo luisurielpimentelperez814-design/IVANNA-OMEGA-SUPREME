@@ -59,8 +59,19 @@ IvannaFusionEngine::IvannaFusionEngine() {
             // en /data/adb/ivanna_omega/hrtf/*.ihr1 con índice verificado por
             // sha256). Sin este fallback el motor caía SIEMPRE al HRTF
             // sintético en sesiones sin selector previo.
+            // FIX (2026-09-10, frente DSP, consistencia con hrtf_convolver.cpp):
+            // hay 10 sujetos reales más además de KEMAR (7 CIPIC humanos
+            // medidos + variantes) empaquetados y sin usar por este camino.
+            // No cambio el orden de prioridad del caso normal (KEMAR sigue
+            // siendo el default razonable), solo agrego fallback adicional
+            // si KEMAR llegara a faltar — antes de este cambio, eso caía
+            // derecho a sintético con 10 datasets reales sin tocar.
             if (!m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf_dataset.ihr1")) {
-                m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf/kemar.ihr1");
+                if (!m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf/kemar.ihr1")) {
+                    if (!m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf/cipic_003.ihr1")) {
+                        m_hrtf->loadFromDataset("/data/adb/ivanna_omega/hrtf/cipic_165.ihr1");
+                    }
+                }
             }
     m_evoEq = new EvolutionaryEQ();
     m_psycho = new Psychoacoustics();

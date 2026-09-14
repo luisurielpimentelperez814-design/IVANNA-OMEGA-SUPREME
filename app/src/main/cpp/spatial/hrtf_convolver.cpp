@@ -98,9 +98,24 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     // busqueda que IvannaFusionCore.cpp:62 ya usa con exito: dataset
     // personalizado del usuario primero, KEMAR medido del modulo despues.
     // El bridge (ya endurecido) valida cabecera/tamano antes de reservar.
+    //
+    // FIX (2026-09-10, frente DSP): confirmado con `find` sobre los
+    // assets reales que van 12 sujetos .ihr1 empaquetados — 7 son
+    // sujetos humanos CIPIC medidos de verdad (cipic_003..cipic_165),
+    // no solo KEMAR. No reordeno cual va PRIMERO — KEMAR como default
+    // es una decision de producto razonable (referencia estandar de la
+    // industria, no un bug), y no es mi llamada decidir que sujeto
+    // "suena mejor". Pero si KEMAR llegara a faltar o venir corrupto en
+    // algun build, antes esto caia derecho a sintetico dejando 10
+    // sujetos reales sin tocar — ahora se agregan como fallback
+    // adicional, mismo patron, sin tocar el orden de prioridad ya
+    // establecido para el caso normal.
     const char* hrtfCandidates[] = {
-        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",  // custom del usuario
-        "/data/adb/ivanna_omega/hrtf/kemar.ihr1"     // KEMAR medido del modulo
+        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",   // custom del usuario
+        "/data/adb/ivanna_omega/hrtf/kemar.ihr1",     // KEMAR medido del modulo (default)
+        "/data/adb/ivanna_omega/hrtf/cipic_003.ihr1", // fallback: sujeto humano medido real
+        "/data/adb/ivanna_omega/hrtf/cipic_165.ihr1", // fallback: otro sujeto humano medido real
+        "/data/adb/ivanna_omega/hrtf/kemar_large.ihr1" // fallback: variante KEMAR
     };
 
     bool hrtfLoaded = false;
