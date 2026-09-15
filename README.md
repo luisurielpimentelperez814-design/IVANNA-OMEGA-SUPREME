@@ -138,6 +138,21 @@ Un asistente cognitivo integrado en la app, con núcleo conversacional propio **
 
 ---
 
+## ✦ Intelligent Upmixing — estéreo → HOA → binaural (v2.3.9+)
+Canal de expasión espacial en tiempo recién añadido y cableado extremo-a-extremo al `IvannaFusionCore`:
+
+| Etapa | Módulo | Qué entrega |
+|-------|--------|-------------|
+| Crossover complementario | `spatial/IntelligentUpmixer` | Separa el contenido en 2 sub-band conteñidas (bass sobre el mono L+R — **es mono-seguro, no suma de potencia en el canal fantasma**) |
+| Vectores de fuente | `spatial/HoaGainMatrix` | Codificación Ambisonics de orden **0–2 real en el plano horizontal** (9 canales ACN/SN3D), con ganancia por dirección |
+| Transientes | `spatial/TransientDetector` | Envolvente rápida (atq 2 ms) vs lenta (smt 60 ms) — dirige el transient sobre el bus mono, evita el chorreo espaciil de percusión |
+| Decodificador binaural | `spatial/HoaBinauralDecoder` | Renderizado 2D de los 9 canales HOA hacia par estéreo usando la **base HRTF CIPIC medida** (no un pan por sin()) |
+| Puerta de calidad host | `tests/spatial_dataset_regression_test.cpp` | Par exacto a ±30°, NaN = 0 en todas las fuentes traseras, canal fantasma = 0 sobre bass |
+
+**Dónde se controla:** `Panel de espacialidad → INTELLIGENT UPMIXING` (toggle on/off + deslizador INMERSIVIDAD 0..1, cableados ambos a `ParameterStore` → JNI → el engine real, no a un intent).
+
+---
+
 ## ✦ Motores de fase y dinámica no-lineal
 
 - **Phase Oracle (Pi-LSTM):** `phase_oracle.cpp` — red recurrente que predice la evolución de fase de la señal para anticipar la decisión del DSP en vez de reaccionar a ella.
