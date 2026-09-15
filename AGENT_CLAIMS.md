@@ -365,6 +365,20 @@ un reemplazo del propietario original — si esa sesión vuelve a
 activarse, este frente sigue siendo suyo; se documentará aquí cada
 avance real para que pueda retomarlo sin perder contexto.
 
+**Encargo directo adicional del propietario (2026-09-15):** módulo
+HOA (Ambisonics)→Binaural, extendiendo `HRTFConvolver` (dentro del
+alcance ya legítimo de este frente: `cpp/spatial/` completo), conectado
+después de `PDEngine` y antes de `SafetyLimiter` en la cadena real.
+El encargo original pedía también "cerrar y sellar" `Φ_SAF∞`
+(matching HRTF/CMA-ES/Q-Learning/persistencia) como ETAPA 1 — **NO se
+toca**: `saf/SaFEngine.kt`, `saf/SaFBridge.kt` y `saf/SaFRoomBridge.kt`
+están EXCLUSIVAMENTE reclamados por el frente "Motor SAF de
+calibración HRTF" (sesión Genspark, ver más abajo en este archivo),
+con la firma de `SaFBridge`/`SaFRoomBridge` explícitamente protegida
+("sin tocar firma"). Se procede solo con lo que es legítimamente mío:
+verificación de premisas (WFS no existe, `HRTFConvolver` sí, todo
+binaural estéreo) y el módulo HOA→Binaural en sí.
+
 ---
 
 ### UI COMPLETA y sus sub-entornos — Compose principal + OEM + theme + viewmodels de UI + visualizadores
