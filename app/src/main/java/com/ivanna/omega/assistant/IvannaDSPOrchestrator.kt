@@ -228,6 +228,16 @@ class IvannaDSPOrchestrator(
                 "volume_up" -> { val ok = voiceController.executeCommand("volume_up"); OrchestrationResult(ok, "volume", if (ok) "Volumen aumentado" else "No se pudo subir el volumen", "volume_up") }
                 "volume_down" -> { val ok = voiceController.executeCommand("volume_down"); OrchestrationResult(ok, "volume", if (ok) "Volumen reducido" else "No se pudo bajar el volumen", "volume_down") }
                 "bass_boost" -> { val ok = voiceController.executeCommand("bass_boost"); OrchestrationResult(ok, "bass", if (ok) "Graves potenciados" else "No se pudo potenciar los graves", "bass_boost") }
+                // Variante segura emitida por IvannaCognitiveCore cuando hay clipping:
+                // primero alivia la distorsión y solo después refuerza graves — nunca
+                // deja al usuario con un "no puedo" (ver commit fix(cognitive)).
+                "bass_boost_safe" -> { voiceController.executeCommand("clip_relief"); val ok = voiceController.executeCommand("bass_boost"); OrchestrationResult(ok, "bass", if (ok) "Graves potenciados con protección anti-distorsión" else "No se pudo potenciar los graves", "bass_boost_safe") }
+                // Auto-reparación completa del producto: auto-diagnóstico + auto-mejora
+                // en una sola orden — recorre telemetría real (DIAGNOSE) y aplica la
+                // política correctiva (OPTIMIZE) sobre DSP, motor adaptativo y estado
+                // térmico. Es el comando que el asistente usa para "manipular todo el
+                // producto" cuando el usuario pide que IVANNA se repare a sí misma.
+                "self_heal" -> { val d = voiceController.executeCommand("diagnose"); val o = voiceController.executeCommand("auto_optimize"); OrchestrationResult(d && o, "self_heal", if (d && o) "Auto-diagnóstico y auto-mejora completados" else "Auto-reparación parcial — revisar panel DSP", "self_heal") }
                 "treble_reduce" -> { val ok = voiceController.executeCommand("treble_reduce"); OrchestrationResult(ok, "treble", if (ok) "Agudos reducidos" else "No se pudo reducir los agudos", "treble_reduce") }
                 "auto_optimize" -> { val ok = voiceController.executeCommand("auto_optimize"); OrchestrationResult(ok, "auto", if (ok) "Audio optimizado automáticamente" else "No se pudo optimizar el audio", "auto_optimize") }
                 "studio_reference" -> applyNamedProfile("ESTUDIO PRO")

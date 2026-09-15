@@ -100,10 +100,19 @@ object IvannaCognitiveCore {
 
             IvannaLanguageCore.AcousticIntent.BASS_BOOST -> {
                 when {
+                    // FIX (reporte del propietario con captura, 2026-09-15): "aumenta
+                    // graves" aparecía en el panel como "IvannaStaticCore (bloqueó)" —
+                    // execute=false hardcodeado ante cualquier clipping. Bloquear del
+                    // todo dejaba al usuario sin acción y sin vía de mejora: exactamente
+                    // el anti-patrón "el agente dice que no puede" que el propietario
+                    // prohibió. Ahora NO se bloquea: se ejecuta una variante segura
+                    // (bass_boost_safe) que primero aplica clip-relief y luego el
+                    // refuerzo con fuerza moderada — el audio mejora Y se protege.
                     clips > 3 -> CognitiveDecision(
-                        execute = false,
-                        reason = "Clipping activo — reforzar graves empeoraría la distorsión.",
-                        warningForUser = "Hay distorsión activa. Reforzar los graves la aumentaría. Primero baja un poco el volumen."
+                        execute = true,
+                        commandOverride = "bass_boost_safe",
+                        reason = "Clipping activo ($clips eventos): graves reforzados con clip-relief previo y fuerza moderada.",
+                        warningForUser = "Detecto algo de distorsión; he subido los graves con protección activa."
                     )
                     else -> CognitiveDecision(execute = true, reason = "Señal dentro de límites.")
                 }
