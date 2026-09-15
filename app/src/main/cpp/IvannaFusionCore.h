@@ -44,6 +44,11 @@ public:
     void process(Ivanna::AudioBuffer* buffer);
 
     void runAcousticProfiling();
+    void setUpmixingEnabled(bool enable) { m_upmixer.setUpmixingEnabled(enable); }
+    bool isUpmixingEnabled() const { return m_upmixer.isUpmixingEnabled(); }
+    void setImmersivity(float value) { m_upmixer.setImmersivity(value); }
+    float getImmersivity() const { return m_upmixer.getImmersivity(); }
+
 
     void setGoldenEarMode(bool enable);
 

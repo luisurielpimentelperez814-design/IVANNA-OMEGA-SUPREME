@@ -78,7 +78,12 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_classifier = new IvannaAudioClassifier();
     m_prosody = new IvannaVoiceProsodyEngine();
     m_memory = new IvannaSuperAgentMemory();
+    
     m_memory->initialize("/data/adb/ivanna_omega/agent_memory.bin");
+    
+    m_upmixer.prepare(48000.0f);
+    m_decoder.prepare(48000.0f, 8); // 8 virtual speakers
+
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
