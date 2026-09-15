@@ -145,6 +145,14 @@ add_library(ivanna_omega SHARED
     # plan de sustitución cuando se restaure el puente memfd real.
     omega_daemon_bridge_stub.cpp
 
+    # FIX (build): undefined symbols g_upmixing_enabled /
+    # g_upmixing_immersivity en libivanna_omega.so. Las definiciones
+    # reales entran en libomega_effect.so por unity-include de
+    # IvannaFusionCore.cpp (address-space separado, audioserver).
+    # Este .cpp es la copia del proceso app — ver comentarios en el
+    # archivo. NO añade ODR conflict: cada SHARED library es unidad.
+    upmixing_controls_bridge.cpp
+
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
     anti_dolby.cpp
