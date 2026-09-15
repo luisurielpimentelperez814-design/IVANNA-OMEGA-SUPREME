@@ -443,3 +443,16 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_evolutionary_eq COMMAND test_evolutionary_eq)
 
+
+add_executable(test_intelligent_upmixer
+  test_intelligent_upmixer.cpp
+  ../spatial/IntelligentUpmixer.cpp
+)
+target_link_libraries(test_intelligent_upmixer PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_intelligent_upmixer PRIVATE .. ../include)
+target_compile_options(test_intelligent_upmixer PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_intelligent_upmixer PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_intelligent_upmixer PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_intelligent_upmixer)
