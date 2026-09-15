@@ -110,6 +110,9 @@ public:
     void setSharedDataset(std::shared_ptr<SharedDataset> ds) noexcept {
         std::atomic_store(&dataset_, std::move(ds));
     }
+    // Getter aditivo (2026-09-15): HoaBinauralDecoder propaga el dataset a
+    // sus HRTFConvolver; sin este acceso el flanco HOA->Binaural no compilaba.
+    std::shared_ptr<SharedDataset> getSharedDataset() const noexcept { return dataset_; }
 
     // ── SAF latent morphing ────────────────────────────────────────────
     // Aplica el vector q_t (7 componentes PCA) del optimizador Φ_SAF^∞
@@ -186,7 +189,14 @@ public:
 
         nearEar[0] = 1.f;
 
-        const float shadowAmount = (absTheta / (float)(M_PI * 0.5)) * aggressiveness;
+        // FIX (NaN en fuentes traseras, 2026-09-15): sin saturar, para
+        // |theta| > pi/2 shadowAmount > 1 -> fc = 14000 - shadowAmount*10500
+        // se vuelve NEGATIVA -> el one-pole lpState queda con polo > 1
+        // (inestable) y explota a inf/NaN (reproducido en host: az=135/180/
+        // 225 -> salida -nan). La sombra de cabeza tiene un maximo fisico:
+        // se satura a 1.0. El hemisferio frontal (|theta| <= pi/2) queda
+        // EXACTAMENTE igual (shadowAmount <= 1 ahi cuando aggressiveness <= 1).
+        const float shadowAmount = std::min((absTheta / (float)(M_PI * 0.5)) * aggressiveness, 1.0f);
         const float fc = 14000.f - shadowAmount * 10500.f;
         const float rc = 1.f / (2.f * (float)M_PI * fc);
         const float dt = 1.f / sr_;

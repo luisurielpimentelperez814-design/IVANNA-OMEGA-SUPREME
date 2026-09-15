@@ -35,7 +35,7 @@ private:
     float bassLpfStateMid_ = 0.0f;
     float lpfAlpha_ = 0.0f;
     
-    TransientDetector transientDetector_;
+    ivanna::TransientDetector transientDetector_;
 };
 
 } // namespace Ivanna

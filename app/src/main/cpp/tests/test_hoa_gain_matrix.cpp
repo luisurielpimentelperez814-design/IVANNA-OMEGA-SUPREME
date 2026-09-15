@@ -7,8 +7,13 @@
 #include <cmath>
 #include "../spatial/HoaGainMatrix.hpp"
 
-using ivanna::HoaGainMatrix;
-using ivanna::HoaVector;
+// FIX (build rojo, 2026-09-15): el header HoaGainMatrix.hpp declara
+// `namespace Ivanna` (I mayúscula, commits d8c1af8/fff60f1) pero este test
+// seguía usando `ivanna::` minúscula -> "'ivanna' has not been declared".
+// Se actualiza el test al namespace nuevo; el header NO se toca (es el
+// cambio nuevo que hay que preservar).
+using Ivanna::HoaGainMatrix;
+using Ivanna::HoaVector;
 
 namespace {
 constexpr float kEps = 1e-5f;
@@ -68,7 +73,7 @@ TEST(HoaGainMatrix, PeriodicidadDosPi) {
     for (float az = -2.5f; az <= 2.5f; az += 0.53f) {
         HoaVector a = HoaGainMatrix::encode(az);
         HoaVector b = HoaGainMatrix::encode(az + 2.0f * kPi);
-        for (int ch = 0; ch < ivanna::kHoaNumChannels; ++ch) {
+        for (int ch = 0; ch < Ivanna::kHoaNumChannels; ++ch) {
             EXPECT_NEAR(a[static_cast<size_t>(ch)], b[static_cast<size_t>(ch)], 1e-3f)
                 << "canal=" << ch << " az=" << az;
         }
@@ -84,7 +89,7 @@ TEST(HoaGainMatrix, Accumulate) {
     // ganancia 1.0 (linealidad de la codificación HOA, propiedad real que
     // se explota en Fase 1 del encargo — varias fuentes sumadas en el mismo
     // campo antes de decodificar).
-    for (int ch = 0; ch < ivanna::kHoaNumChannels; ++ch) {
+    for (int ch = 0; ch < Ivanna::kHoaNumChannels; ++ch) {
         EXPECT_NEAR(field[static_cast<size_t>(ch)], src[static_cast<size_t>(ch)], kEps)
             << "canal=" << ch;
     }

@@ -2,7 +2,7 @@
 #include "../spatial/IntelligentUpmixer.hpp"
 #include <cmath>
 
-using namespace ivanna;
+using namespace Ivanna;
 
 TEST(IntelligentUpmixerTest, IdenticalStereoYieldsFrontalHOA) {
     IntelligentUpmixer upmixer;

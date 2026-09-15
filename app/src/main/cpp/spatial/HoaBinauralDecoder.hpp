@@ -23,7 +23,7 @@ public:
      */
     void prepare(float sampleRate, size_t numSpeakers = 8) noexcept;
     
-    void setHrtfProfile(std::shared_ptr<SyntheticHRTF> profile) noexcept;
+    void setHrtfProfile(std::shared_ptr<ivanna::SyntheticHRTF> profile) noexcept;
 
     /**
      * @param inField Array of HOA vectors for each frame
@@ -36,18 +36,20 @@ public:
 private:
     float sampleRate_ = 48000.0f;
     size_t numSpeakers_ = 8;
-    std::shared_ptr<SyntheticHRTF> hrtfProfile_;
+    std::shared_ptr<ivanna::SyntheticHRTF> hrtfProfile_;
     
     struct VirtualSpeaker {
         float azimuthRad;
         HoaVector decodeGains;
-        HRTFConvolver convolver;
+        ivanna::HRTFConvolver convolver;
         
         // Intermediate mono buffer for decoding HOA -> Speaker
         std::vector<float> monoBuffer;
     };
     
-    std::vector<VirtualSpeaker> speakers_;
+    // unique_ptr: HRTFConvolver contiene std::atomic (ni copiable ni movible),
+    // asi que vector<VirtualSpeaker> plano no compila (resize exige move).
+    std::vector<std::unique_ptr<VirtualSpeaker>> speakers_;
     
     // Internal mix buffers
     std::vector<float> mixL_;
