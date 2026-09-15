@@ -20,7 +20,7 @@
 #include <array>
 #include <cmath>
 
-namespace ivanna {
+namespace Ivanna {
 
 // ============================================================================
 // HoaGainMatrix — codificación Ambisonics (HOA) real, orden 0–2, SN3D/ACN,
@@ -113,4 +113,4 @@ public:
     }
 };
 
-}  // namespace ivanna
+}  // namespace Ivanna
