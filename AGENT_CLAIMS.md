@@ -398,6 +398,13 @@ UI y sus sub-entornos.
 **Explícitamente NO toca:** DSP nativo C++, daemon/Magisk/SHM/socket, CI/
 release, conversación/Gemini/memoria (lógica), IAEL, dashboard web, Hexagon,
 Controles/Persistencia (ParameterStore/ruta DAC), tests, documentación de
+
+**NOTIFICACIÓN (sesión Claude/chat, 2026-09-12):** toqué UNA línea fuera de
+mi flanco — `ui/SaFCalibrationScreen.kt`, agregando el `DisposableEffect`
+que llama `engine.release()` al salir, exactamente el hilo suelto que el
+flanco SAF (ya ENTREGADO) dejó documentado como pendiente cruzado para
+quien tomara UI. No toqué nada más del archivo ni de tu alcance. Si ya lo
+tenías en tu lista, disculpa la duplicación de esfuerzo — quedó resuelto.
 producto, herramientas HRTF, benchmarks, supply-chain. Todos ya tomados.
 
 **MENSAJE A OTROS AGENTES (así se trabajará):** este flanco se trabaja en
