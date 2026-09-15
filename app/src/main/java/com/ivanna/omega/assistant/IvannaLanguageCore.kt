@@ -65,6 +65,8 @@ object IvannaLanguageCore {
         OPTIMIZE,             // "optimiza", "ahorra batería"
         // Desconocida
         UNKNOWN
+        SELF_HEAL,            // "repárate", "auto-repara", "arréglalo todo", "mejórate"        // Desconocida
+        UNKNOWN
     }
 
     /** Punto de entrada principal. Mantiene contexto entre llamadas. */
@@ -110,6 +112,7 @@ object IvannaLanguageCore {
         AcousticIntent.SESSION_REPORT     -> "session_report"
         AcousticIntent.PROFILE_LIST       -> "profile_list"
         AcousticIntent.DIAGNOSE           -> "diagnose"
+            AcousticIntent.SELF_HEAL          -> "self_heal"
         AcousticIntent.EXPLAIN            -> "explain"
         AcousticIntent.OPTIMIZE           -> "optimize"
         AcousticIntent.SELF_INTRO         -> "none"
@@ -236,6 +239,14 @@ object IvannaLanguageCore {
         if (hits(t, "optimiza", "ahorra batería", "ahorra bateria",
                   "mejor rendimiento", "menos consumo")) {
             return AcousticIntent.OPTIMIZE to 0.94f
+        }
+        if (hits(t, "repárate", "reparate", "auto-repara", "autorepara", "auto repara",
+                  "repáralo todo", "reparalo todo", "arréglalo todo", "arreglalo todo",
+                  "arréglalo", "arreglalo", "corrige todo", "revisa todo", "mejórate",
+                  "mejorate", "mejora todo", "mejóralo", "mejoralo", "ajústate",
+                  "ajustate", "diagnostica y repara", "diagnóstico completo",
+                  "optimiza todo", "optimízate", "optimizate")) {
+            return AcousticIntent.SELF_HEAL to 0.95f
         }
         if (hits(t, "cómo estás", "como estas", "estado del sistema",
                   "todo bien", "hay algún problema", "hay algun problema",

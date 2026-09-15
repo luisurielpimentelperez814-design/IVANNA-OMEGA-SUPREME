@@ -137,6 +137,12 @@ object IvannaCognitiveCore {
                 }
             }
 
+            IvannaLanguageCore.AcousticIntent.SELF_HEAL -> CognitiveDecision(
+                execute = true,
+                commandOverride = "self_heal",
+                reason = "Auto-diagnóstico y auto-mejora completos solicitados por el usuario."
+            )
+
             // Reportes y listas — siempre se ejecutan, no hay riesgo de audio
             IvannaLanguageCore.AcousticIntent.SESSION_REPORT,
             IvannaLanguageCore.AcousticIntent.PROFILE_LIST -> CognitiveDecision(

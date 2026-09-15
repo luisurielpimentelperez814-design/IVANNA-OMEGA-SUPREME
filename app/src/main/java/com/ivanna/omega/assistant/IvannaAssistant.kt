@@ -390,6 +390,31 @@ class IvannaAssistant(
                         // ── Flujo estándar para intenciones no musicales ──────────────────
             val decision = fatigueOverride ?: IvannaCognitiveCore.reason(parsed)
 
+            // FIX (reporte del propietario con captura, 2026-09-15): ante una
+            // intención desconocida o una decisión no ejecutable, IVANNA caía al
+            // catálogo estrecho ("Eso aún no lo sé hacer. Puedo mejorar las
+            // voces, dar más espacio...") aunque Gemini estuviera CONECTADO —
+            // el LLM de amplio contexto existía pero su respuesta solo se
+            // usaba si coincidía con un comando DSP. Ahora, cuando la capa
+            // acústica no tiene respuesta y Gemini sí respondió, la respuesta
+            // de Gemini (amplio contexto: cualquier tema) ES la respuesta de
+            // voz; la capa acústica queda como contexto en el panel, no como
+            // sustituto. Solo sin Gemini se usa el catálogo estático.
+            if (!decision.execute && !agentReply.isNullOrBlank()) {
+                profile.recordAdjustment("general_chat", scene ?: "UNKNOWN")
+                memory.recordAdjustment("general_chat", "usuario: \"$text\"", applied = false)
+                IvannaConversationalCore.recordTurn(text, "general_chat", null, agentReply)
+                launch(Dispatchers.Main) {
+                    _ui.value = _ui.value.copy(
+                        processing = false,
+                        statusLine = agentReply,
+                        lastTurn   = ConversationTurn(userText = text, ivannaText = agentReply)
+                    )
+                    voice.speak(agentReply)
+                }
+                return@launch
+            }
+
             val reply: String = when {
                 parsed.acousticIntent == IvannaLanguageCore.AcousticIntent.EXPLAIN -> {
                     IvannaCognitiveCore.explainLastDecision()
