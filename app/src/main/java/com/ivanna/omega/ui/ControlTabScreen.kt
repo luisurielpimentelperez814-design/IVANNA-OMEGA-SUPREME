@@ -86,6 +86,8 @@ fun ControlTabScreen(
         initialAutoMode      = paramStore.isAutoModeEnabled(),
         initialOmegaMode     = paramStore.getOmegaMode(),
         initialSpatialEnabled = IvannaSpatialEngine.enabled,
+        initialHoaUpmixingEnabled = paramStore.isHoaUpmixingEnabled(),
+        initialHoaImmersivity = paramStore.getHoaImmersivity(),
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
         routeState           = routeState,

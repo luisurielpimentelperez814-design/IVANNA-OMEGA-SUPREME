@@ -1,4 +1,11 @@
 #include "IvannaFusionCore.h"
+#include <atomic>
+
+// ── Controles Globales para Upmixing (Accesibles vía JNI) ──
+std::atomic<bool> g_upmixing_enabled{false};
+std::atomic<float> g_upmixing_immersivity{1.0f};
+
+
 #include "IvannaFusionCore.hpp"
 #include "HrtfManager.hpp"
 #include "EvolutionaryEQ.hpp"

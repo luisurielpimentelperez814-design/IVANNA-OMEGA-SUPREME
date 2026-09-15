@@ -1968,6 +1968,24 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     applyNhoWet();
 }
 
+
+extern std::atomic<bool> g_upmixing_enabled;
+extern std::atomic<float> g_upmixing_immersivity;
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetIntelligentUpmixingEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    g_upmixing_enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
+    JNIEnv*, jobject, jfloat immersivity) {
+    if (std::isfinite(immersivity)) {
+        g_upmixing_immersivity.store(immersivity, std::memory_order_relaxed);
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     JNIEnv*, jobject, jfloat v) {

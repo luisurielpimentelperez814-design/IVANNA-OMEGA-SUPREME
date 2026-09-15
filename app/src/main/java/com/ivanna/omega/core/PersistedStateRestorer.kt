@@ -45,6 +45,11 @@ object PersistedStateRestorer {
             IvannaSpatialEngine.setAzimuth(aziRad)
             IvannaSpatialEngine.setElevation(eleRad)
             runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(aziRad) }
+            
+            // Intelligent Upmixing (HOA)
+            val paramStore = com.ivanna.omega.core.ParameterStore(ctx)
+            runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(paramStore.isHoaUpmixingEnabled()) }
+            runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(paramStore.getHoaImmersivity()) }
         }
 
         // 2. Restaurar HarmonicExciterPrefs (perceptual state)

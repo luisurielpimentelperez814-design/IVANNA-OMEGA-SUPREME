@@ -282,7 +282,12 @@ object IvannaNativeLib {
     // semántica que ya tenían cuando λ_t no estaba disponible (< 0 → no-op),
     // pero sin riesgo de UnsatisfiedLinkError.
 
-        // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
+    
+    // ═══ FASE 3: Upmixing Inteligente HOA -> Binaural ═══
+    external fun nativeSetIntelligentUpmixingEnabled(enabled: Boolean)
+    external fun nativeSetUpmixingImmersivity(immersivity: Float)
+
+    // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
         // pero nunca estaban declarados en IvannaNativeLib — falta de sincronización
         // entre .kt declarations y .cpp implementation.

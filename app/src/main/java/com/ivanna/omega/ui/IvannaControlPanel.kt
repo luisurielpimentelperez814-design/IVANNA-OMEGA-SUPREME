@@ -86,6 +86,8 @@ fun IvannaControlPanel(
     initialNpeAdapt: Boolean = true,
     initialNpeManifold: Boolean = false,
     initialSpatialEnabled: Boolean = false,
+    initialHoaUpmixingEnabled: Boolean = false,
+    initialHoaImmersivity: Float = 1.0f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -108,6 +110,8 @@ fun IvannaControlPanel(
     onNpeFlagsChange: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onNpeManifoldChange: (Boolean) -> Unit = {},
     onSpatialEnabledChange: (Boolean) -> Unit = {},
+    onHoaUpmixingEnabledChange: (Boolean) -> Unit = {},
+    onHoaImmersivityChange: (Float) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
     onOpenAdaptiveEngineManual: () -> Unit = {},
@@ -240,6 +244,8 @@ fun IvannaControlPanel(
     var npeInferenceUs by remember { mutableLongStateOf(-1L) }
     var lastAutoAppliedGenre by remember { mutableStateOf<String?>(null) }
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
+    var hoaUpmixingEnabled by remember { mutableStateOf(initialHoaUpmixingEnabled) }
+    var hoaImmersivity by remember { mutableFloatStateOf(initialHoaImmersivity) }
 
     
     // ── Persistencia automática al salir de la pantalla ──
@@ -677,6 +683,23 @@ fun IvannaControlPanel(
         }
 
         SectionLabel("ESPACIAL Y NEUROMÓRFICO", NeonMagenta)
+        
+        GlassCard(
+            title = "INTELIGENCIA ESPACIAL (HOA → BINAURAL)",
+            accent = NeonMagenta,
+            subtitle = "Upmixing M/S Real a Anillo HOA",
+            action = {
+                Switch(hoaUpmixingEnabled, onCheckedChange = { 
+                    hoaUpmixingEnabled = it 
+                    onHoaUpmixingEnabledChange(it)
+                })
+            }
+        ) {
+            AuroraSlider("INMERSIVIDAD HOA", hoaImmersivity, 0f..2f) {
+                hoaImmersivity = it
+                onHoaImmersivityChange(it)
+            }
+        }
 
         GlassCard(
             title = "NHO / ESPACIAL",
