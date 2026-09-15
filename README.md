@@ -172,10 +172,16 @@ Canal de expasión espacial en tiempo recién añadido y cableado extremo-a-extr
 | **Fallback TCP** | `127.0.0.1:12121` (loopback) — la app conecta por aquí si el socket abstracto está bloqueado por SELinux/ROM |
 | SHM | `OmegaControlBus` en `/data/adb/ivanna_omega/omega_control_snapshot` — seqlock embebido, MAGIC + VERSION + CRC32 |
 | Route Arbiter | `OFF / IN_PROCESS / SYSTEM_WIDE` explícito en cada snapshot |
+| Telemetría daemon | `GET_STATUS` expone `clients_served` (aceptaciones reales del socket) — la app distingue "daemon vivo sin clientes" de "daemon muerto", no solo silencio ambiguo |
 | Telemetría B→A | `raw_rms`, `raw_peak`, `effect_frames` escritos por audioserver y leídos por la app — la UI sabe cuándo la Ruta B está viva |
 | ThermalGovernor | 5 niveles de degradación elegante: reduce orden Ambisonics / longitud RIR ante throttling térmico |
 | Offloading | Hexagon cDSP via FastRPC: loader runtime `dlopen` de `libcdsprpc/libadsprpc` (`hexagon/ivanna_dsp.cpp`, contrato IDL único en `ivanna_dsp.idl`), API JNI real (`nativeDsp*`) y telemetría honesta — reporta no-disponible en vez de fingir. **Pendiente:** el skel QAIC del Hexagon SDK (propietario) y el despacho de audio por la ruta DSP en el callback — hoy el audio siempre corre por la cadena CPU/NEON |
 | SELinux | `sepolicy.rule` (153 reglas `allow`) aplicada en instalación **y reaplicada en cada boot** desde `service.sh` — el socket sobrevive reinicios |
+
+---
+
+## ✦ Identidad visual — icono de launcher 2026
+Icono de consumidor nuevo (sesión 2026-09-15): mascota **cerdito Ω con audífonos oro rosa sobre planeta anillado**, sobre fondo negro. Generado en las 5 densidades (mdpi 48 → xxxhdpi 192 px) con foreground centrado al 66% (zona segura adaptive-icon), fondo negro sólido y monocromo derivado del canal alpha para *themed icons* de Android 13+. El `ic_launcher.xml` (adaptive icon v26+) no cambió — solo los bitmaps.
 
 ---
 
