@@ -195,6 +195,20 @@ fun ControlTabScreen(
         voiceProtectionEnabled  = voiceActive,
         onVoiceProtectionChange = { voiceMgr.toggle() },
 
+        // ── Intelligent Upmixing (HOA → Binaural) ────────────────────────
+        // Persiste en ParameterStore (misma fuente que PersistedStateRestorer
+        // leía al arranque) + push inmediato al motor nativo vía JNI.
+        onHoaUpmixingEnabledChange = { enabled ->
+            paramStore.setHoaUpmixingEnabled(enabled)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled) }
+        },
+        onHoaImmersivityChange = { v ->
+            paramStore.setHoaImmersivity(v)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(v.coerceIn(0f, 2f)) }
+        },
+
         // ── Navegación ──────────────────────────────────────────────────
         onOpenVisualizer           = onOpenSpatialTab,
         onOpenAdaptive             = onOpenAdaptiveTab,

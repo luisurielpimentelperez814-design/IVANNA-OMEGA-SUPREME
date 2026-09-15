@@ -688,9 +688,9 @@ fun IvannaControlPanel(
             title = "INTELIGENCIA ESPACIAL (HOA → BINAURAL)",
             accent = NeonMagenta,
             subtitle = "Upmixing M/S Real a Anillo HOA",
-            action = {
-                Switch(hoaUpmixingEnabled, onCheckedChange = { 
-                    hoaUpmixingEnabled = it 
+            rightSlot = {
+                Switch(hoaUpmixingEnabled, onCheckedChange = {
+                    hoaUpmixingEnabled = it
                     onHoaUpmixingEnabledChange(it)
                 })
             }
