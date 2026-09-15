@@ -86,6 +86,12 @@ ivanna_add_test(dsp_core_stability)
 # necesita entrar a la librería ivanna_dsp_under_test.
 ivanna_add_test(test_hoa_gain_matrix)
 
+# Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
+# propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
+# tests por exigencia del encargo (NO mezclado dentro del upmixer).
+# Header-only, sin estado compartido: no entra a ivanna_dsp_under_test.
+ivanna_add_test(test_transient_detector)
+
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
 # existía desde el merge de feature/safetylimiter pero no estaba
 # enganchado a ningún target de CMake — CI nunca lo compilaba ni corría.
