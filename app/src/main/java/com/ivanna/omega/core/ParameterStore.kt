@@ -116,6 +116,10 @@ class ParameterStore(context: Context) {
         // Preset de primer arranque (IVANNA_OMEGA_SIGNATURE)
         private const val KEY_SIGNATURE_APPLIED = "signature_preset_applied"
         private const val KEY_ANTI_DOLBY_INTENSITY = "anti_dolby_intensity"
+
+        // Intelligent Upmixing (HOA → Binaural)
+        private const val KEY_HOA_UPMIXING_ENABLED = "hoa_upmixing_enabled"
+        private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
     fun getExciter(): Float = safeGetFloat(KEY_EXCITER, 0.50f) // RESOLUCIÓN v3.4: 0.35→0.50 — LPF ahora en 14.5kHz permite más drive sin aliasing
@@ -335,4 +339,15 @@ class ParameterStore(context: Context) {
         prefs.edit().putInt(KEY_NATIVE_SR, sr).apply()
     }
     fun loadNativeSampleRate(): Int = safeGetInt(KEY_NATIVE_SR, 48000)
+
+    // ── Intelligent Upmixing (HOA → Binaural) ───────────────────────────────
+    // Defaults alineados con el lado nativo (upmixing_controls_bridge.cpp /
+    // IvannaFusionCore.cpp): enabled=false, immersivity=1.0f.
+    fun isHoaUpmixingEnabled(): Boolean = safeGetBoolean(KEY_HOA_UPMIXING_ENABLED, false)
+    fun setHoaUpmixingEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean(KEY_HOA_UPMIXING_ENABLED, enabled).apply()
+
+    fun getHoaImmersivity(): Float = safeGetFloat(KEY_HOA_IMMERSIVITY, 1.0f)
+    fun setHoaImmersivity(value: Float) =
+        prefs.edit().putFloat(KEY_HOA_IMMERSIVITY, value.coerceIn(0f, 2f)).apply()
 }
