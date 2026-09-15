@@ -48,6 +48,19 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+> 📌 **Nota de coordinación (sesión Genspark, 2026-09-15, por instrucción directa del propietario):**
+> toqué el flanco **Conversación / IA / Memoria** (marcado CERRADO) para resolver un reporte
+> del propietario con captura: el panel mostraba «IvannaStaticCore (bloqueó)» ante
+> «aumenta graves» y la respuesta caía al catálogo estrecho pese a tener Gemini conectado.
+> Cambios (2 commits, push inmediato cada uno):
+> - `03543b2` — BASS_BOOST ya no se bloquea con clipping: ruta segura `bass_boost_safe`
+>   (clip-relief + refuerzo moderado) + nuevo comando `self_heal` en el orquestador DSP.
+> - `1c9a9f7` — Gemini como respuesta de amplio contexto cuando la intención es UNKNOWN
+>   o no ejecutable (el catálogo estático queda solo como fallback sin Gemini) + nuevo
+>   intent SELF_HEAL («repárate», «arréglalo todo», «optimízate») con acción real
+>   (diagnose + auto_optimize). Compilación Android pendiente de CI (sin SDK en sandbox).
+> Cedo el flanco de vuelta; no planeo más toques aquí salvo instrucción directa.
+
 
 ### Daemon nativo + runtime del módulo Magisk
 **Tomado por:** sesión Claude (chat), iniciado 2026-09-07.
