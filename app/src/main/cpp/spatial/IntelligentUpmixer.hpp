@@ -38,4 +38,4 @@ private:
     TransientDetector transientDetector_;
 };
 
-} // namespace ivanna
+} // namespace Ivanna

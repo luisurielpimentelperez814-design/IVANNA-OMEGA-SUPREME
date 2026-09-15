@@ -85,4 +85,4 @@ void HoaBinauralDecoder::processBlock(const std::vector<HoaVector>& inField, flo
     }
 }
 
-} // namespace ivanna
+} // namespace Ivanna

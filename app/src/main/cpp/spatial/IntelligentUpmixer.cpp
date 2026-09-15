@@ -96,4 +96,4 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR, std::v
     }
 }
 
-} // namespace ivanna
+} // namespace Ivanna

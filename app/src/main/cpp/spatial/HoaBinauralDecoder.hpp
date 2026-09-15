@@ -54,4 +54,4 @@ private:
     std::vector<float> mixR_;
 };
 
-} // namespace ivanna
+} // namespace Ivanna
