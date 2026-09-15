@@ -2356,3 +2356,21 @@ Flanco queda LIBRE de nuevo.
 
 ### Nota de coordinación — inserción de video intro en MainActivity (directo del usuario)
 **Sesión Genspark, 2026-09-14.** El usuario pidió directamente mostrar un video intro justo después del splash y antes de la petición de permisos. Cambio mínimo y quirúrgico en `MainActivity.kt` (flanco UI COMPLETA): nueva `IntroVideoScreen` (VideoView nativo de `res/raw/ivanna_intro.mp4`, auto-salto al completar + botón SALTAR) enganchada en el NavHost como ruta `introVideo` entre `splash` e `intro` (popUpTo inclusive). Sin tocar lógica de permisos, DSP ni paneles. Compilación Android no verificable en sandbox (sin SDK) — la validación queda en CI.
+
+---
+
+### CI/bulk + Upmixing HOA — 2026-09-15 (sesión Genspark, indicación directa del propietario)
+
+**1) Bulk CI — diagnóstico verificado, no asumido.** Con cmake 4.4.3 instalado en este host reproduje la suite COMPLETA localmente: **92/92 en verde** (y tras el trabajo, **96/96**). Los dos fallos de los logs (`test_audio_bus` bajo TSan, `test_adaptive_engine` carril rápido) provienen de un commit ANTERIOR: el código actual ya lleva los arreglos —umbrales adaptativos bajo sanitizador y `__attribute__((no_sanitize("thread")))` documentado en las 4 funciones del seqlock (líneas 46-58 de `include/audio_bus.h`)—. Verificado de primera mano bajo TSan: `test_audio_bus` las 3 funciones OK, `publishesA=4542242 publishesB=4528961 tornReads=0`; `test_adaptive_engine` OK. No hubo nada que "reparar" del bulk: ya estaba verde en el HEAD real.
+
+**2) SOFA: solo duplicados exactos, cero corruptos.** Inventario de los 239 `.sofa`: los 239 son HDF5 válidos (magic `89 48 44 46`), **0 corruptos, 0 punteros LFS, 0 truncados**. El subárbol `sofa/ari/` repetía 23 archivos byte-idénticos (MD5) a los de `sofa/` (raíz) — que es la ruta que el código referencia. Eliminados **solo** esos 23 duplicados → 239→216. No se borró ningún archivo único ni ningún dataset referenciado.
+
+**3) Upmixing estéreo→HOA llevado a grado magistral** (`spatial/IntelligentUpmixer.*`):
+- Imagen estéreo preservada como **par exacto a ±30°** (codificación canónica; `HoaGainMatrix` es identidad matemática en el plano horizontal, no aproximación).
+- **Crossover complementario de 2º orden** sobre el mid: `bass + agudos == mid` EXACTO en cada muestra (suma constante, sin error de fase en el corte). Graves al centro → **mono-seguros** (no se cancelan en mono).
+- **Código muerto eliminado**: `encTrans`/`hasTransients` se calculaban y nunca se usaban. El detector de transientes ahora corre sobre el **mono real** (antes solo canal L) y su resultado **sí** modula la apertura lateral.
+- **Inmersividad suavizada por muestra** (~15 ms) — sin zipper al mover el control.
+- Guardas NaN/Inf en la entrada; sin malloc en el camino caliente salvo el primer dimensionado.
+- Barrera de tests **3 → 7** (nuevos: expansión lateral monótona según inmersividad, mono-seguridad de graves correlacionados, no propagación de NaN/Inf, dimensionado exacto del buffer). 7/7 en host; suite completa **96/96**.
+
+**Estado de CI en el remoto:** los commits `c787a789` (SOFA) y `d5599577` (upmixer) están pusheados a `origin/main`. La suite host local queda 100% verde; los carriles de CI correrán sobre este HEAD.
