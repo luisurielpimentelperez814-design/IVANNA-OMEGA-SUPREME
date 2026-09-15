@@ -456,3 +456,16 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_intelligent_upmixer PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_intelligent_upmixer)
+
+add_executable(test_hoa_binaural_decoder
+  test_hoa_binaural_decoder.cpp
+  ../spatial/HoaBinauralDecoder.cpp
+)
+target_link_libraries(test_hoa_binaural_decoder PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_hoa_binaural_decoder PRIVATE .. ../include)
+target_compile_options(test_hoa_binaural_decoder PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hoa_binaural_decoder PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hoa_binaural_decoder PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_hoa_binaural_decoder)
