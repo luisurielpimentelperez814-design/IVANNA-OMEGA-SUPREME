@@ -73,7 +73,15 @@ class IvannaGeminiAgent(
             // sin estar aquí, se rechazaban en la whitelist antes de poder
             // llegar a ningún ejecutor, sin importar que ya tuvieran
             // implementación real en VoiceController.executeCommand().
-            "volume_up_safe", "spatial_mode_lite"
+            "volume_up_safe", "spatial_mode_lite",
+            // FIX (auditoría 2026-09-15): "self_heal" y "bass_boost_safe" ya
+            // tenían rama real en el when() de IvannaDSPOrchestrator.executeCommand
+            // (ver ese archivo) pero NUNCA llegaban a ejecutarse: esta whitelist
+            // los rechazaba en la línea `if (cmd !in VALID_DSP_COMMANDS) return false`
+            // ANTES de que el when() se evaluara siquiera. Mismo anti-patrón
+            // documentado arriba para auto_optimize/los *_preset — comando con
+            // implementación real, muerto por un guardia que nadie sincronizó.
+            "self_heal", "bass_boost_safe"
         )
     }
 
