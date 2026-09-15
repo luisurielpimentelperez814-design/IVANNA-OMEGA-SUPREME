@@ -63,9 +63,8 @@ object IvannaLanguageCore {
         DIAGNOSE,             // "¿cómo estás?", "estado del sistema"
         EXPLAIN,              // "¿por qué?", "¿qué cambiaste?"
         OPTIMIZE,             // "optimiza", "ahorra batería"
+        SELF_HEAL,            // "repárate", "auto-repara", "arréglalo todo", "mejórate"
         // Desconocida
-        UNKNOWN
-        SELF_HEAL,            // "repárate", "auto-repara", "arréglalo todo", "mejórate"        // Desconocida
         UNKNOWN
     }
 
@@ -112,7 +111,7 @@ object IvannaLanguageCore {
         AcousticIntent.SESSION_REPORT     -> "session_report"
         AcousticIntent.PROFILE_LIST       -> "profile_list"
         AcousticIntent.DIAGNOSE           -> "diagnose"
-            AcousticIntent.SELF_HEAL          -> "self_heal"
+        AcousticIntent.SELF_HEAL          -> "self_heal"
         AcousticIntent.EXPLAIN            -> "explain"
         AcousticIntent.OPTIMIZE           -> "optimize"
         AcousticIntent.SELF_INTRO         -> "none"
@@ -355,6 +354,7 @@ object IvannaLanguageCore {
         AcousticIntent.SESSION_REPORT      -> "Aquí está el resumen de lo que hice en esta sesión."
         AcousticIntent.PROFILE_LIST        -> IvannaMusicalIntentEngine.availablePresetsDescription()
         AcousticIntent.DIAGNOSE            -> "Déjame revisar el estado del sistema acústico."
+        AcousticIntent.SELF_HEAL           -> "Voy a diagnosticar y optimizar todo el sistema ahora mismo."
         AcousticIntent.EXPLAIN             -> "Te cuento la última decisión que tomé."
         AcousticIntent.OPTIMIZE            -> "Voy a revisar el sistema y optimizar el consumo."
         AcousticIntent.GREETING            -> "¡Hola! Soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Estoy aquí para llevar tu música al siguiente nivel. ¿Qué te gustaría escuchar hoy?"
