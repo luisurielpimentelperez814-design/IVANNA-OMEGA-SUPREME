@@ -150,6 +150,26 @@ fun processAudioWithScores(
                                 .also { Log.i(TAG, "Agudos reducidos (EQ, últimas bandas)") }
             "auto_optimize"  -> app.globalEffectManager.autoOptimize()
                                 .also { Log.i(TAG, "Auto-optimize aplicado") }
+            // FIX (auditoría 2026-09-15): "diagnose" y "clip_relief" ya
+            // pasaban la whitelist y llegaban aquí, pero caían al else
+            // ("comando desconocido") — el mismo anti-patrón de bass_boost/
+            // treble_reduce/auto_optimize documentado arriba, esta vez para
+            // el flujo self_heal/bass_boost_safe. "diagnose" lee telemetría
+            // real (IvannaAgentCore.state, la misma que usa AgentApi para
+            // agentes externos) en vez de solo decir una frase hecha.
+            // "clip_relief" reduce de verdad el LoudnessEnhancer ya abierto
+            // (ver relieveClipping) antes de que bass_boost_safe refuerce
+            // graves.
+            "diagnose" -> {
+                val s = com.ivanna.omega.agent.IvannaAgentCore.state.value
+                Log.i(TAG, "Diagnóstico: scene=${s.perception.scene.name} " +
+                        "clipCountDelta=${s.health.clipCountDelta} " +
+                        "gainReductionDb=${s.perception.gainReductionDb} " +
+                        "daemonConnected=${s.health.daemonConnected} " +
+                        "adaptiveEngineRunning=${s.health.adaptiveEngineRunning}")
+            }
+            "clip_relief" -> app.globalEffectManager.relieveClipping()
+                             .also { Log.i(TAG, "Alivio de clipping aplicado (LoudnessEnhancer reducido)") }
             "music_mode"   -> app.globalEffectManager.applyProfile(IvannaEffectProfile.WARM)
                               .also { Log.i(TAG, "Modo música (WARM) activado") }
             "flat_mode"    -> {
