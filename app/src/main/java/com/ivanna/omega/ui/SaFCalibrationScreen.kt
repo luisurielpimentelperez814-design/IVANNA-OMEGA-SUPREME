@@ -50,6 +50,20 @@ fun SaFCalibrationScreen(
     val engine  = remember { SaFEngine(context).also { it.initialize() } }
     val state   by engine.state.collectAsState()
 
+    // FIX (hilo suelto documentado en AGENT_CLAIMS.md — "Motor SAF de
+    // calibración HRTF"): release() ya existía, idempotente y tolerante a
+    // fallo parcial por diseño ("Llamar desde el componente Compose que
+    // posea el engine (DisposableEffect)" — doc del propio método), pero
+    // nada en esta pantalla lo invocaba. Sin esto, al salir de la pantalla
+    // (onBack, cambio de tab, proceso en background) el AudioTrack del
+    // estímulo binaural y los CoroutineScope internos del motor (scope,
+    // playerScope) quedaban vivos indefinidamente — fuga real de un
+    // AudioTrack por cada vez que el usuario entraba a calibrar y salía
+    // sin llegar a DONE.
+    DisposableEffect(Unit) {
+        onDispose { engine.release() }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
