@@ -1,5 +1,5 @@
 # IVANNA OMEGA SUPREME — Estado Maestro del Producto
-_Actualizado 2026-09-10 (sesión Claude, chat; verificado en vivo vía API de GitHub —
+_Actualizado 2026-09-15 (sesión Claude, chat; verificado en vivo vía API de GitHub —
 no copiado de AGENT_CLAIMS.md ni de una corrida vieja)._
 
 **Nota de gobernanza:** este archivo llevaba desde 2026-09-08 sin
@@ -18,8 +18,10 @@ por flanco) sobre este resumen.
 | DSP nativo | 8 etapas + espacialización HRTF + IA; benchmark host operativo (flanco Benchmarks) |
 | Certificación IAEL | **PASS** — THD+N −132 dB · IMD −147 dB · bit-exact · 0 NaN/clipping (lab v4); modo captura WAV validado (latencia 0 ms + bit-exact sobre muestras de referencia) |
 | Stress | PASS a 123.7x tiempo real, 0 inválidos (stress v4, seed fija) |
-| Tests host | **74/74 PASS** (pipeline CMake exacto del job test-native-dsp verificado en host: Gammatone, PhaseKalman3, DspCoreStability, AntiDolby, IvannaLab…) + run_ctest.sh como puerta g++ |
+| Tests host | **76/76 PASS** (pipeline CMake exacto del job test-native-dsp verificado en host: Gammatone, PhaseKalman3, DspCoreStability, AntiDolby, IvannaLab…) + run_ctest.sh como puerta g++ |
 | Tests dispositivo | **Ausente** (androidTest) — brecha abierta para producto comercial |
 | Privacidad | docs/PRIVACIDAD_Y_SEGURIDAD.md — preparado para declaración Play |
+| Ficha comercial | docs/PLAY_STORE_LISTING.md — lista para venta/Play Store (2026-09-15) |
+| Icono | Nuevo launcher 2026 (cerdito Ω), 5 densidades + monocromo |
 | Coordinación | AGENT_CLAIMS.md con 17+ flancos (protocolo multi-agente) — fuente de verdad primaria, este archivo es solo el resumen ejecutivo |
 | Deuda prioritaria | CI rojo · androidTest · deduplicar datasets HRTF (≥30 MB ×3) · claims module.prop sin localizar |
