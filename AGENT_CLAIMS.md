@@ -379,6 +379,60 @@ con la firma de `SaFBridge`/`SaFRoomBridge` explícitamente protegida
 verificación de premisas (WFS no existe, `HRTFConvolver` sí, todo
 binaural estéreo) y el módulo HOA→Binaural en sí.
 
+**Avance real 2026-09-15 (misma sesión/frente, continuación — commit
+`06defa02`):** verificado el prompt completo "HOA + Binaural + Upmixing"
+que trajo el propietario contra el código real, con dos hallazgos que
+cambian el plan original:
+
+1. **La "Fase 0" que el prompt daba por confirmada no existe.** Buscado
+   `HoaGainMatrix`/`HoaBinauralDecoder`/`setActiveHrtfProfile` y la rama
+   `feature/hoa-binaural-decoder` en main y en las ~30 ramas remotas del
+   repo: nada. Se empieza desde cero, no se "extiende" nada — dicho aquí
+   para que nadie más pierda tiempo buscando esa base.
+2. **El "clasificador CRNN" que la Fase 1 (Upmixer) pedía reusar
+   ("distingue centro, lados, bajos, transientes, silencio cada 50ms")
+   no existe con esa forma.** `IvannaAudioClassifier` (real, en
+   `cpp/IvannaAudioClassifier.hpp`) clasifica ESCENA completa
+   (`AudioContextClass` + confianza + energía), no componentes
+   espaciales por fuente. Separación centro/lados/bajos/transientes en
+   tiempo real es un problema de investigación aparte, no un simple
+   "reusar lo que ya hay" — la Fase 1 tal como está descrita en el
+   prompt necesita rediseñarse (alternativa real más simple: mid-side +
+   separación por bandas, no un clasificador de fuente).
+3. **`HRTFConvolver::set_position(azimuthDeg, aggressiveness)` es 2D
+   (plano horizontal) — sin parámetro de elevación.** La ambición del
+   prompt de altura real para platillos/transientes no es alcanzable
+   con la infraestructura binaural real de hoy sin antes darle un eje
+   de elevación a `HRTFConvolver`/`SyntheticHRTF` (tarea aparte, más
+   grande).
+
+**Lo que SÍ se construyó, real y verificado (no el sistema completo):**
+`spatial/HoaGainMatrix.hpp` — codificación Ambisonics SN3D/ACN orden
+0–2 en el plano horizontal, identidades trigonométricas exactas (no
+aproximación) para los 6 canales que sobreviven en elevación=0, los
+otros 3 en cero exacto por construcción. 6 tests gtest nuevos
+(`test_hoa_gain_matrix`, ver `tests/CMakeLists.txt`), 82/82 tests
+totales en verde en build normal y ASan+UBSan. Header-only, sin estado,
+cero riesgo para el resto del árbol.
+
+**Lo que falta, explícitamente NO hecho en este commit (para que quien
+retome esto — yo mismo en otra sesión, u otra — no asuma que ya existe):**
+- `HoaBinauralDecoder`: decodificar el campo HOA a N altavoces virtuales
+  y alimentar cada uno a su propia instancia de `HRTFConvolver` en su
+  azimuth fijo, sumando la salida — la normalización real del decodificador
+  (qué factor exacto multiplica cada canal SN3D al reconstruir por
+  altavoz) necesita derivarse/validarse con cuidado antes de escribirla;
+  no se improvisó una fórmula sin verificar para no fabricar precisión
+  que no está comprobada.
+- `IntelligentUpmixer` (Fase 1): bloqueado por el punto 2 de arriba —
+  necesita una fuente real de separación centro/lados/bajos antes de
+  poder escribirse sin inventar detecciones que el motor no hace hoy.
+- Cableado en `ivanna_fusion_engine.cpp/.hpp` (Fase 2), UI (Fase 3) y
+  `IMPLEMENTATION_NOTES.md` (Fase 4): dependen de los dos puntos
+  anteriores.
+
+Flanco sigue abierto, mismo dueño.
+
 ---
 
 ### UI COMPLETA y sus sub-entornos — Compose principal + OEM + theme + viewmodels de UI + visualizadores
