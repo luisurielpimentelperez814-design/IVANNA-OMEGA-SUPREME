@@ -75,6 +75,8 @@ private:
     float bassStateL_ = 0.f, bassStateR_ = 0.f;
     float vocalStateL_ = 0.f, vocalStateR_ = 0.f;
     float drumPrevMono_ = 0.f;
+    float drumEnv_ = 0.f;       // envolvente de transitorios (drums)
+    float drumPrevSide_ = 0.f;  // side previo para imagen estéreo de drums
 
     void applyBassFilter(const float* in, float* out, int frames, float coeff) noexcept;
     void applyVocalFilter(const float* in, float* out, int frames, float coeff) noexcept;

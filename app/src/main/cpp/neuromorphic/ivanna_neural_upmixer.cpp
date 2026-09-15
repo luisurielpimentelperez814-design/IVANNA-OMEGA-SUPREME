@@ -54,15 +54,29 @@ void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept
         float vocalL = vocalStateL_ - bassStateL_;  // Restar bass
         float vocalR = vocalStateR_ - bassStateR_;
 
-        // Drums = transitorios (diferencia de señal)
-        float drum = std::abs(mono - drumPrevMono_) * 2.f;
+        // Drums = transitorios con envolvente (attack instantáneo,
+        // release ~5ms) en vez del |delta|*2 crudo anterior, que metía un
+        // click de alta frecuencia por muestra y copiaba el mismo valor a
+        // L y R (transitorios sin imagen estéreo). La envolvente suaviza
+        // el release y el delta de side reparte el golpe en el campo
+        // estéreo.
+        const float drumDelta = mono - drumPrevMono_;
         drumPrevMono_ = mono;
-        float drumL = drum;
-        float drumR = drum;
+        const float drumAbs = std::fabs(drumDelta) * 2.f;
+        drumEnv_ = (drumAbs > drumEnv_) ? drumAbs
+                                        : drumEnv_ + 0.09f * (drumAbs - drumEnv_);
+        const float sideDelta = side - drumPrevSide_;
+        drumPrevSide_ = side;
+        float drumL = drumEnv_ * 0.5f + sideDelta;
+        float drumR = drumEnv_ * 0.5f - sideDelta;
 
-        // Other = todo lo demás (side + residuo)
-        float otherL = L - vocalL - bassL;
-        float otherR = R - vocalR - bassR;
+        // Other = residuo espectral. REFINAMIENTO: ahora también descuenta
+        // el stem de drums — antes los transitorios quedaban íntegros en
+        // Other Y duplicados en Drums, inflando la energía percibida en
+        // cada golpe. Con esta resta, la suma de los 4 stems reconstruye
+        // la entrada salvo el suavizado de la envolvente de drums.
+        float otherL = L - vocalL - bassL - drumL;
+        float otherR = R - vocalR - bassR - drumR;
 
         // Normalizar y escribir
         out[n*8 + 0] = vocalL; out[n*8 + 1] = vocalR;
@@ -105,6 +119,8 @@ void NeuralUpmixer::reset() noexcept {
     bassStateL_ = bassStateR_ = 0.f;
     vocalStateL_ = vocalStateR_ = 0.f;
     drumPrevMono_ = 0.f;
+    drumEnv_ = 0.f;
+    drumPrevSide_ = 0.f;
 }
 
 void NeuralUpmixer::release() noexcept {

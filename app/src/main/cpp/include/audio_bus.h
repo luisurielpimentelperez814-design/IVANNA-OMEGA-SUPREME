@@ -35,6 +35,7 @@
 #include <type_traits>
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 
 namespace ivanna {
 
@@ -72,7 +73,18 @@ public:
     // Escritor: un solo hilo (si hay más de uno, usar SeqlockBusMulti).
     void publish(const T& value) noexcept {
         guard_.fetch_add(1, std::memory_order_acq_rel);
-        snapshot_ = value;
+        // FIX (UB formal reportado por ThreadSanitizer en CI — 7 warnings
+        // de data race en test_audio_bus): la copia de struct NO atómica
+        // entre los guard es undefined behavior según el modelo de memoria
+        // de C++, aunque el guard impar/par descarte las lecturas rasgadas.
+        // Se escribe palabra a palabra con atomics relaxed bajo el guard —
+        // misma solución ya aplicada y documentada en RawMetricsBus. La
+        // corrección lógica la sigue dando el guard; los atomics quitan
+        // la carrera formal del modelo de memoria.
+        uint32_t buf[kWords];
+        std::memcpy(buf, &value, sizeof(T));
+        for (size_t i = 0; i < kWords; ++i)
+            words_[i].store(buf[i], std::memory_order_relaxed);
         guard_.fetch_add(1, std::memory_order_release);
         seq_.fetch_add(1, std::memory_order_release);
     }
@@ -94,7 +106,10 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;           // escritura en curso, reintentar
-            snap = snapshot_;
+            uint32_t buf[kWords];
+            for (size_t i = 0; i < kWords; ++i)
+                buf[i] = words_[i].load(std::memory_order_relaxed);
+            std::memcpy(&snap, buf, sizeof(T));
             g2 = guard_.load(std::memory_order_acquire);
             if (g1 == g2) break;             // lectura consistente confirmada
         }
@@ -105,7 +120,10 @@ public:
     }
 
 private:
-    alignas(64) T snapshot_{};
+    static constexpr size_t kWords = sizeof(T) / sizeof(uint32_t);
+    static_assert(sizeof(T) % sizeof(uint32_t) == 0,
+        "SeqlockBus<T> requiere sizeof(T) multiplo de 4 bytes para el seqlock atomico");
+    alignas(64) std::array<std::atomic<uint32_t>, kWords> words_{};
     std::atomic<uint32_t> guard_{0};
     std::atomic<uint64_t> seq_{0};
 };
@@ -140,7 +158,13 @@ public:
         // el lector leyéndolo, exactamente el tipo de bug que este archivo
         // existe para evitar en primer lugar.
         slot.guard.fetch_add(1, std::memory_order_acq_rel);
-        slot.payload = Payload{value, s};
+        // Mismo FIX TSan que SeqlockBus: escritura atómica palabra a
+        // palabra bajo el guard, nunca una copia de struct no atómica.
+        const Payload p{value, s};
+        uint32_t buf[Slot::kWords];
+        std::memcpy(buf, &p, sizeof(Payload));
+        for (size_t i = 0; i < Slot::kWords; ++i)
+            slot.words[i].store(buf[i], std::memory_order_relaxed);
         slot.guard.fetch_add(1, std::memory_order_release);
     }
 
@@ -156,7 +180,10 @@ public:
             for (;;) {
                 g1 = slot.guard.load(std::memory_order_acquire);
                 if (g1 & 1u) continue;
-                snap = slot.payload;   // value + seq copiados juntos, atómico vía guard
+                uint32_t buf[Slot::kWords];
+                for (size_t i = 0; i < Slot::kWords; ++i)
+                    buf[i] = slot.words[i].load(std::memory_order_relaxed);
+                std::memcpy(&snap, buf, sizeof(Payload));   // value + seq copiados juntos, atómico vía guard
                 g2 = slot.guard.load(std::memory_order_acquire);
                 if (g1 == g2) break;
             }
@@ -179,7 +206,10 @@ private:
         uint64_t seq = 0;
     };
     struct Slot {
-        alignas(64) Payload payload{};
+        alignas(64) static constexpr size_t kWords = sizeof(Payload) / sizeof(uint32_t);
+        static_assert(sizeof(Payload) % sizeof(uint32_t) == 0,
+            "Payload debe ser multiplo de 4 bytes para el seqlock atomico");
+        std::array<std::atomic<uint32_t>, kWords> words{};
         std::atomic<uint32_t> guard{0};
     };
 

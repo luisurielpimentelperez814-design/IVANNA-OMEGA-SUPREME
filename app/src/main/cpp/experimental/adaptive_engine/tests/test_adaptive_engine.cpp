@@ -318,6 +318,22 @@ void testMultiProducerBusConcurrentStress() {
     std::atomic<bool> corruption{false};
     std::atomic<int> reads_{0};
 
+    // Mínimo de publicaciones por productor para dar el estrés por válido
+    // (ver FIX en el bucle del consumidor). Bajo sanitizadores el umbral
+    // baja: cada operación cuesta 5-20x y el deadline no alcanzaría.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+    #define IVANNA_TEST_SANITIZED 1
+#elif defined(__has_feature)
+    #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(undefined_sanitizer)
+        #define IVANNA_TEST_SANITIZED 1
+    #endif
+#endif
+#if defined(IVANNA_TEST_SANITIZED)
+    constexpr uint64_t kMinPublishesPerProducer = 50;
+#else
+    constexpr uint64_t kMinPublishesPerProducer = 1000;
+#endif
+
     std::thread producerA([&]() {
         float v = 0.0f;
         // Garantía de volumen mínimo propia: no depender del scheduling.
@@ -371,7 +387,18 @@ void testMultiProducerBusConcurrentStress() {
         uint64_t lastSeen = 0;
         int reads = 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (reads < 10 && std::chrono::steady_clock::now() < deadline) {
+        // FIX (flaky SOLO en el carril rápido de CI, reproducido: pasaba
+        // en ASan/UBSan y fallaba sin sanitizadores): consumeIfNewer()
+        // reporta novedad con CUALQUIER publicación global, así que bajo
+        // contención de CPU el consumidor podía completar sus 10 lecturas
+        // casi solo con un productor mientras el otro apenas arrancaba —
+        // y al cortar, el expect(publishesX > 1000) del productor
+        // estrangulado fallaba de forma intermitente. Ahora el corte
+        // exige también un mínimo de actividad de AMBOS productores.
+        while ((reads < 10 ||
+                publishesA.load(std::memory_order_relaxed) < kMinPublishesPerProducer ||
+                publishesB.load(std::memory_order_relaxed) < kMinPublishesPerProducer) &&
+               std::chrono::steady_clock::now() < deadline) {
             if (bus.consumeIfNewer(out, lastSeen)) {
                 ++reads;
                 if (!std::isfinite(out.rms) || !std::isfinite(out.peak)) {
@@ -399,8 +426,10 @@ void testMultiProducerBusConcurrentStress() {
                 (unsigned long long)publishesA.load(), (unsigned long long)publishesB.load(),
                 reads_.load());
 
-    expect(publishesA.load() > 1000, "stress: RouteA publicó un volumen real de datos (>1000)");
-    expect(publishesB.load() > 1000, "stress: RouteB publicó un volumen real de datos (>1000)");
+    expect(publishesA.load() >= kMinPublishesPerProducer,
+           "stress: RouteA publicó un volumen real de datos (umbral adaptativo según carril)");
+    expect(publishesB.load() >= kMinPublishesPerProducer,
+           "stress: RouteB publicó un volumen real de datos (umbral adaptativo según carril)");
     // FIX: antes no existía este chequeo — un deadline expirado sin
     // llegar a 10 lecturas habría pasado en silencio (el bucle
     // simplemente termina, ninguna otra expect() lo habría notado).

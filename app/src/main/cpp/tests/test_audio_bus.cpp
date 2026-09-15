@@ -90,51 +90,7 @@ void testMultiSourcePicksNewest() {
 }
 
 void testConcurrentStress() {
-    // NOTA TSan (auditoría CI, corrida 2026-09-14 + reproducción local):
-    // Bajo ThreadSanitizer este bus reporta una "carrera" en el arranque
-    // de los dos hilos (frames de std::thread::_State_impl<...>::_M_run,
-    // sin ningún frame de código propio del DSP). Investigado a fondo,
-    // no reescrito a ciegas:
-    //   - Se probó primero pasar los args por posición + std::ref(...) y
-    //     luego (este commit) por lambda capturando por referencia — el
-    //     reporte de TSan persiste IDÉNTICO en ambas formas, solo cambia
-    //     el nombre del símbolo en el backtrace. Esto descarta que sea un
-    //     problema de cómo se invoca std::thread: es un artefacto de la
-    //     maquinaria de arranque de hilo de libstdc++/TSan en este
-    //     toolchain, no un bug de invocación nuestro.
-    //   - Ninguna otra prueba con hilos reales de esta misma suite
-    //     (test_control_frame_bus_stress, test_stability,
-    //     OEMRegression.DaemonThreadStress) dispara este aviso — el
-    //     patrón está acotado a este binario/orden de arranque puntual.
-    //   - La invariante real que importa —CERO torn reads— se mantuvo en
-    //     0 en todas las corridas, incluida una reproducción local con
-    //     >1.8M publicaciones por hilo: el seqlock nunca falló.
-    // Conclusión (no definitiva, documentada para que quien retome esto
-    // no repita la investigación desde cero): parece un falso positivo
-    // de arranque de hilo del toolchain, no una carrera real del DSP.
-    // Se suprime puntualmente vía tests/tsan.supp (solo ese símbolo de
-    // runtime, jamás frames de código propio) — ver ese archivo para el
-    // razonamiento completo y cómo revalidar si cambia el toolchain.
-    //
-    // La inequidad de programación medida en la corrida semanal
-    // (publishesA=1 publishesB=1259) sí tenía causa identificada: ambos
-    // hilos comparten globalSeq_ (un único atomic, por diseño — da orden
-    // total entre fuentes) y el runtime de TSan serializa accesos a
-    // atomics contendidos con overhead 20-100x; en un runner de 2 núcleos
-    // eso puede dejar un hilo casi sin cuota de CPU en una ventana corta.
-    // Por eso, bajo TSan, se alarga la ventana y se baja el piso de
-    // publicaciones (verifica "hubo actividad real", no un rendimiento
-    // específico); el resto de sanitizadores/build normal conserva el
-    // umbral y ventana originales, más estrictos.
-#if defined(__SANITIZE_THREAD__)
-    constexpr auto kWindow = std::chrono::milliseconds(1500);
-    constexpr uint64_t kMinPublishes = 20;
-#else
-    constexpr auto kWindow = std::chrono::milliseconds(200);
-    constexpr uint64_t kMinPublishes = 1000;
-#endif
-
-    std::printf("\n=== Stress test — 2 hilos escritores reales, sin torn reads ===\n");
+    std::printf("\n=== Stress test — 2 hilos escritores reales, 200ms, sin torn reads ===\n");
     ivanna::SeqlockBusMulti<TestPayload48, 2> bus;
     std::atomic<bool> running{true};
     std::atomic<uint64_t> publishesA{0}, publishesB{0};
@@ -155,21 +111,38 @@ void testConcurrentStress() {
         }
     };
 
-    // Lambdas capturando por referencia en vez de argumentos posicionales
-    // + std::ref: forma más clara, aunque (ver nota arriba) no cambia el
-    // comportamiento de TSan observado — se mantiene por legibilidad.
-    std::thread tA([&] { writer(0, publishesA); });
-    std::thread tB([&] { writer(1, publishesB); });
+    std::thread tA(writer, 0, std::ref(publishesA));
+    std::thread tB(writer, 1, std::ref(publishesB));
 
     uint64_t seen = 0;
     TestPayload48 out{};
+    // Ventana de estrés: más larga bajo TSan (overhead 5-20x por
+    // operación) para que los escritores alcancen el volumen mínimo
+    // incluso en runners de CI de 2 vCPU.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+    #define IVANNA_TEST_SANITIZED 1
+#elif defined(__has_feature)
+    #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(undefined_sanitizer)
+        #define IVANNA_TEST_SANITIZED 1
+    #endif
+#endif
+#if defined(IVANNA_TEST_SANITIZED)
+    constexpr int kStressWindowMs = 1500;
+#else
+    constexpr int kStressWindowMs = 200;
+#endif
     const auto start = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start < kWindow) {
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(kStressWindowMs)) {
         if (bus.consumeIfNewer(out, seen)) {
             const bool consistent = (out.a == out.b && out.b == out.c &&
                                       out.c == out.d && out.d == out.e && out.e == out.f);
             if (!consistent) tornReads.fetch_add(1, std::memory_order_relaxed);
         }
+        // Cede la CPU: bajo TSan el spin puro del lector privaba de CPU a
+        // los escritores (starvation real observada en CI: publishesA=1 en
+        // toda la ventana). El yield mantiene el estrés pero deja correr
+        // a los productores.
+        std::this_thread::yield();
     }
     running.store(false, std::memory_order_relaxed);
     tA.join();
@@ -179,8 +152,26 @@ void testConcurrentStress() {
                 (unsigned long long)publishesA.load(),
                 (unsigned long long)publishesB.load(),
                 tornReads.load());
-    EXPECT(publishesA.load() > kMinPublishes, "hilo A publicó un volumen real durante la ventana (no fue todo overhead)");
-    EXPECT(publishesB.load() > kMinPublishes, "hilo B publicó un volumen real durante la ventana");
+    // Umbrales adaptativos: bajo ThreadSanitizer exigir >1000
+    // publicaciones por hilo en la ventana es irreal (cada operación
+    // cuesta 5-20x) y convertía el test en fallo garantizado. Lo que el
+    // test debe garantizar es que AMBOS escritores publicaron de verdad
+    // y que no hubo ni un solo torn read — el volumen absoluto es
+    // secundario y depende del hardware del runner.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+    #define IVANNA_TEST_SANITIZED 1
+#elif defined(__has_feature)
+    #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(undefined_sanitizer)
+        #define IVANNA_TEST_SANITIZED 1
+    #endif
+#endif
+#if defined(IVANNA_TEST_SANITIZED)
+    constexpr unsigned long kMinPublishes = 50;
+#else
+    constexpr unsigned long kMinPublishes = 1000;
+#endif
+    EXPECT(publishesA.load() > kMinPublishes, "hilo A publicó un volumen real durante la ventana de estrés (no fue todo overhead)");
+    EXPECT(publishesB.load() > kMinPublishes, "hilo B publicó un volumen real durante la ventana de estrés");
     EXPECT(tornReads.load() == 0, "CERO torn reads detectados — el seqlock protegió cada lectura");
 }
 
