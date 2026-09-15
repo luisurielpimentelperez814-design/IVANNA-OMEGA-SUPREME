@@ -467,6 +467,31 @@ class IvannaGlobalEffectManager(
         }
     }
 
+    /**
+     * Alivio real de clipping antes de reforzar graves: reduce la ganancia
+     * del LoudnessEnhancer ya abierto en cada sesión (mismo mecanismo real
+     * usado en el resto de esta clase — toca el AudioEffect en vivo, no
+     * calcula nada nuevo). Se llama desde VoiceController "clip_relief",
+     * usado por el flujo "bass_boost_safe" de IvannaCognitiveCore cuando
+     * ya hay clipping detectado (ver AgentState.health.clipCountDelta).
+     *
+     * @param reductionMb cuánto bajar el targetGain del LoudnessEnhancer,
+     *                     en mB (100 mB = 1 dB). 300 mB (~3 dB) es
+     *                     suficiente margen para absorber el boost de
+     *                     graves sin percibirse como un "bajón" de volumen.
+     */
+    fun relieveClipping(reductionMb: Int = 300) {
+        activeSessions.forEach { (sessionId, fx) ->
+            runCatching {
+                fx.loudness?.let { le ->
+                    val current = runCatching { le.targetGain.toInt() }.getOrDefault(0)
+                    val next = (current - reductionMb).coerceAtLeast(0)
+                    le.setTargetGain(next)
+                }
+            }.onFailure { Log.w(TAG, "relieveClipping sesion $sessionId: ${it.message}") }
+        }
+    }
+
     /** Android no tiene un efecto "Treble" dedicado equivalente a BassBoost
      *  — se usa el Equalizer real ya abierto, con offset negativo en las
      *  últimas 2 bandas (agudas) del perfil activo, sin tocar el resto. */
