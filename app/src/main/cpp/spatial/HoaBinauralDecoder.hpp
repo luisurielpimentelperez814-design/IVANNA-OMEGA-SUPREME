@@ -6,7 +6,7 @@
 #include <memory>
 #include <cstddef>
 
-namespace ivanna {
+namespace Ivanna {
 
 /**
  * HoaBinauralDecoder - Decodes a 2D HOA field to Binaural output via HRTF.

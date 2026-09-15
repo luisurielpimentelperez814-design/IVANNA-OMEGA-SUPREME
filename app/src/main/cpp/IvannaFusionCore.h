@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstring>
 #include "IvannaFusionCore.hpp"
+#include "spatial/IntelligentUpmixer.hpp"
+#include "spatial/HoaBinauralDecoder.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX (CI rojo — "namespace 'Ivanna' does not enclose namespace
@@ -121,6 +123,9 @@ private:
     IvannaSuperAgentMemory* m_memory = nullptr;
 
     bool m_goldenEarActive = false;
+
+    IntelligentUpmixer m_upmixer;
+    HoaBinauralDecoder m_hoaDecoder;
 
     struct FilterState {
         float x1 = 0.0f;

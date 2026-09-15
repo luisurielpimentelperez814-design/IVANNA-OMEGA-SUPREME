@@ -7,7 +7,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace ivanna {
+namespace Ivanna {
 
 void HoaBinauralDecoder::prepare(float sampleRate, size_t numSpeakers) noexcept {
     sampleRate_ = (std::isfinite(sampleRate) && sampleRate > 0.0f) ? sampleRate : 48000.0f;

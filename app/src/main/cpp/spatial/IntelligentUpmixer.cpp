@@ -6,7 +6,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace ivanna {
+namespace Ivanna {
 
 void IntelligentUpmixer::prepare(float sampleRate) noexcept {
     sampleRate_ = (std::isfinite(sampleRate) && sampleRate > 0.0f) ? sampleRate : 48000.0f;

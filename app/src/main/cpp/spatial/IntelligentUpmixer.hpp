@@ -5,7 +5,7 @@
 #include <vector>
 #include <cstddef>
 
-namespace ivanna {
+namespace Ivanna {
 
 class IntelligentUpmixer {
 public:

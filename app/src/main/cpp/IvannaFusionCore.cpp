@@ -89,7 +89,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_memory->initialize("/data/adb/ivanna_omega/agent_memory.bin");
     
     m_upmixer.prepare(48000.0f);
-    m_decoder.prepare(48000.0f, 8); // 8 virtual speakers
+    m_hoaDecoder.prepare(48000.0f, 8); // 8 virtual speakers
 
 }
 
