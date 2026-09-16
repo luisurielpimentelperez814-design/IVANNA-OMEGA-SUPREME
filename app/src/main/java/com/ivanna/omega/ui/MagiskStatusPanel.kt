@@ -147,7 +147,13 @@ fun MagiskStatusPanel(
             moduleVersion.isNotEmpty() && moduleVersion != "unknown",
             moduleVersion, "—")
 
-        if (isOlderVersion(moduleVersion, com.ivanna.omega.BuildConfig.VERSION_NAME)) {
+        // FIX (alerta de versión que no desaparece): la prop persist.ivanna.version
+        // queda obsoleta hasta el reinicio. Si el daemon ya reportó su versión real
+        // en el handshake HELLO, esa fuente viva manda — la alerta desaparece en
+        // cuanto el binario actualizado responde, sin esperar al reboot.
+        val effectiveModuleVersion =
+            if (omegaBridge.liveModuleVersion.isNotBlank()) omegaBridge.liveModuleVersion else moduleVersion
+        if (isOlderVersion(effectiveModuleVersion, com.ivanna.omega.BuildConfig.VERSION_NAME)) {
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 color = AmberSignal.copy(alpha = 0.12f),
@@ -159,7 +165,7 @@ fun MagiskStatusPanel(
                 // para actualizar): antes decia "reinstala el ZIP actual" sin
                 // decir cual ni donde — el usuario tenia que adivinar la URL.
                 Text(
-                    "⚠ Módulo instalado ($moduleVersion) más viejo que la app " +
+                    "⚠ Módulo instalado ($effectiveModuleVersion) más viejo que la app " +
                     "(${com.ivanna.omega.BuildConfig.VERSION_NAME}) — el daemon y el " +
                     "socket pueden responder, pero con el binario VIEJO (sin STL " +
                     "estático ni bind con retry: puede morir antes de bindear tras " +

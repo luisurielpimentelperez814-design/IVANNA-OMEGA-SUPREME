@@ -16,6 +16,11 @@ object OmegaEngineBridge {
     private const val TCP_FALLBACK_PORT = 12121   // mismo que --tcp-port en service.sh
     private const val CONNECT_TIMEOUT = 2000
     @Volatile var isConnected = false; private set
+    // Versión REAL del módulo reportada por el daemon en el handshake HELLO
+    // (campo "moduleVersion"). Es la fuente viva: a diferencia de la prop
+    // persist.ivanna.version (que queda obsoleta hasta el reinicio), ésta la
+    // publica el binario que está corriendo AHORA. Vacía hasta el primer HELLO.
+    @Volatile var liveModuleVersion: String = ""; private set
     @Volatile private var lastLatencyMs = 0f
     private val reconnecting = AtomicBoolean(false)
 
@@ -133,7 +138,10 @@ object OmegaEngineBridge {
                 Log.w(TAG, "Handshake HELLO: proto=$proto < mínimo $MIN_PROTO_VERSION — daemon incompatible")
                 isConnected = false
             } else {
-                Log.i(TAG, "Handshake HELLO OK — proto=$proto daemon=${resp?.optString("daemon","?")}")
+                // Capturar la versión viva del módulo si el daemon la publica.
+                val live = resp?.optString("moduleVersion", "") ?: ""
+                if (live.isNotBlank()) liveModuleVersion = live
+                Log.i(TAG, "Handshake HELLO OK — proto=$proto daemon=${resp?.optString("daemon","?")} moduleVersion=$liveModuleVersion")
             }
             okProto
         } catch (e: Exception) {
