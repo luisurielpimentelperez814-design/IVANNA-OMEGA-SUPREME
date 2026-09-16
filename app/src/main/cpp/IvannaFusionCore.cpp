@@ -154,7 +154,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         float imm = m_upmixer.getImmersivity();
         if (imm == 1.0f) imm = g_upmixing_immersivity.load(std::memory_order_relaxed);
         m_upmixer.setImmersivity(imm);
-        std::vector<ivanna::HoaVector> outField;
+        std::vector<Ivanna::HoaVector> outField;
         m_upmixer.processBlock(buffer->left, buffer->right, outField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(outField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
     }
