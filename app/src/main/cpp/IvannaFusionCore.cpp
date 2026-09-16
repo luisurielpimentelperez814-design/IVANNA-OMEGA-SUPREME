@@ -157,8 +157,24 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         std::vector<Ivanna::HoaVector> outField;
         m_upmixer.processBlock(buffer->left, buffer->right, outField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(outField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        // FIX (doble procesamiento binaural, 2026-09-16): processBinauralScene()
+        // se llamaba SIEMPRE aqui debajo, incluso con el upmixing activo. Eso
+        // encadenaba dos espacializadores binaurales completos: el HOA decoder
+        // ya distribuye la imagen en 8 altavoces virtuales convolucionados con
+        // HRTF (localizacion correcta por direccion), y processBinauralScene()
+        // es OTRO convolver HRTF de una sola posicion (pose de cabeza) que
+        // recolapsaba esa imagen ya espacializada a traves de un segundo
+        // filtro — coloracion audible (comb-filtering) y perdida de buena
+        // parte del beneficio del upmixing, no un refuerzo. Son dos rutas de
+        // espacializacion binaural ALTERNATIVAS, no etapas que se apilen: se
+        // omite la ruta HRTF de HrtfManager mientras el upmixing esta activo
+        // (mismo criterio que ya aplica m_hrtf->setWetDry()==0: bypass, no
+        // doble aplicacion). Al desactivar upmixing, HrtfManager retoma solo
+        // con una pequeña discontinuidad de historial FIR — inaudible, mismo
+        // orden de magnitud que cualquier cambio de banco/crossfade normal.
+    } else {
+        m_hrtf->processBinauralScene(buffer);
     }
-    m_hrtf->processBinauralScene(buffer);
 
     if (m_goldenEarActive) {
         applyGoldenEarGAN(buffer);  // contiene fast_tanh como limitador de salida
