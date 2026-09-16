@@ -101,6 +101,26 @@ public:
         return v;
     }
 
+    // Energía (suma de cuadrados) del vector encode() en cualquier azimut:
+    //   W^2 + Y^2 + X^2 + V^2 + R^2 + U^2 = 1 + s1^2 + c1^2 + s2^2 + 0.25 + c2^2
+    //   = 1 + 1 + 1 + 0.25 = 3.25  (constante, independiente del azimut).
+    static constexpr float kEncodeEnergy   = 3.25f;
+    // Ganancia que normaliza encode() a energía unitaria exacta.
+    static constexpr float kUnitPowerGain  = 1.0f / 1.802775637731995f; // 1/sqrt(3.25)
+
+    /**
+     * Codifica una fuente MONO puntual con ENERGÍA UNITARIA exacta en el campo
+     * (independiente del azimut). Úsala cuando mezcles varias fuentes y quieras
+     * que la energía total del campo no dependa de cuántas fuentes ni de a qué
+     * ángulo están — el upmixer la usa para que la inmersividad cambie la
+     * ANCHURA sin cambiar el NIVEL.
+     */
+    static HoaVector encodeUnitPower(float azimuthRad) noexcept {
+        HoaVector v = encode(azimuthRad);
+        for (int ch = 0; ch < kHoaNumChannels; ++ch) v[static_cast<size_t>(ch)] *= kUnitPowerGain;
+        return v;
+    }
+
     /**
      * Suma ponderada de un vector HOA en el canal ACN `ch` con ganancia
      * `gain` — utilidad para mezclar varias fuentes codificadas en un mismo

@@ -39,7 +39,9 @@ TEST(IntelligentUpmixerTest, TransparentModeBypass) {
 
     upmixer.processBlock(inL.data(), inR.data(), outField, 256);
 
-    HoaVector encL = HoaGainMatrix::encode(M_PI / 6.0f);
+    // El bypass transparente usa encodeUnitPower (energía unitaria exacta):
+    // la imagen estéreo se preserva a ±30° con energía de campo plana.
+    HoaVector encL = HoaGainMatrix::encodeUnitPower(M_PI / 6.0f);
     for (size_t i = 0; i < 256; ++i) {
         EXPECT_NEAR(outField[i][0], encL[0] * 0.5f, 1e-5f);
         EXPECT_NEAR(outField[i][1], encL[1] * 0.5f, 1e-5f);

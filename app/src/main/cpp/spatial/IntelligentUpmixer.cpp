@@ -8,11 +8,9 @@
 namespace Ivanna {
 
 namespace {
-// Corte del crossover: 140 Hz. Por debajo, el contenido se mantiene al centro
-// (mono-seguro): un grave abierto lateralmente se cancela en mono y suena
-// "hueco" en altavoces/auriculares con poca separación.
-constexpr float kCrossoverHz = 140.0f;
-constexpr float kSmoothMs    = 15.0f;   // constante de suavizado de inmersividad
+constexpr float kCrossoverHz = 140.0f;   // graves por debajo → centro (mono-seguro)
+constexpr float kSmoothMs    = 15.0f;    // suavizado de inmersividad / morphing
+constexpr float kTransRecoverMs = 20.0f; // recuperación del ancho tras un transiente
 
 inline float sanitize(float v) noexcept { return std::isfinite(v) ? v : 0.0f; }
 inline float clamp01(float v) noexcept {
@@ -23,7 +21,6 @@ inline float clamp01(float v) noexcept {
 
 void IntelligentUpmixer::prepare(float sampleRate) noexcept {
     sampleRate_ = (std::isfinite(sampleRate) && sampleRate > 0.0f) ? sampleRate : 48000.0f;
-
     transientDetector_.prepare(sampleRate_);
     transientDetector_.setThreshold(3.0f);
 
@@ -34,6 +31,8 @@ void IntelligentUpmixer::prepare(float sampleRate) noexcept {
 
     bassZ1_ = bassZ2_ = 0.0f;
     smoothedImmersivity_ = targetImmersivity_;
+    widthMorph_ = targetImmersivity_;
+    transientWidth_ = 1.0f;
 }
 
 void IntelligentUpmixer::setImmersivity(float value) noexcept {
@@ -46,32 +45,39 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     if (outField.size() != numFrames) outField.resize(numFrames);
     if (numFrames == 0 || inL == nullptr || inR == nullptr) return;
 
-    // Vectores de codificación HOA — una vez por bloque, no por muestra.
-    const HoaVector encL    = HoaGainMatrix::encode(static_cast<float>(M_PI) / 6.0f);  // +30°
-    const HoaVector encR    = HoaGainMatrix::encode(-static_cast<float>(M_PI) / 6.0f); // -30°
-    const HoaVector encMid  = HoaGainMatrix::encode(0.0f);
-    const HoaVector encSide = HoaGainMatrix::encode(static_cast<float>(M_PI) / 2.0f);
+    // Bases con ENERGÍA UNITARIA exacta (encodeUnitPower): la energía del campo
+    // no depende del azimut ni de cuántas fuentes se mezclen — la inmersividad
+    // cambia la ANCHURA, nunca el NIVEL.
+    const HoaVector encNarrowL = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 6.0f); // +30°
+    const HoaVector encNarrowR = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 6.0f); // -30°
+    const HoaVector encWideL   = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 2.0f); // +90°
+    const HoaVector encWideR   = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 2.0f); // -90°
+    const HoaVector encCenter  = HoaGainMatrix::encodeUnitPower(0.0f);                              // 0°
 
     if (!enabled_ || smoothedImmersivity_ <= 0.001f) {
-        // Bypass transparente: par estéreo EXACTO a ±30° — la imagen original
-        // se reconstruye sin pérdida (misma codificación, ganancia unitaria).
+        // Bypass transparente: par estéreo EXACTO a ±30° con energía unitaria.
         for (std::size_t i = 0; i < numFrames; ++i) {
             HoaVector out = {0};
-            HoaGainMatrix::accumulate(out, encL, sanitize(inL[i]));
-            HoaGainMatrix::accumulate(out, encR, sanitize(inR[i]));
+            HoaGainMatrix::accumulate(out, encNarrowL, sanitize(inL[i]));
+            HoaGainMatrix::accumulate(out, encNarrowR, sanitize(inR[i]));
             outField[i] = out;
         }
         return;
     }
 
-    // Detección de transientes sobre el MONO real (mid) — corrige el sesgo de
-    // alimentar sólo un canal y por fin USA el resultado (antes era código muerto).
+    // Detección de transientes sobre el pico estéreo max(|L|,|R|) — no sobre el
+    // mid (que cancela golpes paneados) ni sobre un solo canal. El resultado SÍ
+    // se usa: en el ataque se estrecha el ancho (transiente localizado al
+    // frente) y se recupera en rampa de ~20 ms.
     if (monoBuf_.size() != numFrames) monoBuf_.resize(numFrames);
     for (std::size_t i = 0; i < numFrames; ++i) {
-        monoBuf_[i] = 0.5f * (sanitize(inL[i]) + sanitize(inR[i]));
+        const float a = std::fabs(sanitize(inL[i]));
+        const float b = std::fabs(sanitize(inR[i]));
+        monoBuf_[i] = a > b ? a : b;
     }
-    const bool  hasTransients = transientDetector_.processBlock(monoBuf_.data(), numFrames);
-    const float widthScale     = hasTransients ? 1.35f : 1.0f;
+    const bool hasTransients = transientDetector_.processBlock(monoBuf_.data(), numFrames);
+    const float transTarget  = hasTransients ? 0.55f : 1.0f; // estrechar en el ataque
+    const float transA       = 1.0f - std::exp(-1.0f / (sampleRate_ * kTransRecoverMs * 0.001f));
 
     for (std::size_t i = 0; i < numFrames; ++i) {
         const float l = sanitize(inL[i]);
@@ -80,28 +86,37 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
         const float mid  = 0.5f * (l + r);
         const float side = 0.5f * (l - r);
 
-        // Crossover complementario de 2º orden sobre el mid (dos polos en
-        // cascada, 12 dB/oct). bass + midHi == mid EXACTO: cruce de suma
-        // constante, sin error de fase en el corte ni overshoot.
+        // Crossover complementario de 2º orden sobre el mid: bass + midHi == mid
+        // EXACTO en cada muestra (suma constante, sin error de fase en el corte).
         bassZ1_ += lpfA_ * (mid - bassZ1_);
         bassZ2_ += lpfA_ * (bassZ1_ - bassZ2_);
         const float bass  = bassZ2_;
         const float midHi = mid - bass;
 
-        // Suavizado por muestra de la inmersividad (sin zipper al mover el control).
+        // Suavizado por muestra de inmersividad y morphing (sin zipper).
         smoothedImmersivity_ += smoothA_ * (targetImmersivity_ - smoothedImmersivity_);
-        const float w  = smoothedImmersivity_;
-        const float dg = 1.0f - 0.5f * w;   // el par estéreo cede sitio a la expansión
+        widthMorph_          += smoothA_ * (smoothedImmersivity_ - widthMorph_);
+        transientWidth_      += transA  * (transTarget - transientWidth_);
+
+        const float w = smoothedImmersivity_;
+        // Morfología de bases: el par directo se abre de ±30° a ±90° según la
+        // inmersividad, con energía de campo plana (bases unitarias).
+        const float m = widthMorph_ * transientWidth_;
+        const float gN = 1.0f - 0.5f * m;   // peso del par estrecho
+        const float gW = 0.5f * m;          // peso del par ancho
 
         HoaVector out = {0};
-        // 1) Imagen estéreo exacta (±30°).
-        HoaGainMatrix::accumulate(out, encL, l * dg);
-        HoaGainMatrix::accumulate(out, encR, r * dg);
+        // 1) Par estéreo directo (estrecho ↔ ancho, energía plana).
+        HoaGainMatrix::accumulate(out, encNarrowL, l * gN);
+        HoaGainMatrix::accumulate(out, encNarrowR, r * gN);
+        HoaGainMatrix::accumulate(out, encWideL,   l * gW);
+        HoaGainMatrix::accumulate(out, encWideR,   r * gW);
         // 2) Expansión inmersiva: presencia central + graves mono-seguros al
-        //    centro + apertura lateral difusa (con realce en transientes).
-        HoaGainMatrix::accumulate(out, encMid,  midHi * w);
-        HoaGainMatrix::accumulate(out, encMid,  bass  * w);
-        HoaGainMatrix::accumulate(out, encSide, side  * w * widthScale);
+        //    centro + apertura lateral difusa.
+        HoaGainMatrix::accumulate(out, encCenter, midHi * w);
+        HoaGainMatrix::accumulate(out, encCenter, bass  * w);
+        HoaGainMatrix::accumulate(out, encWideL,  side  * w * 0.5f);
+        HoaGainMatrix::accumulate(out, encWideR, -side  * w * 0.5f);
 
         outField[i] = out;
     }

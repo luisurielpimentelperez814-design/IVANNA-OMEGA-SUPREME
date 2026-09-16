@@ -62,6 +62,11 @@ private:
     float bassZ1_  = 0.0f;   // 1er polo del crossover (sobre mid)
     float bassZ2_  = 0.0f;   // 2º polo del crossover
 
+    // Morfología de bases: mezcla entre el par estrecho (±30°) y el ancho
+    // (0°/±90°) según inmersividad, con energía de campo plana.
+    float widthMorph_ = 0.0f;        // 0 = estrecho, 1 = ancho (suavizado)
+    float transientWidth_ = 1.0f;    // estrechamiento en el ataque (recupera en rampa)
+
     std::vector<float> monoBuf_;
     ivanna::TransientDetector transientDetector_;
 };
