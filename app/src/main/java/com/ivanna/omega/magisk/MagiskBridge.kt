@@ -81,8 +81,19 @@ object MagiskBridge {
      *   1) persist.ivanna.daemon_active=1 (setprop desde service.sh), O
      *   2) probe real al abstract socket responde.
      */
-    val isDaemonRunning: Boolean
+        @Volatile private var consecutiveProbeFailures = 0
+    @Volatile private var lastDaemonAlive = false
+    private const val PROBE_FAILURES_TO_DECLARE_DOWN = 3
+
+val isDaemonRunning: Boolean
         get() {
+            val alive = probeDaemonAlive()
+            if (alive) { consecutiveProbeFailures = 0; lastDaemonAlive = true }
+            else { consecutiveProbeFailures++; if (consecutiveProbeFailures >= PROBE_FAILURES_TO_DECLARE_DOWN) lastDaemonAlive = false }
+            return lastDaemonAlive
+        }
+
+    private fun probeDaemonAlive(): Boolean {
             // FIX: antes la property de sistema ganaba y cortocircuitaba el probe.
             // persist.ivanna.daemon_active es *persistente*: si el daemon muere
             // (crash, kill, modulo desactivado) nadie la baja hasta el siguiente
@@ -94,6 +105,7 @@ object MagiskBridge {
             if (socketOk) return true
             return getPropCached(PROP_DAEMON) == "1" && propFallbackAllowed
         }
+
 
     /**
      * Solo confiamos en la prop cuando el probe nunca ha funcionado en esta
