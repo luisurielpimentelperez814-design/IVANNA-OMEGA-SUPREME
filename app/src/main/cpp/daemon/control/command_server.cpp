@@ -124,6 +124,15 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
+    } else if (strcmp(action,"SET_UPMIXING")==0) {
+        // Comando dedicado del puente JNI (nativeSetIntelligentUpmixingEnabled /
+        // nativeSetUpmixingImmersivity). Cierra el canal app->daemon->SHM->
+        // audioserver para el estado de Intelligent Upmixing (HOA).
+        m_state.upmixing_enabled = _jsonFloat(json,"upmixingEnabled", m_state.upmixing_enabled);
+        m_state.upmixing_immersivity = _jsonFloat(json,"upmixingImmersivity", m_state.upmixing_immersivity);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
     } else if (strcmp(action,"SET_INTENSITY")==0) {
         m_state.intensity = _clamp(_jsonFloat(json,"intensity",m_state.intensity),0.f,1.f);
         uint64_t gen = publishCurrentState(m_state);

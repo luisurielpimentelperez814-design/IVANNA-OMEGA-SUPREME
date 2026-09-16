@@ -166,6 +166,19 @@ target_include_directories(test_shm_lifecycle PRIVATE
 target_compile_options(test_shm_lifecycle PRIVATE -Wall -Wextra)
 target_link_libraries(test_shm_lifecycle PRIVATE Threads::Threads)
 add_test(NAME test_shm_lifecycle COMMAND test_shm_lifecycle)
+
+# ── test_upmixing_control_plane: evidencia del canal app->daemon->SHM->effect ──
+# Compila el omega_control_bus.cpp REAL (writer/reader seqlock + CRC32) y
+# verifica que el snapshot transporta upmixing_enabled/immersivity con
+# integridad cross-process. Sin red, sin NDK: SHM en /tmp.
+add_executable(test_upmixing_control_plane
+  test_upmixing_control_plane.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/omega_control_bus.cpp
+)
+target_include_directories(test_upmixing_control_plane PRIVATE .. ../include)
+target_compile_options(test_upmixing_control_plane PRIVATE -Wall -Wextra)
+target_link_libraries(test_upmixing_control_plane PRIVATE GTest::gtest_main Threads::Threads)
+gtest_discover_tests(test_upmixing_control_plane)
 # Ver comentario junto a test_adaptive_engine (arriba): FAIL_REGULAR_EXPRESSION
 # removido por redundante con el código de salida y vulnerable a contaminación
 # cruzada de stdout entre tests bajo ctest -j (falso positivo confirmado).

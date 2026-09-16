@@ -21,6 +21,17 @@
 #include <mutex>
 #include <chrono>
 #include <condition_variable>
+// ── Puente de control app→daemon (Ruta B cross-process) ──────────────────
+// El estado de Upmixing escrito desde la UI vive en el PROCESO APP; el DSP
+// system-wide corre en el PROCESO AUDIOSERVER (libomega_effect.so). Son
+// address-spaces separados: un std::atomic aqui jamas lo ve el efecto.
+// El canal oficial es: JNI -> socket @omega_command_socket -> daemon
+// (command_server) -> OmegaControlBus (SHM seqlock) -> omega_effect.
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <cstdio>
+#include <cstddef>
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
@@ -1972,10 +1983,53 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
 extern std::atomic<bool> g_upmixing_enabled;
 extern std::atomic<float> g_upmixing_immersivity;
 
+// ── Puente app→daemon para Upmixing (HOA) ────────────────────────────────
+// Envia un comando JSON al socket de control del daemon (abstract namespace
+// "@omega_command_socket", el mismo que bindea ivanna_daemon.cpp). El daemon
+// actualiza su OmegaDspState y publica el snapshot en el OmegaControlBus
+// (SHM seqlock); omega_effect.cpp lo lee en el callback de audio (RT-safe,
+// lock-free) y llama fc->setUpmixingEnabled()/setImmersivity().
+//
+// Disenio deliberado:
+//  - Fire-and-forget con timeout corto: NUNCA se llama desde el hilo de
+//    audio (solo desde el hilo de UI via JNI), asi que un connect() con
+//    timeout de 200 ms es aceptable aqui y NO viola las reglas RT.
+//  - Si el daemon no esta (sin root / no instalado), el envio falla en
+//    silencio y el atomic local sigue actualizado: la Ruta A (in-process)
+//    conserva el comportamiento actual. Cero regresion sin daemon.
+//  - Se mantiene el atomic local para que la UI refleje el estado al
+//    instante aunque el daemon tarde un ciclo en publicar.
+static void omegaSendUpmixingToDaemon(bool enabled, float immersivity) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000}; // 200 ms
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket"; // '@' abstract -> sun_path[0]='\0'
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[160];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":%d,\"upmixingImmersivity\":%.4f}",
+            enabled ? 1 : 0, static_cast<double>(immersivity));
+        if (n > 0) {
+            (void)::write(fd, json, static_cast<size_t>(n)); // mejor esfuerzo
+        }
+    }
+    ::close(fd);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetIntelligentUpmixingEnabled(
     JNIEnv*, jobject, jboolean enabled) {
-    g_upmixing_enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+    const bool en = (enabled == JNI_TRUE);
+    g_upmixing_enabled.store(en, std::memory_order_relaxed);
+    // Cerrar el canal cross-process: empujar al daemon -> SHM -> audioserver.
+    omegaSendUpmixingToDaemon(en, g_upmixing_immersivity.load(std::memory_order_relaxed));
 }
 
 JNIEXPORT void JNICALL
@@ -1983,6 +2037,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
     JNIEnv*, jobject, jfloat immersivity) {
     if (std::isfinite(immersivity)) {
         g_upmixing_immersivity.store(immersivity, std::memory_order_relaxed);
+        omegaSendUpmixingToDaemon(g_upmixing_enabled.load(std::memory_order_relaxed), immersivity);
     }
 }
 
