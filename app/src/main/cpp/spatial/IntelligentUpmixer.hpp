@@ -52,7 +52,7 @@ public:
                       std::vector<HoaVector>& outField, std::size_t numFrames) noexcept;
 
 private:
-    bool  enabled_             = true;
+    bool  enabled_             = false;
     float targetImmersivity_   = 1.0f;
     float smoothedImmersivity_ = 1.0f;
     float sampleRate_          = 48000.0f;

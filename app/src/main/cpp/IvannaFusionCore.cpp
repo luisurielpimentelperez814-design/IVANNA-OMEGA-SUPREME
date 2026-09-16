@@ -149,11 +149,26 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     m_hrtf->setWetDry(g_hrtf_wet_dry.load(std::memory_order_relaxed));
 
     // Intelligent Upmixing + HOA Binaural Decoder (Mayor impacto en audio espacial)
-    if (m_upmixer.isUpmixingEnabled() || g_upmixing_enabled.load(std::memory_order_relaxed)) {
-        m_upmixer.setUpmixingEnabled(true);
-        float imm = m_upmixer.getImmersivity();
-        if (imm == 1.0f) imm = g_upmixing_immersivity.load(std::memory_order_relaxed);
-        m_upmixer.setImmersivity(imm);
+    //
+    // FIX (interruptor de un solo sentido + slider de inmersividad "pegado",
+    // 2026-09-16): la version anterior evaluaba la condicion de entrada como
+    // `m_upmixer.isUpmixingEnabled() || g_upmixing_enabled.load(...)` y LUEGO,
+    // dentro del propio bloque, llamaba `m_upmixer.setUpmixingEnabled(true)`.
+    // Eso hacia que el primer operando del OR quedara en `true` para siempre
+    // en cuanto se activaba una vez — el atomic (que SI refleja el toggle
+    // real de la UI en la ruta local/JNI) dejaba de importar: no habia forma
+    // de volver a apagar el upmixing sin reiniciar el proceso. Ademas, la
+    // inmersividad solo se releia del atomic cuando `getImmersivity()==1.0f`
+    // (el default), asi que el primer movimiento del slider "pegaba" su
+    // propio valor y bloqueaba cualquier cambio posterior.
+    //
+    // Ahora se lee el estado de una vez (sin escribir de vuelta el flag que
+    // alimenta la condicion) y la inmersividad se sincroniza sin condicion,
+    // cada bloque, igual que ya hace g_hrtf_wet_dry justo arriba.
+    const bool upmixingActive = m_upmixer.isUpmixingEnabled() ||
+                                 g_upmixing_enabled.load(std::memory_order_relaxed);
+    if (upmixingActive) {
+        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
         std::vector<Ivanna::HoaVector> outField;
         m_upmixer.processBlock(buffer->left, buffer->right, outField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(outField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
