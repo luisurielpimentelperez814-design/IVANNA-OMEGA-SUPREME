@@ -53,8 +53,11 @@ void log_message(const std::string& msg) {
     }
 }
 
+static std::atomic<bool> g_shutdown_requested{false};
+
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
+        g_shutdown_requested.store(true, std::memory_order_release);
         // Signal handler seguro: no hacer IO, malloc, mutex ni logging aquí.
         // El loop principal detecta g_running y realiza el cierre ordenado.
         g_running = 0;
@@ -127,6 +130,13 @@ int setup_shared_memory(int sampleRate) {
     }
 
     log_message("Shared Memory listo fd=" + std::to_string(ivanna::shmManager().fd()));
+
+    // Deteccion de crash: si el apagado anterior no fue limpio, registrarlo
+    if (!ivanna::shmManager().previousShutdownClean()) {
+        ivanna::shmManager().noteCrashDetected();
+        log_message("AVISO: apagado anterior NO limpio (crash/kill) — crash_count incrementado");
+    }
+    ivanna::shmManager().markShutdownClean(false); // se pondra a 1 solo en apagado limpio
 
     return ivanna::shmManager().fd();
 }
@@ -238,6 +248,32 @@ int main(int argc, char* argv[]) {
     if (controlServer.start("@omega_command_socket")) {
         log_message("CONTROL socket ready: @omega_command_socket");
         std::thread([&controlServer](){ controlServer.acceptLoop(); }).detach();
+
+    // Watchdog de heartbeat DEDICADO: 1 Hz, no depende del accept loop.
+    // Si el accept loop se bloquea (cliente colgado), el heartbeat sigue
+    // latiendo y la app distingue "daemon vivo, socket ocupado" de "daemon muerto".
+    std::thread([](){
+        const auto t0 = std::chrono::steady_clock::now();
+        uint64_t beats = 0;
+        while (!g_shutdown_requested.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            ++beats;
+            ivanna::shmManager().bumpHealthCounter(1);   // heartbeats_emitidos
+            ivanna::shmManager().publishUptime(
+                (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - t0).count());
+            // RSS desde /proc/self/status (VmRSS), sin dependencias externas
+            if ((beats & 7) == 0) {  // cada 8 s basta
+                std::ifstream f("/proc/self/status"); std::string line;
+                while (std::getline(f, line)) {
+                    if (line.rfind("VmRSS:", 0) == 0) {
+                        ivanna::shmManager().publishRssKb((uint32_t)std::atol(line.c_str() + 6));
+                        break;
+                    }
+                }
+            }
+        }
+    }).detach(); // heartbeat_watchdog
     } else {
         // FIX: antes este fallo era SILENCIOSO. El socket de control es
         // secundario — no abortamos el daemon principal, solo lo logueamos.
@@ -511,5 +547,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Apagado limpio: marcar ANTES de cerrar el SHM — el proximo arranque
+    // distingue cierre ordenado de crash/kill -9.
+    ivanna::shmManager().markShutdownClean(true);
+    log_message("Daemon apagado limpio (shutdown_clean=1)");
     return 0;
 }
