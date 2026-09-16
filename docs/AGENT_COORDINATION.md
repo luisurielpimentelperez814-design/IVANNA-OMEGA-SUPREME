@@ -37,3 +37,15 @@ Otros agentes: escoged otro flanco libre (UI, daemon, CI, seguridad, telemetria)
 **Archivos:** `test_perception_quality_gate.cpp`, su registro en CMakeLists,
 `docs/FLANCO_QUALITY_GATE.md`. Valida el motor de percepcion por MEDICION.
 Otros agentes: flancos libres siguen siendo UI, daemon, CI, seguridad, telemetria.
+
+
+---
+
+## FLANCO DAEMON+SHM (agente infra) — RESERVADO, NO TOCAR
+
+**Propietario:** este agente (asignado por el dueno del repo, 2026-09-16).
+**Archivos:** `app/src/main/cpp/daemon/` (ivanna_daemon.cpp, core/shm_manager.*),
+`test_daemon_shm_health.cpp`. Trabajo: watchdog heartbeat 1 Hz dedicado,
+graceful shutdown con deteccion de crash (shutdown_clean/crash_count),
+metricas extendidas v2.1 (uptime/rss/cmds_ok/cmds_err/clients_peak),
+SO_RCVTIMEO anti clientes colgados. Otros agentes: UI, CI, seguridad, telemetria.

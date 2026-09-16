@@ -373,6 +373,15 @@ target_include_directories(test_perception_quality_gate PRIVATE
 target_link_libraries(test_perception_quality_gate PRIVATE gtest gtest_main)
 add_test(NAME perception_quality_gate COMMAND test_perception_quality_gate)
 
+add_executable(test_daemon_shm_health
+    tests/regression/test_daemon_shm_health.cpp
+)
+target_include_directories(test_daemon_shm_health PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_daemon_shm_health PRIVATE gtest gtest_main)
+add_test(NAME daemon_shm_health COMMAND test_daemon_shm_health)
+
 add_executable(test_oem_stability_suite
     tests/regression/test_oem_stability_suite.cpp
 )
