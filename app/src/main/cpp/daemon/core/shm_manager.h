@@ -40,6 +40,24 @@ inline constexpr size_t   SHM_STATE_OFFSET  = 4096;         // pagina 0: control
 // Offsets FIJOS: los lee ShmManager.kt. Cambiarlos exige bump coordinado.
 inline constexpr size_t   SHM_SAF_FRAME_OFFSET   = 0;   // relativo a base+sizeof(ShmHeader)
 inline constexpr size_t   SHM_HEARTBEAT_OFFSET   = 16;  // idem
+
+// ── Metricas extendidas + marcador de shutdown (pagina de control) ─────────
+// Bytes +48..+95: despues de los contadores de salud (+24..47). Layout v2.1:
+//   +48 uptime_s (u64)          +56 clientes_peak (u32)    +60 cmds_ok (u32)
+//   +64 cmds_err (u32)          +68 rss_kb (u32)           +72 shutdown_clean (u32)
+//   +76 crash_count (u32)       +80 metrics_magic (u32, "METR")
+// Deteccion de crash: el daemon escribe shutdown_clean=0 al arrancar y =1 al
+// apagarse limpio (SIGTERM). Si al arrancar encuentra 0 -> crash previo,
+// incrementa crash_count y lo loguea. La app puede mostrarlo en el panel.
+inline constexpr size_t SHM_UPTIME_OFFSET         = 48;
+inline constexpr size_t SHM_CLIENTS_PEAK_OFFSET   = 56;
+inline constexpr size_t SHM_CMDS_OK_OFFSET        = 60;
+inline constexpr size_t SHM_CMDS_ERR_OFFSET       = 64;
+inline constexpr size_t SHM_RSS_KB_OFFSET         = 68;
+inline constexpr size_t SHM_SHUTDOWN_CLEAN_OFFSET = 72;
+inline constexpr size_t SHM_CRASH_COUNT_OFFSET    = 76;
+inline constexpr size_t SHM_METRICS_MAGIC_OFFSET  = 80;
+inline constexpr uint32_t OMEGA_METRICS_MAGIC     = 0x4D455452u; // "METR"
 // Bloque de salud del canal (roadmap flanco control-plane item 3): métricas
 // que el daemon actualiza y la app lee para observabilidad real del canal.
 // Layout fijo, todo u32 little-endian, relativo a base+sizeof(ShmHeader):
@@ -176,6 +194,16 @@ public:
      *  no como dato coherente con los demás). Seguro desde cualquier hilo
      *  del daemon. No-op si la región no está lista o el índice es inválido. */
     void bumpHealthCounter(uint32_t index) noexcept;
+    // Metricas extendidas (atomic store, lock-free, sin seqlock: cada campo
+    // es un u32/u64 alineado escrito por un solo productor — el daemon).
+    void publishUptime(uint64_t seconds) noexcept;
+    void noteClientsPeak(uint32_t current) noexcept;
+    void noteCommandResult(bool ok) noexcept;
+    void publishRssKb(uint32_t kb) noexcept;
+    void markShutdownClean(bool clean) noexcept;
+    bool previousShutdownClean() noexcept;   // leer ANTES de markShutdownClean(false)
+    void noteCrashDetected() noexcept;       // crash_count++
+    bool extendedMetricsPresent() noexcept;  // metrics_magic valido
     /** Cuenta una escritura de control rechazada (writeControl devolvió false). */
     void noteRejectedWrite() noexcept { bumpHealthCounter(2); }
 

@@ -168,4 +168,68 @@ bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) n
     return true;
 }
 
+
+// ── Metricas extendidas + shutdown marker (layout v2.1) ────────────────────
+// Escritor unico: el daemon. Lectores: app (panel), health_check.sh.
+// Campos alineados de un solo productor -> stores atomicos bastan, sin seqlock.
+
+static inline void storeU32(void* base, size_t off, uint32_t v) noexcept {
+    auto* p = reinterpret_cast<std::atomic<uint32_t>*>(
+        static_cast<uint8_t*>(base) + off);
+    p->store(v, std::memory_order_release);
+}
+static inline uint32_t loadU32(void* base, size_t off) noexcept {
+    auto* p = reinterpret_cast<std::atomic<uint32_t>*>(
+        static_cast<uint8_t*>(base) + off);
+    return p->load(std::memory_order_acquire);
+}
+
+void OmegaShmManager::publishUptime(uint64_t seconds) noexcept {
+    if (!m_base) return;
+    auto* p = reinterpret_cast<std::atomic<uint64_t>*>(
+        static_cast<uint8_t*>(m_base) + SHM_UPTIME_OFFSET);
+    p->store(seconds, std::memory_order_release);
+    storeU32(m_base, SHM_METRICS_MAGIC_OFFSET, OMEGA_METRICS_MAGIC);
+}
+
+void OmegaShmManager::noteClientsPeak(uint32_t current) noexcept {
+    if (!m_base) return;
+    if (current > loadU32(m_base, SHM_CLIENTS_PEAK_OFFSET))
+        storeU32(m_base, SHM_CLIENTS_PEAK_OFFSET, current);
+}
+
+void OmegaShmManager::noteCommandResult(bool ok) noexcept {
+    if (!m_base) return;
+    const size_t off = ok ? SHM_CMDS_OK_OFFSET : SHM_CMDS_ERR_OFFSET;
+    storeU32(m_base, off, loadU32(m_base, off) + 1);
+}
+
+void OmegaShmManager::publishRssKb(uint32_t kb) noexcept {
+    if (!m_base) return;
+    storeU32(m_base, SHM_RSS_KB_OFFSET, kb);
+}
+
+void OmegaShmManager::markShutdownClean(bool clean) noexcept {
+    if (!m_base) return;
+    storeU32(m_base, SHM_SHUTDOWN_CLEAN_OFFSET, clean ? 1u : 0u);
+    storeU32(m_base, SHM_METRICS_MAGIC_OFFSET, OMEGA_METRICS_MAGIC);
+}
+
+bool OmegaShmManager::previousShutdownClean() noexcept {
+    if (!m_base) return true;  // sin SHM no hay evidencia de crash
+    if (loadU32(m_base, SHM_METRICS_MAGIC_OFFSET) != OMEGA_METRICS_MAGIC)
+        return true;           // primer arranque tras el upgrade: sin marca
+    return loadU32(m_base, SHM_SHUTDOWN_CLEAN_OFFSET) == 1u;
+}
+
+void OmegaShmManager::noteCrashDetected() noexcept {
+    if (!m_base) return;
+    storeU32(m_base, SHM_CRASH_COUNT_OFFSET, loadU32(m_base, SHM_CRASH_COUNT_OFFSET) + 1);
+}
+
+bool OmegaShmManager::extendedMetricsPresent() noexcept {
+    if (!m_base) return false;
+    return loadU32(m_base, SHM_METRICS_MAGIC_OFFSET) == OMEGA_METRICS_MAGIC;
+}
+
 } // namespace ivanna
