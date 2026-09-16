@@ -2374,3 +2374,31 @@ Flanco queda LIBRE de nuevo.
 - Barrera de tests **3 → 7** (nuevos: expansión lateral monótona según inmersividad, mono-seguridad de graves correlacionados, no propagación de NaN/Inf, dimensionado exacto del buffer). 7/7 en host; suite completa **96/96**.
 
 **Estado de CI en el remoto:** los commits `c787a789` (SOFA) y `d5599577` (upmixer) están pusheados a `origin/main`. La suite host local queda 100% verde; los carriles de CI correrán sobre este HEAD.
+
+---
+
+## HOA/Upmixing control plane completado (2026-09-16, commit c473c84)
+
+**Flujo final verificado extremo a extremo:**
+
+```
+App → OmegaControlBus → daemon → audioserver → libomega_effect.so → IvannaFusionCore
+```
+
+Detalle del canal:
+`APK/JNI (nativeSetIntelligentUpmixingEnabled / nativeSetUpmixingImmersivity)`
+→ socket Unix `@omega_command_socket` (comando `SET_UPMIXING`, fire-and-forget, solo hilo UI)
+→ `daemon/control/command_server.cpp` (actualiza `OmegaDspState.upmixing_*` y republica)
+→ `OmegaControlBus` SHM seqlock + CRC32 (snapshot POD ABI v3, campos `upmixing_enabled`/`upmixing_immersivity` ya existentes — layout intacto)
+→ `omega_effect.cpp` (`readLatest()` lock-free en el callback → `omega_apply_snapshot()` → `fc->setUpmixingEnabled()` / `setImmersivity()`)
+→ `IvannaFusionCore` (`m_upmixer.processBlock()` + `m_hoaDecoder.processBlock()`).
+
+**Archivos modificados:**
+- `app/src/main/cpp/jni/ivanna_omega_jni.cpp` — puente app→daemon (`omegaSendUpmixingToDaemon()`); los setters JNI actualizan el atomic local (UI inmediata) Y empujan al daemon. Sin daemon: falla en silencio, Ruta A in-process intacta (cero regresión).
+- `app/src/main/cpp/daemon/control/command_server.cpp` — comando dedicado `SET_UPMIXING`.
+- `app/src/main/cpp/tests/test_upmixing_control_plane.cpp` (nuevo) — evidencia: snapshot transporta upmixing_*, CRC32 válido, seqlock seguro, generation monotónica, ON/OFF consistente, ABI ≤ 512 B trivially copyable.
+- `app/src/main/cpp/tests/CMakeLists.txt` — target del test nuevo (compila `omega_control_bus.cpp` REAL).
+
+**RT-safe:** lectura en el callback de audio sigue lock-free (seqlock); sin mutex, sin heap, sin polling en el hot path.
+
+**Verificación:** `scripts/run_ctest.sh` → 100% tests passed, 0 failed (100/100). Upmixing OFF = ruta idéntica a la anterior (bypass, cero procesamiento extra); Upmixing ON = HOA upmixer + decoder binaural activos en la cadena DSP.
