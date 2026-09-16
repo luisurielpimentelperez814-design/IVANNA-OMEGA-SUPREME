@@ -148,6 +148,16 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     }
     m_hrtf->setWetDry(g_hrtf_wet_dry.load(std::memory_order_relaxed));
 
+    // Intelligent Upmixing + HOA Binaural Decoder (Mayor impacto en audio espacial)
+    if (m_upmixer.isUpmixingEnabled() || g_upmixing_enabled.load(std::memory_order_relaxed)) {
+        m_upmixer.setUpmixingEnabled(true);
+        float imm = m_upmixer.getImmersivity();
+        if (imm == 1.0f) imm = g_upmixing_immersivity.load(std::memory_order_relaxed);
+        m_upmixer.setImmersivity(imm);
+        std::vector<ivanna::HoaVector> outField;
+        m_upmixer.processBlock(buffer->left, buffer->right, outField, Ivanna::BLOCK_SIZE);
+        m_hoaDecoder.processBlock(outField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+    }
     m_hrtf->processBinauralScene(buffer);
 
     if (m_goldenEarActive) {

@@ -36,6 +36,8 @@ struct OmegaDspState {
     float bass_boost;
     float dialog_boost;
     float widener_mult;
+    float upmixing_enabled;
+    float upmixing_immersivity;
     float saf_delta_e;
     float saf_metric;
     float saf_memory;

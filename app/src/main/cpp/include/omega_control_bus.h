@@ -101,7 +101,7 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // El bump de VERSION invalida snapshots viejos por diseño (mismatch
 // detectado en isVersionValid()); el reader cae a defaults hasta que
 // el daemon publique con la ABI nueva — sin ruido audible.
-constexpr uint16_t OMEGA_CTRL_VERSION = 2u;
+constexpr uint16_t OMEGA_CTRL_VERSION = 3u;
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 
@@ -187,6 +187,11 @@ struct OmegaDspSnapshot {
     int32_t  room_idx;      // índice sala [-1 = ninguna, 0..199]
     float    room_wet;      // wet/dry [0,1]
 
+    // ── Intelligent Upmixing (HOA) ────────────────────────────────────────────
+    uint32_t upmixing_enabled; // 1 = enabled, 0 = disabled
+    float    upmixing_immersivity;
+
+
     // ── Flags ────────────────────────────────────────────────────────────────
     // bit 0: bypass global
     // bit 1: eq_calibrated
@@ -219,6 +224,8 @@ struct OmegaDspSnapshot {
         s.room_rt60_s = 0.f;   // sala desactivada por defecto
         s.room_idx    = -1;
         s.room_wet    = 0.35f;
+        s.upmixing_enabled = 0;
+        s.upmixing_immersivity = 1.0f;
         s.ref_phon    = 70.f;
         s.loudness_target = -18.f;
         s.harmonic_gain   = 1.f;

@@ -250,12 +250,17 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     // FIX (eco/desfase con sliders altos): cuando el daemon system-wide está activo,
     // la app NO debe procesar localmente — el audio ya pasa por el daemon global.
     // Procesar dos veces causa eco (delay doble) y desfase (filtros IIR duplicados).
-    if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::SYSTEM_WIDE) {
+    if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
         return;
     }
     // Spatial width (slider UI "Ancho espacial")
     if (std::isfinite(s.spatial_width) && s.spatial_width > 0.f) {
         fc->setSpatialWidth(s.spatial_width);
+    }
+    // Intelligent Upmixing (HOA)
+    fc->setUpmixingEnabled(s.upmixing_enabled != 0);
+    if (std::isfinite(s.upmixing_immersivity)) {
+        fc->setImmersivity(s.upmixing_immersivity);
     }
     // Harmonic gain (slider UI "Ganancia armónica")
     if (std::isfinite(s.harmonic_gain) && s.harmonic_gain >= 0.f) {

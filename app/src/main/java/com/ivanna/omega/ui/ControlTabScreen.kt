@@ -202,11 +202,13 @@ fun ControlTabScreen(
             paramStore.setHoaUpmixingEnabled(enabled)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled) }
+            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (enabled) 1.0f else 0.0f}}") }
         },
         onHoaImmersivityChange = { v ->
             paramStore.setHoaImmersivity(v)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(v.coerceIn(0f, 2f)) }
+            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":${v.coerceIn(0f, 2f)}}") }
         },
 
         // ── Navegación ──────────────────────────────────────────────────

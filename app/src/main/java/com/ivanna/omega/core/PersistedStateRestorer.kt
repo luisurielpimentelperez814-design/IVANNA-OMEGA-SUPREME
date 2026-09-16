@@ -50,6 +50,7 @@ object PersistedStateRestorer {
             val paramStore = com.ivanna.omega.core.ParameterStore(ctx)
             runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(paramStore.isHoaUpmixingEnabled()) }
             runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(paramStore.getHoaImmersivity()) }
+            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (paramStore.isHoaUpmixingEnabled()) 1.0f else 0.0f},\"upmixingImmersivity\":${paramStore.getHoaImmersivity()}}") }
         }
 
         // 2. Restaurar HarmonicExciterPrefs (perceptual state)

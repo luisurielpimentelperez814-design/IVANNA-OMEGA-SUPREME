@@ -22,7 +22,7 @@ static const OmegaDspState kDefaultState = {
     {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f},
     65.f, 80.f, false, -5.5f, 0.15f, 19500.f, 1.55f, -16.f, 0.78f, 0.85f, 1.0f, 0.22f, 0.15f,
     {0.92f, 0.78f, 0.55f, 1.38f, 0.85f, 65.f, 80.f, 19500.f, -16.f, 0.22f, 0.15f, 2.5f, 1.5f},
-    2.5f, 1.5f, 1.38f, 0.f, 0.f, 0.f, 1.0f, 0.f, -1, 0.35f, 0.92f, 0ULL,
+    2.5f, 1.5f, 1.38f, 0.f, 1.0f, 0.f, 0.f, 0.f, 1.0f, {0.f}, 0.f, -1, 0.35f, 0.92f, 0ULL,
 };
 
 uint64_t CommandServer::_nowMs() {
@@ -58,6 +58,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.spatial_width=s.spatial_width; snap.loudness_target=s.loudness_tgt; snap.harmonic_gain=s.harmonic_gain;
     snap.anti_dolby=s.anti_dolby; snap.target_gain=s.target_gain; snap.comp_amount=s.comp_amount; snap.exc_red=s.exc_red;
     snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
+    snap.upmixing_enabled=static_cast<uint32_t>(s.upmixing_enabled);
+    snap.upmixing_immersivity=s.upmixing_immersivity;
     snap.saf_delta_energy=s.saf_delta_e; snap.saf_metric_norm=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
     // FIX: copiar el vector latente q[7] — antes solo se publicaban escalares SAF.
     // Sin esta copia, snap.saf_q quedaba en ceros (makeDefaultSnapshot),
@@ -117,6 +119,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         float ad1 = _jsonFloat(json,"antiDolby", 9999.f);
         float ad2 = _jsonFloat(json,"antiDolbyIntensity", 9999.f);
         if (ad1!=9999.f) m_state.anti_dolby = ad1; else if (ad2!=9999.f) m_state.anti_dolby = ad2;
+        m_state.upmixing_enabled = _jsonFloat(json,"upmixingEnabled", m_state.upmixing_enabled);
+        m_state.upmixing_immersivity = _jsonFloat(json,"upmixingImmersivity", m_state.upmixing_immersivity);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

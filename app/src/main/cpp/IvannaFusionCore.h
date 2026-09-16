@@ -41,7 +41,7 @@ public:
     // Constructor de compatibilidad: omega_effect.cpp crea la instancia con el
     // sampleRate capturado de AudioFlinger (ej. 48000 Hz). Se acepta sin
     // almacenarlo; la tasa de muestreo real la gestionan los subsistemas.
-    explicit IvannaFusionEngine(float /*sampleRate*/) : IvannaFusionEngine() {}
+    explicit IvannaFusionEngine(float sampleRate) : IvannaFusionEngine() { sampleRate_ = sampleRate; m_upmixer.prepare(sampleRate); m_hoaDecoder.prepare(sampleRate, 8); }
 
     void process(Ivanna::AudioBuffer* buffer);
 
@@ -63,7 +63,10 @@ public:
     // los enrutan a los subsistemas internos del engine.
 
     // Inicialización espacial tras SET_CONFIG de AudioFlinger.
-    void initSpatial(float /*sr*/, int /*blockSize*/) noexcept {
+    void initSpatial(float sr, int /*blockSize*/) noexcept {
+        sampleRate_ = sr;
+        m_upmixer.prepare(sr);
+        m_hoaDecoder.prepare(sr, 8);
         runAcousticProfiling();
     }
 
