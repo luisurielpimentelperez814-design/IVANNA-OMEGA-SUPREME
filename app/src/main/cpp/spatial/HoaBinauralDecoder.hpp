@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <cstddef>
+#include <array>
 
 namespace Ivanna {
 
@@ -24,6 +25,18 @@ public:
     void prepare(float sampleRate, size_t numSpeakers = 8) noexcept;
     
     void setHrtfProfile(std::shared_ptr<ivanna::SyntheticHRTF> profile) noexcept;
+
+    /**
+     * Pesos de decodificación por orden armónico (0, 1, 2) para el decoder
+     * de muestreo horizontal: peso_base(orden) * max-rE(orden) * renorm,
+     * donde la renormalización deja la ganancia en eje (fuente alineada
+     * con un altavoz virtual) IDÉNTICA a la del decoder de muestreo plano
+     * (peso_base solo, sin max-rE) — max-rE solo cambia la forma fuera de
+     * eje (Daniel & Nicol, decodificación estándar para auriculares).
+     * Público y puro (sin estado) para poder verificarse en tests sin
+     * pasar por HRTFConvolver.
+     */
+    static std::array<float, 3> computeMaxReOrderWeights() noexcept;
 
     /**
      * @param inField Array of HOA vectors for each frame
