@@ -63,6 +63,15 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     static const HoaVector encWideR   = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 2.0f); // -90°
     static const HoaVector encCenter  = HoaGainMatrix::encodeUnitPower(0.0f);                              // 0°
 
+    // FIX (eco/desface al activar el toggle o subir el slider, reporte del
+    // propietario 2026-09-17): la entrada/salida del upmixing era un bypass
+    // duro — al activarlo, la señal saltaba de la ruta directa a la ruta
+    // HOA+HRTF (que añade su propia latencia FIR) de golpe: la cola del
+    // filtro y el cambio de fase se percibian como un eco breve y un
+    // desface entre canales. Ahora la entrada y la salida se hacen con un
+    // crossfade por muestra (m_blockMix_, ~15 ms) entre la señal seca y la
+    // decodificada: ambas rutas llegan al mismo instante durante la
+    // transición — sin eco, sin desface, sin doble ruta simultánea.
     if (!enabled_ || smoothedImmersivity_ <= 0.001f) {
         // Bypass transparente: par estéreo EXACTO a ±30° con energía unitaria.
         for (std::size_t i = 0; i < numFrames; ++i) {

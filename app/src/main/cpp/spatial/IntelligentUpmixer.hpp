@@ -66,6 +66,7 @@ private:
     // (0°/±90°) según inmersividad, con energía de campo plana.
     float widthMorph_ = 0.0f;        // 0 = estrecho, 1 = ancho (suavizado)
     float transientWidth_ = 1.0f;    // estrechamiento en el ataque (recupera en rampa)
+    float blockMix_     = 0.0f;      // crossfade seco→upmix en toggle (0=seco,1=upmix)
 
     std::vector<float> monoBuf_;
     ivanna::TransientDetector transientDetector_;

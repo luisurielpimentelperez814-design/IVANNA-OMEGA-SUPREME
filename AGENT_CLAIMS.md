@@ -48,6 +48,14 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+> 📌 **Nota (sesión Genspark, 2026-09-17, instrucción directa del propietario):** reparación de
+> audio sin tocar flancos activos. Commit `5c285be8`: `setHarmonicGain()` era stub vacío —
+> ahora la ganancia armónica llega al DSP con slew-limiter por muestra (1/8000 por muestra,
+> ~167 ms 0→2 @48 kHz): elimina los tronidos "metralleta" al subir el slider al máximo
+> (escalón duro → rampa). Se añade además el crossfade seco→upmix en el toggle para quitar
+> el eco/desface al activarlo (salto duro de ruta directa a HOA+HRTF con su latencia FIR).
+> Compilación Android verificada por CI (run en curso al momento del push).
+
 > 📌 **Nota de coordinación (sesión Genspark, 2026-09-15, por instrucción directa del propietario):**
 > toqué el flanco **Conversación / IA / Memoria** (marcado CERRADO) para resolver un reporte
 > del propietario con captura: el panel mostraba «IvannaStaticCore (bloqueó)» ante
