@@ -343,7 +343,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // comparable = comb filtering + eco discreto (el "desface" a 100/100).
         //
         // Punto dulce empírico validado en dispositivo: original 100% +
-        // procesado 42.5% (−7.4 dB). A ese nivel relativo el efecto Haas
+        // procesado 40% (−8.0 dB). A ese nivel relativo el efecto Haas
         // (precedence effect) funde la copia atenuada con la principal: se
         // percibe como cuerpo/densidad, NO como eco, y ambas rutas son
         // estéreo completo — no se pierde la imagen estéreo. Este es ahora
@@ -645,17 +645,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             private const val MIX_GAIN_STEP = 1f / 48f
             // Punto de fusión Haas validado empíricamente en dispositivo:
             // original 100% + procesado al 50% (−6 dB) — sin eco discreto.
-            // Ajuste fino 2026-09-17: 0.5 (-6.0 dB) -> 0.425 (-7.4 dB).
+            // Ajustes finos 2026-09-17: 0.5 (-6.0 dB) -> 0.425 (-7.4 dB) -> 0.40 (-8.0 dB).
             // Reduccion de amplitud del procesado: 15% exacta (0.5 x 0.85),
             // que es ~15% menos de eco percibido SIN tocar filtros ni etapas:
             // solo cambia la interaccion original/procesada, como pide la mision.
             //
-            // Por que 0.425 y no menos (analisis de los 3 puntos pedidos):
+            // Por que 0.40 y no menos (analisis de los puntos evaluados):
             //  - 100/100 (1.0): doble senal a nivel comparable -> comb filtering
             //    severo, eco al 100%. Descartado (ya validado en dispositivo).
             //  - 100/50 (0.5): punto de fusion Haas clasico — el procesado se
             //    integra, pero queda eco residual perceptible en transitorios.
-            //  - 0.425 (-7.4 dB): sigue DENTRO de la ventana de precedencia
+            //  - 0.40 (-8.0 dB): sigue DENTRO de la ventana de precedencia
             //    Haas (< ~10 dB bajo el original fusiona; la localizacion la
             //    manda Tidal, el procesado aporta cuerpo/espacialidad), pero el
             //    residuo de eco cae ~15%. Por debajo de ~0.35 (-9 dB) el aporte
@@ -669,7 +669,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             //
             // Latencia: no se toca — reducir el delay captura->reproduccion
             // requiere cambios de buffer del sistema, fuera del alcance de la
-            // mezcla; con la copia a -7.4 dB el delay residual queda por debajo
+            // mezcla; con la copia a -8.0 dB el delay residual queda por debajo
             // del umbral de fusion para la mayoria de contenidos.
             //
             // La rampa per-sample (mixGain 0 -> target) se mantiene intacta:
