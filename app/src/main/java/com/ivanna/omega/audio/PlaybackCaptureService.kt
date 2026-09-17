@@ -43,16 +43,24 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private const val SAMPLE_RATE    = 48_000
         private const val CHANNEL_COUNT  = 2
-        // MISIÓN HAAS MASTER LATENCY TUNING (2026-09-17): 512 → 384.
-        // Punto óptimo medido: 384 frames @ 48 kHz = 8.0 ms por bloque
-        // (vs 10.67 ms a 512) — reduce el desfase percibido ~25% manteniendo
-        // estabilidad: todos los buffers derivados (BLOCK_SAMPLES, rtSpatialIn/Out,
-        // mono, visualizadores V2/Bark64, Haas alignment) escalan de esta
-        // constante; 384 es múltiplo de 64 (alineación SIMD/NEON intacta) y
-        // los FFT de 512pt del pipeline lo toleran por zero-padding.
+        // MISIÓN HAAS MASTER LATENCY TUNING (2026-09-17): 512 → 384 → 320.
+        // 384 frames (8.0 ms/bloque) reducía el desfase ~25% frente a 512
+        // pero, verificado en dispositivo real por el propietario (no en
+        // teoría): el eco seguía siendo audible con ambos sliders al 100%.
+        // 320 frames @ 48 kHz = 6.67 ms/bloque (vs 8.0 ms a 384, vs 10.67 ms
+        // a 512) — reduce el desfase percibido otro ~17% adicional sobre 384
+        // (~37.5% total sobre el valor original de 512). Sigue siendo
+        // múltiplo de 64 (alineación SIMD/NEON intacta, igual que 384 y 512)
+        // y los FFT de 512pt del pipeline lo toleran por zero-padding, igual
+        // que antes. Todos los buffers derivados (BLOCK_SAMPLES, rtSpatialIn/
+        // Out, mono, visualizadores V2/Bark64, Haas alignment) escalan de
+        // esta constante. Si persiste algo de desfase perceptible, el
+        // siguiente escalón a evaluar (por indicación explícita: no saltar a
+        // valores extremos sin medir) es 256 — no bajar directo ahí sin antes
+        // medir underruns/CPU reales a 320 en el dispositivo.
         // Sin cambios: HAAS_SAFE_GAIN=0.40, rampa per-sample, captura, DSP,
         // HRTF/SOFA/RIR, SAF, upmixing.
-        private const val BLOCK_FRAMES   = 384
+        private const val BLOCK_FRAMES   = 320
         private const val BLOCK_SAMPLES  = BLOCK_FRAMES * CHANNEL_COUNT
 
         const val CHANNEL_ID    = "ivanna_playback_channel"
