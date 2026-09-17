@@ -336,15 +336,25 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // hilo THREAD_PRIORITY_URGENT_AUDIO -> jitter y XRun.
         // Tamanyo fijo BLOCK_FRAMES: AudioRecord nunca entrega mas de
         // BLOCK_SAMPLES bytes por read() por como esta configurado.
-        // FIX (raíz del eco/desface): la captura reproduce el audio por su
-        // PROPIO AudioTrack sin silenciar el original de Tidal → los dos
-        // streams (latencias distintas) se suman → comb filtering/echo a
-        // 100/100. Solución determinística: ganancia de rampa del stream
-        // procesado (0 = passthrough puro, 1 = procesado puro). La rampa
-        // evita el tronido al activar/desactivar la captura.
-        private var mixGain = 0f              // 0..1: cuánto del stream procesado
-        private var mixGainTarget = 1f        // objetivo (1 cuando la captura está activa)
-        private const val MIX_GAIN_STEP = 0.05f // rampa: ~20 bloques ≈ 0.2 s a 48 kHz/512
+        // FIX (eco/desface — determinístico): la captura reproduce el audio
+        // procesado por su PROPIO AudioTrack y el original de Tidal sigue
+        // sonando a nivel pleno (no existe API pública para silenciarlo).
+        // Dos copias de la misma señal con latencias distintas y nivel
+        // comparable = comb filtering + eco discreto (el "desface" a 100/100).
+        //
+        // Punto dulce empírico validado en dispositivo: original 100% +
+        // procesado 50% (−6 dB). A ese nivel relativo el efecto Haas
+        // (precedence effect) funde la copia atenuada con la principal: se
+        // percibe como cuerpo/densidad, NO como eco, y ambas rutas son
+        // estéreo completo — no se pierde la imagen estéreo. Este es ahora
+        // el comportamiento por defecto: la ganancia del stream procesado
+        // arranca en 0 y sube con rampa per-sample hasta HAAS_SAFE_GAIN,
+        // sin que el usuario tenga que buscar el punto a mano.
+        //
+        // La rampa interpola la ganancia muestra a muestra dentro del bloque
+        // (no por bloque) → cero zipper noise y cero tronido al conmutar.
+        private var mixGain = 0f                       // nivel actual del stream procesado
+        private var mixGainTarget = HAAS_SAFE_GAIN     // objetivo mientras la captura está activa
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
@@ -376,6 +386,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             workerThread?.start()
             workerHandler = Handler(workerThread!!.looper)
             active = true
+            // Rampa limpia en cada (re)arranque del motor: el procesado entra
+            // desde 0 hasta el nivel de fusión Haas en ~0.5 s.
+            resetMixRamp()
             workerHandler?.post(processingLoop)
         }
 
@@ -518,15 +531,26 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         }
                     }
                     vibratoryProcessor.process(buffer)
-                    // Crossfade con rampa: el stream procesado sube de 0 a 1
-                    // suavemente al activar la captura y baja al apagarla. Como
-                    // el original de Tidal NO se puede silenciar por API, la
-                    // rampa evita que ambos streams suenen a la vez con el
-                    // mismo nivel (el eco) y el tronido al conmutar.
+                    // Rampa per-sample de la ganancia del stream procesado.
+                    // gStart→gEnd interpolado por muestra: el cambio de nivel
+                    // es continuo (sin escalones audibles entre bloques).
+                    // Estado estacionario: HAAS_SAFE_GAIN (0.5 = −6 dB) — el
+                    // punto de fusión Haas: el procesado se integra con el
+                    // original sin eco discreto ni desface, conservando
+                    // estéreo completo en ambas rutas.
+                    val gStart = mixGain
                     if (mixGain < mixGainTarget) mixGain = minOf(mixGain + MIX_GAIN_STEP, mixGainTarget)
                     else if (mixGain > mixGainTarget) mixGain = maxOf(mixGain - MIX_GAIN_STEP, mixGainTarget)
-                    if (mixGain < 1f) {
-                        for (i in 0 until read) buffer[i] *= mixGain
+                    val gEnd = mixGain
+                    if (gEnd < 1f) {
+                        if (gStart == gEnd) {
+                            for (i in 0 until read) buffer[i] *= gEnd
+                        } else {
+                            val inv = 1f / read
+                            for (i in 0 until read) {
+                                buffer[i] *= gStart + (gEnd - gStart) * (i * inv)
+                            }
+                        }
                     }
                     writeAllToTrack(buffer, read)
                     if (IvannaNpeEngine.isReady) {
@@ -609,8 +633,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
         }
 
+        // Reset de la rampa: al (re)arrancar el motor, el procesado entra
+        // desde 0 con rampa limpia hasta el nivel de fusión Haas.
+        private fun resetMixRamp() { mixGain = 0f; mixGainTarget = HAAS_SAFE_GAIN }
+
         companion object {
             private const val TAG = "CaptureEngine"
+            // Paso de rampa por bloque: 1/48 ≈ 0.5 s para llegar al objetivo
+            // (48 bloques × 512 frames / 48 kHz). Los const viven aquí — en el
+            // cuerpo de una clase normal son ilegales en Kotlin.
+            private const val MIX_GAIN_STEP = 1f / 48f
+            // Punto de fusión Haas validado empíricamente en dispositivo:
+            // original 100% + procesado al 50% (−6 dB) — sin eco discreto.
+            private const val HAAS_SAFE_GAIN = 0.5f
         }
     }
 }
