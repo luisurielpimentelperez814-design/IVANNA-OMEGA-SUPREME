@@ -438,7 +438,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                     .build())
-                .setBufferSizeInBytes(minRec)
+                .setBufferSizeInBytes(maxOf(minRec, BLOCK_SAMPLES * 4)) // PCM_FLOAT=4B: nunca menos de 1 bloque (un read BLOCKING con buffer menor espera entregas parciales y suma latencia)
                 .setAudioPlaybackCaptureConfig(captureConfig)
                 .build()
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -553,6 +553,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         }
                     }
                     writeAllToTrack(buffer, read)
+                    tickLatencyProbe() // Haas: medir cola tras cada bloque escrito
                     if (IvannaNpeEngine.isReady) {
                         runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
                     }
@@ -603,7 +604,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
         }
 
-        private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
+        private fun writeAllToTrack(data: FloatArray, totalSamples: Int)
+        tickLatencyProbe() // Haas: medir cola tras cada bloque escrito {
             val track = audioTrack ?: return
             var written = 0
             while (written < totalSamples && active) {
@@ -635,6 +637,41 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         // Reset de la rampa: al (re)arrancar el motor, el procesado entra
         // desde 0 con rampa limpia hasta el nivel de fusión Haas.
+
+        // ── Haas Phase Alignment (2026-09-17): medir latencia REAL, no ganancia ──
+        // Cadena medida: read BLOCKING (1 bloque = 10.7 ms @48k) -> procesado
+        // -> write al track. El delay residual que produce el eco es la cola
+        // del track (frames escritos - frames reproducidos) + el bloque en
+        // vuelo. getTimestamp() da la posicion real de reproduccion.
+        private var framesWrittenToTrack = 0L
+        private var lastLatencyLogNs     = 0L
+        private val audioTs              = android.media.AudioTimestamp()
+
+        private fun tickLatencyProbe() {
+            framesWrittenToTrack += BLOCK_FRAMES
+            val now = System.nanoTime()
+            if (now - lastLatencyLogNs < 2_000_000_000L) return
+            lastLatencyLogNs = now
+            val track = audioTrack ?: return
+            try {
+                if (track.getTimestamp(audioTs)) {
+                    val queued  = framesWrittenToTrack - audioTs.framePosition
+                    val queueMs = queued * 1000.0 / SAMPLE_RATE
+                    val blockMs = BLOCK_FRAMES * 1000.0 / SAMPLE_RATE
+                    Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
+                    // Anti-deriva: si la copia procesada acumula mas de 2 bloques
+                    // de cola se separa en el tiempo del original de Tidal y el
+                    // eco reaparece aunque la ganancia sea 0.40. Techo duro:
+                    // pause/flush/play resincroniza sin tocar la mezcla.
+                    if (queued > 2L * BLOCK_FRAMES) {
+                        Log.w(TAG, "HaasLatency: deriva %.1f ms > 2 bloques — resync temporal".format(queueMs))
+                        track.pause(); track.flush(); track.play()
+                        framesWrittenToTrack = 0L
+                    }
+                }
+            } catch (e: Throwable) { Log.w(TAG, "latency probe: ${e.message}") }
+        }
+
         private fun resetMixRamp() { mixGain = 0f; mixGainTarget = HAAS_SAFE_GAIN }
 
         companion object {
