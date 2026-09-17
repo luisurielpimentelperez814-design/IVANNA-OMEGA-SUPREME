@@ -115,14 +115,18 @@ int setup_shared_memory(int sampleRate) {
             // Daemon reiniciado con la app viva: reattach SIN placement-new
             // destructivo sobre el estado compartido.
             log_message("OmegaSharedState: magic OK - reattach sin reinicializar");
+            // FIX (2026-09-17): en reattach NO se toca is_processing ni
+            // current_latency_ms — la app esta leyendo esos campos AHORA
+            // MISMO y pisarlos con valores de arranque (true / 0.0) borra
+            // el estado real que el daemon anterior habia publicado. Solo
+            // el primer arranque (layout incompatible) inicializa.
         } else {
             log_message("OmegaSharedState: init (primer arranque o layout incompatible)");
             new(state) OmegaSharedState();
             state->state_magic.store(OMEGA_STATE_MAGIC, std::memory_order_release);
+            state->is_processing.store(true);
+            state->current_latency_ms.store(0.0f);
         }
-
-        state->is_processing.store(true);
-        state->current_latency_ms.store(0.0f);
 
         log_message("OmegaSharedState listo (offset=4096, sizeof=" +
                     std::to_string(sizeof(OmegaSharedState)) + ", SHM_SIZE=" +
@@ -367,15 +371,14 @@ int main(int argc, char* argv[]) {
     //    sin NUL correcto. Se aumenta a 65536 y se acumula en heap.
     // 3. reply declarado dos veces en el mismo scope (UB/shadow) — unificado.
     while (g_running) {
-        // Heartbeat daemon→app: timestamp monotónico en la página de control
-        // del SHM (offset fijo SHM_HEARTBEAT_OFFSET). ShmManager lo lee y
-        // detecta daemon zombi en <2 s sin depender del socket.
-        {
-            const uint64_t hb = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (ivanna::shmManager().writeControl(ivanna::SHM_HEARTBEAT_OFFSET, &hb, sizeof(hb)))
-                ivanna::shmManager().bumpHealthCounter(1); // heartbeats_emitidos
-        }
+        // FIX (2026-09-17): el heartbeat ya tiene su propio thread dedicado
+        // (heartbeat_watchdog, 1 Hz, lineas ~255-276) que escribe
+        // SHM_HEARTBEAT_OFFSET y bumpHealthCounter(1). El heartbeat que
+        // este loop escribia aqui era REDUNDANTE — mismo offset, mismo
+        // contador, doble escritura por segundo. El loop principal ahora
+        // solo hace: self-healing pings + accept de clientes. El select()
+        // con timeout de 1s sigue siendo el mecanismo de wakeup (necesario
+        // para detectar g_running=0 sin busy-wait).
         selfHealer.pingAudioEngine();
         selfHealer.pingIpcSocket();
         selfHealer.pingDspKernel();

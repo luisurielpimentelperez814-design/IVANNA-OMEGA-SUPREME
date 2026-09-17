@@ -140,16 +140,22 @@ bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) n
     auto* hdr  = static_cast<ShmHeader*>(m_base);
     auto* data = static_cast<uint8_t*>(m_base) + kHeaderSize;
 
-    // Seqlock write protocol:
-    //   1. epoch → impar (comenzando escritura)
-    //   2. __sync_synchronize() — barrier completo
+    // Seqlock write protocol (single-writer: solo el daemon escribe; el
+    // heartbeat thread y el accept loop llaman bumpHealthCounter, que NO
+    // toca epoch — solo writeControl entra aqui, y solo desde el loop
+    // principal del daemon o el heartbeat thread, nunca concurrentes entre
+    // si porque el heartbeat thread no llama writeControl desde 2026-09-17).
+    // Fences estandar C++11 (no __sync_synchronize legacy GCC):
+    //   1. epoch -> impar (release: visible antes de los datos)
+    //   2. fence seq_cst (los datos no se reordenan antes del store impar)
     //   3. copiar datos
     //   4. actualizar frame_len
-    //   5. epoch → par (escritura completa)
+    //   5. fence seq_cst (los datos no se reordenan despues del store par)
+    //   6. epoch -> par (release: escritura completa visible)
     //   Lectores que leen epoch impar o ven cambio entre pre/post repiten.
     const uint64_t seq = hdr->epoch.load(std::memory_order_relaxed);
     hdr->epoch.store(seq | 1ULL, std::memory_order_release);  // impar
-    __sync_synchronize();
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 
     std::memcpy(data + offset, src, len);
     // frame_len documenta la longitud del frame de DATOS (canal SAF, offset 0).
@@ -162,7 +168,7 @@ bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) n
     if (offset == 0)
         hdr->frame_len = static_cast<uint32_t>(len);
 
-    __sync_synchronize();
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     hdr->epoch.store(seq + 2ULL, std::memory_order_release);  // par (+2)
 
     return true;

@@ -108,10 +108,21 @@ bool OmegaControlBus::publish(const OmegaDspSnapshot& snap) noexcept {
     local.timestamp_ms = nowMs();
     local.stampCrc();
 
-    // Seqlock write: guard odd durante escritura, even en reposo
-    // guard es std::atomic<uint32_t>: los fetch_add son los fences
+    // Seqlock write: guard odd durante escritura, even en reposo.
+    // FIX (2026-09-17): faltaba fence entre el memcpy del snapshot y el
+    // segundo fetch_add (guard par). En ARM64 (modelo debil) el memcpy
+    // podia reordenarse DESPUES del store par: el lector veia guard par
+    // con el snapshot a medio escribir — torn read silencioso que el
+    // seqlock existe precisamente para prevenir. Ahora:
+    //   fetch_add(acq_rel) -> odd (visible antes de los datos)
+    //   fence(seq_cst)     -> los datos no se reordenan antes del odd
+    //   memcpy             -> escribe el snapshot
+    //   fence(seq_cst)     -> los datos no se reordenan despues del even
+    //   fetch_add(release) -> even (escritura completa visible)
     m_region->guard.fetch_add(1, std::memory_order_acq_rel); // odd → escritura
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     std::memcpy(&m_region->snapshot, &local, sizeof(local));
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     m_region->guard.fetch_add(1, std::memory_order_release); // even → estable
 
     m_lastGeneration = local.generation;
