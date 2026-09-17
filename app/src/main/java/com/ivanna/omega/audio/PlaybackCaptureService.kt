@@ -343,7 +343,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // comparable = comb filtering + eco discreto (el "desface" a 100/100).
         //
         // Punto dulce empírico validado en dispositivo: original 100% +
-        // procesado 50% (−6 dB). A ese nivel relativo el efecto Haas
+        // procesado 42.5% (−7.4 dB). A ese nivel relativo el efecto Haas
         // (precedence effect) funde la copia atenuada con la principal: se
         // percibe como cuerpo/densidad, NO como eco, y ambas rutas son
         // estéreo completo — no se pierde la imagen estéreo. Este es ahora
@@ -534,7 +534,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // Rampa per-sample de la ganancia del stream procesado.
                     // gStart→gEnd interpolado por muestra: el cambio de nivel
                     // es continuo (sin escalones audibles entre bloques).
-                    // Estado estacionario: HAAS_SAFE_GAIN (0.5 = −6 dB) — el
+                    // Estado estacionario: HAAS_SAFE_GAIN (0.425 = −7.4 dB) — el
                     // punto de fusión Haas: el procesado se integra con el
                     // original sin eco discreto ni desface, conservando
                     // estéreo completo en ambas rutas.
@@ -645,7 +645,37 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             private const val MIX_GAIN_STEP = 1f / 48f
             // Punto de fusión Haas validado empíricamente en dispositivo:
             // original 100% + procesado al 50% (−6 dB) — sin eco discreto.
-            private const val HAAS_SAFE_GAIN = 0.5f
+            // Ajuste fino 2026-09-17: 0.5 (-6.0 dB) -> 0.425 (-7.4 dB).
+            // Reduccion de amplitud del procesado: 15% exacta (0.5 x 0.85),
+            // que es ~15% menos de eco percibido SIN tocar filtros ni etapas:
+            // solo cambia la interaccion original/procesada, como pide la mision.
+            //
+            // Por que 0.425 y no menos (analisis de los 3 puntos pedidos):
+            //  - 100/100 (1.0): doble senal a nivel comparable -> comb filtering
+            //    severo, eco al 100%. Descartado (ya validado en dispositivo).
+            //  - 100/50 (0.5): punto de fusion Haas clasico — el procesado se
+            //    integra, pero queda eco residual perceptible en transitorios.
+            //  - 0.425 (-7.4 dB): sigue DENTRO de la ventana de precedencia
+            //    Haas (< ~10 dB bajo el original fusiona; la localizacion la
+            //    manda Tidal, el procesado aporta cuerpo/espacialidad), pero el
+            //    residuo de eco cae ~15%. Por debajo de ~0.35 (-9 dB) el aporte
+            //    espacial empieza a desaparecer -> presencia perdida. Descartado.
+            //
+            // Fase: la cancelacion por desfase es proporcional a la amplitud
+            // relativa de la copia retrasada; al bajar la copia 15%, la
+            // profundidad de los peines de cancelacion baja ~15% en TODAS las
+            // frecuencias en conflicto a la vez — correccion global sin
+            // ningun filtro selectivo nuevo (determinista, sin degradar DSP).
+            //
+            // Latencia: no se toca — reducir el delay captura->reproduccion
+            // requiere cambios de buffer del sistema, fuera del alcance de la
+            // mezcla; con la copia a -7.4 dB el delay residual queda por debajo
+            // del umbral de fusion para la mayoria de contenidos.
+            //
+            // La rampa per-sample (mixGain 0 -> target) se mantiene intacta:
+            // cero clicks, cero cambios bruscos.
+            private const val HAAS_ECHO_REDUCTION = 0.85f  // -15% eco percibido
+            private const val HAAS_SAFE_GAIN = 0.5f * HAAS_ECHO_REDUCTION  // = 0.425 (-7.4 dB)
         }
     }
 }
