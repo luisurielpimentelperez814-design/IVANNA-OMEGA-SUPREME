@@ -1,4 +1,5 @@
 #include "IvannaFusionCore.h"
+#include <algorithm>
 #include <atomic>
 
 // ── Controles Globales para Upmixing (Accesibles vía JNI) ──
@@ -191,6 +192,10 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         m_hrtf->processBinauralScene(buffer);
     }
 
+    // Slew-limiter de la ganancia armónica, UNA vez por bloque (el paso por
+    // muestra se aplica dentro del loop del excitador — ver mix_eff). Si el
+    // usuario arrastra el slider, el target salta pero el valor aplicado
+    // recorre la distancia en rampa: sin escalón → sin clic.
     if (m_goldenEarActive) {
         applyGoldenEarGAN(buffer);  // contiene fast_tanh como limitador de salida
     } else {
@@ -240,9 +245,20 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
     // banda de excitación a ≤8 kHz, lo que reduce la densidad de armónicos
     // percibidos — se compensa ligeramente bajando el mix para mantener el
     // calidez sin añadir grosor excesivo en presencia/agudos filtrados.
-    static constexpr float mix_eff = 0.12f;
+    // mix base calibrado (−≈18 dB de armónico sobre la señal) × la ganancia
+    // del slider SUAVIZADA. Antes el slider no llegaba aquí (stub) y el mix
+    // era constante: ahora la ganancia es real pero nunca un escalón.
+    // kHarmSlew: |Δ| máx por muestra ≈ 1/8000 → 0→2 en ~167 ms @48 kHz.
+    static constexpr float kMixBase = 0.12f;
+    static constexpr float kHarmSlew = 1.0f / 8000.0f;
 
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        // Perseguir el target UNA muestra más (slew por muestra, sin zipper).
+        if (m_harmSmoothed_ < m_harmGainTarget_)
+            m_harmSmoothed_ = std::min(m_harmSmoothed_ + kHarmSlew, m_harmGainTarget_);
+        else if (m_harmSmoothed_ > m_harmGainTarget_)
+            m_harmSmoothed_ = std::max(m_harmSmoothed_ - kHarmSlew, m_harmGainTarget_);
+        const float mix_eff = kMixBase * m_harmSmoothed_;
         // Pre-filtro LPF 8 kHz — canal izquierdo
         float xL = buffer->left[i];
         float lfL = b0*xL + b1*m_chebLpfL.x1 + b2*m_chebLpfL.x2

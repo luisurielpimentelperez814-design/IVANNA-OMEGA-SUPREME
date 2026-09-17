@@ -98,7 +98,17 @@ public:
     // Stubs deliberados: permiten compilar el puente OmegaControlBus mientras
     // se cablea hacia StereoWidener / HarmonicExciter / compresor.
     void setSpatialWidth(float /*width*/) noexcept {}
-    void setHarmonicGain(float /*gain*/) noexcept {}
+    // FIX (tronidos tipo metralleta al subir el slider al máximo, reporte
+    // del propietario con captura, 2026-09-17): antes era un stub vacío —
+    // el slider movía el snapshot SHM pero la ganancia armónica nunca
+    // llegaba al DSP. Ahora se almacena como TARGET y process() la
+    // integra con slew por muestra (ver m_harmSmoothed_): un salto duro
+    // de ganancia de excitador es un escalón de amplitud audible = clic
+    // por cada actualización del bus ("metralleta" = ráfaga de esos
+    // clics al arrastrar rápido). El slew lo convierte en rampa suave.
+    void setHarmonicGain(float gain) noexcept {
+        if (gain >= 0.0f && gain <= 4.0f) m_harmGainTarget_ = gain;
+    }
     void setCompressorParams(float /*thresholdDb*/, float /*ratio*/) noexcept {}
     void setRouteProfile(float /*bassDb*/, float /*dialogDb*/,
                          float /*widener*/) noexcept {}
@@ -139,6 +149,13 @@ private:
 
     FilterState m_chebLpfL;
     FilterState m_chebLpfR;
+
+    // Slew-limiter de la ganancia armónica (slider UI → snapshot SHM → aquí).
+    // m_harmSmoothed_ persigue a m_harmGainTarget_ a razón de kHarmSlew
+    // por muestra (~0→2 en ≈167 ms a 48 kHz): imperceptible como retardo,
+    // imposible como clic. Sin malloc ni locks en la ruta caliente.
+    float m_harmGainTarget_  = 1.0f;
+    float m_harmSmoothed_    = 1.0f;
 
 };
 
