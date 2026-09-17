@@ -663,20 +663,38 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // vuelo. getTimestamp() da la posicion real de reproduccion.
         private var framesWrittenToTrack = 0L
         private var lastLatencyLogNs     = 0L
+        private var lastDriftCheckNs     = 0L
         private val audioTs              = android.media.AudioTimestamp()
 
         private fun tickLatencyProbe() {
             framesWrittenToTrack += BLOCK_FRAMES
             val now = System.nanoTime()
-            if (now - lastLatencyLogNs < 2_000_000_000L) return
-            lastLatencyLogNs = now
+            // REFINAMIENTO (mision HAAS, escalon 3 — 2026-09-17): el chequeo
+            // de deriva/resync estaba atado al mismo temporizador que el LOG
+            // (cada 2s). Eso significa que, en el peor caso, el eco podia
+            // sonar hasta 2 segundos completos antes de que el resync
+            // reaccionara. Se separa: el LOG sigue cada 2s (no llenar logcat),
+            // pero la DETECCION de deriva ahora corre cada 250ms — mismo
+            // umbral (2 bloques de cola) y mismo mecanismo de resync
+            // (pause/flush/play), solo que se dispara hasta 8x mas rapido.
+            // No se toca la mezcla, la rampa per-sample, la captura, el DSP,
+            // HRTF/SOFA/RIR, SAF ni el upmixing — solo la cadencia de este
+            // chequeo, tal como pide la mision (no saltar a cambios fuera de
+            // alcance).
+            val shouldLog   = now - lastLatencyLogNs   >= 2_000_000_000L
+            val shouldCheck = now - lastDriftCheckNs   >= 250_000_000L
+            if (!shouldLog && !shouldCheck) return
+            if (shouldCheck) lastDriftCheckNs = now
             val track = audioTrack ?: return
             try {
                 if (track.getTimestamp(audioTs)) {
                     val queued  = framesWrittenToTrack - audioTs.framePosition
                     val queueMs = queued * 1000.0 / SAMPLE_RATE
                     val blockMs = BLOCK_FRAMES * 1000.0 / SAMPLE_RATE
-                    Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
+                    if (shouldLog) {
+                        lastLatencyLogNs = now
+                        Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
+                    }
                     // Anti-deriva: si la copia procesada acumula mas de 2 bloques
                     // de cola se separa en el tiempo del original de Tidal y el
                     // eco reaparece aunque la ganancia sea 0.40. Techo duro:
