@@ -48,6 +48,20 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+> 📌 **Nota (sesión Claude, 2026-09-17, instrucción directa del propietario — seguimiento del
+> reporte anterior):** el propietario reportó que el eco/desface **seguía presente** tras el
+> commit `cf00a2c6` que decía haberlo arreglado. Verificado por lectura: `cf00a2c6` declaraba
+> `blockMix_`/`mixStep` con un comentario describiendo el crossfade, pero la única línea que
+> tocaba `blockMix_` era un no-op — la rama de bypass seguía siendo el mismo salto duro
+> completo. Commit `b1a495bb`: implementación real del crossfade (bucle único por muestra,
+> señal seca + procesada mezcladas con `blockMix_` en rampa de ~15 ms), con un test de
+> regresión (`TogglingMidStreamCrossfadesWithoutStepDiscontinuity`) verificado contra ambas
+> versiones — falla contra `cf00a2c6` (salto de 0.499 en una muestra) y pasa contra el fix real
+> (salto máx. ~2.3% repartido en ~720 muestras). 101/101 tests host en verde, CI en curso al
+> momento de este commit. Hallazgo aparte SIN tocar: `IvannaFusionCore.h::setSpatialWidth()`
+> es un stub vacío — el control de "ancho espacial" del snapshot no llega al DSP real. Queda
+> para una sesión dedicada, no mezclado con este fix de audio.
+
 > 📌 **Nota (sesión Genspark, 2026-09-17, instrucción directa del propietario):** reparación de
 > audio sin tocar flancos activos. Commit `5c285be8`: `setHarmonicGain()` era stub vacío —
 > ahora la ganancia armónica llega al DSP con slew-limiter por muestra (1/8000 por muestra,

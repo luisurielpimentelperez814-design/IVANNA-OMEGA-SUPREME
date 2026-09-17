@@ -151,6 +151,20 @@ Canal de expasión espacial en tiempo recién añadido y cableado extremo-a-extr
 
 **Dónde se controla:** `Panel de espacialidad → INTELLIGENT UPMIXING` (toggle on/off + deslizador INMERSIVIDAD 0..1, cableados ambos a `ParameterStore` → JNI → el engine real, no a un intent).
 
+**Transición de estado (2026-09-17):** activar/desactivar el toggle, o subir/bajar la
+inmersividad, cruza por un crossfade real por muestra (`blockMix_`, ~15 ms) entre la señal
+seca y la procesada — evita el eco/desface que producía un salto duro entre la ruta directa
+(sin latencia) y la ruta HOA+HRTF (con su propia latencia FIR). Nota de honestidad: un intento
+anterior en la misma sesión de trabajo declaró las variables del crossfade pero nunca las usó
+para mezclar nada (la rama de bypass seguía siendo el mismo salto de golpe); quedó verificado
+con un test de regresión que falla contra esa versión intermedia y pasa contra la
+implementación real (`AGENT_CLAIMS.md` tiene el detalle completo).
+
+**Ganancia armónica (GoldenEar):** el slider "ganancia armónica" pasa por un slew-limiter por
+muestra (~167 ms de 0→2 a 48 kHz) — antes el parámetro no llegaba al DSP (`setHarmonicGain()`
+era un stub vacío) y, al cablearlo sin rampa, un arrastre rápido del slider producía una ráfaga
+de clics ("tronidos tipo metralleta").
+
 ---
 
 ## ✦ Motores de fase y dinámica no-lineal
@@ -285,7 +299,7 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 
 </div>
 
-## Estado CI / DSP (2026-09-17)
+## Estado CI / DSP (2026-09-17, actualizado tras fix de eco/desface + tronidos)
 
 - **Build verde**: corregido `IvannaFusionCore.cpp` — referencias `ivanna::HoaVector`
   con namespace incorrecto (el tipo vive en `Ivanna::`); era la causa del build rojo
@@ -294,6 +308,16 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
   ParameterStore (persistencia) → PersistedStateRestorer → JNI
   (nativeSetIntelligentUpmixingEnabled / nativeSetUpmixingImmersivity) →
   IvannaFusionCore → IntelligentUpmixer → HoaBinauralDecoder.
+- **Fix de audio reportado por el propietario (tronidos + eco/desface)**:
+  - Ganancia armónica con slew-limiter real por muestra — sin escalón, sin clics.
+  - Crossfade real seco↔upmix (no un stub que declaraba variables sin usarlas)
+    en la transición del toggle y del slider de inmersividad — sin salto duro,
+    sin eco, sin desface. Verificado con test de regresión que distingue el
+    fix real del intento incompleto anterior (ver `AGENT_CLAIMS.md`).
+  - Interruptor de un solo sentido corregido: antes, una vez activado el
+    upmixing, no había forma de volver a apagarlo sin reiniciar el proceso.
+  - Slider de inmersividad "pegado" corregido: antes solo se releía el valor
+    real la primera vez; movimientos posteriores no tenían efecto.
 - **Posicionamiento espacial**: datasets IHR1 medidos (12 en assets + 12 en el
   módulo Magisk, validados en CI contra el layout del lector C++) con
   interpolación HRTF (HRTFInterpolator), convolución particionada
@@ -302,5 +326,13 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
   estáticas (cero recálculo por bloque), reserva única del buffer de campo,
   crossover complementario 2º orden (bass+midHi == mid exacto), detector de
   transientes sobre pico estéreo con estrechamiento de ancho en el ataque y
-  recuperación ~20 ms, suavizado anti-zipper de inmersividad.
-- **Tests host**: 76/76 en carril normal, ASan+UBSan y TSan (cero data races).
+  recuperación ~20 ms, suavizado anti-zipper de inmersividad, crossfade
+  seco↔upmix por muestra en la transición.
+- **HoaBinauralDecoder**: decodificación con ponderación max-rE (Daniel &
+  Nicol) — reduce el rizado espacial entre altavoces virtuales sin cambiar
+  la ganancia percibida en eje respecto al decoder de muestreo plano.
+- **Conocido, sin reparar aún**: `IvannaFusionCore.h::setSpatialWidth()` es un
+  stub vacío — el control de "ancho espacial" del snapshot no llega al DSP.
+  Documentado en `AGENT_CLAIMS.md` para una sesión dedicada.
+- **Tests host**: 101/101 en verde (incluye el nuevo test de regresión del
+  crossfade), CI end-to-end (host + NDK + APK + release) confirmado en verde.
