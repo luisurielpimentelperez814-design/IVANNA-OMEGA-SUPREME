@@ -139,6 +139,10 @@ private:
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;
+    // Buffer del campo HOA intermedio, reusado bloque a bloque (Upmixer lo
+    // redimensiona solo si BLOCK_SIZE cambia — nunca malloc en el camino
+    // caliente en régimen estable).
+    std::vector<HoaVector> m_hoaField;
 
     struct FilterState {
         float x1 = 0.0f;

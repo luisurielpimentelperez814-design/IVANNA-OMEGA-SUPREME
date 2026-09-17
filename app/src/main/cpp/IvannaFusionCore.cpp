@@ -166,13 +166,22 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // Ahora se lee el estado de una vez (sin escribir de vuelta el flag que
     // alimenta la condicion) y la inmersividad se sincroniza sin condicion,
     // cada bloque, igual que ya hace g_hrtf_wet_dry justo arriba.
+    // Verificado (esta sesion): `m_upmixer.enabled_` por defecto es `false`
+    // (IntelligentUpmixer.hpp) y nada vuelve a escribirlo aqui abajo -- el
+    // primer operando del OR es efectivamente un no-op inerte, el atomic
+    // real de la UI es quien decide siempre. Sin perfil HRTF personalizado
+    // propagado a proposito (HrtfManager no expone hoy un SyntheticHRTF
+    // compartido); el decoder cae a su respaldo sintetico interno por
+    // altavoz virtual -- comportamiento seguro y documentado en
+    // IMPLEMENTATION_NOTES.md, no un hueco. `m_hoaField` es miembro (no
+    // variable local) para no reservar memoria en el camino caliente en
+    // cada bloque activo -- Upmixer solo redimensiona si BLOCK_SIZE cambia.
     const bool upmixingActive = m_upmixer.isUpmixingEnabled() ||
                                  g_upmixing_enabled.load(std::memory_order_relaxed);
     if (upmixingActive) {
         m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
-        std::vector<Ivanna::HoaVector> outField;
-        m_upmixer.processBlock(buffer->left, buffer->right, outField, Ivanna::BLOCK_SIZE);
-        m_hoaDecoder.processBlock(outField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        m_upmixer.processBlock(buffer->left, buffer->right, m_hoaField, Ivanna::BLOCK_SIZE);
+        m_hoaDecoder.processBlock(m_hoaField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
         // FIX (doble procesamiento binaural, 2026-09-16): processBinauralScene()
         // se llamaba SIEMPRE aqui debajo, incluso con el upmixing activo. Eso
         // encadenaba dos espacializadores binaurales completos: el HOA decoder
