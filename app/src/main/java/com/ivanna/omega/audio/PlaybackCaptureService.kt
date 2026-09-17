@@ -534,7 +534,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // Rampa per-sample de la ganancia del stream procesado.
                     // gStart→gEnd interpolado por muestra: el cambio de nivel
                     // es continuo (sin escalones audibles entre bloques).
-                    // Estado estacionario: HAAS_SAFE_GAIN (0.425 = −7.4 dB) — el
+                    // Estado estacionario: HAAS_SAFE_GAIN (0.40 = -8.0 dB) — el
                     // punto de fusión Haas: el procesado se integra con el
                     // original sin eco discreto ni desface, conservando
                     // estéreo completo en ambas rutas.
@@ -674,8 +674,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             //
             // La rampa per-sample (mixGain 0 -> target) se mantiene intacta:
             // cero clicks, cero cambios bruscos.
-            private const val HAAS_ECHO_REDUCTION = 0.85f  // -15% eco percibido
-            private const val HAAS_SAFE_GAIN = 0.5f * HAAS_ECHO_REDUCTION  // = 0.425 (-7.4 dB)
+            private const val HAAS_ECHO_REDUCTION = 0.80f  // PARÁMETRO ÚNICO de calibración Haas: 0.80 => ganancia 0.40 (-8.0 dB);
+        // rango seguro 0.75..0.90 (-8.5..-6.9 dB). <0.75 la copia procesada pierde
+        // cuerpo/espacialidad; >0.90 el eco residual reaparece en transitorios.
+            private const val HAAS_SAFE_GAIN = 0.5f * HAAS_ECHO_REDUCTION  // = 0.40 (-8.0 dB)
         }
     }
 }
