@@ -310,14 +310,18 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
   IvannaFusionCore → IntelligentUpmixer → HoaBinauralDecoder.
 - **Auditoría AudioFlinger/omega_effect (2026-09-17)**: ruta nativa system-wide
   verificada verde (UUID, XML, símbolos, sepolicy correctamente alineados —
-  detalle en `AGENT_CLAIMS.md`). Hallazgo real: nada impedía que la app
-  arrancara también `PlaybackCaptureService` (captura+reproceso+replay propio)
-  cuando el motor nativo ya procesaba el mismo stream "music" en `audioserver`
-  — dos copias procesadas del mismo audio sonando a la vez, con root/Magisk
-  activo. Gate mínimo añadido en `MainActivity.kt`
-  (`MagiskBridge.isDaemonRunning`) para no iniciar la ruta duplicada cuando la
-  nativa ya cubre el mismo audio; sin tocar DSP/HRTF/Haas/upmixing. Fallback
-  intacto para usuarios sin root.
+  detalle en `AGENT_CLAIMS.md`). Hallazgo real (doble procesamiento posible
+  cuando el daemon está activo) — el gate propuesto para evitarlo
+  (`MagiskBridge.isDaemonRunning`) **se probó en dispositivo real y causó una
+  regresión**: `isDaemonRunning` solo confirma que el proceso daemon está
+  vivo, no que `omega_effect.so` esté realmente insertado y procesando audio
+  en `audioserver` — con el gate activo, si el efecto nativo no sonaba de
+  verdad, se apagaba la única ruta que sí funcionaba (efecto de IVANNA
+  desaparecido) y además entraba en bucle pidiendo el permiso de captura una
+  y otra vez. **Revertido por completo** — el hallazgo del doble
+  procesamiento sigue siendo válido y queda documentado para abordarse con
+  una señal de verificación mejor (confirmación real de que `omega_effect`
+  procesa audio, no solo que el daemon esté vivo).
 - **Fix de audio reportado por el propietario (tronidos + eco/desface)**:
   - Ganancia armónica con slew-limiter real por muestra — sin escalón, sin clics.
   - Crossfade real seco↔upmix (no un stub que declaraba variables sin usarlas)

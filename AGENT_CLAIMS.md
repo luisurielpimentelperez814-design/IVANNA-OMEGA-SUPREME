@@ -48,6 +48,27 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+> 📌 **Nota (sesión Claude, 2026-09-17, REVERTIDO — el gate de la auditoría AudioFlinger
+> causó una regresión real en dispositivo):** la auditoría (commit `e302be56`) seguía siendo
+> correcta (ruta nativa verde) y el hallazgo del doble procesamiento sigue siendo válido, pero
+> el gate propuesto para evitarlo (`MagiskBridge.isDaemonRunning` antes de iniciar
+> `PlaybackCaptureService`) se probó en dispositivo real y **causó un bug peor que el
+> original**: `isDaemonRunning` solo confirma que el proceso *daemon* (plano de control) está
+> vivo — NO que `omega_effect.so` esté realmente insertado y procesando audio dentro de
+> `audioserver` (son cosas distintas; el propio módulo tiene un "modo seguro" en
+> `post-fs-data.sh` que borra los XML de audio tras 3 arranques inestables, entre otras formas
+> en que el daemon puede estar vivo sin que el efecto esté sonando). Con el gate activo, si el
+> efecto nativo no sonaba de verdad, se bloqueaba la ÚNICA ruta que sí funcionaba
+> (`PlaybackCaptureService`) — el propietario reportó que el efecto de IVANNA desapareció por
+> completo, y que la app entraba en bucle pidiendo el permiso de MediaProjection una y otra vez
+> (`LaunchedEffect(Unit) { if (!captureActive) { projectionLauncher.launch(...) } }` en las
+> pantallas dashboard/visualizer se re-disparaba porque `captureActive` nunca llegaba a `true`
+> al no arrancar nunca el servicio). **Revertido íntegramente** — `MainActivity.kt` verificado
+> byte a byte idéntico al estado previo al gate (`git diff e302be56~1` vacío). El hallazgo del
+> doble procesamiento sigue documentado como válido para una sesión futura, pero necesita una
+> señal de verificación mejor que "daemon vivo" antes de intentar gatear nada de nuevo — y
+> probarse contra confirmación real del propietario en dispositivo antes de darlo por bueno.
+
 > 📌 **Nota (sesión Claude, 2026-09-17, misión de auditoría AudioFlinger/omega_effect —
 > instrucción directa del propietario, "eliminar deriva estructural"):** auditoría completa de
 > la ruta nativa `omega_effect` (UUID, XML, símbolos, sepolicy) — **verde**, todo correctamente
