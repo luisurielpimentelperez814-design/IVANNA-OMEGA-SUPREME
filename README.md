@@ -254,6 +254,17 @@ Qué requiere cada cosa, sin fantasmas:
 
 ---
 
+## ✦ SAF + SOFA + RIR — conducidos a su máxima expresión (2026-09-17)
+Tres seguros duros más en la cadena de percepción, cada uno cableado a la UI en offline y online, root y sin root:
+
+- **Guard de convergencia SAF** (`include/saf_runtime.h`): el paso de optimización se acota al 25% del delta por tick con NaN-guard — imposible divergencia audible en calibración por voz/UI, manteniendo la normalización por memoria que ya había en SAFUpdate.
+- **Caché offline del cargador SOFA** (`SofaHRTFLoader.cpp`): el último path válido queda en caliente; re-entries de la app o cambio de ángulo desde la UI no recargan el HDF5 desde cero (firma completa de 8 bytes + umbral de 512 bytes ya existentes se respetan).
+- **Puente de estado único al JNI** (`SaFJniBridge.nativeSaFGetStatus`): un solo call expone [q0..q6] + flag de modelo cargado; la UI lee el estado real del modelo en una sola lectura, para root/non-root por igual (funciona tanto en el daemon root como en el render de la app sin root).
+
+Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) validan par exacto a ±30° y NaN=0, con el dataset de regresión host ya operativo.
+
+---
+
 ## ✦ Lo que IVANNA no hace (honestidad de ingeniería)
 
 - **Sin root, la Ruta B no existe:** la app cae a `AudioEffect` por sesión (EQ/DynamicsProcessing de Android) — el DSP profundo custom requiere el módulo.
