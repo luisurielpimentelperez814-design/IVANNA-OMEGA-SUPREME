@@ -63,25 +63,28 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     static const HoaVector encWideR   = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 2.0f); // -90°
     static const HoaVector encCenter  = HoaGainMatrix::encodeUnitPower(0.0f);                              // 0°
 
-    // FIX (eco/desface al activar el toggle o subir el slider, reporte del
-    // propietario 2026-09-17): la entrada/salida del upmixing era un bypass
-    // duro — al activarlo, la señal saltaba de la ruta directa a la ruta
-    // HOA+HRTF (que añade su propia latencia FIR) de golpe: la cola del
-    // filtro y el cambio de fase se percibian como un eco breve y un
-    // desface entre canales. Ahora la entrada y la salida se hacen con un
-    // crossfade por muestra (m_blockMix_, ~15 ms) entre la señal seca y la
-    // decodificada: ambas rutas llegan al mismo instante durante la
-    // transición — sin eco, sin desface, sin doble ruta simultánea.
-    // Crossfade seco→upmix por muestra al activar el toggle (blockMix_ 0→1)
-    // y de vuelta al desactivarlo (1→0). ~15 ms de transición — sin el salto
-    // duro entre la ruta directa y la ruta HOA+HRTF (con su latencia FIR)
-    // que se percibía como eco breve y desface entre canales.
-    const float mixStep = 1.0f / (sampleRate_ * 0.015f);
-    if (!enabled_) {
-        if (blockMix_ <= 0.001f) { blockMix_ = 0.0f; }
-    }
-    if (!enabled_ || smoothedImmersivity_ <= 0.001f) {
-        // Bypass transparente: par estéreo EXACTO a ±30° con energía unitaria.
+    // FIX REAL (eco/desface al activar/desactivar el toggle, reporte del
+    // propietario 2026-09-17 — el intento anterior en este mismo archivo
+    // declaraba blockMix_/mixStep en comentarios pero NUNCA los usaba para
+    // mezclar nada; la rama de bypass seguia siendo el mismo salto duro).
+    //
+    // Causa: al activar/desactivar, la señal saltaba de golpe entre la ruta
+    // directa (sin latencia) y la ruta HOA+HRTF (con su propia latencia
+    // FIR) — la cola del filtro y el cambio de fase se oian como un eco
+    // breve y un desface entre canales. Ahora TODA transicion (activar,
+    // desactivar, y tambien el paso por w=0 de inmersividad, que antes
+    // tenia su propio salto a un camino de calculo distinto) se resuelve
+    // con un crossfade por muestra entre la señal seca (blockMix_=0) y la
+    // procesada (blockMix_=1), avanzando ~1/15ms por muestra — ambas rutas
+    // suenan superpuestas y en fase durante la transicion, nunca una
+    // reemplazando a la otra de un bloque a otro.
+    const float mixStep   = 1.0f / (sampleRate_ * 0.015f);
+    const float mixTarget = enabled_ ? 1.0f : 0.0f;
+
+    // Camino rapido: completamente asentado en bypass sin transicion en
+    // curso — evita el coste del crossover/detector de transientes en el
+    // caso comun (upmixing apagado, que es el valor por defecto real).
+    if (!enabled_ && blockMix_ <= 0.0f) {
         for (std::size_t i = 0; i < numFrames; ++i) {
             HoaVector out = {0};
             HoaGainMatrix::accumulate(out, encNarrowL, sanitize(inL[i]));
@@ -109,6 +112,10 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
         const float l = sanitize(inL[i]);
         const float r = sanitize(inR[i]);
 
+        // Avanza el crossfade seco<->upmix un paso por muestra hacia su destino.
+        if (blockMix_ < mixTarget)      blockMix_ = std::min(blockMix_ + mixStep, mixTarget);
+        else if (blockMix_ > mixTarget) blockMix_ = std::max(blockMix_ - mixStep, mixTarget);
+
         const float mid  = 0.5f * (l + r);
         const float side = 0.5f * (l - r);
 
@@ -126,25 +133,47 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
 
         const float w = smoothedImmersivity_;
         // Morfología de bases: el par directo se abre de ±30° a ±90° según la
-        // inmersividad, con energía de campo plana (bases unitarias).
+        // inmersividad, con energía de campo plana (bases unitarias). Nota:
+        // esta fórmula converge EXACTAMENTE a la mezcla seca cuando w→0
+        // (gN→1, gW→0, midHi/bass/side ponderados por w→0) — por eso ya no
+        // hace falta un branch aparte para "inmersividad ~0": el propio
+        // crossfade blockMix_ cubre activar/desactivar, y esta continuidad
+        // matemática cubre el barrido del slider de inmersividad hasta 0.
         const float m = widthMorph_ * transientWidth_;
         const float gN = 1.0f - 0.5f * m;   // peso del par estrecho
         const float gW = 0.5f * m;          // peso del par ancho
 
-        HoaVector out = {0};
+        HoaVector wet = {0};
         // 1) Par estéreo directo (estrecho ↔ ancho, energía plana).
-        HoaGainMatrix::accumulate(out, encNarrowL, l * gN);
-        HoaGainMatrix::accumulate(out, encNarrowR, r * gN);
-        HoaGainMatrix::accumulate(out, encWideL,   l * gW);
-        HoaGainMatrix::accumulate(out, encWideR,   r * gW);
+        HoaGainMatrix::accumulate(wet, encNarrowL, l * gN);
+        HoaGainMatrix::accumulate(wet, encNarrowR, r * gN);
+        HoaGainMatrix::accumulate(wet, encWideL,   l * gW);
+        HoaGainMatrix::accumulate(wet, encWideR,   r * gW);
         // 2) Expansión inmersiva: presencia central + graves mono-seguros al
         //    centro + apertura lateral difusa.
-        HoaGainMatrix::accumulate(out, encCenter, midHi * w);
-        HoaGainMatrix::accumulate(out, encCenter, bass  * w);
-        HoaGainMatrix::accumulate(out, encWideL,  side  * w * 0.5f);
-        HoaGainMatrix::accumulate(out, encWideR, -side  * w * 0.5f);
+        HoaGainMatrix::accumulate(wet, encCenter, midHi * w);
+        HoaGainMatrix::accumulate(wet, encCenter, bass  * w);
+        HoaGainMatrix::accumulate(wet, encWideL,  side  * w * 0.5f);
+        HoaGainMatrix::accumulate(wet, encWideR, -side  * w * 0.5f);
 
-        outField[i] = out;
+        if (blockMix_ >= 0.999999f) {
+            // Upmix pleno, sin transición en curso: no hay nada que mezclar.
+            outField[i] = wet;
+        } else {
+            // Señal seca EXACTAMENTE igual a la del camino rápido de bypass
+            // (misma codificación ±30°, ganancia unitaria) — continuidad
+            // garantizada en blockMix_==0 con el otro extremo del crossfade.
+            HoaVector dry = {0};
+            HoaGainMatrix::accumulate(dry, encNarrowL, l);
+            HoaGainMatrix::accumulate(dry, encNarrowR, r);
+            HoaVector out{};
+            for (int ch = 0; ch < kHoaNumChannels; ++ch) {
+                out[static_cast<size_t>(ch)] =
+                    dry[static_cast<size_t>(ch)] * (1.0f - blockMix_) +
+                    wet[static_cast<size_t>(ch)] * blockMix_;
+            }
+            outField[i] = out;
+        }
     }
 }
 

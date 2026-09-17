@@ -6,6 +6,71 @@
 
 using namespace Ivanna;
 
+// ── Regresión del fix de eco/desface (2026-09-17) ────────────────────────────
+// El intento anterior declaraba blockMix_/mixStep pero nunca los usaba para
+// mezclar nada — la rama de bypass seguía siendo un salto duro completo.
+// Este test verifica la propiedad que realmente importa: activar el toggle
+// a mitad de una señal continua NO debe producir un salto grande de una
+// muestra a la siguiente (eso es precisamente lo que se oye como "eco" al
+// activar/desactivar) — el cambio debe repartirse en una rampa de ~15 ms.
+TEST(IntelligentUpmixerTest, TogglingMidStreamCrossfadesWithoutStepDiscontinuity) {
+    constexpr size_t kBlock = 512;
+    constexpr float  kL = 0.6f, kR = -0.6f; // señal constante, no trivial (L != R)
+
+    IntelligentUpmixer upmixer;
+    upmixer.prepare(48000.0f);
+    upmixer.setImmersivity(1.0f);
+
+    std::vector<float> inL(kBlock, kL), inR(kBlock, kR);
+
+    // Bloque 1: bypass asentado.
+    upmixer.setUpmixingEnabled(false);
+    std::vector<HoaVector> block1;
+    upmixer.processBlock(inL.data(), inR.data(), block1, kBlock);
+
+    // Referencia: cuánto cambiaría el canal W (índice 0) si el salto fuera
+    // instantáneo y completo (seco -> procesado en una sola muestra). Si el
+    // crossfade real existe, ningún salto muestra-a-muestra debe acercarse
+    // a esta magnitud.
+    upmixer.setUpmixingEnabled(true);
+    std::vector<HoaVector> steadyWet;
+    {
+        // Instancia aparte, ya asentada en 'wet', para medir el destino sin
+        // que la rampa en curso de 'upmixer' contamine la referencia.
+        IntelligentUpmixer ref;
+        ref.prepare(48000.0f);
+        ref.setUpmixingEnabled(true);
+        ref.setImmersivity(1.0f);
+        std::vector<HoaVector> warm;
+        ref.processBlock(inL.data(), inR.data(), warm, kBlock); // converge la rampa propia
+        ref.processBlock(inL.data(), inR.data(), steadyWet, kBlock);
+    }
+    const float fullJump = std::fabs(steadyWet[0][1] - block1[0][1]);
+    ASSERT_GT(fullJump, 1e-4f); // la premisa del test: seco y procesado SÍ difieren
+
+    // Bloque 2: se activa el toggle (ya hecho arriba) y se sigue alimentando
+    // la MISMA señal continua — aquí es donde ocurre la transición real.
+    std::vector<HoaVector> block2;
+    upmixer.processBlock(inL.data(), inR.data(), block2, kBlock);
+
+    float maxStep = 0.0f;
+    auto trackMaxStep = [&](const std::vector<HoaVector>& v, float& prev) {
+        for (const auto& hv : v) {
+            maxStep = std::max(maxStep, std::fabs(hv[1] - prev));
+            prev = hv[1];
+        }
+    };
+    float prev = block1[0][1];
+    trackMaxStep(block1, prev);
+    trackMaxStep(block2, prev);
+
+    // El salto máximo entre muestras consecutivas debe ser una fracción
+    // pequeña del salto completo seco->procesado (crossfade real reparte el
+    // cambio en ~15 ms ≈ 720 muestras a 48 kHz) — no el salto completo de
+    // golpe, que es lo que ocurría antes del fix.
+    EXPECT_LT(maxStep, fullJump * 0.05f);
+}
+
 // ── Invariantes originales (siguen vigentes, no se relajan) ──────────────────
 
 TEST(IntelligentUpmixerTest, IdenticalStereoYieldsFrontalHOA) {
