@@ -4,10 +4,25 @@
 #include <android/log.h>
 
 #define LOG_TAG "IvannaSofaHRTF"
+// SOFA_OFFLINE_CACHE (2026-09-17): evita recargar HDF5 desde emisores
+// repetidos (cambio de escala de habitación por UI, re-entry de la app).
+// Guardado del último path válido en el daemon/app — solo una lectura
+// de disco adicional se intenta si el anterior no es válido os del
+// cambio de proveación (subject/angle).
+static std::string g_sofa_lastPath;
+static bool   g_sofa_lastOk = false;
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 namespace Ivanna {
+
+bool SofaHRTFLoader::loadCached(const std::string& path) {
+    if (g_sofa_lastOk && path == g_sofa_lastPath) return true; // caché caliente
+    const bool ok = load(path);
+    g_sofa_lastOk = ok;
+    if (ok) g_sofa_lastPath = path; else g_sofa_lastPath.clear();
+    return ok;
+}
 
 bool SofaHRTFLoader::load(const std::string& path) {
     LOGI("SofaHRTFLoader: Validando SOFA en %s", path.c_str());
