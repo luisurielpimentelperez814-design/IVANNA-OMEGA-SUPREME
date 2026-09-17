@@ -15,15 +15,29 @@ class AudioCallbackManager(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var isAudioFocusOwned = false
 
-    fun requestAudioFocus(): Boolean {
+    // FIX (eco/desfase en captura de sistema): requestAudioFocus(duck=true) usa
+    // AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK en vez de AUDIOFOCUS_GAIN. Con GAIN
+    // pleno, Tidal/Qobuz/YouTube normalmente PAUSAN su reproducción al perder
+    // el foco — rompiendo la fuente que PlaybackCaptureService necesita seguir
+    // capturando. Con TRANSIENT_MAY_DUCK, Android le pide a la app de origen
+    // que baje su propio volumen (ducking estándar del sistema, no un
+    // setStreamVolume global) en vez de detenerse, mientras IVANNA reproduce su
+    // copia procesada — evitando la superposición a volumen pleno de dos
+    // señales casi-idénticas y desfasadas que producía el eco/comb filtering.
+    // setWillPauseWhenDucked(false) es explícito: sin esto algunas apps OEM
+    // pausan igual bajo TRANSIENT_MAY_DUCK.
+    fun requestAudioFocus(duck: Boolean = false): Boolean {
         return try {
             val attrs = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
+            val focusType = if (duck) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                             else AudioManager.AUDIOFOCUS_GAIN
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                audioFocusRequest = AudioFocusRequest.Builder(focusType)
                     .setAudioAttributes(attrs)
+                    .setWillPauseWhenDucked(false)
                     .setOnAudioFocusChangeListener { onAudioFocusChange(it) }
                     .build()
                 val result = audioFocusRequest?.let { audioManager.requestAudioFocus(it) } ?: android.media.AudioManager.AUDIOFOCUS_REQUEST_FAILED
@@ -34,7 +48,7 @@ class AudioCallbackManager(
                 val result = audioManager.requestAudioFocus(
                     { onAudioFocusChange(it) },
                     AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
+                    focusType
                 )
                 isAudioFocusOwned = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
                 isAudioFocusOwned

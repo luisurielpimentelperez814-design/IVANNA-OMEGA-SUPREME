@@ -103,6 +103,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     private var retryHandler: Handler? = null
     private var retryThread: HandlerThread? = null
 
+    // FIX (causa raíz del eco/desface reproducción original + procesada):
+    // este servicio capturaba el audio de Tidal por software y reproducía su
+    // propia copia procesada, pero nunca solicitaba audio focus — Tidal
+    // seguía sonando a volumen pleno en paralelo, sin desfase controlado, y
+    // por eso el usuario tenía que "encontrar a tanteo" un mix ratio manual
+    // en los sliders para evitar el eco (Haas effect improvisado). Con
+    // AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, Android le pide a Tidal que baje su
+    // propio volumen mientras IVANNA reproduce el resultado procesado, en vez
+    // de sumar dos señales casi-idénticas a volumen pleno.
+    private val audioCallbackManager: AudioCallbackManager by lazy {
+        AudioCallbackManager(getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager)
+    }
+
     private val perceptualCortex: PerceptualCortex
         get() = (application as IVANNAApplication).perceptualCortex
 
@@ -129,6 +142,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             return START_NOT_STICKY
         }
+        runCatching { audioCallbackManager.requestAudioFocus(duck = true) }
         startEngine(projection)
         return START_NOT_STICKY
     }
@@ -136,6 +150,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     override fun onDestroy() {
         // FIX PR-2: desregistrarse del listener
         runCatching { perceptualCortex.removeStateListener(this) }
+        runCatching { audioCallbackManager.abandonAudioFocus() }
         stopEngine()
         releaseWakeLock()
         retryHandler?.removeCallbacksAndMessages(null)
