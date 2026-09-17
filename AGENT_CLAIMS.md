@@ -2402,3 +2402,28 @@ Detalle del canal:
 **RT-safe:** lectura en el callback de audio sigue lock-free (seqlock); sin mutex, sin heap, sin polling en el hot path.
 
 **Verificación:** `scripts/run_ctest.sh` → 100% tests passed, 0 failed (100/100). Upmixing OFF = ruta idéntica a la anterior (bypass, cero procesamiento extra); Upmixing ON = HOA upmixer + decoder binaural activos en la cadena DSP.
+
+
+---
+### Flanco SAF + SOFA + RIR — toma temporal 2026-09-17 (sesión Genspark)
+**Entregado:**
+1. `include/saf_runtime.h` reescrito: NaN-guard real (entrada + denominador
+   degenerado) y step acotado a [0,1] — vergüenza: el intento previo (patch
+   por string-replace sobre el mismo archivo) dejó el header sintácticamente
+   corrupto y CUALQUIERA compilando el codebase con la relación exacta
+   se encontraba con 'expected ,'. Auto-corregido en el commit  fix(saf):
+   reescritura completa. Verdadera verificación en host: compila g++ -O2
+   limpio, SAFUpdate converge de 1.0 a 1.80000 exacto en 200 ticks con
+   memoria activa del denominador.
+2. `SofaHRTFLoader.cpp`: caché offline del último path válido cargado
+   (no recarga HDF5 en re-entries de la app/cambios por UI — root/non-root).
+   Firma completa 8 bytes HDF5 existente preservada; umbral 512 B.
+3. `SaFJniBridge.cpp`: nuevo `nativeSaFGetStatus` — un solo call expone
+   [q0..q6] + modelo cargado, consumible desde SaFCalibrationScreen.kt
+   tanto con el daemon root residente como sin root (solo render de app).
+4. README actualizado: sección dedicada a esta entrega.
+**Reserva:** el RIR (crossfade selección de sala por worker de control con
+condition variable, fuera del hot-path) ya estaba bien cableado en
+omega_effect — no había nada suelto que reforzar aquí sin sobre-ingeniería.
+**Solicitud de relevo:** este flanco queda DEVUELTO — cualquier sesión
+puede retomar el terreno SAF/SOFA/RIR siguiendo exactamente este toque.
