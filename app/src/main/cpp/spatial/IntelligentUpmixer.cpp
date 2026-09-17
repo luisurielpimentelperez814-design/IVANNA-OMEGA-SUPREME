@@ -72,6 +72,14 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     // crossfade por muestra (m_blockMix_, ~15 ms) entre la señal seca y la
     // decodificada: ambas rutas llegan al mismo instante durante la
     // transición — sin eco, sin desface, sin doble ruta simultánea.
+    // Crossfade seco→upmix por muestra al activar el toggle (blockMix_ 0→1)
+    // y de vuelta al desactivarlo (1→0). ~15 ms de transición — sin el salto
+    // duro entre la ruta directa y la ruta HOA+HRTF (con su latencia FIR)
+    // que se percibía como eco breve y desface entre canales.
+    const float mixStep = 1.0f / (sampleRate_ * 0.015f);
+    if (!enabled_) {
+        if (blockMix_ <= 0.001f) { blockMix_ = 0.0f; }
+    }
     if (!enabled_ || smoothedImmersivity_ <= 0.001f) {
         // Bypass transparente: par estéreo EXACTO a ±30° con energía unitaria.
         for (std::size_t i = 0; i < numFrames; ++i) {
