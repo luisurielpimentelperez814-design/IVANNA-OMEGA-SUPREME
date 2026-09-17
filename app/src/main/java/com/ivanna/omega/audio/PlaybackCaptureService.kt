@@ -43,7 +43,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private const val SAMPLE_RATE    = 48_000
         private const val CHANNEL_COUNT  = 2
-        private const val BLOCK_FRAMES   = 512
+        // MISIÓN HAAS MASTER LATENCY TUNING (2026-09-17): 512 → 384.
+        // Punto óptimo medido: 384 frames @ 48 kHz = 8.0 ms por bloque
+        // (vs 10.67 ms a 512) — reduce el desfase percibido ~25% manteniendo
+        // estabilidad: todos los buffers derivados (BLOCK_SAMPLES, rtSpatialIn/Out,
+        // mono, visualizadores V2/Bark64, Haas alignment) escalan de esta
+        // constante; 384 es múltiplo de 64 (alineación SIMD/NEON intacta) y
+        // los FFT de 512pt del pipeline lo toleran por zero-padding.
+        // Sin cambios: HAAS_SAFE_GAIN=0.40, rampa per-sample, captura, DSP,
+        // HRTF/SOFA/RIR, SAF, upmixing.
+        private const val BLOCK_FRAMES   = 384
         private const val BLOCK_SAMPLES  = BLOCK_FRAMES * CHANNEL_COUNT
 
         const val CHANNEL_ID    = "ivanna_playback_channel"
