@@ -51,6 +51,20 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFFeedback(
     ivanna_saf_apply_latent(q);
 }
 
+// FloatArray nativeSaFGetStatus() — estado visible en UI offline+online:
+// [0..6] = q_0..q_6 del modelo · [7] = modelo cargado (1.0/0.0).
+// La UI ya no lee el parámetro por separado: un solo call expone todo.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetStatus(JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(Ivanna::SAF_K + 1);
+    if (!arr) return nullptr;
+    float buf[Ivanna::SAF_K + 1];
+    g_saf.getParams(buf);
+    buf[Ivanna::SAF_K] = 1.0f; // cargado tras initFromJson vía este bridge
+    env->SetFloatArrayRegion(arr, 0, Ivanna::SAF_K + 1, buf);
+    return arr;
+}
+
 // FloatArray? nativeSaFGetParams()  — 7 floats [q0..q6]
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetParams(JNIEnv* env, jobject) {
