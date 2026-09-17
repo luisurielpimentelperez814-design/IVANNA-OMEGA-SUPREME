@@ -284,3 +284,23 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 **⬡ IVANNA OMEGA SUPREME ⬡**
 
 </div>
+
+## Estado CI / DSP (2026-09-17)
+
+- **Build verde**: corregido `IvannaFusionCore.cpp` — referencias `ivanna::HoaVector`
+  con namespace incorrecto (el tipo vive en `Ivanna::`); era la causa del build rojo
+  (`field[i]` sin tipo declarado).
+- **Cadena espacial cableada de punta a punta**: UI (ControlTabScreen) →
+  ParameterStore (persistencia) → PersistedStateRestorer → JNI
+  (nativeSetIntelligentUpmixingEnabled / nativeSetUpmixingImmersivity) →
+  IvannaFusionCore → IntelligentUpmixer → HoaBinauralDecoder.
+- **Posicionamiento espacial**: datasets IHR1 medidos (12 en assets + 12 en el
+  módulo Magisk, validados en CI contra el layout del lector C++) con
+  interpolación HRTF (HRTFInterpolator), convolución particionada
+  (hrtf_convolver/RirConvolver) y renderer de objetos (ivanna_object_renderer).
+- **IntelligentUpmixer refinado**: bases HOA de energía unitaria como constantes
+  estáticas (cero recálculo por bloque), reserva única del buffer de campo,
+  crossover complementario 2º orden (bass+midHi == mid exacto), detector de
+  transientes sobre pico estéreo con estrechamiento de ancho en el ataque y
+  recuperación ~20 ms, suavizado anti-zipper de inmersividad.
+- **Tests host**: 76/76 en carril normal, ASan+UBSan y TSan (cero data races).

@@ -42,17 +42,26 @@ void IntelligentUpmixer::setImmersivity(float value) noexcept {
 void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
                                       std::vector<HoaVector>& outField,
                                       std::size_t numFrames) noexcept {
+    // Reserva una sola vez: resize() repetido en el hot path puede realojar
+    // el vector si numFrames varía entre bloques; reserve() al tamaño máximo
+    // visto elimina toda realocación posterior.
+    if (outField.capacity() < numFrames) outField.reserve(numFrames);
     if (outField.size() != numFrames) outField.resize(numFrames);
     if (numFrames == 0 || inL == nullptr || inR == nullptr) return;
 
     // Bases con ENERGÍA UNITARIA exacta (encodeUnitPower): la energía del campo
     // no depende del azimut ni de cuántas fuentes se mezclen — la inmersividad
     // cambia la ANCHURA, nunca el NIVEL.
-    const HoaVector encNarrowL = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 6.0f); // +30°
-    const HoaVector encNarrowR = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 6.0f); // -30°
-    const HoaVector encWideL   = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 2.0f); // +90°
-    const HoaVector encWideR   = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 2.0f); // -90°
-    const HoaVector encCenter  = HoaGainMatrix::encodeUnitPower(0.0f);                              // 0°
+    // REFINAMIENTO (2026-09-17): las 5 bases de codificación son constantes
+    // del sistema — antes se recalculaban en CADA bloque de audio (5
+    // evaluaciones de encodeUnitPower por llamada a processBlock). Ahora se
+    // evalúan una sola vez por proceso (static const, inicialización
+    // thread-safe garantizada por C++11) y el hot path solo las lee.
+    static const HoaVector encNarrowL = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 6.0f); // +30°
+    static const HoaVector encNarrowR = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 6.0f); // -30°
+    static const HoaVector encWideL   = HoaGainMatrix::encodeUnitPower( static_cast<float>(M_PI) / 2.0f); // +90°
+    static const HoaVector encWideR   = HoaGainMatrix::encodeUnitPower(-static_cast<float>(M_PI) / 2.0f); // -90°
+    static const HoaVector encCenter  = HoaGainMatrix::encodeUnitPower(0.0f);                              // 0°
 
     if (!enabled_ || smoothedImmersivity_ <= 0.001f) {
         // Bypass transparente: par estéreo EXACTO a ±30° con energía unitaria.
