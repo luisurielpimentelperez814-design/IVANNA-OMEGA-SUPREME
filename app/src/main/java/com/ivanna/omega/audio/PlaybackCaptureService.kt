@@ -604,15 +604,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
         }
 
-        private fun writeAllToTrack(data: FloatArray, totalSamples: Int)
-        tickLatencyProbe() // Haas: medir cola tras cada bloque escrito {
+        private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
             val track = audioTrack ?: return
+            // Haas: la medicion de cola ocurre tras la escritura, mas abajo
             var written = 0
             while (written < totalSamples && active) {
                 val result = track.write(data, written, totalSamples - written, AudioTrack.WRITE_BLOCKING)
                 if (result < 0) { Log.e(TAG, "AudioTrack write error: $result"); break }
                 written += result
             }
+            tickLatencyProbe() // Haas: medir cola tras cada bloque escrito (invocacion real)
         }
 
         private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
