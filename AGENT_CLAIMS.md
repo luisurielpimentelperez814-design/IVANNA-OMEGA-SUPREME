@@ -48,6 +48,23 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+> 📌 **Nota (sesión Claude, 2026-09-17, misión de auditoría AudioFlinger/omega_effect —
+> instrucción directa del propietario, "eliminar deriva estructural"):** auditoría completa de
+> la ruta nativa `omega_effect` (UUID, XML, símbolos, sepolicy) — **verde**, todo correctamente
+> cableado (detalle completo en el mensaje del commit `e302be56`). Hallazgo real, fuera de la
+> lista de chequeo literal pero dentro del alcance de "integración AudioEffect/AudioFlinger":
+> nada impedía que la app arrancara **también** `PlaybackCaptureService` (captura + reproceso +
+> replay por `AudioTrack` propio) cuando el motor nativo YA estaba procesando el mismo stream
+> `music` en `audioserver`. Con el daemon activo, eso duplica el DSP sobre el mismo contenido —
+> distinto del caso "original + una copia" que atiende el ajuste Haas de las sesiones anteriores
+> (`f0904c3c`, `e7c9424f`, `57f022e2`), lo que explicaría por qué el eco podía persistir pese a
+> esos ajustes en dispositivos con el módulo Magisk activo. Fix mínimo: gate en
+> `MainActivity.kt` con `MagiskBridge.isDaemonRunning` (probe real de socket) antes de iniciar
+> `PlaybackCaptureService` — sin tocar ningún `.cpp`/`.hpp` de DSP/HRTF/SAF/SOFA/RIR/Haas/
+> upmixing. Fallback intacto para el 99% de usuarios sin root. 101/101 tests nativos sin cambios
+> (esperado). **Pendiente de confirmación del propietario en dispositivo real** — con root/Magisk
+> activo, ¿el eco desaparece ahora sin necesidad del ajuste manual de sliders?
+
 > 📌 **Nota (sesión Claude, 2026-09-17, instrucción directa del propietario — seguimiento del
 > reporte anterior):** el propietario reportó que el eco/desface **seguía presente** tras el
 > commit `cf00a2c6` que decía haberlo arreglado. Verificado por lectura: `cf00a2c6` declaraba

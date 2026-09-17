@@ -308,6 +308,16 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
   ParameterStore (persistencia) → PersistedStateRestorer → JNI
   (nativeSetIntelligentUpmixingEnabled / nativeSetUpmixingImmersivity) →
   IvannaFusionCore → IntelligentUpmixer → HoaBinauralDecoder.
+- **Auditoría AudioFlinger/omega_effect (2026-09-17)**: ruta nativa system-wide
+  verificada verde (UUID, XML, símbolos, sepolicy correctamente alineados —
+  detalle en `AGENT_CLAIMS.md`). Hallazgo real: nada impedía que la app
+  arrancara también `PlaybackCaptureService` (captura+reproceso+replay propio)
+  cuando el motor nativo ya procesaba el mismo stream "music" en `audioserver`
+  — dos copias procesadas del mismo audio sonando a la vez, con root/Magisk
+  activo. Gate mínimo añadido en `MainActivity.kt`
+  (`MagiskBridge.isDaemonRunning`) para no iniciar la ruta duplicada cuando la
+  nativa ya cubre el mismo audio; sin tocar DSP/HRTF/Haas/upmixing. Fallback
+  intacto para usuarios sin root.
 - **Fix de audio reportado por el propietario (tronidos + eco/desface)**:
   - Ganancia armónica con slew-limiter real por muestra — sin escalón, sin clics.
   - Crossfade real seco↔upmix (no un stub que declaraba variables sin usarlas)
