@@ -2449,3 +2449,8 @@ condition variable, fuera del hot-path) ya estaba bien cableado en
 omega_effect — no había nada suelto que reforzar aquí sin sobre-ingeniería.
 **Solicitud de relevo:** este flanco queda DEVUELTO — cualquier sesión
 puede retomar el terreno SAF/SOFA/RIR siguiendo exactamente este toque.
+
+---
+
+### Nota de coordinación — fix de eco/desface en la captura de reproducción (directo del usuario)
+**Sesión Genspark, 2026-09-17.** Fix de raíz en `PlaybackCaptureService.kt` (flanco Controles/audio): crossfade de ganancia con rampa (MIX_GAIN_STEP=0.05 ≈ 0.2 s) aplicado al stream procesado antes de `writeAllToTrack()`. El stream original de Tidal no se puede silenciar por API de Android; la rampa evita que ambos streams suenen a la vez con nivel comparable (la causa del eco por comb filtering) y el tronido al conmutar. El usuario ya no necesita buscar el punto 100/50 a mano. Verificación: estructural + sintaxis Kotlin (sin SDK Android en sandbox); la validación funcional queda en CI/dispositivo. La otra mitad del eco (crossfade seco-upmix del DSP) ya la atacó la sesión anterior en `IvannaFusionCore`.

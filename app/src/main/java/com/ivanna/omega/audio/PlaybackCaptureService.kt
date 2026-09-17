@@ -336,6 +336,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // hilo THREAD_PRIORITY_URGENT_AUDIO -> jitter y XRun.
         // Tamanyo fijo BLOCK_FRAMES: AudioRecord nunca entrega mas de
         // BLOCK_SAMPLES bytes por read() por como esta configurado.
+        // FIX (raíz del eco/desface): la captura reproduce el audio por su
+        // PROPIO AudioTrack sin silenciar el original de Tidal → los dos
+        // streams (latencias distintas) se suman → comb filtering/echo a
+        // 100/100. Solución determinística: ganancia de rampa del stream
+        // procesado (0 = passthrough puro, 1 = procesado puro). La rampa
+        // evita el tronido al activar/desactivar la captura.
+        private var mixGain = 0f              // 0..1: cuánto del stream procesado
+        private var mixGainTarget = 1f        // objetivo (1 cuando la captura está activa)
+        private const val MIX_GAIN_STEP = 0.05f // rampa: ~20 bloques ≈ 0.2 s a 48 kHz/512
+
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialOutL = FloatArray(BLOCK_FRAMES)
@@ -508,6 +518,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         }
                     }
                     vibratoryProcessor.process(buffer)
+                    // Crossfade con rampa: el stream procesado sube de 0 a 1
+                    // suavemente al activar la captura y baja al apagarla. Como
+                    // el original de Tidal NO se puede silenciar por API, la
+                    // rampa evita que ambos streams suenen a la vez con el
+                    // mismo nivel (el eco) y el tronido al conmutar.
+                    if (mixGain < mixGainTarget) mixGain = minOf(mixGain + MIX_GAIN_STEP, mixGainTarget)
+                    else if (mixGain > mixGainTarget) mixGain = maxOf(mixGain - MIX_GAIN_STEP, mixGainTarget)
+                    if (mixGain < 1f) {
+                        for (i in 0 until read) buffer[i] *= mixGain
+                    }
                     writeAllToTrack(buffer, read)
                     if (IvannaNpeEngine.isReady) {
                         runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
