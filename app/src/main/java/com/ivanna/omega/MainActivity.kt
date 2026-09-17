@@ -234,12 +234,35 @@ fun OmegaApp() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-                val intent = Intent(context, PlaybackCaptureService::class.java).apply {
-                    putExtra("resultCode", result.resultCode)
-                    putExtra("data", result.data)
+                // AUDITORÍA AudioFlinger/omega_effect (2026-09-17): si el motor
+                // nativo system-wide ya está vivo (Magisk + omega_effect
+                // procesando el stream "music" dentro de audioserver, ver
+                // magisk_module/system/etc/audio_effects_ivanna_omega.xml),
+                // el audio que PlaybackCaptureService capturaría YA viene
+                // procesado una vez. Reprocesarlo y reproducirlo por un
+                // AudioTrack propio en paralelo crea dos copias procesadas
+                // del mismo contenido sonando a la vez — no el caso simple
+                // "original + una copia" que ya atiende el ajuste Haas de
+                // este mismo servicio, sino un doble-procesamiento real.
+                // No se toca DSP/HRTF/Haas/upmixing: solo se evita arrancar
+                // la ruta redundante cuando la ruta superior ya cubre el
+                // mismo audio.
+                if (com.ivanna.omega.magisk.MagiskBridge.isDaemonRunning) {
+                    android.util.Log.w(
+                        "IVANNA-MainActivity",
+                        "PlaybackCaptureService NO se inicia: el motor nativo " +
+                            "(omega_effect vía Magisk) ya está procesando el " +
+                            "stream music en audioserver — iniciarlo también " +
+                            "duplicaría el procesamiento sobre el mismo audio."
+                    )
+                } else {
+                    val intent = Intent(context, PlaybackCaptureService::class.java).apply {
+                        putExtra("resultCode", result.resultCode)
+                        putExtra("data", result.data)
+                    }
+                    context.startForegroundService(intent)
+                    captureRequested = true
                 }
-                context.startForegroundService(intent)
-                captureRequested = true
             }
         }
 
