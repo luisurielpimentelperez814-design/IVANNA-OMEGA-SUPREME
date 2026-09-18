@@ -108,7 +108,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
 
     override fun onCreate() {
-        appCtx = applicationContext
         super.onCreate()
 
         perceptualCortex.addStateListener(this)
@@ -684,7 +683,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var framesWrittenToTrack = 0L
         private var lastLatencyLogNs     = 0L
         private var lastDriftCheckNs     = 0L
-        private lateinit var appCtx: android.content.Context
         private var lastRouteCheckNs     = 0L
         private var btRouteActive        = false
         private val audioTs              = android.media.AudioTimestamp()
@@ -705,19 +703,23 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // 3 bloques interpretaba ese lag estructural como underrun y
             // disparaba pacing continuamente. En BT el guard tolera 6 bloques
             // y cede 2 ms; en rutas locales mantiene 3 bloques / 1 ms.
+            val t = audioTrack  // ref local fija (el campo real; FIX build: 'track' no resolvia)
+            // BLUETOOTH MASTER PATH: ruta leída de la PROPIA pista
+            // (AudioTrack.routedDevice, API 23+) — más precisa que sondear
+            // los dispositivos del sistema y sin necesidad de Context (el
+            // intento anterior con getSystemService rompía el scope de la
+            // clase interna: causa de los errores 'appCtx'/'it' del CI).
             val nowRoute = System.nanoTime()
             if (nowRoute - lastRouteCheckNs >= 500_000_000L) {
                 lastRouteCheckNs = nowRoute
                 btRouteActive = runCatching {
-                    val am = appCtx.getSystemService(android.media.AudioManager::class.java)
-                    am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.any { dev ->
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
-                    } == true
+                    val d = t?.routedDevice
+                    d != null && (
+                        d.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        d.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        d.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET)
                 }.getOrDefault(false)
             }
-            val t = audioTrack  // ref local fija (el campo real; FIX build: 'track' no resolvia)
             if (t != null) runCatching {
                 val head = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
                 val lagFrames = framesWrittenToTrack - head
