@@ -121,6 +121,84 @@ int main() {
         }
     }
 
+    // ── Caso 5: SIN MICRO-CORTES al mover una fuente en caliente ──
+    // Regresión del bug rebuildDelays(): antes, cada setObject() hacía
+    // assign() de TODAS las líneas de delay → historial de audio borrado
+    // → discontinuidad instantánea = click/pop audible. Ahora el movimiento
+    // suaviza delay/ganancia por muestra sin tocar el historial: el delta
+    // muestra-a-muestra debe quedar acotado por el slew natural de la señal.
+    {
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        wfs.setObject(0, 0.0f, 2.0f, 1.0f);
+        std::vector<float> sig(kFrames);
+        for (int i = 0; i < kFrames; ++i)
+            sig[i] = std::sin(2.f * 3.14159265f * 440.f * static_cast<float>(i) / kSr) * 0.5f;
+        const float* ins[1] = { sig.data() };
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        // 8 bloques de asentamiento (delay físico ~2 m ≈ 280 muestras)
+        for (int b = 0; b < 8; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(ins, 1, L.data(), R.data(), kFrames);
+        }
+        float maxDeltaBefore = 0.f;
+        for (int i = 1; i < kFrames; ++i) {
+            maxDeltaBefore = std::fmax(maxDeltaBefore, std::fabs(L[i] - L[i-1]));
+            maxDeltaBefore = std::fmax(maxDeltaBefore, std::fabs(R[i] - R[i-1]));
+        }
+        // Movimiento BRUSCO de la fuente en mitad del stream:
+        wfs.setObject(0, 3.0f, 0.5f, 1.0f);
+        float maxDeltaAfter = 0.f, maxAbsAfter = 0.f;
+        for (int b = 0; b < 8; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(ins, 1, L.data(), R.data(), kFrames);
+            for (int i = 1; i < kFrames; ++i) {
+                maxDeltaAfter = std::fmax(maxDeltaAfter, std::fabs(L[i] - L[i-1]));
+                maxDeltaAfter = std::fmax(maxDeltaAfter, std::fabs(R[i] - R[i-1]));
+                maxAbsAfter = std::fmax(maxAbsAfter, std::fabs(L[i]));
+                maxAbsAfter = std::fmax(maxAbsAfter, std::fabs(R[i]));
+            }
+        }
+        EXPECT(allFinite(L) && allFinite(R), "movimiento: sin NaN/Inf");
+        // El slew tras mover la fuente debe ser comparable al slew natural de
+        // la señal (mismo orden de magnitud). Un micro-corte del bug viejo
+        // (señal → silencio → señal en 1 muestra) daría deltas 10-100× mayores.
+        EXPECT(maxDeltaAfter < maxDeltaBefore * 4.0f + 0.02f,
+               "movimiento: sin micro-cortes (delta acotado por el slew natural)");
+        EXPECT(maxAbsAfter < 2.0f, "movimiento: sin picos de glitch en amplitud");
+    }
+
+    // ── Caso 6: eliminar una fuente sonando NO produce click (fade-out) ──
+    {
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        wfs.setObject(0, 0.0f, 2.0f, 1.0f);
+        std::vector<float> sig(kFrames);
+        for (int i = 0; i < kFrames; ++i)
+            sig[i] = std::sin(2.f * 3.14159265f * 440.f * static_cast<float>(i) / kSr) * 0.5f;
+        const float* ins[1] = { sig.data() };
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        for (int b = 0; b < 8; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(ins, 1, L.data(), R.data(), kFrames);
+        }
+        wfs.removeObject(0);   // corte solicitado a mitad de stream
+        float maxDelta = 0.f;
+        for (int b = 0; b < 4; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(ins, 1, L.data(), R.data(), kFrames);  // sin entrada viva
+            for (int i = 1; i < kFrames; ++i) {
+                maxDelta = std::fmax(maxDelta, std::fabs(L[i] - L[i-1]));
+                maxDelta = std::fmax(maxDelta, std::fabs(R[i] - R[i-1]));
+            }
+        }
+        EXPECT(allFinite(L) && allFinite(R), "removeObject: sin NaN/Inf");
+        EXPECT(maxDelta < 0.10f, "removeObject: fade-out sin click (delta acotado)");
+        EXPECT(wfs.numObjects() == 0, "removeObject: la ranura se libera tras el fade");
+    }
+
     std::printf("\n====================================================\n");
     if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
     std::printf("%d TEST(S) FALLARON.\n", g_failures);
