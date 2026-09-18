@@ -108,6 +108,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
 
     override fun onCreate() {
+        appCtx = applicationContext
         super.onCreate()
 
         perceptualCortex.addStateListener(this)
@@ -683,6 +684,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var framesWrittenToTrack = 0L
         private var lastLatencyLogNs     = 0L
         private var lastDriftCheckNs     = 0L
+        private lateinit var appCtx: android.content.Context
         private var lastRouteCheckNs     = 0L
         private var btRouteActive        = false
         private val audioTs              = android.media.AudioTimestamp()
@@ -707,15 +709,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             if (nowRoute - lastRouteCheckNs >= 500_000_000L) {
                 lastRouteCheckNs = nowRoute
                 btRouteActive = runCatching {
-                    val am = getSystemService(android.media.AudioManager::class.java)
-                    am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.any {
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+                    val am = appCtx.getSystemService(android.media.AudioManager::class.java)
+                    am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.any { dev ->
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
                     } == true
                 }.getOrDefault(false)
             }
-            val t = activeTrack  // ref local fija (el campo puede mutar; FIX build: 'track' no resolvia)
+            val t = audioTrack  // ref local fija (el campo real; FIX build: 'track' no resolvia)
             if (t != null) runCatching {
                 val head = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
                 val lagFrames = framesWrittenToTrack - head
