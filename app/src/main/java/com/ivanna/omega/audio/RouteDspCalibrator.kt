@@ -3,6 +3,7 @@ package com.ivanna.omega.audio
 import android.content.Context
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -122,8 +123,8 @@ object RouteDspCalibrator {
                 runCatching {
                     OmegaEngineBridge.setRoom(rt60S = 0.28f, wet = 0.15f, roomIdx = -1)
                 }.onFailure { Log.w(TAG, "room bt: ${it.message}") }
-                runCatching { OmegaEngineBridge.setMid(1.12f) }
-                runCatching { OmegaEngineBridge.setMaster(0.91f) }
+                runCatching { MagiskBridge.setMid(1.12f) }
+                runCatching { MagiskBridge.setMaster(0.91f) }
                 Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF on, width 0.78 (joint-stereo safe), sala corta 0.28s/0.15, presencia +mid, headroom -0.8 dB")
             }
 
