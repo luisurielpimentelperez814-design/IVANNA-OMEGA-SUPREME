@@ -671,15 +671,43 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
             val track = audioTrack ?: return
-            // Haas: la medicion de cola ocurre tras la escritura, mas abajo
             var written = 0
             while (written < totalSamples && active) {
                 val result = track.write(data, written, totalSamples - written, AudioTrack.WRITE_BLOCKING)
                 if (result < 0) { Log.e(TAG, "AudioTrack write error: $result"); break }
                 written += result
             }
-            tickLatencyProbe() // Haas: medir cola tras cada bloque escrito (invocacion real)
+            // MISION HAAS (2026-09-18): contar los frames REALMENTE escritos.
+            // Antes framesWrittenToTrack += BLOCK_FRAMES en tickLatencyProbe
+            // ASUMIA el bloque completo — si write() devuelve menos o el
+            // loop de resync rompe a media escritura, el contador se
+            // inflaba, la deriva medida era falsa y el resync disparaba
+            // sobre una cola fantasma (el eco residual que persistia a 0.40).
+            framesWrittenToTrack += written / CHANNEL_COUNT
+            tickLatencyProbe()
+            // Telemetria REAL a la UI: latencia instantanea de cola +
+            // pico sostenido + resyncs acumulados. Sin esto el panel muestra
+            // "Latency: 0.0ms" en standby eterno (el dato se media pero se
+            // perdia en logcat).
+            OmegaMetrics.updateSharedLevels(
+                dspActive = true,
+                hrtfActive = IvannaSpatialEngine.enabled
+            )
+            publishHaasTelemetry()
         }
+
+        private fun publishHaasTelemetry() {
+            val track = audioTrack ?: return
+            try {
+                if (track.getTimestamp(audioTs)) {
+                    val queued = framesWrittenToTrack - audioTs.framePosition
+                    val queueMs = (queued * 1000.0 / SAMPLE_RATE).toFloat().coerceAtLeast(0f)
+                    if (queueMs > peakQueueMs) peakQueueMs = queueMs
+                    OmegaMetrics.updateSharedLatency(queueMs, peakQueueMs, resyncCount)
+                }
+            } catch (_: Throwable) {}
+        }
+        private var peakQueueMs = 0f
 
         private fun feedVoiceController(mono: FloatArray, numFrames: Int) {
             val vc = voiceController ?: return
@@ -717,7 +745,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private val audioTs              = android.media.AudioTimestamp()
 
         private fun tickLatencyProbe() {
-            framesWrittenToTrack += BLOCK_FRAMES
+            // framesWrittenToTrack se incrementa en writeAllToTrack con los
+            // frames REALMENTE escritos — aqui no se asume nada.
             // MICROCUT_GUARD (2026-09-18): detectar underrun real comparando
             // el avance del cabezal de reproducción contra los frames escritos.
             // Si el cabezal lleva >3 bloques de retraso respecto a lo escrito,

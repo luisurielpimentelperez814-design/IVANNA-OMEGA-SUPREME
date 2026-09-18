@@ -57,6 +57,20 @@ data class OmegaMetrics(
         // que se cablee en el futuro, sin duplicar copy().
         // Todos los parametros son opcionales para permitir updates parciales
         // (p.ej. solo RMS/peak cada N bloques y clips acumulados).
+        // MISION HAAS (2026-09-18): latencia real de la cola de salida del
+        // stream procesado (PlaybackCaptureService -> AudioTrack). Antes este
+        // dato solo vivia en logcat y EngineStatusCard mostraba 0.0ms falso
+        // en standby eterno. maxQueueMs = peor cola desde el arranque
+        // (diagnostico sostenido, no solo instantaneo); resyncs = veces que
+        // el anti-deriva hizo pause/flush/play (salud del stream).
+        var peakQueueMsShared: Float = 0f
+        var resyncCountShared: Int = 0
+        fun updateSharedLatency(queueMs: Float, peakMs: Float, resyncs: Int) {
+            peakQueueMsShared = peakMs
+            resyncCountShared = resyncs
+            _shared.value = _shared.value.copy(latencyMs = queueMs.coerceAtLeast(0f))
+        }
+
         fun updateSharedLevels(
             rms: Float? = null,
             peak: Float? = null,
