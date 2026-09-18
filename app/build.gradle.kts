@@ -89,6 +89,12 @@ android {
 
     androidResources {
         noCompress += listOf("tflite")
+        // FIX (APK 333 MB → no descomprimible en móvil): los .sofa son fuentes
+        // AES69 que NUNCA se parsean en runtime (SofaHRTFLoader.cpp:69 — la
+        // conversión a IHR1 es offline). Estaban triplicados (assets/sofa,
+        // assets/saf/sofa_elite, assets/ivanna_omega/sofa ≈ 263 MB) e inflaban
+        // el artefacto CI a 591 MB → la descarga al celular se truncaba.
+        ignoreAssetsPatterns += "*.sofa"
     }
 
     buildFeatures {
