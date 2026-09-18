@@ -152,6 +152,10 @@ add_library(ivanna_omega SHARED
     # Este .cpp es la copia del proceso app — ver comentarios en el
     # archivo. NO añade ODR conflict: cada SHARED library es unidad.
     upmixing_controls_bridge.cpp
+    # FIX(build): wfs_controls_bridge.cpp define g_wfs_enabled/g_wfs_spread
+    # (extern en jni/ivanna_omega_jni.cpp) pero no estaba en ningún target
+    # → undefined symbols al enlazar libivanna_omega.so.
+    wfs_controls_bridge.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
