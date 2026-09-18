@@ -122,6 +122,44 @@ public:
     }
 
     /**
+     * Energía total (suma de cuadrados de los 9 canales ACN) que produce
+     * encode() para una fuente de amplitud unitaria:
+     *   W²=1  +  (Y²+X²)=1  +  (V²+U²)=1  +  R²=0.25   = 3.25
+     * Es una constante EXACTA (no depende del azimuth: las identidades
+     * sin²+cos² y sin²2+cos²2 valen siempre 1), la base de la normalización
+     * de energía de abajo.
+     */
+    static constexpr float kEncodeEnergy = 3.25f;
+
+    /**
+     * Ganancia que lleva encode() a POTENCIA UNITARIA: 1/sqrt(3.25).
+     *
+     * POR QUÉ EXISTE — el encoder crudo (`encode`) es la base de armónicos
+     * esféricos correcta, pero una fuente de amplitud 1 produce un campo de
+     * energía 3.25 (≈ +5.1 dB). Si el camino directo y el espacial del
+     * upmixer no se normalizan por igual, mover el control de immersividad
+     * cambia el volumen percibido (salto audible) en vez de sólo la anchura.
+     * encodeUnitPower() reparte esa energía de forma que la suma de cuadrados
+     * de los 9 canales de una fuente unitaria sea EXACTAMENTE 1, así la
+     * energía del campo iguala la de la señal de entrada y ambos caminos
+     * pueden cruzarse a potencia constante.
+     */
+    static constexpr float kUnitPowerGain = 0.5547001962252291f;  // 1/sqrt(3.25)
+
+    /**
+     * Igual que encode() pero con la energía normalizada a la unidad (ver
+     * kUnitPowerGain). Se usa en cualquier ruta de mezcla donde la potencia
+     * del campo deba corresponderse con la de la señal de entrada; encode()
+     * se reserva para operaciones sobre la base de armónicos (p. ej. el
+     * cálculo de ganancias de decodificación en HoaBinauralDecoder).
+     */
+    static HoaVector encodeUnitPower(float azimuthRad) noexcept {
+        HoaVector v = encode(azimuthRad);
+        for (auto& c : v) c *= kUnitPowerGain;
+        return v;
+    }
+
+    /**
      * Suma ponderada de un vector HOA en el canal ACN `ch` con ganancia
      * `gain` — utilidad para mezclar varias fuentes codificadas en un mismo
      * campo HOA sin repetir el bucle de 9 elementos en cada call site.
