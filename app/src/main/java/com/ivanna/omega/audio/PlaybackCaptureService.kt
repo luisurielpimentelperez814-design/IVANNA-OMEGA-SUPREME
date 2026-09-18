@@ -687,6 +687,21 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private fun tickLatencyProbe() {
             framesWrittenToTrack += BLOCK_FRAMES
+            // MICROCUT_GUARD (2026-09-18): detectar underrun real comparando
+            // el avance del cabezal de reproducción contra los frames escritos.
+            // Si el cabezal lleva >3 bloques de retraso respecto a lo escrito,
+            // el HAL está drenando más lento de lo que alimentamos (BT con
+            // buffer grande, o CPU saturada): bajar el ritmo un bloque para
+            // dejar respirar la cola en vez de seguir empujando hasta el
+            // desbordamiento y el consiguiente clic de resync.
+            runCatching {
+                val head = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                val lagFrames = framesWrittenToTrack - head
+                if (lagFrames > 3L * BLOCK_FRAMES) {
+                    Thread.sleep(1)  // ceder 1 ms: el HAL drena, cola se estabiliza
+                }
+            }
+
             val now = System.nanoTime()
             // REFINAMIENTO (mision HAAS, escalon 3 — 2026-09-17): el chequeo
             // de deriva/resync estaba atado al mismo temporizador que el LOG
