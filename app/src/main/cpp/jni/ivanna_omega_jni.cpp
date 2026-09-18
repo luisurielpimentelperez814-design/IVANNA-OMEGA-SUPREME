@@ -2041,6 +2041,50 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
     }
 }
 
+// ── Wave Field Synthesis: puente app→daemon (mismo patrón que Upmixing) ──
+extern std::atomic<bool>  g_wfs_enabled;
+extern std::atomic<float> g_wfs_spread;
+
+static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000}; // 200 ms — solo hilo UI, nunca RT
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[128];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_WFS\",\"wfsEnabled\":%d,\"wfsSpread\":%.4f}",
+            enabled ? 1 : 0, static_cast<double>(spread));
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool en = (enabled == JNI_TRUE);
+    g_wfs_enabled.store(en, std::memory_order_relaxed);
+    omegaSendWfsToDaemon(en, g_wfs_spread.load(std::memory_order_relaxed));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
+    JNIEnv*, jobject, jfloat spread) {
+    if (std::isfinite(spread)) {
+        const float sp = std::clamp(spread, 0.0f, 2.0f);
+        g_wfs_spread.store(sp, std::memory_order_relaxed);
+        omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     JNIEnv*, jobject, jfloat v) {

@@ -119,6 +119,8 @@ class ParameterStore(context: Context) {
 
         // Intelligent Upmixing (HOA → Binaural)
         private const val KEY_HOA_UPMIXING_ENABLED = "hoa_upmixing_enabled"
+        private const val KEY_WFS_ENABLED = "wfs_enabled"
+        private const val KEY_WFS_SPREAD  = "wfs_spread"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -350,4 +352,13 @@ class ParameterStore(context: Context) {
     fun getHoaImmersivity(): Float = safeGetFloat(KEY_HOA_IMMERSIVITY, 1.0f)
     fun setHoaImmersivity(value: Float) =
         prefs.edit().putFloat(KEY_HOA_IMMERSIVITY, value.coerceIn(0f, 2f)).apply()
+
+    // ── Wave Field Synthesis ── defaults alineados con wfs_controls_bridge.cpp
+    fun isWfsEnabled(): Boolean = safeGetBoolean(KEY_WFS_ENABLED, false)
+    fun setWfsEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean(KEY_WFS_ENABLED, enabled).apply()
+
+    fun getWfsSpread(): Float = safeGetFloat(KEY_WFS_SPREAD, 1.0f)
+    fun setWfsSpread(value: Float) =
+        prefs.edit().putFloat(KEY_WFS_SPREAD, value.coerceIn(0f, 2f)).apply()
 }

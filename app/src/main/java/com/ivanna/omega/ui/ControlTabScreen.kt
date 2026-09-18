@@ -88,6 +88,8 @@ fun ControlTabScreen(
         initialSpatialEnabled = IvannaSpatialEngine.enabled,
         initialHoaUpmixingEnabled = paramStore.isHoaUpmixingEnabled(),
         initialHoaImmersivity = paramStore.getHoaImmersivity(),
+        initialWfsEnabled = paramStore.isWfsEnabled(),
+        initialWfsSpread = paramStore.getWfsSpread(),
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
         routeState           = routeState,
@@ -209,6 +211,19 @@ fun ControlTabScreen(
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(v.coerceIn(0f, 2f)) }
             runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":${v.coerceIn(0f, 2f)}}") }
+        },
+
+        // ── Wave Field Synthesis — mismo patrón que Upmixing (persist + JNI + daemon),
+        // con runCatching para no romper en builds sin el símbolo nativo ──
+        onWfsEnabledChange = { enabled ->
+            paramStore.setWfsEnabled(enabled)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetWfsEnabled(enabled) }
+        },
+        onWfsSpreadChange = { v ->
+            paramStore.setWfsSpread(v)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetWfsSpread(v.coerceIn(0f, 2f)) }
         },
 
         // ── Navegación ──────────────────────────────────────────────────

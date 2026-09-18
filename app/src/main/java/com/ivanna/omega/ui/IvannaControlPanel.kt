@@ -88,6 +88,8 @@ fun IvannaControlPanel(
     initialSpatialEnabled: Boolean = false,
     initialHoaUpmixingEnabled: Boolean = false,
     initialHoaImmersivity: Float = 1.0f,
+    initialWfsEnabled: Boolean = false,
+    initialWfsSpread: Float = 1.0f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -112,6 +114,8 @@ fun IvannaControlPanel(
     onSpatialEnabledChange: (Boolean) -> Unit = {},
     onHoaUpmixingEnabledChange: (Boolean) -> Unit = {},
     onHoaImmersivityChange: (Float) -> Unit = {},
+    onWfsEnabledChange: (Boolean) -> Unit = {},
+    onWfsSpreadChange: (Float) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
     onOpenAdaptiveEngineManual: () -> Unit = {},
@@ -246,6 +250,8 @@ fun IvannaControlPanel(
     var spatialEnabled by remember { mutableStateOf(initialSpatialEnabled) }
     var hoaUpmixingEnabled by remember { mutableStateOf(initialHoaUpmixingEnabled) }
     var hoaImmersivity by remember { mutableFloatStateOf(initialHoaImmersivity) }
+    var wfsEnabled by remember { mutableStateOf(initialWfsEnabled) }
+    var wfsSpread by remember { mutableFloatStateOf(initialWfsSpread) }
 
     
     // ── Persistencia automática al salir de la pantalla ──
@@ -698,6 +704,23 @@ fun IvannaControlPanel(
             AuroraSlider("INMERSIVIDAD HOA", hoaImmersivity, 0f..2f) {
                 hoaImmersivity = it
                 onHoaImmersivityChange(it)
+            }
+        }
+
+        GlassCard(
+            title = "WAVE FIELD SYNTHESIS",
+            accent = AuroraCyan,
+            subtitle = "Array virtual de 16 altavoces — campo de onda físico (renderer nativo testeado)",
+            rightSlot = {
+                Switch(wfsEnabled, onCheckedChange = {
+                    wfsEnabled = it
+                    onWfsEnabledChange(it)
+                })
+            }
+        ) {
+            AuroraSlider("APERTURA WFS", wfsSpread, 0f..2f) {
+                wfsSpread = it
+                onWfsSpreadChange(it)
             }
         }
 

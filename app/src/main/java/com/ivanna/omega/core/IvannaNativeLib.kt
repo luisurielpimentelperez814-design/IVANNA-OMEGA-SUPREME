@@ -287,6 +287,11 @@ object IvannaNativeLib {
     external fun nativeSetIntelligentUpmixingEnabled(enabled: Boolean)
     external fun nativeSetUpmixingImmersivity(immersivity: Float)
 
+    // ═══ Wave Field Synthesis (renderer ya implementado/testeado en
+    // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
+    external fun nativeSetWfsEnabled(enabled: Boolean)
+    external fun nativeSetWfsSpread(spread: Float)
+
     // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
         // pero nunca estaban declarados en IvannaNativeLib — falta de sincronización
