@@ -68,19 +68,7 @@ using HoaVector = std::array<float, kHoaNumChannels>;
 
 class HoaGainMatrix {
 public:
-    /**
-     * Codifica una fuente MONO puntual en el plano horizontal, a la
-     * dirección `azimuthRad` (0 = frente, sentido antihorario visto desde
-     * arriba, igual convención que HRTFConvolver::set_position en radianes
-     * en vez de grados), en los 9 canales ACN/SN3D de orden ≤2.
-     *
-     * Fórmulas (elevación=0, identidad exacta de los armónicos esféricos
-     * reales SN3D — no una aproximación):
-     *   W = 1
-     *   Y = sin(az),  Z = 0,           X = cos(az)
-     *   V = sin(2az), (l=2,m=-1) = 0,  R = -0.5,  (l=2,m=+1) = 0,  U = cos(2az)
-     */
-    static HoaVector encode(float azimuthRad) noexcept {
+static HoaVector encode(float azimuthRad) noexcept {
         const float c1 = std::cos(azimuthRad);
         const float s1 = std::sin(azimuthRad);
         // Identidades de ángulo doble — mismo resultado que cos/sin(2*az),
@@ -104,66 +92,14 @@ public:
     // Energía (suma de cuadrados) del vector encode() en cualquier azimut:
     //   W^2 + Y^2 + X^2 + V^2 + R^2 + U^2 = 1 + s1^2 + c1^2 + s2^2 + 0.25 + c2^2
     //   = 1 + 1 + 1 + 0.25 = 3.25  (constante, independiente del azimut).
-    static constexpr float kEncodeEnergy   = 3.25f;
     // Ganancia que normaliza encode() a energía unitaria exacta.
-    static constexpr float kUnitPowerGain  = 1.0f / 1.802775637731995f; // 1/sqrt(3.25)
 
-    /**
-     * Codifica una fuente MONO puntual con ENERGÍA UNITARIA exacta en el campo
-     * (independiente del azimut). Úsala cuando mezcles varias fuentes y quieras
-     * que la energía total del campo no dependa de cuántas fuentes ni de a qué
-     * ángulo están — el upmixer la usa para que la inmersividad cambie la
-     * ANCHURA sin cambiar el NIVEL.
-     */
-    static HoaVector encodeUnitPower(float azimuthRad) noexcept {
-        HoaVector v = encode(azimuthRad);
-        for (int ch = 0; ch < kHoaNumChannels; ++ch) v[static_cast<size_t>(ch)] *= kUnitPowerGain;
-        return v;
-    }
 
-    /**
-     * Energía total (suma de cuadrados de los 9 canales ACN) que produce
-     * encode() para una fuente de amplitud unitaria:
-     *   W²=1  +  (Y²+X²)=1  +  (V²+U²)=1  +  R²=0.25   = 3.25
-     * Es una constante EXACTA (no depende del azimuth: las identidades
-     * sin²+cos² y sin²2+cos²2 valen siempre 1), la base de la normalización
-     * de energía de abajo.
-     */
+
     static constexpr float kEncodeEnergy = 3.25f;
+    static constexpr float kUnitPowerGain = 0.5547001962252291f;
+    static HoaVector encodeUnitPower(float az) noexcept { HoaVector v = encode(az); for (auto& c : v) c *= kUnitPowerGain; return v; }
 
-    /**
-     * Ganancia que lleva encode() a POTENCIA UNITARIA: 1/sqrt(3.25).
-     *
-     * POR QUÉ EXISTE — el encoder crudo (`encode`) es la base de armónicos
-     * esféricos correcta, pero una fuente de amplitud 1 produce un campo de
-     * energía 3.25 (≈ +5.1 dB). Si el camino directo y el espacial del
-     * upmixer no se normalizan por igual, mover el control de immersividad
-     * cambia el volumen percibido (salto audible) en vez de sólo la anchura.
-     * encodeUnitPower() reparte esa energía de forma que la suma de cuadrados
-     * de los 9 canales de una fuente unitaria sea EXACTAMENTE 1, así la
-     * energía del campo iguala la de la señal de entrada y ambos caminos
-     * pueden cruzarse a potencia constante.
-     */
-    static constexpr float kUnitPowerGain = 0.5547001962252291f;  // 1/sqrt(3.25)
-
-    /**
-     * Igual que encode() pero con la energía normalizada a la unidad (ver
-     * kUnitPowerGain). Se usa en cualquier ruta de mezcla donde la potencia
-     * del campo deba corresponderse con la de la señal de entrada; encode()
-     * se reserva para operaciones sobre la base de armónicos (p. ej. el
-     * cálculo de ganancias de decodificación en HoaBinauralDecoder).
-     */
-    static HoaVector encodeUnitPower(float azimuthRad) noexcept {
-        HoaVector v = encode(azimuthRad);
-        for (auto& c : v) c *= kUnitPowerGain;
-        return v;
-    }
-
-    /**
-     * Suma ponderada de un vector HOA en el canal ACN `ch` con ganancia
-     * `gain` — utilidad para mezclar varias fuentes codificadas en un mismo
-     * campo HOA sin repetir el bucle de 9 elementos en cada call site.
-     */
     static void accumulate(HoaVector& field, const HoaVector& source, float gain) noexcept {
         for (int ch = 0; ch < kHoaNumChannels; ++ch) {
             field[static_cast<size_t>(ch)] += source[static_cast<size_t>(ch)] * gain;
