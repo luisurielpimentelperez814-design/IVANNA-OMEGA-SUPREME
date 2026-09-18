@@ -116,13 +116,15 @@ object RouteDspCalibrator {
                         IvannaNativeLib.nativeSetHRTFEnabled(true)
                     }.onFailure { Log.w(TAG, "HRTF on (bt): ${it.message}") }
                     runCatching {
-                        IvannaNativeLib.nativeSetSpatialWidthDirect(0.85f)
+                        IvannaNativeLib.nativeSetSpatialWidthDirect(0.78f)
                     }.onFailure { Log.w(TAG, "width bt: ${it.message}") }
                 }
                 runCatching {
-                    OmegaEngineBridge.setRoom(rt60S = 0.4f, wet = 0.20f, roomIdx = -1)
+                    OmegaEngineBridge.setRoom(rt60S = 0.28f, wet = 0.15f, roomIdx = -1)
                 }.onFailure { Log.w(TAG, "room bt: ${it.message}") }
-                Log.i(TAG, "Ruta BLUETOOTH → HRTF on, width 0.85, sala corta (0.4s/0.20)")
+                runCatching { OmegaEngineBridge.setMid(1.12f) }
+                runCatching { OmegaEngineBridge.setMaster(0.91f) }
+                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF on, width 0.78 (joint-stereo safe), sala corta 0.28s/0.15, presencia +mid, headroom -0.8 dB")
             }
 
             OutputRoute.UNKNOWN -> Unit

@@ -77,6 +77,8 @@ fun MagiskStatusPanel(
     var lastCommandOutput by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var actionInFlight by remember { mutableStateOf(false) }
+    var connFailStreak by remember { mutableStateOf(0) }
+    var daemonProtoVerified by remember { mutableStateOf(false) }
 
     // ── Polling + auto-reconexión ────────────────────────────────────────
     LaunchedEffect(Unit) {
@@ -91,11 +93,16 @@ fun MagiskStatusPanel(
 
             // FIX: si el daemon está corriendo pero el bridge no está conectado,
             // intentar reconexión desde IO (probe real, no fake).
-            val connected = withContext(Dispatchers.IO) {
+            val rawConnected = withContext(Dispatchers.IO) {
                 if (!omegaBridge.isConnected && (running || active)) {
                     omegaBridge.connect()
                 }
                 omegaBridge.isConnected
+            }
+            if (rawConnected) connFailStreak = 0 else connFailStreak++
+            val connected = rawConnected || (daemonConnected && connFailStreak < 2)
+            if (!daemonProtoVerified && connected && isOlderVersion(version, com.ivanna.omega.BuildConfig.VERSION_NAME)) {
+                daemonProtoVerified = withContext(Dispatchers.IO) { omegaBridge.handshake() }
             }
 
             moduleActive    = active
