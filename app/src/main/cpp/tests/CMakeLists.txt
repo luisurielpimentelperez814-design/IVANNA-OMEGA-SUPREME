@@ -496,3 +496,18 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_hoa_binaural_decoder PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_hoa_binaural_decoder)
+
+
+# ── Wave Field Synthesis (2026-09-18) ──
+add_executable(test_wfs_renderer
+  test_wfs_renderer.cpp
+  ../spatial/WfsRenderer.cpp
+)
+target_include_directories(test_wfs_renderer PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_wfs_renderer PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_wfs_renderer PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_wfs_renderer PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_wfs_renderer COMMAND test_wfs_renderer)
+set_tests_properties(test_wfs_renderer PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")

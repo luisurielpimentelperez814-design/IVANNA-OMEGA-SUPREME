@@ -683,6 +683,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var framesWrittenToTrack = 0L
         private var lastLatencyLogNs     = 0L
         private var lastDriftCheckNs     = 0L
+        private var lastRouteCheckNs     = 0L
+        private var btRouteActive        = false
         private val audioTs              = android.media.AudioTimestamp()
 
         private fun tickLatencyProbe() {
@@ -694,11 +696,32 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // buffer grande, o CPU saturada): bajar el ritmo un bloque para
             // dejar respirar la cola en vez de seguir empujando hasta el
             // desbordamiento y el consiguiente clic de resync.
-            runCatching {
-                val head = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+            // BLUETOOTH MASTER PATH (2026-09-18): detección de ruta de salida
+            // cacheada cada 500 ms (getDevices por bloque sería demasiado
+            // caro en el hot path). Los sinks A2DP/BLE drenan con buffers HAL
+            // estructuralmente más grandes que altavoz/USB: un umbral fijo de
+            // 3 bloques interpretaba ese lag estructural como underrun y
+            // disparaba pacing continuamente. En BT el guard tolera 6 bloques
+            // y cede 2 ms; en rutas locales mantiene 3 bloques / 1 ms.
+            val nowRoute = System.nanoTime()
+            if (nowRoute - lastRouteCheckNs >= 500_000_000L) {
+                lastRouteCheckNs = nowRoute
+                btRouteActive = runCatching {
+                    val am = getSystemService(android.media.AudioManager::class.java)
+                    am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.any {
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+                    } == true
+                }.getOrDefault(false)
+            }
+            val t = activeTrack  // ref local fija (el campo puede mutar; FIX build: 'track' no resolvia)
+            if (t != null) runCatching {
+                val head = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
                 val lagFrames = framesWrittenToTrack - head
-                if (lagFrames > 3L * BLOCK_FRAMES) {
-                    Thread.sleep(1)  // ceder 1 ms: el HAL drena, cola se estabiliza
+                val lagLimit = if (btRouteActive) 6L * BLOCK_FRAMES else 3L * BLOCK_FRAMES
+                if (lagFrames > lagLimit) {
+                    Thread.sleep(if (btRouteActive) 2 else 1)
                 }
             }
 

@@ -276,6 +276,7 @@ add_library(omega_effect SHARED
     IvannaVoiceProsodyEngine.cpp
     IvannaSuperAgentMemory.cpp
     spatial/IntelligentUpmixer.cpp
+    spatial/WfsRenderer.cpp
     spatial/HoaBinauralDecoder.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_dsp.cpp

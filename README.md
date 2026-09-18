@@ -350,3 +350,20 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
   Documentado en `AGENT_CLAIMS.md` para una sesión dedicada.
 - **Tests host**: 101/101 en verde (incluye el nuevo test de regresión del
   crossfade), CI end-to-end (host + NDK + APK + release) confirmado en verde.
+
+## WFS + Bluetooth Master Path (2026-09-18)
+
+- **Wave Field Synthesis (nuevo)**: `spatial/WfsRenderer.{hpp,cpp}` — síntesis de
+  campo de ondas sobre array circular de 16 altavoces virtuales (hasta 32),
+  renderizado binaural con ITD/ILD por altavoz. Driving function WFS 2.5D:
+  atenuación 1/√d (onda cilíndrica) × focalización coseno, delays fraccionarios
+  con interpolación lineal, colas circulares sin allocs en el hot path.
+  Cableado al build del APK y verificado con `test_wfs_renderer` (simetría
+  frontal, ILD/ITD lateral, atenuación por distancia, estabilidad
+  multi-objeto 64 bloques) en los 3 carriles (normal, ASan+UBSan, TSan).
+- **Bluetooth Master Path**: guard de cola de AudioTrack consciente de la ruta
+  (A2DP/SCO/BLE, cacheado 500 ms): umbral 6 bloques / 2 ms en BT vs 3 / 1 ms
+  en rutas locales. Fin del pacing espurio y clics de resync en auriculares BT.
+- **Fix build APK**: `PlaybackCaptureService.kt` — referencia `track` sin
+  resolver en tickLatencyProbe (ref local de `activeTrack`).
+- **Tests host**: 77/77 en normal, ASan+UBSan y TSan.
