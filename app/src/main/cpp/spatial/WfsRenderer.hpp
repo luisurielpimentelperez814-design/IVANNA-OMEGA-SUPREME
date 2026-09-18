@@ -102,7 +102,8 @@ private:
         // Envolvente de salida (fade-out glitch-free al eliminar). 0..1.
         float actEnv = 1.f;
         float actTarget = 1.f;
-        float envStep = 0.f;            // paso lineal por muestra del bloque
+        float envFrom = 1.f;            // envolvente al inicio del bloque
+        float envDelta = 0.f;           // target - from (transicion de 1 bloque)
         std::vector<float> line;        // historial circular de la fuente
         int   writePos = 0;
     };
@@ -136,6 +137,17 @@ private:
     // Historia ITD por altavoz (64 muestras — ITD máximo ~30 @48k).
     std::array<std::array<float, 64>, kMaxSpeakers> itdHist_{};
     std::array<int, kMaxSpeakers>                   itdPos_{};
+
+    // Limitador suave de seguridad (anti-clip => anti-tronidos): por debajo
+    // de |1.0| es EXACTAMENTE lineal (cero coloracion); por encima comprime
+    // de forma continua hacia un techo asintotico de 2.0. La suma coherente
+    // de N altavoces frontales (focus=cos, ILD x1.41, gain<=2) podia superar
+    // +-2.8 -> clip duro en el destino = tronido. Esto lo vuelve imposible.
+    static inline float softLimit(float x) noexcept {
+        if (x >  1.0f) return  1.0f + (x - 1.0f) / (1.0f + (x - 1.0f));
+        if (x < -1.0f) return -1.0f + (x + 1.0f) / (1.0f - (x + 1.0f));
+        return x;
+    }
 
     void rebuildGeometry() noexcept;            // altavoces: azimut, ILD, ITD
     void computeTapTargets(int slot) noexcept;  // delays/ganancias objetivo

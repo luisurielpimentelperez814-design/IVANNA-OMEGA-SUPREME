@@ -2,6 +2,27 @@
 // arquitectura glitch-free (eliminación de micro-cortes).
 #include "WfsRenderer.hpp"
 
+#if defined(__x86_64__) || defined(__i386__)
+  #include <immintrin.h>
+#endif
+
+namespace {
+// Guarda anti-denormales FTZ/DAZ (mismo patron que hrtf_convolver.cpp):
+// las lineas de delay y los one-poles de suavizado arrastran residuos
+// subnormales (~1e-38) donde la CPU degrada 10-100x por microcode assist
+// -> picos de carga en el hilo de audio -> underruns = micro-cortes.
+inline void enableWfsDenormalGuard() noexcept {
+#if defined(__x86_64__) || defined(__i386__)
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__aarch64__)
+    uint64_t fpcr; __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= (1ULL << 24);
+    __asm__ volatile("msr fpcr, %0" :: "r"(fpcr));
+#endif
+}
+} // namespace
+
 namespace ivanna::spatial {
 
 bool WfsRenderer::init(float sampleRate, int blockSize, int numSpeakers) noexcept {
@@ -111,7 +132,7 @@ void WfsRenderer::setObject(int id, float x, float y, float gain) noexcept {
     SourceSlot& slot = slots_[static_cast<size_t>(si)];
     slot.id = id; slot.active = true;
     slot.x = x; slot.y = y; slot.gain = gain;
-    slot.actEnv = 1.f; slot.actTarget = 1.f; slot.envStep = 0.f;
+    slot.actEnv = 1.f; slot.actTarget = 1.f; slot.envFrom = 1.f; slot.envDelta = 0.f;
     slot.writePos = 0;
     ++numActiveObjects_;
     computeTapTargets(si);
@@ -170,6 +191,7 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
     if (frames <= 0 || outL == nullptr || outR == nullptr) return;
     if (numActiveObjects_ == 0) return;
     if (objectInputs == nullptr || numObjects <= 0) return;
+    enableWfsDenormalGuard();   // FTZ/DAZ: sin microcode assists en el hilo RT
 
     const int M = maxDelayTap_;
     const float invFrames = 1.0f / static_cast<float>(frames);
@@ -181,7 +203,8 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
     for (int si = 0; si < kMaxObjects; ++si) {
         SourceSlot& slot = slots_[static_cast<size_t>(si)];
         if (!slot.active) continue;
-        slot.envStep = (slot.actTarget - slot.actEnv) * invFrames;
+        slot.envFrom  = slot.actEnv;
+        slot.envDelta = slot.actTarget - slot.actEnv;   // tramo del bloque
         // Mapeo input i → i-ésima fuente viva en orden de ranura: idéntico
         // al orden de registro de la versión anterior. Las fuentes en
         // fade-out NO consumen entrada (su señal ya no llega del caller).
@@ -218,10 +241,15 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
     const float norm = 1.0f / std::sqrt(static_cast<float>(numSpeakers_));
     for (int n = 0; n < frames; ++n) {
         // Avance de envolventes por muestra (rampa lineal exacta en 1 bloque).
+        // Envolvente con forma smoothstep t^2*(3-2t): derivada CERO al
+        // inicio y al fin del fade -> el retiro/nacimiento de una fuente no
+        // produce el click de esquina de la rampa lineal. f(1)=1 exacto.
+        const float tt = static_cast<float>(n + 1) * invFrames;
+        const float fshape = tt * tt * (3.0f - 2.0f * tt);
         for (int si = 0; si < kMaxObjects; ++si) {
             SourceSlot& slot = slots_[static_cast<size_t>(si)];
-            if (!slot.active || slot.envStep == 0.f) continue;
-            slot.actEnv += slot.envStep;
+            if (!slot.active || slot.envDelta == 0.f) continue;
+            slot.actEnv = slot.envFrom + slot.envDelta * fshape;
             if (slot.actEnv < 0.f) slot.actEnv = 0.f;
             if (slot.actEnv > 1.f) slot.actEnv = 1.f;
         }
@@ -250,6 +278,12 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
                 // Suavizado por muestra: persecución glitch-free del objetivo.
                 tap.delaySmooth += (tap.delayTarget - tap.delaySmooth) * kSmoothCoeff;
                 tap.gainSmooth  += (tap.gainTarget  - tap.gainSmooth)  * kSmoothCoeff;
+                // Snap: error sub-audible -> clavar al objetivo. Elimina la
+                // persecucion asintotica en regimen denormal y la deriva.
+                if (std::fabs(tap.delayTarget - tap.delaySmooth) < 5e-3f)
+                    tap.delaySmooth = tap.delayTarget;
+                if (std::fabs(tap.gainTarget - tap.gainSmooth) < 1e-4f)
+                    tap.gainSmooth = tap.gainTarget;
             }
             // ITD entero por altavoz + ILD constant-power.
             auto& hist = itdHist_[static_cast<size_t>(s)];
@@ -261,8 +295,9 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             accR += vR * speakerGainR_[s];
             hp = (hp + 1) & 63;
         }
-        outL[n] += accL * norm;
-        outR[n] += accR * norm;
+        // Anti-clip (=> anti-tronidos): lineal bajo |1.0|, compresion suave arriba.
+        outL[n] += softLimit(accL * norm);
+        outR[n] += softLimit(accR * norm);
     }
 
     // ── 4) Retiro diferido: las fuentes cuyo fade-out terminó se liberan

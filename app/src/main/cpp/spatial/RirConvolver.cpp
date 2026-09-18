@@ -5,6 +5,24 @@
 #include <cmath>
 #include <algorithm>
 
+#if defined(__x86_64__) || defined(__i386__)
+  #include <immintrin.h>
+#endif
+namespace {
+// FTZ/DAZ anti-denormales: la convolucion RIR arrastra colas que decaen a
+// subnormales y disparan microcode assists -> picos de CPU -> micro-cortes.
+inline void enableRirDenormalGuard() noexcept {
+#if defined(__x86_64__) || defined(__i386__)
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__aarch64__)
+    uint64_t fpcr; __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= (1ULL << 24);
+    __asm__ volatile("msr fpcr, %0" :: "r"(fpcr));
+#endif
+}
+} // namespace
+
 namespace Ivanna {
 
 // ── FFT Radix-2 DIT in-place ─────────────────────────────────────────────────
@@ -140,6 +158,7 @@ void RirConvolver::unload() noexcept {
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {
+    enableRirDenormalGuard();   // FTZ/DAZ en el hilo de audio
     const float wetTarget = wetDry_.load(std::memory_order_relaxed);
 
     // Anti-zipper: coeficiente one-pole una sola vez (~10 ms a 48 kHz OS).
