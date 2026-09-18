@@ -203,4 +203,43 @@ int main() {
     if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
     std::printf("%d TEST(S) FALLARON.\n", g_failures);
     return 1;
+
+    // ── Caso NUEVO (2026-09-18): retiro de fuente sin tronidos ──
+    {
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        wfs.setObject(0, 0.0f, 2.0f, 1.0f);
+        std::vector<float> tone(kFrames);
+        for (int i = 0; i < kFrames; ++i) tone[i] = 0.5f * std::sin(2.f * 3.14159265f * 440.f * i / kSr);
+        const float* tonePtr[1] = { tone.data() };
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        wfs.process(tonePtr, 1, L.data(), R.data(), kFrames);
+        wfs.removeObject(0);
+        std::vector<float> L2(kFrames, 0.f), R2(kFrames, 0.f);
+        wfs.process(silPtr, 1, L2.data(), R2.data(), kFrames);
+        float maxJump = 0.f;
+        for (int i = 1; i < kFrames; ++i) {
+            maxJump = std::max(maxJump, std::fabs(L2[i] - L2[i-1]));
+            maxJump = std::max(maxJump, std::fabs(R2[i] - R2[i-1]));
+        }
+        EXPECT(allFinite(L2) && allFinite(R2), "retiro: sin NaN/Inf durante el fade");
+        EXPECT(maxJump < 0.2f, "retiro: SIN tronido (salto muestra-a-muestra acotado)");
+    }
+
+    // ── Caso NUEVO (2026-09-18): suma coherente sin clip (anti-tronidos) ──
+    {
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        std::vector<float> hot(kFrames, 0.9f);
+        const float* hotPtr[4] = { hot.data(), hot.data(), hot.data(), hot.data() };
+        for (int o = 0; o < 4; ++o) wfs.setObject(o, 0.0f, 1.5f, 2.0f);
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        for (int b = 0; b < 4; ++b)
+            wfs.process(hotPtr, 4, L.data(), R.data(), kFrames);
+        EXPECT(allFinite(L) && allFinite(R), "coherente: sin NaN/Inf con 4 fuentes a gain 2");
+        float peak = 0.f;
+        for (float v : L) peak = std::max(peak, std::fabs(v));
+        for (float v : R) peak = std::max(peak, std::fabs(v));
+        EXPECT(peak < 2.0f, "coherente: techo del soft-limit (sin clip duro => sin tronido)");
+        EXPECT(peak > 0.1f, "coherente: hay senal (el soft-limit no anula el campo)");
+    }
+
 }
