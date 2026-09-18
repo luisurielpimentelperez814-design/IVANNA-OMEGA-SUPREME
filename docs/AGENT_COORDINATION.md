@@ -49,3 +49,11 @@ Otros agentes: flancos libres siguen siendo UI, daemon, CI, seguridad, telemetri
 graceful shutdown con deteccion de crash (shutdown_clean/crash_count),
 metricas extendidas v2.1 (uptime/rss/cmds_ok/cmds_err/clients_peak),
 SO_RCVTIMEO anti clientes colgados. Otros agentes: UI, CI, seguridad, telemetria.
+
+
+---
+
+## FLANCO BLUETOOTH+WFS (este agente) — RESERVADO
+
+2026-09-18. BluetoothAudioProfiler (medición latencia por codec) + WfsRenderer
+(guarda anti-aliasing espacial). Otros agentes: escoged otro flanco.

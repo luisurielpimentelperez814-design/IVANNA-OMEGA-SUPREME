@@ -283,3 +283,29 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
 }
 
 } // namespace ivanna::spatial
+
+
+// ═══ Mejora magistral 2026-09-18: guarda de anti-aliasing espacial ═══════════
+// WFS con array discreto de N altavoces sufre aliasing espacial por encima de
+// f_alias = c / (2 * dx), dx = separación entre altavoces. Por encima, el frente
+// de onda se reconstruye con artefactos (fantasmas). Solución de referencia
+// (Spors & Ahrens): atenuación suave por encima de f_alias con un one-pole
+// por canal, calculada desde la geometría real del array. No degrada el audio
+// por debajo de f_alias — solo evita que la reconstrucción mienta arriba.
+namespace ivanna { namespace wfs {
+    inline float spatialAliasCutoffHz(float speakerSpacingM, float c = 343.0f) noexcept {
+        return (speakerSpacingM > 0.f) ? c / (2.f * speakerSpacingM) : 8000.f;
+    }
+    // One-pole lowpass por canal: y += a(x - y), a = 1 - exp(-2π f_c / sr)
+    struct SpatialAliasGuard {
+        float a = 1.f, yL = 0.f, yR = 0.f;
+        void init(float spacingM, float sampleRate) noexcept {
+            const float fc = spatialAliasCutoffHz(spacingM);
+            a = 1.f - std::exp(-2.f * 3.14159265f * fc / sampleRate);
+        }
+        inline void process(float& L, float& R) noexcept {
+            yL += a * (L - yL); yR += a * (R - yR); L = yL; R = yR;
+        }
+        void reset() noexcept { yL = yR = 0.f; }
+    };
+}} // namespace ivanna::wfs

@@ -387,6 +387,15 @@ target_include_directories(test_daemon_shm_health PRIVATE
 target_link_libraries(test_daemon_shm_health PRIVATE gtest gtest_main)
 add_test(NAME daemon_shm_health COMMAND test_daemon_shm_health)
 
+add_executable(test_bt_wfs_mastery
+    tests/regression/test_bt_wfs_mastery.cpp
+)
+target_include_directories(test_bt_wfs_mastery PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_bt_wfs_mastery PRIVATE gtest gtest_main)
+add_test(NAME bt_wfs_mastery COMMAND test_bt_wfs_mastery)
+
 add_executable(test_oem_stability_suite
     tests/regression/test_oem_stability_suite.cpp
 )
