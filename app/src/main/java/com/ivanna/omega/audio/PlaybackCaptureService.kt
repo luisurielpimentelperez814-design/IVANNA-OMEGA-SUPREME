@@ -373,6 +373,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var mixGain = 0f                       // nivel actual del stream procesado
         private var mixGainTarget = HAAS_SAFE_GAIN     // objetivo mientras la captura está activa
 
+        // MISION HAAS — atacar latencia, no ganancia (2026-09-18):
+        // histeresis del resync anti-deriva. Sin ella, mientras la deriva
+        // persiste, el pause/flush/play podia dispararse en cada chequeo de
+        // 250 ms: cada flush vacia el AudioTrack = HUECO de salida audible
+        // (los "micro cortes" reportados). Minimo 750 ms entre resyncs da
+        // tiempo a que la cola se rellene tras el flush y el proximo chequeo
+        // mida el estado REAL, no la cola vacia recien flusheada.
+        private var lastResyncNs = 0L
+        private var resyncCount = 0
+
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialOutL = FloatArray(BLOCK_FRAMES)
@@ -485,6 +495,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
             audioRecord?.startRecording()
             audioTrack?.play()
+            // MISION HAAS (2026-09-18): punto de medicion "antes" — latencia
+            // estatica de buffers configurada al arrancar el motor, en ms
+            // reales (PCM_FLOAT estereo = 8 B por frame; SAMPLE_RATE Hz).
+            // Es el dato base contra el que se compara cualquier tuning
+            // posterior de BLOCK_FRAMES o buffers, en dispositivo, via logcat.
+            Log.i(TAG, "HaasLatency init: recBuf=%.1f ms, trackBuf=%.1f ms, bloque=%.2f ms".format(
+                minRec / 8f / (SAMPLE_RATE / 1000f),
+                minTrack / 8f / (SAMPLE_RATE / 1000f),
+                BLOCK_FRAMES * 1000f / SAMPLE_RATE))
             audioSessionId = audioTrack?.audioSessionId ?: 0
             (context.applicationContext as? IVANNAApplication)?.let { app ->
                 if (audioSessionId > 0)
@@ -695,12 +714,21 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         lastLatencyLogNs = now
                         Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
                     }
-                    // Anti-deriva: si la copia procesada acumula mas de 2 bloques
-                    // de cola se separa en el tiempo del original de Tidal y el
-                    // eco reaparece aunque la ganancia sea 0.40. Techo duro:
-                    // pause/flush/play resincroniza sin tocar la mezcla.
-                    if (queued > 2L * BLOCK_FRAMES) {
-                        Log.w(TAG, "HaasLatency: deriva %.1f ms > 2 bloques — resync temporal".format(queueMs))
+                    // Anti-deriva con histeresis: si la copia procesada acumula
+                    // mas de 2 bloques de cola se separa en el tiempo del
+                    // original de Tidal y el eco reaparece aunque la ganancia
+                    // sea 0.40. Techo duro: pause/flush/play resincroniza sin
+                    // tocar la mezcla — pero COMO MAXIMO una vez cada 750 ms
+                    // (ver declaracion de lastResyncNs): encadenar flushes era
+                    // la fuente de los micro cortes audibles, y tras un flush
+                    // la cola medida es ~0 por construccion, asi que un resync
+                    // inmediato mediria un fantasma. El contador queda en log
+                    // para la medicion antes/despues que pide la mision.
+                    if (queued > 2L * BLOCK_FRAMES &&
+                        now - lastResyncNs >= 750_000_000L) {
+                        lastResyncNs = now
+                        resyncCount++
+                        Log.w(TAG, "HaasLatency: deriva %.1f ms > 2 bloques — resync #%d (pause/flush/play)".format(queueMs, resyncCount))
                         track.pause(); track.flush(); track.play()
                         framesWrittenToTrack = 0L
                     }
