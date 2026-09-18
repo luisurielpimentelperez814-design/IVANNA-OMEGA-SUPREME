@@ -397,6 +397,35 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         }
 
         fun start() {
+            // GUARDA REAL (2026-09-17): antes de duplicar el stream con
+            // captura+reproceso propio, comprobar si el efecto de sistema
+            // "omega_effect" (libomega_effect.so, instalado vía
+            // magisk_module/system/etc/audio_effects_ivanna_omega.xml como
+            // postprocess del stream "music") ya está registrado en el
+            // dispositivo. Si AudioFlinger ya lo aplica en sitio sobre TODO
+            // el stream music (Tidal incluido), esta captura estaría
+            // reprocesando una señal que YA fue procesada y reproduciéndola
+            // encima del original — eco digital garantizado, e
+            // independiente de bocina/audífonos (coincide exactamente con
+            // el síntoma reportado). Comprobación con API pública, sin
+            // permisos nuevos: AudioEffect.queryEffects() lista TODOS los
+            // efectos que el sistema tiene registrados desde
+            // /system|vendor/etc/audio_effects*.xml, incluido el nuestro si
+            // el módulo Magisk lo instaló correctamente en este dispositivo.
+            val omegaSystemEffectActive = runCatching {
+                android.media.audiofx.AudioEffect.queryEffects()?.any { d ->
+                    d.uuid == OMEGA_SYSTEM_EFFECT_UUID
+                } ?: false
+            }.getOrDefault(false)
+            if (omegaSystemEffectActive) {
+                Log.w(TAG, "omega_effect YA está activo como postprocess de sistema " +
+                        "sobre el stream music — se aborta la captura+reproceso propia " +
+                        "para no duplicar el procesamiento (causa real del eco digital " +
+                        "reportado, independiente de bocina/audífonos).")
+                onError("El procesamiento de sistema ya está activo para este audio; " +
+                        "no se necesita (ni se debe) capturar por software.")
+                return
+            }
             if (!setupHardware()) {
                 cleanupHardwareOnly()
                 onError("Hardware de audio no inicializado")
@@ -821,6 +850,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // rango seguro 0.75..0.90 (-8.5..-6.9 dB). <0.75 la copia procesada pierde
         // cuerpo/espacialidad; >0.90 el eco residual reaparece en transitorios.
             private const val HAAS_SAFE_GAIN = 0.5f * HAAS_ECHO_REDUCTION  // = 0.40 (-8.0 dB)
+
+            // Mismo UUID exacto que IvannaGlobalEffectManager.kt usa para
+            // instanciar el efecto nativo omega_effect en las sesiones
+            // propias de la app (effect_uuid_t compilado en omega_effect.cpp:
+            // timeLow=0x4956414e "IVAN", timeMid=0x4e41 "NA", timeHi=0x4f4d
+            // "OM", clockSeq=0x4547 "EG", node=0x415355505245 "ASUPRE").
+            // No se define un UUID nuevo — se reutiliza el real para poder
+            // detectarlo con AudioEffect.queryEffects().
+            private val OMEGA_SYSTEM_EFFECT_UUID: java.util.UUID =
+                java.util.UUID.fromString("4956414e-4e41-4f4d-4547-415355505245")
         }
     }
 }
