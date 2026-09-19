@@ -511,3 +511,18 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_wfs_renderer COMMAND test_wfs_renderer)
 set_tests_properties(test_wfs_renderer PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+
+# ── WFS activación glitch-free (2026-09-19) ──
+add_executable(test_wfs_activation_crossfade
+  test_wfs_activation_crossfade.cpp
+  ../spatial/WfsRenderer.cpp
+)
+target_include_directories(test_wfs_activation_crossfade PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_wfs_activation_crossfade PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_wfs_activation_crossfade PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_wfs_activation_crossfade PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_wfs_activation_crossfade COMMAND test_wfs_activation_crossfade)
+set_tests_properties(test_wfs_activation_crossfade PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")

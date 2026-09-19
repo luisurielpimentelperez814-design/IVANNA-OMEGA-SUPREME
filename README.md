@@ -367,3 +367,25 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 - **Fix build APK**: `PlaybackCaptureService.kt` — referencia `track` sin
   resolver en tickLatencyProbe (ref local de `activeTrack`).
 - **Tests host**: 77/77 en normal, ASan+UBSan y TSan.
+
+## WFS conectado a la ruta de audio real (2026-09-19)
+
+- **Punto exacto de conexión**: `IvannaFusionEngine::process()`
+  (IvannaFusionCore.cpp), DESPUÉS de la etapa de espacialización
+  (rama HOA-upmixer o HRTF binaural) y ANTES del slew-limiter GoldenEar.
+  Flujo de señal final:
+  `omega_effect.cpp (callback AudioFlinger) → IvannaFusionEngine::process()
+  → [psycho/EQ/HRTF|HOA] → WfsRenderer (fuentes L/R a ±0.75m·spread, 1.5m)
+  → crossfade smoothstep → limitador → salida`.
+- **Mecanismo anti-tronidos**: crossfade smoothstep (3t²−2t³, continuidad C1)
+  de 20 ms en AMBAS direcciones; estado atómico `g_wfs_enabled` leído por
+  bloque (jamás switch duro en callback); en bypass (fade=0) el coste es un
+  branch + un load atómico; buffers miembro pre-asignados (cero allocs en el
+  hot path; re-init solo si cambia el tamaño de bloque del HAL).
+- **Control**: UI → JNI (nativeSetWfsEnabled/Spread) → daemon (SET_WFS) →
+  OmegaControlBus SHM → mismo proceso que el resto de parámetros.
+- **Tests**: `test_wfs_activation_crossfade` — bypass bit-exacto, activación
+  y desactivación sin salto muestra-a-muestra, sin NaN, sin clipping, 10
+  ciclos on/off íntegros, tamaños de bloque 64..960 (HAL heterogéneos).
+  Auditado `test_wfs_renderer`: eliminado código muerto tras break
+  (los 64 bloques ahora ejecutan de verdad).

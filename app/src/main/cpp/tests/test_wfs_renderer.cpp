@@ -117,7 +117,6 @@ int main() {
             wfs.process(ins, 3, L.data(), R.data(), kFrames);
             EXPECT(allFinite(L) && allFinite(R), "multi-objeto: sin NaN/Inf (estable)");
             EXPECT(rmsOf(L) < 4.0 && rmsOf(R) < 4.0, "multi-objeto: sin blow-up de ganancia");
-            if (g_failures > 0) break;
         }
     }
 

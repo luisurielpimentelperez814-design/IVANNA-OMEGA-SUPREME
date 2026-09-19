@@ -6,6 +6,7 @@
 #include "IvannaFusionCore.hpp"
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
+#include "spatial/WfsRenderer.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX (CI rojo — "namespace 'Ivanna' does not enclose namespace
@@ -139,6 +140,21 @@ private:
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;
+
+    // ── Wave Field Synthesis (2026-09-19) — ruta real de audio ──
+    // El renderer sintetiza el campo de ondas de la señal estéreo como
+    // dos fuentes primarias (L y R) sobre el array circular virtual y lo
+    // mezcla binauralmente. La activación/desactivación es GLITCH-FREE:
+    // crossfade smoothstep de 20 ms entre la rama seca (post-HOA/HRTF) y
+    // la rama WFS, con estado atómico externo (g_wfs_enabled) — jamás un
+    // switch duro en el callback. Cero allocs en el hot path: los buffers
+    // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
+    ivanna::spatial::WfsRenderer m_wfs;
+    bool  m_wfsInit      = false;
+    float m_wfsFade      = 0.0f;    // 0 = bypass, 1 = WFS pleno
+    std::vector<float> m_wfsInL, m_wfsInR;      // entradas mono por fuente
+    std::vector<float> m_wfsOutL, m_wfsOutR;    // salida WFS del bloque
+    float m_sampleRateF  = 48000.0f;
     // Buffer del campo HOA intermedio, reusado bloque a bloque (Upmixer lo
     // redimensiona solo si BLOCK_SIZE cambia — nunca malloc en el camino
     // caliente en régimen estable).

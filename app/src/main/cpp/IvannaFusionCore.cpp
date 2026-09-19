@@ -22,6 +22,8 @@ std::atomic<float> g_upmixing_immersivity{1.0f};
 // desde Kotlin vía JNI cuando el routing cambia al DAC USB-C.
 extern std::atomic<float> g_hrtf_wet_dry;
 extern std::atomic<bool>  g_hrtf_flush_req;
+extern std::atomic<bool>  g_wfs_enabled;
+extern std::atomic<float> g_wfs_spread;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -91,6 +93,12 @@ IvannaFusionEngine::IvannaFusionEngine() {
     
     m_upmixer.prepare(48000.0f);
     m_hoaDecoder.prepare(48000.0f, 8); // 8 virtual speakers
+    m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
+    m_wfsInit = true;
+    m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
+    m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
+    m_wfsOutL.assign(Ivanna::BLOCK_SIZE, 0.0f);
+    m_wfsOutR.assign(Ivanna::BLOCK_SIZE, 0.0f);
 
 }
 
@@ -199,6 +207,51 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         // orden de magnitud que cualquier cambio de banco/crossfade normal.
     } else {
         m_hrtf->processBinauralScene(buffer);
+    }
+
+    // ── Wave Field Synthesis (2026-09-19) — capa final de espacialización ──
+    // Actúa SOBRE la salida ya espacializada (rama HOA o HRTF): las dos
+    // fuentes primarias L/R se posicionan a ±0.75 m y su campo se resintetiza
+    // sobre el array WFS (ancho escalado por g_wfs_spread). La mezcla con la
+    // señal seca es un CROSSFADE SMOOTHSTEP de 20 ms en AMBAS direcciones —
+    // nunca un switch duro: activar o desactivar WFS no produce clic, salto
+    // de fase ni de amplitud. Cuando m_wfsFade==0 (bypass) el coste es un
+    // branch + un load atómico por bloque: el renderer no se ejecuta.
+    {
+        const bool wantWfs = g_wfs_enabled.load(std::memory_order_relaxed);
+        // Paso del fade por bloque: 20 ms @ sampleRate real.
+        const float fadeStep = (m_sampleRateF > 0.f)
+            ? static_cast<float>(Ivanna::BLOCK_SIZE) / (0.020f * m_sampleRateF)
+            : 1.0f;
+        if (wantWfs && m_wfsFade < 1.0f)
+            m_wfsFade = m_wfsFade + fadeStep > 1.0f ? 1.0f : m_wfsFade + fadeStep;
+        else if (!wantWfs && m_wfsFade > 0.0f)
+            m_wfsFade = m_wfsFade - fadeStep < 0.0f ? 0.0f : m_wfsFade - fadeStep;
+
+        if (m_wfsFade > 0.0f && m_wfsInit) {
+            const int n = Ivanna::BLOCK_SIZE;
+            if ((int)m_wfsInL.size() != n) {  // solo si BLOCK_SIZE cambia
+                m_wfsInL.assign(n, 0.f);  m_wfsInR.assign(n, 0.f);
+                m_wfsOutL.assign(n, 0.f); m_wfsOutR.assign(n, 0.f);
+                m_wfs.init(m_sampleRateF, n, 16);
+            }
+            for (int i = 0; i < n; ++i) { m_wfsInL[i] = buffer->left[i]; m_wfsInR[i] = buffer->right[i]; }
+            for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
+            const float spread = g_wfs_spread.load(std::memory_order_relaxed);
+            m_wfs.setObject(0, -0.75f * spread, 1.5f, 1.0f);  // fuente L
+            m_wfs.setObject(1,  0.75f * spread, 1.5f, 1.0f);  // fuente R
+            const float* wfsIn[2] = { m_wfsInL.data(), m_wfsInR.data() };
+            m_wfs.process(wfsIn, 2, m_wfsOutL.data(), m_wfsOutR.data(), n);
+            // smoothstep del factor de fade (3t²−2t³): derivada cero en los
+            // extremos → continuidad C1, cero escalón perceptible.
+            const float t  = m_wfsFade;
+            const float sm = t * t * (3.0f - 2.0f * t);
+            const float dry = 1.0f - sm;
+            for (int i = 0; i < n; ++i) {
+                buffer->left[i]  = dry * buffer->left[i]  + sm * m_wfsOutL[i];
+                buffer->right[i] = dry * buffer->right[i] + sm * m_wfsOutR[i];
+            }
+        }
     }
 
     // Slew-limiter de la ganancia armónica, UNA vez por bloque (el paso por
