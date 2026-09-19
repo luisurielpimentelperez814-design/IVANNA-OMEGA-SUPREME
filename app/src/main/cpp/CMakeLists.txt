@@ -273,6 +273,16 @@ add_library(omega_effect SHARED
     # NO añadir a ivanna_omega: generaría ODR violation con audio_orchestrator.cpp.
     hrtf_globals_effect.cpp
 
+    # FIX(build): g_wfs_enabled / g_wfs_spread — IvannaFusionCore.cpp (unity-
+    # include en omega_effect.cpp) los referencia con extern, pero su
+    # definicion real (wfs_controls_bridge.cpp) entra solo al target
+    # ivanna_omega (proceso app). libomega_effect.so corre en audioserver
+    # (address-space separado): sin este stub el linker con --no-undefined
+    # moria con 'undefined symbol: g_wfs_enabled / g_wfs_spread' (CI job
+    # 105835483985). Mismo patron que hrtf_globals_effect.cpp. NO anadir a
+    # ivanna_omega: ODR violation con wfs_controls_bridge.cpp.
+    wfs_globals_effect.cpp
+
     HrtfManager.cpp
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
