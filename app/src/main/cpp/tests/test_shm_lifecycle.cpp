@@ -32,7 +32,11 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <cstdlib>    // std::getenv — candidato $TMPDIR
 #include <unistd.h>
+#include <sys/stat.h> // ::stat + S_ISDIR — sin este include ::stat se resuelve
+                       // como el struct y la compilacion falla (error real
+                       // detectado por g++ tras el push e3767a9d)
 #include <sys/mman.h>
 #include <fcntl.h>
 
