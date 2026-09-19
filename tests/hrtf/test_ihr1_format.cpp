@@ -57,7 +57,7 @@ static void writeIhr1(const std::string& path, bool azel, int numPos, int taps) 
 }
 
 static void checkRoundTrip(bool azel, int numPos, int taps, const char* label) {
-    const std::string path = std::string("/data/data/com.termux/files/home/.ihr1_") + label + ".ihr1";
+    const std::string path = std::string(std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_") + label + ".ihr1";
     writeIhr1(path, azel, numPos, taps);
 
     Dataset ds;
@@ -89,7 +89,7 @@ int main() {
     checkRoundTrip(true, 1250, 8, "cipic_denso");
 
     // Truncado: debe rechazarse, nunca publicarse a medias.
-    const std::string trunc = "/data/data/com.termux/files/home/.ihr1_trunc.ihr1";
+    const std::string trunc = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_trunc.ihr1";
     writeIhr1(trunc, true, 32, 16);
     FILE* f = std::fopen(trunc.c_str(), "rb");
     if (!f) {
@@ -124,7 +124,7 @@ int main() {
     std::remove(trunc.c_str());
 
     // Magic ajeno: rechazo limpio.
-    const std::string bad = "/data/data/com.termux/files/home/.ihr1_bad.ihr1";
+    const std::string bad = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_bad.ihr1";
     f = std::fopen(bad.c_str(), "wb");
     if (!f) {
         std::printf("FAIL: no se pudo crear archivo bad IHR1\n");

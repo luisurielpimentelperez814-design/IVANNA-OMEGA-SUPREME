@@ -160,15 +160,15 @@ public:
         // hay una carrera real entre el escritor actualizando 'localSeq' y
         // el lector leyéndolo, exactamente el tipo de bug que este archivo
         // existe para evitar en primer lugar.
-        slot.guard.fetch_add(1, std::memory_order_acq_rel);
+        slot.guard.fetch_add(1, std::memory_order_seq_cst);
         // Mismo FIX TSan que SeqlockBus: escritura atómica palabra a
         // palabra bajo el guard, nunca una copia de struct no atómica.
         const Payload p{value, s};
         uint32_t buf[Slot::kWords];
         std::memcpy(buf, &p, sizeof(Payload));
         for (size_t i = 0; i < Slot::kWords; ++i)
-            slot.words[i].store(buf[i], std::memory_order_relaxed);
-        slot.guard.fetch_add(1, std::memory_order_release);
+            slot.words[i].store(buf[i], std::memory_order_seq_cst);
+        slot.guard.fetch_add(1, std::memory_order_seq_cst);
     }
 
     __attribute__((no_sanitize("thread")))
@@ -185,7 +185,7 @@ public:
                 if (g1 & 1u) continue;
                 uint32_t buf[Slot::kWords];
                 for (size_t i = 0; i < Slot::kWords; ++i)
-                    buf[i] = slot.words[i].load(std::memory_order_relaxed);
+                    buf[i] = slot.words[i].load(std::memory_order_seq_cst);
                 std::memcpy(&snap, buf, sizeof(Payload));   // value + seq copiados juntos, atómico vía guard
                 g2 = slot.guard.load(std::memory_order_acquire);
                 if (g1 == g2) break;
