@@ -48,9 +48,35 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
-> 📌 **Nota (sesión Claude, 2026-09-17, REVERTIDO — el gate de la auditoría AudioFlinger
-> causó una regresión real en dispositivo):** la auditoría (commit `e302be56`) seguía siendo
-> correcta (ruta nativa verde) y el hallazgo del doble procesamiento sigue siendo válido, pero
+> 📌 **Nota (sesión Claude, 2026-09-19, misión "conectar WFS a la ruta de audio real" —
+> instrucción directa del propietario):** cierre completo del control plane WFS, que hasta
+> ahora vivía como atomics `g_wfs_enabled`/`g_wfs_spread` AISLADOS por proceso (uno en
+> `libivanna_omega.so`/app, otro en `libomega_effect.so`/audioserver vía
+> `wfs_globals_effect.cpp`) sin que ningún snapshot los conectara — el toggle de la UI nunca
+> llegaba al motor real. Cadena cerrada: `OmegaDspSnapshot` (+`wfs_enabled`, +`wfs_spread`,
+> +`wfs_speaker_{x,y,z}[7]`, 296→384 bytes, ABI v3→v4) → daemon (`SET_WFS`, geometría real
+> precargada en `kDefaultState`, **añadida al final del struct** para no romper su
+> inicialización posicional) → `omega_apply_snapshot()` → `IvannaFusionEngine::setWfsEnabled/
+> setWfsSpread/setWfsSpeakerLayout` (mismos atomics que `process()` ya leía, sin estado
+> paralelo) → `WfsRenderer::setSpeakerLayout3D()` (geometría 3D real de 7 altavoces —
+> `RoomGeometryConfig.hpp` con la sala/oyente/altavoces exactos del encargo, distancia 3D
+> incluyendo altura, no solo plano horizontal). Crossfade bypass↔WFS (`setEnabled`/
+> `blendWithBypass`, smoothstep ~15ms) y su test de regresión ya existían en `main` de otra
+> sesión (`test_wfs_activation_crossfade`) — verificado, no reinventado.
+>
+> **Bug real encontrado y corregido en el propio test suite**: `test_wfs_renderer.cpp` tenía
+> dos bloques de test (anti-tronido de retiro, anti-clip de suma coherente) ubicados
+> **después** del `return` de `main()` — código muerto, nunca se ejecutaban; CTest reportaba
+> "TODOS LOS TESTS PASARON" sin haberlos corrido ni una vez. Movidos al lugar correcto; al
+> ejecutarse por primera vez de verdad, el test de "techo del soft-limit" falló — pero era un
+> bug del PROPIO TEST (acumulaba 4 bloques sobre el mismo buffer sin resetear a cero entre
+> llamadas, violando el contrato real de `process()` que sí respeta `IvannaFusionCore.cpp`),
+> no de `WfsRenderer`. Corregido. Añadidos tests de Fase 7: carga de coordenadas 3D, distancia
+> 3D real produce señal, y verificación explícita de que la altura participa en el cálculo
+> (layout con altura ≠ layout plano). 103/103 tests host en verde, incluye SAF/HRTF/Upmixing
+> sin regresión.
+
+
 > el gate propuesto para evitarlo (`MagiskBridge.isDaemonRunning` antes de iniciar
 > `PlaybackCaptureService`) se probó en dispositivo real y **causó un bug peor que el
 > original**: `isDaemonRunning` solo confirma que el proceso *daemon* (plano de control) está

@@ -198,12 +198,10 @@ int main() {
         EXPECT(wfs.numObjects() == 0, "removeObject: la ranura se libera tras el fade");
     }
 
-    std::printf("\n====================================================\n");
-    if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
-    std::printf("%d TEST(S) FALLARON.\n", g_failures);
-    return 1;
-
-    // ── Caso NUEVO (2026-09-18): retiro de fuente sin tronidos ──
+    // ── Caso (2026-09-18): retiro de fuente sin tronidos ──
+    // FIX (2026-09-19): este bloque y el siguiente estaban DESPUÉS del
+    // return de main() — código muerto, nunca se ejecutaban. CTest
+    // reportaba "TODOS LOS TESTS PASARON" sin haberlos corrido ni una vez.
     {
         WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
         wfs.setObject(0, 0.0f, 2.0f, 1.0f);
@@ -224,21 +222,73 @@ int main() {
         EXPECT(maxJump < 0.2f, "retiro: SIN tronido (salto muestra-a-muestra acotado)");
     }
 
-    // ── Caso NUEVO (2026-09-18): suma coherente sin clip (anti-tronidos) ──
+    // ── Caso (2026-09-18): suma coherente sin clip (anti-tronidos) ──
     {
         WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
         std::vector<float> hot(kFrames, 0.9f);
         const float* hotPtr[4] = { hot.data(), hot.data(), hot.data(), hot.data() };
         for (int o = 0; o < 4; ++o) wfs.setObject(o, 0.0f, 1.5f, 2.0f);
         std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
-        for (int b = 0; b < 4; ++b)
-            wfs.process(hotPtr, 4, L.data(), R.data(), kFrames);
-        EXPECT(allFinite(L) && allFinite(R), "coherente: sin NaN/Inf con 4 fuentes a gain 2");
         float peak = 0.f;
-        for (float v : L) peak = std::max(peak, std::fabs(v));
-        for (float v : R) peak = std::max(peak, std::fabs(v));
+        for (int b = 0; b < 4; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(hotPtr, 4, L.data(), R.data(), kFrames);
+            for (float v : L) peak = std::max(peak, std::fabs(v));
+            for (float v : R) peak = std::max(peak, std::fabs(v));
+        }
+        EXPECT(allFinite(L) && allFinite(R), "coherente: sin NaN/Inf con 4 fuentes a gain 2");
         EXPECT(peak < 2.0f, "coherente: techo del soft-limit (sin clip duro => sin tronido)");
         EXPECT(peak > 0.1f, "coherente: hay senal (el soft-limit no anula el campo)");
     }
 
+    // ── Fase 7 (misión "conectar WFS a la ruta de audio real", geometría
+    //    3D): carga de coordenadas reales, distancia 3D, distancia con
+    //    altura ──────────────────────────────────────────────────────────
+    {
+        // Carga de coordenadas: setSpeakerLayout3D con la geometría real
+        // de la misión (7 altavoces, room 3.5x7x3.5m, oyente en el centro
+        // horizontal). FL a 0.35,1.50,0.00 y oyente en 1.75,1.20,3.50 ->
+        // relativo: dx=0.35-1.75=-1.40, dyFwd=3.50-0.00=3.50, dz=1.50-1.20=0.30.
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        const float dx[7]    = {-1.40f, 1.40f, -1.50f, 1.50f, -1.50f, 1.50f, 1.25f};
+        const float dyFwd[7] = { 3.50f, 3.50f,  0.00f,  0.00f,  0.00f,  0.00f, 0.50f};
+        const float dz[7]    = { 0.30f, 0.30f,  0.30f,  0.30f,  1.80f,  1.80f,-1.05f};
+        wfs.setSpeakerLayout3D(dx, dyFwd, dz, 7);
+        EXPECT(wfs.numSpeakers() == 7, "geometria 3D: carga de coordenadas (7 altavoces)");
+
+        // Distancia 3D real: una fuente centrada y adelante debe producir
+        // SEÑAL AUDIBLE (confirma que la síntesis usa la geometría cargada,
+        // no un array degenerado en el origen).
+        wfs.setObject(0, 0.0f, 1.5f, 1.0f);
+        std::vector<float> tone(kFrames);
+        for (int i = 0; i < kFrames; ++i) tone[i] = 0.4f * std::sin(2.f * 3.14159265f * 300.f * i / kSr);
+        const float* tonePtr[1] = { tone.data() };
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        for (int b = 0; b < 6; ++b) wfs.process(tonePtr, 1, L.data(), R.data(), kFrames);
+        EXPECT(allFinite(L) && allFinite(R), "geometria 3D: sin NaN/Inf con layout real");
+        float peak3d = 0.f;
+        for (float v : L) peak3d = std::max(peak3d, std::fabs(v));
+        for (float v : R) peak3d = std::max(peak3d, std::fabs(v));
+        EXPECT(peak3d > 0.001f, "geometria 3D: distancia 3D real produce señal audible");
+
+        // Cálculo con altura: dos layouts IDÉNTICOS salvo la altura de los
+        // altavoces (dz) deben producir salidas DISTINTAS — si la altura no
+        // participara en el cálculo (bug regresivo), darían la misma señal.
+        WfsRenderer wfsFlat; wfsFlat.init(kSr, kFrames, 16);
+        const float dzFlat[7] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+        wfsFlat.setSpeakerLayout3D(dx, dyFwd, dzFlat, 7);
+        wfsFlat.setObject(0, 0.0f, 1.5f, 1.0f);
+        std::vector<float> Lf(kFrames, 0.f), Rf(kFrames, 0.f);
+        for (int b = 0; b < 6; ++b) wfsFlat.process(tonePtr, 1, Lf.data(), Rf.data(), kFrames);
+        double diffHeight = 0.0;
+        for (int i = 0; i < kFrames; ++i) diffHeight += std::fabs(L[i] - Lf[i]) + std::fabs(R[i] - Rf[i]);
+        EXPECT(allFinite(Lf) && allFinite(Rf), "altura: sin NaN/Inf con altura plana");
+        EXPECT(diffHeight > 1e-4, "altura: SI participa en el calculo (layout con altura != layout plano)");
+    }
+
+    std::printf("\n====================================================\n");
+    if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
+    std::printf("%d TEST(S) FALLARON.\n", g_failures);
+    return 1;
 }
