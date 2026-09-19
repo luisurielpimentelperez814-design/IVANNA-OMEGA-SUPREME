@@ -30,6 +30,9 @@ import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 
 /**
  * SofaAfRirSafPanelScreen — Panel experto de procesamiento espacial.
@@ -84,6 +87,9 @@ fun SofaAfRirSafPanelScreen(
     var rirWet      by remember { mutableStateOf(0.35f) }
     var rirRt60     by remember { mutableStateOf(0.5f) }   // s
     var rirRoomIdx  by remember { mutableStateOf(-1) }      // -1 = auto (mejor RT60)
+    var rirDatasetLoaded by remember { mutableStateOf(false) }
+    var rirRoomLines  by remember { mutableStateOf(listOf<String>()) }
+    var showRoomPicker by remember { mutableStateOf(false) }
 
     // ── SAF ──────────────────────────────────────────────────────────────────
     var safConverged  by remember { mutableStateOf(false) }
@@ -99,6 +105,7 @@ fun SofaAfRirSafPanelScreen(
 
     // ── Carga inicial de preferencias ─────────────────────────────────────────
     LaunchedEffect(Unit) {
+        OmegaEngineBridge.ensureRirDataset(ctx)
         val st = SpatialAudioPrefs.load(ctx)
         rirEnabled   = st.rirEnabled
         rirRt60      = st.rirRt60
@@ -115,6 +122,13 @@ fun SofaAfRirSafPanelScreen(
             hrtfSubject = IvannaSpatialManager.activeSubject
             hrtfLoaded  = IvannaSpatialManager.isHrtfDatasetLoaded()
             daemonConnected = OmegaEngineBridge.isConnected
+            rirDatasetLoaded = OmegaEngineBridge.isRirDatasetLoaded()
+            if (rirDatasetLoaded && rirRoomLines.isEmpty()) {
+                val cnt = OmegaEngineBridge.rirRoomCount()
+                if (cnt > 0) rirRoomLines = (0 until cnt).map { i ->
+                    "#" + i + "  " + (OmegaEngineBridge.rirRoomInfo(i) ?: "?")
+                }
+            }
 
             runCatching {
                 safConverged  = SaFBridge.nativeSaFIsConverged()
@@ -313,8 +327,13 @@ fun SofaAfRirSafPanelScreen(
             subtitle = "200 salas medidas · Overlap-Save FFT · OmegaDaemon",
             accent   = AmberSignal,
             icon     = Icons.Default.GraphicEq,
-            statusText = if (rirEnabled) "ACTIVO" else "BYPASS",
-            statusOk   = rirEnabled
+            statusText = when {
+                !rirDatasetLoaded -> "SIN DATASET"
+                rirEnabled && rirRoomIdx >= 0 -> "ACTIVA · #$rirRoomIdx"
+                rirEnabled -> "ACTIVA · AUTO"
+                else -> "BYPASS"
+            },
+            statusOk   = rirEnabled && rirDatasetLoaded
         ) {
             // Toggle principal
             IvannaToggleRow("Convolución de sala", rirEnabled, AmberSignal) {
@@ -347,11 +366,16 @@ fun SofaAfRirSafPanelScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Sala", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("AUTO" to -1, "#10" to 10, "#50" to 50, "#100" to 100, "#150" to 150).forEach { (label, idx) ->
-                        val sel = rirRoomIdx == idx
+                    listOf("AUTO" to -1, "SALAS…" to -2).forEach { (label, idx) ->
+                        val sel = (idx >= 0 && rirRoomIdx == idx) || (idx == -1 && rirRoomIdx < 0) || (idx == -2 && rirRoomIdx >= 0)
                         FilterChip(
                             selected = sel,
-                            onClick  = { rirRoomIdx = idx; applyRir(); persist() },
+                            onClick  = {
+                                if (idx == -2) {
+                                    if (!rirDatasetLoaded) OmegaEngineBridge.ensureRirDataset(ctx)
+                                    showRoomPicker = true
+                                } else { rirRoomIdx = idx; applyRir(); persist() }
+                            },
                             label    = { Text(label, fontSize = 8.sp, fontFamily = FontFamily.Monospace,
                                 fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.Normal) },
                             colors   = FilterChipDefaults.filterChipColors(
@@ -380,6 +404,46 @@ fun SofaAfRirSafPanelScreen(
                 MetricChip("Sala", "$metros m", AmberSignal)
                 MetricChip("Wet", "${"%.0f".format(rirWet * 100)} %", AmberSignal)
                 MetricChip("Índice", if (rirRoomIdx < 0) "AUTO" else "#$rirRoomIdx", AmberSignal)
+            }
+
+            // Selector individual de las 200 salas (metadata real del dataset)
+            if (showRoomPicker) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showRoomPicker = false },
+                    title = { Text("SALAS RIR (${rirRoomLines.size})", color = AmberSignal,
+                        fontFamily = FontFamily.Monospace, fontSize = 13.sp) },
+                    text = {
+                        if (rirRoomLines.isEmpty()) {
+                            Text("Dataset no cargado en este dispositivo.",
+                                color = TextMuted, fontSize = 11.sp)
+                        } else LazyColumn {
+                            items(rirRoomLines.size) { i ->
+                                val parts = rirRoomLines[i].split("|")
+                                Text(
+                                    text = parts[0] + "  ·  RT60 " +
+                                        parts.getOrElse(1) { "?" } + " s  ·  " +
+                                        parts.getOrElse(2) { "?" } + " m³",
+                                    color = if (rirRoomIdx == i) AmberSignal else TextSecondary,
+                                    fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            rirRoomIdx = i
+                                            showRoomPicker = false
+                                            applyRir(); persist()
+                                        }
+                                        .padding(vertical = 6.dp)
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { showRoomPicker = false }) {
+                            Text("CERRAR", color = AmberSignal)
+                        }
+                    },
+                    containerColor = ObsidianDeep
+                )
             }
         }
 

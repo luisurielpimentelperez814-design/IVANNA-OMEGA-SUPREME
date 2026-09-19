@@ -28,6 +28,7 @@ import com.ivanna.omega.saf.SaFPhase
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.cos
 import kotlin.math.sin
+import com.ivanna.omega.magisk.OmegaEngineBridge
 
 /**
  * SaFCalibrationScreen — Interactive HRTF personalisation using Φ_SAF^∞.
@@ -143,7 +144,7 @@ fun SaFCalibrationScreen(
 @Composable
 private fun PhaseBadge(phase: SaFPhase, iter: Int) {
     val (text, color) = when (phase) {
-        SaFPhase.IDLE        -> "EN ESPERA"    to TextMuted
+        SaFPhase.IDLE        -> (if (runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)) "LISTO · DATASET OK" else "EN ESPERA") to TextMuted
         SaFPhase.CALIBRATING -> "CALIBRANDO · iter $iter"  to AmberSignal
         SaFPhase.DONE        -> "CONVERGIDO ✓" to PhosphorGreen
     }

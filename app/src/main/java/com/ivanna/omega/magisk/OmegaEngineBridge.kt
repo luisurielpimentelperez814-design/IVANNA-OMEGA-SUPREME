@@ -331,4 +331,48 @@ object OmegaEngineBridge {
     fun disconnect() { isConnected = false; runCatching { persistentChannel?.close() }; persistentChannel = null }
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs
+
+    // ── RIR dataset: listado real de salas + fallback sin root (2026-09-19) ──
+    @JvmStatic external fun nativeGetRirRoomCount(): Int
+    @JvmStatic external fun nativeIsRirDatasetLoaded(): Boolean
+    @JvmStatic external fun nativeGetRirRoomInfo(idx: Int): String?
+    @JvmStatic external fun nativeSetRirDataDir(dir: String): Boolean
+
+    /** true si el dataset RIR (200 salas) esta cargado en el motor nativo. */
+    @JvmStatic
+    fun isRirDatasetLoaded(): Boolean = runCatching { nativeIsRirDatasetLoaded() }.getOrDefault(false)
+
+    /** Numero de salas indexadas (0 si no hay dataset). */
+    @JvmStatic
+    fun rirRoomCount(): Int = runCatching { nativeGetRirRoomCount() }.getOrDefault(0)
+
+    /** "nombre|rt60|volumen|distancia|WxHxD" de la sala idx, o null. */
+    @JvmStatic
+    fun rirRoomInfo(idx: Int): String? = runCatching { nativeGetRirRoomInfo(idx) }.getOrNull()
+
+    /**
+     * Fallback sin root: extrae assets/ivanna_omega/rir/ (metadata.csv +
+     * rir_0000.wav..rir_0199.wav, ~2 MB) a filesDir/rir la primera vez y
+     * apunta el dataset nativo ahi. Idempotente; no-op si root ya lo cargo.
+     */
+    @JvmStatic
+    fun ensureRirDataset(ctx: android.content.Context): Boolean {
+        if (isRirDatasetLoaded()) return true
+        return runCatching {
+            val dst = java.io.File(ctx.filesDir, "rir")
+            val meta = java.io.File(dst, "metadata.csv")
+            if (!meta.exists()) {
+                dst.mkdirs()
+                ctx.assets.list("ivanna_omega/rir")?.forEach { name ->
+                    val out = java.io.File(dst, name)
+                    if (!out.exists()) {
+                        ctx.assets.open("ivanna_omega/rir/$name").use { i ->
+                            out.outputStream().use { o -> i.copyTo(o) }
+                        }
+                    }
+                }
+            }
+            nativeSetRirDataDir(dst.absolutePath)
+        }.getOrDefault(false)
+    }
 }

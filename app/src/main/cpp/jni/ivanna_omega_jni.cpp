@@ -2535,3 +2535,57 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
     g_rirWorkerCv.notify_all();
     if (g_rirWorkerThread.joinable()) g_rirWorkerThread.join();
 }
+
+// ── RIR dataset: metadata + fallback de directorio (2026-09-19) ─────────────
+// La pantalla Acustica SAF·RIR necesita listar las 200 salas y mostrar estado
+// real. El dataset vive en /data/adb/ivanna_omega/rir (root) o, sin root, en
+// filesDir/rir extraido de los assets empaquetados (rir_0000.wav..rir_0199.wav
+// + metadata.csv YA van dentro del APK). nativeSetRirDataDir re-inicializa el
+// dataset desde ese directorio cuando la ruta root no existe. Todo corre en
+// hilo de UI; el hot path de audio sigue leyendo g_rirDataset con acquire.
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeGetRirRoomCount(JNIEnv*, jclass) {
+    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+    return (ds && ds->isLoaded()) ? (jint)ds->roomCount() : 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeIsRirDatasetLoaded(JNIEnv*, jclass) {
+    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+    return (ds && ds->isLoaded()) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeGetRirRoomInfo(JNIEnv* env, jclass, jint idx) {
+    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+    if (!ds || !ds->isLoaded() || idx < 0 || (size_t)idx >= ds->roomCount()) return nullptr;
+    const Ivanna::RirRoomMeta& m = ds->meta((size_t)idx);
+    // Formato compacto: nombre|rt60_s|volumen_m3|distancia_m|WxHxD
+    char buf[320];
+    std::snprintf(buf, sizeof(buf), "%s|%.3f|%.1f|%.2f|%.1fx%.1fx%.1f",
+                  m.filename.c_str(), (double)m.rt60S, (double)m.volumeM3(),
+                  (double)m.distanceM, (double)m.roomWidthM, (double)m.roomHeightM,
+                  (double)m.roomDepthM);
+    return env->NewStringUTF(buf);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, jclass, jstring jdir) {
+    if (!jdir) return JNI_FALSE;
+    Ivanna::RirDataset* cur = g_rirDataset.load(std::memory_order_acquire);
+    if (cur && cur->isLoaded()) return JNI_TRUE;   // ya cargado (root): no pisar
+    const char* d = env->GetStringUTFChars(jdir, nullptr);
+    if (!d) return JNI_FALSE;
+    Ivanna::RirDataset* ds = new Ivanna::RirDataset();
+    bool okds = ds->load(d);
+    env->ReleaseStringUTFChars(jdir, d);
+    if (!okds) { delete ds; return JNI_FALSE; }
+    // Publicar. El dataset previo (nulo o no cargado) se abandona sin delete:
+    // init ocurre una sola vez por proceso y el worker pudo tomar el puntero.
+    g_rirDataset.store(ds, std::memory_order_release);
+    if (g_rirConvolver.load(std::memory_order_acquire) == nullptr)
+        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+    if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel))
+        g_rirWorkerThread = std::thread(rirWorkerLoop);
+    return JNI_TRUE;
+}
