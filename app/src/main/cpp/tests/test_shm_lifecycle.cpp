@@ -63,7 +63,25 @@ int main() {
           "layout: frames SAF+heartbeat caben en la zona de control");
 
     // ── 3..7. Ciclo de vida sobre un backing file temporal ──
-    std::string base = std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home";
+    // FIX (CI Linux): el fallback era la ruta de Termux
+    // (/data/data/com.termux/files/home), que NO existe en runners de CI —
+    // open() fallaba con ENOENT y el test moria (103 tests, este el unico
+    // rojo, verificado en corridas 35419490595/35419490599). Cadena de
+    // candidatos: $TMPDIR -> /tmp (POSIX siempre escribible) -> "."
+    // (ultimo recurso). Mismo patron ya validado en test_ihr1_format.
+    std::string base;
+    {
+        struct stat st{};
+        const char* tmpdir = std::getenv("TMPDIR");
+        if (tmpdir && *tmpdir && ::stat(tmpdir, &st) == 0 && S_ISDIR(st.st_mode))
+            base = tmpdir;
+        else if (::stat("/tmp", &st) == 0 && S_ISDIR(st.st_mode))
+            base = "/tmp";
+        else if (::stat("/data/data/com.termux/files/home", &st) == 0)
+            base = "/data/data/com.termux/files/home";
+        else
+            base = ".";
+    }
     std::string path = base + "/ivanna_shm_test_" + std::to_string(getpid());
     ::unlink(path.c_str());
 
