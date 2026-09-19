@@ -35,6 +35,10 @@ object AudioRouteManager {
     private var audioManager: AudioManager? = null
     private var deviceCallback: AudioDeviceCallback? = null
     private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
+    // Application context (no la Activity) para BluetoothCodecDetector —
+    // se guarda una sola vez en start(), nunca una referencia de Activity,
+    // para no filtrar memoria en este singleton de vida larga.
+    private var appContextRef: Context? = null
 
     // Handler unico del hilo main + generacion monotona para invalidar el
     // callback de "restaurar wet=1" si la ruta cambia antes de que expire la
@@ -46,6 +50,7 @@ object AudioRouteManager {
     private var pendingHrtfRestore: Runnable? = null
 
     fun start(context: Context) {
+        appContextRef = context.applicationContext
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         audioManager = am
 
@@ -68,6 +73,7 @@ object AudioRouteManager {
         deviceCallback?.let { am.unregisterAudioDeviceCallback(it) }
         deviceCallback = null
         audioManager = null
+        appContextRef = null
     }
 
     fun detectOutputRoute(): OutputRoute {
@@ -122,16 +128,62 @@ object AudioRouteManager {
     }
 
     private fun btProfile(): RouteProfile {
+        // Señal primaria: códec A2DP real vía API pública (BluetoothA2dp.
+        // getCodecStatus) — reemplaza el heurístico de bitrate como fuente
+        // de verdad principal. Cada códec tiene un perfil propio basado en
+        // su calidad real documentada, no un umbral binario.
+        appContextRef?.let { context ->
+            val info = BluetoothCodecDetector.detectActiveCodec(context)
+            if (info.codec != BluetoothCodecDetector.RealCodec.UNAVAILABLE &&
+                info.codec != BluetoothCodecDetector.RealCodec.UNKNOWN) {
+                Log.i(TAG, "Códec BT real detectado: ${info.codec} @ ${info.sampleRateHz}Hz/${info.bitsPerSample}bit")
+                return profileForRealCodec(info)
+            }
+        }
+        // Fallback: sin permiso runtime, sin adapter, o códec no resuelto —
+        // se conserva el heurístico de bitrate como red de seguridad (no se
+        // borra: sigue siendo mejor que no compensar nada en absoluto).
         val bitrate = currentBtBitrateKbps()
         return if (bitrate != null && bitrate < BT_LOW_BITRATE_KBPS) {
-            // SBC en bitrate bajo: ensanchado casi anulado, diálogo elevado
-            // más agresivo que el perfil BT estándar.
-            Log.i(TAG, "BT bitrate bajo detectado: ${bitrate}kbps -> perfil low-bitrate")
+            Log.i(TAG, "BT bitrate bajo detectado: ${bitrate}kbps -> perfil low-bitrate (fallback)")
             RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
         } else {
             RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
         }
     }
+
+    /**
+     * Perfil por códec real — basado en las características de calidad
+     * documentadas de cada códec A2DP, no en un umbral de bitrate genérico:
+     *   SBC: baseline obligatorio, artefactos de banda 2-4kHz conocidos y
+     *        estéreo que se degrada al recodificar — máxima compensación.
+     *   AAC: mejor que SBC en teoría, pero la calidad del encoder de
+     *        Android varía fuerte por fabricante (problema de plataforma
+     *        documentado, no del códec) — compensación moderada.
+     *   aptX: 352kbps fijo, sin los artefactos de banda de SBC — ligera.
+     *   aptX HD / Adaptive: 576-660kbps, cercano a transparente — mínima.
+     *   LDAC: hasta 990kbps, el más transparente disponible en Android —
+     *        sin compensación de diálogo/graves, igual que USB con DAC.
+     *   Opus: eficiente y limpio (API 33+) — ligera, similar a aptX.
+     */
+    private fun profileForRealCodec(info: BluetoothCodecDetector.CodecInfo): RouteProfile =
+        when (info.codec) {
+            BluetoothCodecDetector.RealCodec.SBC ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
+            BluetoothCodecDetector.RealCodec.AAC ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.0f, widenerMult = 0.7f)
+            BluetoothCodecDetector.RealCodec.APTX ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 1.5f, widenerMult = 0.85f)
+            BluetoothCodecDetector.RealCodec.APTX_HD,
+            BluetoothCodecDetector.RealCodec.APTX_ADAPTIVE ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 0.95f)
+            BluetoothCodecDetector.RealCodec.LDAC ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
+            BluetoothCodecDetector.RealCodec.OPUS ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 1.0f, widenerMult = 0.9f)
+            else ->
+                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
+        }
 
     private fun applyRoute(route: OutputRoute) {
         if (route == currentRoute) return
