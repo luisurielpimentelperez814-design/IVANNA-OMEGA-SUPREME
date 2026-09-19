@@ -173,10 +173,12 @@ fun MagiskStatusPanel(
                 // decir cual ni donde — el usuario tenia que adivinar la URL.
                 Text(
                     "⚠ Módulo instalado ($effectiveModuleVersion) más viejo que la app " +
-                    "(${com.ivanna.omega.BuildConfig.VERSION_NAME}) — el daemon y el " +
-                    "socket pueden responder, pero con el binario VIEJO (sin STL " +
-                    "estático ni bind con retry: puede morir antes de bindear tras " +
-                    "un reinicio). Flashea el ZIP de esta versión desde Magisk:\n" +
+                    "(${com.ivanna.omega.BuildConfig.VERSION_NAME}).\n\n" +
+                    "Si YA flasheaste el ZIP nuevo: Magisk carga el binario nuevo " +
+                    "solo tras REINICIAR — hasta entonces el daemon viejo sigue " +
+                    "corriendo y reporta su versión vieja (esta alerta). Reinicia " +
+                    "el teléfono y la alerta desaparece sola.\n\n" +
+                    "Si NO lo has flasheado, instala el ZIP de esta versión desde Magisk:\n" +
                     "github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME" +
                     "/releases/download/v${com.ivanna.omega.BuildConfig.VERSION_NAME}" +
                     "/ivanna_omega_supreme_v${com.ivanna.omega.BuildConfig.VERSION_NAME}.zip",
