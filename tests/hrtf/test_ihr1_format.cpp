@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <sys/stat.h>
 
 using namespace ivanna::ihr1;
 
@@ -25,6 +26,13 @@ static int failures = 0;
 static float sampleL(int pos, int tap) { return pos * 1000.f + tap; }
 static float sampleR(int pos, int tap) { return -(pos * 1000.f + tap); }
 
+static std::string tmpDir() {
+    const char* env = std::getenv("TMPDIR");
+    if (env && *env) return env;
+    struct stat st{};
+    if (::stat("/data/data/com.termux/files/home", &st) == 0) return "/data/data/com.termux/files/home";
+    return "/tmp";
+}
 static void writeIhr1(const std::string& path, bool azel, int numPos, int taps) {
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) {
@@ -57,7 +65,7 @@ static void writeIhr1(const std::string& path, bool azel, int numPos, int taps) 
 }
 
 static void checkRoundTrip(bool azel, int numPos, int taps, const char* label) {
-    const std::string path = std::string(std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_") + label + ".ihr1";
+    const std::string path = std::string(tmpDir() + "/ihr1_") + label + ".ihr1";
     writeIhr1(path, azel, numPos, taps);
 
     Dataset ds;
@@ -89,7 +97,7 @@ int main() {
     checkRoundTrip(true, 1250, 8, "cipic_denso");
 
     // Truncado: debe rechazarse, nunca publicarse a medias.
-    const std::string trunc = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_trunc.ihr1";
+    const std::string trunc = tmpDir() + "/ihr1_trunc.ihr1";
     writeIhr1(trunc, true, 32, 16);
     FILE* f = std::fopen(trunc.c_str(), "rb");
     if (!f) {
@@ -116,15 +124,15 @@ int main() {
     } else {
         std::fwrite(buf.data(), 1, buf.size(), f);
         std::fclose(f);
+        f = nullptr;
     }
-    std::fclose(f);
 
     Dataset ds;
     CHECK(!read(trunc.c_str(), ds), "un IHR1 truncado se acepto como valido");
     std::remove(trunc.c_str());
 
     // Magic ajeno: rechazo limpio.
-    const std::string bad = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/data/data/com.termux/files/home") + "/ihr1_bad.ihr1";
+    const std::string bad = tmpDir() + "/ihr1_bad.ihr1";
     f = std::fopen(bad.c_str(), "wb");
     if (!f) {
         std::printf("FAIL: no se pudo crear archivo bad IHR1\n");
