@@ -9,7 +9,7 @@
 static float softLimit(float x){
     const float a = std::fabs(x);
     if (a <= 0.99f) return x;
-    return std::copysign(0.99f + 0.01f*std::tanh((a-0.99f)*20.f), x);
+    return std::copysign(0.99f + 0.009999f*std::tanh((a-0.99f)*20.f), x);
 }
 
 TEST(WfsProtection, NanInfSeConviertenEnSilencio) {

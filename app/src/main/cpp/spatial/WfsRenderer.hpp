@@ -216,9 +216,11 @@ private:
     // de N altavoces frontales (focus=cos, ILD x1.41, gain<=2) podia superar
     // +-2.8 -> clip duro en el destino = tronido. Esto lo vuelve imposible.
     static inline float softLimit(float x) noexcept {
-        if (x >  1.0f) return  1.0f + (x - 1.0f) / (1.0f + (x - 1.0f));
-        if (x < -1.0f) return -1.0f + (x + 1.0f) / (1.0f - (x + 1.0f));
-        return x;
+        const float a = std::fabs(x);
+        if (a <= 0.99f) return x;                       // identidad bit-exacta
+        // Asintota 0.999999 < 1.0: imposible clipear, continuo en el knee
+        const float lim = 0.99f + 0.009999f * std::tanh((a - 0.99f) * 20.0f);
+        return std::copysign(lim, x);
     }
 
     void rebuildGeometry() noexcept;            // altavoces: azimut, ILD, ITD
