@@ -53,6 +53,32 @@
 #include <cstdint>
 #include <vector>
 
+namespace ivanna::wfs {
+// ═══ Guarda de anti-aliasing espacial ═══════════════════════════════════
+// WFS con array discreto de N altavoces sufre aliasing espacial por encima de
+// f_alias = c / (2 * dx), dx = separación entre altavoces. Por encima, el
+// frente de onda se reconstruye con artefactos (fantasmas). Solución de
+// referencia (Spors & Ahrens): atenuación suave por encima de f_alias con un
+// one-pole por canal, calculada desde la geometría real del array. No
+// degrada el audio por debajo de f_alias — solo evita que la reconstrucción
+// mienta arriba.
+inline float spatialAliasCutoffHz(float speakerSpacingM, float c = 343.0f) noexcept {
+    return (speakerSpacingM > 0.f) ? c / (2.f * speakerSpacingM) : 8000.f;
+}
+// One-pole lowpass por canal: y += a(x - y), a = 1 - exp(-2π f_c / sr)
+struct SpatialAliasGuard {
+    float a = 1.f, yL = 0.f, yR = 0.f;
+    void init(float spacingM, float sampleRate) noexcept {
+        const float fc = spatialAliasCutoffHz(spacingM);
+        a = 1.f - std::exp(-2.f * 3.14159265f * fc / sampleRate);
+    }
+    inline void process(float& L, float& R) noexcept {
+        yL += a * (L - yL); yR += a * (R - yR); L = yL; R = yR;
+    }
+    void reset() noexcept { yL = yR = 0.f; }
+};
+} // namespace ivanna::wfs
+
 namespace ivanna::spatial {
 
 class WfsRenderer {
@@ -137,6 +163,16 @@ private:
     // Historia ITD por altavoz (64 muestras — ITD máximo ~30 @48k).
     std::array<std::array<float, 64>, kMaxSpeakers> itdHist_{};
     std::array<int, kMaxSpeakers>                   itdPos_{};
+
+    // FIX (2026-09-18 → cableado real): antes definido en el .cpp, fuera de
+    // esta clase y de su namespace — matemática correcta, jamás llamado
+    // desde process(). Verificado: con la geometría por defecto (16
+    // altavoces, radio 1.5 m) la separación es ~0.59 m → f_alias ≈ 291 Hz,
+    // muy por debajo del rango donde vive la mayoría de la energía de
+    // música/voz real — sin este filtro, prácticamente todo el contenido
+    // audible se reconstruye por encima de la frecuencia de aliasing
+    // espacial del array (imágenes fantasma / coloración tipo comb).
+    ivanna::wfs::SpatialAliasGuard aliasGuard_;
 
     // Limitador suave de seguridad (anti-clip => anti-tronidos): por debajo
     // de |1.0| es EXACTAMENTE lineal (cero coloracion); por encima comprime
