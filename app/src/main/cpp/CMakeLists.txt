@@ -406,6 +406,15 @@ target_include_directories(test_bt_wfs_mastery PRIVATE
 target_link_libraries(test_bt_wfs_mastery PRIVATE gtest gtest_main)
 add_test(NAME bt_wfs_mastery COMMAND test_bt_wfs_mastery)
 
+add_executable(test_wfs_activation_crossfade
+    tests/regression/test_wfs_activation_crossfade.cpp
+)
+target_include_directories(test_wfs_activation_crossfade PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_wfs_activation_crossfade PRIVATE gtest gtest_main)
+add_test(NAME wfs_activation_crossfade COMMAND test_wfs_activation_crossfade)
+
 add_executable(test_oem_stability_suite
     tests/regression/test_oem_stability_suite.cpp
 )

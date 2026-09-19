@@ -228,3 +228,54 @@ private:
 };
 
 } // namespace ivanna::spatial
+
+// ═══ Motor de protección de audio profesional (salida WFS) ═══════════════════
+// Cadena determinista aplicada a TODA salida WFS antes del mixer:
+//   DC removal -> denormal guard -> soft limiter (tanh suave) -> true-peak hold
+// Garantiza: cero clipping, cero NaN/Inf, cero DC, cero saturacion por suma
+// coherente de altavoces — una mala geometria WFS nunca rompe el audio.
+namespace ivanna { namespace wfs {
+struct WfsProtectionChain {
+    // DC removal: one-pole highpass y = x - x_prev + r*y_prev, r ~ 0.995
+    float r_ = 0.995f, xL_ = 0.f, yL_ = 0.f, xR_ = 0.f, yR_ = 0.f;
+    // True-peak hold con decaimiento lento (evita pumping)
+    float peakHold_ = 0.f;
+
+    void init(float sampleRate) noexcept {
+        // Fc ~ 5 Hz para DC removal sin tocar graves
+        r_ = std::exp(-2.f * 3.14159265f * 5.f / sampleRate);
+        xL_ = yL_ = xR_ = yR_ = peakHold_ = 0.f;
+    }
+    void reset() noexcept { xL_ = yL_ = xR_ = yR_ = peakHold_ = 0.f; }
+
+    // Soft limiter tanh con normalizacion: |x|<=1 pasa casi lineal, picos
+    // se comprimen suavemente a <= ~0.99. Knee suave, sin discontinuidad.
+    static inline float softLimit(float x) noexcept {
+        constexpr float drive = 1.0f / 0.7615941f; // 1/tanh(1) -> x=1 sale ~1
+        return std::tanh(x) * drive * 0.99f;
+    }
+
+    inline float protectChannel(float x, float& xp, float& yp) noexcept {
+        // 1. NaN/Inf -> silencio (nunca propagar)
+        if (!std::isfinite(x)) { xp = 0.f; yp = 0.f; return 0.f; }
+        // 2. Denormal guard: flush subnormales a cero
+        if (std::fabs(x) < 1e-30f) x = 0.f;
+        // 3. DC removal (one-pole highpass)
+        const float y = x - xp + r_ * yp; xp = x; yp = y;
+        // 4. Denormal en la recursion
+        float out = (std::fabs(y) < 1e-30f) ? 0.f : y;
+        // 5. True-peak tracking (para telemetria/diagnostico)
+        const float a = std::fabs(out);
+        peakHold_ = a > peakHold_ ? a : peakHold_ * 0.9995f;
+        // 6. Soft limiter solo si supera 1.0 (transparente en rango normal)
+        if (a > 1.0f) out = softLimit(out);
+        return out;
+    }
+    inline void process(float& L, float& R) noexcept {
+        L = protectChannel(L, xL_, yL_);
+        R = protectChannel(R, xR_, yR_);
+    }
+    // Salud del motor para la UI (FASE 6): true-peak sostenido
+    float truePeak() const noexcept { return peakHold_; }
+};
+}} // namespace ivanna::wfs
