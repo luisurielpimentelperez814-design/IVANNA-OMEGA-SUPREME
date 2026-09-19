@@ -281,7 +281,15 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             int wp = slot.writePos;
             if (in != nullptr) {
                 for (int n = 0; n < frames; ++n) {
-                    slot.line[static_cast<size_t>(wp)] = in[n];
+                    // GUARDA NaN/Inf (Fase 7: recuperación tras fallo): un
+                    // NaN entrando a la línea circular la envenena PARA
+                    // SIEMPRE (NaN*0=NaN — el historial nunca se limpia solo)
+                    // y softLimit() no filtra NaN (todas sus ramas lo
+                    // propagan). Se sanea en la ÚNICA puerta de entrada:
+                    // muestra no finita -> silencio físico, el campo se
+                    // recupera solo en el siguiente bloque.
+                    const float v = in[n];
+                    slot.line[static_cast<size_t>(wp)] = std::isfinite(v) ? v : 0.f;
                     wp = (wp + 1) % M;
                 }
             } else {
@@ -364,8 +372,13 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
         // suavizarse por encima de f_alias, no la señal ya comprimida.
         aliasGuard_.process(accL, accR);
         // Anti-clip (=> anti-tronidos): lineal bajo |1.0|, compresion suave arriba.
-        outL[n] += softLimit(accL * norm);
-        outR[n] += softLimit(accR * norm);
+        // GUARDA NaN/Inf de salida: si pese a todo el campo acumulado no es
+        // finito (estado corrupto heredado de antes del saneo de entrada),
+        // se sustituye por silencio en ESTE bloque — la cadena downstream
+        // (mixer/effect/salida hardware) jamás recibe un NaN desde WFS.
+        const float outLRaw = accL * norm, outRRaw = accR * norm;
+        outL[n] += std::isfinite(outLRaw) ? softLimit(outLRaw) : 0.f;
+        outR[n] += std::isfinite(outRRaw) ? softLimit(outRRaw) : 0.f;
     }
 
     // ── 4) Retiro diferido: las fuentes cuyo fade-out terminó se liberan

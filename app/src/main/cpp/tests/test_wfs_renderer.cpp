@@ -287,6 +287,38 @@ int main() {
         EXPECT(diffHeight > 1e-4, "altura: SI participa en el calculo (layout con altura != layout plano)");
     }
 
+    // ── Caso 7: NaN/Inf en la entrada NO envenena el campo (Fase 7) ──
+    // Antes: un NaN entraba a la línea circular y NaN*0=NaN la mantenía
+    // corrupta para siempre; softLimit() propagaba NaN intacto. Ahora la
+    // puerta de entrada sanea a silencio y el motor se recupera solo.
+    {
+        WfsRenderer wfs; wfs.init(kSr, kFrames, 16);
+        wfs.setObject(0, 0.0f, 2.0f, 1.0f);
+        std::vector<float> bad(kFrames, 0.f);
+        for (int i = 0; i < kFrames; ++i)
+            bad[i] = std::sin(2.f * 3.14159265f * 440.f * static_cast<float>(i) / kSr) * 0.5f;
+        bad[10] = std::nanf(""); bad[100] = INFINITY; bad[200] = -INFINITY;
+        const float* badPtr[1] = { bad.data() };
+        std::vector<float> L(kFrames, 0.f), R(kFrames, 0.f);
+        // Bloque contaminado: la salida debe ser finita igualmente.
+        wfs.process(badPtr, 1, L.data(), R.data(), kFrames);
+        EXPECT(allFinite(L) && allFinite(R), "NaN/Inf: salida finita en el bloque contaminado");
+        // Bloques posteriores con señal limpia: el campo debe recuperarse
+        // (la línea no quedó envenenada — hay energía y sigue finita).
+        std::vector<float> good(kFrames, 0.f);
+        for (int i = 0; i < kFrames; ++i)
+            good[i] = std::sin(2.f * 3.14159265f * 440.f * static_cast<float>(i) / kSr) * 0.5f;
+        const float* goodPtr[1] = { good.data() };
+        for (int b = 0; b < 8; ++b) {
+            std::fill(L.begin(), L.end(), 0.f);
+            std::fill(R.begin(), R.end(), 0.f);
+            wfs.process(goodPtr, 1, L.data(), R.data(), kFrames);
+        }
+        EXPECT(allFinite(L) && allFinite(R), "NaN/Inf: finito tras la recuperación");
+        EXPECT(rmsOf(L) > 1e-4 && rmsOf(R) > 1e-4,
+               "NaN/Inf: el motor se recupera (energía real tras el fallo)");
+    }
+
     std::printf("\n====================================================\n");
     if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
     std::printf("%d TEST(S) FALLARON.\n", g_failures);
