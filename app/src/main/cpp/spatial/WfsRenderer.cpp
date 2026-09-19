@@ -229,9 +229,17 @@ void WfsRenderer::computeTapTargets(int si) noexcept {
         tap.delayTarget = delaySampF < 0.f ? 0.f : (delaySampF > maxTap ? maxTap : delaySampF);
         // Driving function WFS 2.5D (aprox.): atenuación de onda cilíndrica
         // 1/sqrt(d) referida a kRefDistanceM, por peso de focalización coseno.
+        // FIX (geometría 3D real, 2026-09-19): cosA dividía por kArrayRadiusM
+        // (constante del array circular, exacta ahí por construcción) incluso
+        // con layout explícito, donde la distancia horizontal real de cada
+        // altavoz varía mucho (subwoofer ~0.5 m, satélites elevados ~4 m) —
+        // desbalanceaba el peso de foco entre altavoces. Se usa la distancia
+        // horizontal REAL de cada altavoz (spkDist), idéntica a kArrayRadiusM
+        // en el caso circular (sin cambio ahí) y correcta en el explícito.
         float focus = 1.f;
-        if (od > 1e-6f) {
-            const float cosA = (o.x * sx + o.y * sy) / (od * kArrayRadiusM);
+        const float spkDist = std::sqrt(sx * sx + sy * sy);
+        if (od > 1e-6f && spkDist > 1e-6f) {
+            const float cosA = (o.x * sx + o.y * sy) / (od * spkDist);
             focus = cosA > 0.f ? cosA : 0.f;
         }
         const float att = std::sqrt(kRefDistanceM / (d > kRefDistanceM ? d : kRefDistanceM));
