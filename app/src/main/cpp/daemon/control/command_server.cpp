@@ -60,6 +60,13 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
     snap.upmixing_enabled=static_cast<uint32_t>(s.upmixing_enabled);
     snap.upmixing_immersivity=s.upmixing_immersivity;
+    snap.wfs_enabled=static_cast<uint32_t>(s.wfs_enabled);
+    snap.wfs_spread=s.wfs_spread;
+    for (int i = 0; i < ivanna::OMEGA_CTRL_WFS_SPEAKERS && i < 7; ++i) {
+        snap.wfs_speaker_x[i] = s.wfs_speaker_x[i];
+        snap.wfs_speaker_y[i] = s.wfs_speaker_y[i];
+        snap.wfs_speaker_z[i] = s.wfs_speaker_z[i];
+    }
     snap.saf_delta_energy=s.saf_delta_e; snap.saf_metric_norm=s.saf_metric; snap.saf_memory=s.saf_memory; snap.saf_gain=s.saf_gain;
     // FIX: copiar el vector latente q[7] — antes solo se publicaban escalares SAF.
     // Sin esta copia, snap.saf_q quedaba en ceros (makeDefaultSnapshot),
@@ -130,6 +137,22 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // audioserver para el estado de Intelligent Upmixing (HOA).
         m_state.upmixing_enabled = _jsonFloat(json,"upmixingEnabled", m_state.upmixing_enabled);
         m_state.upmixing_immersivity = _jsonFloat(json,"upmixingImmersivity", m_state.upmixing_immersivity);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_WFS")==0) {
+        // Comando dedicado del puente JNI (nativeSetWfsEnabled/nativeSetWfsSpread).
+        // Cierra el canal app->daemon->SHM->audioserver para Wave Field Synthesis
+        // (misión "cerrar WFS de extremo a extremo" — antes g_wfs_enabled/
+        // g_wfs_spread vivían aislados por proceso, nunca publicados aquí).
+        m_state.wfs_enabled = _jsonFloat(json,"wfsEnabled", m_state.wfs_enabled);
+        m_state.wfs_spread  = _clamp(_jsonFloat(json,"wfsSpread", m_state.wfs_spread), 0.f, 2.f);
+        // Layout opcional (7×3 floats) — si no viene, se conserva el actual
+        // (por defecto, la geometría real de RoomGeometryConfig::defaultLayout()).
+        float lx[7], ly[7], lz[7];
+        if (_jsonFloatArray(json,"wfsSpeakerX", lx, 7)) for (int i=0;i<7;i++) m_state.wfs_speaker_x[i]=lx[i];
+        if (_jsonFloatArray(json,"wfsSpeakerY", ly, 7)) for (int i=0;i<7;i++) m_state.wfs_speaker_y[i]=ly[i];
+        if (_jsonFloatArray(json,"wfsSpeakerZ", lz, 7)) for (int i=0;i<7;i++) m_state.wfs_speaker_z[i]=lz[i];
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

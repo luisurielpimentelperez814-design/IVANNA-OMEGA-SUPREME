@@ -48,6 +48,7 @@
 // Sin dependencias externas: solo <cmath>, <vector>, <array>, <cstdint>.
 // ============================================================================
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -97,6 +98,30 @@ public:
 
     bool init(float sampleRate, int blockSize, int numSpeakers = 16) noexcept;
     void reset() noexcept;
+
+    // Fase 2 (geometría 3D real): sustituye el array circular generado por
+    // 7 posiciones explícitas relativas al oyente (metros; dyFwd=frente+,
+    // dz=altura respecto al oído). Distancia/retardo/ganancia usan la
+    // distancia 3D real (incluye altura) — no solo el plano horizontal.
+    void setSpeakerLayout3D(const float* dx, const float* dyFwd, const float* dz,
+                             int count) noexcept;
+
+    // Activación/desactivación del renderer completo (independiente de las
+    // fuentes individuales) — ver blendWithBypass(). Arranca en 1/1
+    // (activo y asentado): quien use process() sin tocar setEnabled()
+    // obtiene el comportamiento de siempre (compatibilidad con el uso
+    // existente de esta clase).
+    void setEnabled(bool enabled) noexcept { enabledTarget_ = enabled ? 1.0f : 0.0f; }
+    bool isEnabled() const noexcept { return enabledTarget_ > 0.5f; }
+    bool isSettledBypassed() const noexcept {
+        return enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f;
+    }
+    // Mezcla bypass<->WFS con transición suave (~15 ms, smoothstep: derivada
+    // cero en ambos extremos). wetL/R = salida de process() para el MISMO
+    // bloque (buffer inicializado a 0 antes de process()). in-place seguro.
+    void blendWithBypass(const float* dryL, const float* dryR,
+                          const float* wetL, const float* wetR,
+                          float* outL, float* outR, int frames) noexcept;
 
     // Posición/actualización de fuente primaria. x/y en metros relativos al
     // oyente (x: derecha+, y: frente+). gain lineal. thread-safety: llamar
@@ -154,6 +179,17 @@ private:
     std::array<float, kMaxSpeakers> speakerAzimuth_{};
     std::array<float, kMaxSpeakers> speakerGainL_{}, speakerGainR_{};
     std::array<int,   kMaxSpeakers> speakerItdL_{}, speakerItdR_{}; // en muestras
+    // Fase 2 (geometría 3D real): posición relativa al oyente por altavoz,
+    // en uso cuando explicitLayout_==true (setSpeakerLayout3D). dz = altura
+    // respecto al oído — entra en la distancia 3D real (no solo horizontal).
+    bool  explicitLayout_ = false;
+    std::array<float, kMaxSpeakers> speakerRelX_{}, speakerRelY_{}, speakerRelZ_{};
+
+    // Activación/desactivación del renderer completo — ver setEnabled()/
+    // blendWithBypass(). Arranca en 1/1: process() sin tocar setEnabled()
+    // se comporta exactamente como antes de esta feature (compatibilidad).
+    float enabledTarget_ = 1.0f;
+    float enabledMix_    = 1.0f;
 
     // Taps (fuente × altavoz) — matriz plana [slot*kMaxSpeakers + spk],
     // preasignada en init() (kMaxObjects × kMaxSpeakers entradas fijas).

@@ -101,9 +101,14 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // El bump de VERSION invalida snapshots viejos por diseño (mismatch
 // detectado en isVersionValid()); el reader cae a defaults hasta que
 // el daemon publique con la ABI nueva — sin ruido audible.
-constexpr uint16_t OMEGA_CTRL_VERSION = 3u;
+// ABI v4 (2026-09-19): añadido wfs_enabled/wfs_spread/wfs_speaker_{x,y,z}[7]
+// al snapshot — cierra la cadena UI->JNI->daemon->snapshot->omega_effect
+// ->WfsRenderer con geometría 3D real de sala (antes: atomics aislados por
+// proceso, jamás publicados por el daemon).
+constexpr uint16_t OMEGA_CTRL_VERSION = 4u;
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
+constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {
@@ -191,6 +196,21 @@ struct OmegaDspSnapshot {
     uint32_t upmixing_enabled; // 1 = enabled, 0 = disabled
     float    upmixing_immersivity;
 
+    // ── Wave Field Synthesis (WFS) ─────────────────────────────────────────────
+    // wfs_enabled: 1 = activo (crossfade smoothstep ~15-20ms hacia/desde el
+    //   bypass, gestionado en WfsRenderer/IvannaFusionCore — nunca switch duro).
+    // wfs_spread: escala de apertura de las fuentes primarias L/R [0, 2].
+    // wfs_speaker_{x,y,z}: geometría real de 7 altavoces (orden fijo: FL, FR,
+    //   SL, SR, TL, TR, SW), coordenadas de SALA en metros (x=ancho, y=altura,
+    //   z=profundidad) — ver RoomGeometryConfig::defaultLayout() para los
+    //   valores de referencia. omega_effect convierte a coordenadas relativas
+    //   al oyente antes de pasarlas a WfsRenderer::setSpeakerLayout3D().
+    uint32_t wfs_enabled;
+    float    wfs_spread;
+    float    wfs_speaker_x[OMEGA_CTRL_WFS_SPEAKERS];
+    float    wfs_speaker_y[OMEGA_CTRL_WFS_SPEAKERS];
+    float    wfs_speaker_z[OMEGA_CTRL_WFS_SPEAKERS];
+
 
     // ── Flags ────────────────────────────────────────────────────────────────
     // bit 0: bypass global
@@ -226,6 +246,19 @@ struct OmegaDspSnapshot {
         s.room_wet    = 0.35f;
         s.upmixing_enabled = 0;
         s.upmixing_immersivity = 1.0f;
+        s.wfs_enabled = 0;      // opt-in, coherente con ParameterStore default
+        s.wfs_spread  = 1.0f;
+        {
+            // RoomGeometryConfig::defaultLayout() (orden FL,FR,SL,SR,TL,TR,SW).
+            // Duplicado aquí como literales (no como dependencia de
+            // WfsRenderer/spatial) para mantener este header autocontenido.
+            constexpr float kX[OMEGA_CTRL_WFS_SPEAKERS] = {0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f};
+            constexpr float kY[OMEGA_CTRL_WFS_SPEAKERS] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
+            constexpr float kZ[OMEGA_CTRL_WFS_SPEAKERS] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
+            for (int i = 0; i < OMEGA_CTRL_WFS_SPEAKERS; ++i) {
+                s.wfs_speaker_x[i] = kX[i]; s.wfs_speaker_y[i] = kY[i]; s.wfs_speaker_z[i] = kZ[i];
+            }
+        }
         s.ref_phon    = 70.f;
         s.loudness_target = -18.f;
         s.harmonic_gain   = 1.f;

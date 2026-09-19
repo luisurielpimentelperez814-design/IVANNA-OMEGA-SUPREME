@@ -1,6 +1,7 @@
 #include "IvannaFusionCore.h"
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 
 // ── Controles Globales para Upmixing (Accesibles vía JNI) ──
 std::atomic<bool> g_upmixing_enabled{false};
@@ -128,6 +129,25 @@ void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) noex
 
 void IvannaFusionEngine::setGoldenEarMode(bool enable) {
     m_goldenEarActive = enable;
+}
+
+void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
+    g_wfs_enabled.store(enable, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
+    if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept {
+    if (x == nullptr || y == nullptr || z == nullptr) return;
+    const auto& room = ivanna::spatial::RoomGeometryConfig::defaultLayout();
+    float dx[7], dyFwd[7], dz[7];
+    for (int i = 0; i < 7; ++i) {
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i]) || !std::isfinite(z[i])) return;
+        dx[i]    = x[i] - room.listenerX;
+        dyFwd[i] = room.listenerZ - z[i];
+        dz[i]    = y[i] - room.listenerY;
+    }
+    m_wfs.setSpeakerLayout3D(dx, dyFwd, dz, 7);
 }
 
 void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {

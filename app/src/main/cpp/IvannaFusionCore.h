@@ -7,6 +7,7 @@
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
+#include "spatial/RoomGeometryConfig.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX (CI rojo — "namespace 'Ivanna' does not enclose namespace
@@ -51,6 +52,23 @@ public:
     bool isUpmixingEnabled() const { return m_upmixer.isUpmixingEnabled(); }
     void setImmersivity(float value) { m_upmixer.setImmersivity(value); }
     float getImmersivity() const { return m_upmixer.getImmersivity(); }
+
+    // Wave Field Synthesis (misión "cerrar WFS de extremo a extremo",
+    // 2026-09-19). setWfsEnabled/setWfsSpread escriben en los MISMOS
+    // atomics g_wfs_enabled/g_wfs_spread que process() ya lee cada bloque
+    // (definidos en wfs_globals_effect.cpp) — sin crear un segundo estado
+    // paralelo. setWfsSpeakerLayout configura la geometría 3D real del
+    // WfsRenderer (llamado desde omega_apply_snapshot, hilo de control, NO
+    // el hilo de audio — mismo criterio ya establecido para setObject()).
+    void setWfsEnabled(bool enable) noexcept;
+    void setWfsSpread(float spread) noexcept;
+    // x/y/z: coordenadas de SALA absolutas (metros; x=ancho,y=altura,
+    // z=profundidad), 7 altavoces, orden FL,FR,SL,SR,TL,TR,SW — mismo
+    // formato que OmegaDspSnapshot::wfs_speaker_{x,y,z}. Se convierten
+    // internamente a coordenadas relativas al oyente (listener fijo en
+    // RoomGeometryConfig::defaultLayout()) antes de pasarlas a
+    // WfsRenderer::setSpeakerLayout3D().
+    void setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept;
 
 
     void setGoldenEarMode(bool enable);

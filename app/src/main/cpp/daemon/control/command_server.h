@@ -61,6 +61,22 @@ struct OmegaDspState {
     // incrementa el daemon en cada accept() y se expone en GET_STATUS para
     // que la app distinga "daemon vivo sin clientes" de "daemon muerto".
     uint32_t clients_served = 0;
+
+    // Wave Field Synthesis (misión "cerrar WFS de extremo a extremo",
+    // 2026-09-19). Al FINAL del struct a propósito: kDefaultState (abajo,
+    // en command_server.cpp) inicializa por posición — insertar campos en
+    // medio desplazaría todos los valores siguientes en silencio. Los
+    // default member initializer de aquí abajo los rellena el agregado
+    // automáticamente al haber menos entradas explícitas en kDefaultState
+    // que miembros en el struct.
+    float wfs_enabled = 0.f;   // opt-in, coherente con ParameterStore default
+    float wfs_spread  = 1.0f;
+    // Geometría real precargada (RoomGeometryConfig::defaultLayout(), orden
+    // FL,FR,SL,SR,TL,TR,SW) — SET_WFS puede sobreescribirla con un layout
+    // custom, pero el default ya es una sala real, no el origen.
+    float wfs_speaker_x[7] = {0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f};
+    float wfs_speaker_y[7] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
+    float wfs_speaker_z[7] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
 };
 
 class CommandServer {

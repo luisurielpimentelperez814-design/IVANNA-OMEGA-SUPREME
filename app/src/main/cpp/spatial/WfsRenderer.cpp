@@ -31,14 +31,23 @@ bool WfsRenderer::init(float sampleRate, int blockSize, int numSpeakers) noexcep
     if (numSpeakers > kMaxSpeakers) numSpeakers = kMaxSpeakers;
     sampleRate_  = sampleRate;
     blockSize_   = blockSize;
-    numSpeakers_ = numSpeakers;
+    // Fase 2 (geometría 3D real): si ya se cargó un layout explícito
+    // (setSpeakerLayout3D llamado antes de esta init(), p.ej. desde
+    // omega_apply_snapshot antes de la primera activación perezosa de
+    // WFS) se respeta su numSpeakers_ (7) — init() nunca pisa una
+    // geometría real ya cargada con el parámetro genérico.
+    if (!explicitLayout_) {
+        numSpeakers_ = numSpeakers;
+    }
 
     // Delay máximo necesario: fuente más lejana permitida + diámetro del
     // array (peor caso geométrico) + margen de un bloque.
     const float maxDistS = (kMaxObjectDist + 2.f * kArrayRadiusM) / kSpeedOfSound;
     maxDelayTap_ = static_cast<int>(maxDistS * sampleRate_) + blockSize_ + 4;
 
-    rebuildGeometry();
+    if (!explicitLayout_) {
+        rebuildGeometry();
+    }
 
     // FIX (guarda de anti-aliasing espacial, antes inalcanzable): separación
     // real entre altavoces adyacentes = circunferencia / N. Con los valores
@@ -57,6 +66,32 @@ bool WfsRenderer::init(float sampleRate, int blockSize, int numSpeakers) noexcep
                  DelayTap{});
     numActiveObjects_ = 0;
     return true;
+}
+
+void WfsRenderer::setSpeakerLayout3D(const float* dx, const float* dyFwd, const float* dz,
+                                      int count) noexcept {
+    if (dx == nullptr || dyFwd == nullptr || dz == nullptr || count <= 0) return;
+    if (count > kMaxSpeakers) count = kMaxSpeakers;
+    numSpeakers_ = count;
+    explicitLayout_ = true;
+    for (int s = 0; s < count; ++s) {
+        speakerRelX_[static_cast<size_t>(s)] = dx[s];
+        speakerRelY_[static_cast<size_t>(s)] = dyFwd[s];
+        speakerRelZ_[static_cast<size_t>(s)] = dz[s];
+        // Azimut/ILD/ITD desde el plano horizontal (mismo modelo que
+        // rebuildGeometry: pan = -sin(az) con az medido desde atrás). La
+        // altura no participa en ITD/ILD (simplificación estándar: los
+        // cues interaurales por defecto no codifican elevación).
+        const float az = std::atan2(-dx[s], -dyFwd[s]); // atrás=+π, coherente con rebuildGeometry
+        speakerAzimuth_[static_cast<size_t>(s)] = az;
+        const float pan = -std::sin(az);
+        const float theta = (pan + 1.f) * 0.25f * 3.14159265358979323846f;
+        speakerGainL_[static_cast<size_t>(s)] = std::cos(theta) * 1.41421356f;
+        speakerGainR_[static_cast<size_t>(s)] = std::sin(theta) * 1.41421356f;
+        const int itd = static_cast<int>(kMaxItdS * sampleRate_ * std::fabs(pan) + 0.5f);
+        if (pan >= 0.f) { speakerItdL_[static_cast<size_t>(s)] = itd; speakerItdR_[static_cast<size_t>(s)] = 0; }
+        else            { speakerItdL_[static_cast<size_t>(s)] = 0;   speakerItdR_[static_cast<size_t>(s)] = itd; }
+    }
 }
 
 void WfsRenderer::reset() noexcept {
@@ -173,11 +208,21 @@ void WfsRenderer::computeTapTargets(int si) noexcept {
     for (int s = 0; s < numSpeakers_; ++s) {
         DelayTap& tap = taps_[static_cast<size_t>(si) * static_cast<size_t>(numSpeakers_)
                               + static_cast<size_t>(s)];
-        // Posición del altavoz (az medido desde atrás → frente = ±π).
-        const float sx = -kArrayRadiusM * std::sin(speakerAzimuth_[s]);
-        const float sy = -kArrayRadiusM * std::cos(speakerAzimuth_[s]);
-        const float dx = o.x - sx, dy = o.y - sy;
-        const float d = std::sqrt(dx * dx + dy * dy);
+        // Posición del altavoz: geometría 3D real explícita (Fase 2) si se
+        // configuró vía setSpeakerLayout3D(), si no el array circular
+        // generado por rebuildGeometry() (comportamiento original).
+        float sx, sy, sz;
+        if (explicitLayout_) {
+            sx = speakerRelX_[static_cast<size_t>(s)];
+            sy = speakerRelY_[static_cast<size_t>(s)];
+            sz = speakerRelZ_[static_cast<size_t>(s)];
+        } else {
+            sx = -kArrayRadiusM * std::sin(speakerAzimuth_[s]);
+            sy = -kArrayRadiusM * std::cos(speakerAzimuth_[s]);
+            sz = 0.f; // fuentes y array circular viven a la altura del oído
+        }
+        const float dx = o.x - sx, dy = o.y - sy, dzh = 0.f - sz; // objeto a altura del oído
+        const float d = std::sqrt(dx * dx + dy * dy + dzh * dzh); // distancia 3D real (Fase 2)
         // Delay fraccionario objetivo (interpolación lineal en la lectura).
         const float delaySampF = (d / kSpeedOfSound) * sampleRate_;
         const float maxTap = static_cast<float>(maxDelayTap_ - blockSize_ - 4);
@@ -198,6 +243,7 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
                           float* outL, float* outR, int frames) noexcept {
     if (frames <= 0 || outL == nullptr || outR == nullptr) return;
     if (numActiveObjects_ == 0) return;
+    if (enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f) return;
     if (objectInputs == nullptr || numObjects <= 0) return;
     enableWfsDenormalGuard();   // FTZ/DAZ: sin microcode assists en el hilo RT
 
@@ -328,6 +374,22 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             slot.writePos = 0;
             --numActiveObjects_;
         }
+    }
+}
+
+void WfsRenderer::blendWithBypass(const float* dryL, const float* dryR,
+                                   const float* wetL, const float* wetR,
+                                   float* outL, float* outR, int frames) noexcept {
+    if (frames <= 0 || dryL == nullptr || dryR == nullptr ||
+        wetL == nullptr || wetR == nullptr || outL == nullptr || outR == nullptr) return;
+    const float step = 1.0f / (sampleRate_ * 0.015f);
+    for (int n = 0; n < frames; ++n) {
+        if (enabledMix_ < enabledTarget_)      enabledMix_ = std::min(enabledMix_ + step, enabledTarget_);
+        else if (enabledMix_ > enabledTarget_) enabledMix_ = std::max(enabledMix_ - step, enabledTarget_);
+        const float t = enabledMix_;
+        const float shaped = t * t * (3.0f - 2.0f * t);
+        outL[n] = dryL[n] * (1.0f - shaped) + wetL[n] * shaped;
+        outR[n] = dryR[n] * (1.0f - shaped) + wetR[n] * shaped;
     }
 }
 

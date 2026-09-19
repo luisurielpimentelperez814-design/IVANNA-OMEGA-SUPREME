@@ -262,6 +262,19 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (std::isfinite(s.upmixing_immersivity)) {
         fc->setImmersivity(s.upmixing_immersivity);
     }
+    // Wave Field Synthesis (misión "cerrar WFS de extremo a extremo",
+    // 2026-09-19): antes g_wfs_enabled/g_wfs_spread vivían como atomics
+    // AISLADOS por proceso (uno en libivanna_omega.so/app, otro en
+    // libomega_effect.so/audioserver — wfs_globals_effect.cpp) sin que
+    // ningún snapshot los conectara: el toggle de la UI nunca llegaba
+    // aquí. snapshot -> setWfsEnabled/setWfsSpread (mismos atomics que
+    // process() ya lee) -> setWfsSpeakerLayout (geometría 3D real de la
+    // sala, 7 altavoces) -> WfsRenderer.
+    fc->setWfsEnabled(s.wfs_enabled != 0);
+    if (std::isfinite(s.wfs_spread)) {
+        fc->setWfsSpread(s.wfs_spread);
+    }
+    fc->setWfsSpeakerLayout(s.wfs_speaker_x, s.wfs_speaker_y, s.wfs_speaker_z);
     // Harmonic gain (slider UI "Ganancia armónica")
     if (std::isfinite(s.harmonic_gain) && s.harmonic_gain >= 0.f) {
         fc->setHarmonicGain(s.harmonic_gain);
