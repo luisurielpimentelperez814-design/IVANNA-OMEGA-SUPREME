@@ -72,7 +72,8 @@ public:
     __attribute__((no_sanitize("thread")))
     // Escritor: un solo hilo (si hay más de uno, usar SeqlockBusMulti).
     void publish(const T& value) noexcept {
-        guard_.fetch_add(1, std::memory_order_acq_rel);
+        while (writerLock_.test_and_set(std::memory_order_acquire)) {}
+        guard_.fetch_add(1, std::memory_order_seq_cst);
         // FIX (UB formal reportado por ThreadSanitizer en CI — 7 warnings
         // de data race en test_audio_bus): la copia de struct NO atómica
         // entre los guard es undefined behavior según el modelo de memoria
@@ -84,9 +85,10 @@ public:
         uint32_t buf[kWords];
         std::memcpy(buf, &value, sizeof(T));
         for (size_t i = 0; i < kWords; ++i)
-            words_[i].store(buf[i], std::memory_order_relaxed);
-        guard_.fetch_add(1, std::memory_order_release);
-        seq_.fetch_add(1, std::memory_order_release);
+            words_[i].store(buf[i], std::memory_order_seq_cst);
+        guard_.fetch_add(1, std::memory_order_seq_cst);
+        seq_.fetch_add(1, std::memory_order_seq_cst);
+        writerLock_.clear(std::memory_order_seq_cst);
     }
 
     // Lector: puede haber varios lectores concurrentes (todos ven el
@@ -108,7 +110,7 @@ public:
             if (g1 & 1u) continue;           // escritura en curso, reintentar
             uint32_t buf[kWords];
             for (size_t i = 0; i < kWords; ++i)
-                buf[i] = words_[i].load(std::memory_order_relaxed);
+                buf[i] = words_[i].load(std::memory_order_seq_cst);
             std::memcpy(&snap, buf, sizeof(T));
             g2 = guard_.load(std::memory_order_acquire);
             if (g1 == g2) break;             // lectura consistente confirmada
@@ -126,6 +128,7 @@ private:
     alignas(64) std::array<std::atomic<uint32_t>, kWords> words_{};
     std::atomic<uint32_t> guard_{0};
     std::atomic<uint64_t> seq_{0};
+    std::atomic_flag writerLock_ = ATOMIC_FLAG_INIT;
 };
 
 // ── SeqlockBusMulti<T, N> — multi-writer (hasta N fuentes) / multi-reader ──
