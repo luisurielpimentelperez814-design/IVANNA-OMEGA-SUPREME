@@ -24,7 +24,10 @@ TEST(WfsProtection, SoftLimiterNuncaClipea) {
     for (float in = 0.f; in <= 1000.f; in += 0.5f)   // incluye saturacion extrema
         mx = std::max(mx, std::fabs(softLimit(in)));
     EXPECT_LT(mx, 1.0f);                 // asintotico a 1.0 -> jamas clipea
-    EXPECT_GT(mx, 0.99f);                // y si comprime de verdad sobre el knee
+    EXPECT_GE(mx, 0.99f);                // alcanza el knee (softLimit(0.99)=0.99 exacto)
+    // Compresion real: una entrada de 1000 debe salir MUY por debajo de 1000
+    EXPECT_LT(softLimit(1000.f), 1.0f);
+    EXPECT_GT(softLimit(1000.f), 0.99f); // comprimida cerca del techo, no lineal
 }
 TEST(WfsProtection, SoftLimiterTransparenteEnRango) {
     EXPECT_EQ(softLimit(0.5f), 0.5f);    // |x|<=0.99 pasa BIT-EXACTO
