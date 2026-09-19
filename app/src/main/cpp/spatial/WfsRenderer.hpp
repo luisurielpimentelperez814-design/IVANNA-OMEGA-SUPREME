@@ -251,8 +251,13 @@ struct WfsProtectionChain {
     // Soft limiter tanh con normalizacion: |x|<=1 pasa casi lineal, picos
     // se comprimen suavemente a <= ~0.99. Knee suave, sin discontinuidad.
     static inline float softLimit(float x) noexcept {
-        constexpr float drive = 1.0f / 0.7615941f; // 1/tanh(1) -> x=1 sale ~1
-        return std::tanh(x) * drive * 0.99f;
+        // Knee en 0.99: por debajo pasa BIT-EXACTO (transparente de verdad).
+        // Por encima: tanh asintotico a 1.0 -> imposible clipear, continuo en
+        // el knee (tanh(0)=0), sin salto de valor ni de pendiente audible.
+        const float a = std::fabs(x);
+        if (a <= 0.99f) return x;
+        const float lim = 0.99f + 0.01f * std::tanh((a - 0.99f) * 20.0f);
+        return std::copysign(lim, x);
     }
 
     inline float protectChannel(float x, float& xp, float& yp) noexcept {
@@ -267,8 +272,8 @@ struct WfsProtectionChain {
         // 5. True-peak tracking (para telemetria/diagnostico)
         const float a = std::fabs(out);
         peakHold_ = a > peakHold_ ? a : peakHold_ * 0.9995f;
-        // 6. Soft limiter solo si supera 1.0 (transparente en rango normal)
-        if (a > 1.0f) out = softLimit(out);
+        // 6. Soft limiter siempre: identidad bajo 0.99, compresion arriba
+        out = softLimit(out);
         return out;
     }
     inline void process(float& L, float& R) noexcept {

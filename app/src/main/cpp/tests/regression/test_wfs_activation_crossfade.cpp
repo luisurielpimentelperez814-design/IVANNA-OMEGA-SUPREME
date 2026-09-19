@@ -6,7 +6,11 @@
 #include <algorithm>
 
 // Reproduce la cadena de proteccion (contrato de WfsProtectionChain)
-static float softLimit(float x){ return std::tanh(x)*(1.0f/0.7615941f)*0.99f; }
+static float softLimit(float x){
+    const float a = std::fabs(x);
+    if (a <= 0.99f) return x;
+    return std::copysign(0.99f + 0.01f*std::tanh((a-0.99f)*20.f), x);
+}
 
 TEST(WfsProtection, NanInfSeConviertenEnSilencio) {
     for (float bad : {NAN, INFINITY, -INFINITY}) {
@@ -17,12 +21,18 @@ TEST(WfsProtection, NanInfSeConviertenEnSilencio) {
 }
 TEST(WfsProtection, SoftLimiterNuncaClipea) {
     float mx = 0.f;
-    for (float in = 0.f; in <= 8.f; in += 0.01f)
+    for (float in = 0.f; in <= 1000.f; in += 0.5f)   // incluye saturacion extrema
         mx = std::max(mx, std::fabs(softLimit(in)));
-    EXPECT_LT(mx, 1.0f);                 // jamas supera 1.0 -> cero clipping
+    EXPECT_LT(mx, 1.0f);                 // asintotico a 1.0 -> jamas clipea
+    EXPECT_GT(mx, 0.99f);                // y si comprime de verdad sobre el knee
 }
 TEST(WfsProtection, SoftLimiterTransparenteEnRango) {
-    EXPECT_NEAR(softLimit(0.5f), 0.5f, 0.02f); // |x|<1 pasa casi intacto
+    EXPECT_EQ(softLimit(0.5f), 0.5f);    // |x|<=0.99 pasa BIT-EXACTO
+    EXPECT_EQ(softLimit(-0.98f), -0.98f);
+}
+TEST(WfsProtection, SoftLimiterContinuoEnElKnee) {
+    // Sin salto en 0.99 (un salto aqui seria un click en cada pico)
+    EXPECT_NEAR(softLimit(0.99f), softLimit(0.9900001f), 1e-3f);
 }
 TEST(WfsCrossfade, ActivacionSinSalto) {
     // smoothstep de 0->1: la derivada en los extremos es 0 (sin click de esquina)
