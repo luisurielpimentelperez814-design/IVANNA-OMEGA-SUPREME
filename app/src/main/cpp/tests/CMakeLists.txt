@@ -158,6 +158,7 @@ add_test(NAME test_ihr1_format COMMAND test_ihr1_format)
 add_executable(test_shm_lifecycle
   test_shm_lifecycle.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/shm_manager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/android_log_compat.cpp
 )
 target_include_directories(test_shm_lifecycle PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -174,6 +175,7 @@ add_test(NAME test_shm_lifecycle COMMAND test_shm_lifecycle)
 add_executable(test_upmixing_control_plane
   test_upmixing_control_plane.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/omega_control_bus.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/android_log_compat.cpp
 )
 target_include_directories(test_upmixing_control_plane PRIVATE .. ../include)
 target_compile_options(test_upmixing_control_plane PRIVATE -Wall -Wextra)

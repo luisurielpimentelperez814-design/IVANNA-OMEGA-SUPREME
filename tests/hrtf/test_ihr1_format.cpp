@@ -27,6 +27,11 @@ static float sampleR(int pos, int tap) { return -(pos * 1000.f + tap); }
 
 static void writeIhr1(const std::string& path, bool azel, int numPos, int taps) {
     FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) {
+        std::printf("FAIL: no se pudo crear archivo IHR1: %s\\n", path.c_str());
+        ++failures;
+        return;
+    }
     std::fwrite("IHR1", 1, 4, f);
     int32_t a = numPos, b = taps, c = 48000;
     std::fwrite(&a, 4, 1, f); std::fwrite(&b, 4, 1, f); std::fwrite(&c, 4, 1, f);
@@ -52,7 +57,7 @@ static void writeIhr1(const std::string& path, bool azel, int numPos, int taps) 
 }
 
 static void checkRoundTrip(bool azel, int numPos, int taps, const char* label) {
-    const std::string path = std::string("/tmp/ihr1_") + label + ".ihr1";
+    const std::string path = std::string("/data/data/com.termux/files/home/.ihr1_") + label + ".ihr1";
     writeIhr1(path, azel, numPos, taps);
 
     Dataset ds;
@@ -84,18 +89,34 @@ int main() {
     checkRoundTrip(true, 1250, 8, "cipic_denso");
 
     // Truncado: debe rechazarse, nunca publicarse a medias.
-    const std::string trunc = "/tmp/ihr1_trunc.ihr1";
+    const std::string trunc = "/data/data/com.termux/files/home/.ihr1_trunc.ihr1";
     writeIhr1(trunc, true, 32, 16);
     FILE* f = std::fopen(trunc.c_str(), "rb");
+    if (!f) {
+        std::printf("FAIL: no se pudo abrir trunc para lectura\n");
+        ++failures;
+    }
+    if (!f) return failures;
     std::fseek(f, 0, SEEK_END);
     const long size = std::ftell(f);
     std::fclose(f);
     f = std::fopen(trunc.c_str(), "rb");
+    if (!f) {
+        std::printf("FAIL: no se pudo reabrir trunc\n");
+        ++failures;
+    }
+    if (!f) return failures;
     std::vector<char> buf(static_cast<size_t>(size) - 64);
     std::fread(buf.data(), 1, buf.size(), f);
     std::fclose(f);
     f = std::fopen(trunc.c_str(), "wb");
-    std::fwrite(buf.data(), 1, buf.size(), f);
+    if (!f) {
+        std::printf("FAIL: no se pudo truncar archivo IHR1\n");
+        ++failures;
+    } else {
+        std::fwrite(buf.data(), 1, buf.size(), f);
+        std::fclose(f);
+    }
     std::fclose(f);
 
     Dataset ds;
@@ -103,10 +124,15 @@ int main() {
     std::remove(trunc.c_str());
 
     // Magic ajeno: rechazo limpio.
-    const std::string bad = "/tmp/ihr1_bad.ihr1";
+    const std::string bad = "/data/data/com.termux/files/home/.ihr1_bad.ihr1";
     f = std::fopen(bad.c_str(), "wb");
-    std::fwrite("NOPE----------------", 1, 20, f);
-    std::fclose(f);
+    if (!f) {
+        std::printf("FAIL: no se pudo crear archivo bad IHR1\n");
+        ++failures;
+    } else {
+        std::fwrite("NOPE----------------", 1, 20, f);
+        std::fclose(f);
+    }
     Dataset ds2;
     CHECK(!read(bad.c_str(), ds2), "un fichero sin magic IHR1 se acepto");
     std::remove(bad.c_str());

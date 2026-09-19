@@ -103,6 +103,13 @@ float SafetyLimiter::limitSample(float x) {
 void SafetyLimiter::process(float* L, float* R, int frames) {
     if (m_bypass || frames <= 0) return;
 
+    // Sanitización de entrada: el limiter es la última barrera del DSP.
+    // Ningún NaN/Inf puede entrar al cálculo de peak ni contaminar estados.
+    for (int i = 0; i < frames; ++i) {
+        if (!std::isfinite(L[i])) L[i] = 0.0f;
+        if (!std::isfinite(R[i])) R[i] = 0.0f;
+    }
+
     // Lazy-init del coeficiente de release si nunca se llamo setSampleRate().
     if (m_releaseCoef <= 0.f) setSampleRate(m_sampleRate);
 
@@ -206,8 +213,22 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
             if (gain < 0.0f) gain = 0.0f;
         }
 
-        float outL = L[i] * gain;
-        float outR = R[i] * gain;
+        if (!std::isfinite(L[i])) {
+            L[i] = 0.0f;
+            m_clipCount.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!std::isfinite(R[i])) {
+            R[i] = 0.0f;
+            m_clipCount.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        // Entrada defensiva: nunca permitir que NaN/Inf llegue al
+        // multiplicador ni al estado audible. El limiter es la última barrera.
+        const float inL = std::isfinite(L[i]) ? L[i] : 0.0f;
+        const float inR = std::isfinite(R[i]) ? R[i] : 0.0f;
+
+        float outL = inL * gain;
+        float outR = inR * gain;
 
         // Seguridad final: NaN/Inf a cero y saturacion SUAVE del residuo.
         // El clip duro anterior (copysign al ceiling) aplanaba la cresta ->

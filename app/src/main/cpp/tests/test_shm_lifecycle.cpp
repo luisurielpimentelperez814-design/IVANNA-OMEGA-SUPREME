@@ -63,7 +63,7 @@ int main() {
           "layout: frames SAF+heartbeat caben en la zona de control");
 
     // ── 3..7. Ciclo de vida sobre un backing file temporal ──
-    std::string path = std::string("/tmp/ivanna_shm_test_") + std::to_string(getpid());
+    std::string path = std::string("/data/data/com.termux/files/home/.ivanna_shm_test_") + std::to_string(getpid());
     ::unlink(path.c_str());
 
     OmegaShmManager mgr;

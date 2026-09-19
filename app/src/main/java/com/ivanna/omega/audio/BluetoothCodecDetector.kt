@@ -84,7 +84,14 @@ object BluetoothCodecDetector {
                     proxyRef = a2dp
                     val device = a2dp?.connectedDevices?.firstOrNull()
                     if (a2dp != null && device != null) {
-                        val status: BluetoothCodecStatus? = a2dp.getCodecStatus(device)
+                        val status = runCatching {
+                            val method = a2dp.javaClass.getMethod(
+                                "getCodecStatus",
+                                android.bluetooth.BluetoothDevice::class.java
+                            )
+                            method.invoke(a2dp, device) as? BluetoothCodecStatus
+                        }.getOrNull()
+
                         val cfg: BluetoothCodecConfig? = status?.codecConfig
                         result.set(mapCodecConfig(cfg))
                     }

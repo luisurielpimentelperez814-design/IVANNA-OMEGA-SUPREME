@@ -16,7 +16,7 @@ using ivanna::OmegaControlBus;
 using ivanna::OmegaDspSnapshot;
 
 namespace {
-const char* kTestPath = "/tmp/omega_upmixing_ctrl_test";
+const char* kTestPath = "./omega_upmixing_ctrl_test";
 }
 
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
