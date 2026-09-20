@@ -307,4 +307,9 @@ object IvannaNativeLib {
             fatigueProtection: Float
         )
 
-    }
+    
+    external fun nativeSetSampleRate(rate: Int): Boolean
+    external fun nativeSetBitDepth(depth: Int): Boolean
+    external fun nativeGetConfiguredSampleRate(): Int
+    external fun nativeGetConfiguredBitDepth(): Int
+}
