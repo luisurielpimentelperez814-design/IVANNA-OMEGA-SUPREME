@@ -13,7 +13,10 @@ object HiResAudioManager {
     private const val KEY_DEPTH = "depth"
     const val DEFAULT_RATE = 48000
     const val DEFAULT_DEPTH = 24
-    val VALID_RATES = intArrayOf(48000, 96000, 192000, 384000)
+    // Familia 48 kHz y familia 44.1 kHz. La de 44.1k faltaba (2026-09-20):
+    // UsbAudioProManager ya la negocia con el DAC, pero el panel no la
+    // ofrecia, asi que toda la musica de 44.1 kHz salia remuestreada a 48k.
+    val VALID_RATES = intArrayOf(44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000)
     val VALID_DEPTHS = intArrayOf(16, 24, 32)
     @Volatile var currentRate: Int = DEFAULT_RATE; private set
     @Volatile var currentDepth: Int = DEFAULT_DEPTH; private set

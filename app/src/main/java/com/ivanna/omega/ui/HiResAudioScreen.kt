@@ -22,13 +22,13 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("◄ VOLVER", fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onBack() })
         Text("AUDIO HI-RES")
-        Text("Ruta activa: " + routeName + " — max real: " + (routeMax/1000) + " kHz")
+        Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz")
         Text("Sample rate")
         HiResAudioManager.VALID_RATES.forEach { r ->
             val enabled = r <= routeMax
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(selected = rate == r, onClick = if (enabled) ({ rate = r; applied = HiResAudioManager.apply(context, r, depth) }) else null)
-                Text((r/1000).toString() + " kHz" + if (enabled) "" else " (no soportado por la ruta)")
+                Text(khzLabel(r) + " kHz" + if (enabled) "" else " (no soportado por la ruta)")
             }
         }
         Text("Profundidad")
@@ -41,4 +41,13 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
         if (applied) Text("Aplicado y persistido — el daemon lo recoge al (re)iniciar.")
         Text("384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android.")
     }
+}
+
+/** Etiqueta de sample rate sin truncar: 44100 -> "44.1", 48000 -> "48".
+ *  (r/1000) enteros mostraba "44 kHz" y "176 kHz" para 44100/176400 — cifras
+ *  que no existen. Se corrige al anadir la familia de 44.1 kHz al panel. */
+private fun khzLabel(rate: Int): String {
+    val whole = rate / 1000
+    val frac  = (rate % 1000) / 100
+    return if (frac == 0) whole.toString() else "$whole.$frac"
 }
