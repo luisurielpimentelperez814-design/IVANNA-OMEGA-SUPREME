@@ -15,6 +15,11 @@ import com.ivanna.omega.audio.HiResAudioManager
 @Composable
 fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
+    // FIX (botón que "no funciona"): el estado inicial se lee SIEMPRE de lo
+    // persistido (no solo del @Volatile en memoria, que arranca en el default
+    // 48k/24b cada vez que el proceso muere). Así la pantalla refleja tu
+    // selección real aunque la app se haya reiniciado.
+    HiResAudioManager.restore(context)
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }
     var depth by remember { mutableStateOf(HiResAudioManager.currentDepth) }
     val (routeName, routeMax) = remember { HiResAudioManager.activeRoute(context) }
@@ -26,19 +31,47 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
         Text("Sample rate")
         HiResAudioManager.VALID_RATES.forEach { r ->
             val enabled = r <= routeMax
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = rate == r, onClick = if (enabled) ({ rate = r; applied = HiResAudioManager.apply(context, r, depth) }) else null)
+            // FIX UX: toda la fila es clickable (antes solo el círculo del
+            // RadioButton, objetivo táctil ~24dp — por eso "no desplegaba ni
+            // seleccionaba"). Y el estado se refleja al instante.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled) {
+                        rate = r
+                        applied = HiResAudioManager.apply(context, r, depth)
+                    }
+                    .padding(vertical = 4.dp)
+            ) {
+                RadioButton(selected = rate == r, onClick = null /* la fila maneja el click */)
                 Text(khzLabel(r) + " kHz" + if (enabled) "" else " (no soportado por la ruta)")
             }
         }
         Text("Profundidad")
         HiResAudioManager.VALID_DEPTHS.forEach { d ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = depth == d, onClick = { depth = d; applied = HiResAudioManager.apply(context, rate, d) })
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        depth = d
+                        applied = HiResAudioManager.apply(context, rate, d)
+                    }
+                    .padding(vertical = 4.dp)
+            ) {
+                RadioButton(selected = depth == d, onClick = null)
                 Text(d.toString() + " bits")
             }
         }
-        if (applied) Text("Aplicado y persistido — el daemon lo recoge al (re)iniciar.")
+        // Confirmación SIEMPRE visible con los valores activos — el usuario
+        // ve de inmediato qué quedó seleccionado, no un mensaje condicional.
+        Text(
+            "Activo: " + khzLabel(HiResAudioManager.currentRate) + " kHz / " +
+                HiResAudioManager.currentDepth + " bits" +
+                if (applied) " — aplicado y persistido (el daemon lo recoge al reiniciar)" else "",
+            fontWeight = FontWeight.Bold
+        )
         Text("384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android.")
     }
 }

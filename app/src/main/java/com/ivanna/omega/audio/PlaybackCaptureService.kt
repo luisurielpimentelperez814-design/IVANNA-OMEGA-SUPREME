@@ -460,6 +460,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // Rampa limpia en cada (re)arranque del motor: el procesado entra
             // desde 0 hasta el nivel de fusión Haas en ~0.5 s.
             resetMixRamp()
+            // FIX (desface acumulado, p.ej. al pausar/reanudar video): al
+            // (re)arrancar el motor se purga la cola del AudioTrack — si se
+            // reusa un track con frames viejos en cola, suenan DESPUÉS del
+            // audio nuevo y el desface crece en cada pausa/seek del video.
+            runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.play() }
             workerHandler?.post(processingLoop)
         }
 
@@ -528,9 +533,21 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build())
-                .setBufferSizeInBytes(minTrack)
+                // FIX (desface + microcortes con video, p.ej. Prime Video):
+                // PERFORMANCE_MODE_LOW_LATENCY + buffer mínimo = el hilo de
+                // audio compite por CPU con el decoder de video y UNDERRUNEA
+                // (gap = microcorte; al recuperarse, la cola se desalinea del
+                // original = desface acumulado que crece con cada underrun).
+                // Solución: PERFORMANCE_MODE_NONE (ruta normal, más estable)
+                // + buffer de 4 bloques (margen de ~43 ms a 48k/512) — la
+                // latencia estructural es constante y predecible, y el mix
+                // Haas ya absorbe la copia como ambiencia, no como eco.
+                // Con video el sistema nunca deja el hilo de audio sin
+                // presupuesto de CPU lo bastante largo como para vaciar 4
+                // bloques seguidos.
+                .setBufferSizeInBytes(minTrack * 4)
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_NONE)
                 .build()
             if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
                 audioTrack?.release();  audioTrack  = null
