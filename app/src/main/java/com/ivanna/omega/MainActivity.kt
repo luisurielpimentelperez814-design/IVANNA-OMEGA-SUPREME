@@ -263,6 +263,7 @@ fun OmegaApp() {
                     nav.navigate("dashboard")
                 }
             }
+            composable("hires") { com.ivanna.omega.ui.HiResAudioScreen() }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
                     com.ivanna.omega.assistant.IvannaLaunchGreeting.greetOnce(context)
