@@ -46,7 +46,7 @@ class AudioPipeline {
         fun syncHardwareSampleRate(context: android.content.Context) {
             val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
             val hw = am?.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull()
-            if (hw != null && hw in 8000..192000) SAMPLE_RATE = hw
+            if (hw != null && hw in 8000..384000) SAMPLE_RATE = hw  // paridad con AudioEngine: rutas nativas directas hasta 384k (USB-DAC)
         }
         const val FRAMES_PER_BLOCK = 256
         const val BUFFER_SIZE = FRAMES_PER_BLOCK * 2   // estéreo intercalado
