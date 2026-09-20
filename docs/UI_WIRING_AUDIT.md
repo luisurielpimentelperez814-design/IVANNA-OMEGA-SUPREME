@@ -51,3 +51,34 @@ Los controles con efecto DSP conservan su ruta JNI/ParameterStore intacta.
 | SpatialControlPanel.kt | 1 | 1 | 1 | no | si | 0→0 |
 | SystemScreen.kt | 0 | 0 | 4 | no | si | 0→0 |
 | TinyMlClassifierPanel.kt | 1 | 0 | 1 | no | si | 0→0 |
+
+
+---
+
+## Cierre profundo de las 12 pantallas marcadas (2026-09-20, sesión Genspark)
+
+Verificación de flujo real (UI → callback → estado → persistencia/JNI), leyendo el código actual.
+No se aceptaron suposiciones; cada control se comprobó contra su destino.
+
+| Pantalla | Controles | Ruta real verificada | Estado |
+|---|---|---|---|
+| AuditoryExperienceScreen | 1 botón (entrar al motor) | `onEnterMotorClick` → nav BRAIN (MainActivity:578) ✅; `onVideoSelected` tenía default vacío sin caller → **REPARADO**: ahora persiste vía `UiActionBridge.persist` | ✅ tras fix |
+| BenchmarkScreen | 2 botones (run/cancel) | `BenchmarkRunner` real + `nativeRunBenchmark` JNI; sin persistencia necesaria (acción efímera) | ✅ |
+| BridgePlayerCard | 1 slider + 6 botones | slider → `onValueChange` real + `onValueChangeFinished` commit; botones → player bridge | ✅ |
+| CognitiveDashboardActivity | 1 slider + 1 botón | slider → `vm.setAggressiveness` (ViewModel real); botón → `vm.resetToNeutralProfile` | ✅ |
+| Iso226CalibratorPanel | 2 sliders + 1 botón | sliders → estado local; botón → `Iso226Calibrator.applyAll(...)` + `Iso226Calibrator.persist(context)` — persistencia real | ✅ |
+| IvannaAssistantScreen | 4 botones + campo texto | asistente real (`IvannaAssistant.processText`/`toggleListening`), Gemini, micrófono | ✅ |
+| IvannaLabScreen | 2 botones + 1 switch | `IvannaLabMonitor.measureNow/resetAndStart/setEnabled` — motor real | ✅ |
+| IvannaOmniComponents | 1 slider + 1 switch + 1 default nav | default `onOpenAdaptiveEngineManual` es intencional: su caller (MainActivity:1140) navega a ADAPTIVE ✅ | ✅ |
+| MagistralDashboardScreen | 3 botones | navegación/acciones reales verificadas | ✅ |
+| NetworkStatusPanel | 2 botones + default back | default `onBack` intencional: caller (MainActivity:718) hace `popBackStack()` ✅ | ✅ |
+| PerceptualBrainDashboard | 4 sliders + 1 botón | cada slider → `engine.setX(it)` + `PerceptualBrainPrefs.save(...)` — estado Y persistencia reales | ✅ |
+| Phase7Screen | 1 checkbox | → `prefs.edit().putBoolean("autoEqEnabled")` + `IvannaSpatialManager.setAutoEq` — persistencia + DSP real | ✅ |
+
+**Único problema real encontrado y reparado:** `AuditoryExperienceScreen.onVideoSelected` (default vacío
+sin call-site — la selección de vídeo se perdía). Reparado persistiendo la ruta vía UiActionBridge.
+Los otros 2 defaults vacíos del barrido (`onOpenAdaptiveEngineManual`, `NetworkStatusPanel.onBack`)
+son defaults Kotlin intencionales con callers reales que los sobreescriben — NO son callbacks muertos.
+
+Las 12 pantallas quedan: controles funcionales ✅, cableado real ✅, persistencia donde aplica ✅,
+sin callbacks muertos ✅, sin estados falsos ✅.

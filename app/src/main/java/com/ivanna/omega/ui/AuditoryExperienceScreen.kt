@@ -40,7 +40,15 @@ fun AuditoryExperienceScreen(
     // DEFAULT PATH: Cambia esto si tus videos están en otra ruta de la memoria interna
     videoFolderPath: String = "/storage/emulated/0/IVANNA/Videos", 
     onEnterMotorClick: () -> Unit = {},
-    onVideoSelected: (File) -> Unit = {}
+    onVideoSelected: (File) -> Unit = { f ->
+        // FIX (auditoría UI 2026-09-20): este callback quedaba con el default
+        // vacío porque su único call-site (MainActivity.kt:577) no lo pasa —
+        // seleccionar un vídeo no hacía NADA y el gesto se perdía sin rastro.
+        // Ahora, como mínimo, la acción se persiste vía UiActionBridge (misma
+        // vía que el resto del barrido) para que el call-site futuro pueda
+        // recuperar la selección al reiniciar en vez de perderla en silencio.
+        com.ivanna.omega.core.UiActionBridge.persist("AuditoryExperienceScreen", "video_selected", f.absolutePath)
+    }
 ) {
     val context = LocalContext.current
     var videoFiles by remember { mutableStateOf<List<File>>(emptyList()) }
