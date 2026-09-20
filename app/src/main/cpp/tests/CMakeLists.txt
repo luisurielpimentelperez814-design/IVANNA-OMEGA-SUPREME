@@ -81,6 +81,7 @@ ivanna_add_test(gammatone_numerical_stability)
 ivanna_add_test(no_denormals_low_level)
 ivanna_add_test(test_phase_oracle_kalman)
 ivanna_add_test(dsp_core_stability)
+ivanna_add_test(test_hires_config)
 # Codificación Ambisonics (HOA) real, plano horizontal, orden ≤2 — ver
 # spatial/HoaGainMatrix.hpp. Header-only (pura matemática, sin estado), no
 # necesita entrar a la librería ivanna_dsp_under_test.
