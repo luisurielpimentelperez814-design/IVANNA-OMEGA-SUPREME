@@ -117,6 +117,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
+    onOpenHiRes: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
     onOpenAdaptiveEngineManual: () -> Unit = {},
     onOpenOpe: () -> Unit = {},
@@ -604,6 +605,23 @@ fun IvannaControlPanel(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonMagenta)
                 ) { Text("PERFILES", fontSize = 11.sp) }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // FIX (pantalla inalcanzable, 2026-09-19): HiResAudioScreen
+                // (selector real de sample rate 16..384 kHz y profundidad
+                // 16/24/32 bit, HiResAudioManager) existía con la ruta
+                // "hires" registrada en el NavHost, pero ningún botón en
+                // toda la app navegaba ahí — el propietario tenía razón,
+                // no era una alucinación.
+                OutlinedButton(
+                    onClick = onOpenHiRes,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("AUDIO HI-RES", fontSize = 11.sp) }
             }
         }
 

@@ -1,4 +1,5 @@
 package com.ivanna.omega.ui
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -8,16 +9,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ivanna.omega.audio.HiResAudioManager
 @Composable
-fun HiResAudioScreen() {
+fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }
     var depth by remember { mutableStateOf(HiResAudioManager.currentDepth) }
     val (routeName, routeMax) = remember { HiResAudioManager.activeRoute(context) }
     var applied by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("◄ VOLVER", fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onBack() })
         Text("AUDIO HI-RES")
         Text("Ruta activa: " + routeName + " — max real: " + (routeMax/1000) + " kHz")
         Text("Sample rate")

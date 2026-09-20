@@ -263,7 +263,7 @@ fun OmegaApp() {
                     nav.navigate("dashboard")
                 }
             }
-            composable("hires") { com.ivanna.omega.ui.HiResAudioScreen() }
+            composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
                     com.ivanna.omega.assistant.IvannaLaunchGreeting.greetOnce(context)
@@ -1119,6 +1119,7 @@ fun DashboardScreen(
                 IvannaSpatialEngine.setWidth(it)
             },
             onOpenVisualizer        = { nav.navigate("visualizer") },
+            onOpenHiRes             = { nav.navigate("hires") },
             onOpenOpe               = { nav.navigate(IvannaRoute.SOUND) },
             onOpenBinaural          = { nav.navigate(IvannaRoute.SOUND) },
             onOpenTelemetry         = { nav.navigate(IvannaRoute.SYSTEM) },
