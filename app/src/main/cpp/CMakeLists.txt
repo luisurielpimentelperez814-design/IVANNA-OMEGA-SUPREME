@@ -258,6 +258,7 @@ target_link_libraries(ivanna_omega
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
     omega_effect.cpp
+    ivanna_hires_jni.cpp
     # FIX(build): omega_effect.cpp incluye IvannaFusionCore.cpp via unity-build
     # (#include "IvannaFusionCore.cpp" en línea 3), que a su vez instancia las
     # 4 clases siguientes. Sus .cpp deben compilarse como unidades separadas
