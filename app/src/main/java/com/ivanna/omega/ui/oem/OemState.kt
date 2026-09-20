@@ -4,6 +4,11 @@ data class OemState(
     val engineState      : EngineState = EngineState.UNKNOWN,
     val backend          : AudioBackend = AudioBackend.UNKNOWN,
     val nativeLoaded     : Boolean = false,
+    // Estado REAL del cDSP Hexagon (IvannaDspManager), no inferido del modo
+    // root — antes el dashboard mostraba "Hexagon DSP" con solo daemon vivo.
+    val dspOpened        : Boolean = false,
+    val dspActive        : Boolean = false,
+    val dspCpuLoad       : Float = 0f,
     val daemonAlive      : Boolean = false,
     val adaptiveRunning  : Boolean = false,
     val activeRoute      : Float = 0f,

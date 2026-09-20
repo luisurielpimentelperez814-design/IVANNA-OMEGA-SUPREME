@@ -10,6 +10,7 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPState
 import com.ivanna.omega.magisk.OmegaDaemon
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.neuromorphic.IvannaDspManager
 import com.ivanna.omega.saf.SaFBridge
 import com.ivanna.omega.saf.SaFRoomBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
@@ -46,12 +47,41 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val daemonAlive = OmegaEngineBridge.isConnected
 
         // ── Backend ───────────────────────────────────────────────────────────
+        // FIX (Hexagon honesto): antes ROOT_DAEMON mapeaba a HEXAGON_DSP sin
+        // consultar el cDSP — el dashboard decia "Hexagon DSP" en cualquier
+        // dispositivo rooteado aunque el FastRPC jamas hubiera abierto (el
+        // skel QAIC propietario no esta en el APK). Ahora: HEXAGON_DSP solo
+        // cuando el DSP esta realmente abierto Y activo; si el daemon root
+        // procesa system-wide sin cDSP, eso es DSP daemon (NEON en el
+        // modulo), no Hexagon. El estado sale de IvannaDspManager, que es la
+        // unica fuente que sabe si nativeDspOpen() tuvo exito.
         val backendMode = runCatching { AudioBackendSelector.mode.value }.getOrNull()
-        val backend = when (backendMode) {
-            AudioBackendSelector.Mode.ROOT_DAEMON    -> OemState.AudioBackend.HEXAGON_DSP
-            AudioBackendSelector.Mode.ROOT_NO_DAEMON -> OemState.AudioBackend.NEON_ARM64
-            AudioBackendSelector.Mode.NO_ROOT        -> OemState.AudioBackend.CPU_FALLBACK
+        val dsp = IvannaDspManager.state.value
+        val backend = when {
+            dsp.opened && dsp.active                     -> OemState.AudioBackend.HEXAGON_DSP
+            backendMode == AudioBackendSelector.Mode.ROOT_DAEMON -> OemState.AudioBackend.NEON_ARM64
+            backendMode == AudioBackendSelector.Mode.ROOT_NO_DAEMON -> OemState.AudioBackend.NEON_ARM64
+            backendMode == AudioBackendSelector.Mode.NO_ROOT        -> OemState.AudioBackend.CPU_FALLBACK
             else                                     -> OemState.AudioBackend.UNKNOWN
+        }
+
+        // ── Sync de parametros neuro al cDSP (cableado que faltaba) ─────────
+        // syncNeuroParams() no tenia NINGUN llamador (verificado por grep):
+        // los sliders del usuario actualizaban el motor CPU y el DSP seguia
+        // con sus defaults de apertura. Cuando el DSP esta abierto, se le
+        // empujan los valores persistidos de la SSOT (core.ParameterStore) en
+        // cada poll — idempotente y lock-free (el manager ya lo garantiza).
+        if (dsp.opened) {
+            runCatching {
+                val p = com.ivanna.omega.core.ParameterStore(getApplication())
+                IvannaDspManager.syncNeuroParams(
+                    alpha          = p.getNpeOhcCompression(),
+                    beta           = p.getNpeLateralInhib(),
+                    lateralInhib   = p.getNpeLateralInhib(),
+                    ohcCompression = p.getNpeOhcCompression(),
+                    masterGainDb   = p.getNpeMasterGain()
+                )
+            }.onFailure { android.util.Log.w("OemViewModel", "syncNeuroParams: ${it.message}") }
         }
 
         // ── Thermal ───────────────────────────────────────────────────────────
@@ -176,6 +206,9 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = OemState(
             engineState    = engineState,
             backend        = backend,
+            dspOpened      = dsp.opened,
+            dspActive      = dsp.active,
+            dspCpuLoad     = dsp.metrics.cpuLoadRatio,
             nativeLoaded   = loaded,
             daemonAlive    = daemonAlive,
             thermalLoad    = thermalLoad,
