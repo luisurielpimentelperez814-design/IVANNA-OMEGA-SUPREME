@@ -227,6 +227,12 @@ fun ControlTabScreen(
         },
 
         // ── Navegación ──────────────────────────────────────────────────
+        // CAUSA RAIZ del boton "AUDIO HI-RES" que no hacia nada: la pantalla viva
+        // es MainScaffold -> ControlTabScreen -> IvannaControlPanel, y aqui nunca
+        // se pasaba onOpenHiRes (default `{}`). Los arreglos previos solo cablearon
+        // el DashboardScreen legacy de MainActivity, que ya no es la pantalla real.
+        // La ruta "hires" vive en el NavHost externo -> outerNav.
+        onOpenHiRes                = { outerNav.navigate("hires") },
         onOpenVisualizer           = onOpenSpatialTab,
         onOpenAdaptive             = onOpenAdaptiveTab,
         onOpenAdaptiveEngineManual = onOpenAdaptiveTab,
