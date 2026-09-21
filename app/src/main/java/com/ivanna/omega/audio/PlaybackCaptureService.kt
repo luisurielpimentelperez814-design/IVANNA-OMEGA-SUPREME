@@ -396,6 +396,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // tiempo a que la cola se rellene tras el flush y el proximo chequeo
         // mida el estado REAL, no la cola vacia recien flusheada.
         private var resyncCount = 0
+        // Cooldown (ms, reloj monotonico) del UNICO resync que queda, el de
+        // publishHaasTelemetry(). d419777a lo uso sin declararlo -> "Unresolved
+        // reference" en compileDebugKotlin: ese era el CI rojo.
+        private var lastResyncMs = 0L
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
