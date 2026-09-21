@@ -29,6 +29,8 @@ class RealTimeCinematicEngine(
     @Volatile private var targetMode:  AudioMode = AudioMode.NONE
     @Volatile private var currentMode: AudioMode = AudioMode.NONE
 
+    val activeMode: AudioMode get() = currentMode
+
     private val transLen = (sampleRate * 0.05).toInt().coerceAtLeast(1)
     private var transCounter = 0
 

@@ -58,11 +58,11 @@ fun EngineStatusCard(
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             StatusLine("DSP", if (metrics.dspActive) "ACTIVE" else "STANDBY", if (metrics.dspActive) PhosphorGreen else AmberSignal)
-            Text("${metrics.sampleRate / 1000}kHz", style = MaterialTheme.typography.labelLarge, color = AuroraCyan)
+            Text(if (metrics.activeCodec != "—") "${metrics.activeCodec} · ${metrics.sampleRate / 1000}kHz" else "${metrics.sampleRate / 1000}kHz", style = MaterialTheme.typography.labelLarge, color = AuroraCyan)
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Latency: %.1fms".format(metrics.latencyMs), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Text("CPU: %.0f%%".format(metrics.cpuPercent), style = MaterialTheme.typography.labelMedium, color = AmberSignal)
+            Text(if (metrics.jitterMs > 0.05f) "Latency: %.1fms (±%.1fms)".format(metrics.latencyMs, metrics.jitterMs) else "Latency: %.1fms".format(metrics.latencyMs), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Text("DSP Load: %.0f%%".format(if (metrics.dspLoadPercent > 0f) metrics.dspLoadPercent else metrics.cpuPercent), style = MaterialTheme.typography.labelMedium, color = AmberSignal)
         }
         DividerGlow()
         Text("AI ANALYSIS", style = MaterialTheme.typography.labelMedium, color = NeonMagenta, fontWeight = FontWeight.Bold)

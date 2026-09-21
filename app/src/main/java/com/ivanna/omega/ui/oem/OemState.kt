@@ -52,6 +52,15 @@ data class OemState(
     val safIteration   : Int = 0,
     val safDiag        : FloatArray = FloatArray(0),
     val daemonStatus   : String = "",
+    // Campos de telemetría refinada (Latencia Adaptativa, Anti-Pop, Budget, Timing)
+    val jitterMs       : Float = 0f,
+    val underrunCount  : Int = 0,
+    val dspLoadPercent : Float = 0f,
+    val bufferHealthPercent: Float = 100f,
+    val activeCodec    : String = "—",
+    val budgetBypasses : Int = 0,
+    val antiPopEvents  : Int = 0,
+    val resyncCount    : Int = 0,
     // FIX (autodiagnóstico invisible): SelfHealingAgent ya repara fallos
     // reales en silencio (daemon desconectado, motor nativo muerto,
     // clipping sostenido) — pero su log público (SelfHealingAgent.log)

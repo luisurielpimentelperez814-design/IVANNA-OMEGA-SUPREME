@@ -21,7 +21,15 @@ data class OmegaMetrics(
     var dspActive: Boolean = false,
     var hrtfActive: Boolean = false,
     var spatialWidth: Float = 0f,
-    var audioRoute: String = "—"  // 4D: ruta de salida detectada por AudioRoutingManager
+    var audioRoute: String = "—",  // 4D: ruta de salida detectada por AudioRoutingManager
+    var jitterMs: Float = 0f,
+    var underrunCount: Int = 0,
+    var dspLoadPercent: Float = 0f,
+    var bufferHealthPercent: Float = 100f,
+    var activeCodec: String = "—",
+    var budgetBypasses: Int = 0,
+    var antiPopEvents: Int = 0,
+    var resyncCount: Int = 0
 ) {
     companion object {
         // FIX (audit): puente global observable.
@@ -46,29 +54,45 @@ data class OmegaMetrics(
             )
         }
 
-        // FIX (Ruta A telemetria muerta): antes solo IvannaBridgePlayer
-        // (reproduccion local) publicaba niveles vivos. Con Spotify/YouTube
-        // el usuario usa MediaProjection/PlaybackCapture (Ruta A) y nadie
-        // rellenaba estos campos -> EngineStatusCard mostraba STANDBY /
-        // RMS -60 dB / peak 0 / clips 0 aunque el DSP procesaba audio.
-        //
-        // updateSharedLevels() da un punto de entrada unico para publicar
-        // niveles desde la ruta de captura y desde cualquier otra ruta A
-        // que se cablee en el futuro, sin duplicar copy().
-        // Todos los parametros son opcionales para permitir updates parciales
-        // (p.ej. solo RMS/peak cada N bloques y clips acumulados).
-        // MISION HAAS (2026-09-18): latencia real de la cola de salida del
-        // stream procesado (PlaybackCaptureService -> AudioTrack). Antes este
-        // dato solo vivia en logcat y EngineStatusCard mostraba 0.0ms falso
-        // en standby eterno. maxQueueMs = peor cola desde el arranque
-        // (diagnostico sostenido, no solo instantaneo); resyncs = veces que
-        // el anti-deriva hizo pause/flush/play (salud del stream).
         var peakQueueMsShared: Float = 0f
         var resyncCountShared: Int = 0
         fun updateSharedLatency(queueMs: Float, peakMs: Float, resyncs: Int) {
             peakQueueMsShared = peakMs
             resyncCountShared = resyncs
-            _shared.value = _shared.value.copy(latencyMs = queueMs.coerceAtLeast(0f))
+            _shared.value = _shared.value.copy(
+                latencyMs = queueMs.coerceAtLeast(0f),
+                resyncCount = resyncs
+            )
+        }
+
+        fun updateRefinedTelemetry(
+            latencyMs: Float? = null,
+            peakLatencyMs: Float? = null,
+            jitterMs: Float? = null,
+            underrunCount: Int? = null,
+            dspLoadPercent: Float? = null,
+            bufferHealthPercent: Float? = null,
+            activeCodec: String? = null,
+            audioRoute: String? = null,
+            budgetBypasses: Int? = null,
+            antiPopEvents: Int? = null,
+            resyncCount: Int? = null
+        ) {
+            if (peakLatencyMs != null) peakQueueMsShared = peakLatencyMs
+            if (resyncCount != null) resyncCountShared = resyncCount
+            val cur = _shared.value
+            _shared.value = cur.copy(
+                latencyMs           = latencyMs           ?: cur.latencyMs,
+                jitterMs            = jitterMs            ?: cur.jitterMs,
+                underrunCount       = underrunCount       ?: cur.underrunCount,
+                dspLoadPercent      = dspLoadPercent      ?: cur.dspLoadPercent,
+                bufferHealthPercent = bufferHealthPercent ?: cur.bufferHealthPercent,
+                activeCodec         = activeCodec         ?: cur.activeCodec,
+                audioRoute          = audioRoute          ?: cur.audioRoute,
+                budgetBypasses      = budgetBypasses      ?: cur.budgetBypasses,
+                antiPopEvents       = antiPopEvents       ?: cur.antiPopEvents,
+                resyncCount         = resyncCount         ?: cur.resyncCount
+            )
         }
 
         fun updateSharedLevels(

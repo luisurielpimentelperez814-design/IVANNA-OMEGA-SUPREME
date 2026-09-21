@@ -137,6 +137,31 @@ fun OemTelemetryScreen(
                     })
             }
 
+            // Mando de Latencia Adaptativa, Timing y Anti-Pop (Objetivos 1, 2, 3, 4, 6)
+            OemCard(Modifier.fillMaxWidth()) {
+                Text("CONTROL DE LATENCIA ADAPTATIVA · MASTER TIMING", color = TextMuted, fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Spacer(Modifier.height(8.dp))
+                TelRow("Latencia Física (Captura→DAC)",
+                    if (state.latencyMs > 0f) "${"%.1f".format(state.latencyMs)} ms" else "Standby",
+                    if (state.latencyMs in 1.0f..35.0f) PhosphorGreen else if (state.latencyMs > 75f) CoralWarn else AuroraCyan)
+                TelRow("Jitter Hardware (EMA)", "±${"%.2f".format(state.jitterMs)} ms",
+                    if (state.jitterMs < 2.0f) PhosphorGreen else AmberSignal)
+                TelRow("Salud del Buffer", "${"%.0f".format(state.bufferHealthPercent)}%",
+                    if (state.bufferHealthPercent > 80f) PhosphorGreen else AmberSignal)
+                TelRow("Presupuesto Hilo Audio (DSP)", "${"%.1f".format(state.dspLoadPercent)}% (Límite: 70%)",
+                    if (state.dspLoadPercent < 50f) PhosphorGreen else if (state.dspLoadPercent < 70f) AmberSignal else CoralWarn)
+                TelRow("Codec Bluetooth Activo", state.activeCodec, AuroraCyan)
+                TelRow("Underruns Reales HAL", "${state.underrunCount}",
+                    if (state.underrunCount == 0) PhosphorGreen else CoralWarn)
+                TelRow("Anti-Pop Intervenciones", "${state.antiPopEvents}",
+                    if (state.antiPopEvents == 0) PhosphorGreen else AmberSignal)
+                TelRow("A/V Resyncs / Micro-Slips", "${state.resyncCount}",
+                    if (state.resyncCount == 0) PhosphorGreen else AmberSignal)
+                TelRow("Bypasses Preventivos (Budget)", "${state.budgetBypasses}",
+                    if (state.budgetBypasses == 0) PhosphorGreen else CoralWarn)
+            }
+
             // Clasificador IA
             OemCard(Modifier.fillMaxWidth()) {
                 Text("CLASIFICADOR IA · CARACTERÍSTICAS", color = TextMuted, fontSize = 8.sp,

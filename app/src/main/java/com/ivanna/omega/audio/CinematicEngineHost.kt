@@ -51,6 +51,9 @@ object CinematicEngineHost {
         engine?.stop()
     }
 
+    val activeModeOrdinal: Int
+        get() = if (active) (engine?.activeMode?.ordinal ?: 0) else 0
+
     /** Identidad si el engine no está activo — no altera el audio. */
     fun processBlock(buf: FloatArray, count: Int = buf.size): FloatArray {
         val eng = engine

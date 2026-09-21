@@ -9,10 +9,15 @@ class IvannaSpatialEngine private constructor() {
         val shared: IvannaSpatialEngine = IvannaSpatialEngine()
 
         @Volatile var enabled: Boolean = true
+        @Volatile var reducedComplexity: Boolean = false
 
         fun setAzimuth(rad: Float) { shared.azimuthRad = rad }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) { shared.distance = v.coerceIn(0.5f, 2.0f) }
+        fun setReducedComplexity(reduced: Boolean) {
+            reducedComplexity = reduced
+            shared.reducedComplexity = reduced
+        }
 
         // FIX: elevación existía en UI (slider binauralElevation) y en prefs
         // pero no tenía ninguna función en el motor espacial ni llamada nativa.
@@ -178,7 +183,9 @@ class IvannaSpatialEngine private constructor() {
             sampleR = (mid - side * width) * widthNorm
 
             var er = 0f
-            for (j in 0 until 4) {
+            val numTaps = if (reducedComplexity) 2 else 4
+            val tapNorm = if (reducedComplexity) 0.5f else 0.25f
+            for (j in 0 until numTaps) {
                 val delaySamples = (earlyReflectionTimes[j] * sampleRate / 1000f).toInt() % maxBlockSize
                 val readIdx = (earlyWriteIndices[j] - delaySamples + maxBlockSize) % maxBlockSize
                 var reflected = earlyReflectionBuffers[j][readIdx] * earlyReflectionGains[j]
@@ -186,7 +193,7 @@ class IvannaSpatialEngine private constructor() {
                 reflected = erLowpassState[j]
                 er += reflected
             }
-            er *= 0.25f  // normaliza la suma de los 4 taps
+            er *= tapNorm  // normaliza la suma según la cantidad de taps activos
 
             val xfeedFactor = 0.15f / dist
             val xfeedReadIdx = crossfeedWriteIndex % crossfeedDelaySamples
@@ -207,7 +214,7 @@ class IvannaSpatialEngine private constructor() {
             outR[i] = outSampleR
 
             val erFeed = (sampleL + sampleR) * 0.5f
-            for (j in 0 until 4) {
+            for (j in 0 until numTaps) {
                 earlyReflectionBuffers[j][earlyWriteIndices[j]] = erFeed
                 earlyWriteIndices[j] = (earlyWriteIndices[j] + 1) % maxBlockSize
             }

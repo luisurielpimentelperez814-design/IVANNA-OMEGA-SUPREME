@@ -27,6 +27,11 @@ import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.audio.IvannaLabMonitor
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
+import com.ivanna.omega.audio.engine.AdaptiveLatencyController
+import com.ivanna.omega.audio.engine.MasterTimingController
+import com.ivanna.omega.audio.engine.ProfessionalAntiPopEngine
+import com.ivanna.omega.audio.engine.AudioThreadBudgetGuard
+import com.ivanna.omega.audio.engine.PredictiveLoadGovernor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -415,6 +420,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // reference" en compileDebugKotlin: ese era el CI rojo.
         private var lastResyncMs = 0L
 
+        // REFINAMIENTO MAGISTRAL: Controladores de Latencia, Timing, Anti-Pop, Presupuesto y Gobernador
+        private val adaptiveLatency    = AdaptiveLatencyController(SAMPLE_RATE)
+        private val masterTiming       = MasterTimingController(SAMPLE_RATE)
+        private val antiPopEngine      = ProfessionalAntiPopEngine(SAMPLE_RATE)
+        private val budgetGuard        = AudioThreadBudgetGuard()
+        private val predictiveGovernor = PredictiveLoadGovernor(SAMPLE_RATE)
+
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialOutL = FloatArray(BLOCK_FRAMES)
@@ -485,11 +497,18 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // reusa un track con frames viejos en cola, suenan DESPUÉS del
             // audio nuevo y el desface crece en cada pausa/seek del video.
             runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.play() }
+            adaptiveLatency.reset()
+            masterTiming.reset()
+            antiPopEngine.reset()
+            budgetGuard.reset()
+            predictiveGovernor.reset()
             workerHandler?.post(processingLoop)
         }
 
         fun stop() {
             active = false
+            masterTiming.reset()
+            antiPopEngine.reset()
             workerHandler?.removeCallbacksAndMessages(null)
             workerThread?.quitSafely()
             workerHandler = null
@@ -501,6 +520,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         }
 
         fun cleanup() {
+            adaptiveLatency.reset()
+            masterTiming.reset()
+            antiPopEngine.reset()
+            budgetGuard.reset()
+            predictiveGovernor.reset()
             (context.applicationContext as? IVANNAApplication)?.let { app ->
                 if (audioSessionId > 0) {
                     app.globalEffectManager.closeSession(audioSessionId)
@@ -576,6 +600,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 audioRecord?.release(); audioRecord = null
                 return false
             }
+            adaptiveLatency.configure(SAMPLE_RATE, targetTrackBuf)
             audioRecord?.startRecording()
             audioTrack?.play()
             // MISION HAAS (2026-09-18): punto de medicion "antes" — latencia
@@ -603,9 +628,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // efectos muertos, sin reinicio automático).
             try {
                 // AUDIT FIX (realtime allocation): estos dos ya se creaban
-                // una sola vez fuera del while — se conservan tal cual.
-                val buffer = FloatArray(BLOCK_SAMPLES)
-                val mono   = FloatArray(BLOCK_FRAMES)
+                // una sola vez fuera del while — se conservan con margen para micro-slip/extension.
+                val buffer = FloatArray(BLOCK_SAMPLES + 8)
+                val mono   = FloatArray(BLOCK_FRAMES + 4)
                 var blockCounter = 0
                 while (active && !Thread.currentThread().isInterrupted) {
                     val rec  = audioRecord ?: break
@@ -613,49 +638,69 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
                     if (read == 0) continue
                     val frames = read / CHANNEL_COUNT
-                    DSPBridge.process(buffer, frames)
-                    // runCatching: llamada in-place a CinematicEngineHost (cero asignaciones)
-                    runCatching { CinematicEngineHost.processBlock(buffer, read) }
-                    if (IvannaSpatialEngine.enabled) {
-                        // AUDIT FIX (realtime allocation): reutilizar buffers
-                        // rtSpatialInL/R/OutL/R (miembros de la clase). Antes
-                        // se creaban 4 FloatArray(frames) por bloque —
-                        // aprox 93 blocks/seg -> ~372 arrays/seg descartados
-                        // en el hilo de audio. Si por cualquier razon el
-                        // driver entregara un bloque mayor que el buffer
-                        // preasignado (BLOCK_FRAMES), se salta la etapa
-                        // spatial en vez de allocar en el hilo caliente.
-                        if (frames <= rtSpatialInL.size) {
-                            val inL  = rtSpatialInL
-                            val inR  = rtSpatialInR
-                            val outL = rtSpatialOutL
-                            val outR = rtSpatialOutR
-                            for (i in 0 until frames) {
-                                inL[i] = buffer[i * 2]
-                                inR[i] = buffer[i * 2 + 1]
-                            }
-                            runCatching {
-                                IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+
+                    // OBJETIVO 4 & 5: INICIO MEDICIÓN DE TIEMPO REAL Y GOBERNADOR PREDICTIVO
+                    budgetGuard.startBlock(frames, SAMPLE_RATE)
+                    predictiveGovernor.updatePrediction(
+                        dspActive = true,
+                        cinematicModeOrdinal = CinematicEngineHost.activeModeOrdinal,
+                        spatialActive = IvannaSpatialEngine.enabled,
+                        npeActive = IvannaNpeEngine.isReady,
+                        isBluetooth = adaptiveLatency.currentRoute == AdaptiveLatencyController.OutputRouteType.BLUETOOTH,
+                        blockFrames = frames
+                    )
+                    IvannaSpatialEngine.setReducedComplexity(predictiveGovernor.isSpatialComplexityReduced)
+
+                    // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter)
+                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE)) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
+                            DSPBridge.process(buffer, frames)
+                        }
+                    }
+
+                    // ETAPA 2: CINEMATIC ENGINE
+                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE)) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE) {
+                            runCatching { CinematicEngineHost.processBlock(buffer, read) }
+                        }
+                    }
+
+                    // ETAPA 3: SPATIAL AUDIO (HRTF / WFS)
+                    if (IvannaSpatialEngine.enabled && budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO)) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO) {
+                            if (frames <= rtSpatialInL.size) {
+                                val inL  = rtSpatialInL
+                                val inR  = rtSpatialInR
+                                val outL = rtSpatialOutL
+                                val outR = rtSpatialOutR
                                 for (i in 0 until frames) {
-                                    buffer[i * 2]     = outL[i]
-                                    buffer[i * 2 + 1] = outR[i]
+                                    inL[i] = buffer[i * 2]
+                                    inR[i] = buffer[i * 2 + 1]
+                                }
+                                runCatching {
+                                    IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                                    for (i in 0 until frames) {
+                                        buffer[i * 2]     = outL[i]
+                                        buffer[i * 2 + 1] = outR[i]
+                                    }
                                 }
                             }
                         }
                     }
-                    IvannaBridgePlayer.activeInstance?.let { player ->
-                        if (player.npeKotlinEnabled) {
-                            runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+
+                    // ETAPA 4: VIBRATORY & NPE
+                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE)) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
+                            IvannaBridgePlayer.activeInstance?.let { player ->
+                                if (player.npeKotlinEnabled) {
+                                    runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+                                }
+                            }
+                            vibratoryProcessor.process(buffer)
                         }
                     }
-                    vibratoryProcessor.process(buffer)
-                    // Rampa per-sample de la ganancia del stream procesado.
-                    // gStart→gEnd interpolado por muestra: el cambio de nivel
-                    // es continuo (sin escalones audibles entre bloques).
-                    // Estado estacionario: HAAS_SAFE_GAIN (0.40 = -8.0 dB) — el
-                    // punto de fusión Haas: el procesado se integra con el
-                    // original sin eco discreto ni desface, conservando
-                    // estéreo completo en ambas rutas.
+
+                    // Rampa per-sample de la ganancia del stream procesado (Efecto Haas)
                     val gStart = mixGain
                     if (mixGain < mixGainTarget) mixGain = minOf(mixGain + MIX_GAIN_STEP, mixGainTarget)
                     else if (mixGain > mixGainTarget) mixGain = maxOf(mixGain - MIX_GAIN_STEP, mixGainTarget)
@@ -670,31 +715,69 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                             }
                         }
                     }
-                    writeAllToTrack(buffer, read)
-                    tickLatencyProbe() // Haas: medir cola tras cada bloque escrito
-                    if (IvannaNpeEngine.isReady) {
-                        runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
+
+                    // OBJETIVO 3: ANTI-POP PROFESIONAL & DC-BLOCKING
+                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.OUTPUT_STAGE) {
+                        antiPopEngine.process(buffer, frames)
                     }
-                    runCatching { SpatialAudioEngineV2.feedCapturedBlock(buffer, frames) }
-                    runCatching { voiceProtection?.feed(buffer, frames, SAMPLE_RATE) }
-                    for (i in 0 until frames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
-                    runCatching { feedVoiceController(mono, frames) }
-                    runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, frames) }
-                    runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, frames) }
+
+                    // Cierre de presupuesto del bloque
+                    budgetGuard.finishBlock()
+
+                    // OBJETIVOS 1 & 2: SINCRONIZACIÓN A/V Y REGULACIÓN DE DERIVA
+                    val targetHeadroom = adaptiveLatency.targetHeadroomFrames
+                    val currentQueued = maxOf(0L, framesWrittenToTrack - (audioTrack?.let {
+                        runCatching {
+                            if (it.getTimestamp(audioTs)) audioTs.framePosition
+                            else it.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                        }.getOrDefault(0L)
+                    } ?: 0L))
+
+                    val effectiveFrames = masterTiming.processAndCompensate(
+                        inOutBuffer = buffer,
+                        inFrames = frames,
+                        targetHeadroomFrames = targetHeadroom,
+                        currentQueuedFrames = currentQueued,
+                        track = audioTrack
+                    ) {
+                        framesWrittenToTrack = 0L
+                    }
+
+                    val samplesToWrite = effectiveFrames * CHANNEL_COUNT
+                    writeAllToTrack(buffer, samplesToWrite)
+
+                    // Tick de latencia adaptativa
+                    adaptiveLatency.tick(
+                        track = audioTrack,
+                        framesWrittenToTrack = framesWrittenToTrack,
+                        dspLoadRatio = budgetGuard.dspLoadPercent / 100f,
+                        predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames
+                    )
+
+                    if (IvannaNpeEngine.isReady) {
+                        runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, effectiveFrames) }
+                    }
+                    runCatching { SpatialAudioEngineV2.feedCapturedBlock(buffer, effectiveFrames) }
+                    runCatching { voiceProtection?.feed(buffer, effectiveFrames, SAMPLE_RATE) }
+                    val monoFrames = minOf(effectiveFrames, mono.size)
+                    for (i in 0 until monoFrames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
+                    runCatching { feedVoiceController(mono, monoFrames) }
+                    runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
+                    runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
                     
                     // FIX 3: Publish real capture levels for Route A
                     runCatching {
                         var sumSq = 0f
                         var peak = 0f
                         var clips = 0
-                        for (i in 0 until read) {
+                        for (i in 0 until samplesToWrite) {
                             val s = buffer[i]
                             sumSq += s * s
                             val absS = kotlin.math.abs(s)
                             if (absS > peak) peak = absS
                             if (absS >= 0.999f) clips++
                         }
-                        val rms = kotlin.math.sqrt(sumSq / read.coerceAtLeast(1).toFloat())
+                        val rms = kotlin.math.sqrt(sumSq / samplesToWrite.coerceAtLeast(1).toFloat())
                         
                         blockCounter++
                         if (blockCounter % 4 == 0) {
@@ -712,7 +795,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // ceros para siempre. El buffer aquí es estéreo intercalado
                     // (exacto formato de nativeLabFeed), capturado por
                     // MediaProjection — fuente de datos real, no sintética.
-                    runCatching { IvannaLabMonitor.feed(buffer, frames) }
+                    runCatching { IvannaLabMonitor.feed(buffer, effectiveFrames) }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Excepción fatal en loop de audio: ${t.message}", t)
@@ -731,17 +814,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 written += result
             }
             // MISION HAAS (2026-09-18): contar los frames REALMENTE escritos.
-            // Antes framesWrittenToTrack += BLOCK_FRAMES en tickLatencyProbe
-            // ASUMIA el bloque completo — si write() devuelve menos o el
-            // loop de resync rompe a media escritura, el contador se
-            // inflaba, la deriva medida era falsa y el resync disparaba
-            // sobre una cola fantasma (el eco residual que persistia a 0.40).
             framesWrittenToTrack += written / CHANNEL_COUNT
             tickLatencyProbe()
             // Telemetria REAL a la UI: latencia instantanea de cola +
-            // pico sostenido + resyncs acumulados. Sin esto el panel muestra
-            // "Latency: 0.0ms" en standby eterno (el dato se media pero se
-            // perdia en logcat).
+            // pico sostenido + resyncs acumulados.
             OmegaMetrics.updateSharedLevels(
                 dspActive = true,
                 hrtfActive = IvannaSpatialEngine.enabled
@@ -751,32 +827,24 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         // getTimestamp() cruza binder hacia AudioFlinger; llamarlo en CADA bloque
         // (~150/s a 320 frames) metia jitter en el hilo de audio. Cada 16 bloques
-        // (~9 Hz, ~107 ms) sobra para medir cola y decidir un resync con 900 ms
-        // de cooldown.
+        // (~9 Hz, ~107 ms) sobra para medir cola y publicar telemetría refinada.
         private var telemetryTick = 0
         private fun publishHaasTelemetry() {
             if ((++telemetryTick and 15) != 0) return
-            val track = audioTrack ?: return
             try {
-                if (track.getTimestamp(audioTs)) {
-                    val queuedFr = framesWrittenToTrack - audioTs.framePosition
-                    val queueMsNow = queuedFr * 1000f / SAMPLE_RATE
-                    // Desfase por underrun acumulado: con buffer sintonizado a baja latencia
-                    // el umbral de desalineación se reduce de 120ms a 45ms (65ms en BT),
-                    // asegurando estricta sincronía labial según norma ITU-R BT.1359-1.
-                    val nowMs = System.nanoTime() / 1_000_000L
-                    val resyncThresholdMs = if (btRouteActive) 65f else 45f
-                    if (queueMsNow > resyncThresholdMs && (nowMs - lastResyncMs) > 900L) {
-                        lastResyncMs = nowMs; resyncCount++
-                        runCatching { track.pause(); track.flush(); track.play() }
-                        framesWrittenToTrack = 0L
-                    }
-
-                    val queued = framesWrittenToTrack - audioTs.framePosition
-                    val queueMs = (queued * 1000.0 / SAMPLE_RATE).toFloat().coerceAtLeast(0f)
-                    if (queueMs > peakQueueMs) peakQueueMs = queueMs
-                    OmegaMetrics.updateSharedLatency(queueMs, peakQueueMs, resyncCount)
-                }
+                OmegaMetrics.updateRefinedTelemetry(
+                    latencyMs = adaptiveLatency.measuredLatencyMs,
+                    peakLatencyMs = adaptiveLatency.peakLatencyMs,
+                    jitterMs = adaptiveLatency.jitterMs,
+                    underrunCount = adaptiveLatency.underrunCount,
+                    dspLoadPercent = budgetGuard.dspLoadPercent,
+                    bufferHealthPercent = adaptiveLatency.bufferHealthPercent,
+                    activeCodec = adaptiveLatency.activeCodec,
+                    audioRoute = adaptiveLatency.currentRoute.name,
+                    budgetBypasses = budgetGuard.bypassEventsTotal,
+                    antiPopEvents = antiPopEngine.smoothedEventsTotal,
+                    resyncCount = masterTiming.resyncCount
+                )
             } catch (_: Throwable) {}
         }
         private var peakQueueMs = 0f
@@ -865,15 +933,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         d.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET)
                 }.getOrDefault(false)
             }
-            if (t != null) runCatching {
-                val head = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
-                val lagFrames = framesWrittenToTrack - head
-                val lagLimit = if (btRouteActive) 6L * BLOCK_FRAMES else 3L * BLOCK_FRAMES
-                if (lagFrames > lagLimit) {
-                    Thread.sleep(if (btRouteActive) 2 else 1)
-                }
-            }
-
             val now = System.nanoTime()
             // FIX REAL (tronidos/microcortes, 2026-09-21): existía AQUÍ un
             // segundo disparador de resync (pause/flush/play) con umbral de

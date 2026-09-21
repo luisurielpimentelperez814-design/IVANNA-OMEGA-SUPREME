@@ -88,7 +88,8 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val thermalLoad  = ThermalGovernor.currentThermalLoad
         val thermalApiOk = ThermalGovernor.thermalApiAvailable
         val tempC        = runCatching { OmegaDaemon.getTemperature() }.getOrDefault(0f)
-        val latencyMs    = runCatching { OmegaDaemon.getLatency()     }.getOrDefault(0f)
+        val sharedOmega  = com.ivanna.omega.audio.OmegaMetrics.shared.value
+        val latencyMs    = if (sharedOmega.latencyMs > 0f) sharedOmega.latencyMs else runCatching { OmegaDaemon.getLatency() }.getOrDefault(0f)
 
         // ── Estado del motor derivado de thermal ──────────────────────────────
         val engineState = when {
@@ -215,6 +216,14 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             thermalApiOk   = thermalApiOk,
             tempC          = tempC,
             latencyMs      = latencyMs,
+            jitterMs       = sharedOmega.jitterMs,
+            underrunCount  = sharedOmega.underrunCount,
+            dspLoadPercent = sharedOmega.dspLoadPercent,
+            bufferHealthPercent = sharedOmega.bufferHealthPercent,
+            activeCodec    = sharedOmega.activeCodec,
+            budgetBypasses = sharedOmega.budgetBypasses,
+            antiPopEvents  = sharedOmega.antiPopEvents,
+            resyncCount    = sharedOmega.resyncCount,
             clipCount      = clipCount,
             evoBestFitness = evoBestFitness,
             evoGeneration  = evoGeneration,
