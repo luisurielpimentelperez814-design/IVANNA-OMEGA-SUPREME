@@ -3,6 +3,7 @@
 #include <cstddef>
 #include "../core/shm_manager.h"
 #include "../../include/omega_control_bus.h"
+#include "../../ivanna_hires_config.hpp"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -172,6 +173,30 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.exc_red = _jsonFloat(json,"excRed",m_state.exc_red);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_HIRES")==0) {
+        // Selector Hi-Res de la app (sample rate / profundidad). La app NO puede
+        // escribir /data/adb/ivanna_omega/hires.conf (su JNI fallaba en silencio
+        // sin root), pero el daemon si: valida con el MISMO contrato cerrado
+        // (ivanna::hires) y persiste. El rate se aplica al SHM en el siguiente
+        // arranque del daemon (setup_shared_memory(rate)), por eso la respuesta
+        // dice "saved_restart_required" y NO "applied": no se promete un cambio
+        // en caliente que este comando no hace.
+        int rate  = (int)_jsonFloat(json, "rate",  0.f);
+        int depth = (int)_jsonFloat(json, "depth", 0.f);
+        if (!ivanna::hires::isValidRate(rate) || !ivanna::hires::isValidDepth(depth)) {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"SET_HIRES\",\"applied\":false,\"status\":\"invalid_value\",\"error\":\"rate=%d depth=%d fuera de contrato\"}",
+                rate, depth);
+        } else if (!ivanna::hires::writeConf("/data/adb/ivanna_omega/hires.conf", rate, depth)) {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"SET_HIRES\",\"applied\":false,\"status\":\"write_failed\",\"error\":\"no se pudo escribir hires.conf\"}");
+        } else {
+            CS_LOG("SET_HIRES rate=%d depth=%d guardado en hires.conf", rate, depth);
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":true,\"command\":\"SET_HIRES\",\"applied\":false,\"status\":\"saved_restart_required\",\"rate\":%d,\"depth\":%d}",
+                rate, depth);
+        }
 
     } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
         float speech = _jsonFloat(json,"speech",0.f);
