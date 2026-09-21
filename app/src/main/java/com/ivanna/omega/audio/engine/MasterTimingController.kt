@@ -58,6 +58,9 @@ class MasterTimingController(
     @Volatile var gracefulResyncCount: Int = 0
         private set
 
+    val resyncCount: Int
+        get() = gracefulResyncCount
+
     @Volatile var currentDriftMs: Float = 0f
         private set
 

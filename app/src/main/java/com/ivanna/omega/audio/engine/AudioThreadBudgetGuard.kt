@@ -48,10 +48,14 @@ class AudioThreadBudgetGuard {
     @Volatile var budgetBypasses: Int = 0
         private set
 
+    val bypassEventsTotal: Int
+        get() = budgetBypasses
+
     @Volatile var isDegradingActive: Boolean = false
         private set
 
-    private val stageTimesNs = LongArray(BudgetStage.values().size)
+    @PublishedApi
+    internal val stageTimesNs = LongArray(BudgetStage.values().size)
 
     /**
      * Inicia el cronómetro del bloque de audio.

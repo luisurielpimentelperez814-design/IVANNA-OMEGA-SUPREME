@@ -52,6 +52,7 @@ class IvannaSpatialEngine private constructor() {
     @Volatile var elevationRad: Float = 0f
     @Volatile var widthFactor: Float = 1.0f
     @Volatile var distance: Float = 1.0f
+    @Volatile var reducedComplexity: Boolean = false
 
     private var fadeGain = 1.0f
     private var targetEnabled = true

@@ -51,6 +51,9 @@ class ProfessionalAntiPopEngine(
     @Volatile var antiPopInterventions: Int = 0
         private set
 
+    val smoothedEventsTotal: Int
+        get() = antiPopInterventions
+
     /**
      * Procesa el bloque de audio estéreo intercalado [L, R, L, R...]:
      * 1. Detecta y corrige discontinuidades de borde con el bloque previo.

@@ -61,7 +61,16 @@ class AdaptiveLatencyController(
     @Volatile var measuredLatencyMs: Float = 0f
         private set
 
+    @Volatile var peakLatencyMs: Float = 0f
+        private set
+
     @Volatile var measuredJitterMs: Float = 0f
+        private set
+
+    val jitterMs: Float
+        get() = measuredJitterMs
+
+    @Volatile var activeCodec: String = "PCM_FLOAT"
         private set
 
     @Volatile var targetHeadroomMs: Float = HEADROOM_SPEAKER_MS
@@ -98,6 +107,7 @@ class AdaptiveLatencyController(
                     AudioDeviceInfo.TYPE_USB_HEADSET -> {
                         currentRoute = OutputRouteType.USB_DAC
                         routeName = "USB-DAC"
+                        activeCodec = "USB_HiRes"
                     }
                     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
                     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
@@ -105,19 +115,23 @@ class AdaptiveLatencyController(
                     AudioDeviceInfo.TYPE_BLE_SPEAKER -> {
                         currentRoute = OutputRouteType.BLUETOOTH
                         routeName = "Bluetooth"
+                        activeCodec = "LDAC/AAC"
                     }
                     AudioDeviceInfo.TYPE_WIRED_HEADSET,
                     AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> {
                         currentRoute = OutputRouteType.WIRED
                         routeName = "Headphone"
+                        activeCodec = "PCM_32BIT"
                     }
                     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> {
                         currentRoute = OutputRouteType.SPEAKER
                         routeName = "Speaker"
+                        activeCodec = "PCM_FLOAT"
                     }
                     else -> {
                         currentRoute = OutputRouteType.SPEAKER
                         routeName = "Speaker"
+                        activeCodec = "PCM_FLOAT"
                     }
                 }
             }
@@ -179,6 +193,9 @@ class AdaptiveLatencyController(
             val queuedFrames = max(0L, framesWrittenToTrack - hwFramePos)
             val queueMs = (queuedFrames * 1000.0f / sampleRate)
             measuredLatencyMs = queueMs
+            if (measuredLatencyMs > peakLatencyMs) {
+                peakLatencyMs = measuredLatencyMs
+            }
 
             // Cálculo de jitter: variación en el intervalo de hardware
             if (lastHwTimestampNs > 0L && hwTimestampNs > lastHwTimestampNs) {
@@ -221,8 +238,13 @@ class AdaptiveLatencyController(
         }
     }
 
+    fun configure(rate: Int = sampleRate, targetTrackBuf: Int = 0) {
+        reset()
+    }
+
     fun reset() {
         measuredLatencyMs = 0f
+        peakLatencyMs = 0f
         measuredJitterMs = 0f
         lastHwTimestampNs = 0L
         lastHwFramePos = 0L
