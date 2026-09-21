@@ -263,6 +263,7 @@ fun OmegaApp() {
                     nav.navigate("dashboard")
                 }
             }
+            composable("wfs") { com.ivanna.omega.ui.WfsCalibrationPanel() }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
