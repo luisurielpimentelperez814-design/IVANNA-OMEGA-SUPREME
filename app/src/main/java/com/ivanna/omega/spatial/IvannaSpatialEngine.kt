@@ -9,13 +9,13 @@ class IvannaSpatialEngine private constructor() {
         val shared: IvannaSpatialEngine = IvannaSpatialEngine()
 
         @Volatile var enabled: Boolean = true
-        @Volatile var reducedComplexity: Boolean = false
+        val reducedComplexity: Boolean
+            get() = shared.reducedComplexity
 
         fun setAzimuth(rad: Float) { shared.azimuthRad = rad }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) { shared.distance = v.coerceIn(0.5f, 2.0f) }
         fun setReducedComplexity(reduced: Boolean) {
-            reducedComplexity = reduced
             shared.reducedComplexity = reduced
         }
 
