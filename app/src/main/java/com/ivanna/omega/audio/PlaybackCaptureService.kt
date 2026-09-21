@@ -357,6 +357,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var voiceController:   VoiceController?           = null
 
         private val voiceWindow = FloatArray(VOICE_WINDOW_SAMPLES)
+        // CAUSA REAL DE TRONIDOS/MICROCORTES PERIODICOS (~1 Hz): la clasificacion
+        // YAMNet (TFLite sobre 15600 muestras) + pushYamnetScores() (socket al
+        // daemon con soTimeout de 2 s) + executeCommand() corrian SINCRONAS en
+        // el hilo URGENT_AUDIO, una vez por cada ventana llena (~0.98 s). Mientras
+        // duraban, el hilo no leia AudioRecord (overrun -> hueco en la captura)
+        // ni escribia al AudioTrack (underrun -> silencio), y con un decoder de
+        // video compitiendo por CPU la pausa crecia. Ahora la ventana se COPIA
+        // (memcpy de ~60 KB) a un snapshot y la inferencia corre en un hilo de
+        // fondo; si aun esta ocupado se descarta esa ventana (nunca se encola).
+        private val voiceSnapshot = FloatArray(VOICE_WINDOW_SAMPLES)
+        private val voiceBusy = AtomicBoolean(false)
+        private var voiceThread:  HandlerThread? = null
+        private var voiceHandler: Handler?       = null
+        private val voiceTask = Runnable { runVoiceClassification() }
         private var voiceFill  = 0
         private var voiceAcc   = 0f
         private var voiceCount = 0
@@ -454,6 +468,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // FIX: arrancar medición automática Lab (THD/LUFS/SNR cada 30s)
             IvannaLabMonitor.startAutoMeasure()
             voiceController = VoiceController(context)
+            voiceThread = HandlerThread("IvannaVoiceClassifier", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
+            voiceHandler = Handler(voiceThread!!.looper)
+            voiceBusy.set(false)
             voiceProtection = VoiceProtectionController(context)
             spatialEngine.start()
             workerThread = HandlerThread("CaptureWorker", Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -477,6 +494,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             workerThread?.quitSafely()
             workerHandler = null
             workerThread  = null
+            voiceHandler?.removeCallbacksAndMessages(null)
+            voiceThread?.quitSafely()
+            voiceHandler = null
+            voiceThread  = null
         }
 
         fun cleanup() {
@@ -731,7 +752,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             publishHaasTelemetry()
         }
 
+        // getTimestamp() cruza binder hacia AudioFlinger; llamarlo en CADA bloque
+        // (~150/s a 320 frames) metia jitter en el hilo de audio. Cada 16 bloques
+        // (~9 Hz, ~107 ms) sobra para medir cola y decidir un resync con 900 ms
+        // de cooldown.
+        private var telemetryTick = 0
         private fun publishHaasTelemetry() {
+            if ((++telemetryTick and 15) != 0) return
             val track = audioTrack ?: return
             try {
                 if (track.getTimestamp(audioTs)) {
@@ -767,13 +794,29 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 }
             }
             if (voiceFill >= voiceWindow.size) {
-                val (hint, scores) = vc.processAudioWithScores(voiceWindow)
+                voiceFill = 0
+                val handler = voiceHandler
+                if (handler != null && voiceBusy.compareAndSet(false, true)) {
+                    System.arraycopy(voiceWindow, 0, voiceSnapshot, 0, voiceWindow.size)
+                    handler.post(voiceTask)
+                }
+            }
+        }
+
+        /** Corre en el hilo de fondo IvannaVoiceClassifier, NUNCA en el hilo de audio. */
+        private fun runVoiceClassification() {
+            try {
+                val vc = voiceController ?: return
+                val (hint, scores) = vc.processAudioWithScores(voiceSnapshot)
                 OmegaEngineBridge.pushYamnetScores(
                     speech = scores.speech, music = scores.music,
                     classId = 0, confidence = maxOf(scores.speech, scores.music)
                 )
                 if (hint != "none") vc.executeCommand(hint)
-                voiceFill = 0
+            } catch (t: Throwable) {
+                Log.w(TAG, "voice classification: ${t.message}")
+            } finally {
+                voiceBusy.set(false)
             }
         }
 
