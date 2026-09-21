@@ -291,6 +291,7 @@ object IvannaNativeLib {
     // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
     external fun nativeSetWfsEnabled(enabled: Boolean)
     external fun nativeSetWfsSpread(spread: Float)
+    external fun nativeSetWfsSpeakerLayout(x: FloatArray, y: FloatArray, z: FloatArray)
 
     // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,
