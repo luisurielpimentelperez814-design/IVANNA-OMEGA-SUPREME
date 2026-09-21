@@ -226,9 +226,23 @@ jobs:
       - name: Build APK (Gradle provisionado)
         run: |
           chmod +x gradlew
+          set -o pipefail
           gradle assembleDebug --no-daemon --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
-            -Dorg.gradle.caching=true -Dorg.gradle.parallel=true
+            -Dorg.gradle.caching=true -Dorg.gradle.parallel=true 2>&1 | tee gradle_build.log
+
+      # Diagnostico: el log de un job fallido solo es legible con sesion en la
+      # web; la API de check-runs SI expone las anotaciones. Se publican como
+      # ::error:: las lineas de error de compilacion Kotlin/Gradle para poder
+      # leer la causa real del rojo sin abrir el log completo.
+      - name: Surface Gradle errors as annotations
+        if: failure()
+        run: |
+          [ -f gradle_build.log ] || exit 0
+          grep -E '^e: |Unresolved reference|Type mismatch|What went wrong|Execution failed for task' gradle_build.log \
+            | sed 's/\r$//; s/%/%25/g' | head -10 \
+            | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+          exit 0
 
       # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
       - name: Validate Gradle APK CRC before staging
