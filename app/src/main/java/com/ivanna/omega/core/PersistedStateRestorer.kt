@@ -14,6 +14,7 @@ object PersistedStateRestorer {
     private const val TAG = "PersistedStateRestorer"
 
     fun restore(context: Context) {
+        runCatching { com.ivanna.omega.spatial.WfsCalibrationManager.restore(context) }
         runCatching { com.ivanna.omega.audio.HiResAudioManager.restore(context) }
         val ctx = context.applicationContext
 
