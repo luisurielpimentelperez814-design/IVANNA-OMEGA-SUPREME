@@ -74,20 +74,33 @@ void WfsRenderer::setSpeakerLayout3D(const float* dx, const float* dyFwd, const 
     if (count > kMaxSpeakers) count = kMaxSpeakers;
     numSpeakers_ = count;
     explicitLayout_ = true;
+    // FASE 1 (WFS adaptativo de sala, 2026-09-21): compensacion de ganancia
+    // por distancia 3D real. La referencia es la distancia al altavoz mas
+    // cercano del layout; los mas lejanos se atenúan en 1/r para igualar la
+    // energía percibida (ley del cuadrado inverso en campo libre). Sin esto,
+    // un layout asimetrico (p.ej. barra de sonido con surrounds) dejaba los
+    // altavoces lejanos artificialmente "presentes" y rompia la imagen. Es
+    // un ajuste de ganancia puramente estatico — se calcula UNA vez por
+    // setSpeakerLayout3D, no por bloque — asi que NO rompe la estabilidad RT
+    // que otras sesiones ya lograron (latencia <25ms, cero alloc en hot path).
+    float minDist = 1e9f;
+    for (int s = 0; s < count; ++s) {
+        const float d = std::sqrt(dx[s]*dx[s] + dyFwd[s]*dyFwd[s] + dz[s]*dz[s]);
+        if (d > 1e-3f && d < minDist) minDist = d;
+    }
+    if (minDist > 1e8f) minDist = 1.0f;  // todos en el origen: sin compensar
     for (int s = 0; s < count; ++s) {
         speakerRelX_[static_cast<size_t>(s)] = dx[s];
         speakerRelY_[static_cast<size_t>(s)] = dyFwd[s];
         speakerRelZ_[static_cast<size_t>(s)] = dz[s];
-        // Azimut/ILD/ITD desde el plano horizontal (mismo modelo que
-        // rebuildGeometry: pan = -sin(az) con az medido desde atrás). La
-        // altura no participa en ITD/ILD (simplificación estándar: los
-        // cues interaurales por defecto no codifican elevación).
+        const float d = std::sqrt(dx[s]*dx[s] + dyFwd[s]*dyFwd[s] + dz[s]*dz[s]);
+        const float distComp = (d > 1e-3f) ? (minDist / d) : 1.0f;
         const float az = std::atan2(-dx[s], -dyFwd[s]); // atrás=+π, coherente con rebuildGeometry
         speakerAzimuth_[static_cast<size_t>(s)] = az;
         const float pan = -std::sin(az);
         const float theta = (pan + 1.f) * 0.25f * 3.14159265358979323846f;
-        speakerGainL_[static_cast<size_t>(s)] = std::cos(theta) * 1.41421356f;
-        speakerGainR_[static_cast<size_t>(s)] = std::sin(theta) * 1.41421356f;
+        speakerGainL_[static_cast<size_t>(s)] = std::cos(theta) * 1.41421356f * distComp;
+        speakerGainR_[static_cast<size_t>(s)] = std::sin(theta) * 1.41421356f * distComp;
         const int itd = static_cast<int>(kMaxItdS * sampleRate_ * std::fabs(pan) + 0.5f);
         if (pan >= 0.f) { speakerItdL_[static_cast<size_t>(s)] = itd; speakerItdR_[static_cast<size_t>(s)] = 0; }
         else            { speakerItdL_[static_cast<size_t>(s)] = 0;   speakerItdR_[static_cast<size_t>(s)] = itd; }
