@@ -395,7 +395,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // (los "micro cortes" reportados). Minimo 750 ms entre resyncs da
         // tiempo a que la cola se rellene tras el flush y el proximo chequeo
         // mida el estado REAL, no la cola vacia recien flusheada.
-        private var lastResyncNs = 0L
         private var resyncCount = 0
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
@@ -784,7 +783,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // vuelo. getTimestamp() da la posicion real de reproduccion.
         private var framesWrittenToTrack = 0L
         private var lastLatencyLogNs     = 0L
-        private var lastDriftCheckNs     = 0L
         private var lastRouteCheckNs     = 0L
         private var btRouteActive        = false
         private val audioTs              = android.media.AudioTimestamp()
@@ -833,50 +831,32 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
 
             val now = System.nanoTime()
-            // REFINAMIENTO (mision HAAS, escalon 3 — 2026-09-17): el chequeo
-            // de deriva/resync estaba atado al mismo temporizador que el LOG
-            // (cada 2s). Eso significa que, en el peor caso, el eco podia
-            // sonar hasta 2 segundos completos antes de que el resync
-            // reaccionara. Se separa: el LOG sigue cada 2s (no llenar logcat),
-            // pero la DETECCION de deriva ahora corre cada 250ms — mismo
-            // umbral (2 bloques de cola) y mismo mecanismo de resync
-            // (pause/flush/play), solo que se dispara hasta 8x mas rapido.
-            // No se toca la mezcla, la rampa per-sample, la captura, el DSP,
-            // HRTF/SOFA/RIR, SAF ni el upmixing — solo la cadencia de este
-            // chequeo, tal como pide la mision (no saltar a cambios fuera de
-            // alcance).
+            // FIX REAL (tronidos/microcortes, 2026-09-21): existía AQUÍ un
+            // segundo disparador de resync (pause/flush/play) con umbral de
+            // 2 bloques (~13 ms a BLOCK_FRAMES=320) — extremadamente
+            // agresivo: cualquier jitter normal de CPU (GC, scheduler, y
+            // sobre todo un decodificador de vídeo compitiendo por núcleos)
+            // supera 13 ms de forma rutinaria, disparando un pause/flush/
+            // play (corte audible real: descarta la cola y reinicia el
+            // track) con mucha más frecuencia de la necesaria. Además corría
+            // EN PARALELO con el resync de publishHaasTelemetry() (umbral
+            // 120 ms, mucho más razonable), con su propia variable de
+            // cooldown (lastResyncNs vs lastResyncMs) — dos mecanismos
+            // independientes, sin coordinarse, podían encadenar resyncs uno
+            // detrás de otro. Se deja UN SOLO mecanismo de resync (el de
+            // publishHaasTelemetry, 120 ms / 900 ms de cooldown) — el
+            // pacing suave de arriba (Thread.sleep 1-2 ms, no destructivo)
+            // sigue intacto sin cambios.
             val shouldLog   = now - lastLatencyLogNs   >= 2_000_000_000L
-            val shouldCheck = now - lastDriftCheckNs   >= 250_000_000L
-            if (!shouldLog && !shouldCheck) return
-            if (shouldCheck) lastDriftCheckNs = now
+            if (!shouldLog) return
+            lastLatencyLogNs = now
             val track = audioTrack ?: return
             try {
                 if (track.getTimestamp(audioTs)) {
                     val queued  = framesWrittenToTrack - audioTs.framePosition
                     val queueMs = queued * 1000.0 / SAMPLE_RATE
                     val blockMs = BLOCK_FRAMES * 1000.0 / SAMPLE_RATE
-                    if (shouldLog) {
-                        lastLatencyLogNs = now
-                        Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
-                    }
-                    // Anti-deriva con histeresis: si la copia procesada acumula
-                    // mas de 2 bloques de cola se separa en el tiempo del
-                    // original de Tidal y el eco reaparece aunque la ganancia
-                    // sea 0.40. Techo duro: pause/flush/play resincroniza sin
-                    // tocar la mezcla — pero COMO MAXIMO una vez cada 750 ms
-                    // (ver declaracion de lastResyncNs): encadenar flushes era
-                    // la fuente de los micro cortes audibles, y tras un flush
-                    // la cola medida es ~0 por construccion, asi que un resync
-                    // inmediato mediria un fantasma. El contador queda en log
-                    // para la medicion antes/despues que pide la mision.
-                    if (queued > 2L * BLOCK_FRAMES &&
-                        now - lastResyncNs >= 750_000_000L) {
-                        lastResyncNs = now
-                        resyncCount++
-                        Log.w(TAG, "HaasLatency: deriva %.1f ms > 2 bloques — resync #%d (pause/flush/play)".format(queueMs, resyncCount))
-                        track.pause(); track.flush(); track.play()
-                        framesWrittenToTrack = 0L
-                    }
+                    Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
                 }
             } catch (e: Throwable) { Log.w(TAG, "latency probe: ${e.message}") }
         }

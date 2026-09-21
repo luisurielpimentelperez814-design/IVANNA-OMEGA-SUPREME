@@ -15,11 +15,14 @@ import com.ivanna.omega.audio.HiResAudioManager
 @Composable
 fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
-    // FIX (botón que "no funciona"): el estado inicial se lee SIEMPRE de lo
-    // persistido (no solo del @Volatile en memoria, que arranca en el default
-    // 48k/24b cada vez que el proceso muere). Así la pantalla refleja tu
-    // selección real aunque la app se haya reiniciado.
-    HiResAudioManager.restore(context)
+    // FIX REAL (2026-09-21): restore(context) se llamaba DIRECTO en el cuerpo
+    // del composable — se ejecutaba en CADA recomposición (cada tap de un
+    // RadioButton cambia `rate`/`depth`/`applied`, lo que recompone esta
+    // función completa), no solo al entrar a la pantalla. Cada llamada
+    // dispara apply() completo (escritura de archivo + 2 llamadas JNI +
+    // intento de comando al daemon) de forma redundante en cada interacción.
+    // Ahora corre UNA sola vez, al entrar a la pantalla.
+    LaunchedEffect(Unit) { HiResAudioManager.restore(context) }
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }
     var depth by remember { mutableStateOf(HiResAudioManager.currentDepth) }
     val (routeName, routeMax) = remember { HiResAudioManager.activeRoute(context) }
