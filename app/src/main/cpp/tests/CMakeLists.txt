@@ -529,3 +529,4 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_wfs_activation_crossfade COMMAND test_wfs_activation_crossfade)
 set_tests_properties(test_wfs_activation_crossfade PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
