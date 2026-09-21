@@ -52,8 +52,8 @@ object CinematicEngineHost {
     }
 
     /** Identidad si el engine no está activo — no altera el audio. */
-    fun processBlock(buf: FloatArray): FloatArray {
+    fun processBlock(buf: FloatArray, count: Int = buf.size): FloatArray {
         val eng = engine
-        return if (active && eng != null) eng.processBlock(buf) else buf
+        return if (active && eng != null) eng.processBlock(buf, buf, count) else buf
     }
 }

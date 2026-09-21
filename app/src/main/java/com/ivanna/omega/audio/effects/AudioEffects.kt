@@ -4,6 +4,10 @@ import kotlin.math.*
 
 interface AudioEffect {
     fun process(input: FloatArray): FloatArray
+    fun process(input: FloatArray, output: FloatArray, count: Int = input.size) {
+        val res = process(input)
+        System.arraycopy(res, 0, output, 0, minOf(count, res.size, output.size))
+    }
     fun reset()
 }
 
@@ -60,9 +64,9 @@ class CinematicReverb(
     private val apR   = Array(4) { AllpassFilter(AP[it]-13) }
     companion object { val COMB = intArrayOf(1116,1188,1277,1356,1422,1491,1557,1617)
                        val AP   = intArrayOf(556,441,341,225) }
-    override fun process(input: FloatArray): FloatArray {
-        val out = FloatArray(input.size)
-        for (i in input.indices) {
+    override fun process(input: FloatArray, output: FloatArray, count: Int) {
+        val n = minOf(count, input.size, output.size)
+        for (i in 0 until n) {
             curDamp += (damping  - curDamp)*0.01f
             curRoom += (roomSize - curRoom)*0.01f
             val fb = curRoom*0.9f+0.1f
@@ -72,8 +76,12 @@ class CinematicReverb(
             wL /= 8f; wR /= 8f
             for (j in 0 until 4) { wL = apL[j].process(wL); wR = apR[j].process(wR) }
             val mid = (wL+wR)*0.5f; val side = (wL-wR)*0.5f*width
-            out[i] = input[i]*dryLevel + (mid+side)*wetLevel
+            output[i] = input[i]*dryLevel + (mid+side)*wetLevel
         }
+    }
+    override fun process(input: FloatArray): FloatArray {
+        val out = FloatArray(input.size)
+        process(input, out, input.size)
         return out
     }
     override fun reset() { combL.forEach{it.reset()}; combR.forEach{it.reset()}
@@ -108,9 +116,9 @@ class ModulatingDelay(
     private val maxD = 44100
     private val buf = FloatArray(maxD); private var wIdx=0
     private var phase=0.0; private var lpState=0f
-    override fun process(input: FloatArray): FloatArray {
-        val out = FloatArray(input.size)
-        for (i in input.indices) {
+    override fun process(input: FloatArray, output: FloatArray, count: Int) {
+        val n = minOf(count, input.size, output.size)
+        for (i in 0 until n) {
             val mod = sin(phase)*depth
             val dSamples = ((baseTimeMs*(1f+mod*0.5f))*SR/1000f).toInt().coerceIn(1,maxD-3)
             val rIdx = (wIdx-dSamples+maxD)%maxD
@@ -121,9 +129,13 @@ class ModulatingDelay(
             val delayed = a0*fr*fr*fr + a1*fr*fr + a2*fr + a3
             val fbSig = delayed*feedback; lpState += tone*(fbSig-lpState)
             buf[wIdx]=input[i]+lpState; wIdx=(wIdx+1)%maxD
-            out[i]=input[i]*dryLevel+delayed*wetLevel
+            output[i]=input[i]*dryLevel+delayed*wetLevel
             phase += 2.0*PI*rateHz/SR; if (phase>2.0*PI) phase-=2.0*PI
         }
+    }
+    override fun process(input: FloatArray): FloatArray {
+        val out = FloatArray(input.size)
+        process(input, out, input.size)
         return out
     }
     override fun reset() { buf.fill(0f); wIdx=0; phase=0.0; lpState=0f }
@@ -141,28 +153,34 @@ class FormantShifter(
     private val fftBuf      = Array(fftSize) { Complex(0f,0f) }
     private val lastPhase   = FloatArray(fftSize/2+1)
     private val lastOutPhase= FloatArray(fftSize/2+1)
+    private val frame       = FloatArray(fftSize)
+    private val mag         = FloatArray(fftSize/2+1)
+    private val ph          = FloatArray(fftSize/2+1)
+    private val synMag      = FloatArray(fftSize/2+1)
+    private val synPh       = FloatArray(fftSize/2+1)
     private var frames = 0
-    override fun process(input: FloatArray): FloatArray {
-        val out = FloatArray(input.size)
-        for (i in input.indices) {
+    override fun process(input: FloatArray, output: FloatArray, count: Int) {
+        val n = minOf(count, input.size, output.size)
+        for (i in 0 until n) {
             inBuf[inIdx]=input[i]; inIdx=(inIdx+1)%inBuf.size
             if (inIdx % hopSize == 0) processFrame()
-            out[i]=outBuf[outIdx]; outBuf[outIdx]=0f; outIdx=(outIdx+1)%outBuf.size
+            output[i]=outBuf[outIdx]; outBuf[outIdx]=0f; outIdx=(outIdx+1)%outBuf.size
         }
+    }
+    override fun process(input: FloatArray): FloatArray {
+        val out = FloatArray(input.size)
+        process(input, out, input.size)
         return out
     }
     private fun processFrame() {
-        val frame = FloatArray(fftSize)
         val rs = (inIdx-fftSize+inBuf.size)%inBuf.size
         for (i in 0 until fftSize) frame[i]=inBuf[(rs+i)%inBuf.size]*window[i]
         for (i in 0 until fftSize) { fftBuf[i].real=frame[i]; fftBuf[i].imag=0f }
         fft(fftBuf, false)
-        val mag = FloatArray(fftSize/2+1); val ph = FloatArray(fftSize/2+1)
         for (k in 0..fftSize/2) {
             mag[k] = sqrt(fftBuf[k].real*fftBuf[k].real + fftBuf[k].imag*fftBuf[k].imag)
             ph[k]  = atan2(fftBuf[k].imag, fftBuf[k].real)
         }
-        val synMag = FloatArray(fftSize/2+1); val synPh = FloatArray(fftSize/2+1)
         for (k in 0..fftSize/2) {
             var dp = (ph[k]-lastPhase[k]).toDouble(); lastPhase[k]=ph[k]
             val expected = 2.0*PI*k*hopSize/fftSize
@@ -199,18 +217,22 @@ class SubHarmonicGenerator(
     private val tracker = AutoCorrelationPitchTracker(SR)
     private var subPhase = 0.0; private var env = 0f
     private val attCoeff = exp(-1f/(0.01f*SR)); private val relCoeff = exp(-1f/(0.1f*SR))
-    override fun process(input: FloatArray): FloatArray {
-        val out = FloatArray(input.size)
+    override fun process(input: FloatArray, output: FloatArray, count: Int) {
+        val n = minOf(count, input.size, output.size)
         val freqMult = 2.0.pow(octaveDown).toFloat()
-        for (i in input.indices) {
+        for (i in 0 until n) {
             val s = input[i]; val amp = abs(s)
             env = if (amp>env) amp+attCoeff*(env-amp) else amp+relCoeff*(env-amp)
             val baseFreq = tracker.process(s)
             val subFreq = baseFreq*freqMult
             val sub = if (baseFreq>20f) sin(subPhase).toFloat()*env else 0f
             subPhase += 2.0*PI*subFreq/SR; if (subPhase>2.0*PI) subPhase-=2.0*PI
-            out[i] = s + tanh((sub*drive*2.5f).toDouble()).toFloat()*mix
+            output[i] = s + tanh((sub*drive*2.5f).toDouble()).toFloat()*mix
         }
+    }
+    override fun process(input: FloatArray): FloatArray {
+        val out = FloatArray(input.size)
+        process(input, out, input.size)
         return out
     }
     override fun reset() { tracker.reset(); subPhase=0.0; env=0f }

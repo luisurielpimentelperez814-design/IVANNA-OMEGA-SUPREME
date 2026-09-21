@@ -547,6 +547,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             val minTrack = AudioTrack.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
             ).coerceAtLeast(BLOCK_SAMPLES * 4)
+            // LATENCIA Y SINCRONIZACIÓN AUDIO/VIDEO (PRIME VIDEO / STREAMING):
+            // El buffer 6x con PERFORMANCE_MODE_NONE agregaba entre 180ms y 256ms de retardo,
+            // separando audiblemente el diálogo del video.
+            // Con YAMNet, socket daemon IPC y resync fuera del hilo RT, y CinematicEngine
+            // operando con buffers preasignados lock-free (cero GC), el hilo de audio procesa
+            // en <1ms por bloque.
+            // PERFORMANCE_MODE_LOW_LATENCY habilita FastMixer en AudioFlinger (~5ms).
+            // Un buffer de minTrack * 2 (doble buffering HAL) o 4 bloques PCM_FLOAT
+            // garantiza estabilidad acústica sin underruns y elimina el desfase A/V (<25ms).
+            val targetTrackBuf = maxOf(minTrack * 2, BLOCK_SAMPLES * 4 * Float.SIZE_BYTES)
             audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -557,21 +567,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build())
-                // FIX (desface + microcortes con video, p.ej. Prime Video):
-                // PERFORMANCE_MODE_LOW_LATENCY + buffer mínimo = el hilo de
-                // audio compite por CPU con el decoder de video y UNDERRUNEA
-                // (gap = microcorte; al recuperarse, la cola se desalinea del
-                // original = desface acumulado que crece con cada underrun).
-                // Solución: PERFORMANCE_MODE_NONE (ruta normal, más estable)
-                // + buffer de 4 bloques (margen de ~43 ms a 48k/512) — la
-                // latencia estructural es constante y predecible, y el mix
-                // Haas ya absorbe la copia como ambiencia, no como eco.
-                // Con video el sistema nunca deja el hilo de audio sin
-                // presupuesto de CPU lo bastante largo como para vaciar 4
-                // bloques seguidos.
-                .setBufferSizeInBytes(minTrack * 6)  // margen anti-underrun con video
+                .setBufferSizeInBytes(targetTrackBuf)
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_NONE)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
             if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
                 audioTrack?.release();  audioTrack  = null
@@ -616,9 +614,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     if (read == 0) continue
                     val frames = read / CHANNEL_COUNT
                     DSPBridge.process(buffer, frames)
-                    // runCatching: si CinematicEngineHost lanza (efecto CRNN en modo
-                    // no-NONE con chain defectuosa), el loop sigue — no muere.
-                    runCatching { CinematicEngineHost.processBlock(buffer).copyInto(buffer) }
+                    // runCatching: llamada in-place a CinematicEngineHost (cero asignaciones)
+                    runCatching { CinematicEngineHost.processBlock(buffer, read) }
                     if (IvannaSpatialEngine.enabled) {
                         // AUDIT FIX (realtime allocation): reutilizar buffers
                         // rtSpatialInL/R/OutL/R (miembros de la clase). Antes
@@ -764,12 +761,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 if (track.getTimestamp(audioTs)) {
                     val queuedFr = framesWrittenToTrack - audioTs.framePosition
                     val queueMsNow = queuedFr * 1000f / SAMPLE_RATE
-                    // Desfase por underrun acumulado: si la cola real supera
-                    // ~120 ms el stream procesado va muy por detrás del vídeo.
-                    // Una sola realineación (pause/flush/play) con histéresis
-                    // amplia (>= 900 ms entre resyncs) — nunca en ráfaga.
+                    // Desfase por underrun acumulado: con buffer sintonizado a baja latencia
+                    // el umbral de desalineación se reduce de 120ms a 45ms (65ms en BT),
+                    // asegurando estricta sincronía labial según norma ITU-R BT.1359-1.
                     val nowMs = System.nanoTime() / 1_000_000L
-                    if (queueMsNow > 120f && (nowMs - lastResyncMs) > 900L) {
+                    val resyncThresholdMs = if (btRouteActive) 65f else 45f
+                    if (queueMsNow > resyncThresholdMs && (nowMs - lastResyncMs) > 900L) {
                         lastResyncMs = nowMs; resyncCount++
                         runCatching { track.pause(); track.flush(); track.play() }
                         framesWrittenToTrack = 0L

@@ -220,7 +220,7 @@ class AudioPipeline {
                 // FIX (PUNTO 2): alimenta RealTimeCinematicEngine con audio real
                 // del hot-path. Identidad (no-op) si el toggle "Anti-Dolby
                 // adaptativo" está apagado — ver CinematicEngineHost.
-                val cinematic = CinematicEngineHost.processBlock(buf)
+                val cinematic = CinematicEngineHost.processBlock(buf, read)
                 if (cinematic !== buf) System.arraycopy(cinematic, 0, buf, 0, minOf(cinematic.size, buf.size))
 
                 // FIX: acumular muestras para YAMNet (downsample 48kHz→16kHz, ratio 3:1)
