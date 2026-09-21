@@ -1,84 +1,129 @@
 package com.ivanna.omega.ui
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.HiResAudioManager
+import com.ivanna.omega.ui.theme.AmberSignal
+import com.ivanna.omega.ui.theme.AuroraCyan
+import com.ivanna.omega.ui.theme.ObsidianVoid
+import com.ivanna.omega.ui.theme.TextPrimary
+import com.ivanna.omega.ui.theme.TextSecondary
+
+/**
+ * Panel Audio Hi-Res: selectores DESPLEGABLES de sample rate y profundidad.
+ *
+ * CAUSAS REALES de "el boton no despliega nada" (2026-09-21):
+ *  1. ControlTabScreen (la pantalla viva) nunca pasaba onOpenHiRes a
+ *     IvannaControlPanel -> el boton AUDIO HI-RES era un no-op.
+ *  2. Esta pantalla dibujaba Text() sin Surface ni color: fuera de un Surface el
+ *     color de contenido por defecto de Compose es NEGRO, sobre fondo oscuro ->
+ *     los rotulos eran invisibles y solo se veian los circulos de los RadioButton.
+ *  3. apply() devolvia siempre false sin root, asi que nunca habia confirmacion.
+ * Ahora: fondo y colores explicitos, dos desplegables, y el estado mostrado es el
+ * resultado REAL devuelto por HiResAudioManager (no una constante).
+ */
 @Composable
 fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
-    // FIX REAL (2026-09-21): restore(context) se llamaba DIRECTO en el cuerpo
-    // del composable — se ejecutaba en CADA recomposición (cada tap de un
-    // RadioButton cambia `rate`/`depth`/`applied`, lo que recompone esta
-    // función completa), no solo al entrar a la pantalla. Cada llamada
-    // dispara apply() completo (escritura de archivo + 2 llamadas JNI +
-    // intento de comando al daemon) de forma redundante en cada interacción.
-    // Ahora corre UNA sola vez, al entrar a la pantalla.
-    LaunchedEffect(Unit) { HiResAudioManager.restore(context) }
+    remember { HiResAudioManager.loadPersisted(context) }
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }
     var depth by remember { mutableStateOf(HiResAudioManager.currentDepth) }
+    var status by remember { mutableStateOf("") }
     val (routeName, routeMax) = remember { HiResAudioManager.activeRoute(context) }
-    var applied by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("◄ VOLVER", fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onBack() })
-        Text("AUDIO HI-RES")
-        Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz")
-        Text("Sample rate")
-        HiResAudioManager.VALID_RATES.forEach { r ->
-            // FIX REAL (botón "no despliega nada"): el gateo `r <= routeMax`
-            // deshabilitaba TODAS las opciones Hi-Res cuando la ruta activa
-            // reportaba un tope bajo (bocina/BT/mixer = 48 kHz) -> el panel
-            // parecía no responder. Ahora TODA opción es siempre seleccionable
-            // y persiste; si supera el tope de la ruta actual solo se avisa
-            // (se aplicará al conectar una ruta que lo soporte, p.ej. USB-DAC).
-            val soportada = r <= routeMax
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        rate = r
-                        applied = HiResAudioManager.apply(context, r, depth)
-                    }
-                    .padding(vertical = 4.dp)
-            ) {
-                RadioButton(selected = rate == r, onClick = null /* la fila maneja el click */)
-                Text(khzLabel(r) + " kHz" + if (soportada) "" else " (se aplica en ruta USB-DAC)")
-            }
-        }
-        Text("Profundidad")
-        HiResAudioManager.VALID_DEPTHS.forEach { d ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        depth = d
-                        applied = HiResAudioManager.apply(context, rate, d)
-                    }
-                    .padding(vertical = 4.dp)
-            ) {
-                RadioButton(selected = depth == d, onClick = null)
-                Text(d.toString() + " bits")
-            }
-        }
-        // Confirmación SIEMPRE visible con los valores activos — el usuario
-        // ve de inmediato qué quedó seleccionado, no un mensaje condicional.
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(ObsidianVoid)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text(
-            "Activo: " + khzLabel(HiResAudioManager.currentRate) + " kHz / " +
-                HiResAudioManager.currentDepth + " bits" +
-                if (applied) " — aplicado y persistido (el daemon lo recoge al reiniciar)" else "",
-            fontWeight = FontWeight.Bold
+            "◄ VOLVER", color = AuroraCyan, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { onBack() }.padding(vertical = 8.dp)
         )
-        Text("384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android.")
+        Text("AUDIO HI-RES", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz", color = TextSecondary)
+
+        HiResDropdown(
+            label = "Sample rate",
+            valueText = khzLabel(rate) + " kHz",
+            options = HiResAudioManager.VALID_RATES.map { it to (khzLabel(it) + " kHz" + if (it <= routeMax) "" else "  (requiere USB-DAC)") },
+            onSelect = { r ->
+                rate = r
+                status = "Guardando…"
+                HiResAudioManager.apply(context, r, depth) { status = it }
+            }
+        )
+        HiResDropdown(
+            label = "Profundidad",
+            valueText = depth.toString() + " bits",
+            options = HiResAudioManager.VALID_DEPTHS.map { it to (it.toString() + " bits") },
+            onSelect = { d ->
+                depth = d
+                status = "Guardando…"
+                HiResAudioManager.apply(context, rate, d) { status = it }
+            }
+        )
+
+        Text(
+            "Seleccionado: " + khzLabel(rate) + " kHz / " + depth + " bits",
+            color = TextPrimary, fontWeight = FontWeight.Bold
+        )
+        if (status.isNotEmpty()) Text(status, color = TextSecondary)
+        if (rate > routeMax) {
+            Text(
+                "La ruta actual limita a " + khzLabel(routeMax) + " kHz: la seleccion queda guardada y solo tendra efecto audible con una ruta que la soporte (USB-DAC).",
+                color = AmberSignal
+            )
+        }
+        Text(
+            "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android. " +
+                "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
+            color = TextSecondary
+        )
+    }
+}
+
+@Composable
+private fun HiResDropdown(
+    label: String,
+    valueText: String,
+    options: List<Pair<Int, String>>,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, color = TextSecondary)
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+            ) { Text(valueText + "  ▾") }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, text) ->
+                    DropdownMenuItem(
+                        text = { Text(text) },
+                        onClick = { expanded = false; onSelect(value) }
+                    )
+                }
+            }
+        }
     }
 }
 
