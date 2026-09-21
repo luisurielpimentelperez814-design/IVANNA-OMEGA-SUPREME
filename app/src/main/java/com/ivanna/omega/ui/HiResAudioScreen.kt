@@ -30,22 +30,25 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
         Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz")
         Text("Sample rate")
         HiResAudioManager.VALID_RATES.forEach { r ->
-            val enabled = r <= routeMax
-            // FIX UX: toda la fila es clickable (antes solo el círculo del
-            // RadioButton, objetivo táctil ~24dp — por eso "no desplegaba ni
-            // seleccionaba"). Y el estado se refleja al instante.
+            // FIX REAL (botón "no despliega nada"): el gateo `r <= routeMax`
+            // deshabilitaba TODAS las opciones Hi-Res cuando la ruta activa
+            // reportaba un tope bajo (bocina/BT/mixer = 48 kHz) -> el panel
+            // parecía no responder. Ahora TODA opción es siempre seleccionable
+            // y persiste; si supera el tope de la ruta actual solo se avisa
+            // (se aplicará al conectar una ruta que lo soporte, p.ej. USB-DAC).
+            val soportada = r <= routeMax
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = enabled) {
+                    .clickable {
                         rate = r
                         applied = HiResAudioManager.apply(context, r, depth)
                     }
                     .padding(vertical = 4.dp)
             ) {
                 RadioButton(selected = rate == r, onClick = null /* la fila maneja el click */)
-                Text(khzLabel(r) + " kHz" + if (enabled) "" else " (no soportado por la ruta)")
+                Text(khzLabel(r) + " kHz" + if (soportada) "" else " (se aplica en ruta USB-DAC)")
             }
         }
         Text("Profundidad")

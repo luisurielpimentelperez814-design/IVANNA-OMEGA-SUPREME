@@ -545,7 +545,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 // Con video el sistema nunca deja el hilo de audio sin
                 // presupuesto de CPU lo bastante largo como para vaciar 4
                 // bloques seguidos.
-                .setBufferSizeInBytes(minTrack * 4)
+                .setBufferSizeInBytes(minTrack * 6)  // margen anti-underrun con video
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_NONE)
                 .build()
@@ -732,6 +732,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             val track = audioTrack ?: return
             try {
                 if (track.getTimestamp(audioTs)) {
+                    val queuedFr = framesWrittenToTrack - audioTs.framePosition
+                    val queueMsNow = queuedFr * 1000f / SAMPLE_RATE
+                    // Desfase por underrun acumulado: si la cola real supera
+                    // ~120 ms el stream procesado va muy por detrás del vídeo.
+                    // Una sola realineación (pause/flush/play) con histéresis
+                    // amplia (>= 900 ms entre resyncs) — nunca en ráfaga.
+                    val nowMs = System.nanoTime() / 1_000_000L
+                    if (queueMsNow > 120f && (nowMs - lastResyncMs) > 900L) {
+                        lastResyncMs = nowMs; resyncCount++
+                        runCatching { track.pause(); track.flush(); track.play() }
+                        framesWrittenToTrack = 0L
+                    }
+
                     val queued = framesWrittenToTrack - audioTs.framePosition
                     val queueMs = (queued * 1000.0 / SAMPLE_RATE).toFloat().coerceAtLeast(0f)
                     if (queueMs > peakQueueMs) peakQueueMs = queueMs
