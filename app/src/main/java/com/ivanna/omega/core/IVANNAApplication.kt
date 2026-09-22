@@ -384,8 +384,6 @@ class IVANNAApplication : Application() {
                 // su propio fallo, tal como ya hace cada runCatching en el
                 // resto de este bloque.
                 runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
-                // IME: worker de decisión (hilo aparte, cada 2 s) — nunca en el hilo de audio.
-                runCatching { com.ivanna.omega.audio.MusicIntelligenceWorker.start(this@IVANNAApplication) }
                 runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() }
 
                 // ── PRIMER LANZAMIENTO: preset magistral de entrada ──────────────

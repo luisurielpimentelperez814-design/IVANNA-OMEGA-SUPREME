@@ -19,22 +19,26 @@
 
 struct OrchestratorState {
 
-    float dialogGain = 0.f;
-    float bassGain = 0.f;
-    float widenerWet = 0.f;
+    std::atomic<float> dialogGain{0.f};
+    std::atomic<float> bassGain{0.f};
+    std::atomic<float> widenerWet{0.f};
 
-    bool manifoldEnabled = false;
+    std::atomic<bool> manifoldEnabled{false};
 
-    float anti_dolby_speech = 0.f;
-    float anti_dolby_music = 0.f;
-    float anti_dolby_bass = 0.f;
+    std::atomic<float> anti_dolby_speech{0.f};
+    std::atomic<float> anti_dolby_music{0.f};
+    std::atomic<float> anti_dolby_bass{0.f};
 
-    float masterGainDb = 0.f;
-    float eqGainDb = 0.f;
-    float stereoWidth = 0.f;
+    std::atomic<float> masterGainDb{0.f};
+    std::atomic<float> eqGainDb{0.f};
+    std::atomic<float> stereoWidth{0.f};
 
-    float lastLufs = -70.f;
-    float lastPeakDbfs = -70.f;
+    std::atomic<float> lastLufs{-70.f};
+    std::atomic<float> lastPeakDbfs{-70.f};
+
+    // Autonomous Stability Sanitizer stats
+    std::atomic<uint32_t> sanitizedNanCount{0};
+
     ivanna::metering::LoudnessMeter loudnessMeter;  // BS.1770-4 real
 
     float loudness_curve[256]{};
@@ -59,18 +63,18 @@ struct OrchestratorState {
     uint32_t genome_generation = 0;
 
 
-    // NUEVO:
     // memoria del widener M/S mono-safe
     float sideLpState = 0.f;
 
-    // NUEVO:
     // ganancia del manifold suavizada
     float genomeGainSmoothed = 1.f;
+
+    // ganancia lineal combinada suavizada (zero clicks / pops)
+    float gainSmoothed = 1.f;
 };
 
 
 static OrchestratorState g_orch;
-static std::mutex g_orch_mutex;
 
 
 
@@ -78,14 +82,14 @@ static void update_anti_dolby(float speech,
                               float music,
                               float bass)
 {
-    g_orch.anti_dolby_speech =
-        std::max(0.f,std::min(1.f,speech));
+    g_orch.anti_dolby_speech.store(
+        std::max(0.f,std::min(1.f,speech)), std::memory_order_relaxed);
 
-    g_orch.anti_dolby_music =
-        std::max(0.f,std::min(1.f,music));
+    g_orch.anti_dolby_music.store(
+        std::max(0.f,std::min(1.f,music)), std::memory_order_relaxed);
 
-    g_orch.anti_dolby_bass =
-        std::max(0.f,std::min(1.f,bass));
+    g_orch.anti_dolby_bass.store(
+        std::max(0.f,std::min(1.f,bass)), std::memory_order_relaxed);
 }
 
 
@@ -176,7 +180,6 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeSetAntiDolbyScores(
     jfloat music,
     jfloat bass)
 {
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
     update_anti_dolby(speech,music,bass);
 }
 
@@ -191,7 +194,6 @@ extern "C" void ivanna_set_anti_dolby_scores(
        !std::isfinite(bass))
         return;
 
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
     update_anti_dolby(speech,music,bass);
 }
 
@@ -206,24 +208,15 @@ extern "C" void ivanna_set_route_profile(
        !std::isfinite(widenerMult))
         return;
 
-
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-
-    g_orch.bassGain =
-        bassBoostDb;
-
-    g_orch.dialogGain =
-        dialogBoostDb;
-
-    g_orch.widenerWet =
-        widenerMult;
+    g_orch.bassGain.store(bassBoostDb, std::memory_order_relaxed);
+    g_orch.dialogGain.store(dialogBoostDb, std::memory_order_relaxed);
+    g_orch.widenerWet.store(widenerMult, std::memory_order_relaxed);
 }
 
 
 extern "C" void ivanna_set_manifold_enabled(bool enabled)
 {
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-    g_orch.manifoldEnabled = enabled;
+    g_orch.manifoldEnabled.store(enabled, std::memory_order_relaxed);
 }
 
 
@@ -232,10 +225,7 @@ extern "C" void ivanna_set_master_gain(float db)
     if(!std::isfinite(db))
         return;
 
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-
-    g_orch.masterGainDb =
-        std::clamp(db,-24.f,24.f);
+    g_orch.masterGainDb.store(std::clamp(db,-24.f,24.f), std::memory_order_relaxed);
 }
 
 
@@ -244,10 +234,7 @@ extern "C" void ivanna_set_eq_gain(float db)
     if(!std::isfinite(db))
         return;
 
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-
-    g_orch.eqGainDb =
-        std::clamp(db,-12.f,12.f);
+    g_orch.eqGainDb.store(std::clamp(db,-12.f,12.f), std::memory_order_relaxed);
 }
 
 
@@ -256,24 +243,19 @@ extern "C" void ivanna_set_stereo_width(float width)
     if(!std::isfinite(width))
         return;
 
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-
-    g_orch.stereoWidth =
-        std::clamp(width,0.f,1.f);
+    g_orch.stereoWidth.store(std::clamp(width,0.f,1.f), std::memory_order_relaxed);
 }
 
 
 extern "C" float ivanna_get_lufs()
 {
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-    return g_orch.lastLufs;
+    return g_orch.lastLufs.load(std::memory_order_relaxed);
 }
 
 
 extern "C" float ivanna_get_peak_dbfs()
 {
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-    return g_orch.lastPeakDbfs;
+    return g_orch.lastPeakDbfs.load(std::memory_order_relaxed);
 }
 
 // ── HRTF wet/dry y flush — fix ruido DAC USB-C ────────────────────────────────
@@ -319,10 +301,13 @@ extern "C" void ivanna_orchestrate(
        samples <= 0)
         return;
 
-
-    std::lock_guard<std::mutex> lock(g_orch_mutex);
-
-
+    // Autonomous Stability Sanitizer: purga de NaNs/Infs en entrada (Cero pops/ruidos)
+    for(int i = 0; i < samples; ++i) {
+        if(!std::isfinite(buffer[i])) {
+            buffer[i] = 0.0f;
+            g_orch.sanitizedNanCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
 
     float rms=0.f;
     float peak=0.f;
@@ -397,34 +382,41 @@ extern "C" void ivanna_orchestrate(
 
     float dialogLin =
         std::pow(10.f,
-        g_orch.dialogGain/20.f);
+        g_orch.dialogGain.load(std::memory_order_relaxed)/20.f);
 
     float bassLin =
         std::pow(10.f,
-        g_orch.bassGain/20.f);
+        g_orch.bassGain.load(std::memory_order_relaxed)/20.f);
 
     float masterLin =
         std::pow(10.f,
-        (g_orch.masterGainDb+
-         g_orch.eqGainDb)/20.f);
+        (g_orch.masterGainDb.load(std::memory_order_relaxed)+
+         g_orch.eqGainDb.load(std::memory_order_relaxed))/20.f);
 
-
-    float combined =
+    float targetCombined =
         dialogLin*
         bassLin*
         masterLin;
 
+    // Slew-rate linear per sample para transición continua libre de pops/clics
+    const int chan = (channels > 0) ? channels : 1;
+    const int nFrames = samples / chan;
+    const float startGain = g_orch.gainSmoothed;
+    const float gainStep = (nFrames > 0) ? (targetCombined - startGain) / static_cast<float>(nFrames) : 0.f;
+    float currentGain = startGain;
 
-    for(int i=0;i<samples;i++)
-        buffer[i]*=combined;
-
-
+    for (int f = 0, idx = 0; f < nFrames; ++f) {
+        currentGain += gainStep;
+        for (int c = 0; c < chan; ++c, ++idx) {
+            buffer[idx] *= currentGain;
+        }
+    }
+    g_orch.gainSmoothed = targetCombined;
 
     // Stereo widener M/S mono-safe
-
     float wetTotal =
-        g_orch.widenerWet+
-        g_orch.stereoWidth;
+        g_orch.widenerWet.load(std::memory_order_relaxed)+
+        g_orch.stereoWidth.load(std::memory_order_relaxed);
 
 
     if(channels==2 &&
@@ -520,7 +512,7 @@ extern "C" void ivanna_orchestrate(
 
 
 
-    if(g_orch.manifoldEnabled &&
+    if(g_orch.manifoldEnabled.load(std::memory_order_relaxed) &&
        evo_best_fitness()>0.5f){
 
         uint8_t gen[GENOME_SIZE];

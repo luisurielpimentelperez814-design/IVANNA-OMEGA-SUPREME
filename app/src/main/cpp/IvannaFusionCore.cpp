@@ -101,6 +101,11 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_wfsOutL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsOutR.assign(Ivanna::BLOCK_SIZE, 0.0f);
 
+    m_inFifoL.assign(kFifoCapacity, 0.0f);
+    m_inFifoR.assign(kFifoCapacity, 0.0f);
+    m_outFifoL.assign(kFifoCapacity, 0.0f);
+    m_outFifoR.assign(kFifoCapacity, 0.0f);
+    resetFifo();
 }
 
 IvannaFusionEngine::~IvannaFusionEngine() {
@@ -273,21 +278,6 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             }
         }
     }
-
-    // FIX (setSpatialWidth/setCompressorParams muertos, auditoria
-    // 2026-09-22): ambos eran stubs vacios — la UI (via omega_apply_snapshot,
-    // Ruta B) ya llamaba a estos setters y no pasaba nada porque no habia
-    // motor DSP detras. Se procesan aqui, mismo orden que Ruta A (compresor
-    // -> widener, ver jni/ivanna_omega_jni.cpp), sobre la señal YA
-    // espacializada (post upmixing/HRTF/WFS) y ANTES del limitador/soft-clip
-    // final — asi cualquier ganancia que agregue el compresor (makeup) o el
-    // ensanchador (boost de side) sigue protegida por el tanh de salida.
-    // Costo cuando ambos estan en reposo (threshold=0dB efectivo / width=1
-    // unity): Compressor::process sigue corriendo el detector+sidechain HPF
-    // (barato, sin malloc); StereoWidener::process toma el camino rapido
-    // "unity transparente" (ver StereoWidener.cpp) sin transformar M/S.
-    m_compressor.process(buffer->left, buffer->right, (int)BLOCK_SIZE);
-    m_widener.process(buffer->left, buffer->right, (int)BLOCK_SIZE);
 
     // Slew-limiter de la ganancia armónica, UNA vez por bloque (el paso por
     // muestra se aplica dentro del loop del excitador — ver mix_eff). Si el

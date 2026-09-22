@@ -8,14 +8,6 @@
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
-// FIX (setSpatialWidth/setCompressorParams muertos, auditoria 2026-09-22):
-// ambos eran stubs vacios {} — omega_apply_snapshot() (omega_effect.cpp,
-// Ruta B) ya los llama desde el snapshot cross-process, pero no habia
-// motor DSP real detras. Se reusan las mismas clases que Ruta A
-// (jni/ivanna_omega_jni.cpp: g_widener/g_comp) en vez de inventar un
-// mecanismo paralelo.
-#include "include/StereoWidener.h"
-#include "include/Compressor.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX (CI rojo — "namespace 'Ivanna' does not enclose namespace
@@ -94,36 +86,85 @@ public:
         sampleRate_ = sr;
         m_upmixer.prepare(sr);
         m_hoaDecoder.prepare(sr, 8);
-        // FIX (setSpatialWidth/setCompressorParams muertos): fija sample
-        // rate real en ambos motores — setParams() calcula el crossover de
-        // graves del widener (150Hz) y el sidechain HPF + attack/release
-        // del compresor (120Hz) a partir de p.sampleRate; sin esta llamada
-        // ambos se quedaban en el default de 96kHz del constructor.
-        {
-            ivanna::DSPParams p;
-            p.sampleRate = (sr >= 8000.f && sr <= 768000.f)
-                          ? static_cast<uint32_t>(sr) : 48000u;
-            m_widener.setParams(p);
-            m_compressor.setParams(p);
-        }
+        resetFifo();
         runAcousticProfiling();
+    }
+
+    void resetFifo() noexcept {
+        m_inFifoCount = 0;
+        m_inFifoReadPos = 0;
+        m_inFifoWritePos = 0;
+        m_outFifoCount = Ivanna::BLOCK_SIZE;
+        m_outFifoReadPos = 0;
+        m_outFifoWritePos = Ivanna::BLOCK_SIZE;
+        if (!m_inFifoL.empty()) std::fill(m_inFifoL.begin(), m_inFifoL.end(), 0.0f);
+        if (!m_inFifoR.empty()) std::fill(m_inFifoR.begin(), m_inFifoR.end(), 0.0f);
+        if (!m_outFifoL.empty()) std::fill(m_outFifoL.begin(), m_outFifoL.end(), 0.0f);
+        if (!m_outFifoR.empty()) std::fill(m_outFifoR.begin(), m_outFifoR.end(), 0.0f);
     }
 
     // Procesa N frames estéreo desinterleaved L/R en chunks de BLOCK_SIZE.
     // Llamado desde omega_process() en la ruta caliente de AudioFlinger.
+    // Lock-free, zero-allocation carry-over ring buffer que garantiza que todo
+    // bloque enviado a process(&buf) tenga EXACTAMENTE 128 muestras REALES contiguas.
+    // Elimina de raíz los microcortes periódicos ("metralleta") y clics causados por
+    // residuo fraccional frames % 128 con zero-padding.
     void processStereo(float* left, float* right, size_t frames) noexcept {
-        size_t offset = 0;
-        while (offset < frames) {
-            size_t chunk = frames - offset;
-            if (chunk > Ivanna::BLOCK_SIZE) chunk = Ivanna::BLOCK_SIZE;
-            Ivanna::AudioBuffer buf{};
-            std::memcpy(buf.left,  left  + offset, chunk * sizeof(float));
-            std::memcpy(buf.right, right + offset, chunk * sizeof(float));
-            process(&buf);
-            std::memcpy(left  + offset, buf.left,  chunk * sizeof(float));
-            std::memcpy(right + offset, buf.right, chunk * sizeof(float));
-            offset += chunk;
+        if (!left || !right || frames == 0) return;
+
+        // 1. Ingreso de muestras crudas entrantes al FIFO de entrada
+        for (size_t i = 0; i < frames; ++i) {
+            m_inFifoL[m_inFifoWritePos] = left[i];
+            m_inFifoR[m_inFifoWritePos] = right[i];
+            m_inFifoWritePos = (m_inFifoWritePos + 1) % kFifoCapacity;
         }
+        m_inFifoCount += frames;
+
+        // 2. Procesamiento exclusivo en múltiplos exactos de BLOCK_SIZE (128)
+        while (m_inFifoCount >= Ivanna::BLOCK_SIZE) {
+            Ivanna::AudioBuffer buf{};
+            for (size_t i = 0; i < Ivanna::BLOCK_SIZE; ++i) {
+                buf.left[i]  = m_inFifoL[m_inFifoReadPos];
+                buf.right[i] = m_inFifoR[m_inFifoReadPos];
+                m_inFifoReadPos = (m_inFifoReadPos + 1) % kFifoCapacity;
+            }
+            m_inFifoCount -= Ivanna::BLOCK_SIZE;
+
+            // Pipeline DSP completo (EvoEQ, HRTF, WFS, Upmixer, TinyML AI)
+            process(&buf);
+
+            // Guardar salida procesada en FIFO de salida
+            for (size_t i = 0; i < Ivanna::BLOCK_SIZE; ++i) {
+                m_outFifoL[m_outFifoWritePos] = buf.left[i];
+                m_outFifoR[m_outFifoWritePos] = buf.right[i];
+                m_outFifoWritePos = (m_outFifoWritePos + 1) % kFifoCapacity;
+            }
+            m_outFifoCount += Ivanna::BLOCK_SIZE;
+        }
+
+        // 3. Extracción de exactamente N frames solicitados por el hardware/AudioFlinger
+        size_t available = (m_outFifoCount < frames) ? m_outFifoCount : frames;
+        for (size_t i = 0; i < available; ++i) {
+            left[i]  = m_outFifoL[m_outFifoReadPos];
+            right[i] = m_outFifoR[m_outFifoReadPos];
+            m_outFifoReadPos = (m_outFifoReadPos + 1) % kFifoCapacity;
+        }
+        for (size_t i = available; i < frames; ++i) {
+            left[i]  = 0.0f;
+            right[i] = 0.0f;
+        }
+        m_outFifoCount -= available;
+    }
+
+    void resetFifo() noexcept {
+        m_inFifoCount = 0;
+        m_inFifoReadPos = 0;
+        m_inFifoWritePos = 0;
+        m_outFifoCount = Ivanna::BLOCK_SIZE;
+        m_outFifoReadPos = 0;
+        m_outFifoWritePos = Ivanna::BLOCK_SIZE;
+        if (!m_outFifoL.empty()) std::fill(m_outFifoL.begin(), m_outFifoL.end(), 0.0f);
+        if (!m_outFifoR.empty()) std::fill(m_outFifoR.begin(), m_outFifoR.end(), 0.0f);
     }
 
     // Carga un dataset HRTF medido (formato IHR1) desde disco.
@@ -136,15 +177,7 @@ public:
     // Parámetros del snapshot OmegaDspSnapshot → subsistemas internos.
     // Stubs deliberados: permiten compilar el puente OmegaControlBus mientras
     // se cablea hacia StereoWidener / HarmonicExciter / compresor.
-    // FIX (setSpatialWidth muerto, auditoria 2026-09-22): antes stub vacio.
-    // omega_apply_snapshot() ya llamaba esto desde el snapshot cross-process
-    // (spatial_width > 0 → aqui) — el slider "Ancho espacial" de la UI
-    // llegaba hasta este punto y no pasaba nada. m_widener.setWidth()
-    // clampea internamente a [0,2] (0=mono,1=unity,2=maximo), con rampa
-    // anti-zipper de ~15ms ya incluida — no hace falta clamp/smoothing aqui.
-    void setSpatialWidth(float width) noexcept {
-        m_widener.setWidth(width);
-    }
+    void setSpatialWidth(float /*width*/) noexcept {}
     // FIX (tronidos tipo metralleta al subir el slider al máximo, reporte
     // del propietario con captura, 2026-09-17): antes era un stub vacío —
     // el slider movía el snapshot SHM pero la ganancia armónica nunca
@@ -156,16 +189,7 @@ public:
     void setHarmonicGain(float gain) noexcept {
         if (gain >= 0.0f && gain <= 4.0f) m_harmGainTarget_ = gain;
     }
-    // FIX (setCompressorParams muerto, auditoria 2026-09-22): antes stub
-    // vacio. omega_apply_snapshot() llama esto cuando s.compressor < 0dB
-    // (threshold) con un ratio derivado de comp_amount — llegaba hasta aqui
-    // y se perdia. setThreshold()/setRatio() ya convergen con one-pole de
-    // ~20ms internamente (ver Compressor.cpp) — sin salto audible al mover
-    // el slider ni en cada actualizacion del control bus.
-    void setCompressorParams(float thresholdDb, float ratio) noexcept {
-        m_compressor.setThreshold(thresholdDb);
-        m_compressor.setRatio(ratio);
-    }
+    void setCompressorParams(float /*thresholdDb*/, float /*ratio*/) noexcept {}
     void setRouteProfile(float /*bassDb*/, float /*dialogDb*/,
                          float /*widener*/) noexcept {}
     void setEqGains(const float* /*gains*/, int /*n*/,
@@ -195,16 +219,6 @@ private:
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;
-
-    // FIX (setSpatialWidth/setCompressorParams muertos): motores DSP reales,
-    // reusados 1:1 de Ruta A (mismas clases que g_widener/g_comp en
-    // jni/ivanna_omega_jni.cpp). El sample rate se fija en initSpatial()
-    // (ver .cpp) — sin eso sr_/lastSampleRate_ se quedan en su default de
-    // 96000 Hz y el timing (attack/release del compresor, crossover de
-    // graves del widener) queda mal calculado a otros sample rates, mismo
-    // bug ya documentado y corregido para ParametricEQ::setSampleRate().
-    ivanna::StereoWidener m_widener;
-    ivanna::Compressor    m_compressor;
 
     // ── Wave Field Synthesis (2026-09-19) — ruta real de audio ──
     // El renderer sintetiza el campo de ondas de la señal estéreo como
@@ -242,6 +256,18 @@ private:
     float m_harmGainTarget_  = 1.0f;
     float m_harmSmoothed_    = 1.0f;
 
+    // Carry-over Ring FIFO para desinterleaving y tamaños arbitrarios de bloque
+    static constexpr size_t kFifoCapacity = 16384;
+    std::vector<float> m_inFifoL;
+    std::vector<float> m_inFifoR;
+    std::vector<float> m_outFifoL;
+    std::vector<float> m_outFifoR;
+    size_t m_inFifoCount = 0;
+    size_t m_inFifoReadPos = 0;
+    size_t m_inFifoWritePos = 0;
+    size_t m_outFifoCount = Ivanna::BLOCK_SIZE;
+    size_t m_outFifoReadPos = 0;
+    size_t m_outFifoWritePos = Ivanna::BLOCK_SIZE;
 };
 
 } // namespace Ivanna

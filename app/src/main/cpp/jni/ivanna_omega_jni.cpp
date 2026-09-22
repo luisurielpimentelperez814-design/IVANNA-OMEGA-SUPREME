@@ -12,21 +12,6 @@
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
-// FIX (build): imeFeedBlock/imeDecideNowJson/imeSharedOpaque son C++ real
-// (namespace ivanna::ime, ver ImeBridge.hpp), pero el #include vivía más
-// abajo (línea ~2049), dentro del bloque `extern "C" { ... }` que abre en
-// la línea 583 y no cierra hasta la 2571 (DSPBridge y compañía). Un
-// `extern "C"` afecta el LINKAGE de lo declarado en su interior aunque esté
-// dentro de un namespace — namespace controla el lookup, extern "C" controla
-// el símbolo emitido. Resultado real medido en CI: ivanna_omega_jni.cpp.o
-// referenciaba el símbolo plano sin decorar "imeSharedOpaque" (linkage C,
-// heredado del extern "C" que lo envolvía), mientras que ImeBridge.cpp lo
-// define con linkage C++ normal (namespace, sin extern "C") → símbolo
-// decorado distinto → "undefined symbol" al enlazar (ld.lld, 3 símbolos:
-// imeSharedOpaque, imeFeedBlock, imeDecideNowJson). Se sube el include aquí,
-// a nivel de archivo, fuera de cualquier extern "C", para que el compilador
-// vea la declaración con el linkage C++ real que ImeBridge.cpp ya usa.
-#include "../music_intelligence/ImeBridge.hpp"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -2060,33 +2045,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
 
-// ── IME (Music Intelligence Engine) — bucle real: captura → extractor → decide → JSON ──
-// (el #include de ImeBridge.hpp se movió al principio del archivo — ver el
-// comentario ahí; aquí adentro, dentro del extern "C" que abre en la línea
-// 583, el include heredaba linkage C para funciones C++ reales.)
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeFeedBlock(
-        JNIEnv* env, jobject, jfloatArray samples, jint frames) {
-    if (!samples || frames <= 0) return;
-    jfloat* buf = env->GetFloatArrayElements(samples, nullptr);
-    if (!buf) return;
-    ivanna::ime::imeFeedBlock(buf, (int)frames);
-    env->ReleaseFloatArrayElements(samples, buf, JNI_ABORT);
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(JNIEnv* env, jobject) {
-    char json[512];
-    const int n = ivanna::ime::imeDecideNowJson(json, (int)sizeof(json));
-    return env->NewStringUTF(n > 0 ? json : "{}");
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(JNIEnv*, jobject, jboolean en) {
-    reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque())->enabled.store(en == JNI_TRUE, std::memory_order_relaxed);
-}
-
 static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;
@@ -2125,49 +2083,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
         g_wfs_spread.store(sp, std::memory_order_relaxed);
         omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
     }
-}
-
-// ── WFS: layout de 7 altavoces (FL,FR,SL,SR,TL,TR,SW) — calibracion de sala ──
-// Persiste en el snapshot del daemon (wfs_speaker_{x,y,z}) que omega_effect
-// consume y pasa a setWfsSpeakerLayout() en cada bloque. Sin cambio de ABI:
-// reencoda la posicion del oyente y la geometria de sala ya persistidas.
-static void omegaSendWfsLayoutToDaemon(JNIEnv* env, jfloatArray x, jfloatArray y, jfloatArray z) noexcept {
-    if (!x || !y || !z) return;
-    jsize n = env->GetArrayLength(x);
-    if (n != 7 || env->GetArrayLength(y) != 7 || env->GetArrayLength(z) != 7) return;
-    jfloat *px=env->GetFloatArrayElements(x,nullptr),
-           *py=env->GetFloatArrayElements(y,nullptr),
-           *pz=env->GetFloatArrayElements(z,nullptr);
-    if (!px||!py||!pz){ if(px)env->ReleaseFloatArrayElements(x,px,JNI_ABORT);
-        if(py)env->ReleaseFloatArrayElements(y,py,JNI_ABORT);
-        if(pz)env->ReleaseFloatArrayElements(z,pz,JNI_ABORT); return; }
-    char json[1024]; int off=0;
-    off += std::snprintf(json+off,sizeof(json)-off,"{\"action\":\"SET_WFS\",\"wfsEnabled\":%d,\"wfsSpread\":%.4f,",
-        g_wfs_enabled.load(std::memory_order_relaxed)?1:0,
-        (double)g_wfs_spread.load(std::memory_order_relaxed));
-    const char* keys[3]={"wfsSpeakerX","wfsSpeakerY","wfsSpeakerZ"};
-    jfloat* arrs[3]={px,py,pz};
-    for(int a=0;a<3;a++){ off+=std::snprintf(json+off,sizeof(json)-off,"\"%s\":[",keys[a]);
-        for(int i=0;i<7;i++) off+=std::snprintf(json+off,sizeof(json)-off,"%.3f%s",(double)arrs[a][i],i<6?",":"");
-        off+=std::snprintf(json+off,sizeof(json)-off,"]%s",a<2?",":"}"); }
-    int fd=::socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
-    if(fd>=0){ struct timeval tv{0,200000};
-        ::setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&tv,sizeof(tv));
-        struct sockaddr_un addr; std::memset(&addr,0,sizeof(addr)); addr.sun_family=AF_UNIX;
-        const char* nm="omega_command_socket"; addr.sun_path[0]='\0';
-        std::memcpy(addr.sun_path+1,nm,std::strlen(nm));
-        socklen_t len=offsetof(struct sockaddr_un,sun_path)+1+std::strlen(nm);
-        if(::connect(fd,(struct sockaddr*)&addr,len)==0)(void)::write(fd,json,(size_t)off);
-        ::close(fd); }
-    env->ReleaseFloatArrayElements(x,px,JNI_ABORT);
-    env->ReleaseFloatArrayElements(y,py,JNI_ABORT);
-    env->ReleaseFloatArrayElements(z,pz,JNI_ABORT);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
-    JNIEnv* env, jobject, jfloatArray x, jfloatArray y, jfloatArray z) {
-    omegaSendWfsLayoutToDaemon(env, x, y, z);
 }
 
 JNIEXPORT void JNICALL

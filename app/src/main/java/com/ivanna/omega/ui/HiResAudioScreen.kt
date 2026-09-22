@@ -36,7 +36,7 @@ import com.ivanna.omega.ui.theme.TextSecondary
  * resultado REAL devuelto por HiResAudioManager (no una constante).
  */
 @Composable
-fun HiResAudioScreen(onBack: () -> Unit, onOpenMusicIntel: () -> Unit = {}) {
+fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     remember { HiResAudioManager.loadPersisted(context) }
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }
@@ -92,16 +92,10 @@ fun HiResAudioScreen(onBack: () -> Unit, onOpenMusicIntel: () -> Unit = {}) {
             )
         }
         Text(
-            "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android.",
+            "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android. " +
+                "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
             color = TextSecondary
         )
-        Text(
-            "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
-            color = TextSecondary
-        )
-        androidx.compose.material3.TextButton(onClick = onOpenMusicIntel) {
-            Text("MUSIC INTELLIGENCE →")
-        }
     }
 }
 

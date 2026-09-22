@@ -90,11 +90,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // escalera, en vez de caer en un "else -> 30_000L" para siempre, se
         // rinde honestamente.
         private const val MAX_RESTART_ATTEMPTS = 6
-        // ROUTE ARBITER: periodo de reevaluacion dinamica Ruta A/Ruta B.
-        // 1500 ms -- suficientemente frecuente para detectar la activacion
-        // del modulo Magisk en tiempo util, y lejos de cualquier cadencia
-        // de hilo de audio (bloques de ~6.7 ms a BLOCK_FRAMES=320).
-        private const val ROUTE_ARBITER_INTERVAL_MS = 1500L
 
         private const val VOICE_DECIMATION    = 3
         private const val VOICE_WINDOW_SAMPLES = 15600
@@ -107,10 +102,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     private val engineRef   = AtomicReference<CaptureEngine?>(null)
     private val projRef     = AtomicReference<MediaProjection?>(null)
     private val running     = AtomicBoolean(false)
-    // ROUTE ARBITER (vigilancia dinamica Ruta A/Ruta B): controla si el
-    // ciclo periodico de reevaluacion sigue reprogramandose. Vive en el
-    // hilo de control (retryHandler), nunca en el hilo de audio.
-    private val routeArbiterActive = AtomicBoolean(false)
 
     @Volatile private var wakeLock: PowerManager.WakeLock? = null
     private var retryAttempts = 0
@@ -130,34 +121,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         AudioCallbackManager(getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager)
     }
 
-    // ROUTE ARBITER dinamico: reevalua periodicamente (hilo de control, NO
-    // el hilo de audio URGENT_AUDIO) si omega_effect (Ruta B, sistema) esta
-    // activo mientras CaptureEngine (Ruta A) sigue corriendo. Extiende el
-    // guard original de AudioEffect.queryEffects() en CaptureEngine.start()
-    // -- que solo se evaluaba una vez al arrancar -- a vigilancia continua,
-    // para cubrir el caso en que el modulo Magisk/omega_effect se activa
-    // DESPUES de que Ruta A ya esta reproduciendo su copia procesada.
-    private val routeArbiterTick = object : Runnable {
-        override fun run() {
-            if (!routeArbiterActive.get()) return
-            val routeARunning = running.get()
-            val routeBActive = RouteArbiter.isSystemWideEffectActive()
-            Log.d(TAG, "[RUTA_A] active=$routeARunning")
-            Log.d(TAG, "[RUTA_B] active=$routeBActive")
-            val state = RouteArbiter.evaluate(routeARunning)
-            if (state == RouteArbiter.RouteState.LOOPBACK_PROCESSING) {
-                // Ruta B aparecio mientras Ruta A seguia activa: detener
-                // Ruta A de forma limpia (misma ruta que stopEngine() ya
-                // usa) para evitar el doble DSP sobre el mismo stream.
-                Log.w(TAG, "[ROUTE_ARBITER] duplicate_dsp_prevented=true reason=system_wide_effect_detected stopping_route_a")
-                stopEngine()
-            } else {
-                Log.d(TAG, "[ROUTE_ARBITER] duplicate_dsp_prevented=false state=$state")
-            }
-            retryHandler?.postDelayed(this, ROUTE_ARBITER_INTERVAL_MS)
-        }
-    }
-
     private val perceptualCortex: PerceptualCortex
         get() = (application as IVANNAApplication).perceptualCortex
 
@@ -170,11 +133,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         acquireWakeLock()
         retryThread = HandlerThread("RetryHandler", Process.THREAD_PRIORITY_BACKGROUND)
             .also { it.start(); retryHandler = Handler(it.looper) }
-        // ROUTE ARBITER: arranca el ciclo de vigilancia dinamica en el
-        // mismo hilo de control que ya maneja los reintentos -- sin hilo
-        // nuevo, sin tocar el hilo de audio.
-        routeArbiterActive.set(true)
-        retryHandler?.post(routeArbiterTick)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -198,15 +156,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // FIX PR-2: desregistrarse del listener
         runCatching { perceptualCortex.removeStateListener(this) }
         runCatching { audioCallbackManager.abandonAudioFocus() }
-        // ROUTE ARBITER: detener el ciclo de vigilancia antes de tirar el
-        // handler, para que un tick en vuelo no se reprograme sobre un
-        // HandlerThread que ya se esta cerrando.
-        routeArbiterActive.set(false)
         stopEngine()
         releaseWakeLock()
         retryHandler?.removeCallbacksAndMessages(null)
         retryThread?.quitSafely()
-        RouteArbiter.reset()
         _isCapturing.value = false
 
         super.onDestroy()
@@ -809,12 +762,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val monoFrames = minOf(effectiveFrames, mono.size)
                     for (i in 0 until monoFrames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, monoFrames) }
-                    // IME (PASO 2): alimenta el extractor RT-safe con el audio REAL capturado.
-                    // El bridge nativo deinterleava a buffers estáticos (cero malloc); decide() corre en el worker.
-                    runCatching {
-                        if (com.ivanna.omega.core.IvannaNativeLib.isLoaded)
-                            com.ivanna.omega.core.IvannaNativeLib.nativeImeFeedBlock(buffer, read)
-                    }
                     runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
                     runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
                     

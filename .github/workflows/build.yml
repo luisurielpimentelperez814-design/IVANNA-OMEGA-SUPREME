@@ -239,21 +239,9 @@ jobs:
         if: failure()
         run: |
           [ -f gradle_build.log ] || exit 0
-          # La cuota de anotaciones ::error:: del check-run ya la agota la
-          # propia AGP (10 "C/C++: ld.lld: error" nativas) antes de que este
-          # paso corra: los ::error:: de aqui nunca se veian. Usamos
-          # ::warning:: (cupo separado) para el diagnostico dirigido: el
-          # contexto "referenced by" de ld.lld y si ImeBridge.cpp.o esta en
-          # el comando de link real.
-          OUT=$(
-            {
-              echo "IMEOBJ_IN_LINK:$(grep -n 'ld.lld' gradle_build.log | grep -c 'ImeBridge.cpp.o' || true)"
-              echo "IMEBRIDGE_MENTIONS:$(grep -c 'ImeBridge.cpp' gradle_build.log || true)"
-              grep -n "ImeBridge.cpp" gradle_build.log | head -6
-              grep -n -A1 "undefined symbol: imeFeedBlock" gradle_build.log | head -3
-            } 2>&1
-          )
-          echo "$OUT" | sed 's/\r$//; s/%/%25/g' | while IFS= read -r l; do [ -n "$l" ] && echo "::warning::IME-DIAG: ${l:0:400}"; done
+          grep -E '^e: |Unresolved reference|Type mismatch|What went wrong|Execution failed for task' gradle_build.log \
+            | sed 's/\r$//; s/%/%25/g' | head -10 \
+            | while IFS= read -r l; do echo "::error::${l:0:400}"; done
           exit 0
 
       # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──

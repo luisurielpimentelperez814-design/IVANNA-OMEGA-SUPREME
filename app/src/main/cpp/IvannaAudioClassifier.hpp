@@ -109,6 +109,7 @@ public:
     // Output reading. Thread-safe, wait-free.
     void getClassProbabilities(float* outProbs) const noexcept;
     uint8_t getDominantClass() const noexcept;
+    bool getModelOutput(AIModelOutput& out) const noexcept;
 
     bool loadWeights(const void* data, size_t bytes) noexcept;
 
