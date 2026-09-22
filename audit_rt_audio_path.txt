@@ -1,0 +1,30 @@
+=== ALLOCACIONES EN RUTA AUDIO ===
+
+=== PROCESS AUDIO REAL ===
+
+=== LOGS DENTRO DE AUDIO ===
+
+=== ESTADO GIT ===
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	app/src/main/cpp/IvannaFusionCore.cpp.backup_wfs_rt
+	arbol_audio_real.sh
+	arbol_audio_real.txt
+	audit_relevante.sh
+	audit_relevante.txt
+	audit_rt_audio_path.sh
+	audit_rt_audio_path.txt
+	auditar_mezcla_wfs.sh
+	cableado.txt
+	detectar_ruta_real.sh
+	detectar_wfs_real.sh
+	encontrar_cableado.sh
+	ivanna_tree_audit.sh
+	ivanna_tree_audit.txt
+	ruta_real.txt
+	wfs_real.txt
+
+nothing added to commit but untracked files present (use "git add" to track)
