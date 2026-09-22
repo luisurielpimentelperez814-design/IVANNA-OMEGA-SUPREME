@@ -2102,6 +2102,61 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
     }
 }
 
+// FIX (build rojo, auditoría 2026-09-22): WfsCalibrationManager.kt llamaba a
+// IvannaNativeLib.nativeSetWfsSpeakerLayout(x,y,z) — nunca existió ni la
+// declaración `external fun` ni este wrapper JNI ("Unresolved reference" en
+// compileDebugKotlin). El daemon (command_server.cpp, acción "SET_WFS") YA
+// acepta los arrays opcionales wfsSpeakerX/Y/Z (7 floats c/u) desde antes —
+// solo faltaba el puente app→daemon para el layout de altavoces, igual que
+// omegaSendWfsToDaemon() ya lo hace para wfsEnabled/wfsSpread. Se omiten
+// "wfsEnabled"/"wfsSpread" del JSON a propósito: _jsonFloat() conserva el
+// valor ya publicado cuando la clave no viene, así que este comando no
+// pisa el estado enabled/spread vigente — solo la geometría.
+static void omegaSendWfsSpeakerLayoutToDaemon(const float* x, const float* y, const float* z) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000}; // 200 ms — solo hilo UI, nunca RT
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[512];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_WFS\","
+            "\"wfsSpeakerX\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f],"
+            "\"wfsSpeakerY\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f],"
+            "\"wfsSpeakerZ\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f]}",
+            static_cast<double>(x[0]), static_cast<double>(x[1]), static_cast<double>(x[2]),
+            static_cast<double>(x[3]), static_cast<double>(x[4]), static_cast<double>(x[5]), static_cast<double>(x[6]),
+            static_cast<double>(y[0]), static_cast<double>(y[1]), static_cast<double>(y[2]),
+            static_cast<double>(y[3]), static_cast<double>(y[4]), static_cast<double>(y[5]), static_cast<double>(y[6]),
+            static_cast<double>(z[0]), static_cast<double>(z[1]), static_cast<double>(z[2]),
+            static_cast<double>(z[3]), static_cast<double>(z[4]), static_cast<double>(z[5]), static_cast<double>(z[6]));
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
+    JNIEnv* env, jobject, jfloatArray xArr, jfloatArray yArr, jfloatArray zArr) {
+    if (!xArr || !yArr || !zArr) return;
+    if (env->GetArrayLength(xArr) < 7 || env->GetArrayLength(yArr) < 7 || env->GetArrayLength(zArr) < 7) return;
+    float x[7], y[7], z[7];
+    env->GetFloatArrayRegion(xArr, 0, 7, x);
+    env->GetFloatArrayRegion(yArr, 0, 7, y);
+    env->GetFloatArrayRegion(zArr, 0, 7, z);
+    for (int i = 0; i < 7; ++i) {
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i]) || !std::isfinite(z[i])) return;
+    }
+    omegaSendWfsSpeakerLayoutToDaemon(x, y, z);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     JNIEnv*, jobject, jfloat v) {

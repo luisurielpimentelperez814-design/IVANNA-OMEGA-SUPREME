@@ -291,6 +291,12 @@ object IvannaNativeLib {
     // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
     external fun nativeSetWfsEnabled(enabled: Boolean)
     external fun nativeSetWfsSpread(spread: Float)
+    // FIX (build rojo, auditoría 2026-09-22): faltaba esta declaración —
+    // WfsCalibrationManager.kt ya la llamaba, "Unresolved reference" en
+    // compileDebugKotlin. Implementación real en ivanna_omega_jni.cpp:
+    // publica la geometría (7 altavoces) al daemon (acción SET_WFS,
+    // campos wfsSpeakerX/Y/Z), sin tocar wfsEnabled/wfsSpread vigentes.
+    external fun nativeSetWfsSpeakerLayout(x: FloatArray, y: FloatArray, z: FloatArray)
     // FIX (build roto, 2026-09-22): faltaban por completo -- MusicIntelligenceWorker.kt
     // las llamaba pero no existia ni la declaracion aqui ni el wrapper JNI
     // (ver jni/ivanna_ime_jni.cpp). La logica real ya existia en
