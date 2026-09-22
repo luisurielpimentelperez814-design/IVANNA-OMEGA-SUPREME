@@ -578,7 +578,18 @@ static int32_t omega_process(effect_handle_t self,
         
         // FASE 3: Integración de TinyML Asíncrono
         int aiDominantClass = -1;
-        if (auto* classifier = fc->getClassifier()) {
+        // FIX (build rojo, auditoria 2026-09-22): 'classifier' se declaraba
+        // dentro del propio `if (auto* classifier = ...)` -- su ámbito
+        // terminaba al cerrar ese bloque. La sección Anti-Dolby (~50 líneas
+        // más abajo, misma iteración del chunk) lo reutilizaba asumiendo que
+        // seguía vivo -> "'classifier' was not declared in this scope",
+        // error de compilación real en el target Android (nunca detectado
+        // por los tests host: IvannaFusionCore.cpp/omega_effect.cpp no se
+        // compilan ahí). Se declara una vez a nivel del chunk y ambos usos
+        // la comparten -- mismo puntero, sin llamada duplicada a
+        // fc->getClassifier().
+        auto* classifier = fc->getClassifier();
+        if (classifier) {
             aiDominantClass = classifier->getDominantClass();
         }
 
