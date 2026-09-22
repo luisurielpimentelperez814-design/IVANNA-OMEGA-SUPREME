@@ -92,11 +92,16 @@ fun HiResAudioScreen(onBack: () -> Unit, onOpenMusicIntel: () -> Unit = {} = {})
             )
         }
         Text(
-            "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android. " +
-            androidx.compose.material3.TextButton(onClick = onOpenMusicIntel) { Text("MUSIC INTELLIGENCE →") }
-                "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
+            "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android.",
             color = TextSecondary
         )
+        Text(
+            "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
+            color = TextSecondary
+        )
+        androidx.compose.material3.TextButton(onClick = onOpenMusicIntel) {
+            Text("MUSIC INTELLIGENCE →")
+        }
     }
 }
 

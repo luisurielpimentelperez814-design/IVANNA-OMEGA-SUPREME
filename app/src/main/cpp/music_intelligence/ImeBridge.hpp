@@ -19,6 +19,10 @@ struct ImeSharedState {
     MusicDecision         latestDecision{};
 };
 
+// FIX (build 87cd652d): la declaración NO debe heredar extern "C" del
+// archivo .cpp — devuelve un tipo C++ (ImeSharedState&) y el NDK la
+// rechaza con -Werror=return-type-c-linkage. Al ser una definición en C++
+// puro (namespace ivanna::ime), la declaración limpia en C++ es correcta.
 ImeSharedState& imeShared();
 
 // RT-safe: interleaved estéreo [L0,R0,...], frames = muestras por canal.
