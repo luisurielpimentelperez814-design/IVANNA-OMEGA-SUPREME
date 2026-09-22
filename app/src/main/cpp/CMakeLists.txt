@@ -161,8 +161,6 @@ add_library(ivanna_omega SHARED
     music_intelligence/MusicFeatureExtractor.cpp
     music_intelligence/MusicIntelligenceEngine.cpp
     music_intelligence/ImeBridge.cpp
-    music_intelligence/MusicIntelligenceEngine.cpp
-    music_intelligence/MusicFeatureExtractor.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp

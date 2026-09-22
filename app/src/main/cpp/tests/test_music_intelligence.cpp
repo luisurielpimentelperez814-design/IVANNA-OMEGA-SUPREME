@@ -55,9 +55,14 @@ int main(){
     MusicDecision da2=eng.decide(fa);
     EXPECT(da2.profileIndex==da.profileIndex && da2.wfsSpread==da.wfsSpread, "decisión determinista y estable en llamadas repetidas");
 
-    // Diferentes tamaños de bloque (robustez)
+    // Diferentes tamaños de bloque (robustez). Buffers de origen propios por
+    // iteracion, del tamano de blk: reutilizar al/ar (N=320) con blk>320
+    // (384, 512) leia fuera del vector -> heap-buffer-overflow bajo ASan
+    // (bug del arnes de test, no del extractor: processBlock() es una API de
+    // puntero crudo que confia en `frames`, igual que el resto del DSP RT).
     for(int blk : {128, 240, 320, 384, 512}){
-        fe.reset(); fe.processBlock(al.data(), ar.data(), blk);
+        std::vector<float> xl(blk), xr(blk); genSine(xl, xr, sr, 60.f, 0.2f);
+        fe.reset(); fe.processBlock(xl.data(), xr.data(), blk);
         MusicFeatures fx=fe.features();
         if(!std::isfinite(fx.rms)) { EXPECT(false,"bloque produce NaN"); }
     }
