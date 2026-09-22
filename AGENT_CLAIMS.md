@@ -2518,3 +2518,11 @@ puede retomar el terreno SAF/SOFA/RIR siguiendo exactamente este toque.
 
 ### Nota de coordinación — fix de eco/desface en la captura de reproducción (directo del usuario)
 **Sesión Genspark, 2026-09-17.** Fix de raíz en `PlaybackCaptureService.kt` (flanco Controles/audio): crossfade de ganancia con rampa (MIX_GAIN_STEP=0.05 ≈ 0.2 s) aplicado al stream procesado antes de `writeAllToTrack()`. El stream original de Tidal no se puede silenciar por API de Android; la rampa evita que ambos streams suenen a la vez con nivel comparable (la causa del eco por comb filtering) y el tronido al conmutar. El usuario ya no necesita buscar el punto 100/50 a mano. Verificación: estructural + sintaxis Kotlin (sin SDK Android en sandbox); la validación funcional queda en CI/dispositivo. La otra mitad del eco (crossfade seco-upmix del DSP) ya la atacó la sesión anterior en `IvannaFusionCore`.
+
+---
+### Nota de coordinación — verificación del anti-Dolby TinyML recién subido (auditoría por lectura, sin tocar código, 2026-09-22)
+**Contexto:** por indicación directa del propietario, se auditó el commit `03c2d263` (`anti_dolby.cpp/h`, `IvannaFusionCore`, `audio_orchestrator.cpp`) sin editar nada — territorio DSP nativo, tomado en exclusiva por otra sesión Claude activa.
+
+**Verificado real y cableado (no decorativo):** `AntiDolbyState::currentWidener()`/`currentSpreadMultiplier()` sí se leen en `omega_effect.cpp` (líneas ~618-635): `classifier->getModelOutput(aiOut)` alimenta `updateFromNeuralContext()`, `tick(dt)` suaviza, y `currentWidener()` mueve `sideGainSmooth` sobre la señal mid/side real cada bloque. Con test de convergencia acotada en `dsp_core_stability.cpp` (`AntiDolbyStateStability.ConvergesToTargetBounded`).
+
+**Hueco real encontrado (mismo patrón recurrente de este repo — parámetro calculado, nunca consumido):** `currentEqBoost()` (boost 2-4kHz de inteligibilidad vocal) y `currentExciterLowOnly()` (gating del exciter armónico a graves) están declarados en `anti_dolby.h`, se actualizan en `tick()`, pero **ningún `.cpp` del repo los llama** — grep confirma cero referencias fuera de su propia declaración. El widener/spread del anti-Dolby es real; el EQ de presencia vocal y el gating del exciter que promete el mismo motor no llegan a la señal todavía. Queda para quien tenga el flanco DSP nativo — no se tocó nada del código para no invadir.
