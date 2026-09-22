@@ -257,16 +257,22 @@ bool HRTFConvolver::loadCustomHrir(const float* irL, const float* irR, size_t le
 // -----------------------------------------------------------------------------
 void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness, bool immediate) noexcept {
     // Fuente del IR: HRIR medido (SOFA) si está activo, si no el sintético.
-    // Punteros (no referencias a subobjetos de temporales): el HRIRPair
-    // sintético se materializa en synthHolder SOLO en esa rama, y ambos
-    // punteros quedan siempre válidos durante todo el cuerpo.
-    HRIRPair synthHolder{};
+    // FIX RT (auditoria 2026-09-22, causa raiz de tronidos/microcortes con
+    // WFS+HRTF activos y fuente en movimiento): antes se copiaba el resultado
+    // de generate() a un HRIRPair LOCAL (synthHolder), fresco en cada llamada
+    // -> malloc de sus dos std::vector en cada cambio de azimut/agresividad,
+    // en pleno hilo de audio SCHED_FIFO. generate() ahora devuelve una
+    // referencia a un scratch persistente de SyntheticHRTF (preasignado, ver
+    // synthetic_hrtf.hpp): se apunta directo a ese scratch, sin copia local.
+    // Es seguro leerlo aqui mismo (un solo hilo llama a este metodo por
+    // instancia, y el scratch se consume via memcpy mas abajo, antes de
+    // cualquier llamada subsiguiente a generate()).
     const std::vector<float>* irLp = &customIrL_;
     const std::vector<float>* irRp = &customIrR_;
     if (!customHrirActive_.load(std::memory_order_acquire)) {
-        synthHolder = hrtf_.generate(azimuthDeg, aggressiveness);
-        irLp = &synthHolder.L;
-        irRp = &synthHolder.R;
+        const HRIRPair& synth = hrtf_.generate(azimuthDeg, aggressiveness);
+        irLp = &synth.L;
+        irRp = &synth.R;
     }
     const std::vector<float>& irL = *irLp;
     const std::vector<float>& irR = *irRp;

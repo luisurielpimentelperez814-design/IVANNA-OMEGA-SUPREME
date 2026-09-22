@@ -22,6 +22,20 @@ struct HRIRPair {
 class SyntheticHRTF {
 public:
     void init(uint32_t sampleRate, int irLen) {
+        // FIX RT (auditoria 2026-09-22, causa raiz de tronidos/microcortes con
+        // WFS+HRTF activos y fuente en movimiento): generate()/generateFromDataset()
+        // construian un HRIRPair LOCAL (dos std::vector<float> vacios) en CADA
+        // llamada y lo llenaban con .assign(irLen_,...) -> malloc en cada cambio
+        // de azimut/agresividad. updateFilterResponses() (hrtf_convolver.cpp) las
+        // llama desde DENTRO de HRTFConvolver::process() (hilo de audio
+        // SCHED_FIFO) en cada crossfade -> heap alloc/free en el hot path cada
+        // vez que una fuente se mueve (paneo WFS, head-tracking, objetos
+        // dinamicos). Se preasigna aqui UNA vez un scratch persistente que
+        // generate()/generateFromDataset() reutilizan (misma capacidad, .assign()
+        // sobre tamaño igual no realoja) y devuelven por referencia const — cero
+        // allocs por llamada a partir de este punto.
+        scratch_.L.assign((size_t)irLen, 0.f);
+        scratch_.R.assign((size_t)irLen, 0.f);
         sr_ = (float)sampleRate;
         irLen_ = irLen;
     }
@@ -159,7 +173,15 @@ public:
         for (int i = 0; i < 7; ++i) latentQ_[i] = 0.f;
     }
 
-    HRIRPair generate(float azimuthDeg, float aggressiveness) const {
+    // Devuelve una referencia a un scratch INTERNO persistente (preasignado en
+    // init(), jamas realojado en generate()): el resultado es valido hasta la
+    // PROXIMA llamada a generate()/generateFromDataset(). Los dos call sites
+    // reales (updateFilterResponses() en el hot path, y SafSpatialModifier en
+    // el hilo de control) lo consumen inmediatamente (memcpy / copia a su
+    // propio miembro) antes de cualquier llamada subsiguiente — sin
+    // reentrancia posible (un solo hilo llama a cada instancia de
+    // SyntheticHRTF por vez).
+    const HRIRPair& generate(float azimuthDeg, float aggressiveness) const {
         if (!std::isfinite(azimuthDeg)) azimuthDeg = 0.f;
         if (!std::isfinite(aggressiveness)) aggressiveness = 0.5f;
         aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
@@ -170,6 +192,13 @@ public:
             return generateFromDataset(azimuthDeg);
         }
 
+        // scratch_ ya tiene capacidad para irLen_ desde init() (o de una
+        // llamada previa con el mismo irLen_): assign() sobre tamaño igual o
+        // menor a la capacidad ya reservada NO realoja, solo resetea valores.
+        HRIRPair& out = scratch_;
+        out.L.assign((size_t)irLen_, 0.f);
+        out.R.assign((size_t)irLen_, 0.f);
+
         const float theta = azimuthDeg * (float)M_PI / 180.f;
         const float absTheta = std::fabs(theta);
 
@@ -178,10 +207,6 @@ public:
         const float tau = (HEAD_R / SPEED) * (absTheta + std::sin(absTheta));
         const float itdSamples = tau * sr_;
         const int   delaySamp  = std::clamp((int)std::round(itdSamples), 0, irLen_ / 2);
-
-        HRIRPair out;
-        out.L.assign(irLen_, 0.f);
-        out.R.assign(irLen_, 0.f);
 
         const bool sourceRight = theta >= 0.f;
         std::vector<float>& nearEar = sourceRight ? out.R : out.L;
@@ -223,10 +248,12 @@ public:
     }
 
 private:
-    HRIRPair generateFromDataset(float azimuthDeg) const {
-        HRIRPair out;
-        out.L.assign(irLen_, 0.f);
-        out.R.assign(irLen_, 0.f);
+    const HRIRPair& generateFromDataset(float azimuthDeg) const {
+        // Mismo scratch persistente que generate() (ver FIX RT en init()):
+        // sin allocs por llamada.
+        HRIRPair& out = scratch_;
+        out.L.assign((size_t)irLen_, 0.f);
+        out.R.assign((size_t)irLen_, 0.f);
         
         auto ds = std::atomic_load(&dataset_);
         if (!ds) return out;
@@ -367,6 +394,13 @@ private:
 
     float sr_    = 96000.f;
     int   irLen_ = 128;
+
+    // FIX RT (auditoria 2026-09-22): scratch persistente de generate()/
+    // generateFromDataset(), preasignado en init(). `mutable` porque ambas
+    // son const (no cambian el estado logico del modelo HRTF) pero necesitan
+    // escribir en un buffer reutilizable para no asignar memoria en cada
+    // llamada desde el hilo de audio.
+    mutable HRIRPair scratch_;
 
     // Dataset personalizado (struct declarado en la zona pública)
     std::shared_ptr<SharedDataset> dataset_;
