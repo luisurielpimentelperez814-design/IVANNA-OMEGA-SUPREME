@@ -62,6 +62,22 @@ struct UnifiedControlFrame {
     // ── Route Profile (BT/AUX/USB) — ver control_set_route_profile() ──
     std::atomic<float> route_bass_boost_db{0.f};     // compensa pérdida de graves (AUX)
     std::atomic<float> route_dialog_boost_db{0.f};   // compensa codec lossy (BT SBC/AAC)
+    // FASE 1 (widener_mult, arquitectura unificada — ver control_apply_frame()):
+    // route_widener_mult NO es un segundo control de ancho que compite con
+    // setSpatialWidth(). Es el ÚNICO multiplicador de seguridad de ruta
+    // (BT SBC mono-compat), y se aplica como factor interno sobre CADA
+    // etapa de ancho que exista en el pipeline — hoy son dos, y son DSP
+    // distintos, no el mismo valor con dos nombres:
+    //   Etapa A — "Widener" (nho_wet): ancho estéreo M/S clásico.
+    //             base = widener_stereo + audio_engine_width.
+    //   Etapa B — "Spatial Width" (PDEngine, spatial_width): ancho
+    //             binaural ITD/ILD. base = spatial_width, fuente única
+    //             = setSpatialWidth() (UI) fusionado con evo genome +
+    //             LearningBias, EXACTAMENTE como antes de este fix.
+    // control_apply_frame() suaviza este valor (one-pole, ~50ms tick) y
+    // lo multiplica sobre el resultado FINAL de cada etapa — nunca crea
+    // una tercera fuente de verdad ni toca cómo se calcula la base de
+    // ninguna de las dos etapas.
     std::atomic<float> route_widener_mult{1.f};      // reduce ancho en BT (mono-compat)
 
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
@@ -173,6 +189,10 @@ inline void control_set_evo_genome(const float* genome, int genome_size) noexcep
  * bassBoostDb: compensa impedancia/rolloff de graves en AUX.
  * dialogBoostDb: compensa la pérdida de banda 2-4kHz de codecs lossy (SBC/AAC).
  * widenerMult: reduce el ancho estéreo en BT (SBC colapsa mejor en mono-compat).
+ *   FASE 1: este valor ya NO se aplica solo al Widener (nho_wet) — ver el
+ *   comentario sobre route_widener_mult arriba en el struct. control_apply_frame()
+ *   lo suaviza y lo aplica también sobre spatial_width (PDEngine binaural),
+ *   la otra etapa de ancho del pipeline. bassBoostDb/dialogBoostDb no cambian.
  */
 inline void control_set_route_profile(float bassBoostDb, float dialogBoostDb, float widenerMult) noexcept {
     g_control_frame.route_bass_boost_db.store(std::clamp(bassBoostDb, 0.f, 6.f), std::memory_order_relaxed);
