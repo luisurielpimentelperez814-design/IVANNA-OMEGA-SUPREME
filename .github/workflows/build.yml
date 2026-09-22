@@ -239,27 +239,21 @@ jobs:
         if: failure()
         run: |
           [ -f gradle_build.log ] || exit 0
-          {
-            echo "=== ImeBridge mentions ==="
-            grep -n "ImeBridge" gradle_build.log | head -20
-            echo "=== Building CXX object lines (ivanna_omega, arm64) ==="
-            grep -n "Building CXX object.*ivanna_omega" gradle_build.log | head -60
-            echo "=== Link command (ivanna_omega .so, arm64) ==="
-            grep -n "libivanna_omega.so" gradle_build.log | head -10
-          } > diag_extra.log 2>&1 || true
-          MATCHES=$(grep -nE '^e: |error:|Unresolved reference|Type mismatch|What went wrong|Execution failed for task|FAILURE:|Caused by' gradle_build.log \
-            | sed 's/\r$//; s/%/%25/g' | head -15)
-          EXTRA=$(cat diag_extra.log | sed 's/\r$//; s/%/%25/g' | head -60)
-          if [ -n "$MATCHES" ]; then
-            echo "$MATCHES" | while IFS= read -r l; do echo "::error::${l:0:400}"; done
-          fi
-          if [ -n "$EXTRA" ]; then
-            echo "$EXTRA" | while IFS= read -r l; do [ -n "$l" ] && echo "::error::${l:0:400}"; done
-          fi
-          if [ -z "$MATCHES" ] && [ -z "$EXTRA" ]; then
-            tail -n 60 gradle_build.log | sed 's/\r$//; s/%/%25/g' \
-              | while IFS= read -r l; do [ -n "$l" ] && echo "::error::${l:0:400}"; done
-          fi
+          # La cuota de anotaciones ::error:: del check-run ya la agota la
+          # propia AGP (10 "C/C++: ld.lld: error" nativas) antes de que este
+          # paso corra: los ::error:: de aqui nunca se veian. Usamos
+          # ::warning:: (cupo separado) para el diagnostico dirigido: el
+          # contexto "referenced by" de ld.lld y si ImeBridge.cpp.o esta en
+          # el comando de link real.
+          OUT=$(
+            {
+              grep -n -A2 "undefined symbol: imeFeedBlock\|undefined symbol: imeDecideNowJson\|undefined symbol: imeSharedOpaque" gradle_build.log | head -30
+              echo "IMEOBJ_IN_LINK:$(grep -n 'ld.lld' gradle_build.log | grep -c 'ImeBridge.cpp.o' || true)"
+              echo "IMEBRIDGE_MENTIONS:$(grep -c 'ImeBridge.cpp' gradle_build.log || true)"
+              grep -n "ImeBridge.cpp" gradle_build.log | head -10
+            } 2>&1
+          )
+          echo "$OUT" | sed 's/\r$//; s/%/%25/g' | while IFS= read -r l; do [ -n "$l" ] && echo "::warning::IME-DIAG: ${l:0:400}"; done
           exit 0
 
       # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
