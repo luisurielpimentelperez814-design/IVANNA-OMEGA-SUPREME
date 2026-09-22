@@ -209,6 +209,17 @@ struct omega_effect_context_t {
     // rampa de 0→1 tarda ~50ms — imperceptible vs el salto duro de ±4 dB.
     float sideGainSmooth;
     AntiDolbyState* antiDolby;
+    // FIX (mismo patrón "calculado pero nunca consumido" que currentWidener()
+    // tenía hasta el commit anterior — verificado por grep, cero llamadores):
+    // currentEqBoost() de AntiDolbyState (presencia vocal 2-4kHz) no tenía
+    // ningún filtro real que lo aplicara a la señal. Estado de memoria de un
+    // biquad peaking dedicado, banda 2-4kHz (centro 3kHz) — coeficientes se
+    // recalculan cada bloque a partir del dB ya suavizado por
+    // AntiDolbyState::tick() (attack/release propios), así que solo hace
+    // falta persistir x1/x2/y1/y2 entre bloques (igual que sideGainSmooth
+    // arriba). calloc los deja en 0 — arranque limpio.
+    float presenceEqX1L, presenceEqX2L, presenceEqY1L, presenceEqY2L;
+    float presenceEqX1R, presenceEqX2R, presenceEqY1R, presenceEqY2R;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -640,6 +651,57 @@ static int32_t omega_process(effect_handle_t self,
                 sv *= ctx->sideGainSmooth;
                 L[n] = m + sv;
                 R[n] = m - sv;
+            }
+        }
+
+        // ── Presencia vocal 2-4kHz (currentEqBoost) ──────────────────────
+        // Mismo antiDolby de arriba: este parámetro se calculaba y suavizaba
+        // en AntiDolbyState pero ningún .cpp del repo lo consumía (verificado
+        // por grep antes de este fix — igual que currentWidener() antes de
+        // cablearse). Biquad RBJ peaking estándar, centro 3kHz (mitad
+        // geométrica de la banda 2-4kHz), Q=1.2. Se procesa SIEMPRE (nunca
+        // se salta por boostDb≈0): con A=pow(10,g/40)=1 el peaking RBJ es
+        // matemáticamente la identidad (b0=a0, b1=a1, b2=a2 tras normalizar
+        // por a0), así que saltar el bloque no ahorraría nada real y sí
+        // introduciría el mismo salto de rama audible que este repo ya
+        // documentó y corrigió muchas veces en otros filtros (ver
+        // ParametricEQ/HarmonicExciter). Coeficientes recalculados cada
+        // bloque a partir de un valor ya suavizado (attack/release en
+        // AntiDolbyState::tick) — no hace falta crossfade propio, el target
+        // ya llega continuo.
+        if (ctx->antiDolby) {
+            const uint32_t srPresence = (ctx->config.outputCfg.samplingRate != 0)
+                                 ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float boostDb = ctx->antiDolby->currentEqBoost();
+            const float A = std::pow(10.0f, boostDb / 40.0f);
+            const float w0 = 2.0f * (float)M_PI * 3000.0f / (float)srPresence;
+            const float cosw0 = std::cos(w0), sinw0 = std::sin(w0);
+            const float alpha = sinw0 / (2.0f * 1.2f);
+            float b0 = 1.0f + alpha * A, b1 = -2.0f * cosw0, b2 = 1.0f - alpha * A;
+            float a0 = 1.0f + alpha / A, a1 = -2.0f * cosw0, a2 = 1.0f - alpha / A;
+            b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+            for (int n = 0; n < chunk; ++n) {
+                float xl = L[n];
+                float yl = b0 * xl + b1 * ctx->presenceEqX1L + b2 * ctx->presenceEqX2L
+                                    - a1 * ctx->presenceEqY1L - a2 * ctx->presenceEqY2L;
+                if (!std::isfinite(yl)) {
+                    yl = 0.f;
+                    ctx->presenceEqX1L = ctx->presenceEqX2L = ctx->presenceEqY1L = ctx->presenceEqY2L = 0.f;
+                }
+                ctx->presenceEqX2L = ctx->presenceEqX1L; ctx->presenceEqX1L = xl;
+                ctx->presenceEqY2L = ctx->presenceEqY1L; ctx->presenceEqY1L = yl;
+                L[n] = yl;
+
+                float xr = R[n];
+                float yr = b0 * xr + b1 * ctx->presenceEqX1R + b2 * ctx->presenceEqX2R
+                                    - a1 * ctx->presenceEqY1R - a2 * ctx->presenceEqY2R;
+                if (!std::isfinite(yr)) {
+                    yr = 0.f;
+                    ctx->presenceEqX1R = ctx->presenceEqX2R = ctx->presenceEqY1R = ctx->presenceEqY2R = 0.f;
+                }
+                ctx->presenceEqX2R = ctx->presenceEqX1R; ctx->presenceEqX1R = xr;
+                ctx->presenceEqY2R = ctx->presenceEqY1R; ctx->presenceEqY1R = yr;
+                R[n] = yr;
             }
         }
 
