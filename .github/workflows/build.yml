@@ -239,13 +239,24 @@ jobs:
         if: failure()
         run: |
           [ -f gradle_build.log ] || exit 0
+          {
+            echo "=== ImeBridge mentions ==="
+            grep -n "ImeBridge" gradle_build.log | head -20
+            echo "=== Building CXX object lines (ivanna_omega, arm64) ==="
+            grep -n "Building CXX object.*ivanna_omega" gradle_build.log | head -60
+            echo "=== Link command (ivanna_omega .so, arm64) ==="
+            grep -n "libivanna_omega.so" gradle_build.log | head -10
+          } > diag_extra.log 2>&1 || true
           MATCHES=$(grep -nE '^e: |error:|Unresolved reference|Type mismatch|What went wrong|Execution failed for task|FAILURE:|Caused by' gradle_build.log \
-            | sed 's/\r$//; s/%/%25/g' | head -25)
+            | sed 's/\r$//; s/%/%25/g' | head -15)
+          EXTRA=$(cat diag_extra.log | sed 's/\r$//; s/%/%25/g' | head -60)
           if [ -n "$MATCHES" ]; then
             echo "$MATCHES" | while IFS= read -r l; do echo "::error::${l:0:400}"; done
-          else
-            # Sin match de patron conocido: volcar la cola cruda del log (donde
-            # vive el fallo real) en vez de quedarnos sin diagnostico.
+          fi
+          if [ -n "$EXTRA" ]; then
+            echo "$EXTRA" | while IFS= read -r l; do [ -n "$l" ] && echo "::error::${l:0:400}"; done
+          fi
+          if [ -z "$MATCHES" ] && [ -z "$EXTRA" ]; then
             tail -n 60 gradle_build.log | sed 's/\r$//; s/%/%25/g' \
               | while IFS= read -r l; do [ -n "$l" ] && echo "::error::${l:0:400}"; done
           fi
