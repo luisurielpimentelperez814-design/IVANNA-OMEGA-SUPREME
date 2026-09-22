@@ -291,6 +291,12 @@ object IvannaNativeLib {
     // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
     external fun nativeSetWfsEnabled(enabled: Boolean)
     external fun nativeSetWfsSpread(spread: Float)
+    // FIX (build roto, 2026-09-22): faltaban por completo -- MusicIntelligenceWorker.kt
+    // las llamaba pero no existia ni la declaracion aqui ni el wrapper JNI
+    // (ver jni/ivanna_ime_jni.cpp). La logica real ya existia en
+    // music_intelligence/ImeBridge.{hpp,cpp}, solo desconectada.
+    external fun nativeImeSetEnabled(enabled: Boolean)
+    external fun nativeImeDecideNow(): String
 
     // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,

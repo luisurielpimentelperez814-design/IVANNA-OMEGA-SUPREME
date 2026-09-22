@@ -12,6 +12,7 @@
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
+#include "../music_intelligence/ImeBridge.hpp"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -1513,6 +1514,22 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     const int n = std::min((int)frames, 2048);
     if (!copyJFloat(env, inL, lBuf, n)) return;
     if (!copyJFloat(env, inR, rBuf, n)) return;
+    // Music Intelligence Engine (IME): alimenta el extractor real con el
+    // audio que YA está en stack (lBuf/rBuf) — sin esto, ImeBridge nunca
+    // recibía audio real (solo su propio test lo llamaba). imeFeedBlock es
+    // RT-safe por diseño propio (seqlock, cero malloc, early-return
+    // inmediato si el toggle está apagado — ver ImeBridge.cpp) así que es
+    // seguro llamarlo incondicionalmente aquí, en el mismo hilo que ya
+    // procesa este bloque.
+    {
+        float interLeaved[4096];
+        const int ni = std::min(n, 2048);
+        for (int i = 0; i < ni; ++i) {
+            interLeaved[2 * i]     = lBuf[i];
+            interLeaved[2 * i + 1] = rBuf[i];
+        }
+        ivanna::ime::imeFeedBlock(interLeaved, ni);
+    }
     // DSP chain
     // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
     // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth

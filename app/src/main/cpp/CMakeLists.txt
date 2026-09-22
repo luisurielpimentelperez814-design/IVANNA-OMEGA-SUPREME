@@ -52,6 +52,7 @@ add_library(ivanna_omega SHARED
     jni/ivanna_visualizer_v2_jni.cpp
     jni/ivanna_visualizer_bark64_jni.cpp
     jni/ivanna_npe_jni.cpp
+    jni/ivanna_ime_jni.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
@@ -292,6 +293,9 @@ add_library(omega_effect SHARED
     IvannaSuperAgentMemory.cpp
     spatial/IntelligentUpmixer.cpp
     spatial/WfsRenderer.cpp
+    music_intelligence/MusicFeatureExtractor.cpp
+    music_intelligence/MusicIntelligenceEngine.cpp
+    music_intelligence/ImeBridge.cpp
     spatial/HoaBinauralDecoder.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_dsp.cpp
