@@ -36,7 +36,7 @@ import com.ivanna.omega.ui.theme.TextSecondary
  * resultado REAL devuelto por HiResAudioManager (no una constante).
  */
 @Composable
-fun HiResAudioScreen(onBack: () -> Unit, onOpenMusicIntel: () -> Unit = {} = {}) {
+fun HiResAudioScreen(onBack: () -> Unit, onOpenMusicIntel: () -> Unit = {}) {
     val context = LocalContext.current
     remember { HiResAudioManager.loadPersisted(context) }
     var rate by remember { mutableStateOf(HiResAudioManager.currentRate) }

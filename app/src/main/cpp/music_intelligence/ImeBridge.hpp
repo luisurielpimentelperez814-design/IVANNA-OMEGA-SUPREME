@@ -23,7 +23,7 @@ struct ImeSharedState {
 // archivo .cpp — devuelve un tipo C++ (ImeSharedState&) y el NDK la
 // rechaza con -Werror=return-type-c-linkage. Al ser una definición en C++
 // puro (namespace ivanna::ime), la declaración limpia en C++ es correcta.
-ImeSharedState& imeShared();
+void* imeSharedOpaque();
 
 // RT-safe: interleaved estéreo [L0,R0,...], frames = muestras por canal.
 // Deinterleava a buffers estáticos preasignados y acumula en el extractor.

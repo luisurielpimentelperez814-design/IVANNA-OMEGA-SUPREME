@@ -1,6 +1,6 @@
 // test_ime_bridge.cpp — pruebas obligatorias del bucle IME (PASO 8).
-#include "MusicIntelligenceEngine.hpp"
-#include "ImeBridge.hpp"
+#include "../music_intelligence/MusicIntelligenceEngine.hpp"
+#include "../music_intelligence/ImeBridge.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>

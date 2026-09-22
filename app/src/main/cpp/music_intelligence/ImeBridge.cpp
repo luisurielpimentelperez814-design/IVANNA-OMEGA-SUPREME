@@ -20,7 +20,7 @@ inline uint64_t nowMs() noexcept {
 }
 } // namespace
 
-ImeSharedState& imeShared() { return g_state; }
+void* imeSharedOpaque() { return reinterpret_cast<void*>(&g_state); }
 
 void imeFeedBlock(const float* interleaved, int frames) noexcept {
     if (!interleaved || frames <= 0) return;
