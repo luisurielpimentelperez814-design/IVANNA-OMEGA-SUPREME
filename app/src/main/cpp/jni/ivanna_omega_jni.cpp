@@ -12,6 +12,21 @@
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
+// FIX (build): imeFeedBlock/imeDecideNowJson/imeSharedOpaque son C++ real
+// (namespace ivanna::ime, ver ImeBridge.hpp), pero el #include vivía más
+// abajo (línea ~2049), dentro del bloque `extern "C" { ... }` que abre en
+// la línea 583 y no cierra hasta la 2571 (DSPBridge y compañía). Un
+// `extern "C"` afecta el LINKAGE de lo declarado en su interior aunque esté
+// dentro de un namespace — namespace controla el lookup, extern "C" controla
+// el símbolo emitido. Resultado real medido en CI: ivanna_omega_jni.cpp.o
+// referenciaba el símbolo plano sin decorar "imeSharedOpaque" (linkage C,
+// heredado del extern "C" que lo envolvía), mientras que ImeBridge.cpp lo
+// define con linkage C++ normal (namespace, sin extern "C") → símbolo
+// decorado distinto → "undefined symbol" al enlazar (ld.lld, 3 símbolos:
+// imeSharedOpaque, imeFeedBlock, imeDecideNowJson). Se sube el include aquí,
+// a nivel de archivo, fuera de cualquier extern "C", para que el compilador
+// vea la declaración con el linkage C++ real que ImeBridge.cpp ya usa.
+#include "../music_intelligence/ImeBridge.hpp"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -2046,7 +2061,9 @@ extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
 
 // ── IME (Music Intelligence Engine) — bucle real: captura → extractor → decide → JSON ──
-#include "../music_intelligence/ImeBridge.hpp"
+// (el #include de ImeBridge.hpp se movió al principio del archivo — ver el
+// comentario ahí; aquí adentro, dentro del extern "C" que abre en la línea
+// 583, el include heredaba linkage C para funciones C++ reales.)
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeFeedBlock(
