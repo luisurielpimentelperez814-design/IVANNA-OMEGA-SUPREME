@@ -239,9 +239,16 @@ jobs:
         if: failure()
         run: |
           [ -f gradle_build.log ] || exit 0
-          grep -E '^e: |Unresolved reference|Type mismatch|What went wrong|Execution failed for task' gradle_build.log \
-            | sed 's/\r$//; s/%/%25/g' | head -10 \
-            | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+          MATCHES=$(grep -nE '^e: |error:|Unresolved reference|Type mismatch|What went wrong|Execution failed for task|FAILURE:|Caused by' gradle_build.log \
+            | sed 's/\r$//; s/%/%25/g' | head -25)
+          if [ -n "$MATCHES" ]; then
+            echo "$MATCHES" | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+          else
+            # Sin match de patron conocido: volcar la cola cruda del log (donde
+            # vive el fallo real) en vez de quedarnos sin diagnostico.
+            tail -n 60 gradle_build.log | sed 's/\r$//; s/%/%25/g' \
+              | while IFS= read -r l; do [ -n "$l" ] && echo "::error::${l:0:400}"; done
+          fi
           exit 0
 
       # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
