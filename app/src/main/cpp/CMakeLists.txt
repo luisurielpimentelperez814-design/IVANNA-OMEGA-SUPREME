@@ -156,6 +156,11 @@ add_library(ivanna_omega SHARED
     # (extern en jni/ivanna_omega_jni.cpp) pero no estaba en ningún target
     # → undefined symbols al enlazar libivanna_omega.so.
     wfs_controls_bridge.cpp
+    # IME (Music Intelligence Engine): bucle cerrado — extractor RT-safe +
+    # decisión + puente seqlock que alimenta el DSP real vía JNI/control bus.
+    music_intelligence/MusicFeatureExtractor.cpp
+    music_intelligence/MusicIntelligenceEngine.cpp
+    music_intelligence/ImeBridge.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp

@@ -762,6 +762,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val monoFrames = minOf(effectiveFrames, mono.size)
                     for (i in 0 until monoFrames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, monoFrames) }
+                    // IME (PASO 2): alimenta el extractor RT-safe con el audio REAL capturado.
+                    // El bridge nativo deinterleava a buffers estáticos (cero malloc); decide() corre en el worker.
+                    runCatching {
+                        if (com.ivanna.omega.core.IvannaNativeLib.isLoaded)
+                            com.ivanna.omega.core.IvannaNativeLib.nativeImeFeedBlock(buffer, read)
+                    }
                     runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
                     runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
                     

@@ -264,7 +264,8 @@ fun OmegaApp() {
                 }
             }
             composable("wfs") { com.ivanna.omega.ui.WfsCalibrationPanel() }
-            composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
+            composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }, onOpenMusicIntel = { nav.navigate("music_intel") }) }
+            composable("music_intel") { com.ivanna.omega.ui.MusicIntelligencePanel(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
                     com.ivanna.omega.assistant.IvannaLaunchGreeting.greetOnce(context)

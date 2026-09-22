@@ -2045,6 +2045,31 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
 
+// ── IME (Music Intelligence Engine) — bucle real: captura → extractor → decide → JSON ──
+#include "../music_intelligence/ImeBridge.hpp"
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeFeedBlock(
+        JNIEnv* env, jobject, jfloatArray samples, jint frames) {
+    if (!samples || frames <= 0) return;
+    jfloat* buf = env->GetFloatArrayElements(samples, nullptr);
+    if (!buf) return;
+    ivanna::ime::imeFeedBlock(buf, (int)frames);
+    env->ReleaseFloatArrayElements(samples, buf, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(JNIEnv* env, jobject) {
+    char json[512];
+    const int n = ivanna::ime::imeDecideNowJson(json, (int)sizeof(json));
+    return env->NewStringUTF(n > 0 ? json : "{}");
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(JNIEnv*, jobject, jboolean en) {
+    ivanna::ime::imeShared().enabled.store(en == JNI_TRUE, std::memory_order_relaxed);
+}
+
 static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;

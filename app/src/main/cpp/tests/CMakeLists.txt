@@ -474,6 +474,17 @@ endif()
 add_test(NAME test_music_intelligence COMMAND test_music_intelligence)
 set_tests_properties(test_music_intelligence PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 
+# PASO 8 (IME): prueba del bucle cerrado — bridge seqlock + decide + feed real.
+add_executable(test_ime_bridge
+  test_ime_bridge.cpp
+  ../music_intelligence/MusicFeatureExtractor.cpp
+  ../music_intelligence/MusicIntelligenceEngine.cpp
+  ../music_intelligence/ImeBridge.cpp)
+target_include_directories(test_ime_bridge PRIVATE .. ../music_intelligence)
+target_compile_options(test_ime_bridge PRIVATE -Wall -Wextra)
+add_test(NAME test_ime_bridge COMMAND test_ime_bridge)
+set_tests_properties(test_ime_bridge PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
 
 # FIX (build rojo, 2026-09-15): HoaBinauralDecoder e IntelligentUpmixer usan
 # ivanna::HRTFConvolver cuyas definiciones viven en spatial/hrtf_convolver.cpp.
