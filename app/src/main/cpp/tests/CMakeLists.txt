@@ -459,6 +459,21 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_evolutionary_eq COMMAND test_evolutionary_eq)
 
+# ── Music Intelligence Engine (IME) ─────────────────────────────────────────
+add_executable(test_music_intelligence
+  test_music_intelligence.cpp
+  ../music_intelligence/MusicFeatureExtractor.cpp
+  ../music_intelligence/MusicIntelligenceEngine.cpp
+)
+target_include_directories(test_music_intelligence PRIVATE .. ../music_intelligence)
+target_compile_options(test_music_intelligence PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_music_intelligence PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_music_intelligence PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_music_intelligence COMMAND test_music_intelligence)
+set_tests_properties(test_music_intelligence PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
 
 # FIX (build rojo, 2026-09-15): HoaBinauralDecoder e IntelligentUpmixer usan
 # ivanna::HRTFConvolver cuyas definiciones viven en spatial/hrtf_convolver.cpp.
