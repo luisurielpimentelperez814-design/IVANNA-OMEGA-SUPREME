@@ -29,14 +29,14 @@ int main() {
     CHECK(std::isfinite(d1.wfsSpread) && std::isfinite(d1.hrtfDepth) && std::isfinite(d1.eqTiltDb)
        && std::isfinite(d1.dynamicsAmount) && std::isfinite(d1.envDepth), "decision sin NaN");
 
-    imeShared().enabled.store(true);
+    reinterpret_cast<ivanna::ime::ImeSharedState*>(imeSharedOpaque())->enabled.store(true);
     static float buf[512 * 2];
     for (int i = 0; i < 512; ++i) {
         const float s = 0.5f * std::sin(2.f * 3.14159265f * 110.f * i / 48000.f);
         buf[2 * i] = s; buf[2 * i + 1] = s;
     }
     for (int b = 0; b < 40; ++b) imeFeedBlock(buf, 512);
-    CHECK(imeShared().blocksFed.load() >= 40, "feed incrementa blocksFed");
+    CHECK(reinterpret_cast<ivanna::ime::ImeSharedState*>(imeSharedOpaque())->blocksFed.load() >= 40, "feed incrementa blocksFed");
     char json[512];
     const int n = imeDecideNowJson(json, sizeof(json));
     CHECK(n > 0, "imeDecideNowJson produce JSON");

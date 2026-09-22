@@ -2067,7 +2067,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(JNIEnv* env, jobje
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(JNIEnv*, jobject, jboolean en) {
-    ivanna::ime::imeShared().enabled.store(en == JNI_TRUE, std::memory_order_relaxed);
+    reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque())->enabled.store(en == JNI_TRUE, std::memory_order_relaxed);
 }
 
 static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
