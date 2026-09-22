@@ -247,10 +247,10 @@ jobs:
           # el comando de link real.
           OUT=$(
             {
-              grep -n -A2 "undefined symbol: imeFeedBlock\|undefined symbol: imeDecideNowJson\|undefined symbol: imeSharedOpaque" gradle_build.log | head -30
               echo "IMEOBJ_IN_LINK:$(grep -n 'ld.lld' gradle_build.log | grep -c 'ImeBridge.cpp.o' || true)"
               echo "IMEBRIDGE_MENTIONS:$(grep -c 'ImeBridge.cpp' gradle_build.log || true)"
-              grep -n "ImeBridge.cpp" gradle_build.log | head -10
+              grep -n "ImeBridge.cpp" gradle_build.log | head -6
+              grep -n -A1 "undefined symbol: imeFeedBlock" gradle_build.log | head -3
             } 2>&1
           )
           echo "$OUT" | sed 's/\r$//; s/%/%25/g' | while IFS= read -r l; do [ -n "$l" ] && echo "::warning::IME-DIAG: ${l:0:400}"; done
