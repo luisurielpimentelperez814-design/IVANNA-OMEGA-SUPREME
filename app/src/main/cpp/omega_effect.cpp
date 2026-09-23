@@ -4,6 +4,9 @@
 #include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block
 #include "IvannaFusionCore.cpp"
 #include "adaptive_engine_v2.hpp"
+
+// Escala adaptativa de apertura WFS (definida en wfs_globals_effect.cpp, este .so).
+extern std::atomic<float> g_wfs_adaptive_spread_scale;
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
 #include "anti_dolby.h"
@@ -611,6 +614,16 @@ static int32_t omega_process(effect_handle_t self,
             ctx->adaptiveEngine->smoothParameters();
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
+            // ADAPTIVE SPREAD -> WFS: la intensidad espacial decidida por el
+            // motor adaptativo (base 0.7) modula la apertura del campo WFS en
+            // IvannaFusionEngine::process via g_wfs_adaptive_spread_scale.
+            // Clamp [0.5, 1.5]: nunca colapsa el campo ni lo duplica de golpe.
+            {
+                const float sc = adaptParams.spatialIntensity / 0.7f;
+                const float c = !std::isfinite(sc) ? 1.0f
+                              : (sc < 0.5f ? 0.5f : (sc > 1.5f ? 1.5f : sc));
+                g_wfs_adaptive_spread_scale.store(c, std::memory_order_relaxed);
+            }
             
             // Dynamic EQ Adjustment in Real-Time
             // (Apply post-process EQ to L/R buffers directly for zero-latency)

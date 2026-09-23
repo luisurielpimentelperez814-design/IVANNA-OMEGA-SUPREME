@@ -25,6 +25,7 @@ extern std::atomic<float> g_hrtf_wet_dry;
 extern std::atomic<bool>  g_hrtf_flush_req;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
+extern std::atomic<float> g_wfs_adaptive_spread_scale;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -140,7 +141,13 @@ void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
     g_wfs_enabled.store(enable, std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
-    if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);
+    // Sanitizado (mision WFS): NaN/Inf descartados + clamp [0,2] coherente con
+    // el clamp del daemon (command_server SET_WFS). Valores absurdos de UI/SHM
+    // nunca llegan al renderer.
+    if (std::isfinite(spread)) {
+        const float c = spread < 0.0f ? 0.0f : (spread > 2.0f ? 2.0f : spread);
+        g_wfs_spread.store(c, std::memory_order_relaxed);
+    }
 }
 void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept {
     if (x == nullptr || y == nullptr || z == nullptr) return;
@@ -262,7 +269,15 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             }
             for (int i = 0; i < n; ++i) { m_wfsInL[i] = buffer->left[i]; m_wfsInR[i] = buffer->right[i]; }
             for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
-            const float spread = g_wfs_spread.load(std::memory_order_relaxed);
+            const float spreadRaw = g_wfs_spread.load(std::memory_order_relaxed);
+            // ADAPTIVE SPREAD REAL (mision WFS): el cerebro adaptativo
+            // (AdaptiveEngineV2 en omega_effect) publica esta escala segun la
+            // escena; modula la apertura sobre el spread del usuario. Guarda:
+            // valores invalidos -> 1.0 (sin efecto), tope 1.5x.
+            float spreadScale = g_wfs_adaptive_spread_scale.load(std::memory_order_relaxed);
+            if (!std::isfinite(spreadScale) || spreadScale <= 0.0f) spreadScale = 1.0f;
+            if (spreadScale > 1.5f) spreadScale = 1.5f;
+            const float spread = spreadRaw * spreadScale;
             m_wfs.setObject(0, -0.75f * spread, 1.5f, 1.0f);  // fuente L
             m_wfs.setObject(1,  0.75f * spread, 1.5f, 1.0f);  // fuente R
             const float* wfsIn[2] = { m_wfsInL.data(), m_wfsInR.data() };
