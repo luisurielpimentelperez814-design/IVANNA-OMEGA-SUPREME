@@ -6,6 +6,7 @@
 #include "adaptive_engine_v2.hpp"
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
+#include "spatial/HearingAdaptationEngine.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
@@ -215,6 +216,12 @@ struct omega_effect_context_t {
     // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
     // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
     ivanna::SafetyLimiter* safetyLimiter;
+    // Eje 6: adaptación auditiva (isófonas, sello del ear tip, presbicusia,
+    // fatiga) — antes solo vivía en IvannaAudioPipeline (Ruta de test,
+    // PerfAuditor) y nunca se llamaba desde el callback real de AudioFlinger.
+    // Cero latencia añadida (biquads de mínima fase) — seguro al final de
+    // la cadena de Ruta B, igual que en el pipeline de referencia.
+    ivanna::spatial::HearingAdaptationEngine* hearingEngine;
     // FIX (tronido en cambio de clase TinyML): s_sideGainSmooth era thread_local
     // estático — si AudioFlinger rota el thread entre callbacks, cada thread nuevo
     // arrancaba en 1.0f → salto de ganancia → tronido. Ahora es miembro del
@@ -709,6 +716,13 @@ static int32_t omega_process(effect_handle_t self,
         // process() es branchless NEON, sin malloc/locks: seguro en RT.
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
+        // Eje 6 (cableado real, auditoría 2026-09-24): antes vivía huérfano
+        // en IvannaAudioPipeline.hpp, solo ejercitado por test_perf_auditor.cpp.
+        // Va tras el limiter (último eslabón antes del sanitizer) para que la
+        // compensación de graves/agudos no reintroduzca picos que el limiter
+        // ya recortó.
+        if (ctx->hearingEngine) ctx->hearingEngine->process(L, R, chunk);
+
         // Interleave -> salida con Autonomous Stability Sanitizer (cero NaNs / Infs)
         for (int n = 0; n < chunk; ++n) {
             float l = L[n];
@@ -799,6 +813,13 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // distorsion armonica; release 6.25 ms = bombeo).
                     // `sr` ya esta validado arriba en este mismo handler.
                     ctx->safetyLimiter->setSampleRate((float)sr);
+                }
+                // Eje 6: perfil neutro por defecto (sello perfecto, 0 dB de
+                // pérdida) hasta que el audiograma real llegue por el control
+                // bus — deja el motor activo en el hot path sin colorear el
+                // audio mientras tanto.
+                if (!ctx->hearingEngine) {
+                    ctx->hearingEngine = new (std::nothrow) ivanna::spatial::HearingAdaptationEngine();
                 }
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
@@ -1223,6 +1244,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->safetyLimiter) {
             delete ctx->safetyLimiter;
             ctx->safetyLimiter = nullptr;
+        }
+        if (ctx->hearingEngine) {
+            delete ctx->hearingEngine;
+            ctx->hearingEngine = nullptr;
         }
         if (ctx->rirConvolver) {
             delete ctx->rirConvolver;
