@@ -159,7 +159,12 @@ public:
         for (int i = 0; i < 7; ++i) latentQ_[i] = 0.f;
     }
 
-    HRIRPair generate(float azimuthDeg, float aggressiveness) const {
+    // FIX RT (tronidos): antes construia HRIRPair local con .assign()
+    // (heap alloc) por llamada — y updateFilterResponses() lo invoca
+    // desde HRTFConvolver::process() en el callback de audio ->
+    // malloc en el hilo RT = tronidos/cortes. Ahora reusa un scratch
+    // preasignado (mutable) y devuelve referencia; cero alloc tras init.
+    const HRIRPair& generate(float azimuthDeg, float aggressiveness) noexcept {
         if (!std::isfinite(azimuthDeg)) azimuthDeg = 0.f;
         if (!std::isfinite(aggressiveness)) aggressiveness = 0.5f;
         aggressiveness = std::clamp(aggressiveness, 0.f, 1.f);
@@ -170,6 +175,7 @@ public:
             return generateFromDataset(azimuthDeg);
         }
 
+        HRIRPair& out = scratch_;
         const float theta = azimuthDeg * (float)M_PI / 180.f;
         const float absTheta = std::fabs(theta);
 
@@ -179,7 +185,6 @@ public:
         const float itdSamples = tau * sr_;
         const int   delaySamp  = std::clamp((int)std::round(itdSamples), 0, irLen_ / 2);
 
-        HRIRPair out;
         out.L.assign(irLen_, 0.f);
         out.R.assign(irLen_, 0.f);
 
@@ -223,8 +228,8 @@ public:
     }
 
 private:
-    HRIRPair generateFromDataset(float azimuthDeg) const {
-        HRIRPair out;
+    const HRIRPair& generateFromDataset(float azimuthDeg) noexcept {
+        HRIRPair& out = scratch_;
         out.L.assign(irLen_, 0.f);
         out.R.assign(irLen_, 0.f);
         
@@ -370,6 +375,8 @@ private:
 
     // Dataset personalizado (struct declarado en la zona pública)
     std::shared_ptr<SharedDataset> dataset_;
+    // Scratch RT reutilizable (cero alloc en hot path). Uno por instancia.
+    mutable HRIRPair scratch_{};
     // Base PCA del dataset (morph exacto)
     std::vector<float> pcaV_;
     int pcaK_ = 0;
