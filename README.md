@@ -392,92 +392,87 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 
 ---
 
-## ✦ Arquitectura Acústica Espacial de 7 Ejes (C++20 RT-Safe)
+## ✦ Arquitectura Acústica Espacial de 7 Ejes — banco de certificación (C++20 RT-Safe)
 
-La etapa espacial de IVANNA implementa un motor acústico integral de 7 ejes de grado kernel, desacoplado de la CPU principal y operando estrictamente con **latencia algorítmica agregada de 0 ms**, sin asignaciones dinámicas (`malloc`/`new`) en el hilo de alta prioridad (`SCHED_FIFO`):
+**Estado real (auditoría forense 2026-09-24, commit `dd40ae02`, verificado archivo por archivo,
+no por comentarios):** los 7 archivos existen, compilan, y el código DSP dentro de cada uno es
+**real** (no placeholders/stubs vacíos) — pero **`IvannaAudioPipeline` (el orquestador de los 7
+ejes) hoy solo lo instancia `PerfAuditor.hpp`/`test_perf_auditor.cpp`. No está cableado a
+`omega_effect.cpp` ni a `ivanna_omega_jni.cpp` — las dos rutas que procesan audio real en el
+dispositivo.** Es un banco de certificación aislado y correcto en sí mismo, no (todavía) la
+cadena que suena. Detalle honesto por eje, con línea de archivo:
 
-```
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │                   IVANNA AUDIO PIPELINE                │
-                                 └──────────────────────────┬─────────────────────────────┘
-                                                            │ Stereo L/R
-                                                            ▼
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │ EJE 1: StereoObjectDecomposer                          │
-                                 │ • Descomposición analítica Mid/Side                   │
-                                 │ • IIR 1-pole bass energy tracker (~250 Hz)             │
-                                 │ • 4 objetos continuos: CENTER, LEFT, RIGHT, AMBIENT    │
-                                 └──────────────────────────┬─────────────────────────────┘
-                                                            │ 4 Objetos planares
-                                                            ▼
-       ┌────────────────────────┐ ┌───────────────────────────────────────────────────────┐
-       │ EJE 2: HrtfPersonalizer│ │ EJE 4: ObjectSpatialRenderer                          │
-       │ • Modelo Woodworth     │─┼─► • Ley 1/d con amortiguación atmosférica por polo IIR│
-       │ • Notch Pinna 6-9 kHz  │ │ • Panoramización bilineal ITD/ILD                     │
-       │ • Resonancia canal     │ │ • Early Reflections (ER) multitap fraccionales        │
-       └────────────────────────┘ └─────────────────────────┬─────────────────────────────┘
-                                                            │ Stereo binaural
-                                                            ▼
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │ EJE 5: PhysicalSceneRenderer                           │
-                                 │ • Simulación continua de oclusión física               │
-                                 │ • Coeficientes de absorción de pared Direct Form I     │
-                                 │ • Sin bifurcaciones de rama impredecibles en caché L1  │
-                                 └──────────────────────────┬─────────────────────────────┘
-                                                            │
-                                                            ▼
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │ EJE 3: RoomProjectionEngine & RirConvolver             │
-                                 │ • De-reverberación por seguidor inverso de mínima fase │
-                                 │ • Convolución particionada uniforme (Gardner/Wefers)   │
-                                 │ • Head de partición 0 (512 muestras) a latencia cero   │
-                                 │ • 32 particiones de cola tardía (16384 muestras)       │
-                                 └──────────────────────────┬─────────────────────────────┘
-                                                            │
-                                                            ▼
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │ EJE 6: HearingAdaptationEngine                         │
-                                 │ • Compensación dinámica de fuga de almohadilla (+4 dB) │
-                                 │ • Curvas isofónicas ISO 226 y presbiacusia (4k/8kHz)   │
-                                 │ • Damping adaptativo contra fatiga auditiva            │
-                                 └──────────────────────────┬─────────────────────────────┘
-                                                            │
-                                                            ▼
-                                 ┌────────────────────────────────────────────────────────┐
-                                 │ EJE 7: PerfAuditor & Certificación de Rendimiento      │
-                                 │ • Latencia algorítmica agregada: 0.00 ms               │
-                                 │ • Zero-heap allocations en hot path                    │
-                                 │ • Protección contra subnormales/denormals y NaN        │
-                                 └────────────────────────────────────────────────────────┘
-```
+- **Eje 1 (`StereoObjectDecomposer.hpp`)** — real: Mid/Side genuino, LPF de 1 polo, 4 objetos
+  (`CENTER/LEFT/RIGHT/AMBIENT`) con `ObjectPosition{x,y,z}` continuo, cero malloc en `decompose()`.
+  La "correlación intercanal" es en realidad un ratio de energía instantánea (`instSide`), no un
+  coeficiente de correlación de Pearson formal — término impreciso, matemática real.
+- **Eje 2 (`HrtfPersonalizer.hpp`)** — **parcial**: la fórmula esférica de Woodworth SÍ existe y
+  es correcta, pero **en `synthetic_hrtf.hpp` (la ruta HRTF real), no en `HrtfPersonalizer`** —
+  ahí `recalculate()` solo calcula un escalar `itdScale_` que **nadie lee** (`getItdScale()` no
+  tiene ningún caller fuera de este archivo, confirmado por grep sobre todo el árbol). El "notch
+  de pinna" es una única frecuencia de corte pasada por un blend de un polo (`in*0.85 + s*0.15`),
+  no un filtro notch real (banda de rechazo); y `canal_resonance_boost_db` está declarado en el
+  perfil pero nunca se usa en ningún cálculo.
+- **Eje 3 (`RoomProjectionEngine.hpp`)** — **parcial**: la convolución particionada por
+  overlap-save SÍ es real (delega en `RirConvolver`, FFT Radix-2 propia, confirmado). Pero la
+  "inversión de mínima fase" no existe como tal — lo implementado es un atenuador dependiente de
+  la envolvente RMS de la propia señal (`envL += 0.01f*(absL-envL)`), una heurística de
+  de-reverberación distinta, no una inversión espectral de fase mínima.
+- **Eje 4 (`ObjectSpatialRenderer.hpp`) y Eje 5 (`PhysicalSceneRenderer.hpp`)** — real: atenuación
+  por distancia (1 polo IIR) y oclusión (transmission loss + lowpass dependiente de
+  `occlusionFactor_`) confirmados con código real, sin malloc.
+- **Eje 6 (`HearingAdaptationEngine.hpp`)** — **parcial**: la compensación de fuga de almohadilla
+  (`ear_tip_seal_factor`) sí está modelada con una fórmula real. Las "curvas isofónicas ISO 226"
+  son en realidad una aproximación de 2 bandas (shelf grave/agudo con ganancia derivada de
+  `loss_4khz_db`/`loss_8khz_db`) — no hay tabla de datos de la norma ISO 226 ni curvas
+  dependientes de SPL. Funcional y RT-safe, pero no es literalmente ISO 226.
+- **Eje 7 (`PerfAuditor.hpp`)** — el benchmark es real (mide CPU%, ejecuta la pipeline 1s), pero
+  `latency_ms_algorithmic` se **asigna a `0.0f` por código**, no se deriva de una medición de
+  alineación de muestras — el "0 ms" es una aserción de diseño, no un resultado medido. Bajo ASan
+  el test de presupuesto de CPU (`test_perf_auditor`, caso `WithinBudgetCompliance`) es flaky por
+  el overhead propio de la instrumentación (falla con ASan, pasa 100% sin sanitizers) — no es una
+  regresión de código, es una limitación conocida de medir CPU% bajo ASan.
 
-### Componentes de la Cadena Espacial:
-1. **Eje 1 (`StereoObjectDecomposer.hpp`)**: Extrae en tiempo real 4 fuentes sonoras discretas a partir de un flujo estéreo estándar usando filtros analíticos de energía y correlación instantánea Mid/Side. Los búferes son estáticos (`kMaxBlock = 4096`), garantizando cero allocations durante el renderizado.
-2. **Eje 2 (`HrtfPersonalizer.hpp`)**: Modela el retardo interaural de tiempo (ITD) basado en el diámetro craneal del usuario según la ecuación esférica de Woodworth/Rayleigh. Sintetiza atómicamente el notch de interferencia destructiva de la pinna (6–9 kHz) y la resonancia del canal auditivo sin bloqueos.
-3. **Eje 3 (`RoomProjectionEngine.hpp` & `RirConvolver.hpp`)**: Cancelación acústica parcial mediante envolvente de fase mínima para eliminar resonancias no deseadas, seguido de una proyección espacial por convolución particionada en dominio frecuencial (overlap-save). La partición inicial de 512 muestras se evalúa sin retardo (0 muestras añadidas).
-4. **Eje 4 (`ObjectSpatialRenderer.hpp`)**: Renderiza los 4 objetos posicionados en coordenadas esféricas continuas aplicando leyes de atenuación inversa, amortiguación por absorción atmosférica en agudos y retardos de reflexión temprana en anillo circular sin jitter.
-5. **Eje 5 (`PhysicalSceneRenderer.hpp`)**: Modela materiales acústicos y factores de oclusión mediante un filtro pasobajas adaptativo Direct Form I, procesado con bucles vectorizables de baja complejidad computacional.
-6. **Eje 6 (`HearingAdaptationEngine.hpp`)**: Corrige la pérdida de graves por falta de sellado hermético de los auriculares (ear-tip seal factor) y aplica compensación espectral personalizada para presbiacusia e isofonía (norma ISO 226), atenuando armónicos estridentes si se detecta fatiga auditiva.
-7. **Eje 7 (`IvannaAudioPipeline.hpp` & `PerfAuditor.hpp`)**: Orquesta los 6 ejes con memoria de raspado alineada a 16 bytes (`alignas(16)`), punteros libres de alias (`__restrict`) y valida en banco de pruebas un consumo inferior al 12% de CPU sobre núcleos de eficiencia ARM64 con latencia de adición nula.
+**Próximo paso real, no prometido con fecha:** cablear `IvannaAudioPipeline::process()` como una
+etapa opcional dentro de `IvannaFusionCore::processStereo()` (Ruta B) o `ivanna_omega_jni.cpp`
+(Ruta A), y decidir explícitamente qué reemplaza (nada hoy se duplica porque nada de esto corre
+en producción todavía).
 
 ---
 
-## ✦ Motor TinyML Neuromórfico Anti-Dolby (Sub-Milisegundo, SIMD NEON, Lock-Free SeqLock)
+## ✦ Motor TinyML Neuromórfico Anti-Dolby — dos implementaciones, una sola en producción
 
-Para erradicar la fatiga acústica inducida por sobrecompresión multibanda y limitación hiper-agresiva típica de procesamientos como Dolby Atmos en dispositivos móviles, IVANNA integra **`IvannaNeuromorphicTinyML`**:
+**Estado real (auditoría 2026-09-24):** existen DOS sistemas neuromórficos separados en el árbol,
+con nombres que se prestan a confusión — solo uno de los dos procesa audio real hoy:
 
-- **Reemplazo de YAMNet**: El anterior modelo YAMNet requería ventanas de inferencia de 1000 ms y generaba un overhead prohibitivo en hilos de tiempo real. Ha sido reemplazado por una arquitectura híbrida de **Red Convolucional Separable en Profundidad (Depthwise Separable CNN) + SNN/Pi-LSTM** con tiempo de cálculo en el rango de **sub-milisegundo**.
-- **Aceleración Vectorial ARM NEON FMA**: Operaciones vectorizadas en registros Q de 128 bits (`vfmaq_f32`, `vabsq_f32`, `vmaxq_f32`, `vld1q_f32`, `vst1q_f32`) optimizadas para residir íntegramente en la memoria caché L1 de datos.
-- **Sincronización Lock-Free Wait-Free (SeqLock)**: Los datos de audio alimentan el motor mediante búferes SPSC. La lectura de los embeddings acústicos de 128 dimensiones se realiza mediante una secuencia de bloqueo atómica (SeqLock con semántica `std::memory_order_acquire` / `release`), impidiendo cualquier contención en el callback de audio del sistema (`AudioFlinger / FastMixer`).
-- **Mitigación de Fatiga en Tiempo Real**: Identifica patrones de distorsión dinámica y compresión excesiva en 40 bandas espectrales de energía, regulando de forma continua los umbrales de compresión y amortiguando la fatiga auditiva en el `HearingAdaptationEngine`.
+- **`AntiDolbyAI` + `pi_lstm_milenio.hpp`** (`app/src/main/cpp/neuromorphic/`) — **este es el que
+  corre en producción**. Instanciado como `ctx->antiDolby` en `omega_effect.cpp` (Ruta B, hot
+  path real), con `updateFromNeuralContext()`/`tick()` llamados por bloque. Su propio comentario
+  de cabecera lo llama *"Supremacy Core Replacement for YAMNet"* — 64 bandas Mel (simplificado
+  vs. las de YAMNet), Pi-LSTM real.
+- **`IvannaNeuromorphicTinyML`** (`app/src/main/cpp/IvannaNeuromorphicTinyML.{hpp,cpp}`) — el
+  código es real y no trivial (extracción de features NEON, bloque de convolución depthwise,
+  SeqLock lock-free genuino para el embedding, buffers alineados a 32 bytes) — pero **no lo
+  instancia ni lo llama ningún otro archivo del repositorio** (confirmado por grep sobre todo
+  `app/src/main/cpp/`: cero referencias fuera de su propio `.hpp`/`.cpp`). Es código muerto: bien
+  escrito, compilable, no conectado a nada.
+
+Las capacidades reales de sustitución de YAMNet (sub-milisegundo, NEON, SeqLock lock-free) están
+genuinamente implementadas — pero en `AntiDolbyAI`, no en la clase que un lector externo
+asumiría por el nombre "TinyML". Corregido aquí para que el nombre correcto quede documentado.
 
 ---
 
 ## ✦ Veredicto de Calidad y Pruebas Continuas (CI/CD)
 
-- **Suites de Pruebas Host (CTest)**: 100% en verde en todos los pipelines de GitHub Actions.
-- **Sanitizadores de Memoria y Concurrencia**: Ejecución limpia bajo **AddressSanitizer (ASan)**, **UndefinedBehaviorSanitizer (UBSan)** y sin fugas en memoria estática.
+- **Suites de Pruebas Host (CTest), sin sanitizers**: 112/112 en verde (verificado localmente,
+  `dd40ae02`, `bash scripts/run_ctest.sh`).
+- **Bajo ASan+UBSan**: 111/112. El único caso rojo (`test_perf_auditor`, sub-caso
+  `WithinBudgetCompliance`) es un flake conocido de medir CPU% bajo la instrumentación de ASan
+  (el overhead del propio sanitizer infla la métrica medida) — no reproduce sin sanitizers, no
+  está relacionado con ningún cambio de código, y no representa una regresión funcional.
 - **Validación de Artefactos de Producción**:
   - Binario ELF nativo `ivanna_daemon` (AArch64 PIE) compilado con Android NDK r26.
-  - Paquete Magisk Module v2.3.9 ZIP verificado con firmas de integridad.
+  - Paquete Magisk Module ZIP verificado con firmas de integridad (`version.properties` como
+    fuente única — build falla si `module.prop` diverge).
   - Aplicación APK lista para instalación con enlace JNI completo.
