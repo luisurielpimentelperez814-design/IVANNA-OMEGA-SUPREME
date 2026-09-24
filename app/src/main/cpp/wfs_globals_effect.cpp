@@ -21,13 +21,3 @@
 
 std::atomic<bool>  g_wfs_enabled{false};
 std::atomic<float> g_wfs_spread{1.0f};
-
-// Escala adaptativa — stub para Ruta B. El AdaptiveDecisionEngine no existe
-// en el proceso audioserver, por lo que este atomic permanece en 1.0 (sin
-// modulación adaptativa). IvannaFusionCore::process() multiplica el spread
-// base por este valor: en Ruta B el resultado es idéntico al comportamiento
-// anterior (1.0 × spread_base = spread_base). Sin regresión auditiva.
-// En Ruta A (libivanna_omega.so), la definición real en wfs_controls_bridge.cpp
-// permite al AdaptiveDecisionEngine reducir la apertura ante saturación/fatiga.
-// NO añadir a ivanna_omega: ODR violation con wfs_controls_bridge.cpp.
-std::atomic<float> g_wfs_adaptive_spread_scale{1.0f};

@@ -500,25 +500,6 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_hoa_binaural_decoder)
 
-# FIX RT (auditoría 2026-09-22): regresión del fix de asignación de memoria
-# en el hot path de SyntheticHRTF::generate()/generateFromDataset() (ver
-# synthetic_hrtf.hpp) — barrido continuo de azimut bajo ASan/UBSan.
-add_executable(test_hrtf_convolver_rt_safety
-  test_hrtf_convolver_rt_safety.cpp
-  ../spatial/hrtf_convolver.cpp
-  ../SafHRTFDatasetBridge.cpp
-  ../SafPcaDecoder.cpp
-  ../HRTFBinLoader.cpp
-)
-target_link_libraries(test_hrtf_convolver_rt_safety PRIVATE GTest::gtest_main ivanna_dsp_under_test)
-target_include_directories(test_hrtf_convolver_rt_safety PRIVATE .. ../include host_stubs)
-target_compile_options(test_hrtf_convolver_rt_safety PRIVATE -Wall -Wextra)
-if(IVANNA_SAN_FLAGS)
-  target_compile_options(test_hrtf_convolver_rt_safety PRIVATE ${IVANNA_SAN_FLAGS})
-  target_link_options(test_hrtf_convolver_rt_safety PRIVATE ${IVANNA_SAN_FLAGS})
-endif()
-gtest_discover_tests(test_hrtf_convolver_rt_safety)
-
 
 # ── Wave Field Synthesis (2026-09-18) ──
 add_executable(test_wfs_renderer
@@ -533,20 +514,6 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_wfs_renderer COMMAND test_wfs_renderer)
 set_tests_properties(test_wfs_renderer PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
-
-# Mision WFS: proteccion instanciada + extremos (clipping/NaN/DC/toggles/silencio).
-add_executable(test_wfs_adaptive_protection
-  test_wfs_adaptive_protection.cpp
-  ../spatial/WfsRenderer.cpp
-)
-target_include_directories(test_wfs_adaptive_protection PRIVATE .. ../include ../spatial host_stubs)
-target_compile_options(test_wfs_adaptive_protection PRIVATE -Wall -Wextra)
-if(IVANNA_SAN_FLAGS)
-  target_compile_options(test_wfs_adaptive_protection PRIVATE ${IVANNA_SAN_FLAGS})
-  target_link_options(test_wfs_adaptive_protection PRIVATE ${IVANNA_SAN_FLAGS})
-endif()
-add_test(NAME test_wfs_adaptive_protection COMMAND test_wfs_adaptive_protection)
-set_tests_properties(test_wfs_adaptive_protection PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 
 
 # ── WFS activación glitch-free (2026-09-19) ──

@@ -110,6 +110,15 @@ constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
 
+// Flags de procesamiento acústico avanzado (campo flags)
+constexpr uint32_t OMEGA_FLAG_MASTER_BYPASS = (1u << 0);
+constexpr uint32_t OMEGA_FLAG_EQ_CALIBRATED = (1u << 1);
+constexpr uint32_t OMEGA_FLAG_PERCEPTUAL_ON = (1u << 2);
+constexpr uint32_t OMEGA_FLAG_ANTI_DOLBY_ON = (1u << 3);
+constexpr uint32_t OMEGA_FLAG_VOLTERRA_ON   = (1u << 4); // Anti-Lossy Volterra H2 Reconstruction
+constexpr uint32_t OMEGA_FLAG_FASTRPC_ON    = (1u << 5); // Qualcomm Hexagon cDSP FastRPC Offload
+constexpr uint32_t OMEGA_FLAG_ATI_ON        = (1u << 6); // Active Transducer Inversion (Phase/Group Delay)
+
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(data);

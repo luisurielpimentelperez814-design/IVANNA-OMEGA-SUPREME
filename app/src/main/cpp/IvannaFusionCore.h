@@ -77,6 +77,14 @@ public:
 
     void setSafLatentParams(const float q[7]) noexcept;
 
+    // ── Supremacía Acústica: TinyML Kernel, Volterra H2 & Hexagon cDSP ────────
+    void setVolterraEnabled(bool enable) noexcept { m_volterraEnabled = enable; }
+    bool isVolterraEnabled() const noexcept { return m_volterraEnabled; }
+    void setFastRpcEnabled(bool enable) noexcept { m_fastRpcEnabled = enable; }
+    bool isFastRpcEnabled() const noexcept { return m_fastRpcEnabled; }
+    void setAtiEnabled(bool enable) noexcept { m_atiEnabled = enable; }
+    bool isAtiEnabled() const noexcept { return m_atiEnabled; }
+
     // ── API de compatibilidad con omega_effect.cpp / OmegaControlBus ─────────
     // Estos métodos reciben los parámetros del Control Plane (snapshot SHM) y
     // los enrutan a los subsistemas internos del engine.
@@ -156,6 +164,17 @@ public:
         m_outFifoCount -= available;
     }
 
+    void resetFifo() noexcept {
+        m_inFifoCount = 0;
+        m_inFifoReadPos = 0;
+        m_inFifoWritePos = 0;
+        m_outFifoCount = Ivanna::BLOCK_SIZE;
+        m_outFifoReadPos = 0;
+        m_outFifoWritePos = Ivanna::BLOCK_SIZE;
+        if (!m_outFifoL.empty()) std::fill(m_outFifoL.begin(), m_outFifoL.end(), 0.0f);
+        if (!m_outFifoR.empty()) std::fill(m_outFifoR.begin(), m_outFifoR.end(), 0.0f);
+    }
+
     // Carga un dataset HRTF medido (formato IHR1) desde disco.
     // Devuelve false si el archivo no existe o la cabecera es inválida.
     bool loadCustomHrtf(const char* path) noexcept;
@@ -205,6 +224,9 @@ private:
     IvannaSuperAgentMemory* m_memory = nullptr;
 
     bool m_goldenEarActive = false;
+    bool m_volterraEnabled = true;
+    bool m_fastRpcEnabled = false;
+    bool m_atiEnabled = true;
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;

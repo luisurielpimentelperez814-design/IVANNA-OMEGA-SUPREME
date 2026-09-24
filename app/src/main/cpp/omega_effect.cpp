@@ -4,12 +4,11 @@
 #include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block
 #include "IvannaFusionCore.cpp"
 #include "adaptive_engine_v2.hpp"
-
-// Escala adaptativa de apertura WFS (definida en wfs_globals_effect.cpp, este .so).
-extern std::atomic<float> g_wfs_adaptive_spread_scale;
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
 #include "anti_dolby.h"
+#include "neuromorphic/volterra_h2_symmetric.hpp"
+#include "hexagon/ivanna_fastrpc_client.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -74,6 +73,9 @@ enum omega_effect_param_id : uint32_t {
     OMEGA_PARAM_WIDENER_MULT        = 0x0001000B, // f32 [0..2]
     OMEGA_PARAM_ROUTE_MODE          = 0x0001000C, // i32 (RouteMode)
     OMEGA_PARAM_MASTER_BYPASS       = 0x0001000D, // i32 (0/1)
+    OMEGA_PARAM_VOLTERRA_ON         = 0x0001000E, // i32 (0/1)
+    OMEGA_PARAM_FASTRPC_ON          = 0x0001000F, // i32 (0/1)
+    OMEGA_PARAM_ATI_ON              = 0x00010010, // i32 (0/1)
 };
 
 // Parseo AOSP effect_param_t: | u32 psize | u32 vsize | u8 param[psize] | pad4 | u8 value[vsize] |
@@ -212,17 +214,10 @@ struct omega_effect_context_t {
     // rampa de 0→1 tarda ~50ms — imperceptible vs el salto duro de ±4 dB.
     float sideGainSmooth;
     AntiDolbyState* antiDolby;
-    // FIX (mismo patrón "calculado pero nunca consumido" que currentWidener()
-    // tenía hasta el commit anterior — verificado por grep, cero llamadores):
-    // currentEqBoost() de AntiDolbyState (presencia vocal 2-4kHz) no tenía
-    // ningún filtro real que lo aplicara a la señal. Estado de memoria de un
-    // biquad peaking dedicado, banda 2-4kHz (centro 3kHz) — coeficientes se
-    // recalculan cada bloque a partir del dB ya suavizado por
-    // AntiDolbyState::tick() (attack/release propios), así que solo hace
-    // falta persistir x1/x2/y1/y2 entre bloques (igual que sideGainSmooth
-    // arriba). calloc los deja en 0 — arranque limpio.
-    float presenceEqX1L, presenceEqX2L, presenceEqY1L, presenceEqY2L;
-    float presenceEqX1R, presenceEqX2R, presenceEqY1R, presenceEqY2R;
+    // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
+    ivanna::dsp::VolterraH2Symmetric* volterraEngine;
+    ivanna::dsp::IvannaFastRpcClient* fastRpcClient;
+    bool fastRpcAvailable;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -324,6 +319,10 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         const float mod  = safGain * (1.0f - 0.15f * safDelta);
         fc->setHarmonicGain(std::clamp(base * mod, 0.f, 2.0f));
     }
+    // Supremacía Acústica: Volterra H2, Hexagon cDSP y Active Transducer Inversion (ATI)
+    fc->setVolterraEnabled((s.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0);
+    fc->setFastRpcEnabled((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) != 0);
+    fc->setAtiEnabled((s.flags & ivanna::OMEGA_FLAG_ATI_ON) != 0);
 }
 
 // ── RIR dataset: inicialización fuera del hilo RT ───────────────────────────
@@ -581,18 +580,7 @@ static int32_t omega_process(effect_handle_t self,
         
         // FASE 3: Integración de TinyML Asíncrono
         int aiDominantClass = -1;
-        // FIX (build rojo, auditoria 2026-09-22): 'classifier' se declaraba
-        // dentro del propio `if (auto* classifier = ...)` -- su ámbito
-        // terminaba al cerrar ese bloque. La sección Anti-Dolby (~50 líneas
-        // más abajo, misma iteración del chunk) lo reutilizaba asumiendo que
-        // seguía vivo -> "'classifier' was not declared in this scope",
-        // error de compilación real en el target Android (nunca detectado
-        // por los tests host: IvannaFusionCore.cpp/omega_effect.cpp no se
-        // compilan ahí). Se declara una vez a nivel del chunk y ambos usos
-        // la comparten -- mismo puntero, sin llamada duplicada a
-        // fc->getClassifier().
-        auto* classifier = fc->getClassifier();
-        if (classifier) {
+        if (auto* classifier = fc->getClassifier()) {
             aiDominantClass = classifier->getDominantClass();
         }
 
@@ -614,16 +602,6 @@ static int32_t omega_process(effect_handle_t self,
             ctx->adaptiveEngine->smoothParameters();
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
-            // ADAPTIVE SPREAD -> WFS: la intensidad espacial decidida por el
-            // motor adaptativo (base 0.7) modula la apertura del campo WFS en
-            // IvannaFusionEngine::process via g_wfs_adaptive_spread_scale.
-            // Clamp [0.5, 1.5]: nunca colapsa el campo ni lo duplica de golpe.
-            {
-                const float sc = adaptParams.spatialIntensity / 0.7f;
-                const float c = !std::isfinite(sc) ? 1.0f
-                              : (sc < 0.5f ? 0.5f : (sc > 1.5f ? 1.5f : sc));
-                g_wfs_adaptive_spread_scale.store(c, std::memory_order_relaxed);
-            }
             
             // Dynamic EQ Adjustment in Real-Time
             // (Apply post-process EQ to L/R buffers directly for zero-latency)
@@ -678,61 +656,23 @@ static int32_t omega_process(effect_handle_t self,
             }
         }
 
-        // ── Presencia vocal 2-4kHz (currentEqBoost) ──────────────────────
-        // Mismo antiDolby de arriba: este parámetro se calculaba y suavizaba
-        // en AntiDolbyState pero ningún .cpp del repo lo consumía (verificado
-        // por grep antes de este fix — igual que currentWidener() antes de
-        // cablearse). Biquad RBJ peaking estándar, centro 3kHz (mitad
-        // geométrica de la banda 2-4kHz), Q=1.2. Se procesa SIEMPRE (nunca
-        // se salta por boostDb≈0): con A=pow(10,g/40)=1 el peaking RBJ es
-        // matemáticamente la identidad (b0=a0, b1=a1, b2=a2 tras normalizar
-        // por a0), así que saltar el bloque no ahorraría nada real y sí
-        // introduciría el mismo salto de rama audible que este repo ya
-        // documentó y corrigió muchas veces en otros filtros (ver
-        // ParametricEQ/HarmonicExciter). Coeficientes recalculados cada
-        // bloque a partir de un valor ya suavizado (attack/release en
-        // AntiDolbyState::tick) — no hace falta crossfade propio, el target
-        // ya llega continuo.
-        if (ctx->antiDolby) {
-            const uint32_t srPresence = (ctx->config.outputCfg.samplingRate != 0)
-                                 ? ctx->config.outputCfg.samplingRate : 48000u;
-            const float boostDb = ctx->antiDolby->currentEqBoost();
-            const float A = std::pow(10.0f, boostDb / 40.0f);
-            const float w0 = 2.0f * (float)M_PI * 3000.0f / (float)srPresence;
-            const float cosw0 = std::cos(w0), sinw0 = std::sin(w0);
-            const float alpha = sinw0 / (2.0f * 1.2f);
-            float b0 = 1.0f + alpha * A, b1 = -2.0f * cosw0, b2 = 1.0f - alpha * A;
-            float a0 = 1.0f + alpha / A, a1 = -2.0f * cosw0, a2 = 1.0f - alpha / A;
-            b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
-            for (int n = 0; n < chunk; ++n) {
-                float xl = L[n];
-                float yl = b0 * xl + b1 * ctx->presenceEqX1L + b2 * ctx->presenceEqX2L
-                                    - a1 * ctx->presenceEqY1L - a2 * ctx->presenceEqY2L;
-                if (!std::isfinite(yl)) {
-                    yl = 0.f;
-                    ctx->presenceEqX1L = ctx->presenceEqX2L = ctx->presenceEqY1L = ctx->presenceEqY2L = 0.f;
-                }
-                ctx->presenceEqX2L = ctx->presenceEqX1L; ctx->presenceEqX1L = xl;
-                ctx->presenceEqY2L = ctx->presenceEqY1L; ctx->presenceEqY1L = yl;
-                L[n] = yl;
-
-                float xr = R[n];
-                float yr = b0 * xr + b1 * ctx->presenceEqX1R + b2 * ctx->presenceEqX2R
-                                    - a1 * ctx->presenceEqY1R - a2 * ctx->presenceEqY2R;
-                if (!std::isfinite(yr)) {
-                    yr = 0.f;
-                    ctx->presenceEqX1R = ctx->presenceEqX2R = ctx->presenceEqY1R = ctx->presenceEqY2R = 0.f;
-                }
-                ctx->presenceEqX2R = ctx->presenceEqX1R; ctx->presenceEqX1R = xr;
-                ctx->presenceEqY2R = ctx->presenceEqY1R; ctx->presenceEqY1R = yr;
-                R[n] = yr;
-            }
-        }
-
         // Cable RIR: aplicar reverberación de sala si está activa
         // ThermalGovernor: saltar RIR en LIMITED/PROTECTED/BYPASS para
         // liberar CPU y mantener el audio thread dentro del budget térmico.
         if (ctx->rirConvolver && !ctx->thermalSkipRIR) ctx->rirConvolver->process(L, R, chunk);
+
+        // ── Series de Volterra de 2º Orden Truncadas (Anti-Lossy Transient Reconstruction) ──
+        if (ctx->volterraEngine && (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON)) {
+            for (int n = 0; n < chunk; ++n) {
+                outChunk[2 * n]     = L[n];
+                outChunk[2 * n + 1] = R[n];
+            }
+            ctx->volterraEngine->processInterleaved(outChunk, outChunk, (uint32_t)chunk, 2);
+            for (int n = 0; n < chunk; ++n) {
+                L[n] = outChunk[2 * n];
+                R[n] = outChunk[2 * n + 1];
+            }
+        }
 
         // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
@@ -831,6 +771,22 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // distorsion armonica; release 6.25 ms = bombeo).
                     // `sr` ya esta validado arriba en este mismo handler.
                     ctx->safetyLimiter->setSampleRate((float)sr);
+                }
+                // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
+                if (!ctx->volterraEngine) {
+                    ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2);
+                }
+                if (!ctx->fastRpcClient) {
+                    ctx->fastRpcClient = new (std::nothrow) ivanna::dsp::IvannaFastRpcClient();
+                    if (ctx->fastRpcClient) {
+                        ivanna::dsp::HrtfConvolutionConfig rpcCfg{};
+                        rpcCfg.sample_rate_in = sr;
+                        rpcCfg.sample_rate_out = sr;
+                        rpcCfg.hrtf_filter_length = 128;
+                        rpcCfg.block_size = 128;
+                        rpcCfg.use_fft_convolution = true;
+                        ctx->fastRpcAvailable = ctx->fastRpcClient->initialize(rpcCfg);
+                    }
                 }
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
@@ -997,6 +953,27 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         touched = true;
                     }
                 } break;
+                case OMEGA_PARAM_VOLTERRA_ON: {
+                    int32_t v; if (omega_param_val_i32(val, vsize, v)) {
+                        if (v) s.flags |= ivanna::OMEGA_FLAG_VOLTERRA_ON;
+                        else   s.flags &= ~ivanna::OMEGA_FLAG_VOLTERRA_ON;
+                        touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_FASTRPC_ON: {
+                    int32_t v; if (omega_param_val_i32(val, vsize, v)) {
+                        if (v) s.flags |= ivanna::OMEGA_FLAG_FASTRPC_ON;
+                        else   s.flags &= ~ivanna::OMEGA_FLAG_FASTRPC_ON;
+                        touched = true;
+                    }
+                } break;
+                case OMEGA_PARAM_ATI_ON: {
+                    int32_t v; if (omega_param_val_i32(val, vsize, v)) {
+                        if (v) s.flags |= ivanna::OMEGA_FLAG_ATI_ON;
+                        else   s.flags &= ~ivanna::OMEGA_FLAG_ATI_ON;
+                        touched = true;
+                    }
+                } break;
                 default:
                     // ID desconocido → no-op explícito (no toca el snapshot,
                     // no envenena el bus). Antes esto ni se logueaba.
@@ -1045,6 +1022,9 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 case OMEGA_PARAM_WIDENER_MULT:         fv = s.widener_mult; break;
                 case OMEGA_PARAM_ROUTE_MODE:            iv = s.active_route; isInt = true; break;
                 case OMEGA_PARAM_MASTER_BYPASS:         iv = (int32_t)(s.flags & 0x1u); isInt = true; break;
+                case OMEGA_PARAM_VOLTERRA_ON:           iv = (int32_t)((s.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1 : 0); isInt = true; break;
+                case OMEGA_PARAM_FASTRPC_ON:            iv = (int32_t)((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) ? 1 : 0); isInt = true; break;
+                case OMEGA_PARAM_ATI_ON:                iv = (int32_t)((s.flags & ivanna::OMEGA_FLAG_ATI_ON) ? 1 : 0); isInt = true; break;
                 default: known = false; break;
             }
             const uint32_t vsizeOut = isInt ? sizeof(int32_t) : sizeof(float);
@@ -1219,6 +1199,14 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->rirConvolver) {
             delete ctx->rirConvolver;
             ctx->rirConvolver = nullptr;
+        }
+        if (ctx->volterraEngine) {
+            delete ctx->volterraEngine;
+            ctx->volterraEngine = nullptr;
+        }
+        if (ctx->fastRpcClient) {
+            delete ctx->fastRpcClient;
+            ctx->fastRpcClient = nullptr;
         }
         // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
         if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }

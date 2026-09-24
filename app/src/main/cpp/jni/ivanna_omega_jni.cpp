@@ -12,7 +12,6 @@
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
-#include "../music_intelligence/ImeBridge.hpp"
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -50,6 +49,8 @@
 #include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "../perceptual_loudness.hpp"
 #include "../ivannalab/ivannalab.h"
+#include "../neuromorphic/volterra_h2_symmetric.hpp"
+#include "../hexagon/ivanna_fastrpc_client.hpp"
 #include "omega_shared.h"
 // FIX (build roto — ld: undefined symbol: g_shared): g_shared vive
 // DENTRO de un namespace anónimo en omega_daemon.cpp (líneas 53-514),
@@ -1418,6 +1419,20 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
     }
 
+    // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
+    if (g_volterra_enabled.load(std::memory_order_relaxed)) {
+        static thread_local float voltInter[2 * 2048];
+        for (int i = 0; i < n; ++i) {
+            voltInter[2 * i]     = g_ats.pdOutL[i];
+            voltInter[2 * i + 1] = g_ats.pdOutR[i];
+        }
+        g_volterra_engine.processInterleaved(voltInter, voltInter, (uint32_t)n, 2);
+        for (int i = 0; i < n; ++i) {
+            g_ats.pdOutL[i] = voltInter[2 * i];
+            g_ats.pdOutR[i] = voltInter[2 * i + 1];
+        }
+    }
+
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
         float l = g_ats.pdOutL[i];
@@ -1514,22 +1529,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     const int n = std::min((int)frames, 2048);
     if (!copyJFloat(env, inL, lBuf, n)) return;
     if (!copyJFloat(env, inR, rBuf, n)) return;
-    // Music Intelligence Engine (IME): alimenta el extractor real con el
-    // audio que YA está en stack (lBuf/rBuf) — sin esto, ImeBridge nunca
-    // recibía audio real (solo su propio test lo llamaba). imeFeedBlock es
-    // RT-safe por diseño propio (seqlock, cero malloc, early-return
-    // inmediato si el toggle está apagado — ver ImeBridge.cpp) así que es
-    // seguro llamarlo incondicionalmente aquí, en el mismo hilo que ya
-    // procesa este bloque.
-    {
-        float interLeaved[4096];
-        const int ni = std::min(n, 2048);
-        for (int i = 0; i < ni; ++i) {
-            interLeaved[2 * i]     = lBuf[i];
-            interLeaved[2 * i + 1] = rBuf[i];
-        }
-        ivanna::ime::imeFeedBlock(interLeaved, ni);
-    }
     // DSP chain
     // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
     // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth
@@ -1622,6 +1621,22 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     }
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
+
+    // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
+    if (g_volterra_enabled.load(std::memory_order_relaxed)) {
+        float inter[4096];
+        const int samples = std::min(n, 2048);
+        for (int i = 0; i < samples; ++i) {
+            inter[2 * i]     = oL[i];
+            inter[2 * i + 1] = oR[i];
+        }
+        g_volterra_engine.processInterleaved(inter, inter, (uint32_t)samples, 2);
+        for (int i = 0; i < samples; ++i) {
+            oL[i] = inter[2 * i];
+            oR[i] = inter[2 * i + 1];
+        }
+    }
+
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
@@ -1729,6 +1744,81 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsLabAutoEnabled(
     JNIEnv*, jobject) {
     return g_lab_auto_enabled.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPREMACÍA ACÚSTICA: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
+// Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
+// ═══════════════════════════════════════════════════════════════════════════
+static std::atomic<bool> g_volterra_enabled{true};
+static std::atomic<bool> g_fastrpc_enabled{false};
+static std::atomic<bool> g_ati_enabled{true};
+static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetVolterraEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_volterra_enabled.store(on, std::memory_order_release);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        if (on) snap.flags |= ivanna::OMEGA_FLAG_VOLTERRA_ON;
+        else    snap.flags &= ~ivanna::OMEGA_FLAG_VOLTERRA_ON;
+        bus.publish(snap);
+    }
+    LOGI("[IvannaNativeLib] Volterra H2 Anti-Lossy Reconstruction set to %d", on);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsVolterraEnabled(
+    JNIEnv*, jobject) {
+    return g_volterra_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFastRpcEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_fastrpc_enabled.store(on, std::memory_order_release);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        if (on) snap.flags |= ivanna::OMEGA_FLAG_FASTRPC_ON;
+        else    snap.flags &= ~ivanna::OMEGA_FLAG_FASTRPC_ON;
+        bus.publish(snap);
+    }
+    LOGI("[IvannaNativeLib] Qualcomm Hexagon cDSP FastRPC Offload set to %d", on);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsFastRpcEnabled(
+    JNIEnv*, jobject) {
+    return g_fastrpc_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAtiEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_ati_enabled.store(on, std::memory_order_release);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        if (on) snap.flags |= ivanna::OMEGA_FLAG_ATI_ON;
+        else    snap.flags &= ~ivanna::OMEGA_FLAG_ATI_ON;
+        bus.publish(snap);
+    }
+    LOGI("[IvannaNativeLib] Active Transducer Inversion (ATI) set to %d", on);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAtiEnabled(
+    JNIEnv*, jobject) {
+    return g_ati_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
@@ -2100,61 +2190,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
         g_wfs_spread.store(sp, std::memory_order_relaxed);
         omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
     }
-}
-
-// FIX (build rojo, auditoría 2026-09-22): WfsCalibrationManager.kt llamaba a
-// IvannaNativeLib.nativeSetWfsSpeakerLayout(x,y,z) — nunca existió ni la
-// declaración `external fun` ni este wrapper JNI ("Unresolved reference" en
-// compileDebugKotlin). El daemon (command_server.cpp, acción "SET_WFS") YA
-// acepta los arrays opcionales wfsSpeakerX/Y/Z (7 floats c/u) desde antes —
-// solo faltaba el puente app→daemon para el layout de altavoces, igual que
-// omegaSendWfsToDaemon() ya lo hace para wfsEnabled/wfsSpread. Se omiten
-// "wfsEnabled"/"wfsSpread" del JSON a propósito: _jsonFloat() conserva el
-// valor ya publicado cuando la clave no viene, así que este comando no
-// pisa el estado enabled/spread vigente — solo la geometría.
-static void omegaSendWfsSpeakerLayoutToDaemon(const float* x, const float* y, const float* z) noexcept {
-    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return;
-    struct timeval tv{0, 200000}; // 200 ms — solo hilo UI, nunca RT
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    const char* name = "omega_command_socket";
-    addr.sun_path[0] = '\0';
-    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
-    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
-    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
-        char json[512];
-        int n = std::snprintf(json, sizeof(json),
-            "{\"action\":\"SET_WFS\","
-            "\"wfsSpeakerX\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f],"
-            "\"wfsSpeakerY\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f],"
-            "\"wfsSpeakerZ\":[%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f]}",
-            static_cast<double>(x[0]), static_cast<double>(x[1]), static_cast<double>(x[2]),
-            static_cast<double>(x[3]), static_cast<double>(x[4]), static_cast<double>(x[5]), static_cast<double>(x[6]),
-            static_cast<double>(y[0]), static_cast<double>(y[1]), static_cast<double>(y[2]),
-            static_cast<double>(y[3]), static_cast<double>(y[4]), static_cast<double>(y[5]), static_cast<double>(y[6]),
-            static_cast<double>(z[0]), static_cast<double>(z[1]), static_cast<double>(z[2]),
-            static_cast<double>(z[3]), static_cast<double>(z[4]), static_cast<double>(z[5]), static_cast<double>(z[6]));
-        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
-    }
-    ::close(fd);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
-    JNIEnv* env, jobject, jfloatArray xArr, jfloatArray yArr, jfloatArray zArr) {
-    if (!xArr || !yArr || !zArr) return;
-    if (env->GetArrayLength(xArr) < 7 || env->GetArrayLength(yArr) < 7 || env->GetArrayLength(zArr) < 7) return;
-    float x[7], y[7], z[7];
-    env->GetFloatArrayRegion(xArr, 0, 7, x);
-    env->GetFloatArrayRegion(yArr, 0, 7, y);
-    env->GetFloatArrayRegion(zArr, 0, 7, z);
-    for (int i = 0; i < 7; ++i) {
-        if (!std::isfinite(x[i]) || !std::isfinite(y[i]) || !std::isfinite(z[i])) return;
-    }
-    omegaSendWfsSpeakerLayoutToDaemon(x, y, z);
 }
 
 JNIEXPORT void JNICALL

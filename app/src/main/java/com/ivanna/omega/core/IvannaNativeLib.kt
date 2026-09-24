@@ -259,6 +259,14 @@ object IvannaNativeLib {
     external fun nativeSetLabAutoEnabled(enabled: Boolean)
     external fun nativeIsLabAutoEnabled(): Boolean
 
+    // ═══ Supremacía Acústica: Volterra H2, FastRPC Hexagon cDSP & ATI ═════
+    external fun nativeSetVolterraEnabled(enabled: Boolean)
+    external fun nativeIsVolterraEnabled(): Boolean
+    external fun nativeSetFastRpcEnabled(enabled: Boolean)
+    external fun nativeIsFastRpcEnabled(): Boolean
+    external fun nativeSetAtiEnabled(enabled: Boolean)
+    external fun nativeIsAtiEnabled(): Boolean
+
     /** Reinicia el acumulador de medición de IvannaLab. */
     external fun nativeLabReset()
     /** Alimenta [frames] frames estéreo intercalados [L0,R0,L1,R1,...]. */
@@ -291,18 +299,6 @@ object IvannaNativeLib {
     // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
     external fun nativeSetWfsEnabled(enabled: Boolean)
     external fun nativeSetWfsSpread(spread: Float)
-    // FIX (build rojo, auditoría 2026-09-22): faltaba esta declaración —
-    // WfsCalibrationManager.kt ya la llamaba, "Unresolved reference" en
-    // compileDebugKotlin. Implementación real en ivanna_omega_jni.cpp:
-    // publica la geometría (7 altavoces) al daemon (acción SET_WFS,
-    // campos wfsSpeakerX/Y/Z), sin tocar wfsEnabled/wfsSpread vigentes.
-    external fun nativeSetWfsSpeakerLayout(x: FloatArray, y: FloatArray, z: FloatArray)
-    // FIX (build roto, 2026-09-22): faltaban por completo -- MusicIntelligenceWorker.kt
-    // las llamaba pero no existia ni la declaracion aqui ni el wrapper JNI
-    // (ver jni/ivanna_ime_jni.cpp). La logica real ya existia en
-    // music_intelligence/ImeBridge.{hpp,cpp}, solo desconectada.
-    external fun nativeImeSetEnabled(enabled: Boolean)
-    external fun nativeImeDecideNow(): String
 
     // ── FIX: Métodos JNI que DSPBridge/HybridDecisionEngine necesitan ──────
         // Estos fueron llamados en DSPBridge.applyCompressorAmount(), etc.,

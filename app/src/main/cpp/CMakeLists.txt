@@ -52,20 +52,6 @@ add_library(ivanna_omega SHARED
     jni/ivanna_visualizer_v2_jni.cpp
     jni/ivanna_visualizer_bark64_jni.cpp
     jni/ivanna_npe_jni.cpp
-    jni/ivanna_ime_jni.cpp
-    # FIX (build rojo, auditoría 2026-09-22): ivanna_ime_jni.cpp (arriba) llama
-    # a ivanna::ime::imeFeedBlock/imeDecideNowJson/imeSharedOpaque, pero esas
-    # implementaciones (music_intelligence/{MusicFeatureExtractor,
-    # MusicIntelligenceEngine,ImeBridge}.cpp) solo estaban en el target
-    # omega_effect (proceso audioserver) -- ivanna_omega.so (proceso app, el
-    # que Kotlin/IvannaNativeLib carga) volvía a quedar con undefined symbol
-    # al enlazar. Mismo patrón ya documentado arriba para
-    # wfs_controls_bridge.cpp/upmixing_controls_bridge.cpp: dos SHARED
-    # libraries, cada .cpp es su propia unidad de traducción — sin ODR
-    # conflict entre ellas.
-    music_intelligence/MusicFeatureExtractor.cpp
-    music_intelligence/MusicIntelligenceEngine.cpp
-    music_intelligence/ImeBridge.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
@@ -306,9 +292,6 @@ add_library(omega_effect SHARED
     IvannaSuperAgentMemory.cpp
     spatial/IntelligentUpmixer.cpp
     spatial/WfsRenderer.cpp
-    music_intelligence/MusicFeatureExtractor.cpp
-    music_intelligence/MusicIntelligenceEngine.cpp
-    music_intelligence/ImeBridge.cpp
     spatial/HoaBinauralDecoder.cpp
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_dsp.cpp
