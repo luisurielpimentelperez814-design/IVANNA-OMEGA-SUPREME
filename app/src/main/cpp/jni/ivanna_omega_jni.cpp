@@ -117,6 +117,8 @@ static ivanna::IvannaLab g_lab(96000, 4096);
 
 // FASE 2 (NAEL): flag global — definición en audio_control_plane.cpp.
 extern std::atomic<bool> g_nael_enabled;
+extern std::atomic<bool> g_upmixing_enabled;
+extern std::atomic<float> g_upmixing_immersivity;
 
 // FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
 // real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
@@ -1279,7 +1281,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.voice_score       = vpScore;
         rawM.crest_factor_db   = (rms > 1e-6f) ? 20.0f * std::log10(std::max(peakAbs / rms, 1.0f)) : 0.0f;
         rawM.upmix_active      = g_upmixing_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
-        rawM.golden_ear_active = (g_params.harmonic_gain > 0.05f) ? 1.0f : 0.0f;
+        rawM.golden_ear_active = (g_params.drive > 0.05f) ? 1.0f : 0.0f;
         rawM.wfs_active        = g_wfs_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
         rawM.rir_active        = (g_rirConvolver.load(std::memory_order_acquire) != nullptr) ? 1.0f : 0.0f;
         // Exponer band energies al JNI getter (AdaptiveDashboard)
@@ -2101,10 +2103,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
     applyNhoWet();
 }
-
-
-extern std::atomic<bool> g_upmixing_enabled;
-extern std::atomic<float> g_upmixing_immersivity;
 
 // ── Puente app→daemon para Upmixing (HOA) ────────────────────────────────
 // Envia un comando JSON al socket de control del daemon (abstract namespace
