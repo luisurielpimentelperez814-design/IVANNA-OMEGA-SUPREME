@@ -546,3 +546,18 @@ endif()
 add_test(NAME test_ime_bridge COMMAND test_ime_bridge)
 set_tests_properties(test_ime_bridge PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 
+# ── Master Acoustic Orchestrator: Arbitraje Unificado y Estabilidad de Referencia ──
+add_executable(test_master_acoustic_orchestrator
+  test_master_acoustic_orchestrator.cpp
+  ../experimental/adaptive_engine/adaptive_decision_engine.cpp
+)
+target_link_libraries(test_master_acoustic_orchestrator PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_master_acoustic_orchestrator PRIVATE .. ../include ../experimental/adaptive_engine host_stubs)
+target_compile_options(test_master_acoustic_orchestrator PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_master_acoustic_orchestrator PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_master_acoustic_orchestrator PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_master_acoustic_orchestrator COMMAND test_master_acoustic_orchestrator)
+
+

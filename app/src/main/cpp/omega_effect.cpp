@@ -268,24 +268,33 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
         return;
     }
-    // Spatial width (slider UI "Ancho espacial")
-    if (std::isfinite(s.spatial_width) && s.spatial_width > 0.f) {
-        fc->setSpatialWidth(s.spatial_width);
-    }
+    // ── Master Acoustic Orchestrator: Jerarquía Espacial (HRTF > WFS > RIR > M/S) ──
     // Intelligent Upmixing (HOA)
-    fc->setUpmixingEnabled(s.upmixing_enabled != 0);
+    const bool upmixOn = (s.upmixing_enabled != 0);
+    fc->setUpmixingEnabled(upmixOn);
     if (std::isfinite(s.upmixing_immersivity)) {
         fc->setImmersivity(s.upmixing_immersivity);
     }
     // Wave Field Synthesis con modulación acústica de AntiDolby
-    fc->setWfsEnabled(s.wfs_enabled != 0);
+    const bool wfsOn = (s.wfs_enabled != 0);
+    fc->setWfsEnabled(wfsOn);
     if (std::isfinite(s.wfs_spread)) {
         float spread = s.wfs_spread;
         if (ad) spread *= ad->currentSpreadMultiplier();
         fc->setWfsSpread(spread);
     }
     fc->setWfsSpeakerLayout(s.wfs_speaker_x, s.wfs_speaker_y, s.wfs_speaker_z);
-    // Harmonic gain (slider UI "Ganancia armónica")
+
+    // Spatial width: si HOA o WFS están activos, el ensanchador M/S se neutraliza
+    // para no alterar la física del frente de onda ni introducir filtro de peine.
+    if (upmixOn || wfsOn) {
+        fc->setSpatialWidth(1.0f);
+    } else if (std::isfinite(s.spatial_width) && s.spatial_width > 0.f) {
+        fc->setSpatialWidth(s.spatial_width);
+    }
+
+    // ── Master Acoustic Orchestrator: Jerarquía Armónica (GoldenEarGAN > Volterra > Exciter) ──
+    // Harmonic gain (slider UI "Ganancia armónica" / GoldenEarGAN)
     if (std::isfinite(s.harmonic_gain) && s.harmonic_gain >= 0.f) {
         fc->setHarmonicGain(s.harmonic_gain);
     }
@@ -320,7 +329,11 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         fc->setHarmonicGain(std::clamp(base * mod, 0.f, 2.0f));
     }
     // Supremacía Acústica: Volterra H2, Hexagon cDSP y Active Transducer Inversion (ATI)
-    fc->setVolterraEnabled((s.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0);
+    // Arbitraje de armónicos: si GoldenEarGAN está activo con ganancia positiva, Volterra
+    // se desactiva en este bloque para evitar doble saturación polinómica destructiva.
+    const bool allowVolterra = ((s.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0) &&
+                               (s.harmonic_gain <= 0.05f);
+    fc->setVolterraEnabled(allowVolterra);
     fc->setFastRpcEnabled((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) != 0);
     fc->setAtiEnabled((s.flags & ivanna::OMEGA_FLAG_ATI_ON) != 0);
 }

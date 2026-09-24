@@ -1277,6 +1277,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.band_high_energy  = bandEnergy(5, 7);
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
+        rawM.crest_factor_db   = (rms > 1e-6f) ? 20.0f * std::log10(std::max(peakAbs / rms, 1.0f)) : 0.0f;
+        rawM.upmix_active      = g_upmixing_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+        rawM.golden_ear_active = (g_params.harmonic_gain > 0.05f) ? 1.0f : 0.0f;
+        rawM.wfs_active        = g_wfs_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+        rawM.rir_active        = (g_rirConvolver.load(std::memory_order_acquire) != nullptr) ? 1.0f : 0.0f;
         // Exponer band energies al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
         g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
@@ -1314,7 +1319,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         //    componer un sobre-ensanchamiento cuando ambas piden ensanchar
         //    al mismo tiempo. Encoding M/S: pdOut = mid + side*sideMul.
         //    Smoothing exponencial (thread_local) para evitar clics.
-        // estado en g_ats
+        //    ARBITRAJE ESPACIAL: Si HOA Upmixing o WFS están activos, el ensanchador M/S
+        //    se neutraliza para respetar la síntesis física/virtual del escenario acústico.
         const float widthTarget = blend_adaptive_from_neutral(
             1.0f,
             std::clamp(g_lastAdaptiveSpatialWidth.load(std::memory_order_relaxed), 0.f, 1.5f),
@@ -1322,8 +1328,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_ats.widthSmooth += 0.02f * (widthTarget - g_ats.widthSmooth);  // ~50 bloques a τ
         const float adaptiveWidenAmount = std::max(0.f, g_ats.widthSmooth - 1.f);
         const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
-        if (combinedWidenAmount > 0.005f) {
-            const float sideMul = 1.f + combinedWidenAmount;
+        const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||
+                                             g_wfs_enabled.load(std::memory_order_relaxed));
+        const float effectiveWidenAmount = spatialHierarchyActive ? 0.0f : combinedWidenAmount;
+        if (effectiveWidenAmount > 0.005f) {
+            const float sideMul = 1.f + effectiveWidenAmount;
             for (int i = 0; i < n; ++i) {
                 const float mid  = (g_ats.pdOutL[i] + g_ats.pdOutR[i]) * 0.5f;
                 const float side = (g_ats.pdOutL[i] - g_ats.pdOutR[i]) * 0.5f * sideMul;

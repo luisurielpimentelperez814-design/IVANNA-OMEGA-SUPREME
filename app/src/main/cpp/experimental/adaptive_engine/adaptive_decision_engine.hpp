@@ -74,10 +74,26 @@ struct AdaptiveState {
     float exciter_reduction = 0.0f;  // 0..1, cuanto reducir el drive del exciter (0 = sin cambio)
     float spatial_width     = 1.0f;  // 0..1.5, ancho estéreo sugerido (1.0 = sin cambio)
     float safety_margin     = 1.0f;  // 0..1, margen de seguridad restante (1 = sano, 0 = crítico)
-    // GAP cerrado: faltaba en el AdaptiveState pedido por el prompt de
-    // Fase 3. Pass-through directo de m.voice_score (ver comentario en
-    // RawAudioMetrics) — no se computa nada nuevo acá adentro.
+    // GAP cerrado: pass-through directo de m.voice_score
     float voice_protection_amount = 0.0f;  // 0..1, cuánta protección de voz sugerir
+
+    // ── FASE 3: Arbitraje Acústico Unificado ──────────────────────────────
+    // 1. Armónicos: Un solo generador dominante (GoldenEarGAN > Volterra H2 > Exciter)
+    float golden_ear_scale        = 1.0f; // [0, 1] factor de ganancia GoldenEarGAN
+    float volterra_scale          = 1.0f; // [0, 1] factor de ganancia Volterra H2
+    float exciter_scale           = 1.0f; // [0, 1] factor de ganancia Harmonic Exciter
+
+    // 2. Espacialidad: Prioridad HRTF > WFS > RIR > M/S
+    float hrtf_binaural_scale     = 1.0f; // [0, 1]
+    float wfs_spread_scale        = 1.0f; // [0, 1]
+    float rir_wet_scale           = 1.0f; // [0, 1]
+    float ms_widener_scale        = 1.0f; // [0, 1] (0.0 = neutro / sin ensanche M/S adicional)
+    float upmix_immersivity       = 1.0f; // [0, 1]
+
+    // 3. Dinámica & Personalidad Musical (Transientes, Fatiga)
+    float dynamic_headroom_db     = 0.0f; // dB
+    float eq_tilt_db              = 0.0f; // dB (-2.5 .. 0) atenuación de fatiga
+
     // FIX (doc engañosa): este campo decía "ms desde epoch", pero NUNCA
     // contiene ms de pared — AdaptiveStateBus::publish() lo sobrescribe con
     // el número de secuencia monotónica (ver publish() y el test de
@@ -105,17 +121,19 @@ struct RawAudioMetrics {
     // AdaptiveDecisionEngine::gainReductionLinearToDb() ANTES de llamar
     // rawMetrics.publish() — este campo asume que ya llegó convertido.
     float gain_reduction_db = 0.0f;
-    // GAP cerrado (auditoría vs. spec de Fase 3): faltaba una entrada para
-    // voice_protection_amount. Este motor NO tiene forma propia de
-    // detectar voz desde RMS/energía de bandas — eso sería inventar una
-    // métrica falsa, justo el patrón que este proyecto viene corrigiendo
-    // toda la sesión. En cambio, se reutiliza el score REAL que ya calcula
-    // VoiceProtectionController (YamnetClassifier, TFLite real, ver
-    // audio/VoiceProtectionController.kt) — quien publique este struct en
-    // producción (fase futura) debe pasar ese valor tal cual, 0..1.
-    // Default 0.5f (neutral) para que los tests que no lo seteen no
-    // disparen el caso "voz detectada" por accidente.
+    // GAP cerrado (auditoría vs. spec de Fase 3): pass-through del score
+    // de VoiceProtectionController.
     float voice_score        = 0.5f;
+
+    // Métricas para arbitraje de motores activos y dinámica
+    float crest_factor_db   = 0.0f;  // 20*log10(peak/max(rms, 1e-6))
+    float golden_ear_active = 0.0f;  // 1.0f si GoldenEarGAN está activo
+    float volterra_active   = 0.0f;  // 1.0f si Volterra H2 está activo
+    float wfs_active        = 0.0f;  // 1.0f si WFS está activo
+    float upmix_active      = 0.0f;  // 1.0f si HOA Upmixing está activo
+    float rir_active        = 0.0f;  // 1.0f si convolución RIR de sala está activa
+    float musical_density   = 0.0f;  // densidad espectral estimada [0, 1]
+
     // Secuencia GLOBAL de publicación, asignada por RawMetricsBus::publish()
     // (fetch_add sobre un contador compartido entre TODAS las fuentes). Es
     // el criterio con el que consumeIfNewer() elige el slot más reciente y
@@ -394,10 +412,46 @@ public:
     // de Fase 4). Queda lista y testeada para cuando ese wiring se decida.
     static float gainReductionLinearToDb(float reductionLinear, float ceiling = 0.989f) noexcept;
 
-    // Combina las cinco funciones puras de arriba en un AdaptiveState
-    // completo. Público y estático para que los tests puedan verificar el
-    // resultado combinado sin arrancar ningún hilo.
-    static AdaptiveState evaluate(const RawAudioMetrics& m, float sibilanceEma) noexcept;
+    // Combina las funciones puras en un AdaptiveState completo.
+    // Soporta evaluación con o sin fatiga acumulada (default 0.0f para compatibilidad total).
+    static AdaptiveState evaluate(const RawAudioMetrics& m, float sibilanceEma, float fatigueEma = 0.0f) noexcept;
+
+    // ── Arbitraje Acústico Unificado (Fase 3 & Fase 4) ──────────────────────────
+    // Jerarquía de Armónicos: un solo generador dominante (GoldenEarGAN > Volterra H2 > Harmonic Exciter)
+    struct HarmonicArbitration {
+        float golden_ear_scale = 1.0f;
+        float volterra_scale   = 1.0f;
+        float exciter_scale    = 1.0f;
+        float total_drive      = 1.0f;
+    };
+    static HarmonicArbitration arbitrateHarmonics(const RawAudioMetrics& m, float sibilanceEma) noexcept;
+
+    // Jerarquía de Espacialidad: 1. HRTF/HOA, 2. WFS, 3. RIR, 4. M/S Widener
+    struct SpatialArbitration {
+        float hrtf_binaural_scale = 1.0f;
+        float wfs_spread_scale    = 1.0f;
+        float rir_wet_scale       = 1.0f;
+        float ms_widener_scale    = 1.0f;
+        float upmix_immersivity   = 1.0f;
+    };
+    static SpatialArbitration arbitrateSpatial(const RawAudioMetrics& m) noexcept;
+
+    // Dinámica y Preservación de Transientes (Crest Factor aware)
+    struct DynamicsArbitration {
+        float target_gain          = 1.0f;
+        float compressor_amount    = 0.0f;
+        float dynamic_headroom_db  = 0.0f;
+        float compressor_ratio     = 1.0f;
+    };
+    static DynamicsArbitration arbitrateDynamics(const RawAudioMetrics& m) noexcept;
+
+    // Personalidad Acústica Musical (Voz, Densidad, Fatiga)
+    struct PersonalityArbitration {
+        float eq_tilt_db             = 0.0f;
+        float vocal_clarity_boost_db = 0.0f;
+        float sub_bass_damping       = 0.0f;
+    };
+    static PersonalityArbitration arbitratePersonality(const RawAudioMetrics& m, float fatigueEma) noexcept;
 
 private:
     void controlLoop();

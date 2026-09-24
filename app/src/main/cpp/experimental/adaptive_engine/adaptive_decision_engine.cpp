@@ -126,8 +126,159 @@ float AdaptiveDecisionEngine::computeVoiceProtection(const RawAudioMetrics& m) n
     return clamp01(m.voice_score);
 }
 
+AdaptiveDecisionEngine::HarmonicArbitration
+AdaptiveDecisionEngine::arbitrateHarmonics(const RawAudioMetrics& m, float sibilanceEma) noexcept {
+    HarmonicArbitration out;
+    const bool geActive   = (m.golden_ear_active > 0.5f);
+    const bool voltActive = (m.volterra_active > 0.5f);
+    const float sib       = clamp01(sibilanceEma);
+
+    if (geActive) {
+        // GoldenEarGAN es dominante: Volterra y Exciter reducidos para evitar IMD
+        out.golden_ear_scale = 1.0f;
+        out.volterra_scale   = 0.25f;
+        out.exciter_scale    = 0.15f * (1.0f - sib);
+    } else if (voltActive) {
+        // Volterra restaurando códec: Exciter reducido, GoldenEar desactivado
+        out.golden_ear_scale = 0.0f;
+        out.volterra_scale   = 1.0f;
+        out.exciter_scale    = 0.35f * (1.0f - sib);
+    } else {
+        // Régimen estándar
+        out.golden_ear_scale = 1.0f;
+        out.volterra_scale   = 1.0f;
+        out.exciter_scale    = clamp01(1.0f - computeExciterReduction(m, sibilanceEma));
+    }
+
+    // Presupuesto total de distorsión armónica: acotado para evitar acumulación ciega
+    const float totalDrive = out.golden_ear_scale * 0.5f +
+                             out.volterra_scale   * 0.3f +
+                             out.exciter_scale    * 0.2f;
+    out.total_drive = totalDrive;
+    if (totalDrive > 1.0f) {
+        const float inv = 1.0f / totalDrive;
+        out.golden_ear_scale *= inv;
+        out.volterra_scale   *= inv;
+        out.exciter_scale    *= inv;
+    }
+    return out;
+}
+
+AdaptiveDecisionEngine::SpatialArbitration
+AdaptiveDecisionEngine::arbitrateSpatial(const RawAudioMetrics& m) noexcept {
+    SpatialArbitration out;
+    const bool upmixActive = (m.upmix_active > 0.5f);
+    const bool wfsActive   = (m.wfs_active > 0.5f);
+    const bool rirActive   = (m.rir_active > 0.5f);
+    const float voiceScore = clamp01(m.voice_score);
+    const float gr         = std::max(0.0f, m.gain_reduction_db);
+
+    // 1. Localización HRTF: siempre 1.0 (referencia binaural directa)
+    out.hrtf_binaural_scale = 1.0f;
+
+    // 2. Profundidad WFS: síntesis de frente de onda
+    if (wfsActive) {
+        out.wfs_spread_scale = clampRange(1.0f - gr * 0.03f, 0.7f, 1.0f);
+        if (upmixActive) {
+            // Si convive con HOA Upmixer, atenuar ligeramente para evitar dispersión
+            out.wfs_spread_scale *= 0.85f;
+        }
+    } else {
+        out.wfs_spread_scale = 1.0f;
+    }
+
+    // 3. Sala RIR: balance entre reverberación y claridad/localización
+    if (rirActive) {
+        float rirWet = 1.0f;
+        if (voiceScore > 0.6f) {
+            // Proteger inteligibilidad de la voz: no ahogar en reverb de sala
+            rirWet *= 0.65f;
+        }
+        if (wfsActive || upmixActive) {
+            // Evitar que la cola de reverberación emborrone el frente de onda directo
+            rirWet *= 0.80f;
+        }
+        out.rir_wet_scale = rirWet;
+    } else {
+        out.rir_wet_scale = 1.0f;
+    }
+
+    // 4. Expansión M/S: más bajo en la jerarquía.
+    // NUNCA permitir tres ensanchadores compitiendo.
+    if (upmixActive || wfsActive) {
+        // HOA o WFS activos -> ensanche M/S neutralizado (0.0 = neutro / sin ensanche M/S adicional)
+        out.ms_widener_scale = 0.0f;
+    } else if (voiceScore > 0.6f) {
+        // Voz presente -> proteger imagen fantasma central (evitar ahuecar el centro)
+        out.ms_widener_scale = 0.25f;
+    } else {
+        out.ms_widener_scale = 1.0f;
+    }
+
+    out.upmix_immersivity = upmixActive ? clamp01(1.0f - voiceScore * 0.3f) : 1.0f;
+    return out;
+}
+
+AdaptiveDecisionEngine::DynamicsArbitration
+AdaptiveDecisionEngine::arbitrateDynamics(const RawAudioMetrics& m) noexcept {
+    DynamicsArbitration out;
+    const float rms   = std::max(0.0f, m.rms);
+    const float peak  = std::max(0.0f, m.peak);
+    const float crest = peak / std::max(rms, kEps);
+    const float crestDb = 20.0f * std::log10(std::max(crest, 1.0f));
+
+    float baseComp = computeCompressorAmount(m);
+    out.target_gain = computeTargetGain(m);
+
+    if (crestDb >= 14.0f) {
+        // Audio muy dinámico (clásico, jazz, acústico): preservar transientes e impacto
+        out.compressor_amount   = baseComp;
+        out.dynamic_headroom_db = 2.0f;
+        out.compressor_ratio    = 1.3f;
+    } else if (crestDb <= 7.0f) {
+        // Audio denso/comprimido: evitar bombeo artificial
+        out.compressor_amount   = std::min(baseComp, 0.25f);
+        out.dynamic_headroom_db = 0.5f;
+        out.compressor_ratio    = 1.2f;
+    } else {
+        out.compressor_amount   = baseComp;
+        out.dynamic_headroom_db = 1.0f;
+        out.compressor_ratio    = 1.0f + 2.0f * baseComp;
+    }
+    return out;
+}
+
+AdaptiveDecisionEngine::PersonalityArbitration
+AdaptiveDecisionEngine::arbitratePersonality(const RawAudioMetrics& m, float fatigueEma) noexcept {
+    PersonalityArbitration out;
+    const float voiceScore = clamp01(m.voice_score);
+
+    // Claridad vocal: si hay voz, realce de presencia psicoacústica
+    if (voiceScore > 0.5f) {
+        out.vocal_clarity_boost_db = (voiceScore - 0.5f) * 3.0f;
+    }
+
+    // Mitigación de fatiga: si la exposición acumulada a agudos es alta (>0.35 EMA)
+    const float fEma = clamp01(fatigueEma);
+    if (fEma > 0.35f) {
+        // Atenuación suave progresiva (hasta -2.5dB) para proteger el oído en sesiones largas
+        out.eq_tilt_db = -std::min(2.5f, (fEma - 0.35f) * 6.0f);
+    }
+
+    // Densidad musical: si el bajo es muy dominante (>55% de la energía)
+    const float total = std::max(0.0f, m.band_low_energy) +
+                         std::max(0.0f, m.band_mid_energy) +
+                         std::max(0.0f, m.band_high_energy) + kEps;
+    if (m.band_low_energy / total > 0.55f) {
+        out.sub_bass_damping = 0.3f; // Control de subgrave en música densa
+    }
+
+    return out;
+}
+
 AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
-                                                float sibilanceEma) noexcept {
+                                                float sibilanceEma,
+                                                float fatigueEma) noexcept {
     AdaptiveState s;
     s.target_gain       = computeTargetGain(m);
     s.compressor_amount  = computeCompressorAmount(m);
@@ -135,6 +286,31 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
     s.spatial_width      = computeSpatialWidth(m);
     s.safety_margin      = computeSafetyMargin(m);
     s.voice_protection_amount = computeVoiceProtection(m);
+
+    // ── FASE 3: Arbitraje Acústico Unificado ──────────────────────────────
+    // 1. Armónicos
+    auto harm = arbitrateHarmonics(m, sibilanceEma);
+    s.golden_ear_scale = harm.golden_ear_scale;
+    s.volterra_scale   = harm.volterra_scale;
+    s.exciter_scale    = harm.exciter_scale;
+
+    // 2. Espacialidad
+    auto spat = arbitrateSpatial(m);
+    s.hrtf_binaural_scale = spat.hrtf_binaural_scale;
+    s.wfs_spread_scale    = spat.wfs_spread_scale;
+    s.rir_wet_scale       = spat.rir_wet_scale;
+    s.ms_widener_scale    = spat.ms_widener_scale;
+    s.upmix_immersivity   = spat.upmix_immersivity;
+
+    // 3. Dinámica
+    auto dyn = arbitrateDynamics(m);
+    s.dynamic_headroom_db = dyn.dynamic_headroom_db;
+    s.compressor_amount   = dyn.compressor_amount;
+
+    // 4. Personalidad y Fatiga
+    auto pers = arbitratePersonality(m, fatigueEma);
+    s.eq_tilt_db = pers.eq_tilt_db;
+
     s.timestamp          = 0;  // lo asigna AdaptiveStateBus::publish() al secuenciar
     return s;
 }
@@ -218,7 +394,7 @@ void AdaptiveDecisionEngine::controlLoop() {
             constexpr float kFatigueAlpha = 0.005f;
             fatigueEma_ += kFatigueAlpha * (highRatio - fatigueEma_);
 
-            AdaptiveState s = evaluate(metrics, sibilanceEma_);
+            AdaptiveState s = evaluate(metrics, sibilanceEma_, fatigueEma_);
             adaptiveState.publish(s);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kControlIntervalMs));
