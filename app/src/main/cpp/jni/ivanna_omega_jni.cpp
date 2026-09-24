@@ -119,6 +119,8 @@ static ivanna::IvannaLab g_lab(96000, 4096);
 extern std::atomic<bool> g_nael_enabled;
 extern std::atomic<bool> g_upmixing_enabled;
 extern std::atomic<float> g_upmixing_immersivity;
+extern std::atomic<bool>  g_wfs_enabled;
+extern std::atomic<float> g_wfs_spread;
 
 // FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
 // real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
@@ -2163,9 +2165,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
 }
 
 // ── Wave Field Synthesis: puente app→daemon (mismo patrón que Upmixing) ──
-extern std::atomic<bool>  g_wfs_enabled;
-extern std::atomic<float> g_wfs_spread;
-
 static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;
