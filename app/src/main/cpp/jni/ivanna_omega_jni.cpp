@@ -123,6 +123,16 @@ extern std::atomic<bool> g_nael_enabled;
 // bloques — contador thread_local en la función, sin golpear atomic por bloque.
 static std::atomic<bool> g_lab_auto_enabled{false};
 static std::atomic<int>  g_lab_auto_frame_count{0};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPREMACÍA ACÚSTICA: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
+// Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
+// ═══════════════════════════════════════════════════════════════════════════
+static std::atomic<bool> g_volterra_enabled{true};
+static std::atomic<bool> g_fastrpc_enabled{false};
+static std::atomic<bool> g_ati_enabled{true};
+static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
+
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
@@ -1423,12 +1433,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
     if (g_volterra_enabled.load(std::memory_order_relaxed)) {
         static thread_local float voltInter[2 * 2048];
-        for (int i = 0; i < n; ++i) {
+        const int samples = std::min(n, 2048);
+        for (int i = 0; i < samples; ++i) {
             voltInter[2 * i]     = g_ats.pdOutL[i];
             voltInter[2 * i + 1] = g_ats.pdOutR[i];
         }
-        g_volterra_engine.processInterleaved(voltInter, voltInter, (uint32_t)n, 2);
-        for (int i = 0; i < n; ++i) {
+        g_volterra_engine.processInterleaved(voltInter, voltInter, (uint32_t)samples, 2);
+        for (int i = 0; i < samples; ++i) {
             g_ats.pdOutL[i] = voltInter[2 * i];
             g_ats.pdOutR[i] = voltInter[2 * i + 1];
         }
@@ -1748,13 +1759,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsLabAutoEnabled(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SUPREMACÍA ACÚSTICA: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
-// Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
+// JNI API: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
 // ═══════════════════════════════════════════════════════════════════════════
-static std::atomic<bool> g_volterra_enabled{true};
-static std::atomic<bool> g_fastrpc_enabled{false};
-static std::atomic<bool> g_ati_enabled{true};
-static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetVolterraEnabled(
