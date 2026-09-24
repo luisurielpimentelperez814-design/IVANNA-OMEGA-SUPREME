@@ -119,6 +119,11 @@ add_library(ivanna_omega SHARED
     evolutionary_kernel_v2.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
 
+    # Music Intelligence Engine (IME)
+    music_intelligence/MusicFeatureExtractor.cpp
+    music_intelligence/MusicIntelligenceEngine.cpp
+    music_intelligence/ImeBridge.cpp
+
     # System audio integration
     shm_hyperplane.cpp
     # FIX (auditoria 2026-08-07): omega_daemon.cpp SACADO de la libreria.

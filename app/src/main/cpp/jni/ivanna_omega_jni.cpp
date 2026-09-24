@@ -41,6 +41,7 @@
 #include "../include/SafetyLimiter.h"
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
+#include "../music_intelligence/ImeBridge.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../include/dc_blocker.hpp"
@@ -2696,3 +2697,25 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
         g_rirWorkerThread = std::thread(rirWorkerLoop);
     return JNI_TRUE;
 }
+
+// ── Music Intelligence Engine (IME) ──────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    auto* s = reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque());
+    if (s) {
+        s->enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(
+    JNIEnv* env, jobject) {
+    char buf[512] = {0};
+    int n = ivanna::ime::imeDecideNowJson(buf, sizeof(buf));
+    if (n <= 0) {
+        return env->NewStringUTF("{}");
+    }
+    return env->NewStringUTF(buf);
+}
+

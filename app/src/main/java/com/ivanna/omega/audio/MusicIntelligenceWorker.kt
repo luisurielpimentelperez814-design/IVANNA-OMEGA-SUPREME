@@ -56,28 +56,47 @@ object MusicIntelligenceWorker {
     fun setEnabled(ctx: Context, on: Boolean) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", on).apply()
         enabled = on
-        runCatching { IvannaNativeLib.nativeImeSetEnabled(on) }
+        try {
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.nativeImeSetEnabled(on)
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "nativeImeSetEnabled failed: ${e.message}")
+        }
         _state.value = _state.value.copy(active = on)
     }
 
     fun start(appContext: Context) {
         if (scope != null) return
         enabled = isEnabled(appContext)
-        runCatching { IvannaNativeLib.nativeImeSetEnabled(enabled) }
+        try {
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.nativeImeSetEnabled(enabled)
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "nativeImeSetEnabled failed: ${e.message}")
+        }
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = s
         s.launch {
             while (isActive) {
                 delay(2000)
-                if (enabled) runCatching { tick() }.onFailure { Log.w(TAG, "tick: ${it.message}") }
+                if (enabled) {
+                    try {
+                        tick()
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "tick: ${e.message}")
+                    }
+                }
             }
         }
     }
 
     private fun tick() {
         if (!IvannaNativeLib.isLoaded) return
-        val o = JSONObject(IvannaNativeLib.nativeImeDecideNow())
-        val blocks = o.optLong("blocks", 0)
+        val rawJson: String = IvannaNativeLib.nativeImeDecideNow()
+        val o = JSONObject(rawJson)
+        val blocks = o.optLong("blocks", 0L)
         val conf = o.optDouble("confidence", 0.0).toFloat()
         val tWfs  = o.optDouble("wfsSpread", 0.5).toFloat()
         val tHrtf = o.optDouble("hrtfDepth", 0.5).toFloat()
@@ -88,7 +107,7 @@ object MusicIntelligenceWorker {
             active = true, style = o.optString("style", "—"), confidence = conf,
             wfsSpread = tWfs, hrtfDepth = tHrtf, eqTiltDb = tTilt,
             dynamicsAmount = tDyn, envDepth = tEnv,
-            blocks = blocks, adaptMs = o.optLong("adaptMs", 0))
+            blocks = blocks, adaptMs = o.optLong("adaptMs", 0L))
         if (blocks < MIN_BLOCKS || conf < MIN_CONFIDENCE) return
         applySmoothed(tWfs, tHrtf, tTilt, tDyn, tEnv)
     }
@@ -99,13 +118,17 @@ object MusicIntelligenceWorker {
         curTilt += SMOOTH * (tTilt - curTilt)
         curDyn  += SMOOTH * (tDyn  - curDyn)
         curEnv  += SMOOTH * (tEnv  - curEnv)
-        runCatching {
-            IvannaNativeLib.nativeSetWfsEnabled(true)
-            IvannaNativeLib.nativeSetWfsSpread((0.4f + 0.8f * curWfs).coerceIn(0f, 2f))
-            IvannaNativeLib.nativeSetEQParams(-curTilt / 2f, 0f, curTilt / 2f, 1f)
-            IvannaNativeLib.nativeSetCompressorAmount(curDyn.coerceIn(0f, 1f))
-            IvannaNativeLib.nativeSetSpatialWet(curHrtf.coerceIn(0f, 1f))
-            IvannaNativeLib.nativeSetSpatialWidthDirect((0.3f + curEnv).coerceIn(0f, 1.5f))
+        try {
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.nativeSetWfsEnabled(true)
+                IvannaNativeLib.nativeSetWfsSpread((0.4f + 0.8f * curWfs).coerceIn(0f, 2f))
+                IvannaNativeLib.nativeSetEQParams(-curTilt / 2f, 0f, curTilt / 2f, 1f)
+                IvannaNativeLib.nativeSetCompressorAmount(curDyn.coerceIn(0f, 1f))
+                IvannaNativeLib.nativeSetSpatialWet(curHrtf.coerceIn(0f, 1f))
+                IvannaNativeLib.nativeSetSpatialWidthDirect((0.3f + curEnv).coerceIn(0f, 1.5f))
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "applySmoothed failed: ${e.message}")
         }
         _state.value = _state.value.copy(lastAppliedAtMs = System.currentTimeMillis())
     }

@@ -529,3 +529,20 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_wfs_activation_crossfade COMMAND test_wfs_activation_crossfade)
 set_tests_properties(test_wfs_activation_crossfade PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# ── Music Intelligence Engine bridge (2026-09-24) ──
+add_executable(test_ime_bridge
+  test_ime_bridge.cpp
+  ../music_intelligence/MusicFeatureExtractor.cpp
+  ../music_intelligence/MusicIntelligenceEngine.cpp
+  ../music_intelligence/ImeBridge.cpp
+)
+target_include_directories(test_ime_bridge PRIVATE .. ../include ../music_intelligence host_stubs)
+target_compile_options(test_ime_bridge PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_ime_bridge PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_ime_bridge PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_ime_bridge COMMAND test_ime_bridge)
+set_tests_properties(test_ime_bridge PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+

@@ -259,6 +259,10 @@ object IvannaNativeLib {
     external fun nativeSetLabAutoEnabled(enabled: Boolean)
     external fun nativeIsLabAutoEnabled(): Boolean
 
+    // ═══ Music Intelligence Engine (IME) ════════════════════════════════
+    external fun nativeImeSetEnabled(enabled: Boolean)
+    external fun nativeImeDecideNow(): String
+
     // ═══ Supremacía Acústica: Volterra H2, FastRPC Hexagon cDSP & ATI ═════
     external fun nativeSetVolterraEnabled(enabled: Boolean)
     external fun nativeIsVolterraEnabled(): Boolean
