@@ -24,6 +24,10 @@ import psychoacousticsHpp from '../../app/src/main/cpp/Psychoacoustics.hpp?raw';
 import psychoacousticsCpp from '../../app/src/main/cpp/Psychoacoustics.cpp?raw';
 import hrtfManagerHpp from '../../app/src/main/cpp/HrtfManager.hpp?raw';
 import hrtfManagerCpp from '../../app/src/main/cpp/HrtfManager.cpp?raw';
+import ivannaNeuromorphicTinyMLHpp from '../../app/src/main/cpp/IvannaNeuromorphicTinyML.hpp?raw';
+import ivannaAudioPipelineHpp from '../../app/src/main/cpp/spatial/IvannaAudioPipeline.hpp?raw';
+import perfAuditorHpp from '../../app/src/main/cpp/spatial/PerfAuditor.hpp?raw';
+import stereoDecomposerHpp from '../../app/src/main/cpp/spatial/StereoObjectDecomposer.hpp?raw';
 
 export const CPP_FILES: CppFile[] = [
   {
@@ -91,6 +95,30 @@ export const CPP_FILES: CppFile[] = [
     category: 'source',
     description: 'Implementación del convolver HRTF optimizado a NEON',
     content: hrtfManagerCpp,
+  },
+  {
+    filename: 'IvannaNeuromorphicTinyML.hpp',
+    category: 'header',
+    description: 'Motor TinyML neuromórfico (Eje Anti-Dolby) — Pi-LSTM e inferencia sub-milisegundo sin locks',
+    content: ivannaNeuromorphicTinyMLHpp,
+  },
+  {
+    filename: 'IvannaAudioPipeline.hpp',
+    category: 'header',
+    description: 'Pipeline Espacial 6 Ejes — Orquestación integral de descomposición, HRTF, sala, objetos y adaptación auditiva',
+    content: ivannaAudioPipelineHpp,
+  },
+  {
+    filename: 'StereoObjectDecomposer.hpp',
+    category: 'header',
+    description: 'Eje 1: Descomposición estéreo a 4 objetos acústicos WFS (Center, Left, Right, Ambient)',
+    content: stereoDecomposerHpp,
+  },
+  {
+    filename: 'PerfAuditor.hpp',
+    category: 'header',
+    description: 'Eje 7: Auditoría continua de rendimiento RT-Safety, latencia cero añadida y monitor de L1 cache',
+    content: perfAuditorHpp,
   },
 ];
 
