@@ -1,6 +1,6 @@
 import React from 'react';
 import { DspParameters } from '../types';
-import { Cpu, Zap, Activity, Waves, Sliders, ShieldAlert, Sparkles, Layers, Headphones, Radio, ShieldCheck, Compass } from 'lucide-react';
+import { Cpu, Zap, Activity, Waves, ShieldAlert, Layers, Headphones, Radio, ShieldCheck, Compass } from 'lucide-react';
 
 interface DspPipelineProps {
   params: DspParameters;
