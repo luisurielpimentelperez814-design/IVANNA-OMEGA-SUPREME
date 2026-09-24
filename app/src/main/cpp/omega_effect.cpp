@@ -579,8 +579,9 @@ static int32_t omega_process(effect_handle_t self,
         fc->processStereo(L, R, (size_t)chunk);
         
         // FASE 3: Integración de TinyML Asíncrono
+        auto* classifier = fc ? fc->getClassifier() : nullptr;
         int aiDominantClass = -1;
-        if (auto* classifier = fc->getClassifier()) {
+        if (classifier) {
             aiDominantClass = classifier->getDominantClass();
         }
 

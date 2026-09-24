@@ -26,6 +26,7 @@ public:
     };
 
     bool   load(const std::string& path);
+    bool   loadCached(const std::string& path);
     Status lastStatus() const noexcept { return lastStatus_; }
 
     const HRTFIR& hrtf() const { return m_hrtf; }

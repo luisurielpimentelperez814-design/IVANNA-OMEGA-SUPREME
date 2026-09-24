@@ -164,16 +164,6 @@ public:
         m_outFifoCount -= available;
     }
 
-    void resetFifo() noexcept {
-        m_inFifoCount = 0;
-        m_inFifoReadPos = 0;
-        m_inFifoWritePos = 0;
-        m_outFifoCount = Ivanna::BLOCK_SIZE;
-        m_outFifoReadPos = 0;
-        m_outFifoWritePos = Ivanna::BLOCK_SIZE;
-        if (!m_outFifoL.empty()) std::fill(m_outFifoL.begin(), m_outFifoL.end(), 0.0f);
-        if (!m_outFifoR.empty()) std::fill(m_outFifoR.begin(), m_outFifoR.end(), 0.0f);
-    }
 
     // Carga un dataset HRTF medido (formato IHR1) desde disco.
     // Devuelve false si el archivo no existe o la cabecera es inválida.
