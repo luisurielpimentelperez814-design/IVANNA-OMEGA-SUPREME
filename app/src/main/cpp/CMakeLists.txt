@@ -38,6 +38,7 @@ add_library(ivanna_omega SHARED
     daemon/core/omega_control_bus.cpp
     saf_optimizer.cpp
         neuromorphic/AntiDolbyAI.cpp
+        IvannaNeuromorphicTinyML.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
     SafGlobalBridge.cpp
@@ -303,6 +304,7 @@ add_library(omega_effect SHARED
     neuromorphic/volterra_h2_symmetric.cpp
     saf_optimizer.cpp
         neuromorphic/AntiDolbyAI.cpp
+        IvannaNeuromorphicTinyML.cpp
     anti_dolby.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp

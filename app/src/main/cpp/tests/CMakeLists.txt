@@ -568,3 +568,18 @@ target_include_directories(test_wfs_object_decomposition PRIVATE .. ../include .
 target_compile_options(test_wfs_object_decomposition PRIVATE -Wall -Wextra)
 add_test(NAME test_wfs_object_decomposition COMMAND test_wfs_object_decomposition)
 set_tests_properties(test_wfs_object_decomposition PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
+
+# EJE 7: Final Performance, RT-Safety & Latency Certification
+add_executable(test_perf_auditor
+  test_perf_auditor.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_perf_auditor PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_perf_auditor PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_perf_auditor PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_perf_auditor PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_perf_auditor PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_perf_auditor)
+
