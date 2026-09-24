@@ -229,7 +229,10 @@ jobs:
           set -o pipefail
           gradle assembleDebug --no-daemon --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
-            -Dorg.gradle.caching=true -Dorg.gradle.parallel=true 2>&1 | tee gradle_build.log
+            -Dorg.gradle.caching=true 2>&1 | tee gradle_build.log || \
+          (echo "Retrying assembleDebug with --refresh-dependencies..." && \
+           gradle assembleDebug --no-daemon --stacktrace --refresh-dependencies \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_build.log)
 
       # Diagnostico: el log de un job fallido solo es legible con sesion en la
       # web; la API de check-runs SI expone las anotaciones. Se publican como

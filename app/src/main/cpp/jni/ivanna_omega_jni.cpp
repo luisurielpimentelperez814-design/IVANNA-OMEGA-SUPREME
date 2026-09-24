@@ -2194,6 +2194,43 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
 }
 
 JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
+    JNIEnv* env, jobject, jfloatArray jx, jfloatArray jy, jfloatArray jz) {
+    if (!jx || !jy || !jz) return;
+    jsize len = env->GetArrayLength(jx);
+    if (len < 7) return;
+    jfloat x[7], y[7], z[7];
+    env->GetFloatArrayRegion(jx, 0, 7, x);
+    env->GetFloatArrayRegion(jy, 0, 7, y);
+    env->GetFloatArrayRegion(jz, 0, 7, z);
+
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t slen = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), slen) == 0) {
+        char json[512];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_WFS_LAYOUT\","
+            "\"wfsSpeakerX\":[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f],"
+            "\"wfsSpeakerY\":[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f],"
+            "\"wfsSpeakerZ\":[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f]}",
+            x[0],x[1],x[2],x[3],x[4],x[5],x[6],
+            y[0],y[1],y[2],y[3],y[4],y[5],y[6],
+            z[0],z[1],z[2],z[3],z[4],z[5],z[6]);
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     JNIEnv*, jobject, jfloat v) {
     if (!std::isfinite(v)) return;

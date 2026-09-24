@@ -2,6 +2,7 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://repo1.maven.org/maven2/") }
         gradlePluginPortal()
     }
     // NOTA (auditoria 2026-09-10, flanco Gradle raiz): se ELIMINA el bloque
@@ -18,6 +19,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://repo1.maven.org/maven2/") }
     }
 }
 rootProject.name = "IVANNA-OMEGA-SUPREME"

@@ -247,7 +247,15 @@ dependencies {
     // esa sección); firebase-ai es un artefacto independiente y no necesita
     // ese BoM ni el plugin com.google.gms.google-services (init manual, ver
     // CloudSyncManager.ensureFirebaseAppReady()).
-    implementation("com.google.firebase:firebase-ai:17.12.1")
+    implementation("com.google.firebase:firebase-ai:17.12.1") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
+    }
     // App Check (migración Gemini/Firebase AI Logic) — desde julio 2026,
     // Firebase exige App Check para AI Logic automáticamente; sin instalar
     // un proveedor, TODAS las llamadas se bloquean sin importar que el resto
@@ -361,7 +369,8 @@ configurations.all {
             "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
             "org.jetbrains.kotlin:kotlin-stdlib-common:2.2.21",
             "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
+            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1"
         )
     }
 }
