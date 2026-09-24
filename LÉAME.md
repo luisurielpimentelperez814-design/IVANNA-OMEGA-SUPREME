@@ -70,6 +70,27 @@ no cortar la cola de reverberación a mitad de reproducción.
 
 ---
 
+## ✦ Arquitectura Acústica Espacial de 7 Ejes (C++20 RT-Safe)
+El motor de espacialización acústica de IVANNA trabaja con **0 ms de latencia algorítmica añadida** y cero asignaciones dinámicas en el hilo de alta prioridad de audio (`SCHED_FIFO`):
+- **Eje 1 (`StereoObjectDecomposer`)**: Descomposición en tiempo real Mid/Side con filtros de energía de 1 polo en graves (~250 Hz) para aislar 4 objetos continuos (CENTER, LEFT, RIGHT, AMBIENT).
+- **Eje 2 (`HrtfPersonalizer`)**: Cálculo anatómico del retardo interaural (ITD) con la esfera de Woodworth/Rayleigh y síntesis del notch físico de pinna (6–9 kHz) y resonancia del conducto auditivo.
+- **Eje 3 (`RoomProjectionEngine` & `RirConvolver`)**: De-reverberación y cancelación acústica parcial de sala combinada con convolución particionada uniforme (Gardner/Wefers overlap-save) con partición 0 a latencia cero y cola extendida de hasta 16384 muestras.
+- **Eje 4 (`ObjectSpatialRenderer`)**: Renderizado 3D de objetos con atenuación inversa $1/d$, amortiguación de altas frecuencias por absorción de aire y reflexiones tempranas multicapa fraccionales.
+- **Eje 5 (`PhysicalSceneRenderer`)**: Simulación física de oclusión de obstáculos y absorción de materiales con filtros Direct Form I optimizados para la caché L1.
+- **Eje 6 (`HearingAdaptationEngine`)**: Compensación de pérdidas en graves por falta de sellado hermético de almohadillas (hasta +4 dB), curvas isofónicas (ISO 226), corrección de presbiacusia y protección dinámica contra fatiga auditiva.
+- **Eje 7 (`PerfAuditor`)**: Certificación de rendimiento en tiempo real, latencia estricta de 0 ms, ausencia de NaN/Inf y presupuesto de CPU < 12% en procesadores móviles.
+
+---
+
+## ✦ Motor TinyML Neuromórfico Anti-Dolby
+Sustituye por completo los 1000 ms de latencia del viejo YAMNet por una red liviana híbrida Depthwise Separable CNN + SNN/Pi-LSTM:
+- **Inferencia en Sub-Milisegundo**: Ejecución inmediata por bloque de 10 ms (480 muestras a 48 kHz).
+- **SIMD ARM NEON FMA**: Registros de 128 bits operando directamente sobre la caché L1.
+- **Sincronización Lock-Free Wait-Free**: Estructuras SeqLock atómicas y búferes SPSC que eliminan cualquier riesgo de bloqueo o inversión de prioridad en `AudioFlinger`.
+- **Descompresión Dinámica Anti-Dolby**: Atenúa la fatiga acústica provocada por procesadores dinámicos comerciales hiper-agresivos.
+
+---
+
 ## ✦ Instalación
 
 1. Descarga el artefacto del último build verde en CI (módulo Magisk + APK).
