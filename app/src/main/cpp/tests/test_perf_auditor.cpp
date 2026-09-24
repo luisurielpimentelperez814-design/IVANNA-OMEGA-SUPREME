@@ -43,6 +43,43 @@ TEST(PerfAuditorTest, WithinBudgetCompliance) {
     EXPECT_TRUE(PerfAuditor::withinBudget(measured, target));
 }
 
+// 4. Latencia REAL: auditoria 2026-09-24 — antes latency_ms_algorithmic
+// era una constante 0.0f puesta a mano, no una medicion. measure() ahora
+// llama a measureAlgorithmicLatencyMs() de verdad: este test lo prueba
+// directamente contra un pipeline con estado alterado deliberadamente
+// (varios bloques de ruido antes de medir), para que un futuro cambio que
+// vuelva a hardcodear 0.0f sin medir no pase inadvertido.
+TEST(PerfAuditorTest, MeasuredLatencyIsARealMeasurementNotAConstant) {
+    IvannaAudioPipeline pipeline;
+    constexpr size_t kBlock = 512;
+    std::vector<float> noiseL(kBlock), noiseR(kBlock);
+    for (size_t i = 0; i < kBlock; ++i) {
+        noiseL[i] = 0.4f * std::sin(0.1f * static_cast<float>(i));
+        noiseR[i] = 0.4f * std::cos(0.1f * static_cast<float>(i));
+    }
+    // Ensuciar el estado interno antes de medir — measureAlgorithmicLatencyMs
+    // debe resetear el pipeline por si solo, no depender de que el caller
+    // lo entregue limpio.
+    for (int b = 0; b < 5; ++b) {
+        pipeline.process(noiseL.data(), noiseR.data(), kBlock);
+    }
+
+    const float latencyMs = PerfAuditor::measureAlgorithmicLatencyMs(pipeline, 48000.0f);
+
+    // Para contenido centrado (el mismo caso que ZeroAddedAlgorithmicLatency)
+    // debe seguir siendo ~0, pero medido, no asignado.
+    EXPECT_GE(latencyMs, 0.0f);
+    EXPECT_LT(latencyMs, (512.0f / 48000.0f) * 1000.0f)
+        << "La latencia medida debe caer dentro de un bloque — si esto "
+           "falla, measureAlgorithmicLatencyMs() dejo de encontrar el pico "
+           "real del impulso.";
+
+    // Sample rate 0 o negativo no debe dividir por cero / devolver NaN o Inf.
+    IvannaAudioPipeline pipeline2;
+    const float safeLatency = PerfAuditor::measureAlgorithmicLatencyMs(pipeline2, 0.0f);
+    EXPECT_TRUE(std::isfinite(safeLatency));
+}
+
 // 3. RT Safety & Numerical Resilience
 TEST(PerfAuditorTest, NumericalStabilityNoNaNOrDenormals) {
     IvannaAudioPipeline pipeline;

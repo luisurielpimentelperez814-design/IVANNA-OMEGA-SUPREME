@@ -32,12 +32,71 @@ struct PerfBudget {
 
 class PerfAuditor {
 public:
+    /**
+     * @brief Mide la latencia algoritmica real en vez de asumirla.
+     * Auditoria 2026-09-24: antes era una constante `0.0f` puesta a mano
+     * ("Sample-aligned / partitioned: 0 added samples") — una aseveracion
+     * de diseño, no una medicion. Ahora se envia un impulso CENTRADO
+     * (L==R, mismo caso que valida PerfAuditorTest.ZeroAddedAlgorithmicLatency)
+     * y se mide el ONSET: el indice de la primera muestra de salida que
+     * cruza el mismo umbral (1e-4) que ese test unitario ya usaba para
+     * decidir "hay respuesta directa" — se reutiliza esa definicion en vez
+     * de inventar una nueva.
+     *
+     * Nota de diseño (por que onset y no pico de energia): esta cadena
+     * mezcla un camino directo (IIR de 1 polo, sube lento) con
+     * reflexiones tempranas (ER, ganancia fija aplicada de inmediato al
+     * mismo impulso retrasado unas pocas muestras) — el PICO de energia
+     * puede caer en la primera reflexion (~8 muestras), no en la
+     * respuesta directa, sin que eso sea "latencia añadida" en el sentido
+     * que le importa a este presupuesto (cuando empieza a sonar, no
+     * cuando suena mas fuerte). Contenido panorizado SÍ puede tener
+     * retardo interaural real en el oido lateral (Eje 2/4, itdScale) —
+     * señal perceptual intencional, no medida aqui porque el impulso de
+     * prueba esta centrado (x=0, itd=0) a proposito, igual que el test
+     * unitario que ya validaba este invariante.
+     * Deja el pipeline reseteado antes y despues para no ensuciar la
+     * medicion de CPU/estabilidad que sigue en measure().
+     */
+    static float measureAlgorithmicLatencyMs(IvannaAudioPipeline& p, float sampleRateHz) {
+        constexpr size_t kBlock = 512;
+        constexpr float kOnsetThreshold = 0.0001f;
+        p.reset();
+        std::vector<float> bufL(kBlock, 0.0f);
+        std::vector<float> bufR(kBlock, 0.0f);
+        bufL[0] = 1.0f;
+        bufR[0] = 1.0f; // impulso centrado: mid=1, side=0 -> objeto CENTER, x=0, itd=0
+
+        p.process(bufL.data(), bufR.data(), kBlock);
+
+        size_t onsetIdx = kBlock; // sentinel: sin respuesta detectable
+        for (size_t i = 0; i < kBlock; ++i) {
+            const float v = 0.5f * (std::fabs(bufL[i]) + std::fabs(bufR[i]));
+            if (v > kOnsetThreshold) {
+                onsetIdx = i;
+                break;
+            }
+        }
+        p.reset();
+
+        if (sampleRateHz <= 0.0f) return 0.0f; // sample rate invalido: error del caller, no del DSP
+        if (onsetIdx >= kBlock) {
+            // Sin respuesta detectable dentro del bloque: reportar el
+            // bloque completo como cota conservadora en vez de devolver
+            // 0 — 0 aqui seria una afirmacion falsa de "sin retardo"
+            // cuando en realidad no se encontro ninguna respuesta.
+            return (static_cast<float>(kBlock) / sampleRateHz) * 1000.0f;
+        }
+        return (static_cast<float>(onsetIdx) / sampleRateHz) * 1000.0f;
+    }
+
     static PerfBudget measure(IvannaAudioPipeline& p, int duration_s) {
         PerfBudget b;
-        b.latency_ms_algorithmic = 0.0f; // Sample-aligned / partitioned: 0 added samples
-        
+
         constexpr size_t kBlockSize = 512;
         constexpr float kSampleRate = 48000.0f;
+
+        b.latency_ms_algorithmic = measureAlgorithmicLatencyMs(p, kSampleRate);
         const size_t totalBlocks = static_cast<size_t>((duration_s * kSampleRate) / kBlockSize);
 
         std::vector<float> bufL(kBlockSize);
@@ -92,8 +151,14 @@ public:
         b.xruns_8h = 0;
         b.alloc_events_hot_path = 0;
         b.lock_events_hot_path = 0;
-        b.peaq_score = -0.15f; // Transparent perceptual quality
-        b.visqol_score = 4.85f;
+        // AUDITORIA 2026-09-24: estos dos siguen SIN medirse — son
+        // constantes optimistas, no la salida de un PEAQ/ViSQOL real.
+        // Implementarlos de verdad requiere las referencias/algoritmos
+        // completos de esas metricas (fuera de alcance de este cambio,
+        // que se limito a la latencia). No usar estos dos numeros como
+        // evidencia de calidad hasta que esto se resuelva.
+        b.peaq_score = -0.15f; // Transparent perceptual quality (NO MEDIDO)
+        b.visqol_score = 4.85f; // NO MEDIDO
         b.latency_ms_end_to_end = (512.0f / 48000.0f) * 1000.0f; // <= 10.6ms native frame, algo=0ms
 
         return b;
