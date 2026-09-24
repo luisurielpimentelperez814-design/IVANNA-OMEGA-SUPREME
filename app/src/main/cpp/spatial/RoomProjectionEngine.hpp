@@ -77,12 +77,12 @@ public:
         }
     }
 
-    RirConvolver& getConvolver() noexcept {
+    Ivanna::RirConvolver& getConvolver() noexcept {
         return convolver_;
     }
 
 private:
-    RirConvolver convolver_;
+    Ivanna::RirConvolver convolver_;
     std::atomic<float> inversionGain_{0.25f};
     std::atomic<float> projectionWet_{0.35f};
 

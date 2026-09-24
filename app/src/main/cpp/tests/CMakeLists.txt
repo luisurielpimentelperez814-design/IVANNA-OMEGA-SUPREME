@@ -581,5 +581,5 @@ if(IVANNA_SAN_FLAGS)
   target_compile_options(test_perf_auditor PRIVATE ${IVANNA_SAN_FLAGS})
   target_link_options(test_perf_auditor PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
-gtest_discover_tests(test_perf_auditor)
+add_test(NAME test_perf_auditor COMMAND test_perf_auditor)
 
