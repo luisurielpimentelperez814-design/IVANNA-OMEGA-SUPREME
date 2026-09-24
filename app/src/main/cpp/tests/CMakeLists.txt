@@ -560,4 +560,11 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_master_acoustic_orchestrator COMMAND test_master_acoustic_orchestrator)
 
-
+# EJE 1: descomposición estéreo→objetos WFS (decomposer + renderer reales).
+add_executable(test_wfs_object_decomposition
+  test_wfs_object_decomposition.cpp
+  ../spatial/WfsRenderer.cpp)
+target_include_directories(test_wfs_object_decomposition PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_wfs_object_decomposition PRIVATE -Wall -Wextra)
+add_test(NAME test_wfs_object_decomposition COMMAND test_wfs_object_decomposition)
+set_tests_properties(test_wfs_object_decomposition PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
