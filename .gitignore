@@ -8,6 +8,8 @@ build/
 *.so
 
 # ── Node / Vite / tooling JS ─────────────────────────────────────
+bun.lock
+bun.lockb
 node_modules/
 *.tsbuildinfo
 .vite/
