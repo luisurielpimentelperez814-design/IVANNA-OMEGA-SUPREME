@@ -60,11 +60,17 @@ public:
     void processChannel(float* __restrict buffer, size_t numSamples) noexcept {
         if (!buffer || numSamples == 0) return;
         const float alpha = filterCoeff_.load(std::memory_order_relaxed);
+        const float resDelta = resonanceGainDelta_.load(std::memory_order_relaxed);
         float s = filterState_;
         for (size_t i = 0; i < numSamples; ++i) {
             float in = buffer[i];
             s += alpha * (in - s);
-            buffer[i] = in * 0.85f + s * 0.15f;
+            // High-passed content around the pinna notch band (in - s is the
+            // complement of the one-pole lowpass state, i.e. what the notch
+            // shelf below removes) — canal_resonance_boost_db boosts/cuts
+            // exactly that band, so the field is no longer dead.
+            const float band = in - s;
+            buffer[i] = in * 0.85f + s * 0.15f + band * resDelta;
         }
         filterState_ = s;
     }
@@ -85,12 +91,21 @@ private:
         // Filter coeff approx for 48kHz
         const float w = 2.0f * 3.14159265f * (notchHz / 48000.0f);
         filterCoeff_.store(std::clamp(w, 0.01f, 0.95f), std::memory_order_release);
+
+        // Ear canal resonance boost/cut, precomputed as (linearGain - 1) so the
+        // hot path stays a single multiply-add — no std::pow() per sample.
+        // Clamped to +-12 dB: physically plausible canal resonance range,
+        // guards against a bad profile value blowing up the notch band.
+        const float boostDb = std::clamp(profile_.canal_resonance_boost_db, -12.0f, 12.0f);
+        const float resGainLinear = std::pow(10.0f, boostDb * 0.05f);
+        resonanceGainDelta_.store(resGainLinear - 1.0f, std::memory_order_release);
     }
 
     UserPinnaProfile profile_;
     std::atomic<float> itdScale_{1.0f};
     std::atomic<float> pinnaNotchFreqHz_{6500.0f};
     std::atomic<float> filterCoeff_{0.2f};
+    std::atomic<float> resonanceGainDelta_{0.0f};
     float filterState_{0.0f};
 };
 

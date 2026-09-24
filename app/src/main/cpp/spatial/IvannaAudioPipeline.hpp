@@ -66,7 +66,10 @@ public:
         decomposer_.decompose(bufferL, bufferR, objPtrs, numSamples);
 
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage
-        spatialRenderer_.renderObjects(objPtrs, decomposer_.getObjects(), bufferL, bufferR, numSamples);
+        // itdScale ahora sí se lee de HrtfPersonalizer (antes getItdScale()
+        // no tenia caller — auditoria 2026-09-24).
+        spatialRenderer_.renderObjects(objPtrs, decomposer_.getObjects(), bufferL, bufferR,
+                                        numSamples, personalizer_.getItdScale());
 
         // 3. Eje 2: Apply personalized pinna/canal filter
         personalizer_.processChannel(bufferL, numSamples);

@@ -44,12 +44,19 @@ public:
      * @param outL Left accumulation output buffer
      * @param outR Right accumulation output buffer
      * @param numSamples Number of samples to render
+     * @param itdScale Interaural time difference scale from Eje 2
+     *   (HrtfPersonalizer::getItdScale(), Woodworth head-radius ratio,
+     *   1.0 = adult average). 0.0 disables ITD and reproduces the old
+     *   ILD-only behaviour exactly. Auditoria 2026-09-24: antes el
+     *   comentario decia "ITD + ILD" pero solo se calculaba ILD (ganancia);
+     *   getItdScale() no tenia ningun caller en todo el arbol.
      */
     void renderObjects(const float* const* __restrict inObjects,
                        const std::array<DecomposedObject, NUM_OBJECTS>& objects,
                        float* __restrict outL,
                        float* __restrict outR,
-                       size_t numSamples) noexcept {
+                       size_t numSamples,
+                       float itdScale = 1.0f) noexcept {
         if (!inObjects || !outL || !outR || numSamples == 0) return;
 
         // Clear output accumulation buffers
@@ -74,6 +81,19 @@ public:
             const float ildL = std::cos(0.785398f - panAngle) * distGain;
             const float ildR = std::sin(0.785398f - panAngle) * distGain;
 
+            // Interaural time difference: ~660us max at the assumed 48kHz
+            // operating rate (same implicit assumption as the 8/17/29/43
+            // sample ER taps below) -> ~32 samples. Source to the right
+            // (panAngle>0) delays the LEFT ear; source to the left delays
+            // the RIGHT ear. itdScale=0 collapses both lags to 0, exactly
+            // reproducing the previous ILD-only behaviour.
+            static constexpr float kItdMaxSamples = 32.0f;
+            const float itdSigned = std::sin(panAngle) * itdScale * kItdMaxSamples;
+            const size_t itdL = itdSigned > 0.0f
+                ? static_cast<size_t>(itdSigned + 0.5f) : 0u;
+            const size_t itdR = itdSigned < 0.0f
+                ? static_cast<size_t>(-itdSigned + 0.5f) : 0u;
+
             float fltL = distFilterL_[objIdx];
             float fltR = distFilterR_[objIdx];
 
@@ -83,15 +103,23 @@ public:
             for (size_t i = 0; i < numSamples; ++i) {
                 const float s = inObj[i];
 
-                // Direct sound filtering (distance damping)
-                fltL += hfDampAlpha * (s * ildL - fltL);
-                fltR += hfDampAlpha * (s * ildR - fltR);
+                // Push to delay buffer FIRST — both the ITD read and the
+                // early-reflections taps below draw from it, and itdL/itdR
+                // == 0 must read back exactly this sample (backward compat).
+                dBuf[dPos] = s;
+
+                // Per-ear ITD lookup from this object's own delay line —
+                // zero extra memory, same 512-sample ring already used for ER.
+                const float sL = dBuf[(dPos + 512 - itdL) & 511];
+                const float sR = dBuf[(dPos + 512 - itdR) & 511];
+
+                // Direct sound filtering (distance damping), now per-ear
+                // ITD-delayed instead of both ears reading the same sample.
+                fltL += hfDampAlpha * (sL * ildL - fltL);
+                fltR += hfDampAlpha * (sR * ildR - fltR);
 
                 const float directL = fltL;
                 const float directR = fltR;
-
-                // Push to delay buffer for fractional early reflections (ER)
-                dBuf[dPos] = s;
 
                 // Early reflections per object (precomputed fixed taps: 8, 17, 29, 43 samples)
                 const float er1 = dBuf[(dPos + 512 - 8) & 511] * 0.25f;
