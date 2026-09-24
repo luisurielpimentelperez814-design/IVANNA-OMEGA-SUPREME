@@ -2519,20 +2519,28 @@ puede retomar el terreno SAF/SOFA/RIR siguiendo exactamente este toque.
 ### Nota de coordinación — fix de eco/desface en la captura de reproducción (directo del usuario)
 **Sesión Genspark, 2026-09-17.** Fix de raíz en `PlaybackCaptureService.kt` (flanco Controles/audio): crossfade de ganancia con rampa (MIX_GAIN_STEP=0.05 ≈ 0.2 s) aplicado al stream procesado antes de `writeAllToTrack()`. El stream original de Tidal no se puede silenciar por API de Android; la rampa evita que ambos streams suenen a la vez con nivel comparable (la causa del eco por comb filtering) y el tronido al conmutar. El usuario ya no necesita buscar el punto 100/50 a mano. Verificación: estructural + sintaxis Kotlin (sin SDK Android en sandbox); la validación funcional queda en CI/dispositivo. La otra mitad del eco (crossfade seco-upmix del DSP) ya la atacó la sesión anterior en `IvannaFusionCore`.
 
----
-### Cableado de HearingAdaptationEngine (Eje 6) a Ruta B real — 2026-09-24 (sesión Claude/chat)
-**Entregado:** `HearingAdaptationEngine` (Eje 6, único componente del banco de 7 ejes que no
-duplica WFS/HRTF/RIR/Compressor ya en producción) estaba completo y probado pero solo lo
-ejercitaba `test_perf_auditor.cpp` vía `IvannaAudioPipeline` — nunca corría en el audio real del
-dispositivo. Commit `e7dcc503`: nuevo miembro `hearingEngine` en `omega_effect_context_t`,
-instanciado en `SET_CONFIG` (perfil neutro por defecto, sin audiograma real disponible aún en
-`OmegaControlBus`), invocado en `omega_process` tras `SafetyLimiter` y antes del sanitizer de
-NaN/Inf, liberado en `release()`. No se cableó `IvannaAudioPipeline::process()` completo a
-propósito (duplicaría etapas ya activas en Ruta B por otras clases).
-**Verificación:** `test-native-dsp` (host CTest, replica exacta del job CI) — 112/112 tests
-passed, incluido `test_perf_auditor`. **No verificado:** el job `build-apk` (compila
-`omega_effect.cpp` con Android NDK r26) no se pudo ejecutar en este sandbox — sin NDK instalado.
-El cambio sigue el patrón exacto de `safetyLimiter` (mismo ciclo de vida, mismo `new (std::nothrow)`,
-mismo `delete` en `release()`), pero la compilación real con el NDK queda pendiente de que CI la
-confirme o de que otra sesión con NDK disponible la corra.
-**Archivos modificados:** `app/src/main/cpp/omega_effect.cpp`, `README.md`, `AGENT_CLAIMS.md`.
+## ⚠️ Hallazgo Pendiente: Doble Procesamiento Ruta A+B (2026-09-24)
+
+**Encontrado:** Si daemon está activo + PlaybackCaptureService se inicia simultáneamente,
+el audio se procesa 2× (omega_effect.so en audioserver + AudioTrack de app en Ruta A).
+Resultado: eco/desface audible en dispositivo real.
+
+**Gate propuesto por sesión anterior:** Bloquear PlaybackCaptureService si `isDaemonRunning()`.
+
+**Resultado en dispositivo real:** Regresión peor que el original.
+- `isDaemonRunning()` retorna true si el proceso daemon está vivo
+- Pero **NO confirma** que `omega_effect.so` esté insertado y procesando en audioserver
+- Con el gate activo: if isDaemonRunning() → bloquea Ruta A
+- Efecto: Ruta B (daemon/effect.so) podría no estar sonando real → IVANNA desaparece
+- Además: entra en bucle pidiendo permiso de captura una y otra vez
+
+**Status:** Revertido. Gate defectuoso. Hallazgo permanece válido; necesita mejor señal.
+
+**Para sesión futura:** Buscar confirmación REAL de que `omega_effect.so` procesa audio,
+no solo que el daemon esté vivo. Candidatos:
+- Lectura de `audioflinger` logs en tiempo real
+- Verificación del descriptor de AudioFlinger effect UUID
+- Frame counter en SHM que solo incrementa si effect procesa
+
+Flanco documentado para no repetir trabajo ya hecho.
+
