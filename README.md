@@ -395,12 +395,17 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 ## ✦ Arquitectura Acústica Espacial de 7 Ejes — banco de certificación (C++20 RT-Safe)
 
 **Estado real (auditoría forense 2026-09-24, commit `dd40ae02`, verificado archivo por archivo,
-no por comentarios):** los 7 archivos existen, compilan, y el código DSP dentro de cada uno es
-**real** (no placeholders/stubs vacíos) — pero **`IvannaAudioPipeline` (el orquestador de los 7
-ejes) hoy solo lo instancia `PerfAuditor.hpp`/`test_perf_auditor.cpp`. No está cableado a
-`omega_effect.cpp` ni a `ivanna_omega_jni.cpp` — las dos rutas que procesan audio real en el
-dispositivo.** Es un banco de certificación aislado y correcto en sí mismo, no (todavía) la
-cadena que suena. Detalle honesto por eje, con línea de archivo:
+no por comentarios; actualizado 2026-09-24 tras commit `e7dcc503`):** los 7 archivos existen,
+compilan, y el código DSP dentro de cada uno es **real** (no placeholders/stubs vacíos). El
+orquestador `IvannaAudioPipeline` (los 7 ejes como conjunto) sigue sin cablearse a producción —
+solo lo instancian `PerfAuditor.hpp`/`test_perf_auditor.cpp`, y así debe seguir: cablear el
+orquestador completo duplicaría WFS/HRTF/RIR/Compressor, que ya corren en Ruta B por otras
+clases. **La única pieza genuinamente nueva del banco — `HearingAdaptationEngine` (Eje 6), que no
+duplica nada existente — ya está cableada directamente a `omega_effect.cpp` (Ruta B real,
+`omega_process`, commit `e7dcc503`)**, como último eslabón tras `SafetyLimiter` y antes del
+sanitizer de NaN/Inf. Perfil neutro (`AudiogramProfile{}` por defecto) hasta que el audiograma
+real llegue por `OmegaControlBus` — sigue sin haber UI ni campo en el snapshot para eso. Detalle
+honesto por eje, con línea de archivo:
 
 - **Eje 1 (`StereoObjectDecomposer.hpp`)** — real: Mid/Side genuino, LPF de 1 polo, 4 objetos
   (`CENTER/LEFT/RIGHT/AMBIENT`) con `ObjectPosition{x,y,z}` continuo, cero malloc en `decompose()`.
@@ -421,11 +426,13 @@ cadena que suena. Detalle honesto por eje, con línea de archivo:
 - **Eje 4 (`ObjectSpatialRenderer.hpp`) y Eje 5 (`PhysicalSceneRenderer.hpp`)** — real: atenuación
   por distancia (1 polo IIR) y oclusión (transmission loss + lowpass dependiente de
   `occlusionFactor_`) confirmados con código real, sin malloc.
-- **Eje 6 (`HearingAdaptationEngine.hpp`)** — **parcial**: la compensación de fuga de almohadilla
-  (`ear_tip_seal_factor`) sí está modelada con una fórmula real. Las "curvas isofónicas ISO 226"
-  son en realidad una aproximación de 2 bandas (shelf grave/agudo con ganancia derivada de
-  `loss_4khz_db`/`loss_8khz_db`) — no hay tabla de datos de la norma ISO 226 ni curvas
-  dependientes de SPL. Funcional y RT-safe, pero no es literalmente ISO 226.
+- **Eje 6 (`HearingAdaptationEngine.hpp`)** — **parcial, pero ya suena**: la compensación de fuga
+  de almohadilla (`ear_tip_seal_factor`) sí está modelada con una fórmula real. Las "curvas
+  isofónicas ISO 226" son en realidad una aproximación de 2 bandas (shelf grave/agudo con
+  ganancia derivada de `loss_4khz_db`/`loss_8khz_db`) — no hay tabla de datos de la norma ISO 226
+  ni curvas dependientes de SPL. Funcional y RT-safe, pero no es literalmente ISO 226. A
+  diferencia de los ejes 1–5 y 7, **este ya corre en el audio real de Ruta B** (`omega_process`,
+  `omega_effect.cpp`, commit `e7dcc503`) — no solo en el banco de certificación.
 - **Eje 7 (`PerfAuditor.hpp`)** — el benchmark es real (mide CPU%, ejecuta la pipeline 1s), pero
   `latency_ms_algorithmic` se **asigna a `0.0f` por código**, no se deriva de una medición de
   alineación de muestras — el "0 ms" es una aserción de diseño, no un resultado medido. Bajo ASan
@@ -433,10 +440,10 @@ cadena que suena. Detalle honesto por eje, con línea de archivo:
   el overhead propio de la instrumentación (falla con ASan, pasa 100% sin sanitizers) — no es una
   regresión de código, es una limitación conocida de medir CPU% bajo ASan.
 
-**Próximo paso real, no prometido con fecha:** cablear `IvannaAudioPipeline::process()` como una
-etapa opcional dentro de `IvannaFusionCore::processStereo()` (Ruta B) o `ivanna_omega_jni.cpp`
-(Ruta A), y decidir explícitamente qué reemplaza (nada hoy se duplica porque nada de esto corre
-en producción todavía).
+**Próximo paso real, no prometido con fecha:** el Eje 6 ya quedó resuelto (ver arriba). Para los
+ejes 1–5 y 7, decidir explícitamente, clase por clase, qué reemplazarían en Ruta B sin duplicar
+WFS/HRTF/RIR/Compressor que ya corren ahí — nada de eso se cablea hoy porque nada de eso es
+código nuevo respecto a lo ya en producción.
 
 ---
 
