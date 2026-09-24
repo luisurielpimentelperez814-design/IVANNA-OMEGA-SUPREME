@@ -201,6 +201,16 @@ struct omega_effect_context_t {
     ivanna::adaptive::AdaptiveEngineV2* adaptiveEngine;
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
     bool     thermalSkipRIR;        // ThermalGovernor: saltar RIR en tier ≥ LIMITED
+    // FIX RT (auditoría 2026-09-24): Volterra H2 (neuromorphic/volterra_h2_symmetric)
+    // es O(K²) por muestra (K=64 => ~2080 coeficientes H2, bucle NEON en
+    // grupos de 4 por cada una) — coste comparable o mayor al de RIR, pero
+    // se integró (cc23618c) SIN gate térmico: corría siempre que estaba
+    // enabled, sin importar tier. Bajo carga (WFS+HRTF+HOA+RIR+Volterra a
+    // la vez) eso es "cálculo pesado no preparado" en el hilo de audio —
+    // exactamente el patrón que agota el budget del bloque y causa
+    // desface/underrun. Mismo patrón que thermalSkipRIR: no se destruye el
+    // engine (caro recrearlo), solo se salta el bloque.
+    bool     thermalSkipVolterra;
     // FIX (distorsion digital): limiter por instancia al final de la cadena
     // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
     // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
@@ -551,6 +561,10 @@ static int32_t omega_process(effect_handle_t self,
         } else {
             ctx->thermalSkipRIR = false;
         }
+        // Volterra H2: mismo umbral que RIR (LIMITED) — O(K²)/muestra, sin
+        // gate propio desde su integración (cc23618c). No destruir el
+        // engine (delay lines preasignadas), solo saltar el bloque.
+        ctx->thermalSkipVolterra = (tier >= ivanna::ThermalTier::LIMITED);
     }
 
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
@@ -676,7 +690,7 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->rirConvolver && !ctx->thermalSkipRIR) ctx->rirConvolver->process(L, R, chunk);
 
         // ── Series de Volterra de 2º Orden Truncadas (Anti-Lossy Transient Reconstruction) ──
-        if (ctx->volterraEngine && (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON)) {
+        if (ctx->volterraEngine && !ctx->thermalSkipVolterra && (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON)) {
             for (int n = 0; n < chunk; ++n) {
                 outChunk[2 * n]     = L[n];
                 outChunk[2 * n + 1] = R[n];

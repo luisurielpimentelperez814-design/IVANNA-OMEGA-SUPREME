@@ -22,6 +22,23 @@ struct HRIRPair {
 class SyntheticHRTF {
 public:
     void init(uint32_t sampleRate, int irLen) {
+        // FIX RT (auditoría 2026-09-22, REVERTIDO por accidente en cc23618c
+        // "Volterra H2/Hexagon cDSP/ATI" — 2026-09-24 — y restaurado aquí):
+        // causa raíz de tronidos/microcortes con WFS+HRTF activos y fuente en
+        // movimiento. generate()/generateFromDataset() construían un HRIRPair
+        // LOCAL (dos std::vector<float> vacíos) en CADA llamada, llenado con
+        // .assign() -> malloc en cada cambio de azimut/agresividad.
+        // updateFilterResponses() (hrtf_convolver.cpp) las llama desde DENTRO
+        // de HRTFConvolver::process() (hilo de audio SCHED_FIFO) en cada
+        // crossfade -> heap alloc/free en el hot path cada vez que una fuente
+        // se mueve (paneo WFS, head-tracking, objetos dinámicos). Se
+        // preasigna aquí UNA vez un scratch persistente que generate()/
+        // generateFromDataset() reutilizan (misma capacidad, .assign() sobre
+        // tamaño igual no realoja) y devuelven por referencia const — cero
+        // allocs por llamada a partir de este punto. Cubierto por
+        // test_hrtf_convolver_rt_safety (barrido continuo de azimut, ASan).
+        scratch_.L.assign((size_t)irLen, 0.f);
+        scratch_.R.assign((size_t)irLen, 0.f);
         sr_ = (float)sampleRate;
         irLen_ = irLen;
     }

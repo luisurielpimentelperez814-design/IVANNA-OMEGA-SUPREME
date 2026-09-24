@@ -2,6 +2,20 @@
 // arquitectura glitch-free (eliminación de micro-cortes).
 #include "WfsRenderer.hpp"
 
+// Cadena de proteccion profesional instanciada en el pipeline real (mision
+// WFS, RESTAURADA 2026-09-24 — cc23618c "Volterra H2/Hexagon cDSP/ATI" la
+// habia eliminado por accidente, revirtiendo a un softLimit() suelto sin DC
+// removal ni denormal guard; la clase seguia intacta en WfsRenderer.hpp,
+// solo le faltaba el cableado): DC removal + denormal guard + soft limit +
+// true-peak, aplicada por muestra a la salida WFS antes de mezclarse.
+// thread_local: el renderer vive en el hilo de audio; sin locks. Lazy-init
+// a 48 kHz (el coeficiente del DC removal a 5 Hz es insensible a la SR en
+// la practica). Cubierta por test_wfs_adaptive_protection.
+namespace {
+thread_local ivanna::wfs::WfsProtectionChain g_wfsProtection;
+thread_local bool g_wfsProtectionInit = false;
+}
+
 #if defined(__x86_64__) || defined(__i386__)
   #include <immintrin.h>
 #endif
@@ -377,8 +391,14 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
         // se sustituye por silencio en ESTE bloque — la cadena downstream
         // (mixer/effect/salida hardware) jamás recibe un NaN desde WFS.
         const float outLRaw = accL * norm, outRRaw = accR * norm;
-        outL[n] += std::isfinite(outLRaw) ? softLimit(outLRaw) : 0.f;
-        outR[n] += std::isfinite(outRRaw) ? softLimit(outRRaw) : 0.f;
+        // WfsProtectionChain REAL (ya no declarada-sin-usar): sanea NaN/Inf,
+        // quita DC y subnormales, y limita suave — imposible clipear aunque
+        // la suma coherente de altavoces supere 0 dBFS.
+        if (!g_wfsProtectionInit) { g_wfsProtection.init(48000.0f); g_wfsProtectionInit = true; }
+        float pl = outLRaw, pr = outRRaw;   // copias mutables (los Raw son const)
+        g_wfsProtection.process(pl, pr);
+        outL[n] += pl;
+        outR[n] += pr;
     }
 
     // ── 4) Retiro diferido: las fuentes cuyo fade-out terminó se liberan
