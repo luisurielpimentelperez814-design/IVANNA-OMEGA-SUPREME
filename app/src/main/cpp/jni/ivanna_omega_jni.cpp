@@ -1864,7 +1864,19 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     env->ReleaseFloatArrayElements(params, p, JNI_ABORT);
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
-    g_gain.setParams(g_params);
+    // FIX (headroom EQ): este path era el único de los 5 call-sites de
+    // g_gain.setParams() que NO aplicaba la compensación de stack de bandas
+    // del EQ antes de configurar GainStage. AdaptiveBackend.kt llama a
+    // nativeSetParams(FloatArray) con EQ peaks que pueden apilar >10 dB;
+    // sin compensación, el SafetyLimiter actuaba en modo compresión extrema
+    // desde aquí → pumping / distorsión audible en ajustes adaptativos.
+    // Mismo patrón que nativeSetParams(drive,wet,...) l.820, nativeProcess
+    // l.862, nativeInitDirect l.1493 y nativeInit l.634.
+    { const float c   = g_eq.getOutputCompensationDb();
+      const float mDb = g_params.master;
+      g_params.master = std::clamp(mDb - c, -60.0f, 6.0f);
+      g_gain.setParams(g_params);
+      g_params.master = mDb; }
 }
 // FIX CRÍTICO DE REGRESIÓN: esta función desapareció de una reescritura en
 // paralelo de este archivo, pero IvannaNativeLib.kt (Kotlin) sigue
