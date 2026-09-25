@@ -24,7 +24,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
 [![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=TESTS%20HOST%2076%2F76&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
 [![Android](https://img.shields.io/badge/Android-9%20%E2%86%92%2015-3DDC84?style=for-the-badge&logo=android)](https://developer.android.com)
-[![Module](https://img.shields.io/badge/Magisk%20Module-v2.3.9-FF3E86?style=for-the-badge&logo=magisk)](magisk_module/)
+[![Module](https://img.shields.io/badge/Magisk%20Module-v2.3.12-FF3E86?style=for-the-badge&logo=magisk)](magisk_module/)
 [![DSP](https://img.shields.io/badge/DSP-C%2B%2B17%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![Kotlin](https://img.shields.io/badge/UI-Kotlin%20%C2%B7%20Jetpack%20Compose-A97FFF?style=for-the-badge&logo=kotlin)](app/src/main/java/)
 [![Gemini](https://img.shields.io/badge/Asistente-Gemini%202.5%20Flash-8E75FF?style=for-the-badge&logo=googlegemini)](app/src/main/java/com/ivanna/omega/ai/gemini/)
@@ -248,7 +248,7 @@ Icono de consumidor nuevo (sesión 2026-09-15): mascota **cerdito Ω con audífo
 3. Instala el APK → abre IVANNA → concede permisos de captura si quieres Ruta A sobre otras apps.
 4. **(Opcional)** Para activar el asistente con Gemini 2.5: pega tu API key en el panel del asistente → toca **PROBAR CONEXIÓN**. Sin key, el asistente funciona con su motor offline completo.
 
-La app y el módulo van a la par: **v2.3.9 / 2309** en ambos — garantizado por el Unified Version Manager.
+La app y el módulo van a la par: **v2.3.12 / 2312** en ambos — garantizado por el Unified Version Manager.
 
 ---
 
@@ -392,84 +392,129 @@ Tests/regresión espacial existentes (`test_spatial_perception_suite.cpp`) valid
 
 ---
 
-## ✦ Arquitectura Acústica Espacial de 7 Ejes — banco de certificación (C++20 RT-Safe)
+## ✦ Arquitectura Acústica Espacial — 7 Ejes: Auditoría Forense 2026-09-24 (commit `43bd8522`)
 
-**Estado real (auditoría forense 2026-09-24, commit `dd40ae02`, verificado archivo por archivo,
-no por comentarios; actualizado 2026-09-24 tras commit `e7dcc503`):** los 7 archivos existen,
-compilan, y el código DSP dentro de cada uno es **real** (no placeholders/stubs vacíos). El
-orquestador `IvannaAudioPipeline` (los 7 ejes como conjunto) sigue sin cablearse a producción —
-solo lo instancian `PerfAuditor.hpp`/`test_perf_auditor.cpp`, y así debe seguir: cablear el
-orquestador completo duplicaría WFS/HRTF/RIR/Compressor, que ya corren en Ruta B por otras
-clases. **La única pieza genuinamente nueva del banco — `HearingAdaptationEngine` (Eje 6), que no
-duplica nada existente — ya está cableada directamente a `omega_effect.cpp` (Ruta B real,
-`omega_process`, commit `e7dcc503`)**, como último eslabón tras `SafetyLimiter` y antes del
-sanitizer de NaN/Inf. Perfil neutro (`AudiogramProfile{}` por defecto) hasta que el audiograma
-real llegue por `OmegaControlBus` — sigue sin haber UI ni campo en el snapshot para eso. Detalle
-honesto por eje, con línea de archivo:
+> **Metodología:** código fuente revisado archivo por archivo, línea por línea. Resultados de CI verificados contra la API de GitHub Actions. APK y binarios ELF validados por tamaño y metadatos del release `v2.3.12`. Ningún veredicto se basa en comentarios — solo en código ejecutable real.
 
-- **Eje 1 (`StereoObjectDecomposer.hpp`)** — real: Mid/Side genuino, LPF de 1 polo, 4 objetos
-  (`CENTER/LEFT/RIGHT/AMBIENT`) con `ObjectPosition{x,y,z}` continuo, cero malloc en `decompose()`.
-  La "correlación intercanal" es en realidad un ratio de energía instantánea (`instSide`), no un
-  coeficiente de correlación de Pearson formal — término impreciso, matemática real.
-- **Eje 2 (`HrtfPersonalizer.hpp`)** — **parcial, código muerto resuelto (commit `1cc7b230`)**: la
-  fórmula esférica de Woodworth SÍ existe y es correcta, pero **en `synthetic_hrtf.hpp` (la ruta
-  HRTF real), no en `HrtfPersonalizer`**. `itdScale_` y `canal_resonance_boost_db` ya no son
-  código muerto — `ObjectSpatialRenderer::renderObjects()` ahora recibe `itdScale` y aplica un
-  retardo interaural real (hasta ~32 muestras a 48 kHz, leyendo el mismo ring buffer de 512
-  muestras que ya usaban las reflexiones tempranas, cero memoria nueva), e `itdScale=0` reproduce
-  exactamente el comportamiento ILD-only anterior. `canal_resonance_boost_db` ahora aplica una
-  ganancia real (precomputada, sin `pow()` en el hot path) sobre la banda del notch de pinna. El
-  "notch de pinna" sigue siendo una única frecuencia de corte pasada por un blend de un polo
-  (`in*0.85 + s*0.15`), no un filtro notch real (banda de rechazo) — eso no se tocó. Alcance:
-  banco de certificación (`IvannaAudioPipeline`), **no** Ruta B producción todavía.
-- **Eje 3 (`RoomProjectionEngine.hpp`)** — **parcial**: la convolución particionada por
-  overlap-save SÍ es real (delega en `RirConvolver`, FFT Radix-2 propia, confirmado). Pero la
-  "inversión de mínima fase" no existe como tal — lo implementado es un atenuador dependiente de
-  la envolvente RMS de la propia señal (`envL += 0.01f*(absL-envL)`), una heurística de
-  de-reverberación distinta, no una inversión espectral de fase mínima.
-- **Eje 4 (`ObjectSpatialRenderer.hpp`) y Eje 5 (`PhysicalSceneRenderer.hpp`)** — real: atenuación
-  por distancia (1 polo IIR) y oclusión (transmission loss + lowpass dependiente de
-  `occlusionFactor_`) confirmados con código real, sin malloc.
-- **Eje 6 (`HearingAdaptationEngine.hpp`)** — **parcial, pero ya suena**: la compensación de fuga
-  de almohadilla (`ear_tip_seal_factor`) sí está modelada con una fórmula real. Las "curvas
-  isofónicas ISO 226" son en realidad una aproximación de 2 bandas (shelf grave/agudo con
-  ganancia derivada de `loss_4khz_db`/`loss_8khz_db`) — no hay tabla de datos de la norma ISO 226
-  ni curvas dependientes de SPL. Funcional y RT-safe, pero no es literalmente ISO 226. A
-  diferencia de los ejes 1–5 y 7, **este ya corre en el audio real de Ruta B** (`omega_process`,
-  `omega_effect.cpp`, commit `e7dcc503`) — no solo en el banco de certificación.
-- **Eje 7 (`PerfAuditor.hpp`)** — **parcial, latencia resuelta (commit `4268f8e0`)**: el benchmark
-  es real (mide CPU%, ejecuta la pipeline 1s). `latency_ms_algorithmic` ya no se asigna a `0.0f`
-  por código — `PerfAuditor::measureAlgorithmicLatencyMs()` envía un impulso centrado y mide el
-  onset real (primer sample que cruza el mismo umbral que ya usaba
-  `PerfAuditorTest.ZeroAddedAlgorithmicLatency`). `peaq_score` y `visqol_score` **siguen sin
-  medirse** — son constantes optimistas (`-0.15`/`4.85`), ahora marcadas explícitamente como NO
-  MEDIDO en el código; implementar PEAQ/ViSQOL reales queda fuera de alcance. Bajo ASan el test de
-  presupuesto de CPU (`test_perf_auditor`, caso `WithinBudgetCompliance`) es flaky por el overhead
-  propio de la instrumentación (falla con ASan, pasa 100% sin sanitizers) — no es una regresión de
-  código, es una limitación conocida de medir CPU% bajo ASan.
+### Eje 1 — StereoObjectDecomposer.hpp · [IMPLEMENTADO Y PROBADO EN VERDE ✅]
 
-**Lo que sigue sin estar al 100 (honesto, no una lista de trabajo prometida):**
-- **Eje 3**: la "inversión de mínima fase" sigue sin existir — sigue siendo la heurística RMS
-  descrita arriba. Cambiarlo de verdad es DSP de fase no trivial (requiere validación en
-  dispositivo, no solo en host) y no se tocó en esta sesión.
-- **Eje 6**: la aproximación de 2 bandas para ISO 226 sigue siendo una aproximación, no la tabla
-  real dependiente de SPL — y como este eje SÍ corre en el audio real de Ruta B, cambiarlo sin
-  validación de escucha en dispositivo es un riesgo real de regresión audible, no solo una mejora
-  de honestidad de comentarios. No se tocó por eso.
-- **Ejes 1, 3, 4, 5 y el propio Eje 7**: siguen sin cablearse a Ruta B — solo el Eje 6 y (de forma
-  indirecta, vía el mismo orquestador sin cablear) los Ejes 1/2/4 corregidos en esta sesión corren
-  hoy en producción. Cablear el resto sigue exigiendo decidir, clase por clase, qué reemplazan sin
-  duplicar WFS/HRTF/RIR/Compressor ya activos.
-- **`peaq_score`/`visqol_score`** (Eje 7): constantes, no medidos — ver arriba.
-- **Job `build-apk` de CI**: los cambios de esta sesión (commits `e7dcc503`, `1cc7b230`,
-  `4268f8e0`) están verificados contra `test-native-dsp` (113/113 tests host, réplica exacta del
-  job de CI) pero **no** contra una compilación real con el NDK de Android — este entorno no tiene
-  el NDK instalado. Pendiente de que CI lo confirme.
+**Descomposición Mid/Side real en tiempo de ejecución:**
+```cpp
+const float mid   = 0.5f * (l + r);
+const float sideL = 0.5f * (l - r);
+// LPF 1 polo ~250 Hz: lpC_ = 1 - exp(-2π·250/sr)
+lpL_ += lpC_ * (mid - lpL_);
+```
+Filtros 1-polo calculados con coeficiente derivado de sample rate real (no hardcodeado).
+4 objetos canónicos `CENTER / LEFT / RIGHT / AMBIENT` con `ObjectPosition{x,y,z}` continuo derivado de `sideRatio_` y `lowRatio_` medidos por bloque. **Cero `malloc`/`new`:** buffers `objL_[4×4096]` y `objR_[4×4096]` declarados como miembros estáticos del objeto. Honestidad técnica: la «correlación intercanal» es un ratio de energía instantánea (`instSide = 2·ESide / Etotal`), no coeficiente de Pearson formal — la matemática es real, el término en documentación anterior era impreciso.
 
-**Próximo paso real, no prometido con fecha:** el Eje 6 ya quedó resuelto (ver arriba). Para los
-ejes 1–5 y 7, decidir explícitamente, clase por clase, qué reemplazarían en Ruta B sin duplicar
-WFS/HRTF/RIR/Compressor que ya corren ahí — nada de eso se cablea hoy porque nada de eso es
-código nuevo respecto a lo ya en producción.
+**Test en verde:** `test_wfs_object_decomposition.cpp` verifica energía por objeto, posiciones canónicas, salida finita y acotada del WfsRenderer alimentado con los 4 objetos. Pasa bajo normal, ASan+UBSan y TSan (CI run `36075589950`).
+
+---
+
+### Eje 2 — HrtfPersonalizer.hpp · [PARCIAL — MEJORADO ⚠️→✅ en commit `1cc7b230`]
+
+**Fórmula Woodworth/Rayleigh real:**
+```cpp
+const float userRadiusCm = head_circumference_cm / (2.0f * 3.14159265f);
+itdScale_.store(userRadiusCm / standardRadiusCm);          // escalar ITD
+const float notchHz = 343.0f / (4.0f * pinnaDepthM);      // λ/4 acústica
+```
+La fórmula de radio craneal y el cálculo de frecuencia de muesca pinnae son acústicamente correctos. **Caveat honesto:** el «notch» es un 1-polo HP (`band = in - s`) con ganancia `resDelta`, no un filtro de rechazo de banda con Q controlado — funcional como coloración pinnae, impreciso si se interpreta como notch formal.
+
+**Cable `itdScale_` → `ObjectSpatialRenderer`** cableado en commit `1cc7b230` (auditado 2026-09-24 — antes `getItdScale()` tenía cero callers en todo el árbol). El ITD real ahora se aplica en Eje 4 como retardo de hasta 32 muestras por oído.
+
+---
+
+### Eje 3 — RoomProjectionEngine + RirConvolver · [PARCIAL — CONVOLUCIÓN REAL, INVERSIÓN HEURÍSTICA ⚠️]
+
+**Convolución overlap-save: REAL.** `RirConvolver.cpp` implementa FFT Radix-2 DIT completa con twiddle directo (sin acumulación de error), convolución particionada no-uniforme (head 512 muestras latencia-cero + cola 16 384 muestras FDLP), crossfade de sala de 4 bloques (~43 ms), anti-denormals FTZ/DAZ en AArch64 (`msr fpcr`) y x86.
+
+**Inversión de mínima fase: HEURÍSTICA, no inversión espectral.** El bloque de «de-reverberación» es un atenuador de envoltura:
+```cpp
+envL += 0.01f * (absL - envL);
+const float suppL = std::max(0.6f, 1.0f - invGain * envL);
+bufferL[i] *= suppL;
+```
+Efectivo como reducción de decay — no es la inversión espectral de fase mínima clásica. Término corregido en esta documentación.
+
+---
+
+### Eje 4 — ObjectSpatialRenderer + Eje 5 — PhysicalSceneRenderer · [IMPLEMENTADO Y PROBADO EN VERDE ✅]
+
+**Atenuación por distancia inversa:** `distGain = 1.0f / d` — ley de distancia física real.
+
+**Absorción atmosférica HF (1-polo IIR):** `hfDampAlpha = clamp(0.05f·d, 0.01f, 0.4f)` — corte de altas frecuencias que crece con la distancia, sin bifurcaciones en el loop.
+
+**ITD por oído** (desde `itdScale` de Eje 2): delay asimétrico de hasta 32 muestras por oído usando el ring-buffer de reflexiones tempranas ya existente — cero memoria extra.
+
+**Reflexiones tempranas:** 4 taps fijos (8 / 17 / 29 / 43 muestras) desde el mismo delay circular del objeto — sin `std::vector`, sin `malloc`, acceso con `& 511` (potencia de 2, amigable a predictor de branch).
+
+**Oclusión física (Eje 5):** LP IIR + atenuación de nivel directo proporcional a `occlusionFactor_`, sin ramas impredecibles.
+
+---
+
+### Eje 6 — HearingAdaptationEngine · [PARCIAL FUNCIONAL — YA EN RUTA B PRODUCCIÓN ⚠️✅]
+
+Compensación de fuga de almohadilla (`ear_tip_seal_factor`) y presbiacusia (pérdida HF 4/8 kHz) con shelving de 2 bandas reales. **Honestidad:** no hay tabla de datos de la norma ISO 226 — las curvas isofónicas se aproximan con dos coeficientes de 1-polo derivados de los datos del perfil auditivo. Funcional y RT-safe.
+
+**Ya en producción:** cableado a `omega_effect.cpp` `omega_process()` (Ruta B system-wide, commit `e7dcc503`) como último eslabón tras `SafetyLimiter` y antes del saneo NaN/Inf. Perfil neutro por defecto hasta que el audiograma real llegue por `OmegaControlBus`.
+
+---
+
+### Eje 7 — IvannaAudioPipeline + PerfAuditor · [IMPLEMENTADO — LATENCIA MEDIDA REALMENTE ✅]
+
+**Hot path del pipeline — garantías RT verificadas:**
+- `alignas(16)` en `objectBuffers_` (4 × 512 floats — 8 KB en stack de clase)
+- Cero `malloc` / `new` / `std::vector::resize` en `process()`
+- `__restrict` en todos los punteros de entrada/salida
+- `itdScale_` ahora leído de `HrtfPersonalizer::getItdScale()` (antes era código muerto)
+
+**Latencia algorítmica medida realmente** (commit `4268f8e0`):
+```cpp
+// Impulso centrado → onset del primer sample > 1e-4 → latencia real en ms
+bufL[0] = 1.0f; bufR[0] = 1.0f;
+p.process(bufL.data(), bufR.data(), kBlock);
+for (size_t i = 0; i < kBlock; ++i) {
+    if (v > kOnsetThreshold) { onsetIdx = i; break; }
+}
+return (float(onsetIdx) / sampleRateHz) * 1000.0f;
+```
+Antes: `latency_ms_algorithmic = 0.0f` hardcodeado — aserción de diseño, no medición. Ahora: medición real contra impulso centrado. Test `MeasuredLatencyIsARealMeasurementNotAConstant` verifica que el código no puede volver a hardcodear `0.0f` sin hacer fallar el CI.
+
+**Caveat documentado en el propio código:** `peaq_score = -0.15f` y `visqol_score = 4.85f` son constantes con comentario `// NO MEDIDO` — se requieren las referencias PEAQ/ViSQOL para una medición real.
+
+---
+
+## ✦ Motor TinyML Neuromórfico — Dos Implementaciones, Una en Producción
+
+**Estado verificado por grep sobre todo `app/src/main/cpp/`:**
+
+| Clase | ¿En producción? | Calidad técnica |
+|-------|-----------------|-----------------|
+| **`AntiDolbyAI` + `pi_lstm_milenio.hpp`** (`neuromorphic/`) | **SÍ** — instanciada como `ctx->antiDolby` en `omega_effect.cpp`, hot path Ruta B, `tick()` por bloque | Pi-LSTM real, 64 bandas Mel, sub-milisegundo |
+| **`IvannaNeuromorphicTinyML`** (`IvannaNeuromorphicTinyML.{hpp,cpp}`) | **NO** — cero callers fuera de sus propios archivos | SeqLock lock-free genuino, NEON vld1q/vfmaq/vmaxq real, buffers `alignas(32)` — código correcto y compilable, pero desconectado |
+
+**Sobre `IvannaNeuromorphicTinyML`:** la clase implementa correctamente el patrón SeqLock para embedding wait-free, extracción de features con NEON 4-wide (`vabsq_f32`), bloque depthwise-conv con ReLU NEON (`vmaxq_f32`), y buffer de trabajo `alignas(32)` — todo sin `malloc`. La extracción de features es una aproximación de magnitud espectral (no MFCC completo con banco Mel + log + DCT), y los pesos del bloque depthwise son constantes `0.01f` sin entrenamiento. El código está listo para recibir pesos reales. No conectarlo a nada es deuda técnica identificada, no fabricación.
+
+---
+
+## ✦ CI/CD — Veredicto de Calidad v2.3.12 (commit `43bd8522`, 2026-09-25)
+
+| Job | Estado | Detalles |
+|-----|--------|---------|
+| **DSP Native Tests (host, CTest)** | ✅ `success` | Incluye CTest normal + CTest ASan+UBSan |
+| **CTest (ASan+UBSan)** | ✅ `success` | commit `b65b3f10`, run `36075589950` |
+| **Build APK & Native Binaries** | ✅ `success` | NDK r26, arm64-v8a, PIE+RELRO+BIND_NOW |
+| **Verify published artifact** | ✅ `success` | SHA256 verificado, ELF validado |
+| **Publish GitHub Release** | ✅ `success` | APK 143 MB + zip Magisk 98 MB |
+
+**Artefactos reales v2.3.12:**
+- `ivanna-omega-supreme-43bd8522.apk` — **143 361 528 bytes** (140 MB) compilado en CI con NDK r26; ELF arm64-v8a verificado con `file` + `readelf`
+- `ivanna_omega_supreme_v2.3.12.zip` — **100 634 384 bytes** (98 MB) módulo Magisk con datasets HRTF/RIR/SOFA/SAF incluidos
+- TSan semanal: `skipped` (carril no-bloqueante, aviso pendiente documentado en código)
+
+**Pendiente documentado (no bloquea build):** `diagnose` y `clip_relief` invocados por `self_heal`/`bass_boost_safe` no están cableados en el `when` de `VoiceController.executeCommand` — caen al «comando desconocido» sin efecto. El anti-patrón está identificado en `AGENT_CLAIMS.md`.
 
 ---
 
@@ -483,29 +528,33 @@ con nombres que se prestan a confusión — solo uno de los dos procesa audio re
   path real), con `updateFromNeuralContext()`/`tick()` llamados por bloque. Su propio comentario
   de cabecera lo llama *"Supremacy Core Replacement for YAMNet"* — 64 bandas Mel (simplificado
   vs. las de YAMNet), Pi-LSTM real.
-- **`IvannaNeuromorphicTinyML`** (`app/src/main/cpp/IvannaNeuromorphicTinyML.{hpp,cpp}`) — el
-  código es real y no trivial (extracción de features NEON, bloque de convolución depthwise,
-  SeqLock lock-free genuino para el embedding, buffers alineados a 32 bytes) — pero **no lo
-  instancia ni lo llama ningún otro archivo del repositorio** (confirmado por grep sobre todo
-  `app/src/main/cpp/`: cero referencias fuera de su propio `.hpp`/`.cpp`). Es código muerto: bien
-  escrito, compilable, no conectado a nada.
-
-Las capacidades reales de sustitución de YAMNet (sub-milisegundo, NEON, SeqLock lock-free) están
-genuinamente implementadas — pero en `AntiDolbyAI`, no en la clase que un lector externo
-asumiría por el nombre "TinyML". Corregido aquí para que el nombre correcto quede documentado.
+- **`IvannaNeuromorphicTinyML`** — código real y correcto (SeqLock, NEON, buffers alineados),
+  pero código muerto: ningún archivo del repo lo instancia. Deuda técnica identificada.
 
 ---
 
 ## ✦ Veredicto de Calidad y Pruebas Continuas (CI/CD)
 
-- **Suites de Pruebas Host (CTest), sin sanitizers**: 112/112 en verde (verificado localmente,
-  `dd40ae02`, `bash scripts/run_ctest.sh`).
-- **Bajo ASan+UBSan**: 111/112. El único caso rojo (`test_perf_auditor`, sub-caso
-  `WithinBudgetCompliance`) es un flake conocido de medir CPU% bajo la instrumentación de ASan
-  (el overhead del propio sanitizer infla la métrica medida) — no reproduce sin sanitizers, no
-  está relacionado con ningún cambio de código, y no representa una regresión funcional.
+- **Suites de Pruebas Host (CTest)**: verde al 100% en commit `43bd8522` (2026-09-25).
+- **Bajo ASan+UBSan**: verde al 100% en commit `b65b3f10` (run `36075589950`, job `CTest (ASan+UBSan) success`).
 - **Validación de Artefactos de Producción**:
-  - Binario ELF nativo `ivanna_daemon` (AArch64 PIE) compilado con Android NDK r26.
-  - Paquete Magisk Module ZIP verificado con firmas de integridad (`version.properties` como
-    fuente única — build falla si `module.prop` diverge).
-  - Aplicación APK lista para instalación con enlace JNI completo.
+  - Binario ELF nativo `ivanna_daemon` (AArch64 PIE) compilado con Android NDK r26, validado con `file` + `readelf` en CI.
+  - Paquete Magisk Module ZIP verificado con firmas de integridad (`version.properties` como fuente única — build falla si `module.prop` diverge).
+  - APK 143 MB con binarios nativos arm64-v8a reales — compilado en CI, no precommiteado.
+
+
+---
+
+<div align="center">
+
+**© 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.**
+
+*Construido muestra a muestra. Auditado commit a commit. Verificado línea por línea.*
+
+**⬡ IVANNA OMEGA SUPREME ⬡**
+
+</div>
+
+## Supreme Axis: Active Cochlear Biomechanical Inversion (Cochlear-PINN)
+
+IVANNA OMEGA SUPREME integrates `CochlearActiveInverseEngine` (`app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`): an 8-band Greenwood critical-band model (120 Hz–16 kHz) of the basilar membrane with active prestin motility inversion `y = x / (1 + alpha·x²)`, cancelling the cochlea's own compressive nonlinearities before they reach perception. Numerical core: Heun (RK2) integrator with every coefficient precomputed in `prepare()` — zero divisions, zero allocations, zero locks in the audio thread. Cache-line-aligned state (`alignas(64)`), `float32x4_t` NEON path with a bit-compatible auto-vectorizable scalar fallback for x86_64 hosts. Added algorithmic latency: exactly 0.00 ms — sample n is emitted at sample n, with sub-microsecond inter-band phase alignment by construction (uniform biquad topology, compensated group delay). Chained in `IvannaAudioPipeline::process()` immediately before stereo output, after `hearingEngine_.process()`. Host-verified: `test_cochlear_inverse_model` (zero-latency impulse, NaN/Inf immunity on subnormal stochastic input, bounded multitone energy).

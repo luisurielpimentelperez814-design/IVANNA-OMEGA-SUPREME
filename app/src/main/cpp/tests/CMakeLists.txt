@@ -596,3 +596,9 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_hrtf_personalizer_wiring COMMAND test_hrtf_personalizer_wiring)
 
+# ── Eje Supremo Neuroacústico: inversión coclear activa (header-only) ────────
+add_executable(test_cochlear_inverse_model test_cochlear_inverse_model.cpp)
+target_link_libraries(test_cochlear_inverse_model PRIVATE GTest::gtest_main)
+target_include_directories(test_cochlear_inverse_model PRIVATE .. ../include ../spatial ../neuromorphic host_stubs)
+target_compile_options(test_cochlear_inverse_model PRIVATE -Wall -Wextra)
+add_test(NAME test_cochlear_inverse_model COMMAND test_cochlear_inverse_model)

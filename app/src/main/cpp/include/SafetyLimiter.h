@@ -64,7 +64,7 @@ private:
     float limitSample(float x);
     float computeGainForPeak(float peakLin) const;  // ganancia objetivo para un peak
 
-    float m_threshold = 0.98855f;   // onset del soft-knee
+    float m_threshold = 0.63096f;   // onset del soft-knee (-4.0 dBFS, igual que setParams() default)
     float m_ceiling   = 0.98855f;   // -0.1 dBFS
     bool  m_bypass    = false;
 
