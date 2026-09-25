@@ -471,6 +471,14 @@ fun OmegaApp() {
             }
             composable("spatial_audio") {
                 com.ivanna.omega.ui.SpatialAudioPanel(
+                    onBack = { nav.popBackStack() },
+                    modifier = Modifier.fillMaxSize().background(Carbon)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                )
+            }
+            composable("cochlear_inverse") {
+                com.ivanna.omega.ui.SpatialAudioPanel(
+                    onBack = { nav.popBackStack() },
                     modifier = Modifier.fillMaxSize().background(Carbon)
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )

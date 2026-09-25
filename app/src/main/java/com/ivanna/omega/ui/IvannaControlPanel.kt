@@ -521,6 +521,10 @@ fun IvannaControlPanel(
             }
         }
 
+        // ── Eje Supremo: Inversión Biomecánica Coclear (PINN) ──────────────
+        SectionLabel("INVERSIÓN BIOMECÁNICA COCLEAR (PINN)", AuroraCyan)
+        CochlearInverseCard()
+
         SectionLabel("ADAPTIVE ENGINE", AuroraCyan)
 
         com.ivanna.omega.ui.AdaptiveEngineStatusCard(telemetry = adaptiveTelemetry)

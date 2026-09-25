@@ -6,6 +6,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -28,7 +31,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SpatialAudioPanel(modifier: Modifier = Modifier) {
+fun SpatialAudioPanel(
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     var state by remember { mutableStateOf(SpatialAudioPrefs.load(context)) }
     fun update(f: (SpatialAudioState) -> SpatialAudioState) {
@@ -94,7 +100,22 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().background(ObsidianDeep).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        Text("SPATIAL AUDIO", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Atrás",
+                        tint = AuroraCyan
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text("SPATIAL AUDIO · INVERSIÓN COCLEAR (PINN)", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        }
 
         // ── Eje Supremo: Inversión Biomecánica Coclear (PINN) ──────────────
         CochlearInverseCard(

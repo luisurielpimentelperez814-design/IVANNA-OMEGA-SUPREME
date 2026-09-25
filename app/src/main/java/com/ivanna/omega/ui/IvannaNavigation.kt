@@ -3,6 +3,8 @@ package com.ivanna.omega.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -147,12 +149,13 @@ fun MainScaffold(
             // ── SPATIAL ──────────────────────────────────────────────────
             composable(TABS[3].route) {
                 SpatialHubScreen(
+                    onOpenCochlearInverse = { outerNav.navigate("spatial_audio") },
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
                     onOpenAudioControlHub = { outerNav.navigate(IvannaRoute.AUDIO_CONTROL_HUB) },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("binaural") },
-                    onOpenAuditory   = { outerNav.navigate("auditory") },
+                    onOpenAuditory   = { outerNav.navigate("spatial_audio") },
                     onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) },
                     onOpenBenchmark  = { outerNav.navigate("benchmark") },
                     onOpenPhase7     = { outerNav.navigate("phase7") },
@@ -178,6 +181,7 @@ fun MainScaffold(
 // ── SpatialHubScreen ─────────────────────────────────────────────────────────
 @Composable
 fun SpatialHubScreen(
+    onOpenCochlearInverse : () -> Unit = {},
     onOpenSaF        : () -> Unit = {},
     onOpenVisualizer : () -> Unit,
     onOpenOpe        : () -> Unit,
@@ -191,10 +195,12 @@ fun SpatialHubScreen(
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         HubHeader("SPATIAL ENGINE", "Binaural · HRTF · Object Renderer · Head Tracking", NeonMagenta)
+        HubCard("INVERSIÓN BIOMECÁNICA COCLEAR", "Anti-Dolby PINN · Descompresión OHC Activa · Latencia 0.00 ms", AuroraCyan, onOpenCochlearInverse)
         HubCard("CALIBRACIÓN Φ_SAF^∞",    "HRTF personalizado · 7-D Riemanniano · 214 HRTFs", AuroraCyan,   onOpenSaF)
         HubCard("VISUALIZADOR DE ESPECTRO",  "FFT 64-Band · Bark Perceptual",       AuroraCyan,   onOpenVisualizer)
         HubCard("EQ / COMPRESOR · OPE",      "IIR 10-Band · Brickwall Limiter",      AuroraCyan,   onOpenOpe)
@@ -223,6 +229,7 @@ fun SystemHubScreen(
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
