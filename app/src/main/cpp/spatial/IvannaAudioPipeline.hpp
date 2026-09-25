@@ -10,6 +10,7 @@
 #include "ObjectSpatialRenderer.hpp"
 #include "PhysicalSceneRenderer.hpp"
 #include "HearingAdaptationEngine.hpp"
+#include "../neuromorphic/CochlearActiveInverseModel.hpp"
 
 namespace ivanna::spatial {
 
@@ -49,6 +50,7 @@ public:
     ObjectSpatialRenderer& spatialRenderer() noexcept { return spatialRenderer_; }
     PhysicalSceneRenderer& physicalScene() noexcept { return physicalScene_; }
     HearingAdaptationEngine& hearingEngine() noexcept { return hearingEngine_; }
+    ivanna::neuromorphic::CochlearActiveInverseEngine& cochlearEngine() noexcept { return cochlearEngine_; }
 
     /**
      * @brief Renders an audio block through the complete 6-axis pipeline.
@@ -83,6 +85,8 @@ public:
 
         // 6. Eje 6: Hearing adaptation & fatigue protection
         hearingEngine_.process(bufferL, bufferR, numSamples);
+        // Eje Supremo Neuroacústico: inversión coclear activa (in-place, 0 ms)
+        cochlearEngine_.process(bufferL, bufferR, numSamples);
     }
 
 private:
@@ -92,6 +96,7 @@ private:
     ObjectSpatialRenderer spatialRenderer_;
     PhysicalSceneRenderer physicalScene_;
     HearingAdaptationEngine hearingEngine_;
+    ivanna::neuromorphic::CochlearActiveInverseEngine cochlearEngine_;
 
     // Static scratch memory for zero-allocation hot-path guarantee
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};
