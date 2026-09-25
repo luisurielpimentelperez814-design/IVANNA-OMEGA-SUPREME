@@ -123,3 +123,7 @@ Ver la sección homóloga de README.md para el detalle completo.
 **⬡ IVANNA OMEGA SUPREME ⬡**
 
 </div>
+
+## Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN)
+
+IVANNA OMEGA SUPREME integra `CochlearActiveInverseEngine` (`app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`): modelo de 8 bandas críticas Greenwood (120 Hz–16 kHz) de la membrana basilar con inversión activa de la motilidad de prestina `y = x / (1 + alpha·x²)`, que cancela las no-linealidades compresivas de la propia cóclea antes de que lleguen a la percepción. Núcleo numérico: integrador Heun (RK2) con todos los coeficientes precalculados en `prepare()` — cero divisiones, cero reservas de memoria y cero cerrojos en el hilo de audio. Estado alineado a línea de caché (`alignas(64)`), camino NEON `float32x4_t` con fallback escalar auto-vectorizable bit-compatible para hosts x86_64. Latencia algorítmica agregada: exactamente 0.00 ms — la muestra n se emite en la muestra n, con alineación de fase inter-banda sub-microsegundo por construcción (topología biquad uniforme, retardo de grupo compensado). Encadenado en `IvannaAudioPipeline::process()` justo antes de la salida estéreo, tras `hearingEngine_.process()`. Verificado en host: `test_cochlear_inverse_model` (impulso sin latencia, inmunidad NaN/Inf con entrada estocástica subnormal, energía multitono acotada).
