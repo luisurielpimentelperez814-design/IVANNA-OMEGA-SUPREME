@@ -11,7 +11,9 @@ data class SpatialAudioState(
     val rirWet: Float = 0.35f,
     val safEnabled: Boolean = false,
     val safIntensity: Float = 0.5f,
-    val safAutoMode: Boolean = true
+    val safAutoMode: Boolean = true,
+    val cochlearInverseEnabled: Boolean = true,
+    val cochlearIntensity: Float = 0.35f
 )
 
 object SpatialAudioPrefs {
@@ -40,7 +42,9 @@ object SpatialAudioPrefs {
             rirWet       = p.getFloat("rirWet", d.rirWet),
             safEnabled   = p.getBoolean("safEnabled", d.safEnabled),
             safIntensity = p.getFloat("safIntensity", d.safIntensity),
-            safAutoMode  = p.getBoolean("safAutoMode", d.safAutoMode)
+            safAutoMode  = p.getBoolean("safAutoMode", d.safAutoMode),
+            cochlearInverseEnabled = p.getBoolean("cochlearInverseEnabled", d.cochlearInverseEnabled),
+            cochlearIntensity = p.getFloat("cochlearIntensity", d.cochlearIntensity)
         )
     }
 
@@ -55,6 +59,8 @@ object SpatialAudioPrefs {
             .putBoolean("safEnabled", s.safEnabled)
             .putFloat("safIntensity", s.safIntensity)
             .putBoolean("safAutoMode", s.safAutoMode)
+            .putBoolean("cochlearInverseEnabled", s.cochlearInverseEnabled)
+            .putFloat("cochlearIntensity", s.cochlearIntensity)
             .apply()
     }
 }

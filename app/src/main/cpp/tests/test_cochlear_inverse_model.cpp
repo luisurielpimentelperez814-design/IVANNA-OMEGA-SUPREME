@@ -69,3 +69,34 @@ TEST(CochlearInverse, HarmonicLinearizationEnergy) {
     EXPECT_GT(eout, ein * 0.05);   // no anula la señal
     EXPECT_LT(eout, ein * 20.0);   // no explota
 }
+
+TEST(CochlearInverse, LockFreeControlAndBypass) {
+    CochlearActiveInverseEngine eng;
+    eng.prepare(48000.f);
+
+    EXPECT_TRUE(eng.isEnabled());
+    EXPECT_NEAR(eng.intensity(), 0.35f, 1e-4f);
+    EXPECT_TRUE(eng.isActive());
+
+    // Control de intensidad
+    eng.setIntensity(0.75f);
+    EXPECT_NEAR(eng.intensity(), 0.75f, 1e-4f);
+
+    // Bypass bit-exacto cuando disabled
+    eng.setEnabled(false);
+    EXPECT_FALSE(eng.isEnabled());
+    EXPECT_FALSE(eng.isActive());
+
+    std::vector<float> L(128, 0.42f), R(128, -0.42f);
+    eng.process(L.data(), R.data(), 128);
+    for (int i = 0; i < 128; ++i) {
+        EXPECT_EQ(L[i], 0.42f);
+        EXPECT_EQ(R[i], -0.42f);
+    }
+
+    // Reactivación lock-free
+    eng.setEnabled(true);
+    EXPECT_TRUE(eng.isEnabled());
+    EXPECT_TRUE(eng.isActive());
+}
+

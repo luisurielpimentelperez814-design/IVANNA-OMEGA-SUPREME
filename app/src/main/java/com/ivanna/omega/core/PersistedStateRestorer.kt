@@ -76,6 +76,12 @@ object PersistedStateRestorer {
 
         // 3. Restaurar SpatialAudioPrefs (HRTF, RIR, SAF)
         val saPrefs = SpatialAudioPrefs.load(ctx)
+
+        // Eje Supremo: Inversión Biomecánica Coclear (Cochlear-PINN)
+        runCatching {
+            NativeBridge.setCochlearInverseEnabled(saPrefs.cochlearInverseEnabled)
+            NativeBridge.setCochlearIntensity(saPrefs.cochlearIntensity)
+        }
         
         IvannaSpatialEngine.enabled = saPrefs.hrtfEnabled
         if (saPrefs.hrtfEnabled) {

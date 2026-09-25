@@ -53,6 +53,12 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DCMAKE_CXX_STANDARD=20", "-DANDROID_STL=c++_shared")
+            }
+        }
     }
 
     buildTypes {

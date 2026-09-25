@@ -43,6 +43,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <atomic>
+#include <cstring>
 
 #if defined(__ARM_NEON) || defined(__aarch64__)
   #include <arm_neon.h>
@@ -69,6 +71,21 @@ public:
     };
 
     CochlearActiveInverseEngine() noexcept { prepare(48000.f); }
+
+    CochlearActiveInverseEngine(const CochlearActiveInverseEngine& other) noexcept {
+        copyFrom(other);
+    }
+    CochlearActiveInverseEngine& operator=(const CochlearActiveInverseEngine& other) noexcept {
+        if (this != &other) { copyFrom(other); }
+        return *this;
+    }
+    CochlearActiveInverseEngine(CochlearActiveInverseEngine&& other) noexcept {
+        copyFrom(other);
+    }
+    CochlearActiveInverseEngine& operator=(CochlearActiveInverseEngine&& other) noexcept {
+        if (this != &other) { copyFrom(other); }
+        return *this;
+    }
 
     // Precalcula TODOS los coeficientes (biquads RBJ + Heun). Se llama desde
     // el hilo de control (init/cambio de sample rate), nunca desde el callback.
@@ -110,10 +127,21 @@ public:
         }
     }
 
-    void setIntensity(float w) noexcept {
-        wet_ = (std::isfinite(w)) ? (w < 0.f ? 0.f : (w > 1.f ? 1.f : w)) : 0.35f;
+    void setEnabled(bool enabled) noexcept {
+        enabled_.store(enabled, std::memory_order_release);
     }
-    float intensity() const noexcept { return wet_; }
+    bool isEnabled() const noexcept {
+        return enabled_.load(std::memory_order_acquire);
+    }
+    bool isActive() const noexcept {
+        return enabled_.load(std::memory_order_acquire) && (wet_.load(std::memory_order_acquire) > 0.0001f);
+    }
+
+    void setIntensity(float w) noexcept {
+        const float val = (std::isfinite(w)) ? (w < 0.f ? 0.f : (w > 1.f ? 1.f : w)) : 0.35f;
+        wet_.store(val, std::memory_order_release);
+    }
+    float intensity() const noexcept { return wet_.load(std::memory_order_acquire); }
 
     // Hot path. In-place por canal. Cero alloc, cero locks, cero divisiones
     // en el integrador; el recíproco de la inversa de prestina usa vrecpeq +
@@ -121,17 +149,34 @@ public:
     void process(float* IVANNA_COCHLEAR_RESTRICT bufferL,
                  float* IVANNA_COCHLEAR_RESTRICT bufferR,
                  std::size_t numSamples) noexcept {
+        if (!enabled_.load(std::memory_order_relaxed)) return;
         if (!bufferL || !bufferR || numSamples == 0) return;
+        const float currentWet = wet_.load(std::memory_order_relaxed);
+        if (currentWet <= 0.0001f) return;
         for (std::size_t n = 0; n < numSamples; ++n) {
-            bufferL[n] = processSample(bufferL[n]);
-            bufferR[n] = processSample(bufferR[n]);
+            bufferL[n] = processSample(bufferL[n], currentWet);
+            bufferR[n] = processSample(bufferR[n], currentWet);
         }
     }
 
 private:
     struct Biquad { float b0, b1, b2, a1, a2, z1, z2; };
 
-    inline float processSample(float x) noexcept {
+    void copyFrom(const CochlearActiveInverseEngine& other) noexcept {
+        sampleRate_ = other.sampleRate_;
+        dt_ = other.dt_;
+        halfDt_ = other.halfDt_;
+        wet_.store(other.wet_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        enabled_.store(other.enabled_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        std::memcpy(biquad_, other.biquad_, sizeof(biquad_));
+        std::memcpy(membD_, other.membD_, sizeof(membD_));
+        std::memcpy(membV_, other.membV_, sizeof(membV_));
+        std::memcpy(membC1_, other.membC1_, sizeof(membC1_));
+        std::memcpy(membC2_, other.membC2_, sizeof(membC2_));
+        std::memcpy(prestinAlpha_, other.prestinAlpha_, sizeof(prestinAlpha_));
+    }
+
+    inline float processSample(float x, float wet) noexcept {
         if (!std::isfinite(x)) return 0.0f;   // guard: jamás propagar NaN/Inf
 #if IVANNA_COCHLEAR_NEON
         // ── Camino NEON: 4 bandas por vector en el filtrado + Heun ──
@@ -181,7 +226,7 @@ private:
                 vst1q_f32(&acc[g], yb);
             }
             float sum = acc[0] + acc[1] + acc[2] + acc[3] + acc[4] + acc[5] + acc[6] + acc[7];
-            out = x * (1.0f - wet_) + sum * (wet_ * kRecombNorm);
+            out = x * (1.0f - wet) + sum * (wet * kRecombNorm);
         }
         return out;
 #else
@@ -205,7 +250,7 @@ private:
             const float d = membD_[b];
             sum += d / (1.0f + prestinAlpha_[b] * d * d);
         }
-        return x * (1.0f - wet_) + sum * (wet_ * kRecombNorm);
+        return x * (1.0f - wet) + sum * (wet * kRecombNorm);
 #endif
     }
 
@@ -216,7 +261,8 @@ private:
     float sampleRate_ = 48000.f;
     float dt_         = 1.0f / 48000.f;
     float halfDt_     = 0.5f / 48000.f;
-    float wet_        = 0.35f;
+    std::atomic<float> wet_{0.35f};
+    std::atomic<bool>  enabled_{true};
 
     // Estado alineado a línea de caché: un acceso por banda = una línea.
     alignas(64) Biquad biquad_[kBands];

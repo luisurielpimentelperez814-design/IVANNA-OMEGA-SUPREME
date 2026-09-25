@@ -33,6 +33,11 @@ class IvannaAudioPipeline {
 public:
     static constexpr size_t MAX_BLOCK_SIZE = 512;
 
+    static IvannaAudioPipeline& getActiveInstance() noexcept {
+        static IvannaAudioPipeline s_instance;
+        return s_instance;
+    }
+
     IvannaAudioPipeline() noexcept {
         reset();
     }

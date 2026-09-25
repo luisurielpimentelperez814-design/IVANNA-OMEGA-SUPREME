@@ -21,6 +21,7 @@
 #include "../spatial/ivanna_head_tracker.hpp"
 #include "../spatial/ivanna_object_renderer.hpp"
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
+#include "../spatial/IvannaAudioPipeline.hpp"
 #include "../include/audio_thread_priority.h"
 
 namespace {
@@ -306,6 +307,101 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqB
     if (renderer) {
         renderer->getAutoEq().setBand(bandIndex, freqHz, gainDb, q);
     }
+}
+
+// ============================================================================
+// Eje Supremo Neuroacústico — Inversión Biomecánica Coclear Activa (Cochlear-PINN)
+// Control seguro lock-free y sin contención con hilos SCHED_FIFO.
+// ============================================================================
+
+static inline void cochlearSetEnabledHelper(jboolean enabled) noexcept {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setEnabled(enabled == JNI_TRUE);
+}
+
+static inline void cochlearSetIntensityHelper(jfloat intensity) noexcept {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setIntensity(static_cast<float>(intensity));
+}
+
+static inline jboolean cochlearIsActiveHelper() noexcept {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().isActive() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ── IvannaSpatialNative bindings ────────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_setCochlearInverseEnabled(JNIEnv*, jclass, jboolean enabled) {
+    cochlearSetEnabledHelper(enabled);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeSetCochlearInverseEnabled(JNIEnv*, jclass, jboolean enabled) {
+    cochlearSetEnabledHelper(enabled);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_setCochlearIntensity(JNIEnv*, jclass, jfloat intensity) {
+    cochlearSetIntensityHelper(intensity);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeSetCochlearIntensity(JNIEnv*, jclass, jfloat intensity) {
+    cochlearSetIntensityHelper(intensity);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_isCochlearActive(JNIEnv*, jclass) {
+    return cochlearIsActiveHelper();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeIsCochlearActive(JNIEnv*, jclass) {
+    return cochlearIsActiveHelper();
+}
+
+// ── IvannaNativeLib bindings ────────────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_setCochlearInverseEnabled(JNIEnv*, jobject, jboolean enabled) {
+    cochlearSetEnabledHelper(enabled);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearInverseEnabled(JNIEnv*, jobject, jboolean enabled) {
+    cochlearSetEnabledHelper(enabled);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_setCochlearIntensity(JNIEnv*, jobject, jfloat intensity) {
+    cochlearSetIntensityHelper(intensity);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearIntensity(JNIEnv*, jobject, jfloat intensity) {
+    cochlearSetIntensityHelper(intensity);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_isCochlearActive(JNIEnv*, jobject) {
+    return cochlearIsActiveHelper();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsCochlearActive(JNIEnv*, jobject) {
+    return cochlearIsActiveHelper();
+}
+
+// ── NativeBridge bindings ───────────────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setCochlearInverseEnabled(JNIEnv*, jclass, jboolean enabled) {
+    cochlearSetEnabledHelper(enabled);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setCochlearIntensity(JNIEnv*, jclass, jfloat intensity) {
+    cochlearSetIntensityHelper(intensity);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_isCochlearActive(JNIEnv*, jclass) {
+    return cochlearIsActiveHelper();
 }
 
 } // extern "C"

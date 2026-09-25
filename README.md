@@ -558,3 +558,11 @@ con nombres que se prestan a confusión — solo uno de los dos procesa audio re
 ## Supreme Axis: Active Cochlear Biomechanical Inversion (Cochlear-PINN)
 
 IVANNA OMEGA SUPREME integrates `CochlearActiveInverseEngine` (`app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`): an 8-band Greenwood critical-band model (120 Hz–16 kHz) of the basilar membrane with active prestin motility inversion `y = x / (1 + alpha·x²)`, cancelling the cochlea's own compressive nonlinearities before they reach perception. Numerical core: Heun (RK2) integrator with every coefficient precomputed in `prepare()` — zero divisions, zero allocations, zero locks in the audio thread. Cache-line-aligned state (`alignas(64)`), `float32x4_t` NEON path with a bit-compatible auto-vectorizable scalar fallback for x86_64 hosts. Added algorithmic latency: exactly 0.00 ms — sample n is emitted at sample n, with sub-microsecond inter-band phase alignment by construction (uniform biquad topology, compensated group delay). Chained in `IvannaAudioPipeline::process()` immediately before stereo output, after `hearingEngine_.process()`. Host-verified: `test_cochlear_inverse_model` (zero-latency impulse, NaN/Inf immunity on subnormal stochastic input, bounded multitone energy).
+
+### Jetpack Compose UI Availability & Lock-Free JNI Path
+- **Jetpack Compose UI (`CochlearInverseCard`)**: Integrated into the Spatial Audio Screen (`SpatialAudioPanel`), featuring a reactive toggle switch for OHC decompression, continuous intensity dial (0% to 100%) with haptic feedback, and real-time diagnostic badges (`OHC ACTIVA`, `GREENWOOD 8B`, `HEUN RK2 · 0 DIV`, `0.00 ms LAT`).
+- **JNI Bindings (`C++20 <-> Kotlin`)**: Thread-safe, lock-free bindings exposed across `IvannaSpatialNative`, `IvannaNativeLib`, and `NativeBridge`:
+  * `setCochlearInverseEnabled(boolean enabled)`
+  * `setCochlearIntensity(float intensity)` (0.0f to 1.0f)
+  * `isCochlearActive()` -> boolean
+- **State Persistence & C++20 Standardization**: Automatic persistence via `SpatialAudioPrefs` and restored on boot via `PersistedStateRestorer`. Modern C++20 standard enforced across CMake (`-std=c++20`) and Gradle NDK.

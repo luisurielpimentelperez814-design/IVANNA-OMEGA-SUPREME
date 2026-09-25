@@ -60,4 +60,13 @@ object IvannaSpatialNative {
     @JvmStatic external fun nativeUpmixerSetEnabled(handle: Long, enabled: Boolean)
     @JvmStatic external fun nativeUpmixerSetStemPosition(handle: Long, stemType: Int, x: Float, y: Float, z: Float, width: Float)
     @JvmStatic external fun nativeUpmixerReset(handle: Long)
+
+    // ═══ Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ═══
+    @JvmStatic external fun setCochlearInverseEnabled(enabled: Boolean)
+    @JvmStatic external fun setCochlearIntensity(intensity: Float)
+    @JvmStatic external fun isCochlearActive(): Boolean
+
+    @JvmStatic external fun nativeSetCochlearInverseEnabled(enabled: Boolean)
+    @JvmStatic external fun nativeSetCochlearIntensity(intensity: Float)
+    @JvmStatic external fun nativeIsCochlearActive(): Boolean
 }

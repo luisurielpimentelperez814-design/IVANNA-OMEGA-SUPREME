@@ -60,6 +60,10 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
                 gain = state.safIntensity
             )
         }
+        runCatching {
+            com.ivanna.omega.core.NativeBridge.setCochlearInverseEnabled(state.cochlearInverseEnabled)
+            com.ivanna.omega.core.NativeBridge.setCochlearIntensity(state.cochlearIntensity)
+        }
         while (true) {
             hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
             activeSubject = IvannaSpatialManager.currentHrtfSubject()
@@ -91,6 +95,15 @@ fun SpatialAudioPanel(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         Text("SPATIAL AUDIO", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+
+        // ── Eje Supremo: Inversión Biomecánica Coclear (PINN) ──────────────
+        CochlearInverseCard(
+            initialEnabled = state.cochlearInverseEnabled,
+            initialIntensity = state.cochlearIntensity,
+            onStateChanged = { en, inten ->
+                update { it.copy(cochlearInverseEnabled = en, cochlearIntensity = inten) }
+            }
+        )
 
         // ── HRTF ──────────────────────────────────────────────────────────
         SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {

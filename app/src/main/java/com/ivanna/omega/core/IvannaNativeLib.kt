@@ -325,4 +325,13 @@ object IvannaNativeLib {
     external fun nativeSetBitDepth(depth: Int): Boolean
     external fun nativeGetConfiguredSampleRate(): Int
     external fun nativeGetConfiguredBitDepth(): Int
+
+    // ═══ Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ═══
+    external fun setCochlearInverseEnabled(enabled: Boolean)
+    external fun setCochlearIntensity(intensity: Float)
+    external fun isCochlearActive(): Boolean
+
+    external fun nativeSetCochlearInverseEnabled(enabled: Boolean)
+    external fun nativeSetCochlearIntensity(intensity: Float)
+    external fun nativeIsCochlearActive(): Boolean
 }
