@@ -411,13 +411,17 @@ honesto por eje, con línea de archivo:
   (`CENTER/LEFT/RIGHT/AMBIENT`) con `ObjectPosition{x,y,z}` continuo, cero malloc en `decompose()`.
   La "correlación intercanal" es en realidad un ratio de energía instantánea (`instSide`), no un
   coeficiente de correlación de Pearson formal — término impreciso, matemática real.
-- **Eje 2 (`HrtfPersonalizer.hpp`)** — **parcial**: la fórmula esférica de Woodworth SÍ existe y
-  es correcta, pero **en `synthetic_hrtf.hpp` (la ruta HRTF real), no en `HrtfPersonalizer`** —
-  ahí `recalculate()` solo calcula un escalar `itdScale_` que **nadie lee** (`getItdScale()` no
-  tiene ningún caller fuera de este archivo, confirmado por grep sobre todo el árbol). El "notch
-  de pinna" es una única frecuencia de corte pasada por un blend de un polo (`in*0.85 + s*0.15`),
-  no un filtro notch real (banda de rechazo); y `canal_resonance_boost_db` está declarado en el
-  perfil pero nunca se usa en ningún cálculo.
+- **Eje 2 (`HrtfPersonalizer.hpp`)** — **parcial, código muerto resuelto (commit `1cc7b230`)**: la
+  fórmula esférica de Woodworth SÍ existe y es correcta, pero **en `synthetic_hrtf.hpp` (la ruta
+  HRTF real), no en `HrtfPersonalizer`**. `itdScale_` y `canal_resonance_boost_db` ya no son
+  código muerto — `ObjectSpatialRenderer::renderObjects()` ahora recibe `itdScale` y aplica un
+  retardo interaural real (hasta ~32 muestras a 48 kHz, leyendo el mismo ring buffer de 512
+  muestras que ya usaban las reflexiones tempranas, cero memoria nueva), e `itdScale=0` reproduce
+  exactamente el comportamiento ILD-only anterior. `canal_resonance_boost_db` ahora aplica una
+  ganancia real (precomputada, sin `pow()` en el hot path) sobre la banda del notch de pinna. El
+  "notch de pinna" sigue siendo una única frecuencia de corte pasada por un blend de un polo
+  (`in*0.85 + s*0.15`), no un filtro notch real (banda de rechazo) — eso no se tocó. Alcance:
+  banco de certificación (`IvannaAudioPipeline`), **no** Ruta B producción todavía.
 - **Eje 3 (`RoomProjectionEngine.hpp`)** — **parcial**: la convolución particionada por
   overlap-save SÍ es real (delega en `RirConvolver`, FFT Radix-2 propia, confirmado). Pero la
   "inversión de mínima fase" no existe como tal — lo implementado es un atenuador dependiente de
@@ -433,12 +437,34 @@ honesto por eje, con línea de archivo:
   ni curvas dependientes de SPL. Funcional y RT-safe, pero no es literalmente ISO 226. A
   diferencia de los ejes 1–5 y 7, **este ya corre en el audio real de Ruta B** (`omega_process`,
   `omega_effect.cpp`, commit `e7dcc503`) — no solo en el banco de certificación.
-- **Eje 7 (`PerfAuditor.hpp`)** — el benchmark es real (mide CPU%, ejecuta la pipeline 1s), pero
-  `latency_ms_algorithmic` se **asigna a `0.0f` por código**, no se deriva de una medición de
-  alineación de muestras — el "0 ms" es una aserción de diseño, no un resultado medido. Bajo ASan
-  el test de presupuesto de CPU (`test_perf_auditor`, caso `WithinBudgetCompliance`) es flaky por
-  el overhead propio de la instrumentación (falla con ASan, pasa 100% sin sanitizers) — no es una
-  regresión de código, es una limitación conocida de medir CPU% bajo ASan.
+- **Eje 7 (`PerfAuditor.hpp`)** — **parcial, latencia resuelta (commit `4268f8e0`)**: el benchmark
+  es real (mide CPU%, ejecuta la pipeline 1s). `latency_ms_algorithmic` ya no se asigna a `0.0f`
+  por código — `PerfAuditor::measureAlgorithmicLatencyMs()` envía un impulso centrado y mide el
+  onset real (primer sample que cruza el mismo umbral que ya usaba
+  `PerfAuditorTest.ZeroAddedAlgorithmicLatency`). `peaq_score` y `visqol_score` **siguen sin
+  medirse** — son constantes optimistas (`-0.15`/`4.85`), ahora marcadas explícitamente como NO
+  MEDIDO en el código; implementar PEAQ/ViSQOL reales queda fuera de alcance. Bajo ASan el test de
+  presupuesto de CPU (`test_perf_auditor`, caso `WithinBudgetCompliance`) es flaky por el overhead
+  propio de la instrumentación (falla con ASan, pasa 100% sin sanitizers) — no es una regresión de
+  código, es una limitación conocida de medir CPU% bajo ASan.
+
+**Lo que sigue sin estar al 100 (honesto, no una lista de trabajo prometida):**
+- **Eje 3**: la "inversión de mínima fase" sigue sin existir — sigue siendo la heurística RMS
+  descrita arriba. Cambiarlo de verdad es DSP de fase no trivial (requiere validación en
+  dispositivo, no solo en host) y no se tocó en esta sesión.
+- **Eje 6**: la aproximación de 2 bandas para ISO 226 sigue siendo una aproximación, no la tabla
+  real dependiente de SPL — y como este eje SÍ corre en el audio real de Ruta B, cambiarlo sin
+  validación de escucha en dispositivo es un riesgo real de regresión audible, no solo una mejora
+  de honestidad de comentarios. No se tocó por eso.
+- **Ejes 1, 3, 4, 5 y el propio Eje 7**: siguen sin cablearse a Ruta B — solo el Eje 6 y (de forma
+  indirecta, vía el mismo orquestador sin cablear) los Ejes 1/2/4 corregidos en esta sesión corren
+  hoy en producción. Cablear el resto sigue exigiendo decidir, clase por clase, qué reemplazan sin
+  duplicar WFS/HRTF/RIR/Compressor ya activos.
+- **`peaq_score`/`visqol_score`** (Eje 7): constantes, no medidos — ver arriba.
+- **Job `build-apk` de CI**: los cambios de esta sesión (commits `e7dcc503`, `1cc7b230`,
+  `4268f8e0`) están verificados contra `test-native-dsp` (113/113 tests host, réplica exacta del
+  job de CI) pero **no** contra una compilación real con el NDK de Android — este entorno no tiene
+  el NDK instalado. Pendiente de que CI lo confirme.
 
 **Próximo paso real, no prometido con fecha:** el Eje 6 ya quedó resuelto (ver arriba). Para los
 ejes 1–5 y 7, decidir explícitamente, clase por clase, qué reemplazarían en Ruta B sin duplicar
