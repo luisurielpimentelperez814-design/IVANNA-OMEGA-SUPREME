@@ -30,6 +30,9 @@ TEST(PerfAuditorTest, WithinBudgetCompliance) {
     PerfBudget target;
     target.latency_ms_algorithmic = 0.0f;
     target.cpu_pct_p99 = 12.0f; // Target <= 12% on Snapdragon 4 Gen 2
+#if defined(IVANNA_SANITIZER_ACTIVE) || defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(undefined_behavior_sanitizer)))
+    target.cpu_pct_p99 = 80.0f; // Sanitizer instrumentation overhead in virtualized CI runners
+#endif
     target.xruns_8h = 0;
     target.nan_events_8h = 0;
     target.alloc_events_hot_path = 0;
