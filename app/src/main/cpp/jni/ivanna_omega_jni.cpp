@@ -139,10 +139,13 @@ static std::atomic<bool> g_volterra_enabled{true};
 // relaxed ordering (semántica idéntica a g_volterra_enabled / g_voice_protect_score).
 // setIntensity() es un float-store idempotente; seguro llamarlo desde el hilo UI.
 // g_cochlearEngine es un singleton estático (cero alloc, cero mutex en hot-path).
+// NOTA DE ENLACE: g_cochlearEnabled / g_cochlearIntensity tienen enlace EXTERNO para
+// que ivanna_spatial_jni.cpp también pueda actualizarlos (evitando símbolos JNI
+// duplicados). Los símbolos JNI nativeSet* residen únicamente en ivanna_spatial_jni.cpp.
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
-static ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
-static std::atomic<bool>  g_cochlearEnabled{false};
-static std::atomic<float> g_cochlearIntensity{0.35f};
+ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
+std::atomic<bool>  g_cochlearEnabled{false};
+std::atomic<float> g_cochlearIntensity{0.35f};
 static std::atomic<bool> g_fastrpc_enabled{false};
 static std::atomic<bool> g_ati_enabled{true};
 static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
@@ -2697,61 +2700,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
     return arr;
 }
 } // extern "C"
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Eje Supremo Neuroacústico — JNI API pública (3 funciones, lock-free)
-//
-// Ruta de datos (UI → nativo):
-//   Switch Compose → ViewModel StateFlow → IvannaNativeLib.nativeSetCochlearInverseEnabled()
-//       → g_cochlearEnabled (std::atomic<bool>)
-//       → audio hot-path: if(enabled) { setIntensity(g_cochlearIntensity); process(...) }
-//
-//   Slider Compose  → ViewModel StateFlow → IvannaNativeLib.nativeSetCochlearIntensity()
-//       → g_cochlearIntensity (std::atomic<float>)
-//       → leído en cada bloque de audio antes de process()
-//
-// La prioridad SCHED_FIFO del hilo de audio ya la gestiona
-// ivanna::audio::enableAudioThreadFastMathOnce() al inicio de nativeProcess/
-// nativeProcessBlock — no se necesita ningún mutex aquí; los atomics con
-// relaxed ordering son suficientes (mismo modelo que g_volterra_enabled).
-// ═══════════════════════════════════════════════════════════════════════════════
-extern "C" {
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearInverseEnabled(
-    JNIEnv*, jobject, jboolean enabled) {
-    const bool on = (enabled == JNI_TRUE);
-    g_cochlearEnabled.store(on, std::memory_order_release);
-    // Preparar el motor con la tasa de muestreo activa cuando se activa por
-    // primera vez (idempotente: prepare() vuelve a calcular los biquads RBJ
-    // si el SR cambió; resetea z1/z2 solo si se llama explícitamente reset()).
-    if (on && g_params.sampleRate > 0) {
-        g_cochlearEngine.prepare(static_cast<float>(g_params.sampleRate));
-    }
-    LOGI("[Cochlear] setCochlearInverseEnabled=%d (sr=%u)", on ? 1 : 0, g_params.sampleRate);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearIntensity(
-    JNIEnv*, jobject, jfloat intensity) {
-    if (!std::isfinite(intensity)) return;
-    const float w = intensity < 0.f ? 0.f : (intensity > 1.f ? 1.f : intensity);
-    g_cochlearIntensity.store(w, std::memory_order_relaxed);
-    // No es necesario llamar setIntensity() aquí: el hot-path lo lee del
-    // atómico y lo aplica al engine en cada bloque — cero latencia de UI.
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsCochlearActive(
-    JNIEnv*, jobject) {
-    // Activo = habilitado Y pipeline inicializado Y hay audio fluyendo
-    // (verificado por g_initialized — misma condición que nativeProcess).
-    const bool active = g_cochlearEnabled.load(std::memory_order_acquire)
-                     && g_initialized.load(std::memory_order_acquire);
-    return active ? JNI_TRUE : JNI_FALSE;
-}
-
-} // extern "C" (cochlear block)
 
 // ── Limpieza ordenada antes de que los destructores estáticos corran ─────
 // JNI_OnUnload corre cuando el ClassLoader que cargó el .so es GC'd,

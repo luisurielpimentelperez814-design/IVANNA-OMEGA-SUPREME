@@ -312,14 +312,34 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqB
 // ============================================================================
 // Eje Supremo Neuroacústico — Inversión Biomecánica Coclear Activa (Cochlear-PINN)
 // Control seguro lock-free y sin contención con hilos SCHED_FIFO.
+//
+// Los 3 símbolos JNI (nativeSet*/isCochlear*) residen AQUÍ (ivanna_spatial_jni.cpp)
+// como única definición para todo el .so. Los atomics g_cochlearEnabled /
+// g_cochlearIntensity están definidos en ivanna_omega_jni.cpp con enlace externo
+// y se declaran aquí vía extern para que los helpers los actualicen también —
+// el hot-path de nativeProcess / nativeProcessBlock los lee directamente.
 // ============================================================================
+#include "../neuromorphic/CochlearActiveInverseModel.hpp"
+extern ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
+extern std::atomic<bool>  g_cochlearEnabled;
+extern std::atomic<float> g_cochlearIntensity;
 
 static inline void cochlearSetEnabledHelper(jboolean enabled) noexcept {
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setEnabled(enabled == JNI_TRUE);
+    const bool on = (enabled == JNI_TRUE);
+    // Ruta A: pipeline IvannaAudioPipeline (gestiona su propio engine interno)
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setEnabled(on);
+    // Ruta B: atomics leídos por nativeProcess/nativeProcessBlock (hot-path manual DSP)
+    g_cochlearEnabled.store(on, std::memory_order_release);
 }
 
 static inline void cochlearSetIntensityHelper(jfloat intensity) noexcept {
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setIntensity(static_cast<float>(intensity));
+    const float w = std::isfinite(static_cast<float>(intensity))
+        ? (intensity < 0.f ? 0.f : (intensity > 1.f ? 1.f : static_cast<float>(intensity)))
+        : 0.35f;
+    // Ruta A: pipeline
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setIntensity(w);
+    // Ruta B: atomic del hot-path manual
+    g_cochlearIntensity.store(w, std::memory_order_relaxed);
 }
 
 static inline jboolean cochlearIsActiveHelper() noexcept {

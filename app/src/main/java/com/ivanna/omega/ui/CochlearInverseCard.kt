@@ -17,7 +17,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ivanna.omega.ui.theme.*
 import com.ivanna.omega.ui.viewmodels.CochlearInverseViewModel
@@ -42,8 +41,8 @@ import com.ivanna.omega.ui.viewmodels.CochlearInverseViewModel
 internal fun CochlearInverseCard(
     vm: CochlearInverseViewModel = viewModel(factory = CochlearInverseViewModel.Factory)
 ) {
-    val enabled    by vm.cochlearEnabled.collectAsStateWithLifecycle()
-    val intensity  by vm.cochlearIntensity.collectAsStateWithLifecycle()
+    val enabled    by vm.cochlearEnabled.collectAsState()
+    val intensity  by vm.cochlearIntensity.collectAsState()
     val haptic     = LocalHapticFeedback.current
 
     // Color de acento animado: cian cuando activo, magenta tenue cuando inactivo
