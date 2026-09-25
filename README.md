@@ -173,6 +173,7 @@ de clics ("tronidos tipo metralleta").
 - **Motor coclear Volterra H2:** `IvannaNpeEngine` — modelado no-lineal de la cóclea (memoria de Volterra de 2º orden) con upsampling polifásico, compresión OHC e inhibición lateral.
 - **Neuromorphic Processing Engine (NPE):** spike-based con detección de género (`nativeGetDetectedGenre`) y firma espectral por bandas (`nativeGetSynthSignature`) — expone clasificación al sistema adaptativo.
 - **OmegaVibratoryProcessor:** modelado físico de la respuesta vibratoria del transductor.
+- **CochlearActiveInverseEngine (PINN/OHC) — `neuromorphic/CochlearActiveInverseModel.hpp`:** Eje Supremo Neuroacústico. Aplica la transferencia inversa de la compresión de prestina (`y_b = g_b / (1 + α_b·g_b²)`) sobre 8 bandas Greenwood (120 Hz – 16 kHz) con integrador Heun RK2 cero-divisiones y recíproco Newton-Raphson NEON. Latencia algorítmica: **0.00 ms**. Controles en UI (pestaña **NHO** → *Inversión Biomecánica Coclear*): Switch toggle + Slider de intensidad 0–100 % con retroalimentación háptica. Estado persistido en `ivanna_cochlear_prefs_v1`. Ruta JNI: `IvannaNativeLib.nativeSetCochlearInverseEnabled` / `nativeSetCochlearIntensity` / `nativeIsCochlearActive` → `ivanna_omega_jni.cpp::g_cochlearEnabled` / `g_cochlearIntensity` (atómicos lock-free).
 
 ---
 

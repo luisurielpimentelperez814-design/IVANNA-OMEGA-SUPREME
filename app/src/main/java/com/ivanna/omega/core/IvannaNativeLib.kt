@@ -271,6 +271,16 @@ object IvannaNativeLib {
     external fun nativeSetAtiEnabled(enabled: Boolean)
     external fun nativeIsAtiEnabled(): Boolean
 
+    // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine (PINN/OHC) ──────
+    /** Activa/desactiva la Inversión Biomecánica Coclear Activa (Eje Supremo PINN).
+     *  Thread-safe: escribe a un std::atomic<bool>; el hot-path lo lee con relaxed order. */
+    external fun nativeSetCochlearInverseEnabled(enabled: Boolean)
+    /** Establece la intensidad de descompresión OHC [0.0 .. 1.0].
+     *  0.0 = bypass completo; 1.0 = inversión máxima de prestina. Latencia de UI: 0 ms. */
+    external fun nativeSetCochlearIntensity(intensity: Float)
+    /** Devuelve true si el motor coclear está activo Y el pipeline inicializado. */
+    external fun nativeIsCochlearActive(): Boolean
+
     /** Reinicia el acumulador de medición de IvannaLab. */
     external fun nativeLabReset()
     /** Alimenta [frames] frames estéreo intercalados [L0,R0,L1,R1,...]. */
@@ -327,11 +337,9 @@ object IvannaNativeLib {
     external fun nativeGetConfiguredBitDepth(): Int
 
     // ═══ Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ═══
+    // Símbolos sin prefijo → IvannaSpatialNative / NativeBridge (ivanna_spatial_jni.cpp)
+    // Símbolos nativeSet*  → ivanna_omega_jni.cpp hot-path (g_cochlearEnabled / g_cochlearIntensity)
     external fun setCochlearInverseEnabled(enabled: Boolean)
     external fun setCochlearIntensity(intensity: Float)
     external fun isCochlearActive(): Boolean
-
-    external fun nativeSetCochlearInverseEnabled(enabled: Boolean)
-    external fun nativeSetCochlearIntensity(intensity: Float)
-    external fun nativeIsCochlearActive(): Boolean
 }

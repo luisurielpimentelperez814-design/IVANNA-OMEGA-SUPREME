@@ -333,6 +333,8 @@ private fun BinauralTab(
 // ── Tab NHO ───────────────────────────────────────────────────────────────────
 // Bug E fix — los 4 sliders levantados a prefs; antes cada switch de tab los reseteaba
 @Composable
+// ── Tab NHO ───────────────────────────────────────────────────────────────────
+// Bug E fix — los 4 sliders levantados a prefs; antes cada switch de tab los reseteaba
 private fun NHOTab(
     prefs: AdaptiveControlsState,
     updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
@@ -357,6 +359,12 @@ private fun NHOTab(
             }
         }
     }
+    Spacer(modifier = Modifier.height(12.dp))
+    // ── Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ───────
+    // Controla CochlearActiveInverseEngine (C++20, NEON, 8 bandas Greenwood).
+    // Ruta JNI: CochlearInverseViewModel → IvannaNativeLib.nativeSetCochlear*()
+    //   → g_cochlearEnabled / g_cochlearIntensity (atomic) → hot-path de audio.
+    CochlearInverseCard()
 }
 
 // ── Componente slider reutilizable ────────────────────────────────────────────
