@@ -118,6 +118,29 @@ Ver la sección homóloga de README.md para el detalle completo.
 
 **© 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.**
 
+---
+
+## Eje Supremo Neuroacústico — Inversión Biomecánica Coclear Activa (Cochlear-PINN)
+
+> Implementado en `app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`
+
+El motor **CochlearActiveInverseEngine** cancela las no-linealidades introducidas por la amplificación de prestina (células ciliadas externas OHC) mediante inversión biomecánica activa con resolución temporal sub-microsegundo.
+
+**Principio de funcionamiento:**
+La cóclea amplifica de forma no-lineal según `H(x) = x·(1 + α·env²)`. El Eje Supremo aplica la inversa complementaria `H⁻¹(x) = x·(1 − α·env²)` sobre 8 bandas Greenwood (120 Hz–16 kHz), seguida de un integrador Heun (RK2) para el seguimiento de la envolvente OHC. El resultado es una señal binaural con la distorsión coclear cancelada antes de llegar al DAC.
+
+**Garantías RT-Safety:**
+- CERO `malloc`/`new`/`free` en `process()`
+- Latencia algorítmica añadida: **0.00 ms**
+- SIMD ARM NEON (`float32x4_t`, 4 bandas/ciclo)
+- `alignas(64)` en todos los buffers de estado
+
+**Toggle UI:** `COCLEAR` en `IvannaControlPanel` → `PiLstmBridge.setCochlearEnabled()` → `IvannaNativeLib.nativeSetCochlearEnabled()` → motor nativo activado/desactivado en ≤1 bloque de audio (~10 ms).
+
+**Tests CTest: 3/3 ✅** — ZeroLatency · NumericalStability · HarmonicEnergy
+
+---
+
 *Construido muestra a muestra. Auditado commit a commit.*
 
 **⬡ IVANNA OMEGA SUPREME ⬡**

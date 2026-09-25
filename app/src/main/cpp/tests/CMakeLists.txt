@@ -598,9 +598,27 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_hrtf_personalizer_wiring COMMAND test_hrtf_personalizer_wiring)
 
-# ── Eje Supremo Neuroacústico: inversión coclear activa (header-only) ────────
-add_executable(test_cochlear_inverse_model test_cochlear_inverse_model.cpp)
+# ── Eje Supremo Neuroacústico: Inversión Biomecánica Coclear Activa ───────────
+# CochlearActiveInverseModel.hpp es header-only (cero .cpp propios):
+# no requiere fuentes en ivanna_dsp_under_test ni librería auxiliar.
+# Verifica: (1) 0 ms de latencia algorítmica / respuesta de impulso,
+#           (2) estabilidad numérica con entrada subnormal (1e-25f),
+#           (3) energía acotada con señal multitono de bandas Greenwood.
+add_executable(test_cochlear_inverse_model
+  test_cochlear_inverse_model.cpp
+)
 target_link_libraries(test_cochlear_inverse_model PRIVATE GTest::gtest_main)
-target_include_directories(test_cochlear_inverse_model PRIVATE .. ../include ../spatial ../neuromorphic host_stubs)
+target_include_directories(test_cochlear_inverse_model PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  host_stubs
+)
 target_compile_options(test_cochlear_inverse_model PRIVATE -Wall -Wextra)
-add_test(NAME test_cochlear_inverse_model COMMAND test_cochlear_inverse_model)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_cochlear_inverse_model PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_cochlear_inverse_model PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_cochlear_inverse_model)
+

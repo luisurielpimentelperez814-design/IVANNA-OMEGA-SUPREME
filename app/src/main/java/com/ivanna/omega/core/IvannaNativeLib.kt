@@ -70,6 +70,10 @@ object IvannaNativeLib {
     external fun nativeSetDelta(v: Float)
     external fun nativeSetEta(v: Float)
     external fun nativeSetSpatialWet(v: Float)
+    /** Eje Supremo: activa/desactiva el motor Cochlear-PINN en el hot-path de audio. */
+    external fun nativeSetCochlearEnabled(enabled: Boolean)
+    /** Eje Supremo: devuelve el estado actual del motor Cochlear-PINN. */
+    external fun nativeGetCochlearEnabled(): Boolean
     external fun nativeSetHarmonicGain(v: Float)
     external fun nativeSetHRTFEnabled(en: Boolean)
     external fun nativeSetAdaptEnabled(en: Boolean)

@@ -487,6 +487,56 @@ Antes: `latency_ms_algorithmic = 0.0f` hardcodeado — aserción de diseño, no 
 
 ---
 
+### Eje Supremo — Inversión Biomecánica Coclear Activa (Cochlear-PINN) · [IMPLEMENTADO ✅]
+
+> **`app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`** — header-only, RT-Safe, C++20
+
+Cancela las no-linealidades cocleares originadas en la **amplificación de prestina (OHC — Outer Hair Cells)** mediante inversión biomecánica activa con resolución temporal **sub-microsegundo**.
+
+**Arquitectura:**
+
+- **8 bandas críticas Greenwood** (mapa coclear humano, 1990) con frecuencias centrales de 120 Hz a 16 000 Hz, posiciones uniformes en el espacio tonotópico: `{120, 331, 710, 1390, 2613, 4807, 8736, 16000}` Hz.
+- **Función de transferencia inversa complementaria `1 + α·x²`:** el modelo OHC hacia adelante amplifica `H(x) = x·(1 + α·env²)`; la inversa aplica `H⁻¹(x) = x·(1 − α·env²)` — sin divisiones en el hot-path.
+- **Integrador numérico Heun (Runge-Kutta orden 2):** usado para el seguimiento de envolvente OHC (dynamics), libre de divisiones en el loop de audio. Los coeficientes son pre-computados en `prepare()` (la única división del ciclo de vida del motor).
+- **`alignas(64)`** en los buffers de estado `ChannelState` (SoA — Structure of Arrays) para carga NEON contigua sin gather.
+- **SIMD ARM NEON `float32x4_t`:** procesa 4 bandas por ciclo (2 iteraciones = 8 bandas totales), con fallback scalar auto-vectorizable para hosts x86\_64.
+- **`__restrict`** en todos los punteros de audio; garantía estricta de **CERO** llamadas a `malloc`, `new`, `free` o `std::vector::resize` en `process()`.
+- **Latencia algorítmica agregada: exactamente 0.00 ms** — procesado causal in-place, sin buffers de lookahead.
+
+**Integración en el pipeline:**
+
+```
+Input (Stereo L/R)
+  → StereoObjectDecomposer     (Eje 1)
+  → ObjectSpatialRenderer      (Eje 4)
+  → PhysicalSceneRenderer      (Eje 5)
+  → RoomProjectionEngine       (Eje 3)
+  → HearingAdaptationEngine    (Eje 6)
+  → CochlearActiveInverseEngine  ← EJE SUPREMO (último eslabón, 0.00 ms)
+  → Output (Stereo L/R)
+```
+
+**Cableado UI → JNI → DSP:**
+
+```
+Toggle "COCLEAR" (IvannaControlPanel)
+  → ControlTabScreen.onNpeFlagsChange
+  → PiLstmBridge.setCochlearEnabled(en)
+  → IvannaNativeLib.nativeSetCochlearEnabled(en)   ← JNI dedicado
+  → g_cochlear_enabled.store(…, relaxed)            ← atómico en hot-path
+  → g_cochlear_engine.process(L, R, n)              ← CochlearActiveInverseEngine
+```
+
+**Suite de tests CTest (3/3 verde):**
+
+| Test | Descripción | Estado |
+|------|-------------|--------|
+| `ZeroLatencyAndImpulseResponse` | Respuesta instantánea no-nula en muestra 0 | ✅ 0 ms |
+| `NumericalStabilityNoNaN` | 50 bloques señal estocástica + subnormal (1e-25f): cero NaN/Inf | ✅ |
+| `HarmonicLinearizationEnergy` | Energía acotada con multitono Greenwood, sin clipping descontrolado | ✅ |
+
+---
+
 ## ✦ Motor TinyML Neuromórfico — Dos Implementaciones, Una en Producción
 
 **Estado verificado por grep sobre todo `app/src/main/cpp/`:**

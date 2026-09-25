@@ -108,8 +108,10 @@ object PiLstmBridge {
         if (ready) IvannaNativeLib.nativeSetAdaptEnabled(en)
     }
     fun setCochlearEnabled(en: Boolean) {
-        // Cochlear → spatial wet: on=1.0, off=0.0
-        if (ready) IvannaNativeLib.nativeSetSpatialWet(if (en) 1f else 0f)
+        // Eje Supremo: llama al motor CochlearActiveInverseEngine real (Cochlear-PINN).
+        // Anteriormente enrutaba erróneamente a nativeSetSpatialWet — ahora cableado
+        // directamente al JNI dedicado que controla g_cochlear_enabled en el hot-path.
+        if (ready) IvannaNativeLib.nativeSetCochlearEnabled(en)
     }
     // Estado para restaurar tras bypass (FIX: antes harmonicGain se ponía a 0
     // al entrar en bypass y JAMÁS se restauraba al salir — el ajuste del

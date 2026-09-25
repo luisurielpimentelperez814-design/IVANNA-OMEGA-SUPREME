@@ -133,22 +133,16 @@ static std::atomic<int>  g_lab_auto_frame_count{0};
 // Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
 // ═══════════════════════════════════════════════════════════════════════════
 static std::atomic<bool> g_volterra_enabled{true};
-
-// ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine (PINN/OHC) ─────────
-// Controles lock-free: enabled y intensity se leen desde el hilo de audio con
-// relaxed ordering (semántica idéntica a g_volterra_enabled / g_voice_protect_score).
-// setIntensity() es un float-store idempotente; seguro llamarlo desde el hilo UI.
-// g_cochlearEngine es un singleton estático (cero alloc, cero mutex en hot-path).
-// NOTA DE ENLACE: g_cochlearEnabled / g_cochlearIntensity tienen enlace EXTERNO para
-// que ivanna_spatial_jni.cpp también pueda actualizarlos (evitando símbolos JNI
-// duplicados). Los símbolos JNI nativeSet* residen únicamente en ivanna_spatial_jni.cpp.
-#include "../neuromorphic/CochlearActiveInverseModel.hpp"
-ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
-std::atomic<bool>  g_cochlearEnabled{false};
-std::atomic<float> g_cochlearIntensity{0.35f};
 static std::atomic<bool> g_fastrpc_enabled{false};
 static std::atomic<bool> g_ati_enabled{true};
 static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
+
+// ── Eje Supremo Neuroacústico: Inversión Biomecánica Coclear Activa ──────────
+// g_cochlear_engine: instancia estática (sin heap), RT-Safe, ≈704 bytes.
+// g_cochlear_enabled: leído en hot-path con relaxed (escritura solo desde UI).
+#include "../neuromorphic/CochlearActiveInverseModel.hpp"
+static std::atomic<bool> g_cochlear_enabled{true};
+static ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlear_engine;
 
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
@@ -1471,14 +1465,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
     }
 
-    // ── Eje Supremo Neuroacústico: Inversión Coclear Activa (PINN/OHC) ──────────
-    // Posición: DESPUÉS de Volterra H2 (idéntica a IvannaAudioPipeline::process() —
-    // último estadio antes de la salida). Cero lock, cero alloc; el denominador
-    // de la inversa de prestina (1 + α·d²) ≥ 1 garantiza que la energía de salida
-    // nunca supera la de entrada — no se necesita re-limitar tras este paso.
-    if (g_cochlearEnabled.load(std::memory_order_relaxed)) {
-        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
-        g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, static_cast<std::size_t>(n));
+    // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
+    // Latencia añadida: 0.00 ms. Cero allocs. Branchless NEON en ARM64.
+    // Posición: último eslabón del DSP (post-Volterra), antes del re-interleave.
+    if (g_cochlear_enabled.load(std::memory_order_relaxed)) {
+        g_cochlear_engine.process(g_ats.pdOutL, g_ats.pdOutR, n);
     }
 
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
@@ -1524,6 +1515,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // (ataque 0.19ms = distorsion armonica; release 6.25ms = bombeo).
     g_safety_limiter.setParams();
     g_safety_limiter.setSampleRate((float)sr);
+    // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
+    // Called here (UI thread, non-RT) — process() will never allocate.
+    g_cochlear_engine.prepare(static_cast<float>(sr), 512);
     // FIX RT: inicializar RIR aquí (hilo de UI) — alocación + disco fuera
     // del callback de audio. nativeProcess solo leerá los punteros ya
     // publicados con acquire-load.
@@ -1685,17 +1679,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         }
     }
 
+    // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
+    // Post-Volterra, pre-limiter: la señal está en su nivel final de mezcla.
+    // 0.00 ms de latencia añadida. Branchless NEON en ARM64. Cero allocs.
+    if (g_cochlear_enabled.load(std::memory_order_relaxed)) {
+        g_cochlear_engine.process(oL, oR, n);
+    }
+
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
     g_safety_limiter.process(oL, oR, n);
-    // ── Eje Supremo Neuroacústico: Inversión Coclear Activa (PINN/OHC) ──────────
-    // Mismo patrón que en nativeProcess: post-limiter, pre-output. La descompresión
-    // OHC es acotada por construcción (denominador ≥ 1 → sin clip posible).
-    if (g_cochlearEnabled.load(std::memory_order_relaxed)) {
-        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
-        g_cochlearEngine.process(oL, oR, static_cast<std::size_t>(n));
-    }
     // FIX (safety net — mismo motivo que en nativeProcess, ver ese
     // comentario extenso): NaN/Inf nunca se saneaba en esta ruta tampoco.
     // Campo separado (blkNanRecoveries) por el mismo motivo que el resto
@@ -2146,6 +2140,25 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     if (!std::isfinite(v)) return;
     g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
     applyNhoWet();
+}
+
+// ── nativeSetCochlearEnabled — Eje Supremo: Inversión Biomecánica Coclear ────
+// Activa / desactiva el CochlearActiveInverseEngine en el hot-path de audio.
+// Escritura atómica (relaxed): el motor lee el flag en cada bloque de audio
+// con memory_order_relaxed — latencia de propagación ≤ 1 bloque (~10 ms).
+// Cuando se activa, el engine ya tiene su estado listo (prepare() fue
+// llamado en nativeInitDSP); no se resetea al re-activar para evitar glitch.
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    g_cochlear_enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+
+// ── nativeGetCochlearEnabled — estado actual del Eje Supremo ─────────────────
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearEnabled(
+    JNIEnv*, jobject) {
+    return g_cochlear_enabled.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
 // ── Puente app→daemon para Upmixing (HOA) ────────────────────────────────
