@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.3.12
-versionCode=2312
+version=v2.3.13
+versionCode=2313
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.3.12: RT-safety fixes (HRTF malloc eliminado, WfsProtection restaurada, Volterra H2 gate térmico) · EQ headroom compensado · SafetyLimiter threshold corregido · HearingAdaptationEngine Eje 6 cableado en Ruta B · crash JNI nativeEvolveStep resuelto · SCHED_FIFO 98
+description=v2.3.13: Eje Supremo Inversión Biomecánica Coclear Activa (Cochlear-PINN) + Micro-delay MSO · Artefacto ultra-optimizado sin duplicidades · Módulo Magisk ligero sin peso muerto .sofa · Fix de descompresión CI (streaming deflate estándar).
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

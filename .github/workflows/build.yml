@@ -334,7 +334,7 @@ jobs:
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
           fi
           ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
-          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" )
+          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" -x "system/etc/ivanna_omega/sofa/*" -x "*.sofa" )
           # El zip DEBE contener el daemon
           unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
@@ -393,19 +393,7 @@ jobs:
           # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
           sha256sum -c apk_sha256.txt
 
-          # Empaquetado determinístico en directorio limpio
-          rm -rf artifact && mkdir artifact
-          cp "./$APK_FINAL"  artifact/
-          cp apk_sha256.txt  artifact/
-          # -j: sin paths internos; -X: sin metadatos extra; sin incluir el zip en sí
-          ( cd artifact && zip -jX ivanna-apk-package.zip "$APK_FINAL" apk_sha256.txt )
-          # Validar el zip producido
-          unzip -t artifact/ivanna-apk-package.zip
-          unzip -l artifact/ivanna-apk-package.zip | grep -q "$(basename "$APK_FINAL")" \
-            || { echo "ERROR: APK no encontrado dentro del package zip"; exit 1; }
-          sha256sum artifact/ivanna-apk-package.zip | tee artifact/package_sha256.txt
-
-          echo "✓ APK empaquetado y verificado: $APK_FINAL"
+          echo "✓ APK verificado: $APK_FINAL"
 
       - name: Upload Magisk module (zip + daemon + effect lib)
         uses: actions/upload-artifact@v4
@@ -423,12 +411,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-build-${{ github.sha }}
-          compression-level: 0
           path: |
             ivanna-omega-supreme-${{ github.sha }}.apk
             apk_sha256.txt
-            artifact/ivanna-apk-package.zip
-            artifact/package_sha256.txt
           if-no-files-found: error
           overwrite: false
 
