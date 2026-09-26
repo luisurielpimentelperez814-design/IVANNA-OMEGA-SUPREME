@@ -118,6 +118,12 @@ object PersistedStateRestorer {
             }
         }
 
+        // 4. Restaurar los 5 Ejes de Supremacía Cuántico-Neuromórfica (C++23 Lock-Free)
+        runCatching {
+            val supremeState = com.ivanna.omega.ui.SupremeAxesPrefs.load(ctx)
+            com.ivanna.omega.ui.SupremeAxesPrefs.applyToNative(supremeState)
+        }.onFailure { Log.w(TAG, "Fallo al restaurar SupremeAxesPrefs: ${it.message}") }
+
         Log.i(TAG, "✅ Todos los controles descableados restaurados (Persistencia total conectada)")
     }
 }

@@ -42,6 +42,13 @@ fun SpatialAudioPanel(
         SpatialAudioPrefs.save(context, state)
     }
 
+    var supremeState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
+    val supremeTelemetry by rememberSupremeAxesTelemetry()
+    fun updateSupreme(f: (SupremeAxesState) -> SupremeAxesState) {
+        supremeState = f(supremeState)
+        SupremeAxesPrefs.save(context, supremeState)
+    }
+
     // Estado real leído del motor (FASE 5)
     var hrtfLoaded by remember { mutableStateOf(false) }
     var activeSubject by remember { mutableStateOf("none") }
@@ -69,6 +76,7 @@ fun SpatialAudioPanel(
         runCatching {
             com.ivanna.omega.core.NativeBridge.setCochlearInverseEnabled(state.cochlearInverseEnabled)
             com.ivanna.omega.core.NativeBridge.setCochlearIntensity(state.cochlearIntensity)
+            SupremeAxesPrefs.applyToNative(supremeState)
         }
         while (true) {
             hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
@@ -219,6 +227,13 @@ fun SpatialAudioPanel(
             RowSwitch("Modo automático", state.safAutoMode) { on -> update { it.copy(safAutoMode = on) } }
             Text("Modelo: $safStatus", color = TextMuted, fontSize = 10.sp)
         }
+
+        // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (C++23 Lock-Free) ──
+        WarpedLatticeAxisCard(supremeState, supremeTelemetry, ::updateSupreme)
+        TransharmonicCvnnAxisCard(supremeState, supremeTelemetry, ::updateSupreme)
+        SnnNmfHoaAxisCard(supremeState, supremeTelemetry, ::updateSupreme)
+        PinnaManifoldAxisCard(supremeState, supremeTelemetry, ::updateSupreme)
+        ShmFarrowArbitratorAxisCard(supremeState, supremeTelemetry, ::updateSupreme)
     }
 }
 

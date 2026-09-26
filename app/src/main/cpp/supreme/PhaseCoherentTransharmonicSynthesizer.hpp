@@ -121,7 +121,11 @@ public:
     }
 
     void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
     void setHarmonicGain(float g) noexcept { harmonicGain_.store(std::clamp(g, 0.0f, 1.0f), std::memory_order_release); }
+    float harmonicGain() const noexcept { return harmonicGain_.load(std::memory_order_acquire); }
+    void setImdCancelStrength(float s) noexcept { imdCancelStrength_.store(std::clamp(s, 0.0f, 1.0f), std::memory_order_release); }
+    float imdCancelStrength() const noexcept { return imdCancelStrength_.load(std::memory_order_acquire); }
     float maxPhaseDerivativeStep() const noexcept { return lastPhaseDerivativeContinuity_; }
 
 private:
@@ -201,7 +205,8 @@ private:
 
         const float ddspOsc = envSlow * (std::cos(oscPhase) * accR - std::sin(oscPhase) * accI);
         // Cancelación destructiva del producto de intermodulación predicho
-        const float imdCancelled = ddspOsc - 0.18f * imdBeatEnvelope * z2Real;
+        const float imdStrength = imdCancelStrength_.load(std::memory_order_relaxed);
+        const float imdCancelled = ddspOsc - (0.36f * imdStrength) * imdBeatEnvelope * z2Real;
 
         // 6. Proyección pasa-alto (>16 kHz) con fase coherente
         const float hpOut = hpB0_ * imdCancelled + hpSt[0];
@@ -235,6 +240,7 @@ private:
 
     std::atomic<bool> enabled_{true};
     std::atomic<float> harmonicGain_{0.25f};
+    std::atomic<float> imdCancelStrength_{0.5f};
 };
 
 } // namespace ivanna::supreme

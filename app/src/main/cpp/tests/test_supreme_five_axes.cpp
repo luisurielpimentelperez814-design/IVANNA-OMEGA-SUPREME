@@ -14,6 +14,7 @@
 #include "supreme/SnnNmfHoaUpmixer.hpp"
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
+#include "spatial/IvannaAudioPipeline.hpp"
 
 using namespace ivanna::supreme;
 
@@ -202,3 +203,62 @@ TEST(SupremeAxis5_ShmArbitrationAndFarrow5, LocklessCasOwnershipAndNanosecondFar
     // Polinomio de 5º orden a f = fs/48 tiene error de interpolación < 1e-5
     EXPECT_LT(maxErr, 1.0e-4f);
 }
+
+// ─── INTEGRACIÓN PIPELINE + CONTROLES LOCK-FREE UI/JNI ───────────────────────
+TEST(SupremeFiveAxesPipelineIntegration, FullControlsAndTelemetryEndToEnd) {
+    auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+    pipe.reset();
+
+    // Activar y parametrizar los 5 Ejes tal como lo hace SupremeAxesPrefs.applyToNative()
+    pipe.warpedLatticeInverter().setWarpingLambda(0.756f);
+    pipe.warpedLatticeInverter().setBlCompensationDrive(0.55f);
+    pipe.warpedLatticeInverter().setMicroChirpEnabled(true);
+    pipe.warpedLatticeInverter().setEnabled(true);
+
+    pipe.transharmonicSynth().setHarmonicGain(0.32f);
+    pipe.transharmonicSynth().setImdCancelStrength(0.85f);
+    pipe.transharmonicSynth().setEnabled(true);
+
+    pipe.snnNmfHoaUpmixer().setImmersivity(0.65f);
+    pipe.snnNmfHoaUpmixer().setSnnThreshold(0.50f);
+    pipe.snnNmfHoaUpmixer().setEnabled(true);
+
+    pipe.pinnaManifoldInterpolator().calibrateFromLatents(0.20f, -0.15f, 0.10f, 48000.0f);
+    pipe.pinnaManifoldInterpolator().setWetMix(0.60f);
+    pipe.pinnaManifoldInterpolator().setEnabled(true);
+
+    pipe.shmMsoArbitrator().setMsoItdNanoseconds(12500.0f);
+    pipe.shmMsoArbitrator().setEbpfBypassActive(true);
+    pipe.shmMsoArbitrator().setEnabled(true);
+    EXPECT_TRUE(pipe.shmMsoArbitrator().tryAcquireOwnership(4242, 10'000'000ULL));
+    EXPECT_EQ(pipe.shmMsoArbitrator().ownerPid(), 4242);
+
+    std::array<float, 256> bufL{}, bufR{};
+    for (size_t i = 0; i < 256; ++i) {
+        const float t = static_cast<float>(i) / 48000.0f;
+        bufL[i] = 0.35f * std::sin(2.0f * 3.14159265f * 440.0f * t);
+        bufR[i] = 0.35f * std::cos(2.0f * 3.14159265f * 880.0f * t);
+    }
+
+    pipe.process(bufL.data(), bufR.data(), 256);
+
+    for (size_t i = 0; i < 256; ++i) {
+        ASSERT_TRUE(std::isfinite(bufL[i]));
+        ASSERT_TRUE(std::isfinite(bufR[i]));
+    }
+
+    // Verificar telemetría leída por la UI
+    EXPECT_GE(pipe.warpedLatticeInverter().lastSubSampleDelay(), 0.0f);
+    EXPECT_LT(pipe.warpedLatticeInverter().lastSubSampleDelay(), 1.0f);
+    EXPECT_GE(pipe.pinnaManifoldInterpolator().activeNotchFreqHz(), 6200.0f);
+    EXPECT_LE(pipe.pinnaManifoldInterpolator().activeNotchFreqHz(), 10400.0f);
+
+    // Devolver a bypass para no alterar estado global de otros tests
+    pipe.shmMsoArbitrator().releaseOwnership(4242);
+    pipe.warpedLatticeInverter().setEnabled(false);
+    pipe.transharmonicSynth().setEnabled(false);
+    pipe.snnNmfHoaUpmixer().setEnabled(false);
+    pipe.pinnaManifoldInterpolator().setEnabled(false);
+    pipe.shmMsoArbitrator().setEnabled(false);
+}
+

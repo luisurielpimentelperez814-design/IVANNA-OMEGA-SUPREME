@@ -52,4 +52,12 @@ object IvannaRoute {
 
     // Panel de conectividad WiFi / datos / Gemini Agent
     const val NETWORK = "network_status"
+
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026) ─────
+    const val SUPREME_AXES_HUB       = "supreme_axes_hub"
+    const val SUPREME_AXIS_1_LATTICE = "supreme_axis_1_lattice"
+    const val SUPREME_AXIS_2_CVNN    = "supreme_axis_2_cvnn"
+    const val SUPREME_AXIS_3_SNN_HOA = "supreme_axis_3_snn_hoa"
+    const val SUPREME_AXIS_4_PINNA_INR  = "supreme_axis_4_pinna_inr"
+    const val SUPREME_AXIS_5_SHM_FARROW = "supreme_axis_5_shm_farrow"
 }

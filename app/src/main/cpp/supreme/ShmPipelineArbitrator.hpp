@@ -205,4 +205,79 @@ struct alignas(64) ShmArbitrationControlBlock {
     }
 };
 
+/**
+ * @class SupremeMsoFarrowArbitrator
+ * @brief Orquestador en tiempo real del Eje 5: Arbitraje SHM lockless CAS
+ *        (owner_pid + bypass eBPF/XDP) y alineación interaural MSO mediante
+ *        un par estéreo de filtros polinómicos de Farrow de 5º Orden.
+ */
+class alignas(64) SupremeMsoFarrowArbitrator {
+public:
+    SupremeMsoFarrowArbitrator() noexcept {
+        reset();
+    }
+
+    void reset() noexcept {
+        farrowL_.reset();
+        farrowR_.reset();
+    }
+
+    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
+
+    void setMsoItdNanoseconds(float ns) noexcept {
+        const float clamped = std::clamp(ns, -750000.0f, 750000.0f);
+        msoItdNs_.store(clamped, std::memory_order_release);
+        shm_.mso_itd_nanoseconds.store(clamped, std::memory_order_relaxed);
+    }
+
+    float msoItdNanoseconds() const noexcept {
+        return msoItdNs_.load(std::memory_order_acquire);
+    }
+
+    void setEbpfBypassActive(bool active) noexcept {
+        shm_.ebpf_bypass_active.store(active, std::memory_order_release);
+    }
+
+    bool isEbpfBypassActive() const noexcept {
+        return shm_.ebpf_bypass_active.load(std::memory_order_acquire);
+    }
+
+    bool tryAcquireOwnership(int32_t pid, uint64_t nowNs) noexcept {
+        return shm_.tryAcquireOwnership(pid, nowNs);
+    }
+
+    bool releaseOwnership(int32_t pid) noexcept {
+        return shm_.releaseOwnership(pid);
+    }
+
+    int32_t ownerPid() const noexcept {
+        return shm_.owner_pid.load(std::memory_order_acquire);
+    }
+
+    void process(float* __restrict left, float* __restrict right, size_t numSamples, float sampleRate = 48000.0f) noexcept {
+        if (!left || !right || numSamples == 0) return;
+        if (!enabled_.load(std::memory_order_relaxed)) return;
+
+        const float sr = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
+        const float itdNs = msoItdNs_.load(std::memory_order_relaxed);
+        // Conversión de nanosegundos a fracción de muestra diferencial L/R alrededor de 0.5 muestras
+        const float deltaSamples = (itdNs * 1.0e-9f) * sr;
+        const float fracL = std::clamp(0.5f - 0.5f * deltaSamples, 0.0f, 1.0f);
+        const float fracR = std::clamp(0.5f + 0.5f * deltaSamples, 0.0f, 1.0f);
+
+        for (size_t i = 0; i < numSamples; ++i) {
+            left[i]  = farrowL_.processSample(left[i],  fracL);
+            right[i] = farrowR_.processSample(right[i], fracR);
+        }
+    }
+
+private:
+    FarrowOrder5Delay farrowL_{};
+    FarrowOrder5Delay farrowR_{};
+    ShmArbitrationControlBlock shm_{};
+    std::atomic<bool> enabled_{false};
+    std::atomic<float> msoItdNs_{0.0f};
+};
+
 } // namespace ivanna::supreme

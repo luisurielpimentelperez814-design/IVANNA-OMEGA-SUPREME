@@ -242,6 +242,7 @@ fun ControlTabScreen(
         onOpenAdaptiveProfiles     = { outerNav.navigate("adaptive_profiles") },
         onOpenProfiles             = { outerNav.navigate("profiles") },
         onOpenMagisk               = { outerNav.navigate("magisk") },
+        onOpenSupremeAxesHub       = { outerNav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
         modifier                   = modifier
     )
 }

@@ -257,6 +257,30 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
                          "Corre en Dispatchers.IO — no bloquea el hilo de audio."
             )
 
+            // ── 9. 5 Ejes de Supremacía Cuántico-Neuromórfica (C++23) ────
+            val supState = remember { SupremeAxesPrefs.load(ctx) }
+            val supTelem by rememberSupremeAxesTelemetry()
+            val activeSupremeCount = listOf(
+                supState.warpedLatticeEnabled,
+                supState.transharmonicCvnnEnabled,
+                supState.snnHoaUpmixerEnabled,
+                supState.pinnaManifoldEnabled,
+                supState.farrowMsoEnabled
+            ).count { it }
+            EngineCard(
+                icon   = Icons.Default.Memory,
+                title  = "5 EJES DE SUPREMACÍA (C++23 LOCK-FREE)",
+                status = "$activeSupremeCount/5 activos · τ_g=${"%.3f".format(supTelem.subSampleDelaySamples)} · LIF=${supTelem.snnActiveSpikes}",
+                ok     = nativeLoaded,
+                detail = buildString {
+                    append("Eje 1 (Warped Lattice Anti-Dirac): ${if (supState.warpedLatticeEnabled) "ON" else "BYPASS"} · λ=${"%.3f".format(supState.warpedLatticeLambda)} · τ_g=${"%.3f".format(supTelem.subSampleDelaySamples)} smp\n")
+                    append("Eje 2 (CVNN+DDSP Anti-DSEE): ${if (supState.transharmonicCvnnEnabled) "ON" else "BYPASS"} · Δφ̇=${"%.4f".format(supTelem.maxPhaseDerivativeRad)} rad\n")
+                    append("Eje 3 (SNN INT8 + NMF HOA 4º): ${if (supState.snnHoaUpmixerEnabled) "ON" else "BYPASS"} · Spikes=${supTelem.snnActiveSpikes}/4 · 16ch UPOLA\n")
+                    append("Eje 4 (Pinna Manifold INR-SDF): ${if (supState.pinnaManifoldEnabled) "ON" else "BYPASS"} · Notch=${"%.0f".format(supTelem.pinnaNotchFreqHz)} Hz · ITD=${"%.1f".format(supTelem.pinnaItdMicroSec)} μs\n")
+                    append("Eje 5 (SHM CAS + Farrow 5º MSO): ${if (supState.farrowMsoEnabled) "ON" else "BYPASS"} · OwnerPID=${supTelem.shmOwnerPid} · ITD=${"%+.0f".format(supState.msoItdNanoseconds)} ns")
+                }
+            )
+
             Spacer(Modifier.height(8.dp))
         }
     }

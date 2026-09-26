@@ -79,4 +79,51 @@ class CochlearJniIntegrationTest {
         NativeBridge.setCochlearIntensity(5.0f)
         assertEquals(1.0f, NativeBridge.getCochlearIntensity(), 0.001f)
     }
+
+    @Test
+    fun supremeFiveAxes_jniControlsAndTelemetry() {
+        if (!NativeBridge.isLoaded) return
+
+        // Eje 1: Warped Lattice
+        NativeBridge.safeSetWarpedLatticeLambda(0.756f)
+        NativeBridge.safeSetWarpedLatticeBlDrive(0.50f)
+        NativeBridge.safeSetWarpedLatticeMicroChirp(true)
+        NativeBridge.safeSetWarpedLatticeEnabled(true)
+        val tauG = NativeBridge.safeGetWarpedLatticeSubSampleDelay()
+        assertTrue("Sub-sample delay debe estar en [0, 1)", tauG in 0.0f..1.0f)
+
+        // Eje 2: Transharmonic CVNN + DDSP
+        NativeBridge.safeSetTransharmonicHarmonicGain(0.30f)
+        NativeBridge.safeSetTransharmonicImdCancel(0.85f)
+        NativeBridge.safeSetTransharmonicCvnnEnabled(true)
+        assertTrue(NativeBridge.safeGetTransharmonicPhaseStep().isFinite())
+
+        // Eje 3: SNN INT8 + NMF -> HOA 4th Order
+        NativeBridge.safeSetSnnHoaImmersivity(0.65f)
+        NativeBridge.safeSetSnnSpikeThreshold(0.55f)
+        NativeBridge.safeSetSnnHoaUpmixerEnabled(true)
+        assertTrue(NativeBridge.safeGetSnnActiveSpikes() >= 0)
+
+        // Eje 4: Pinna Manifold INR-SDF
+        NativeBridge.safeCalibratePinnaManifold(0.15f, -0.10f, 0.08f)
+        NativeBridge.safeSetPinnaManifoldWetMix(0.65f)
+        NativeBridge.safeSetPinnaManifoldEnabled(true)
+        assertTrue("Pinna notch en banda anatómica", NativeBridge.safeGetPinnaActiveNotchHz() in 6000f..11000f)
+        assertTrue("ITD en rango fisiológico", NativeBridge.safeGetPinnaActiveItdUs() in 450f..800f)
+
+        // Eje 5: SHM Lockless CAS + Farrow 5th-Order MSO
+        NativeBridge.safeSetMsoItdNanoseconds(8500f)
+        NativeBridge.safeSetEbpfBypassActive(true)
+        NativeBridge.safeSetFarrowMsoEnabled(true)
+        assertTrue(NativeBridge.safeAcquireShmArbitration(7777))
+        assertEquals(7777, NativeBridge.safeGetShmOwnerPid())
+        assertTrue(NativeBridge.safeReleaseShmArbitration(7777))
+
+        // Restaurar bypass
+        NativeBridge.safeSetWarpedLatticeEnabled(false)
+        NativeBridge.safeSetTransharmonicCvnnEnabled(false)
+        NativeBridge.safeSetSnnHoaUpmixerEnabled(false)
+        NativeBridge.safeSetPinnaManifoldEnabled(false)
+        NativeBridge.safeSetFarrowMsoEnabled(false)
+    }
 }

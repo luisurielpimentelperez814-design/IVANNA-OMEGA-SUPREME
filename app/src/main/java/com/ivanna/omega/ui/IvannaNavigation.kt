@@ -149,6 +149,12 @@ fun MainScaffold(
             // ── SPATIAL ──────────────────────────────────────────────────
             composable(TABS[3].route) {
                 SpatialHubScreen(
+                    onOpenSupremeAxesHub  = { outerNav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
+                    onOpenAxis1Lattice    = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_1_LATTICE) },
+                    onOpenAxis2Cvnn       = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_2_CVNN) },
+                    onOpenAxis3SnnHoa     = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_3_SNN_HOA) },
+                    onOpenAxis4PinnaInr   = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_4_PINNA_INR) },
+                    onOpenAxis5ShmFarrow  = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_5_SHM_FARROW) },
                     onOpenCochlearInverse = { outerNav.navigate("cochlear_inverse") },
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
                     onOpenAudioControlHub = { outerNav.navigate(IvannaRoute.AUDIO_CONTROL_HUB) },
@@ -167,6 +173,8 @@ fun MainScaffold(
             // ── SYSTEM ───────────────────────────────────────────────────
             composable(TABS[4].route) {
                 SystemHubScreen(
+                    onOpenSupremeAxesHub = { outerNav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
+                    onOpenAxis5ShmFarrow = { outerNav.navigate(IvannaRoute.SUPREME_AXIS_5_SHM_FARROW) },
                     onOpenMagisk    = { outerNav.navigate("magisk") },
                     onOpenProfiles  = { outerNav.navigate("profiles") },
                     onOpenLab       = { outerNav.navigate("lab") },
@@ -185,6 +193,12 @@ fun MainScaffold(
 // ── SpatialHubScreen ─────────────────────────────────────────────────────────
 @Composable
 fun SpatialHubScreen(
+    onOpenSupremeAxesHub  : () -> Unit = {},
+    onOpenAxis1Lattice    : () -> Unit = {},
+    onOpenAxis2Cvnn       : () -> Unit = {},
+    onOpenAxis3SnnHoa     : () -> Unit = {},
+    onOpenAxis4PinnaInr   : () -> Unit = {},
+    onOpenAxis5ShmFarrow  : () -> Unit = {},
     onOpenCochlearInverse : () -> Unit = {},
     onOpenSaF        : () -> Unit = {},
     onOpenVisualizer : () -> Unit,
@@ -204,7 +218,13 @@ fun SpatialHubScreen(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        HubHeader("SPATIAL ENGINE", "Binaural · HRTF · Object Renderer · Head Tracking", NeonMagenta)
+        HubHeader("SPATIAL ENGINE", "Binaural · HRTF · Object Renderer · 5 Ejes de Supremacía", NeonMagenta)
+        HubCard("✦ 5 EJES DE SUPREMACÍA NEUROACÚSTICA", "Centro Maestro C++23 · Celosía · CVNN · SNN-HOA4 · Pinna INR · Farrow 5º", PhosphorGreen, onOpenSupremeAxesHub)
+        HubCard("EJE 1 · CELOSÍA DEFORMADA (ANTI-DIRAC)", "Warped Lattice Z(ω) · Excursión Bl(x) · Micro-Chirp 17.5–19 kHz", AuroraCyan, onOpenAxis1Lattice)
+        HubCard("EJE 2 · TRANSARMÓNICO CVNN+DDSP (ANTI-DSEE)", "Analítica Hilbert >16 kHz · Derivada de Fase · Supresión IMD H2", NeonMagenta, onOpenAxis2Cvnn)
+        HubCard("EJE 3 · SNN INT8 + NMF → HOA 4º (ANTI-DOLBY)", "4 Flujos Ortogonales · 16 Canales Esféricos · UPOLA · SCHED_FIFO", PhosphorGreen, onOpenAxis3SnnHoa)
+        HubCard("EJE 4 · PINNA MANIFOLD INR-SDF (ANTI-APPLE)", "MLP SIREN 2 Capas · Descenso Gradiente 3 Pasos · FIR 32-Tap Fase Mínima", AmberSignal, onOpenAxis4PinnaInr)
+        HubCard("EJE 5 · ARBITRAJE SHM + FARROW 5º MSO", "Bypass AudioFlinger eBPF/XDP · Lockless CAS owner_pid · Retardo Sub-ns", AuroraCyan, onOpenAxis5ShmFarrow)
         HubCard("INVERSIÓN BIOMECÁNICA COCLEAR", "Anti-Dolby PINN · Descompresión OHC Activa · Latencia 0.00 ms", AuroraCyan, onOpenCochlearInverse)
         HubCard("CALIBRACIÓN Φ_SAF^∞",    "HRTF personalizado · 7-D Riemanniano · 214 HRTFs", AuroraCyan,   onOpenSaF)
         HubCard("CONTROL ESPACIAL 3D",       "Azimuth · Elevación · Ancho Estéreo Directo",         AuroraCyan,   onOpenSpatialControl)
@@ -226,6 +246,8 @@ fun SpatialHubScreen(
 // ── SystemHubScreen ───────────────────────────────────────────────────────────
 @Composable
 fun SystemHubScreen(
+    onOpenSupremeAxesHub : () -> Unit = {},
+    onOpenAxis5ShmFarrow : () -> Unit = {},
     onOpenMagisk    : () -> Unit,
     onOpenProfiles  : () -> Unit,
     onOpenLab       : () -> Unit,
@@ -248,6 +270,16 @@ fun SystemHubScreen(
             "✦ IVANNA ASSISTANT",
             "Inteligencia acústica conversacional · Voz · Lenguaje · Agentes · Memoria",
             AuroraCyan, onOpenAssistant
+        )
+        HubCard(
+            "✦ 5 EJES DE SUPREMACÍA NEUROACÚSTICA",
+            "Warped Lattice · CVNN+DDSP · SNN-HOA4 · Pinna INR-SDF · Arbitraje SHM Farrow 5º",
+            PhosphorGreen, onOpenSupremeAxesHub
+        )
+        HubCard(
+            "EJE 5 · ARBITRAJE KERNEL SHM + FARROW 5º",
+            "Bypass eBPF/XDP · Lockless CAS owner_pid · Alineación MSO Sub-Nanosegundo",
+            AuroraCyan, onOpenAxis5ShmFarrow
         )
         HubCard("CENTRO DE CONTROL OEM++",
             "Dashboard · HRTF · SAF/RIR · IA · Térmico · Telemetría",

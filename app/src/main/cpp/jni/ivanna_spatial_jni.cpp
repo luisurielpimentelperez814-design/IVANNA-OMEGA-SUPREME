@@ -438,4 +438,123 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearIntensity(JNIEnv*, j
     return cochlearGetIntensityHelper();
 }
 
+// ============================================================================
+// 5 EJES DE SUPREMACÍA NEUROACÚSTICA — JNI Bindings (NativeBridge & IvannaNativeLib)
+// ============================================================================
+
+// ── EJE 1: WarpedLatticeTransducerInverter ──────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeEnabled(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeMicroChirp(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setMicroChirpEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeBlDrive(JNIEnv*, jclass, jfloat drive) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setBlCompensationDrive(drive);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeLambda(JNIEnv*, jclass, jfloat lam) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setWarpingLambda(lam);
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeSubSampleDelay(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().lastSubSampleDelay();
+}
+
+// ── EJE 2: PhaseCoherentTransharmonicSynthesizer ────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setTransharmonicCvnnEnabled(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().setEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setTransharmonicHarmonicGain(JNIEnv*, jclass, jfloat gain) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().setHarmonicGain(gain);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setTransharmonicImdCancel(JNIEnv*, jclass, jfloat strength) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().setImdCancelStrength(strength);
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getTransharmonicPhaseStep(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().maxPhaseDerivativeStep();
+}
+
+// ── EJE 3: SnnNmfHoaUpmixer ─────────────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setSnnHoaUpmixerEnabled(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer().setEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setSnnHoaImmersivity(JNIEnv*, jclass, jfloat w) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer().setImmersivity(w);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setSnnSpikeThreshold(JNIEnv*, jclass, jfloat th) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer().setSnnThreshold(th);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_promoteSnnThreadToSchedFifo(JNIEnv*, jclass, jint prio) {
+    return ivanna::supreme::SnnNmfHoaUpmixer::promoteCurrentThreadToSchedFifo(prio) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getSnnActiveSpikes(JNIEnv*, jclass) {
+    return static_cast<jint>(ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer().lastActiveSpikes());
+}
+
+// ── EJE 4: PinnaManifoldInterpolator ────────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setPinnaManifoldEnabled(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator().setEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setPinnaManifoldWetMix(JNIEnv*, jclass, jfloat wet) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator().setWetMix(wet);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_calibratePinnaManifold(
+    JNIEnv*, jclass, jfloat conchaDepth, jfloat helixCurl, jfloat headWidth) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .pinnaManifoldInterpolator()
+        .calibrateFromLatents(conchaDepth, helixCurl, headWidth, 48000.0f);
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveNotchHz(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator().activeNotchFreqHz();
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveItdUs(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator().activeItdMicroSeconds();
+}
+
+// ── EJE 5: SupremeMsoFarrowArbitrator ───────────────────────────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setFarrowMsoEnabled(JNIEnv*, jclass, jboolean en) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().shmMsoArbitrator().setEnabled(en == JNI_TRUE);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setMsoItdNanoseconds(JNIEnv*, jclass, jfloat ns) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().shmMsoArbitrator().setMsoItdNanoseconds(ns);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setEbpfBypassActive(JNIEnv*, jclass, jboolean active) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().shmMsoArbitrator().setEbpfBypassActive(active == JNI_TRUE);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_acquireShmArbitration(JNIEnv*, jclass, jint pid) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .shmMsoArbitrator().tryAcquireOwnership(pid, 100'000'000ULL) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_releaseShmArbitration(JNIEnv*, jclass, jint pid) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .shmMsoArbitrator().releaseOwnership(pid) ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getShmOwnerPid(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().shmMsoArbitrator().ownerPid();
+}
+
 } // extern "C"

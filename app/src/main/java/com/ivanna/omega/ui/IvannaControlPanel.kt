@@ -126,6 +126,7 @@ fun IvannaControlPanel(
     onOpenAdaptiveProfiles: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
     onOpenMagisk: () -> Unit = {},
+    onOpenSupremeAxesHub: () -> Unit = {},
     metrics: OmegaMetrics = OmegaMetrics(),
     onMetricsUpdate: ((OmegaMetrics) -> Unit)? = null,
     adaptiveTelemetry: com.ivanna.omega.ui.AdaptiveTelemetrySnapshot = com.ivanna.omega.ui.AdaptiveTelemetrySnapshot(),
@@ -925,6 +926,34 @@ fun IvannaControlPanel(
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = PhosphorGreen)
                 ) { Text("RESTAURAR EVO", fontSize = 10.sp) }
+            }
+        }
+
+        SectionLabel("5 EJES DE SUPREMACÍA CUÁNTICO-NEUROMÓRFICA", PhosphorGreen)
+        GlassCard(
+            title = "CENTRO MAESTRO · 5 EJES DE SUPREMACÍA C++23",
+            accent = PhosphorGreen,
+            subtitle = "Celosía Deformada · CVNN+DDSP · SNN-HOA 4º · Pinna INR-SDF · SHM Farrow 5º"
+        ) {
+            Text(
+                "Controla en tiempo real los 5 motores zero-copy y lock-free del pipeline: " +
+                "inversión de transductores Bl(x), reconstrucción transarmónica Hilbert >16 kHz, " +
+                "separación SNN INT8 hacia Ambisonics de 4º orden (16 canales), calibración " +
+                "fotogramétrica INR-SDF del pabellón auricular y arbitraje SHM con Farrow de 5º orden.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+            OutlinedButton(
+                onClick = onOpenSupremeAxesHub,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, PhosphorGreen)
+            ) {
+                Text(
+                    "ABRIR PANEL DE CONTROL DE LOS 5 EJES SUPREMOS →",
+                    color = PhosphorGreen,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 

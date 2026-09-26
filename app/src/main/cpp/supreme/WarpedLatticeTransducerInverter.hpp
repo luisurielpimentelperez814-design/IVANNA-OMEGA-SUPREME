@@ -136,6 +136,10 @@ public:
         if (!enabled_.load(std::memory_order_relaxed)) return;
 
         const float fracDelay = computeSubSampleInverseGroupDelay(1000.0f);
+        lastSubSampleDelay_.store(fracDelay, std::memory_order_relaxed);
+        const float blDrive = blCompensationDrive_.load(std::memory_order_relaxed);
+        const float effBeta1 = beta1_ * blDrive;
+        const float effBeta2 = beta2_ * blDrive;
 
         for (size_t i = 0; i < numSamples; ++i) {
             float inL = sanitize(left[i]);
@@ -164,8 +168,8 @@ public:
             excursionEstL_ = sanitize(excursionDecay_ * excursionEstL_ + (1.0f - excursionDecay_) * inL);
             excursionEstR_ = sanitize(excursionDecay_ * excursionEstR_ + (1.0f - excursionDecay_) * inR);
 
-            const float blRatioL = std::clamp(1.0f - beta1_ * excursionEstL_ - beta2_ * excursionEstL_ * excursionEstL_, 0.55f, 1.45f);
-            const float blRatioR = std::clamp(1.0f - beta1_ * excursionEstR_ - beta2_ * excursionEstR_ * excursionEstR_, 0.55f, 1.45f);
+            const float blRatioL = std::clamp(1.0f - effBeta1 * excursionEstL_ - effBeta2 * excursionEstL_ * excursionEstL_, 0.55f, 1.45f);
+            const float blRatioR = std::clamp(1.0f - effBeta1 * excursionEstR_ - effBeta2 * excursionEstR_ * excursionEstR_, 0.55f, 1.45f);
 
             float fL = (inL / blRatioL) + microChirp;
             float fR = (inR / blRatioR) + microChirp;
@@ -183,7 +187,18 @@ public:
     void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
     void setMicroChirpEnabled(bool en) noexcept { microChirpEnabled_.store(en, std::memory_order_release); }
+    bool isMicroChirpEnabled() const noexcept { return microChirpEnabled_.load(std::memory_order_acquire); }
+    void setBlCompensationDrive(float drive) noexcept {
+        blCompensationDrive_.store(std::clamp(drive, 0.0f, 2.0f), std::memory_order_release);
+    }
+    float blCompensationDrive() const noexcept {
+        return blCompensationDrive_.load(std::memory_order_acquire);
+    }
+    void setWarpingLambda(float lam) noexcept {
+        lambda_ = std::clamp(lam, -0.85f, 0.85f);
+    }
     float warpingLambda() const noexcept { return lambda_; }
+    float lastSubSampleDelay() const noexcept { return lastSubSampleDelay_.load(std::memory_order_relaxed); }
 
 private:
     [[gnu::always_inline]] inline void processWarpedLatticeStep(
@@ -275,6 +290,8 @@ private:
 
     std::atomic<bool> enabled_{true};
     std::atomic<bool> microChirpEnabled_{true};
+    std::atomic<float> blCompensationDrive_{1.0f};
+    std::atomic<float> lastSubSampleDelay_{0.24f};
 };
 
 } // namespace ivanna::supreme

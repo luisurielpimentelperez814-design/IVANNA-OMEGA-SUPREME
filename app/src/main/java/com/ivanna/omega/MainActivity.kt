@@ -217,6 +217,11 @@ fun OmegaApp() {
     LaunchedEffect(Unit) {
         // Re-aplicar al DSP nativo/daemon lo que se acaba de restaurar.
         runCatching { dsp.value.pushToNative() }
+        runCatching {
+            com.ivanna.omega.ui.SupremeAxesPrefs.applyToNative(
+                com.ivanna.omega.ui.SupremeAxesPrefs.load(appContext)
+            )
+        }
         snapshotFlow { dsp.value }.collectLatest { state ->
             delay(400)  // debounce: los sliders emiten decenas de valores/seg
             runCatching { DSPStatePrefs.save(appContext, state) }
@@ -725,6 +730,33 @@ fun OmegaApp() {
                     modifier = Modifier.fillMaxSize(),
                     onBack   = { nav.popBackStack() }
                 )
+            }
+
+            // ── 5 EJES DE SUPREMACÍA CUÁNTICO-NEUROMÓRFICA (C++23 Lock-Free) ──
+            composable(IvannaRoute.SUPREME_AXES_HUB) {
+                com.ivanna.omega.ui.SupremeFiveAxesHubScreen(
+                    onBack      = { nav.popBackStack() },
+                    onOpenAxis1 = { nav.navigate(IvannaRoute.SUPREME_AXIS_1_LATTICE) },
+                    onOpenAxis2 = { nav.navigate(IvannaRoute.SUPREME_AXIS_2_CVNN) },
+                    onOpenAxis3 = { nav.navigate(IvannaRoute.SUPREME_AXIS_3_SNN_HOA) },
+                    onOpenAxis4 = { nav.navigate(IvannaRoute.SUPREME_AXIS_4_PINNA_INR) },
+                    onOpenAxis5 = { nav.navigate(IvannaRoute.SUPREME_AXIS_5_SHM_FARROW) }
+                )
+            }
+            composable(IvannaRoute.SUPREME_AXIS_1_LATTICE) {
+                com.ivanna.omega.ui.WarpedLatticeAxisScreen(onBack = { nav.popBackStack() })
+            }
+            composable(IvannaRoute.SUPREME_AXIS_2_CVNN) {
+                com.ivanna.omega.ui.TransharmonicCvnnAxisScreen(onBack = { nav.popBackStack() })
+            }
+            composable(IvannaRoute.SUPREME_AXIS_3_SNN_HOA) {
+                com.ivanna.omega.ui.SnnNmfHoaAxisScreen(onBack = { nav.popBackStack() })
+            }
+            composable(IvannaRoute.SUPREME_AXIS_4_PINNA_INR) {
+                com.ivanna.omega.ui.PinnaManifoldAxisScreen(onBack = { nav.popBackStack() })
+            }
+            composable(IvannaRoute.SUPREME_AXIS_5_SHM_FARROW) {
+                com.ivanna.omega.ui.ShmFarrowArbitratorAxisScreen(onBack = { nav.popBackStack() })
             }
         }
     }

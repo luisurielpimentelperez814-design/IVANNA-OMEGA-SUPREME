@@ -9,6 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,79 @@ public:
 
     PinnaManifoldInterpolator() noexcept {
         initializeManifoldBasis();
+        calibrateFromLatents(0.0f, 0.0f, 0.0f, 48000.0f);
+    }
+
+    void reset() noexcept {
+        firHistoryL_.fill(0.0f);
+        firHistoryR_.fill(0.0f);
+        histWriteIdx_ = 0;
+    }
+
+    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
+    void setWetMix(float w) noexcept { wetMix_.store(std::clamp(w, 0.0f, 1.0f), std::memory_order_release); }
+    float wetMix() const noexcept { return wetMix_.load(std::memory_order_acquire); }
+    float activeNotchFreqHz() const noexcept { return activeNotchHz_.load(std::memory_order_relaxed); }
+    float activeItdMicroSeconds() const noexcept { return activeItdUs_.load(std::memory_order_relaxed); }
+
+    /**
+     * @brief Recalibra el filtro FIR de fase mínima en el Manifold de HRTF a partir de
+     *        parámetros antropométricos normalizados [-1, 1] (profundidad de concha,
+     *        pliegue de hélix y ancho cefálico) mediante swap de doble buffer sin bloqueo.
+     */
+    void calibrateFromLatents(
+        float conchaDepth,
+        float helixCurl,
+        float headWidth,
+        float sampleRate = 48000.0f) noexcept
+    {
+        std::array<float, 24> syntheticPatch{};
+        for (size_t i = 0; i < syntheticPatch.size(); ++i) {
+            const float fi = static_cast<float>(i);
+            syntheticPatch[i] = conchaDepth * std::cos(fi * 0.4f)
+                              + helixCurl   * std::sin(fi * 0.7f)
+                              + headWidth   * std::cos(fi * 1.1f);
+        }
+        const uint32_t nextSlot = (activeFirSlot_.load(std::memory_order_relaxed) + 1u) & 1u;
+        activePairs_[nextSlot] = synthesizeFromImagePatch(syntheticPatch.data(), syntheticPatch.size(), sampleRate);
+        activeNotchHz_.store(activePairs_[nextSlot].pinnaNotchFreqHz, std::memory_order_relaxed);
+        activeItdUs_.store(activePairs_[nextSlot].itdMicroSeconds, std::memory_order_relaxed);
+        activeFirSlot_.store(nextSlot, std::memory_order_release);
+    }
+
+    /**
+     * @brief Convolución FIR causal de fase mínima en tiempo real (32 taps, 0.00 ms lookahead).
+     */
+    void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
+        if (!left || !right || numSamples == 0) return;
+        const float wet = wetMix_.load(std::memory_order_relaxed);
+        if (!enabled_.load(std::memory_order_relaxed) || wet <= 1.0e-5f) return;
+
+        const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
+        const auto& firL = activePairs_[slot].left;
+        const auto& firR = activePairs_[slot].right;
+        const float dry = 1.0f - wet;
+
+        for (size_t i = 0; i < numSamples; ++i) {
+            const float inL = std::isfinite(left[i])  ? left[i]  : 0.0f;
+            const float inR = std::isfinite(right[i]) ? right[i] : 0.0f;
+
+            firHistoryL_[histWriteIdx_] = inL;
+            firHistoryR_[histWriteIdx_] = inR;
+
+            float accL = 0.0f;
+            float accR = 0.0f;
+            for (size_t k = 0; k < FIR_TAPS; ++k) {
+                const size_t idx = (histWriteIdx_ + FIR_TAPS - k) & (FIR_TAPS - 1);
+                accL += firL[k] * firHistoryL_[idx];
+                accR += firR[k] * firHistoryR_[idx];
+            }
+            histWriteIdx_ = (histWriteIdx_ + 1) & (FIR_TAPS - 1);
+
+            left[i]  = std::clamp(dry * inL + wet * accL, -1.95f, 1.95f);
+            right[i] = std::clamp(dry * inR + wet * accR, -1.95f, 1.95f);
+        }
     }
 
     /**
@@ -223,6 +297,17 @@ private:
     alignas(64) std::array<std::array<float, 8>, LATENT_DIM> encoderProj_{};
     alignas(64) std::array<std::array<float, LATENT_DIM>, LATENT_DIM> manifoldMetric_{};
     alignas(64) std::array<std::array<float, 3>, LATENT_DIM> landmarkCoords_{};
+
+    alignas(64) std::array<MinimumPhaseFirPair, 2> activePairs_{};
+    alignas(64) std::array<float, FIR_TAPS> firHistoryL_{};
+    alignas(64) std::array<float, FIR_TAPS> firHistoryR_{};
+    size_t histWriteIdx_{0};
+
+    std::atomic<uint32_t> activeFirSlot_{0};
+    std::atomic<bool> enabled_{true};
+    std::atomic<float> wetMix_{0.5f};
+    std::atomic<float> activeNotchHz_{7800.0f};
+    std::atomic<float> activeItdUs_{620.0f};
 };
 
 } // namespace ivanna::supreme

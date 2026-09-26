@@ -164,7 +164,7 @@ public:
 
         // Paso LIF (Leaky Integrate-and-Fire) + actualización multiplicativa NMF de rango 4
         constexpr float kLeakBeta = 0.88f;
-        constexpr float kSpikeThreshold = 0.45f;
+        const float kSpikeThreshold = snnThreshold_.load(std::memory_order_relaxed);
         float maskSum = 0.0f;
         uint32_t spikeCount = 0;
 
@@ -277,7 +277,11 @@ public:
     }
 
     void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
     void setImmersivity(float w) noexcept { immersivity_.store(std::clamp(w, 0.0f, 1.0f), std::memory_order_release); }
+    float immersivity() const noexcept { return immersivity_.load(std::memory_order_acquire); }
+    void setSnnThreshold(float th) noexcept { snnThreshold_.store(std::clamp(th, 0.15f, 0.85f), std::memory_order_release); }
+    float snnThreshold() const noexcept { return snnThreshold_.load(std::memory_order_acquire); }
     uint32_t lastActiveSpikes() const noexcept { return lastActiveSpikes_; }
 
 private:
@@ -341,6 +345,7 @@ private:
 
     std::atomic<bool> enabled_{true};
     std::atomic<float> immersivity_{0.5f};
+    std::atomic<float> snnThreshold_{0.45f};
 };
 
 } // namespace ivanna::supreme
