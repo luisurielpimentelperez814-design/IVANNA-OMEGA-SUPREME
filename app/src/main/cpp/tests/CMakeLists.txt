@@ -625,6 +625,7 @@ gtest_discover_tests(test_cochlear_inverse_model)
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp
+  ../spatial/RirConvolver.cpp
 )
 target_link_libraries(test_supreme_five_axes PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_supreme_five_axes PRIVATE
