@@ -16,7 +16,8 @@ using ivanna::OmegaControlBus;
 using ivanna::OmegaDspSnapshot;
 
 namespace {
-const char* kTestPath = "./omega_upmixing_ctrl_test";
+const char* kTestPath1 = "./omega_upmixing_ctrl_test_1";
+const char* kTestPath2 = "./omega_upmixing_ctrl_test_2";
 }
 
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
@@ -32,9 +33,9 @@ TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
 }
 
 TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
-    ::unlink(kTestPath);
+    ::unlink(kTestPath1);
     OmegaControlBus writer;
-    ASSERT_TRUE(writer.openWriter(kTestPath));
+    ASSERT_TRUE(writer.openWriter(kTestPath1));
 
     // Estado OFF inicial
     OmegaDspSnapshot snap = OmegaDspSnapshot::makeDefault();
@@ -43,7 +44,7 @@ TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
     ASSERT_TRUE(writer.publish(snap));
 
     OmegaControlBus reader;
-    ASSERT_TRUE(reader.openReader(kTestPath));
+    ASSERT_TRUE(reader.openReader(kTestPath1));
     OmegaDspSnapshot got{};
     uint64_t seen = 0;
     ASSERT_TRUE(reader.readLatest(got, seen));
@@ -69,19 +70,19 @@ TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
 
     writer.close();
     reader.close();
-    ::unlink(kTestPath);
+    ::unlink(kTestPath1);
 }
 
 TEST(UpmixingControlPlane, ReadLatestNoActualizaSinNuevaGeneracion) {
-    ::unlink(kTestPath);
+    ::unlink(kTestPath2);
     OmegaControlBus writer;
-    ASSERT_TRUE(writer.openWriter(kTestPath));
+    ASSERT_TRUE(writer.openWriter(kTestPath2));
     OmegaDspSnapshot snap = OmegaDspSnapshot::makeDefault();
     snap.upmixing_enabled = 1u;
     ASSERT_TRUE(writer.publish(snap));
 
     OmegaControlBus reader;
-    ASSERT_TRUE(reader.openReader(kTestPath));
+    ASSERT_TRUE(reader.openReader(kTestPath2));
     OmegaDspSnapshot got{};
     uint64_t seen = 0;
     ASSERT_TRUE(reader.readLatest(got, seen));
@@ -90,5 +91,5 @@ TEST(UpmixingControlPlane, ReadLatestNoActualizaSinNuevaGeneracion) {
     EXPECT_FALSE(reader.readLatest(got, seen));
     EXPECT_EQ(got.generation, genTrasPrimera);
     writer.close(); reader.close();
-    ::unlink(kTestPath);
+    ::unlink(kTestPath2);
 }
