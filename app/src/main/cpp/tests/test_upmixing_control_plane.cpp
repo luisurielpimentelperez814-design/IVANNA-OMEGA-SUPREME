@@ -93,3 +93,57 @@ TEST(UpmixingControlPlane, ReadLatestNoActualizaSinNuevaGeneracion) {
     writer.close(); reader.close();
     ::unlink(kTestPath2);
 }
+
+TEST(UpmixingControlPlane, SupremeFiveAxes_RoundTripThroughSeqlock) {
+    constexpr const char* kTestPath3 = "/tmp/ivanna_test_omega_ctrl_v2_supreme5";
+    ::unlink(kTestPath3);
+    OmegaControlBus writer;
+    OmegaControlBus reader;
+    ASSERT_TRUE(writer.openWriter(kTestPath3));
+    ASSERT_TRUE(reader.openReader(kTestPath3));
+
+    OmegaDspSnapshot pub = OmegaDspSnapshot::makeDefault();
+    pub.flags |= OMEGA_FLAG_SUPREME_LATTICE_ON
+              |  OMEGA_FLAG_SUPREME_MICROCHIRP_ON
+              |  OMEGA_FLAG_SUPREME_CVNN_ON
+              |  OMEGA_FLAG_SUPREME_SNN_HOA_ON
+              |  OMEGA_FLAG_SUPREME_PINNA_ON
+              |  OMEGA_FLAG_SUPREME_FARROW_MSO_ON
+              |  OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
+    pub.supreme_lattice_bl_drive    = 1.45f;
+    pub.supreme_lattice_lambda      = 0.756f;
+    pub.supreme_cvnn_harmonic_gain  = 0.62f;
+    pub.supreme_cvnn_imd_cancel     = 0.88f;
+    pub.supreme_snn_immersivity     = 0.79f;
+    pub.supreme_snn_spike_threshold = 0.39f;
+    pub.supreme_pinna_wet_mix       = 0.71f;
+    pub.supreme_pinna_concha_depth  = 0.21f;
+    pub.supreme_pinna_helix_curl    = -0.09f;
+    pub.supreme_pinna_head_width    = 0.14f;
+    pub.supreme_mso_itd_ns          = 6400.0f;
+
+    ASSERT_TRUE(writer.publish(pub));
+
+    OmegaDspSnapshot got{};
+    uint64_t seenGen = 0;
+    ASSERT_TRUE(reader.readLatest(got, seenGen));
+    EXPECT_TRUE(got.isValid());
+    EXPECT_EQ(got.version, OMEGA_CTRL_VERSION);
+    EXPECT_NE(got.flags & OMEGA_FLAG_SUPREME_LATTICE_ON, 0u);
+    EXPECT_NE(got.flags & OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON, 0u);
+    EXPECT_FLOAT_EQ(got.supreme_lattice_bl_drive, 1.45f);
+    EXPECT_FLOAT_EQ(got.supreme_lattice_lambda, 0.756f);
+    EXPECT_FLOAT_EQ(got.supreme_cvnn_harmonic_gain, 0.62f);
+    EXPECT_FLOAT_EQ(got.supreme_cvnn_imd_cancel, 0.88f);
+    EXPECT_FLOAT_EQ(got.supreme_snn_immersivity, 0.79f);
+    EXPECT_FLOAT_EQ(got.supreme_snn_spike_threshold, 0.39f);
+    EXPECT_FLOAT_EQ(got.supreme_pinna_wet_mix, 0.71f);
+    EXPECT_FLOAT_EQ(got.supreme_pinna_concha_depth, 0.21f);
+    EXPECT_FLOAT_EQ(got.supreme_pinna_helix_curl, -0.09f);
+    EXPECT_FLOAT_EQ(got.supreme_pinna_head_width, 0.14f);
+    EXPECT_FLOAT_EQ(got.supreme_mso_itd_ns, 6400.0f);
+
+    reader.close();
+    writer.close();
+    ::unlink(kTestPath3);
+}

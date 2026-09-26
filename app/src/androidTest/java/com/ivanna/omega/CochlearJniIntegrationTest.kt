@@ -119,6 +119,22 @@ class CochlearJniIntegrationTest {
         assertEquals(7777, NativeBridge.safeGetShmOwnerPid())
         assertTrue(NativeBridge.safeReleaseShmArbitration(7777))
 
+        // Calibración activa NLMS y fotogramétrica 8x8 + Telemetría extendida
+        NativeBridge.safeRunWarpedLatticeLoopbackCalibration(92.0f, 0.008f)
+        val kappas = NativeBridge.safeGetWarpedLatticeKappas()
+        assertEquals("El filtro de celosía deformada tiene 8 etapas", 8, kappas.size)
+        for (k in kappas) {
+            assertTrue("Estabilidad de Schur |kappa_m| < 1", kotlin.math.abs(k) < 1.0f)
+        }
+
+        val masks = NativeBridge.safeGetSnnOrthogonalMasks()
+        assertEquals("SNN+NMF descompone en 4 flujos ortogonales", 4, masks.size)
+
+        val patch64 = FloatArray(64) { idx -> 0.5f + 0.25f * kotlin.math.sin(idx * 0.3f) }
+        NativeBridge.safeCalibratePinnaFromImagePatch(patch64)
+        val latents = NativeBridge.safeGetPinnaActiveLatents()
+        assertEquals("Pinna INR proyecta 6 parámetros antropométricos latentes", 6, latents.size)
+
         // Restaurar bypass
         NativeBridge.safeSetWarpedLatticeEnabled(false)
         NativeBridge.safeSetTransharmonicCvnnEnabled(false)

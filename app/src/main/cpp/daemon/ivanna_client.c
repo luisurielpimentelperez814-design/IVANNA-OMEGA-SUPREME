@@ -33,7 +33,8 @@
 #include <stddef.h>
 #include <time.h>
 
-#define SOCKET_NAME   "omega_command_socket"
+#define SOCKET_PRIMARY   "omega_daemon_socket"
+#define SOCKET_SECONDARY "omega_command_socket"
 #define DEFAULT_TMO_S 2
 
 /* ── Construye el JSON de comando a partir del argumento CLI ─────────── */
@@ -49,6 +50,49 @@ static int build_json(const char* arg, char* out, int outlen) {
     /* GET_TELEMETRY */
     if (!strcmp(arg, "GET_TELEMETRY"))
         return snprintf(out, outlen, "{\"action\":\"GET_TELEMETRY\"}");
+
+    /* GET_SUPREME_AXES */
+    if (!strcmp(arg, "GET_SUPREME_AXES") || !strcmp(arg, "SUPREME_STATUS"))
+        return snprintf(out, outlen, "{\"action\":\"GET_SUPREME_AXES\"}");
+
+    /* SET_SUPREME_PRESET:<flat|supreme|gaming|cinema> */
+    if (!strncmp(arg, "SET_SUPREME_PRESET:", 19)) {
+        const char* p = arg + 19;
+        if (!strcmp(p, "flat")) {
+            return snprintf(out, outlen,
+                "{\"action\":\"SET_SUPREME_AXES\",\"latticeEnabled\":0,\"microChirp\":0,"
+                "\"blDrive\":0.0,\"lambda\":0.72,\"cvnnEnabled\":0,\"harmonicGain\":0.0,"
+                "\"imdCancel\":0.0,\"snnHoaEnabled\":0,\"snnImmersivity\":0.0,"
+                "\"snnThreshold\":0.45,\"pinnaEnabled\":0,\"pinnaWetMix\":0.0,"
+                "\"conchaDepth\":0.0,\"helixCurl\":0.0,\"headWidth\":0.0,"
+                "\"farrowMsoEnabled\":0,\"msoItdNs\":0.0,\"ebpfBypassActive\":0}");
+        } else if (!strcmp(p, "gaming")) {
+            return snprintf(out, outlen,
+                "{\"action\":\"SET_SUPREME_AXES\",\"latticeEnabled\":1,\"microChirp\":0,"
+                "\"blDrive\":0.95,\"lambda\":0.72,\"cvnnEnabled\":1,\"harmonicGain\":0.25,"
+                "\"imdCancel\":0.75,\"snnHoaEnabled\":1,\"snnImmersivity\":0.82,"
+                "\"snnThreshold\":0.38,\"pinnaEnabled\":1,\"pinnaWetMix\":0.72,"
+                "\"conchaDepth\":0.18,\"helixCurl\":-0.06,\"headWidth\":0.12,"
+                "\"farrowMsoEnabled\":1,\"msoItdNs\":3500.0,\"ebpfBypassActive\":1}");
+        } else if (!strcmp(p, "cinema")) {
+            return snprintf(out, outlen,
+                "{\"action\":\"SET_SUPREME_AXES\",\"latticeEnabled\":1,\"microChirp\":1,"
+                "\"blDrive\":1.10,\"lambda\":0.74,\"cvnnEnabled\":1,\"harmonicGain\":0.40,"
+                "\"imdCancel\":0.80,\"snnHoaEnabled\":1,\"snnImmersivity\":0.92,"
+                "\"snnThreshold\":0.35,\"pinnaEnabled\":1,\"pinnaWetMix\":0.68,"
+                "\"conchaDepth\":0.20,\"helixCurl\":-0.08,\"headWidth\":0.14,"
+                "\"farrowMsoEnabled\":1,\"msoItdNs\":1200.0,\"ebpfBypassActive\":1}");
+        } else {
+            /* supreme (por defecto) */
+            return snprintf(out, outlen,
+                "{\"action\":\"SET_SUPREME_AXES\",\"latticeEnabled\":1,\"microChirp\":1,"
+                "\"blDrive\":1.25,\"lambda\":0.756,\"cvnnEnabled\":1,\"harmonicGain\":0.45,"
+                "\"imdCancel\":0.85,\"snnHoaEnabled\":1,\"snnImmersivity\":0.75,"
+                "\"snnThreshold\":0.42,\"pinnaEnabled\":1,\"pinnaWetMix\":0.65,"
+                "\"conchaDepth\":0.18,\"helixCurl\":-0.06,\"headWidth\":0.12,"
+                "\"farrowMsoEnabled\":1,\"msoItdNs\":0.0,\"ebpfBypassActive\":1}");
+        }
+    }
 
     /* SET_PRESET:<name> */
     if (!strncmp(arg, "SET_PRESET:", 11))
@@ -87,7 +131,8 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         fprintf(stderr,
             "Uso: ivanna_client <CMD>\n"
-            "  PING | STATUS | GET_TELEMETRY\n"
+            "  PING | STATUS | GET_TELEMETRY | GET_SUPREME_AXES\n"
+            "  SET_SUPREME_PRESET:<flat|supreme|gaming|cinema>\n"
             "  SET_PRESET:<name>   SET_BYPASS:<0|1>\n"
             "  SET_REVERB:<rt60>   SET_VOLUME:<0-1>\n"
             "  '{\"action\":\"...\"}' (JSON directo)\n");
@@ -118,21 +163,29 @@ int main(int argc, char* argv[]) {
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    /* ── Conectar al abstract namespace ───────────────────────────────── */
+    /* ── Conectar al abstract namespace (primario -> secundario) ──────── */
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    /* Abstract namespace: sun_path[0]='\0', nombre sin null inicial */
-    size_t namelen = strlen(SOCKET_NAME);
+    size_t namelen = strlen(SOCKET_PRIMARY);
     addr.sun_path[0] = '\0';
-    memcpy(addr.sun_path + 1, SOCKET_NAME, namelen);
+    memcpy(addr.sun_path + 1, SOCKET_PRIMARY, namelen);
     socklen_t addrlen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + namelen);
 
     if (connect(fd, (struct sockaddr*)&addr, addrlen) < 0) {
-        fprintf(stderr, "ivanna_client: connect @%s: %s\n",
-                SOCKET_NAME, strerror(errno));
-        close(fd);
-        return 1;
+        /* Fallback al socket secundario @omega_command_socket */
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        namelen = strlen(SOCKET_SECONDARY);
+        addr.sun_path[0] = '\0';
+        memcpy(addr.sun_path + 1, SOCKET_SECONDARY, namelen);
+        addrlen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + namelen);
+        if (connect(fd, (struct sockaddr*)&addr, addrlen) < 0) {
+            fprintf(stderr, "ivanna_client: connect @%s / @%s: %s\n",
+                    SOCKET_PRIMARY, SOCKET_SECONDARY, strerror(errno));
+            close(fd);
+            return 1;
+        }
     }
 
     /* ── Enviar comando ────────────────────────────────────────────────── */

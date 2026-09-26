@@ -31,13 +31,24 @@ object OmegaEngineBridge {
     // periodico (1 probe/5s, timeout 2s — coste despreciable) y la UI
     // siempre refleja el estado real del socket.
     @Volatile private var keepaliveStarted = false
+    @Volatile private var lastSupremeAxesPayload: JSONObject? = null
     fun startKeepalive() {
         if (keepaliveStarted) return
         keepaliveStarted = true
         Thread({
             var alive = true
+            var wasConnected = false
             while (alive) {
-                try { connect(); Thread.sleep(5000) }
+                try {
+                    val nowConnected = connect()
+                    if (nowConnected && !wasConnected) {
+                        lastSupremeAxesPayload?.let { payload ->
+                            runCatching { sendCommand(payload) }
+                        }
+                    }
+                    wasConnected = nowConnected
+                    Thread.sleep(5000)
+                }
                 catch (_: InterruptedException) { alive = false }  // return ilegal en lambda SAM → flag
                 catch (_: Throwable) { /* probe ya maneja sus errores */ }
             }
@@ -352,27 +363,31 @@ object OmegaEngineBridge {
         farrowMsoEnabled: Boolean,
         msoItdNanoseconds: Float,
         ebpfBypassActive: Boolean
-    ): Boolean = sendCommand(JSONObject().apply {
-        put("action", "SET_SUPREME_AXES")
-        put("warpedLatticeEnabled", if (warpedLatticeEnabled) 1.0f else 0.0f)
-        put("warpedLatticeMicroChirp", if (warpedLatticeMicroChirp) 1.0f else 0.0f)
-        put("warpedLatticeBlDrive", warpedLatticeBlDrive)
-        put("warpedLatticeLambda", warpedLatticeLambda)
-        put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
-        put("transharmonicHarmonicGain", transharmonicHarmonicGain)
-        put("transharmonicImdCancel", transharmonicImdCancel)
-        put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
-        put("snnHoaImmersivity", snnHoaImmersivity)
-        put("snnSpikeThreshold", snnSpikeThreshold)
-        put("pinnaManifoldEnabled", if (pinnaManifoldEnabled) 1.0f else 0.0f)
-        put("pinnaManifoldWetMix", pinnaManifoldWetMix)
-        put("pinnaConchaDepth", pinnaConchaDepth)
-        put("pinnaHelixCurl", pinnaHelixCurl)
-        put("pinnaHeadWidth", pinnaHeadWidth)
-        put("farrowMsoEnabled", if (farrowMsoEnabled) 1.0f else 0.0f)
-        put("msoItdNanoseconds", msoItdNanoseconds)
-        put("ebpfBypassActive", if (ebpfBypassActive) 1.0f else 0.0f)
-    })
+    ): Boolean {
+        val payload = JSONObject().apply {
+            put("action", "SET_SUPREME_AXES")
+            put("warpedLatticeEnabled", if (warpedLatticeEnabled) 1.0f else 0.0f)
+            put("warpedLatticeMicroChirp", if (warpedLatticeMicroChirp) 1.0f else 0.0f)
+            put("warpedLatticeBlDrive", warpedLatticeBlDrive)
+            put("warpedLatticeLambda", warpedLatticeLambda)
+            put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
+            put("transharmonicHarmonicGain", transharmonicHarmonicGain)
+            put("transharmonicImdCancel", transharmonicImdCancel)
+            put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
+            put("snnHoaImmersivity", snnHoaImmersivity)
+            put("snnSpikeThreshold", snnSpikeThreshold)
+            put("pinnaManifoldEnabled", if (pinnaManifoldEnabled) 1.0f else 0.0f)
+            put("pinnaManifoldWetMix", pinnaManifoldWetMix)
+            put("pinnaConchaDepth", pinnaConchaDepth)
+            put("pinnaHelixCurl", pinnaHelixCurl)
+            put("pinnaHeadWidth", pinnaHeadWidth)
+            put("farrowMsoEnabled", if (farrowMsoEnabled) 1.0f else 0.0f)
+            put("msoItdNanoseconds", msoItdNanoseconds)
+            put("ebpfBypassActive", if (ebpfBypassActive) 1.0f else 0.0f)
+        }
+        lastSupremeAxesPayload = payload
+        return sendCommand(payload)
+    }
 
     fun disconnect() { isConnected = false; runCatching { persistentChannel?.close() }; persistentChannel = null }
     fun getStatus(): Boolean = isConnected

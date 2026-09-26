@@ -80,13 +80,20 @@ bool OmegaControlBus::openWriter(const char* path) noexcept {
 
     m_isWriter = true;
 
-    // Si el SHM es nuevo (magic inválido), escribir snapshot default
-    if (m_region->snapshot.magic != OMEGA_CTRL_MAGIC) {
+    // Si el SHM es nuevo (magic inválido) o proviene de una versión ABI anterior,
+    // escribir snapshot default firmado con OMEGA_CTRL_VERSION actual y CRC32 válido.
+    if (m_region->snapshot.magic != OMEGA_CTRL_MAGIC ||
+        m_region->snapshot.version != OMEGA_CTRL_VERSION ||
+        !m_region->snapshot.isValid()) {
         auto def = OmegaDspSnapshot::makeDefault();
-        // Escribir sin seqlock: nadie más puede estar leyendo un SHM nuevo
+        // Escribir con seqlock limpio: garantiza transición sin lecturas corruptas
+        m_region->guard.store(1u, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
         std::memcpy(&m_region->snapshot, &def, sizeof(def));
-        m_region->guard.store(0, std::memory_order_release);
-        OMEGA_CTRL_LOGD("openWriter: initialized new SHM at %s", path);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        m_region->guard.store(0u, std::memory_order_release);
+        OMEGA_CTRL_LOGD("openWriter: initialized SHM v%u at %s",
+                        (unsigned)OMEGA_CTRL_VERSION, path);
     } else {
         OMEGA_CTRL_LOGD("openWriter: attached existing SHM at %s (gen=%llu)",
                         path,

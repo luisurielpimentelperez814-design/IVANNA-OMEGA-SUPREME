@@ -105,7 +105,10 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // al snapshot — cierra la cadena UI->JNI->daemon->snapshot->omega_effect
 // ->WfsRenderer con geometría 3D real de sala (antes: atomics aislados por
 // proceso, jamás publicados por el daemon).
-constexpr uint16_t OMEGA_CTRL_VERSION = 4u;
+// ABI v5 (2026-09-26): añadidos los 5 Ejes de Supremacía Cuántico-Neuromórfica
+// (8 flags OMEGA_FLAG_SUPREME_* + 11 escalares supreme_*) manteniendo
+// sizeof(OmegaDspSnapshot) <= 512 bytes y copia trivial cross-process.
+constexpr uint16_t OMEGA_CTRL_VERSION = 5u;
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
