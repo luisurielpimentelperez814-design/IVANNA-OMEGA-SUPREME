@@ -328,6 +328,52 @@ object OmegaEngineBridge {
     fun setPinnaMetrics(width: Float, height: Float, depth: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("width", width); put("height", height); put("depth", depth) })
     fun setPinnaMetrics(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("args", args.map { it.toString() }) })
 
+    /**
+     * Sincroniza los 5 Ejes de Supremacía Cuántico-Neuromórfica con el daemon Magisk (`ivanna_daemon`),
+     * el cual los publica mediante seqlock en `OmegaControlBus` (`OmegaDspSnapshot`) hacia `omega_effect.so`
+     * en `audioserver` (Ruta B system-wide).
+     */
+    fun pushSupremeAxesState(
+        warpedLatticeEnabled: Boolean,
+        warpedLatticeMicroChirp: Boolean,
+        warpedLatticeBlDrive: Float,
+        warpedLatticeLambda: Float,
+        transharmonicCvnnEnabled: Boolean,
+        transharmonicHarmonicGain: Float,
+        transharmonicImdCancel: Float,
+        snnHoaUpmixerEnabled: Boolean,
+        snnHoaImmersivity: Float,
+        snnSpikeThreshold: Float,
+        pinnaManifoldEnabled: Boolean,
+        pinnaManifoldWetMix: Float,
+        pinnaConchaDepth: Float,
+        pinnaHelixCurl: Float,
+        pinnaHeadWidth: Float,
+        farrowMsoEnabled: Boolean,
+        msoItdNanoseconds: Float,
+        ebpfBypassActive: Boolean
+    ): Boolean = sendCommand(JSONObject().apply {
+        put("action", "SET_SUPREME_AXES")
+        put("warpedLatticeEnabled", if (warpedLatticeEnabled) 1.0f else 0.0f)
+        put("warpedLatticeMicroChirp", if (warpedLatticeMicroChirp) 1.0f else 0.0f)
+        put("warpedLatticeBlDrive", warpedLatticeBlDrive)
+        put("warpedLatticeLambda", warpedLatticeLambda)
+        put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
+        put("transharmonicHarmonicGain", transharmonicHarmonicGain)
+        put("transharmonicImdCancel", transharmonicImdCancel)
+        put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
+        put("snnHoaImmersivity", snnHoaImmersivity)
+        put("snnSpikeThreshold", snnSpikeThreshold)
+        put("pinnaManifoldEnabled", if (pinnaManifoldEnabled) 1.0f else 0.0f)
+        put("pinnaManifoldWetMix", pinnaManifoldWetMix)
+        put("pinnaConchaDepth", pinnaConchaDepth)
+        put("pinnaHelixCurl", pinnaHelixCurl)
+        put("pinnaHeadWidth", pinnaHeadWidth)
+        put("farrowMsoEnabled", if (farrowMsoEnabled) 1.0f else 0.0f)
+        put("msoItdNanoseconds", msoItdNanoseconds)
+        put("ebpfBypassActive", if (ebpfBypassActive) 1.0f else 0.0f)
+    })
+
     fun disconnect() { isConnected = false; runCatching { persistentChannel?.close() }; persistentChannel = null }
     fun getStatus(): Boolean = isConnected
     fun getLastLatencyMs(): Float = lastLatencyMs

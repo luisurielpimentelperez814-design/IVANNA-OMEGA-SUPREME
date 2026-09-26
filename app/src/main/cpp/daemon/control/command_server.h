@@ -84,6 +84,30 @@ struct OmegaDspState {
 
     // Anti-Dolby SPSC Lock-Free Ring Buffer
     float spsc_ring_factor = 1.0f;
+
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026) ────
+    bool  supreme_lattice_enabled     = true;
+    bool  supreme_microchirp_enabled  = true;
+    float supreme_lattice_bl_drive    = 1.0f;
+    float supreme_lattice_lambda      = 0.72f;
+
+    bool  supreme_cvnn_enabled        = true;
+    float supreme_cvnn_harmonic_gain  = 0.35f;
+    float supreme_cvnn_imd_cancel     = 0.65f;
+
+    bool  supreme_snn_hoa_enabled     = true;
+    float supreme_snn_immersivity     = 0.55f;
+    float supreme_snn_spike_threshold = 0.45f;
+
+    bool  supreme_pinna_enabled       = true;
+    float supreme_pinna_wet_mix       = 0.50f;
+    float supreme_pinna_concha_depth  = 0.15f;
+    float supreme_pinna_helix_curl    = -0.05f;
+    float supreme_pinna_head_width    = 0.10f;
+
+    bool  supreme_farrow_mso_enabled  = true;
+    float supreme_mso_itd_ns          = 0.0f;
+    bool  supreme_ebpf_bypass_active  = false;
 };
 
 class CommandServer {

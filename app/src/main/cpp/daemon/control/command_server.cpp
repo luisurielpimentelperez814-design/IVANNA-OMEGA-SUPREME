@@ -79,10 +79,29 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
     for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
     snap.cochlear_intensity = s.cochlear_intensity;
+    snap.supreme_lattice_bl_drive    = s.supreme_lattice_bl_drive;
+    snap.supreme_lattice_lambda      = s.supreme_lattice_lambda;
+    snap.supreme_cvnn_harmonic_gain  = s.supreme_cvnn_harmonic_gain;
+    snap.supreme_cvnn_imd_cancel     = s.supreme_cvnn_imd_cancel;
+    snap.supreme_snn_immersivity     = s.supreme_snn_immersivity;
+    snap.supreme_snn_spike_threshold = s.supreme_snn_spike_threshold;
+    snap.supreme_pinna_wet_mix       = s.supreme_pinna_wet_mix;
+    snap.supreme_pinna_concha_depth  = s.supreme_pinna_concha_depth;
+    snap.supreme_pinna_helix_curl    = s.supreme_pinna_helix_curl;
+    snap.supreme_pinna_head_width    = s.supreme_pinna_head_width;
+    snap.supreme_mso_itd_ns          = s.supreme_mso_itd_ns;
+
     snap.flags = (s.eq_calibrated ? 0x02u : 0u);
     if (s.cochlear_enabled) {
         snap.flags |= ivanna::OMEGA_FLAG_COCHLEAR_ON;
     }
+    if (s.supreme_lattice_enabled)     snap.flags |= ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON;
+    if (s.supreme_microchirp_enabled)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON;
+    if (s.supreme_cvnn_enabled)        snap.flags |= ivanna::OMEGA_FLAG_SUPREME_CVNN_ON;
+    if (s.supreme_snn_hoa_enabled)     snap.flags |= ivanna::OMEGA_FLAG_SUPREME_SNN_HOA_ON;
+    if (s.supreme_pinna_enabled)       snap.flags |= ivanna::OMEGA_FLAG_SUPREME_PINNA_ON;
+    if (s.supreme_farrow_mso_enabled)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
+    if (s.supreme_ebpf_bypass_active)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
 }
@@ -183,6 +202,45 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.spsc_ring_factor = _clamp(_jsonFloat(json,"factor",m_state.spsc_ring_factor),0.5f,2.0f);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_SUPREME_AXES")==0 || strcmp(action,"setSupremeAxes")==0) {
+        m_state.supreme_lattice_enabled     = (_jsonFloat(json,"warpedLatticeEnabled",     m_state.supreme_lattice_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_microchirp_enabled  = (_jsonFloat(json,"warpedLatticeMicroChirp",  m_state.supreme_microchirp_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_lattice_bl_drive    = _clamp(_jsonFloat(json,"warpedLatticeBlDrive",    m_state.supreme_lattice_bl_drive), 0.f, 2.f);
+        m_state.supreme_lattice_lambda      = _clamp(_jsonFloat(json,"warpedLatticeLambda",     m_state.supreme_lattice_lambda), -0.85f, 0.85f);
+
+        m_state.supreme_cvnn_enabled        = (_jsonFloat(json,"transharmonicCvnnEnabled", m_state.supreme_cvnn_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_cvnn_harmonic_gain  = _clamp(_jsonFloat(json,"transharmonicHarmonicGain", m_state.supreme_cvnn_harmonic_gain), 0.f, 1.f);
+        m_state.supreme_cvnn_imd_cancel     = _clamp(_jsonFloat(json,"transharmonicImdCancel",    m_state.supreme_cvnn_imd_cancel), 0.f, 1.f);
+
+        m_state.supreme_snn_hoa_enabled     = (_jsonFloat(json,"snnHoaUpmixerEnabled",     m_state.supreme_snn_hoa_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_snn_immersivity     = _clamp(_jsonFloat(json,"snnHoaImmersivity",     m_state.supreme_snn_immersivity), 0.f, 1.f);
+        m_state.supreme_snn_spike_threshold = _clamp(_jsonFloat(json,"snnSpikeThreshold",     m_state.supreme_snn_spike_threshold), 0.15f, 1.50f);
+
+        m_state.supreme_pinna_enabled       = (_jsonFloat(json,"pinnaManifoldEnabled",     m_state.supreme_pinna_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_pinna_wet_mix       = _clamp(_jsonFloat(json,"pinnaManifoldWetMix",  m_state.supreme_pinna_wet_mix), 0.f, 1.f);
+        m_state.supreme_pinna_concha_depth  = _clamp(_jsonFloat(json,"pinnaConchaDepth",     m_state.supreme_pinna_concha_depth), -1.f, 1.f);
+        m_state.supreme_pinna_helix_curl    = _clamp(_jsonFloat(json,"pinnaHelixCurl",       m_state.supreme_pinna_helix_curl), -1.f, 1.f);
+        m_state.supreme_pinna_head_width    = _clamp(_jsonFloat(json,"pinnaHeadWidth",       m_state.supreme_pinna_head_width), -1.f, 1.f);
+
+        m_state.supreme_farrow_mso_enabled  = (_jsonFloat(json,"farrowMsoEnabled",         m_state.supreme_farrow_mso_enabled ? 1.f : 0.f) > 0.5f);
+        m_state.supreme_mso_itd_ns          = _clamp(_jsonFloat(json,"msoItdNanoseconds",    m_state.supreme_mso_itd_ns), -50000.f, 50000.f);
+        m_state.supreme_ebpf_bypass_active  = (_jsonFloat(json,"ebpfBypassActive",         m_state.supreme_ebpf_bypass_active ? 1.f : 0.f) > 0.5f);
+
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"GET_SUPREME_AXES")==0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"GET_SUPREME_AXES\",\"generation\":%llu,\"warpedLatticeEnabled\":%s,\"transharmonicCvnnEnabled\":%s,\"snnHoaUpmixerEnabled\":%s,\"pinnaManifoldEnabled\":%s,\"farrowMsoEnabled\":%s,\"msoItdNanoseconds\":%.1f}",
+            (unsigned long long)gen,
+            m_state.supreme_lattice_enabled?"true":"false",
+            m_state.supreme_cvnn_enabled?"true":"false",
+            m_state.supreme_snn_hoa_enabled?"true":"false",
+            m_state.supreme_pinna_enabled?"true":"false",
+            m_state.supreme_farrow_mso_enabled?"true":"false",
+            m_state.supreme_mso_itd_ns);
 
     } else if (strcmp(action,"SET_PF_PARAMS")==0) {
         _jsonFloatArray(json,"params",m_state.pf_params,13);

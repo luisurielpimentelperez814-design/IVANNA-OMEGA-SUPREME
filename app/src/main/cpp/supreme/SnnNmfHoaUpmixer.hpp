@@ -284,6 +284,16 @@ public:
     float snnThreshold() const noexcept { return snnThreshold_.load(std::memory_order_acquire); }
     uint32_t lastActiveSpikes() const noexcept { return lastActiveSpikes_; }
 
+    /**
+     * @brief Devuelve la máscara ortogonal normalizada (partición de la unidad) del flujo k ∈ [0, 3].
+     */
+    float streamMask(size_t k) const noexcept {
+        if (k >= NUM_STREAMS) return 0.0f;
+        float sum = 0.0f;
+        for (size_t i = 0; i < NUM_STREAMS; ++i) sum += nmfActivationH_[i];
+        return (sum > 1.0e-6f) ? (nmfActivationH_[k] / sum) : 0.25f;
+    }
+
 private:
     static void encodeSphericalHarmonics16(
         float azRad,

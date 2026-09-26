@@ -463,6 +463,20 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeSubSampleDelay(JNIEnv*, jclass) {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().lastSubSampleDelay();
 }
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_runWarpedLatticeLoopbackCalibration(JNIEnv*, jclass, jfloat f0Hz, jfloat mu) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().runSyntheticLoopbackCalibration(f0Hz, mu);
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeKappas(JNIEnv* env, jclass) {
+    jfloatArray arr = env->NewFloatArray(8);
+    if (!arr) return nullptr;
+    float tmp[8]{};
+    const auto& inv = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter();
+    for (size_t i = 0; i < 8; ++i) tmp[i] = inv.reflectionCoefficient(i);
+    env->SetFloatArrayRegion(arr, 0, 8, tmp);
+    return arr;
+}
 
 // ── EJE 2: PhaseCoherentTransharmonicSynthesizer ────────────────────────────
 extern "C" JNIEXPORT void JNICALL
@@ -503,6 +517,16 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getSnnActiveSpikes(JNIEnv*, jclass) {
     return static_cast<jint>(ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer().lastActiveSpikes());
 }
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getSnnOrthogonalMasks(JNIEnv* env, jclass) {
+    jfloatArray arr = env->NewFloatArray(4);
+    if (!arr) return nullptr;
+    float tmp[4]{};
+    const auto& up = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().snnNmfHoaUpmixer();
+    for (size_t k = 0; k < 4; ++k) tmp[k] = up.streamMask(k);
+    env->SetFloatArrayRegion(arr, 0, 4, tmp);
+    return arr;
+}
 
 // ── EJE 4: PinnaManifoldInterpolator ────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
@@ -519,6 +543,35 @@ Java_com_ivanna_omega_core_NativeBridge_calibratePinnaManifold(
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
         .pinnaManifoldInterpolator()
         .calibrateFromLatents(conchaDepth, helixCurl, headWidth, 48000.0f);
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_calibratePinnaFromImagePatch(
+    JNIEnv* env, jclass, jfloatArray patchArr) {
+    auto& pinna = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator();
+    if (patchArr) {
+        const jsize len = env->GetArrayLength(patchArr);
+        if (len > 0) {
+            std::vector<float> patch(static_cast<size_t>(len), 0.0f);
+            env->GetFloatArrayRegion(patchArr, 0, len, patch.data());
+            pinna.calibrateFromImagePatch(patch.data(), patch.size(), 48000.0f);
+        }
+    }
+    jfloatArray outLatents = env->NewFloatArray(6);
+    if (!outLatents) return nullptr;
+    float lat[6]{};
+    for (size_t i = 0; i < 6; ++i) lat[i] = pinna.activeLatent(i);
+    env->SetFloatArrayRegion(outLatents, 0, 6, lat);
+    return outLatents;
+}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveLatents(JNIEnv* env, jclass) {
+    jfloatArray outLatents = env->NewFloatArray(6);
+    if (!outLatents) return nullptr;
+    float lat[6]{};
+    const auto& pinna = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator();
+    for (size_t i = 0; i < 6; ++i) lat[i] = pinna.activeLatent(i);
+    env->SetFloatArrayRegion(outLatents, 0, 6, lat);
+    return outLatents;
 }
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveNotchHz(JNIEnv*, jclass) {
@@ -544,8 +597,11 @@ Java_com_ivanna_omega_core_NativeBridge_setEbpfBypassActive(JNIEnv*, jclass, jbo
 }
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_NativeBridge_acquireShmArbitration(JNIEnv*, jclass, jint pid) {
+    const auto nowTp = std::chrono::steady_clock::now().time_since_epoch();
+    const uint64_t nowNs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(nowTp).count());
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
-        .shmMsoArbitrator().tryAcquireOwnership(pid, 100'000'000ULL) ? JNI_TRUE : JNI_FALSE;
+        .shmMsoArbitrator().tryAcquireOwnership(pid, nowNs > 0 ? nowNs : 100'000'000ULL) ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_NativeBridge_releaseShmArbitration(JNIEnv*, jclass, jint pid) {

@@ -199,6 +199,26 @@ public:
     }
     float warpingLambda() const noexcept { return lambda_; }
     float lastSubSampleDelay() const noexcept { return lastSubSampleDelay_.load(std::memory_order_relaxed); }
+    float reflectionCoefficient(size_t stage) const noexcept {
+        return (stage < ORDER) ? kappa_[stage] : 0.0f;
+    }
+
+    /**
+     * @brief Ejecuta un barrido de calibración en bucle cerrado sobre una respuesta
+     *        electromecánica de referencia (resonancia fundamental f0 + inductancia Le)
+     *        usando adaptación NLMS proyectada en el hipercubo de estabilidad de Schur.
+     */
+    void runSyntheticLoopbackCalibration(float f0Hz = 92.0f, float mu = 0.005f) noexcept {
+        std::array<float, 128> synthLoopback{};
+        const float w0 = 2.0f * kPi * std::clamp(f0Hz, 30.0f, 400.0f) * invSampleRate_;
+        for (size_t i = 0; i < synthLoopback.size(); ++i) {
+            const float fi = static_cast<float>(i);
+            const float env = std::exp(-0.025f * fi);
+            synthLoopback[i] = 0.15f * env * std::sin(w0 * fi)
+                             + 0.05f * std::cos(2.0f * kPi * 18200.0f * fi * invSampleRate_);
+        }
+        adaptFromLoopback(synthLoopback.data(), synthLoopback.size(), mu);
+    }
 
 private:
     [[gnu::always_inline]] inline void processWarpedLatticeStep(

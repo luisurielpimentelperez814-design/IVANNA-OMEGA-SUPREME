@@ -15,6 +15,7 @@
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
 #include "spatial/IvannaAudioPipeline.hpp"
+#include "include/omega_control_bus.h"
 
 using namespace ivanna::supreme;
 
@@ -260,5 +261,64 @@ TEST(SupremeFiveAxesPipelineIntegration, FullControlsAndTelemetryEndToEnd) {
     pipe.snnNmfHoaUpmixer().setEnabled(false);
     pipe.pinnaManifoldInterpolator().setEnabled(false);
     pipe.shmMsoArbitrator().setEnabled(false);
+}
+
+TEST(SupremeFiveAxesPipelineIntegration, CrossProcessSnapshotAndLaboratoryCalibrations) {
+    // 1. Verificar ABI y transporte cross-process de los 5 Ejes en OmegaDspSnapshot
+    ivanna::OmegaDspSnapshot snap = ivanna::OmegaDspSnapshot::makeDefault();
+    EXPECT_LE(sizeof(ivanna::OmegaDspSnapshot), 512u);
+    snap.flags |= ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON
+                | ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON
+                | ivanna::OMEGA_FLAG_SUPREME_CVNN_ON
+                | ivanna::OMEGA_FLAG_SUPREME_SNN_HOA_ON
+                | ivanna::OMEGA_FLAG_SUPREME_PINNA_ON
+                | ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
+    snap.supreme_lattice_bl_drive    = 0.82f;
+    snap.supreme_lattice_lambda      = 0.74f;
+    snap.supreme_cvnn_harmonic_gain  = 0.44f;
+    snap.supreme_cvnn_imd_cancel     = 0.91f;
+    snap.supreme_snn_immersivity     = 0.78f;
+    snap.supreme_snn_spike_threshold = 0.42f;
+    snap.supreme_pinna_wet_mix       = 0.68f;
+    snap.supreme_pinna_concha_depth  = 0.22f;
+    snap.supreme_pinna_helix_curl    = -0.12f;
+    snap.supreme_pinna_head_width    = 0.09f;
+    snap.supreme_mso_itd_ns          = 14500.0f;
+    snap.stampCrc();
+    EXPECT_TRUE(snap.isValid());
+
+    // 2. Calibración NLMS en bucle cerrado del Eje 1 (hipercubo de Schur |κ_m| < 0.95)
+    WarpedLatticeTransducerInverter inv;
+    inv.runSyntheticLoopbackCalibration(92.0f, 0.008f);
+    for (size_t m = 0; m < WarpedLatticeTransducerInverter::ORDER; ++m) {
+        const float km = inv.reflectionCoefficient(m);
+        EXPECT_TRUE(std::isfinite(km));
+        EXPECT_LT(std::fabs(km), 0.951f);
+    }
+
+    // 3. Partición de la unidad de las 4 máscaras ortogonales SNN+NMF del Eje 3
+    SnnNmfHoaUpmixer up;
+    float maskSum = 0.0f;
+    for (size_t k = 0; k < SnnNmfHoaUpmixer::NUM_STREAMS; ++k) {
+        const float mk = up.streamMask(k);
+        EXPECT_GE(mk, 0.0f);
+        EXPECT_LE(mk, 1.0f);
+        maskSum += mk;
+    }
+    EXPECT_NEAR(maskSum, 1.0f, 1.0e-4f);
+
+    // 4. Calibración fotogramétrica 8x8 directa del Eje 4 (Manifold INR-SDF)
+    PinnaManifoldInterpolator pinna;
+    std::array<float, 64> patch64{};
+    for (size_t i = 0; i < 64; ++i) {
+        patch64[i] = 0.25f * std::sin(static_cast<float>(i) * 0.3f);
+    }
+    pinna.calibrateFromImagePatch(patch64.data(), patch64.size(), 48000.0f);
+    for (size_t d = 0; d < PinnaManifoldInterpolator::LATENT_DIM; ++d) {
+        const float z = pinna.activeLatent(d);
+        EXPECT_TRUE(std::isfinite(z));
+        EXPECT_GE(z, -1.0f);
+        EXPECT_LE(z, 1.0f);
+    }
 }
 

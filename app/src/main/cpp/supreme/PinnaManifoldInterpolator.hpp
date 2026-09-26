@@ -82,6 +82,30 @@ public:
     }
 
     /**
+     * @brief Calibra directamente el Manifold de HRTF a partir de un parche fotogramétrico
+     *        de cámara frontal (ej. 8x8 = 64 floats de luma/profundidad) y conmuta el
+     *        banco FIR de fase mínima mediante doble buffer lock-free.
+     */
+    void calibrateFromImagePatch(
+        const float* __restrict imagePatch,
+        size_t patchLen,
+        float sampleRate = 48000.0f) noexcept
+    {
+        if (!imagePatch || patchLen == 0) return;
+        const uint32_t nextSlot = (activeFirSlot_.load(std::memory_order_relaxed) + 1u) & 1u;
+        activePairs_[nextSlot] = synthesizeFromImagePatch(imagePatch, patchLen, sampleRate);
+        activeNotchHz_.store(activePairs_[nextSlot].pinnaNotchFreqHz, std::memory_order_relaxed);
+        activeItdUs_.store(activePairs_[nextSlot].itdMicroSeconds, std::memory_order_relaxed);
+        activeFirSlot_.store(nextSlot, std::memory_order_release);
+    }
+
+    float activeLatent(size_t idx) const noexcept {
+        if (idx >= LATENT_DIM) return 0.0f;
+        const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
+        return activePairs_[slot].latentAnthropometrics[idx];
+    }
+
+    /**
      * @brief Convolución FIR causal de fase mínima en tiempo real (32 taps, 0.00 ms lookahead).
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {

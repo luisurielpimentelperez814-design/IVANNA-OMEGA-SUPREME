@@ -255,6 +255,10 @@ public:
         return shm_.owner_pid.load(std::memory_order_acquire);
     }
 
+    uint64_t leaseEpochNs() const noexcept {
+        return shm_.lease_epoch_ns.load(std::memory_order_acquire);
+    }
+
     void process(float* __restrict left, float* __restrict right, size_t numSamples, float sampleRate = 48000.0f) noexcept {
         if (!left || !right || numSamples == 0) return;
         if (!enabled_.load(std::memory_order_relaxed)) return;

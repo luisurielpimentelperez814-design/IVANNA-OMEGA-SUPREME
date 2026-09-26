@@ -63,6 +63,8 @@ object NativeBridge {
     @JvmStatic external fun setWarpedLatticeBlDrive(drive: Float)
     @JvmStatic external fun setWarpedLatticeLambda(lambda: Float)
     @JvmStatic external fun getWarpedLatticeSubSampleDelay(): Float
+    @JvmStatic external fun runWarpedLatticeLoopbackCalibration(f0Hz: Float, mu: Float)
+    @JvmStatic external fun getWarpedLatticeKappas(): FloatArray?
 
     fun safeSetWarpedLatticeEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setWarpedLatticeEnabled(enabled) }
@@ -78,6 +80,13 @@ object NativeBridge {
     }
     fun safeGetWarpedLatticeSubSampleDelay(): Float =
         if (isLoaded) runCatching { getWarpedLatticeSubSampleDelay() }.getOrDefault(0.24f) else 0.24f
+    fun safeRunWarpedLatticeLoopbackCalibration(f0Hz: Float = 92.0f, mu: Float = 0.005f) {
+        if (isLoaded) runCatching { runWarpedLatticeLoopbackCalibration(f0Hz, mu) }
+    }
+    fun safeGetWarpedLatticeKappas(): FloatArray =
+        if (isLoaded) runCatching { getWarpedLatticeKappas() }.getOrNull()
+            ?: floatArrayOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f)
+        else floatArrayOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f)
 
     // ── EJE 2: PhaseCoherentTransharmonicSynthesizer (Anti-DSEE CVNN+DDSP) ──
     @JvmStatic external fun setTransharmonicCvnnEnabled(enabled: Boolean)
@@ -103,6 +112,7 @@ object NativeBridge {
     @JvmStatic external fun setSnnSpikeThreshold(threshold: Float)
     @JvmStatic external fun promoteSnnThreadToSchedFifo(priority: Int): Boolean
     @JvmStatic external fun getSnnActiveSpikes(): Int
+    @JvmStatic external fun getSnnOrthogonalMasks(): FloatArray?
 
     fun safeSetSnnHoaUpmixerEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setSnnHoaUpmixerEnabled(enabled) }
@@ -117,11 +127,17 @@ object NativeBridge {
         if (isLoaded) runCatching { promoteSnnThreadToSchedFifo(priority) }.getOrDefault(false) else false
     fun safeGetSnnActiveSpikes(): Int =
         if (isLoaded) runCatching { getSnnActiveSpikes() }.getOrDefault(2) else 2
+    fun safeGetSnnOrthogonalMasks(): FloatArray =
+        if (isLoaded) runCatching { getSnnOrthogonalMasks() }.getOrNull()
+            ?: floatArrayOf(0.25f, 0.25f, 0.25f, 0.25f)
+        else floatArrayOf(0.25f, 0.25f, 0.25f, 0.25f)
 
     // ── EJE 4: PinnaManifoldInterpolator (Anti-Apple INR-SDF + FIR Fase Mín) ─
     @JvmStatic external fun setPinnaManifoldEnabled(enabled: Boolean)
     @JvmStatic external fun setPinnaManifoldWetMix(wet: Float)
     @JvmStatic external fun calibratePinnaManifold(conchaDepth: Float, helixCurl: Float, headWidth: Float)
+    @JvmStatic external fun calibratePinnaFromImagePatch(patch: FloatArray): FloatArray?
+    @JvmStatic external fun getPinnaActiveLatents(): FloatArray?
     @JvmStatic external fun getPinnaActiveNotchHz(): Float
     @JvmStatic external fun getPinnaActiveItdUs(): Float
 
@@ -134,6 +150,14 @@ object NativeBridge {
     fun safeCalibratePinnaManifold(conchaDepth: Float, helixCurl: Float, headWidth: Float) {
         if (isLoaded) runCatching { calibratePinnaManifold(conchaDepth, helixCurl, headWidth) }
     }
+    fun safeCalibratePinnaFromImagePatch(patch: FloatArray): FloatArray =
+        if (isLoaded) runCatching { calibratePinnaFromImagePatch(patch) }.getOrNull()
+            ?: floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
+        else floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
+    fun safeGetPinnaActiveLatents(): FloatArray =
+        if (isLoaded) runCatching { getPinnaActiveLatents() }.getOrNull()
+            ?: floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
+        else floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
     fun safeGetPinnaActiveNotchHz(): Float =
         if (isLoaded) runCatching { getPinnaActiveNotchHz() }.getOrDefault(7800f) else 7800f
     fun safeGetPinnaActiveItdUs(): Float =

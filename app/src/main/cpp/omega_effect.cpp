@@ -11,6 +11,11 @@
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
+#include "supreme/WarpedLatticeTransducerInverter.hpp"
+#include "supreme/PhaseCoherentTransharmonicSynthesizer.hpp"
+#include "supreme/SnnNmfHoaUpmixer.hpp"
+#include "supreme/PinnaManifoldInterpolator.hpp"
+#include "supreme/ShmPipelineArbitrator.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -239,6 +244,15 @@ struct omega_effect_context_t {
     // Eje Supremo Coclear: CochlearActiveInverseEngine
     ivanna::neuromorphic::CochlearActiveInverseEngine* cochlearEngine;
     float cochlearIntensity;
+    // 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B per-instance)
+    ivanna::supreme::WarpedLatticeTransducerInverter*      supremeLattice;
+    ivanna::supreme::PhaseCoherentTransharmonicSynthesizer* supremeCvnn;
+    ivanna::supreme::SnnNmfHoaUpmixer*                     supremeSnnHoa;
+    ivanna::supreme::PinnaManifoldInterpolator*            supremePinna;
+    ivanna::supreme::SupremeMsoFarrowArbitrator*           supremeMsoFarrow;
+    float lastPinnaConcha;
+    float lastPinnaHelix;
+    float lastPinnaHead;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -357,6 +371,62 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     fc->setVolterraEnabled(allowVolterra);
     fc->setFastRpcEnabled((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) != 0);
     fc->setAtiEnabled((s.flags & ivanna::OMEGA_FLAG_ATI_ON) != 0);
+}
+
+static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
+                                            const ivanna::OmegaDspSnapshot& s) noexcept {
+    if (!ctx) return;
+    if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
+        return;
+    }
+    if (ctx->supremeLattice) {
+        ctx->supremeLattice->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON) != 0);
+        ctx->supremeLattice->setMicroChirpEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON) != 0);
+        if (std::isfinite(s.supreme_lattice_bl_drive))
+            ctx->supremeLattice->setBlCompensationDrive(s.supreme_lattice_bl_drive);
+        if (std::isfinite(s.supreme_lattice_lambda))
+            ctx->supremeLattice->setWarpingLambda(s.supreme_lattice_lambda);
+    }
+    if (ctx->supremeCvnn) {
+        ctx->supremeCvnn->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_CVNN_ON) != 0);
+        if (std::isfinite(s.supreme_cvnn_harmonic_gain))
+            ctx->supremeCvnn->setHarmonicGain(s.supreme_cvnn_harmonic_gain);
+        if (std::isfinite(s.supreme_cvnn_imd_cancel))
+            ctx->supremeCvnn->setImdCancelStrength(s.supreme_cvnn_imd_cancel);
+    }
+    if (ctx->supremeSnnHoa) {
+        ctx->supremeSnnHoa->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_SNN_HOA_ON) != 0);
+        if (std::isfinite(s.supreme_snn_immersivity))
+            ctx->supremeSnnHoa->setImmersivity(s.supreme_snn_immersivity);
+        if (std::isfinite(s.supreme_snn_spike_threshold))
+            ctx->supremeSnnHoa->setSnnThreshold(s.supreme_snn_spike_threshold);
+    }
+    if (ctx->supremePinna) {
+        ctx->supremePinna->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_PINNA_ON) != 0);
+        if (std::isfinite(s.supreme_pinna_wet_mix))
+            ctx->supremePinna->setWetMix(s.supreme_pinna_wet_mix);
+        if (std::isfinite(s.supreme_pinna_concha_depth) &&
+            std::isfinite(s.supreme_pinna_helix_curl) &&
+            std::isfinite(s.supreme_pinna_head_width)) {
+            if (std::fabs(s.supreme_pinna_concha_depth - ctx->lastPinnaConcha) > 1.0e-4f ||
+                std::fabs(s.supreme_pinna_helix_curl   - ctx->lastPinnaHelix)  > 1.0e-4f ||
+                std::fabs(s.supreme_pinna_head_width   - ctx->lastPinnaHead)   > 1.0e-4f) {
+                ctx->lastPinnaConcha = s.supreme_pinna_concha_depth;
+                ctx->lastPinnaHelix  = s.supreme_pinna_helix_curl;
+                ctx->lastPinnaHead   = s.supreme_pinna_head_width;
+                const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                     ? ctx->config.outputCfg.samplingRate : 48000u;
+                ctx->supremePinna->calibrateFromLatents(
+                    ctx->lastPinnaConcha, ctx->lastPinnaHelix, ctx->lastPinnaHead, (float)srNow);
+            }
+        }
+    }
+    if (ctx->supremeMsoFarrow) {
+        ctx->supremeMsoFarrow->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON) != 0);
+        ctx->supremeMsoFarrow->setEbpfBypassActive((s.flags & ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON) != 0);
+        if (std::isfinite(s.supreme_mso_itd_ns))
+            ctx->supremeMsoFarrow->setMsoItdNanoseconds(s.supreme_mso_itd_ns);
+    }
 }
 
 // ── RIR dataset: inicialización fuera del hilo RT ───────────────────────────
@@ -549,7 +619,9 @@ static int32_t omega_process(effect_handle_t self,
         ivanna::OmegaDspSnapshot snap;
         if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
             omega_apply_snapshot(fc, ctx->antiDolby, snap);
+            omega_apply_supreme_axes(ctx, snap);
             omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
+            ctx->pendingSnap = snap;
         }
     }
 
@@ -722,6 +794,19 @@ static int32_t omega_process(effect_handle_t self,
             ctx->cochlearEngine->process(L, R, (int)chunk);
         }
 
+        // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B) ──
+        if (!ctx->thermalSkipVolterra) {
+            if (ctx->supremeLattice)   ctx->supremeLattice->process(L, R, (size_t)chunk);
+            if (ctx->supremeCvnn)      ctx->supremeCvnn->process(L, R, (size_t)chunk);
+            if (ctx->supremeSnnHoa)    ctx->supremeSnnHoa->process(L, R, (size_t)chunk);
+            if (ctx->supremePinna)     ctx->supremePinna->process(L, R, (size_t)chunk);
+            if (ctx->supremeMsoFarrow) {
+                const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                     ? ctx->config.outputCfg.samplingRate : 48000u;
+                ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
+            }
+        }
+
         // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
         // expansion mid/side del TinyML (s *= 1.2f en clase 'Music') o un
@@ -858,6 +943,26 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     }
                 }
                 ctx->cochlearIntensity = 1.0f;
+                // 5 Ejes de Supremacía Cuántico-Neuromórfica (instanciación fuera de RT)
+                if (!ctx->supremeLattice) {
+                    ctx->supremeLattice = new (std::nothrow) ivanna::supreme::WarpedLatticeTransducerInverter();
+                    if (ctx->supremeLattice) ctx->supremeLattice->prepare(static_cast<float>(sr));
+                }
+                if (!ctx->supremeCvnn) {
+                    ctx->supremeCvnn = new (std::nothrow) ivanna::supreme::PhaseCoherentTransharmonicSynthesizer();
+                    if (ctx->supremeCvnn) ctx->supremeCvnn->prepare(static_cast<float>(sr));
+                }
+                if (!ctx->supremeSnnHoa) {
+                    ctx->supremeSnnHoa = new (std::nothrow) ivanna::supreme::SnnNmfHoaUpmixer();
+                    if (ctx->supremeSnnHoa) ctx->supremeSnnHoa->prepare(static_cast<float>(sr));
+                }
+                if (!ctx->supremePinna) {
+                    ctx->supremePinna = new (std::nothrow) ivanna::supreme::PinnaManifoldInterpolator();
+                    if (ctx->supremePinna) ctx->supremePinna->calibrateFromLatents(0.0f, 0.0f, 0.0f, static_cast<float>(sr));
+                }
+                if (!ctx->supremeMsoFarrow) {
+                    ctx->supremeMsoFarrow = new (std::nothrow) ivanna::supreme::SupremeMsoFarrowArbitrator();
+                }
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
@@ -891,6 +996,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         uint64_t seen = 0;
                         if (ivanna::effectControlBus().readLatest(seed, seen)) {
                             omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
+                            omega_apply_supreme_axes(ctx, seed);
+                            ctx->pendingSnap = seed;
                             ctx->lastAppliedGen = seen;
                             LOGI("OmegaControlBus attached (seed gen=%llu route=%d)",
                                  (unsigned long long)seen,
@@ -1287,6 +1394,26 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->cochlearEngine) {
             delete ctx->cochlearEngine;
             ctx->cochlearEngine = nullptr;
+        }
+        if (ctx->supremeLattice) {
+            delete ctx->supremeLattice;
+            ctx->supremeLattice = nullptr;
+        }
+        if (ctx->supremeCvnn) {
+            delete ctx->supremeCvnn;
+            ctx->supremeCvnn = nullptr;
+        }
+        if (ctx->supremeSnnHoa) {
+            delete ctx->supremeSnnHoa;
+            ctx->supremeSnnHoa = nullptr;
+        }
+        if (ctx->supremePinna) {
+            delete ctx->supremePinna;
+            ctx->supremePinna = nullptr;
+        }
+        if (ctx->supremeMsoFarrow) {
+            delete ctx->supremeMsoFarrow;
+            ctx->supremeMsoFarrow = nullptr;
         }
         // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
         if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }

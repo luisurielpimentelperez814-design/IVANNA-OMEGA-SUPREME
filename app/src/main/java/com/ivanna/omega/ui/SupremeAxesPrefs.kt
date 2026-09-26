@@ -3,9 +3,14 @@ package com.ivanna.omega.ui
 import android.content.Context
 import android.os.Process
 import com.ivanna.omega.core.NativeBridge
+import com.ivanna.omega.magisk.OmegaEngineBridge
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * Estado persistente de los 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026).
@@ -46,6 +51,7 @@ data class SupremeAxesState(
 
 object SupremeAxesPrefs {
     private const val PREFS_NAME = "ivanna_supreme_five_axes_prefs"
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _stateFlow = MutableStateFlow(SupremeAxesState())
     val stateFlow: StateFlow<SupremeAxesState> = _stateFlow.asStateFlow()
@@ -111,10 +117,42 @@ object SupremeAxesPrefs {
             .putBoolean("ebpfBypassActive", s.ebpfBypassActive)
             .putBoolean("shmArbitrationLockedByApp", s.shmArbitrationLockedByApp)
             .apply()
+        pushToDaemonRutaB(s)
     }
 
     /**
-     * Empuja el estado completo de los 5 Ejes al pipeline C++23 vía NativeBridge.
+     * Sincroniza asíncronamente los 5 Ejes con `ivanna_daemon` -> `OmegaControlBus` -> `omega_effect.so` (Ruta B).
+     */
+    fun pushToDaemonRutaB(s: SupremeAxesState) {
+        ioScope.launch {
+            runCatching {
+                OmegaEngineBridge.pushSupremeAxesState(
+                    warpedLatticeEnabled      = s.warpedLatticeEnabled,
+                    warpedLatticeMicroChirp   = s.warpedLatticeMicroChirp,
+                    warpedLatticeBlDrive      = s.warpedLatticeBlDrive,
+                    warpedLatticeLambda       = s.warpedLatticeLambda,
+                    transharmonicCvnnEnabled  = s.transharmonicCvnnEnabled,
+                    transharmonicHarmonicGain = s.transharmonicHarmonicGain,
+                    transharmonicImdCancel    = s.transharmonicImdCancel,
+                    snnHoaUpmixerEnabled      = s.snnHoaUpmixerEnabled,
+                    snnHoaImmersivity         = s.snnHoaImmersivity,
+                    snnSpikeThreshold         = s.snnSpikeThreshold,
+                    pinnaManifoldEnabled      = s.pinnaManifoldEnabled,
+                    pinnaManifoldWetMix       = s.pinnaManifoldWetMix,
+                    pinnaConchaDepth          = s.pinnaConchaDepth,
+                    pinnaHelixCurl            = s.pinnaHelixCurl,
+                    pinnaHeadWidth            = s.pinnaHeadWidth,
+                    farrowMsoEnabled          = s.farrowMsoEnabled,
+                    msoItdNanoseconds         = s.msoItdNanoseconds,
+                    ebpfBypassActive          = s.ebpfBypassActive
+                )
+            }
+        }
+    }
+
+    /**
+     * Empuja el estado completo de los 5 Ejes al pipeline C++23 vía NativeBridge (Ruta A)
+     * y al bus SHM inter-proceso vía OmegaEngineBridge (Ruta B).
      * Operación 100% lock-free y noexcept.
      */
     fun applyToNative(s: SupremeAxesState) {
@@ -150,5 +188,8 @@ object SupremeAxesPrefs {
         if (s.shmArbitrationLockedByApp) {
             NativeBridge.safeAcquireShmArbitration(pid)
         }
+
+        // Sincronizar también Ruta B (Daemon + AudioFlinger HAL Effect)
+        pushToDaemonRutaB(s)
     }
 }

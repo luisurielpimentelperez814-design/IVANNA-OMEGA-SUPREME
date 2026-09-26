@@ -119,6 +119,13 @@ constexpr uint32_t OMEGA_FLAG_VOLTERRA_ON   = (1u << 4); // Anti-Lossy Volterra 
 constexpr uint32_t OMEGA_FLAG_FASTRPC_ON    = (1u << 5); // Qualcomm Hexagon cDSP FastRPC Offload
 constexpr uint32_t OMEGA_FLAG_ATI_ON        = (1u << 6); // Active Transducer Inversion (Phase/Group Delay)
 constexpr uint32_t OMEGA_FLAG_COCHLEAR_ON   = (1u << 7); // Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN)
+constexpr uint32_t OMEGA_FLAG_SUPREME_LATTICE_ON     = (1u << 8);  // Eje 1: Warped Lattice Z(ω) + Bl(x)
+constexpr uint32_t OMEGA_FLAG_SUPREME_MICROCHIRP_ON  = (1u << 9);  // Eje 1: Micro-Chirp 17.5-19 kHz
+constexpr uint32_t OMEGA_FLAG_SUPREME_CVNN_ON        = (1u << 10); // Eje 2: Transharmonic CVNN + DDSP
+constexpr uint32_t OMEGA_FLAG_SUPREME_SNN_HOA_ON     = (1u << 11); // Eje 3: SNN INT8 + NMF -> HOA 4th Order
+constexpr uint32_t OMEGA_FLAG_SUPREME_PINNA_ON       = (1u << 12); // Eje 4: Pinna Manifold INR-SDF 32-tap FIR
+constexpr uint32_t OMEGA_FLAG_SUPREME_FARROW_MSO_ON  = (1u << 13); // Eje 5: Farrow Order-5 MSO Phase Alignment
+constexpr uint32_t OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON = (1u << 14); // Eje 5: eBPF/XDP SHM Direct-to-HAL Bypass
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {
@@ -225,6 +232,19 @@ struct OmegaDspSnapshot {
     // ── Cochlear Active Inverse & Flags ─────────────────────────────────────
     float    cochlear_intensity; // Intensidad [0.0, 1.0]
 
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026) ────
+    float    supreme_lattice_bl_drive;      // Eje 1: [0.0, 2.0]
+    float    supreme_lattice_lambda;        // Eje 1: [-0.85, 0.85]
+    float    supreme_cvnn_harmonic_gain;    // Eje 2: [0.0, 1.0]
+    float    supreme_cvnn_imd_cancel;       // Eje 2: [0.0, 1.0]
+    float    supreme_snn_immersivity;       // Eje 3: [0.0, 1.0]
+    float    supreme_snn_spike_threshold;   // Eje 3: [0.15, 1.50]
+    float    supreme_pinna_wet_mix;         // Eje 4: [0.0, 1.0]
+    float    supreme_pinna_concha_depth;    // Eje 4: [-1.0, 1.0]
+    float    supreme_pinna_helix_curl;      // Eje 4: [-1.0, 1.0]
+    float    supreme_pinna_head_width;      // Eje 4: [-1.0, 1.0]
+    float    supreme_mso_itd_ns;            // Eje 5: [-50000.0, 50000.0]
+
     // ── Flags ────────────────────────────────────────────────────────────────
     // bit 0: bypass global
     // bit 1: eq_calibrated
@@ -262,6 +282,17 @@ struct OmegaDspSnapshot {
         s.wfs_enabled = 0;      // opt-in, coherente con ParameterStore default
         s.wfs_spread  = 1.0f;
         s.cochlear_intensity = 1.0f;
+        s.supreme_lattice_bl_drive    = 1.0f;
+        s.supreme_lattice_lambda      = 0.72f;
+        s.supreme_cvnn_harmonic_gain  = 0.25f;
+        s.supreme_cvnn_imd_cancel     = 0.50f;
+        s.supreme_snn_immersivity     = 0.50f;
+        s.supreme_snn_spike_threshold = 0.45f;
+        s.supreme_pinna_wet_mix       = 0.50f;
+        s.supreme_pinna_concha_depth  = 0.0f;
+        s.supreme_pinna_helix_curl    = 0.0f;
+        s.supreme_pinna_head_width    = 0.0f;
+        s.supreme_mso_itd_ns          = 0.0f;
         {
             // RoomGeometryConfig::defaultLayout() (orden FL,FR,SL,SR,TL,TR,SW).
             // Duplicado aquí como literales (no como dependencia de
