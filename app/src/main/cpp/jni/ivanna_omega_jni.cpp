@@ -2301,8 +2301,36 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     JNIEnv*, jobject, jfloat v) {
     if (!std::isfinite(v)) return;
-    g_nho_wet_spatial.store(std::clamp(v, 0.0f, 1.0f), std::memory_order_relaxed);
+    const float clamped = std::clamp(v, 0.0f, 1.0f);
+    g_nho_wet_spatial.store(clamped, std::memory_order_relaxed);
     applyNhoWet();
+
+    // Propagar a través del bus de control seqlock para Route B (omega_effect en audioserver)
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.anti_dolby = clamped;
+        if (clamped > 0.01f) snap.flags |= ivanna::OMEGA_FLAG_ANTI_DOLBY_ON;
+        else                 snap.flags &= ~ivanna::OMEGA_FLAG_ANTI_DOLBY_ON;
+        bus.publish(snap);
+    }
+}
+
+static std::atomic<float> g_spsc_ring_factor{1.0f};
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpscRingFactor(
+    JNIEnv*, jobject, jfloat factor) {
+    if (!std::isfinite(factor)) return;
+    g_spsc_ring_factor.store(std::clamp(factor, 0.5f, 2.0f), std::memory_order_relaxed);
+    LOGI("[IvannaNativeLib] Anti-Dolby SPSC Ring Buffer factor set to %.2f", factor);
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpscRingFactor(
+    JNIEnv*, jobject) {
+    return g_spsc_ring_factor.load(std::memory_order_relaxed);
 }
 // ═══════════════════════════════════════════════════════════════════════════════
 // OmegaEngine mode control

@@ -272,6 +272,8 @@ object IvannaNativeLib {
     external fun nativeIsFastRpcEnabled(): Boolean
     external fun nativeSetAtiEnabled(enabled: Boolean)
     external fun nativeIsAtiEnabled(): Boolean
+    external fun nativeSetSpscRingFactor(factor: Float)
+    external fun nativeGetSpscRingFactor(): Float
 
     // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine (PINN/OHC) ──────
     /** Activa/desactiva la Inversión Biomecánica Coclear Activa (Eje Supremo PINN).

@@ -149,17 +149,18 @@ fun MainScaffold(
             // ── SPATIAL ──────────────────────────────────────────────────
             composable(TABS[3].route) {
                 SpatialHubScreen(
-                    onOpenCochlearInverse = { outerNav.navigate("spatial_audio") },
+                    onOpenCochlearInverse = { outerNav.navigate("cochlear_inverse") },
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
                     onOpenAudioControlHub = { outerNav.navigate(IvannaRoute.AUDIO_CONTROL_HUB) },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
-                    onOpenBinaural   = { outerNav.navigate("binaural") },
-                    onOpenAuditory   = { outerNav.navigate("spatial_audio") },
+                    onOpenBinaural   = { outerNav.navigate("spatial_audio") },
+                    onOpenAuditory   = { outerNav.navigate(IvannaRoute.SPACE) },
                     onOpenAbxTest    = { outerNav.navigate(IvannaRoute.ABX_TEST) },
                     onOpenBenchmark  = { outerNav.navigate("benchmark") },
                     onOpenPhase7     = { outerNav.navigate("phase7") },
-                    onOpenCognitiveDash = { outerNav.navigate("cognitive_dash") }
+                    onOpenCognitiveDash = { outerNav.navigate("cognitive_dash") },
+                    onOpenSpatialControl = { outerNav.navigate("spatial_control") }
                 )
             }
 
@@ -172,6 +173,9 @@ fun MainScaffold(
                     onOpenEngines   = { outerNav.navigate("engines_status") },
                     onOpenOemDash   = { outerNav.navigate("oem_dashboard") },
                     onOpenAssistant = { outerNav.navigate(IvannaRoute.IVANNA_ASSISTANT) },
+                    onOpenNetwork   = { outerNav.navigate(IvannaRoute.NETWORK) },
+                    onOpenAdaptiveProfiles = { outerNav.navigate("adaptive_profiles") },
+                    onOpenHiRes     = { outerNav.navigate("hires") }
                 )
             }
         }
@@ -191,7 +195,8 @@ fun SpatialHubScreen(
     onOpenBenchmark  : () -> Unit = {},
     onOpenPhase7     : () -> Unit = {},
     onOpenAudioControlHub : () -> Unit = {},
-    onOpenCognitiveDash : () -> Unit = {}
+    onOpenCognitiveDash : () -> Unit = {},
+    onOpenSpatialControl : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -202,6 +207,7 @@ fun SpatialHubScreen(
         HubHeader("SPATIAL ENGINE", "Binaural · HRTF · Object Renderer · Head Tracking", NeonMagenta)
         HubCard("INVERSIÓN BIOMECÁNICA COCLEAR", "Anti-Dolby PINN · Descompresión OHC Activa · Latencia 0.00 ms", AuroraCyan, onOpenCochlearInverse)
         HubCard("CALIBRACIÓN Φ_SAF^∞",    "HRTF personalizado · 7-D Riemanniano · 214 HRTFs", AuroraCyan,   onOpenSaF)
+        HubCard("CONTROL ESPACIAL 3D",       "Azimuth · Elevación · Ancho Estéreo Directo",         AuroraCyan,   onOpenSpatialControl)
         HubCard("VISUALIZADOR DE ESPECTRO",  "FFT 64-Band · Bark Perceptual",       AuroraCyan,   onOpenVisualizer)
         HubCard("EQ / COMPRESOR · OPE",      "IIR 10-Band · Brickwall Limiter",      AuroraCyan,   onOpenOpe)
         HubCard("MOTOR BINAURAL",            "HRTF + VBAP + 32 Objetos + 6DoF",     NeonMagenta,  onOpenBinaural)
@@ -226,6 +232,9 @@ fun SystemHubScreen(
     onOpenEngines   : () -> Unit = {},
     onOpenOemDash   : () -> Unit = {},
     onOpenAssistant : () -> Unit = {},
+    onOpenNetwork   : () -> Unit = {},
+    onOpenAdaptiveProfiles : () -> Unit = {},
+    onOpenHiRes     : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -249,6 +258,15 @@ fun SystemHubScreen(
         HubCard("ESTADO DE MOTORES",
             "RouteDspCalibrator · USB Pro · HRTF · Backend · Daemon · Control Loop",
             AuroraCyan, onOpenEngines)
+        HubCard("ESTADO DE RED / TELEMETRÍA",
+            "Latencia · Socket IPC · Conectividad y Puertos",
+            AuroraCyan, onOpenNetwork)
+        HubCard("PERFILES ADAPTATIVOS",
+            "Catálogo dinámico de curvas psicoacústicas",
+            AmberSignal, onOpenAdaptiveProfiles)
+        HubCard("AUDIO HI-RES",
+            "Selector de frecuencia 16..384 kHz y profundidad de bits",
+            AuroraCyan, onOpenHiRes)
     }
 }
 

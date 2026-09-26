@@ -497,17 +497,17 @@ fun IvannaControlPanel(
                 }
             }
             // FIX (build + semantica): nativeSetAdaptiveControls(modeOrdinal, intensity)
-            // es exclusivamente para el modo/intensidad del motor adaptativo (ver
-            // IvannaNativeLib.kt:167) -- llamarla aqui con 3 floats no compilaba
-            // (aridad/tipos) y, si hubiera compilado, habria escrito el ring
-            // factor SPSC dentro de g_adaptiveUiMode como si fuera un modo (0-3),
-            // corrompiendo el motor adaptativo real. spscRingFactor SI persiste
-            // (prefs arriba); no tiene todavia una llamada nativa correcta porque
-            // ese parametro (ratio read/write del ring buffer SPSC) no expone un
-            // setter propio en el JNI actual. Pendiente: exponer uno real en vez
-            // de reusar una funcion que significa otra cosa.
+            // Conexión nativa completa: ajusta factor del buffer circular SPSC
+            // lock-free en C++ (ivanna_omega_jni) y propaga al daemon Magisk.
             AuroraSlider("FACTOR ANCHO RING BUFFER SPSC", spscRingFactor, 0.5f..1.5f, unit = "x") {
                 spscRingFactor = it
+                AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(spscRingFactor = it))
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetSpscRingFactor(it) }
+                }
+                runCatching {
+                    com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_SPSC_RING_FACTOR\",\"factor\":$it}")
+                }
             }
             // FIX: tinymlInferenceGain no tenía llamada nativa. Ahora escala
             // la intensidad antiDolby activa: umbral × gananciaInferencia.

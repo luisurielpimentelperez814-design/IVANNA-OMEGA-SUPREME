@@ -52,6 +52,12 @@ object PersistedStateRestorer {
             runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(paramStore.isHoaUpmixingEnabled()) }
             runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(paramStore.getHoaImmersivity()) }
             runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (paramStore.isHoaUpmixingEnabled()) 1.0f else 0.0f},\"upmixingImmersivity\":${paramStore.getHoaImmersivity()}}") }
+
+            // Wave Field Synthesis (WFS) & SPSC Ring Buffer
+            runCatching { IvannaNativeLib.nativeSetWfsEnabled(paramStore.isWfsEnabled()) }
+            runCatching { IvannaNativeLib.nativeSetWfsSpread(paramStore.getWfsSpread()) }
+            runCatching { IvannaNativeLib.nativeSetSpscRingFactor(acPrefs.spscRingFactor) }
+            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_SPSC_RING_FACTOR\",\"factor\":${acPrefs.spscRingFactor}}") }
         }
 
         // 2. Restaurar HarmonicExciterPrefs (perceptual state)

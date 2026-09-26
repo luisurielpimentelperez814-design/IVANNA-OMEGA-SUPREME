@@ -81,6 +81,9 @@ struct OmegaDspState {
     // Eje Supremo Coclear (Active Inverse)
     bool cochlear_enabled = false;
     float cochlear_intensity = 1.0f;
+
+    // Anti-Dolby SPSC Lock-Free Ring Buffer
+    float spsc_ring_factor = 1.0f;
 };
 
 class CommandServer {

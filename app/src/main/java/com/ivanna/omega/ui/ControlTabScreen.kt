@@ -233,12 +233,12 @@ fun ControlTabScreen(
         // el DashboardScreen legacy de MainActivity, que ya no es la pantalla real.
         // La ruta "hires" vive en el NavHost externo -> outerNav.
         onOpenHiRes                = { outerNav.navigate("hires") },
-        onOpenVisualizer           = onOpenSpatialTab,
+        onOpenVisualizer           = { outerNav.navigate("visualizer") },
         onOpenAdaptive             = onOpenAdaptiveTab,
-        onOpenAdaptiveEngineManual = onOpenAdaptiveTab,
-        onOpenOpe                  = onOpenSpatialTab,
-        onOpenBinaural             = onOpenSpatialTab,
-        onOpenTelemetry            = onOpenAdaptiveTab,
+        onOpenAdaptiveEngineManual = { outerNav.navigate("adaptive") },
+        onOpenOpe                  = { outerNav.navigate("ope") },
+        onOpenBinaural             = { outerNav.navigate("spatial_audio") },
+        onOpenTelemetry            = { outerNav.navigate("telemetry") },
         onOpenAdaptiveProfiles     = { outerNav.navigate("adaptive_profiles") },
         onOpenProfiles             = { outerNav.navigate("profiles") },
         onOpenMagisk               = { outerNav.navigate("magisk") },
