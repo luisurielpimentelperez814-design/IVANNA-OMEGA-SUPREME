@@ -91,7 +91,9 @@ public:
     alignas(64) ChannelState chanR_{};
 
     float sampleRate_ = 48000.0f;
-    float wetGain_    = 1.0f;   // [0..1] — intensidad de la corrección
+    float wetGain_    = 1.0f;   // [0..1] — intensidad efectiva (computed)
+    float intensity_  = 1.0f;   // [0..1] — intensidad configurada
+    bool  enabled_    = true;   // on/off state
 
     // ────────────────────────────────────────────────────────────────────────
     // prepare() — pre-computa coeficientes; sin allocs.
@@ -138,6 +140,24 @@ public:
     }
 
     [[nodiscard]] float getWetGain() const noexcept { return wetGain_; }
+
+    // ── API requerida por ivanna_spatial_jni.cpp (Ruta A helper) ─────────────
+    /** Activa o desactiva el motor (wet=intensity_ si on, 0 si off). */
+    void setEnabled(bool on) noexcept {
+        enabled_ = on;
+        wetGain_ = on ? intensity_ : 0.0f;
+    }
+
+    /** Ajusta la intensidad de corrección [0..1] sin alterar el estado on/off. */
+    void setIntensity(float w) noexcept {
+        intensity_ = (w < 0.0f) ? 0.0f : (w > 1.0f) ? 1.0f : w;
+        if (enabled_) wetGain_ = intensity_;
+    }
+
+    /** Devuelve true si el motor está activo y la intensidad es perceptible (>0). */
+    [[nodiscard]] bool isActive() const noexcept {
+        return enabled_ && (wetGain_ > 0.0f);
+    }
 
     CochlearActiveInverseEngine& cochlearEngine() noexcept { return *this; }
 

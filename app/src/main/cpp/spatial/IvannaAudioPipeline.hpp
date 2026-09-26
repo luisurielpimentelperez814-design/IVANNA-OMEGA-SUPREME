@@ -44,6 +44,26 @@ public:
         reset();
     }
 
+    /**
+     * @brief Returns the process-wide active pipeline instance.
+     *
+     * Used by ivanna_spatial_jni.cpp helpers (Ruta A) to forward control
+     * changes (enable/intensity) to the pipeline's cochlear engine.
+     * Returns a static no-op instance when no Android audio session is running
+     * (e.g. host-side unit tests) so helpers never dereference a null pointer.
+     */
+    static IvannaAudioPipeline& getActiveInstance() noexcept {
+        // Static singleton — zero heap; constructed once on first call.
+        // In the Android audio path, omega_effect.cpp registers the live
+        // instance via setActiveInstance(). In tests / no audio session,
+        // the placeholder instance is returned (safe no-op).
+        static IvannaAudioPipeline s_placeholder;
+        return (s_active_ != nullptr) ? *s_active_ : s_placeholder;
+    }
+
+    /** Register / unregister the live pipeline from the audio thread. */
+    static void setActiveInstance(IvannaAudioPipeline* p) noexcept { s_active_ = p; }
+
     void reset() noexcept {
         decomposer_.reset();
         spatialRenderer_.reset();
@@ -121,6 +141,9 @@ private:
 
     // Static scratch memory for zero-allocation hot-path guarantee
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};
+
+    // Singleton pointer — set by omega_effect.cpp; null outside Android audio session
+    inline static IvannaAudioPipeline* s_active_ = nullptr;
 };
 
 } // namespace ivanna::spatial
