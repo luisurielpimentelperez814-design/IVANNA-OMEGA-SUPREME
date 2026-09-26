@@ -38,12 +38,28 @@ import com.ivanna.omega.ui.viewmodels.CochlearInverseViewModel
  *   — sobrevive reinicios del servicio/daemon y del proceso.
  */
 @Composable
-internal fun CochlearInverseCard(
+fun CochlearInverseCard(
+    modifier: Modifier = Modifier,
+    initialEnabled: Boolean? = null,
+    initialIntensity: Float? = null,
+    onStateChanged: ((Boolean, Float) -> Unit)? = null,
     vm: CochlearInverseViewModel = viewModel(factory = CochlearInverseViewModel.Factory)
 ) {
     val enabled    by vm.cochlearEnabled.collectAsState()
     val intensity  by vm.cochlearIntensity.collectAsState()
     val haptic     = LocalHapticFeedback.current
+
+    LaunchedEffect(initialEnabled) {
+        if (initialEnabled != null && initialEnabled != enabled) {
+            vm.setCochlearEnabled(initialEnabled)
+        }
+    }
+
+    LaunchedEffect(initialIntensity) {
+        if (initialIntensity != null && kotlin.math.abs(initialIntensity - intensity) > 0.001f) {
+            vm.setCochlearIntensity(initialIntensity)
+        }
+    }
 
     // Color de acento animado: cian cuando activo, magenta tenue cuando inactivo
     val accentColor by animateColorAsState(
@@ -52,6 +68,7 @@ internal fun CochlearInverseCard(
         label = "cochlearAccent"
     )
 
+    Box(modifier = modifier) {
     GlassCard(
         title    = "INVERSIÓN BIOMECÁNICA COCLEAR (PINN)",
         accent   = accentColor,
@@ -63,6 +80,7 @@ internal fun CochlearInverseCard(
                 onCheckedChange  = { on ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     vm.setCochlearEnabled(on)
+                    onStateChanged?.invoke(on, intensity)
                 },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor        = AuroraCyan,
@@ -91,6 +109,7 @@ internal fun CochlearInverseCard(
                 accentColor    = accentColor,
                 onValueChange  = { w ->
                     vm.setCochlearIntensity(w)
+                    onStateChanged?.invoke(enabled, w)
                     // Feedback háptico cada 10 % de recorrido del slider
                     val snapped = (w * 10).toInt()
                     val prevSnapped = (intensity * 10).toInt()
@@ -103,6 +122,7 @@ internal fun CochlearInverseCard(
             // ── Info técnica compacta ─────────────────────────────────────────
             TechInfoRow(intensity = intensity)
         }
+    }
     }
 }
 

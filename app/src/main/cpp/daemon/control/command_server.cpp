@@ -78,7 +78,11 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.room_rt60_s=s.room_rt60_s; snap.room_idx=s.room_idx; snap.room_wet=s.room_wet;
     for (int i=0;i<OMEGA_EQ_BANDS && i<ivanna::OMEGA_CTRL_EQ_BANDS;i++) snap.eq_gains[i]=s.eq_gains[i];
     for (int i=0;i<13;i++) snap.pf_params[i]=s.pf_params[i];
-    snap.flags=(s.eq_calibrated?0x02u:0u);
+    snap.cochlear_intensity = s.cochlear_intensity;
+    snap.flags = (s.eq_calibrated ? 0x02u : 0u);
+    if (s.cochlear_enabled) {
+        snap.flags |= ivanna::OMEGA_FLAG_COCHLEAR_ON;
+    }
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
 }
@@ -159,6 +163,19 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
 
     } else if (strcmp(action,"SET_INTENSITY")==0) {
         m_state.intensity = _clamp(_jsonFloat(json,"intensity",m_state.intensity),0.f,1.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"setCochlearInverseEnabled")==0 || strcmp(action,"SET_COCHLEAR_INVERSE_ENABLED")==0 || strcmp(action,"setCochlearEnabled")==0) {
+        float enVal = _jsonFloat(json, "enabled", m_state.cochlear_enabled ? 1.0f : 0.0f);
+        if (strstr(json, "\"enabled\":true") || strstr(json, "\"enabled\": true")) enVal = 1.0f;
+        else if (strstr(json, "\"enabled\":false") || strstr(json, "\"enabled\": false")) enVal = 0.0f;
+        m_state.cochlear_enabled = (enVal > 0.5f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"setCochlearIntensity")==0 || strcmp(action,"SET_COCHLEAR_INTENSITY")==0) {
+        m_state.cochlear_intensity = _clamp(_jsonFloat(json,"intensity",m_state.cochlear_intensity),0.f,1.f);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

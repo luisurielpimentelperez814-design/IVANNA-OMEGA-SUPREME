@@ -346,6 +346,10 @@ static inline jboolean cochlearIsActiveHelper() noexcept {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().isActive() ? JNI_TRUE : JNI_FALSE;
 }
 
+static inline jfloat cochlearGetIntensityHelper() noexcept {
+    return static_cast<jfloat>(g_cochlearIntensity.load(std::memory_order_relaxed));
+}
+
 // ── IvannaSpatialNative bindings ────────────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_setCochlearInverseEnabled(JNIEnv*, jclass, jboolean enabled) {
@@ -422,6 +426,16 @@ Java_com_ivanna_omega_core_NativeBridge_setCochlearIntensity(JNIEnv*, jclass, jf
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_NativeBridge_isCochlearActive(JNIEnv*, jclass) {
     return cochlearIsActiveHelper();
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getCochlearIntensity(JNIEnv*, jclass) {
+    return cochlearGetIntensityHelper();
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearIntensity(JNIEnv*, jobject) {
+    return cochlearGetIntensityHelper();
 }
 
 } // extern "C"

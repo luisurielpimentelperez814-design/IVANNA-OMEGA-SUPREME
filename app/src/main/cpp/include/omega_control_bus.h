@@ -222,6 +222,9 @@ struct OmegaDspSnapshot {
     float    wfs_speaker_z[OMEGA_CTRL_WFS_SPEAKERS];
 
 
+    // ── Cochlear Active Inverse & Flags ─────────────────────────────────────
+    float    cochlear_intensity; // Intensidad [0.0, 1.0]
+
     // ── Flags ────────────────────────────────────────────────────────────────
     // bit 0: bypass global
     // bit 1: eq_calibrated
@@ -258,6 +261,7 @@ struct OmegaDspSnapshot {
         s.upmixing_immersivity = 1.0f;
         s.wfs_enabled = 0;      // opt-in, coherente con ParameterStore default
         s.wfs_spread  = 1.0f;
+        s.cochlear_intensity = 1.0f;
         {
             // RoomGeometryConfig::defaultLayout() (orden FL,FR,SL,SR,TL,TR,SW).
             // Duplicado aquí como literales (no como dependencia de

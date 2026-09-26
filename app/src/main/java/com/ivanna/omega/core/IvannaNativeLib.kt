@@ -282,6 +282,7 @@ object IvannaNativeLib {
     external fun nativeSetCochlearIntensity(intensity: Float)
     /** Devuelve true si el motor coclear está activo Y el pipeline inicializado. */
     external fun nativeIsCochlearActive(): Boolean
+    external fun nativeGetCochlearIntensity(): Float
 
     /** Reinicia el acumulador de medición de IvannaLab. */
     external fun nativeLabReset()
@@ -344,4 +345,5 @@ object IvannaNativeLib {
     external fun setCochlearInverseEnabled(enabled: Boolean)
     external fun setCochlearIntensity(intensity: Float)
     external fun isCochlearActive(): Boolean
+    external fun getCochlearIntensity(): Float
 }

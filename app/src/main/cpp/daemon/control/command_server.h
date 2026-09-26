@@ -77,6 +77,10 @@ struct OmegaDspState {
     float wfs_speaker_x[7] = {0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f};
     float wfs_speaker_y[7] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
     float wfs_speaker_z[7] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
+
+    // Eje Supremo Coclear (Active Inverse)
+    bool cochlear_enabled = false;
+    float cochlear_intensity = 1.0f;
 };
 
 class CommandServer {

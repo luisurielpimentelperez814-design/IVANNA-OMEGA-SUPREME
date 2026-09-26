@@ -8,6 +8,7 @@
 #include "spatial/RirDataset.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
 #include "anti_dolby.h"
+#include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
 #include <vector>
@@ -235,6 +236,9 @@ struct omega_effect_context_t {
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
     ivanna::dsp::IvannaFastRpcClient* fastRpcClient;
     bool fastRpcAvailable;
+    // Eje Supremo Coclear: CochlearActiveInverseEngine
+    ivanna::neuromorphic::CochlearActiveInverseEngine* cochlearEngine;
+    float cochlearIntensity;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -709,6 +713,15 @@ static int32_t omega_process(effect_handle_t self,
             }
         }
 
+        // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine ──
+        const auto& snap = ctx->pendingSnap;
+        const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        if (ctx->cochlearEngine && cochOn) {
+            const float intensity = (snap.cochlear_intensity > 0.0f) ? snap.cochlear_intensity : ctx->cochlearIntensity;
+            ctx->cochlearEngine->setIntensity(intensity);
+            ctx->cochlearEngine->process(L, R, (int)chunk);
+        }
+
         // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
         // expansion mid/side del TinyML (s *= 1.2f en clase 'Music') o un
@@ -837,6 +850,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         ctx->fastRpcAvailable = ctx->fastRpcClient->initialize(rpcCfg);
                     }
                 }
+                // Eje Supremo Coclear: CochlearActiveInverseEngine
+                if (!ctx->cochlearEngine) {
+                    ctx->cochlearEngine = new (std::nothrow) ivanna::neuromorphic::CochlearActiveInverseEngine();
+                    if (ctx->cochlearEngine) {
+                        ctx->cochlearEngine->prepare(static_cast<float>(sr), (ctx->rtCapacity > 0) ? ctx->rtCapacity : 4096);
+                    }
+                }
+                ctx->cochlearIntensity = 1.0f;
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
@@ -1147,6 +1168,8 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
     ctx->antiDolby = nullptr;
     ctx->rirConvolver = nullptr;
+    ctx->cochlearEngine = nullptr;
+    ctx->cochlearIntensity = 1.0f;
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
@@ -1260,6 +1283,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->fastRpcClient) {
             delete ctx->fastRpcClient;
             ctx->fastRpcClient = nullptr;
+        }
+        if (ctx->cochlearEngine) {
+            delete ctx->cochlearEngine;
+            ctx->cochlearEngine = nullptr;
         }
         // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
         if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }
