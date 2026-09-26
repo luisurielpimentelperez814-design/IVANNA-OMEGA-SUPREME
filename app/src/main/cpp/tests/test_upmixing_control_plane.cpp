@@ -103,13 +103,13 @@ TEST(UpmixingControlPlane, SupremeFiveAxes_RoundTripThroughSeqlock) {
     ASSERT_TRUE(reader.openReader(kTestPath3));
 
     OmegaDspSnapshot pub = OmegaDspSnapshot::makeDefault();
-    pub.flags |= OMEGA_FLAG_SUPREME_LATTICE_ON
-              |  OMEGA_FLAG_SUPREME_MICROCHIRP_ON
-              |  OMEGA_FLAG_SUPREME_CVNN_ON
-              |  OMEGA_FLAG_SUPREME_SNN_HOA_ON
-              |  OMEGA_FLAG_SUPREME_PINNA_ON
-              |  OMEGA_FLAG_SUPREME_FARROW_MSO_ON
-              |  OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
+    pub.flags |= ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_CVNN_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_SNN_HOA_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_PINNA_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON
+              |  ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
     pub.supreme_lattice_bl_drive    = 1.45f;
     pub.supreme_lattice_lambda      = 0.756f;
     pub.supreme_cvnn_harmonic_gain  = 0.62f;
@@ -128,9 +128,9 @@ TEST(UpmixingControlPlane, SupremeFiveAxes_RoundTripThroughSeqlock) {
     uint64_t seenGen = 0;
     ASSERT_TRUE(reader.readLatest(got, seenGen));
     EXPECT_TRUE(got.isValid());
-    EXPECT_EQ(got.version, OMEGA_CTRL_VERSION);
-    EXPECT_NE(got.flags & OMEGA_FLAG_SUPREME_LATTICE_ON, 0u);
-    EXPECT_NE(got.flags & OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON, 0u);
+    EXPECT_EQ(got.version, ivanna::OMEGA_CTRL_VERSION);
+    EXPECT_NE(got.flags & ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON, 0u);
+    EXPECT_NE(got.flags & ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON, 0u);
     EXPECT_FLOAT_EQ(got.supreme_lattice_bl_drive, 1.45f);
     EXPECT_FLOAT_EQ(got.supreme_lattice_lambda, 0.756f);
     EXPECT_FLOAT_EQ(got.supreme_cvnn_harmonic_gain, 0.62f);
