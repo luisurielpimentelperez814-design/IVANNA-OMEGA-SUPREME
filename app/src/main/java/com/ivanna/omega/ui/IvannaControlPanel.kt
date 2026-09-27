@@ -979,6 +979,9 @@ private fun AcousticRealityReconstructionCard() {
     var telemetry by remember {
         mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot())
     }
+    var cogTelemetry by remember {
+        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot())
+    }
 
     LaunchedEffect(axesState.realityReconstructionEnabled) {
         com.ivanna.omega.core.NativeBridge.safeSetRealityReconstructionEnabled(axesState.realityReconstructionEnabled)
@@ -993,6 +996,9 @@ private fun AcousticRealityReconstructionCard() {
         while (isActive) {
             telemetry = withContext(Dispatchers.Default) {
                 com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot()
+            }
+            cogTelemetry = withContext(Dispatchers.Default) {
+                com.ivanna.omega.core.NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
             }
             delay(300L)
         }
@@ -1011,10 +1017,23 @@ private fun AcousticRealityReconstructionCard() {
     val microGain   = if (telemetry.size > 11) telemetry[11] else 1.18f
     val coherence   = if (telemetry.size > 15) telemetry[15] else 0.92f
 
+    val topPriorityIdx = if (cogTelemetry.size > 0) cogTelemetry[0].toInt() else 0
+    val topPriorityLabel = when (topPriorityIdx) {
+        0 -> "1º PROFUNDIDAD"
+        1 -> "1º MICRODINÁMICA"
+        2 -> "1º CLARIDAD VOCAL"
+        else -> "1º EXP. AMBIENTAL"
+    }
+    val humanJudgeVerdict = if (cogTelemetry.size > 8) cogTelemetry[8] else 0.90f
+    val execCoherence     = if (cogTelemetry.size > 10) cogTelemetry[10] else 0.91f
+    val homeostasisIdx    = if (cogTelemetry.size > 12) cogTelemetry[12] else 0.96f
+    val digitalTwinIdx    = if (cogTelemetry.size > 13) cogTelemetry[13] else 0.92f
+    val evoFitness        = if (cogTelemetry.size > 14) cogTelemetry[14] else 0.89f
+
     GlassCard(
-        title = "RECONSTRUCCIÓN DE REALIDAD ACÚSTICA (FASES 1–8)",
+        title = "RECONSTRUCCIÓN DE REALIDAD & CEREBRO EJECUTIVO (FASES 1–15)",
         accent = if (axesState.realityReconstructionEnabled) AuroraCyan else TextMuted,
-        subtitle = "SOURCE → ROOM → AIR → EAR · Genoma Acústico · MicroRealidad · 4D WFS",
+        subtitle = "SOURCE → ROOM → AIR → EAR · ExecutiveBrain · Homeostasis · DigitalTwin",
         rightSlot = {
             ToggleSwitch(
                 checked = axesState.realityReconstructionEnabled,
@@ -1097,6 +1116,54 @@ private fun AcousticRealityReconstructionCard() {
                 value = "%.2f×".format(microGain),
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(0.85f)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatBlock(
+                label = "INTENT FASE 9",
+                value = topPriorityLabel,
+                accent = AuroraCyan,
+                modifier = Modifier.weight(1.2f)
+            )
+            StatBlock(
+                label = "JUEZ HUMANO",
+                value = "%.0f%%".format(humanJudgeVerdict * 100f),
+                accent = PhosphorGreen,
+                modifier = Modifier.weight(0.9f)
+            )
+            StatBlock(
+                label = "HOMEOSTASIS",
+                value = "%.0f%%".format(homeostasisIdx * 100f),
+                accent = NeonMagenta,
+                modifier = Modifier.weight(0.9f)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatBlock(
+                label = "EXEC BRAIN",
+                value = "%.0f%%".format(execCoherence * 100f),
+                accent = AuroraCyan,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "DIGITAL TWIN",
+                value = "%.0f%%".format(digitalTwinIdx * 100f),
+                accent = AmberSignal,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "EVO CMA-ES/Q",
+                value = "%.1f%%".format(evoFitness * 100f),
+                accent = PhosphorGreen,
+                modifier = Modifier.weight(1f)
             )
         }
 

@@ -222,7 +222,7 @@ public:
         };
         decomposer_.decompose(bufferL, bufferR, objPtrs, numSamples);
 
-        // ── FASE 8: AcousticRealityOrchestrator state coordination ──────────
+        // ── FASE 8 & FASES 9–15: AcousticRealityOrchestrator + AcousticExecutiveBrain ──
         std::array<DecomposedObject, 4> activeObjs = decomposer_.getObjects();
         float itdScale = personalizer_.getItdScale();
         if (realityReconstructionEnabled_) {
@@ -231,16 +231,25 @@ public:
                 orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
             }
             const float k = activeRealityState_.realityIntensity;
+            const auto& exec = activeRealityState_.cognitive.executiveDecision;
+            const float spreadMod = (exec.arbitratedWfsSpreadScale > 0.1f) ? exec.arbitratedWfsSpreadScale : 1.0f;
+            const float depthMod  = (exec.arbitratedObjectDepthScale > 0.1f) ? exec.arbitratedObjectDepthScale : 1.0f;
+
             for (size_t i = 0; i < 4; ++i) {
                 const auto& gSrc = activeRealityState_.genome.sources[i];
-                activeObjs[i].position.x = activeObjs[i].position.x * (1.0f - k) + gSrc.posX * k;
-                activeObjs[i].position.y = activeObjs[i].position.y * (1.0f - k) + gSrc.posY * k;
+                activeObjs[i].position.x = (activeObjs[i].position.x * (1.0f - k) + gSrc.posX * k) * spreadMod;
+                activeObjs[i].position.y = (activeObjs[i].position.y * (1.0f - k) + gSrc.posY * k) * depthMod;
                 activeObjs[i].position.z = gSrc.posZ * k;
                 activeObjs[i].gain *= (1.0f - k) + k * activeRealityState_.neuralProposal.sourceSeparationWeights[i];
             }
-            spatialRenderer_.setEarlyReflectionGains(activeRealityState_.timeline.room.earlyTapGains);
+            std::array<float, 4> scaledErGains = activeRealityState_.timeline.room.earlyTapGains;
+            const float erScale = (exec.arbitratedEarlyReflectionsScale > 0.1f) ? exec.arbitratedEarlyReflectionsScale : 1.0f;
+            for (float& eg : scaledErGains) eg *= erScale;
+            spatialRenderer_.setEarlyReflectionGains(scaledErGains);
             physicalScene_.setWallAbsorption(activeRealityState_.genome.roomFingerprint.wallAbsorption);
-            itdScale = activeRealityState_.personalField.customItdScale;
+            itdScale = (exec.arbitratedHrtfItdScale > 0.1f)
+                ? exec.arbitratedHrtfItdScale
+                : activeRealityState_.personalField.customItdScale;
         }
 
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage

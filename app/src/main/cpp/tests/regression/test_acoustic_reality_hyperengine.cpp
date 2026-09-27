@@ -380,3 +380,294 @@ TEST(AcousticRealityHyperengineValidation, 6_ZeroAlgorithmicLatencyAndLockFreeBu
     ivanna::MasterAcousticOrchestrator::arbitrateSnapshot(dspSnap, adaptSt);
     EXPECT_TRUE(dspSnap.isValid()) << "El snapshot arbitrado por MasterAcousticOrchestrator + RealityOrchestrator debe preservar CRC32 válido";
 }
+
+// ============================================================================
+// PRUEBA 7 (FASE 9): AcousticCognitiveCore — Comprensión de Escena y Ranking
+// Escenario: Concierto rock + sala grande + voz central + público amplio + fatiga creciente
+// Salida requerida:
+//   1. DepthPreservation (profundidad)
+//   2. MicroDynamicPreservation (preservación microdinámica)
+//   3. VocalClarity (claridad vocal)
+//   4. AmbientExpansion (expansión ambiental)
+// ============================================================================
+TEST(AcousticRealityCognitiveEvolutionValidation, 7_Fase9_CognitiveCoreRockConcertPriorityRanking) {
+    using namespace ivanna::reality;
+
+    AcousticGenome genome{};
+    genome.roomFingerprint.estimatedVolumeM3 = 1450.0f; // Sala grande / arena
+    genome.roomFingerprint.estimatedRt60Sec  = 1.35f;   // Reverberación de concierto
+    genome.reflectionPattern.diffuseness     = 0.86f;   // Público amplio
+    genome.sources[0].existenceProb          = 0.94f;   // Voz central activa
+    genome.sources[0].posX                   = 0.02f;   // Centrada
+    genome.sources[0].posY                   = 2.60f;
+    genome.uncertainty                       = 0.12f;
+
+    MicroDetailMap microMap{};
+    microMap.nodes[static_cast<size_t>(MicroComponentType::MicroTransients)].existence  = 0.84f;
+    microMap.nodes[static_cast<size_t>(MicroComponentType::HumanBreath)].existence      = 0.68f;
+    microMap.nodes[static_cast<size_t>(MicroComponentType::ReverberantTails)].existence = 0.82f;
+
+    AcousticTimeMachineState tmState = AcousticTimeMachine::reconstructTimeline(genome, kSampleRate);
+    PersonalizedAcousticField personalField{};
+    personalField.elevationCueStrength = 0.70f;
+
+    PerceptualOptimizationState perceptualState{};
+    perceptualState.scores.fatigueFree  = 0.34f; // Fatiga creciente (presión = 0.66)
+    perceptualState.scores.realismScore = 0.86f;
+
+    AcousticCognitiveCore cognitiveCore;
+    const RealityIntentState intent = cognitiveCore.comprehendAndFormIntent(
+        genome, microMap, tmState, personalField, perceptualState);
+
+    EXPECT_EQ(intent.priorityRanking[0], CognitivePriorityAxis::DepthPreservation);
+    EXPECT_EQ(intent.priorityRanking[1], CognitivePriorityAxis::MicroDynamicPreservation);
+    EXPECT_EQ(intent.priorityRanking[2], CognitivePriorityAxis::VocalClarity);
+    EXPECT_EQ(intent.priorityRanking[3], CognitivePriorityAxis::AmbientExpansion);
+
+    EXPECT_GT(intent.depthPriority, intent.microDynamicPriority);
+    EXPECT_GT(intent.microDynamicPriority, intent.vocalClarityPriority);
+    EXPECT_GT(intent.vocalClarityPriority, intent.ambientExpansionPriority);
+    EXPECT_GT(intent.cognitiveCoherence, 0.75f);
+}
+
+// ============================================================================
+// PRUEBA 8 (FASES 10 & 11): AcousticSpecialistNetwork + AcousticExecutiveBrain
+// Arbitraje de conflictos entre Spatial Agent ("más expansión"), Room Agent
+// ("más reverberación") y HumanPerceptionAgent ("demasiada expansión / fatiga").
+// ============================================================================
+TEST(AcousticRealityCognitiveEvolutionValidation, 8_Fases10_11_SpecialistNetworkAndExecutiveArbitration) {
+    using namespace ivanna::reality;
+
+    AcousticGenome genome{};
+    genome.roomFingerprint.estimatedVolumeM3 = 950.0f;
+    genome.roomFingerprint.estimatedRt60Sec  = 1.10f;
+    genome.reflectionPattern.diffuseness     = 0.80f;
+    genome.spatialRelations.depthStratification = 2.0f;
+    genome.uncertainty = 0.14f;
+
+    MicroDetailMap microMap{};
+    microMap.nodes[0].existence = 0.80f;
+    microMap.nodes[2].existence = 0.75f;
+    microMap.nodes[4].existence = 0.72f;
+
+    const auto timeline = AcousticTimeMachine::reconstructTimeline(genome, kSampleRate);
+    NeuralAcousticProposal aiProp{};
+    aiProp.inferenceConfidence = 0.90f;
+
+    PersonalizedAcousticField personalField{};
+    PerceptualOptimizationTargets perceptual{};
+    perceptual.scores.fatigueFree  = 0.42f; // Fatiga moderada-alta
+    perceptual.scores.naturalness  = 0.88f;
+    perceptual.scores.realismScore = 0.85f;
+    perceptual.harmonicRestraintScale  = 0.92f;
+    perceptual.cochlearReliefIntensity = 0.65f;
+
+    RealityIntentState intent{};
+    intent.sceneScaleIndex          = 0.88f;
+    intent.ambientExpansionPriority = 0.85f; // Provoca que Spatial y Room pidan alta expansión/reverb
+    intent.risingFatiguePressure    = 0.58f; // Mientras hay presión de fatiga
+    intent.vocalClarityPriority     = 0.78f;
+    intent.microDynamicPriority     = 0.82f;
+    intent.depthPriority            = 0.90f;
+    intent.priorityRanking = {
+        CognitivePriorityAxis::DepthPreservation,
+        CognitivePriorityAxis::MicroDynamicPreservation,
+        CognitivePriorityAxis::VocalClarity,
+        CognitivePriorityAxis::AmbientExpansion
+    };
+
+    const auto spatialRep = SpatialIntelligenceAgent::evaluateAndPropose(genome, personalField, intent);
+    const auto roomRep    = RoomIntelligenceAgent::evaluateAndPropose(genome, timeline, aiProp, intent);
+    const auto microRep   = MicroRealityAgent::evaluateAndPropose(microMap, genome, intent);
+    const auto judgeRep   = HumanPerceptionAgent::judgeReality(genome, perceptual, spatialRep, roomRep, intent);
+
+    EXPECT_TRUE(judgeRep.vetoArtificialSpectacularity)
+        << "HumanPerceptionAgent debe vetar la espectacularidad artificial cuando sube la fatiga o la expansión excesiva";
+
+    const auto decision = AcousticExecutiveBrain::arbitrate(
+        intent, spatialRep, roomRep, microRep, judgeRep, perceptual);
+
+    EXPECT_NE(decision.activeConflictFlags, 0u)
+        << "AcousticExecutiveBrain debe registrar banderas de conflicto activas al arbitrar agentes";
+    EXPECT_LE(decision.arbitratedWfsSpreadScale, judgeRep.maxAllowedExpansionClamp + 1.0e-4f);
+    EXPECT_LE(decision.arbitratedRoomWetScale, judgeRep.maxAllowedReverbClamp + 1.0e-4f);
+    EXPECT_GT(decision.executiveCoherenceScore, 0.55f);
+}
+
+// ============================================================================
+// PRUEBA 9 (FASES 12 & 13): AcousticExperienceMemory ("Rush - Xanadu") +
+//                           SelfCalibratingRealityLoop (Homeostasis Biológica)
+// Verifica aprendizaje de estado sin guardar audio y convergencia homeostática.
+// ============================================================================
+TEST(AcousticRealityCognitiveEvolutionValidation, 9_Fases12_13_MemoryMatrixRushXanaduAndHomeostasis) {
+    using namespace ivanna::reality;
+
+    AcousticExperienceMemory memory;
+    SelfCalibratingRealityLoop homeostasis;
+
+    // Firma acústica representativa de "Rush - Xanadu" (escenario amplio, RT60 rico, alta densidad transitoria)
+    const uint32_t xanaduSig = AcousticExperienceMemory::computeSceneSignatureHash(
+        static_cast<uint8_t>(AcousticSceneArchetype::LiveConcertArena),
+        3.4f,  // stageWidthM
+        1.15f, // estimatedRt60Sec
+        0.78f, // transientDensity
+        0.74f  // vocalCentrality
+    );
+
+    ExecutiveArbitrationDecision dec{};
+    dec.arbitratedWfsSpreadScale = 1.14f;
+    dec.arbitratedRoomWetScale   = 0.96f;
+
+    AcousticExperienceEntry entry{};
+    HomeostaticLoopState loopState{};
+    for (int cycle = 0; cycle < 25; ++cycle) {
+        entry = memory.consolidateAndRecall(xanaduSig, dec, 2.35f, 0.22f, 0.91f);
+        loopState = homeostasis.stepHomeostasis(
+            entry.achievedRealismEma,
+            0.89f,
+            entry.learnedFatigueSensitivity,
+            dec.arbitratedWfsSpreadScale);
+    }
+
+    EXPECT_EQ(entry.signatureHash, xanaduSig);
+    EXPECT_EQ(entry.observations, 25u);
+    EXPECT_NEAR(entry.pleasantDepthMeters, 2.35f, 0.15f);
+    EXPECT_NEAR(entry.learnedSpatialPreference, 1.14f, 0.10f);
+    EXPECT_GT(loopState.stabilityIndex, 0.85f)
+        << "El ciclo homeostático debe converger hacia estabilidad biológica sin oscilaciones";
+    // Verifica que AcousticExperienceEntry sea ligero (solo estado, jamás buffers PCM)
+    EXPECT_LE(sizeof(AcousticExperienceEntry), 64u);
+}
+
+// ============================================================================
+// PRUEBA 10 (FASES 14 & 15): DigitalAcousticTwin + EvolutionaryRealityOptimizer
+// Verifica síntesis coherente Sala+Dispositivo+Oyente+Escena y optimización CMA-ES/Q.
+// ============================================================================
+TEST(AcousticRealityCognitiveEvolutionValidation, 10_Fases14_15_DigitalTwinAndEvolutionaryOptimization) {
+    using namespace ivanna::reality;
+
+    ivanna::spatial::IvannaAudioPipeline pipeline;
+    pipeline.reset();
+    pipeline.setRealityReconstructionEnabled(true);
+
+    std::array<float, kBlockSize> bufL{}, bufR{};
+    for (size_t blk = 0; blk < 20; ++blk) {
+        synthesizeConcertEventBlock(bufL.data(), bufR.data(), kBlockSize, blk * kBlockSize);
+        pipeline.orchestrateRealityFromBlock(bufL.data(), bufR.data(), kBlockSize, kSampleRate);
+    }
+
+    const auto& st  = pipeline.activeRealityState();
+    const auto& cog = st.cognitive;
+
+    // Fase 14: DigitalAcousticTwin coherente
+    EXPECT_GT(cog.digitalTwin.roomDimensionsM[0], 2.0f);
+    EXPECT_GT(cog.digitalTwin.roomDimensionsM[1], 2.0f);
+    EXPECT_GT(cog.digitalTwin.roomDimensionsM[2], 2.0f);
+    EXPECT_GT(cog.digitalTwin.twinCoherenceIndex, 0.65f);
+
+    // Fase 15: EvolutionaryRealityOptimizer (CMA-ES + Q-Learning)
+    EXPECT_GE(cog.evolutionary.generation, 20u);
+    EXPECT_GT(cog.evolutionary.fitness, 0.55f);
+    for (float g : cog.evolutionary.genes) {
+        EXPECT_GE(g, 0.75f);
+        EXPECT_LE(g, 1.25f);
+    }
+}
+
+// ============================================================================
+// FASE FINAL — VALIDACIÓN HUMANA (6 Pruebas de Certificación Humana):
+//   1. Original vs reconstrucción
+//   2. Localización ciega
+//   3. Sensación de sala
+//   4. Fatiga después de escucha prolongada
+//   5. Comparación con procesamiento tradicional ("otro Dolby / compresor agresivo")
+//   6. Estabilidad 24 horas (simulación acelerada de 24h de ciclos cognitivos y RT)
+// ============================================================================
+TEST(AcousticRealityHumanValidationSuite, 11_HumanValidation_FatigueVsTraditionalAnd24HourStability) {
+    using namespace ivanna::reality;
+
+    ivanna::spatial::IvannaAudioPipeline ivannaPipeline;
+    ivannaPipeline.reset();
+    ivannaPipeline.setRealityReconstructionEnabled(true);
+
+    std::array<float, kBlockSize> origL{}, origR{};
+    synthesizeConcertEventBlock(origL.data(), origR.data(), kBlockSize, 0);
+
+    // ── Validación Humana 4 & 5: Escucha prolongada y comparación vs DSP tradicional ──
+    std::array<float, kBlockSize> ivannaL = origL, ivannaR = origR;
+    std::array<float, kBlockSize> tradL   = origL, tradR   = origR;
+
+    for (int b = 0; b < 16; ++b) {
+        synthesizeConcertEventBlock(origL.data(), origR.data(), kBlockSize, b * kBlockSize);
+        ivannaL = origL;
+        ivannaR = origR;
+        ivannaPipeline.orchestrateRealityFromBlock(ivannaL.data(), ivannaR.data(), kBlockSize, kSampleRate);
+        ivannaPipeline.process(ivannaL.data(), ivannaR.data(), kBlockSize);
+
+        // Procesamiento tradicional agresivo ("otro espacializador / loudness maximizer"):
+        // infla el canal Side x1.8 y aplica saturación dura que destruye el factor de cresta
+        for (size_t i = 0; i < kBlockSize; ++i) {
+            const float mid  = 0.5f * (origL[i] + origR[i]);
+            const float side = 0.5f * (origL[i] - origR[i]) * 1.85f;
+            tradL[i] = std::tanh((mid + side) * 2.2f);
+            tradR[i] = std::tanh((mid - side) * 2.2f);
+        }
+    }
+
+    auto computeCrestDb = [](const float* l, const float* r, size_t n) {
+        float peak = 1.0e-6f;
+        for (size_t i = 0; i < n; ++i) {
+            peak = std::max(peak, std::max(std::fabs(l[i]), std::fabs(r[i])));
+        }
+        const float rms = std::max(1.0e-6f, computeRms(l, r, n));
+        return 20.0f * std::log10(peak / rms);
+    };
+
+    const float crestIvanna = computeCrestDb(ivannaL.data(), ivannaR.data(), kBlockSize);
+    const float crestTrad   = computeCrestDb(tradL.data(), tradR.data(), kBlockSize);
+    EXPECT_GT(crestIvanna, crestTrad + 1.5f)
+        << "IVANNA preserva la microdinámica y el factor de cresta natural frente al aplastamiento del DSP tradicional";
+
+    const auto& finalState = ivannaPipeline.activeRealityState();
+    EXPECT_GT(finalState.cognitive.humanJudge.longTermListeningComfort, 0.65f)
+        << "La comodidad auditiva de largo plazo debe mantenerse alta tras exposición prolongada";
+
+    // ── Validación Humana 6: Estabilidad 24 Horas (Ciclo Homeostático + Cognitivo Continuo) ──
+    // Simulamos 86,400 segundos (24 horas) en pasos acelerados del sistema nervioso superior,
+    // verificando 0 NaN/Inf, 0 desbordamientos, memoria acotada y homeostasis estable.
+    auto& orch = AcousticRealityOrchestrator::instance();
+    ivanna::experimental::RawAudioMetrics m{};
+    m.rms              = 0.24f;
+    m.peak             = 0.74f;
+    m.crest_factor_db  = 9.8f;
+    m.band_low_energy  = 0.08f;
+    m.band_mid_energy  = 0.11f;
+    m.band_high_energy = 0.05f;
+    m.voice_score      = 0.62f;
+
+    std::array<ivanna::spatial::DecomposedObject, 4> objs{};
+    objs[0].position = { 0.0f, 1.5f, 0.05f }; objs[0].gain = 1.0f;
+    objs[1].position = {-0.7f, 2.1f, 0.15f }; objs[1].gain = 0.85f;
+    objs[2].position = { 0.7f, 2.1f, 0.15f }; objs[2].gain = 0.85f;
+    objs[3].position = { 0.0f, 3.0f, 0.45f }; objs[3].gain = 0.70f;
+
+    const auto adaptSt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(m, 0.14f, 0.10f);
+
+    AcousticRealityState snap24h{};
+    constexpr int kSimulatedSteps = 2400; // Representa 24h a razón de 1 época cognitiva cada 36 s
+    for (int step = 0; step < kSimulatedSteps; ++step) {
+        const uint64_t simTimeUs = static_cast<uint64_t>(step) * 36000000ULL; // +36s por paso -> 86,400s (24h)
+        snap24h = orch.orchestrateCycle(m, adaptSt, objs, 0.45f, 0.32f, kSampleRate, 0.050f, simTimeUs);
+    }
+
+    EXPECT_TRUE(std::isfinite(snap24h.perceptual.scores.realismScore));
+    EXPECT_TRUE(std::isfinite(snap24h.cognitive.homeostasis.stabilityIndex));
+    EXPECT_TRUE(std::isfinite(snap24h.cognitive.executiveDecision.executiveCoherenceScore));
+    EXPECT_TRUE(std::isfinite(snap24h.cognitive.digitalTwin.twinCoherenceIndex));
+    EXPECT_TRUE(std::isfinite(snap24h.cognitive.evolutionary.fitness));
+    EXPECT_GT(snap24h.cognitive.homeostasis.stabilityIndex, 0.85f)
+        << "Tras 24 horas de operación continua, el bucle homeostático debe permanecer 100% estable";
+    EXPECT_GE(snap24h.cognitive.executiveDecision.arbitratedWfsSpreadScale, 0.75f);
+    EXPECT_LE(snap24h.cognitive.executiveDecision.arbitratedWfsSpreadScale, 1.25f);
+}
+

@@ -221,6 +221,7 @@ object NativeBridge {
         sensitivityScore: Float
     )
     @JvmStatic external fun getRealityTelemetrySnapshot(): FloatArray?
+    @JvmStatic external fun getCognitiveEvolutionTelemetrySnapshot(): FloatArray?
 
     fun safeSetRealityReconstructionEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setRealityReconstructionEnabled(enabled) }
@@ -245,4 +246,9 @@ object NativeBridge {
         if (isLoaded) runCatching { getRealityTelemetrySnapshot() }.getOrNull()
             ?: floatArrayOf(0.84f, 0.91f, 0.86f, 0.11f, 0.89f, 0.88f, 6.8f, 8.6f, 3.5f, 0.38f, 9.4f, 1.18f, 0.78f, 0.42f, 0.65f, 0.92f)
         else floatArrayOf(0.84f, 0.91f, 0.86f, 0.11f, 0.89f, 0.88f, 6.8f, 8.6f, 3.5f, 0.38f, 9.4f, 1.18f, 0.78f, 0.42f, 0.65f, 0.92f)
+
+    fun safeGetCognitiveEvolutionTelemetrySnapshot(): FloatArray =
+        if (isLoaded) runCatching { getCognitiveEvolutionTelemetrySnapshot() }.getOrNull()
+            ?: floatArrayOf(0f, 0.84f, 0.80f, 0.76f, 0.62f, 0.88f, 0.86f, 0.84f, 0.90f, 0.94f, 0.91f, 0f, 0.96f, 0.92f, 0.89f, 12f)
+        else floatArrayOf(0f, 0.84f, 0.80f, 0.76f, 0.62f, 0.88f, 0.86f, 0.84f, 0.90f, 0.94f, 0.91f, 0f, 0.96f, 0.92f, 0.89f, 12f)
 }

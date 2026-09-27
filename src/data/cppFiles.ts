@@ -37,7 +37,7 @@ export const CPP_FILES: CppFile[] = [
   {
     filename: 'acoustic_reality_hyperengine.hpp',
     category: 'header',
-    description: 'ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1 a 8): AcousticGenome, MicroDetailMap, AcousticTimeMachine, NeuralInferenceCore, PersonalAuditoryModel, PerceptualOptimizer y AcousticRealityOrchestrator',
+    description: 'ACOUSTIC REALITY RECONSTRUCTION & COGNITIVE EVOLUTION HYPERENGINE (Fases 1 a 15): AcousticGenome, MicroDetailMap, AcousticTimeMachine, NeuralInferenceCore, PersonalAuditoryModel, PerceptualOptimizer, AcousticCognitiveCore, SpecialistNetwork, ExecutiveBrain, ExperienceMemory, SelfCalibratingLoop, DigitalTwin y EvolutionaryOptimizer',
     content: acousticRealityHyperengineHpp,
   },
   {
@@ -55,7 +55,7 @@ export const CPP_FILES: CppFile[] = [
   {
     filename: 'test_acoustic_reality_hyperengine.cpp',
     category: 'source',
-    description: 'Suite de Validación Científica (6 Pruebas): Concierto vs Reconstrucción, Localización 4D, Profundidad, Realismo de Sala, Carga CPU y Latencia Cero',
+    description: 'Suite de Validación Científica y Humana (Fases 1–15): Original vs Reconstrucción, Localización Ciega 4D, Sala, Fatiga vs Tradicional, Prioridades Cognitivas, Arbitraje Ejecutivo, Memoria Rush Xanadu, Homeostasis, Digital Twin y Estabilidad 24h',
     content: testAcousticRealityCpp,
   },
   {

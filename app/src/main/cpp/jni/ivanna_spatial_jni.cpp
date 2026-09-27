@@ -783,4 +783,52 @@ Java_com_ivanna_omega_core_NativeBridge_getRealityTelemetrySnapshot(JNIEnv* env,
     return outArr;
 }
 
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getCognitiveEvolutionTelemetrySnapshot(JNIEnv* env, jclass) {
+    jfloatArray outArr = env->NewFloatArray(16);
+    if (!outArr) return nullptr;
+
+    auto& orch = ivanna::reality::AcousticRealityOrchestrator::instance();
+    auto snap = orch.stateBus().readLatestSnapshot();
+    if (snap.sequence == 0) {
+        ivanna::experimental::RawAudioMetrics seedM{};
+        seedM.rms              = 0.22f;
+        seedM.peak             = 0.68f;
+        seedM.crest_factor_db  = 9.8f;
+        seedM.band_low_energy  = 0.08f;
+        seedM.band_mid_energy  = 0.11f;
+        seedM.band_high_energy = 0.04f;
+        seedM.voice_score      = 0.64f;
+        const auto seedAdapt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(seedM, 0.12f, 0.08f);
+        std::array<ivanna::spatial::DecomposedObject, 4> seedObjs{};
+        seedObjs[0].position = { 0.0f, 1.45f, 0.05f }; seedObjs[0].energy = 0.11f; seedObjs[0].gain = 1.0f;
+        seedObjs[1].position = {-0.58f, 2.20f, 0.18f }; seedObjs[1].energy = 0.05f; seedObjs[1].gain = 0.8f;
+        seedObjs[2].position = { 0.58f, 2.20f, 0.18f }; seedObjs[2].energy = 0.05f; seedObjs[2].gain = 0.8f;
+        seedObjs[3].position = { 0.0f, 1.70f, -0.18f }; seedObjs[3].energy = 0.08f; seedObjs[3].gain = 0.7f;
+        snap = orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, 20000ULL);
+    }
+
+    const auto& cog = snap.cognitive;
+    float c[16]{};
+    c[0]  = static_cast<float>(cog.intent.priorityRanking[0]);      // Top Priority Axis (0..3)
+    c[1]  = cog.intent.depthPriority;                               // Depth Priority
+    c[2]  = cog.intent.microDynamicPriority;                        // MicroDynamic Priority
+    c[3]  = cog.intent.vocalClarityPriority;                        // VocalClarity Priority
+    c[4]  = cog.intent.ambientExpansionPriority;                    // AmbientExpansion Priority
+    c[5]  = cog.spatialAgent.localizationScore;                     // Spatial Agent Score
+    c[6]  = cog.roomAgent.physicalRealismScore;                     // Room Agent Score
+    c[7]  = cog.microAgent.microTransientVitality;                  // MicroReality Agent Score
+    c[8]  = cog.humanJudge.brainRealismVerdict;                     // HumanPerception Judge Verdict
+    c[9]  = cog.humanJudge.antiSpectacularityIndex;                 // Anti-Spectacularity Guard
+    c[10] = cog.executiveDecision.executiveCoherenceScore;          // Executive Brain Coherence
+    c[11] = static_cast<float>(cog.executiveDecision.activeConflictFlags); // Conflict Flags
+    c[12] = cog.homeostasis.stabilityIndex;                         // Homeostasis Loop Stability
+    c[13] = cog.digitalTwin.twinCoherenceIndex;                     // Digital Twin Coherence
+    c[14] = cog.evolutionary.fitness;                               // Evolutionary CMA-ES/Q Fitness
+    c[15] = static_cast<float>(cog.recalledMemory.observations);    // Memory Consolidations
+
+    env->SetFloatArrayRegion(outArr, 0, 16, c);
+    return outArr;
+}
+
 } // extern "C"

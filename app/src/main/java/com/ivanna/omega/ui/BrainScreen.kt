@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.ui.theme.*
 
@@ -39,7 +40,7 @@ fun BrainScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("ADAPTATIVO", "PERCEPTUAL", "EVOLUTIVO", "LAB", "PROFILER")
+    val tabs = listOf("ADAPTATIVO", "PERCEPTUAL", "COGNITIVO 9-15", "EVOLUTIVO", "LAB", "PROFILER")
 
     // Bug F fix — estado evolutivo levantado para sobrevivir cambios de tab
     var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
@@ -89,9 +90,10 @@ fun BrainScreen(modifier: Modifier = Modifier) {
             when (selectedTab) {
                 0 -> AdaptiveTab()
                 1 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { PerceptualTab(); TinyMlClassifierPanel() }
-                2 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { EvolutionTab(prefs, ::updatePrefs); CmaEsFitnessPanel() }
-                3 -> LabTab()
-                4 -> NeonProfilerPanel()
+                2 -> CognitiveEvolutionTab()
+                3 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { EvolutionTab(prefs, ::updatePrefs); CmaEsFitnessPanel() }
+                4 -> LabTab()
+                5 -> NeonProfilerPanel()
             }
         }
     }
@@ -338,6 +340,143 @@ private fun LabTab() {
                     colors = ButtonDefaults.buttonColors(containerColor = NeonMagenta.copy(alpha = 0.2f), contentColor = NeonMagenta),
                     modifier = Modifier.weight(1f)
                 ) { Text("MEDIR", fontSize = 11.sp) }
+            }
+        }
+    }
+}
+
+// ── Tab COGNITIVO 9-15 (Acoustic Reality Cognitive Evolution Engine) ──────────
+@Composable
+private fun CognitiveEvolutionTab() {
+    var realityEnabled by remember { mutableStateOf(NativeBridge.safeIsRealityReconstructionEnabled()) }
+    var realityIntensity by remember { mutableFloatStateOf(0.88f) }
+    var realityTele by remember { mutableStateOf(NativeBridge.safeGetRealityTelemetrySnapshot()) }
+    var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            realityTele = NativeBridge.safeGetRealityTelemetrySnapshot()
+            cogTele = NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
+            kotlinx.coroutines.delay(250L)
+        }
+    }
+
+    val priorityNames = listOf(
+        "1. PROFUNDIDAD FÍSICA",
+        "2. MICRODINÁMICA",
+        "3. CLARIDAD VOCAL",
+        "4. EXPANSIÓN AMBIENTAL"
+    )
+    val topAxisIdx = cogTele.getOrElse(0) { 0f }.toInt().coerceIn(0, 3)
+
+    GlassCard(
+        "SISTEMA NERVIOSO SUPERIOR · FASES 9–15",
+        AuroraCyan,
+        "AcousticCognitiveCore · Specialist Network · ExecutiveBrain · Memory · Homeostasis · DigitalTwin"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "RECONSTRUCCIÓN COGNITIVA DE REALIDAD ACÚSTICA",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = realityEnabled,
+                    onCheckedChange = { en ->
+                        realityEnabled = en
+                        NativeBridge.safeSetRealityReconstructionEnabled(en)
+                    }
+                )
+            }
+            IvannaSliderRowBrain("INTENSIDAD REALIDAD", realityIntensity, 0f, 1f, "") { v ->
+                realityIntensity = v
+                NativeBridge.safeSetRealityIntensity(v)
+            }
+            Text(
+                "EJE LÍDER ACTUAL: ${priorityNames[topAxisIdx]}",
+                color = PhosphorGreen,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
+        }
+    }
+
+    GlassCard(
+        "FASE 9 & 10 · PRIORIDADES COGNITIVAS Y RED DE ESPECIALISTAS",
+        NeonMagenta,
+        "Spatial · Room · MicroReality · HumanPerception Judge"
+    ) {
+        val metrics = listOf(
+            "Prioridad Profundidad" to cogTele.getOrElse(1) { 0.84f },
+            "Prioridad Microdinámica" to cogTele.getOrElse(2) { 0.80f },
+            "Prioridad Claridad Vocal" to cogTele.getOrElse(3) { 0.76f },
+            "Prioridad Expansión" to cogTele.getOrElse(4) { 0.62f },
+            "Spatial Agent (Localización)" to cogTele.getOrElse(5) { 0.88f },
+            "Room Agent (Realismo Físico)" to cogTele.getOrElse(6) { 0.86f },
+            "MicroReality Agent (Vitalidad)" to cogTele.getOrElse(7) { 0.84f },
+            "HumanPerception Judge (Veredicto)" to cogTele.getOrElse(8) { 0.90f },
+            "Índice Anti-Espectacularidad" to cogTele.getOrElse(9) { 0.94f }
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            metrics.forEach { (label, value) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(label, color = TextSecondary, fontSize = 11.sp)
+                    Text(
+                        "%.1f %%".format(value * 100f),
+                        color = NeonMagenta,
+                        fontSize = 11.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { value.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = NeonMagenta,
+                    trackColor = ObsidianEdge
+                )
+            }
+        }
+    }
+
+    GlassCard(
+        "FASES 11–15 · EXECUTIVE BRAIN, MEMORIA, HOMEOSTASIS Y GEMELO DIGITAL",
+        PhosphorGreen,
+        "Arbitraje de Conflictos · Rush Xanadu Memory · PID Homeostático · CMA-ES + Q-Learning"
+    ) {
+        val execMetrics = listOf(
+            "Coherencia Executive Brain" to "%.1f %%".format(cogTele.getOrElse(10) { 0.91f } * 100f),
+            "Conflictos Arbitrados (Flags)" to "0x%02X".format(cogTele.getOrElse(11) { 0f }.toInt()),
+            "Estabilidad Homeostática (Fase 13)" to "%.1f %%".format(cogTele.getOrElse(12) { 0.96f } * 100f),
+            "Coherencia Digital Twin (Fase 14)" to "%.1f %%".format(cogTele.getOrElse(13) { 0.92f } * 100f),
+            "Fitness CMA-ES / Q-Learning (Fase 15)" to "%.3f".format(cogTele.getOrElse(14) { 0.89f }),
+            "Consolidaciones Memoria (Fase 12)" to "${cogTele.getOrElse(15) { 12f }.toInt()} estados",
+            "Sala Inferida (W×D×H)" to "%.1f×%.1f×%.1f m".format(
+                realityTele.getOrElse(6) { 6.8f },
+                realityTele.getOrElse(7) { 8.6f },
+                realityTele.getOrElse(8) { 3.5f }
+            ),
+            "Realismo Perceptual Compuesto" to "%.1f %%".format(realityTele.getOrElse(5) { 0.88f } * 100f)
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            execMetrics.forEach { (k, v) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(k, color = TextSecondary, fontSize = 11.sp)
+                    Text(
+                        v,
+                        color = PhosphorGreen,
+                        fontSize = 11.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
             }
         }
     }
