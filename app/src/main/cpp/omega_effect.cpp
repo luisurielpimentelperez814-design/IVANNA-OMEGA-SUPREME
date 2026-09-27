@@ -442,6 +442,11 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
         if (std::isfinite(s.supreme_mso_itd_ns))
             ctx->supremeMsoFarrow->setMsoItdNanoseconds(s.supreme_mso_itd_ns);
     }
+    auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+    realityOrch.setEnabled((s.flags & ivanna::OMEGA_FLAG_REALITY_RECON_ON) != 0);
+    if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
+        realityOrch.setRealityIntensity(s.intensity);
+    }
 }
 
 // ── RIR dataset: inicialización fuera del hilo RT ───────────────────────────
@@ -807,9 +812,10 @@ static int32_t omega_process(effect_handle_t self,
         // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine ──
         const auto& snap = ctx->pendingSnap;
         const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
-        if (ctx->cochlearEngine && cochOn) {
+        if (ctx->cochlearEngine) {
             const float intensity = (snap.cochlear_intensity > 0.0f) ? snap.cochlear_intensity : ctx->cochlearIntensity;
             ctx->cochlearEngine->setIntensity(intensity);
+            ctx->cochlearEngine->setEnabled(cochOn);
             ctx->cochlearEngine->process(L, R, (int)chunk);
         }
 
@@ -824,21 +830,23 @@ static int32_t omega_process(effect_handle_t self,
                                      ? ctx->config.outputCfg.samplingRate : 48000u;
                 ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
             }
+            // Fase 2 & Fase 8: MicroReality Extraction Pass (0 dB loudness inflation)
+            auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+            if (realityOrch.isEnabled()) {
+                const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+                if (rSnap.sequence > 0) {
+                    realityOrch.microExtractor().applyMicroIntelligibilityPass(
+                        L, R, (size_t)chunk, rSnap.microMap);
+                }
+            }
         }
 
-        // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
-        // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
-        // expansion mid/side del TinyML (s *= 1.2f en clase 'Music') o un
-        // RIR con ganancia alta clippeaban directo al interleave.
-        // process() es branchless NEON, sin malloc/locks: seguro en RT.
-        if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
-
-        // Eje 6 (cableado real, auditoría 2026-09-24): antes vivía huérfano
-        // en IvannaAudioPipeline.hpp, solo ejercitado por test_perf_auditor.cpp.
-        // Va tras el limiter (último eslabón antes del sanitizer) para que la
-        // compensación de graves/agudos no reintroduzca picos que el limiter
-        // ya recortó.
+        // Eje 6: compensación auditiva antes del limitador de seguridad final
         if (ctx->hearingEngine) ctx->hearingEngine->process(L, R, chunk);
+
+        // FIX (distorsion digital): ultimo eslabon real de la cadena — el mismo
+        // SafetyLimiter que corre al final de la Ruta A.
+        if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
         // Interleave -> salida con Autonomous Stability Sanitizer (cero NaNs / Infs)
         for (int n = 0; n < chunk; ++n) {

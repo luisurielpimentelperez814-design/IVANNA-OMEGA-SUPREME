@@ -656,9 +656,21 @@ JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
     return env->NewStringUTF("IVANNA OMEGA SUPREME v1.1-OPE | GORE TNS © 2026");
 }
+// ── FIX: mutex DSP — declarado antes de nativeInit, nativeSetParams y nativeProcess ──
+static std::mutex g_dspProcessMutex;
+static std::mutex g_uiMutex;
+static ivanna::DSPParams g_params_ui;
+static std::atomic<bool> g_params_dirty{false};
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) { LOGE("Bad SR: %d", sr); return; }
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    const bool alreadyInitSameSr = g_initialized.load(std::memory_order_acquire)
+                                && (g_params.sampleRate == static_cast<uint32_t>(sr));
+    if (alreadyInitSameSr) {
+        return;
+    }
     // NATIVOS DIRECTOS: 48000/96000/192000/384000 Hz pasan sin remuestreo
     // ni re-cuantización. Antes el gate rechazaba 384k ("Bad SR") y todo
     // lo que no fuera <=192k moría aquí — el DSP completo (EQ, compresor,
@@ -765,7 +777,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         // NO detach — se une en JNI_OnUnload antes de los destructores.
     }
     {
+        g_cochlearEngine.prepare(static_cast<float>(sr), 512);
+        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
+        g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        pipe.cochlearEngine().prepare(static_cast<float>(sr), 512);
+        pipe.cochlearEngine().setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
+        pipe.cochlearEngine().setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
         pipe.warpedLatticeInverter().prepare((float)sr);
         pipe.transharmonicSynth().prepare((float)sr);
         pipe.snnNmfHoaUpmixer().prepare((float)sr);
@@ -778,11 +796,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
-// ── FIX: mutex DSP — declarado antes de nativeSetParams y nativeProcess ──────
-static std::mutex g_dspProcessMutex;
-static std::mutex g_uiMutex;
-static ivanna::DSPParams g_params_ui;
-static std::atomic<bool> g_params_dirty{false};
 
 // ── FIX CRÍTICO (tronido al mover sliders + aplicar ISO 226) ────────────────
 // nativeSetFatigueProtection() hacía `g_params.high += comp` y
@@ -1463,58 +1476,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
         } // !s_rirConvolver guard
     }
-    // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
-    // FIX (clipping/bombeo/tronidos, 2026-08-27): ambos corren aquí, DESPUÉS
-    // del ensanchamiento M/S adaptativo (sideMul hasta ~1.5x) y de la
-    // convolución RIR (suma de cola de reverb). Antes estaban antes de esas
-    // dos etapas: el limiter protegía una señal intermedia y M/S + RIR podían
-    // volver a subir el nivel por encima del ceiling sin protección — de ahí
-    // los tronidos en material con mucha reverb o contenido casi-mono.
-    g_safety_limiter.process(g_ats.pdOutL, g_ats.pdOutR, n);
-    for (int i = 0; i < n; ++i) {
-        g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
-        g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
-    }
-    // FIX (safety net — NaN/Inf nunca saneado en la señal real, verificado
-    // con grep completo del archivo: los isfinite() existentes solo cubren
-    // los SETTERS de parámetros desde Kotlin/UI, ninguno cubre las MUESTRAS
-    // de audio en sí). Los biquads IIR de este motor pueden divergir — es
-    // el motivo explícito por el que existe el pre-EQ peak guard más
-    // arriba — pero ese guard compara pk > 0.89f, y toda comparación con
-    // NaN da falso: un NaN nunca dispara el guard y pasa intacto hasta
-    // acá. Multiplicar NaN por cualquier escala sigue siendo NaN. Última
-    // red antes de que la señal salga de esta función — si algo divergió
-    // en cualquier etapa entre el peak guard y aquí, se reemplaza por
-    // silencio en vez de dejar pasar NaN/Inf al HAL de audio.
-    // g_ats.nanRecoveries es diagnóstico: en operación normal debe quedarse
-    // en 0; si sube de verdad, hay una etapa divergiendo y hace falta
-    // investigarla en su origen, no acá — esto es la red, no el arreglo.
-    // ═══════════════════════════════════════════════════════════
-    // FASE 3 (IvannaLab auto-feed) — g_ats.pdOutL/pdOutR es la salida
-    // final post-procesada (post-DSP, post-PDEngine, post-limiter).
-    // Throttle: 1 de cada 100 bloques → a 96 kHz / n≈1024 eso son ~1 s
-    // entre feeds, suficiente para measure() con datos reales sin
-    // saturar FFT/K-weighting. Contador thread_local para no golpear
-    // atomic en cada bloque; el atomic global sólo es el gate ON/OFF.
-    // Sin malloc en RT: buffer estático thread_local de 2*2048 floats.
-    // ═══════════════════════════════════════════════════════════
-    if (g_lab_auto_enabled.load(std::memory_order_relaxed)) {
-        static thread_local int s_labFeedCounter = 0;
-        if ((++s_labFeedCounter % 100) == 0) {
-            static thread_local float labInter[2 * 2048];
-            for (int i = 0; i < n; ++i) {
-                float l = g_ats.pdOutL[i];
-                float r = g_ats.pdOutR[i];
-                if (!std::isfinite(l)) l = 0.f;
-                if (!std::isfinite(r)) r = 0.f;
-                labInter[2 * i]     = l;
-                labInter[2 * i + 1] = r;
-            }
-            g_lab.feed(labInter, n);
-            g_lab_auto_frame_count.fetch_add(1, std::memory_order_relaxed);
-        }
-    }
-
     // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
     if (g_volterra_enabled.load(std::memory_order_relaxed)) {
         static thread_local float voltInter[2 * 2048];
@@ -1531,13 +1492,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
 
     // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
-    // Latencia añadida: 0.00 ms. Cero allocs. Branchless NEON en ARM64.
-    // Posición: último eslabón del DSP (post-Volterra), antes del re-interleave.
-    if (g_cochlearEnabled.load(std::memory_order_relaxed)) {
-        g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
-    }
+    // Latencia añadida: 0.00 ms. Cero allocs. Rampa suave interna al activar/desactivar.
+    g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
+    g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
 
-    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica + Acoustic Reality Hyperengine (Ruta A / Ruta C) ──
     {
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
         const float srNow = static_cast<float>(std::max(g_params.sampleRate, 8000u));
@@ -1546,6 +1505,41 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         pipe.transharmonicSynth().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
         pipe.shmMsoArbitrator().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), srNow);
         pipe.warpedLatticeInverter().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+
+        auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+        if (realityOrch.isEnabled()) {
+            const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+            if (rSnap.sequence > 0) {
+                realityOrch.microExtractor().applyMicroIntelligibilityPass(
+                    g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), rSnap.microMap);
+            }
+        }
+    }
+
+    // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
+    // Corren DESPUÉS de M/S adaptativo, RIR, Volterra, Coclear y los 5 Ejes
+    // Supremos para impedir cualquier pico > 0 dBFS o DC residual hacia AudioTrack.
+    g_safety_limiter.process(g_ats.pdOutL, g_ats.pdOutR, n);
+    for (int i = 0; i < n; ++i) {
+        g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
+        g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
+    }
+
+    if (g_lab_auto_enabled.load(std::memory_order_relaxed)) {
+        static thread_local int s_labFeedCounter = 0;
+        if ((++s_labFeedCounter % 100) == 0) {
+            static thread_local float labInter[2 * 2048];
+            for (int i = 0; i < n; ++i) {
+                float l = g_ats.pdOutL[i];
+                float r = g_ats.pdOutR[i];
+                if (!std::isfinite(l)) l = 0.f;
+                if (!std::isfinite(r)) r = 0.f;
+                labInter[2 * i]     = l;
+                labInter[2 * i + 1] = r;
+            }
+            g_lab.feed(labInter, n);
+            g_lab_auto_frame_count.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
@@ -1573,6 +1567,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) return JNI_FALSE;  // paridad con nativeInit (9f99d4e6): nativas directas hasta 384k
+    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    if (g_initialized.load(std::memory_order_acquire) && g_params.sampleRate == static_cast<uint32_t>(sr)) {
+        return JNI_TRUE;
+    }
     g_params.sampleRate = (uint32_t)sr;
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
@@ -1776,10 +1774,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
 
     // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
     // Post-Volterra, pre-limiter: la señal está en su nivel final de mezcla.
-    // 0.00 ms de latencia añadida. Branchless NEON en ARM64. Cero allocs.
-    if (g_cochlearEnabled.load(std::memory_order_relaxed)) {
-        g_cochlearEngine.process(oL, oR, n);
-    }
+    // 0.00 ms de latencia añadida. Rampa suave interna al activar/desactivar.
+    g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
+    g_cochlearEngine.process(oL, oR, n);
 
     // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
     {

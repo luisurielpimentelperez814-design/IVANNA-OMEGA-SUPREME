@@ -20,6 +20,7 @@
 #include "../supreme/SnnNmfHoaUpmixer.hpp"
 #include "../supreme/PinnaManifoldInterpolator.hpp"
 #include "../supreme/ShmPipelineArbitrator.hpp"
+#include "../include/acoustic_reality_hyperengine.hpp"
 
 namespace ivanna::spatial {
 
@@ -86,6 +87,7 @@ public:
         decomposer_.reset();
         spatialRenderer_.reset();
         physicalScene_.reset();
+        roomEngine_.reset();
         hearingEngine_.reset();
         cochlearEngine_.reset();
         warpedLatticeInverter_.reset();
@@ -93,6 +95,8 @@ public:
         snnNmfHoaUpmixer_.reset();
         pinnaManifoldInterpolator_.reset();
         shmMsoArbitrator_.reset();
+        realityOrchestrator_.reset();
+        lastRealitySeq_ = 0;
     }
 
     StereoObjectDecomposer& decomposer() noexcept { return decomposer_; }
@@ -105,6 +109,25 @@ public:
     /** Eje Supremo: Cochlear-PINN active inverse engine accessor. */
     ivanna::neuromorphic::CochlearActiveInverseEngine& cochlearEngine() noexcept {
         return cochlearEngine_;
+    }
+
+    /** Acoustic Reality Reconstruction Hyperengine (Fases 1–8) accessor. */
+    ivanna::reality::AcousticRealityOrchestrator& realityOrchestrator() noexcept {
+        return realityOrchestrator_;
+    }
+    const ivanna::reality::AcousticRealityOrchestrator& realityOrchestrator() const noexcept {
+        return realityOrchestrator_;
+    }
+    void setRealityReconstructionEnabled(bool enabled) noexcept {
+        realityReconstructionEnabled_ = enabled;
+        realityOrchestrator_.setEnabled(enabled);
+        ivanna::reality::AcousticRealityOrchestrator::instance().setEnabled(enabled);
+    }
+    bool isRealityReconstructionEnabled() const noexcept {
+        return realityReconstructionEnabled_;
+    }
+    const ivanna::reality::AcousticRealityState& activeRealityState() const noexcept {
+        return activeRealityState_;
     }
 
     /** 5 Ejes de Supremacía Computacional — Accessors Lock-Free */
@@ -125,6 +148,64 @@ public:
     }
 
     /**
+     * @brief Executes a complete Acoustic Reality Reconstruction cycle (Phases 1–8)
+     *        from an input stereo block and updates the lock-free state bus.
+     */
+    const ivanna::reality::AcousticRealityState& orchestrateRealityFromBlock(
+        const float* __restrict bufL,
+        const float* __restrict bufR,
+        size_t numSamples,
+        float sampleRate = 48000.0f) noexcept
+    {
+        if (!bufL || !bufR || numSamples == 0) return activeRealityState_;
+        const size_t n = std::min(numSamples, MAX_BLOCK_SIZE);
+
+        // Quick 3-band energy & peak/RMS extraction for RawAudioMetrics
+        float sumSq = 0.0f, pk = 0.0f, eLow = 0.0f, eMid = 0.0f, eHigh = 0.0f;
+        float lp1 = 0.0f, lp2 = 0.0f;
+        for (size_t i = 0; i < n; ++i) {
+            const float m = 0.5f * (bufL[i] + bufR[i]);
+            const float a = std::max(std::fabs(bufL[i]), std::fabs(bufR[i]));
+            sumSq += m * m;
+            if (a > pk) pk = a;
+            lp1 += 0.04f * (m - lp1);
+            lp2 += 0.30f * (m - lp2);
+            const float bL = lp1;
+            const float bM = lp2 - lp1;
+            const float bH = m - lp2;
+            eLow  += bL * bL;
+            eMid  += bM * bM;
+            eHigh += bH * bH;
+        }
+        const float invN = 1.0f / static_cast<float>(n);
+        ivanna::experimental::RawAudioMetrics rawM{};
+        rawM.rms              = std::sqrt(sumSq * invN);
+        rawM.peak             = pk;
+        rawM.band_low_energy  = std::sqrt(eLow * invN);
+        rawM.band_mid_energy  = std::sqrt(eMid * invN);
+        rawM.band_high_energy = std::sqrt(eHigh * invN);
+        rawM.crest_factor_db  = (rawM.rms > 1.0e-6f)
+            ? (20.0f * std::log10(std::max(1.0f, rawM.peak / rawM.rms)))
+            : 0.0f;
+        const float bandTot = rawM.band_low_energy + rawM.band_mid_energy + rawM.band_high_energy + 1.0e-6f;
+        rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTot) * 1.4f, 0.0f, 1.0f);
+
+        const auto adaptSt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(rawM, rawM.band_high_energy);
+        const float dtSec  = static_cast<float>(n) / std::max(8000.0f, sampleRate);
+        realityTickUs_    += static_cast<uint64_t>(dtSec * 1.0e6f);
+
+        activeRealityState_ = realityOrchestrator_.orchestrateCycle(
+            rawM, adaptSt, decomposer_.getObjects(),
+            decomposer_.sideRatio(), decomposer_.lowRatio(),
+            sampleRate, dtSec, realityTickUs_);
+        ivanna::reality::AcousticRealityOrchestrator::instance().orchestrateCycle(
+            rawM, adaptSt, decomposer_.getObjects(),
+            decomposer_.sideRatio(), decomposer_.lowRatio(),
+            sampleRate, dtSec, realityTickUs_);
+        return activeRealityState_;
+    }
+
+    /**
      * @brief Renders an audio block through the complete 7-axis + 5 Supreme Axes pipeline.
      *
      * Latencia algorítmica total añadida: 0.00 ms.
@@ -141,11 +222,30 @@ public:
         };
         decomposer_.decompose(bufferL, bufferR, objPtrs, numSamples);
 
+        // ── FASE 8: AcousticRealityOrchestrator state coordination ──────────
+        std::array<DecomposedObject, 4> activeObjs = decomposer_.getObjects();
+        float itdScale = personalizer_.getItdScale();
+        if (realityReconstructionEnabled_) {
+            realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
+            if (activeRealityState_.sequence == 0) {
+                orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
+            }
+            const float k = activeRealityState_.realityIntensity;
+            for (size_t i = 0; i < 4; ++i) {
+                const auto& gSrc = activeRealityState_.genome.sources[i];
+                activeObjs[i].position.x = activeObjs[i].position.x * (1.0f - k) + gSrc.posX * k;
+                activeObjs[i].position.y = activeObjs[i].position.y * (1.0f - k) + gSrc.posY * k;
+                activeObjs[i].position.z = gSrc.posZ * k;
+                activeObjs[i].gain *= (1.0f - k) + k * activeRealityState_.neuralProposal.sourceSeparationWeights[i];
+            }
+            spatialRenderer_.setEarlyReflectionGains(activeRealityState_.timeline.room.earlyTapGains);
+            physicalScene_.setWallAbsorption(activeRealityState_.genome.roomFingerprint.wallAbsorption);
+            itdScale = activeRealityState_.personalField.customItdScale;
+        }
+
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage
-        // itdScale ahora sí se lee de HrtfPersonalizer (antes getItdScale()
-        // no tenia caller — auditoria 2026-09-24).
-        spatialRenderer_.renderObjects(objPtrs, decomposer_.getObjects(), bufferL, bufferR,
-                                        numSamples, personalizer_.getItdScale());
+        spatialRenderer_.renderObjects(objPtrs, activeObjs, bufferL, bufferR,
+                                        numSamples, itdScale);
 
         // 3. Eje 2: Apply personalized pinna/canal filter
         personalizer_.processChannel(bufferL, numSamples);
@@ -156,6 +256,12 @@ public:
 
         // 5. Eje 3: Room partial inversion and virtual room projection
         roomEngine_.process(bufferL, bufferR, numSamples);
+
+        // 5b. Fase 2: MicroReality Extraction Pass (0 dB loudness inflation, perceptual intelligibility)
+        if (realityReconstructionEnabled_) {
+            realityOrchestrator_.microExtractor().applyMicroIntelligibilityPass(
+                bufferL, bufferR, numSamples, activeRealityState_.microMap);
+        }
 
         // 6. Eje 6: Hearing adaptation & fatigue protection
         hearingEngine_.process(bufferL, bufferR, numSamples);
@@ -194,6 +300,13 @@ private:
     ivanna::supreme::SnnNmfHoaUpmixer snnNmfHoaUpmixer_;
     ivanna::supreme::PinnaManifoldInterpolator pinnaManifoldInterpolator_;
     ivanna::supreme::SupremeMsoFarrowArbitrator shmMsoArbitrator_;
+
+    // Acoustic Reality Reconstruction Hyperengine (Fases 1–8)
+    ivanna::reality::AcousticRealityOrchestrator realityOrchestrator_{};
+    ivanna::reality::AcousticRealityState        activeRealityState_{};
+    uint64_t                                     lastRealitySeq_{0};
+    uint64_t                                     realityTickUs_{0};
+    bool                                         realityReconstructionEnabled_{false};
 
     // Static scratch memory for zero-allocation hot-path guarantee
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};

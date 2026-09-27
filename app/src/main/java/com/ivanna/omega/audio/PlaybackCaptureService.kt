@@ -616,10 +616,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 minTrack / 8f / (SAMPLE_RATE / 1000f),
                 BLOCK_FRAMES * 1000f / SAMPLE_RATE))
             audioSessionId = audioTrack?.audioSessionId ?: 0
-            (context.applicationContext as? IVANNAApplication)?.let { app ->
-                if (audioSessionId > 0)
-                    app.globalEffectManager.openSession(audioSessionId, context.packageName)
-            }
+            // NO abrir IvannaGlobalEffectManager sobre nuestro propio AudioTrack:
+            // PlaybackCaptureService ya ejecuta el pipeline DSP nativo completo
+            // (DSPBridge, Cinematic, Spatial, Vibratory) sobre `buffer`. Adjuntar
+            // además Equalizer/BassBoost/Virtualizer/LoudnessEnhancer/DynamicsProcessing
+            // del sistema duplicaba el procesado y causaba saturación/estática al
+            // cambiar de ventana hacia Tidal o YouTube.
             return true
         }
 
@@ -654,22 +656,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     )
                     IvannaSpatialEngine.setReducedComplexity(predictiveGovernor.isSpatialComplexityReduced)
 
-                    // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter)
-                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE)) {
-                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
-                            DSPBridge.process(buffer, frames)
-                        }
+                    // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter / Coclear / 5 Ejes)
+                    // Nunca omitir bloques alternos de filtros IIR con estado al cambiar de ventana
+                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
+                        DSPBridge.process(buffer, frames)
                     }
 
                     // ETAPA 2: CINEMATIC ENGINE
-                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE)) {
-                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE) {
-                            runCatching { CinematicEngineHost.processBlock(buffer, read) }
-                        }
+                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE) {
+                        runCatching { CinematicEngineHost.processBlock(buffer, read) }
                     }
 
                     // ETAPA 3: SPATIAL AUDIO (HRTF / WFS)
-                    if (IvannaSpatialEngine.enabled && budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO)) {
+                    if (IvannaSpatialEngine.enabled) {
                         budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO) {
                             if (frames <= rtSpatialInL.size) {
                                 val inL  = rtSpatialInL
@@ -692,15 +691,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     }
 
                     // ETAPA 4: VIBRATORY & NPE
-                    if (budgetGuard.canExecute(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE)) {
-                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
-                            IvannaBridgePlayer.activeInstance?.let { player ->
-                                if (player.npeKotlinEnabled) {
-                                    runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
-                                }
+                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
+                        IvannaBridgePlayer.activeInstance?.let { player ->
+                            if (player.npeKotlinEnabled) {
+                                runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
                             }
-                            vibratoryProcessor.process(buffer)
                         }
+                        vibratoryProcessor.process(buffer)
                     }
 
                     // Rampa per-sample de la ganancia del stream procesado (Efecto Haas)
@@ -728,13 +725,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     budgetGuard.finishBlock()
 
                     // OBJETIVOS 1 & 2: SINCRONIZACIÓN A/V Y REGULACIÓN DE DERIVA
+                    // Usar la medición cacheada de adaptiveLatency (sin cruzar Binder en cada bloque)
                     val targetHeadroom = adaptiveLatency.targetHeadroomFrames
-                    val currentQueued = maxOf(0L, framesWrittenToTrack - (audioTrack?.let {
-                        runCatching {
-                            if (it.getTimestamp(audioTs)) audioTs.framePosition
-                            else it.playbackHeadPosition.toLong() and 0xFFFFFFFFL
-                        }.getOrDefault(0L)
-                    } ?: 0L))
+                    val currentQueued = (adaptiveLatency.measuredLatencyMs * SAMPLE_RATE / 1000f).toLong().coerceAtLeast(0L)
 
                     val effectiveFrames = masterTiming.processAndCompensate(
                         inOutBuffer = buffer,
@@ -743,19 +736,27 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         currentQueuedFrames = currentQueued,
                         track = audioTrack
                     ) {
-                        framesWrittenToTrack = 0L
+                        val hwPos = audioTrack?.let {
+                            runCatching {
+                                if (it.getTimestamp(audioTs)) audioTs.framePosition
+                                else it.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+                            }.getOrDefault(0L)
+                        } ?: 0L
+                        framesWrittenToTrack = hwPos
                     }
 
                     val samplesToWrite = effectiveFrames * CHANNEL_COUNT
                     writeAllToTrack(buffer, samplesToWrite)
 
-                    // Tick de latencia adaptativa
-                    adaptiveLatency.tick(
-                        track = audioTrack,
-                        framesWrittenToTrack = framesWrittenToTrack,
-                        dspLoadRatio = budgetGuard.dspLoadPercent / 100f,
-                        predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames
-                    )
+                    // Tick de latencia adaptativa (throttled cada 8 bloques para evitar Binder IPC por bloque)
+                    if ((blockCounter and 7) == 0) {
+                        adaptiveLatency.tick(
+                            track = audioTrack,
+                            framesWrittenToTrack = framesWrittenToTrack,
+                            dspLoadRatio = budgetGuard.dspLoadPercent / 100f,
+                            predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames
+                        )
+                    }
 
                     if (IvannaNpeEngine.isReady) {
                         runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, effectiveFrames) }

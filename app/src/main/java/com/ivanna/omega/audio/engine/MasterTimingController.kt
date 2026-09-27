@@ -65,10 +65,11 @@ class MasterTimingController(
         private set
 
     private var lastResyncTimestampMs = 0L
+    private var slipCooldownBlocks = 0
 
     /**
-     * Procesa un bloque estéreo de audio y aplica micro-slip/micro-extension
-     * de forma transparente si la deriva excede la tolerancia.
+     * Procesa un bloque estéreo de audio y aplica micro-slip
+     * de forma transparente únicamente si la cola acumulada excede la tolerancia.
      *
      * @param inOutBuffer Buffer de audio intercalado L, R, L, R...
      * @param inFrames Cantidad de frames estéreo en inOutBuffer
@@ -76,7 +77,7 @@ class MasterTimingController(
      * @param currentQueuedFrames Frames actualmente retenidos en el buffer de AudioTrack
      * @param track AudioTrack activo para emergencias
      * @param onResyncNeeded Callback invocado si se requiere resync del contador de frames
-     * @return Cantidad efectiva de frames a escribir en AudioTrack (inFrames, inFrames - 1 o inFrames + 1)
+     * @return Cantidad efectiva de frames a escribir en AudioTrack
      */
     fun processAndCompensate(
         inOutBuffer: FloatArray,
@@ -89,36 +90,41 @@ class MasterTimingController(
         val inSamples = inFrames * 2
         if (inSamples <= 0 || inSamples > slipWorkBuffer.size) return inFrames
 
+        // Si currentQueuedFrames == 0 (arranque o reloj sincronizado al mínimo), no hay deriva real
+        if (currentQueuedFrames <= 0L) {
+            currentDriftMs = 0f
+            return inFrames
+        }
+
         val driftFrames = currentQueuedFrames - targetHeadroomFrames
         val driftMs = (driftFrames * 1000.0f / sampleRate)
         currentDriftMs = driftMs
 
         val nowMs = System.nanoTime() / 1_000_000L
 
-        // 1. Detección de salto catastrófico (Seek de video / scrubbing / pausa larga > 250ms)
+        // 1. Detección de acumulación catastrófica de cola (> 250ms sobre el target)
         val catastrophicFrames = (CATASTROPHIC_DRIFT_MS * sampleRate / 1000f).toLong()
-        if (abs(driftFrames) > catastrophicFrames && (nowMs - lastResyncTimestampMs > 1000L) && track != null) {
+        if (driftFrames > catastrophicFrames && (nowMs - lastResyncTimestampMs > 1500L) && track != null) {
             lastResyncTimestampMs = nowMs
             gracefulResyncCount++
             performGracefulResync(inOutBuffer, inFrames, track, onResyncNeeded)
             return inFrames
         }
 
-        // 2. Deriva positiva: el DAC va ligeramente más lento que la captura (Q > target + tolerancia)
-        // Se aplica micro-slip (descarte de 1 frame mediante crossfade de mínima energía)
-        if (driftFrames > SLIP_TOLERANCE_FRAMES && inFrames > 16) {
-            totalSlipsApplied++
-            return applyMicroSlip(inOutBuffer, inFrames)
+        // 2. Deriva positiva sostenida: la cola excede el target + 2x tolerancia.
+        // Throttled a máximo 1 vez cada 32 bloques (~4.5 Hz) para evitar modulación a 150 Hz.
+        if (driftFrames > SLIP_TOLERANCE_FRAMES * 2 && inFrames > 16) {
+            if (++slipCooldownBlocks >= 32) {
+                slipCooldownBlocks = 0
+                totalSlipsApplied++
+                return applyMicroSlip(inOutBuffer, inFrames)
+            }
+        } else {
+            slipCooldownBlocks = 0
         }
 
-        // 3. Deriva negativa: el DAC va ligeramente más rápido que la captura (Q < target - tolerancia)
-        // Se aplica micro-extension (interpolación de 1 frame mediante blend sub-audible)
-        if (driftFrames < -SLIP_TOLERANCE_FRAMES && inFrames > 16) {
-            totalExtensionsApplied++
-            return applyMicroExtension(inOutBuffer, inFrames)
-        }
-
-        // En régimen de sincronía nominal: pasar intacto
+        // En régimen nominal o cola baja (mismo oscilador cristal AudioRecord/AudioTrack):
+        // pasar el bloque 100% intacto sin empalmes de fase.
         return inFrames
     }
 

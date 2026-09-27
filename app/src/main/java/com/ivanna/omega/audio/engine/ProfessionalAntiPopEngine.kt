@@ -29,8 +29,11 @@ class ProfessionalAntiPopEngine(
     val sampleRate: Int = 48000
 ) {
     companion object {
-        private const val DISCONTINUITY_THRESHOLD = 0.08f
-        private const val SMOOTH_FRAMES = 16
+        // Umbral sobre la segunda diferencia (error de predicción lineal C1),
+        // evitando falsos positivos en señales agudas normales (>1 kHz) que antes
+        // disparaban la rampa en cada bloque (150 Hz = estática/tronido continuo).
+        private const val DISCONTINUITY_THRESHOLD = 0.75f
+        private const val SMOOTH_FRAMES = 4
     }
 
     // Coeficiente DC blocker: R = 1 - (2 * pi * fc / fs)
@@ -43,9 +46,12 @@ class ProfessionalAntiPopEngine(
     private var dcPrevInR  = 0f
     private var dcPrevOutR = 0f
 
-    // Memoria del último frame reproducido para detección de discontinuidad
+    // Memoria de los últimos 2 frames reproducidos para predicción C1 de derivada
     private var lastSampleL = 0f
     private var lastSampleR = 0f
+    private var lastSlopeL  = 0f
+    private var lastSlopeR  = 0f
+    private var hasHistory  = false
 
     // Contador de intervenciones para telemetría
     @Volatile var antiPopInterventions: Int = 0
@@ -56,35 +62,15 @@ class ProfessionalAntiPopEngine(
 
     /**
      * Procesa el bloque de audio estéreo intercalado [L, R, L, R...]:
-     * 1. Detecta y corrige discontinuidades de borde con el bloque previo.
-     * 2. Aplica el filtro DC-Blocker de 5Hz en tiempo real.
-     * 3. Registra el estado final para el próximo bloque.
+     * 1. Detecta únicamente saltos de escalón DC/fase reales (error de predicción C1 > 0.75).
+     * 2. Aplica el filtro DC-Blocker de 5Hz y sanea NaN/Inf en tiempo real.
+     * 3. Registra el estado final y pendiente para el próximo bloque.
      */
     fun process(buffer: FloatArray, frames: Int) {
         val samples = frames * 2
         if (samples <= 0 || samples > buffer.size) return
 
-        // 1. Detección de discontinuidad en el borde inicial
-        val firstL = buffer[0]
-        val firstR = buffer[1]
-        val jumpL = abs(firstL - lastSampleL)
-        val jumpR = abs(firstR - lastSampleR)
-
-        if (jumpL > DISCONTINUITY_THRESHOLD || jumpR > DISCONTINUITY_THRESHOLD) {
-            antiPopInterventions++
-            // Suavizar los primeros frames mediante rampa de igual potencia
-            val smoothCount = minOf(SMOOTH_FRAMES, frames)
-            for (f in 0 until smoothCount) {
-                val alpha = (f + 1).toFloat() / (smoothCount + 1).toFloat()
-                val targetL = buffer[f * 2]
-                val targetR = buffer[f * 2 + 1]
-
-                buffer[f * 2]     = lastSampleL * (1f - alpha) + targetL * alpha
-                buffer[f * 2 + 1] = lastSampleR * (1f - alpha) + targetR * alpha
-            }
-        }
-
-        // 2. Filtro DC-Blocker (5 Hz): y[n] = x[n] - x[n-1] + R * y[n-1]
+        // 1. Filtro DC-Blocker (5 Hz) + Saneo NaN/Inf: y[n] = x[n] - x[n-1] + R * y[n-1]
         var xL_prev = dcPrevInL
         var yL_prev = dcPrevOutL
         var xR_prev = dcPrevInR
@@ -95,11 +81,13 @@ class ProfessionalAntiPopEngine(
             val idxL = i * 2
             val idxR = idxL + 1
 
-            val inL = buffer[idxL]
-            val inR = buffer[idxR]
+            val rawL = buffer[idxL]
+            val rawR = buffer[idxR]
+            val inL = if (rawL.isFinite()) rawL else 0f
+            val inR = if (rawR.isFinite()) rawR else 0f
 
-            val outL = inL - xL_prev + R * yL_prev
-            val outR = inR - xR_prev + R * yR_prev
+            val outL = (inL - xL_prev + R * yL_prev).coerceIn(-1.0f, 1.0f)
+            val outR = (inR - xR_prev + R * yR_prev).coerceIn(-1.0f, 1.0f)
 
             buffer[idxL] = outL
             buffer[idxR] = outR
@@ -115,9 +103,39 @@ class ProfessionalAntiPopEngine(
         dcPrevInR  = xR_prev
         dcPrevOutR = yR_prev
 
-        // 3. Guardar último frame para el siguiente bloque
-        lastSampleL = buffer[(frames - 1) * 2]
-        lastSampleR = buffer[(frames - 1) * 2 + 1]
+        // 2. Detección de discontinuidad real de escalón (C1 prediction error)
+        if (hasHistory && frames >= SMOOTH_FRAMES) {
+            val expectedL = (lastSampleL + lastSlopeL).coerceIn(-1.0f, 1.0f)
+            val expectedR = (lastSampleR + lastSlopeR).coerceIn(-1.0f, 1.0f)
+            val errL = abs(buffer[0] - expectedL)
+            val errR = abs(buffer[1] - expectedR)
+
+            if (errL > DISCONTINUITY_THRESHOLD || errR > DISCONTINUITY_THRESHOLD) {
+                antiPopInterventions++
+                val smoothCount = minOf(SMOOTH_FRAMES, frames)
+                for (f in 0 until smoothCount) {
+                    val alpha = (f + 1).toFloat() / (smoothCount + 1).toFloat()
+                    buffer[f * 2]     = expectedL * (1f - alpha) + buffer[f * 2] * alpha
+                    buffer[f * 2 + 1] = expectedR * (1f - alpha) + buffer[f * 2 + 1] * alpha
+                }
+            }
+        }
+
+        // 3. Guardar último frame y pendiente para el siguiente bloque
+        val endL = buffer[(frames - 1) * 2]
+        val endR = buffer[(frames - 1) * 2 + 1]
+        if (frames >= 2) {
+            val prevEndL = buffer[(frames - 2) * 2]
+            val prevEndR = buffer[(frames - 2) * 2 + 1]
+            lastSlopeL = endL - prevEndL
+            lastSlopeR = endR - prevEndR
+        } else {
+            lastSlopeL = 0f
+            lastSlopeR = 0f
+        }
+        lastSampleL = endL
+        lastSampleR = endR
+        hasHistory = true
     }
 
     /**
@@ -157,6 +175,9 @@ class ProfessionalAntiPopEngine(
         dcPrevOutR = 0f
         lastSampleL = 0f
         lastSampleR = 0f
+        lastSlopeL = 0f
+        lastSlopeR = 0f
+        hasHistory = false
         antiPopInterventions = 0
     }
 }

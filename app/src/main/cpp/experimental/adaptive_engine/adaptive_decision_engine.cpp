@@ -1,5 +1,6 @@
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 #include "adaptive_decision_engine.hpp"
+#include "../../include/acoustic_reality_hyperengine.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -413,6 +414,29 @@ void AdaptiveDecisionEngine::controlLoop() {
             adaptiveLambdaT_.store(lambdaT, std::memory_order_relaxed);
 
             adaptiveState.publish(s);
+
+            // ── FASE 8: AcousticRealityOrchestrator (entre AdaptiveDecisionEngine y DSP) ──
+            // Ejecuta inferencia neural acústica (Fase 4), síntesis de genoma (Fase 1),
+            // máquina del tiempo acústica (Fase 3), modelo auditivo personal (Fase 5),
+            // directivas 4D WFS (Fase 6) y optimización perceptual (Fase 7) FUERA del audio thread.
+            const auto nowUs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            const float sideProxy = clamp01(1.0f - metrics.voice_score * 0.55f);
+            const float lowProxy  = clamp01(metrics.band_low_energy / total);
+            std::array<ivanna::spatial::DecomposedObject, 4> proxyObjects{};
+            proxyObjects[0].position = { 0.0f, 1.4f, 0.0f };
+            proxyObjects[0].energy   = metrics.band_mid_energy;
+            proxyObjects[1].position = {-0.65f * s.spatial_width, 2.1f, 0.15f };
+            proxyObjects[1].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[2].position = { 0.65f * s.spatial_width, 2.1f, 0.15f };
+            proxyObjects[2].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[3].position = { 0.0f, 1.6f, -0.20f };
+            proxyObjects[3].energy   = metrics.band_low_energy;
+
+            ivanna::reality::AcousticRealityOrchestrator::instance().orchestrateCycle(
+                metrics, s, proxyObjects, sideProxy, lowProxy,
+                48000.0f, static_cast<float>(kControlIntervalMs) * 0.001f, nowUs);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kControlIntervalMs));
     }

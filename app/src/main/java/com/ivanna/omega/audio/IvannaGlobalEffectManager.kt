@@ -572,21 +572,21 @@ class IvannaGlobalEffectManager(
         val virtNudge = ((sigma - 0.5f) * 160f)          // -80..+80 (short range)
         val eqNudgeMb = ((sigma - 0.5f) * 240f).toInt()  // -120..+120 mB ≈ ±1.2 dB
 
+        val prof = activeProfile
         activeSessions.forEach { (sessionId, fx) ->
             runCatching {
                 fx.virtualizer?.let { v ->
                     if (!v.strengthSupported) return@let
-                    val current = runCatching { v.roundedStrength.toInt() }.getOrDefault(0)
-                    val next = (current + virtNudge).toInt().coerceIn(0, 1000)
+                    val base = prof.virtualizerStrength.toInt()
+                    val next = (base + virtNudge).toInt().coerceIn(0, 1000)
                     v.setStrength(next.toShort())
                 }
                 fx.equalizer?.let { eq ->
                     if (!eq.enabled) return@let
                     val numBands = eq.numberOfBands.toInt()
                     for (band in 0 until numBands) {
-                        val currentMb = runCatching { eq.getBandLevel(band.toShort()).toInt() }
-                            .getOrDefault(0)
-                        val nextMb = (currentMb + eqNudgeMb).coerceIn(-1500, 1500)
+                        val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
+                        val nextMb = (baseMb + eqNudgeMb).coerceIn(-1500, 1500)
                         eq.setBandLevel(band.toShort(), nextMb.toShort())
                     }
                 }

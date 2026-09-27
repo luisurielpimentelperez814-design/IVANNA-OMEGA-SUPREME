@@ -15,6 +15,7 @@ std::atomic<float> g_upmixing_immersivity{1.0f};
 #include "IvannaVoiceProsodyEngine.hpp"
 #include "IvannaSuperAgentMemory.hpp"
 #include "IvannaAudioClassifier.hpp"
+#include "include/acoustic_reality_hyperengine.hpp"
 #include <iostream>
 #include <atomic>
 
@@ -263,8 +264,23 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             for (int i = 0; i < n; ++i) { m_wfsInL[i] = buffer->left[i]; m_wfsInR[i] = buffer->right[i]; }
             for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
             const float spread = g_wfs_spread.load(std::memory_order_relaxed);
-            m_wfs.setObject(0, -0.75f * spread, 1.5f, 1.0f);  // fuente L
-            m_wfs.setObject(1,  0.75f * spread, 1.5f, 1.0f);  // fuente R
+            const auto realitySnap = ivanna::reality::AcousticRealityOrchestrator::instance().stateBus().readLatestSnapshot();
+            if (realitySnap.enabled && realitySnap.sequence > 0) {
+                m_wfs.setRoomDimensions(
+                    realitySnap.neuralProposal.inferredRoomDimsMeters[0],
+                    realitySnap.neuralProposal.inferredRoomDimsMeters[1],
+                    realitySnap.neuralProposal.inferredRoomDimsMeters[2],
+                    realitySnap.neuralProposal.inferredWallAbsorption);
+                const auto& sL = realitySnap.genome.sources[1];
+                const auto& sR = realitySnap.genome.sources[2];
+                m_wfs.setObject4D(0, -0.75f * spread + sL.posX * 0.25f, sL.posY, sL.posZ,
+                                  sL.velX, sL.velY, sL.velZ, 1.0f, sL.roomCoupling);
+                m_wfs.setObject4D(1,  0.75f * spread + sR.posX * 0.25f, sR.posY, sR.posZ,
+                                  sR.velX, sR.velY, sR.velZ, 1.0f, sR.roomCoupling);
+            } else {
+                m_wfs.setObject(0, -0.75f * spread, 1.5f, 1.0f);  // fuente L
+                m_wfs.setObject(1,  0.75f * spread, 1.5f, 1.0f);  // fuente R
+            }
             const float* wfsIn[2] = { m_wfsInL.data(), m_wfsInR.data() };
             m_wfs.process(wfsIn, 2, m_wfsOutL.data(), m_wfsOutR.data(), n);
             // smoothstep del factor de fade (3t²−2t³): derivada cero en los

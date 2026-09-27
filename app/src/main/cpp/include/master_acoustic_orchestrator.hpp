@@ -21,6 +21,7 @@
 
 #include "experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "omega_control_bus.h"
+#include "acoustic_reality_hyperengine.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -28,9 +29,15 @@ namespace ivanna {
 
 class MasterAcousticOrchestrator {
 public:
-    using RawMetrics    = experimental::RawAudioMetrics;
-    using AdaptiveState = experimental::AdaptiveState;
-    using Engine        = experimental::AdaptiveDecisionEngine;
+    using RawMetrics          = experimental::RawAudioMetrics;
+    using AdaptiveState       = experimental::AdaptiveState;
+    using Engine              = experimental::AdaptiveDecisionEngine;
+    using RealityOrchestrator = reality::AcousticRealityOrchestrator;
+    using RealityState        = reality::AcousticRealityState;
+
+    static inline RealityOrchestrator& realityOrchestrator() noexcept {
+        return RealityOrchestrator::instance();
+    }
 
     // Métodos de evaluación y arbitraje delegados al motor adaptativo evolucionado
     static inline AdaptiveState evaluate(const RawMetrics& m, float sibilanceEma, float fatigueEma = 0.0f) noexcept {
@@ -121,6 +128,14 @@ public:
                                            static_cast<float>(OMEGA_CTRL_EQ_BANDS - kTiltStartBand);
                 snap.eq_gains[b] += state.eq_tilt_db * bandFraction;
             }
+        }
+
+        // ── 5. ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fase 8) ─────────
+        // Coordina estados entre AdaptiveDecisionEngine y motores DSP existentes
+        // si hay una reconstrucción activa publicada en el bus lock-free.
+        const auto realitySnap = RealityOrchestrator::instance().stateBus().readLatestSnapshot();
+        if (realitySnap.sequence > 0) {
+            RealityOrchestrator::coordinateSnapshot(snap, realitySnap);
         }
 
         // Recalcular integridad CRC32 del snapshot actualizado

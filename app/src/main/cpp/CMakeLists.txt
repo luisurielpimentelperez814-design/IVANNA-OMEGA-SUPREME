@@ -326,6 +326,7 @@ add_library(omega_effect SHARED
     # APK) pero no aquí → símbolos indefinidos al enlazar libomega_effect.so.
     spatial/RirDataset.cpp
     spatial/RirConvolver.cpp
+    experimental/adaptive_engine/adaptive_decision_engine.cpp
     # FIX (distorsion digital Ruta B): omega_process expandia el canal side
     # con s *= 1.2f (TinyML bloque 'Music') y pasaba por el RIR SIN limiter
     # al final — con señal caliente eso clippea (distorsion digital dura).
@@ -341,6 +342,7 @@ target_include_directories(omega_effect PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/spatial
+    ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
 )
 
 target_link_libraries(omega_effect
@@ -441,6 +443,15 @@ target_link_libraries(test_oem_stability_suite
 )
 
 add_dependencies(test_oem_stability_suite gtest)
+
+add_executable(test_acoustic_reality_hyperengine
+    tests/regression/test_acoustic_reality_hyperengine.cpp
+)
+target_include_directories(test_acoustic_reality_hyperengine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_acoustic_reality_hyperengine PRIVATE gtest gtest_main)
+add_test(NAME acoustic_reality_hyperengine COMMAND test_acoustic_reality_hyperengine)
 
 
 

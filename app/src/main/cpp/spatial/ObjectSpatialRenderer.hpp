@@ -35,6 +35,13 @@ public:
             delayBufferPos_[obj] = 0;
             std::fill(delayBuffers_[obj].begin(), delayBuffers_[obj].end(), 0.0f);
         }
+        erGains_ = {0.25f, 0.18f, 0.12f, 0.08f};
+    }
+
+    void setEarlyReflectionGains(const std::array<float, EARLY_REFLECTIONS_TAPS>& gains) noexcept {
+        for (size_t k = 0; k < EARLY_REFLECTIONS_TAPS; ++k) {
+            erGains_[k] = std::clamp(gains[k], 0.0f, 0.45f);
+        }
     }
 
     /**
@@ -69,11 +76,15 @@ public:
 
             const auto& meta = objects[objIdx];
             const float x = std::clamp(meta.position.x, -1.0f, 1.0f);
-            const float d = std::max(0.5f, meta.position.y); // Distance in meters
+            const float z = std::clamp(meta.position.z, -1.5f, 2.5f);
+            const float dHoriz = std::max(0.5f, meta.position.y);
+            const float d = std::sqrt(dHoriz * dHoriz + z * z); // True 3D distance in meters
 
             // 1. Distance law (1 / d with safety cap) + 1-pole high frequency air damping
-            const float distGain = 1.0f / d;
-            const float hfDampAlpha = std::clamp(0.05f * d, 0.01f, 0.4f);
+            //    modulated by vertical elevation (Blauert upper-hemisphere spectral cue)
+            const float distGain = (1.0f / d) * std::clamp(meta.gain, 0.1f, 1.5f);
+            const float elevTilt = 1.0f + 0.18f * z;
+            const float hfDampAlpha = std::clamp(0.05f * d * elevTilt, 0.01f, 0.55f);
 
             // 2. Bilinear panning / HRTF interaural cue calculation (ITD + ILD)
             // Left & Right gain cues
@@ -122,10 +133,10 @@ public:
                 const float directR = fltR;
 
                 // Early reflections per object (precomputed fixed taps: 8, 17, 29, 43 samples)
-                const float er1 = dBuf[(dPos + 512 - 8) & 511] * 0.25f;
-                const float er2 = dBuf[(dPos + 512 - 17) & 511] * 0.18f;
-                const float er3 = dBuf[(dPos + 512 - 29) & 511] * 0.12f;
-                const float er4 = dBuf[(dPos + 512 - 43) & 511] * 0.08f;
+                const float er1 = dBuf[(dPos + 512 - 8) & 511] * erGains_[0];
+                const float er2 = dBuf[(dPos + 512 - 17) & 511] * erGains_[1];
+                const float er3 = dBuf[(dPos + 512 - 29) & 511] * erGains_[2];
+                const float er4 = dBuf[(dPos + 512 - 43) & 511] * erGains_[3];
                 dPos = (dPos + 1) & 511;
 
                 const float erSum = (er1 + er2 + er3 + er4) * distGain;
@@ -145,6 +156,7 @@ private:
     float distFilterR_[NUM_OBJECTS]{};
     std::array<std::array<float, 512>, NUM_OBJECTS> delayBuffers_{};
     size_t delayBufferPos_[NUM_OBJECTS]{};
+    std::array<float, EARLY_REFLECTIONS_TAPS> erGains_{{0.25f, 0.18f, 0.12f, 0.08f}};
 };
 
 } // namespace ivanna::spatial

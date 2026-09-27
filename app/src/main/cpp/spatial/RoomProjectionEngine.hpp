@@ -40,6 +40,16 @@ public:
         convolver_.setWetDry(wet);
     }
 
+    void reset() noexcept {
+        envStateL_ = 0.0f;
+        envStateR_ = 0.0f;
+        envFastL_  = 0.0f;
+        envFastR_  = 0.0f;
+        wpeHistL_.fill(0.0f);
+        wpeHistR_.fill(0.0f);
+        wpeWriteIdx_ = 0;
+    }
+
     /**
      * @brief Process stereo block through partial inversion and virtual room projection.
      */

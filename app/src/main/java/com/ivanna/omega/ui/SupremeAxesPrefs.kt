@@ -47,7 +47,15 @@ data class SupremeAxesState(
     val farrowMsoEnabled: Boolean = true,
     val msoItdNanoseconds: Float = 0.0f,
     val ebpfBypassActive: Boolean = false,
-    val shmArbitrationLockedByApp: Boolean = false
+    val shmArbitrationLockedByApp: Boolean = false,
+
+    // ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1–8)
+    val realityReconstructionEnabled: Boolean = true,
+    val realityIntensity: Float = 0.85f,
+    val personalHeadRadiusM: Float = 0.0875f,
+    val personalPinnaDepthM: Float = 0.0185f,
+    val personalElevationBiasDeg: Float = 0.0f,
+    val personalTransducerType: Int = 0
 )
 
 object SupremeAxesPrefs {
@@ -91,7 +99,13 @@ object SupremeAxesPrefs {
             farrowMsoEnabled          = bool("farrowMsoEnabled", d.farrowMsoEnabled),
             msoItdNanoseconds         = flt("msoItdNanoseconds", d.msoItdNanoseconds).coerceIn(-50000f, 50000f),
             ebpfBypassActive          = bool("ebpfBypassActive", d.ebpfBypassActive),
-            shmArbitrationLockedByApp = bool("shmArbitrationLockedByApp", d.shmArbitrationLockedByApp)
+            shmArbitrationLockedByApp = bool("shmArbitrationLockedByApp", d.shmArbitrationLockedByApp),
+            realityReconstructionEnabled = bool("realityReconstructionEnabled", d.realityReconstructionEnabled),
+            realityIntensity          = flt("realityIntensity", d.realityIntensity).coerceIn(0f, 1f),
+            personalHeadRadiusM       = flt("personalHeadRadiusM", d.personalHeadRadiusM).coerceIn(0.070f, 0.110f),
+            personalPinnaDepthM       = flt("personalPinnaDepthM", d.personalPinnaDepthM).coerceIn(0.010f, 0.030f),
+            personalElevationBiasDeg  = flt("personalElevationBiasDeg", d.personalElevationBiasDeg).coerceIn(-25f, 25f),
+            personalTransducerType    = runCatching { p.getInt("personalTransducerType", d.personalTransducerType) }.getOrDefault(d.personalTransducerType).coerceIn(0, 3)
         ).also { _stateFlow.value = it }
     }
 
@@ -119,6 +133,12 @@ object SupremeAxesPrefs {
             .putFloat("msoItdNanoseconds", s.msoItdNanoseconds)
             .putBoolean("ebpfBypassActive", s.ebpfBypassActive)
             .putBoolean("shmArbitrationLockedByApp", s.shmArbitrationLockedByApp)
+            .putBoolean("realityReconstructionEnabled", s.realityReconstructionEnabled)
+            .putFloat("realityIntensity", s.realityIntensity)
+            .putFloat("personalHeadRadiusM", s.personalHeadRadiusM)
+            .putFloat("personalPinnaDepthM", s.personalPinnaDepthM)
+            .putFloat("personalElevationBiasDeg", s.personalElevationBiasDeg)
+            .putInt("personalTransducerType", s.personalTransducerType)
             .apply()
         pushToDaemonRutaB(s)
     }
@@ -194,7 +214,25 @@ object SupremeAxesPrefs {
             NativeBridge.safeAcquireShmArbitration(pid)
         }
 
+        // ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1–8)
+        NativeBridge.safeSetRealityIntensity(s.realityIntensity)
+        NativeBridge.safeSetPersonalAuditoryProfile(
+            headRadiusM      = s.personalHeadRadiusM,
+            pinnaDepthM      = s.personalPinnaDepthM,
+            elevationBiasDeg = s.personalElevationBiasDeg,
+            transducerType   = s.personalTransducerType,
+            sensitivityScore = 1.0f
+        )
+        NativeBridge.safeSetRealityReconstructionEnabled(s.realityReconstructionEnabled)
+
         // Sincronizar también Ruta B (Daemon + AudioFlinger HAL Effect)
         pushToDaemonRutaB(s)
+        ioScope.launch {
+            runCatching {
+                com.ivanna.omega.magisk.MagiskBridge.sendCommand(
+                    "{\"action\":\"SET_REALITY_RECONSTRUCTION\",\"enabled\":${if (s.realityReconstructionEnabled) "true" else "false"},\"intensity\":${s.realityIntensity}}"
+                )
+            }
+        }
     }
 }

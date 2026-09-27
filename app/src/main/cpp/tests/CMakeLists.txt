@@ -643,4 +643,27 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_supreme_five_axes)
 
+# ── ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1 a 8 + 6 Pruebas de Validación) ──
+add_executable(test_acoustic_reality_hyperengine
+  regression/test_acoustic_reality_hyperengine.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_acoustic_reality_hyperengine PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_acoustic_reality_hyperengine PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_acoustic_reality_hyperengine PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_acoustic_reality_hyperengine PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_acoustic_reality_hyperengine PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_acoustic_reality_hyperengine)
+
+
 

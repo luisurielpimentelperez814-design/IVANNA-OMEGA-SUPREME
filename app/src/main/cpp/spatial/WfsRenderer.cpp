@@ -158,13 +158,30 @@ int WfsRenderer::allocSlot() noexcept {
 }
 
 void WfsRenderer::setObject(int id, float x, float y, float gain) noexcept {
+    setObject4D(id, x, y, 0.f, 0.f, 0.f, 0.f, gain, 0.f);
+}
+
+void WfsRenderer::setObject4D(int id, float x, float y, float z,
+                              float vx, float vy, float vz,
+                              float gain, float roomCoupling) noexcept {
     if (id < 0) return;
-    // Clamp de distancia física (una fuente a 1 km rompería la aproximación).
-    const float d = std::sqrt(x * x + y * y);
+    if (!std::isfinite(x)) x = 0.f;
+    if (!std::isfinite(y)) y = 1.5f;
+    if (!std::isfinite(z)) z = 0.f;
+    if (!std::isfinite(vx)) vx = 0.f;
+    if (!std::isfinite(vy)) vy = 0.f;
+    if (!std::isfinite(vz)) vz = 0.f;
+    if (!std::isfinite(gain)) gain = 1.f;
+    if (!std::isfinite(roomCoupling)) roomCoupling = 0.f;
+
+    // Clamp de distancia física 3D (una fuente a 1 km rompería la aproximación).
+    const float d = std::sqrt(x * x + y * y + z * z);
     if (d > kMaxObjectDist) {
         const float sc = kMaxObjectDist / d;
-        x *= sc; y *= sc;
+        x *= sc; y *= sc; z *= sc;
     }
+    z = std::clamp(z, -2.5f, 3.5f);
+    roomCoupling = std::clamp(roomCoupling, 0.f, 0.85f);
 
     int si = findSlot(id);
     if (si >= 0) {
@@ -174,7 +191,10 @@ void WfsRenderer::setObject(int id, float x, float y, float gain) noexcept {
         // muestra en process() → glide sin click (antes: rebuildDelays()
         // borraba todas las líneas = micro-corte garantizado).
         SourceSlot& slot = slots_[static_cast<size_t>(si)];
-        slot.x = x; slot.y = y; slot.gain = gain;
+        slot.x = x; slot.y = y; slot.z = z;
+        slot.vx = vx; slot.vy = vy; slot.vz = vz;
+        slot.gain = gain;
+        slot.roomCoupling = roomCoupling;
         slot.actTarget = 1.f;   // revive si estaba en fade-out
         computeTapTargets(si);
         return;
@@ -188,7 +208,11 @@ void WfsRenderer::setObject(int id, float x, float y, float gain) noexcept {
     if (si < 0) return;         // array de fuentes lleno — degradar en silencio
     SourceSlot& slot = slots_[static_cast<size_t>(si)];
     slot.id = id; slot.active = true;
-    slot.x = x; slot.y = y; slot.gain = gain;
+    slot.x = x; slot.y = y; slot.z = z;
+    slot.vx = vx; slot.vy = vy; slot.vz = vz;
+    slot.gain = gain;
+    slot.roomCoupling = roomCoupling;
+    slot.elevState = 0.f;
     slot.actEnv = 1.f; slot.actTarget = 1.f; slot.envFrom = 1.f; slot.envDelta = 0.f;
     slot.writePos = 0;
     ++numActiveObjects_;
@@ -200,6 +224,13 @@ void WfsRenderer::setObject(int id, float x, float y, float gain) noexcept {
         tap.delaySmooth = tap.delayTarget;
         tap.gainSmooth  = tap.gainTarget;
     }
+}
+
+void WfsRenderer::setRoomDimensions(float widthM, float depthM, float heightM, float wallAbsorption) noexcept {
+    if (std::isfinite(widthM)  && widthM  > 1.5f) roomWidthM_     = std::clamp(widthM,  2.0f, 30.0f);
+    if (std::isfinite(depthM)  && depthM  > 1.5f) roomDepthM_     = std::clamp(depthM,  2.0f, 40.0f);
+    if (std::isfinite(heightM) && heightM > 1.5f) roomHeightM_    = std::clamp(heightM, 2.0f, 15.0f);
+    if (std::isfinite(wallAbsorption))            wallAbsorption_ = std::clamp(wallAbsorption, 0.05f, 0.95f);
 }
 
 void WfsRenderer::removeObject(int id) noexcept {
@@ -235,8 +266,8 @@ void WfsRenderer::computeTapTargets(int si) noexcept {
             sy = -kArrayRadiusM * std::cos(speakerAzimuth_[s]);
             sz = 0.f; // fuentes y array circular viven a la altura del oído
         }
-        const float dx = o.x - sx, dy = o.y - sy, dzh = 0.f - sz; // objeto a altura del oído
-        const float d = std::sqrt(dx * dx + dy * dy + dzh * dzh); // distancia 3D real (Fase 2)
+        const float dx = o.x - sx, dy = o.y - sy, dzh = o.z - sz; // Fase 6: altura perceptual real 3D
+        const float d = std::sqrt(dx * dx + dy * dy + dzh * dzh); // distancia 3D real (Fase 2 + Fase 6)
         // Delay fraccionario objetivo (interpolación lineal en la lectura).
         const float delaySampF = (d / kSpeedOfSound) * sampleRate_;
         const float maxTap = static_cast<float>(maxDelayTap_ - blockSize_ - 4);
@@ -358,7 +389,15 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
                 int rp2 = rp - 1; if (rp2 < 0) rp2 += M;
                 const float a = slot.line[static_cast<size_t>(rp)];
                 const float b = slot.line[static_cast<size_t>(rp2)];
-                spk += (a + (b - a) * frac) * tap.gainSmooth * slot.actEnv;
+                float directWave = (a + (b - a) * frac);
+                if (slot.roomCoupling > 1.0e-4f) {
+                    const float reflGain = slot.roomCoupling * (1.0f - wallAbsorption_) * 0.22f;
+                    const int reflSamples = std::min(M - frames - 4, std::max(8, static_cast<int>((roomWidthM_ / kSpeedOfSound) * sampleRate_)));
+                    int rpRefl = (rp - reflSamples) % M;
+                    if (rpRefl < 0) rpRefl += M;
+                    directWave += slot.line[static_cast<size_t>(rpRefl)] * reflGain;
+                }
+                spk += directWave * tap.gainSmooth * slot.actEnv;
                 // Suavizado por muestra: persecución glitch-free del objetivo.
                 tap.delaySmooth += (tap.delayTarget - tap.delaySmooth) * kSmoothCoeff;
                 tap.gainSmooth  += (tap.gainTarget  - tap.gainSmooth)  * kSmoothCoeff;
@@ -406,14 +445,29 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
     //       durante el fade escribimos... su señal real; al liberar, la
     //       línea se limpia para su próximo nacimiento — hilo de control,
     //       fuera del pase caliente).
+    const float dtBlock = (sampleRate_ > 0.f) ? (static_cast<float>(frames) / sampleRate_) : 0.f;
     for (int si = 0; si < kMaxObjects; ++si) {
         SourceSlot& slot = slots_[static_cast<size_t>(si)];
-        if (slot.active && slot.actTarget == 0.f && slot.actEnv <= 0.f) {
+        if (!slot.active) continue;
+        if (slot.actTarget == 0.f && slot.actEnv <= 0.f) {
             slot.active = false;
             slot.id = -1;
             for (auto& v : slot.line) v = 0.f;
             slot.writePos = 0;
             --numActiveObjects_;
+            continue;
+        }
+        // Fase 6: Integración cinemática continua 4D (sin salto de fase ni reset de línea)
+        if (dtBlock > 0.f && (std::fabs(slot.vx) > 1.0e-5f || std::fabs(slot.vy) > 1.0e-5f || std::fabs(slot.vz) > 1.0e-5f)) {
+            slot.x += slot.vx * dtBlock;
+            slot.y += slot.vy * dtBlock;
+            slot.z = std::clamp(slot.z + slot.vz * dtBlock, -2.5f, 3.5f);
+            const float d = std::sqrt(slot.x * slot.x + slot.y * slot.y + slot.z * slot.z);
+            if (d > kMaxObjectDist) {
+                const float sc = kMaxObjectDist / d;
+                slot.x *= sc; slot.y *= sc; slot.z *= sc;
+            }
+            computeTapTargets(si);
         }
     }
 }

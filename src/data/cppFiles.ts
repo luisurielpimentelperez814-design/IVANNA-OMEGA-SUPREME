@@ -28,8 +28,36 @@ import ivannaNeuromorphicTinyMLHpp from '../../app/src/main/cpp/IvannaNeuromorph
 import ivannaAudioPipelineHpp from '../../app/src/main/cpp/spatial/IvannaAudioPipeline.hpp?raw';
 import perfAuditorHpp from '../../app/src/main/cpp/spatial/PerfAuditor.hpp?raw';
 import stereoDecomposerHpp from '../../app/src/main/cpp/spatial/StereoObjectDecomposer.hpp?raw';
+import acousticRealityHyperengineHpp from '../../app/src/main/cpp/include/acoustic_reality_hyperengine.hpp?raw';
+import wfsRendererHpp from '../../app/src/main/cpp/spatial/WfsRenderer.hpp?raw';
+import wfsRendererCpp from '../../app/src/main/cpp/spatial/WfsRenderer.cpp?raw';
+import testAcousticRealityCpp from '../../app/src/main/cpp/tests/regression/test_acoustic_reality_hyperengine.cpp?raw';
 
 export const CPP_FILES: CppFile[] = [
+  {
+    filename: 'acoustic_reality_hyperengine.hpp',
+    category: 'header',
+    description: 'ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1 a 8): AcousticGenome, MicroDetailMap, AcousticTimeMachine, NeuralInferenceCore, PersonalAuditoryModel, PerceptualOptimizer y AcousticRealityOrchestrator',
+    content: acousticRealityHyperengineHpp,
+  },
+  {
+    filename: 'WfsRenderer.hpp',
+    category: 'header',
+    description: 'Fase 6: 4D Field Synthesis Supreme — Objetos 4D con velocidad continua (vx/vy/vz), profundidad variable, elevación Z e interacción con habitación',
+    content: wfsRendererHpp,
+  },
+  {
+    filename: 'WfsRenderer.cpp',
+    category: 'source',
+    description: 'Fase 6: Implementación 4D Field Synthesis Supreme (ley inversa de distancia, integración cinemática continua y reflexiones de primer orden)',
+    content: wfsRendererCpp,
+  },
+  {
+    filename: 'test_acoustic_reality_hyperengine.cpp',
+    category: 'source',
+    description: 'Suite de Validación Científica (6 Pruebas): Concierto vs Reconstrucción, Localización 4D, Profundidad, Realismo de Sala, Carga CPU y Latencia Cero',
+    content: testAcousticRealityCpp,
+  },
   {
     filename: 'CMakeLists.txt',
     category: 'build',

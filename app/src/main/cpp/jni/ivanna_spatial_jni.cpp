@@ -363,7 +363,8 @@ static inline void cochlearSetEnabledHelper(jboolean enabled) noexcept {
     const bool on = (enabled == JNI_TRUE);
     // Ruta A: pipeline IvannaAudioPipeline (gestiona su propio engine interno)
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setEnabled(on);
-    // Ruta B: atomics leídos por nativeProcess/nativeProcessBlock (hot-path manual DSP)
+    // Ruta B / hot-path DSPBridge & IvannaNativeLib: sincronizar g_cochlearEngine + atomic
+    g_cochlearEngine.setEnabled(on);
     g_cochlearEnabled.store(on, std::memory_order_release);
 }
 
@@ -373,12 +374,15 @@ static inline void cochlearSetIntensityHelper(jfloat intensity) noexcept {
         : 0.35f;
     // Ruta A: pipeline
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setIntensity(w);
-    // Ruta B: atomic del hot-path manual
+    // Ruta B / hot-path manual: sincronizar g_cochlearEngine + atomic
+    g_cochlearEngine.setIntensity(w);
     g_cochlearIntensity.store(w, std::memory_order_relaxed);
 }
 
 static inline jboolean cochlearIsActiveHelper() noexcept {
-    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().isActive() ? JNI_TRUE : JNI_FALSE;
+    const bool active = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().isActive()
+                     || g_cochlearEngine.isActive();
+    return active ? JNI_TRUE : JNI_FALSE;
 }
 
 static inline jfloat cochlearGetIntensityHelper() noexcept {
@@ -697,6 +701,86 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_NativeBridge_isShmCrossProcessMapped(JNIEnv*, jclass) {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
         .shmMsoArbitrator().isCrossProcessShmMapped() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ── ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1–8) ─────────────────
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setRealityReconstructionEnabled(JNIEnv*, jclass, jboolean en) {
+    const bool enabled = (en == JNI_TRUE);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().setRealityReconstructionEnabled(enabled);
+    ivanna::reality::AcousticRealityOrchestrator::instance().setEnabled(enabled);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_isRealityReconstructionEnabled(JNIEnv*, jclass) {
+    return ivanna::reality::AcousticRealityOrchestrator::instance().isEnabled() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setRealityIntensity(JNIEnv*, jclass, jfloat intensity) {
+    ivanna::reality::AcousticRealityOrchestrator::instance().setRealityIntensity(intensity);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().realityOrchestrator().setRealityIntensity(intensity);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setPersonalAuditoryProfile(
+    JNIEnv*, jclass, jfloat headRadiusM, jfloat pinnaDepthM,
+    jfloat elevationBiasDeg, jint transducerType, jfloat sensitivityScore) {
+    ivanna::reality::ListenerRealityInput in{};
+    in.pinnaProfile.head_circumference_cm = std::clamp(headRadiusM * 100.0f * 2.0f * 3.14159265f, 48.0f, 64.0f);
+    in.pinnaProfile.ear_pinna_size_mm     = std::clamp(pinnaDepthM * 2000.0f, 50.0f, 80.0f);
+    in.pinnaProfile.canal_resonance_boost_db = std::clamp((sensitivityScore - 1.0f) * 6.0f, -6.0f, 6.0f);
+    in.headPitchDeg = std::clamp(elevationBiasDeg, -25.0f, 25.0f);
+    in.deviceClass  = static_cast<ivanna::reality::DeviceTransducerClass>(std::clamp(static_cast<int>(transducerType), 0, 4));
+    ivanna::reality::AcousticRealityOrchestrator::instance().personalModel().setListenerInput(in);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().realityOrchestrator().personalModel().setListenerInput(in);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getRealityTelemetrySnapshot(JNIEnv* env, jclass) {
+    jfloatArray outArr = env->NewFloatArray(16);
+    if (!outArr) return nullptr;
+
+    auto& orch = ivanna::reality::AcousticRealityOrchestrator::instance();
+    auto snap = orch.stateBus().readLatestSnapshot();
+    if (snap.sequence == 0) {
+        ivanna::experimental::RawAudioMetrics seedM{};
+        seedM.rms              = 0.22f;
+        seedM.peak             = 0.68f;
+        seedM.crest_factor_db  = 9.8f;
+        seedM.band_low_energy  = 0.08f;
+        seedM.band_mid_energy  = 0.11f;
+        seedM.band_high_energy = 0.04f;
+        seedM.voice_score      = 0.64f;
+        const auto seedAdapt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(seedM, 0.12f, 0.08f);
+        std::array<ivanna::spatial::DecomposedObject, 4> seedObjs{};
+        seedObjs[0].position = { 0.0f, 1.45f, 0.05f }; seedObjs[0].energy = 0.11f; seedObjs[0].gain = 1.0f;
+        seedObjs[1].position = {-0.58f, 2.20f, 0.18f }; seedObjs[1].energy = 0.05f; seedObjs[1].gain = 0.8f;
+        seedObjs[2].position = { 0.58f, 2.20f, 0.18f }; seedObjs[2].energy = 0.05f; seedObjs[2].gain = 0.8f;
+        seedObjs[3].position = { 0.0f, 1.70f, -0.18f }; seedObjs[3].energy = 0.08f; seedObjs[3].gain = 0.7f;
+        snap = orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, 20000ULL);
+    }
+
+    float t[16]{};
+    t[0]  = snap.perceptual.scores.presence;
+    t[1]  = snap.perceptual.scores.naturalness;
+    t[2]  = snap.perceptual.scores.separation;
+    t[3]  = 1.0f - snap.perceptual.scores.fatigueFree;
+    t[4]  = snap.perceptual.scores.immersion;
+    t[5]  = snap.perceptual.scores.realismScore;
+    t[6]  = snap.neuralProposal.inferredRoomDimsMeters[0];
+    t[7]  = snap.neuralProposal.inferredRoomDimsMeters[1];
+    t[8]  = snap.neuralProposal.inferredRoomDimsMeters[2];
+    t[9]  = snap.genome.roomFingerprint.estimatedRt60Sec;
+    t[10] = snap.genome.roomFingerprint.earlyToLateRatioDb;
+    t[11] = 1.0f + snap.microMap.intelligibilityContrast;
+    t[12] = snap.microMap.nodes[0].existence; // MicroTransients
+    t[13] = snap.microMap.nodes[2].existence; // HumanBreath
+    t[14] = snap.microMap.nodes[4].existence; // RoomAir
+    t[15] = 1.0f - snap.genome.uncertainty;   // Genome Coherence
+
+    env->SetFloatArrayRegion(outArr, 0, 16, t);
+    return outArr;
 }
 
 } // extern "C"

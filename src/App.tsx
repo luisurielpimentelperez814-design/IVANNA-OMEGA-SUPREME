@@ -12,6 +12,7 @@ import { DspPipeline } from './components/DspPipeline';
 import { ParameterControls } from './components/ParameterControls';
 import { usePersist } from './usePersist';
 import { IvannaVoicePanel } from './components/IvannaVoicePanel';
+import { AcousticRealityPanel } from './components/AcousticRealityPanel';
 
 // Code-splitting: estos dos tabs se cargan bajo demanda.
 // CodeExporter arrastra todas las fuentes C++ del DSP (imports ?raw) y
@@ -77,7 +78,7 @@ const DEFAULT_METRICS: BenchmarkMetrics = {
   lastCalibratedAt: new Date().toLocaleTimeString(),
 };
 
-type ActiveTab = 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
+type ActiveTab = 'master' | 'reality_hyperengine' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
 
 export default function App() {
   // ── Persistencia de tab activo ──────────────────────────────────────────────
@@ -311,6 +312,9 @@ export default function App() {
             onRunAutoCalibration={handleRunAutoCalibration}
             onApplyPreset={handleApplyPreset}
           />
+        )}
+        {activeTab === 'reality_hyperengine' && (
+          <AcousticRealityPanel params={params} onParamChange={handleParamChange} />
         )}
         {activeTab === 'tinyml' && (
           <TinyMlClassifierPanel params={params} classification={classification} onParamChange={handleParamChange} />

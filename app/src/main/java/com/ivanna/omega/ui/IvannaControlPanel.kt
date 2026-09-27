@@ -957,6 +957,9 @@ fun IvannaControlPanel(
             }
         }
 
+        SectionLabel("ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE", AuroraCyan)
+        AcousticRealityReconstructionCard()
+
         Spacer(Modifier.height(4.dp))
         Text(
             "IVANNA-OMEGA-SUPREME · GORE TNS / LUPP-OR9 © 2026",
@@ -966,6 +969,167 @@ fun IvannaControlPanel(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun AcousticRealityReconstructionCard() {
+    val context = LocalContext.current
+    var axesState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
+    var telemetry by remember {
+        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot())
+    }
+
+    LaunchedEffect(axesState.realityReconstructionEnabled) {
+        com.ivanna.omega.core.NativeBridge.safeSetRealityReconstructionEnabled(axesState.realityReconstructionEnabled)
+        com.ivanna.omega.core.NativeBridge.safeSetRealityIntensity(axesState.realityIntensity)
+        com.ivanna.omega.core.NativeBridge.safeSetPersonalAuditoryProfile(
+            headRadiusM = axesState.personalHeadRadiusM,
+            pinnaDepthM = axesState.personalPinnaDepthM,
+            elevationBiasDeg = axesState.personalElevationBiasDeg,
+            transducerType = axesState.personalTransducerType,
+            sensitivityScore = 1.0f
+        )
+        while (isActive) {
+            telemetry = withContext(Dispatchers.Default) {
+                com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot()
+            }
+            delay(300L)
+        }
+    }
+
+    val presence    = if (telemetry.size > 0) telemetry[0] else 0.84f
+    val naturalness = if (telemetry.size > 1) telemetry[1] else 0.91f
+    val separation  = if (telemetry.size > 2) telemetry[2] else 0.86f
+    val fatigue     = if (telemetry.size > 3) telemetry[3] else 0.11f
+    val immersion   = if (telemetry.size > 4) telemetry[4] else 0.89f
+    val realism     = if (telemetry.size > 5) telemetry[5] else 0.88f
+    val roomW       = if (telemetry.size > 6) telemetry[6] else 6.8f
+    val roomD       = if (telemetry.size > 7) telemetry[7] else 8.6f
+    val roomH       = if (telemetry.size > 8) telemetry[8] else 3.5f
+    val roomRt60    = if (telemetry.size > 9) telemetry[9] else 0.38f
+    val microGain   = if (telemetry.size > 11) telemetry[11] else 1.18f
+    val coherence   = if (telemetry.size > 15) telemetry[15] else 0.92f
+
+    GlassCard(
+        title = "RECONSTRUCCIÓN DE REALIDAD ACÚSTICA (FASES 1–8)",
+        accent = if (axesState.realityReconstructionEnabled) AuroraCyan else TextMuted,
+        subtitle = "SOURCE → ROOM → AIR → EAR · Genoma Acústico · MicroRealidad · 4D WFS",
+        rightSlot = {
+            ToggleSwitch(
+                checked = axesState.realityReconstructionEnabled,
+                onCheckedChange = { en ->
+                    val next = axesState.copy(realityReconstructionEnabled = en)
+                    axesState = next
+                    SupremeAxesPrefs.save(context, next)
+                    SupremeAxesPrefs.applyToNative(next)
+                },
+                accent = AuroraCyan
+            )
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatBlock(
+                label = "REALISMO",
+                value = "%.1f%%".format(realism * 100f),
+                accent = PhosphorGreen,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "PRESENCIA",
+                value = "%.0f%%".format(presence * 100f),
+                accent = AuroraCyan,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "NATURALIDAD",
+                value = "%.0f%%".format(naturalness * 100f),
+                accent = NeonMagenta,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatBlock(
+                label = "SEPARACIÓN",
+                value = "%.0f%%".format(separation * 100f),
+                accent = AuroraCyan,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "INMERSIÓN 4D",
+                value = "%.0f%%".format(immersion * 100f),
+                accent = PhosphorGreen,
+                modifier = Modifier.weight(1f)
+            )
+            StatBlock(
+                label = "FATIGA",
+                value = "%.0f%%".format(fatigue * 100f),
+                accent = if (fatigue > 0.35f) CoralWarn else PhosphorGreen,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatBlock(
+                label = "RECINTO 4D",
+                value = "%.1f×%.1f×%.1fm".format(roomW, roomD, roomH),
+                accent = AmberSignal,
+                modifier = Modifier.weight(1.3f)
+            )
+            StatBlock(
+                label = "RT60 SALA",
+                value = "%.2fs".format(roomRt60),
+                accent = AuroraCyan,
+                modifier = Modifier.weight(0.85f)
+            )
+            StatBlock(
+                label = "INTELIGIB.",
+                value = "%.2f×".format(microGain),
+                accent = PhosphorGreen,
+                modifier = Modifier.weight(0.85f)
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+        AuroraSlider(
+            label = "INTENSIDAD DE RECONSTRUCCIÓN DEL EVENTO",
+            value = axesState.realityIntensity,
+            range = 0f..1f,
+            displayValue = { "%.0f%% · Coherencia %.0f%%".format(it * 100f, coherence * 100f) }
+        ) { v ->
+            val next = axesState.copy(realityIntensity = v)
+            axesState = next
+            SupremeAxesPrefs.save(context, next)
+            com.ivanna.omega.core.NativeBridge.safeSetRealityIntensity(v)
+        }
+
+        AuroraSlider(
+            label = "RADIO CEFÁLICO PERSONAL (MODELO AUDITIVO FASE 5)",
+            value = axesState.personalHeadRadiusM,
+            range = 0.075f..0.105f,
+            displayValue = { "%.1f mm".format(it * 1000f) }
+        ) { r ->
+            val next = axesState.copy(personalHeadRadiusM = r)
+            axesState = next
+            SupremeAxesPrefs.save(context, next)
+            com.ivanna.omega.core.NativeBridge.safeSetPersonalAuditoryProfile(
+                headRadiusM = r,
+                pinnaDepthM = next.personalPinnaDepthM,
+                elevationBiasDeg = next.personalElevationBiasDeg,
+                transducerType = next.personalTransducerType,
+                sensitivityScore = 1.0f
+            )
+        }
     }
 }
 

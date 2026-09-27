@@ -3,8 +3,8 @@ import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Spar
 import { DspParameters } from '../types';
 
 interface HeaderProps {
-  activeTab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
-  setActiveTab: (tab: 'master' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice') => void;
+  activeTab: 'master' | 'reality_hyperengine' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
+  setActiveTab: (tab: 'master' | 'reality_hyperengine' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice') => void;
   params: DspParameters;
   onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
   onApplyPreset: (presetName: DspParameters['activePreset']) => void;
@@ -134,6 +134,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sliders className="w-3.5 h-3.5" />
             <span>Master Control</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reality_hyperengine')}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
+              activeTab === 'reality_hyperengine'
+                ? 'bg-[#10242C] border-[#38BDF8] text-[#38BDF8] font-bold shadow-sm shadow-[#38BDF8]/25'
+                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#38BDF8]" />
+            <span>Acoustic Reality 4D</span>
           </button>
 
           <button

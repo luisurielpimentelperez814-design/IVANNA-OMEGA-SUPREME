@@ -121,6 +121,7 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     if (s.supreme_pinna_enabled)       snap.flags |= ivanna::OMEGA_FLAG_SUPREME_PINNA_ON;
     if (s.supreme_farrow_mso_enabled)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
     if (s.supreme_ebpf_bypass_active)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
+    if (s.reality_recon_enabled)       snap.flags |= ivanna::OMEGA_FLAG_REALITY_RECON_ON;
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
 }
@@ -247,6 +248,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.supreme_farrow_mso_enabled  = (_jsonFloat(json,"farrowMsoEnabled",         m_state.supreme_farrow_mso_enabled ? 1.f : 0.f) > 0.5f);
         m_state.supreme_mso_itd_ns          = _clamp(_jsonFloat(json,"msoItdNanoseconds",    m_state.supreme_mso_itd_ns), -50000.f, 50000.f);
         m_state.supreme_ebpf_bypass_active  = (_jsonFloat(json,"ebpfBypassActive",         m_state.supreme_ebpf_bypass_active ? 1.f : 0.f) > 0.5f);
+        m_state.reality_recon_enabled       = (_jsonFloat(json,"realityReconstructionEnabled", m_state.reality_recon_enabled ? 1.f : 0.f) > 0.5f);
 
         // Persistir estado de los 5 Ejes en disco para sobrevivir reinicios o auto-curación
         {
@@ -295,7 +297,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_SUPREME_AXES")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_SUPREME_AXES\",\"generation\":%llu,\"warpedLatticeEnabled\":%s,\"transharmonicCvnnEnabled\":%s,\"transharmonicAnalogTapeDrive\":%.3f,\"snnHoaUpmixerEnabled\":%s,\"pinnaManifoldEnabled\":%s,\"farrowMsoEnabled\":%s,\"msoItdNanoseconds\":%.1f}",
+            "{\"ok\":true,\"command\":\"GET_SUPREME_AXES\",\"generation\":%llu,\"warpedLatticeEnabled\":%s,\"transharmonicCvnnEnabled\":%s,\"transharmonicAnalogTapeDrive\":%.3f,\"snnHoaUpmixerEnabled\":%s,\"pinnaManifoldEnabled\":%s,\"farrowMsoEnabled\":%s,\"msoItdNanoseconds\":%.1f,\"realityReconstructionEnabled\":%s}",
             (unsigned long long)gen,
             m_state.supreme_lattice_enabled?"true":"false",
             m_state.supreme_cvnn_enabled?"true":"false",
@@ -303,7 +305,17 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.supreme_snn_hoa_enabled?"true":"false",
             m_state.supreme_pinna_enabled?"true":"false",
             m_state.supreme_farrow_mso_enabled?"true":"false",
-            m_state.supreme_mso_itd_ns);
+            m_state.supreme_mso_itd_ns,
+            m_state.reality_recon_enabled?"true":"false");
+
+    } else if (strcmp(action,"SET_REALITY_RECONSTRUCTION")==0 || strcmp(action,"setRealityReconstruction")==0) {
+        float enVal = _jsonFloat(json, "enabled", m_state.reality_recon_enabled ? 1.0f : 0.0f);
+        if (strstr(json, "\"enabled\":true") || strstr(json, "\"enabled\": true")) enVal = 1.0f;
+        else if (strstr(json, "\"enabled\":false") || strstr(json, "\"enabled\": false")) enVal = 0.0f;
+        m_state.reality_recon_enabled = (enVal > 0.5f);
+        m_state.intensity = _clamp(_jsonFloat(json, "intensity", m_state.intensity), 0.0f, 1.0f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
     } else if (strcmp(action,"SET_PF_PARAMS")==0) {
         _jsonFloatArray(json,"params",m_state.pf_params,13);

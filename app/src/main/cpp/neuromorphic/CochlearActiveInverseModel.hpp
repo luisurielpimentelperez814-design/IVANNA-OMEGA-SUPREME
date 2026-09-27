@@ -91,9 +91,17 @@ public:
     alignas(64) ChannelState chanR_{};
 
     float sampleRate_ = 48000.0f;
-    float wetGain_    = 1.0f;   // [0..1] — intensidad efectiva (computed)
-    float intensity_  = 1.0f;   // [0..1] — intensidad configurada
-    bool  enabled_    = true;   // on/off state
+    float wetGain_    = 0.35f;  // [0..1] — intensidad efectiva (computed)
+    float intensity_  = 0.35f;  // [0..1] — intensidad configurada
+    float activeWet_  = 0.0f;   // rampa suave anti-click por muestra
+    bool  enabled_    = false;  // on/off state (bypass por defecto hasta activación)
+
+    CochlearActiveInverseEngine() noexcept {
+        prepare(48000.0f, 512);
+        enabled_   = false;
+        wetGain_   = 0.0f;
+        activeWet_ = 0.0f;
+    }
 
     // ────────────────────────────────────────────────────────────────────────
     // prepare() — pre-computa coeficientes; sin allocs.
@@ -131,12 +139,27 @@ public:
                  float* __restrict bufferR,
                  int numSamples) noexcept {
         if (!bufferL || !bufferR || numSamples <= 0) return;
-        processMono(bufferL, numSamples, chanL_);
-        processMono(bufferR, numSamples, chanR_);
+        const float targetWet = enabled_ ? wetGain_ : 0.0f;
+        if (targetWet <= 1.0e-6f && activeWet_ <= 1.0e-6f) {
+            return;
+        }
+        float wetEndL = activeWet_;
+        float wetEndR = activeWet_;
+        processMono(bufferL, numSamples, chanL_, targetWet, wetEndL);
+        processMono(bufferR, numSamples, chanR_, targetWet, wetEndR);
+        activeWet_ = wetEndL;
+        if (!enabled_ && activeWet_ <= 1.0e-6f) {
+            activeWet_ = 0.0f;
+            reset();
+        }
     }
 
     void setWetGain(float wet) noexcept {
-        wetGain_ = (wet < 0.0f) ? 0.0f : (wet > 1.0f) ? 1.0f : wet;
+        const float clamped = (wet < 0.0f) ? 0.0f : (wet > 1.0f) ? 1.0f : wet;
+        intensity_ = clamped;
+        wetGain_   = clamped;
+        activeWet_ = clamped;
+        enabled_   = (clamped > 0.0f);
     }
 
     [[nodiscard]] float getWetGain() const noexcept { return wetGain_; }
@@ -145,6 +168,9 @@ public:
     /** Activa o desactiva el motor (wet=intensity_ si on, 0 si off). */
     void setEnabled(bool on) noexcept {
         enabled_ = on;
+        if (on && intensity_ <= 1.0e-4f) {
+            intensity_ = 0.35f;
+        }
         wetGain_ = on ? intensity_ : 0.0f;
     }
 
@@ -188,18 +214,22 @@ private:
     // ────────────────────────────────────────────────────────────────────────
     // processMono() — hot-path: cero divisiones, cero allocs
     // NEON: 4 bandas/ciclo × 2 grupos = 8 bandas totales
+    // Preserva ganancia unitaria de banda ancha (0 dB insertion loss)
+    // sustrayendo únicamente el término no-lineal de compresión OHC (prestina).
     // ────────────────────────────────────────────────────────────────────────
     void processMono(float* __restrict buf, int N,
-                     ChannelState& __restrict ch) noexcept {
-        const float wet      = wetGain_;
-        const float dry      = 1.0f - wet;
+                     ChannelState& __restrict ch,
+                     float targetWet,
+                     float& currentWet) noexcept {
         const float alpha_p  = ALPHA_PRESTIN;
-        // INV8: constexpr → el compilador la propaga como multiplicación
         constexpr float INV8 = 0.125f;
+        constexpr float RAMP_COEFF = 0.002f; // ~10ms rampa suave anti-click @ 48kHz
 
         for (int n = 0; n < N; ++n) {
+            currentWet += RAMP_COEFF * (targetWet - currentWet);
+            const float wet = currentWet;
             const float x = buf[n];
-            float out_sum = 0.0f;
+            float nl_cancel_sum = 0.0f;
 
 #if defined(IVANNA_COCHLEAR_NEON)
             // ── NEON: 2 iteraciones × 4 bandas = 8 bandas ────────────────
@@ -218,13 +248,9 @@ private:
 
                 // ─── Biquad BPF: y = b0·x - b0·x2 + na1·y1 + na2·y2 ────
                 const float32x4_t xv = vdupq_n_f32(x);
-                // Step 1: b0*x
                 float32x4_t bpf_v = vmulq_f32(b0v, xv);
-                // Step 2: - b0*x2  (vmlsq: a - b*c)
                 bpf_v = vmlsq_f32(bpf_v, b0v, x2v);
-                // Step 3: + na1*y1
                 bpf_v = vmlaq_f32(bpf_v, na1v, y1v);
-                // Step 4: + na2*y2
                 bpf_v = vmlaq_f32(bpf_v, na2v, y2v);
 
                 // Actualizar historia biquad
@@ -234,35 +260,26 @@ private:
                 y1v = bpf_v;
 
                 // ─── Heun OHC envelope (RK2, primer orden, sin divisiones) ─
-                // E = |bpf|
                 const float32x4_t Ev = vabsq_f32(bpf_v);
-                // Seleccionar coef: ataque si E > env, else release
                 const uint32x4_t rising = vcgtq_f32(Ev, envv);
                 const float32x4_t coef  = vbslq_f32(rising, attv, relv);
-                // k1 = (E - env) * coef
-                const float32x4_t k1v  = vmulq_f32(vsubq_f32(Ev, envv), coef);
-                // env_pred = env + k1
+                const float32x4_t k1v   = vmulq_f32(vsubq_f32(Ev, envv), coef);
                 const float32x4_t predv = vaddq_f32(envv, k1v);
-                // k2 = (E - env_pred) * coef  (mismo E → causal)
-                const float32x4_t k2v  = vmulq_f32(vsubq_f32(Ev, predv), coef);
-                // env_new = env + 0.5*(k1+k2)
+                const float32x4_t k2v   = vmulq_f32(vsubq_f32(Ev, predv), coef);
                 envv = vmlaq_f32(envv, vdupq_n_f32(0.5f), vaddq_f32(k1v, k2v));
-                envv = vmaxq_f32(envv, vdupq_n_f32(0.0f)); // clamp ≥ 0
+                envv = vmaxq_f32(envv, vdupq_n_f32(0.0f));
 
-                // ─── Prestin inverse: out = bpf * (1 - α·env²) ───────────
-                // env²
+                // ─── Cancelación NL de prestina: Δ_NL = bpf * (α·env² + 0.05·env) ───
                 const float32x4_t env2v = vmulq_f32(envv, envv);
-                // gain = 1 - α·env²
-                float32x4_t gainv = vsubq_f32(vdupq_n_f32(1.0f),
-                                               vmulq_f32(vdupq_n_f32(alpha_p), env2v));
-                gainv = vmaxq_f32(gainv, vdupq_n_f32(0.0f)); // clamp ≥ 0
-                // band output
-                const float32x4_t outv = vmulq_f32(bpf_v, gainv);
+                float32x4_t nlv = vmlaq_f32(vmulq_f32(vdupq_n_f32(0.05f), envv),
+                                            vdupq_n_f32(alpha_p), env2v);
+                nlv = vminq_f32(nlv, vdupq_n_f32(0.45f));
+                const float32x4_t outv = vmulq_f32(bpf_v, nlv);
 
                 // ─── Reducción horizontal (4 bandas → 1 acumulador) ───────
                 const float32x2_t s2 = vadd_f32(vget_low_f32(outv), vget_high_f32(outv));
                 const float32x2_t s1 = vpadd_f32(s2, s2);
-                out_sum += vget_lane_f32(s1, 0);
+                nl_cancel_sum += vget_lane_f32(s1, 0);
 
                 // ─── Store estado actualizado ─────────────────────────────
                 vst1q_f32(ch.x1  + bg, x1v);
@@ -285,24 +302,26 @@ private:
                 ch.y1[b] = bpf;
 
                 // Heun OHC envelope (RK2)
-                const float E    = (bpf >= 0.0f) ? bpf : -bpf; // |bpf|, branchless
+                const float E    = (bpf >= 0.0f) ? bpf : -bpf;
                 const float coef = (E > ch.env[b]) ? ch.att[b] : ch.rel[b];
                 const float k1   = (E - ch.env[b]) * coef;
                 const float pred = ch.env[b] + k1;
                 const float k2   = (E - pred) * coef;
                 float env_new    = ch.env[b] + 0.5f * (k1 + k2);
-                if (env_new < 0.0f) env_new = 0.0f; // clamp ≥ 0
+                if (env_new < 0.0f) env_new = 0.0f;
                 ch.env[b] = env_new;
 
-                // Prestin inverse complementaria: H_inv(x) = bpf*(1-α·env²)
+                // Cancelación NL de prestina: Δ_NL = bpf * (α·env² + 0.05·env)
                 const float env2 = env_new * env_new;
-                float gain = 1.0f - alpha_p * env2;
-                if (gain < 0.0f) gain = 0.0f; // clamp ≥ 0
-                out_sum += bpf * gain;
+                float nl = alpha_p * env2 + 0.05f * env_new;
+                if (nl > 0.45f) nl = 0.45f;
+                nl_cancel_sum += bpf * nl;
             }
 #endif
-            // Normalización: /NUM_BANDS (constexpr mult, no division) + wet/dry
-            buf[n] = out_sum * INV8 * wet + x * dry;
+            // Preserva 100% de la señal directa de banda ancha x (0 dB pérdida de volumen)
+            // y resta el término no-lineal de compresión OHC escalado suavemente por wet.
+            const float y = x - (nl_cancel_sum * INV8 * wet);
+            buf[n] = std::isfinite(y) ? y : x;
         }
     }
 };

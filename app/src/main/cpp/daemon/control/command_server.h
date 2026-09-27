@@ -109,6 +109,7 @@ struct OmegaDspState {
     bool  supreme_farrow_mso_enabled  = true;
     float supreme_mso_itd_ns          = 0.0f;
     bool  supreme_ebpf_bypass_active  = false;
+    bool  reality_recon_enabled       = true;
 };
 
 class CommandServer {

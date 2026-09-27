@@ -129,6 +129,7 @@ constexpr uint32_t OMEGA_FLAG_SUPREME_SNN_HOA_ON     = (1u << 11); // Eje 3: SNN
 constexpr uint32_t OMEGA_FLAG_SUPREME_PINNA_ON       = (1u << 12); // Eje 4: Pinna Manifold INR-SDF 32-tap FIR
 constexpr uint32_t OMEGA_FLAG_SUPREME_FARROW_MSO_ON  = (1u << 13); // Eje 5: Farrow Order-5 MSO Phase Alignment
 constexpr uint32_t OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON = (1u << 14); // Eje 5: eBPF/XDP SHM Direct-to-HAL Bypass
+constexpr uint32_t OMEGA_FLAG_REALITY_RECON_ON       = (1u << 15); // Fases 1-8: Acoustic Reality Reconstruction Hyperengine
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {
@@ -332,7 +333,8 @@ struct OmegaDspSnapshot {
                 | OMEGA_FLAG_SUPREME_CVNN_ON
                 | OMEGA_FLAG_SUPREME_SNN_HOA_ON
                 | OMEGA_FLAG_SUPREME_PINNA_ON
-                | OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
+                | OMEGA_FLAG_SUPREME_FARROW_MSO_ON
+                | OMEGA_FLAG_REALITY_RECON_ON;
         s.raw_rms      = 0.0f;
         s.raw_peak     = 0.0f;
         s.supreme_declipped_peaks = 0u;

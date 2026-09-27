@@ -128,6 +128,19 @@ public:
     // desde el hilo de control entre bloques. NUNCA resetea historiales:
     // mover una fuente suaviza delay/ganancia sin tocar el audio en vuelo.
     void setObject(int id, float x, float y, float gain) noexcept;
+
+    // ── FASE 6: 4D FIELD SYNTHESIS SUPREME ──────────────────────────────────
+    // Objeto dinámico 4D con profundidad variable (y), altura perceptual (z),
+    // vector de velocidad cinemática continua (vx, vy, vz) e interacción física
+    // con las fronteras de la habitación (roomCoupling).
+    void setObject4D(int id, float x, float y, float z,
+                     float vx, float vy, float vz,
+                     float gain, float roomCoupling = 0.25f) noexcept;
+
+    // Configura las dimensiones físicas del recinto para acoplamiento de
+    // reflexiones de primer orden dentro del campo WFS 4D.
+    void setRoomDimensions(float widthM, float depthM, float heightM, float wallAbsorption = 0.25f) noexcept;
+
     void removeObject(int id) noexcept;   // fade-out de un bloque, sin click
     void clearObjects() noexcept;
 
@@ -148,8 +161,11 @@ private:
     struct SourceSlot {
         int   id = -1;
         bool  active = false;
-        float x = 0.f, y = 0.f;
+        float x = 0.f, y = 0.f, z = 0.f;
+        float vx = 0.f, vy = 0.f, vz = 0.f;
         float gain = 1.f;
+        float roomCoupling = 0.f;
+        float elevState = 0.f;
         // Envolvente de salida (fade-out glitch-free al eliminar). 0..1.
         float actEnv = 1.f;
         float actTarget = 1.f;
@@ -190,6 +206,12 @@ private:
     // se comporta exactamente como antes de esta feature (compatibilidad).
     float enabledTarget_ = 1.0f;
     float enabledMix_    = 1.0f;
+
+    // Fase 6: Geometría física de la habitación para interacción de bordes 4D
+    float roomWidthM_     = 6.5f;
+    float roomDepthM_     = 8.2f;
+    float roomHeightM_    = 3.4f;
+    float wallAbsorption_ = 0.25f;
 
     // Taps (fuente × altavoz) — matriz plana [slot*kMaxSpeakers + spk],
     // preasignada en init() (kMaxObjects × kMaxSpeakers entradas fijas).
