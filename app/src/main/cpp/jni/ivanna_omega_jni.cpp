@@ -2846,6 +2846,8 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
     if (g_rirConvolver.load(std::memory_order_acquire) == nullptr) {
         auto* conv = new Ivanna::RirConvolver();
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+        conv->setTrueStereoCrossGain(0.20f);
+        conv->setTransauralXtcStrength(0.16f);
         conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, (int)g_params.sampleRate);
         conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
         g_rirConvolver.store(conv, std::memory_order_release);
@@ -2868,6 +2870,8 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
         return;
     }
     conv->applySofaCoupling(g_localSafQ);
+    conv->setTrueStereoCrossGain(0.20f);
+    conv->setTransauralXtcStrength((rt60S > 0.52f) ? 0.38f : ((rt60S < 0.31f) ? 0.0f : 0.16f));
     conv->setWetDry(std::clamp(static_cast<float>(wet), 0.0f, 1.0f));
     if (ds && ds->isLoaded() && ds->roomCount() > 0) {
         const int32_t targetIdx = (roomIdx >= 0 && static_cast<size_t>(roomIdx) < ds->roomCount())

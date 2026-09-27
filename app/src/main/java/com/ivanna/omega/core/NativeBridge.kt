@@ -65,6 +65,8 @@ object NativeBridge {
     @JvmStatic external fun getWarpedLatticeSubSampleDelay(): Float
     @JvmStatic external fun runWarpedLatticeLoopbackCalibration(f0Hz: Float, mu: Float)
     @JvmStatic external fun getWarpedLatticeKappas(): FloatArray?
+    @JvmStatic external fun setWarpedLatticeRouteArchetype(routeIdx: Int)
+    @JvmStatic external fun getWarpedLatticeDeclippedPeaks(): Int
 
     fun safeSetWarpedLatticeEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setWarpedLatticeEnabled(enabled) }
@@ -78,6 +80,11 @@ object NativeBridge {
     fun safeSetWarpedLatticeLambda(lambda: Float) {
         if (isLoaded) runCatching { setWarpedLatticeLambda(lambda) }
     }
+    fun safeSetWarpedLatticeRouteArchetype(routeIdx: Int) {
+        if (isLoaded) runCatching { setWarpedLatticeRouteArchetype(routeIdx) }
+    }
+    fun safeGetWarpedLatticeDeclippedPeaks(): Int =
+        if (isLoaded) runCatching { getWarpedLatticeDeclippedPeaks() }.getOrDefault(0) else 0
     fun safeGetWarpedLatticeSubSampleDelay(): Float =
         if (isLoaded) runCatching { getWarpedLatticeSubSampleDelay() }.getOrDefault(0.24f) else 0.24f
     fun safeRunWarpedLatticeLoopbackCalibration(f0Hz: Float = 92.0f, mu: Float = 0.005f) {
@@ -92,7 +99,9 @@ object NativeBridge {
     @JvmStatic external fun setTransharmonicCvnnEnabled(enabled: Boolean)
     @JvmStatic external fun setTransharmonicHarmonicGain(gain: Float)
     @JvmStatic external fun setTransharmonicImdCancel(strength: Float)
+    @JvmStatic external fun setTransharmonicAnalogTapeDrive(drive: Float)
     @JvmStatic external fun getTransharmonicPhaseStep(): Float
+    @JvmStatic external fun getTransharmonicTapeMagnetization(): Float
 
     fun safeSetTransharmonicCvnnEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setTransharmonicCvnnEnabled(enabled) }
@@ -103,8 +112,13 @@ object NativeBridge {
     fun safeSetTransharmonicImdCancel(strength: Float) {
         if (isLoaded) runCatching { setTransharmonicImdCancel(strength) }
     }
+    fun safeSetTransharmonicAnalogTapeDrive(drive: Float) {
+        if (isLoaded) runCatching { setTransharmonicAnalogTapeDrive(drive) }
+    }
     fun safeGetTransharmonicPhaseStep(): Float =
         if (isLoaded) runCatching { getTransharmonicPhaseStep() }.getOrDefault(0.012f) else 0.012f
+    fun safeGetTransharmonicTapeMagnetization(): Float =
+        if (isLoaded) runCatching { getTransharmonicTapeMagnetization() }.getOrDefault(0.0f) else 0.0f
 
     // ── EJE 3: SnnNmfHoaUpmixer (Anti-Dolby SNN INT8 + NMF -> HOA 4º Orden) ─
     @JvmStatic external fun setSnnHoaUpmixerEnabled(enabled: Boolean)

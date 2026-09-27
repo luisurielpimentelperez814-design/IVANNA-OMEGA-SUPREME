@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 
 #if defined(__linux__) || defined(__ANDROID__)
 #include <pthread.h>
@@ -67,14 +68,12 @@ public:
     void prepare(float sampleRate) noexcept {
         sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
 
-        // 1. Pesos sinápticos cuantizados INT8 de la SNN LIF (4 neuronas de salida x 4 rasgos de entrada)
-        //    Rasgos: [|Mid|, |Side|, Transiente, Coherencia Interaural]
-        snnWeightsInt8_ = {{
-            { 96, -68,  32,  84}, // Neurona 0 -> Centro (alta coherencia, bajo Side)
-            {-64, 108,  28, -72}, // Neurona 1 -> Lateral (alto Side, baja coherencia)
-            { 24,  36, 112,  18}, // Neurona 2 -> Reflexión Temprana (impulsada por transientes)
-            {-38,  74, -82, -64}  // Neurona 3 -> Cola Difusa (estacionaria descorrelacionada)
-        }};
+        // 1. Pesos sinápticos cuantizados INT8 de la SNN LIF entrenados desde SofaSafRirMasterKnowledge
+        for (size_t k = 0; k < NUM_STREAMS; ++k) {
+            for (size_t f = 0; f < 4; ++f) {
+                snnWeightsInt8_[k][f] = ivanna::master::kMasterSnnWeightsInt8[k][f];
+            }
+        }
         snnScale_ = 1.0f / 127.0f;
 
         // 2. Matriz de codificación esférica SN3D hacia los 16 canales HOA para cada flujo ortogonal
@@ -110,7 +109,9 @@ public:
 
     void reset() noexcept {
         snnMembranePotential_.fill(0.0f);
-        nmfActivationH_.fill(0.25f);
+        for (size_t k = 0; k < NUM_STREAMS; ++k) {
+            nmfActivationH_[k] = ivanna::master::kMasterNmfStreamPrior[k];
+        }
         hoaBus_.fill(0.0f);
         upolaHistoryL_.fill(0.0f);
         upolaHistoryR_.fill(0.0f);

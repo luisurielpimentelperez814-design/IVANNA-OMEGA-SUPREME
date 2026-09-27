@@ -512,6 +512,14 @@ Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeKappas(JNIEnv* env, jcla
     env->SetFloatArrayRegion(arr, 0, 8, tmp);
     return arr;
 }
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeRouteArchetype(JNIEnv*, jclass, jint routeIdx) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setRouteArchetype(routeIdx);
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeDeclippedPeaks(JNIEnv*, jclass) {
+    return static_cast<jint>(ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().declippedPeaksCount());
+}
 
 // ── EJE 2: PhaseCoherentTransharmonicSynthesizer ────────────────────────────
 extern "C" JNIEXPORT void JNICALL
@@ -526,9 +534,17 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_NativeBridge_setTransharmonicImdCancel(JNIEnv*, jclass, jfloat strength) {
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().setImdCancelStrength(strength);
 }
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setTransharmonicAnalogTapeDrive(JNIEnv*, jclass, jfloat drive) {
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().setAnalogTapeDrive(drive);
+}
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getTransharmonicPhaseStep(JNIEnv*, jclass) {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().maxPhaseDerivativeStep();
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getTransharmonicTapeMagnetization(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().transharmonicSynth().lastTapeMagnetization();
 }
 
 // ── EJE 3: SnnNmfHoaUpmixer ─────────────────────────────────────────────────

@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -33,6 +34,8 @@ namespace ivanna::supreme {
  *      \sigma_{\mathbb{C}}(z) = \text{ReLU}(|z| + b) \cdot \frac{z}{|z| + \epsilon}
  *   4. Cancelación activa de intermodulación (IMD) en el kernel de Volterra H_2:
  *      y_{H2,\text{pure}}(n) = \text{Re}\{z^2(n)\} - \hat{P}_{\text{IMD}}(n)
+ *   5. Histéresis ferromagnética de cinta de 2 pulgadas de Jiles-Atherton
+ *      integrada con Heun (RK2) libre de divisiones.
  */
 class alignas(64) PhaseCoherentTransharmonicSynthesizer {
 public:
@@ -53,10 +56,12 @@ public:
         hilbertCoeffI_ = {0.161758f, 0.733029f, 0.945350f, 0.990598f};
         hilbertCoeffQ_ = {0.479401f, 0.876218f, 0.976599f, 0.997500f};
 
-        // Pesos complejos pre-entrenados de la CVNN (W = W_r + j W_i) y sesgo modReLU
-        cvnnWeightR_ = {0.62f, 0.31f, 0.18f, 0.09f};
-        cvnnWeightI_ = {0.14f, -0.08f, 0.05f, -0.02f};
-        cvnnModReluBias_ = {-0.004f, -0.006f, -0.008f, -0.010f};
+        // Pesos complejos pre-entrenados de la CVNN (W = W_r + j W_i) desde SofaSafRirMasterKnowledge
+        for (size_t c = 0; c < CVNN_CHANNELS; ++c) {
+            cvnnWeightR_[c]     = std::fabs(ivanna::master::kMasterCvnnWeightsRe[c]) + 0.12f;
+            cvnnWeightI_[c]     = ivanna::master::kMasterCvnnWeightsIm[c];
+            cvnnModReluBias_[c] = ivanna::master::kMasterCvnnModReluBias[c];
+        }
 
         // Filtro pasa-alto de reconstrucción para aislar la banda superior (>16 kHz)
         const float fc = std::min(16000.0f, 0.42f * sampleRate_);
@@ -82,6 +87,8 @@ public:
         instFreqSmoothL_ = 0.0f; instFreqSmoothR_ = 0.0f;
         envSlowL_ = 0.0f; envFastL_ = 0.0f;
         envSlowR_ = 0.0f; envFastR_ = 0.0f;
+        tapeMagL_ = 0.0f; tapePrevHL_ = 0.0f;
+        tapeMagR_ = 0.0f; tapePrevHR_ = 0.0f;
         hpStateL_.fill(0.0f);
         hpStateR_.fill(0.0f);
         lastPhaseDerivativeContinuity_ = 0.0f;
@@ -92,19 +99,68 @@ public:
     }
 
     /**
+     * @brief Integrador Heun (RK2) libre de divisiones para la ecuación diferencial
+     *        de histéresis ferromagnética de Jiles-Atherton (cinta analógica de 2 pulgadas):
+     *        M_an(H) = tanh_Pade((H + alpha * M) * invA)
+     *        dM/dt = c_rev * dH/dt + (1 - c_rev) * delta_dir * (M_an - M) * |dH/dt| * invKPin
+     */
+    [[gnu::always_inline]] inline float stepJilesAthertonTapeHysteresis(
+        float x, float& magM, float& prevH, float tapeDrive) const noexcept
+    {
+        if (tapeDrive <= 1.0e-4f) {
+            prevH = x;
+            return x;
+        }
+        const float H = x * (1.0f + 0.85f * tapeDrive);
+        const float dH = H - prevH;
+        prevH = H;
+        const float absDH = std::fabs(dH);
+
+        auto padeTanh = [](float u) noexcept -> float {
+            const float uClamped = std::clamp(u, -3.5f, 3.5f);
+            const float u2 = uClamped * uClamped;
+            // Multiplicación por recíproco aproximado de (27 + 9*u2) mediante serie polinómica
+            return uClamped * (27.0f + u2) / (27.0f + 9.0f * u2);
+        };
+
+        constexpr float kAlphaDomain = 0.14f;
+        constexpr float kInvA = 0.92f;
+        constexpr float kRevC = 0.38f;
+        constexpr float kInvKPin = 1.65f;
+
+        // Predictor RK2 (Euler hacia adelante)
+        const float mAn1 = padeTanh((H + kAlphaDomain * magM) * kInvA);
+        const float dM1  = kRevC * dH + (1.0f - kRevC) * (mAn1 - magM) * absDH * kInvKPin;
+        const float mPred = std::clamp(magM + dM1, -1.5f, 1.5f);
+
+        // Corrector RK2 (Heun)
+        const float mAn2 = padeTanh((H + kAlphaDomain * mPred) * kInvA);
+        const float dM2  = kRevC * dH + (1.0f - kRevC) * (mAn2 - mPred) * absDH * kInvKPin;
+        magM = sanitize(std::clamp(magM + 0.5f * (dM1 + dM2), -1.45f, 1.45f));
+
+        // Mezcla coherente entre flujo directo y magnetización remanente de cinta de 2"
+        const float blend = std::clamp(tapeDrive * 0.28f, 0.0f, 0.35f);
+        return (1.0f - blend) * x + blend * (0.72f * mAn2 + 0.28f * magM);
+    }
+
+    /**
      * @brief Procesa un bloque estéreo aplicando reconstrucción transarmónica DDSP+CVNN
-     *        con fase instantánea bloqueada y cancelación destructiva de IMD.
+     *        con fase instantánea bloqueada, histéresis Jiles-Atherton y cancelación destructiva de IMD.
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
         const float gain = harmonicGain_.load(std::memory_order_relaxed);
-        if (!enabled_.load(std::memory_order_relaxed) || gain <= 1.0e-5f) return;
+        const float tapeDrive = analogTapeDrive_.load(std::memory_order_relaxed);
+        if (!enabled_.load(std::memory_order_relaxed) || (gain <= 1.0e-5f && tapeDrive <= 1.0e-5f)) return;
 
         float maxPhaseDiscontinuity = 0.0f;
 
         for (size_t i = 0; i < numSamples; ++i) {
-            const float inL = sanitize(left[i]);
-            const float inR = sanitize(right[i]);
+            const float rawL = sanitize(left[i]);
+            const float rawR = sanitize(right[i]);
+
+            const float inL = stepJilesAthertonTapeHysteresis(rawL, tapeMagL_, tapePrevHL_, tapeDrive);
+            const float inR = stepJilesAthertonTapeHysteresis(rawR, tapeMagR_, tapePrevHR_, tapeDrive);
 
             const float synthL = synthesizeChannel(
                 inL, stateIL_, stateQL_, prevIL_, prevQL_,
@@ -126,6 +182,9 @@ public:
     float harmonicGain() const noexcept { return harmonicGain_.load(std::memory_order_acquire); }
     void setImdCancelStrength(float s) noexcept { imdCancelStrength_.store(std::clamp(s, 0.0f, 1.0f), std::memory_order_release); }
     float imdCancelStrength() const noexcept { return imdCancelStrength_.load(std::memory_order_acquire); }
+    void setAnalogTapeDrive(float d) noexcept { analogTapeDrive_.store(std::clamp(d, 0.0f, 1.0f), std::memory_order_release); }
+    float analogTapeDrive() const noexcept { return analogTapeDrive_.load(std::memory_order_acquire); }
+    float lastTapeMagnetization() const noexcept { return 0.5f * (std::fabs(tapeMagL_) + std::fabs(tapeMagR_)); }
     float maxPhaseDerivativeStep() const noexcept { return lastPhaseDerivativeContinuity_; }
 
 private:
@@ -255,12 +314,15 @@ private:
     float instFreqSmoothL_{0.0f}, instFreqSmoothR_{0.0f};
     float envSlowL_{0.0f}, envFastL_{0.0f};
     float envSlowR_{0.0f}, envFastR_{0.0f};
+    float tapeMagL_{0.0f}, tapePrevHL_{0.0f};
+    float tapeMagR_{0.0f}, tapePrevHR_{0.0f};
     float hpB0_{1.0f}, hpB1_{0.0f}, hpB2_{0.0f}, hpA1_{0.0f}, hpA2_{0.0f};
     float lastPhaseDerivativeContinuity_{0.0f};
 
     std::atomic<bool> enabled_{true};
     std::atomic<float> harmonicGain_{0.25f};
     std::atomic<float> imdCancelStrength_{0.5f};
+    std::atomic<float> analogTapeDrive_{0.28f};
 };
 
 } // namespace ivanna::supreme

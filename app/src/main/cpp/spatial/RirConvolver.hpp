@@ -66,6 +66,10 @@ public:
     float lateDecorrelation() const noexcept { return decorrel_.load(std::memory_order_relaxed); }
     void setEarlyClarityBoost(float boost) noexcept { earlyBoost_.store(std::clamp(boost, 0.5f, 1.5f), std::memory_order_relaxed); }
     float earlyClarityBoost() const noexcept { return earlyBoost_.load(std::memory_order_relaxed); }
+    void setTrueStereoCrossGain(float gain) noexcept { trueStereoCross_.store(std::clamp(gain, 0.0f, 0.45f), std::memory_order_relaxed); }
+    float trueStereoCrossGain() const noexcept { return trueStereoCross_.load(std::memory_order_relaxed); }
+    void setTransauralXtcStrength(float strength) noexcept { xtcStrength_.store(std::clamp(strength, 0.0f, 0.85f), std::memory_order_relaxed); }
+    float transauralXtcStrength() const noexcept { return xtcStrength_.load(std::memory_order_relaxed); }
     void applySofaCoupling(const float q[7]) noexcept;
     void synthesizeMasterStudioBrir(float rt60S = 0.34f, int sampleRate = 48000) noexcept;
     void setWetDry(float wet) noexcept { wetDry_.store(wet, std::memory_order_relaxed); }
@@ -104,6 +108,13 @@ private:
     std::atomic<float> wetDry_{0.f};
     std::atomic<float> decorrel_{0.62f};     // Acoplado a coherencia interaural SOFA por defecto
     std::atomic<float> earlyBoost_{1.08f};   // Pre-énfasis de claridad temprana acoplado a muesca de pinna SOFA
+    std::atomic<float> trueStereoCross_{0.18f}; // Matriz True-Stereo 4-caminos (LL, LR, RL, RR)
+    std::atomic<float> xtcStrength_{0.0f};      // Cancelación de diafonía transaural (XTC tipo BACCH)
+    alignas(64) float crossHistL_[32] = {};
+    alignas(64) float crossHistR_[32] = {};
+    int crossWriteIdx_ = 0;
+    float xtcLpL_ = 0.0f, xtcLpR_ = 0.0f;
+    float xtcBassL_ = 0.0f, xtcBassR_ = 0.0f;
     // Anti-zipper del wet/dry: el slider se aplica por BLOQUE (escalón duro
     // de ganancia = tronido). Se suaviza por muestra con un one-pole.
     float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)

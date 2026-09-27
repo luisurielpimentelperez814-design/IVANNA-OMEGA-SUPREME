@@ -35,7 +35,9 @@ import kotlin.math.sin
  */
 data class SupremeAxesLiveTelemetry(
     val subSampleDelaySamples: Float = 0.24f,
+    val declippedPeaksCount: Int = 0,
     val maxPhaseDerivativeRad: Float = 0.012f,
+    val tapeMagnetization: Float = 0.0f,
     val snnActiveSpikes: Int = 2,
     val pinnaNotchFreqHz: Float = 7800f,
     val pinnaItdMicroSec: Float = 620f,
@@ -54,7 +56,9 @@ fun rememberSupremeAxesTelemetry(): State<SupremeAxesLiveTelemetry> {
         while (true) {
             value = SupremeAxesLiveTelemetry(
                 subSampleDelaySamples = NativeBridge.safeGetWarpedLatticeSubSampleDelay(),
+                declippedPeaksCount   = NativeBridge.safeGetWarpedLatticeDeclippedPeaks(),
                 maxPhaseDerivativeRad = NativeBridge.safeGetTransharmonicPhaseStep(),
+                tapeMagnetization     = NativeBridge.safeGetTransharmonicTapeMagnetization(),
                 snnActiveSpikes       = NativeBridge.safeGetSnnActiveSpikes(),
                 pinnaNotchFreqHz      = NativeBridge.safeGetPinnaActiveNotchHz(),
                 pinnaItdMicroSec      = NativeBridge.safeGetPinnaActiveItdUs(),
@@ -115,9 +119,9 @@ fun WarpedLatticeAxisCard(
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
-                label = "SONDA CHIRP",
-                value = if (state.warpedLatticeMicroChirp) "18.2 kHz" else "OFF",
-                accent = if (state.warpedLatticeMicroChirp) AmberSignal else TextMuted,
+                label = "DE-CLIPPER",
+                value = "${telemetry.declippedPeaksCount} pk",
+                accent = if (telemetry.declippedPeaksCount > 0) AmberSignal else PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -240,6 +244,17 @@ fun TransharmonicCvnnAxisCard(
             onValueChange = { imd ->
                 onUpdate { it.copy(transharmonicImdCancel = imd) }
                 NativeBridge.safeSetTransharmonicImdCancel(imd)
+            }
+        )
+
+        AuroraSlider(
+            label = "HISTÉRESIS MAGNÉTICA DE CINTA 2\" (JILES-ATHERTON RK2)",
+            value = state.transharmonicAnalogTapeDrive,
+            range = 0f..1f,
+            displayValue = { "%.0f %% (M=%.3f)".format(it * 100f, telemetry.tapeMagnetization) },
+            onValueChange = { tape ->
+                onUpdate { it.copy(transharmonicAnalogTapeDrive = tape) }
+                NativeBridge.safeSetTransharmonicAnalogTapeDrive(tape)
             }
         )
 

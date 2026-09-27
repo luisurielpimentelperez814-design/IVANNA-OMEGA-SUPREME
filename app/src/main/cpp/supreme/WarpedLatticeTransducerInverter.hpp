@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -95,12 +96,10 @@ public:
         const float warpRaw = 1.0674f * std::sqrt((2.0f / kPi) * std::atan(0.06583f * fsKhz)) - 0.1916f;
         lambda_ = std::clamp(warpRaw, -0.85f, 0.85f);
 
-        // Coeficientes de reflexión iniciales κ_m modelando resonancia f_0 y decaimiento inductivo Le
-        constexpr std::array<float, ORDER> kDefaultKappa = {
-            -0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f
-        };
+        // Coeficientes de reflexión iniciales κ_m entrenados desde SofaSafRirMasterKnowledge (Ruta 0: Studio #51)
+        const int routeIdx = std::clamp(activeRouteArchetype_.load(std::memory_order_relaxed), 0, 2);
         for (size_t m = 0; m < ORDER; ++m) {
-            kappa_[m] = kDefaultKappa[m];
+            kappa_[m] = ivanna::master::kMasterBarkKappaByRoute[routeIdx][m];
             gammaGroupDelay_[m] = 0.125f * static_cast<float>(ORDER - m) * invSampleRate_;
         }
 
@@ -124,7 +123,47 @@ public:
         delayFracR_.fill(0.0f);
         excursionEstL_ = 0.0f;
         excursionEstR_ = 0.0f;
+        declipPrev1L_ = 0.0f; declipPrev2L_ = 0.0f;
+        declipPrev1R_ = 0.0f; declipPrev2R_ = 0.0f;
+        declippedPeaks_.store(0u, std::memory_order_relaxed);
         silenceEnvelope_ = 0.0f;
+    }
+
+    /**
+     * @brief Selecciona el arquetipo de coeficientes Bark pre-entrenados:
+     *        0 = Studio DAC/AUX (#51), 1 = Bluetooth (#63), 2 = Speaker (#81).
+     */
+    void setRouteArchetype(int routeArchetype) noexcept {
+        const int idx = std::clamp(routeArchetype, 0, 2);
+        activeRouteArchetype_.store(idx, std::memory_order_release);
+        for (size_t m = 0; m < ORDER; ++m) {
+            kappa_[m] = ivanna::master::kMasterBarkKappaByRoute[idx][m];
+        }
+    }
+    int routeArchetype() const noexcept { return activeRouteArchetype_.load(std::memory_order_acquire); }
+    uint32_t declippedPeaksCount() const noexcept { return declippedPeaks_.load(std::memory_order_relaxed); }
+
+    /**
+     * @brief Reconstructor de picos recortados digitalmente (Master De-Clipper Cúbico de Hermite, 0.00 ms latencia).
+     *        Detecta mesetas de recorte ("Loudness War" |x| > 0.92 con primera derivada aplastada)
+     *        y restaura la curvatura parabólica natural de la cresta antes de la etapa Lorentz Bl(x).
+     */
+    [[gnu::always_inline]] inline float reconstructClippedCrest(
+        float x, float& prev1, float& prev2, uint32_t& peakCounter) const noexcept
+    {
+        const float absX = std::fabs(x);
+        const float d1 = x - prev1;
+        const float d0 = prev1 - prev2;
+        float out = x;
+        if (absX > 0.92f && std::fabs(prev1) > 0.90f && std::fabs(d1) < 0.035f) {
+            // Extrapolación de curvatura de Hermite libre de sobreimpulso inestable
+            const float curvature = std::clamp(std::fabs(d0) * 0.42f + (absX - 0.90f) * 0.38f, 0.005f, 0.18f);
+            out = (x >= 0.0f) ? (x + curvature) : (x - curvature);
+            ++peakCounter;
+        }
+        prev2 = prev1;
+        prev1 = x;
+        return out;
     }
 
     [[gnu::always_inline]] inline float sanitize(float x) const noexcept {
@@ -185,9 +224,14 @@ public:
         const float effBeta1 = beta1_ * blDrive;
         const float effBeta2 = beta2_ * blDrive;
 
+        uint32_t localDeclipped = 0u;
         for (size_t i = 0; i < numSamples; ++i) {
             float inL = sanitize(left[i]);
             float inR = sanitize(right[i]);
+
+            // 0. Master De-Clipper Cúbico de Hermite (restauración de crestas Loudness War a 0.00 ms)
+            inL = reconstructClippedCrest(inL, declipPrev1L_, declipPrev2L_, localDeclipped);
+            inR = reconstructClippedCrest(inR, declipPrev1R_, declipPrev2R_, localDeclipped);
 
             // 1. Detección de silencio e inyección de Micro-Chirp (17.5 - 19 kHz con dithering de fase)
             const float instEnergy = 0.5f * (inL * inL + inR * inR);
@@ -225,6 +269,9 @@ public:
             // 4. Compensación de retardo de grupo inverso sub-muestra (interpolador Lagrange cúbico)
             left[i]  = std::clamp(applySubSampleDelay(fL, delayFracL_, fracDelay), -1.95f, 1.95f);
             right[i] = std::clamp(applySubSampleDelay(fR, delayFracR_, fracDelay), -1.95f, 1.95f);
+        }
+        if (localDeclipped > 0u) {
+            declippedPeaks_.fetch_add(localDeclipped, std::memory_order_relaxed);
         }
     }
 
@@ -347,6 +394,8 @@ private:
     float excursionDecay_{0.988f};
     float excursionEstL_{0.0f};
     float excursionEstR_{0.0f};
+    float declipPrev1L_{0.0f}, declipPrev2L_{0.0f};
+    float declipPrev1R_{0.0f}, declipPrev2R_{0.0f};
     float silenceEnvelope_{0.0f};
     float chirpPhase_{0.0f};
     float chirpFreqHz_{17500.0f};
@@ -354,6 +403,8 @@ private:
 
     std::atomic<bool> enabled_{true};
     std::atomic<bool> microChirpEnabled_{true};
+    std::atomic<int> activeRouteArchetype_{0};
+    std::atomic<uint32_t> declippedPeaks_{0u};
     std::atomic<float> blCompensationDrive_{1.0f};
     std::atomic<float> lastSubSampleDelay_{0.24f};
 };

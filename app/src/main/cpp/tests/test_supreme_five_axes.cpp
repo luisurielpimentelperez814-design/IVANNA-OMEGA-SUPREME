@@ -388,4 +388,78 @@ TEST(SofaSafRirMasterKnowledge, JointSofaSafRirBootCalibrationAndCoupling) {
     EXPECT_NEAR(bootSnap.saf_q[0], ivanna::master::kMasterSafGoldenQ[0], 1e-6f);
 }
 
+TEST(SofaSafRirMasterKnowledge, TrueStereoXtcDeClipperJilesAthertonAndWpeDereverb) {
+    // 1. Master De-Clipper Cúbico de Hermite + Arquetipos Bark por ruta (Eje 1)
+    WarpedLatticeTransducerInverter inv;
+    inv.setRouteArchetype(2); // Speaker (#81)
+    EXPECT_EQ(inv.routeArchetype(), 2);
+    EXPECT_NEAR(inv.reflectionCoefficient(0), ivanna::master::kMasterBarkKappaByRoute[2][0], 1e-5f);
+    inv.setRouteArchetype(0); // Studio DAC/AUX (#51)
+    EXPECT_NEAR(inv.reflectionCoefficient(0), ivanna::master::kMasterBarkKappaByRoute[0][0], 1e-5f);
+
+    std::array<float, 128> clipL{}, clipR{};
+    for (size_t i = 0; i < 128; ++i) {
+        const float raw = 1.15f * std::sin(2.0f * 3.14159265f * 440.0f * float(i) / 48000.0f);
+        // Simular meseta de recorte Loudness War en +-0.96
+        clipL[i] = std::clamp(raw, -0.96f, 0.96f);
+        clipR[i] = std::clamp(raw, -0.96f, 0.96f);
+    }
+    inv.process(clipL.data(), clipR.data(), 128);
+    EXPECT_GT(inv.declippedPeaksCount(), 0u);
+    for (size_t i = 0; i < 128; ++i) {
+        ASSERT_TRUE(std::isfinite(clipL[i]));
+        ASSERT_TRUE(std::isfinite(clipR[i]));
+    }
+
+    // 2. Histéresis Magnética de Cinta de 2" Jiles-Atherton RK2 + CVNN SOFA (Eje 2)
+    PhaseCoherentTransharmonicSynthesizer cvnn;
+    cvnn.setAnalogTapeDrive(0.35f);
+    cvnn.setHarmonicGain(0.30f);
+    std::array<float, 256> tapeL{}, tapeR{};
+    for (size_t i = 0; i < 256; ++i) {
+        tapeL[i] = 0.6f * std::sin(2.0f * 3.14159265f * 220.0f * float(i) / 48000.0f);
+        tapeR[i] = 0.6f * std::cos(2.0f * 3.14159265f * 220.0f * float(i) / 48000.0f);
+    }
+    cvnn.process(tapeL.data(), tapeR.data(), 256);
+    EXPECT_GT(cvnn.lastTapeMagnetization(), 1.0e-4f);
+    for (size_t i = 0; i < 256; ++i) {
+        ASSERT_TRUE(std::isfinite(tapeL[i]));
+        ASSERT_TRUE(std::isfinite(tapeR[i]));
+    }
+
+    // 3. Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + Holografía Transaural XTC en RirConvolver
+    Ivanna::RirConvolver conv;
+    conv.applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+    conv.setTrueStereoCrossGain(0.25f);
+    conv.setTransauralXtcStrength(0.35f);
+    conv.synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, 48000);
+    conv.setWetDry(0.30f);
+
+    std::vector<float> monoL(512, 0.0f), silentR(512, 0.0f);
+    monoL[0] = 0.9f; // Impulso exclusivamente en canal izquierdo
+    conv.process(monoL.data(), silentR.data(), 512);
+    double contraEnergyR = 0.0;
+    for (size_t i = 0; i < 512; ++i) {
+        ASSERT_TRUE(std::isfinite(monoL[i]));
+        ASSERT_TRUE(std::isfinite(silentR[i]));
+        contraEnergyR += silentR[i] * silentR[i];
+    }
+    // El acoplamiento contralateral True-Stereo (LR) + XTC proyecta energía real al oído derecho
+    EXPECT_GT(contraEnergyR, 1.0e-7);
+
+    // 4. Predictor Lineal WPE de Fase Mínima en RoomProjectionEngine
+    ivanna::spatial::RoomProjectionEngine roomProj;
+    roomProj.setInversionGain(0.5f);
+    std::array<float, 256> revL{}, revR{};
+    for (size_t i = 0; i < 256; ++i) {
+        revL[i] = 0.5f * std::exp(-float(i) * 0.005f) * std::sin(0.2f * float(i));
+        revR[i] = 0.5f * std::exp(-float(i) * 0.005f) * std::cos(0.2f * float(i));
+    }
+    roomProj.process(revL.data(), revR.data(), 256);
+    for (size_t i = 0; i < 256; ++i) {
+        ASSERT_TRUE(std::isfinite(revL[i]));
+        ASSERT_TRUE(std::isfinite(revR[i]));
+    }
+}
+
 

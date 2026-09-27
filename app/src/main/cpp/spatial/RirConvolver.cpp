@@ -223,6 +223,11 @@ void RirConvolver::unload() noexcept {
     pending_.store(false, std::memory_order_relaxed);
     std::memset(overlapL_, 0, sizeof overlapL_);
     std::memset(overlapR_, 0, sizeof overlapR_);
+    std::memset(crossHistL_, 0, sizeof crossHistL_);
+    std::memset(crossHistR_, 0, sizeof crossHistR_);
+    crossWriteIdx_ = 0;
+    xtcLpL_ = 0.0f; xtcLpR_ = 0.0f;
+    xtcBassL_ = 0.0f; xtcBassR_ = 0.0f;
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {
@@ -360,14 +365,66 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
         }
 
-        // ── Mezcla wet/dry: UN solo one-pole por par de muestras ──────────
+        // ── Mezcla wet/dry + Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + Holografía Transaural XTC ──
         const float ws = wetSmooth_;
         float wn = wetNow_;
+        const float tsCross = trueStereoCross_.load(std::memory_order_relaxed);
+        const float xtcAmt  = xtcStrength_.load(std::memory_order_relaxed);
+        constexpr float kBassCoeff = 0.028f; // ~220 Hz @ 48 kHz (preserva impacto en graves)
+        constexpr float kShadowLp  = 0.36f;  // Sombra acústica craneal de Woodworth (~3.2 kHz)
+
         for (int i = 0; i < n; ++i) {
             wn = wetTarget + ws * (wn - wetTarget);
             const float dry = 1.f - wn;
-            L[offset + i] = dry * L[offset + i] + wn * convL[i];
-            R[offset + i] = dry * R[offset + i] + wn * convR[i];
+            const float inL = L[offset + i];
+            const float inR = R[offset + i];
+
+            // Actualizar línea de retardo circular de 32 taps para acoplamiento contralateral (LR/RL) y XTC
+            crossWriteIdx_ = (crossWriteIdx_ - 1) & 31;
+            crossHistL_[crossWriteIdx_] = convL[i];
+            crossHistR_[crossWriteIdx_] = convR[i];
+
+            float wetL = convL[i];
+            float wetR = convR[i];
+
+            // 1. Matriz True-Stereo 4-Caminos (LL + RL -> L, RR + LR -> R) con kernel SOFA de 32 taps
+            if (tsCross > 0.001f) {
+                float crossFromR = 0.0f;
+                float crossFromL = 0.0f;
+                for (int k = 1; k < 32; ++k) {
+                    const int idx = (crossWriteIdx_ + k) & 31;
+                    const float tap = ivanna::master::kMasterTrueStereoCrossKernel[k];
+                    crossFromR += crossHistR_[idx] * tap;
+                    crossFromL += crossHistL_[idx] * tap;
+                }
+                wetL += tsCross * crossFromR;
+                wetR += tsCross * crossFromL;
+            }
+
+            float outL = dry * inL + wn * wetL;
+            float outR = dry * inR + wn * wetR;
+
+            // 2. Holografía Transaural Recursiva de Fase Mínima (XTC tipo BACCH para altavoces / Genezi)
+            if (xtcAmt > 0.001f) {
+                // Aislar graves (<220 Hz) para mantener pegada en fase intacta en los woofers
+                xtcBassL_ += kBassCoeff * (outL - xtcBassL_);
+                xtcBassR_ += kBassCoeff * (outR - xtcBassR_);
+                const float hiL = outL - xtcBassL_;
+                const float hiR = outR - xtcBassR_;
+
+                // Retardo interaural Woodworth (~11 muestras @ 48 kHz = 229 us para altavoces a +-30 deg)
+                const int delayIdx = (crossWriteIdx_ + 11) & 31;
+                xtcLpL_ += kShadowLp * (crossHistL_[delayIdx] - xtcLpL_);
+                xtcLpR_ += kShadowLp * (crossHistR_[delayIdx] - xtcLpR_);
+
+                // Cancelación antisimétrica de diafonía transaural con compensación de energía
+                const float normGain = 1.0f + 0.22f * xtcAmt;
+                outL = xtcBassL_ + normGain * (hiL - xtcAmt * 0.42f * xtcLpR_);
+                outR = xtcBassR_ + normGain * (hiR - xtcAmt * 0.42f * xtcLpL_);
+            }
+
+            L[offset + i] = outL;
+            R[offset + i] = outR;
         }
         wetNow_ = wn;
 

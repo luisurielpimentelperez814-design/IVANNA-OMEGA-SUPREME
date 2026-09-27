@@ -279,6 +279,26 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
+    // ── Matriz Mid/Side con Slew-Limiter por muestra (setSpatialWidth real) ──
+    {
+        static constexpr float kWidthSlew = 1.0f / 4096.0f;
+        const float targetW = m_spatialWidthTarget_;
+        if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
+            for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                if (m_spatialWidthSmoothed_ < targetW)
+                    m_spatialWidthSmoothed_ = std::min(m_spatialWidthSmoothed_ + kWidthSlew, targetW);
+                else if (m_spatialWidthSmoothed_ > targetW)
+                    m_spatialWidthSmoothed_ = std::max(m_spatialWidthSmoothed_ - kWidthSlew, targetW);
+                const float w = m_spatialWidthSmoothed_;
+                const float mid  = 0.5f * (buffer->left[i] + buffer->right[i]);
+                const float side = 0.5f * (buffer->left[i] - buffer->right[i]) * w;
+                const float norm = 1.0f / std::sqrt(0.5f * (1.0f + w * w));
+                buffer->left[i]  = (mid + side) * norm;
+                buffer->right[i] = (mid - side) * norm;
+            }
+        }
+    }
+
     // Slew-limiter de la ganancia armónica, UNA vez por bloque (el paso por
     // muestra se aplica dentro del loop del excitador — ver mix_eff). Si el
     // usuario arrastra el slider, el target salta pero el valor aplicado

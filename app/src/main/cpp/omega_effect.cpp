@@ -387,6 +387,12 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
             ctx->supremeLattice->setBlCompensationDrive(s.supreme_lattice_bl_drive);
         if (std::isfinite(s.supreme_lattice_lambda))
             ctx->supremeLattice->setWarpingLambda(s.supreme_lattice_lambda);
+        const int routeArch = (s.room_rt60_s > 0.52f) ? 2 : ((s.room_rt60_s > 0.01f && s.room_rt60_s < 0.31f) ? 1 : 0);
+        ctx->supremeLattice->setRouteArchetype(routeArch);
+        if (ctx->rirConvolver) {
+            ctx->rirConvolver->setTrueStereoCrossGain(0.20f);
+            ctx->rirConvolver->setTransauralXtcStrength((routeArch == 2) ? 0.38f : ((routeArch == 0) ? 0.16f : 0.0f));
+        }
     }
     if (ctx->supremeCvnn) {
         ctx->supremeCvnn->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_CVNN_ON) != 0);

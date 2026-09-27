@@ -175,7 +175,12 @@ public:
     // Parámetros del snapshot OmegaDspSnapshot → subsistemas internos.
     // Stubs deliberados: permiten compilar el puente OmegaControlBus mientras
     // se cablea hacia StereoWidener / HarmonicExciter / compresor.
-    void setSpatialWidth(float /*width*/) noexcept {}
+    void setSpatialWidth(float width) noexcept {
+        if (std::isfinite(width)) {
+            m_spatialWidthTarget_ = std::clamp(width, 0.0f, 3.0f);
+        }
+    }
+    float getSpatialWidth() const noexcept { return m_spatialWidthTarget_; }
     // FIX (tronidos tipo metralleta al subir el slider al máximo, reporte
     // del propietario con captura, 2026-09-17): antes era un stub vacío —
     // el slider movía el snapshot SHM pero la ganancia armónica nunca
@@ -256,6 +261,8 @@ private:
     // imposible como clic. Sin malloc ni locks en la ruta caliente.
     float m_harmGainTarget_  = 1.0f;
     float m_harmSmoothed_    = 1.0f;
+    float m_spatialWidthTarget_   = 1.0f;
+    float m_spatialWidthSmoothed_ = 1.0f;
 
     // Carry-over Ring FIFO para desinterleaving y tamaños arbitrarios de bloque
     static constexpr size_t kFifoCapacity = 16384;

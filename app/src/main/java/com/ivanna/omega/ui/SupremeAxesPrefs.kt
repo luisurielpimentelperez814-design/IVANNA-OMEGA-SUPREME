@@ -18,32 +18,33 @@ import kotlinx.coroutines.launch
  *   Compose UI <-> SharedPreferences <-> PersistedStateRestorer <-> NativeBridge (JNI) <-> C++23 DSP
  */
 data class SupremeAxesState(
-    // EJE 1: WarpedLatticeTransducerInverter (Anti-Dirac)
-    val warpedLatticeEnabled: Boolean = false,
+    // EJE 1: WarpedLatticeTransducerInverter (Anti-Dirac + Master De-Clipper)
+    val warpedLatticeEnabled: Boolean = true,
     val warpedLatticeMicroChirp: Boolean = true,
     val warpedLatticeBlDrive: Float = 0.50f,
     val warpedLatticeLambda: Float = 0.756f,
 
-    // EJE 2: PhaseCoherentTransharmonicSynthesizer (Anti-DSEE CVNN+DDSP)
-    val transharmonicCvnnEnabled: Boolean = false,
+    // EJE 2: PhaseCoherentTransharmonicSynthesizer (Anti-DSEE CVNN+DDSP + Cinta 2" Jiles-Atherton)
+    val transharmonicCvnnEnabled: Boolean = true,
     val transharmonicHarmonicGain: Float = 0.28f,
     val transharmonicImdCancel: Float = 0.85f,
+    val transharmonicAnalogTapeDrive: Float = 0.25f,
 
     // EJE 3: SnnNmfHoaUpmixer (Anti-Dolby SNN INT8 + NMF -> HOA 4º Orden)
-    val snnHoaUpmixerEnabled: Boolean = false,
+    val snnHoaUpmixerEnabled: Boolean = true,
     val snnHoaImmersivity: Float = 0.65f,
     val snnSpikeThreshold: Float = 0.55f,
     val snnSchedFifoPromoted: Boolean = false,
 
     // EJE 4: PinnaManifoldInterpolator (Anti-Apple INR-SDF + FIR Fase Mínima)
-    val pinnaManifoldEnabled: Boolean = false,
+    val pinnaManifoldEnabled: Boolean = true,
     val pinnaManifoldWetMix: Float = 0.65f,
     val pinnaConchaDepth: Float = 0.15f,
     val pinnaHelixCurl: Float = -0.10f,
     val pinnaHeadWidth: Float = 0.08f,
 
     // EJE 5: SupremeMsoFarrowArbitrator (eBPF/SHM CAS owner_pid + Farrow 5º Orden)
-    val farrowMsoEnabled: Boolean = false,
+    val farrowMsoEnabled: Boolean = true,
     val msoItdNanoseconds: Float = 0.0f,
     val ebpfBypassActive: Boolean = false,
     val shmArbitrationLockedByApp: Boolean = false
@@ -74,6 +75,7 @@ object SupremeAxesPrefs {
             transharmonicCvnnEnabled  = bool("transharmonicCvnnEnabled", d.transharmonicCvnnEnabled),
             transharmonicHarmonicGain = flt("transharmonicHarmonicGain", d.transharmonicHarmonicGain).coerceIn(0f, 1f),
             transharmonicImdCancel    = flt("transharmonicImdCancel", d.transharmonicImdCancel).coerceIn(0f, 1f),
+            transharmonicAnalogTapeDrive = flt("transharmonicAnalogTapeDrive", d.transharmonicAnalogTapeDrive).coerceIn(0f, 1f),
 
             snnHoaUpmixerEnabled      = bool("snnHoaUpmixerEnabled", d.snnHoaUpmixerEnabled),
             snnHoaImmersivity         = flt("snnHoaImmersivity", d.snnHoaImmersivity).coerceIn(0f, 1f),
@@ -103,6 +105,7 @@ object SupremeAxesPrefs {
             .putBoolean("transharmonicCvnnEnabled", s.transharmonicCvnnEnabled)
             .putFloat("transharmonicHarmonicGain", s.transharmonicHarmonicGain)
             .putFloat("transharmonicImdCancel", s.transharmonicImdCancel)
+            .putFloat("transharmonicAnalogTapeDrive", s.transharmonicAnalogTapeDrive)
             .putBoolean("snnHoaUpmixerEnabled", s.snnHoaUpmixerEnabled)
             .putFloat("snnHoaImmersivity", s.snnHoaImmersivity)
             .putFloat("snnSpikeThreshold", s.snnSpikeThreshold)
@@ -162,9 +165,10 @@ object SupremeAxesPrefs {
         NativeBridge.safeSetWarpedLatticeMicroChirp(s.warpedLatticeMicroChirp)
         NativeBridge.safeSetWarpedLatticeEnabled(s.warpedLatticeEnabled)
 
-        // EJE 2: Phase-Coherent Transharmonic Synthesizer (CVNN + DDSP)
+        // EJE 2: Phase-Coherent Transharmonic Synthesizer (CVNN + DDSP + Cinta 2" Jiles-Atherton)
         NativeBridge.safeSetTransharmonicHarmonicGain(s.transharmonicHarmonicGain)
         NativeBridge.safeSetTransharmonicImdCancel(s.transharmonicImdCancel)
+        NativeBridge.safeSetTransharmonicAnalogTapeDrive(s.transharmonicAnalogTapeDrive)
         NativeBridge.safeSetTransharmonicCvnnEnabled(s.transharmonicCvnnEnabled)
 
         // EJE 3: SNN INT8 + Online NMF -> 4th Order HOA Upmixer

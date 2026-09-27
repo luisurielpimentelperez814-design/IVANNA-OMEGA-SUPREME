@@ -587,4 +587,27 @@ inline void computeSofaRirCoupling(const float q[7], float& outEarlyBoost, float
     outWetScale     = std::clamp(1.0f + mod[3], 0.75f, 1.25f);
 }
 
+// ── 9. Trained Supreme 5-Axes Tensors (SOFA-SAF-RIR Calibrated) ──
+// Route 0: AUX/USB-DAC (Studio #51), Route 1: Bluetooth (#63), Route 2: Speaker (#81)
+alignas(32) inline constexpr float kMasterBarkKappaByRoute[3][8] = {
+    { -0.362f,  0.228f, -0.142f,  0.086f, -0.052f,  0.030f, -0.017f,  0.0085f }, // [0] Studio DAC/AUX (#51)
+    { -0.415f,  0.264f, -0.168f,  0.104f, -0.064f,  0.038f, -0.022f,  0.0110f }, // [1] Bluetooth Anti-Codec (#63)
+    { -0.485f,  0.312f, -0.198f,  0.124f, -0.076f,  0.045f, -0.026f,  0.0135f }  // [2] Speaker Excursion (#81)
+};
+
+alignas(16) inline constexpr float kMasterCvnnWeightsRe[4] = { -0.569596f, -0.023825f, -0.199524f, -0.066934f };
+alignas(16) inline constexpr float kMasterCvnnWeightsIm[4] = { 0.102138f, -0.111689f, 0.026427f, 0.050864f };
+alignas(16) inline constexpr float kMasterCvnnModReluBias[4] = { -0.0032f, -0.0048f, -0.0064f, -0.0080f };
+
+alignas(16) inline constexpr int8_t kMasterSnnWeightsInt8[4][4] = {
+    {  102,  -72,   34,   88 }, // Stream 0: Center Anchor (SOFA IACC_early locked)
+    {  -68,  112,   30,  -76 }, // Stream 1: Lateral Dipole (SOFA pinna notch)
+    {   26,   40,  116,   22 }, // Stream 2: Early Reflections (RIR 5-80ms C80)
+    {  -42,   78,  -84,  -68 }  // Stream 3: Diffuse Late Field (RIR 80ms+ IACC_late)
+};
+alignas(16) inline constexpr float kMasterNmfStreamPrior[4] = { 0.29999f, 0.23510f, 0.15121f, 0.31371f };
+
+// 32-tap True-Stereo Contralateral Cross-Feed & XTC Kernel (SOFA Woodworth ITD + Head Shadow)
+alignas(64) inline constexpr float kMasterTrueStereoCrossKernel[32] = { 0.000000e+00f, 4.977468e-04f, 9.954937e-04f, 1.493241e-03f, 1.990987e-03f, 4.689134e-04f, 6.497535e-04f, 8.447483e-04f, 1.045915e-03f, 1.245017e-03f, 1.433903e-03f, 1.604841e-03f, -1.544503e-03f, 9.184152e-04f, -2.856895e-03f, 1.286826e-03f, -3.332918e-03f, 1.798566e-03f, -2.102824e-03f, 1.854314e-03f, -1.330329e-03f, 2.354733e-03f, -4.752857e-04f, 2.120355e-03f, -2.492713e-04f, 1.052904e-03f, -3.880077e-04f, 4.408410e-04f, -1.192064e-04f, 1.336863e-04f, -1.949421e-05f, 0.000000e+00f };
+
 } // namespace ivanna::master

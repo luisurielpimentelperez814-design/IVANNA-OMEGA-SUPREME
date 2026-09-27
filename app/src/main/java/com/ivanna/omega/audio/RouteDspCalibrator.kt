@@ -3,6 +3,7 @@ package com.ivanna.omega.audio
 import android.content.Context
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.saf.SaFRoomBridge
@@ -86,9 +87,10 @@ object RouteDspCalibrator {
 
         when (route) {
             OutputRoute.SPEAKER -> {
-                // Altavoz: HRTF de oreja fuera; sala abierta RIR #81 (rir_0081.wav, RT60=0.613s) acoplada con SAF.
+                // Altavoz: HRTF de oreja fuera; sala abierta RIR #81 (rir_0081.wav, RT60=0.613s) acoplada con SAF + XTC Transaural.
                 if (nativeReady) runCatching {
                     IvannaNativeLib.nativeSetHRTFEnabled(false)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(2)
                 }.onFailure { Log.w(TAG, "HRTF off (speaker): ${it.message}") }
                 runCatching {
                     SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.613f, drr = 7.40f, steps = 24)
@@ -96,14 +98,15 @@ object RouteDspCalibrator {
                     OmegaEngineBridge.pushSafLatentQ(q, gain = 0.65f)
                     OmegaEngineBridge.setRoom(rt60S = 0.613f, wet = 0.16f, roomIdx = 81)
                 }.onFailure { Log.w(TAG, "room speaker: ${it.message}") }
-                Log.i(TAG, "Ruta SPEAKER → HRTF off + SOFA-SAF-RIR Sala #81 (RT60 0.613s, wet 0.16)")
+                Log.i(TAG, "Ruta SPEAKER → HRTF off + SOFA-SAF-RIR Sala #81 + Arquetipo Bark #2 + Holografía Transaural XTC")
             }
 
             OutputRoute.WIRED_AUX, OutputRoute.USB -> {
-                // Canal directo a auricular/DAC: HRTF binaural completo + Sala de Control Maestra
-                // ITU-R BS.1116 (rir_0051.wav, RT60=0.340s, DRR=10.31dB, C80=16.66dB) acoplada con SOFA-SAF.
+                // Canal directo a auricular/DAC/Genezi: HRTF binaural completo + Sala de Control Maestra
+                // ITU-R BS.1116 (rir_0051.wav, RT60=0.340s, DRR=10.31dB, C80=16.66dB) acoplada con SOFA-SAF + True-Stereo 4-Caminos.
                 if (nativeReady) runCatching {
                     IvannaNativeLib.nativeSetHRTFEnabled(true)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(0)
                 }.onFailure { Log.w(TAG, "HRTF on (aux/usb): ${it.message}") }
                 runCatching {
                     SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.340f, drr = 10.31f, steps = 32)
@@ -111,7 +114,7 @@ object RouteDspCalibrator {
                     OmegaEngineBridge.pushSafLatentQ(q, gain = 0.85f)
                     OmegaEngineBridge.setRoom(rt60S = 0.340f, wet = 0.22f, roomIdx = 51)
                 }.onFailure { Log.w(TAG, "room aux/usb: ${it.message}") }
-                Log.i(TAG, "Ruta ${route.name} → HRTF on + Golden Master Studio Control Room #51 (RT60 0.340s, DRR 10.31dB, wet 0.22)")
+                Log.i(TAG, "Ruta ${route.name} → HRTF on + Golden Master Studio Control Room #51 + Arquetipo Bark #0 + True-Stereo")
             }
 
             OutputRoute.BLUETOOTH -> {
@@ -119,6 +122,7 @@ object RouteDspCalibrator {
                 if (nativeReady) {
                     runCatching {
                         IvannaNativeLib.nativeSetHRTFEnabled(true)
+                        NativeBridge.safeSetWarpedLatticeRouteArchetype(1)
                     }.onFailure { Log.w(TAG, "HRTF on (bt): ${it.message}") }
                     runCatching {
                         IvannaNativeLib.nativeSetSpatialWidthDirect(0.88f)
