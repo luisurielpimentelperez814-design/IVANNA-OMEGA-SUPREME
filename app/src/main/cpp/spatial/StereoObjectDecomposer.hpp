@@ -24,6 +24,7 @@ struct DecomposedObject {
     ObjectPosition position{};
     float spread{1.0f};
     float gain{1.0f};
+    float energy{0.0f};
 };
 
 class StereoObjectDecomposer {

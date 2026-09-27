@@ -446,11 +446,18 @@ add_dependencies(test_oem_stability_suite gtest)
 
 add_executable(test_acoustic_reality_hyperengine
     tests/regression/test_acoustic_reality_hyperengine.cpp
+    spatial/RirConvolver.cpp
 )
 target_include_directories(test_acoustic_reality_hyperengine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/spatial
+    ${CMAKE_CURRENT_SOURCE_DIR}/neuromorphic
+    ${CMAKE_CURRENT_SOURCE_DIR}/supreme
+    ${CMAKE_CURRENT_SOURCE_DIR}/experimental/adaptive_engine
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
 )
-target_link_libraries(test_acoustic_reality_hyperengine PRIVATE gtest gtest_main)
+target_link_libraries(test_acoustic_reality_hyperengine PRIVATE gtest gtest_main ${log-lib})
 add_test(NAME acoustic_reality_hyperengine COMMAND test_acoustic_reality_hyperengine)
 
 

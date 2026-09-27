@@ -147,8 +147,8 @@ TEST(AcousticRealityHyperengineValidation, 1_ConcertOriginalVsReconstruction) {
 // PRUEBA 2: Localización Espacial 3D/4D (Azimut, Altura Perceptual y Movimiento)
 // ============================================================================
 TEST(AcousticRealityHyperengineValidation, 2_SpatialLocalization4DAndElevation) {
-    Ivanna::WfsRenderer wfs;
-    wfs.prepare(kSampleRate, static_cast<int>(kBlockSize));
+    ivanna::spatial::WfsRenderer wfs;
+    wfs.init(kSampleRate, static_cast<int>(kBlockSize));
     wfs.setEnabled(true);
     wfs.setRoomDimensions(7.2f, 9.5f, 3.8f, 0.30f);
 
@@ -156,12 +156,15 @@ TEST(AcousticRealityHyperengineValidation, 2_SpatialLocalization4DAndElevation) 
     for (size_t i = 0; i < kBlockSize; ++i) {
         monoSrc[i] = 0.5f * std::sin(kTwoPi * 660.0f * static_cast<float>(i) / kSampleRate);
     }
+    const float* srcPtr = monoSrc.data();
 
     // Caso A: Fuente a la izquierda (-1.4 m)
     std::array<float, kBlockSize> outLeftL{}, outLeftR{};
     wfs.setObject4D(0, -1.4f, 2.0f, 0.3f, 0.0f, 0.0f, 0.0f, 1.0f, 0.25f);
     for (int warm = 0; warm < 4; ++warm) {
-        wfs.process(monoSrc.data(), monoSrc.data(),
+        outLeftL.fill(0.0f);
+        outLeftR.fill(0.0f);
+        wfs.process(&srcPtr, 1,
                     outLeftL.data(), outLeftR.data(), static_cast<int>(kBlockSize));
     }
     double eLL = 0.0, eLR = 0.0;
@@ -177,7 +180,9 @@ TEST(AcousticRealityHyperengineValidation, 2_SpatialLocalization4DAndElevation) 
     std::array<float, kBlockSize> outRightL{}, outRightR{};
     wfs.setObject4D(0, +1.4f, 2.0f, 0.8f, 0.25f, -0.10f, 0.05f, 1.0f, 0.30f);
     for (int warm = 0; warm < 4; ++warm) {
-        wfs.process(monoSrc.data(), monoSrc.data(),
+        outRightL.fill(0.0f);
+        outRightR.fill(0.0f);
+        wfs.process(&srcPtr, 1,
                     outRightL.data(), outRightR.data(), static_cast<int>(kBlockSize));
     }
     double eRL = 0.0, eRR = 0.0;
@@ -236,9 +241,9 @@ TEST(AcousticRealityHyperengineValidation, 3_DepthPerceptionAndAcousticTimeMachi
     EXPECT_GT(farStory.air.propagationDistanceM, nearStory.air.propagationDistanceM * 3.5f);
 
     // 4. Verificar atenuación física por profundidad en WfsRenderer (y = 1.0 m vs y = 4.5 m)
-    Ivanna::WfsRenderer wfsNear, wfsFar;
-    wfsNear.prepare(kSampleRate, static_cast<int>(kBlockSize));
-    wfsFar.prepare(kSampleRate, static_cast<int>(kBlockSize));
+    ivanna::spatial::WfsRenderer wfsNear, wfsFar;
+    wfsNear.init(kSampleRate, static_cast<int>(kBlockSize));
+    wfsFar.init(kSampleRate, static_cast<int>(kBlockSize));
     wfsNear.setEnabled(true);
     wfsFar.setEnabled(true);
     wfsNear.setObject4D(0, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.1f);
@@ -248,9 +253,12 @@ TEST(AcousticRealityHyperengineValidation, 3_DepthPerceptionAndAcousticTimeMachi
     for (size_t i = 0; i < kBlockSize; ++i) {
         sig[i] = 0.5f * std::sin(kTwoPi * 500.0f * static_cast<float>(i) / kSampleRate);
     }
+    const float* sigPtr = sig.data();
     for (int k = 0; k < 5; ++k) {
-        wfsNear.process(sig.data(), sig.data(), nearL.data(), nearR.data(), static_cast<int>(kBlockSize));
-        wfsFar.process(sig.data(), sig.data(), farL.data(), farR.data(), static_cast<int>(kBlockSize));
+        nearL.fill(0.0f); nearR.fill(0.0f);
+        farL.fill(0.0f);  farR.fill(0.0f);
+        wfsNear.process(&sigPtr, 1, nearL.data(), nearR.data(), static_cast<int>(kBlockSize));
+        wfsFar.process(&sigPtr, 1, farL.data(), farR.data(), static_cast<int>(kBlockSize));
     }
     const float rmsNear = computeRms(nearL.data(), nearR.data(), kBlockSize);
     const float rmsFar  = computeRms(farL.data(), farR.data(), kBlockSize);
@@ -291,9 +299,9 @@ TEST(AcousticRealityHyperengineValidation, 4_RoomRealismAndBoundaryInteraction) 
     EXPECT_GT(genomeHall.roomFingerprint.estimatedRt60Sec, genomeSmall.roomFingerprint.estimatedRt60Sec);
 
     // Verificar interacción con habitación en WfsRenderer (roomCoupling > 0 vs roomCoupling == 0)
-    Ivanna::WfsRenderer wfsDryRoom, wfsCoupledRoom;
-    wfsDryRoom.prepare(kSampleRate, static_cast<int>(kBlockSize));
-    wfsCoupledRoom.prepare(kSampleRate, static_cast<int>(kBlockSize));
+    ivanna::spatial::WfsRenderer wfsDryRoom, wfsCoupledRoom;
+    wfsDryRoom.init(kSampleRate, static_cast<int>(kBlockSize));
+    wfsCoupledRoom.init(kSampleRate, static_cast<int>(kBlockSize));
     wfsDryRoom.setEnabled(true);
     wfsCoupledRoom.setEnabled(true);
     wfsCoupledRoom.setRoomDimensions(6.0f, 7.5f, 3.2f, 0.20f);
@@ -305,9 +313,12 @@ TEST(AcousticRealityHyperengineValidation, 4_RoomRealismAndBoundaryInteraction) 
     for (size_t i = 0; i < kBlockSize; ++i) {
         sig[i] = (i < 64) ? (0.6f * std::sin(kTwoPi * 800.0f * static_cast<float>(i) / kSampleRate)) : 0.0f;
     }
+    const float* sigPtr = sig.data();
     for (int b = 0; b < 4; ++b) {
-        wfsDryRoom.process(sig.data(), sig.data(), dryL.data(), dryR.data(), static_cast<int>(kBlockSize));
-        wfsCoupledRoom.process(sig.data(), sig.data(), coupL.data(), coupR.data(), static_cast<int>(kBlockSize));
+        dryL.fill(0.0f);  dryR.fill(0.0f);
+        coupL.fill(0.0f); coupR.fill(0.0f);
+        wfsDryRoom.process(&sigPtr, 1, dryL.data(), dryR.data(), static_cast<int>(kBlockSize));
+        wfsCoupledRoom.process(&sigPtr, 1, coupL.data(), coupR.data(), static_cast<int>(kBlockSize));
     }
 
     double diffEnergy = 0.0;
