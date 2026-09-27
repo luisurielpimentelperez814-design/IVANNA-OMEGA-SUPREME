@@ -88,6 +88,19 @@ object SaFRoomBridge {
 
     fun reset() { if (loaded) runCatching { nativeSafrReset() } }
 
+    /**
+     * Actualiza el estado de sala R_t (rt60, drr, roomMode) y ejecuta [steps] pasos
+     * Riemannianos de Φ_SAF-Room^∞ para converger p_t al equilibrio SOFA-SAF-RIR.
+     */
+    fun optimiseForCurrentRoom(rt60: Float, drr: Float, steps: Int = 24, roomMode: Float = 0f): FloatArray {
+        setRoomState(rt60, drr, roomMode)
+        val n = steps.coerceIn(1, 128)
+        for (i in 0 until n) {
+            step()
+        }
+        return getParams()
+    }
+
     // ── JNI ──────────────────────────────────────────────────────────────────
     @JvmStatic private external fun nativeSafrStep(): Float
     @JvmStatic private external fun nativeSafrSetRoom(rt60: Float, drr: Float, roomMode: Float)
