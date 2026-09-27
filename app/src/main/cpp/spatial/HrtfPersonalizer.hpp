@@ -30,8 +30,8 @@ class HrtfPersonalizer {
 public:
     HrtfPersonalizer() noexcept {
         profile_.head_circumference_cm = 56.0f;
-        profile_.ear_pinna_size_mm = 65.0f;
-        profile_.canal_resonance_boost_db = 0.0f;
+        profile_.ear_pinna_size_mm = 62.0f;         // KEMAR/CIPIC Golden Ear reference (notch ~8.2 kHz)
+        profile_.canal_resonance_boost_db = 1.6f;   // Sutil presencia natural de concha 4.5 kHz desde el arranque
         profile_.high_freq_rolloff_factor = 1.0f;
         recalculate();
     }

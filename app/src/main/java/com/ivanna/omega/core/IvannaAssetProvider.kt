@@ -27,9 +27,33 @@ object IvannaAssetProvider {
         if (sys.isDirectory) return sys
         extractedRoot?.let { return it }
         val dst = File(context.filesDir, ASSET_ROOT)
-        if (!dst.isDirectory) {
+        if (!dst.isDirectory || !File(dst, "hrtf/kemar.ihr1").exists()) {
             dst.mkdirs()
-            copyAssetTree(context, ASSET_ROOT, dst)
+            val priorityRel = listOf(
+                "SAF_model_total.json",
+                "pca_basis.bin",
+                "hrtf/kemar.ihr1",
+                "rir/metadata.csv",
+                "rir/rir_0051.wav",
+                "rir/rir_0122.wav",
+                "rir/rir_0169.wav",
+                "rir/rir_0081.wav",
+                "rir/rir_0063.wav"
+            )
+            for (rel in priorityRel) {
+                val out = File(dst, rel)
+                if (!out.exists() || out.length() == 0L) {
+                    out.parentFile?.mkdirs()
+                    runCatching {
+                        context.assets.open("$ASSET_ROOT/$rel").use { input ->
+                            out.outputStream().use { o -> input.copyTo(o) }
+                        }
+                    }
+                }
+            }
+            Thread({
+                runCatching { copyAssetTree(context, ASSET_ROOT, dst) }
+            }, "IvannaAssetBgExtract").start()
         }
         extractedRoot = dst
         return dst

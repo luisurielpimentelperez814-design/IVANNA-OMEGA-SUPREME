@@ -80,7 +80,7 @@ object PersistedStateRestorer {
             }.onFailure { Log.w(TAG, "Fallo al restaurar HarmonicExciterPrefs: ${it.message}") }
         }
 
-        // 3. Restaurar SpatialAudioPrefs (HRTF, RIR, SAF)
+        // 3. Restaurar SpatialAudioPrefs (HRTF, RIR, SAF — Root y Non-Root)
         val saPrefs = SpatialAudioPrefs.load(ctx)
 
         // Eje Supremo: Inversión Biomecánica Coclear (Cochlear-PINN)
@@ -94,28 +94,30 @@ object PersistedStateRestorer {
             IvannaSpatialManager.setHrtfSubject(saPrefs.hrtfSubject)
         }
 
-        if (OmegaEngineBridge.isConnected) {
-            if (saPrefs.rirEnabled) {
-                OmegaEngineBridge.setRoom(saPrefs.rirRt60, saPrefs.rirWet)
-            } else {
-                OmegaEngineBridge.disableRoom()
-            }
-        }
+        // Asegurar dataset RIR extraído y registrado tanto en Non-Root como en Root
+        runCatching { OmegaEngineBridge.ensureRirDataset(ctx) }
 
         if (saPrefs.safEnabled) {
             runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
-            val q = SaFRoomBridge.getParams()
-            if (OmegaEngineBridge.isConnected) {
-                OmegaEngineBridge.pushSafLatentQ(
-                    FloatArray(7) { i -> q.getOrElse(i) { 0f } * saPrefs.safIntensity },
-                    gain = saPrefs.safIntensity
-                )
+            val activeRt60 = if (saPrefs.rirEnabled) saPrefs.rirRt60 else 0.34f
+            runCatching {
+                SaFRoomBridge.optimiseForCurrentRoom(rt60 = activeRt60, drr = 10.31f, steps = 32)
             }
+            val q = SaFRoomBridge.getParams()
+            val qScaled = FloatArray(7) { i ->
+                val base = q.getOrElse(i) { 0f }
+                base * saPrefs.safIntensity
+            }
+            OmegaEngineBridge.pushSafLatentQ(qScaled, gain = saPrefs.safIntensity)
         } else {
             runCatching { SaFBridge.nativeSaFReset() }
-            if (OmegaEngineBridge.isConnected) {
-                OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
-            }
+            OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
+        }
+
+        if (saPrefs.rirEnabled) {
+            OmegaEngineBridge.setRoom(saPrefs.rirRt60, saPrefs.rirWet)
+        } else {
+            OmegaEngineBridge.disableRoom()
         }
 
         // 4. Restaurar los 5 Ejes de Supremacía Cuántico-Neuromórfica (C++23 Lock-Free)

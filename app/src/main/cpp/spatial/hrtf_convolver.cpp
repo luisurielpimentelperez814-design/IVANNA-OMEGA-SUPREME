@@ -111,11 +111,17 @@ void HRTFConvolver::init(uint32_t sampleRate) {
     // adicional, mismo patron, sin tocar el orden de prioridad ya
     // establecido para el caso normal.
     const char* hrtfCandidates[] = {
-        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",   // custom del usuario
-        "/data/adb/ivanna_omega/hrtf/kemar.ihr1",     // KEMAR medido del modulo (default)
-        "/data/adb/ivanna_omega/hrtf/cipic_003.ihr1", // fallback: sujeto humano medido real
-        "/data/adb/ivanna_omega/hrtf/cipic_165.ihr1", // fallback: otro sujeto humano medido real
-        "/data/adb/ivanna_omega/hrtf/kemar_large.ihr1" // fallback: variante KEMAR
+        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",                        // custom del usuario (root)
+        "/system/etc/ivanna_omega/hrtf/kemar.ihr1",                        // Magisk mount (root)
+        "/data/adb/ivanna_omega/hrtf/kemar.ihr1",                          // KEMAR medido del modulo (root)
+        "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1",  // No-Root APK assets extraídos
+        "/data/user/0/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1",// No-Root multi-user path
+        "/data/adb/ivanna_omega/hrtf/cipic_003.ihr1",                      // fallback: sujeto humano medido real
+        "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/cipic_003.ihr1",
+        "/data/adb/ivanna_omega/hrtf/cipic_165.ihr1",                      // fallback: otro sujeto humano medido real
+        "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/cipic_165.ihr1",
+        "/data/adb/ivanna_omega/hrtf/kemar_large.ihr1",                    // fallback: variante KEMAR
+        "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/kemar_large.ihr1"
     };
 
     bool hrtfLoaded = false;
@@ -127,6 +133,36 @@ void HRTFConvolver::init(uint32_t sampleRate) {
             break;
         }
     }
+
+    // Cargar también pca_basis.bin si está en disco (Root o No-Root);
+    // si no está, SyntheticHRTF::init() ya precargó la base maestra SOFA-PCA desde ROM constexpr.
+    const char* pcaCandidates[] = {
+        "/system/etc/ivanna_omega/pca_basis.bin",
+        "/data/adb/ivanna_omega/pca_basis.bin",
+        "/data/data/com.ivanna.omega/files/ivanna_omega/pca_basis.bin",
+        "/data/user/0/com.ivanna.omega/files/ivanna_omega/pca_basis.bin"
+    };
+    for (const char* pcaPath : pcaCandidates) {
+        if (hrtf_.loadPcaBasis(pcaPath)) {
+            break;
+        }
+    }
+
+    // Inicializar SafSpatialModifier con el modelo maestro SOFA-SAF
+    Ivanna::SAFModel masterModel;
+    masterModel.p0.assign(
+        ivanna::master::kMasterSofaP0,
+        ivanna::master::kMasterSofaP0 + ivanna::master::kMasterHrirVecLen
+    );
+    masterModel.V.resize(ivanna::master::kMasterSafK);
+    for (int k = 0; k < ivanna::master::kMasterSafK; ++k) {
+        masterModel.V[k].assign(
+            ivanna::master::kMasterSofaPcaV[k],
+            ivanna::master::kMasterSofaPcaV[k] + ivanna::master::kMasterHrirVecLen
+        );
+    }
+    safModifier_.init(masterModel);
+    hrtf_.setLatentParams(ivanna::master::kMasterSafGoldenQ);
 
     if (hrtfLoaded) {
         __android_log_print(
@@ -277,13 +313,16 @@ void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness
     const std::vector<float>& irL = *irLp;
     const std::vector<float>& irR = *irRp;
 
+    const size_t copyL = std::min(irL.size(), static_cast<size_t>(IR_LEN));
+    const size_t copyR = std::min(irR.size(), static_cast<size_t>(IR_LEN));
+
     if (immediate) {
         std::fill(H_ReL_curr_.begin(), H_ReL_curr_.end(), 0.0f);
         std::fill(H_ImL_curr_.begin(), H_ImL_curr_.end(), 0.0f);
         std::fill(H_ReR_curr_.begin(), H_ReR_curr_.end(), 0.0f);
         std::fill(H_ImR_curr_.begin(), H_ImR_curr_.end(), 0.0f);
-        std::memcpy(H_ReL_curr_.data(), irL.data(), IR_LEN * sizeof(float));
-        std::memcpy(H_ReR_curr_.data(), irR.data(), IR_LEN * sizeof(float));
+        if (copyL > 0) std::memcpy(H_ReL_curr_.data(), irL.data(), copyL * sizeof(float));
+        if (copyR > 0) std::memcpy(H_ReR_curr_.data(), irR.data(), copyR * sizeof(float));
         fft_->forward(H_ReL_curr_.data(), H_ImL_curr_.data());
         fft_->forward(H_ReR_curr_.data(), H_ImR_curr_.data());
 
@@ -295,8 +334,8 @@ void HRTFConvolver::updateFilterResponses(float azimuthDeg, float aggressiveness
         std::fill(H_ImL_targ_.begin(), H_ImL_targ_.end(), 0.0f);
         std::fill(H_ReR_targ_.begin(), H_ReR_targ_.end(), 0.0f);
         std::fill(H_ImR_targ_.begin(), H_ImR_targ_.end(), 0.0f);
-        std::memcpy(H_ReL_targ_.data(), irL.data(), IR_LEN * sizeof(float));
-        std::memcpy(H_ReR_targ_.data(), irR.data(), IR_LEN * sizeof(float));
+        if (copyL > 0) std::memcpy(H_ReL_targ_.data(), irL.data(), copyL * sizeof(float));
+        if (copyR > 0) std::memcpy(H_ReR_targ_.data(), irR.data(), copyR * sizeof(float));
         fft_->forward(H_ReL_targ_.data(), H_ImL_targ_.data());
         fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());
     }
@@ -575,10 +614,10 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         uint32_t missing = numSamples - samplesToDeliver;
         std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
         std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
-    
+    }
+
     // 3. ITD interaural: delay fraccional por oido (post-convolucion)
     applyItd(outputL, outputR, numSamples);
-}
 }
 
 } // namespace ivanna
@@ -589,19 +628,35 @@ void ivanna::HRTFConvolver::updateSafField(
     float azimuth
 )
 {
+    hrtf_.setLatentParams(q.data());
+
     if(!safModifier_.update(
         q,
         hrtf_,
         azimuth))
+    {
+        newTargetPending_.store(true, std::memory_order_release);
         return;
-
+    }
 
     const HRIRPair& h =
         safModifier_.current();
 
-
     hrir_L_target_ = h.L;
     hrir_R_target_ = h.R;
+
+    if (filterInitialized_ && fft_) {
+        std::fill(H_ReL_targ_.begin(), H_ReL_targ_.end(), 0.0f);
+        std::fill(H_ImL_targ_.begin(), H_ImL_targ_.end(), 0.0f);
+        std::fill(H_ReR_targ_.begin(), H_ReR_targ_.end(), 0.0f);
+        std::fill(H_ImR_targ_.begin(), H_ImR_targ_.end(), 0.0f);
+        const size_t copyL = std::min(h.L.size(), static_cast<size_t>(IR_LEN));
+        const size_t copyR = std::min(h.R.size(), static_cast<size_t>(IR_LEN));
+        if (copyL > 0) std::memcpy(H_ReL_targ_.data(), h.L.data(), copyL * sizeof(float));
+        if (copyR > 0) std::memcpy(H_ReR_targ_.data(), h.R.data(), copyR * sizeof(float));
+        fft_->forward(H_ReL_targ_.data(), H_ImL_targ_.data());
+        fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());
+    }
 
     // FIX: faltaba memory_order_release — el hilo de audio podía leer
     // xfadeSamplesRemaining_ con el nuevo valor antes de ver los datos

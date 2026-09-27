@@ -64,6 +64,10 @@ public:
     // difusa y envolvente. 0.0 = correlada (legado), 1.0 = máxima difusión.
     void setLateDecorrelation(float amount) noexcept { decorrel_.store(std::clamp(amount, 0.f, 1.f), std::memory_order_relaxed); }
     float lateDecorrelation() const noexcept { return decorrel_.load(std::memory_order_relaxed); }
+    void setEarlyClarityBoost(float boost) noexcept { earlyBoost_.store(std::clamp(boost, 0.5f, 1.5f), std::memory_order_relaxed); }
+    float earlyClarityBoost() const noexcept { return earlyBoost_.load(std::memory_order_relaxed); }
+    void applySofaCoupling(const float q[7]) noexcept;
+    void synthesizeMasterStudioBrir(float rt60S = 0.34f, int sampleRate = 48000) noexcept;
     void setWetDry(float wet) noexcept { wetDry_.store(wet, std::memory_order_relaxed); }
     float wetDry() const noexcept      { return wetDry_.load(std::memory_order_relaxed); }
 
@@ -98,7 +102,8 @@ private:
     float workIm_[FFT_SIZE] = {};
 
     std::atomic<float> wetDry_{0.f};
-    std::atomic<float> decorrel_{0.0f};   // 0=cola correlada (legado), 1=difusa
+    std::atomic<float> decorrel_{0.62f};     // Acoplado a coherencia interaural SOFA por defecto
+    std::atomic<float> earlyBoost_{1.08f};   // Pre-énfasis de claridad temprana acoplado a muesca de pinna SOFA
     // Anti-zipper del wet/dry: el slider se aplica por BLOQUE (escalón duro
     // de ganancia = tronido). Se suaviza por muestra con un one-pole.
     float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)

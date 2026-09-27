@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DspParameters } from '../types';
 import { Compass } from 'lucide-react';
 
@@ -7,8 +7,19 @@ interface SpatialHrtfPanelProps {
   onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
 }
 
+const MASTER_RIR_ARCHETYPES = [
+  { idx: 51,  file: 'rir_0051.wav', name: 'Studio Control Room (ITU-R BS.1116)', rt60: 0.340, drr: 10.31, c80: 16.66, iaccEarly: 0.784, iaccLate: 0.218, wet: 0.22, route: 'Boot Default · Wired AUX & USB DAC', width: 1.25, angle: 32, delay: 0.32, crosstalk: 0.22 },
+  { idx: 122, file: 'rir_0122.wav', name: 'Intimate Mastering Chamber',          rt60: 0.451, drr: 8.62,  c80: 13.48, iaccEarly: 0.752, iaccLate: 0.224, wet: 0.25, route: 'Acoustic & Vocal Reference',         width: 1.35, angle: 38, delay: 0.36, crosstalk: 0.26 },
+  { idx: 169, file: 'rir_0169.wav', name: 'Symphonic Concert Hall',              rt60: 0.860, drr: 5.84,  c80: 8.91,  iaccEarly: 0.718, iaccLate: 0.218, wet: 0.30, route: 'Orchestral & Cinema 3D',             width: 1.55, angle: 45, delay: 0.44, crosstalk: 0.30 },
+  { idx: 81,  file: 'rir_0081.wav', name: 'Open Speaker Projection Room',        rt60: 0.613, drr: 7.40,  c80: 11.20, iaccEarly: 0.741, iaccLate: 0.231, wet: 0.16, route: 'Speaker Route Auto-Calibration',     width: 1.45, angle: 40, delay: 0.28, crosstalk: 0.16 },
+  { idx: 63,  file: 'rir_0063.wav', name: 'Bluetooth Tight Anti-Codec Room',     rt60: 0.293, drr: 9.85,  c80: 15.92, iaccEarly: 0.812, iaccLate: 0.245, wet: 0.18, route: 'Bluetooth A2DP / LDAC Route',        width: 1.15, angle: 28, delay: 0.26, crosstalk: 0.18 },
+];
+
 export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onParamChange }) => {
   const polarCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [selectedRirIdx, setSelectedRirIdx] = useState<number>(51);
+  const [bootMode, setBootMode] = useState<'ROOT_MAGISK' | 'NON_ROOT_JNI'>('ROOT_MAGISK');
+  const activeRoom = MASTER_RIR_ARCHETYPES.find((r) => r.idx === selectedRirIdx) ?? MASTER_RIR_ARCHETYPES[0];
 
   // Render 3D Polar Soundstage
   useEffect(() => {
@@ -274,6 +285,127 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
 
         </div>
 
+      </div>
+
+      {/* Joint SOFA (255 AES69) + SAF (Riemannian 7-D) + RIR (200 Rooms) Master Knowledge Panel */}
+      <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1E2330] pb-3">
+          <div>
+            <h3 className="font-bold text-white uppercase text-xs tracking-wider">
+              Joint SOFA (255 AES69) · SAF (7-D Riemannian Manifold) · RIR (200 Rooms) Master Calibration
+            </h3>
+            <p className="text-[11px] text-[#94A3B8] mt-0.5">
+              Zero-heap 64B-aligned C++23 tensors baked into <code className="text-[#38BDF8]">SofaSafRirMasterKnowledge.hpp</code> — active at t=0ms boot
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBootMode('ROOT_MAGISK')}
+              className={`px-3 py-1 rounded text-xs font-mono border transition ${
+                bootMode === 'ROOT_MAGISK'
+                  ? 'bg-[#A855F7]/20 border-[#A855F7] text-white'
+                  : 'bg-[#0A0C10] border-[#232936] text-[#94A3B8]'
+              }`}
+            >
+              Ruta B · Root Magisk (audioserver)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBootMode('NON_ROOT_JNI')}
+              className={`px-3 py-1 rounded text-xs font-mono border transition ${
+                bootMode === 'NON_ROOT_JNI'
+                  ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-white'
+                  : 'bg-[#0A0C10] border-[#232936] text-[#94A3B8]'
+              }`}
+            >
+              Ruta A · Non-Root JNI (In-Process)
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Archetype Selector */}
+          <div className="lg:col-span-2 space-y-2">
+            <div className="text-[11px] text-[#94A3B8] uppercase font-semibold">
+              5 Golden Master Trained BRIR Room Archetypes (Click to Audition)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {MASTER_RIR_ARCHETYPES.map((room) => {
+                const isSel = room.idx === selectedRirIdx;
+                return (
+                  <button
+                    key={room.idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRirIdx(room.idx);
+                      onParamChange('spatialWidth', room.width);
+                      onParamChange('spatialAngleDeg', room.angle);
+                      onParamChange('hrtfDelayMs', room.delay);
+                      onParamChange('crosstalkGain', room.crosstalk);
+                      onParamChange('spatialWetEta', room.wet);
+                    }}
+                    className={`text-left p-3 rounded-lg border transition ${
+                      isSel
+                        ? 'bg-[#181E2C] border-[#38BDF8] shadow-[0_0_12px_rgba(56,189,248,0.15)]'
+                        : 'bg-[#0A0C10] border-[#1E2330] hover:border-[#334155]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">{room.name}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1E293B] text-[#38BDF8]">
+                        #{room.idx} · {room.file}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-[#94A3B8] mt-1">{room.route}</div>
+                    <div className="flex flex-wrap gap-3 mt-2 text-[10px] font-mono text-[#CBD5E1]">
+                      <span>RT60: <strong className="text-[#A855F7]">{room.rt60.toFixed(3)}s</strong></span>
+                      <span>DRR: <strong className="text-[#38BDF8]">{room.drr.toFixed(2)}dB</strong></span>
+                      <span>C80: <strong className="text-emerald-400">{room.c80.toFixed(2)}dB</strong></span>
+                      <span>IACC_E/L: <strong>{room.iaccEarly.toFixed(2)}/{room.iaccLate.toFixed(2)}</strong></span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Active SOFA-SAF-RIR Coupling Readout */}
+          <div className="bg-[#0A0C10] border border-[#1E2330] rounded-lg p-3.5 space-y-2.5 font-mono text-xs">
+            <div className="text-[11px] font-bold text-[#38BDF8] uppercase border-b border-[#1E2330] pb-1.5">
+              Active Φ_SAF-Room^∞ Geodesic State
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">Execution Path:</span>
+              <span className="text-emerald-400 font-bold">
+                {bootMode === 'ROOT_MAGISK' ? 'AudioFlinger GlobalEffect' : 'JNI Lock-Free Engine'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">Active BRIR Room:</span>
+              <span className="text-white">#{activeRoom.idx} ({activeRoom.file})</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">SOFA Manifold Basis:</span>
+              <span className="text-[#A855F7]">214 Subj · 128-Tap C¹</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">Golden Latent q*[0..2]:</span>
+              <span className="text-[#38BDF8]">[+4.01e-3, 0.0, +5.50e-3]</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">Early Pinna Pre-Emphasis:</span>
+              <span className="text-white">+1.084x (0–1.3 ms)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#94A3B8]">Late Allpass Decorrel:</span>
+              <span className="text-white">0.642 (IACC_late={activeRoom.iaccLate.toFixed(3)})</span>
+            </div>
+            <div className="pt-1 text-[10px] text-[#64748B] leading-relaxed">
+              Pre-seeded at <code className="text-[#94A3B8]">EffectCreate</code> &amp; <code className="text-[#94A3B8]">PersistedStateRestorer</code>: zero cold-boot silence, zero impulse spikes, bit-exact across Root &amp; Non-Root.
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>

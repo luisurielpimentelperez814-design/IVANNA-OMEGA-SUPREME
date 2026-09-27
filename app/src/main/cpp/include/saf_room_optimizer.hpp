@@ -58,6 +58,7 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 
 namespace ivanna {
 
@@ -111,8 +112,8 @@ class SaFRoomOptimizer {
 public:
     SaFRoomOptimizer() noexcept {
         std::memcpy(m_G, kSAFR_G0, sizeof(m_G));
-        std::memset(m_p, 0, sizeof(m_p));
-        std::memset(m_target, 0, sizeof(m_target));
+        std::memcpy(m_p, ivanna::master::kMasterSafGoldenQ, sizeof(m_p));
+        std::memcpy(m_target, ivanna::master::kMasterSafGoldenQ, sizeof(m_target));
     }
 
     // ── Observe new room/HRTF/sound-field context ─────────────────────────
@@ -121,6 +122,19 @@ public:
         m_rt60.store(r.rt60,     std::memory_order_relaxed);
         m_drr.store(r.drr,       std::memory_order_relaxed);
         m_roomMode.store(r.roomMode, std::memory_order_relaxed);
+
+        // Couple room RT60/DRR deviation from Golden Master Studio Control Room
+        // into the 7-D SOFA-SAF perceptual target τ_t via kSofaToRirCouplingᵀ
+        const float dRt60 = std::clamp(r.rt60 - ivanna::master::kMasterStudioRoomRt60S, -0.35f, 1.20f);
+        const float dDrr  = std::clamp((ivanna::master::kMasterStudioRoomDrrDb - r.drr) * 0.04f, -0.30f, 0.35f);
+        std::lock_guard<std::mutex> lk(m_mtx);
+        for (int i = 0; i < SAFR_K; ++i) {
+            const float roomShift = (0.35f * ivanna::master::kSofaToRirCoupling[0][i] * dDrr
+                                  +  0.25f * ivanna::master::kSofaToRirCoupling[1][i] * dRt60)
+                                  * ivanna::master::kMasterSafSigma[i];
+            m_target[i] = std::clamp(ivanna::master::kMasterSafGoldenQ[i] + roomShift,
+                                     kSAFR_Pmin[i], kSAFR_Pmax[i]);
+        }
     }
     void setHrtfState(const HrtfState& h) noexcept {
         m_hMismatch.store(h.mismatchEnergy, std::memory_order_relaxed);
@@ -218,7 +232,8 @@ public:
 
     void reset() noexcept {
         std::lock_guard<std::mutex> lk(m_mtx);
-        std::memset(m_p, 0, sizeof(m_p));
+        std::memcpy(m_p, ivanna::master::kMasterSafGoldenQ, sizeof(m_p));
+        std::memcpy(m_target, ivanna::master::kMasterSafGoldenQ, sizeof(m_target));
         m_iter.store(0, std::memory_order_relaxed);
     }
 

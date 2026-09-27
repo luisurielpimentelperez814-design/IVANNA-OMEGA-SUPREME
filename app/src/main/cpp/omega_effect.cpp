@@ -6,6 +6,7 @@
 #include "adaptive_engine_v2.hpp"
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
+#include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
@@ -512,10 +513,14 @@ static void omega_rir_worker_loop() {
             continue;
         }
         int irLen = (int)irL.size();
-        if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+        if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
+        const float* q = (ctx->pendingSnap.saf_q_valid == 1u)
+            ? ctx->pendingSnap.saf_q
+            : ivanna::master::kMasterSafGoldenQ;
+        ctx->rirConvolver->applySofaCoupling(q);
         ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
-        LOGI("RirConvolver: sala idx=%d sr=%dHz cargada (worker, fuera de RT)",
-             (int)idx, sr);
+        LOGI("RirConvolver: sala idx=%d sr=%dHz (%d muestras) + SOFA-SAF acoplada (worker, fuera de RT)",
+             (int)idx, sr, irLen);
     }
 }
 
@@ -958,7 +963,20 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 if (!ctx->supremePinna) {
                     ctx->supremePinna = new (std::nothrow) ivanna::supreme::PinnaManifoldInterpolator();
-                    if (ctx->supremePinna) ctx->supremePinna->calibrateFromLatents(0.0f, 0.0f, 0.0f, static_cast<float>(sr));
+                    if (ctx->supremePinna) {
+                        ctx->supremePinna->calibrateFromLatents(
+                            ivanna::master::kMasterSafGoldenQNorm[2],
+                            ivanna::master::kMasterSafGoldenQNorm[3],
+                            ivanna::master::kMasterSafGoldenQNorm[0],
+                            static_cast<float>(sr));
+                        ctx->supremePinna->setWetMix(0.62f);
+                    }
+                    ctx->lastPinnaConcha = ivanna::master::kMasterSafGoldenQNorm[2];
+                    ctx->lastPinnaHelix  = ivanna::master::kMasterSafGoldenQNorm[3];
+                    ctx->lastPinnaHead   = ivanna::master::kMasterSafGoldenQNorm[0];
+                }
+                if (ctx->fusionCore) {
+                    ctx->fusionCore->setSafLatentParams(ivanna::master::kMasterSafGoldenQ);
                 }
                 if (!ctx->supremeMsoFarrow) {
                     ctx->supremeMsoFarrow = new (std::nothrow) ivanna::supreme::SupremeMsoFarrowArbitrator();
@@ -967,7 +985,13 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
                 omega_rir_dataset_init();
-                if (!ctx->rirConvolver) ctx->rirConvolver = new Ivanna::RirConvolver();
+                if (!ctx->rirConvolver) {
+                    ctx->rirConvolver = new Ivanna::RirConvolver();
+                    ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+                    ctx->rirConvolver->synthesizeMasterStudioBrir(
+                        ivanna::master::kMasterStudioRoomRt60S, static_cast<int>(sr));
+                    ctx->rirConvolver->setWetDry(ivanna::master::kMasterStudioRoomWet);
+                }
                 // FIX RT (2026-08-27): arrancar el worker de carga de IR
                 // (hilo de control, proceso-global). Idempotente; el hilo
                 // duerme en la CV hasta que omega_apply_room publique una

@@ -1,5 +1,6 @@
 // spatial/RirDataset.cpp
 #include "RirDataset.hpp"
+#include "SofaSafRirMasterKnowledge.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -134,11 +135,17 @@ bool RirDataset::load(const std::string& dir) {
     // "com.ivanna.omega" es el applicationId real (ver todos los símbolos
     // JNI Java_com_ivanna_omega_*); /data/data/<pkg> es el path estable que
     // usa el propio framework de Android para Context.getFilesDir().
-    static const char* kNoRootFallbackDir =
-        "/data/data/com.ivanna.omega/files/ivanna_omega/rir";
+    static const char* kFallbackDirs[] = {
+        "/system/etc/ivanna_omega/rir",
+        "/data/adb/ivanna_omega/rir",
+        "/data/data/com.ivanna.omega/files/ivanna_omega/rir",
+        "/data/user/0/com.ivanna.omega/files/ivanna_omega/rir"
+    };
 
     std::vector<std::string> candidates = {dir};
-    if (dir != kNoRootFallbackDir) candidates.push_back(kNoRootFallbackDir);
+    for (const char* fb : kFallbackDirs) {
+        if (dir != fb) candidates.emplace_back(fb);
+    }
 
     for (const auto& candidateDir : candidates) {
         const std::string csvPath = candidateDir + "/metadata.csv";
@@ -148,7 +155,7 @@ bool RirDataset::load(const std::string& dir) {
             continue;
         }
         dir_ = candidateDir;
-        return loadFromCsv(f);
+        if (loadFromCsv(f)) return true;
     }
     return false;
 }

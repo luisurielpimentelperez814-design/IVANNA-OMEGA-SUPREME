@@ -6,11 +6,11 @@ import android.content.Context
 data class SpatialAudioState(
     val hrtfEnabled: Boolean = true,
     val hrtfSubject: String = "kemar",
-    val rirEnabled: Boolean = false,
-    val rirRt60: Float = 0.5f,
-    val rirWet: Float = 0.35f,
-    val safEnabled: Boolean = false,
-    val safIntensity: Float = 0.5f,
+    val rirEnabled: Boolean = true,
+    val rirRt60: Float = 0.34f,
+    val rirWet: Float = 0.22f,
+    val safEnabled: Boolean = true,
+    val safIntensity: Float = 0.78f,
     val safAutoMode: Boolean = true,
     val cochlearInverseEnabled: Boolean = true,
     val cochlearIntensity: Float = 0.35f

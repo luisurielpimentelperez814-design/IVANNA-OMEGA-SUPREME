@@ -207,7 +207,10 @@ object OmegaEngineBridge {
 
     fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
     fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",targetGain); put("compAmount",compAmount); put("excRed",excRed); put("timestamp",System.currentTimeMillis()) })
-    fun setRoom(rt60S: Float, wet: Float = 0.35f, roomIdx: Int = -1): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S); put("wet",wet); put("idx",roomIdx) })
+    fun setRoom(rt60S: Float, wet: Float = 0.22f, roomIdx: Int = -1): Boolean {
+        runCatching { nativeSetLocalRoom(rt60S, wet, roomIdx) }
+        return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S); put("wet",wet); put("idx",roomIdx) })
+    }
     fun disableRoom(): Boolean = setRoom(0f,0f)
     fun getRoomStatus(): JSONObject? = requestCommand(JSONObject().apply { put("action","GET_ROOM_STATUS") })
     /**
@@ -310,6 +313,7 @@ object OmegaEngineBridge {
      */
     fun pushSafLatentQ(q: FloatArray, gain: Float = 1.0f): Boolean {
         if (q.size < 7) return false
+        runCatching { nativePushLocalSafLatent(q, gain) }
         return sendCommand(JSONObject().apply {
             put("action", "PUSH_SAF_STATE")
             put("q", org.json.JSONArray(q.take(7)))
@@ -398,6 +402,8 @@ object OmegaEngineBridge {
     @JvmStatic external fun nativeIsRirDatasetLoaded(): Boolean
     @JvmStatic external fun nativeGetRirRoomInfo(idx: Int): String?
     @JvmStatic external fun nativeSetRirDataDir(dir: String): Boolean
+    @JvmStatic external fun nativeSetLocalRoom(rt60S: Float, wet: Float, roomIdx: Int)
+    @JvmStatic external fun nativePushLocalSafLatent(q: FloatArray, gain: Float)
 
     /** true si el dataset RIR (200 salas) esta cargado en el motor nativo. */
     @JvmStatic
@@ -422,16 +428,38 @@ object OmegaEngineBridge {
         return runCatching {
             val dst = java.io.File(ctx.filesDir, "rir")
             val meta = java.io.File(dst, "metadata.csv")
+            val priorityFiles = listOf(
+                "metadata.csv",
+                "rir_0051.wav",
+                "rir_0122.wav",
+                "rir_0169.wav",
+                "rir_0081.wav",
+                "rir_0063.wav"
+            )
             if (!meta.exists()) {
                 dst.mkdirs()
-                ctx.assets.list("ivanna_omega/rir")?.forEach { name ->
+                for (name in priorityFiles) {
                     val out = java.io.File(dst, name)
-                    if (!out.exists()) {
-                        ctx.assets.open("ivanna_omega/rir/$name").use { i ->
-                            out.outputStream().use { o -> i.copyTo(o) }
+                    if (!out.exists() || out.length() == 0L) {
+                        runCatching {
+                            ctx.assets.open("ivanna_omega/rir/$name").use { i ->
+                                out.outputStream().use { o -> i.copyTo(o) }
+                            }
                         }
                     }
                 }
+                Thread({
+                    runCatching {
+                        ctx.assets.list("ivanna_omega/rir")?.forEach { name ->
+                            val out = java.io.File(dst, name)
+                            if (!out.exists() || out.length() == 0L) {
+                                ctx.assets.open("ivanna_omega/rir/$name").use { i ->
+                                    out.outputStream().use { o -> i.copyTo(o) }
+                                }
+                            }
+                        }
+                    }
+                }, "IvannaRirBgExtract").start()
             }
             nativeSetRirDataDir(dst.absolutePath)
         }.getOrDefault(false)

@@ -1,4 +1,5 @@
 #include "HrtfManager.hpp"
+#include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -6,8 +7,20 @@
 namespace Ivanna {
 
 HrtfManager::HrtfManager() {
-    synthesizeHrtf(0.0f, 0.0f, 0.0f, 0);
-    synthesizeHrtf(0.0f, 0.0f, 0.0f, 1);
+    const char* bootCandidates[] = {
+        "/data/adb/ivanna_omega/hrtf_dataset.ihr1",
+        "/system/etc/ivanna_omega/hrtf/kemar.ihr1",
+        "/data/adb/ivanna_omega/hrtf/kemar.ihr1",
+        "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1",
+        "/data/user/0/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1"
+    };
+    for (const char* p : bootCandidates) {
+        if (loadFromDataset(p)) break;
+    }
+    if (!m_datasetLoaded) {
+        synthesizeHrtf(0.0f, 0.0f, 0.0f, 0);
+        synthesizeHrtf(0.0f, 0.0f, 0.0f, 1);
+    }
 
     for (size_t i = 0; i < BLOCK_SIZE + HRTF_TAPS; ++i) {
         m_histL[i] = 0.0f;
@@ -39,25 +52,60 @@ void HrtfManager::synthesizeHrtf(float yaw, float pitch, float roll, int bank) {
     const float riemannian_scale =
         1.0f + m_intrinsicCurvature.load(std::memory_order_relaxed) * std::sin(geodesic_dist);
 
-    const float itd = std::sin(theta) * 0.1f * riemannian_scale;
-    const float ild = std::sin(theta) * riemannian_scale;
+    const float ild = std::clamp(std::sin(theta) * riemannian_scale * 0.25f, -0.45f, 0.45f);
+    const int itdSamples = std::clamp(
+        static_cast<int>(std::round(std::sin(theta) * 18.0f * riemannian_scale)),
+        -24, 24
+    );
 
-    for (size_t i = 0; i < HRTF_TAPS; ++i) {
-        const float t  = static_cast<float>(i) / HRTF_TAPS;
-        const float tL = t - itd;
-        const float tR = t + itd;
+    std::memset(m_hrtfLL[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfRR[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfLR[bank], 0, HRTF_TAPS * sizeof(float));
+    std::memset(m_hrtfRL[bank], 0, HRTF_TAPS * sizeof(float));
 
-        m_hrtfLL[bank][i] = (tL >= 0.0f)
-            ? std::exp(-tL * 10.0f) * std::cos(tL * 30.0f) * (1.0f - ild * 0.5f) : 0.0f;
-        m_hrtfRR[bank][i] = (tR >= 0.0f)
-            ? std::exp(-tR * 10.0f) * std::cos(tR * 30.0f) * (1.0f + ild * 0.5f) : 0.0f;
+    // Construir HRIR causal de 128 taps desde la variedad maestra SOFA + SAF (p0 + V * q_master)
+    constexpr int kSofaLen = ivanna::master::kMasterHrirLen;
+    float baseL[kSofaLen]{};
+    float baseR[kSofaLen]{};
+    float energyL = 1e-8f, energyR = 1e-8f;
+    for (int n = 0; n < kSofaLen; ++n) {
+        float l = ivanna::master::kMasterSofaP0[n];
+        float r = ivanna::master::kMasterSofaP0[kSofaLen + n];
+        for (int k = 0; k < ivanna::master::kMasterSafK; ++k) {
+            const float qk = ivanna::master::kMasterSafGoldenQ[k];
+            l += qk * ivanna::master::kMasterSofaPcaV[k][n];
+            r += qk * ivanna::master::kMasterSofaPcaV[k][kSofaLen + n];
+        }
+        baseL[n] = l;
+        baseR[n] = r;
+        energyL += l * l;
+        energyR += r * r;
+    }
+    const float normL = (1.0f - ild) / std::sqrt(energyL);
+    const float normR = (1.0f + ild) / std::sqrt(energyR);
+    const int delayL = std::max(0, itdSamples);
+    const int delayR = std::max(0, -itdSamples);
 
-        const float tcL = t - 0.1f - itd;
-        const float tcR = t - 0.1f + itd;
-        m_hrtfLR[bank][i] = (tcR > 0.0f)
-            ? (0.3f * std::exp(-tcR * 15.0f) * (1.0f + ild * 0.5f)) : 0.0f;
-        m_hrtfRL[bank][i] = (tcL > 0.0f)
-            ? (0.3f * std::exp(-tcL * 15.0f) * (1.0f - ild * 0.5f)) : 0.0f;
+    // Almacenar en orden causal invertido [HRTF_TAPS - 1 - tap] porque processBinauralScene
+    // indexa m_histL[i + t] donde t = HRTF_TAPS - 1 es la muestra actual x[n].
+    for (int n = 0; n < kSofaLen; ++n) {
+        const int tapL = n + delayL;
+        const int tapR = n + delayR;
+        if (tapL < static_cast<int>(HRTF_TAPS)) {
+            m_hrtfLL[bank][HRTF_TAPS - 1 - tapL] = baseL[n] * normL;
+        }
+        if (tapR < static_cast<int>(HRTF_TAPS)) {
+            m_hrtfRR[bank][HRTF_TAPS - 1 - tapR] = baseR[n] * normR;
+        }
+        // Crossfeed acústico natural de sombra cefálica (~14 muestras = 290 us)
+        const int crossTapL = tapL + 14;
+        const int crossTapR = tapR + 14;
+        if (crossTapL < static_cast<int>(HRTF_TAPS)) {
+            m_hrtfRL[bank][HRTF_TAPS - 1 - crossTapL] = baseL[n] * normL * 0.12f;
+        }
+        if (crossTapR < static_cast<int>(HRTF_TAPS)) {
+            m_hrtfLR[bank][HRTF_TAPS - 1 - crossTapR] = baseR[n] * normR * 0.12f;
+        }
     }
 }
 
@@ -274,8 +322,25 @@ void HrtfManager::loadFromDatasetAtAzimuth(float azimuthDeg, int bank) {
     std::memset(m_hrtfLR[bank], 0, HRTF_TAPS * sizeof(float));
     std::memset(m_hrtfRL[bank], 0, HRTF_TAPS * sizeof(float));
 
-    std::memcpy(m_hrtfLL[bank], e.left.data(),  cL * sizeof(float));
-    std::memcpy(m_hrtfRR[bank], e.right.data(), cR * sizeof(float));
+    constexpr size_t kSofaLen = static_cast<size_t>(ivanna::master::kMasterHrirLen);
+    for (size_t k = 0; k < cL; ++k) {
+        float val = e.left[k];
+        if (k < kSofaLen) {
+            for (int c = 0; c < ivanna::master::kMasterSafK; ++c) {
+                val += ivanna::master::kMasterSafGoldenQ[c] * ivanna::master::kMasterSofaPcaV[c][k];
+            }
+        }
+        m_hrtfLL[bank][HRTF_TAPS - 1 - k] = val;
+    }
+    for (size_t k = 0; k < cR; ++k) {
+        float val = e.right[k];
+        if (k < kSofaLen) {
+            for (int c = 0; c < ivanna::master::kMasterSafK; ++c) {
+                val += ivanna::master::kMasterSafGoldenQ[c] * ivanna::master::kMasterSofaPcaV[c][kSofaLen + k];
+            }
+        }
+        m_hrtfRR[bank][HRTF_TAPS - 1 - k] = val;
+    }
 }
 
 } // namespace Ivanna

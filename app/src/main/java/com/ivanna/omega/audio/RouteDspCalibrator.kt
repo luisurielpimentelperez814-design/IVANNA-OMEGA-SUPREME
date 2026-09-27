@@ -5,6 +5,7 @@ import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.saf.SaFRoomBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,47 +86,53 @@ object RouteDspCalibrator {
 
         when (route) {
             OutputRoute.SPEAKER -> {
-                // Altavoz: el audio habita la habitación del usuario.
-                // HRTF de oreja fuera; sala RIR real encendida.
+                // Altavoz: HRTF de oreja fuera; sala abierta RIR #81 (rir_0081.wav, RT60=0.613s) acoplada con SAF.
                 if (nativeReady) runCatching {
                     IvannaNativeLib.nativeSetHRTFEnabled(false)
                 }.onFailure { Log.w(TAG, "HRTF off (speaker): ${it.message}") }
                 runCatching {
-                    OmegaEngineBridge.setRoom(rt60S = 0.7f, wet = 0.30f, roomIdx = -1)
+                    SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.613f, drr = 7.40f, steps = 24)
+                    val q = SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(q, gain = 0.65f)
+                    OmegaEngineBridge.setRoom(rt60S = 0.613f, wet = 0.16f, roomIdx = 81)
                 }.onFailure { Log.w(TAG, "room speaker: ${it.message}") }
-                Log.i(TAG, "Ruta SPEAKER → HRTF off + sala RIR (RT60 0.7s, wet 0.30)")
+                Log.i(TAG, "Ruta SPEAKER → HRTF off + SOFA-SAF-RIR Sala #81 (RT60 0.613s, wet 0.16)")
             }
 
             OutputRoute.WIRED_AUX, OutputRoute.USB -> {
-                // Canal directo a auricular/DAC: HRTF binaural completo,
-                // sin sala sintética (la sala real del usuario ya existe).
+                // Canal directo a auricular/DAC: HRTF binaural completo + Sala de Control Maestra
+                // ITU-R BS.1116 (rir_0051.wav, RT60=0.340s, DRR=10.31dB, C80=16.66dB) acoplada con SOFA-SAF.
                 if (nativeReady) runCatching {
                     IvannaNativeLib.nativeSetHRTFEnabled(true)
                 }.onFailure { Log.w(TAG, "HRTF on (aux/usb): ${it.message}") }
                 runCatching {
-                    OmegaEngineBridge.setRoom(rt60S = 0f, wet = 0f, roomIdx = -1) // sala off
-                }.onFailure { Log.w(TAG, "room off (aux/usb): ${it.message}") }
-                Log.i(TAG, "Ruta ${route.name} → HRTF on, sala off")
+                    SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.340f, drr = 10.31f, steps = 32)
+                    val q = SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(q, gain = 0.85f)
+                    OmegaEngineBridge.setRoom(rt60S = 0.340f, wet = 0.22f, roomIdx = 51)
+                }.onFailure { Log.w(TAG, "room aux/usb: ${it.message}") }
+                Log.i(TAG, "Ruta ${route.name} → HRTF on + Golden Master Studio Control Room #51 (RT60 0.340s, DRR 10.31dB, wet 0.22)")
             }
 
             OutputRoute.BLUETOOTH -> {
-                // Codec con pérdida: HRTF sí, pero campo contenido para no
-                // alimentar al codec con side-channel extremo, y sala corta
-                // (reverb larga + SBC = cola empastada).
+                // Codec con pérdida: HRTF on + Sala Compacta Anti-Codec #63 (rir_0063.wav, RT60=0.293s) acoplada con SOFA-SAF.
                 if (nativeReady) {
                     runCatching {
                         IvannaNativeLib.nativeSetHRTFEnabled(true)
                     }.onFailure { Log.w(TAG, "HRTF on (bt): ${it.message}") }
                     runCatching {
-                        IvannaNativeLib.nativeSetSpatialWidthDirect(0.78f)
+                        IvannaNativeLib.nativeSetSpatialWidthDirect(0.88f)
                     }.onFailure { Log.w(TAG, "width bt: ${it.message}") }
                 }
                 runCatching {
-                    OmegaEngineBridge.setRoom(rt60S = 0.28f, wet = 0.15f, roomIdx = -1)
+                    SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.293f, drr = 9.85f, steps = 24)
+                    val q = SaFRoomBridge.getParams()
+                    OmegaEngineBridge.pushSafLatentQ(q, gain = 0.78f)
+                    OmegaEngineBridge.setRoom(rt60S = 0.293f, wet = 0.18f, roomIdx = 63)
                 }.onFailure { Log.w(TAG, "room bt: ${it.message}") }
                 runCatching { MagiskBridge.setMid(1.12f) }
                 runCatching { MagiskBridge.setMaster(0.91f) }
-                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF on, width 0.78 (joint-stereo safe), sala corta 0.28s/0.15, presencia +mid, headroom -0.8 dB")
+                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF on + SOFA-SAF-RIR Sala #63 (RT60 0.293s, wet 0.18), presencia +mid")
             }
 
             OutputRoute.UNKNOWN -> Unit

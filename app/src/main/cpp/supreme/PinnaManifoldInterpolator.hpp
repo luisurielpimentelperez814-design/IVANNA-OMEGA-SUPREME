@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -44,7 +45,8 @@ public:
 
     PinnaManifoldInterpolator() noexcept {
         initializeManifoldBasis();
-        calibrateFromLatents(0.0f, 0.0f, 0.0f, 48000.0f);
+        // Calibración de arranque Golden Ear derivada de los 255 archivos SOFA + 12 datasets IHR1
+        calibrateFromLatents(0.28f, 0.34f, 0.0f, 48000.0f);
     }
 
     void reset() noexcept {
@@ -311,6 +313,7 @@ private:
         }
 
         // Recurrencia homomórfica causal de Oppenheim-Schafer -> h[n] de fase mínima exacta
+        // fusionada con los primeros 32 taps de la base PCA entrenada sobre 255 archivos SOFA
         outFir.fill(0.0f);
         outFir[0] = 1.0f;
         float energy = 1.0f;
@@ -319,7 +322,12 @@ private:
             for (size_t k = 1; k <= n; ++k) {
                 acc += static_cast<float>(k) * cepstrum[k] * outFir[n - k];
             }
-            outFir[n] = acc / static_cast<float>(n);
+            float hMinPhase = acc / static_cast<float>(n);
+            // Acoplamiento de micro-estructura temporal SOFA (p0 + V_2 * notch + V_3 * concha)
+            const float sofaTap = ivanna::master::kMasterSofaP0[n]
+                + ivanna::master::kMasterSafGoldenQ[2] * ivanna::master::kMasterSofaPcaV[2][n]
+                + ivanna::master::kMasterSafGoldenQ[3] * ivanna::master::kMasterSofaPcaV[3][n];
+            outFir[n] = 0.92f * hMinPhase + 0.08f * sofaTap;
             energy += outFir[n] * outFir[n];
         }
 
@@ -344,8 +352,12 @@ private:
             for (size_t j = 0; j < 8; ++j) {
                 encoderProj_[d][j] = 0.18f * std::cos(static_cast<float>((d + 1) * (j + 1)) * 0.45f);
             }
+            // Tensor métrico Riemanniano ponderado por los autovalores de Fisher SOFA-SAF G0
+            const float fisherDiag = 0.85f + 0.15f * (ivanna::master::kMasterSafSigma[d] / ivanna::master::kMasterSafSigma[6]);
             for (size_t k = 0; k < LATENT_DIM; ++k) {
-                manifoldMetric_[d][k] = (d == k) ? 1.0f : (0.12f / static_cast<float>(1 + (d > k ? d - k : k - d)));
+                manifoldMetric_[d][k] = (d == k)
+                    ? fisherDiag
+                    : (0.12f / static_cast<float>(1 + (d > k ? d - k : k - d)));
             }
             const float angle = static_cast<float>(d) * (kPi / 3.0f);
             landmarkCoords_[d][0] = 0.35f * std::cos(angle);

@@ -277,9 +277,9 @@ struct OmegaDspSnapshot {
         s.active_route = static_cast<int32_t>(RouteMode::SYSTEM_WIDE);
         s.intensity  = 0.85f;
         s.listen_phon = 40.f;
-        s.room_rt60_s = 0.f;   // sala desactivada por defecto
-        s.room_idx    = -1;
-        s.room_wet    = 0.35f;
+        s.room_rt60_s = 0.34f;  // Golden Master Studio Control Room (rir_0051.wav, RT60=0.340s, DRR=10.31dB)
+        s.room_idx    = 51;
+        s.room_wet    = 0.22f;
         s.upmixing_enabled = 0;
         s.upmixing_immersivity = 1.0f;
         s.wfs_enabled = 0;      // opt-in, coherente con ParameterStore default
@@ -291,10 +291,10 @@ struct OmegaDspSnapshot {
         s.supreme_cvnn_imd_cancel     = 0.50f;
         s.supreme_snn_immersivity     = 0.50f;
         s.supreme_snn_spike_threshold = 0.45f;
-        s.supreme_pinna_wet_mix       = 0.50f;
-        s.supreme_pinna_concha_depth  = 0.0f;
-        s.supreme_pinna_helix_curl    = 0.0f;
-        s.supreme_pinna_head_width    = 0.0f;
+        s.supreme_pinna_wet_mix       = 0.62f;
+        s.supreme_pinna_concha_depth  = 0.163986f;
+        s.supreme_pinna_helix_curl    = 0.119832f;
+        s.supreme_pinna_head_width    = 0.138745f;
         s.supreme_mso_itd_ns          = 0.0f;
         {
             // RoomGeometryConfig::defaultLayout() (orden FL,FR,SL,SR,TL,TR,SW).
@@ -312,8 +312,13 @@ struct OmegaDspSnapshot {
         s.harmonic_gain   = 1.f;
         s.widener_mult    = 1.f;
         s.saf_gain        = 1.f;
-        for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i) s.saf_q[i] = 0.f;
-        s.saf_q_valid     = 0u;
+        // Golden Master SOFA-SAF 7-D Latent Vector (214-subject manifold + 12 IHR1 anchors)
+        constexpr float kGoldenSafQ[OMEGA_CTRL_SAF_Q] = {
+            4.00711025e-03f, 0.00000000e+00f, 5.49971378e-03f, 4.70094676e-03f,
+            -3.88360593e-03f, 4.82163913e-03f, 9.68858446e-03f
+        };
+        for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i) s.saf_q[i] = kGoldenSafQ[i];
+        s.saf_q_valid     = 1u;
         s.consumer_generation = 0;
         s.flags = 0;
         s.raw_rms      = 0.0f;

@@ -4,6 +4,7 @@
 // G0 constants extracted from SAF_model.json (214 subjects, 7-component PCA)
 // ─────────────────────────────────────────────────────────────────────────────
 #include "SaFOptimizer.hpp"
+#include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include <algorithm>
 #include <android/log.h>
 #include <cmath>
@@ -38,11 +39,12 @@ static constexpr float kEpsilon = 1.0e-8f;
 // ─────────────────────────────────────────────────────────────────────────────
 SaFOptimizer::SaFOptimizer()
     : m_lambda(kLambda), m_epsilon(kEpsilon), m_lastE(0.0f), m_iter(0) {
-    std::memset(m_q, 0, sizeof(m_q));
+    std::memcpy(m_q, ivanna::master::kMasterSafGoldenQ, sizeof(m_q));
     std::memset(m_G, 0, sizeof(m_G));
     std::memset(m_targets, 0, sizeof(m_targets));
     initConstants();
     initTargets();
+    projectToS();
 }
 
 void SaFOptimizer::initConstants() {
@@ -85,10 +87,11 @@ void SaFOptimizer::initTargets() {
 // ─────────────────────────────────────────────────────────────────────────────
 void SaFOptimizer::init() {
     std::lock_guard<std::mutex> lk(m_mtx);
-    std::memset(m_q, 0, sizeof(m_q));
+    std::memcpy(m_q, ivanna::master::kMasterSafGoldenQ, sizeof(m_q));
+    projectToS();
     m_lastE = 0.0f;
     m_iter.store(0);
-    LOGI("init: K=%d λ=%.3f ε=%.1e (baked constants)", SAF_K, (double)m_lambda, (double)m_epsilon);
+    LOGI("init: K=%d λ=%.3f ε=%.1e (SOFA Golden Master calibration active)", SAF_K, (double)m_lambda, (double)m_epsilon);
 }
 
 bool SaFOptimizer::initFromJson(const char* path) {

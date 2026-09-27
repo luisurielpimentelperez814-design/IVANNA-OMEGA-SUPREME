@@ -41,6 +41,7 @@
 #include "../include/SafetyLimiter.h"
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
+#include "../spatial/SofaSafRirMasterKnowledge.hpp"
 #include "../music_intelligence/ImeBridge.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
@@ -166,6 +167,10 @@ static std::atomic<Ivanna::RirConvolver*> g_rirConvolver{nullptr};
 // lectura de disco + la FFT del IR y la entrega vía RirConvolver::load()
 // (que ya es thread-safe con process() vía pending_ + crossfade).
 static std::atomic<int32_t>       g_rirPendingIdx{-1};
+static float                      g_localSafQ[7] = {
+    4.00711025e-03f, 0.00000000e+00f, 5.49971378e-03f, 4.70094676e-03f,
+    -3.88360593e-03f, 4.82163913e-03f, 9.68858446e-03f
+};
 static std::mutex                 g_rirWorkerMtx;
 static std::condition_variable    g_rirWorkerCv;
 static std::atomic<bool>          g_rirWorkerRunning{false};
@@ -195,7 +200,8 @@ static void rirWorkerLoop() {
             Ivanna::RirDataset::resampleLinear(irL, sr, sessionSr);
             Ivanna::RirDataset::resampleLinear(irR, sr, sessionSr);
             int irLen = (int)irL.size();
-            if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+            if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
+            conv->applySofaCoupling(g_localSafQ);
             conv->load(irL.data(), irR.data(), irLen);
         }
         lk.lock();
@@ -708,10 +714,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         Ivanna::RirDataset* ds = new Ivanna::RirDataset();
         if (!ds->load("/data/adb/ivanna_omega/rir")) {
             delete ds; ds = nullptr;
-            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — passthrough");
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR");
         }
         g_rirDataset.store(ds, std::memory_order_release);
-        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+        auto* conv = new Ivanna::RirConvolver();
+        conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, sr);
+        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
+        g_rirConvolver.store(conv, std::memory_order_release);
+        if (ds && ds->isLoaded()) {
+            g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
+        }
     }
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
         g_rirWorkerThread = std::thread(rirWorkerLoop);
@@ -1530,10 +1543,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         Ivanna::RirDataset* ds = new Ivanna::RirDataset();
         if (!ds->load("/data/adb/ivanna_omega/rir")) {
             delete ds; ds = nullptr;
-            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — passthrough");
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR");
         }
         g_rirDataset.store(ds, std::memory_order_release);
-        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+        auto* conv = new Ivanna::RirConvolver();
+        conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, sr);
+        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
+        g_rirConvolver.store(conv, std::memory_order_release);
+        if (ds && ds->isLoaded()) {
+            g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
+        }
     }
     // FIX RT: arrancar el worker de carga de IR (hilo de control, joinable).
     // Idempotente — nativeInitDSP puede re-llamarse por cambio de SR.
@@ -2823,11 +2843,58 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
     // Publicar. El dataset previo (nulo o no cargado) se abandona sin delete:
     // init ocurre una sola vez por proceso y el worker pudo tomar el puntero.
     g_rirDataset.store(ds, std::memory_order_release);
-    if (g_rirConvolver.load(std::memory_order_acquire) == nullptr)
-        g_rirConvolver.store(new Ivanna::RirConvolver(), std::memory_order_release);
+    if (g_rirConvolver.load(std::memory_order_acquire) == nullptr) {
+        auto* conv = new Ivanna::RirConvolver();
+        conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, (int)g_params.sampleRate);
+        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
+        g_rirConvolver.store(conv, std::memory_order_release);
+    }
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel))
         g_rirWorkerThread = std::thread(rirWorkerLoop);
+    g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
+    g_rirWorkerCv.notify_one();
     return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
+    JNIEnv*, jclass, jfloat rt60S, jfloat wet, jint roomIdx) {
+    Ivanna::RirDataset*   ds   = g_rirDataset.load(std::memory_order_acquire);
+    Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
+    if (!conv) return;
+    if (rt60S <= 0.005f || wet <= 0.0001f) {
+        conv->setWetDry(0.0f);
+        return;
+    }
+    conv->applySofaCoupling(g_localSafQ);
+    conv->setWetDry(std::clamp(static_cast<float>(wet), 0.0f, 1.0f));
+    if (ds && ds->isLoaded() && ds->roomCount() > 0) {
+        const int32_t targetIdx = (roomIdx >= 0 && static_cast<size_t>(roomIdx) < ds->roomCount())
+            ? static_cast<int32_t>(roomIdx)
+            : static_cast<int32_t>(ds->findNearestSmart(rt60S));
+        g_rirPendingIdx.store(targetIdx, std::memory_order_release);
+        g_rirWorkerCv.notify_one();
+    } else {
+        conv->synthesizeMasterStudioBrir(rt60S, static_cast<int>(g_params.sampleRate));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativePushLocalSafLatent(
+    JNIEnv* env, jclass, jfloatArray qArr, jfloat gain) {
+    if (!qArr) return;
+    const jsize len = env->GetArrayLength(qArr);
+    if (len < 7) return;
+    float q[7]{};
+    env->GetFloatArrayRegion(qArr, 0, 7, q);
+    const float g = std::clamp(static_cast<float>(gain), 0.0f, 2.0f);
+    for (int i = 0; i < 7; ++i) {
+        g_localSafQ[i] = (g > 0.01f) ? (q[i] * g) : ivanna::master::kMasterSafGoldenQ[i];
+    }
+    if (Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire)) {
+        conv->applySofaCoupling(g_localSafQ);
+    }
 }
 
 // ── Music Intelligence Engine (IME) ──────────────────────────────────────────

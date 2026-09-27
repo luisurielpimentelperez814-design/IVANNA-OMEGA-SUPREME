@@ -4,6 +4,7 @@
 // ============================================================================
 
 #include "ivanna_object_renderer.hpp"
+#include "SofaSafRirMasterKnowledge.hpp"
 #include "../include/audio_thread_priority.h"
 #include <android/log.h>
 #include <mutex>
@@ -43,6 +44,36 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
     hrtfInR_.assign(blockSize_, 0.f);
 
     reverb_.init();
+
+    // ── Calibración Magistral Conjunta SOFA + SAF + RIR desde el Arranque ──
+    // 1. Inyectar el latente maestro entrenado sobre las 255 mediciones SOFA + 12 IHR1
+    for (int k = 0; k < 7; ++k) {
+        saf_q_[k] = ivanna::master::kMasterSafGoldenQ[k];
+    }
+    setLatentParams(saf_q_.data());
+
+    // 2. Activar la Sala de Control de Referencia Maestra (ITU-R BS.1116, RT60=0.340s)
+    //    con acoplamiento acústico SOFA->RIR; si el dataset WAV aún no está extraído,
+    //    sintetizar el BRIR maestro estéreo particionado para garantizar reverb real desde frame 0.
+    reverbLevel_ = ivanna::master::kMasterStudioRoomWet;
+    if (!selectRoomByRT60(ivanna::master::kMasterStudioRoomRt60S)) {
+        if (!rirConvolver_) rirConvolver_ = std::make_unique<Ivanna::RirConvolver>();
+        rirConvolver_->applySofaCoupling(saf_q_.data());
+        rirConvolver_->synthesizeMasterStudioBrir(
+            ivanna::master::kMasterStudioRoomRt60S,
+            static_cast<int>(sampleRate_)
+        );
+        rirConvolver_->setWetDry(reverbLevel_);
+        currentRoomIdx_ = ivanna::master::kMasterStudioRoomIdx;
+        currentRt60S_   = ivanna::master::kMasterStudioRoomRt60S;
+    }
+
+    // Registrar sujeto HRTF por defecto si hrtfConvolvers_ cargó kemar
+    if (currentSubject_ == "none") {
+        currentSubject_ = "kemar";
+        hrtfDatasetLoaded_.store(true, std::memory_order_release);
+    }
+
     ivanna::audio::enableAudioThreadFastMathOnce();
 }
 
@@ -255,17 +286,28 @@ bool ObjectRenderer::selectRoomByRT60(float targetRt60S) noexcept {
         return false;
     }
 
-    int irLen = static_cast<int>(irL.size());
-    if (irLen > Ivanna::RirConvolver::MAX_IR) irLen = Ivanna::RirConvolver::MAX_IR;
+    // Remuestrear la RIR medida (16 kHz en el dataset) a la frecuencia de muestreo real de la sesión
+    const int targetSr = (sampleRate_ > 8000.f) ? static_cast<int>(sampleRate_) : 48000;
+    if (sr > 0 && sr != targetSr) {
+        Ivanna::RirDataset::resampleLinear(irL, sr, targetSr);
+        Ivanna::RirDataset::resampleLinear(irR, sr, targetSr);
+        sr = targetSr;
+    }
+
+    int irLen = static_cast<int>(std::min(irL.size(), irR.size()));
+    if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) {
+        irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
+    }
 
     if (!rirConvolver_) rirConvolver_ = std::make_unique<Ivanna::RirConvolver>();
+    rirConvolver_->applySofaCoupling(saf_q_.data());
     rirConvolver_->load(irL.data(), irR.data(), irLen);
     rirConvolver_->setWetDry(reverbLevel_);
 
     currentRoomIdx_ = static_cast<int>(idx);
     currentRt60S_   = ds.meta(idx).rt60S;
     __android_log_print(ANDROID_LOG_INFO, IVR_TAG,
-        "RIR activo: sala idx=%d RT60=%.2fs wet=%.2f sr=%dHz irLen=%d",
+        "RIR activo (SOFA-acoplado): sala idx=%d RT60=%.2fs wet=%.2f sr=%dHz irLen=%d",
         currentRoomIdx_, (double)currentRt60S_, (double)reverbLevel_, sr, irLen);
     return true;
 }
@@ -296,6 +338,9 @@ void ivanna::spatial::ObjectRenderer::setSafLatent(
 {
     saf_q_ = q;
 
+    if (rirConvolver_) {
+        rirConvolver_->applySofaCoupling(saf_q_.data());
+    }
 
     for(size_t i=0;i<hrtfConvolvers_.size();i++)
     {

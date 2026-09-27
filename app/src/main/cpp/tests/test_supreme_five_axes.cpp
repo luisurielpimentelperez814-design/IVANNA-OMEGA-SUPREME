@@ -332,3 +332,60 @@ TEST(SupremeFiveAxesPipelineIntegration, CrossProcessSnapshotAndLaboratoryCalibr
     }
 }
 
+TEST(SofaSafRirMasterKnowledge, JointSofaSafRirBootCalibrationAndCoupling) {
+    // 1. Verificar ausencia de picos espurios en kMasterSofaP0 (continuidad C1 en 128 taps L+R)
+    float maxP0 = 0.0f;
+    for (int i = 0; i < 256; ++i) {
+        ASSERT_TRUE(std::isfinite(ivanna::master::kMasterSofaP0[i]));
+        maxP0 = std::max(maxP0, std::fabs(ivanna::master::kMasterSofaP0[i]));
+    }
+    EXPECT_GT(maxP0, 1.0e-4f);
+    EXPECT_LT(maxP0, 0.05f); // Sin spike en tap 100
+
+    // 2. Verificar métricas físicas medidas de las 200 salas RIR (DRR, C80, IACC_early, IACC_late)
+    for (int r = 0; r < ivanna::master::kMasterRoomCount; ++r) {
+        const auto& m = ivanna::master::kRirAcousticsTable[r];
+        EXPECT_TRUE(std::isfinite(m.drrDb));
+        EXPECT_TRUE(std::isfinite(m.c80Db));
+        EXPECT_GT(m.iaccEarly, 0.50f);
+        EXPECT_LT(m.iaccEarly, 0.96f);
+        EXPECT_GT(m.iaccLate, 0.10f);
+        EXPECT_LT(m.iaccLate, m.iaccEarly);
+    }
+
+    // 3. Verificar acoplamiento SOFA-SAF -> RIR y síntesis BRIR de Sala de Control Maestra (#51)
+    Ivanna::RirConvolver conv;
+    conv.applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+    conv.synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, 48000);
+    conv.setWetDry(ivanna::master::kMasterStudioRoomWet);
+    EXPECT_TRUE(conv.isLoaded());
+    EXPECT_GT(conv.earlyClarityBoost(), 1.0f);
+    EXPECT_GT(conv.lateDecorrelation(), 0.5f);
+
+    std::vector<float> bufL(512, 0.0f), bufR(512, 0.0f);
+    bufL[0] = 0.8f;
+    bufR[0] = 0.8f;
+    conv.process(bufL.data(), bufR.data(), 512);
+    double energyL = 0.0, energyR = 0.0, diffLR = 0.0;
+    for (size_t i = 0; i < 512; ++i) {
+        ASSERT_TRUE(std::isfinite(bufL[i]));
+        ASSERT_TRUE(std::isfinite(bufR[i]));
+        energyL += bufL[i] * bufL[i];
+        energyR += bufR[i] * bufR[i];
+        diffLR  += std::fabs(bufL[i] - bufR[i]);
+    }
+    EXPECT_GT(energyL, 0.1);
+    EXPECT_GT(energyR, 0.1);
+    EXPECT_GT(diffLR, 1.0e-4); // Decorrelación binaural SOFA-SAF activa en reflexiones tempranas
+
+    // 4. Verificar que el snapshot de arranque (Root & Non-Root) nace con calibración Golden Master
+    const ivanna::OmegaDspSnapshot bootSnap = ivanna::OmegaDspSnapshot::makeDefault();
+    EXPECT_TRUE(bootSnap.isValid());
+    EXPECT_EQ(bootSnap.room_idx, ivanna::master::kMasterStudioRoomIdx);
+    EXPECT_NEAR(bootSnap.room_rt60_s, ivanna::master::kMasterStudioRoomRt60S, 0.01f);
+    EXPECT_NEAR(bootSnap.room_wet, ivanna::master::kMasterStudioRoomWet, 0.01f);
+    EXPECT_EQ(bootSnap.saf_q_valid, 1u);
+    EXPECT_NEAR(bootSnap.saf_q[0], ivanna::master::kMasterSafGoldenQ[0], 1e-6f);
+}
+
+

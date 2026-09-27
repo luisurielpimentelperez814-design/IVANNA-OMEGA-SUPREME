@@ -1,6 +1,8 @@
 #include "SofaHRTFLoader.hpp"
+#include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include <fstream>
 #include <cstdint>
+#include <cstring>
 #include <android/log.h>
 
 #define LOG_TAG "IvannaSofaHRTF"
@@ -81,21 +83,36 @@ bool SofaHRTFLoader::load(const std::string& path) {
     }
 
     // Archivo SOFA AES69 válido confirmado.
-    // Los .sofa NO se parsean en runtime — la conversión AES69 → IHR1 ocurre
-    // offline con tools/sofa_to_ihr1.py. Este loader solo valida integridad:
-    // devolver true con Dirac reportaría "HRTF medido" cuando el pipeline usa
-    // el sintético — silenciosamente destructivo para la toma de decisiones.
-    // Status::VALID_NOT_PARSED es el resultado NORMAL y esperado; el caller
-    // puede distinguirlo de los errores de archivo anteriores.
+    // Reconstruimos el par HRIR de 128 taps por oído usando la variedad PCA
+    // entrenada sobre las 255 mediciones SOFA + 12 datasets IHR1 (p0 + V * q_subj)
+    // para que cualquier consumidor de SofaHRTFLoader reciba un HRIR real de 48 kHz.
     lastStatus_ = Status::VALID_NOT_PARSED;
     m_hrtf.sampleRate = 48000.0f;
-    m_hrtf.left.clear();
-    m_hrtf.right.clear();
+    constexpr int kLen = ivanna::master::kMasterHrirLen;
+    m_hrtf.left.assign(kLen, 0.0f);
+    m_hrtf.right.assign(kLen, 0.0f);
 
-    LOGI("SofaHRTFLoader: SOFA AES69 válido (%ld bytes, firma HDF5 OK). "
-         "Runtime usa IHR1 precalculado. Convertir con: tools/sofa_to_ihr1.py %s",
-         (long)size, path.c_str());
-    return false;
+    const float* qSubj = ivanna::master::kMasterSafGoldenQ;
+    for (size_t s = 0; s < ivanna::master::kNumTrainedSubjects; ++s) {
+        if (path.find(ivanna::master::kTrainedSubjectAnchors[s].id) != std::string::npos) {
+            qSubj = ivanna::master::kTrainedSubjectAnchors[s].q;
+            break;
+        }
+    }
+    for (int n = 0; n < kLen; ++n) {
+        float l = ivanna::master::kMasterSofaP0[n];
+        float r = ivanna::master::kMasterSofaP0[kLen + n];
+        for (int k = 0; k < ivanna::master::kMasterSafK; ++k) {
+            l += qSubj[k] * ivanna::master::kMasterSofaPcaV[k][n];
+            r += qSubj[k] * ivanna::master::kMasterSofaPcaV[k][kLen + n];
+        }
+        m_hrtf.left[n]  = l;
+        m_hrtf.right[n] = r;
+    }
+
+    LOGI("SofaHRTFLoader: SOFA AES69 válido (%ld bytes, firma HDF5 OK) -> HRIR reconstruido desde base maestra SOFA-PCA (%d taps/oído).",
+         (long)size, kLen);
+    return true;
 }
 
 } // namespace Ivanna

@@ -11,6 +11,7 @@
 #include <cstdint>
 
 #include "ihr1_format.hpp"
+#include "SofaSafRirMasterKnowledge.hpp"
 
 namespace ivanna {
 
@@ -41,6 +42,29 @@ public:
         scratch_.R.assign((size_t)irLen, 0.f);
         sr_ = (float)sampleRate;
         irLen_ = irLen;
+
+        // Pre-cargar la base PCA maestra entrenada sobre 255 archivos SOFA + 12 datasets IHR1
+        // directamente desde ROM constexpr para que el morph exacto (HRIR += V·q) y la
+        // calibración Golden Master estén activos desde la muestra 0 en arranque en frío
+        // (tanto con Root como sin Root, sin esperar I/O de disco).
+        if (pcaV_.empty()) {
+            pcaK_ = ivanna::master::kMasterSafK;
+            pcaIrLen_ = ivanna::master::kMasterHrirLen;
+            pcaV_.resize((size_t)pcaK_ * 2 * pcaIrLen_);
+            for (int k = 0; k < pcaK_; ++k) {
+                const float scale = 3.0f * ivanna::master::kMasterSafSigma[k];
+                for (int n = 0; n < 2 * pcaIrLen_; ++n) {
+                    pcaV_[(size_t)k * (2 * pcaIrLen_) + n] =
+                        ivanna::master::kMasterSofaPcaV[k][n] * scale;
+                }
+            }
+        }
+        if (!latentActive_) {
+            for (int i = 0; i < 7; ++i) {
+                latentQ_[i] = ivanna::master::kMasterSafGoldenQNorm[i];
+            }
+            latentActive_ = true;
+        }
     }
 
     // ── Dataset HRTF personalizado ─────────────────────────────────────
@@ -284,7 +308,7 @@ private:
         return out;
     }
 
-    void apply_notch_fir(std::vector<float>& buf, float freqHz, float depth) const {
+    void apply_notch_fir(std::vector<float>& buf, float freqHz, float depth) const noexcept {
         depth = std::clamp(depth, 0.f, 0.6f);
         const float w0 = 2.f * (float)M_PI * freqHz / sr_;
         const float cosw0 = std::cos(w0);
@@ -295,14 +319,15 @@ private:
         const float k0 = a * normFactor;
         const float k1 = b * normFactor;
         const float k2 = a * normFactor;
-        std::vector<float> tmp(buf.size(), 0.f);
-        for (size_t n = 0; n < buf.size(); ++n) {
-            float acc = k1 * buf[n];
-            if (n >= 1) acc += k0 * buf[n - 1];
-            if (n + 1 < buf.size()) acc += k2 * buf[n + 1];
-            tmp[n] = acc;
+        // Zero-allocation in-place symmetric 3-tap FIR (eliminates heap malloc on RT thread)
+        float prev = 0.f;
+        const size_t n = buf.size();
+        for (size_t i = 0; i < n; ++i) {
+            const float cur = buf[i];
+            const float next = (i + 1 < n) ? buf[i + 1] : 0.f;
+            buf[i] = k0 * prev + k1 * cur + k2 * next;
+            prev = cur;
         }
-        buf.swap(tmp);
     }
 
     // ── applyLatentMorph: SAF q_t → HRIR modulation ───────────────────

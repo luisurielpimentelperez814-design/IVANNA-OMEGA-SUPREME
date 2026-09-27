@@ -24,13 +24,28 @@
 #include <atomic>
 #include <cstring>
 #include <android/log.h>
+#include "spatial/SofaSafRirMasterKnowledge.hpp"
 
 #define TAG "SaFLatentBridge"
 
-// Snapshot seqlock-lite: buffer doble + contador de versión para que un
-// lector nunca vea un vector a medio escribir.
-static std::atomic<uint32_t> g_latentSeq{0};
-static float g_latent[7] = {0.f};
+// Snapshot seqlock-lite: inicializado desde el arranque con el latente
+// maestro entrenado sobre las 255 mediciones SOFA + 12 datasets IHR1
+// (kMasterSafGoldenQ) para que desde el frame 0 sin intervención del usuario
+// el renderer opere con calibración magistral.
+static std::atomic<uint32_t> g_latentSeq{2};
+static float g_latent[7] = {
+    ivanna::master::kMasterSafGoldenQ[0],
+    ivanna::master::kMasterSafGoldenQ[1],
+    ivanna::master::kMasterSafGoldenQ[2],
+    ivanna::master::kMasterSafGoldenQ[3],
+    ivanna::master::kMasterSafGoldenQ[4],
+    ivanna::master::kMasterSafGoldenQ[5],
+    ivanna::master::kMasterSafGoldenQ[6]
+};
+
+extern "C" uint32_t ivanna_saf_get_latent_seq() {
+    return g_latentSeq.load(std::memory_order_acquire);
+}
 
 extern "C" void ivanna_saf_apply_latent(const float q[7]) {
     if (!q) return;

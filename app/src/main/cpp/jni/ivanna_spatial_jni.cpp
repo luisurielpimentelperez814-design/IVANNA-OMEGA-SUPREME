@@ -39,24 +39,42 @@ inline ivanna::spatial::ObjectRenderer* toObjectRenderer(jlong h) {
 // en __hash_table → "unknown class name 'false_type'" y crash de build.
 // Movidos a file scope con static (internal linkage idéntico). Fix mínimo.
 extern "C" bool ivanna_saf_get_latent_snapshot(float out[7]);
+extern "C" uint32_t ivanna_saf_get_latent_seq();
+extern "C" void ivanna_saf_apply_latent(const float q[7]);
+static std::atomic<uint32_t> g_lastObservedSafSeq{0};
+static std::atomic<jlong>    g_lastObservedHandle{0};
 static std::unordered_map<jlong, std::array<float,7>> g_safLatentApplied;
 static std::mutex g_safLatentAppliedMutex;
 
 // Aplica el latente SAF pendiente al renderer del handle, si cambió.
-// Llamada desde nativeObjectRendererCreate (inicial) y renderBlock.
+// Fast-path 100% lock-free en el hilo de audio: si el contador de secuencia
+// atómico global y el handle activo no cambiaron, retorna en 2 cargas atómicas
+// sin tocar std::mutex ni std::unordered_map.
 static inline void safApplyPendingToRenderer(jlong handle,
         ivanna::spatial::ObjectRenderer* renderer) {
+    const uint32_t curSeq = ivanna_saf_get_latent_seq();
+    if ((curSeq & 1u) != 0u) return; // escritura en curso
+    if (curSeq == g_lastObservedSafSeq.load(std::memory_order_relaxed) &&
+        handle == g_lastObservedHandle.load(std::memory_order_relaxed)) {
+        return;
+    }
     float q[7];
     if (!ivanna_saf_get_latent_snapshot(q)) return;  // lectura inconsistente → skip
     {
         std::lock_guard<std::mutex> g(g_safLatentAppliedMutex);
         auto it = g_safLatentApplied.find(handle);
         if (it != g_safLatentApplied.end() &&
-            std::memcmp(it->second.data(), q, sizeof(float) * 7) == 0) return;
+            std::memcmp(it->second.data(), q, sizeof(float) * 7) == 0) {
+            g_lastObservedSafSeq.store(curSeq, std::memory_order_relaxed);
+            g_lastObservedHandle.store(handle, std::memory_order_relaxed);
+            return;
+        }
         std::array<float,7> arr;
         std::memcpy(arr.data(), q, sizeof(float) * 7);
         g_safLatentApplied[handle] = arr;
     }
+    g_lastObservedSafSeq.store(curSeq, std::memory_order_relaxed);
+    g_lastObservedHandle.store(handle, std::memory_order_relaxed);
     renderer->setSafLatent(q, 7);
 }
 static inline ivanna::ai::NeuralUpmixer* toUpmixer(jlong h) {
@@ -262,18 +280,35 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetHrtfSub
         // y loadHrtfDatasetFromFile abre rutas corruptas o crashea. Los
         // std::string ahora viven en variables con nombre hasta el final
         // del scope, y el array solo guarda vistas válidas.
-        const std::string candSystemEtc = "/system/etc/ivanna_omega/hrtf/" + subj + ".ihr1";
-        const std::string candDataAdb   = "/data/adb/ivanna_omega/hrtf/" + subj + ".ihr1";
-        const std::string candLegacy    = "/data/adb/ivanna_omega/hrtf_" + subj + ".ihr1";
+        const std::string candSystemEtc  = "/system/etc/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candDataAdb    = "/data/adb/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candNoRootData = "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candNoRootUser = "/data/user/0/com.ivanna.omega/files/ivanna_omega/hrtf/" + subj + ".ihr1";
+        const std::string candLegacy     = "/data/adb/ivanna_omega/hrtf_" + subj + ".ihr1";
         const char* candidates[] = {
             candSystemEtc.c_str(),
             candDataAdb.c_str(),
+            candNoRootData.c_str(),
+            candNoRootUser.c_str(),
             candLegacy.c_str(),
             nullptr
         };
         for (int i = 0; candidates[i]; ++i) {
             if (renderer->loadHrtfDatasetFromFile(candidates[i])) {
                 renderer->setCurrentSubjectName(subj.c_str());
+                break;
+            }
+        }
+        // Acoplar el ancla SAF entrenada sobre SOFA/IHR1 para este sujeto con el prior Golden Master
+        for (size_t s = 0; s < ivanna::master::kNumTrainedSubjects; ++s) {
+            if (subj == ivanna::master::kTrainedSubjectAnchors[s].id) {
+                float qCoupled[7];
+                for (int k = 0; k < 7; ++k) {
+                    qCoupled[k] = 0.65f * ivanna::master::kMasterSafGoldenQ[k]
+                                + 0.35f * ivanna::master::kTrainedSubjectAnchors[s].q[k];
+                }
+                ivanna_saf_apply_latent(qCoupled);
+                renderer->setSafLatent(qCoupled, 7);
                 break;
             }
         }

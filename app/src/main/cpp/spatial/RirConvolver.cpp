@@ -2,6 +2,7 @@
 // Ver RirConvolver.hpp para la documentación completa.
 
 #include "RirConvolver.hpp"
+#include "SofaSafRirMasterKnowledge.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -77,7 +78,57 @@ RirConvolver::RirConvolver() {
     std::memset(overlapR_, 0, sizeof overlapR_);
 }
 
+void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
+    float earlyBoost = 1.08f, lateDecorrel = 0.62f, rt60Delta = 0.0f, wetScale = 1.0f;
+    ivanna::master::computeSofaRirCoupling(q, earlyBoost, lateDecorrel, rt60Delta, wetScale);
+    earlyBoost_.store(earlyBoost, std::memory_order_relaxed);
+    decorrel_.store(lateDecorrel, std::memory_order_relaxed);
+}
+
+void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexcept {
+    const int sr = (sampleRate > 8000) ? sampleRate : 48000;
+    const float rt60 = std::clamp(rt60S, 0.18f, 1.80f);
+    const int irLen = std::min(MAX_IR + 4 * BLOCK, static_cast<int>(rt60 * static_cast<float>(sr)));
+    std::vector<float> irL(irLen, 0.0f), irR(irLen, 0.0f);
+
+    // Impulso directo + reflexiones tempranas de sala de control ITU-R BS.1116
+    irL[0] = 0.68f;
+    irR[0] = 0.68f;
+    const int erTap1 = std::min(irLen - 1, static_cast<int>(0.0042f * sr));
+    const int erTap2 = std::min(irLen - 1, static_cast<int>(0.0079f * sr));
+    const int erTap3 = std::min(irLen - 1, static_cast<int>(0.0134f * sr));
+    irL[erTap1] += 0.22f; irR[erTap1] += 0.18f;
+    irL[erTap2] -= 0.15f; irR[erTap2] += 0.19f;
+    irL[erTap3] += 0.12f; irR[erTap3] -= 0.14f;
+
+    // Cola difusa binaural descorrelacionada con decaimiento exponencial (-60 dB en rt60)
+    const float decayRate = 6.907755f / (rt60 * static_cast<float>(sr));
+    uint32_t seedL = 0x9E3779B9u;
+    uint32_t seedR = 0x85EBCA6Bu;
+    float normL = 0.0f, normR = 0.0f;
+    for (int n = 0; n < irLen; ++n) {
+        if (n > erTap1) {
+            seedL = seedL * 1664525u + 1013904223u;
+            seedR = seedR * 22695477u + 1u;
+            const float nL = (static_cast<float>(static_cast<int32_t>(seedL)) / 2147483648.0f);
+            const float nR = (static_cast<float>(static_cast<int32_t>(seedR)) / 2147483648.0f);
+            const float env = 0.035f * std::exp(-decayRate * static_cast<float>(n));
+            irL[n] += env * nL;
+            irR[n] += env * nR;
+        }
+        normL += irL[n] * irL[n];
+        normR += irR[n] * irR[n];
+    }
+    const float invNorm = 1.0f / std::sqrt(std::max(1e-6f, 0.5f * (normL + normR)));
+    for (int n = 0; n < irLen; ++n) {
+        irL[n] *= invNorm;
+        irR[n] *= invNorm;
+    }
+    load(irL.data(), irR.data(), irLen);
+}
+
 void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept {
+    if (!irL || !irR || irLen <= 0) return;
     // ── Particionado no uniforme: head (latencia 0) + cola (overlap-save) ──
     const int headLen = irLen < MAX_IR ? irLen : MAX_IR;
     const int tailLen = (irLen > MAX_IR) ? (irLen - MAX_IR) : 0;
@@ -106,15 +157,11 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
         for (int i = 0; i < plen; ++i) rre[i] = irR[off + i];
         fftReal(rre, rim, FFT_SIZE, false);
         // ── BRIR: decorrelar la cola R con red allpass en frecuencia ──
-        // H(z) allpass de primer orden por bin: |H|=1 (no cambia RT60 ni nivel),
-        // solo rota fase. Aplicado a la cola R, la hace incoherente con L ->
-        // reverb difusa envolvente en vez de una imagen mono fantasma.
         if (decorrel_.load(std::memory_order_relaxed) > 0.001f) {
             const float amt = decorrel_.load(std::memory_order_relaxed);
             const float a = 0.6f * amt;             // coeficiente allpass
             for (int k = 1; k < FFT_SIZE / 2; ++k) {
                 const float w = 2.0f * 3.14159265358979f * (float)k / (float)FFT_SIZE;
-                // Rotacion de fase allpass: phi = -2*atan(a*sin(w)/(1-a*cos(w)))
                 const float cw = std::cos(w), sw = std::sin(w);
                 const float den = 1.0f + a*a - 2.0f*a*cw;
                 const float re_h = ((1.0f+a*a)*cw - 2.0f*a) / den;
@@ -122,14 +169,13 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
                 const float re2 = rre[k]*re_h - rim[k]*im_h;
                 const float im2 = rre[k]*im_h + rim[k]*re_h;
                 rre[k] = re2; rim[k] = im2;
-                // conjugado para la mitad negativa del espectro real
                 rre[FFT_SIZE-k] = re2; rim[FFT_SIZE-k] = -im2;
             }
         }
     }
-    (void)headLen; // el camino head existente consume las primeras MAX_IR muestras
-    if (!irL || !irR || irLen <= 0) return;
+    (void)headLen;
     const int len = std::min(irLen, MAX_IR);
+    const float eBoost = earlyBoost_.load(std::memory_order_relaxed);
 
     // Calcular FFT de la IR en los buffers pendientes (hilo de control)
     std::memset(pendIrReL_, 0, sizeof pendIrReL_);
@@ -138,8 +184,30 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     std::memset(pendIrImR_, 0, sizeof pendIrImR_);
 
     for (int i = 0; i < len; ++i) {
-        pendIrReL_[i] = irL[i];
-        pendIrReR_[i] = irR[i];
+        // Aplicar realce de claridad directa/temprana acoplado al perfil SOFA-SAF
+        const float gain = (i < 64) ? eBoost : 1.0f;
+        pendIrReL_[i] = irL[i] * gain;
+        pendIrReR_[i] = irR[i] * gain;
+    }
+
+    // ── Binauralización SOFA-SAF de reflexiones tempranas (i >= 48, >1 ms @48k) ──
+    // Los WAV de RIR medidos tienen alta correlación L/R en los primeros 10 ms.
+    // Inyectamos el dipolo lateral ortogonalizado del manifold SOFA-SAF (kMasterSofaP0)
+    // únicamente en las reflexiones tempranas (preservando el impulso directo 0..47 intacto)
+    // para lograr IACC_early auténtico de cabeza antropomórfica (~0.76).
+    if (len > 64 && decorrel_.load(std::memory_order_relaxed) > 0.05f) {
+        const float latScale = 0.28f * decorrel_.load(std::memory_order_relaxed);
+        for (int i = len - 1; i >= 48; --i) {
+            float accLat = 0.0f;
+            const int maxK = std::min(i - 48, 31);
+            for (int k = 0; k <= maxK; ++k) {
+                const float mid = 0.5f * (pendIrReL_[i - k] + pendIrReR_[i - k]);
+                const float dip = (ivanna::master::kMasterSofaP0[k] - ivanna::master::kMasterSofaP0[128 + k]) * 85.0f;
+                accLat += mid * dip;
+            }
+            pendIrReL_[i] += latScale * accLat;
+            pendIrReR_[i] -= latScale * accLat;
+        }
     }
     fftReal(pendIrReL_, pendIrImL_, FFT_SIZE, false);
     fftReal(pendIrReR_, pendIrImR_, FFT_SIZE, false);
@@ -224,6 +292,11 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         const int newOl = (n < MAX_IR) ? n : MAX_IR - 1;
         std::memcpy(overlapL_, workRe_ + ol + n - newOl, newOl * sizeof(float));
         fftReal(workRe_, workIm_, FFT_SIZE, false);
+        // Capturar espectro de entrada X_L(k) en el FDL ANTES de multiplicar por H_head
+        if (tailPartsActive_ > 0 && fdlReL_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
+            std::memcpy(&fdlReL_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
+            std::memcpy(&fdlImL_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+        }
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReL_[i] - workIm_[i]*irImL_[i];
             float yi = workRe_[i]*irImL_[i] + workIm_[i]*irReL_[i];
@@ -241,24 +314,60 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         for (int i = 0; i < n; ++i) workRe_[ol + i] = R[offset + i];
         std::memcpy(overlapR_, workRe_ + ol + n - newOl, newOl * sizeof(float));
         fftReal(workRe_, workIm_, FFT_SIZE, false);
+        // Capturar espectro de entrada X_R(k) en el FDL ANTES de multiplicar por H_head
+        if (tailPartsActive_ > 0 && fdlReR_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
+            std::memcpy(&fdlReR_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
+            std::memcpy(&fdlImR_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+        }
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReR_[i] - workIm_[i]*irImR_[i];
             float yi = workRe_[i]*irImR_[i] + workIm_[i]*irReR_[i];
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
+        float convR[BLOCK];
+        for (int i = 0; i < n; ++i) convR[i] = workRe_[ol + i];
+
+        // ── Cola particionada estéreo (L y R con decorrelación BRIR allpass) ──
+        if (tailPartsActive_ > 0 && loaded_.load(std::memory_order_acquire) &&
+            fdlReL_.size() >= (size_t)TAIL_PARTS * FFT_SIZE &&
+            fdlReR_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
+            float accReL[FFT_SIZE]{}, accImL[FFT_SIZE]{};
+            float accReR[FFT_SIZE]{}, accImR[FFT_SIZE]{};
+            for (int p = 0; p < tailPartsActive_; ++p) {
+                const int src = (fdlIndex_ - p + TAIL_PARTS) % TAIL_PARTS;
+                const float* xrL = &fdlReL_[(size_t)src * FFT_SIZE];
+                const float* xiL = &fdlImL_[(size_t)src * FFT_SIZE];
+                const float* hrL = &tailIrReL_[(size_t)p * FFT_SIZE];
+                const float* hiL = &tailIrImL_[(size_t)p * FFT_SIZE];
+                const float* xrR = &fdlReR_[(size_t)src * FFT_SIZE];
+                const float* xiR = &fdlImR_[(size_t)src * FFT_SIZE];
+                const float* hrR = &tailIrReR_[(size_t)p * FFT_SIZE];
+                const float* hiR = &tailIrImR_[(size_t)p * FFT_SIZE];
+                for (int k = 0; k < FFT_SIZE; ++k) {
+                    accReL[k] += xrL[k] * hrL[k] - xiL[k] * hiL[k];
+                    accImL[k] += xrL[k] * hiL[k] + xiL[k] * hrL[k];
+                    accReR[k] += xrR[k] * hrR[k] - xiR[k] * hiR[k];
+                    accImR[k] += xrR[k] * hiR[k] + xiR[k] * hrR[k];
+                }
+            }
+            fftReal(accReL, accImL, FFT_SIZE, true);
+            fftReal(accReR, accImR, FFT_SIZE, true);
+            for (int i = 0; i < n; ++i) {
+                convL[i] += accReL[ol + i];
+                convR[i] += accReR[ol + i];
+            }
+            fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
+        }
 
         // ── Mezcla wet/dry: UN solo one-pole por par de muestras ──────────
-        // wetNow_ avanza exactamente N pasos para N muestras (no 2N).
-        // L y R ven el mismo wetNow_ en cada instante → imagen estéreo correcta.
-        const float ws  = wetSmooth_;
-        const float wsi = 1.f - ws;
+        const float ws = wetSmooth_;
         float wn = wetNow_;
         for (int i = 0; i < n; ++i) {
             wn = wetTarget + ws * (wn - wetTarget);
             const float dry = 1.f - wn;
             L[offset + i] = dry * L[offset + i] + wn * convL[i];
-            R[offset + i] = dry * R[offset + i] + wn * workRe_[ol + i];
+            R[offset + i] = dry * R[offset + i] + wn * convR[i];
         }
         wetNow_ = wn;
 
@@ -277,32 +386,7 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
 
         offset    += n;
         remaining -= n;
-    
-    // ── Cola particionada (overlap-save, latencia de 1 bloque, inaudible) ──
-    if (tailPartsActive_ > 0 && loaded_.load(std::memory_order_acquire)) {
-        // Espectro del bloque de entrada actual (workRe_/workIm_ ya lo contienen
-        // al salir del camino head); almacenarlo en el FDL y acumular colas.
-        std::memcpy(&fdlReL_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
-        std::memcpy(&fdlImL_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
-        float accRe[FFT_SIZE]; float accIm[FFT_SIZE];
-        std::memset(accRe, 0, sizeof accRe); std::memset(accIm, 0, sizeof accIm);
-        for (int p = 0; p < tailPartsActive_; ++p) {
-            const int src = (fdlIndex_ - p + TAIL_PARTS) % TAIL_PARTS;
-            const float* xr = &fdlReL_[(size_t)src * FFT_SIZE];
-            const float* xi = &fdlImL_[(size_t)src * FFT_SIZE];
-            const float* hr = &tailIrReL_[(size_t)p * FFT_SIZE];
-            const float* hi = &tailIrImL_[(size_t)p * FFT_SIZE];
-            for (int k = 0; k < FFT_SIZE; ++k) {
-                accRe[k] += xr[k] * hr[k] - xi[k] * hi[k];
-                accIm[k] += xr[k] * hi[k] + xi[k] * hr[k];
-            }
-        }
-        fftReal(accRe, accIm, FFT_SIZE, true);
-        const float w = wetDry_.load(std::memory_order_relaxed);
-        for (int i = 0; i < BLOCK; ++i) L[i] += accRe[i] * w;  // cola humeda se suma al head
-        fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
     }
-}
 }
 
 } // namespace Ivanna
