@@ -320,5 +320,15 @@ TEST(SupremeFiveAxesPipelineIntegration, CrossProcessSnapshotAndLaboratoryCalibr
         EXPECT_GE(z, -1.0f);
         EXPECT_LE(z, 1.0f);
     }
+    // Propiedad de fase mínima estricta (Oppenheim-Schafer): h[0] concentra la energía causal máxima
+    EXPECT_GT(pinna.activeFirLeft(0), 0.5f);
+    EXPECT_GT(pinna.activeFirRight(0), 0.5f);
+
+    // 5. Guardia hardware FTZ/DAZ (ScopedFpDenormalsToZero) sin efectos colaterales
+    {
+        ScopedFpDenormalsToZero guard{};
+        volatile float subnormal = 1.0e-40f;
+        (void)subnormal;
+    }
 }
 

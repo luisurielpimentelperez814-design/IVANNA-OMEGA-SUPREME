@@ -17,8 +17,51 @@
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
 #endif
+#if defined(__riscv_vector)
+#include <riscv_vector.h>
+#endif
+#if defined(__SSE__) || defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#include <pmmintrin.h>
+#endif
 
 namespace ivanna::supreme {
+
+/**
+ * @struct ScopedFpDenormalsToZero
+ * @brief Guardia RAII sin bloqueo que fuerza Flush-To-Zero (FTZ) y Denormals-Are-Zero (DAZ)
+ *        en registros de control FPU hardware (ARM64 FPCR bit 24 FZ / x86 MXCSR) durante
+ *        el hot-path de audio, cumpliendo la restricción de cero fallos por subnormales.
+ */
+struct ScopedFpDenormalsToZero {
+#if defined(__aarch64__)
+    uint64_t prevFpcr_{0};
+    ScopedFpDenormalsToZero() noexcept {
+        uint64_t fpcr = 0;
+        asm volatile("mrs %0, fpcr" : "=r"(fpcr));
+        prevFpcr_ = fpcr;
+        const uint64_t fzFpcr = fpcr | (1ULL << 24);
+        if (fzFpcr != fpcr) {
+            asm volatile("msr fpcr, %0" : : "r"(fzFpcr));
+        }
+    }
+    ~ScopedFpDenormalsToZero() noexcept {
+        asm volatile("msr fpcr, %0" : : "r"(prevFpcr_));
+    }
+#elif defined(__SSE__) || defined(__x86_64__) || defined(_M_X64)
+    unsigned int prevMxcsr_{0};
+    ScopedFpDenormalsToZero() noexcept {
+        prevMxcsr_ = _mm_getcsr();
+        _mm_setcsr(prevMxcsr_ | 0x8040u); // FTZ (bit 15) + DAZ (bit 6)
+    }
+    ~ScopedFpDenormalsToZero() noexcept {
+        _mm_setcsr(prevMxcsr_);
+    }
+#else
+    ScopedFpDenormalsToZero() noexcept = default;
+    ~ScopedFpDenormalsToZero() noexcept = default;
+#endif
+};
 
 /**
  * @struct WarpedLatticeTransducerInverter
@@ -134,6 +177,7 @@ public:
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
         if (!enabled_.load(std::memory_order_relaxed)) return;
+        ScopedFpDenormalsToZero ftzGuard{};
 
         const float fracDelay = computeSubSampleInverseGroupDelay(1000.0f);
         lastSubSampleDelay_.store(fracDelay, std::memory_order_relaxed);

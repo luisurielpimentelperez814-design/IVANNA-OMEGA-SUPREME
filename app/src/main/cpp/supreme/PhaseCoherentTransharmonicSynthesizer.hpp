@@ -187,6 +187,25 @@ private:
         // 4. Inferencia CVNN (Complex-Valued Neural Network) con activación modReLU
         float accR = 0.0f;
         float accI = 0.0f;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        const float32x4_t vWR   = vld1q_f32(cvnnWeightR_.data());
+        const float32x4_t vWI   = vld1q_f32(cvnnWeightI_.data());
+        const float32x4_t vBias = vld1q_f32(cvnnModReluBias_.data());
+        const float32x4_t vZ2R  = vdupq_n_f32(z2Real);
+        const float32x4_t vZ2I  = vdupq_n_f32(z2Imag);
+        const float32x4_t vEps  = vdupq_n_f32(1.0e-12f);
+        const float32x4_t vZero = vdupq_n_f32(0.0f);
+
+        // uR = wr * z2Real - wi * z2Imag; uI = wr * z2Imag + wi * z2Real
+        const float32x4_t vUR = vfmsq_f32(vmulq_f32(vWR, vZ2R), vWI, vZ2I);
+        const float32x4_t vUI = vfmaq_f32(vmulq_f32(vWR, vZ2I), vWI, vZ2R);
+        const float32x4_t vMagSq = vfmaq_f32(vfmaq_f32(vEps, vUR, vUR), vUI, vUI);
+        const float32x4_t vUMag  = vsqrtq_f32(vMagSq);
+        const float32x4_t vModGain = vdivq_f32(vmaxq_f32(vZero, vaddq_f32(vUMag, vBias)), vUMag);
+
+        accR = vaddvq_f32(vmulq_f32(vUR, vModGain));
+        accI = vaddvq_f32(vmulq_f32(vUI, vModGain));
+#else
         for (size_t c = 0; c < CVNN_CHANNELS; ++c) {
             const float wr = cvnnWeightR_[c];
             const float wi = cvnnWeightI_[c];
@@ -197,6 +216,7 @@ private:
             accR += uR * modGain;
             accI += uI * modGain;
         }
+#endif
 
         // 5. Oscilador DDSP bloqueado en fase instantánea para síntesis de banda >16 kHz
         oscPhase += 2.0f * instFreqSmooth;

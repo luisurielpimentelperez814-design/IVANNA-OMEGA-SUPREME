@@ -14,6 +14,13 @@
 #include <cstdint>
 #include <algorithm>
 
+#if defined(__linux__) || defined(__ANDROID__)
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace ivanna::supreme {
 
 /**
@@ -214,12 +221,33 @@ struct alignas(64) ShmArbitrationControlBlock {
 class alignas(64) SupremeMsoFarrowArbitrator {
 public:
     SupremeMsoFarrowArbitrator() noexcept {
+        attachSharedMemory();
         reset();
     }
+
+    ~SupremeMsoFarrowArbitrator() noexcept {
+#if defined(__linux__) || defined(__ANDROID__)
+        if (mappedBlock_ && mappedBlock_ != &shmLocal_) {
+            ::munmap(mappedBlock_, sizeof(ShmArbitrationControlBlock));
+            mappedBlock_ = &shmLocal_;
+        }
+        if (shmFd_ >= 0) {
+            ::close(shmFd_);
+            shmFd_ = -1;
+        }
+#endif
+    }
+
+    SupremeMsoFarrowArbitrator(const SupremeMsoFarrowArbitrator&) = delete;
+    SupremeMsoFarrowArbitrator& operator=(const SupremeMsoFarrowArbitrator&) = delete;
 
     void reset() noexcept {
         farrowL_.reset();
         farrowR_.reset();
+    }
+
+    bool isCrossProcessShmMapped() const noexcept {
+        return mappedBlock_ != &shmLocal_;
     }
 
     void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
@@ -228,7 +256,7 @@ public:
     void setMsoItdNanoseconds(float ns) noexcept {
         const float clamped = std::clamp(ns, -750000.0f, 750000.0f);
         msoItdNs_.store(clamped, std::memory_order_release);
-        shm_.mso_itd_nanoseconds.store(clamped, std::memory_order_relaxed);
+        shm().mso_itd_nanoseconds.store(clamped, std::memory_order_relaxed);
     }
 
     float msoItdNanoseconds() const noexcept {
@@ -236,27 +264,27 @@ public:
     }
 
     void setEbpfBypassActive(bool active) noexcept {
-        shm_.ebpf_bypass_active.store(active, std::memory_order_release);
+        shm().ebpf_bypass_active.store(active, std::memory_order_release);
     }
 
     bool isEbpfBypassActive() const noexcept {
-        return shm_.ebpf_bypass_active.load(std::memory_order_acquire);
+        return shm().ebpf_bypass_active.load(std::memory_order_acquire);
     }
 
     bool tryAcquireOwnership(int32_t pid, uint64_t nowNs) noexcept {
-        return shm_.tryAcquireOwnership(pid, nowNs);
+        return shm().tryAcquireOwnership(pid, nowNs);
     }
 
     bool releaseOwnership(int32_t pid) noexcept {
-        return shm_.releaseOwnership(pid);
+        return shm().releaseOwnership(pid);
     }
 
     int32_t ownerPid() const noexcept {
-        return shm_.owner_pid.load(std::memory_order_acquire);
+        return shm().owner_pid.load(std::memory_order_acquire);
     }
 
     uint64_t leaseEpochNs() const noexcept {
-        return shm_.lease_epoch_ns.load(std::memory_order_acquire);
+        return shm().lease_epoch_ns.load(std::memory_order_acquire);
     }
 
     void process(float* __restrict left, float* __restrict right, size_t numSamples, float sampleRate = 48000.0f) noexcept {
@@ -277,9 +305,62 @@ public:
     }
 
 private:
+    [[gnu::always_inline]] inline ShmArbitrationControlBlock& shm() noexcept {
+        return *mappedBlock_;
+    }
+    [[gnu::always_inline]] inline const ShmArbitrationControlBlock& shm() const noexcept {
+        return *mappedBlock_;
+    }
+
+    void attachSharedMemory() noexcept {
+        mappedBlock_ = &shmLocal_;
+#if defined(__linux__) || defined(__ANDROID__)
+        static constexpr const char* kCandidatePaths[] = {
+            "/dev/shm/omega_supreme_arb_v1",
+            "/data/adb/ivanna_omega/omega_supreme_arb_v1",
+            "/tmp/omega_supreme_arb_v1"
+        };
+        for (const char* path : kCandidatePaths) {
+            const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+            if (fd < 0) continue;
+            if (::ftruncate(fd, static_cast<off_t>(sizeof(ShmArbitrationControlBlock))) != 0) {
+                ::close(fd);
+                continue;
+            }
+            void* ptr = ::mmap(
+                nullptr,
+                sizeof(ShmArbitrationControlBlock),
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED,
+                fd,
+                0);
+            if (ptr == MAP_FAILED || !ptr) {
+                ::close(fd);
+                continue;
+            }
+            auto* blk = static_cast<ShmArbitrationControlBlock*>(ptr);
+            uint32_t expectedMagic = ShmArbitrationControlBlock::MAGIC;
+            if (blk->magic.load(std::memory_order_acquire) != expectedMagic) {
+                blk->owner_pid.store(0, std::memory_order_relaxed);
+                blk->lease_epoch_ns.store(0, std::memory_order_relaxed);
+                blk->ebpf_bypass_active.store(false, std::memory_order_relaxed);
+                blk->mso_itd_nanoseconds.store(0.0f, std::memory_order_relaxed);
+                blk->write_idx.store(0, std::memory_order_relaxed);
+                blk->read_idx.store(0, std::memory_order_relaxed);
+                blk->magic.store(expectedMagic, std::memory_order_release);
+            }
+            shmFd_ = fd;
+            mappedBlock_ = blk;
+            break;
+        }
+#endif
+    }
+
     FarrowOrder5Delay farrowL_{};
     FarrowOrder5Delay farrowR_{};
-    ShmArbitrationControlBlock shm_{};
+    ShmArbitrationControlBlock shmLocal_{};
+    ShmArbitrationControlBlock* mappedBlock_{&shmLocal_};
+    int shmFd_{-1};
     std::atomic<bool> enabled_{false};
     std::atomic<float> msoItdNs_{0.0f};
 };

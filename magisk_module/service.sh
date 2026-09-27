@@ -9,6 +9,7 @@ LOG="$STATE/daemon.log"
 mkdir -p "$STATE"
 
 chmod 755 "$DAEMON" 2>/dev/null
+chmod 755 "$MODDIR/system/bin/ivanna_client" 2>/dev/null
 chmod 755 "$MODDIR/service.sh" 2>/dev/null
 
 if pidof ivanna_daemon >/dev/null 2>&1; then
@@ -54,6 +55,16 @@ sleep 3
 
 if kill -0 "$PID" 2>/dev/null; then
     echo "$(date) daemon activo PID=$PID" >> "$LOG"
+    CLIENT="$MODDIR/system/bin/ivanna_client"
+    if [ -x "$CLIENT" ]; then
+        if [ -f "$STATE/supreme_axes.cfg" ]; then
+            "$CLIENT" "$(cat "$STATE/supreme_axes.cfg")" >> "$LOG" 2>&1
+            echo "$(date) 5 Ejes Supremos restaurados desde supreme_axes.cfg" >> "$LOG"
+        else
+            "$CLIENT" "SET_SUPREME_PRESET:supreme" >> "$LOG" 2>&1
+            echo "$(date) 5 Ejes Supremos inicializados con preset supreme" >> "$LOG"
+        fi
+    fi
 else
     echo "$(date) ERROR daemon murió al iniciar" >> "$LOG"
 fi

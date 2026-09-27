@@ -581,6 +581,16 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveItdUs(JNIEnv*, jclass) {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator().activeItdMicroSeconds();
 }
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPinnaActiveFirTaps(JNIEnv* env, jclass) {
+    jfloatArray outTaps = env->NewFloatArray(8);
+    if (!outTaps) return nullptr;
+    float taps[8]{};
+    const auto& pinna = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().pinnaManifoldInterpolator();
+    for (size_t i = 0; i < 8; ++i) taps[i] = pinna.activeFirLeft(i);
+    env->SetFloatArrayRegion(outTaps, 0, 8, taps);
+    return outTaps;
+}
 
 // ── EJE 5: SupremeMsoFarrowArbitrator ───────────────────────────────────────
 extern "C" JNIEXPORT void JNICALL
@@ -611,6 +621,11 @@ Java_com_ivanna_omega_core_NativeBridge_releaseShmArbitration(JNIEnv*, jclass, j
 extern "C" JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getShmOwnerPid(JNIEnv*, jclass) {
     return ivanna::spatial::IvannaAudioPipeline::getActiveInstance().shmMsoArbitrator().ownerPid();
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_isShmCrossProcessMapped(JNIEnv*, jclass) {
+    return ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .shmMsoArbitrator().isCrossProcessShmMapped() ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"

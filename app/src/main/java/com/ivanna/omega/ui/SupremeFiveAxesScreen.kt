@@ -43,6 +43,8 @@ data class SupremeAxesLiveTelemetry(
     val latticeKappas: List<Float> = listOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f),
     val snnOrthogonalMasks: List<Float> = listOf(0.25f, 0.25f, 0.25f, 0.25f),
     val pinnaLatents: List<Float> = listOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f),
+    val pinnaFirTaps: List<Float> = listOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f),
+    val shmCrossProcessMapped: Boolean = false,
     val daemonRutaBConnected: Boolean = false
 )
 
@@ -60,6 +62,8 @@ fun rememberSupremeAxesTelemetry(): State<SupremeAxesLiveTelemetry> {
                 latticeKappas         = NativeBridge.safeGetWarpedLatticeKappas().toList(),
                 snnOrthogonalMasks    = NativeBridge.safeGetSnnOrthogonalMasks().toList(),
                 pinnaLatents          = NativeBridge.safeGetPinnaActiveLatents().toList(),
+                pinnaFirTaps          = NativeBridge.safeGetPinnaActiveFirTaps().toList(),
+                shmCrossProcessMapped = NativeBridge.safeIsShmCrossProcessMapped(),
                 daemonRutaBConnected  = OmegaEngineBridge.isConnected
             )
             delay(250L)
@@ -1191,6 +1195,75 @@ fun PinnaManifoldAxisScreen(onBack: () -> Unit) {
                 )
             }
         }
+
+        GlassCard(
+            title = "RESPUESTA AL IMPULSO FIR FASE MÍNIMA (OPPENHEIM-SCHAFER)",
+            accent = AuroraCyan,
+            subtitle = "Concentración de Energía Causal en h[0..7] · Pre-Ringing 0.00 ms"
+        ) {
+            val taps = telemetry.pinnaFirTaps
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                for (i in 0 until 4) {
+                    StatBlock(
+                        label = "h[$i]",
+                        value = "%+.3f".format(taps.getOrElse(i) { 0f }),
+                        accent = if (i == 0) PhosphorGreen else AuroraCyan,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                for (i in 4 until 8) {
+                    StatBlock(
+                        label = "h[$i]",
+                        value = "%+.3f".format(taps.getOrElse(i) { 0f }),
+                        accent = AmberSignal,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        update { it.copy(pinnaConchaDepth = 0.0f, pinnaHelixCurl = 0.0f, pinnaHeadWidth = 0.0f) }
+                        NativeBridge.safeCalibratePinnaManifold(0.0f, 0.0f, 0.0f)
+                    },
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, AuroraCyan)
+                ) {
+                    Text("KEMAR", color = AuroraCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+                OutlinedButton(
+                    onClick = {
+                        update { it.copy(pinnaConchaDepth = 0.42f, pinnaHelixCurl = -0.18f, pinnaHeadWidth = 0.25f) }
+                        NativeBridge.safeCalibratePinnaManifold(0.42f, -0.18f, 0.25f)
+                    },
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, AmberSignal)
+                ) {
+                    Text("CIPIC-021", color = AmberSignal, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+                OutlinedButton(
+                    onClick = {
+                        update { it.copy(pinnaConchaDepth = -0.35f, pinnaHelixCurl = 0.22f, pinnaHeadWidth = -0.20f) }
+                        NativeBridge.safeCalibratePinnaManifold(-0.35f, 0.22f, -0.20f)
+                    },
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, PhosphorGreen)
+                ) {
+                    Text("CIPIC-008", color = PhosphorGreen, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
     }
 }
 
@@ -1219,7 +1292,7 @@ fun ShmFarrowArbitratorAxisScreen(onBack: () -> Unit) {
         GlassCard(
             title = "ESTADO DEL PUENTE INTER-PROCESO (RUTA A + RUTA B)",
             accent = AuroraCyan,
-            subtitle = "OmegaControlBus Seqlock SHM + Reloj Monotónico Real (CLOCK_MONOTONIC)"
+            subtitle = "OmegaControlBus Seqlock SHM v5 + Reloj Monotónico Real (CLOCK_MONOTONIC)"
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1238,9 +1311,9 @@ fun ShmFarrowArbitratorAxisScreen(onBack: () -> Unit) {
                     modifier = Modifier.weight(1f)
                 )
                 StatBlock(
-                    label = "ORDEN FARROW",
-                    value = "5º (6 Taps)",
-                    accent = AuroraCyan,
+                    label = "MMAP SHM",
+                    value = if (telemetry.shmCrossProcessMapped) "MAP_SHARED" else "LOCAL RAM",
+                    accent = if (telemetry.shmCrossProcessMapped) PhosphorGreen else AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
             }

@@ -207,6 +207,19 @@ public:
         outStreams[STREAM_DIFFUSE_TAIL] = sanitize(m3 * (0.3f * mid - 0.7f * side));
 
         // Proyección directa a los 16 canales de Higher Order Ambisonics (4º Orden)
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        const float s0 = outStreams[0];
+        const float s1 = outStreams[1];
+        const float s2 = outStreams[2];
+        const float s3 = outStreams[3];
+        for (size_t ch = 0; ch < HOA_CHANNELS; ch += 4) {
+            float32x4_t vAcc = vmulq_n_f32(vld1q_f32(&hoaEncodingMatrix_[0][ch]), s0);
+            vAcc = vfmaq_n_f32(vAcc, vld1q_f32(&hoaEncodingMatrix_[1][ch]), s1);
+            vAcc = vfmaq_n_f32(vAcc, vld1q_f32(&hoaEncodingMatrix_[2][ch]), s2);
+            vAcc = vfmaq_n_f32(vAcc, vld1q_f32(&hoaEncodingMatrix_[3][ch]), s3);
+            vst1q_f32(&outHoa16[ch], vAcc);
+        }
+#else
         for (size_t ch = 0; ch < HOA_CHANNELS; ++ch) {
             const float acc =
                 outStreams[0] * hoaEncodingMatrix_[0][ch] +
@@ -215,6 +228,7 @@ public:
                 outStreams[3] * hoaEncodingMatrix_[3][ch];
             outHoa16[ch] = sanitize(acc);
         }
+#endif
     }
 
     /**

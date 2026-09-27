@@ -15,6 +15,10 @@
 #include <cstdint>
 #include <algorithm>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 namespace ivanna::supreme {
 
 /**
@@ -105,8 +109,22 @@ public:
         return activePairs_[slot].latentAnthropometrics[idx];
     }
 
+    float activeFirLeft(size_t tap) const noexcept {
+        if (tap >= FIR_TAPS) return 0.0f;
+        const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
+        return activePairs_[slot].left[tap];
+    }
+
+    float activeFirRight(size_t tap) const noexcept {
+        if (tap >= FIR_TAPS) return 0.0f;
+        const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
+        return activePairs_[slot].right[tap];
+    }
+
     /**
-     * @brief Convolución FIR causal de fase mínima en tiempo real (32 taps, 0.00 ms lookahead).
+     * @brief Convolución FIR causal de fase mínima en tiempo real (32 taps, 0.00 ms lookahead)
+     *        usando línea de retardo doblemente espejada (2 * FIR_TAPS) para acceso lineal
+     *        contiguo en caché L1 y producto punto SIMD ARM NEON de 8 registros.
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
@@ -114,25 +132,46 @@ public:
         if (!enabled_.load(std::memory_order_relaxed) || wet <= 1.0e-5f) return;
 
         const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
-        const auto& firL = activePairs_[slot].left;
-        const auto& firR = activePairs_[slot].right;
+        const float* __restrict firL = activePairs_[slot].left.data();
+        const float* __restrict firR = activePairs_[slot].right.data();
         const float dry = 1.0f - wet;
 
         for (size_t i = 0; i < numSamples; ++i) {
             const float inL = std::isfinite(left[i])  ? left[i]  : 0.0f;
             const float inR = std::isfinite(right[i]) ? right[i] : 0.0f;
 
-            firHistoryL_[histWriteIdx_] = inL;
-            firHistoryR_[histWriteIdx_] = inR;
+            // Decremento circular para que [histWriteIdx_ .. histWriteIdx_ + FIR_TAPS - 1]
+            // contenga exactamente x[n], x[n-1], ..., x[n-31] de forma contigua en memoria.
+            histWriteIdx_ = (histWriteIdx_ == 0) ? (FIR_TAPS - 1) : (histWriteIdx_ - 1);
+            firHistoryL_[histWriteIdx_]            = inL;
+            firHistoryL_[histWriteIdx_ + FIR_TAPS] = inL;
+            firHistoryR_[histWriteIdx_]            = inR;
+            firHistoryR_[histWriteIdx_ + FIR_TAPS] = inR;
+
+            const float* __restrict hL = &firHistoryL_[histWriteIdx_];
+            const float* __restrict hR = &firHistoryR_[histWriteIdx_];
 
             float accL = 0.0f;
             float accR = 0.0f;
-            for (size_t k = 0; k < FIR_TAPS; ++k) {
-                const size_t idx = (histWriteIdx_ + FIR_TAPS - k) & (FIR_TAPS - 1);
-                accL += firL[k] * firHistoryL_[idx];
-                accR += firR[k] * firHistoryR_[idx];
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+            float32x4_t vAccL0 = vdupq_n_f32(0.0f);
+            float32x4_t vAccL1 = vdupq_n_f32(0.0f);
+            float32x4_t vAccR0 = vdupq_n_f32(0.0f);
+            float32x4_t vAccR1 = vdupq_n_f32(0.0f);
+            for (size_t k = 0; k < FIR_TAPS; k += 8) {
+                vAccL0 = vfmaq_f32(vAccL0, vld1q_f32(&firL[k]),     vld1q_f32(&hL[k]));
+                vAccL1 = vfmaq_f32(vAccL1, vld1q_f32(&firL[k + 4]), vld1q_f32(&hL[k + 4]));
+                vAccR0 = vfmaq_f32(vAccR0, vld1q_f32(&firR[k]),     vld1q_f32(&hR[k]));
+                vAccR1 = vfmaq_f32(vAccR1, vld1q_f32(&firR[k + 4]), vld1q_f32(&hR[k + 4]));
             }
-            histWriteIdx_ = (histWriteIdx_ + 1) & (FIR_TAPS - 1);
+            accL = vaddvq_f32(vaddq_f32(vAccL0, vAccL1));
+            accR = vaddvq_f32(vaddq_f32(vAccR0, vAccR1));
+#else
+            for (size_t k = 0; k < FIR_TAPS; ++k) {
+                accL += firL[k] * hL[k];
+                accR += firR[k] * hR[k];
+            }
+#endif
 
             left[i]  = std::clamp(dry * inL + wet * accL, -1.95f, 1.95f);
             right[i] = std::clamp(dry * inR + wet * accR, -1.95f, 1.95f);
@@ -323,8 +362,8 @@ private:
     alignas(64) std::array<std::array<float, 3>, LATENT_DIM> landmarkCoords_{};
 
     alignas(64) std::array<MinimumPhaseFirPair, 2> activePairs_{};
-    alignas(64) std::array<float, FIR_TAPS> firHistoryL_{};
-    alignas(64) std::array<float, FIR_TAPS> firHistoryR_{};
+    alignas(64) std::array<float, FIR_TAPS * 2> firHistoryL_{};
+    alignas(64) std::array<float, FIR_TAPS * 2> firHistoryR_{};
     size_t histWriteIdx_{0};
 
     std::atomic<uint32_t> activeFirSlot_{0};

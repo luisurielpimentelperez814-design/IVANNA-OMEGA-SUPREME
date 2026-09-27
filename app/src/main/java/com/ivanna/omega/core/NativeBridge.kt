@@ -140,6 +140,7 @@ object NativeBridge {
     @JvmStatic external fun getPinnaActiveLatents(): FloatArray?
     @JvmStatic external fun getPinnaActiveNotchHz(): Float
     @JvmStatic external fun getPinnaActiveItdUs(): Float
+    @JvmStatic external fun getPinnaActiveFirTaps(): FloatArray?
 
     fun safeSetPinnaManifoldEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setPinnaManifoldEnabled(enabled) }
@@ -162,6 +163,10 @@ object NativeBridge {
         if (isLoaded) runCatching { getPinnaActiveNotchHz() }.getOrDefault(7800f) else 7800f
     fun safeGetPinnaActiveItdUs(): Float =
         if (isLoaded) runCatching { getPinnaActiveItdUs() }.getOrDefault(620f) else 620f
+    fun safeGetPinnaActiveFirTaps(): FloatArray =
+        if (isLoaded) runCatching { getPinnaActiveFirTaps() }.getOrNull()
+            ?: floatArrayOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f)
+        else floatArrayOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f)
 
     // ── EJE 5: SupremeMsoFarrowArbitrator (SHM CAS owner_pid + Farrow 5º) ───
     @JvmStatic external fun setFarrowMsoEnabled(enabled: Boolean)
@@ -170,6 +175,7 @@ object NativeBridge {
     @JvmStatic external fun acquireShmArbitration(pid: Int): Boolean
     @JvmStatic external fun releaseShmArbitration(pid: Int): Boolean
     @JvmStatic external fun getShmOwnerPid(): Int
+    @JvmStatic external fun isShmCrossProcessMapped(): Boolean
 
     fun safeSetFarrowMsoEnabled(enabled: Boolean) {
         if (isLoaded) runCatching { setFarrowMsoEnabled(enabled) }
@@ -186,4 +192,6 @@ object NativeBridge {
         if (isLoaded) runCatching { releaseShmArbitration(pid) }.getOrDefault(true) else true
     fun safeGetShmOwnerPid(): Int =
         if (isLoaded) runCatching { getShmOwnerPid() }.getOrDefault(0) else 0
+    fun safeIsShmCrossProcessMapped(): Boolean =
+        if (isLoaded) runCatching { isShmCrossProcessMapped() }.getOrDefault(false) else false
 }

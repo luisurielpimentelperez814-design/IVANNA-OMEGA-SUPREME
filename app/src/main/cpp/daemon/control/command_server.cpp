@@ -227,6 +227,46 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.supreme_mso_itd_ns          = _clamp(_jsonFloat(json,"msoItdNanoseconds",    m_state.supreme_mso_itd_ns), -50000.f, 50000.f);
         m_state.supreme_ebpf_bypass_active  = (_jsonFloat(json,"ebpfBypassActive",         m_state.supreme_ebpf_bypass_active ? 1.f : 0.f) > 0.5f);
 
+        // Persistir estado de los 5 Ejes en disco para sobrevivir reinicios o auto-curación
+        {
+            static constexpr const char* kPersistPaths[] = {
+                "/data/adb/ivanna_omega/supreme_axes.cfg",
+                "/tmp/ivanna_supreme_axes.cfg"
+            };
+            for (const char* path : kPersistPaths) {
+                FILE* fp = fopen(path, "wb");
+                if (fp) {
+                    fprintf(fp,
+                        "{\"action\":\"SET_SUPREME_AXES\",\"warpedLatticeEnabled\":%.0f,\"warpedLatticeMicroChirp\":%.0f,"
+                        "\"warpedLatticeBlDrive\":%.4f,\"warpedLatticeLambda\":%.4f,\"transharmonicCvnnEnabled\":%.0f,"
+                        "\"transharmonicHarmonicGain\":%.4f,\"transharmonicImdCancel\":%.4f,\"snnHoaUpmixerEnabled\":%.0f,"
+                        "\"snnHoaImmersivity\":%.4f,\"snnSpikeThreshold\":%.4f,\"pinnaManifoldEnabled\":%.0f,"
+                        "\"pinnaManifoldWetMix\":%.4f,\"pinnaConchaDepth\":%.4f,\"pinnaHelixCurl\":%.4f,"
+                        "\"pinnaHeadWidth\":%.4f,\"farrowMsoEnabled\":%.0f,\"msoItdNanoseconds\":%.2f,\"ebpfBypassActive\":%.0f}\n",
+                        m_state.supreme_lattice_enabled ? 1.f : 0.f,
+                        m_state.supreme_microchirp_enabled ? 1.f : 0.f,
+                        m_state.supreme_lattice_bl_drive,
+                        m_state.supreme_lattice_lambda,
+                        m_state.supreme_cvnn_enabled ? 1.f : 0.f,
+                        m_state.supreme_cvnn_harmonic_gain,
+                        m_state.supreme_cvnn_imd_cancel,
+                        m_state.supreme_snn_hoa_enabled ? 1.f : 0.f,
+                        m_state.supreme_snn_immersivity,
+                        m_state.supreme_snn_spike_threshold,
+                        m_state.supreme_pinna_enabled ? 1.f : 0.f,
+                        m_state.supreme_pinna_wet_mix,
+                        m_state.supreme_pinna_concha_depth,
+                        m_state.supreme_pinna_helix_curl,
+                        m_state.supreme_pinna_head_width,
+                        m_state.supreme_farrow_mso_enabled ? 1.f : 0.f,
+                        m_state.supreme_mso_itd_ns,
+                        m_state.supreme_ebpf_bypass_active ? 1.f : 0.f);
+                    fclose(fp);
+                    break;
+                }
+            }
+        }
+
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
@@ -352,9 +392,18 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         float h = _jsonFloat(json,"height", 9999.f);
         float d = _jsonFloat(json,"depth", 9999.f);
         if (w!=9999.f) concha = w; if (h!=9999.f) helix = h; if (d!=9999.f) fosa = d;
+        // Normalizar métricas (si vienen en mm > 1.5, escalar a [-1, 1]) y publicar al Eje 4
+        const float normConcha = (concha > 1.5f || concha < -1.5f) ? _clamp((concha - 18.0f) / 10.0f, -1.f, 1.f) : _clamp(concha, -1.f, 1.f);
+        const float normHelix  = (helix  > 1.5f || helix  < -1.5f) ? _clamp((helix  - 60.0f) / 25.0f, -1.f, 1.f) : _clamp(helix,  -1.f, 1.f);
+        const float normFosa   = (fosa   > 1.5f || fosa   < -1.5f) ? _clamp((fosa   - 15.0f) / 10.0f, -1.f, 1.f) : _clamp(fosa,   -1.f, 1.f);
+        m_state.supreme_pinna_enabled      = true;
+        m_state.supreme_pinna_concha_depth = normConcha;
+        m_state.supreme_pinna_helix_curl   = normHelix;
+        m_state.supreme_pinna_head_width   = normFosa;
+        uint64_t gen = publishCurrentState(m_state);
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"action\":\"SET_PINNA_METRICS\",\"concha\":%.1f,\"helix\":%.1f,\"fosa\":%.1f}",
-            concha, helix, fosa);
+            "{\"ok\":true,\"action\":\"SET_PINNA_METRICS\",\"generation\":%llu,\"concha\":%.3f,\"helix\":%.3f,\"fosa\":%.3f}",
+            (unsigned long long)gen, concha, helix, fosa);
 
     } else if (strcmp(action,"PING")==0) {
         n = snprintf(reply,reply_sz,
@@ -382,26 +431,37 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             compatible?"true":"false",
             compatible?"ready":"proto_mismatch");
 
-    } else if (strcmp(action,"HELLO")==0) {
-        // Handshake de protocolo: el bridge lo envía al conectar y exige que
-        // la versión del daemon sea compatible. Responde la versión real y
-        // el estado, para que la app rechaze un daemon viejo/incompatible en
-        // vez de asumir que el socket abierto implica contrato válido.
-        n = snprintf(reply,(size_t)reply_sz,
-            "{\"ok\":true,\"action\":\"HELLO\",\"proto\":%d,\"daemon\":\"2.3.6\",\"status\":\"ready\"}",
-            OMEGA_PROTO_VERSION);
-
-    } else if (strcmp(action,"GET_STATUS")==0) {
+    } else if (strcmp(action,"GET_STATUS")==0 || strcmp(action,"STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u}",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u}",
             (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
             m_state.harmonic_gain, m_state.anti_dolby,
             m_state.cochlear_enabled?"true":"false", m_state.cochlear_intensity, m_state.spsc_ring_factor,
+            m_state.supreme_lattice_enabled?"true":"false",
+            m_state.supreme_cvnn_enabled?"true":"false",
+            m_state.supreme_snn_hoa_enabled?"true":"false",
+            m_state.supreme_pinna_enabled?"true":"false",
+            m_state.supreme_farrow_mso_enabled?"true":"false",
+            m_state.supreme_ebpf_bypass_active?"true":"false",
             (unsigned long long)m_state.last_update,
             m_state.self_heal_restarts, m_state.clients_served);
+
+    } else if (strcmp(action,"GET_TELEMETRY")==0) {
+        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"GET_TELEMETRY\",\"generation\":%llu,\"ctrl_version\":%u,\"samplerate\":48000,\"supreme_lattice\":%s,\"supreme_cvnn\":%s,\"supreme_snn_hoa\":%s,\"supreme_pinna\":%s,\"supreme_farrow_mso\":%s,\"ebpf_bypass\":%s,\"mso_itd_ns\":%.2f,\"clients_served\":%u}",
+            (unsigned long long)gen, (unsigned)ivanna::OMEGA_CTRL_VERSION,
+            m_state.supreme_lattice_enabled?"true":"false",
+            m_state.supreme_cvnn_enabled?"true":"false",
+            m_state.supreme_snn_hoa_enabled?"true":"false",
+            m_state.supreme_pinna_enabled?"true":"false",
+            m_state.supreme_farrow_mso_enabled?"true":"false",
+            m_state.supreme_ebpf_bypass_active?"true":"false",
+            m_state.supreme_mso_itd_ns,
+            m_state.clients_served);
 
     } else if (strcmp(action,"GET_HEALTH")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
