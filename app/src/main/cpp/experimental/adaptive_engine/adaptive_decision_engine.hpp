@@ -60,6 +60,7 @@
 
 #include <atomic>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <thread>
