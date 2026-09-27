@@ -190,7 +190,8 @@ public:
         const float bandTot = rawM.band_low_energy + rawM.band_mid_energy + rawM.band_high_energy + 1.0e-6f;
         rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTot) * 1.4f, 0.0f, 1.0f);
 
-        const auto adaptSt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(rawM, rawM.band_high_energy);
+        ivanna::experimental::AdaptiveState adaptSt{};
+        adaptSt.eq_tilt_db = -std::clamp(rawM.band_high_energy * 2.5f, 0.0f, 2.5f);
         const float dtSec  = static_cast<float>(n) / std::max(8000.0f, sampleRate);
         realityTickUs_    += static_cast<uint64_t>(dtSec * 1.0e6f);
 
