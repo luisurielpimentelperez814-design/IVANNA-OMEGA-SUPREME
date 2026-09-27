@@ -337,9 +337,8 @@ class PerceptualCortex {
         try {
             if (!IvannaNativeLib.isLoaded) return baseFatigue
 
-            // API retirada (ver IvannaNativeLib): el motor nativo no expone λ_t.
-            // Mismo comportamiento que el camino "λ_t no disponible" de antes.
-            val lambdaT = ADAPTIVE_LAMBDA_T_UNAVAILABLE
+            val lambdaT = runCatching { IvannaNativeLib.nativeGetAdaptiveLambdaT() }
+                .getOrDefault(ADAPTIVE_LAMBDA_T_UNAVAILABLE)
             if (lambdaT < 0) return baseFatigue  // No disponible
 
             Log.d("PerceptualCortex", "applyAdaptiveLambdaT: λ_t=$lambdaT")

@@ -29,12 +29,13 @@ object AdaptiveEnvironmentBridge {
             return  // Evitar actualizaciones innecesarias
         }
         lastRT60 = clampedRT60
-        
-        // El puente nativo de RT60 era API fantasma (external fun sin símbolo JNI
-        // y sin RT60 en AdaptiveDecisionEngine) — ver IvannaNativeLib. El RT60 se
-        // conserva en memoria para los consumidores Kotlin (getCurrentRT60), sin
-        // llamada nativa que pueda tirar UnsatisfiedLinkError.
-        Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 s (cacheado, sin puente nativo)")
+
+        if (com.ivanna.omega.core.IvannaNativeLib.isLoaded) {
+            runCatching {
+                com.ivanna.omega.core.IvannaNativeLib.nativeSetAdaptiveEnvironmentRT60(clampedRT60)
+            }
+        }
+        Log.d(TAG, "updateEnvironmentRT60: $clampedRT60 s")
     }
 
     /**

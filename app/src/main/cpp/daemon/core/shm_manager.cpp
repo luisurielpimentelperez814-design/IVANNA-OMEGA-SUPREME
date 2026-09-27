@@ -181,19 +181,26 @@ bool OmegaShmManager::writeControl(size_t offset, const void* src, size_t len) n
 
 static inline void storeU32(void* base, size_t off, uint32_t v) noexcept {
     auto* p = reinterpret_cast<std::atomic<uint32_t>*>(
-        static_cast<uint8_t*>(base) + off);
+        static_cast<uint8_t*>(base) + sizeof(ShmHeader) + off);
     p->store(v, std::memory_order_release);
 }
 static inline uint32_t loadU32(void* base, size_t off) noexcept {
     auto* p = reinterpret_cast<std::atomic<uint32_t>*>(
-        static_cast<uint8_t*>(base) + off);
+        static_cast<uint8_t*>(base) + sizeof(ShmHeader) + off);
     return p->load(std::memory_order_acquire);
+}
+
+void OmegaShmManager::publishHeartbeatMs(uint64_t monotonicMs) noexcept {
+    if (!m_base) return;
+    auto* p = reinterpret_cast<std::atomic<uint64_t>*>(
+        static_cast<uint8_t*>(m_base) + sizeof(ShmHeader) + SHM_HEARTBEAT_OFFSET);
+    p->store(monotonicMs, std::memory_order_release);
 }
 
 void OmegaShmManager::publishUptime(uint64_t seconds) noexcept {
     if (!m_base) return;
     auto* p = reinterpret_cast<std::atomic<uint64_t>*>(
-        static_cast<uint8_t*>(m_base) + SHM_UPTIME_OFFSET);
+        static_cast<uint8_t*>(m_base) + sizeof(ShmHeader) + SHM_UPTIME_OFFSET);
     p->store(seconds, std::memory_order_release);
     storeU32(m_base, SHM_METRICS_MAGIC_OFFSET, OMEGA_METRICS_MAGIC);
 }

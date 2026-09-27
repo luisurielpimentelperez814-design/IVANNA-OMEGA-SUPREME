@@ -353,6 +353,7 @@ class IVANNAApplication : Application() {
                 // pasada (daemon Magisk aún arrancando), el loop de 5s reintenta.
                 delay(500)
                 omegaBridge.connect()
+                runCatching { com.ivanna.omega.magisk.ShmManager.initialize(this@IVANNAApplication) }
                 Log.d(TAG, if (omegaBridge.isConnected)
                     "✅ OmegaEngineBridge conectado al daemon system-wide"
                 else

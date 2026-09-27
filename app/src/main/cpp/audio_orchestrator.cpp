@@ -10,6 +10,7 @@
 #include <android/log.h>
 
 #include "omega_shared.h"
+#include "audio_control_plane.hpp"
 #include "evolutionary_kernel.h"
 #include "dsp/loudness_meter.hpp"  // BS.1770-4 LUFS real (K-weighting + gating)
 
@@ -82,14 +83,13 @@ static void update_anti_dolby(float speech,
                               float music,
                               float bass)
 {
-    g_orch.anti_dolby_speech.store(
-        std::max(0.f,std::min(1.f,speech)), std::memory_order_relaxed);
-
-    g_orch.anti_dolby_music.store(
-        std::max(0.f,std::min(1.f,music)), std::memory_order_relaxed);
-
-    g_orch.anti_dolby_bass.store(
-        std::max(0.f,std::min(1.f,bass)), std::memory_order_relaxed);
+    const float sp = std::max(0.f,std::min(1.f,speech));
+    const float mu = std::max(0.f,std::min(1.f,music));
+    const float ba = std::max(0.f,std::min(1.f,bass));
+    g_orch.anti_dolby_speech.store(sp, std::memory_order_relaxed);
+    g_orch.anti_dolby_music.store(mu, std::memory_order_relaxed);
+    g_orch.anti_dolby_bass.store(ba, std::memory_order_relaxed);
+    control_set_yamnet_scores(sp, ba);
 }
 
 
@@ -211,6 +211,7 @@ extern "C" void ivanna_set_route_profile(
     g_orch.bassGain.store(bassBoostDb, std::memory_order_relaxed);
     g_orch.dialogGain.store(dialogBoostDb, std::memory_order_relaxed);
     g_orch.widenerWet.store(widenerMult, std::memory_order_relaxed);
+    control_set_route_profile(bassBoostDb, dialogBoostDb, widenerMult);
 }
 
 
@@ -234,7 +235,9 @@ extern "C" void ivanna_set_eq_gain(float db)
     if(!std::isfinite(db))
         return;
 
-    g_orch.eqGainDb.store(std::clamp(db,-12.f,12.f), std::memory_order_relaxed);
+    const float clamped = std::clamp(db,-12.f,12.f);
+    g_orch.eqGainDb.store(clamped, std::memory_order_relaxed);
+    g_control_frame.audio_engine_eq_gain.store(clamped, std::memory_order_relaxed);
 }
 
 
@@ -243,19 +246,34 @@ extern "C" void ivanna_set_stereo_width(float width)
     if(!std::isfinite(width))
         return;
 
-    g_orch.stereoWidth.store(std::clamp(width,0.f,1.f), std::memory_order_relaxed);
+    const float clamped = std::clamp(width,0.f,1.f);
+    g_orch.stereoWidth.store(clamped, std::memory_order_relaxed);
+    g_control_frame.audio_engine_width.store(clamped, std::memory_order_relaxed);
+}
+
+
+extern "C" void ivanna_set_exciter_amount(float amount)
+{
+    if(!std::isfinite(amount))
+        return;
+
+    g_control_frame.audio_engine_exciter.store(std::clamp(amount,0.f,1.f), std::memory_order_relaxed);
 }
 
 
 extern "C" float ivanna_get_lufs()
 {
-    return g_orch.lastLufs.load(std::memory_order_relaxed);
+    const float local = g_orch.lastLufs.load(std::memory_order_relaxed);
+    if (local > -69.5f) return local;
+    return g_control_frame.output_lufs.load(std::memory_order_relaxed);
 }
 
 
 extern "C" float ivanna_get_peak_dbfs()
 {
-    return g_orch.lastPeakDbfs.load(std::memory_order_relaxed);
+    const float local = g_orch.lastPeakDbfs.load(std::memory_order_relaxed);
+    if (local > -69.5f) return local;
+    return g_control_frame.output_peak_dbfs.load(std::memory_order_relaxed);
 }
 
 // ── HRTF wet/dry y flush — fix ruido DAC USB-C ────────────────────────────────

@@ -250,20 +250,33 @@ int main(int argc, char* argv[]) {
 
     CommandServer commandServer;
     commandServer.resetState();
-    CommandServer controlServer;
-    if (controlServer.start("@omega_command_socket")) {
+    if (commandServer.start("@omega_command_socket")) {
         log_message("CONTROL socket ready: @omega_command_socket");
-        std::thread([&controlServer](){ controlServer.acceptLoop(); }).detach();
+        std::thread([&commandServer](){ commandServer.acceptLoop(); }).detach();
+    } else {
+        // FIX: antes este fallo era SILENCIOSO. El socket de control es
+        // secundario — no abortamos el daemon principal, solo lo logueamos.
+        log_message("WARN: no se pudo bindear @omega_command_socket (secundario) — el daemon principal sigue activo.");
+    }
 
-    // Watchdog de heartbeat DEDICADO: 1 Hz, no depende del accept loop.
+    // Watchdog de heartbeat DEDICADO: 1 Hz, no depende del accept loop ni de @omega_command_socket.
     // Si el accept loop se bloquea (cliente colgado), el heartbeat sigue
     // latiendo y la app distingue "daemon vivo, socket ocupado" de "daemon muerto".
     std::thread([](){
         const auto t0 = std::chrono::steady_clock::now();
         uint64_t beats = 0;
+        auto publishNowMs = []() noexcept {
+            struct timespec ts{};
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            const uint64_t monoMs = static_cast<uint64_t>(ts.tv_sec) * 1000ULL +
+                                    static_cast<uint64_t>(ts.tv_nsec / 1000000ULL);
+            ivanna::shmManager().publishHeartbeatMs(monoMs);
+        };
+        publishNowMs();
         while (!g_shutdown_requested.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             ++beats;
+            publishNowMs();
             ivanna::shmManager().bumpHealthCounter(1);   // heartbeats_emitidos
             ivanna::shmManager().publishUptime(
                 (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(
@@ -280,11 +293,6 @@ int main(int argc, char* argv[]) {
             }
         }
     }).detach(); // heartbeat_watchdog
-    } else {
-        // FIX: antes este fallo era SILENCIOSO. El socket de control es
-        // secundario — no abortamos el daemon principal, solo lo logueamos.
-        log_message("WARN: no se pudo bindear @omega_command_socket (secundario) — el daemon principal sigue activo.");
-    }
 
     Ivanna::IvannaSelfHealingEngine selfHealer;
     selfHealer.startMonitoring();
@@ -396,7 +404,6 @@ int main(int argc, char* argv[]) {
         // por seguridad — costo nulo, un pthread_mutex_lock/unlock más por
         // segundo).
         commandServer.reportSelfHealRestarts((uint32_t)report.restartCount);
-        controlServer.reportSelfHealRestarts((uint32_t)report.restartCount);
 
         fd_set readfds; FD_ZERO(&readfds); FD_SET(g_server_fd,&readfds);
         struct timeval tv{1,0};
@@ -539,8 +546,9 @@ int main(int argc, char* argv[]) {
 
     }
     if (g_server_fd>=0) close(g_server_fd);
-    controlServer.stop();
+    commandServer.stop();
     selfHealer.stopMonitoring();
+    ivanna::shmManager().markShutdownClean(true);
     log_message("Daemon shutdown REAL");
     }
     catch (const std::exception& e) {

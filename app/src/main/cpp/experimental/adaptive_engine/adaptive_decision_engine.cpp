@@ -395,6 +395,23 @@ void AdaptiveDecisionEngine::controlLoop() {
             fatigueEma_ += kFatigueAlpha * (highRatio - fatigueEma_);
 
             AdaptiveState s = evaluate(metrics, sibilanceEma_, fatigueEma_);
+
+            // Modulación real por RT60 del entorno acústico y cálculo de λ_t
+            const float rt60 = environmentRt60_.load(std::memory_order_relaxed);
+            if (rt60 > 0.35f && metrics.rir_active > 0.5f) {
+                const float rt60Damp = clampRange(1.0f - (rt60 - 0.35f) * 0.30f, 0.45f, 1.0f);
+                s.rir_wet_scale *= rt60Damp;
+            }
+            const float rms   = std::max(0.0f, metrics.rms);
+            const float peak  = std::max(0.0f, metrics.peak);
+            const float crest = peak / std::max(rms, kEps);
+            const float dynNorm = clamp01((crest - 2.0f) / 10.0f);
+            const float rt60Norm = clamp01((rt60 - 0.1f) / 2.9f);
+            const float lambdaT = clamp01(
+                0.35f + 0.35f * dynNorm + 0.20f * (1.0f - clamp01(fatigueEma_)) - 0.15f * rt60Norm
+            );
+            adaptiveLambdaT_.store(lambdaT, std::memory_order_relaxed);
+
             adaptiveState.publish(s);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kControlIntervalMs));

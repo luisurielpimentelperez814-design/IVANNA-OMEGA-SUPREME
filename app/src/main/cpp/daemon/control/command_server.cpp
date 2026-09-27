@@ -2,6 +2,7 @@
 #include "command_server.h"
 #include <cstddef>
 #include "../core/shm_manager.h"
+#include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
 #include "../../ivanna_hires_config.hpp"
 #include <sys/socket.h>
@@ -51,7 +52,24 @@ const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
     p+=8; while(*p==' '||*p==':'||*p=='"') p++; int i=0; while(*p&&*p!='"'&&i<bufSz-1) buf[i++]=*p++; buf[i]='\0'; return buf;
 }
 
+static OmegaSharedState* getSharedState() noexcept {
+    void* base = ivanna::shmManager().base();
+    if (!base) return nullptr;
+    return reinterpret_cast<OmegaSharedState*>(
+        static_cast<uint8_t*>(base) + ivanna::SHM_STATE_OFFSET);
+}
+
 static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
+    if (OmegaSharedState* shm = getSharedState()) {
+        shm->intensity.store(s.intensity, std::memory_order_relaxed);
+        shm->ai_runtime_gain_mul.store(s.target_gain, std::memory_order_relaxed);
+        shm->ai_runtime_comp_amount.store(s.comp_amount, std::memory_order_relaxed);
+        shm->ai_runtime_exciter_red.store(s.exc_red, std::memory_order_relaxed);
+        shm->ai_runtime_spatial_width.store(s.spatial_width, std::memory_order_relaxed);
+        shm->route_bass_boost_db.store(s.bass_boost, std::memory_order_relaxed);
+        shm->route_dialog_boost_db.store(s.dialog_boost, std::memory_order_relaxed);
+        shm->route_widener_mult.store(s.widener_mult, std::memory_order_relaxed);
+    }
     ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
     snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
     snap.intensity=s.intensity; snap.listen_phon=s.listen_phon; snap.ref_phon=s.ref_phon;
@@ -324,10 +342,16 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         }
 
     } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
-        float speech = _jsonFloat(json,"speech",0.f);
-        float music = _jsonFloat(json,"music",0.f);
+        float speech = _clamp(_jsonFloat(json,"speech",0.f), 0.f, 1.f);
+        float music = _clamp(_jsonFloat(json,"music",0.f), 0.f, 1.f);
         float classId = _jsonFloat(json,"classId",0.f);
-        float conf = _jsonFloat(json,"confidence",0.f);
+        float conf = _clamp(_jsonFloat(json,"confidence",0.f), 0.f, 1.f);
+        if (OmegaSharedState* shm = getSharedState()) {
+            shm->ai_voice_score.store(speech, std::memory_order_relaxed);
+            shm->ai_music_score.store(music, std::memory_order_relaxed);
+            shm->ai_yamnet_class_id.store(static_cast<int>(classId), std::memory_order_relaxed);
+            shm->ai_yamnet_confidence.store(conf, std::memory_order_relaxed);
+        }
         CS_LOG("YAMNET REAL speech=%.2f music=%.2f class=%d conf=%.2f", speech, music, (int)classId, conf);
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
@@ -476,11 +500,15 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             ivanna::controlBus().isWriterOpen()?"true":"false");
     } else {
         CS_LOG("Accion desconocida: %s", action);
+        ivanna::shmManager().noteCommandResult(false);
         n = snprintf(reply,reply_sz,
             "{\"ok\":false,\"command\":\"%s\",\"applied\":false,\"status\":\"unknown_action\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"error\":\"unknown action %s\"}",
             action, (unsigned long long)ivanna::controlBus().lastPublishedGeneration(), action);
+        pthread_mutex_unlock(&m_mutex);
+        return n;
     }
 
+    ivanna::shmManager().noteCommandResult(true);
     pthread_mutex_unlock(&m_mutex);
     return n;
 }
@@ -549,10 +577,18 @@ void CommandServer::acceptLoop() {
             struct sockaddr_un cli; socklen_t clen=sizeof(cli);
             int cfd = accept(m_server_fd,(struct sockaddr*)&cli,&clen);
             if (cfd<0) continue;
-            char buf[4096]={}; ssize_t n=recv(cfd,buf,sizeof(buf)-1,MSG_DONTWAIT);
+            bumpClientsServed();
+            ivanna::shmManager().bumpHealthCounter(4);
+            struct timeval rcv_tv{0, 150000};
+            setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &rcv_tv, sizeof(rcv_tv));
+            char buf[4096]={}; ssize_t n=recv(cfd,buf,sizeof(buf)-1,0);
             if (n>0) {
                 buf[n]='\0'; char reply[4096]={};
-                int rlen = handleJsonCommand(buf,reply,sizeof(reply));
+                const char* p = buf;
+                while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') ++p;
+                int rlen = (*p == '{')
+                    ? handleJsonCommand(p, reply, sizeof(reply))
+                    : handleTextCommand(p, reply, sizeof(reply));
                 if (rlen>0) send(cfd,reply,rlen,MSG_NOSIGNAL);
             } else {
                 ivanna::ShmHeader* hdr = (ivanna::ShmHeader*)ivanna::shmManager().base();

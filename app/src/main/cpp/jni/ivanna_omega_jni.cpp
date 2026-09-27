@@ -2841,6 +2841,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
     env->SetFloatArrayRegion(arr, 0, 8, v);
     return arr;
 }
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveLambdaT(
+    JNIEnv*, jobject) {
+    return g_adaptiveEngine.getAdaptiveLambdaT();
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEnvironmentRT60(
+    JNIEnv*, jobject, jfloat rt60) {
+    g_adaptiveEngine.setEnvironmentRT60(static_cast<float>(rt60));
+}
 } // extern "C"
 
 // ── Limpieza ordenada antes de que los destructores estáticos corran ─────
@@ -2943,6 +2955,7 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
     JNIEnv*, jclass, jfloat rt60S, jfloat wet, jint roomIdx) {
+    g_adaptiveEngine.setEnvironmentRT60(rt60S > 0.005f ? static_cast<float>(rt60S) : 0.30f);
     Ivanna::RirDataset*   ds   = g_rirDataset.load(std::memory_order_acquire);
     Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
     if (!conv) return;

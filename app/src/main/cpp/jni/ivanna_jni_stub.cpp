@@ -32,6 +32,7 @@ extern "C" {
     void  ivanna_set_master_gain(float db);
     void  ivanna_set_eq_gain(float db);
     void  ivanna_set_stereo_width(float width);
+    void  ivanna_set_exciter_amount(float amount);
     float ivanna_get_lufs();
     float ivanna_get_peak_dbfs();
     // FIX DAC USB-C: control del wet/dry y flush del HrtfManager
@@ -151,6 +152,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeInit(
 JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeSetExciter(
     JNIEnv* /*env*/, jobject /*thiz*/, jfloat amount) {
     if (!std::isfinite(amount)) { LOGE("nativeSetExciter: NaN/Inf — ignorado"); return; }
+    ivanna_set_exciter_amount(amount);
     LOGI("AudioEngine_nativeSetExciter: amount=%.2f", amount);
 }
 

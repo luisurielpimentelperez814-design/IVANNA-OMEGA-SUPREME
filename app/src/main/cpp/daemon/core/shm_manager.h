@@ -199,6 +199,7 @@ public:
     void bumpHealthCounter(uint32_t index) noexcept;
     // Metricas extendidas (atomic store, lock-free, sin seqlock: cada campo
     // es un u32/u64 alineado escrito por un solo productor — el daemon).
+    void publishHeartbeatMs(uint64_t monotonicMs) noexcept;
     void publishUptime(uint64_t seconds) noexcept;
     void noteClientsPeak(uint32_t current) noexcept;
     void noteCommandResult(bool ok) noexcept;

@@ -295,19 +295,9 @@ object IvannaNativeLib {
     /** Reporte de texto generado por IvannaLab a partir del estado acumulado. */
     external fun nativeLabReport(): String
 
-    // ── API RETIRADA (λ_t / RT60 adaptativo) ───────────────────────────────
-    // `nativeGetAdaptiveLambdaT()` y `nativeSetAdaptiveEnvironmentRT60()` estaban
-    // declaradas como `external fun` sin NINGÚN símbolo JNI en la .so, y además
-    // AdaptiveDecisionEngine (app/src/main/cpp/experimental/adaptive_engine/
-    // adaptive_decision_engine.hpp:266) no tiene concepto de λ_t ni de RT60: su
-    // API pública es computeTargetGain/CompressorAmount/ExciterReduction/
-    // SpatialWidth/SafetyMargin/VoiceProtection. No hay motor real detrás.
-    //
-    // DECISIÓN: se retira la API fantasma en vez de inventar DSP. Los dos
-    // callers (PerceptualCortex.applyAdaptiveLambdaT y
-    // AdaptiveEnvironmentBridge.updateEnvironmentRT60) quedan en la misma
-    // semántica que ya tenían cuando λ_t no estaba disponible (< 0 → no-op),
-    // pero sin riesgo de UnsatisfiedLinkError.
+    // ── λ_t / RT60 adaptativo (AdaptiveDecisionEngine) ─────────────────────
+    external fun nativeGetAdaptiveLambdaT(): Float
+    external fun nativeSetAdaptiveEnvironmentRT60(rt60: Float)
 
     
     // ═══ FASE 3: Upmixing Inteligente HOA -> Binaural ═══

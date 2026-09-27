@@ -376,6 +376,19 @@ public:
     void stop() noexcept;
     bool running() const noexcept { return running_.load(std::memory_order_relaxed); }
 
+    // ── Entorno Acústico (RT60) y Factor de Adaptación Temporal λ_t ─────────
+    void setEnvironmentRT60(float rt60) noexcept {
+        if (!std::isfinite(rt60)) return;
+        const float clamped = rt60 < 0.1f ? 0.1f : (rt60 > 3.0f ? 3.0f : rt60);
+        environmentRt60_.store(clamped, std::memory_order_relaxed);
+    }
+    float getEnvironmentRT60() const noexcept {
+        return environmentRt60_.load(std::memory_order_relaxed);
+    }
+    float getAdaptiveLambdaT() const noexcept {
+        return adaptiveLambdaT_.load(std::memory_order_relaxed);
+    }
+
     // ── Funciones de análisis puras (sin estado oculto más allá de lo que
     // reciben por parámetro) — expuestas públicas específicamente para que
     // los tests las llamen directo, sin necesitar arrancar el hilo ni
@@ -464,6 +477,9 @@ private:
     // audio thread.
     float sibilanceEma_ = 0.0f;
     float fatigueEma_   = 0.0f;
+
+    std::atomic<float> environmentRt60_{0.30f};
+    std::atomic<float> adaptiveLambdaT_{0.50f};
 
     std::thread       controlThread_;
     std::atomic<bool> running_{false};

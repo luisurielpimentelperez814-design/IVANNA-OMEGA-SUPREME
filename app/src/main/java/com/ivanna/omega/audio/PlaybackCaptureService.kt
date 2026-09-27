@@ -187,11 +187,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             if (com.ivanna.omega.BuildConfig.DEBUG) Log.d(TAG, "Perceptual update: fatigue=${String.format("%.2f", fatigueLevel)}, " +
                 "adaptiveBuffer=$adaptiveBufferSize, emotion=${state.emotion}")
 
-            // Aquí podrías aplicar dinámicamente:
-            // - Cambiar BLOCK_FRAMES según fatiga
-            // - Ajustar ganancia de captura
-            // - Modular sensibilidad de Voice Protection
-            // (Implementación específica depende de tu AudioRecord setup)
+            if (com.ivanna.omega.core.IvannaNativeLib.isLoaded) {
+                runCatching {
+                    com.ivanna.omega.core.IvannaNativeLib.nativeSetFatigueProtection(
+                        state.dsp.iso226Compensation,
+                        state.dsp.fatigueProtection
+                    )
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error aplicando estado perceptual: ${e.message}")
         }

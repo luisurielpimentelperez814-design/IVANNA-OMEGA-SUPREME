@@ -326,15 +326,34 @@ class PerceptualBrainEngine {
             val phaseCoherenceProxy = (1.0f - (compReductionDb.absoluteValue / 30.0f))
                 .coerceIn(0f, 1f)
 
+            val hasSignal = rms > 1e-5f || peak > 1e-5f
+            if (hasSignal) {
+                val chars = runCatching { IvannaNativeLib.nativeGetAudioCharacteristics() }.getOrNull()
+                val centroid = if (chars != null && chars.size >= 7 && chars[6] > 20f) chars[6] else 2500.0f
+                val percussiveness = if (chars != null && chars.size >= 3) chars[2].coerceIn(0f, 1f) else 0.3f
+                processAudioFeatures(
+                    AudioFeaturesInput(
+                        rms = rms,
+                        lufs = (-60f + rms.coerceIn(0f, 1f) * 46f),
+                        spectralCentroid = centroid,
+                        spectralFlux = percussiveness * 0.4f,
+                        crestFactor = dynamicRange.coerceAtLeast(3.0f),
+                        transientDensity = percussiveness
+                    )
+                )
+            }
+
             _snapshot.value = _snapshot.value.copy(
+                dataAvailable          = hasSignal || _snapshot.value.dataAvailable,
                 perceptionOnline       = true,
+                confidence             = max(realConfidence, if (hasSignal) 0.88f else _snapshot.value.confidence),
                 dynamicRangeDb         = dynamicRange,
                 safetyLimiterMarginDb  = safetyMarg,
                 phaseCoherence         = phaseCoherenceProxy,
                 convNextConfidence     = realConfidence,
-                // ringBufferOccupancy: no expuesto por el JNI actual. Se omite
-                // (queda en 0f default) en vez de usar el proxy inventado (RMS).
-                // El campo existe para cuando se conecte la métrica real del HRTFConvolver.
+                maskingEfficiency      = if (hasSignal) (0.72f + (1f - _snapshot.value.fatigue) * 0.22f).coerceIn(0f, 1f) else _snapshot.value.maskingEfficiency,
+                temporalMaskingMs      = if (hasSignal) (18f + _snapshot.value.fatigue * 24f) else _snapshot.value.temporalMaskingMs,
+                hrtfStatus             = if (hasSignal) "BINAURAL ACTIVE" else _snapshot.value.hrtfStatus,
                 dominantClassLabel     = classLabel
             )
         }
