@@ -23,7 +23,8 @@ data class AdaptiveTelemetry(
     val spatialWidth: Float = 1f, // Ancho espacial actual en el motor
     val safetyMargin: Float = 0f, // Margen de safety del limiter
     val voiceProtect: Float = 0f, // Score de protección de voz (0..1)
-    val motorRunning: Boolean = false  // Si Motor A está activo
+    val motorRunning: Boolean = false, // Si Motor A está activo
+    val appliedCount: Long = 0L        // Ciclos adaptativos aplicados (src[9])
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +102,8 @@ class AdaptiveBackend(context: Context) {
                 spatialWidth = src[6],
                 safetyMargin = src[7],
                 voiceProtect = if (src[8] == 0f && voiceProtectionScore > 0f) voiceProtectionScore else src[8],
-                motorRunning = motorActive
+                motorRunning = motorActive,
+                appliedCount = src.getOrElse(9) { 0f }.toLong()
             )
             // FIX: cerrar el loop adaptive → SAF. El AdaptiveDecisionEngine
             // publica en AdaptiveStateBus (seqlock C++); nativeGetAdaptiveTelemetry
@@ -304,5 +306,5 @@ fun AdaptiveTelemetry.toSnapshot(): AdaptiveTelemetrySnapshot = AdaptiveTelemetr
     spatialWidth = spatialWidth,
     safetyMargin = safetyMargin,
     voiceProtectionAmount = voiceProtect,
-    appliedCount = 0L
+    appliedCount = appliedCount
 )

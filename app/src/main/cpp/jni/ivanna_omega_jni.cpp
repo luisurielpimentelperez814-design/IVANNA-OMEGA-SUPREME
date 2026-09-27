@@ -977,6 +977,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const int n = std::min((int)nFrames, 2048);
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
+    // Alimentar MusicIntelligenceEngine (IME) con el bloque estéreo intercalado seco
+    // (RT-safe: verifica atómicamente enabled, cero malloc, seqlock).
+    ivanna::ime::imeFeedBlock(data, n);
     // FIX CRÍTICO: 'data' viene INTERCALADO estéreo [L0,R0,L1,R1,...].
     // El código anterior pasaba el mismo puntero como left y right → mono aliasado.
     // Fix: de-intercalar a buffers L/R reales (thread_local: sin stack overhead),
@@ -2849,7 +2852,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
 // g_adaptiveEngine.adaptiveState después de que su destructor corriera →
 // UB → std::terminate(). El std::terminate() se reproducía 2/3 corridas
 // en el stress-test de estabilidad.
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
+extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
     // 1. Parar el hilo bridge (Ruta B, audioRouteBridgeLoop) — accede a
     //    g_adaptiveEngine.rawMetrics/adaptiveState; debe parar ANTES de
     //    que el destructor de g_adaptiveEngine corra. Mismo orden que el

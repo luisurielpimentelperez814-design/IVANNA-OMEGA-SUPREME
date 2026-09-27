@@ -141,9 +141,6 @@ JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeGetPeakDb
     return ivanna_get_peak_dbfs();
 }
 
-}
-
-
 // ── AudioEngine.kt missing JNI bindings ──
 
 JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeInit(
@@ -192,4 +189,7 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeFlushHrtfHi
     ivanna_flush_hrtf_history();
     LOGI("HRTF history flushed via JNI");
 }
+
+} // extern "C"
+
 

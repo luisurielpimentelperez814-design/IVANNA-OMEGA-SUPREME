@@ -189,6 +189,11 @@ object AudioRouteManager {
         if (route == currentRoute) return
         val previousRoute = currentRoute
         currentRoute = route
+        appContextRef?.let { ctx ->
+            Thread({
+                runCatching { BluetoothAudioProfiler.refresh(ctx) }
+            }, "BtAudioProfilerRefresh").start()
+        }
         val p = profileFor(route)
         Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
         AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)

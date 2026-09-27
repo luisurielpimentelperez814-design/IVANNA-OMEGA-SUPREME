@@ -118,9 +118,9 @@ IvannaFusionEngine::~IvannaFusionEngine() {
 }
 
 void IvannaFusionEngine::runAcousticProfiling() {
-    // EvolutionaryEQ no expone calibrateTargetRoom(): su paso de calibración
-    // real es updateLM_CMA_ES() (optimización CMA-ES sobre el genoma FIR).
-    if (m_evoEq) m_evoEq->updateLM_CMA_ES();
+    // Ejecuta la optimización LM-CMA-ES acotada y verifica finitud y pico <= 1.0
+    // para habilitar m_ready en EvolutionaryEQ::processNEON().
+    if (m_evoEq) m_evoEq->calibrate(sampleRate_);
 }
 
 bool IvannaFusionEngine::loadCustomHrtf(const char* path) noexcept {
@@ -279,10 +279,10 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
-    // ── Matriz Mid/Side con Slew-Limiter por muestra (setSpatialWidth real) ──
+    // ── Matriz Mid/Side con Slew-Limiter por muestra (setSpatialWidth + setRouteProfile) ──
     {
         static constexpr float kWidthSlew = 1.0f / 4096.0f;
-        const float targetW = m_spatialWidthTarget_;
+        const float targetW = std::clamp(m_spatialWidthTarget_ * m_routeWidenerMult_, 0.0f, 3.0f);
         if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                 if (m_spatialWidthSmoothed_ < targetW)
@@ -295,6 +295,36 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
                 const float norm = 1.0f / std::sqrt(0.5f * (1.0f + w * w));
                 buffer->left[i]  = (mid + side) * norm;
                 buffer->right[i] = (mid - side) * norm;
+            }
+        }
+    }
+
+    // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
+    {
+        const float routeDb = std::clamp((m_routeBassDb_ + m_routeDialogDb_) * 0.35f, -6.0f, 6.0f);
+        const float targetTrim = m_eqTrimTarget_ * std::pow(10.0f, routeDb / 20.0f) * m_intensityTarget_;
+        const bool compActive = (m_compRatio_ > 1.005f && m_compThresholdDb_ < -0.1f);
+        if (compActive || std::fabs(m_eqTrimSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetTrim - 1.0f) > 1.0e-4f) {
+            static constexpr float kTrimSlew = 1.0f / 4096.0f;
+            const float thrLin = std::pow(10.0f, m_compThresholdDb_ / 20.0f);
+            const float slope  = 1.0f - (1.0f / std::max(1.0f, m_compRatio_));
+            for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                if (m_eqTrimSmoothed_ < targetTrim)
+                    m_eqTrimSmoothed_ = std::min(m_eqTrimSmoothed_ + kTrimSlew, targetTrim);
+                else if (m_eqTrimSmoothed_ > targetTrim)
+                    m_eqTrimSmoothed_ = std::max(m_eqTrimSmoothed_ - kTrimSlew, targetTrim);
+                float g = m_eqTrimSmoothed_;
+                if (compActive) {
+                    const float pk = std::max(std::fabs(buffer->left[i]), std::fabs(buffer->right[i]));
+                    const float c  = (pk > m_compEnv_) ? 0.015f : 0.0008f;
+                    m_compEnv_ += c * (pk - m_compEnv_);
+                    if (m_compEnv_ > thrLin && thrLin > 1.0e-6f) {
+                        const float overDb = 20.0f * std::log10(m_compEnv_ / thrLin);
+                        g *= std::pow(10.0f, (-overDb * slope) / 20.0f);
+                    }
+                }
+                buffer->left[i]  *= g;
+                buffer->right[i] *= g;
             }
         }
     }

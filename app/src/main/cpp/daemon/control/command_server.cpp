@@ -129,6 +129,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.listen_phon=_jsonFloat(json,"listenPhon",m_state.listen_phon);
         m_state.ref_phon=_jsonFloat(json,"refPhon",m_state.ref_phon);
         m_state.eq_calibrated=ok;
+        publishCurrentState(m_state);
         n=snprintf(reply,reply_sz,
             "{\"ok\":true,\"action\":\"SET_EQ_BANDS\",\"listenPhon\":%.1f,\"refPhon\":%.1f,\"gains\":[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]}",
             m_state.listen_phon,m_state.ref_phon,

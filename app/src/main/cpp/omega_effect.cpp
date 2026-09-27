@@ -339,6 +339,12 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         const float ratio = 1.0f + 7.0f * std::clamp(s.comp_amount, 0.f, 1.f);
         fc->setCompressorParams(s.compressor, ratio);
     }
+    if (std::isfinite(s.intensity) && s.intensity > 0.f) {
+        fc->setIntensity(s.intensity);
+    }
+    const float widMult = (upmixOn || wfsOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
+    fc->setRouteProfile(s.bass_boost_db, s.dialog_boost_db, widMult);
+    fc->setEqGains(s.eq_gains, ivanna::OMEGA_CTRL_EQ_BANDS, s.listen_phon, s.ref_phon);
     // ── Cable SAF → Ruta B — vector latente q[7] → motor HRTF ──────────────
     // FIX: ABI v2 añade saf_q[7] + saf_q_valid al snapshot. Cuando el daemon
     // publica un SET_SAF_STATE con el vector latente, saf_q_valid=1 y los

@@ -126,6 +126,11 @@ object PersistedStateRestorer {
             com.ivanna.omega.ui.SupremeAxesPrefs.applyToNative(supremeState)
         }.onFailure { Log.w(TAG, "Fallo al restaurar SupremeAxesPrefs: ${it.message}") }
 
+        // 5. Restaurar calibración de layout de altavoces WFS (7 altavoces virtuales)
+        runCatching {
+            com.ivanna.omega.spatial.WfsCalibrationManager.restore(ctx)
+        }.onFailure { Log.w(TAG, "Fallo al restaurar WfsCalibrationManager: ${it.message}") }
+
         Log.i(TAG, "✅ Todos los controles descableados restaurados (Persistencia total conectada)")
     }
 }

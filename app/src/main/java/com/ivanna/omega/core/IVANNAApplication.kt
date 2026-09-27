@@ -214,6 +214,7 @@ class IVANNAApplication : Application() {
         // No modifica AudioRouteManager — lee su detectOutputRoute() público.
         com.ivanna.omega.audio.RouteDspCalibrator.start(this)
         com.ivanna.omega.audio.IvannaUnifiedPipeline.start(this)
+        com.ivanna.omega.audio.MusicIntelligenceWorker.start(this)
 
         // Gobernador térmico OEM: degrada carga DSP (exciter → espacial →
         // compresor) ANTES de que el kernel haga throttling de golpe — mejor

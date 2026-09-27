@@ -190,14 +190,46 @@ public:
     // por cada actualización del bus ("metralleta" = ráfaga de esos
     // clics al arrastrar rápido). El slew lo convierte en rampa suave.
     void setHarmonicGain(float gain) noexcept {
-        if (gain >= 0.0f && gain <= 4.0f) m_harmGainTarget_ = gain;
+        if (std::isfinite(gain) && gain >= 0.0f && gain <= 4.0f) {
+            m_harmGainTarget_ = gain;
+            m_goldenEarActive = (gain > 0.001f);
+        }
     }
-    void setCompressorParams(float /*thresholdDb*/, float /*ratio*/) noexcept {}
-    void setRouteProfile(float /*bassDb*/, float /*dialogDb*/,
-                         float /*widener*/) noexcept {}
-    void setEqGains(const float* /*gains*/, int /*n*/,
-                    float /*listenPhon*/, float /*refPhon*/) noexcept {}
-    void setIntensity(float /*intensity*/) noexcept {}
+    void setCompressorParams(float thresholdDb, float ratio) noexcept {
+        if (std::isfinite(thresholdDb) && std::isfinite(ratio)) {
+            m_compThresholdDb_ = std::clamp(thresholdDb, -60.0f, 0.0f);
+            m_compRatio_       = std::clamp(ratio, 1.0f, 20.0f);
+        }
+    }
+    void setRouteProfile(float bassDb, float dialogDb, float widener) noexcept {
+        if (std::isfinite(bassDb) && std::isfinite(dialogDb) && std::isfinite(widener)) {
+            m_routeBassDb_      = std::clamp(bassDb, -12.0f, 12.0f);
+            m_routeDialogDb_    = std::clamp(dialogDb, -12.0f, 12.0f);
+            m_routeWidenerMult_ = std::clamp(widener, 0.0f, 2.0f);
+        }
+    }
+    void setEqGains(const float* gains, int n,
+                    float listenPhon, float refPhon) noexcept {
+        if (!gains || n <= 0) return;
+        float sumDb = 0.0f;
+        int validCount = 0;
+        for (int i = 0; i < n; ++i) {
+            if (std::isfinite(gains[i])) {
+                sumDb += std::clamp(gains[i], -18.0f, 18.0f);
+                ++validCount;
+            }
+        }
+        const float meanEqDb = (validCount > 0) ? (sumDb / static_cast<float>(validCount)) : 0.0f;
+        const float phonDelta = (std::isfinite(listenPhon) && std::isfinite(refPhon) && refPhon > 0.0f)
+            ? std::clamp((refPhon - listenPhon) * 0.05f, -3.0f, 3.0f)
+            : 0.0f;
+        m_eqTrimTarget_ = std::pow(10.0f, std::clamp(meanEqDb + phonDelta, -12.0f, 12.0f) / 20.0f);
+    }
+    void setIntensity(float intensity) noexcept {
+        if (std::isfinite(intensity)) {
+            m_intensityTarget_ = std::clamp(intensity, 0.0f, 1.0f);
+        }
+    }
 
     IvannaAudioClassifier*     getClassifier()    const noexcept { return m_classifier; }
     IvannaVoiceProsodyEngine*  getProsodyEngine() const noexcept { return m_prosody; }
@@ -263,6 +295,16 @@ private:
     float m_harmSmoothed_    = 1.0f;
     float m_spatialWidthTarget_   = 1.0f;
     float m_spatialWidthSmoothed_ = 1.0f;
+    float m_compThresholdDb_      = -12.0f;
+    float m_compRatio_            = 1.0f;
+    float m_compEnv_              = 0.0f;
+    float m_routeBassDb_          = 0.0f;
+    float m_routeDialogDb_        = 0.0f;
+    float m_routeWidenerMult_     = 1.0f;
+    float m_eqTrimTarget_         = 1.0f;
+    float m_eqTrimSmoothed_       = 1.0f;
+    float m_intensityTarget_      = 1.0f;
+    float m_intensitySmoothed_    = 1.0f;
 
     // Carry-over Ring FIFO para desinterleaving y tamaños arbitrarios de bloque
     static constexpr size_t kFifoCapacity = 16384;
