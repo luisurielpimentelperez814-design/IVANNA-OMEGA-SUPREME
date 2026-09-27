@@ -356,6 +356,7 @@ object OmegaEngineBridge {
         transharmonicCvnnEnabled: Boolean,
         transharmonicHarmonicGain: Float,
         transharmonicImdCancel: Float,
+        transharmonicAnalogTapeDrive: Float = 0.25f,
         snnHoaUpmixerEnabled: Boolean,
         snnHoaImmersivity: Float,
         snnSpikeThreshold: Float,
@@ -377,6 +378,7 @@ object OmegaEngineBridge {
             put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
             put("transharmonicHarmonicGain", transharmonicHarmonicGain)
             put("transharmonicImdCancel", transharmonicImdCancel)
+            put("transharmonicAnalogTapeDrive", transharmonicAnalogTapeDrive)
             put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
             put("snnHoaImmersivity", snnHoaImmersivity)
             put("snnSpikeThreshold", snnSpikeThreshold)

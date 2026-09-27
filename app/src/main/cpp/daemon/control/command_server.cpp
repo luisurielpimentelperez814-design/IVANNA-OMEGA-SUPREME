@@ -83,6 +83,7 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.supreme_lattice_lambda      = s.supreme_lattice_lambda;
     snap.supreme_cvnn_harmonic_gain  = s.supreme_cvnn_harmonic_gain;
     snap.supreme_cvnn_imd_cancel     = s.supreme_cvnn_imd_cancel;
+    snap.supreme_cvnn_tape_drive     = s.supreme_cvnn_tape_drive;
     snap.supreme_snn_immersivity     = s.supreme_snn_immersivity;
     snap.supreme_snn_spike_threshold = s.supreme_snn_spike_threshold;
     snap.supreme_pinna_wet_mix       = s.supreme_pinna_wet_mix;
@@ -212,6 +213,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.supreme_cvnn_enabled        = (_jsonFloat(json,"transharmonicCvnnEnabled", m_state.supreme_cvnn_enabled ? 1.f : 0.f) > 0.5f);
         m_state.supreme_cvnn_harmonic_gain  = _clamp(_jsonFloat(json,"transharmonicHarmonicGain", m_state.supreme_cvnn_harmonic_gain), 0.f, 1.f);
         m_state.supreme_cvnn_imd_cancel     = _clamp(_jsonFloat(json,"transharmonicImdCancel",    m_state.supreme_cvnn_imd_cancel), 0.f, 1.f);
+        m_state.supreme_cvnn_tape_drive     = _clamp(_jsonFloat(json,"transharmonicAnalogTapeDrive", m_state.supreme_cvnn_tape_drive), 0.f, 1.f);
 
         m_state.supreme_snn_hoa_enabled     = (_jsonFloat(json,"snnHoaUpmixerEnabled",     m_state.supreme_snn_hoa_enabled ? 1.f : 0.f) > 0.5f);
         m_state.supreme_snn_immersivity     = _clamp(_jsonFloat(json,"snnHoaImmersivity",     m_state.supreme_snn_immersivity), 0.f, 1.f);
@@ -239,7 +241,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
                     fprintf(fp,
                         "{\"action\":\"SET_SUPREME_AXES\",\"warpedLatticeEnabled\":%.0f,\"warpedLatticeMicroChirp\":%.0f,"
                         "\"warpedLatticeBlDrive\":%.4f,\"warpedLatticeLambda\":%.4f,\"transharmonicCvnnEnabled\":%.0f,"
-                        "\"transharmonicHarmonicGain\":%.4f,\"transharmonicImdCancel\":%.4f,\"snnHoaUpmixerEnabled\":%.0f,"
+                        "\"transharmonicHarmonicGain\":%.4f,\"transharmonicImdCancel\":%.4f,\"transharmonicAnalogTapeDrive\":%.4f,\"snnHoaUpmixerEnabled\":%.0f,"
                         "\"snnHoaImmersivity\":%.4f,\"snnSpikeThreshold\":%.4f,\"pinnaManifoldEnabled\":%.0f,"
                         "\"pinnaManifoldWetMix\":%.4f,\"pinnaConchaDepth\":%.4f,\"pinnaHelixCurl\":%.4f,"
                         "\"pinnaHeadWidth\":%.4f,\"farrowMsoEnabled\":%.0f,\"msoItdNanoseconds\":%.2f,\"ebpfBypassActive\":%.0f}\n",
@@ -250,6 +252,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
                         m_state.supreme_cvnn_enabled ? 1.f : 0.f,
                         m_state.supreme_cvnn_harmonic_gain,
                         m_state.supreme_cvnn_imd_cancel,
+                        m_state.supreme_cvnn_tape_drive,
                         m_state.supreme_snn_hoa_enabled ? 1.f : 0.f,
                         m_state.supreme_snn_immersivity,
                         m_state.supreme_snn_spike_threshold,
@@ -273,10 +276,11 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_SUPREME_AXES")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_SUPREME_AXES\",\"generation\":%llu,\"warpedLatticeEnabled\":%s,\"transharmonicCvnnEnabled\":%s,\"snnHoaUpmixerEnabled\":%s,\"pinnaManifoldEnabled\":%s,\"farrowMsoEnabled\":%s,\"msoItdNanoseconds\":%.1f}",
+            "{\"ok\":true,\"command\":\"GET_SUPREME_AXES\",\"generation\":%llu,\"warpedLatticeEnabled\":%s,\"transharmonicCvnnEnabled\":%s,\"transharmonicAnalogTapeDrive\":%.3f,\"snnHoaUpmixerEnabled\":%s,\"pinnaManifoldEnabled\":%s,\"farrowMsoEnabled\":%s,\"msoItdNanoseconds\":%.1f}",
             (unsigned long long)gen,
             m_state.supreme_lattice_enabled?"true":"false",
             m_state.supreme_cvnn_enabled?"true":"false",
+            m_state.supreme_cvnn_tape_drive,
             m_state.supreme_snn_hoa_enabled?"true":"false",
             m_state.supreme_pinna_enabled?"true":"false",
             m_state.supreme_farrow_mso_enabled?"true":"false",

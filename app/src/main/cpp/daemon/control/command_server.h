@@ -79,7 +79,7 @@ struct OmegaDspState {
     float wfs_speaker_z[7] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
 
     // Eje Supremo Coclear (Active Inverse)
-    bool cochlear_enabled = false;
+    bool cochlear_enabled = true;
     float cochlear_intensity = 1.0f;
 
     // Anti-Dolby SPSC Lock-Free Ring Buffer
@@ -94,6 +94,7 @@ struct OmegaDspState {
     bool  supreme_cvnn_enabled        = true;
     float supreme_cvnn_harmonic_gain  = 0.35f;
     float supreme_cvnn_imd_cancel     = 0.65f;
+    float supreme_cvnn_tape_drive     = 0.25f;
 
     bool  supreme_snn_hoa_enabled     = true;
     float supreme_snn_immersivity     = 0.55f;

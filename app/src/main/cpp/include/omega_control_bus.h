@@ -240,6 +240,7 @@ struct OmegaDspSnapshot {
     float    supreme_lattice_lambda;        // Eje 1: [-0.85, 0.85]
     float    supreme_cvnn_harmonic_gain;    // Eje 2: [0.0, 1.0]
     float    supreme_cvnn_imd_cancel;       // Eje 2: [0.0, 1.0]
+    float    supreme_cvnn_tape_drive;       // Eje 2: [0.0, 1.0] Histéresis Cinta 2" Jiles-Atherton
     float    supreme_snn_immersivity;       // Eje 3: [0.0, 1.0]
     float    supreme_snn_spike_threshold;   // Eje 3: [0.15, 1.50]
     float    supreme_pinna_wet_mix;         // Eje 4: [0.0, 1.0]
@@ -262,6 +263,10 @@ struct OmegaDspSnapshot {
     // sí esté procesando — por eso la UI marcaba "sin audio" con Ruta B viva.
     float    raw_rms;          // RMS del bloque actual [0, 1] — 0 = silencio
     float    raw_peak;         // Peak del bloque actual [0, 1]
+    uint32_t supreme_declipped_peaks; // Picos reconstruidos por Master De-Clipper en Ruta B
+    float    supreme_tape_mag;        // Magnetización Jiles-Atherton en Ruta B
+    uint32_t supreme_snn_spikes;      // Espigas activas SNN INT8 en Ruta B
+    float    supreme_subsample_delay; // Retardo inverso sub-muestra en Ruta B
     uint64_t effect_frames;    // Total de frames procesados por omega_effect (monotónico)
 
     // ── Integridad ────────────────────────────────────────────────────────────
@@ -287,9 +292,10 @@ struct OmegaDspSnapshot {
         s.cochlear_intensity = 1.0f;
         s.supreme_lattice_bl_drive    = 1.0f;
         s.supreme_lattice_lambda      = 0.72f;
-        s.supreme_cvnn_harmonic_gain  = 0.25f;
-        s.supreme_cvnn_imd_cancel     = 0.50f;
-        s.supreme_snn_immersivity     = 0.50f;
+        s.supreme_cvnn_harmonic_gain  = 0.28f;
+        s.supreme_cvnn_imd_cancel     = 0.85f;
+        s.supreme_cvnn_tape_drive     = 0.25f;
+        s.supreme_snn_immersivity     = 0.65f;
         s.supreme_snn_spike_threshold = 0.45f;
         s.supreme_pinna_wet_mix       = 0.62f;
         s.supreme_pinna_concha_depth  = 0.163986f;
@@ -320,9 +326,19 @@ struct OmegaDspSnapshot {
         for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i) s.saf_q[i] = kGoldenSafQ[i];
         s.saf_q_valid     = 1u;
         s.consumer_generation = 0;
-        s.flags = 0;
+        s.flags = OMEGA_FLAG_COCHLEAR_ON
+                | OMEGA_FLAG_SUPREME_LATTICE_ON
+                | OMEGA_FLAG_SUPREME_MICROCHIRP_ON
+                | OMEGA_FLAG_SUPREME_CVNN_ON
+                | OMEGA_FLAG_SUPREME_SNN_HOA_ON
+                | OMEGA_FLAG_SUPREME_PINNA_ON
+                | OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
         s.raw_rms      = 0.0f;
         s.raw_peak     = 0.0f;
+        s.supreme_declipped_peaks = 0u;
+        s.supreme_tape_mag        = 0.0f;
+        s.supreme_snn_spikes      = 2u;
+        s.supreme_subsample_delay = 0.24f;
         s.effect_frames = 0ULL;
         s.stampCrc();
         return s;

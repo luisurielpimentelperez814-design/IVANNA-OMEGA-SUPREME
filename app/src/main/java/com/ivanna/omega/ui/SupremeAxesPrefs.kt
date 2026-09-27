@@ -137,6 +137,7 @@ object SupremeAxesPrefs {
                     transharmonicCvnnEnabled  = s.transharmonicCvnnEnabled,
                     transharmonicHarmonicGain = s.transharmonicHarmonicGain,
                     transharmonicImdCancel    = s.transharmonicImdCancel,
+                    transharmonicAnalogTapeDrive = s.transharmonicAnalogTapeDrive,
                     snnHoaUpmixerEnabled      = s.snnHoaUpmixerEnabled,
                     snnHoaImmersivity         = s.snnHoaImmersivity,
                     snnSpikeThreshold         = s.snnSpikeThreshold,

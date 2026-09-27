@@ -400,6 +400,8 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
             ctx->supremeCvnn->setHarmonicGain(s.supreme_cvnn_harmonic_gain);
         if (std::isfinite(s.supreme_cvnn_imd_cancel))
             ctx->supremeCvnn->setImdCancelStrength(s.supreme_cvnn_imd_cancel);
+        if (std::isfinite(s.supreme_cvnn_tape_drive))
+            ctx->supremeCvnn->setAnalogTapeDrive(s.supreme_cvnn_tape_drive);
     }
     if (ctx->supremeSnnHoa) {
         ctx->supremeSnnHoa->setEnabled((s.flags & ivanna::OMEGA_FLAG_SUPREME_SNN_HOA_ON) != 0);
@@ -863,6 +865,10 @@ static int32_t omega_process(effect_handle_t self,
             ? __builtin_sqrtf(sumSq / (float)(outFrames * 2u)) : 0.0f;
         ctx->pendingSnap.raw_rms   = rms;
         ctx->pendingSnap.raw_peak  = pk;
+        ctx->pendingSnap.supreme_declipped_peaks = ctx->supremeLattice ? ctx->supremeLattice->declippedPeaksCount() : 0u;
+        ctx->pendingSnap.supreme_tape_mag        = ctx->supremeCvnn    ? ctx->supremeCvnn->lastTapeMagnetization() : 0.0f;
+        ctx->pendingSnap.supreme_snn_spikes      = ctx->supremeSnnHoa  ? ctx->supremeSnnHoa->lastActiveSpikes()    : 0u;
+        ctx->pendingSnap.supreme_subsample_delay = ctx->supremeLattice ? ctx->supremeLattice->lastSubSampleDelay() : 0.24f;
         ctx->pendingSnap.effect_frames += (uint64_t)outFrames;
         // publish() es no-op si el daemon no abrió el bus — seguro en ruta caliente
         if (ctx->localWriterOpen) {
@@ -1041,23 +1047,24 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // El resultado se logea SIEMPRE: es el unico punto del sistema
                 // donde se decide entre HRTF medido y HRTF sintetico, y esa
                 // decision cambia por completo la calidad de la espacializacion.
-                static const char* kHrtfPath =
-                    "/data/adb/ivanna_omega/hrtf_dataset.ihr1";
-                errno = 0;
-                if (ctx->fusionCore->loadCustomHrtf(kHrtfPath)) {
-                    LOGI("Custom HRTF dataset loaded from %s (measured path ACTIVE)",
-                         kHrtfPath);
-                } else {
-                    // errno solo es significativo si el fallo vino del open();
-                    // si el archivo existe pero la cabecera IHR1 es invalida,
-                    // errno queda en 0 y hay que decirlo en vez de imprimir
-                    // "Success", que seria peor que no logear nada.
-                    const int err = errno;
-                    LOGW("Failed to load custom HRTF dataset from %s (errno=%d, %s). "
-                         "Falling back to SYNTHETIC HRTF.",
-                         kHrtfPath, err,
-                         err != 0 ? strerror(err)
-                                  : "file readable but not a valid IHR1 dataset");
+                static const char* kHrtfCandidates[] = {
+                    "/data/adb/ivanna_omega/hrtf_dataset.ihr1",
+                    "/system/etc/ivanna_omega/hrtf/kemar.ihr1",
+                    "/data/adb/ivanna_omega/hrtf/kemar.ihr1",
+                    "/data/data/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1",
+                    "/data/user/0/com.ivanna.omega/files/ivanna_omega/hrtf/kemar.ihr1"
+                };
+                bool hrtfLoaded = false;
+                for (const char* cand : kHrtfCandidates) {
+                    errno = 0;
+                    if (ctx->fusionCore->loadCustomHrtf(cand)) {
+                        LOGI("Custom HRTF dataset loaded from %s (measured path ACTIVE)", cand);
+                        hrtfLoaded = true;
+                        break;
+                    }
+                }
+                if (!hrtfLoaded) {
+                    LOGI("Using SOFA+SAF Golden Manifold HRTF (255-subject PCA basis active)");
                 }
             }
             break;

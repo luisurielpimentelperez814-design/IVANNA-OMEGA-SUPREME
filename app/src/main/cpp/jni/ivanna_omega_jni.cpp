@@ -42,6 +42,7 @@
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "../spatial/IvannaAudioPipeline.hpp"
 #include "../music_intelligence/ImeBridge.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
@@ -405,7 +406,34 @@ static void adaptiveSnapshotLoop() {
 // el próximo ciclo (30-50ms después) se autocorrige. No se resolvió con
 // un bus multi-productor propiamente dicho porque eso es alcance nuevo,
 // no parte de este cierre de integración.
-static std::atomic<bool> g_audioRouteBridgeStarted{false};
+static std::atomic<bool>     g_audioRouteBridgeStarted{false};
+static std::atomic<uint32_t> g_routeB_declippedPeaks{0u};
+static std::atomic<float>    g_routeB_tapeMag{0.0f};
+static std::atomic<uint32_t> g_routeB_snnSpikes{2u};
+static std::atomic<float>    g_routeB_subsampleDelay{0.24f};
+
+extern "C" uint32_t ivanna_get_routeB_declipped_peaks() noexcept {
+    return g_routeB_declippedPeaks.load(std::memory_order_relaxed);
+}
+extern "C" float ivanna_get_routeB_tape_mag() noexcept {
+    return g_routeB_tapeMag.load(std::memory_order_relaxed);
+}
+extern "C" uint32_t ivanna_get_routeB_snn_spikes() noexcept {
+    return g_routeB_snnSpikes.load(std::memory_order_relaxed);
+}
+extern "C" float ivanna_get_routeB_subsample_delay() noexcept {
+    return g_routeB_subsampleDelay.load(std::memory_order_relaxed);
+}
+extern "C" bool ivanna_is_routeB_active() noexcept {
+    return g_activeRoute.load(std::memory_order_relaxed) == 2;
+}
+extern "C" void ivanna_set_route_rir_xtc(int routeIdx) noexcept {
+    if (Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire)) {
+        conv->setTrueStereoCrossGain(0.20f);
+        conv->setTransauralXtcStrength((routeIdx == 2) ? 0.38f : ((routeIdx == 0) ? 0.16f : 0.0f));
+    }
+}
+
 static void audioRouteBridgeLoop() {
     // Última lectura vista, para no republicar/loguear si omega_effect no
     // está produciendo audio nuevo ahora mismo (evita contaminar el bus
@@ -455,6 +483,12 @@ static void audioRouteBridgeLoop() {
             if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
                 rms  = snap.raw_rms;
                 peak = snap.raw_peak;
+                g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);
+                g_routeB_tapeMag.store(snap.supreme_tape_mag, std::memory_order_relaxed);
+                g_routeB_snnSpikes.store(snap.supreme_snn_spikes, std::memory_order_relaxed);
+                if (snap.supreme_subsample_delay > 0.0f) {
+                    g_routeB_subsampleDelay.store(snap.supreme_subsample_delay, std::memory_order_relaxed);
+                }
             } else if (lastRms < 0.0f) {
                 continue;  // bus abierto pero jamás publicó — sin audio aún
             } else {
@@ -547,7 +581,7 @@ static void audioRouteBridgeLoop() {
         // Ruta A) y se escribe target_gain de vuelta al daemon.
         static uint64_t s_lastSeenAdaptiveSeq = 0;
         ivanna::experimental::AdaptiveState st{};
-        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastSeenAdaptiveSeq)) {
+        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastSeenAdaptiveSeq) && shared != nullptr) {
             shared->ai_runtime_gain_mul.store(
                 std::clamp(st.target_gain, 0.5f, 1.0f), std::memory_order_release);
             // FIX (Ruta B — spatial_width sin efecto, gap README): antes solo
@@ -729,6 +763,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
         g_rirWorkerThread = std::thread(rirWorkerLoop);
         // NO detach — se une en JNI_OnUnload antes de los destructores.
+    }
+    {
+        auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        pipe.warpedLatticeInverter().prepare((float)sr);
+        pipe.transharmonicSynth().prepare((float)sr);
+        pipe.snnNmfHoaUpmixer().prepare((float)sr);
+        pipe.pinnaManifoldInterpolator().calibrateFromLatents(
+            ivanna::master::kMasterSafGoldenQNorm[2],
+            ivanna::master::kMasterSafGoldenQNorm[3],
+            ivanna::master::kMasterSafGoldenQNorm[0],
+            (float)sr);
     }
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
@@ -1489,6 +1534,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
     }
 
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
+    {
+        auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        const float srNow = static_cast<float>(std::max(g_params.sampleRate, 8000u));
+        pipe.snnNmfHoaUpmixer().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+        pipe.pinnaManifoldInterpolator().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+        pipe.transharmonicSynth().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+        pipe.shmMsoArbitrator().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), srNow);
+        pipe.warpedLatticeInverter().process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+    }
+
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
     for (int i = 0; i < n; ++i) {
         float l = g_ats.pdOutL[i];
@@ -1560,6 +1616,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
         g_rirWorkerThread = std::thread(rirWorkerLoop);
         // NO detach — se une en JNI_OnUnload antes de los destructores.
+    }
+    {
+        auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        pipe.warpedLatticeInverter().prepare((float)sr);
+        pipe.transharmonicSynth().prepare((float)sr);
+        pipe.snnNmfHoaUpmixer().prepare((float)sr);
+        pipe.pinnaManifoldInterpolator().calibrateFromLatents(
+            ivanna::master::kMasterSafGoldenQNorm[2],
+            ivanna::master::kMasterSafGoldenQNorm[3],
+            ivanna::master::kMasterSafGoldenQNorm[0],
+            (float)sr);
     }
     g_initialized.store(true, std::memory_order_release);
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
@@ -1709,6 +1776,17 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // 0.00 ms de latencia añadida. Branchless NEON en ARM64. Cero allocs.
     if (g_cochlearEnabled.load(std::memory_order_relaxed)) {
         g_cochlearEngine.process(oL, oR, n);
+    }
+
+    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
+    {
+        auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        const float srNow = static_cast<float>(std::max(g_params.sampleRate, 8000u));
+        pipe.snnNmfHoaUpmixer().process(oL, oR, static_cast<size_t>(n));
+        pipe.pinnaManifoldInterpolator().process(oL, oR, static_cast<size_t>(n));
+        pipe.transharmonicSynth().process(oL, oR, static_cast<size_t>(n));
+        pipe.shmMsoArbitrator().process(oL, oR, static_cast<size_t>(n), srNow);
+        pipe.warpedLatticeInverter().process(oL, oR, static_cast<size_t>(n));
     }
 
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
