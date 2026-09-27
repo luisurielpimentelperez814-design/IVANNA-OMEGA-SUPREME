@@ -89,7 +89,8 @@ static void update_anti_dolby(float speech,
     g_orch.anti_dolby_speech.store(sp, std::memory_order_relaxed);
     g_orch.anti_dolby_music.store(mu, std::memory_order_relaxed);
     g_orch.anti_dolby_bass.store(ba, std::memory_order_relaxed);
-    control_set_yamnet_scores(sp, ba);
+    const float sil = std::clamp(1.0f - (sp + mu + ba), 0.0f, 1.0f);
+    control_set_yamnet_scores(sp, mu, ba, sil);
 }
 
 
