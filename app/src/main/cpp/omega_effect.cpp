@@ -841,8 +841,15 @@ static int32_t omega_process(effect_handle_t self,
         // FIX artefactos: setEnabled/setIntensity estaban DENTRO del chunk loop
         // → cada chunk llamaba a setEnabled(cochOn) que hacía wetGain_ = 0 o intensity_
         // en un solo sample → click/pop audible. Ahora se configuran una sola vez
-        // POR CALLBACK (fuera del loop), y process() solo se llama si isActive().
-        const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        // POR CALLBACK (fuera del loop, ver cochOnPre/intensityPre arriba), y
+        // process() solo se llama si isActive() — ya refleja el estado aplicado.
+        // BUILD FIX (2026-09-28): esta linea referenciaba 'snap', una variable
+        // local declarada dentro del if(ctx->ctrlBusOpen){...} de mas arriba y
+        // fuera de alcance aqui — no compilaba con el NDK (el compilador
+        // devolvia "use of undeclared identifier 'snap'", linea 845). El
+        // valor que calculaba (cochOn) tampoco se usaba en ningun lado despues:
+        // era codigo muerto sobrante del refactor que movio esta logica a
+        // cochOnPre, antes del loop. Se elimina en vez de repararla.
         if (ctx->cochlearEngine && ctx->cochlearEngine->isActive()) {
             ctx->cochlearEngine->process(L, R, (int)chunk);
         }
