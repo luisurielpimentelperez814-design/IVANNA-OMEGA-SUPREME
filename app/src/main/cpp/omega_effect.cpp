@@ -828,17 +828,10 @@ static int32_t omega_process(effect_handle_t self,
             // Fases 1-15: Acoustic Reality Reconstruction & Cognitive Evolution Pass (0 malloc, 0 mutex)
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
             if (realityOrch.isEnabled()) {
-                const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
-                                     ? ctx->config.outputCfg.samplingRate : 48000u;
-                realityOrch.microExtractor().extractRT(L, R, (size_t)chunk, (float)srNow);
                 const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
                 if (rSnap.sequence > 0) {
                     realityOrch.microExtractor().applyMicroIntelligibilityPass(
                         L, R, (size_t)chunk, rSnap.microMap);
-                    realityOrch.timeMachine().reconstructTemporalField(
-                        L, R, (size_t)chunk, rSnap.timeMachine);
-                    realityOrch.roomProjection().projectRoom(
-                        L, R, (size_t)chunk);
                 }
             }
         }

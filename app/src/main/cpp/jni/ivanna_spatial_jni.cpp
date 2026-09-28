@@ -704,7 +704,7 @@ Java_com_ivanna_omega_core_NativeBridge_isShmCrossProcessMapped(JNIEnv*, jclass)
 }
 
 namespace {
-inline ivanna::reality::AcousticRealityOrchestrator::OrchestrationSnapshot
+inline ivanna::reality::AcousticRealityState
 refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& orch) noexcept {
     ivanna::experimental::RawAudioMetrics seedM{};
     seedM.rms              = 0.22f;

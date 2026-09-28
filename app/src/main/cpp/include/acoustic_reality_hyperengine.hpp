@@ -1918,6 +1918,13 @@ public:
         snap.stampCrc();
     }
 
+    void coordinateSnapshot(OmegaDspSnapshot& snap) const noexcept {
+        const auto rs = stateBus_.readLatestSnapshot();
+        if (rs.sequence > 0) {
+            coordinateSnapshot(snap, rs);
+        }
+    }
+
     // Singleton global RT-safe para acceso coordinado entre JNI, AdaptiveDecisionEngine y Pipeline
     static AcousticRealityOrchestrator& instance() noexcept {
         static AcousticRealityOrchestrator s_instance;

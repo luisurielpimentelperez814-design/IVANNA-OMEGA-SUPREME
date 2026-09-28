@@ -1512,15 +1512,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 
         auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
         if (realityOrch.isEnabled()) {
-            realityOrch.microExtractor().extractRT(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), srNow);
             const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
             if (rSnap.sequence > 0) {
                 realityOrch.microExtractor().applyMicroIntelligibilityPass(
                     g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), rSnap.microMap);
-                realityOrch.timeMachine().reconstructTemporalField(
-                    g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), rSnap.timeMachine);
-                realityOrch.roomProjection().projectRoom(
-                    g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
             }
         }
     }
