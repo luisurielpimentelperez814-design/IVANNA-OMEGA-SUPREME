@@ -6,23 +6,23 @@
 namespace ivanna {
 
 struct DSPParams {
-    float drive     = 0.48f;
-    float wet       = 0.38f;
+    float drive     = 0.45f;
+    float wet       = 0.32f;
     // FIX: mix=0.70 → GainStage.inputGain_ = dbToLin((0.70-0.5)*12) = +2.4 dB
     // antes del EQ en cada cadena que no sobrescriba este campo — boost
     // gratuito que satura el SafetyLimiter sin que el usuario lo pida.
     // Valor neutro: 0.50 → dbToLin((0.50-0.5)*12) = dbToLin(0) = 1.0 (0 dB).
     float mix       = 0.50f;
-    float alpha     = 0.35f;
-    float beta      = 0.08f;
+    float alpha     = 0.375f;
+    float beta      = 0.105f;
     float gamma     = 0.72f;
     float freq      = 1000.f;
     float resonance = 0.707f;
-    float low       = 2.2f;
-    float mid       = 0.8f;
-    float high      = 1.8f;
-    float presence  = 1.6f;
-    float master    = 0.8f;
+    float low       = 0.0f;
+    float mid       = 0.0f;
+    float high      = 0.0f;
+    float presence  = 0.0f;
+    float master    = 0.0f;
     uint32_t sampleRate = 96000;
 };
 

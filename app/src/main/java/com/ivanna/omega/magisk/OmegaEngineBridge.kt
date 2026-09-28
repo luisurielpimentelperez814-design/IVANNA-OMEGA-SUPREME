@@ -303,6 +303,9 @@ object OmegaEngineBridge {
     fun setIntensity(intensity: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
     fun setIntensity(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
 
+    fun setHarmonicGain(gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_HARMONIC_GAIN"); put("gain", gain) })
+    fun setHarmonicGain(gain: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_HARMONIC_GAIN"); put("gain", gain) })
+
     fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("deltaEnergy", deltaEnergy); put("metricNorm", metricNorm); put("memory", memory); put("gain", gain) })
     /**
      * Envía el vector latente q[7] real de Φ_SAF-Room^∞ (SaFRoomBridge.getParams())

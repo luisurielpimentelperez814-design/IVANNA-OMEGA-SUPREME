@@ -197,7 +197,7 @@ struct OmegaSharedState {
     std::atomic<uint32_t> read_pos;
 
     OmegaSharedState()
-        : intensity(0.92f), is_processing(true), bypass_enabled(false),
+        : intensity(0.8f), is_processing(true), bypass_enabled(false),
           phase_coherence(1.0f), collapse_strength(0.5f), vocoder_mix(0.8f),
           current_temperature(35.0f), current_latency_ms(0.0f),
           pf_drive(0.48f), pf_wet(0.38f), pf_mix(0.72f),

@@ -90,6 +90,14 @@ object IvannaNpeEngine {
         }
     }
 
+    private var cachedHarmonicGain: Float = 0.60f
+    private var cachedLateralInhib: Float = 0.50f
+    private var cachedOhcComp: Float = 0.40f
+    private var cachedMasterGainDb: Float = 0.0f
+    private var cachedHrtf: Boolean = true
+    private var cachedCochlear: Boolean = true
+    private var cachedAdapt: Boolean = true
+
     fun setBypass(bypass: Boolean) {
         if (handle != 0L) IvannaNpeNative.nativeSetBypass(handle, bypass)
     }
@@ -98,8 +106,19 @@ object IvannaNpeEngine {
         if (handle != 0L) IvannaNpeNative.nativeSetAGC(handle, targetDb, rate)
     }
 
+    fun setAgcParams(targetDb: Float, rate: Float) {
+        setAGC(targetDb, rate)
+    }
+
     fun setEngineFlags(hrtf: Boolean, cochlear: Boolean, adapt: Boolean) {
+        cachedHrtf = hrtf
+        cachedCochlear = cochlear
+        cachedAdapt = adapt
         if (handle != 0L) IvannaNpeNative.nativeSetEngineFlags(handle, hrtf, cochlear, adapt)
+    }
+
+    fun setBinauralEnabled(enabled: Boolean) {
+        setEngineFlags(enabled, cachedCochlear, cachedAdapt)
     }
 
     // NUEVO: motor coclear completo (Volterra H2 + upsampling polifásico).
@@ -111,9 +130,25 @@ object IvannaNpeEngine {
         }
 
     fun setNeuroParams(harmonicGain: Float, lateralInhib: Float, ohcCompression: Float, masterGainDb: Float) {
+        cachedHarmonicGain = harmonicGain
+        cachedLateralInhib = lateralInhib
+        cachedOhcComp = ohcCompression
+        cachedMasterGainDb = masterGainDb
         if (handle != 0L) {
             IvannaNpeNative.nativeSetNeuroParams(handle, harmonicGain, lateralInhib, ohcCompression, masterGainDb)
         }
+    }
+
+    fun setOhcParams(ohcCompression: Float, lateralInhib: Float) {
+        setNeuroParams(cachedHarmonicGain, lateralInhib, ohcCompression, cachedMasterGainDb)
+    }
+
+    fun setHarmonicGain(harmonicGain: Float) {
+        setNeuroParams(harmonicGain, cachedLateralInhib, cachedOhcComp, cachedMasterGainDb)
+    }
+
+    fun setMasterGain(masterGainDb: Float) {
+        setNeuroParams(cachedHarmonicGain, cachedLateralInhib, cachedOhcComp, masterGainDb)
     }
 
     fun getDetectedGenre(): String =

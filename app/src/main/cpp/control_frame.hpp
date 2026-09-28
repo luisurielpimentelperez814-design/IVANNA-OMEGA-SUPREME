@@ -49,29 +49,29 @@ namespace ivanna {
 struct ControlFrame {
     uint64_t seq = 0;  // Nº de secuencia monotónico, asignado por el bus al publicar
 
-    // ── Cadena DSP (EQ/Comp/Exciter/Widener/Gain — Calibración Magistral) ─
-    float drive     = 0.48f;
-    float wet       = 0.38f;
-    float mix       = 0.50f;
-    float alpha     = 0.35f;
-    float beta      = 0.08f;
-    float gamma_v   = 0.72f;
+    // ── Cadena DSP (EQ/Comp/Exciter/Widener/Gain) ─────────────────────────
+    float drive     = 0.65f;
+    float wet       = 0.50f;
+    float mix       = 0.70f;
+    float alpha     = 0.50f;
+    float beta      = 0.50f;
+    float gamma_v   = 0.50f;
     float freq      = 1000.f;
     float resonance = 0.707f;
-    float low       = 2.2f;
-    float mid       = 0.8f;
-    float high      = 1.8f;
-    float presence  = 1.6f;
-    float master    = 0.8f;
+    float low       = 0.0f;
+    float mid       = 0.0f;
+    float high      = 0.0f;
+    float presence  = 0.0f;
+    float master    = 0.0f;
 
-    // ── PDEngine / NHO / Spatial (Calibración Magistral activa) ───────────
-    int   mode              = 2;      // 0=DSP, 1=+NHO, 2=+NHO+Spatial
-    float nho_alpha         = 0.40f;
+    // ── PDEngine / NHO / Spatial ──────────────────────────────────────────
+    int   mode              = 0;      // 0=DSP, 1=+NHO, 2=+NHO+Spatial
+    float nho_alpha         = 0.50f;
     float nho_beta          = 0.50f;
-    float nho_wet           = 0.72f;
-    float nho_harmonic_gain = 1.28f;
-    float spatial_angle_deg = 32.0f;
-    float spatial_width     = 1.32f;
+    float nho_wet           = 0.50f;
+    float nho_harmonic_gain = 1.00f;
+    float spatial_angle_deg = 0.0f;
+    float spatial_width     = 1.0f;
 
     // Proyección al DSPParams legado que consumen ParametricEQ/Compressor/
     // HarmonicExciter/StereoWidener/GainStage. sampleRate se inyecta aparte
