@@ -1,0 +1,9 @@
+{
+  "style": "modern_compressed",
+  "methodology": "Producción moderna masterizada con compresión/limitación agresiva: crest bajo, densidad alta, dinámica reducida. NO aplicar el mismo tratamiento expansivo que a material dinámico.",
+  "features": { "bassRatio": 0.33, "trebleRatio": 0.20, "crestDb": 4.3, "stereoWidth": 0.45, "transientRate": 0.40, "density": 0.85 },
+  "frequency_behavior": { "bass": "present", "midrange": "forward", "treble": "bright" },
+  "dynamics": { "compression": "high", "transients": "controlled" },
+  "spatial": { "stereo_width": "moderate", "depth": "low", "room": "dry" },
+  "recommended_processing": { "wfs_spread": 0.4, "hrtf_depth": 0.4, "eq_tilt_db": 0.5, "dynamics_amount": 0.4, "environment_depth": 0.3 }
+}

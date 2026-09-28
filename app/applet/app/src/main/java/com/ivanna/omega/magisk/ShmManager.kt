@@ -1,0 +1,411 @@
+package com.ivanna.omega.magisk
+
+import com.ivanna.omega.saf.SaFRoomBridge
+
+import android.content.Context
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import android.os.SharedMemory
+import android.util.Log
+import com.ivanna.omega.core.NativeLibraryLoader
+import java.io.FileDescriptor
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * ShmManager — implementación real.
+ *
+ * FIX (bug real, ver auditoría): esta clase era un stub de una línea
+ * ("init stub") y el símbolo JNI que debía usar (nativeMlock) apuntaba
+ * además a un paquete Java que no existe (com.ivanna.omega.ShmManager en
+ * vez de com.ivanna.omega.magisk.ShmManager) — corregido en
+ * shm_hyperplane.cpp junto con este archivo.
+ *
+ * Qué hace: crea una región de memoria compartida (android.os.SharedMemory,
+ * API 27+) que el daemon Magisk (system-wide) y el proceso de la app
+ * pueden mapear ambos, y la fija en RAM (mlock) para que el kernel no la
+ * pagee bajo presión de memoria — crítico porque es un buffer leído por
+ * el hilo de audio en tiempo real en ambos lados.
+ *
+ * FIX 2026-08-10 (el SHM "nunca conectaba"): esta clase creaba su propia
+ * region con SharedMemory.create() — una region PRIVADA del proceso app, sin
+ * ninguna relacion con /data/adb/ivanna_omega/omega_shm del daemon. Los dos
+ * lados escribian en memorias distintas, asi que readAndApplySafFrame() jamas
+ * veia un frame valido. Ahora initialize() pide primero el fd real al daemon
+ * (handshake SCM_RIGHTS de ivanna_daemon.cpp "Modo B") y solo cae a la region
+ * local cuando no hay daemon (modo sin root).
+ *
+ * Tamano: 64 KiB, el mismo que declara daemon/core/shm_manager.h (SHM_SIZE).
+ */
+object ShmManager {
+    private const val TAG = "IVANNA-SHM"
+    private const val SHM_NAME = "ivanna_omega_hyperplane"
+
+    // FIX: 4096 era una suposicion ("no hay contrato de tamano documentado").
+    // El tamano YA NO es un literal compartido: se deriva del backing file
+    // (fstat/length), que el daemon trunca a ivanna::SHM_SIZE (constante unica
+    // en daemon/core/shm_manager.h = 4096 + sizeof(OmegaSharedState) + 16KiB).
+    // (64 KiB = 16 UnifiedControlFrames). Mapear 4 KiB contra una region de
+    // 64 KiB dejaba 15/16 del hyperplane invisible para la app.
+    // Fallback historico (layout v1, 64KiB). Solo se usa si el archivo no existe aun;
+    // en cuanto el daemon crea el backing se usa su longitud real.
+    private const val SHM_SIZE_FALLBACK_V1 = 65536
+
+    // sizeof(ivanna::ShmHeader) — única fuente: daemon/core/shm_manager.h
+    // (static_assert(sizeof(ShmHeader)==32) hace fallar el build si cambia).
+    //
+    // FIX (ABI desincronizado, verificado leyendo el struct real): el C++ ya
+    // tiene epoch:u64(8) + frame_len/magic/version/state_size/reserved:u32×4(16)
+    // = 28 bytes, redondeado a 32 por alignas(8) — y su propio static_assert
+    // ya dice 32 (cambiado de 16 en un commit reciente). Esta constante se
+    // había quedado en 16: cada lectura de readAndApplySafFrame() apuntaba
+    // 16 bytes ANTES de donde el daemon realmente escribe el frame SAF,
+    // leyendo la cola del propio ShmHeader como si fueran floats de audio.
+    private const val SHM_HEADER_BYTES = 32
+
+    // FIX (compileKotlin roto: "unresolved reference: SHM_HEARTBEAT_OFF"):
+    // ac741f1 introdujo daemonHeartbeatMs()/isDaemonAlive() usando este offset
+    // pero nunca declaro la constante — el commit solo valido sintaxis C++
+    // (g++ -fsyntax-only), no Kotlin, y el error llego a main. Valor ABSOLUTO:
+    // el daemon escribe el heartbeat con writeControl(SHM_HEARTBEAT_OFFSET=16),
+    // que copia en base + sizeof(ShmHeader)=32 + 16 = byte 48 del mmap.
+    // Debe coincidir con SHM_HEADER_BYTES(32) + SHM_HEARTBEAT_OFFSET(16) del
+    // C++ (daemon/core/shm_manager.h). Cambio exige bump coordinado de ABI.
+    private const val SHM_HEARTBEAT_OFF = SHM_HEADER_BYTES + 16
+
+    // ── Bloque de salud del canal (espejo de SHM_HEALTH_OFFSET del C++) ──────
+    // Offset absoluto del inicio del bloque: sizeof(ShmHeader)=32 + SHM_HEALTH_OFFSET=24.
+    // Layout interno (u32 LE cada uno): +0 safFrames, +4 heartbeats,
+    // +8 writesRechazados, +12 comandos, +16 clientes, +20 reservado.
+    private const val SHM_HEALTH_ABS = SHM_HEADER_BYTES + 24
+
+    // ── ABI del ShmHeader (espejo de daemon/core/shm_manager.h) ─────────────
+    // validateShmHeader() en C++ es la fuente de verdad; aquí se replica la
+    // misma lógica con los offsets absolutos del struct (blindados allá por
+    // static_assert de offsetof): epoch:u64@0, frame_len:u32@8, magic:u32@12,
+    // version:u32@16, state_size:u32@20. Cualquier cambio exige bump
+    // coordinado de OMEGA_SHM_VERSION en ambos lados.
+    private const val SHM_OFF_MAGIC = 12
+    private const val SHM_OFF_VERSION = 16
+    private const val SHM_MAGIC_OMEG = 0x4F4D4547   // "OMEG"
+    private const val SHM_VERSION_EXPECTED = 2
+
+    private const val DAEMON_SOCKET = "omega_daemon_socket"
+    private const val HANDSHAKE_TIMEOUT_MS = 1500
+
+    private external fun nativeMlockBuffer(buffer: ByteBuffer): Int
+    private external fun nativeMapSharedFd(fd: FileDescriptor, size: Int): ByteBuffer?
+    private external fun nativeUnmapSharedFd(buffer: ByteBuffer): Int
+
+    private val loaded = NativeLibraryLoader.ensureLoaded()
+    private val initialized = AtomicBoolean(false)
+
+    @Volatile private var sharedMemory: SharedMemory? = null
+    @Volatile private var mappedBuffer: ByteBuffer? = null
+    @Volatile private var mappedFromDaemon = false
+
+    /** Región mapeada, o null si initialize() no se llamó o falló. */
+    val buffer: ByteBuffer? get() = mappedBuffer
+
+    /** true si la memoria está mapeada y mlock() tuvo éxito. */
+    val isReady: Boolean get() = initialized.get() && mappedBuffer != null
+
+    /**
+     * true cuando la region mapeada es LA DEL DAEMON (fd recibido por
+     * SCM_RIGHTS). false = region local aislada (modo sin root): la app
+     * funciona, pero no hay telemetria del daemon que leer.
+     */
+    val isSharedWithDaemon: Boolean get() = mappedFromDaemon
+
+    fun initialize(ctx: Context) {
+        if (!initialized.compareAndSet(false, true)) {
+            Log.d(TAG, "initialize() ignorado: ya inicializado")
+            return
+        }
+        if (!loaded) {
+            Log.e(TAG, "libivanna_omega.so no cargada; SHM deshabilitada")
+            initialized.set(false)
+            return
+        }
+
+        // ── 1) Camino real: pedir el fd del omega_shm al daemon ───────────────
+        // El daemon (ivanna_daemon.cpp, "Modo B") entrega el fd de
+        // /data/adb/ivanna_omega/omega_shm por SCM_RIGHTS a todo cliente que
+        // conecta y NO envia bytes durante 150 ms. Nadie en Kotlin lo pedia:
+        // por eso el hyperplane estaba muerto aunque el daemon lo publicara.
+        val daemonBuf = runCatching { mapFromDaemon() }.getOrNull()
+        if (daemonBuf != null) {
+            // FASE 5: validar magic/version ANTES de aceptar el mapeo. Un
+            // backing de otra época (actualización Magisk con app vieja, o
+            // al revés) se rechaza aquí y se degrada a región local en vez
+            // de leer basura como si fuera telemetría del daemon.
+            if (isDaemonHeaderValid(daemonBuf)) {
+                mappedBuffer = daemonBuf
+                mappedFromDaemon = true
+                Log.i(TAG, "SHM del daemon mapeada via SCM_RIGHTS (${daemonBuf.capacity()}B, header OK)")
+                return
+            }
+            Log.e(TAG, "SHM del daemon con header inválido (magic/version) — rechazada, fallback a local")
+            runCatching { nativeUnmapSharedFd(daemonBuf) }
+        } else {
+            Log.w(TAG, "Daemon no entrego el fd de omega_shm — fallback a region local")
+        }
+
+        // ── 2) Fallback sin root: region local propia ─────────────────────────
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) {
+            Log.w(TAG, "android.os.SharedMemory requiere API 27+; SHM deshabilitada")
+            initialized.set(false)
+            return
+        }
+        try {
+            val shm = SharedMemory.create(SHM_NAME, SHM_SIZE_FALLBACK_V1)
+            val buf = shm.mapReadWrite()
+            if (!buf.isDirect) {
+                Log.e(TAG, "mapReadWrite() devolvió un buffer no-direct; abortando mlock")
+                shm.close()
+                initialized.set(false)
+                return
+            }
+            val mlockResult = nativeMlockBuffer(buf)
+            if (mlockResult != 0) {
+                Log.w(TAG, "mlock() falló (ret=$mlockResult) — región puede paginarse")
+            }
+            sharedMemory = shm
+            mappedBuffer = buf
+            mappedFromDaemon = false
+            Log.i(TAG, "SHM local '$SHM_NAME' mapeada (${SHM_SIZE_FALLBACK_V1}B), mlock=${mlockResult == 0}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Fallo creando/mapeando SharedMemory: ${e.message}", e)
+            initialized.set(false)
+        }
+    }
+
+    /**
+     * Conecta al socket abstracto del daemon, guarda silencio para caer en el
+     * handshake "Modo B", y mapea el fd recibido por SCM_RIGHTS.
+     * Devuelve null si el daemon no esta, si SELinux niega connectto, o si el
+     * mmap falla.
+     */
+    private fun mapFromDaemon(): ByteBuffer? {
+        val sock = LocalSocket()
+        try {
+            sock.soTimeout = HANDSHAKE_TIMEOUT_MS
+            sock.connect(
+                LocalSocketAddress(DAEMON_SOCKET, LocalSocketAddress.Namespace.ABSTRACT)
+            )
+            // No escribir NADA: el daemon clasifica como cliente SHM (Modo B)
+            // exactamente a quien calla durante 150 ms; si mandamos un byte
+            // entra al parser de texto y nunca envia el fd.
+            val one = ByteArray(1)
+            val n = sock.inputStream.read(one)
+            val fds = sock.ancillaryFileDescriptors
+            if (n <= 0 || fds == null || fds.isEmpty() || fds[0] == null) {
+                Log.w(TAG, "handshake SHM sin fd (n=$n, fds=${fds?.size ?: 0})")
+                return null
+            }
+            // detachFd() transfiere la propiedad del fd al codigo nativo:
+            // nativeMapSharedFd() hace close() tras el mmap.
+            val pfd = ParcelFileDescriptor.dup(fds[0])
+            val rawFd = pfd.detachFd()
+            // Layout v2: el daemon trunca el backing a ivanna::SHM_SIZE (constante unica C++).
+            // La app NO duplica ese numero: mapea con la longitud real del archivo
+            // recibido (stat del fd), con minimo del fallback v1 si no es legible.
+            // FIX (CI rojo): ParcelFileDescriptor.dup() NO acepta un Int crudo
+            // (rawFd de detachFd()) — solo FileDescriptor/PFD. Se adopta el fd
+            // UNA vez y se duplica desde esa instancia para el fstat de tamaño,
+            // sin fuga (se cierra el duplicado) ni doble-adopción del mismo fd.
+            val nativeFd = ParcelFileDescriptor.adoptFd(rawFd)
+            val dupPfd = ParcelFileDescriptor.dup(nativeFd.fileDescriptor)
+            val realSize = runCatching { android.system.Os.fstat(dupPfd.fileDescriptor).st_size.toInt() }
+                .also { runCatching { dupPfd.close() } }
+                .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
+            val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
+            if (buf == null) {
+                Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
+            } else {
+                // FIX (endianness, verificado — NewDirectByteBuffer en JNI
+                // siempre crea el buffer en el orden por defecto de Java,
+                // BIG_ENDIAN, sin importar el layout real de la memoria
+                // nativa). El daemon escribe ShmHeader.epoch y el frame SAF
+                // con enteros/floats nativos de ARM64, que es little-endian
+                // en todo dispositivo Android actual. Sin esto, epoch (el
+                // seqlock) y los 4 floats de readAndApplySafFrame() se leían
+                // con los bytes invertidos — el chequeo de paridad de epoch
+                // quedaba comprobando bits sin relación con la escritura
+                // real, y un float little-endian reinterpretado como
+                // big-endian da un patrón de bits esencialmente aleatorio,
+                // casi nunca dentro de gain !in 0.1f..4.0f. Explica por qué
+                // esa función probablemente nunca validaba un frame real
+                // incluso con el fd ya recibido correctamente.
+                buf.order(ByteOrder.LITTLE_ENDIAN)
+            }
+            return buf
+        } catch (t: Throwable) {
+            Log.d(TAG, "mapFromDaemon: ${t.message}")
+            return null
+        } finally {
+            runCatching { sock.close() }
+        }
+    }
+
+    /** Libera la región. Llamar desde el ciclo de vida de la app (onDestroy). */
+    fun release() {
+        val buf = mappedBuffer
+        mappedBuffer = null
+        if (mappedFromDaemon && buf != null) {
+            runCatching { nativeUnmapSharedFd(buf) }
+        }
+        mappedFromDaemon = false
+        sharedMemory?.close()
+        // FIX (parser roto): la linea aqui era `sharedMemory` (identificador
+        // suelto sin operador). Ademas el cierre `}` de release() se habia
+        // perdido en algun rebase, dejando readAndApplySafFrame() anidado
+        // dentro de release() y el archivo entero desbalanceado en +1 llave
+        // (compileDebugKotlin: "Missing '}'" en L150). Se completa la
+        // asignacion a null y se cierra release() antes del siguiente fun.
+        sharedMemory = null
+    }
+
+    // ── FIX: Leer SAF frame del SHM y alimentar SaFRoomBridge ─────────────────
+    // El daemon publica un SAF frame (4×float: gain/compressor/exciter/spatial)
+    // en el SHM después de cada SAF_UPDATE. Nadie en Kotlin lo leía — la app
+    // nunca veía los valores que el daemon había procesado.
+    //
+    // readAndApplySafFrame() lee los 16 bytes desde (base + 16) del SHM
+    // (los primeros 16 bytes son el ShmHeader seqlock) y los pasa a
+    // SaFRoomBridge.setHrtfState() + setRoomState() para mantener el
+    // optimizador Kotlin en sync con el daemon C++.
+    //
+    // Llamar periódicamente desde AdaptiveBackend.pollTelemetry() (10 Hz).
+    /**
+     * Valida el ShmHeader de una región recién mapeada del daemon:
+     * magic == "OMEG" y version soportada. Es el espejo Kotlin de
+     * validateShmHeader() (daemon/core/shm_manager.h). Lectura LITTLE_ENDIAN
+     * explícita — el daemon escribe en LE (ARM64) y el ByteBuffer JNI nace
+     * en BIG_ENDIAN por defecto de Java.
+     */
+    private fun isDaemonHeaderValid(buf: ByteBuffer): Boolean {
+        if (buf.capacity() < SHM_HEADER_BYTES) return false
+        return runCatching {
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            le.getInt(SHM_OFF_MAGIC) == SHM_MAGIC_OMEG &&
+            le.getInt(SHM_OFF_VERSION) == SHM_VERSION_EXPECTED
+        }.getOrDefault(false)
+    }
+
+    /** Último heartbeat del daemon (ms monotónicos) o -1 si el SHM no es del daemon. */
+    fun daemonHeartbeatMs(): Long {
+        val buf = buffer ?: return -1L
+        if (!isReady || !mappedFromDaemon) return -1L
+        if (buf.capacity() < SHM_HEARTBEAT_OFF + 8) return -1L
+        return runCatching {
+            buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN).getLong(SHM_HEARTBEAT_OFF)
+        }.getOrDefault(-1L)
+    }
+
+    /** true si el daemon escribió heartbeat en los últimos [maxAgeMs] ms. */
+    fun isDaemonAlive(maxAgeMs: Long = 2000L): Boolean {
+        val hb = daemonHeartbeatMs()
+        if (hb <= 0L) return false
+        // FIX (mismatch de dominio de reloj): el daemon escribe el heartbeat
+        // con std::chrono::steady_clock, que en Android/Linux mapea a
+        // CLOCK_MONOTONIC — NO avanza durante deep sleep. La comparación debe
+        // usar uptimeMillis() (también CLOCK_MONOTONIC), NO elapsedRealtime()
+        // (CLOCK_BOOTTIME, que SÍ incluye el tiempo suspendido). Con
+        // elapsedRealtime(), tras cualquier suspensión del dispositivo la app
+        // reportaba daemon zombi estando vivo: now avanzaba las horas dormidas
+        // pero hb no, así que (now - hb) superaba maxAgeMs siempre.
+        val now = android.os.SystemClock.uptimeMillis()
+        return (now - hb) in 0..maxAgeMs
+    }
+
+    /**
+     * Métricas de salud del canal daemon↔app (roadmap control-plane item 3).
+     * Contadores u32 monotónicos escritos por el daemon (pueden envolver a
+     * ~4e9 — interpretar por delta entre muestreos, nunca como absolutos).
+     * Devuelve null si la región no es la del daemon o es demasiado corta.
+     */
+    data class ChannelHealth(
+        val safFramesPublished: Long,
+        val heartbeatsEmitted: Long,
+        val writesRejected: Long,
+        val commandsProcessed: Long,
+        val clientsConnected: Long,
+    )
+
+    fun channelHealth(): ChannelHealth? {
+        val buf = buffer ?: return null
+        if (!isReady || !mappedFromDaemon) return null
+        if (buf.capacity() < SHM_HEALTH_ABS + 24) return null
+        return runCatching {
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            // u32 sin signo -> Long (máscara 0xFFFFFFFF) para no devolver
+            // negativos cuando el contador supera Int.MAX_VALUE.
+            fun u32(absOff: Int) = le.getInt(absOff).toLong() and 0xFFFFFFFFL
+            ChannelHealth(
+                safFramesPublished = u32(SHM_HEALTH_ABS + 0),
+                heartbeatsEmitted  = u32(SHM_HEALTH_ABS + 4),
+                writesRejected     = u32(SHM_HEALTH_ABS + 8),
+                commandsProcessed  = u32(SHM_HEALTH_ABS + 12),
+                clientsConnected   = u32(SHM_HEALTH_ABS + 16),
+            )
+        }.getOrNull()
+    }
+
+    fun readAndApplySafFrame(): Boolean {
+        val buf = buffer ?: return false
+        if (!isReady) return false
+        // Sin fd del daemon la region es local y siempre esta en ceros: leerla
+        // solo gastaria ciclos a 10 Hz.
+        if (!mappedFromDaemon) return false
+        return try {
+            // Offset del frame = sizeof(ivanna::ShmHeader), fijado por
+            // static_assert en daemon/core/shm_manager.h (el build C++ falla
+            // si diverge — no es un literal inventado).
+            val HEADER_BYTES = SHM_HEADER_BYTES
+            if (buf.capacity() < HEADER_BYTES + 16) return false
+
+            // Endianness: ByteBuffer Java nace BIG_ENDIAN; el SHM nativo es
+            // little-endian (ARM64). Sin forzarlo, getLong/getFloat leían los
+            // bytes invertidos — el reader nunca validaba un frame real.
+            val le = buf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
+            // epoch está en bytes 0..7 (ShmHeader::epoch, std::atomic<uint64_t>)
+            val epochBefore = le.getLong(0)
+            if (epochBefore % 2L != 0L) return false   // escritura en curso
+
+            // SAF frame: [gain:f][compressor:f][exciter:f][spatial:f]
+            val gain       = le.getFloat(HEADER_BYTES + 0)
+            val compressor = le.getFloat(HEADER_BYTES + 4)
+            val exciter    = le.getFloat(HEADER_BYTES + 8)
+            val spatial    = le.getFloat(HEADER_BYTES + 12)
+
+            val epochAfter = le.getLong(0)
+            if (epochAfter != epochBefore) return false  // torn read — reintentar después
+
+            // Validar rango (datos plausibles)
+            if (gain !in 0.1f..4.0f) return false
+
+            // Propagar al optimizador Riemanniano Kotlin
+            SaFRoomBridge.setHrtfState(
+                mismatchEnergy  = exciter.coerceIn(0f, 1f),
+                convergenceRate = (1f - spatial.coerceIn(0f, 1f))
+            )
+            // gain del daemon → contexto de sala: gain > 1.0 implica señal reforzada
+            // (sala poco reverberante); gain < 1.0 implica atenuación (sala activa)
+            SaFRoomBridge.setRoomState(
+                rt60    = (1.5f * (1f - gain.coerceIn(0.5f, 1.5f) / 1.5f)).coerceIn(0f, 3f),
+                drr     = gain * 6f,
+                roomMode = compressor.coerceIn(0f, 1f)
+            )
+            true
+        } catch (_: Exception) { false }
+    }
+
+    fun close() {
+        initialized.set(false)
+    }
+}

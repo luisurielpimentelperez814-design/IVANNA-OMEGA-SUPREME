@@ -1,0 +1,8 @@
+{
+  "version": "6.0",
+  "socketPath": "/dev/socket/ivanna_omega",
+  "logFile": "/data/adb/ivanna_omega/daemon.log",
+  "realTimePriority": 80,
+  "defaultSampleRate": 48000,
+  "defaultBlockSize": 512
+}

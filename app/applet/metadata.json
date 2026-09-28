@@ -1,0 +1,6 @@
+{
+  "name": "IVANNA-OMEGA-SUPREME",
+  "description": "Daemon de audio de grado audiófilo y suite DSP para Android Magisk con Inversión Biomecánica Coclear (Cochlear-PINN), Anti-Dolby TinyML e integración completa de controles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

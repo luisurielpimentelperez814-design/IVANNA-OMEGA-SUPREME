@@ -1,0 +1,469 @@
+package com.ivanna.omega.magisk
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
+import android.util.Log
+import org.json.JSONObject
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
+
+object OmegaEngineBridge {
+    private const val TAG = "OmegaEngineBridge"
+    private const val SOCKET_PRIMARY = "omega_daemon_socket"
+    private const val MIN_PROTO_VERSION = 3   // exigido en el handshake HELLO al conectar
+    private const val TCP_FALLBACK_PORT = 12121   // mismo que --tcp-port en service.sh
+    private const val CONNECT_TIMEOUT = 2000
+    @Volatile var isConnected = false; private set
+    // Versión REAL del módulo reportada por el daemon en el handshake HELLO
+    // (campo "moduleVersion"). Es la fuente viva: a diferencia de la prop
+    // persist.ivanna.version (que queda obsoleta hasta el reinicio), ésta la
+    // publica el binario que está corriendo AHORA. Vacía hasta el primer HELLO.
+    @Volatile var liveModuleVersion: String = ""; private set
+    @Volatile private var lastLatencyMs = 0f
+    private val reconnecting = AtomicBoolean(false)
+
+    // ── Keepalive: probe suave cada 5 s ──────────────────────────────────
+    // Sin esto isConnected solo se refresca cuando la UI pulsa un boton —
+    // tras un boot o una caida del daemon el panel quedaba DESCONECTADO
+    // hasta intervencion manual. Un hilo daemon ligero hace probeSocket()
+    // periodico (1 probe/5s, timeout 2s — coste despreciable) y la UI
+    // siempre refleja el estado real del socket.
+    @Volatile private var keepaliveStarted = false
+    @Volatile private var lastSupremeAxesPayload: JSONObject? = null
+    fun startKeepalive() {
+        if (keepaliveStarted) return
+        keepaliveStarted = true
+        Thread({
+            var alive = true
+            var wasConnected = false
+            while (alive) {
+                try {
+                    val nowConnected = connect()
+                    if (nowConnected && !wasConnected) {
+                        lastSupremeAxesPayload?.let { payload ->
+                            runCatching { sendCommand(payload) }
+                        }
+                    }
+                    wasConnected = nowConnected
+                    Thread.sleep(5000)
+                }
+                catch (_: InterruptedException) { alive = false }  // return ilegal en lambda SAM → flag
+                catch (_: Throwable) { /* probe ya maneja sus errores */ }
+            }
+        }, "omega-socket-keepalive").apply { isDaemon = true }.start()
+    }
+    // Canal persistente abstracto: funciona igual sobre LocalSocket (Unix
+    // abstracto) o Socket (TCP loopback 127.0.0.1) — la app elige la primera
+    // vía que conecte. Así el daemon sigue alcanzable aunque SELinux o la
+    // ROM bloqueen el socket abstracto (el TCP fallback lo abre el daemon
+    // con --tcp-port 12121, loopback solamente).
+    private interface Channel {
+        val output: OutputStream
+        val input: InputStream
+        fun close()
+    }
+    private class UnixChannel(val s: LocalSocket) : Channel {
+        override val output get() = s.outputStream
+        override val input  get() = s.inputStream
+        override fun close() = s.close()
+    }
+    private class TcpChannel(val s: Socket) : Channel {
+        override val output get() = s.outputStream
+        override val input  get() = s.inputStream
+        override fun close() = s.close()
+    }
+    @Volatile private var persistentChannel: Channel? = null
+
+    fun connect(): Boolean {
+        if (reconnecting.compareAndSet(false, true)) {
+            try { return probeSocket() } finally { reconnecting.set(false) }
+        }
+        return isConnected
+    }
+    private fun probeSocket(): Boolean {
+        // Sonda Unix primero; si falla (SELinux/ROM bloquea el abstracto),
+        // probar el fallback TCP loopback que el daemon abre con --tcp-port.
+        val unixOk = runCatching {
+            val sock = LocalSocket()
+            sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
+            sock.soTimeout = CONNECT_TIMEOUT
+            sock.close()
+            true
+        }.getOrDefault(false)
+        if (unixOk) { isConnected = true; return true }
+        val tcpOk = runCatching {
+            val s = Socket()
+            s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), CONNECT_TIMEOUT)
+            s.soTimeout = CONNECT_TIMEOUT
+            s.close()
+            true
+        }.getOrDefault(false)
+        isConnected = tcpOk
+        if (tcpOk) Log.i(TAG, "Daemon alcanzable via TCP loopback fallback (Unix socket bloqueado)")
+        return tcpOk
+    }
+    @Synchronized
+    private fun ensureSocket(): Channel? {
+        if (persistentChannel != null && isConnected) return persistentChannel
+        runCatching { persistentChannel?.close() }
+        persistentChannel = null
+        // Vía 1: Unix abstracto (rápida, sin overhead de red).
+        val unix = runCatching {
+            val sock = LocalSocket()
+            sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
+            sock.soTimeout = CONNECT_TIMEOUT
+            UnixChannel(sock)
+        }.getOrNull()
+        if (unix != null) { persistentChannel = unix; isConnected = true; return unix }
+        // Vía 2: TCP loopback 127.0.0.1:12121 (fallback del daemon).
+        val tcp = runCatching {
+            val s = Socket()
+            s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), CONNECT_TIMEOUT)
+            s.soTimeout = CONNECT_TIMEOUT
+            s.tcpNoDelay = true
+            TcpChannel(s)
+        }.getOrNull()
+        if (tcp != null) {
+            persistentChannel = tcp; isConnected = true
+            Log.i(TAG, "Conectado al daemon por TCP fallback (Unix no disponible)")
+            return tcp
+        }
+        isConnected = false
+        return null
+    }
+    @Synchronized
+    /**
+     * Handshake de protocolo: envía HELLO y exige que el daemon responda una
+     * versión >= MIN_PROTO_VERSION. Si el daemon no responde o es más viejo,
+     * la conexión se considera inválida (isConnected=false) aunque el socket
+     * esté abierto — un socket vivo no implica contrato compatible.
+     */
+    fun handshake(): Boolean {
+        return try {
+            val resp = requestCommand(JSONObject().apply { put("action", "HELLO") })
+            val proto = resp?.optInt("proto", -1) ?: -1
+            val okProto = proto >= MIN_PROTO_VERSION
+            if (!okProto) {
+                Log.w(TAG, "Handshake HELLO: proto=$proto < mínimo $MIN_PROTO_VERSION — daemon incompatible")
+                isConnected = false
+            } else {
+                // Capturar la versión viva del módulo si el daemon la publica.
+                val live = resp?.optString("moduleVersion", "") ?: ""
+                if (live.isNotBlank()) liveModuleVersion = live
+                Log.i(TAG, "Handshake HELLO OK — proto=$proto daemon=${resp?.optString("daemon","?")} moduleVersion=$liveModuleVersion")
+            }
+            okProto
+        } catch (e: Exception) {
+            Log.w(TAG, "Handshake HELLO falló: ${e.message}")
+            isConnected = false
+            false
+        }
+    }
+
+    fun sendCommand(payload: JSONObject): Boolean {
+        return try {
+            val t0 = System.nanoTime()
+            val socket = ensureSocket()?: return false
+            val frame = payload.toString() + "\n"
+            socket.output.write(frame.toByteArray(Charsets.UTF_8))
+            socket.output.flush()
+            val buffer = ByteArray(4096)
+            val bytesRead = socket.input.read(buffer)
+            val t1 = System.nanoTime()
+            lastLatencyMs = (t1 - t0) / 1_000_000f
+            isConnected = bytesRead > 0
+            isConnected
+        } catch (e: Exception) {
+            Log.w(TAG, "sendCommand error: ${e.message}")
+            isConnected = false
+            runCatching { persistentChannel?.close() }
+            persistentChannel = null
+            false
+        }
+    }
+    @Synchronized
+    fun requestCommand(payload: JSONObject): JSONObject? {
+        return try {
+            val t0 = System.nanoTime()
+            val socket = ensureSocket()?: return null
+            val frame = payload.toString() + "\n"
+            socket.output.write(frame.toByteArray(Charsets.UTF_8))
+            socket.output.flush()
+            val buffer = ByteArray(4096)
+            val bytesRead = socket.input.read(buffer)
+            val t1 = System.nanoTime()
+            lastLatencyMs = (t1 - t0) / 1_000_000f
+            isConnected = bytesRead > 0
+            if (isConnected) JSONObject(String(buffer, 0, bytesRead, Charsets.UTF_8)) else null
+        } catch (e: Exception) {
+            isConnected = false
+            runCatching { persistentChannel?.close() }
+            persistentChannel = null
+            null
+        }
+    }
+
+    fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
+    fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",targetGain); put("compAmount",compAmount); put("excRed",excRed); put("timestamp",System.currentTimeMillis()) })
+    fun setRoom(rt60S: Float, wet: Float = 0.22f, roomIdx: Int = -1): Boolean {
+        runCatching { nativeSetLocalRoom(rt60S, wet, roomIdx) }
+        return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S); put("wet",wet); put("idx",roomIdx) })
+    }
+    fun disableRoom(): Boolean = setRoom(0f,0f)
+    fun getRoomStatus(): JSONObject? = requestCommand(JSONObject().apply { put("action","GET_ROOM_STATUS") })
+    /**
+     * FIX (botón TELEMETRY muerto): antes reutilizaba el canal persistente con
+     * requestCommand(). Si ese canal se había quedado medio-abierto (daemon
+     * reiniciado, conexión stale) el read() se bloqueaba hasta el timeout y el
+     * botón parecía no hacer nada. Además un JSON de respuesta >4096 B o una
+     * respuesta partida en 2 recv() dejaba el JSON truncado → JSONObject() lanzaba
+     * y devolvía null → "Omega OFFLINE" aunque el daemon estuviera vivo.
+     *
+     * Ahora: canal EFÍMERO dedicado por consulta (sin estado stale), lectura en
+     * bucle hasta '}' balanceado o EOF, timeout generoso, y fallback a PING si
+     * GET_STATUS no parsea. Devuelve SIEMPRE una cadena legible con la causa.
+     */
+    fun requestTelemetry(): String {
+        val reply = queryDaemonEphemeral(JSONObject().apply { put("action","GET_STATUS") })
+            ?: queryDaemonEphemeral(JSONObject().apply { put("action","PING") })
+        return if (reply != null) {
+            isConnected = true
+            "Omega OK latency=${"%.1f".format(lastLatencyMs)}ms $reply"
+        } else {
+            isConnected = false
+            // Diagnóstico honesto: distingue daemon-sin-bind de rechazo SELinux
+            // para que el usuario sepa qué mirar, en vez del genérico "OFFLINE".
+            "Omega OFFLINE — " + runCatching { MagiskBridge.diagnoseSocket() }.getOrDefault("sin diagnóstico")
+        }
+    }
+
+    /**
+     * Abre una conexión NUEVA (Unix abstracto, luego TCP fallback), envía un
+     * comando JSON y lee la respuesta completa balanceando llaves. Sin canal
+     * persistente → imposible que quede stale. Cierra siempre.
+     */
+    @Synchronized
+    private fun queryDaemonEphemeral(payload: JSONObject): String? {
+        val t0 = System.nanoTime()
+        val channel: Channel = runCatching {
+            val sock = LocalSocket()
+            sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
+            sock.soTimeout = 3000
+            UnixChannel(sock)
+        }.getOrElse {
+            runCatching {
+                val s = Socket()
+                s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), 3000)
+                s.soTimeout = 3000
+                s.tcpNoDelay = true
+                TcpChannel(s)
+            }.getOrNull()
+        } ?: return null
+        try {
+            channel.output.write(payload.toString().toByteArray(Charsets.UTF_8))
+            channel.output.flush()
+            val buf = ByteArray(8192)
+            val sb = StringBuilder()
+            var depth = 0
+            var started = false
+            var inStr = false
+            var esc = false
+            while (true) {
+                val n = try { channel.input.read(buf) } catch (_: Exception) { -1 }
+                if (n <= 0) break
+                for (i in 0 until n) {
+                    val c = buf[i].toChar()
+                    sb.append(c)
+                    if (inStr) { if (esc) esc = false else if (c == '\\') esc = true else if (c == '"') inStr = false; continue }
+                    when (c) {
+                        '"' -> inStr = true
+                        '{' -> { depth++; started = true }
+                        '}' -> if (started && --depth == 0) {
+                            lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+                            return sb.toString()
+                        }
+                    }
+                }
+                if (sb.length > 65536) break
+            }
+            val raw = sb.toString().trim()
+            lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
+            return if (raw.isNotEmpty()) raw else null
+        } catch (e: Exception) {
+            Log.w(TAG, "queryDaemonEphemeral error: ${e.message}")
+            return null
+        } finally {
+            runCatching { channel.close() }
+        }
+    }
+
+    fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
+    fun setIntensity(intensity: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
+    fun setIntensity(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
+
+    fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("deltaEnergy", deltaEnergy); put("metricNorm", metricNorm); put("memory", memory); put("gain", gain) })
+    /**
+     * Envía el vector latente q[7] real de Φ_SAF-Room^∞ (SaFRoomBridge.getParams())
+     * al daemon — este es el único punto donde q[7] llega al bus (saf_q en
+     * OmegaDspSnapshot), que omega_effect.cpp aplica vía setSafLatentParams().
+     * Antes de este método, SpatialAudioPanel activaba el switch SAF pero nunca
+     * enviaba el vector calculado; el DSP nunca recibía la calibración real.
+     */
+    fun pushSafLatentQ(q: FloatArray, gain: Float = 1.0f): Boolean {
+        if (q.size < 7) return false
+        runCatching { nativePushLocalSafLatent(q, gain) }
+        return sendCommand(JSONObject().apply {
+            put("action", "PUSH_SAF_STATE")
+            put("q", org.json.JSONArray(q.take(7)))
+            put("gain", gain)
+        })
+    }
+    fun pushSAFState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", json) })
+    fun pushSAFState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("args", args.map { it.toString() }) })
+
+    fun sendPerceptualState(compressor: Float, exciterRed: Float, highCut: Float, spatialWidth: Float, loudnessTarget: Float, harmonicGain: Float, antiDolby: Float): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("compressor", compressor); put("exciterRed", exciterRed); put("highCut", highCut); put("spatialWidth", spatialWidth); put("loudnessTarget", loudnessTarget); put("harmonicGain", harmonicGain); put("antiDolby", antiDolby) })
+    fun sendPerceptualState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("state", json) })
+    fun sendPerceptualState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("args", args.map { it.toString() }) })
+
+    fun setRouteProfile(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("profile", json) })
+    fun setRouteProfile(a: Float, b: Float, c: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b); put("c", c) })
+    fun setRouteProfile(a: Float, b: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b) })
+    fun setRouteProfile(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("args", args.map { it.toString() }) })
+
+    fun pushYamnetScores(speech: Float, music: Float, classId: Int, confidence: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("speech", speech); put("music", music); put("classId", classId); put("confidence", confidence) })
+    fun pushYamnetScores(speech: Float, music: Float, classId: Float, confidence: Float): Boolean = pushYamnetScores(speech, music, classId.toInt(), confidence)
+    fun pushYamnetScores(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", json) })
+    fun pushYamnetScores(scores: FloatArray): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.toList()) })
+    fun pushYamnetScores(scores: List<Float>): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores) })
+    fun pushYamnetScores(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("args", args.map { it.toString() }) })
+
+    fun setPinnaMetrics(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("metrics", json) })
+    fun setPinnaMetrics(width: Float, height: Float, depth: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("width", width); put("height", height); put("depth", depth) })
+    fun setPinnaMetrics(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("args", args.map { it.toString() }) })
+
+    /**
+     * Sincroniza los 5 Ejes de Supremacía Cuántico-Neuromórfica con el daemon Magisk (`ivanna_daemon`),
+     * el cual los publica mediante seqlock en `OmegaControlBus` (`OmegaDspSnapshot`) hacia `omega_effect.so`
+     * en `audioserver` (Ruta B system-wide).
+     */
+    fun pushSupremeAxesState(
+        warpedLatticeEnabled: Boolean,
+        warpedLatticeMicroChirp: Boolean,
+        warpedLatticeBlDrive: Float,
+        warpedLatticeLambda: Float,
+        transharmonicCvnnEnabled: Boolean,
+        transharmonicHarmonicGain: Float,
+        transharmonicImdCancel: Float,
+        transharmonicAnalogTapeDrive: Float = 0.25f,
+        snnHoaUpmixerEnabled: Boolean,
+        snnHoaImmersivity: Float,
+        snnSpikeThreshold: Float,
+        pinnaManifoldEnabled: Boolean,
+        pinnaManifoldWetMix: Float,
+        pinnaConchaDepth: Float,
+        pinnaHelixCurl: Float,
+        pinnaHeadWidth: Float,
+        farrowMsoEnabled: Boolean,
+        msoItdNanoseconds: Float,
+        ebpfBypassActive: Boolean
+    ): Boolean {
+        val payload = JSONObject().apply {
+            put("action", "SET_SUPREME_AXES")
+            put("warpedLatticeEnabled", if (warpedLatticeEnabled) 1.0f else 0.0f)
+            put("warpedLatticeMicroChirp", if (warpedLatticeMicroChirp) 1.0f else 0.0f)
+            put("warpedLatticeBlDrive", warpedLatticeBlDrive)
+            put("warpedLatticeLambda", warpedLatticeLambda)
+            put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
+            put("transharmonicHarmonicGain", transharmonicHarmonicGain)
+            put("transharmonicImdCancel", transharmonicImdCancel)
+            put("transharmonicAnalogTapeDrive", transharmonicAnalogTapeDrive)
+            put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
+            put("snnHoaImmersivity", snnHoaImmersivity)
+            put("snnSpikeThreshold", snnSpikeThreshold)
+            put("pinnaManifoldEnabled", if (pinnaManifoldEnabled) 1.0f else 0.0f)
+            put("pinnaManifoldWetMix", pinnaManifoldWetMix)
+            put("pinnaConchaDepth", pinnaConchaDepth)
+            put("pinnaHelixCurl", pinnaHelixCurl)
+            put("pinnaHeadWidth", pinnaHeadWidth)
+            put("farrowMsoEnabled", if (farrowMsoEnabled) 1.0f else 0.0f)
+            put("msoItdNanoseconds", msoItdNanoseconds)
+            put("ebpfBypassActive", if (ebpfBypassActive) 1.0f else 0.0f)
+        }
+        lastSupremeAxesPayload = payload
+        return sendCommand(payload)
+    }
+
+    fun disconnect() { isConnected = false; runCatching { persistentChannel?.close() }; persistentChannel = null }
+    fun getStatus(): Boolean = isConnected
+    fun getLastLatencyMs(): Float = lastLatencyMs
+
+    // ── RIR dataset: listado real de salas + fallback sin root (2026-09-19) ──
+    @JvmStatic external fun nativeGetRirRoomCount(): Int
+    @JvmStatic external fun nativeIsRirDatasetLoaded(): Boolean
+    @JvmStatic external fun nativeGetRirRoomInfo(idx: Int): String?
+    @JvmStatic external fun nativeSetRirDataDir(dir: String): Boolean
+    @JvmStatic external fun nativeSetLocalRoom(rt60S: Float, wet: Float, roomIdx: Int)
+    @JvmStatic external fun nativePushLocalSafLatent(q: FloatArray, gain: Float)
+
+    /** true si el dataset RIR (200 salas) esta cargado en el motor nativo. */
+    @JvmStatic
+    fun isRirDatasetLoaded(): Boolean = runCatching { nativeIsRirDatasetLoaded() }.getOrDefault(false)
+
+    /** Numero de salas indexadas (0 si no hay dataset). */
+    @JvmStatic
+    fun rirRoomCount(): Int = runCatching { nativeGetRirRoomCount() }.getOrDefault(0)
+
+    /** "nombre|rt60|volumen|distancia|WxHxD" de la sala idx, o null. */
+    @JvmStatic
+    fun rirRoomInfo(idx: Int): String? = runCatching { nativeGetRirRoomInfo(idx) }.getOrNull()
+
+    /**
+     * Fallback sin root: extrae assets/ivanna_omega/rir/ (metadata.csv +
+     * rir_0000.wav..rir_0199.wav, ~2 MB) a filesDir/rir la primera vez y
+     * apunta el dataset nativo ahi. Idempotente; no-op si root ya lo cargo.
+     */
+    @JvmStatic
+    fun ensureRirDataset(ctx: android.content.Context): Boolean {
+        if (isRirDatasetLoaded()) return true
+        return runCatching {
+            val dst = java.io.File(ctx.filesDir, "rir")
+            val meta = java.io.File(dst, "metadata.csv")
+            val priorityFiles = listOf(
+                "metadata.csv",
+                "rir_0051.wav",
+                "rir_0122.wav",
+                "rir_0169.wav",
+                "rir_0081.wav",
+                "rir_0063.wav"
+            )
+            if (!meta.exists()) {
+                dst.mkdirs()
+                for (name in priorityFiles) {
+                    val out = java.io.File(dst, name)
+                    if (!out.exists() || out.length() == 0L) {
+                        runCatching {
+                            ctx.assets.open("ivanna_omega/rir/$name").use { i ->
+                                out.outputStream().use { o -> i.copyTo(o) }
+                            }
+                        }
+                    }
+                }
+                Thread({
+                    runCatching {
+                        ctx.assets.list("ivanna_omega/rir")?.forEach { name ->
+                            val out = java.io.File(dst, name)
+                            if (!out.exists() || out.length() == 0L) {
+                                ctx.assets.open("ivanna_omega/rir/$name").use { i ->
+                                    out.outputStream().use { o -> i.copyTo(o) }
+                                }
+                            }
+                        }
+                    }
+                }, "IvannaRirBgExtract").start()
+            }
+            nativeSetRirDataDir(dst.absolutePath)
+        }.getOrDefault(false)
+    }
+}

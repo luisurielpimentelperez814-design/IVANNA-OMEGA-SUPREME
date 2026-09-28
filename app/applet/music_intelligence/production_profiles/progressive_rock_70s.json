@@ -1,0 +1,9 @@
+{
+  "style": "progressive_rock_70s",
+  "methodology": "Centroides derivados de práctica documentada de producción 70s: dinámica amplia, escena estéreo grande, medios densos en instrumentos, agudos controlados. Valores de ingeniería, no medición por pista comercial.",
+  "features": { "bassRatio": 0.34, "trebleRatio": 0.18, "crestDb": 13.2, "stereoWidth": 0.62, "transientRate": 0.45, "density": 0.70 },
+  "frequency_behavior": { "bass": "extended", "midrange": "instrument_dense", "treble": "controlled" },
+  "dynamics": { "compression": "low", "transients": "strong" },
+  "spatial": { "stereo_width": "large", "depth": "high", "room": "large" },
+  "recommended_processing": { "wfs_spread": 0.8, "hrtf_depth": 0.7, "eq_tilt_db": -1.0, "dynamics_amount": 0.9, "environment_depth": 0.55 }
+}

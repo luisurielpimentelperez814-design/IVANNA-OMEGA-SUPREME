@@ -1,0 +1,513 @@
+=== OMEGA PROCESS RUTA CALIENTE ===
+static int32_t omega_process(effect_handle_t self,
+                             audio_buffer_t *inBuf, audio_buffer_t *outBuf) {
+    omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
+    if (!ctx || !ctx->enabled || !inBuf || !outBuf) return 0;
+    if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
+
+    const int frames = (int)inBuf->frameCount;
+    const float* in = inBuf->f32;
+    float* out = outBuf->f32;
+
+    // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
+    // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
+    IvannaFusionEngine* fc = ctx->fusionCore;
+    if (!fc) {
+        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        return 0;
+    }
+
+    // AUDIT FIX (control plane reconnect): drena a lo más UN snapshot nuevo
+    // por callback. readLatest() es lock-free (seqlock en SHM), no bloquea,
+    // no malloc, y solo retorna true si hay una generation posterior a la
+    // ya aplicada. Esto conecta finalmente los sliders de la UI -> daemon
+    // -> SHM -> omega_process, cerrando el ciclo que estaba roto.
+    if (ctx->ctrlBusOpen) {
+        ivanna::OmegaDspSnapshot snap;
+        if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
+            omega_apply_snapshot(fc, snap);
+            omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
+        }
+    }
+
+    // ── Thermal Governor — bypass temprano si SoC en zona peligrosa ─────────
+    // Si el SoC supera 75°C (ThermalTier::BYPASS), el audio thread ya no
+    // puede garantizar latencia — hacer pass-through limpio es mejor que
+    // tener underruns con DSP activo. La lectura es O(1) (atómica, sin syscall).
+    {
+        const auto tier = ivanna::getThermalGovernor().getCurrentTier();
+        if (tier == ivanna::ThermalTier::BYPASS) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+            return 0;
+        }
+        // Tier LIMITED o PROTECTED: desactivar RIR (la más costosa en CPU)
+        if (tier >= ivanna::ThermalTier::LIMITED && ctx->rirConvolver) {
+            // No destruir el convolver (caro recrearlo) — solo saltarlo este ciclo
+            // El flag ctrlBusOpen se mantiene — el snapshot ya tiene el room_rt60
+            // y el convolver volverá a activarse cuando el SoC se enfríe.
+            ctx->thermalSkipRIR = true;
+        } else {
+            ctx->thermalSkipRIR = false;
+        }
+    }
+
+    // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
+    // (SET_CONFIG). Si vinieran sin reservar (calloc falló en SET_CONFIG)
+    // se cae a passthrough — jamás asignar en el hilo de audio.
+    if (!ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
+        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        return 0;
+    }
+    float* L = ctx->rtL;
+    float* R = ctx->rtR;
+
+    // AUDIT FIX (rigid buffer / silent bypass): si el bloque entrante excede
+    // la capacidad preasignada (p.ej. AudioFlinger con LDAC/LHDC puede lanzar
+    // bloques grandes), ya NO se hace bypass silencioso a plano. Se procesa
+    // el bloque completo en chunks de a lo sumo rtCapacity frames, reutilizando
+    // los mismos buffers L/R — sin malloc, sin locks, mismo coste de memoria.
+    // Solo se logea UNA vez por instancia (flag en el ctx, no en el hot path)
+    // para no inundar logcat desde el callback de audio.
+    if (frames > ctx->rtCapacity && !ctx->chunkedWarned) {
+        ctx->chunkedWarned = true;
+        LOGW("omega_process: frameCount=%d > rtCapacity=%d — procesando en chunks (sin bypass)",
+             frames, ctx->rtCapacity);
+    }
+
+    int offset = 0;
+    while (offset < frames) {
+        const int chunk = ((frames - offset) < ctx->rtCapacity)
+                          ? (frames - offset) : ctx->rtCapacity;
+        const float* inChunk  = in  + (size_t)offset * 2u;
+        float*       outChunk = out + (size_t)offset * 2u;
+
+        for (int n = 0; n < chunk; ++n) {
+            L[n] = inChunk[2 * n];
+            R[n] = inChunk[2 * n + 1];
+        }
+
+        // Render binaural de objetos (VBAP + HRTF) + DSP de salida
+        fc->processStereo(L, R, (size_t)chunk);
+        
+        // FASE 3: Integración de TinyML Asíncrono
+        int aiDominantClass = -1;
+        if (auto* classifier = fc->getClassifier()) {
+            aiDominantClass = classifier->getDominantClass();
+        }
+
+        // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial)
+        if (ctx->adaptiveEngine) {
+            float pitchHz = 0.0f;
+            float pitchConf = 0.0f;
+            bool isVoiced = false;
+            
+            if (auto* prosody = fc->getProsodyEngine()) {
+                auto metrics = prosody->getMetrics();
+                pitchHz = metrics.pitchFreq;
+                pitchConf = metrics.pitchConfidence;
+                isVoiced = metrics.isVoiced;
+            }
+
+            ctx->adaptiveEngine->analyzeAudio(L, chunk);
+            ctx->adaptiveEngine->computeAdaptiveParameters(aiDominantClass, pitchHz, isVoiced, pitchConf);
+            ctx->adaptiveEngine->smoothParameters();
+            
+            const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
+            
+            // FIX (EQ adaptativo muerto, auditoria 2026-09-22): bass/mid/treble
+            // ahora se aplican de verdad via el mismo ParametricEQ de 8 bandas
+            // que usa Ruta A (ParametricEQ::setParams(DSPParams), ver
+            // dsp/ParametricEQ.cpp) — bandas reales con anti-zipper (crossfade
+            // 15ms al reajustar), NaN-guard por muestra, y compensacion de
+            // headroom cuando el apilado de bandas supera 3dB. setParams()
+            // recalcula 8 biquads (trig completo) — SOLO se llama si el
+            // objetivo se movio mas de 0.05dB desde el ultimo bloque, igual
+            // criterio que Ruta A (nunca dentro del hot path si no cambio).
+            if (ctx->adaptiveEq) {
+                const float db = adaptParams.eqBass, dm = adaptParams.eqMid,
+                            dt = adaptParams.eqTreble;
+                const bool changed =
+                    std::fabs(db - ctx->lastAdaptiveEqBass)   > 0.05f ||
+                    std::fabs(dm - ctx->lastAdaptiveEqMid)    > 0.05f ||
+                    std::fabs(dt - ctx->lastAdaptiveEqTreble) > 0.05f;
+                if (changed && std::isfinite(db) && std::isfinite(dm) && std::isfinite(dt)) {
+                    const uint32_t srEq = (ctx->config.outputCfg.samplingRate != 0)
+                                         ? ctx->config.outputCfg.samplingRate : 48000u;
+                    ivanna::DSPParams eqp;
+                    eqp.sampleRate = srEq;
+                    eqp.low        = db;   // Band 0 (80Hz shelf) + Band 1 (200Hz)
+                    eqp.mid        = dm;   // Band 3 (1kHz) + Band 4 (2.5kHz)
+                    eqp.high       = dt;   // Band 5 (5kHz) + Band 7 (12kHz shelf)
+                    eqp.presence   = 0.f;  // Band 6 — sin control dedicado del
+                                            // adaptive engine, queda plana.
+                    eqp.freq       = 1000.f;
+                    eqp.resonance  = 0.707f;
+                    ctx->adaptiveEq->setParams(eqp);
+                    ctx->adaptiveEqCompLinGain = std::pow(10.0f,
+                        -ctx->adaptiveEq->getOutputCompensationDb() / 20.0f);
+                    ctx->lastAdaptiveEqBass   = db;
+                    ctx->lastAdaptiveEqMid    = dm;
+                    ctx->lastAdaptiveEqTreble = dt;
+                }
+                ctx->adaptiveEq->process(L, R, chunk);
+                if (ctx->adaptiveEqCompLinGain < 0.999f) {
+                    for (int n = 0; n < chunk; ++n) {
+                        L[n] *= ctx->adaptiveEqCompLinGain;
+                        R[n] *= ctx->adaptiveEqCompLinGain;
+                    }
+                }
+            }
+
+            if (adaptParams.applyISO226) {
+                float isoGain = std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f));
+                for (int n = 0; n < chunk; ++n) {
+                    L[n] *= isoGain;
+                    R[n] *= isoGain;
+                }
+            }
+        }
+
+        // Apply side-target from AI classification
+        if (aiDominantClass != -1) {
+            uint8_t domClass = aiDominantClass;
+            // 0: Speech, 1: Music, 2: Transient, 3: Noise
+            // FIX (tronidos, 2026-08-27): la ganancia del side saltaba DURO
+            // entre bloques cuando el clasificador cambiaba de clase
+            // (0.8 -> 1.0 -> 1.2: escalones de ±4 dB en la frontera del
+            // bloque, ~cada 50 ms con música hablada -> tronido/zipper
+            // audible continuo). Mismo patrón que el fix de voice-protect
+            // de Ruta A: EMA por muestra (~10 ms) con el SR real de la
+            // sesión, convergencia suave hacia el objetivo de la clase.
+            const float sideTarget = (domClass == 0) ? 0.8f
+                                   : (domClass == 1) ? 1.2f : 1.0f;
+            // FIX: ctx->sideGainSmooth — estado por instancia, no thread_local
+            const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                 ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float sideCoef = std::exp(-1.0f / (0.010f * (float)srNow));
+            // Inicialización lazy: si sideGainSmooth es 0 (calloc), arranca en 1.0
+            if (ctx->sideGainSmooth < 0.01f) ctx->sideGainSmooth = 1.0f;
+            for (int n = 0; n < chunk; ++n) {
+                ctx->sideGainSmooth += (1.0f - sideCoef) * (sideTarget - ctx->sideGainSmooth);
+                const float m = (L[n] + R[n]) * 0.5f;
+                float sv = (L[n] - R[n]) * 0.5f;
+                sv *= ctx->sideGainSmooth;
+                L[n] = m + sv;
+                R[n] = m - sv;
+            }
+        }
+
+        // Cable RIR: aplicar reverberación de sala si está activa
+        // ThermalGovernor: saltar RIR en LIMITED/PROTECTED/BYPASS para
+        // liberar CPU y mantener el audio thread dentro del budget térmico.
+        if (ctx->rirConvolver && !ctx->thermalSkipRIR) ctx->rirConvolver->process(L, R, chunk);
+
+        // FIX (distorsion digital): ultimo eslabon de la cadena — el mismo
+        // SafetyLimiter que corre al final de la Ruta A. Sin esto, la
+        // expansion mid/side del TinyML (s *= 1.2f en clase 'Music') o un
+        // RIR con ganancia alta clippeaban directo al interleave.
+        // process() es branchless NEON, sin malloc/locks: seguro en RT.
+        if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
+
+        // Interleave -> salida
+        for (int n = 0; n < chunk; ++n) {
+            outChunk[2 * n]     = L[n];
+            outChunk[2 * n + 1] = R[n];
+        }
+        offset += chunk;
+    }
+
+    // ── Telemetría de audio real → OmegaControlBus local ─────────────────────
+    // Calcula RMS y peak sobre la salida procesada y los escribe en el snapshot
+    // pendiente (ctx->pendingSnap). OmegaControlBus.publish() los propaga via
+    // SHM al proceso de la app, donde audioRouteBridgeLoop() los lee cada 30ms.
+    // Sin esto: audioRouteBridgeLoop() nunca detecta Ruta B activa porque
+    // omega_daemon_get_shared_state() usa SHM compartida; UI refleja audio cuando el daemon está conectado.
+    {
+
+=== FUSION CORE PROCESS STEREO ===
+
+=== WFS PROCESS COMPLETO ===
+void WfsRenderer::process(const float* const* objectInputs, int numObjects,
+                          float* outL, float* outR, int frames) noexcept {
+    if (frames <= 0 || outL == nullptr || outR == nullptr) return;
+    if (numActiveObjects_ == 0) return;
+    if (enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f) return;
+    if (objectInputs == nullptr || numObjects <= 0) return;
+    enableWfsDenormalGuard();   // FTZ/DAZ: sin microcode assists en el hilo RT
+
+    const int M = maxDelayTap_;
+    const float invFrames = 1.0f / static_cast<float>(frames);
+
+    // ── 0) Envolventes de activación: rampa lineal por bloque hacia el
+    //       objetivo (fade-out glitch-free en removeObject; las fuentes
+    //       vivas permanecen en 1). Se calcula el paso ANTES del bloque.
+    int inputIdx = 0;
+    for (int si = 0; si < kMaxObjects; ++si) {
+        SourceSlot& slot = slots_[static_cast<size_t>(si)];
+        if (!slot.active) continue;
+        slot.envFrom  = slot.actEnv;
+        slot.envDelta = slot.actTarget - slot.actEnv;   // tramo del bloque
+        // Mapeo input i → i-ésima fuente viva en orden de ranura: idéntico
+        // al orden de registro de la versión anterior. Las fuentes en
+        // fade-out NO consumen entrada (su señal ya no llega del caller).
+        if (slot.actTarget > 0.f) {
+            const float* in = (inputIdx < numObjects) ? objectInputs[inputIdx] : nullptr;
+            ++inputIdx;
+            // ── 1) Driving: escribir la fuente en SU línea (una por fuente).
+            //       Si el caller no pasó entrada para una fuente viva, se
+            //       escribe silencio — físicamente la fuente calló; mantener
+            //       historia consistente (leer historia vieja sería un loop
+            //       del pasado, audible como estutter).
+            int wp = slot.writePos;
+            if (in != nullptr) {
+                for (int n = 0; n < frames; ++n) {
+                    // GUARDA NaN/Inf (Fase 7: recuperación tras fallo): un
+                    // NaN entrando a la línea circular la envenena PARA
+                    // SIEMPRE (NaN*0=NaN — el historial nunca se limpia solo)
+                    // y softLimit() no filtra NaN (todas sus ramas lo
+                    // propagan). Se sanea en la ÚNICA puerta de entrada:
+                    // muestra no finita -> silencio físico, el campo se
+                    // recupera solo en el siguiente bloque.
+                    const float v = in[n];
+                    slot.line[static_cast<size_t>(wp)] = std::isfinite(v) ? v : 0.f;
+                    wp = (wp + 1) % M;
+                }
+            } else {
+                for (int n = 0; n < frames; ++n) {
+                    slot.line[static_cast<size_t>(wp)] = 0.f;
+                    wp = (wp + 1) % M;
+                }
+            }
+            slot.writePos = wp;
+        }
+    }
+
+    // ── 2+3) Síntesis del campo y mezcla binaural en UN solo pase por
+    //        muestra. Los taps leen la línea de SU fuente con su propio
+    //        delay fraccionario suavizado y su ganancia suavizada; el
+    //        one-pole por muestra (kSmoothCoeff) hace que cualquier
+    //        movimiento de la fuente sea un glide continuo — no hay salto
+    //        de fase ni de amplitud, por tanto NO hay micro-corte.
+    const float norm = 1.0f / std::sqrt(static_cast<float>(numSpeakers_));
+    for (int n = 0; n < frames; ++n) {
+        // Avance de envolventes por muestra (rampa lineal exacta en 1 bloque).
+        // Envolvente con forma smoothstep t^2*(3-2t): derivada CERO al
+        // inicio y al fin del fade -> el retiro/nacimiento de una fuente no
+        // produce el click de esquina de la rampa lineal. f(1)=1 exacto.
+        const float tt = static_cast<float>(n + 1) * invFrames;
+        const float fshape = tt * tt * (3.0f - 2.0f * tt);
+        for (int si = 0; si < kMaxObjects; ++si) {
+            SourceSlot& slot = slots_[static_cast<size_t>(si)];
+            if (!slot.active || slot.envDelta == 0.f) continue;
+            slot.actEnv = slot.envFrom + slot.envDelta * fshape;
+            if (slot.actEnv < 0.f) slot.actEnv = 0.f;
+            if (slot.actEnv > 1.f) slot.actEnv = 1.f;
+        }
+
+        float accL = 0.f, accR = 0.f;
+        for (int s = 0; s < numSpeakers_; ++s) {
+            float spk = 0.f;
+            for (int si = 0; si < kMaxObjects; ++si) {
+                const SourceSlot& slot = slots_[static_cast<size_t>(si)];
+                if (!slot.active) continue;
+                DelayTap& tap = taps_[static_cast<size_t>(si) * static_cast<size_t>(numSpeakers_)
+                                      + static_cast<size_t>(s)];
+                // writePos apunta una posición DESPUÉS de la última muestra
+                // escrita; la muestra n del bloque vive (frames-1-n) atrás,
+                // más el delay físico suavizado del par (fuente→altavoz).
+                const float ds = tap.delaySmooth;
+                const int di = static_cast<int>(ds);
+                const float frac = ds - static_cast<float>(di);
+                const int back = frames - 1 - n + di;
+                int rp  = (slot.writePos - back) % M;
+                if (rp < 0) rp += M;
+                int rp2 = rp - 1; if (rp2 < 0) rp2 += M;
+                const float a = slot.line[static_cast<size_t>(rp)];
+                const float b = slot.line[static_cast<size_t>(rp2)];
+                spk += (a + (b - a) * frac) * tap.gainSmooth * slot.actEnv;
+                // Suavizado por muestra: persecución glitch-free del objetivo.
+                tap.delaySmooth += (tap.delayTarget - tap.delaySmooth) * kSmoothCoeff;
+                tap.gainSmooth  += (tap.gainTarget  - tap.gainSmooth)  * kSmoothCoeff;
+                // Snap: error sub-audible -> clavar al objetivo. Elimina la
+                // persecucion asintotica en regimen denormal y la deriva.
+                if (std::fabs(tap.delayTarget - tap.delaySmooth) < 5e-3f)
+                    tap.delaySmooth = tap.delayTarget;
+                if (std::fabs(tap.gainTarget - tap.gainSmooth) < 1e-4f)
+                    tap.gainSmooth = tap.gainTarget;
+            }
+            // ITD entero por altavoz + ILD constant-power.
+            auto& hist = itdHist_[static_cast<size_t>(s)];
+            int& hp = itdPos_[static_cast<size_t>(s)];
+            hist[static_cast<size_t>(hp)] = spk;
+            const float vL = hist[static_cast<size_t>((hp - speakerItdL_[s]) & 63)];
+            const float vR = hist[static_cast<size_t>((hp - speakerItdR_[s]) & 63)];
+            accL += vL * speakerGainL_[s];
+            accR += vR * speakerGainR_[s];
+            hp = (hp + 1) & 63;
+        }
+        // FIX (guarda de anti-aliasing espacial, antes definida pero jamás
+        // llamada desde ningún lado del árbol): se aplica al campo YA
+        // reconstruido (acumulado sobre los altavoces virtuales), antes del
+        // limitador — es la reconstrucción de onda la que necesita
+        // suavizarse por encima de f_alias, no la señal ya comprimida.
+        aliasGuard_.process(accL, accR);
+        // Anti-clip (=> anti-tronidos): lineal bajo |1.0|, compresion suave arriba.
+        // GUARDA NaN/Inf de salida: si pese a todo el campo acumulado no es
+        // finito (estado corrupto heredado de antes del saneo de entrada),
+        // se sustituye por silencio en ESTE bloque — la cadena downstream
+        // (mixer/effect/salida hardware) jamás recibe un NaN desde WFS.
+        const float outLRaw = accL * norm, outRRaw = accR * norm;
+        outL[n] += std::isfinite(outLRaw) ? softLimit(outLRaw) : 0.f;
+        outR[n] += std::isfinite(outRRaw) ? softLimit(outRRaw) : 0.f;
+    }
+
+    // ── 4) Retiro diferido: las fuentes cuyo fade-out terminó se liberan
+    //       DESPUÉS del bloque (su línea queda a ceros de forma natural:
+    //       durante el fade escribimos... su señal real; al liberar, la
+    //       línea se limpia para su próximo nacimiento — hilo de control,
+    //       fuera del pase caliente).
+    for (int si = 0; si < kMaxObjects; ++si) {
+        SourceSlot& slot = slots_[static_cast<size_t>(si)];
+        if (slot.active && slot.actTarget == 0.f && slot.actEnv <= 0.f) {
+            slot.active = false;
+            slot.id = -1;
+            for (auto& v : slot.line) v = 0.f;
+            slot.writePos = 0;
+            --numActiveObjects_;
+        }
+    }
+}
+
+void WfsRenderer::blendWithBypass(const float* dryL, const float* dryR,
+
+=== BLOQUEOS EN AUDIO ===
+app/src/main/cpp/omega_effect.cpp:23:#include <mutex>
+app/src/main/cpp/omega_effect.cpp:24:#include <condition_variable>
+app/src/main/cpp/omega_effect.cpp:167: * extremos deadlock si el allocator toca un mutex compartido.
+app/src/main/cpp/omega_effect.cpp:377:// process() vía pending_ + crossfade). El mutex solo protege secciones
+app/src/main/cpp/omega_effect.cpp:379:static std::mutex              g_rirBMtx;
+app/src/main/cpp/omega_effect.cpp:380:static std::condition_variable g_rirBCv;
+app/src/main/cpp/omega_effect.cpp:392:    std::unique_lock<std::mutex> lk(g_rirBMtx);
+app/src/main/cpp/omega_effect.cpp:401:        // Fase lenta SIN el mutex: disco + alloc (ds es proceso-global,
+app/src/main/cpp/omega_effect.cpp:418:        // Fase rápida CON el mutex: entregar solo si el ctx sigue vivo
+app/src/main/cpp/omega_effect.cpp:419:        // (release_effect des-registra bajo el mismo mutex -> sin UAF).
+app/src/main/cpp/omega_effect.cpp:434:// Llamable desde el hilo de audio: publicación breve bajo mutex (contención
+app/src/main/cpp/omega_effect.cpp:437:    std::lock_guard<std::mutex> lk(g_rirBMtx);
+app/src/main/cpp/omega_effect.cpp:1118:        std::lock_guard<std::mutex> lk(g_rirBMtx);
+app/src/main/cpp/omega_effect.cpp:1174:            // de una entrega (disco ya leído, esperando el mutex), al
+app/src/main/cpp/omega_effect.cpp:1177:            std::lock_guard<std::mutex> lk(g_rirBMtx);
+app/src/main/cpp/spatial/RirDataset.cpp:50:    std::ifstream f(path, std::ios::binary);
+app/src/main/cpp/spatial/RirDataset.cpp:145:        std::ifstream f(csvPath);
+app/src/main/cpp/spatial/RirDataset.cpp:156:bool RirDataset::loadFromCsv(std::ifstream& f) {
+app/src/main/cpp/spatial/RirDataset.cpp:199:        std::ifstream wavCheck(dir_ + "/" + m.filename, std::ios::binary);
+app/src/main/cpp/spatial/RirDataset.hpp:137:    bool loadFromCsv(std::ifstream& f);
+app/src/main/cpp/spatial/ihr1_format.hpp:71:    FILE* f = std::fopen(path, "rb");
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:9:#include <mutex>
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:77:        FILE* f = std::fopen(path, "rb");
+
+=== CAMBIOS DINAMICOS EN AUDIO ===
+app/src/main/cpp/omega_effect.cpp:164: * `static thread_local std::vector<float>::resize()` dentro del callback
+app/src/main/cpp/omega_effect.cpp:165: * realtime de AudioFlinger. La rama de resize() de std::vector puede
+app/src/main/cpp/omega_effect.cpp:776:                // no tenga que llamar a malloc/resize en el callback.
+app/src/main/cpp/omega_effect.cpp:1119:        g_rirBLive.push_back(ctx);
+app/src/main/cpp/IvannaFusionCore.cpp:99:    m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
+app/src/main/cpp/IvannaFusionCore.cpp:100:    m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
+app/src/main/cpp/IvannaFusionCore.cpp:101:    m_wfsOutL.assign(Ivanna::BLOCK_SIZE, 0.0f);
+app/src/main/cpp/IvannaFusionCore.cpp:102:    m_wfsOutR.assign(Ivanna::BLOCK_SIZE, 0.0f);
+app/src/main/cpp/IvannaFusionCore.cpp:254:                m_wfsInL.assign(n, 0.f);  m_wfsInR.assign(n, 0.f);
+app/src/main/cpp/IvannaFusionCore.cpp:255:                m_wfsOutL.assign(n, 0.f); m_wfsOutR.assign(n, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:87:        tailIrReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:88:        tailIrImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:89:        tailIrReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:90:        tailIrImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:91:        fdlReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:92:        fdlImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:93:        fdlReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirConvolver.cpp:94:        fdlImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+app/src/main/cpp/spatial/RirDataset.cpp:25:    while (std::getline(ss, field, ',')) out.push_back(field);
+app/src/main/cpp/spatial/RirDataset.cpp:109:    w.samples.resize(numSamples);
+app/src/main/cpp/spatial/RirDataset.cpp:141:    if (dir != kNoRootFallbackDir) candidates.push_back(kNoRootFallbackDir);
+app/src/main/cpp/spatial/RirDataset.cpp:147:            warnings_.push_back("No se pudo abrir metadata.csv en " + csvPath);
+app/src/main/cpp/spatial/RirDataset.cpp:160:        warnings_.push_back("metadata.csv vacío");
+app/src/main/cpp/spatial/RirDataset.cpp:177:            warnings_.push_back("metadata.csv línea " + std::to_string(lineNo) +
+app/src/main/cpp/spatial/RirDataset.cpp:201:            warnings_.push_back("metadata.csv línea " + std::to_string(lineNo) +
+app/src/main/cpp/spatial/RirDataset.cpp:206:        rooms_.push_back(std::move(m));
+app/src/main/cpp/spatial/RirDataset.cpp:264:        dists.reserve(rooms_.size());
+app/src/main/cpp/spatial/RirDataset.cpp:265:        for (const auto& r : rooms_) dists.push_back(r.distanceM);
+app/src/main/cpp/spatial/RirDataset.cpp:357:        outL.reserve(w.samples.size());
+app/src/main/cpp/spatial/RirDataset.cpp:358:        outR.reserve(w.samples.size());
+app/src/main/cpp/spatial/RirDataset.cpp:361:            outL.push_back(v);
+app/src/main/cpp/spatial/RirDataset.cpp:362:            outR.push_back(v);
+app/src/main/cpp/spatial/RirDataset.cpp:368:        outL.reserve(frames);
+app/src/main/cpp/spatial/RirDataset.cpp:369:        outR.reserve(frames);
+app/src/main/cpp/spatial/RirDataset.cpp:371:            outL.push_back(static_cast<float>(w.samples[i * w.channels + 0]) * kInv32768);
+app/src/main/cpp/spatial/RirDataset.cpp:372:            outR.push_back(static_cast<float>(w.samples[i * w.channels + 1]) * kInv32768);
+app/src/main/cpp/spatial/cue_based_spatial.hpp:1:// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/fft_radix2.hpp:1:// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/fft_radix2.hpp:26:        bitrev_.resize(N_);
+app/src/main/cpp/spatial/fft_radix2.hpp:29:        cosTab_.resize(N_ / 2);
+app/src/main/cpp/spatial/fft_radix2.hpp:30:        sinTab_.resize(N_ / 2);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:84:    itdLineL_.assign(256, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:85:    itdLineR_.assign(256, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:150:    histL_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:151:    histR_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:152:    pendingIn_L_.assign(RING_BUFFER_SIZE, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:153:    pendingIn_R_.assign(RING_BUFFER_SIZE, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:154:    outQueue_L_.assign(RING_BUFFER_SIZE, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:155:    outQueue_R_.assign(RING_BUFFER_SIZE, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:160:    reL_.assign(fftSize_, 0.0f);   imL_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:161:    reR_.assign(fftSize_, 0.0f);   imR_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:162:    monoRe_.assign(fftSize_, 0.0f); monoIm_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:163:    yReL_.assign(fftSize_, 0.0f);  yImL_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:164:    yReR_.assign(fftSize_, 0.0f);  yImR_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:166:    hrir_L_current_.assign(fftSize_, 0.0f); hrir_R_current_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:167:    hrir_L_target_.assign(fftSize_, 0.0f);  hrir_R_target_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:168:    H_ReL_curr_.assign(fftSize_, 0.0f);     H_ImL_curr_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:169:    H_ReR_curr_.assign(fftSize_, 0.0f);     H_ImR_curr_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:170:    H_ReL_targ_.assign(fftSize_, 0.0f);     H_ImL_targ_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:171:    H_ReR_targ_.assign(fftSize_, 0.0f);     H_ImR_targ_.assign(fftSize_, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:238:// control (resize fuera del hot path); el hilo de audio solo lee los
+app/src/main/cpp/spatial/hrtf_convolver.cpp:245:        customIrL_.assign(IR_LEN, 0.0f);
+app/src/main/cpp/spatial/hrtf_convolver.cpp:246:        customIrR_.assign(IR_LEN, 0.0f);
+app/src/main/cpp/spatial/ihr1_format.hpp:106:    out.az.assign(static_cast<size_t>(numPos), 0.f);
+app/src/main/cpp/spatial/ihr1_format.hpp:107:    out.el.assign(static_cast<size_t>(numPos), 0.f);
+app/src/main/cpp/spatial/ihr1_format.hpp:108:    out.L.assign(static_cast<size_t>(numPos) * static_cast<size_t>(irLen), 0.f);
+app/src/main/cpp/spatial/ihr1_format.hpp:109:    out.R.assign(static_cast<size_t>(numPos) * static_cast<size_t>(irLen), 0.f);
+app/src/main/cpp/spatial/ivanna_head_tracker.hpp:5:// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:39:    virtualSpk_.assign(kNumVirtualSpeakers, std::vector<float>(blockSize_, 0.f));
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:40:    spkL_.assign(blockSize_, 0.f);
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:41:    spkR_.assign(blockSize_, 0.f);
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:42:    hrtfInL_.assign(blockSize_, 0.f);
+app/src/main/cpp/spatial/ivanna_object_renderer.cpp:43:    hrtfInR_.assign(blockSize_, 0.f);
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:5:// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:156:        newDs->L.resize(static_cast<size_t>(numDirs));
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:157:        newDs->R.resize(static_cast<size_t>(numDirs));
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:160:            newDs->L[static_cast<size_t>(i)].assign(ds.L.begin() + off, ds.L.begin() + off + taps);
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:161:            newDs->R[static_cast<size_t>(i)].assign(ds.R.begin() + off, ds.R.begin() + off + taps);
+app/src/main/cpp/spatial/ivanna_object_renderer.hpp:239:                delayLines[i].resize(delayTimes[i], 0.f);
+app/src/main/cpp/spatial/spatial_jni.cpp:4: * © 2026 Luis Uriel Pimentel Pérez - GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:1:// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:43:        ds->az.resize(numDirs);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:44:        ds->L.resize(numDirs);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:45:        ds->R.resize(numDirs);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:49:            ds->L[i].assign(irL + (size_t)s * irLen, irL + (size_t)(s + 1) * irLen);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:50:            ds->R[i].assign(irR + (size_t)s * irLen, irR + (size_t)(s + 1) * irLen);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:183:        out.L.assign(irLen_, 0.f);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:184:        out.R.assign(irLen_, 0.f);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:228:        out.L.assign(irLen_, 0.f);
+app/src/main/cpp/spatial/synthetic_hrtf.hpp:229:        out.R.assign(irLen_, 0.f);
+app/src/main/cpp/spatial/HoaBinauralDecoder.cpp:42:    speakers_.reserve(numSpeakers_);
+app/src/main/cpp/spatial/HoaBinauralDecoder.cpp:44:        speakers_.push_back(std::make_unique<VirtualSpeaker>());
+app/src/main/cpp/spatial/HoaBinauralDecoder.cpp:111:    mixL_.resize(numFrames);
+app/src/main/cpp/spatial/HoaBinauralDecoder.cpp:112:    mixR_.resize(numFrames);
+app/src/main/cpp/spatial/HoaBinauralDecoder.cpp:115:        speaker->monoBuffer.resize(numFrames);
+app/src/main/cpp/spatial/HoaBinauralDecoder.hpp:64:    // asi que vector<VirtualSpeaker> plano no compila (resize exige move).
+app/src/main/cpp/spatial/IntelligentUpmixer.cpp:45:    // Reserva una sola vez: resize() repetido en el hot path puede realojar
+app/src/main/cpp/spatial/IntelligentUpmixer.cpp:46:    // el vector si numFrames varía entre bloques; reserve() al tamaño máximo
+app/src/main/cpp/spatial/IntelligentUpmixer.cpp:48:    if (outField.capacity() < numFrames) outField.reserve(numFrames);
+app/src/main/cpp/spatial/IntelligentUpmixer.cpp:49:    if (outField.size() != numFrames) outField.resize(numFrames);
+app/src/main/cpp/spatial/IntelligentUpmixer.cpp:101:    if (monoBuf_.size() != numFrames) monoBuf_.resize(numFrames);
+app/src/main/cpp/spatial/WfsRenderer.cpp:63:        slot.line.assign(static_cast<size_t>(maxDelayTap_), 0.f);
+app/src/main/cpp/spatial/WfsRenderer.cpp:65:    taps_.assign(static_cast<size_t>(kMaxObjects) * static_cast<size_t>(numSpeakers_),
+app/src/main/cpp/spatial/WfsRenderer.hpp:5:// (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+app/src/main/cpp/spatial/WfsRenderer.hpp:23:// desde setObject(), y ese método hacía assign() de TODAS las líneas de

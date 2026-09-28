@@ -1,0 +1,31 @@
+{
+    "system": "IVANNA OMEGA SUPREME IAEL",
+    "timestamp": "2026-08-28 04:20:50",
+    "certification": "PASS",
+    "results": [
+        {
+            "test": "bass_60hz",
+            "samples": 48000,
+            "rms": 0.5656854249492381,
+            "snr_db": 115.05149978319906,
+            "clipping_events": 0,
+            "invalid_samples": 0
+        },
+        {
+            "test": "voice_band",
+            "samples": 48000,
+            "rms": 0.565685424949238,
+            "snr_db": 115.05149978319906,
+            "clipping_events": 0,
+            "invalid_samples": 0
+        },
+        {
+            "test": "treble_10khz",
+            "samples": 48000,
+            "rms": 0.565685424949237,
+            "snr_db": 115.05149978319905,
+            "clipping_events": 0,
+            "invalid_samples": 0
+        }
+    ]
+}

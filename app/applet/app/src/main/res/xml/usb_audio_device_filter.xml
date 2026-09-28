@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Filtro de dispositivos para ACTION_USB_DEVICE_ATTACHED (entrada tipo C).
+  Clase 0x01 = USB Audio Class (cubre UAC1 y UAC2: ambos declaran clase
+  AUDIO a nivel de interface; los DAC modernos con interfaz vendor-specific
+  quedan fuera a proposito — el receiver dinamico de UsbAudioProManager los
+  escanea igualmente al arrancar la app).
+  Sin vendor-id/product-id: cualquier DAC/AMP de clase audio dispara, el
+  filtrado fino (endpoint isoc OUT real) lo hace UsbAudioProManager.
+-->
+<resources>
+    <usb-device class="1" />
+</resources>

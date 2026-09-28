@@ -1,0 +1,41 @@
+filename,brand,model,type,impedance_ohm,sensitivity_db,low_freq_hz,high_freq_hz
+speaker_000.wav,Focal,Sopra N1,floor-standing,6,93.5,24,46812
+speaker_001.wav,Focal,Kanta N2,floor-standing,8,87.7,44,34779
+speaker_002.wav,B&W,705 S2,floor-standing,6,95.0,38,36839
+speaker_003.wav,B&W,804 D3,floor-standing,6,94.3,29,37923
+speaker_004.wav,KEF,LS50 Meta,bookshelf,6,93.1,28,26112
+speaker_005.wav,KEF,R11 Meta,floor-standing,6,89.3,27,44992
+speaker_006.wav,JBL,L100 Classic,floor-standing,8,91.9,41,27719
+speaker_007.wav,JBL,4309,floor-standing,4,91.2,26,29920
+speaker_008.wav,ATC,SCM19,floor-standing,8,85.2,20,35269
+speaker_009.wav,ATC,SCM150,bookshelf,6,90.9,20,41385
+speaker_010.wav,PMC,twenty5.23,floor-standing,4,89.2,37,36869
+speaker_011.wav,PMC,MB2 SE,floor-standing,6,91.7,42,23862
+speaker_012.wav,Dynaudio,Special Forty,floor-standing,8,93.7,39,34082
+speaker_013.wav,Dynaudio,Contour 60i,floor-standing,8,85.6,43,23578
+speaker_014.wav,Wilson Audio,SabrinaX,floor-standing,4,87.0,22,33886
+speaker_015.wav,Wilson Audio,Yvette,floor-standing,8,87.7,42,26882
+speaker_016.wav,Magico,A3,floor-standing,6,90.2,39,28649
+speaker_017.wav,Magico,V2,floor-standing,6,88.7,23,49217
+speaker_018.wav,Sonus Faber,Olympica Nova III,floor-standing,8,85.4,33,42411
+speaker_019.wav,Sonus Faber,Sonetto VIII,floor-standing,8,91.9,23,22431
+speaker_020.wav,Klipsch,Heresy IV,floor-standing,4,86.1,20,31547
+speaker_021.wav,Klipsch,Cornwall IV,floor-standing,4,89.1,41,47975
+speaker_022.wav,Tannoy,Stirling GR,floor-standing,6,87.2,24,23163
+speaker_023.wav,Tannoy,Kensington GR,floor-standing,4,90.0,27,31092
+speaker_024.wav,Revel,F228Be,floor-standing,6,94.2,35,26845
+speaker_025.wav,Revel,M126Be,floor-standing,6,90.7,32,27487
+speaker_026.wav,Yamaha,NS-5000,floor-standing,6,92.0,29,27238
+speaker_027.wav,Yamaha,NS-2000A,floor-standing,8,94.7,39,35828
+speaker_028.wav,Pioneer,S-1EX,floor-standing,4,95.0,37,20921
+speaker_029.wav,Pioneer,S-3EX,floor-standing,6,88.4,28,28523
+speaker_030.wav,MartinLogan,Expression 13A,floor-standing,8,90.0,43,44473
+speaker_031.wav,MartinLogan,Classic ESL 9,floor-standing,8,92.1,34,27275
+speaker_032.wav,Quad,ESL-2912,floor-standing,6,93.0,27,23905
+speaker_033.wav,Quad,Z-3,floor-standing,6,91.7,30,40138
+speaker_034.wav,Monitor Audio,Gold 300,floor-standing,6,91.3,41,39889
+speaker_035.wav,Monitor Audio,Platinum 200,floor-standing,4,87.7,27,44842
+speaker_036.wav,PSB,Synchrony T600,floor-standing,4,88.4,24,42414
+speaker_037.wav,PSB,Imagine X2T,floor-standing,6,91.6,20,36413
+speaker_038.wav,DALI,Epicon 6,floor-standing,6,89.8,32,39908
+speaker_039.wav,DALI,Menuet SE,floor-standing,8,90.1,20,25536

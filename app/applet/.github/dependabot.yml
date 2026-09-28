@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    labels: ["dependencies", "github-actions"]
+    groups:
+      actions-minor:
+        update-types: ["minor", "patch"]
+
+  # Gradle (dependencias Android/Kotlin)
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    labels: ["dependencies", "android"]
+    ignore:
+      # NDK y CMake los controlamos manualmente en build.yml
+      - dependency-name: "com.android.tools.build:gradle"
+        update-types: ["version-update:semver-major"]
+    groups:
+      kotlin-minor:
+        patterns: ["org.jetbrains.kotlin*"]
+        update-types: ["minor", "patch"]
+      compose-minor:
+        patterns: ["androidx.compose*"]
+        update-types: ["minor", "patch"]
