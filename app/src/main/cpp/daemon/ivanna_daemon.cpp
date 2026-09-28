@@ -212,6 +212,7 @@ int main(int argc, char* argv[]) {
         else if (arg=="--tcp-port" && i+1<argc) { try{ tcp_port = std::stoi(argv[++i]); } catch(...) { tcp_port = 0; } }
     }
     g_socket_path=socket_path;
+    (void)buffer;
     { int hr=0, hd=0; if (ivanna::hires::readConf("/data/adb/ivanna_omega/hires.conf", hr, hd)) rate = hr; }
     struct sigaction sa; memset(&sa,0,sizeof(sa)); sa.sa_handler=signal_handler;
     sigaction(SIGINT,&sa,nullptr); sigaction(SIGTERM,&sa,nullptr);

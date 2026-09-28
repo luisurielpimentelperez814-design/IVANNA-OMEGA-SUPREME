@@ -444,9 +444,7 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
     }
     auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
     realityOrch.setEnabled((s.flags & ivanna::OMEGA_FLAG_REALITY_RECON_ON) != 0);
-    if (std::isfinite(s.reality_intensity) && s.reality_intensity >= 0.0f) {
-        realityOrch.setRealityIntensity(s.reality_intensity);
-    } else if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
+    if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
         realityOrch.setRealityIntensity(s.intensity);
     }
 }

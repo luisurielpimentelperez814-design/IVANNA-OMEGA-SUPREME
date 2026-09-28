@@ -503,7 +503,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.supreme_ebpf_bypass_active?"true":"false",
             m_state.supreme_mso_itd_ns,
             m_state.reality_recon_enabled?"true":"false",
-            m_state.reality_intensity,
+            m_state.intensity,
             m_state.clients_served);
 
     } else if (strcmp(action,"GET_HEALTH")==0) {
