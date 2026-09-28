@@ -35,9 +35,14 @@ static constexpr int   ITD_BUF_SIZE  = 64;     // power-of-2, ≥ TAU_MAX_SAMP+1
 
 class CueBasedSpatial {
 public:
-    float theta   = 0.f;  // ángulo en radianes [-PI/2, PI/2]
+    float theta   = 0.f;  // ángulo objetivo en radianes [-PI/2, PI/2]
     float width   = 1.f;  // 0=mono, 1=full stereo
     float wet     = 0.5f;
+
+    // Estado suavizado por muestra para evitar saltos en el puntero de lectura ITD (d0)
+    float thetaSmooth_ = 0.f;
+    float widthSmooth_ = 1.f;
+    float wetSmooth_   = 0.5f;
 
     // ITD delay buffer (left channel delayed when source is right)
     float delayBufL[ITD_BUF_SIZE] = {};
@@ -47,18 +52,21 @@ public:
     void reset() noexcept {
         for (int i = 0; i < ITD_BUF_SIZE; ++i) delayBufL[i] = delayBufR[i] = 0.f;
         writeIdx = 0;
+        thetaSmooth_ = theta;
+        widthSmooth_ = width;
+        wetSmooth_   = wet;
     }
 
     // ── Compute ITD delay in samples for given angle ──────────────────────
     // Positive θ = source to the right → left ear delayed
     float itd_samples(float sample_rate) const noexcept {
-        const float tau_sec = 0.00065f * std::sin(theta);
+        const float tau_sec = 0.00065f * std::sin(thetaSmooth_);
         return tau_sec * sample_rate;
     }
 
     // ── ILD gains ─────────────────────────────────────────────────────────
     void ild_gains(float& gainL, float& gainR) const noexcept {
-        const float s = ILD_ALPHA * std::sin(theta) * width;
+        const float s = ILD_ALPHA * std::sin(thetaSmooth_) * widthSmooth_;
         gainL = 1.f - s;   // attenuate ipsilateral
         gainR = 1.f + s;   // boost contralateral
         gainL = std::clamp(gainL, 0.3f, 1.5f);
@@ -69,6 +77,11 @@ public:
     void process_sample(float xL, float xR,
                         float& yL, float& yR,
                         float sample_rate = 96000.f) noexcept {
+        constexpr float kSlew = 0.0015f;
+        thetaSmooth_ += kSlew * (theta - thetaSmooth_);
+        widthSmooth_ += kSlew * (width - widthSmooth_);
+        wetSmooth_   += kSlew * (wet   - wetSmooth_);
+
         // Write into circular buffer
         delayBufL[writeIdx & (ITD_BUF_SIZE-1)] = xL;
         delayBufR[writeIdx & (ITD_BUF_SIZE-1)] = xR;
@@ -92,7 +105,7 @@ public:
 
         // Source right → delay left; source left → delay right
         float dL, dR;
-        if (theta >= 0.f) {
+        if (thetaSmooth_ >= 0.f) {
             // Source right: delay left ear
             dL = delayBufL[idxA_L] * (1.f-frac) + delayBufL[idxB_L] * frac;
             dR = xR;
@@ -109,8 +122,8 @@ public:
         dR *= gR;
 
         // Wet/dry mix
-        yL = (1.f - wet) * xL + wet * dL;
-        yR = (1.f - wet) * xR + wet * dR;
+        yL = (1.f - wetSmooth_) * xL + wetSmooth_ * dL;
+        yR = (1.f - wetSmooth_) * xR + wetSmooth_ * dR;
 
         ++writeIdx;
     }

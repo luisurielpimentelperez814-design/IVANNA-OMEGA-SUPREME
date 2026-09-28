@@ -155,10 +155,11 @@ public:
         const float d1 = x - prev1;
         const float d0 = prev1 - prev2;
         float out = x;
-        if (absX > 0.92f && std::fabs(prev1) > 0.90f && std::fabs(d1) < 0.035f) {
-            // Extrapolación de curvatura de Hermite libre de sobreimpulso inestable
-            const float curvature = std::clamp(std::fabs(d0) * 0.42f + (absX - 0.90f) * 0.38f, 0.005f, 0.18f);
-            out = (x >= 0.0f) ? (x + curvature) : (x - curvature);
+        // Actuar únicamente sobre mesetas de recorte duro real (≥ 0.985 con derivada plana)
+        // para no distorsionar crestas legítimas de ondas senoidales o transitorios limpios.
+        if (absX > 0.985f && std::fabs(prev1) > 0.985f && std::fabs(d1) < 0.008f) {
+            const float curvature = std::clamp(std::fabs(d0) * 0.25f + (absX - 0.985f) * 0.20f, 0.001f, 0.012f);
+            out = (x >= 0.0f) ? std::min(0.998f, x + curvature) : std::max(-0.998f, x - curvature);
             ++peakCounter;
         }
         prev2 = prev1;
@@ -252,12 +253,12 @@ public:
                 microChirp = 1.25e-4f * std::sin(chirpPhase_);
             }
 
-            // 2. Pre-compensación no-lineal de excursión Bl(x)
+            // 2. Pre-compensación no-lineal de excursión Bl(x) acotada para baja THD
             excursionEstL_ = sanitize(excursionDecay_ * excursionEstL_ + (1.0f - excursionDecay_) * inL);
             excursionEstR_ = sanitize(excursionDecay_ * excursionEstR_ + (1.0f - excursionDecay_) * inR);
 
-            const float blRatioL = std::clamp(1.0f - effBeta1 * excursionEstL_ - effBeta2 * excursionEstL_ * excursionEstL_, 0.55f, 1.45f);
-            const float blRatioR = std::clamp(1.0f - effBeta1 * excursionEstR_ - effBeta2 * excursionEstR_ * excursionEstR_, 0.55f, 1.45f);
+            const float blRatioL = std::clamp(1.0f - 0.25f * effBeta1 * excursionEstL_ - 0.25f * effBeta2 * excursionEstL_ * excursionEstL_, 0.92f, 1.08f);
+            const float blRatioR = std::clamp(1.0f - 0.25f * effBeta1 * excursionEstR_ - 0.25f * effBeta2 * excursionEstR_ * excursionEstR_, 0.92f, 1.08f);
 
             float fL = (inL / blRatioL) + microChirp;
             float fR = (inR / blRatioR) + microChirp;
@@ -402,7 +403,7 @@ private:
     uint32_t lfsrState_{0xA5A5F00Du};
 
     std::atomic<bool> enabled_{true};
-    std::atomic<bool> microChirpEnabled_{true};
+    std::atomic<bool> microChirpEnabled_{false};
     std::atomic<int> activeRouteArchetype_{0};
     std::atomic<uint32_t> declippedPeaks_{0u};
     std::atomic<float> blCompensationDrive_{1.0f};

@@ -39,18 +39,18 @@ Psychoacoustics::Psychoacoustics() {
 
 void Psychoacoustics::applyMaskingCompensation(Ivanna::AudioBuffer* buffer) {
 
-    // Coeficientes de envolvente para 48 kHz, bloque de 128 muestras
+    // Coeficientes de envolvente para 48 kHz
     // Attack:  5 ms  → exp(-1 / (0.005 * 48000)) ≈ 0.99583
     // Release: 80 ms → exp(-1 / (0.080 * 48000)) ≈ 0.99974
     constexpr float ATT = 0.99583f;
     constexpr float REL = 0.99974f;
 
-    // Expansión máxima: +1.5 dB = factor 1.189
-    constexpr float MAX_EXPAND = 1.189f;
-    // Umbral de puerta: -40 dBFS ≈ 0.01 (no expandir ruido de fondo)
-    constexpr float GATE_THRESH = 0.01f;
-    // Umbral de acción del expander: -20 dBFS ≈ 0.1
-    constexpr float ENV_THRESH = 0.1f;
+    // Expansión máxima suave de micro-detalle: +1.0 dB = factor 1.122
+    constexpr float MAX_EXPAND = 1.122f;
+    // Umbral de puerta: -42 dBFS ≈ 0.008 (no expandir ruido de fondo)
+    constexpr float GATE_THRESH = 0.008f;
+    // Umbral superior de expansión de bajo nivel: -16 dBFS ≈ 0.16
+    constexpr float ENV_THRESH = 0.16f;
 
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
 
@@ -61,18 +61,19 @@ void Psychoacoustics::applyMaskingCompensation(Ivanna::AudioBuffer* buffer) {
                 ? (1.0f - ATT) * absL + ATT * m_envLeft
                 : (1.0f - REL) * absL + REL * m_envLeft;
 
+            // NOTA CRÍTICA: La ganancia objetivo debe depender EXCLUSIVAMENTE de la
+            // envolvente lenta m_envLeft, nunca de absL/m_envLeft muestra a muestra.
+            // Usar absL/m_envLeft amplificaba los cruces por cero de cada ciclo
+            // senoidal mientras dejaba los picos en 1.0, deformando la onda (THD severa).
             float targetGainL = 1.0f;
-            if (absL > GATE_THRESH && m_envLeft > ENV_THRESH) {
-                // Expansión suave: cuanto más quieta la muestra vs envolvente,
-                // menos se expande — rodilla blanda de 6 dB
-                const float ratio = absL / (m_envLeft + 1e-9f);  // 0..1
-                const float knee  = ratio * ratio;                // suaviza la curva
-                targetGainL = 1.0f + (MAX_EXPAND - 1.0f) * (1.0f - knee);
+            if (m_envLeft > GATE_THRESH && m_envLeft < ENV_THRESH) {
+                const float normEnv = (m_envLeft - GATE_THRESH) / (ENV_THRESH - GATE_THRESH);
+                const float window  = 4.0f * normEnv * (1.0f - normEnv); // campana suave C1 en [0,1]
+                targetGainL = 1.0f + (MAX_EXPAND - 1.0f) * window;
             }
 
-            // Suavizado de ganancia: τ = 2 ms para evitar clicks en saltos bruscos
-            // coef ≈ exp(-1 / (0.002 * 48000)) ≈ 0.9896
-            m_gainSmL = 0.9896f * m_gainSmL + 0.0104f * targetGainL;
+            // Suavizado de ganancia lento (τ ≈ 15 ms → 0.9986 @ 48 kHz) libre de modulación en banda de audio
+            m_gainSmL = 0.9986f * m_gainSmL + 0.0014f * targetGainL;
             buffer->left[i] *= m_gainSmL;
         }
 
@@ -84,13 +85,13 @@ void Psychoacoustics::applyMaskingCompensation(Ivanna::AudioBuffer* buffer) {
                 : (1.0f - REL) * absR + REL * m_envRight;
 
             float targetGainR = 1.0f;
-            if (absR > GATE_THRESH && m_envRight > ENV_THRESH) {
-                const float ratio = absR / (m_envRight + 1e-9f);
-                const float knee  = ratio * ratio;
-                targetGainR = 1.0f + (MAX_EXPAND - 1.0f) * (1.0f - knee);
+            if (m_envRight > GATE_THRESH && m_envRight < ENV_THRESH) {
+                const float normEnv = (m_envRight - GATE_THRESH) / (ENV_THRESH - GATE_THRESH);
+                const float window  = 4.0f * normEnv * (1.0f - normEnv);
+                targetGainR = 1.0f + (MAX_EXPAND - 1.0f) * window;
             }
 
-            m_gainSmR = 0.9896f * m_gainSmR + 0.0104f * targetGainR;
+            m_gainSmR = 0.9986f * m_gainSmR + 0.0014f * targetGainR;
             buffer->right[i] *= m_gainSmR;
         }
     }

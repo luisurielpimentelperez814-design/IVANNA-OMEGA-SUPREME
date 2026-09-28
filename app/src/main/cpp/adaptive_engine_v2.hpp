@@ -163,10 +163,12 @@ public:
         // ── 2. Spectral Centroid via FFT ────────────────────────────────────
         {
             const int N = std::min(FFT_N, len);
-            static float re[FFT_N], im[FFT_N];
+            alignas(16) float re[FFT_N];
+            alignas(16) float im[FFT_N];
             // Ventana Hann
+            const float invN1 = (N > 1) ? (1.0f / static_cast<float>(N - 1)) : 0.0f;
             for (int i = 0; i < N; ++i) {
-                float w = 0.5f * (1.0f - std::cos(2.0f * 3.14159f * i / (N - 1)));
+                float w = 0.5f * (1.0f - std::cos(2.0f * 3.14159265f * i * invN1));
                 re[i] = buf[i] * w;
                 im[i] = 0.0f;
             }
@@ -203,17 +205,18 @@ public:
 
         // ── 3. Tonality via ACF (Autocorrelation Function) ─────────────────
         // ACF al lag ~fundamental period. Peak prominente → tonal (música).
-        // ACF flat → noise/percussive. Mucho mejor que el placeholder 0.5f.
+        // ACF flat → noise/percussive. Acotado a 512 muestras y paso 8 para
+        // garantizar ejecución O(1) estricta en callbacks de baja latencia.
         {
-            const int acfLen = std::min(len, 2048);
-            const int lag0 = (int)(sampleRate / 4000.0f); // ~20 ms @ 48kHz
-            const int lag1 = (int)(sampleRate / 80.0f);   // ~12 ms
+            const int acfLen = std::min(len, 512);
+            const int lag0 = std::max(1, (int)(sampleRate / 4000.0f));
+            const int lag1 = std::min(acfLen / 2, (int)(sampleRate / 100.0f));
 
             float acf0 = 0.0f; // autocorrelación a lag 0 (energía total)
             for (int i = 0; i < acfLen; ++i) acf0 += buf[i] * buf[i];
 
             float acfPeak = 0.0f;
-            for (int lag = lag0; lag < std::min(lag1, acfLen/2); lag += 4) {
+            for (int lag = lag0; lag < lag1; lag += 8) {
                 float r = 0.0f;
                 for (int i = 0; i + lag < acfLen; ++i) r += buf[i] * buf[i + lag];
                 acfPeak = std::max(acfPeak, std::fabs(r));

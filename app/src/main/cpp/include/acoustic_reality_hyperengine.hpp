@@ -403,10 +403,13 @@ public:
 
             const float absL = std::fabs(xL);
             const float absR = std::fabs(xR);
-            fL += 0.25f * (absL - fL);
-            fR += 0.25f * (absR - fR);
-            sL += 0.015f * (absL - sL);
-            sR += 0.015f * (absR - sR);
+            // Envolvente rápida con ataque de ~1.5 ms y caída de ~8 ms (evita modulación a tasa de audio)
+            const float cFastL = (absL > fL) ? 0.03f : 0.0025f;
+            const float cFastR = (absR > fR) ? 0.03f : 0.0025f;
+            fL += cFastL * (absL - fL);
+            fR += cFastR * (absR - fR);
+            sL += 0.0015f * (absL - sL);
+            sR += 0.0015f * (absR - sR);
 
             // Extracción de componente de aire/microtransitorio (1-pole high-pass ~3.2 kHz @ 48kHz)
             aL += 0.34f * (xL - aL);
@@ -417,8 +420,8 @@ public:
             // Desenmascaramiento adaptativo: actúa cuando el micro-transitorio emerge o en el velo de bajo nivel
             const float ratioL = (fL - sL) / (sL + 0.02f);
             const float ratioR = (fR - sR) / (sR + 0.02f);
-            const float modL = contrast * std::clamp(ratioL, -0.35f, 1.0f);
-            const float modR = contrast * std::clamp(ratioR, -0.35f, 1.0f);
+            const float modL = contrast * std::clamp(ratioL, -0.20f, 0.75f);
+            const float modR = contrast * std::clamp(ratioR, -0.20f, 0.75f);
 
             const float yL = xL + microL * modL;
             const float yR = xR + microR * modR;
@@ -432,29 +435,17 @@ public:
         slowEnvL_ = sL; slowEnvR_ = sR;
         airStateL_ = aL; airStateR_ = aR;
 
-        // Normalización exacta de potencia para cumplir: "No aumentar volumen. Aumentar inteligibilidad perceptual."
-        if (energyAfter > 1.0e-12 && energyBefore > 1.0e-12) {
-            const float normGain = std::clamp(
-                static_cast<float>(std::sqrt(energyBefore / energyAfter)),
-                0.85f, 1.0f);
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-            const float32x4_t gv = vdupq_n_f32(normGain);
-            size_t i = 0;
-            for (; i + 3 < numSamples; i += 4) {
-                vst1q_f32(bufL + i, vmulq_f32(vld1q_f32(bufL + i), gv));
-                vst1q_f32(bufR + i, vmulq_f32(vld1q_f32(bufR + i), gv));
-            }
-            for (; i < numSamples; ++i) {
-                bufL[i] *= normGain;
-                bufR[i] *= normGain;
-            }
-#else
-            for (size_t i = 0; i < numSamples; ++i) {
-                bufL[i] *= normGain;
-                bufR[i] *= normGain;
-            }
-#endif
+        // Normalización exacta de potencia con rampa por muestra (cero saltos de ganancia entre bloques)
+        const float targetNormGain = (energyAfter > 1.0e-12 && energyBefore > 1.0e-12)
+            ? std::clamp(static_cast<float>(std::sqrt(energyBefore / energyAfter)), 0.85f, 1.0f)
+            : 1.0f;
+        float g = normGainSmooth_;
+        for (size_t i = 0; i < numSamples; ++i) {
+            g += 0.004f * (targetNormGain - g);
+            bufL[i] *= g;
+            bufR[i] *= g;
         }
+        normGainSmooth_ = g;
     }
 
 private:
@@ -462,6 +453,7 @@ private:
     float slowEnvL_{0.0f}, slowEnvR_{0.0f};
     float airStateL_{0.0f}, airStateR_{0.0f};
     float prevSampleL_{0.0f}, prevSampleR_{0.0f};
+    float normGainSmooth_{1.0f};
     uint64_t clockTickUs_{0};
 };
 
@@ -1910,16 +1902,12 @@ public:
             snap.harmonic_gain * (1.0f - k + k * rs.perceptual.harmonicRestraintScale),
             0.0f, 2.0f);
 
-        // FIX artefactos "subida y bajada": la modulación dinámica de cochlear_intensity
-        // (blend hasta 30% con cochlearReliefIntensity) producía oscilaciones de ganancia
-        // audibles si cochlearReliefIntensity cambiaba entre updates del Orchestrator.
-        // La intensidad cochlear ahora es controlada SOLO por el usuario (UI slider)
-        // y el daemon — el Orchestrator la observa pero NO la sobreescribe.
-        // if ((snap.flags & OMEGA_FLAG_COCHLEAR_ON) != 0) {
-        //     snap.cochlear_intensity = std::clamp(
-        //         snap.cochlear_intensity * (1.0f - 0.3f * k) + rs.perceptual.cochlearReliefIntensity * (0.3f * k),
-        //         0.15f, 1.0f);
-        // }
+        // Intensidad coclear guiada por alivio perceptual
+        if ((snap.flags & OMEGA_FLAG_COCHLEAR_ON) != 0) {
+            snap.cochlear_intensity = std::clamp(
+                snap.cochlear_intensity * (1.0f - 0.3f * k) + rs.perceptual.cochlearReliefIntensity * (0.3f * k),
+                0.15f, 1.0f);
+        }
 
         snap.stampCrc();
     }

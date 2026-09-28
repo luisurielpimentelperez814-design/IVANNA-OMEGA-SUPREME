@@ -250,6 +250,7 @@ struct AudioThreadState {
     float guardCompLimit       = 1.0f;
     float guardExcLimit        = 1.0f;
     float widthSmooth          = 1.0f;
+    float loudnessTrimSmooth   = 1.0f;
     uint64_t lastAdaptiveSeq   = 0;
     // FIX (tronido "metralleta" al subir volumen): estado persistente del
     // pre-EQ peak guard para poder rampear en vez de saltar de bloque a
@@ -899,6 +900,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // data race en las estructuras de parámetros → valores corruptos →
     // crash o congelamiento al pulsar HRTF/DSP desde la UI.
     std::lock_guard<std::mutex> lock(g_uiMutex);
+    g_params_ui = g_params;
     g_params_ui.drive = drive; g_params_ui.wet = wet;   g_params_ui.mix = mix;
     g_params_ui.alpha = alpha; g_params_ui.beta = beta; g_params_ui.gamma = gamma_v;
     g_params_ui.freq  = freq;  g_params_ui.resonance = resonance;
@@ -908,17 +910,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // GainStage lo trata como dB → conversión incorrecta + overflow.
     const float masterDbNsp = (master <= 0.001f) ? -60.0f
         : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
-    g_params.master = masterDbNsp;
-    g_eq.setParams(g_params);
-    g_comp.setParams(g_params);
-    g_exciter.setParams(g_params);
-    g_widener.setParams(g_params);
-    // Compensación de headroom EQ antes de GainStage.
-    const float compNsp = g_eq.getOutputCompensationDb();
-    g_params.master  = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
-    g_gain.setParams(g_params);
-    g_params.master  = masterDbNsp;  // restaurar
-    // NHO parameters mapped from DSP params
+    g_params_ui.master = masterDbNsp;
+    // Publicar de forma diferida al hilo de audio vía g_params_dirty para no
+    // mutar coeficientes biquad (g_eq/g_comp/g_exciter/g_widener/g_gain) en
+    // paralelo mientras nativeProcess ejecuta el bloque actual.
+    g_params_dirty.store(true, std::memory_order_release);
+    // NHO parameters mapped from DSP params (suavizados internamente por muestra)
     g_pd.set_nho_alpha(alpha);
     g_pd.set_nho_beta(beta);
     g_nho_wet_exciter.store(wet * 0.5f, std::memory_order_relaxed);
@@ -1153,7 +1150,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const float nho_a = 0.5f + g_control_frame.evo_genome_nho[0].load(std::memory_order_relaxed) * 0.4f;
         const float nho_b = 0.1f + g_control_frame.evo_genome_nho[1].load(std::memory_order_relaxed) * 0.3f;
         const float nho_h = std::clamp(g_control_frame.evo_genome_nho[3].load(std::memory_order_relaxed), 0.f, 2.f);
-        const float sp_angle = std::clamp(g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) * 120.f, 0.f, 120.f);
+        const float sp_angle = std::clamp((g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) - 0.5f) * 60.f, -30.f, 30.f);
         const float sp_width = std::clamp(g_control_frame.evo_genome_spatial[1].load(std::memory_order_relaxed) * 1.5f, 0.f, 1.5f);
         g_pd.set_nho_alpha(nho_a);
         g_pd.set_nho_beta(nho_b);
@@ -1302,11 +1299,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // 0.15dB es inaudible como salto puntual (umbral JND ~0.3-0.5dB
         // para tonos puros, más alto para música) pero evita el trigger
         // permanente sobre el residual del EMA.
-        if (g_loudness_trim_enabled.load(std::memory_order_relaxed) && std::fabs(trim) > 0.15f) {
-            const float trimLin = std::pow(10.f, trim / 20.f);
+        const float targetTrimLin = (g_loudness_trim_enabled.load(std::memory_order_relaxed) && std::fabs(trim) > 0.15f)
+            ? std::pow(10.f, std::clamp(trim, -12.f, 12.f) / 20.f)
+            : 1.0f;
+        if (std::fabs(targetTrimLin - 1.0f) > 1e-4f || std::fabs(g_ats.loudnessTrimSmooth - 1.0f) > 1e-4f) {
             for (int i = 0; i < n; ++i) {
-                g_ats.pdOutL[i] *= trimLin;
-                g_ats.pdOutR[i] *= trimLin;
+                g_ats.loudnessTrimSmooth += 0.001f * (targetTrimLin - g_ats.loudnessTrimSmooth);
+                g_ats.pdOutL[i] *= g_ats.loudnessTrimSmooth;
+                g_ats.pdOutR[i] *= g_ats.loudnessTrimSmooth;
             }
         }
     }
@@ -1781,7 +1781,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         const float nho_a = 0.5f + g_control_frame.evo_genome_nho[0].load(std::memory_order_relaxed) * 0.4f;
         const float nho_b = 0.1f + g_control_frame.evo_genome_nho[1].load(std::memory_order_relaxed) * 0.3f;
         const float nho_h = std::clamp(g_control_frame.evo_genome_nho[3].load(std::memory_order_relaxed), 0.f, 2.f);
-        const float sp_angle = std::clamp(g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) * 120.f, 0.f, 120.f);
+        const float sp_angle = std::clamp((g_control_frame.evo_genome_spatial[0].load(std::memory_order_relaxed) - 0.5f) * 60.f, -30.f, 30.f);
         const float sp_width = std::clamp(g_control_frame.evo_genome_spatial[1].load(std::memory_order_relaxed) * 1.5f, 0.f, 1.5f);
         g_pd.set_nho_alpha(nho_a);
         g_pd.set_nho_beta(nho_b);

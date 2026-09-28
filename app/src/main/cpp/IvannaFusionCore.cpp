@@ -426,12 +426,20 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
         m_chebLpfR.x2 = m_chebLpfR.x1; m_chebLpfR.x1 = xR;
         m_chebLpfR.y2 = m_chebLpfR.y1; m_chebLpfR.y1 = lfR;
 
-        // H2 Chebyshev SÓLO sobre la señal pre-filtrada (≤8 kHz).
-        // H2(lfL) genera armónico a ≤16 kHz << Nyquist 24 kHz → cero aliasing.
-        // El original sin filtrar (xL) se mezcla de vuelta: se preserva el
-        // timbre completo (incluyendo agudos >8 kHz) sin el artefacto.
-        float h2L = 2.0f*lfL*lfL - 1.0f;
-        float h2R = 2.0f*lfR*lfR - 1.0f;
+        // H2 armónico par sin offset DC sobre la señal pre-filtrada (≤8 kHz).
+        // NOTA CRÍTICA: el polinomio de Chebyshev T2(x) = 2x² - 1 tiene valor
+        // en reposo T2(0) = -1.0, lo que inyectaba un offset DC constante de
+        // -0.12 en fast_tanh_scalar(), desplazando el punto de operación hacia
+        // saturación asimétrica y causando pops al modular mix_eff.
+        // Además, x² es estrictamente no negativo (media > 0), por lo que se
+        // desacopla el DC mediante un filtro paso-alto de 1er orden (fc ~ 15 Hz)
+        // antes de inyectar el 2º armónico puro.
+        const float rawH2L = 2.0f * lfL * lfL;
+        const float rawH2R = 2.0f * lfR * lfR;
+        m_h2DcMeanL += 0.002f * (rawH2L - m_h2DcMeanL);
+        m_h2DcMeanR += 0.002f * (rawH2R - m_h2DcMeanR);
+        const float h2L = rawH2L - m_h2DcMeanL;
+        const float h2R = rawH2R - m_h2DcMeanR;
 
         buffer->left[i]  = fast_tanh_scalar(xL + h2L * mix_eff);
         buffer->right[i] = fast_tanh_scalar(xR + h2R * mix_eff);

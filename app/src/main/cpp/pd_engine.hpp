@@ -101,17 +101,24 @@ public:
     static constexpr float MIX_SPATIAL  = 0.2f;
     static constexpr float MIX_STATE    = 0.2f;
 
+    float modLSmooth_ = 1.0f;
+    float modRSmooth_ = 1.0f;
+
     void init(uint32_t sr) noexcept {
         sample_rate = (float)sr;
         cue_bank.init(sr);
+        hrtf.init(sr);
         reset();
     }
 
     void reset() noexcept {
         for (int i = 0; i < PD_DIM; ++i) z[i] = z_prev[i] = 0.f;
+        modLSmooth_ = 1.0f;
+        modRSmooth_ = 1.0f;
         nho.reset();
         cue_bank.reset();
         spatial.reset();
+        hrtf.reset();
     }
 
     // ── F(c_t) — cue-driven state update function ─────────────────────────
@@ -144,15 +151,16 @@ public:
         return sum * (1.f / PD_DIM);
     }
 
-    // ── State update z_{t+1} = z_t + μ_t · F(c_t) ───────────────────────
+    // ── State update z_{t+1} = z_t + μ_t · (F(c_t) - z_t) ───────────────
     void update_state(const PerceptualCues& c) noexcept {
         float F[PD_DIM];
         compute_F(c, F);
 
         for (int i = 0; i < PD_DIM; ++i) {
+            const float dzi = z[i] - z_prev[i];
             z_prev[i] = z[i];
-            const float mu_i = compute_mu(F[i], z[i] - z_prev[i]);
-            float zn = z[i] + mu_i * F[i];
+            const float mu_i = compute_mu(F[i], dzi);
+            float zn = z[i] + 0.15f * mu_i * (F[i] - z[i]);
             // Safety clamp + NaN guard
             if (!std::isfinite(zn)) zn = 0.f;
             z[i] = std::clamp(zn, -4.f, 4.f);
@@ -182,16 +190,18 @@ public:
 
     // ── Decode output y_t = state-modulated NHO/Spatial blend ─────────────
     // FIX: zmL/zmR — cada canal usa su propia media del estado como modulador
-    // dinámico sin inyectar offset DC ni atenuar al 20% la señal espacializada.
+    // dinámico con suavizado one-pole por muestra para eliminar escalones de 20 Hz.
     inline void decode(float xL, float xR,
                        float sL, float sR,
                        float& yL, float& yR) noexcept {
         const float zmL = nho_tanh(state_mean_L());
         const float zmR = nho_tanh(state_mean_R());
-        const float modL = std::clamp(1.0f + MIX_STATE * zmL, 0.80f, 1.20f);
-        const float modR = std::clamp(1.0f + MIX_STATE * zmR, 0.80f, 1.20f);
-        yL = (MIX_DRY + MIX_SPATIAL) * (sL * modL) + (1.0f - MIX_DRY - MIX_SPATIAL) * xL;
-        yR = (MIX_DRY + MIX_SPATIAL) * (sR * modR) + (1.0f - MIX_DRY - MIX_SPATIAL) * xR;
+        const float targetModL = std::clamp(1.0f + MIX_STATE * zmL, 0.80f, 1.20f);
+        const float targetModR = std::clamp(1.0f + MIX_STATE * zmR, 0.80f, 1.20f);
+        modLSmooth_ += 0.002f * (targetModL - modLSmooth_);
+        modRSmooth_ += 0.002f * (targetModR - modRSmooth_);
+        yL = (MIX_DRY + MIX_SPATIAL) * (sL * modLSmooth_) + (1.0f - MIX_DRY - MIX_SPATIAL) * xL;
+        yR = (MIX_DRY + MIX_SPATIAL) * (sR * modRSmooth_) + (1.0f - MIX_DRY - MIX_SPATIAL) * xR;
     }
 
     // ── Main process block ─────────────────────────────────────────────────

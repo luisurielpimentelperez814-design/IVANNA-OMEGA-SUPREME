@@ -51,6 +51,12 @@ public:
     float harmonic_gain = 0.2f; // harmonic mix level
     float wet         = 0.3f;   // wet/dry
 
+    // Smoothed runtime parameters (prevents zipper/click on 50ms evo updates)
+    float alpha_smooth = 0.8f;
+    float beta_smooth  = 0.3f;
+    float harmonic_smooth = 0.2f;
+    float wet_smooth   = 0.3f;
+
     // ── Gating μ_t ─────────────────────────────────────────────────────────
     // μ_t = clamp(||F|| / (||F|| + ||z - z_prev|| + ε), 0, 1) · mu
     static inline float compute_mu(float F, float dz, float base_mu) noexcept {
@@ -63,9 +69,15 @@ public:
     // ── Process one stereo sample ───────────────────────────────────────────
     inline void process_sample(float xL, float xR,
                                float& yL, float& yR) noexcept {
+        constexpr float kParamSlew = 0.002f;
+        alpha_smooth    += kParamSlew * (alpha - alpha_smooth);
+        beta_smooth     += kParamSlew * (beta - beta_smooth);
+        harmonic_smooth += kParamSlew * (harmonic_gain - harmonic_smooth);
+        wet_smooth      += kParamSlew * (wet - wet_smooth);
+
         // F(c_t) = tanh(α·x + β·z)
-        const float FL = nho_tanh(alpha * xL + beta * zL);
-        const float FR = nho_tanh(alpha * xR + beta * zR);
+        const float FL = nho_tanh(alpha_smooth * xL + beta_smooth * zL);
+        const float FR = nho_tanh(alpha_smooth * xR + beta_smooth * zR);
 
         const float dzL = FL - zL;
         const float dzR = FR - zR;
@@ -73,16 +85,18 @@ public:
         const float mu_t_L = compute_mu(FL, dzL, mu);
         const float mu_t_R = compute_mu(FR, dzR, mu);
 
-        // State update: z_{t+1} = z_t + μ_t · F(c_t)
-        zL = nho_safe(zL + mu_t_L * FL);
-        zR = nho_safe(zR + mu_t_R * FR);
+        // State update: leaky ODE z_{t+1} = z_t + μ_t · (F(c_t) - z_t)
+        // Guarantees asymptotic stability (z -> 0 in silence) and |z| <= 1,
+        // eliminating DC latch-up and comparator switching artifacts.
+        zL = nho_safe(zL + mu_t_L * dzL);
+        zR = nho_safe(zR + mu_t_R * dzR);
 
         // Output: y = (1-wet)·x + wet·tanh(harmonic_gain·z)
-        const float hL = nho_tanh(harmonic_gain * zL);
-        const float hR = nho_tanh(harmonic_gain * zR);
+        const float hL = nho_tanh(harmonic_smooth * zL);
+        const float hR = nho_tanh(harmonic_smooth * zR);
 
-        yL = (1.f - wet) * xL + wet * hL;
-        yR = (1.f - wet) * xR + wet * hR;
+        yL = (1.f - wet_smooth) * xL + wet_smooth * hL;
+        yR = (1.f - wet_smooth) * xR + wet_smooth * hR;
     }
 
     // ── Process block — zero allocations ───────────────────────────────────
@@ -96,7 +110,14 @@ public:
         }
     }
 
-    void reset() noexcept { zL = 0.f; zR = 0.f; }
+    void reset() noexcept {
+        zL = 0.f;
+        zR = 0.f;
+        alpha_smooth = alpha;
+        beta_smooth = beta;
+        harmonic_smooth = harmonic_gain;
+        wet_smooth = wet;
+    }
 
     void set_alpha(float v)         noexcept { alpha = std::clamp(v, 0.f, 4.f); }
     void set_beta(float v)          noexcept { beta  = std::clamp(v, 0.f, 1.f); }

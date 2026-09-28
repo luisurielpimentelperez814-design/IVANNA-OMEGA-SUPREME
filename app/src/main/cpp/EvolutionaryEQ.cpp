@@ -150,7 +150,14 @@ void EvolutionaryEQ::rebuildFilterFromGenome() {
         const float a = std::fabs(taps[t]);
         if (a > peak) peak = a;
     }
-    const float norm = (peak > 1.0f) ? (1.0f / peak) : 1.0f;
+    // Verificar también ganancia máxima en frecuencia para evitar que bandas
+    // apiladas empujen la señal a saturación aguas abajo.
+    float maxMag = peak;
+    for (int k = 0; k < kNumTargets; ++k) {
+        const float m = magnitudeAt(taps, kTargetWn[k]);
+        if (m > maxMag) maxMag = m;
+    }
+    const float norm = (maxMag > 1.4125f) ? (1.4125f / maxMag) : ((peak > 1.0f) ? (1.0f / peak) : 1.0f);
 
     for (size_t t = 0; t < FIR_TAPS; ++t) {
         m_firCoeffsL[t] = taps[t] * norm;
@@ -259,13 +266,11 @@ void EvolutionaryEQ::processNEON(Ivanna::AudioBuffer* buffer) {
             r_out += m_firCoeffsR[t] * m_histR[i + t];
         }
 
-        // Soft-clip Padé como saturador musical. La Padé [7/6] sobrepasa 1.0
-        // en ~0.5% con entradas grandes: el clamp duro garantiza |salida| <= 1
-        // SIEMPRE (doctrina SafetyLimiter / certificación IAEL: 0 clipping).
-        float l_final = fast_tanh_scalar(l_out);
-        float r_final = fast_tanh_scalar(r_out);
-        l_final = std::fmin(1.0f, std::fmax(-1.0f, l_final));
-        r_final = std::fmin(1.0f, std::fmax(-1.0f, r_final));
+        // Evitar doble saturación no-lineal: IvannaFusionEngine::process() ya
+        // aplica fast_tanh al final de la cadena. Aquí solo se garantiza el
+        // invariante de rango seguro [-1, 1] y finitud tras el FIR lineal.
+        float l_final = std::fmin(1.0f, std::fmax(-1.0f, l_out));
+        float r_final = std::fmin(1.0f, std::fmax(-1.0f, r_out));
         if (!std::isfinite(l_final) || !std::isfinite(r_final)) invalid = true;
 
         buffer->left[i] = l_final;
