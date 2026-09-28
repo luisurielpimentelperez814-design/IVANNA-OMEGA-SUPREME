@@ -720,6 +720,26 @@ static int32_t omega_process(effect_handle_t self,
              frames, ctx->rtCapacity);
     }
 
+    // ── Pre-loop: sincronizar parámetros cocleares UNA VEZ por callback ─────────
+    // FIX artefactos "motor/carcacha" + clicks: setEnabled/setIntensity producen
+    // un salto de ganancia si se llaman dentro del chunk loop (un step change en
+    // wetGain_ cada ~10 ms = click audible). Aquí se configuran antes del loop;
+    // process() por chunk solo ejecuta DSP sin tocar los parámetros.
+    {
+        const auto& snapPre = ctx->pendingSnap;
+        const bool  cochOnPre = (snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        if (ctx->cochlearEngine) {
+            const float intensityPre =
+                (std::isfinite(snapPre.cochlear_intensity) && snapPre.cochlear_intensity > 0.0f)
+                    ? snapPre.cochlear_intensity
+                    : ctx->cochlearIntensity;
+            // setIntensity y setEnabled aplican rampa interna (sin step change).
+            // Si el estado no cambió, son no-ops de bajo coste.
+            ctx->cochlearEngine->setIntensity(intensityPre);
+            ctx->cochlearEngine->setEnabled(cochOnPre);
+        }
+    }
+
     int offset = 0;
     while (offset < frames) {
         const int chunk = ((frames - offset) < ctx->rtCapacity)
@@ -818,12 +838,12 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine ──
-        const auto& snap = ctx->pendingSnap;
+        // FIX artefactos: setEnabled/setIntensity estaban DENTRO del chunk loop
+        // → cada chunk llamaba a setEnabled(cochOn) que hacía wetGain_ = 0 o intensity_
+        // en un solo sample → click/pop audible. Ahora se configuran una sola vez
+        // POR CALLBACK (fuera del loop), y process() solo se llama si isActive().
         const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
-        if (ctx->cochlearEngine) {
-            const float intensity = (snap.cochlear_intensity > 0.0f) ? snap.cochlear_intensity : ctx->cochlearIntensity;
-            ctx->cochlearEngine->setIntensity(intensity);
-            ctx->cochlearEngine->setEnabled(cochOn);
+        if (ctx->cochlearEngine && ctx->cochlearEngine->isActive()) {
             ctx->cochlearEngine->process(L, R, (int)chunk);
         }
 
