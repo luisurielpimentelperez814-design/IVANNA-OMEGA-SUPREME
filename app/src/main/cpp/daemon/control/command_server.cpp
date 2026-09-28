@@ -493,7 +493,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_TELEMETRY")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_TELEMETRY\",\"generation\":%llu,\"ctrl_version\":%u,\"samplerate\":48000,\"supreme_lattice\":%s,\"supreme_cvnn\":%s,\"supreme_snn_hoa\":%s,\"supreme_pinna\":%s,\"supreme_farrow_mso\":%s,\"ebpf_bypass\":%s,\"mso_itd_ns\":%.2f,\"clients_served\":%u}",
+            "{\"ok\":true,\"command\":\"GET_TELEMETRY\",\"generation\":%llu,\"ctrl_version\":%u,\"samplerate\":48000,\"supreme_lattice\":%s,\"supreme_cvnn\":%s,\"supreme_snn_hoa\":%s,\"supreme_pinna\":%s,\"supreme_farrow_mso\":%s,\"ebpf_bypass\":%s,\"mso_itd_ns\":%.2f,\"reality_recon\":%s,\"reality_intensity\":%.2f,\"clients_served\":%u}",
             (unsigned long long)gen, (unsigned)ivanna::OMEGA_CTRL_VERSION,
             m_state.supreme_lattice_enabled?"true":"false",
             m_state.supreme_cvnn_enabled?"true":"false",
@@ -502,6 +502,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.supreme_farrow_mso_enabled?"true":"false",
             m_state.supreme_ebpf_bypass_active?"true":"false",
             m_state.supreme_mso_itd_ns,
+            m_state.reality_recon_enabled?"true":"false",
+            m_state.reality_intensity,
             m_state.clients_served);
 
     } else if (strcmp(action,"GET_HEALTH")==0) {

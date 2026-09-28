@@ -299,12 +299,21 @@ private fun LabTab() {
                 modifier = Modifier.fillMaxWidth())
 
             measureResult?.let { m ->
+                val labLabels = listOf(
+                    "THD (%)",
+                    "IMD SMPTE (%)",
+                    "LUFS Integrado (LUFS)",
+                    "Rango Dinámico LRA (LU)",
+                    "SNR Estadístico (dB)",
+                    "Peak (dBFS)",
+                    "True Peak (dBTP)"
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf("THD", "SNR", "Latencia", "Flatness").forEachIndexed { i, lbl ->
+                    labLabels.forEachIndexed { i, lbl ->
                         if (i < m.size) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(lbl, color = TextSecondary, fontSize = 10.sp)
-                                Text(if (m[i] == -1f) "—" else "%.4f".format(m[i]), color = NeonMagenta, fontSize = 10.sp,
+                                Text(if (m[i] == -1f) "—" else "%.3f".format(m[i]), color = NeonMagenta, fontSize = 10.sp,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                             }
                         }
@@ -348,12 +357,16 @@ private fun LabTab() {
 // ── Tab COGNITIVO 9-15 (Acoustic Reality Cognitive Evolution Engine) ──────────
 @Composable
 private fun CognitiveEvolutionTab() {
-    var realityEnabled by remember { mutableStateOf(NativeBridge.safeIsRealityReconstructionEnabled()) }
-    var realityIntensity by remember { mutableFloatStateOf(0.88f) }
+    val context = LocalContext.current
+    var axesState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
+    var realityEnabled by remember { mutableStateOf(axesState.realityReconstructionEnabled) }
+    var realityIntensity by remember { mutableFloatStateOf(axesState.realityIntensity) }
     var realityTele by remember { mutableStateOf(NativeBridge.safeGetRealityTelemetrySnapshot()) }
     var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()) }
 
     LaunchedEffect(Unit) {
+        NativeBridge.safeSetRealityReconstructionEnabled(realityEnabled)
+        NativeBridge.safeSetRealityIntensity(realityIntensity)
         while (true) {
             realityTele = NativeBridge.safeGetRealityTelemetrySnapshot()
             cogTele = NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
@@ -386,12 +399,18 @@ private fun CognitiveEvolutionTab() {
                     checked = realityEnabled,
                     onCheckedChange = { en ->
                         realityEnabled = en
+                        val next = axesState.copy(realityReconstructionEnabled = en)
+                        axesState = next
+                        SupremeAxesPrefs.save(context, next)
                         NativeBridge.safeSetRealityReconstructionEnabled(en)
                     }
                 )
             }
             IvannaSliderRowBrain("INTENSIDAD REALIDAD", realityIntensity, 0f, 1f, "") { v ->
                 realityIntensity = v
+                val next = axesState.copy(realityIntensity = v)
+                axesState = next
+                SupremeAxesPrefs.save(context, next)
                 NativeBridge.safeSetRealityIntensity(v)
             }
             Text(

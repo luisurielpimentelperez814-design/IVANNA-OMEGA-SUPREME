@@ -29,6 +29,7 @@ import ivannaAudioPipelineHpp from '../../app/src/main/cpp/spatial/IvannaAudioPi
 import perfAuditorHpp from '../../app/src/main/cpp/spatial/PerfAuditor.hpp?raw';
 import stereoDecomposerHpp from '../../app/src/main/cpp/spatial/StereoObjectDecomposer.hpp?raw';
 import acousticRealityHyperengineHpp from '../../app/src/main/cpp/include/acoustic_reality_hyperengine.hpp?raw';
+import acousticCognitiveEvolutionHpp from '../../app/src/main/cpp/include/acoustic_cognitive_evolution_engine.hpp?raw';
 import wfsRendererHpp from '../../app/src/main/cpp/spatial/WfsRenderer.hpp?raw';
 import wfsRendererCpp from '../../app/src/main/cpp/spatial/WfsRenderer.cpp?raw';
 import testAcousticRealityCpp from '../../app/src/main/cpp/tests/regression/test_acoustic_reality_hyperengine.cpp?raw';
@@ -147,6 +148,12 @@ export const CPP_FILES: CppFile[] = [
     category: 'header',
     description: 'Eje 7: Auditoría continua de rendimiento RT-Safety, latencia cero añadida y monitor de L1 cache',
     content: perfAuditorHpp,
+  },
+  {
+    filename: 'acoustic_cognitive_evolution_engine.hpp',
+    category: 'header',
+    description: 'Fases 9–15: Sistema Nervioso Superior (AcousticCognitiveCore, SpecialistNetwork, ExecutiveBrain, Memory, Homeostasis, DigitalTwin, CMA-ES/Q-Learning)',
+    content: acousticCognitiveEvolutionHpp,
   },
 ];
 

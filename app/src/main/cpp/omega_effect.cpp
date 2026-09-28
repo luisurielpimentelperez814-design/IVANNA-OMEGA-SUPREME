@@ -444,7 +444,9 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
     }
     auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
     realityOrch.setEnabled((s.flags & ivanna::OMEGA_FLAG_REALITY_RECON_ON) != 0);
-    if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
+    if (std::isfinite(s.reality_intensity) && s.reality_intensity >= 0.0f) {
+        realityOrch.setRealityIntensity(s.reality_intensity);
+    } else if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
         realityOrch.setRealityIntensity(s.intensity);
     }
 }
@@ -490,6 +492,11 @@ static std::atomic<bool>       g_rirBStarted{false};
 static std::vector<omega_effect_context_t*> g_rirBLive;   // ctx vivos
 static omega_effect_context_t* g_rirBCtx = nullptr;       // petición pendiente
 static int32_t                 g_rirBIdx = -1;
+// Motor adaptativo y cognitivo out-of-RT para el proceso audioserver (Ruta B):
+// ejecuta controlLoop() @ 50ms en hilo de control independiente y alimenta
+// AcousticRealityOrchestrator::instance().orchestrateCycle() sin tocar el hilo RT.
+static ivanna::experimental::AdaptiveDecisionEngine g_effectAdaptiveEngine;
+static std::atomic<bool>                            g_effectAdaptiveStarted{false};
 
 static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
     for (auto* c : g_rirBLive) if (c == ctx) return true;
@@ -642,6 +649,11 @@ static int32_t omega_process(effect_handle_t self,
     if (ctx->ctrlBusOpen) {
         ivanna::OmegaDspSnapshot snap;
         if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
+            omega_apply_supreme_axes(ctx, snap);
+            auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+            if (realityOrch.isEnabled()) {
+                realityOrch.coordinateSnapshot(snap);
+            }
             omega_apply_snapshot(fc, ctx->antiDolby, snap);
             omega_apply_supreme_axes(ctx, snap);
             omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
@@ -737,21 +749,6 @@ static int32_t omega_process(effect_handle_t self,
             ctx->adaptiveEngine->smoothParameters();
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
-            
-            // Dynamic EQ Adjustment in Real-Time
-            // (Apply post-process EQ to L/R buffers directly for zero-latency)
-            // A simple implementation of the target curve:
-            // Since IvannaFusionEngine::setEqGains is empty, we apply it here.
-            // But we don't have a ParametricEQ instance per-band easily accessible.
-            // As a DSP-safe minimal proxy, we'll just modify the gain directly based on RMS for ISO226.
-            
-            float bassGain = std::pow(10.0f, (adaptParams.eqBass / 20.0f));
-            float midGain = std::pow(10.0f, (adaptParams.eqMid / 20.0f));
-            float trebleGain = std::pow(10.0f, (adaptParams.eqTreble / 20.0f));
-            
-            // Simple multi-band approximation for zero-latency
-            // We use simple FIR/IIR filtering in a real scenario, here we just do broad gains.
-            // The adaptive engine output is now blended with AI.
 
             if (adaptParams.applyISO226) {
                 float isoGain = std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f));
@@ -830,13 +827,20 @@ static int32_t omega_process(effect_handle_t self,
                                      ? ctx->config.outputCfg.samplingRate : 48000u;
                 ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
             }
-            // Fase 2 & Fase 8: MicroReality Extraction Pass (0 dB loudness inflation)
+            // Fases 1-15: Acoustic Reality Reconstruction & Cognitive Evolution Pass (0 malloc, 0 mutex)
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
             if (realityOrch.isEnabled()) {
+                const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                     ? ctx->config.outputCfg.samplingRate : 48000u;
+                realityOrch.microExtractor().extractRT(L, R, (size_t)chunk, (float)srNow);
                 const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
                 if (rSnap.sequence > 0) {
                     realityOrch.microExtractor().applyMicroIntelligibilityPass(
                         L, R, (size_t)chunk, rSnap.microMap);
+                    realityOrch.timeMachine().reconstructTemporalField(
+                        L, R, (size_t)chunk, rSnap.timeMachine);
+                    realityOrch.roomProjection().projectRoom(
+                        L, R, (size_t)chunk);
                 }
             }
         }
@@ -884,6 +888,25 @@ static int32_t omega_process(effect_handle_t self,
         ctx->pendingSnap.supreme_snn_spikes      = ctx->supremeSnnHoa  ? ctx->supremeSnnHoa->lastActiveSpikes()    : 0u;
         ctx->pendingSnap.supreme_subsample_delay = ctx->supremeLattice ? ctx->supremeLattice->lastSubSampleDelay() : 0.24f;
         ctx->pendingSnap.effect_frames += (uint64_t)outFrames;
+
+        // Publicar métricas lock-free al hilo cognitivo/adaptativo out-of-RT (Ruta B)
+        if (rms > 1e-6f || pk > 1e-6f) {
+            ivanna::experimental::RawAudioMetrics rawM{};
+            rawM.rms              = rms;
+            rawM.peak             = pk;
+            rawM.band_low_energy  = rms * 0.35f;
+            rawM.band_mid_energy  = rms * 0.45f;
+            rawM.band_high_energy = rms * 0.20f;
+            rawM.voice_score      = (ctx->adaptiveEngine && ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
+                                     ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced) ? 0.72f : 0.35f;
+            rawM.wfs_active       = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_WFS_ON) ? 1.0f : 0.0f;
+            rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
+            rawM.upmix_active     = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_UPMIX_ON) ? 1.0f : 0.0f;
+            rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
+            g_effectAdaptiveEngine.rawMetrics.publish(
+                ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
+        }
+
         // publish() es no-op si el daemon no abrió el bus — seguro en ruta caliente
         if (ctx->localWriterOpen) {
             ivanna::effectControlBus().publish(ctx->pendingSnap);
@@ -911,8 +934,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
                 if (!ctx->fusionCore) {
                     ctx->fusionCore = new IvannaFusionEngine((float)sr);
-                    ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
-                    ctx->antiDolby = new AntiDolbyState();
+                    if (!ctx->adaptiveEngine) {
+                        ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
+                    }
+                    if (!ctx->antiDolby) {
+                        ctx->antiDolby = new AntiDolbyState();
+                    }
                 }
                 ctx->fusionCore->initSpatial((float)sr, 4096);
                 // AUDIT FIX (realtime allocation): preasignar buffers L/R
@@ -1029,6 +1056,9 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // bajo g_rirBMtx (release_effect des-registra antes de
                     // liberar -> sin UAF aunque el hilo sobreviva al efecto).
                 }
+                if (!g_effectAdaptiveStarted.exchange(true, std::memory_order_acq_rel)) {
+                    g_effectAdaptiveEngine.start();
+                }
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
                 // no creó el SHM (arranque en frío del audioserver), la
@@ -1045,6 +1075,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         ivanna::OmegaDspSnapshot seed;
                         uint64_t seen = 0;
                         if (ivanna::effectControlBus().readLatest(seed, seen)) {
+                            omega_apply_supreme_axes(ctx, seed);
+                            auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+                            if (realityOrch.isEnabled()) {
+                                realityOrch.coordinateSnapshot(seed);
+                            }
                             omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
                             omega_apply_supreme_axes(ctx, seed);
                             ctx->pendingSnap = seed;

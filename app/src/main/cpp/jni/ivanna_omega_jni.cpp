@@ -1452,6 +1452,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         static uint64_t s_rirLastGen = 0;
         ivanna::OmegaDspSnapshot rirSnap{};
         if (ivanna::effectControlBus().readLatest(rirSnap, s_rirLastGen)) {
+            auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+            if (realityOrch.isEnabled()) {
+                realityOrch.coordinateSnapshot(rirSnap);
+            }
             const float rt60 = rirSnap.room_rt60_s;
             const float wet  = rirSnap.room_wet;
             if (rt60 < 0.01f || !s_rirDataset || s_rirDataset->roomCount() == 0) {
@@ -1508,10 +1512,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 
         auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
         if (realityOrch.isEnabled()) {
+            realityOrch.microExtractor().extractRT(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), srNow);
             const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
             if (rSnap.sequence > 0) {
                 realityOrch.microExtractor().applyMicroIntelligibilityPass(
                     g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), rSnap.microMap);
+                realityOrch.timeMachine().reconstructTemporalField(
+                    g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), rSnap.timeMachine);
+                realityOrch.roomProjection().projectRoom(
+                    g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
             }
         }
     }

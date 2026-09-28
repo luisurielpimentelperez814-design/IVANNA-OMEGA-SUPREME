@@ -482,8 +482,9 @@ std::string IvannaLab::generateReport() const {
     os << std::fixed << std::setprecision(1);
     os << "=== IVANNA AUDIO REPORT ===\n";
     os << "Peak:      " << r.peakDBFS   << " dBFS\n";
-    os << "RMS:       " << r.snrDB      << " dBFS\n";
+    os << "SNR:       " << r.snrDB      << " dB\n";
     os << "LUFS:      " << r.integratedLUFS << " LUFS\n";
+    os << "LRA:       " << r.luRange        << " LU\n";
     os << "True Peak: " << r.truepeakDBTP   << " dBTP\n";
     os << std::setprecision(2);
     os << "THD:       " << r.thdPercent  << " %\n";
