@@ -890,9 +890,9 @@ static int32_t omega_process(effect_handle_t self,
             rawM.band_high_energy = rms * 0.20f;
             rawM.voice_score      = (ctx->adaptiveEngine && ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
                                      ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced) ? 0.72f : 0.35f;
-            rawM.wfs_active       = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_WFS_ON) ? 1.0f : 0.0f;
+            rawM.wfs_active       = (ctx->pendingSnap.wfs_enabled != 0u) ? 1.0f : 0.0f;
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
-            rawM.upmix_active     = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_UPMIX_ON) ? 1.0f : 0.0f;
+            rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
             g_effectAdaptiveEngine.rawMetrics.publish(
                 ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
