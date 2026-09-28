@@ -703,8 +703,8 @@ Java_com_ivanna_omega_core_NativeBridge_isShmCrossProcessMapped(JNIEnv*, jclass)
         .shmMsoArbitrator().isCrossProcessShmMapped() ? JNI_TRUE : JNI_FALSE;
 }
 
-namespace {
-inline ivanna::reality::AcousticRealityState
+extern "C++" {
+static inline ivanna::reality::AcousticRealityState
 refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& orch) noexcept {
     ivanna::experimental::RawAudioMetrics seedM{};
     seedM.rms              = 0.22f;
@@ -723,7 +723,7 @@ refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& o
     const uint64_t nextTs = (orch.stateBus().readLatestSnapshot().sequence + 1ULL) * 20000ULL;
     return orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, nextTs);
 }
-} // namespace
+} // extern "C++"
 
 // ── ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1–15) ────────────────
 extern "C" JNIEXPORT void JNICALL
