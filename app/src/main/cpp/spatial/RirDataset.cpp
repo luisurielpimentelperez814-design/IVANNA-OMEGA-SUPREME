@@ -395,12 +395,20 @@ void RirDataset::resampleLinear(std::vector<float>& channel, int irSr,
 
     std::vector<float> out(dstN);
     const double step = (double)(srcN - 1) / (double)(dstN - 1);
+    // FIX CRÍTICO (2026-09-28): al sobremuestrear un RIR (p.ej. 16 kHz -> 48 kHz,
+    // ratio = 3.0), el número de muestras se multiplica por `ratio`, triplicando
+    // la suma de cuadrados (energía de convolución discreta) y multiplicando la
+    // ganancia de continua por `ratio` (+9.54 dB). Al subir RT60 (salas más largas)
+    // y wet/dry al 100%, esa ganancia parásita inyectaba un rugido/estruendo en
+    // aumento. Escalar por 1/sqrt(ratio) preserva exactamente la energía L2 del RIR
+    // independientemente de la frecuencia de muestreo de la sesión.
+    const float energyNorm = (ratio > 1.0) ? static_cast<float>(1.0 / std::sqrt(ratio)) : 1.0f;
     for (size_t i = 0; i < dstN; ++i) {
         const double pos = (double)i * step;
         const size_t i0 = (size_t)pos;
         const size_t i1 = (i0 + 1 < srcN) ? i0 + 1 : i0;
         const float frac = (float)(pos - (double)i0);
-        out[i] = channel[i0] + frac * (channel[i1] - channel[i0]);
+        out[i] = (channel[i0] + frac * (channel[i1] - channel[i0])) * energyNorm;
     }
     channel.swap(out);
 }

@@ -168,6 +168,9 @@ static std::atomic<Ivanna::RirConvolver*> g_rirConvolver{nullptr};
 // lectura de disco + la FFT del IR y la entrega vía RirConvolver::load()
 // (que ya es thread-safe con process() vía pending_ + crossfade).
 static std::atomic<int32_t>       g_rirPendingIdx{-1};
+static std::atomic<float>         g_localRoomRt60{0.0f};
+static std::atomic<float>         g_localRoomWet{0.0f};
+static std::atomic<int32_t>       g_localRoomIdx{-1};
 static float                      g_localSafQ[7] = {
     4.00711025e-03f, 0.00000000e+00f, 5.49971378e-03f, 4.70094676e-03f,
     -3.88360593e-03f, 4.82163913e-03f, 9.68858446e-03f
@@ -193,17 +196,19 @@ static void rirWorkerLoop() {
         std::vector<float> irL, irR;
         int sr = 0;
         if (ds->loadImpulseResponse((size_t)idx, irL, irR, sr) && !irL.empty()) {
-            // FIX (2026-08-29): las IRs del dataset están a 16 kHz y se
-            // convolucionaban sin remuestrear — a 48k la reverb sonaba 3× más
-            // corta y con reflexiones mal posicionadas; a 96/192/384k peor.
-            // Resampleo lineal a la SR de sesión AQUÍ (hilo worker, no RT).
             const int sessionSr = (int)g_params.sampleRate;
             Ivanna::RirDataset::resampleLinear(irL, sr, sessionSr);
             Ivanna::RirDataset::resampleLinear(irR, sr, sessionSr);
             int irLen = (int)irL.size();
             if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
-            conv->applySofaCoupling(g_localSafQ);
-            conv->load(irL.data(), irR.data(), irLen);
+            if (g_localRoomRt60.load(std::memory_order_acquire) >= 0.01f &&
+                g_localRoomWet.load(std::memory_order_acquire) > 0.001f) {
+                conv->applySofaCoupling(g_localSafQ);
+                conv->load(irL.data(), irR.data(), irLen);
+            } else {
+                conv->setWetDry(0.0f);
+                conv->unload();
+            }
         }
         lk.lock();
     }
@@ -282,6 +287,7 @@ static std::atomic<bool> g_loudnessMeterInit{false};
 // (Spotify/YouTube Music) — volumen percibido consistente entre archivos
 // sin importar el mastering original.
 static std::atomic<float> g_loudness_target{-14.f};
+static std::atomic<bool>  g_loudness_trim_enabled{true};
 // ═══ FASE 4B: AdaptiveDecisionEngine — cierre del lazo adaptativo ════════════
 // Única instancia del motor. Sus buses (rawMetrics, adaptiveState) son
 // SPSC seqlock — el audio thread publica RawAudioMetrics + consume
@@ -760,17 +766,28 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         Ivanna::RirDataset* ds = new Ivanna::RirDataset();
         if (!ds->load("/data/adb/ivanna_omega/rir")) {
             delete ds; ds = nullptr;
-            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR");
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR cuando se active RIR");
         }
         g_rirDataset.store(ds, std::memory_order_release);
         auto* conv = new Ivanna::RirConvolver();
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
-        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, sr);
-        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
-        g_rirConvolver.store(conv, std::memory_order_release);
-        if (ds && ds->isLoaded()) {
-            g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
+        const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
+        const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
+        if (initRt60 >= 0.01f && initWet > 0.001f) {
+            conv->setWetDry(initWet);
+            if (ds && ds->isLoaded() && ds->roomCount() > 0) {
+                const int32_t reqIdx = g_localRoomIdx.load(std::memory_order_acquire);
+                const int32_t targetIdx = (reqIdx >= 0 && static_cast<size_t>(reqIdx) < ds->roomCount())
+                    ? reqIdx
+                    : static_cast<int32_t>(ds->findNearestSmart(initRt60));
+                g_rirPendingIdx.store(targetIdx, std::memory_order_release);
+            } else {
+                conv->synthesizeMasterStudioBrir(initRt60, sr);
+            }
+        } else {
+            conv->setWetDry(0.0f);
         }
+        g_rirConvolver.store(conv, std::memory_order_release);
     }
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
         g_rirWorkerThread = std::thread(rirWorkerLoop);
@@ -1285,7 +1302,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // 0.15dB es inaudible como salto puntual (umbral JND ~0.3-0.5dB
         // para tonos puros, más alto para música) pero evita el trigger
         // permanente sobre el residual del EMA.
-        if (std::fabs(trim) > 0.15f) {
+        if (g_loudness_trim_enabled.load(std::memory_order_relaxed) && std::fabs(trim) > 0.15f) {
             const float trimLin = std::pow(10.f, trim / 20.f);
             for (int i = 0; i < n; ++i) {
                 g_ats.pdOutL[i] *= trimLin;
@@ -1458,11 +1475,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             }
             const float rt60 = rirSnap.room_rt60_s;
             const float wet  = rirSnap.room_wet;
-            if (rt60 < 0.01f || !s_rirDataset || s_rirDataset->roomCount() == 0) {
+            if (rt60 < 0.01f || wet <= 0.001f) {
                 s_rirConvolver->setWetDry(0.f);
+                s_rirConvolver->unload();
+            } else if (!s_rirDataset || s_rirDataset->roomCount() == 0) {
+                s_rirConvolver->synthesizeMasterStudioBrir(rt60, (int)g_params.sampleRate);
+                s_rirConvolver->setWetDry(wet);
             } else {
                 static int32_t s_rirLastIdx = -1;
-                const size_t roomIdx = s_rirDataset->findNearestSmart(rt60);
+                const size_t roomIdx = (rirSnap.room_idx >= 0 && static_cast<size_t>(rirSnap.room_idx) < s_rirDataset->roomCount())
+                    ? static_cast<size_t>(rirSnap.room_idx)
+                    : s_rirDataset->findNearestSmart(rt60);
                 if ((int32_t)roomIdx != s_rirLastIdx || !s_rirConvolver->isLoaded()) {
                     // FIX RT: NO leer disco aquí. Publicar el índice y
                     // despertar al worker — él hace WAV+FFT y entrega vía
@@ -1597,24 +1620,32 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // Called here (UI thread, non-RT) — process() will never allocate.
     g_cochlearEngine.prepare(static_cast<float>(sr), 512);
     g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
-    // FIX RT: inicializar RIR aquí (hilo de UI) — alocación + disco fuera
-    // del callback de audio. nativeProcess solo leerá los punteros ya
-    // publicados con acquire-load.
     if (g_rirConvolver.load(std::memory_order_acquire) == nullptr) {
         Ivanna::RirDataset* ds = new Ivanna::RirDataset();
         if (!ds->load("/data/adb/ivanna_omega/rir")) {
             delete ds; ds = nullptr;
-            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR");
+            LOGI("Ruta A: sin dataset RIR en /data/adb/ivanna_omega/rir — usando Golden Master Studio BRIR cuando se active RIR");
         }
         g_rirDataset.store(ds, std::memory_order_release);
         auto* conv = new Ivanna::RirConvolver();
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
-        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, sr);
-        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
-        g_rirConvolver.store(conv, std::memory_order_release);
-        if (ds && ds->isLoaded()) {
-            g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
+        const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
+        const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
+        if (initRt60 >= 0.01f && initWet > 0.001f) {
+            conv->setWetDry(initWet);
+            if (ds && ds->isLoaded() && ds->roomCount() > 0) {
+                const int32_t reqIdx = g_localRoomIdx.load(std::memory_order_acquire);
+                const int32_t targetIdx = (reqIdx >= 0 && static_cast<size_t>(reqIdx) < ds->roomCount())
+                    ? reqIdx
+                    : static_cast<int32_t>(ds->findNearestSmart(initRt60));
+                g_rirPendingIdx.store(targetIdx, std::memory_order_release);
+            } else {
+                conv->synthesizeMasterStudioBrir(initRt60, sr);
+            }
+        } else {
+            conv->setWetDry(0.0f);
         }
+        g_rirConvolver.store(conv, std::memory_order_release);
     }
     // FIX RT: arrancar el worker de carga de IR (hilo de control, joinable).
     // Idempotente — nativeInitDSP puede re-llamarse por cambio de SR.
@@ -1761,6 +1792,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
 
+    // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
+    if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
+        if (s_rirConvolver->isLoaded()) {
+            s_rirConvolver->process(oL, oR, n);
+        }
+    }
+
     // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
     if (g_volterra_enabled.load(std::memory_order_relaxed)) {
         float inter[4096];
@@ -1871,6 +1909,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNaelEnabled(
     LOGI("NAEL (ISO 226:2023) %s", on ? "ENABLED" : "disabled");
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsIso226Enabled(
+    JNIEnv*, jobject) {
+    return g_nael_enabled.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetNaelCorrections(
     JNIEnv* env, jobject) {
@@ -1900,6 +1944,88 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsLabAutoEnabled(
     JNIEnv*, jobject) {
     return g_lab_auto_enabled.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetLabAutoFrameCount(
+    JNIEnv*, jobject) {
+    return (jint)g_lab_auto_frame_count.load(std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLoudnessTarget(
+    JNIEnv*, jobject, jfloat targetLufs) {
+    if (!std::isfinite(targetLufs)) return;
+    const float clamped = std::clamp((float)targetLufs, -36.0f, -6.0f);
+    g_loudness_target.store(clamped, std::memory_order_relaxed);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.loudness_target = clamped;
+        bus.publish(snap);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLoudnessTrimEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    g_loudness_trim_enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioSpectrum(
+    JNIEnv* env, jobject) {
+    jfloatArray out = env->NewFloatArray(ivanna::BEB_BANDS);
+    if (!out) return nullptr;
+    jfloat vals[ivanna::BEB_BANDS];
+    for (int b = 0; b < ivanna::BEB_BANDS; ++b) {
+        vals[b] = 0.5f * (g_pd.cue_bank.envL[b] + g_pd.cue_bank.envR[b]);
+    }
+    env->SetFloatArrayRegion(out, 0, ivanna::BEB_BANDS, vals);
+    return out;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPerceptualCues(
+    JNIEnv* env, jobject) {
+    jfloatArray out = env->NewFloatArray(4);
+    if (!out) return nullptr;
+    const jfloat vals[4] = {
+        g_pd.last_cues.L,
+        g_pd.last_cues.T,
+        g_pd.last_cues.S,
+        g_pd.last_cues.R
+    };
+    env->SetFloatArrayRegion(out, 0, 4, vals);
+    return out;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeRunNeuralBenchmarks(
+    JNIEnv* env, jobject) {
+    jfloatArray out = env->NewFloatArray(4);
+    if (!out) return nullptr;
+    constexpr int kN = 256;
+    float inL[kN] = {}, inR[kN] = {}, outL[kN] = {}, outR[kN] = {};
+    inL[0] = 0.5f; inR[0] = -0.5f;
+    auto t0 = std::chrono::steady_clock::now();
+    ivanna::NHOEngine benchNho;
+    benchNho.process_block(inL, inR, outL, outR, kN);
+    auto t1 = std::chrono::steady_clock::now();
+    ivanna::BiquadEnvelopeBank benchBeb;
+    benchBeb.init(48000);
+    (void)benchBeb.process_block(inL, inR, kN);
+    auto t2 = std::chrono::steady_clock::now();
+    ivanna::CueBasedSpatial benchSp;
+    benchSp.process_block(inL, inR, outL, outR, kN, 48000.f);
+    auto t3 = std::chrono::steady_clock::now();
+    const float us0 = std::chrono::duration<float, std::micro>(t1 - t0).count();
+    const float us1 = std::chrono::duration<float, std::micro>(t2 - t1).count();
+    const float us2 = std::chrono::duration<float, std::micro>(t3 - t2).count();
+    const jfloat vals[4] = { us0, us1, us2, us0 + us1 + us2 };
+    env->SetFloatArrayRegion(out, 0, 4, vals);
+    return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2171,11 +2297,33 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBeta(
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetGamma(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_angle(v * 90.f); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta(JNIEnv*,jobject,jfloat v) { g_pd.set_spatial_width(v); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_nho_wet_eta.store(v<0.f?0.f:v>1.f?1.f:v,std::memory_order_relaxed); applyNhoWet(); }
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*,jobject,jfloat v) { g_pd.set_nho_harmonic(v); }
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*,jobject,jboolean en) { g_pd.set_mode(en ? 2 : 0); }
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*,jobject,jboolean) {}
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax(JNIEnv*,jobject,jfloat) {}
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*,jobject,jint,jfloat) {}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*,jobject,jfloat v) {
+    if (!std::isfinite(v)) return;
+    g_pd.set_nho_harmonic(v);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.harmonic_gain = std::clamp((float)v, 0.0f, 2.0f);
+        bus.publish(snap);
+    }
+}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHRTFEnabled(JNIEnv*,jobject,jboolean en) {
+    const bool on = (en == JNI_TRUE);
+    g_pd.set_mode(on ? 2 : 1);
+    g_pd.set_binaural_enabled(on);
+}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptEnabled(JNIEnv*,jobject,jboolean en) {
+    g_adaptiveUiMode.store((en == JNI_TRUE) ? 1 : 0, std::memory_order_relaxed);
+}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax(JNIEnv*,jobject,jfloat v) {
+    if (!std::isfinite(v)) return;
+    g_pd.nho.set_mu(std::clamp((float)v, 0.05f, 0.50f));
+    g_loudness_target.store(std::clamp(-v * 36.0f, -36.0f, -6.0f), std::memory_order_relaxed);
+}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*,jobject,jint,jfloat g) {
+    if (std::isfinite(g)) g_pd.spatial.set_wet(std::clamp((float)g, 0.0f, 1.0f));
+}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*,jobject,jint,jfloat) {}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*,jobject) { g_pd.reset(); }
 // ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
@@ -2942,28 +3090,63 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
         conv->setTrueStereoCrossGain(0.20f);
         conv->setTransauralXtcStrength(0.16f);
-        conv->synthesizeMasterStudioBrir(ivanna::master::kMasterStudioRoomRt60S, (int)g_params.sampleRate);
-        conv->setWetDry(ivanna::master::kMasterStudioRoomWet);
+        const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
+        const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
+        if (initRt60 >= 0.01f && initWet > 0.001f) {
+            conv->setWetDry(initWet);
+            const int32_t reqIdx = g_localRoomIdx.load(std::memory_order_acquire);
+            const int32_t targetIdx = (reqIdx >= 0 && static_cast<size_t>(reqIdx) < ds->roomCount())
+                ? reqIdx
+                : static_cast<int32_t>(ds->findNearestSmart(initRt60));
+            g_rirPendingIdx.store(targetIdx, std::memory_order_release);
+        } else {
+            conv->setWetDry(0.0f);
+        }
         g_rirConvolver.store(conv, std::memory_order_release);
     }
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel))
         g_rirWorkerThread = std::thread(rirWorkerLoop);
-    g_rirPendingIdx.store(ivanna::master::kMasterStudioRoomIdx, std::memory_order_release);
-    g_rirWorkerCv.notify_one();
+    if (g_localRoomRt60.load(std::memory_order_acquire) >= 0.01f &&
+        g_localRoomWet.load(std::memory_order_acquire) > 0.001f) {
+        g_rirWorkerCv.notify_one();
+    }
     return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
     JNIEnv*, jclass, jfloat rt60S, jfloat wet, jint roomIdx) {
-    g_adaptiveEngine.setEnvironmentRT60(rt60S > 0.005f ? static_cast<float>(rt60S) : 0.30f);
+    const bool active = (rt60S > 0.005f && wet > 0.0001f);
+    g_localRoomRt60.store(active ? static_cast<float>(rt60S) : 0.0f, std::memory_order_release);
+    g_localRoomWet.store(active ? static_cast<float>(wet) : 0.0f, std::memory_order_release);
+    g_localRoomIdx.store(active ? static_cast<int32_t>(roomIdx) : -1, std::memory_order_release);
+    g_adaptiveEngine.setEnvironmentRT60(active ? static_cast<float>(rt60S) : 0.30f);
+
+    // Sincronizar también el OmegaControlBus local para que DSPBridge_nativeProcess
+    // (que lee effectControlBus().readLatest) no re-active una sala vieja.
+    {
+        auto& bus = ivanna::effectControlBus();
+        ivanna::OmegaDspSnapshot snap;
+        uint64_t seen = 0;
+        if (bus.readLatest(snap, seen)) {
+            snap.room_rt60_s = active ? static_cast<float>(rt60S) : 0.0f;
+            snap.room_wet    = active ? std::clamp(static_cast<float>(wet), 0.0f, 1.0f) : 0.0f;
+            snap.room_idx    = active ? static_cast<int32_t>(roomIdx) : -1;
+            bus.publish(snap);
+        }
+    }
+
     Ivanna::RirDataset*   ds   = g_rirDataset.load(std::memory_order_acquire);
     Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
-    if (!conv) return;
-    if (rt60S <= 0.005f || wet <= 0.0001f) {
-        conv->setWetDry(0.0f);
+    if (!active) {
+        g_rirPendingIdx.store(-1, std::memory_order_release);
+        if (conv) {
+            conv->setWetDry(0.0f);
+            conv->unload();
+        }
         return;
     }
+    if (!conv) return;
     conv->applySofaCoupling(g_localSafQ);
     conv->setTrueStereoCrossGain(0.20f);
     conv->setTransauralXtcStrength((rt60S > 0.52f) ? 0.38f : ((rt60S < 0.31f) ? 0.0f : 0.16f));

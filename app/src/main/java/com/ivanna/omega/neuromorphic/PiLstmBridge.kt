@@ -27,13 +27,54 @@ object PiLstmBridge {
 
     val isReady: Boolean get() = ready
 
-    fun setAlpha(v: Float)        { if (ready) nativeSetAlpha(v) }
-    fun setBeta(v: Float)         { if (ready) nativeSetBeta(v) }
-    fun setGamma(v: Float)        { if (ready) nativeSetGamma(v) }
-    fun setDelta(v: Float)        { if (ready) nativeSetDelta(v) }
+    private var lastAlpha = 0.8f
+    private var lastBeta = 0.25f
+
+    fun setAlpha(v: Float) {
+        lastAlpha = v
+        if (ready) {
+            nativeSetAlpha(v)
+            runCatching { IvannaNativeLib.nativeSetAlpha(v) }
+            runCatching { IvannaNpeEngine.setOhcParams(lastAlpha, lastBeta) }
+        }
+    }
+    fun setBeta(v: Float) {
+        lastBeta = v
+        if (ready) {
+            nativeSetBeta(v)
+            runCatching { IvannaNativeLib.nativeSetBeta(v) }
+            runCatching { IvannaNpeEngine.setOhcParams(lastAlpha, lastBeta) }
+        }
+    }
+    fun setGamma(v: Float) {
+        if (ready) {
+            nativeSetGamma(v)
+            runCatching { IvannaNativeLib.nativeSetGamma(v) }
+        }
+    }
+    fun setDelta(v: Float) {
+        if (ready) {
+            nativeSetDelta(v)
+            runCatching { IvannaNativeLib.nativeSetDelta(v) }
+        }
+    }
     private var lastHarmonicGain = 0.2f
-    fun setHarmonicGain(v: Float) { if (ready) { lastHarmonicGain = v; nativeSetHarmonicGain(v) } }
-    fun setHrtfEnabled(en: Boolean) { if (ready) nativeSetHrtfEnabled(en) }
+    fun setHarmonicGain(v: Float) {
+        if (ready) {
+            lastHarmonicGain = v
+            nativeSetHarmonicGain(v)
+            runCatching { IvannaNativeLib.nativeSetHarmonicGain(v) }
+            runCatching { IvannaNpeEngine.setHarmonicGain(v) }
+            runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.setHarmonicGain(v.toDouble()) }
+        }
+    }
+    fun setHrtfEnabled(en: Boolean) {
+        if (ready) {
+            nativeSetHrtfEnabled(en)
+            runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
+            runCatching { IvannaNpeEngine.setBinauralEnabled(en) }
+        }
+    }
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f
     fun getError(): Float = if (ready) nativeGetError() else 0f
 
@@ -78,14 +119,25 @@ object PiLstmBridge {
             runCatching { inst.updateNpeKotlinParams(outputScaling = gainLin) }
                 .onFailure { Log.w(TAG, "setMasterGain updateNpe: ${it.message}") }
         }
+        runCatching { IvannaNpeEngine.setMasterGain(safeDb) }
         lastMasterGainLin = gainLin
     }
 
     /** Amortiguamiento η de la ODE (rango 0..5) — su propósito REAL. */
-    fun setOdeDamping(eta: Float) { if (ready) nativeSetEta(eta.coerceIn(0f, 5f)) }
+    fun setOdeDamping(eta: Float) {
+        if (ready) {
+            nativeSetEta(eta.coerceIn(0f, 5f))
+            runCatching { IvannaNativeLib.nativeSetEta((eta / 5f).coerceIn(0f, 1f)) }
+        }
+    }
 
     /** Techo neuroplástico NP_max (rango 0.1..10) — invalida la semilla residual. */
-    fun setNeuroplasticityMax(npMax: Float) { if (ready) nativeSetNPMax(npMax.coerceIn(0.1f, 10f)) }
+    fun setNeuroplasticityMax(npMax: Float) {
+        if (ready) {
+            nativeSetNPMax(npMax.coerceIn(0.1f, 10f))
+            runCatching { IvannaNativeLib.nativeSetNPMax((npMax / 10f).coerceIn(0.05f, 1f)) }
+        }
+    }
     fun setAgc(targetDb: Float, rate: Float) {
         if (!ready) return
         try {
@@ -99,6 +151,9 @@ object PiLstmBridge {
                         android.util.Log.w(TAG, "AGC updateNpe: ${it.message}")
                     }
             }
+            runCatching { IvannaNpeEngine.setAgcParams(safeTarget, safeRate) }
+            runCatching { IvannaNativeLib.nativeSetNPMax(gain) }
+            runCatching { IvannaNativeLib.nativeSetDelta(safeRate) }
         } catch (t: Throwable) {
             android.util.Log.e("IVANNA_OMEGA_LSTM", "setAgc safe fallback error", t)
         }
@@ -123,11 +178,14 @@ object PiLstmBridge {
         // Bypass NPE: deshabilita motor adaptativo y fuerza ganancia neutra
         if (ready) {
             IvannaNativeLib.nativeSetAdaptEnabled(!bypass)
+            runCatching { IvannaNpeEngine.setBypass(bypass) }
             if (bypass) {
                 savedHarmonicGain = lastHarmonicGain
                 nativeSetHarmonicGain(0f)
+                runCatching { IvannaNativeLib.nativeSetHarmonicGain(0f) }
             } else {
                 nativeSetHarmonicGain(savedHarmonicGain)
+                runCatching { IvannaNativeLib.nativeSetHarmonicGain(savedHarmonicGain) }
             }
         }
     }
@@ -142,7 +200,7 @@ object PiLstmBridge {
         // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition
         val c = clarity.coerceIn(0f, 1f)
         setHarmonicGain(0.1f + c * 0.8f)
-        nativeSetBeta(0.2f + c * 0.6f)
+        setBeta(0.2f + c * 0.6f)
     }
 
     fun setWarmth(warmth: Float) {
@@ -151,9 +209,7 @@ object PiLstmBridge {
         // Mapear calidez (0-1) a compresión OHC y gamma
         val w = warmth.coerceIn(0f, 1f)
         val ohcComp = 0.1f + w * 0.7f
-        nativeSetGamma(0.5f + w * 0.5f)
-        // Nota: nativeSetOhcCompression se añadiría en C++ si existiera,
-        // pero usamos nativeSetAlpha como proxy (ajuste de ganancia maestra)
-        nativeSetAlpha(ohcComp)
+        setGamma(0.5f + w * 0.5f)
+        setAlpha(ohcComp)
     }
 }

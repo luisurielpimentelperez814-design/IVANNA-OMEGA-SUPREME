@@ -117,6 +117,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseState(JNIEnv*, jobject)
     return g_kalman.k.x[0];
 }
 
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseEnergy(JNIEnv*, jobject) {
+    const float x0 = g_kalman.k.x[0];
+    const float v1 = g_kalman.k.x[1] * g_kalman.k.dt;
+    return std::sqrt(x0 * x0 + v1 * v1);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
         JNIEnv*, jobject, jfloat alpha, jfloat beta, jfloat gamma) {
@@ -135,5 +142,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPhaseParameters(
 // state[1] = velocidad (samples/sample) — derivada instantánea para el
 // detector de transitorios de BiquadEnvelopeBank. El bridge normaliza.
 extern "C" float phase_oracle_velocity() {
+    return g_kalman.k.x[1];
+}
+
+extern "C" float phase_oracle_tick(float measurement) {
+    static bool s_init = false;
+    if (!s_init) {
+        kalmanInit();
+        s_init = true;
+    }
+    g_kalman.k.tick(measurement);
     return g_kalman.k.x[1];
 }

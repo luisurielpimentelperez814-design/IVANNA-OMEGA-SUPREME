@@ -61,7 +61,7 @@ fun SpatialAudioPanel(
             IvannaSpatialEngine.enabled = true
             IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
         }
-        if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet)
+        if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
         if (state.safEnabled) {
             runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
             // Propagar q[7] real al daemon en el restore — sin esto el DSP

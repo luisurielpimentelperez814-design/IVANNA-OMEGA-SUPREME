@@ -92,8 +92,9 @@ public:
                                                 // solo si cambia n, nunca allocar por bloque
 
     // ── Parameters ───────────────────────────────────────────────────────────
-    std::atomic<int>   mode{0};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
+    std::atomic<int>   mode{1};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
     float sample_rate = 96000.f;
+    PerceptualCues last_cues{};
 
     // Output mix coefficients (from spec)
     static constexpr float MIX_DRY      = 0.6f;
@@ -179,17 +180,18 @@ public:
         return (state_mean_L() + state_mean_R()) * 0.5f;
     }
 
-    // ── Decode output y_t = 0.6·x + 0.2·S + 0.2·tanh(zmL/R) ────────────
-    // FIX: zmL/zmR — cada canal usa su propia media del estado en lugar del
-    // escalar global zm. Preserva la imagen estéreo generada por compute_F()
-    // y evita que el aporte de estado aplaste el campo binaural.
+    // ── Decode output y_t = state-modulated NHO/Spatial blend ─────────────
+    // FIX: zmL/zmR — cada canal usa su propia media del estado como modulador
+    // dinámico sin inyectar offset DC ni atenuar al 20% la señal espacializada.
     inline void decode(float xL, float xR,
                        float sL, float sR,
                        float& yL, float& yR) noexcept {
         const float zmL = nho_tanh(state_mean_L());
         const float zmR = nho_tanh(state_mean_R());
-        yL = MIX_DRY * xL + MIX_SPATIAL * sL + MIX_STATE * zmL;
-        yR = MIX_DRY * xR + MIX_SPATIAL * sR + MIX_STATE * zmR;
+        const float modL = std::clamp(1.0f + MIX_STATE * zmL, 0.80f, 1.20f);
+        const float modR = std::clamp(1.0f + MIX_STATE * zmR, 0.80f, 1.20f);
+        yL = (MIX_DRY + MIX_SPATIAL) * (sL * modL) + (1.0f - MIX_DRY - MIX_SPATIAL) * xL;
+        yR = (MIX_DRY + MIX_SPATIAL) * (sR * modR) + (1.0f - MIX_DRY - MIX_SPATIAL) * xR;
     }
 
     // ── Main process block ─────────────────────────────────────────────────
@@ -199,7 +201,17 @@ public:
                        float* outL, float* outR, int n) noexcept {
         // Lock-free apply of any pending EvolutionaryKernel genome update
         apply_evo_genome();
-        const int m = mode.load(std::memory_order_relaxed);
+
+        // Extract perceptual cues from block ALWAYS (even in mode 0) so PhaseOracle,
+        // 8-band envelope telemetry, and EvolutionaryKernel stay live in all modes.
+        const PerceptualCues cues = cue_bank.process_block(inL, inR, n);
+        last_cues = cues;
+        evo_update_audio_cues(cues.L, cues.T, cues.S);
+        update_state(cues);
+
+        const bool binauralOn = binauralEnabled_.load(std::memory_order_relaxed);
+        const int rawMode = mode.load(std::memory_order_relaxed);
+        const int m = (binauralOn || binauralRamp_ > 0.0005f) ? std::max(rawMode, 2) : rawMode;
 
         if (m == 0) {
             // Mode 0: passthrough (DSP chain handles everything)
@@ -210,26 +222,14 @@ public:
         // FASE 8 paso 4 (b/3): procesar el bloque completo por HRTFConvolver
         // de una sola llamada (es autocontenida — acumula en su ring buffer
         // interno y drena a exactamente n muestras, confirmado por lectura
-        // directa de hrtf_convolver.cpp). binauralEnabled_ arranca en false
-        // por defecto (commit a/3); esta llamada YA se ejecuta cuando está
-        // activo pero decode() todavía NO consume hrtfBufL_/R_ — eso es el
-        // commit c/3. Resize solo si n cambia, nunca allocar dentro del loop.
-        const bool binauralOn = binauralEnabled_.load(std::memory_order_relaxed);
-        if (binauralOn) {
+        // directa de hrtf_convolver.cpp).
+        if (binauralOn || binauralRamp_ > 0.0005f) {
             if (hrtfBufL_.size() != static_cast<size_t>(n)) {
                 hrtfBufL_.resize(n);
                 hrtfBufR_.resize(n);
             }
             hrtf.process(inL, inR, hrtfBufL_.data(), hrtfBufR_.data(), n);
         }
-
-        // Extract perceptual cues from block
-        const PerceptualCues cues = cue_bank.process_block(inL, inR, n);
-
-        // Alimenta al EvolutionaryKernel con cues reales — antes el GA optimizaba
-        // contra una función fija sin relación con lo que sonaba (fitness audio-
-        // agnóstico). Ahora busca genomas coherentes con el audio en curso.
-        evo_update_audio_cues(cues.L, cues.T, cues.S);
 
         for (int i = 0; i < n; ++i) {
             float xL = inL[i], xR = inR[i];
@@ -243,14 +243,6 @@ public:
                 float sL, sR;
                 spatial.process_sample(nhL, nhR, sL, sR, sample_rate);
 
-                // FASE 8 paso 4 (c/3): reemplazo real, nunca suma. binaural
-                // solo aplica si m>=2 (precedencia explícita — necesita las
-                // cues perceptuales de CueBasedSpatial ya activas como base
-                // de la rampa). Un solo one-pole compartido entre L y R
-                // (kBinauralRampCoeff) — replicar el patrón de wetNow_ en
-                // RirConvolver; dos one-pole independientes desalinean fase
-                // entre canales y colapsan la imagen estéreo (bug ya
-                // corregido ahí una vez, no repetirlo aquí).
                 const float target = binauralOn ? 1.f : 0.f;
                 binauralRamp_ += (target - binauralRamp_) * kBinauralRampCoeff;
 
@@ -260,14 +252,9 @@ public:
                     finalR = sR * (1.f - binauralRamp_) + hrtfBufR_[i] * binauralRamp_;
                 }
 
-                // State update with cues
-                update_state(cues);
-
-                // Decode: y = 0.6·x + 0.2·S + 0.2·tanh(mean(z))
                 decode(xL, xR, finalL, finalR, outL[i], outR[i]);
             } else {
                 // Mode 1: NHO only, no spatial
-                update_state(cues);
                 decode(xL, xR, nhL, nhR, outL[i], outR[i]);
             }
         }

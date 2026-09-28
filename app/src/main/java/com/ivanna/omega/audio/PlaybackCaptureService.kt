@@ -692,6 +692,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
                     // ETAPA 4: VIBRATORY & NPE
                     budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
+                        if (IvannaNpeEngine.isReady) {
+                            runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
+                        }
                         IvannaBridgePlayer.activeInstance?.let { player ->
                             if (player.npeKotlinEnabled) {
                                 runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
@@ -758,9 +761,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         )
                     }
 
-                    if (IvannaNpeEngine.isReady) {
-                        runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, effectiveFrames) }
-                    }
                     runCatching { SpatialAudioEngineV2.feedCapturedBlock(buffer, effectiveFrames) }
                     runCatching { voiceProtection?.feed(buffer, effectiveFrames, SAMPLE_RATE) }
                     val monoFrames = minOf(effectiveFrames, mono.size)

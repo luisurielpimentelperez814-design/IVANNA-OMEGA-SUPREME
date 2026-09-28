@@ -21,6 +21,7 @@
 
 // C linkage to phase_oracle.cpp — zero overhead, same TU visibility as JNI
 extern "C" float phase_oracle_velocity();
+extern "C" float phase_oracle_tick(float measurement);
 
 namespace ivanna {
 
@@ -119,7 +120,7 @@ public:
         // PhaseOracle refinement of transient cue:
         // state[1] (velocity = audio derivative) is a faster, O(1) transient
         // detector that bypasses envelope attack lag. Blend at KALMAN_BLEND.
-        const float vel = phase_oracle_velocity();
+        const float vel = phase_oracle_tick((xL + xR) * 0.5f);
         const float abs_vel = vel < 0.f ? -vel : vel;
         // Soft-normalize: empirical peak ~5000 at 48kHz, ±1 signal
         const float x = abs_vel * (1.0f / 5000.0f);

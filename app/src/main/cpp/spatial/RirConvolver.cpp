@@ -76,6 +76,19 @@ RirConvolver::RirConvolver() {
     std::memset(irImR_, 0, sizeof irImR_);
     std::memset(overlapL_, 0, sizeof overlapL_);
     std::memset(overlapR_, 0, sizeof overlapR_);
+    const size_t totalFloats = static_cast<size_t>(TAIL_PARTS) * FFT_SIZE;
+    tailIrReL_.assign(totalFloats, 0.f);
+    tailIrImL_.assign(totalFloats, 0.f);
+    tailIrReR_.assign(totalFloats, 0.f);
+    tailIrImR_.assign(totalFloats, 0.f);
+    pendTailIrReL_.assign(totalFloats, 0.f);
+    pendTailIrImL_.assign(totalFloats, 0.f);
+    pendTailIrReR_.assign(totalFloats, 0.f);
+    pendTailIrImR_.assign(totalFloats, 0.f);
+    fdlReL_.assign(totalFloats, 0.f);
+    fdlImL_.assign(totalFloats, 0.f);
+    fdlReR_.assign(totalFloats, 0.f);
+    fdlImR_.assign(totalFloats, 0.f);
 }
 
 void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
@@ -129,33 +142,84 @@ void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexc
 
 void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept {
     if (!irL || !irR || irLen <= 0) return;
-    // ── Particionado no uniforme: head (latencia 0) + cola (overlap-save) ──
-    const int headLen = irLen < MAX_IR ? irLen : MAX_IR;
-    const int tailLen = (irLen > MAX_IR) ? (irLen - MAX_IR) : 0;
-    tailPartsActive_ = tailLen > 0 ? (tailLen + BLOCK - 1) / BLOCK : 0;
-    if (tailPartsActive_ > TAIL_PARTS) tailPartsActive_ = TAIL_PARTS;
-    if (tailPartsActive_ > 0 && tailIrReL_.size() < (size_t)(TAIL_PARTS * FFT_SIZE)) {
-        tailIrReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        tailIrImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        tailIrReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        tailIrImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        fdlReL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        fdlImL_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        fdlReR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
-        fdlImR_.assign((size_t)TAIL_PARTS * FFT_SIZE, 0.f);
+
+    // ── FIX CRÍTICO (2026-09-28): Eliminación de DC Offset + Normalización L2 Unit-Energy ──
+    // Los WAVs de RIR medidos en disco no están normalizados en energía L2: salas con
+    // mayor RT60 acumulan hasta +14 dB de ganancia de convolución discreta y componente DC.
+    // Al subir los dos sliders (RT60 y Wet) en la UI, el convolver inyectaba un sonido/ruido
+    // creciente que saturaba la cola FDL. Además, el hilo worker escribía directamente
+    // sobre tailIrReL_ mientras el hilo RT de audio lo leía (data race).
+    // Solución:
+    //   1) Copia local sin DC + ventana half-cosine de 64 muestras al final + normalización L2
+    //      para que cualquier sala tenga exactamente energía unitaria (0 dB).
+    //   2) Escribir las particiones de cola en pendTailIr* y hacer swap atómico en process().
+    const int safeLen = std::min(irLen, MAX_IR_TOTAL);
+    std::vector<float> normIrL(safeLen), normIrR(safeLen);
+    double meanL = 0.0, meanR = 0.0;
+    for (int i = 0; i < safeLen; ++i) {
+        meanL += std::isfinite(irL[i]) ? irL[i] : 0.0f;
+        meanR += std::isfinite(irR[i]) ? irR[i] : 0.0f;
     }
-    // Espectro de cada particion de cola (hilo de control — seguro usar fft aqui)
-    for (int p = 0; p < tailPartsActive_; ++p) {
+    meanL /= static_cast<double>(safeLen);
+    meanR /= static_cast<double>(safeLen);
+
+    double energySum = 0.0;
+    const int fadeLen = std::min(64, safeLen / 4);
+    for (int i = 0; i < safeLen; ++i) {
+        float vL = (std::isfinite(irL[i]) ? irL[i] : 0.0f) - static_cast<float>(meanL);
+        float vR = (std::isfinite(irR[i]) ? irR[i] : 0.0f) - static_cast<float>(meanR);
+        if (fadeLen > 0 && i >= safeLen - fadeLen) {
+            const float t = static_cast<float>(safeLen - 1 - i) / static_cast<float>(fadeLen);
+            const float w = 0.5f * (1.0f - std::cos(3.14159265f * t));
+            vL *= w;
+            vR *= w;
+        }
+        normIrL[i] = vL;
+        normIrR[i] = vR;
+        energySum += static_cast<double>(vL) * vL + static_cast<double>(vR) * vR;
+    }
+    const float rmsEnergy = static_cast<float>(std::sqrt(std::max(1e-9, 0.5 * energySum)));
+    // Target L2 norm = 0.72f (-2.85 dB headroom para evitar saturación en transitorios densos)
+    const float invL2 = 0.72f / rmsEnergy;
+    for (int i = 0; i < safeLen; ++i) {
+        normIrL[i] *= invL2;
+        normIrR[i] *= invL2;
+    }
+
+    // ── Particionado no uniforme: head (latencia 0) + cola (overlap-save) ──
+    const int tailLen = (safeLen > MAX_IR) ? (safeLen - MAX_IR) : 0;
+    int newTailParts = tailLen > 0 ? (tailLen + BLOCK - 1) / BLOCK : 0;
+    if (newTailParts > TAIL_PARTS) newTailParts = TAIL_PARTS;
+
+    const size_t totalFloats = static_cast<size_t>(TAIL_PARTS) * FFT_SIZE;
+    if (pendTailIrReL_.size() < totalFloats) {
+        pendTailIrReL_.assign(totalFloats, 0.f);
+        pendTailIrImL_.assign(totalFloats, 0.f);
+        pendTailIrReR_.assign(totalFloats, 0.f);
+        pendTailIrImR_.assign(totalFloats, 0.f);
+    } else {
+        std::fill(pendTailIrReL_.begin(), pendTailIrReL_.end(), 0.f);
+        std::fill(pendTailIrImL_.begin(), pendTailIrImL_.end(), 0.f);
+        std::fill(pendTailIrReR_.begin(), pendTailIrReR_.end(), 0.f);
+        std::fill(pendTailIrImR_.begin(), pendTailIrImR_.end(), 0.f);
+    }
+
+    // Espectro de cada partición de cola en buffers PENDIENTES (sin data-race con el hilo RT)
+    for (int p = 0; p < newTailParts; ++p) {
         const int off = MAX_IR + p * BLOCK;
-        const int plen = (off + BLOCK <= irLen) ? BLOCK : (irLen - off);
-        float* tre = &tailIrReL_[(size_t)p * FFT_SIZE]; float* tim = &tailIrImL_[(size_t)p * FFT_SIZE];
-        std::memset(tre, 0, FFT_SIZE * sizeof(float)); std::memset(tim, 0, FFT_SIZE * sizeof(float));
-        for (int i = 0; i < plen; ++i) tre[i] = irL[off + i];
+        const int plen = (off + BLOCK <= safeLen) ? BLOCK : (safeLen - off);
+        // Atenuación progresiva por partición para impedir acumulación resonante cuando se suben RT60 y Wet
+        const float partDamp = 1.0f / std::sqrt(1.0f + 0.35f * static_cast<float>(p));
+        float* tre = &pendTailIrReL_[(size_t)p * FFT_SIZE];
+        float* tim = &pendTailIrImL_[(size_t)p * FFT_SIZE];
+        for (int i = 0; i < plen; ++i) tre[i] = normIrL[off + i] * partDamp;
         fftReal(tre, tim, FFT_SIZE, false);
-        float* rre = &tailIrReR_[(size_t)p * FFT_SIZE]; float* rim = &tailIrImR_[(size_t)p * FFT_SIZE];
-        std::memset(rre, 0, FFT_SIZE * sizeof(float)); std::memset(rim, 0, FFT_SIZE * sizeof(float));
-        for (int i = 0; i < plen; ++i) rre[i] = irR[off + i];
+
+        float* rre = &pendTailIrReR_[(size_t)p * FFT_SIZE];
+        float* rim = &pendTailIrImR_[(size_t)p * FFT_SIZE];
+        for (int i = 0; i < plen; ++i) rre[i] = normIrR[off + i] * partDamp;
         fftReal(rre, rim, FFT_SIZE, false);
+
         // ── BRIR: decorrelar la cola R con red allpass en frecuencia ──
         if (decorrel_.load(std::memory_order_relaxed) > 0.001f) {
             const float amt = decorrel_.load(std::memory_order_relaxed);
@@ -173,8 +237,9 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
             }
         }
     }
-    (void)headLen;
-    const int len = std::min(irLen, MAX_IR);
+    pendTailPartsActive_ = newTailParts;
+
+    const int len = std::min(safeLen, MAX_IR);
     const float eBoost = earlyBoost_.load(std::memory_order_relaxed);
 
     // Calcular FFT de la IR en los buffers pendientes (hilo de control)
@@ -186,23 +251,19 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     for (int i = 0; i < len; ++i) {
         // Aplicar realce de claridad directa/temprana acoplado al perfil SOFA-SAF
         const float gain = (i < 64) ? eBoost : 1.0f;
-        pendIrReL_[i] = irL[i] * gain;
-        pendIrReR_[i] = irR[i] * gain;
+        pendIrReL_[i] = normIrL[i] * gain;
+        pendIrReR_[i] = normIrR[i] * gain;
     }
 
     // ── Binauralización SOFA-SAF de reflexiones tempranas (i >= 48, >1 ms @48k) ──
-    // Los WAV de RIR medidos tienen alta correlación L/R en los primeros 10 ms.
-    // Inyectamos el dipolo lateral ortogonalizado del manifold SOFA-SAF (kMasterSofaP0)
-    // únicamente en las reflexiones tempranas (preservando el impulso directo 0..47 intacto)
-    // para lograr IACC_early auténtico de cabeza antropomórfica (~0.76).
     if (len > 64 && decorrel_.load(std::memory_order_relaxed) > 0.05f) {
-        const float latScale = 0.28f * decorrel_.load(std::memory_order_relaxed);
+        const float latScale = 0.06f * decorrel_.load(std::memory_order_relaxed);
         for (int i = len - 1; i >= 48; --i) {
             float accLat = 0.0f;
             const int maxK = std::min(i - 48, 31);
             for (int k = 0; k <= maxK; ++k) {
                 const float mid = 0.5f * (pendIrReL_[i - k] + pendIrReR_[i - k]);
-                const float dip = (ivanna::master::kMasterSofaP0[k] - ivanna::master::kMasterSofaP0[128 + k]) * 85.0f;
+                const float dip = (ivanna::master::kMasterSofaP0[k] - ivanna::master::kMasterSofaP0[128 + k]) * 8.0f;
                 accLat += mid * dip;
             }
             pendIrReL_[i] += latScale * accLat;
@@ -211,6 +272,45 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     }
     fftReal(pendIrReL_, pendIrImL_, FFT_SIZE, false);
     fftReal(pendIrReR_, pendIrImR_, FFT_SIZE, false);
+
+    // ── Normalización de Pico Espectral Global (Head + Tail) ──
+    // Impide que modos resonantes de salas grandes acumulen > 0 dB al subir RT60 + Wet.
+    float maxBinPower = 1e-6f;
+    for (int k = 0; k < FFT_SIZE; ++k) {
+        float pL = pendIrReL_[k] * pendIrReL_[k] + pendIrImL_[k] * pendIrImL_[k];
+        float pR = pendIrReR_[k] * pendIrReR_[k] + pendIrImR_[k] * pendIrImR_[k];
+        for (int p = 0; p < newTailParts; ++p) {
+            const float* tre = &pendTailIrReL_[(size_t)p * FFT_SIZE];
+            const float* tim = &pendTailIrImL_[(size_t)p * FFT_SIZE];
+            const float* rre = &pendTailIrReR_[(size_t)p * FFT_SIZE];
+            const float* rim = &pendTailIrImR_[(size_t)p * FFT_SIZE];
+            pL += tre[k] * tre[k] + tim[k] * tim[k];
+            pR += rre[k] * rre[k] + rim[k] * rim[k];
+        }
+        const float pk = std::max(pL, pR);
+        if (pk > maxBinPower) maxBinPower = pk;
+    }
+    const float maxBinMag = std::sqrt(maxBinPower);
+    if (maxBinMag > 0.85f) {
+        const float specScale = 0.85f / maxBinMag;
+        for (int k = 0; k < FFT_SIZE; ++k) {
+            pendIrReL_[k] *= specScale;
+            pendIrImL_[k] *= specScale;
+            pendIrReR_[k] *= specScale;
+            pendIrImR_[k] *= specScale;
+        }
+        for (int p = 0; p < newTailParts; ++p) {
+            float* tre = &pendTailIrReL_[(size_t)p * FFT_SIZE];
+            float* tim = &pendTailIrImL_[(size_t)p * FFT_SIZE];
+            float* rre = &pendTailIrReR_[(size_t)p * FFT_SIZE];
+            float* rim = &pendTailIrImR_[(size_t)p * FFT_SIZE];
+            for (int k = 0; k < FFT_SIZE; ++k) {
+                tre[k] *= specScale; tim[k] *= specScale;
+                rre[k] *= specScale; rim[k] *= specScale;
+            }
+        }
+    }
+
     pendOverlapLen_ = len - 1;
 
     // Señalar al hilo de audio que hay una nueva IR lista
@@ -219,111 +319,135 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
 }
 
 void RirConvolver::unload() noexcept {
+    wetDry_.store(0.0f, std::memory_order_relaxed);
     loaded_.store(false, std::memory_order_release);
     pending_.store(false, std::memory_order_relaxed);
+    clearHistoryPending_.store(true, std::memory_order_release);
     std::memset(overlapL_, 0, sizeof overlapL_);
     std::memset(overlapR_, 0, sizeof overlapR_);
+    std::memset(tailInL_, 0, sizeof tailInL_);
+    std::memset(tailInR_, 0, sizeof tailInR_);
+    std::memset(tailHistL_, 0, sizeof tailHistL_);
+    std::memset(tailHistR_, 0, sizeof tailHistR_);
+    std::memset(tailOutL_, 0, sizeof tailOutL_);
+    std::memset(tailOutR_, 0, sizeof tailOutR_);
+    tailPos_ = 0;
     std::memset(crossHistL_, 0, sizeof crossHistL_);
     std::memset(crossHistR_, 0, sizeof crossHistR_);
     crossWriteIdx_ = 0;
     xtcLpL_ = 0.0f; xtcLpR_ = 0.0f;
     xtcBassL_ = 0.0f; xtcBassR_ = 0.0f;
+    dcX1L_ = 0.0f; dcY1L_ = 0.0f;
+    dcX1R_ = 0.0f; dcY1R_ = 0.0f;
+    wetNow_ = 0.0f;
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {
     enableRirDenormalGuard();   // FTZ/DAZ en el hilo de audio
-    const float wetTarget = wetDry_.load(std::memory_order_relaxed);
+    const float wetTarget = std::clamp(wetDry_.load(std::memory_order_relaxed), 0.0f, 1.0f);
 
-    // Anti-zipper: coeficiente one-pole una sola vez (~10 ms a 48 kHz OS).
-    // wetSmooth_==0 → primera pasada; se deriva del sampleRate si está
-    // disponible, si no 0.9995 es equivalente a ~10 ms.
+    if (clearHistoryPending_.exchange(false, std::memory_order_acq_rel)) {
+        std::memset(overlapL_, 0, sizeof overlapL_);
+        std::memset(overlapR_, 0, sizeof overlapR_);
+        std::memset(tailInL_, 0, sizeof tailInL_);
+        std::memset(tailInR_, 0, sizeof tailInR_);
+        std::memset(tailHistL_, 0, sizeof tailHistL_);
+        std::memset(tailHistR_, 0, sizeof tailHistR_);
+        std::memset(tailOutL_, 0, sizeof tailOutL_);
+        std::memset(tailOutR_, 0, sizeof tailOutR_);
+        tailPos_ = 0;
+        std::memset(crossHistL_, 0, sizeof crossHistL_);
+        std::memset(crossHistR_, 0, sizeof crossHistR_);
+        if (!fdlReL_.empty()) std::fill(fdlReL_.begin(), fdlReL_.end(), 0.f);
+        if (!fdlImL_.empty()) std::fill(fdlImL_.begin(), fdlImL_.end(), 0.f);
+        if (!fdlReR_.empty()) std::fill(fdlReR_.begin(), fdlReR_.end(), 0.f);
+        if (!fdlImR_.empty()) std::fill(fdlImR_.begin(), fdlImR_.end(), 0.f);
+        fdlIndex_ = 0;
+        crossWriteIdx_ = 0;
+        xtcLpL_ = 0.0f; xtcLpR_ = 0.0f;
+        xtcBassL_ = 0.0f; xtcBassR_ = 0.0f;
+        dcX1L_ = 0.0f; dcY1L_ = 0.0f;
+        dcX1R_ = 0.0f; dcY1R_ = 0.0f;
+        wetNow_ = 0.0f;
+    }
+
     if (wetSmooth_ <= 0.f) {
         wetSmooth_ = (float)std::exp(-1.0 / (48000.0 * 0.010));  // ~10 ms @48k
     }
-    // Snap inicial: si el efecto acaba de activarse, arrancar en el target
-    // para no arrastrar un barrido largo desde 0 (evita "fade-in" espurio).
-    if (wetNow_ <= 0.00001f && wetTarget > 0.00001f) wetNow_ = wetTarget;
 
-    // Bypass limpio: solo cuando tanto el target como el suavizado están en 0
-    if (wetTarget < 1e-4f && wetNow_ < 1e-4f) return;
+    // Bypass limpio: cuando tanto el target como el suavizado están en 0
+    if (wetTarget < 1e-4f && wetNow_ < 1e-4f) {
+        wetNow_ = 0.0f;
+        return;
+    }
     if (!loaded_.load(std::memory_order_acquire)) return;
 
     // Aplicar IR pendiente si load() fue llamado desde el hilo de control.
     if (pending_.load(std::memory_order_acquire)) {
-        const bool hadIr = (overlapLen_ > 0) || xfadeBlocks_ > 0;
-        if (hadIr) {
+        const bool hadIr = (overlapLen_ > 0);
+        if (hadIr && xfadeBlocks_ == 0) {
             std::memcpy(oldIrReL_, irReL_, sizeof oldIrReL_);
             std::memcpy(oldIrImL_, irImL_, sizeof oldIrImL_);
             std::memcpy(oldIrReR_, irReR_, sizeof oldIrReR_);
             std::memcpy(oldIrImR_, irImR_, sizeof oldIrImR_);
             xfadeBlocks_ = XFADE_BLOCKS;
-        } else {
-            xfadeBlocks_ = 0;
-            overlapLen_  = pendOverlapLen_;
         }
+        overlapLen_ = pendOverlapLen_;
         std::memcpy(irReL_, pendIrReL_, sizeof irReL_);
         std::memcpy(irImL_, pendIrImL_, sizeof irImL_);
         std::memcpy(irReR_, pendIrReR_, sizeof irReR_);
         std::memcpy(irImR_, pendIrImR_, sizeof irImR_);
+        const size_t totalFloats = static_cast<size_t>(TAIL_PARTS) * FFT_SIZE;
+        if (pendTailIrReL_.size() >= totalFloats && tailIrReL_.size() >= totalFloats) {
+            std::memcpy(tailIrReL_.data(), pendTailIrReL_.data(), totalFloats * sizeof(float));
+            std::memcpy(tailIrImL_.data(), pendTailIrImL_.data(), totalFloats * sizeof(float));
+            std::memcpy(tailIrReR_.data(), pendTailIrReR_.data(), totalFloats * sizeof(float));
+            std::memcpy(tailIrImR_.data(), pendTailIrImR_.data(), totalFloats * sizeof(float));
+        }
+        tailPartsActive_ = pendTailPartsActive_;
         pending_.store(false, std::memory_order_release);
     }
 
-    // FIX (partial block bypass): antes solo se procesaban min(frames, BLOCK)
-    // muestras. Si el caller pasaba más de BLOCK frames (lo hace RirWorker con
-    // bloques de 1024), las muestras [BLOCK..frames-1] quedaban sin convolución —
-    // reverb parcial, el tail de sala desaparecía en la segunda mitad del bloque.
-    // Fix: loop over sub-blocks of BLOCK frames hasta cubrir todo `frames`.
     int remaining = frames;
     int offset    = 0;
 
     while (remaining > 0) {
         const int n = (remaining < BLOCK) ? remaining : BLOCK;
+        const int ol = (overlapLen_ < MAX_IR) ? overlapLen_ : MAX_IR - 1;
 
-        // Convolución overlap-save para este sub-bloque — L y R comparten
-        // el MISMO wetNow_ por muestra: FIX (stereo drift).
-        // Bug anterior: el loop de L avanzaba wetNow_ N veces, y el de R
-        // arrancaba desde el valor ya driftado → L y R tenían wet-levels
-        // distintos → separación estéreo se corrompía durante transiciones
-        // (drag del slider, cambio de preset). Fix: computar wet una vez por
-        // par de muestras (un solo loop que procesa L y R juntos), en vez de
-        // dos loops consecutivos que avanzan el one-pole por separado.
-
-        // ── Overlap-save L ────────────────────────────────────────────────
+        // ── Overlap-save Head L (latencia 0, soporta cualquier n <= BLOCK) ──
         std::memset(workRe_, 0, FFT_SIZE * sizeof(float));
         std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
-        const int ol = (overlapLen_ < MAX_IR) ? overlapLen_ : MAX_IR - 1;
-        std::memcpy(workRe_, overlapL_, ol * sizeof(float));
-        for (int i = 0; i < n; ++i) workRe_[ol + i] = L[offset + i];
-        const int newOl = (n < MAX_IR) ? n : MAX_IR - 1;
-        std::memcpy(overlapL_, workRe_ + ol + n - newOl, newOl * sizeof(float));
-        fftReal(workRe_, workIm_, FFT_SIZE, false);
-        // Capturar espectro de entrada X_L(k) en el FDL ANTES de multiplicar por H_head
-        if (tailPartsActive_ > 0 && fdlReL_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
-            std::memcpy(&fdlReL_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
-            std::memcpy(&fdlImL_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+        if (ol > 0) {
+            std::memcpy(workRe_, overlapL_, ol * sizeof(float));
         }
+        for (int i = 0; i < n; ++i) workRe_[ol + i] = L[offset + i];
+        // FIX CRÍTICO: conservar SIEMPRE las últimas `ol` muestras contiguas (workRe_ + n),
+        // nunca `min(n, MAX_IR-1)` que dejaba congelado overlapL_[n..ol-1] cuando n=320 < 511.
+        if (ol > 0) {
+            std::memcpy(overlapL_, workRe_ + n, ol * sizeof(float));
+        }
+        fftReal(workRe_, workIm_, FFT_SIZE, false);
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReL_[i] - workIm_[i]*irImL_[i];
             float yi = workRe_[i]*irImL_[i] + workIm_[i]*irReL_[i];
             workRe_[i] = yr; workIm_[i] = yi;
         }
         fftReal(workRe_, workIm_, FFT_SIZE, true);
-        // Guardar salida L convolucionada temporalmente
         float convL[BLOCK];
         for (int i = 0; i < n; ++i) convL[i] = workRe_[ol + i];
 
-        // ── Overlap-save R ────────────────────────────────────────────────
+        // ── Overlap-save Head R (latencia 0, soporta cualquier n <= BLOCK) ──
         std::memset(workRe_, 0, FFT_SIZE * sizeof(float));
         std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
-        std::memcpy(workRe_, overlapR_, ol * sizeof(float));
-        for (int i = 0; i < n; ++i) workRe_[ol + i] = R[offset + i];
-        std::memcpy(overlapR_, workRe_ + ol + n - newOl, newOl * sizeof(float));
-        fftReal(workRe_, workIm_, FFT_SIZE, false);
-        // Capturar espectro de entrada X_R(k) en el FDL ANTES de multiplicar por H_head
-        if (tailPartsActive_ > 0 && fdlReR_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
-            std::memcpy(&fdlReR_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
-            std::memcpy(&fdlImR_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+        if (ol > 0) {
+            std::memcpy(workRe_, overlapR_, ol * sizeof(float));
         }
+        for (int i = 0; i < n; ++i) workRe_[ol + i] = R[offset + i];
+        if (ol > 0) {
+            std::memcpy(overlapR_, workRe_ + n, ol * sizeof(float));
+        }
+        fftReal(workRe_, workIm_, FFT_SIZE, false);
         for (int i = 0; i < FFT_SIZE; ++i) {
             float yr = workRe_[i]*irReR_[i] - workIm_[i]*irImR_[i];
             float yi = workRe_[i]*irImR_[i] + workIm_[i]*irReR_[i];
@@ -333,36 +457,64 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         float convR[BLOCK];
         for (int i = 0; i < n; ++i) convR[i] = workRe_[ol + i];
 
-        // ── Cola particionada estéreo (L y R con decorrelación BRIR allpass) ──
+        // ── Cola particionada estéreo alineada exactamente a BLOCK=512 muestras ──
+        // Acumula muestras de entrada en tailInL_/R_ y ejecuta el paso FDL de 1024 puntos
+        // únicamente cuando se completan 512 muestras exactas, eliminando los huecos de ceros
+        // y el zumbido periódico de 150 Hz cuando el caller entrega bloques de 256 o 320 frames.
         if (tailPartsActive_ > 0 && loaded_.load(std::memory_order_acquire) &&
             fdlReL_.size() >= (size_t)TAIL_PARTS * FFT_SIZE &&
             fdlReR_.size() >= (size_t)TAIL_PARTS * FFT_SIZE) {
-            float accReL[FFT_SIZE]{}, accImL[FFT_SIZE]{};
-            float accReR[FFT_SIZE]{}, accImR[FFT_SIZE]{};
-            for (int p = 0; p < tailPartsActive_; ++p) {
-                const int src = (fdlIndex_ - p + TAIL_PARTS) % TAIL_PARTS;
-                const float* xrL = &fdlReL_[(size_t)src * FFT_SIZE];
-                const float* xiL = &fdlImL_[(size_t)src * FFT_SIZE];
-                const float* hrL = &tailIrReL_[(size_t)p * FFT_SIZE];
-                const float* hiL = &tailIrImL_[(size_t)p * FFT_SIZE];
-                const float* xrR = &fdlReR_[(size_t)src * FFT_SIZE];
-                const float* xiR = &fdlImR_[(size_t)src * FFT_SIZE];
-                const float* hrR = &tailIrReR_[(size_t)p * FFT_SIZE];
-                const float* hiR = &tailIrImR_[(size_t)p * FFT_SIZE];
-                for (int k = 0; k < FFT_SIZE; ++k) {
-                    accReL[k] += xrL[k] * hrL[k] - xiL[k] * hiL[k];
-                    accImL[k] += xrL[k] * hiL[k] + xiL[k] * hrL[k];
-                    accReR[k] += xrR[k] * hrR[k] - xiR[k] * hiR[k];
-                    accImR[k] += xrR[k] * hiR[k] + xiR[k] * hrR[k];
+            for (int i = 0; i < n; ++i) {
+                convL[i] += tailOutL_[tailPos_];
+                convR[i] += tailOutR_[tailPos_];
+                tailInL_[tailPos_] = L[offset + i];
+                tailInR_[tailPos_] = R[offset + i];
+                if (++tailPos_ >= BLOCK) {
+                    tailPos_ = 0;
+                    // FFT L de ventana 1024 = [tailHistL_(512), tailInL_(512)]
+                    std::memcpy(workRe_, tailHistL_, BLOCK * sizeof(float));
+                    std::memcpy(workRe_ + BLOCK, tailInL_, BLOCK * sizeof(float));
+                    std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
+                    std::memcpy(tailHistL_, tailInL_, BLOCK * sizeof(float));
+                    fftReal(workRe_, workIm_, FFT_SIZE, false);
+                    std::memcpy(&fdlReL_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
+                    std::memcpy(&fdlImL_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+
+                    // FFT R de ventana 1024 = [tailHistR_(512), tailInR_(512)]
+                    std::memcpy(workRe_, tailHistR_, BLOCK * sizeof(float));
+                    std::memcpy(workRe_ + BLOCK, tailInR_, BLOCK * sizeof(float));
+                    std::memset(workIm_, 0, FFT_SIZE * sizeof(float));
+                    std::memcpy(tailHistR_, tailInR_, BLOCK * sizeof(float));
+                    fftReal(workRe_, workIm_, FFT_SIZE, false);
+                    std::memcpy(&fdlReR_[(size_t)fdlIndex_ * FFT_SIZE], workRe_, FFT_SIZE * sizeof(float));
+                    std::memcpy(&fdlImR_[(size_t)fdlIndex_ * FFT_SIZE], workIm_, FFT_SIZE * sizeof(float));
+
+                    float accReL[FFT_SIZE]{}, accImL[FFT_SIZE]{};
+                    float accReR[FFT_SIZE]{}, accImR[FFT_SIZE]{};
+                    for (int p = 0; p < tailPartsActive_; ++p) {
+                        const int src = (fdlIndex_ - p + TAIL_PARTS) % TAIL_PARTS;
+                        const float* xrL = &fdlReL_[(size_t)src * FFT_SIZE];
+                        const float* xiL = &fdlImL_[(size_t)src * FFT_SIZE];
+                        const float* hrL = &tailIrReL_[(size_t)p * FFT_SIZE];
+                        const float* hiL = &tailIrImL_[(size_t)p * FFT_SIZE];
+                        const float* xrR = &fdlReR_[(size_t)src * FFT_SIZE];
+                        const float* xiR = &fdlImR_[(size_t)src * FFT_SIZE];
+                        const float* hrR = &tailIrReR_[(size_t)p * FFT_SIZE];
+                        const float* hiR = &tailIrImR_[(size_t)p * FFT_SIZE];
+                        for (int k = 0; k < FFT_SIZE; ++k) {
+                            accReL[k] += xrL[k] * hrL[k] - xiL[k] * hiL[k];
+                            accImL[k] += xrL[k] * hiL[k] + xiL[k] * hrL[k];
+                            accReR[k] += xrR[k] * hrR[k] - xiR[k] * hiR[k];
+                            accImR[k] += xrR[k] * hiR[k] + xiR[k] * hrR[k];
+                        }
+                    }
+                    fftReal(accReL, accImL, FFT_SIZE, true);
+                    fftReal(accReR, accImR, FFT_SIZE, true);
+                    std::memcpy(tailOutL_, accReL + BLOCK, BLOCK * sizeof(float));
+                    std::memcpy(tailOutR_, accReR + BLOCK, BLOCK * sizeof(float));
+                    fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
                 }
             }
-            fftReal(accReL, accImL, FFT_SIZE, true);
-            fftReal(accReR, accImR, FFT_SIZE, true);
-            for (int i = 0; i < n; ++i) {
-                convL[i] += accReL[ol + i];
-                convR[i] += accReR[ol + i];
-            }
-            fdlIndex_ = (fdlIndex_ + 1) % TAIL_PARTS;
         }
 
         // ── Mezcla wet/dry + Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + Holografía Transaural XTC ──
@@ -372,20 +524,32 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         const float xtcAmt  = xtcStrength_.load(std::memory_order_relaxed);
         constexpr float kBassCoeff = 0.028f; // ~220 Hz @ 48 kHz (preserva impacto en graves)
         constexpr float kShadowLp  = 0.36f;  // Sombra acústica craneal de Woodworth (~3.2 kHz)
+        constexpr float kDcPole    = 0.9993f; // ~5 Hz DC blocker en la cola reverberante
 
         for (int i = 0; i < n; ++i) {
             wn = wetTarget + ws * (wn - wetTarget);
-            const float dry = 1.f - wn;
+            // Ley de mezcla equa-potencia suave: evita que al subir el slider Wet al 100%
+            // la cola reverberante sume +6 dB sobre la señal directa.
+            const float dry = 1.0f - 0.68f * wn;
+            const float wetGain = 0.82f * wn;
             const float inL = L[offset + i];
             const float inR = R[offset + i];
 
+            // Bloqueo DC de primer orden sobre la salida convolucionada antes de entrar al historial
+            const float rawConvL = std::isfinite(convL[i]) ? convL[i] : 0.0f;
+            const float rawConvR = std::isfinite(convR[i]) ? convR[i] : 0.0f;
+            const float cleanL = rawConvL - dcX1L_ + kDcPole * dcY1L_;
+            dcX1L_ = rawConvL; dcY1L_ = cleanL;
+            const float cleanR = rawConvR - dcX1R_ + kDcPole * dcY1R_;
+            dcX1R_ = rawConvR; dcY1R_ = cleanR;
+
             // Actualizar línea de retardo circular de 32 taps para acoplamiento contralateral (LR/RL) y XTC
             crossWriteIdx_ = (crossWriteIdx_ - 1) & 31;
-            crossHistL_[crossWriteIdx_] = convL[i];
-            crossHistR_[crossWriteIdx_] = convR[i];
+            crossHistL_[crossWriteIdx_] = cleanL;
+            crossHistR_[crossWriteIdx_] = cleanR;
 
-            float wetL = convL[i];
-            float wetR = convR[i];
+            float wetL = cleanL;
+            float wetR = cleanR;
 
             // 1. Matriz True-Stereo 4-Caminos (LL + RL -> L, RR + LR -> R) con kernel SOFA de 32 taps
             if (tsCross > 0.001f) {
@@ -401,8 +565,8 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
                 wetR += tsCross * crossFromL;
             }
 
-            float outL = dry * inL + wn * wetL;
-            float outR = dry * inR + wn * wetR;
+            float outL = dry * inL + wetGain * wetL;
+            float outR = dry * inR + wetGain * wetR;
 
             // 2. Holografía Transaural Recursiva de Fase Mínima (XTC tipo BACCH para altavoces / Genezi)
             if (xtcAmt > 0.001f) {
@@ -417,10 +581,18 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
                 xtcLpL_ += kShadowLp * (crossHistL_[delayIdx] - xtcLpL_);
                 xtcLpR_ += kShadowLp * (crossHistR_[delayIdx] - xtcLpR_);
 
-                // Cancelación antisimétrica de diafonía transaural con compensación de energía
-                const float normGain = 1.0f + 0.22f * xtcAmt;
-                outL = xtcBassL_ + normGain * (hiL - xtcAmt * 0.42f * xtcLpR_);
-                outR = xtcBassR_ + normGain * (hiR - xtcAmt * 0.42f * xtcLpL_);
+                // Cancelación antisimétrica de diafonía transaural con compensación de energía controlada
+                const float normGain = 1.0f + 0.10f * xtcAmt;
+                outL = xtcBassL_ + normGain * (hiL - xtcAmt * 0.32f * xtcLpR_);
+                outR = xtcBassR_ + normGain * (hiR - xtcAmt * 0.32f * xtcLpL_);
+            }
+
+            // Soft-clip racional de seguridad (> 0.96f) para impedir espurios de convolución
+            if (std::fabs(outL) > 0.96f) {
+                outL = std::copysign(0.96f + 0.04f * std::tanh((std::fabs(outL) - 0.96f) * 8.0f), outL);
+            }
+            if (std::fabs(outR) > 0.96f) {
+                outR = std::copysign(0.96f + 0.04f * std::tanh((std::fabs(outR) - 0.96f) * 8.0f), outR);
             }
 
             L[offset + i] = outL;

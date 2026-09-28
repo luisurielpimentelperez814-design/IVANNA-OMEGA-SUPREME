@@ -1892,15 +1892,17 @@ public:
             snap.wfs_spread = std::clamp(snap.wfs_spread + k * (targetSpread - snap.wfs_spread), 0.5f, 2.0f);
         }
 
-        // Modulación de sala RIR: alinea RT60 y wet con la trayectoria SOURCE -> ROOM -> AIR -> EAR y RoomAgent
-        if (snap.room_wet > 0.0f) {
-            const float targetWet = std::clamp(snap.room_wet * rs.perceptual.roomWetRealismScale, 0.05f, 0.85f);
-            snap.room_wet = snap.room_wet + k * (targetWet - snap.room_wet);
-        }
-        if (snap.room_rt60_s > 0.01f) {
-            const float inferredRt60 = rs.genome.roomFingerprint.estimatedRt60Sec
-                                     * rs.cognitive.executiveDecision.arbitratedRt60Scale;
-            snap.room_rt60_s = std::clamp(snap.room_rt60_s * (1.0f - 0.25f * k) + inferredRt60 * (0.25f * k), 0.15f, 3.0f);
+        // Modulación de sala RIR: respeta estrictamente el botón de encendido/apagado
+        // y la selección manual del usuario. Si room_rt60_s <= 0.01f o room_wet <= 0.001f,
+        // la reverberación está APAGADA y jamás debe reactivarse sola. Si el usuario la
+        // activó, solo aplica un micro-ajuste homeostático (±8%) sobre wet sin cambiar
+        // room_rt60_s (evita recargas continuas de WAV en el hilo worker).
+        if (snap.room_rt60_s > 0.01f && snap.room_wet > 0.001f) {
+            const float trim = std::clamp(rs.perceptual.roomWetRealismScale, 0.92f, 1.04f);
+            snap.room_wet = std::clamp(snap.room_wet * (1.0f + 0.25f * k * (trim - 1.0f)), 0.0f, 1.0f);
+        } else {
+            snap.room_rt60_s = 0.0f;
+            snap.room_wet    = 0.0f;
         }
 
         // Contención de excitación artificial impuesta por HumanPerceptionAgent + ExecutiveBrain

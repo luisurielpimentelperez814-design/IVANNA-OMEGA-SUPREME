@@ -531,9 +531,15 @@ static void omega_rir_worker_loop() {
         // Fase rápida CON el mutex: entregar solo si el ctx sigue vivo
         // (release_effect des-registra bajo el mismo mutex -> sin UAF).
         if (!omega_rir_ctx_alive_locked(ctx) || !ctx->rirConvolver) continue;
+        if (ctx->pendingSnap.room_rt60_s < 0.01f || ctx->pendingSnap.room_wet <= 0.001f) {
+            ctx->rirConvolver->setWetDry(0.f);
+            ctx->rirConvolver->unload();
+            continue;
+        }
         if (!ok) {
             LOGW("RirDataset: sala idx=%d no se pudo cargar — bypass", (int)idx);
             ctx->rirConvolver->setWetDry(0.f);
+            ctx->rirConvolver->unload();
             continue;
         }
         int irLen = (int)irL.size();
@@ -577,21 +583,24 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     // Audio thread (RT): solo acquire-load. Si el dataset aún no se publicó
     // (SET_CONFIG no corrió o la carga falló) -> bypass seco, SIN tocar disco
     // ni hacer malloc en este hilo.
-    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
-    if (!ds || ds->roomCount() == 0 || !ctx->rirConvolver) {
-        if (ctx->rirConvolver) {
-            ctx->rirConvolver->setWetDry(0.f);
-        }
-        return;  // dry path: sin sala hasta que SET_CONFIG la prepare
-    }
+    if (!ctx->rirConvolver) return;
 
     const float rt60 = s.room_rt60_s;
     const float wet  = s.room_wet;
 
-    if (rt60 < 0.01f) {
-        // Bypass: desactivar convolver
+    if (rt60 < 0.01f || wet <= 0.001f) {
+        // Bypass: desactivar convolver y purgar cola FDL/overlap inmediatamente
         ctx->rirConvolver->setWetDry(0.f);
         ctx->rirConvolver->unload();
+        return;
+    }
+
+    Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
+    if (!ds || ds->roomCount() == 0) {
+        const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                             ? ctx->config.outputCfg.samplingRate : 48000u;
+        ctx->rirConvolver->synthesizeMasterStudioBrir(rt60, static_cast<int>(srNow));
+        ctx->rirConvolver->setWetDry(wet);
         return;
     }
 
@@ -600,11 +609,15 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     // Con solo RT60 había empates y saltos de sala arbitrarios entre salas
     // con reverberación casi idéntica pero geometría opuesta (pasillo
     // largo vs cubiculo compacto suenan distinto al mismo RT60).
-    const size_t roomIdx = ds->findNearestSmart(rt60);
+    const size_t roomIdx = (s.room_idx >= 0 && static_cast<size_t>(s.room_idx) < ds->roomCount())
+        ? static_cast<size_t>(s.room_idx)
+        : ds->findNearestSmart(rt60);
 
-    // Solo recargar si la sala cambió (comparar por idx)
-    const int32_t targetIdx = s.room_idx;
-    if (targetIdx >= 0 && static_cast<size_t>(targetIdx) == roomIdx && ctx->rirConvolver->isLoaded()) {
+    // Solo recargar si la sala cambió respecto a la última aplicada en este contexto
+    const size_t prevRoomIdx = (ctx->pendingSnap.room_idx >= 0 && static_cast<size_t>(ctx->pendingSnap.room_idx) < ds->roomCount())
+        ? static_cast<size_t>(ctx->pendingSnap.room_idx)
+        : ((ctx->pendingSnap.room_rt60_s >= 0.01f) ? ds->findNearestSmart(ctx->pendingSnap.room_rt60_s) : static_cast<size_t>(-1));
+    if (prevRoomIdx == roomIdx && ctx->rirConvolver->isLoaded()) {
         // Si el índice no cambió, solo actualizar wet/dry
         ctx->rirConvolver->setWetDry(wet);
         return;
@@ -1032,9 +1045,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->rirConvolver) {
                     ctx->rirConvolver = new Ivanna::RirConvolver();
                     ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
-                    ctx->rirConvolver->synthesizeMasterStudioBrir(
-                        ivanna::master::kMasterStudioRoomRt60S, static_cast<int>(sr));
-                    ctx->rirConvolver->setWetDry(ivanna::master::kMasterStudioRoomWet);
+                    ctx->rirConvolver->setWetDry(0.0f);
                 }
                 // FIX RT (2026-08-27): arrancar el worker de carga de IR
                 // (hilo de control, proceso-global). Idempotente; el hilo
@@ -1073,6 +1084,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                             }
                             omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
                             omega_apply_supreme_axes(ctx, seed);
+                            omega_apply_room(ctx, seed);
                             ctx->pendingSnap = seed;
                             ctx->lastAppliedGen = seen;
                             LOGI("OmegaControlBus attached (seed gen=%llu route=%d)",

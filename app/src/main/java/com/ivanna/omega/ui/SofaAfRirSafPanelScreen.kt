@@ -113,6 +113,9 @@ fun SofaAfRirSafPanelScreen(
         rirWet       = st.rirWet
         safIntensity = st.safIntensity
         safEnabled   = st.safEnabled
+        if (!st.rirEnabled) {
+            OmegaEngineBridge.disableRoom()
+        }
     }
 
     // ── Polling de telemetría (500 ms) ────────────────────────────────────────

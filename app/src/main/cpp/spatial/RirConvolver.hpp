@@ -98,9 +98,18 @@ private:
 
     // Cola particionada: espectros de cada particion + FDL (frequency delay line)
     std::vector<float> tailIrReL_, tailIrImL_, tailIrReR_, tailIrImR_; // [TAIL_PARTS][FFT_SIZE]
+    std::vector<float> pendTailIrReL_, pendTailIrImL_, pendTailIrReR_, pendTailIrImR_;
     std::vector<float> fdlReL_, fdlImL_, fdlReR_, fdlImR_;             // espectros de entrada
     int tailPartsActive_ = 0;   // cuantas particiones de cola tienen energia
+    int pendTailPartsActive_ = 0;
     int fdlIndex_ = 0;          // puntero circular del FDL
+    float tailInL_[BLOCK]   = {}; // acumulador de entrada de exactamente BLOCK muestras para FDL
+    float tailInR_[BLOCK]   = {};
+    float tailHistL_[BLOCK] = {}; // mitad anterior (512 muestras) para ventana FFT_SIZE=1024 del FDL
+    float tailHistR_[BLOCK] = {};
+    float tailOutL_[BLOCK]  = {}; // bloque de cola convolucionado listo para drenar
+    float tailOutR_[BLOCK]  = {};
+    int   tailPos_          = 0;  // posicion [0..BLOCK-1] dentro del acumulador/salida de cola
 
     float workRe_[FFT_SIZE] = {};  // Buffers de trabajo — sin malloc en process()
     float workIm_[FFT_SIZE] = {};
@@ -115,12 +124,15 @@ private:
     int crossWriteIdx_ = 0;
     float xtcLpL_ = 0.0f, xtcLpR_ = 0.0f;
     float xtcBassL_ = 0.0f, xtcBassR_ = 0.0f;
+    float dcX1L_ = 0.0f, dcY1L_ = 0.0f;
+    float dcX1R_ = 0.0f, dcY1R_ = 0.0f;
     // Anti-zipper del wet/dry: el slider se aplica por BLOQUE (escalón duro
     // de ganancia = tronido). Se suaviza por muestra con un one-pole.
     float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)
     float wetSmooth_ = 0.0f;   // coef. one-pole; 0 = se deriva de sampleRate
     std::atomic<bool>  loaded_{false};
     std::atomic<bool>  pending_{false};
+    std::atomic<bool>  clearHistoryPending_{false};
 
     // IR pendiente de aplicar (escrita por load(), leída por process())
     float pendIrReL_[FFT_SIZE] = {};
