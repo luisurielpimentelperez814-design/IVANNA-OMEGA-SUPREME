@@ -26,6 +26,8 @@ namespace dsp {
  * Memory strategy: All buffers pre-allocated and 32-byte aligned for NEON / portable SIMD.
  * Concurrency: Wait-free ring buffers (SPSC) for feature extraction -> inference handoff.
  */
+// NOTA: clase sin caller en producción (2026-09-29). Pesos 0.01f sin entrenar.
+// Re-añadir a CMakeLists cuando haya pesos reales. Ver AntiDolbyAI para referencia.
 class IvannaNeuromorphicTinyML {
 public:
     // Frame sizes optimized for 48kHz audio (10ms windows)
