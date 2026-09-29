@@ -135,7 +135,7 @@ TEST(ObjectSpatialRendererWiring, LivePipelineActiveInstanceWiringAndChunkedAxes
     IvannaAudioPipeline::getActiveInstance().roomEngine().setProjectionWet(0.22f);
     IvannaAudioPipeline::getActiveInstance().physicalScene().setOcclusion(0.15f);
     IvannaAudioPipeline::getActiveInstance().physicalScene().setWallAbsorption(0.42f);
-    IvannaAudioPipeline::getActiveInstance().hearingEngine().setListeningSpl(62.0f);
+    IvannaAudioPipeline::getActiveInstance().hearingEngine().setFatigueLevel(0.25f);
 
     // Process a 1024-sample block (> MAX_BLOCK_SIZE) via processLiveSpatialAxes
     constexpr size_t kLargeBlock = 1024;
