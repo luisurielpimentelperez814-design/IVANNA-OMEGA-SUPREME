@@ -1547,29 +1547,29 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         s_routeAGuard.beginBlock(g_ats.pdOutL, g_ats.pdOutR, nSamples, false);
 
         pipe.snnNmfHoaUpmixer().process(g_ats.pdOutL, g_ats.pdOutR, nSamples);
-        (void)s_routeAGuard.endStage(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples,
-            ivanna::supreme::AcousticModuleId::SnnNmfHoaUpmixer, true, 1.15f);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
 
         pipe.pinnaManifoldInterpolator().process(g_ats.pdOutL, g_ats.pdOutR, nSamples);
-        (void)s_routeAGuard.endStage(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples,
-            ivanna::supreme::AcousticModuleId::PinnaManifold, true, 1.15f);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis4_PinnaManifold,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
 
         pipe.transharmonicSynth().process(g_ats.pdOutL, g_ats.pdOutR, nSamples);
-        (void)s_routeAGuard.endStage(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples,
-            ivanna::supreme::AcousticModuleId::PhaseCoherentCvnn, true, 1.15f);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis2_Transharmonic,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
 
         pipe.shmMsoArbitrator().process(g_ats.pdOutL, g_ats.pdOutR, nSamples, srNow);
-        (void)s_routeAGuard.endStage(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples,
-            ivanna::supreme::AcousticModuleId::ShmMsoFarrow, true, 1.10f);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis5_MsoFarrow,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.15f, 0.95f);
 
         pipe.warpedLatticeInverter().process(g_ats.pdOutL, g_ats.pdOutR, nSamples);
-        (void)s_routeAGuard.endStage(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples,
-            ivanna::supreme::AcousticModuleId::WarpedLatticeInverter, true, 1.15f);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
 
         auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
         if (realityOrch.isEnabled()) {
@@ -1577,15 +1577,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             if (rSnap.sequence > 0) {
                 realityOrch.microExtractor().applyMicroIntelligibilityPass(
                     g_ats.pdOutL, g_ats.pdOutR, nSamples, rSnap.microMap);
-                (void)s_routeAGuard.endStage(
-                    g_ats.pdOutL, g_ats.pdOutR, nSamples,
-                    ivanna::supreme::AcousticModuleId::MicroIntelligibility, true, 1.12f);
+                s_routeAGuard.enforceStageEnergyCeiling(
+                    ivanna::supreme::AcousticModuleId::RealityReconstruction,
+                    g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.15f, 0.95f);
             }
         }
-        // Acotar energía acumulada pre-limiter al rango lineal seguro (<= 0.96f)
+        // Acotar energía acumulada pre-limiter al rango lineal seguro (<= 0.92f)
         // para que SafetyLimiter nunca entre en compresión de pared ni dispare
         // falsos positivos de clipping en IvannaAgentCore / SelfHealingAgent.
-        s_routeAGuard.finishBlock(g_ats.pdOutL, g_ats.pdOutR, nSamples, 0.96f);
+        s_routeAGuard.processBlock(g_ats.pdOutL, g_ats.pdOutR, nSamples, 0.92f);
     }
 
     // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
@@ -1874,16 +1874,26 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
 
         s_blkGuard.beginBlock(oL, oR, nSamples, false);
         pipe.snnNmfHoaUpmixer().process(oL, oR, nSamples);
-        (void)s_blkGuard.endStage(oL, oR, nSamples, ivanna::supreme::AcousticModuleId::SnnNmfHoaUpmixer, true, 1.15f);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa,
+            oL, oR, nSamples, 1.18f, 0.95f);
         pipe.pinnaManifoldInterpolator().process(oL, oR, nSamples);
-        (void)s_blkGuard.endStage(oL, oR, nSamples, ivanna::supreme::AcousticModuleId::PinnaManifold, true, 1.15f);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis4_PinnaManifold,
+            oL, oR, nSamples, 1.18f, 0.95f);
         pipe.transharmonicSynth().process(oL, oR, nSamples);
-        (void)s_blkGuard.endStage(oL, oR, nSamples, ivanna::supreme::AcousticModuleId::PhaseCoherentCvnn, true, 1.15f);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis2_Transharmonic,
+            oL, oR, nSamples, 1.18f, 0.95f);
         pipe.shmMsoArbitrator().process(oL, oR, nSamples, srNow);
-        (void)s_blkGuard.endStage(oL, oR, nSamples, ivanna::supreme::AcousticModuleId::ShmMsoFarrow, true, 1.10f);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis5_MsoFarrow,
+            oL, oR, nSamples, 1.15f, 0.95f);
         pipe.warpedLatticeInverter().process(oL, oR, nSamples);
-        (void)s_blkGuard.endStage(oL, oR, nSamples, ivanna::supreme::AcousticModuleId::WarpedLatticeInverter, true, 1.15f);
-        s_blkGuard.finishBlock(oL, oR, nSamples, 0.96f);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
+            oL, oR, nSamples, 1.18f, 0.95f);
+        s_blkGuard.processBlock(oL, oR, nSamples, 0.92f);
     }
 
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
