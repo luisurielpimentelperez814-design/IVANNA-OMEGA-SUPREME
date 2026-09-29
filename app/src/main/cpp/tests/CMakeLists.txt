@@ -665,5 +665,28 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_acoustic_reality_hyperengine)
 
+# ── SUPREME ZERO-POP STATE TRANSITION LAYER (Certificación Fases 5 y 6) ──
+add_executable(test_supreme_zero_pop_transition
+  test_supreme_zero_pop_transition.cpp
+  ../spatial/RirConvolver.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+)
+target_link_libraries(test_supreme_zero_pop_transition PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_supreme_zero_pop_transition PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_supreme_zero_pop_transition PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_supreme_zero_pop_transition PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_supreme_zero_pop_transition PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_supreme_zero_pop_transition)
+
 
 

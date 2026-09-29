@@ -8,6 +8,7 @@
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
+#include "supreme/SupremeTransitionEnvelope.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX (CI rojo — "namespace 'Ivanna' does not enclose namespace
@@ -272,6 +273,7 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::supreme::SupremeTransitionEnvelope m_upmixEnv_{};
     bool  m_wfsInit      = false;
     float m_wfsFade      = 0.0f;    // 0 = bypass, 1 = WFS pleno
     std::vector<float> m_wfsInL, m_wfsInR;      // entradas mono por fuente

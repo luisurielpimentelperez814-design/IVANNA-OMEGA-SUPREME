@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__linux__) || defined(__ANDROID__)
 #include <fcntl.h>
@@ -41,6 +42,10 @@ public:
 
     void reset() noexcept {
         delayLine_.fill(0.0f);
+    }
+
+    void seedConstant(float x) noexcept {
+        delayLine_.fill(sanitize(x));
     }
 
     [[gnu::always_inline]] inline float sanitize(float x) const noexcept {
@@ -222,6 +227,13 @@ class alignas(64) SupremeMsoFarrowArbitrator {
 public:
     SupremeMsoFarrowArbitrator() noexcept {
         attachSharedMemory();
+        transitionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+        reset();
+    }
+
+    void prepare(float sampleRate) noexcept {
+        sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
         reset();
     }
 
@@ -244,19 +256,38 @@ public:
     void reset() noexcept {
         farrowL_.reset();
         farrowR_.reset();
+        smoothItdNs_ = msoItdNs_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
     }
 
     bool isCrossProcessShmMapped() const noexcept {
         return mappedBlock_ != &shmLocal_;
     }
 
-    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    void setEnabled(bool en) noexcept {
+        enabled_.store(en, std::memory_order_release);
+        if (!en && transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(0.0f);
+        }
+    }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
+    void setThermalBypass(bool skip) noexcept { thermalBypass_.store(skip, std::memory_order_release); }
+    bool isThermalBypass() const noexcept { return thermalBypass_.load(std::memory_order_acquire); }
+    void setTransitionTimesMs(float attackMs, float releaseMs, float thermalMs = 35.0f) noexcept {
+        transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
+    }
+    const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
 
     void setMsoItdNanoseconds(float ns) noexcept {
         const float clamped = std::clamp(ns, -750000.0f, 750000.0f);
         msoItdNs_.store(clamped, std::memory_order_release);
         shm().mso_itd_nanoseconds.store(clamped, std::memory_order_relaxed);
+        if (transitionEnv_.renderedBlocks == 0u) {
+            smoothItdNs_ = clamped;
+        }
     }
 
     float msoItdNanoseconds() const noexcept {
@@ -289,18 +320,53 @@ public:
 
     void process(float* __restrict left, float* __restrict right, size_t numSamples, float sampleRate = 48000.0f) noexcept {
         if (!left || !right || numSamples == 0) return;
-        if (!enabled_.load(std::memory_order_relaxed)) return;
+        const float sr = (sampleRate > 8000.0f) ? sampleRate : sampleRate_;
+        if (std::fabs(sr - transitionEnv_.sampleRate) > 1.0f) {
+            sampleRate_ = sr;
+            transitionEnv_.configure(sr, transitionEnv_.attack_ms, transitionEnv_.release_ms, transitionEnv_.thermal_ms);
+        }
 
-        const float sr = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
-        const float itdNs = msoItdNs_.load(std::memory_order_relaxed);
-        // Conversión de nanosegundos a fracción de muestra diferencial L/R alrededor de 0.5 muestras
-        const float deltaSamples = (itdNs * 1.0e-9f) * sr;
-        const float fracL = std::clamp(0.5f - 0.5f * deltaSamples, 0.0f, 1.0f);
-        const float fracR = std::clamp(0.5f + 0.5f * deltaSamples, 0.0f, 1.0f);
+        const bool thermSkip = thermalBypass_.load(std::memory_order_relaxed);
+        const bool isThermChange = (thermSkip != lastThermalBypass_);
+        lastThermalBypass_ = thermSkip;
+        const bool wantOn = enabled_.load(std::memory_order_relaxed) && !thermSkip;
+        const float targetEnv = wantOn ? 1.0f : 0.0f;
+        const TransitionProfile profile = (isThermChange || (thermSkip && transitionEnv_.isTransitioning()))
+            ? TransitionProfile::Thermal
+            : TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
+        if (!transitionEnv_.beginBlock(targetEnv, profile)) {
+            smoothItdNs_ = msoItdNs_.load(std::memory_order_relaxed);
+            return;
+        }
+        if (wasSilent) {
+            // Sembrar la línea de retardo de Farrow con la primera muestra evita el
+            // escalón de arranque de 2.5 muestras cuando se activa desde silencio.
+            farrowL_.seedConstant(left[0]);
+            farrowR_.seedConstant(right[0]);
+        }
+
+        const float targetItdNs = msoItdNs_.load(std::memory_order_relaxed);
 
         for (size_t i = 0; i < numSamples; ++i) {
-            left[i]  = farrowL_.processSample(left[i],  fracL);
-            right[i] = farrowR_.processSample(right[i], fracR);
+            smoothItdNs_ += 0.005f * (targetItdNs - smoothItdNs_);
+            // Conversión de nanosegundos a fracción de muestra diferencial L/R alrededor de 0.5 muestras
+            const float deltaSamples = (smoothItdNs_ * 1.0e-9f) * sr;
+            const float fracL = std::clamp(0.5f - 0.5f * deltaSamples, 0.0f, 1.0f);
+            const float fracR = std::clamp(0.5f + 0.5f * deltaSamples, 0.0f, 1.0f);
+
+            const float dryL = std::isfinite(left[i])  ? left[i]  : 0.0f;
+            const float dryR = std::isfinite(right[i]) ? right[i] : 0.0f;
+            const float wetL = farrowL_.processSample(dryL, fracL);
+            const float wetR = farrowR_.processSample(dryR, fracR);
+
+            const float env = transitionEnv_.nextSample();
+            left[i]  = SupremeTransitionEnvelope::mixSample(dryL, wetL, env);
+            right[i] = SupremeTransitionEnvelope::mixSample(dryR, wetR, env);
+        }
+        if (transitionEnv_.isSilent()) {
+            farrowL_.reset();
+            farrowR_.reset();
         }
     }
 
@@ -358,10 +424,15 @@ private:
 
     FarrowOrder5Delay farrowL_{};
     FarrowOrder5Delay farrowR_{};
+    SupremeTransitionEnvelope transitionEnv_{};
     ShmArbitrationControlBlock shmLocal_{};
     ShmArbitrationControlBlock* mappedBlock_{&shmLocal_};
     int shmFd_{-1};
+    float sampleRate_{48000.0f};
+    float smoothItdNs_{0.0f};
+    bool lastThermalBypass_{false};
     std::atomic<bool> enabled_{false};
+    std::atomic<bool> thermalBypass_{false};
     std::atomic<float> msoItdNs_{0.0f};
 };
 

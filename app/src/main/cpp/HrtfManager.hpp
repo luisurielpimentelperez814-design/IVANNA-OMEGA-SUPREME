@@ -2,6 +2,7 @@
 #include "IvannaFusionCore.hpp"
 #include "HRTFBinLoader.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
+#include "supreme/SupremeTransitionEnvelope.hpp"
 #include <algorithm>  // FIX: std::clamp usado en setSafLatentQ() sin este include
 #include <atomic>
 #include <cstring>
@@ -46,7 +47,11 @@ public:
     // muestras residuales en el historial cuando cambia la ruta de audio.
     // wet=0 → señal seca estéreo pura; wet=1 → binaural completo (default).
     void setWetDry(float wet) noexcept {
-        m_wetDry.store(std::clamp(wet, 0.f, 1.f), std::memory_order_relaxed);
+        const float w = std::clamp(wet, 0.f, 1.f);
+        m_wetDry.store(w, std::memory_order_relaxed);
+        if (m_wetEnv.renderedBlocks == 0u) {
+            m_wetEnv.setImmediate(w);
+        }
     }
     float getWetDry() const noexcept {
         return m_wetDry.load(std::memory_order_relaxed);
@@ -84,6 +89,7 @@ private:
     void loadFromDatasetAtAzimuth(float azimuthDeg, int bank);
 
     std::atomic<float> m_wetDry{1.0f};   // FIX DAC USB-C: 0=dry, 1=full HRTF
+    ivanna::supreme::SupremeTransitionEnvelope m_wetEnv{};
     std::atomic<int>   m_activeBank{0};
     std::atomic<int>   m_pendingBank{0};
     int                m_pendingBankLocal = 0;

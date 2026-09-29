@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -75,10 +76,21 @@ public:
         hpA1_ = -2.0f * cosW0 * a0Inv;
         hpA2_ =  (1.0f - alpha) * a0Inv;
 
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
         reset();
     }
 
     void reset() noexcept {
+        clearFilterStates();
+        smoothHarmonicGain_ = harmonicGain_.load(std::memory_order_relaxed);
+        smoothTapeDrive_    = analogTapeDrive_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed) &&
+                        (smoothHarmonicGain_ > 1.0e-5f || smoothTapeDrive_ > 1.0e-5f);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+    }
+
+    void clearFilterStates() noexcept {
         stateIL_.fill(0.0f); stateQL_.fill(0.0f);
         stateIR_.fill(0.0f); stateQR_.fill(0.0f);
         prevIL_ = 0.0f; prevQL_ = 0.0f;
@@ -149,9 +161,28 @@ public:
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
-        const float gain = harmonicGain_.load(std::memory_order_relaxed);
-        const float tapeDrive = analogTapeDrive_.load(std::memory_order_relaxed);
-        if (!enabled_.load(std::memory_order_relaxed) || (gain <= 1.0e-5f && tapeDrive <= 1.0e-5f)) return;
+        const float targetGain = harmonicGain_.load(std::memory_order_relaxed);
+        const float targetTape = analogTapeDrive_.load(std::memory_order_relaxed);
+        const bool thermSkip   = thermalBypass_.load(std::memory_order_relaxed);
+        const bool isThermChange = (thermSkip != lastThermalBypass_);
+        lastThermalBypass_ = thermSkip;
+
+        const bool wantOn = enabled_.load(std::memory_order_relaxed) &&
+                            !thermSkip &&
+                            (targetGain > 1.0e-5f || targetTape > 1.0e-5f);
+        const float targetEnv = wantOn ? 1.0f : 0.0f;
+        const TransitionProfile profile = (isThermChange || (thermSkip && transitionEnv_.isTransitioning()))
+            ? TransitionProfile::Thermal
+            : TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
+        if (!transitionEnv_.beginBlock(targetEnv, profile)) {
+            smoothHarmonicGain_ = targetGain;
+            smoothTapeDrive_    = targetTape;
+            return;
+        }
+        if (wasSilent) {
+            clearFilterStates();
+        }
 
         float maxPhaseDiscontinuity = 0.0f;
 
@@ -159,8 +190,11 @@ public:
             const float rawL = sanitize(left[i]);
             const float rawR = sanitize(right[i]);
 
-            const float inL = stepJilesAthertonTapeHysteresis(rawL, tapeMagL_, tapePrevHL_, tapeDrive);
-            const float inR = stepJilesAthertonTapeHysteresis(rawR, tapeMagR_, tapePrevHR_, tapeDrive);
+            smoothHarmonicGain_ += 0.004f * (targetGain - smoothHarmonicGain_);
+            smoothTapeDrive_    += 0.004f * (targetTape - smoothTapeDrive_);
+
+            const float inL = stepJilesAthertonTapeHysteresis(rawL, tapeMagL_, tapePrevHL_, smoothTapeDrive_);
+            const float inR = stepJilesAthertonTapeHysteresis(rawR, tapeMagR_, tapePrevHR_, smoothTapeDrive_);
 
             const float synthL = synthesizeChannel(
                 inL, stateIL_, stateQL_, prevIL_, prevQL_,
@@ -169,20 +203,51 @@ public:
                 inR, stateIR_, stateQR_, prevIR_, prevQR_,
                 oscPhaseR_, instFreqSmoothR_, envSlowR_, envFastR_, hpStateR_, maxPhaseDiscontinuity);
 
-            left[i]  = std::clamp(inL + gain * synthL, -1.95f, 1.95f);
-            right[i] = std::clamp(inR + gain * synthR, -1.95f, 1.95f);
+            const float wetL = std::clamp(inL + smoothHarmonicGain_ * synthL, -1.95f, 1.95f);
+            const float wetR = std::clamp(inR + smoothHarmonicGain_ * synthR, -1.95f, 1.95f);
+
+            const float env = transitionEnv_.nextSample();
+            left[i]  = SupremeTransitionEnvelope::mixSample(rawL, wetL, env);
+            right[i] = SupremeTransitionEnvelope::mixSample(rawR, wetR, env);
         }
 
         lastPhaseDerivativeContinuity_ = maxPhaseDiscontinuity;
+        if (transitionEnv_.isSilent()) {
+            clearFilterStates();
+        }
     }
 
-    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    void setEnabled(bool en) noexcept {
+        enabled_.store(en, std::memory_order_release);
+        if (!en && transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(0.0f);
+        }
+    }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
-    void setHarmonicGain(float g) noexcept { harmonicGain_.store(std::clamp(g, 0.0f, 1.0f), std::memory_order_release); }
+    void setThermalBypass(bool skip) noexcept { thermalBypass_.store(skip, std::memory_order_release); }
+    bool isThermalBypass() const noexcept { return thermalBypass_.load(std::memory_order_acquire); }
+    void setTransitionTimesMs(float attackMs, float releaseMs, float thermalMs = 35.0f) noexcept {
+        transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
+    }
+    const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    void setHarmonicGain(float g) noexcept {
+        const float clamped = std::clamp(g, 0.0f, 1.0f);
+        harmonicGain_.store(clamped, std::memory_order_release);
+        if (transitionEnv_.renderedBlocks == 0u) {
+            smoothHarmonicGain_ = clamped;
+        }
+    }
     float harmonicGain() const noexcept { return harmonicGain_.load(std::memory_order_acquire); }
     void setImdCancelStrength(float s) noexcept { imdCancelStrength_.store(std::clamp(s, 0.0f, 1.0f), std::memory_order_release); }
     float imdCancelStrength() const noexcept { return imdCancelStrength_.load(std::memory_order_acquire); }
-    void setAnalogTapeDrive(float d) noexcept { analogTapeDrive_.store(std::clamp(d, 0.0f, 1.0f), std::memory_order_release); }
+    void setAnalogTapeDrive(float d) noexcept {
+        const float clamped = std::clamp(d, 0.0f, 1.0f);
+        analogTapeDrive_.store(clamped, std::memory_order_release);
+        if (transitionEnv_.renderedBlocks == 0u) {
+            smoothTapeDrive_ = clamped;
+        }
+    }
     float analogTapeDrive() const noexcept { return analogTapeDrive_.load(std::memory_order_acquire); }
     float lastTapeMagnetization() const noexcept { return 0.5f * (std::fabs(tapeMagL_) + std::fabs(tapeMagR_)); }
     float maxPhaseDerivativeStep() const noexcept { return lastPhaseDerivativeContinuity_; }
@@ -318,8 +383,13 @@ private:
     float tapeMagR_{0.0f}, tapePrevHR_{0.0f};
     float hpB0_{1.0f}, hpB1_{0.0f}, hpB2_{0.0f}, hpA1_{0.0f}, hpA2_{0.0f};
     float lastPhaseDerivativeContinuity_{0.0f};
+    float smoothHarmonicGain_{0.25f};
+    float smoothTapeDrive_{0.28f};
+    bool lastThermalBypass_{false};
 
+    SupremeTransitionEnvelope transitionEnv_{};
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> thermalBypass_{false};
     std::atomic<float> harmonicGain_{0.25f};
     std::atomic<float> imdCancelStrength_{0.5f};
     std::atomic<float> analogTapeDrive_{0.28f};

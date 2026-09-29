@@ -17,6 +17,7 @@
 #include "supreme/SnnNmfHoaUpmixer.hpp"
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
+#include "supreme/SupremeTransitionEnvelope.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -254,6 +255,7 @@ struct omega_effect_context_t {
     float lastPinnaConcha;
     float lastPinnaHelix;
     float lastPinnaHead;
+    ivanna::supreme::SupremeTransitionEnvelope masterBypassEnv;
     // AUDIT FIX #4 (plano de control): estado del writer local para
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
@@ -589,9 +591,9 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     const float wet  = s.room_wet;
 
     if (rt60 < 0.01f || wet <= 0.001f) {
-        // Bypass: desactivar convolver y purgar cola FDL/overlap inmediatamente
+        // Zero-Pop: fijar wet=0 para que RirConvolver::process() haga rampa
+        // suave de wetNow_ hasta 0.0f antes de entrar en reposo (sin corte duro).
         ctx->rirConvolver->setWetDry(0.f);
-        ctx->rirConvolver->unload();
         return;
     }
 
@@ -672,29 +674,27 @@ static int32_t omega_process(effect_handle_t self,
         }
     }
 
-    // ── Thermal Governor — bypass temprano si SoC en zona peligrosa ─────────
-    // Si el SoC supera 75°C (ThermalTier::BYPASS), el audio thread ya no
-    // puede garantizar latencia — hacer pass-through limpio es mejor que
-    // tener underruns con DSP activo. La lectura es O(1) (atómica, sin syscall).
+    // ── Thermal Governor & Master Bypass — transición suave Zero-Pop ────────
+    // NUNCA realizar bypass duro en el hilo de audio mientras masterBypassEnv > 0.
+    // Solo cuando la rampa de transición llega exactamente a cero se ejecuta el
+    // memmove de passthrough directo para ahorrar 100% de CPU.
+    bool wantMasterActive = ctx->enabled && ((ctx->pendingSnap.flags & 0x1u) == 0u);
+    auto masterProfile = ivanna::supreme::TransitionProfile::Standard;
     {
         const auto tier = ivanna::getThermalGovernor().getCurrentTier();
         if (tier == ivanna::ThermalTier::BYPASS) {
-            memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
-            return 0;
+            wantMasterActive = false;
+            masterProfile = ivanna::supreme::TransitionProfile::Thermal;
         }
-        // Tier LIMITED o PROTECTED: desactivar RIR (la más costosa en CPU)
-        if (tier >= ivanna::ThermalTier::LIMITED && ctx->rirConvolver) {
-            // No destruir el convolver (caro recrearlo) — solo saltarlo este ciclo
-            // El flag ctrlBusOpen se mantiene — el snapshot ya tiene el room_rt60
-            // y el convolver volverá a activarse cuando el SoC se enfríe.
-            ctx->thermalSkipRIR = true;
-        } else {
-            ctx->thermalSkipRIR = false;
-        }
-        // Volterra H2: mismo umbral que RIR (LIMITED) — O(K²)/muestra, sin
-        // gate propio desde su integración (cc23618c). No destruir el
-        // engine (delay lines preasignadas), solo saltar el bloque.
+        // Tier LIMITED o PROTECTED: rampa suave de desactivación para RIR,
+        // Volterra y los 5 Ejes Supremos (sin corte duro de bloque).
+        ctx->thermalSkipRIR      = (tier >= ivanna::ThermalTier::LIMITED);
         ctx->thermalSkipVolterra = (tier >= ivanna::ThermalTier::LIMITED);
+    }
+
+    if (!ctx->masterBypassEnv.beginBlock(wantMasterActive ? 1.0f : 0.0f, masterProfile)) {
+        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        return 0;
     }
 
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
@@ -718,26 +718,6 @@ static int32_t omega_process(effect_handle_t self,
         ctx->chunkedWarned = true;
         LOGW("omega_process: frameCount=%d > rtCapacity=%d — procesando en chunks (sin bypass)",
              frames, ctx->rtCapacity);
-    }
-
-    // ── Pre-loop: sincronizar parámetros cocleares UNA VEZ por callback ─────────
-    // FIX artefactos "motor/carcacha" + clicks: setEnabled/setIntensity producen
-    // un salto de ganancia si se llaman dentro del chunk loop (un step change en
-    // wetGain_ cada ~10 ms = click audible). Aquí se configuran antes del loop;
-    // process() por chunk solo ejecuta DSP sin tocar los parámetros.
-    {
-        const auto& snapPre = ctx->pendingSnap;
-        const bool  cochOnPre = (snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
-        if (ctx->cochlearEngine) {
-            const float intensityPre =
-                (std::isfinite(snapPre.cochlear_intensity) && snapPre.cochlear_intensity > 0.0f)
-                    ? snapPre.cochlear_intensity
-                    : ctx->cochlearIntensity;
-            // setIntensity y setEnabled aplican rampa interna (sin step change).
-            // Si el estado no cambió, son no-ops de bajo coste.
-            ctx->cochlearEngine->setIntensity(intensityPre);
-            ctx->cochlearEngine->setEnabled(cochOnPre);
-        }
     }
 
     int offset = 0;
@@ -819,61 +799,78 @@ static int32_t omega_process(effect_handle_t self,
             }
         }
 
-        // Cable RIR: aplicar reverberación de sala si está activa
-        // ThermalGovernor: saltar RIR en LIMITED/PROTECTED/BYPASS para
-        // liberar CPU y mantener el audio thread dentro del budget térmico.
-        if (ctx->rirConvolver && !ctx->thermalSkipRIR) ctx->rirConvolver->process(L, R, chunk);
+        // Cable RIR: aplicar reverberación de sala con transición térmica suave.
+        // RirConvolver mantiene rampa interna wetNow_ -> wetTarget y retorna en O(1)
+        // cuando ambos llegan a cero (cero clics al entrar/salir de ThermalTier::LIMITED).
+        if (ctx->rirConvolver) {
+            const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
+                ? ctx->pendingSnap.room_wet
+                : 0.0f;
+            ctx->rirConvolver->setWetDry(desiredRirWet);
+            ctx->rirConvolver->process(L, R, chunk);
+        }
 
-        // ── Series de Volterra de 2º Orden Truncadas (Anti-Lossy Transient Reconstruction) ──
-        if (ctx->volterraEngine && !ctx->thermalSkipVolterra && (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON)) {
-            for (int n = 0; n < chunk; ++n) {
-                outChunk[2 * n]     = L[n];
-                outChunk[2 * n + 1] = R[n];
-            }
-            ctx->volterraEngine->processInterleaved(outChunk, outChunk, (uint32_t)chunk, 2);
-            for (int n = 0; n < chunk; ++n) {
-                L[n] = outChunk[2 * n];
-                R[n] = outChunk[2 * n + 1];
+        // ── Series de Volterra de 2º Orden Truncadas (con SupremeTransitionEnvelope) ──
+        if (ctx->volterraEngine) {
+            const bool wantVolterra = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
+            ctx->volterraEngine->setEnabled(wantVolterra);
+            ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
+            if (wantVolterra || !ctx->volterraEngine->isSilent()) {
+                for (int n = 0; n < chunk; ++n) {
+                    outChunk[2 * n]     = L[n];
+                    outChunk[2 * n + 1] = R[n];
+                }
+                ctx->volterraEngine->processInterleaved(outChunk, outChunk, (uint32_t)chunk, 2);
+                for (int n = 0; n < chunk; ++n) {
+                    L[n] = outChunk[2 * n];
+                    R[n] = outChunk[2 * n + 1];
+                }
             }
         }
 
         // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine ──
-        // FIX artefactos: setEnabled/setIntensity estaban DENTRO del chunk loop
-        // → cada chunk llamaba a setEnabled(cochOn) que hacía wetGain_ = 0 o intensity_
-        // en un solo sample → click/pop audible. Ahora se configuran una sola vez
-        // POR CALLBACK (fuera del loop, ver cochOnPre/intensityPre arriba), y
-        // process() solo se llama si isActive() — ya refleja el estado aplicado.
-        // BUILD FIX (2026-09-28): esta linea referenciaba 'snap', una variable
-        // local declarada dentro del if(ctx->ctrlBusOpen){...} de mas arriba y
-        // fuera de alcance aqui — no compilaba con el NDK (el compilador
-        // devolvia "use of undeclared identifier 'snap'", linea 845). El
-        // valor que calculaba (cochOn) tampoco se usaba en ningun lado despues:
-        // era codigo muerto sobrante del refactor que movio esta logica a
-        // cochOnPre, antes del loop. Se elimina en vez de repararla.
-        if (ctx->cochlearEngine && ctx->cochlearEngine->isActive()) {
+        const auto& snap = ctx->pendingSnap;
+        const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        if (ctx->cochlearEngine) {
+            const float intensity = (snap.cochlear_intensity > 0.0f) ? snap.cochlear_intensity : ctx->cochlearIntensity;
+            ctx->cochlearEngine->setIntensity(intensity);
+            ctx->cochlearEngine->setEnabled(cochOn);
+            ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->cochlearEngine->process(L, R, (int)chunk);
         }
 
-        // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B) ──
-        if (!ctx->thermalSkipVolterra) {
-            if (ctx->supremeLattice)   ctx->supremeLattice->process(L, R, (size_t)chunk);
-            if (ctx->supremeCvnn)      ctx->supremeCvnn->process(L, R, (size_t)chunk);
-            if (ctx->supremeSnnHoa)    ctx->supremeSnnHoa->process(L, R, (size_t)chunk);
-            if (ctx->supremePinna)     ctx->supremePinna->process(L, R, (size_t)chunk);
-            if (ctx->supremeMsoFarrow) {
-                const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
-                                     ? ctx->config.outputCfg.samplingRate : 48000u;
-                ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
-            }
-            // Fases 1-15: Acoustic Reality Reconstruction & Cognitive Evolution Pass (0 malloc, 0 mutex)
+        // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B, Zero-Pop Transition Layer) ──
+        // Cada motor gestiona su propio SupremeTransitionEnvelope (attack 8ms, release 18ms,
+        // thermal 35ms) y ahorra 100% de CPU únicamente cuando su envolvente llega a cero.
+        if (ctx->supremeLattice) {
+            ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
+            ctx->supremeLattice->process(L, R, (size_t)chunk);
+        }
+        if (ctx->supremeCvnn) {
+            ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
+            ctx->supremeCvnn->process(L, R, (size_t)chunk);
+        }
+        if (ctx->supremeSnnHoa) {
+            ctx->supremeSnnHoa->setThermalBypass(ctx->thermalSkipVolterra);
+            ctx->supremeSnnHoa->process(L, R, (size_t)chunk);
+        }
+        if (ctx->supremePinna) {
+            ctx->supremePinna->setThermalBypass(ctx->thermalSkipVolterra);
+            ctx->supremePinna->process(L, R, (size_t)chunk);
+        }
+        if (ctx->supremeMsoFarrow) {
+            const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
+                                 ? ctx->config.outputCfg.samplingRate : 48000u;
+            ctx->supremeMsoFarrow->setThermalBypass(ctx->thermalSkipVolterra);
+            ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
+        }
+        // Fases 1-15: Acoustic Reality Reconstruction & Cognitive Evolution Pass (0 malloc, 0 mutex)
+        {
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
-            if (realityOrch.isEnabled()) {
-                const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
-                if (rSnap.sequence > 0) {
-                    realityOrch.microExtractor().applyMicroIntelligibilityPass(
-                        L, R, (size_t)chunk, rSnap.microMap);
-                }
-            }
+            const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+            const bool realityActive = realityOrch.isEnabled() && (rSnap.sequence > 0);
+            realityOrch.microExtractor().applyMicroIntelligibilityPass(
+                L, R, (size_t)chunk, rSnap.microMap, realityActive, ctx->thermalSkipVolterra);
         }
 
         // Eje 6: compensación auditiva antes del limitador de seguridad final
@@ -883,14 +880,17 @@ static int32_t omega_process(effect_handle_t self,
         // SafetyLimiter que corre al final de la Ruta A.
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
-        // Interleave -> salida con Autonomous Stability Sanitizer (cero NaNs / Infs)
+        // Interleave -> salida con Autonomous Stability Sanitizer y rampa Master/Thermal Zero-Pop
         for (int n = 0; n < chunk; ++n) {
+            const float masterEnv = ctx->masterBypassEnv.nextSample();
+            const float dryL = inChunk[2 * n];
+            const float dryR = inChunk[2 * n + 1];
             float l = L[n];
             float r = R[n];
-            if (!std::isfinite(l)) l = 0.0f;
-            if (!std::isfinite(r)) r = 0.0f;
-            outChunk[2 * n]     = l;
-            outChunk[2 * n + 1] = r;
+            if (!std::isfinite(l)) l = dryL;
+            if (!std::isfinite(r)) r = dryR;
+            outChunk[2 * n]     = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryL, l, masterEnv);
+            outChunk[2 * n + 1] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryR, r, masterEnv);
         }
         offset += chunk;
     }
@@ -1065,6 +1065,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->supremeMsoFarrow) {
                     ctx->supremeMsoFarrow = new (std::nothrow) ivanna::supreme::SupremeMsoFarrowArbitrator();
                 }
+                ctx->masterBypassEnv.configure(static_cast<float>(sr), 8.0f, 18.0f, 35.0f);
+                ctx->masterBypassEnv.setImmediate(1.0f);
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
@@ -1388,6 +1390,8 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     if (!ctx) return -ENOMEM;
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
+    ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+    ctx->masterBypassEnv.setImmediate(1.0f);
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
     ctx->antiDolby = nullptr;
     ctx->rirConvolver = nullptr;

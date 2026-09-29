@@ -30,6 +30,8 @@ HrtfManager::HrtfManager() {
     // Inicializar coeficientes de crossfade
     m_xfadePos  = 0;
     m_xfading   = false;
+    m_wetEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+    m_wetEnv.setImmediate(1.0f);
     ivanna::dsp::HrtfConvolutionConfig cfg;
     cfg.sample_rate_in = 48000;
     cfg.sample_rate_out = 768000;
@@ -184,10 +186,9 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
         }
     }
 
-    // FIX DAC USB-C: leer wet una sola vez por bloque (costo: 1 atomic load/bloque).
-    // wet=0 → bypass puro (señal seca), wet=1 → HRTF completo (comportamiento legacy).
-    const float wet = m_wetDry.load(std::memory_order_relaxed);
-    const float dry = 1.f - wet;
+    // FIX DAC USB-C: leer targetWet una sola vez por bloque y aplicar rampa por muestra
+    // con SupremeTransitionEnvelope para evitar clics cuando wet salta entre 0 y 1.
+    const float targetWet = std::clamp(m_wetDry.load(std::memory_order_relaxed), 0.0f, 1.0f);
 
     // ── Ingresar muestras al historial ───────────────────────────────────────
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
@@ -195,8 +196,8 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
         m_histR[HRTF_TAPS - 1 + i] = buffer->right[i];
     }
 
-    // Bypass completo: si wet==0 no hay nada que mezclar, la señal ya está en buffer
-    if (wet == 0.f) {
+    // Bypass completo únicamente cuando la envolvente de transición ha llegado a cero
+    if (!m_wetEnv.beginBlock(targetWet)) {
         std::memmove(m_histL, m_histL + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
         std::memmove(m_histR, m_histR + BLOCK_SIZE, (HRTF_TAPS - 1) * sizeof(float));
         return;
@@ -205,6 +206,8 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
     // ── Convolución HRTF ─────────────────────────────────────────────────────
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        const float wet = m_wetEnv.nextSample();
+        const float dry = 1.0f - wet;
         float32x4_t aLL = vdupq_n_f32(0.f), aLR = vdupq_n_f32(0.f);
         float32x4_t aRR = vdupq_n_f32(0.f), aRL = vdupq_n_f32(0.f);
 
@@ -251,6 +254,8 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
     }
 #else
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        const float wet = m_wetEnv.nextSample();
+        const float dry = 1.0f - wet;
         float outL = 0.f, outR = 0.f;
         for (size_t t = 0; t < HRTF_TAPS; ++t) {
             const float xL = m_histL[i + t];

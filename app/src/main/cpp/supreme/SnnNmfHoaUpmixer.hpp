@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__linux__) || defined(__ANDROID__)
 #include <pthread.h>
@@ -104,10 +105,20 @@ public:
             hrtfSphericalGainR_[ch] = w * signR * 0.25f;
         }
 
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
         reset();
     }
 
     void reset() noexcept {
+        clearFilterStates();
+        const float initWet = (enabled_.load(std::memory_order_relaxed) &&
+                               !thermalBypass_.load(std::memory_order_relaxed))
+            ? std::clamp(immersivity_.load(std::memory_order_relaxed), 0.0f, 1.0f)
+            : 0.0f;
+        transitionEnv_.setImmediate(initWet);
+    }
+
+    void clearFilterStates() noexcept {
         snnMembranePotential_.fill(0.0f);
         for (size_t k = 0; k < NUM_STREAMS; ++k) {
             nmfActivationH_[k] = ivanna::master::kMasterNmfStreamPrior[k];
@@ -238,8 +249,23 @@ public:
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
-        const float wet = immersivity_.load(std::memory_order_relaxed);
-        if (!enabled_.load(std::memory_order_relaxed) || wet <= 1.0e-5f) return;
+        const float rawWet   = std::clamp(immersivity_.load(std::memory_order_relaxed), 0.0f, 1.0f);
+        const bool thermSkip = thermalBypass_.load(std::memory_order_relaxed);
+        const bool isThermChange = (thermSkip != lastThermalBypass_);
+        lastThermalBypass_ = thermSkip;
+
+        const bool wantOn = enabled_.load(std::memory_order_relaxed) && !thermSkip;
+        const float targetWet = wantOn ? rawWet : 0.0f;
+        const TransitionProfile profile = (isThermChange || (thermSkip && transitionEnv_.isTransitioning()))
+            ? TransitionProfile::Thermal
+            : TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
+        if (!transitionEnv_.beginBlock(targetWet, profile)) {
+            return;
+        }
+        if (wasSilent) {
+            clearFilterStates();
+        }
 
         std::array<float, NUM_STREAMS> streams{};
         std::array<float, HOA_CHANNELS> hoa16{};
@@ -285,15 +311,37 @@ public:
             upolaHistoryR_[1] = upolaHistoryR_[0];
             upolaHistoryR_[0] = sanitize(binR);
 
-            // Mezcla equilloudness sin bombeo acústico
-            left[i]  = std::clamp((1.0f - 0.35f * wet) * dryL + wet * partL, -1.95f, 1.95f);
-            right[i] = std::clamp((1.0f - 0.35f * wet) * dryR + wet * partR, -1.95f, 1.95f);
+            // Mezcla equilloudness sin bombeo acústico ni discontinuidad por transición
+            const float envWet = transitionEnv_.nextSample();
+            left[i]  = std::clamp((1.0f - 0.35f * envWet) * dryL + envWet * partL, -1.95f, 1.95f);
+            right[i] = std::clamp((1.0f - 0.35f * envWet) * dryR + envWet * partR, -1.95f, 1.95f);
+        }
+        if (transitionEnv_.isSilent()) {
+            clearFilterStates();
         }
     }
 
-    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    void setEnabled(bool en) noexcept {
+        enabled_.store(en, std::memory_order_release);
+        if (!en && transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(0.0f);
+        }
+    }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
-    void setImmersivity(float w) noexcept { immersivity_.store(std::clamp(w, 0.0f, 1.0f), std::memory_order_release); }
+    void setThermalBypass(bool skip) noexcept { thermalBypass_.store(skip, std::memory_order_release); }
+    bool isThermalBypass() const noexcept { return thermalBypass_.load(std::memory_order_acquire); }
+    void setTransitionTimesMs(float attackMs, float releaseMs, float thermalMs = 35.0f) noexcept {
+        transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
+    }
+    const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    void setImmersivity(float w) noexcept {
+        const float clamped = std::clamp(w, 0.0f, 1.0f);
+        immersivity_.store(clamped, std::memory_order_release);
+        if (transitionEnv_.renderedBlocks == 0u && enabled_.load(std::memory_order_relaxed)) {
+            transitionEnv_.setImmediate(clamped);
+        }
+    }
     float immersivity() const noexcept { return immersivity_.load(std::memory_order_acquire); }
     void setSnnThreshold(float th) noexcept { snnThreshold_.store(std::clamp(th, 0.15f, 0.85f), std::memory_order_release); }
     float snnThreshold() const noexcept { return snnThreshold_.load(std::memory_order_acquire); }
@@ -367,8 +415,11 @@ private:
     float corrRunning_{0.0f};
     float energyRunning_{1.0e-6f};
     uint32_t lastActiveSpikes_{0};
+    bool lastThermalBypass_{false};
 
+    SupremeTransitionEnvelope transitionEnv_{};
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> thermalBypass_{false};
     std::atomic<float> immersivity_{0.5f};
     std::atomic<float> snnThreshold_{0.45f};
 };

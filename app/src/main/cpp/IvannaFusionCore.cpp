@@ -95,6 +95,8 @@ IvannaFusionEngine::IvannaFusionEngine() {
     
     m_upmixer.prepare(48000.0f);
     m_hoaDecoder.prepare(48000.0f, 8); // 8 virtual speakers
+    m_upmixEnv_.configure(48000.0f, 10.0f, 18.0f, 35.0f);
+    m_upmixEnv_.setImmediate(1.0f);
     m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -212,25 +214,29 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // cada bloque activo -- Upmixer solo redimensiona si BLOCK_SIZE cambia.
     const bool upmixingActive = m_upmixer.isUpmixingEnabled() ||
                                  g_upmixing_enabled.load(std::memory_order_relaxed);
-    if (upmixingActive) {
+    m_upmixEnv_.setTarget(upmixingActive ? 1.0f : 0.0f);
+    if (m_upmixEnv_.isTransitioning()) {
+        // Transición suave entre HOA Upmixer + Decoder y HrtfManager sin clics
+        alignas(64) float hoaL[Ivanna::BLOCK_SIZE];
+        alignas(64) float hoaR[Ivanna::BLOCK_SIZE];
+        std::memcpy(hoaL, buffer->left,  Ivanna::BLOCK_SIZE * sizeof(float));
+        std::memcpy(hoaR, buffer->right, Ivanna::BLOCK_SIZE * sizeof(float));
+
+        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
+        m_upmixer.processBlock(hoaL, hoaR, m_hoaField, Ivanna::BLOCK_SIZE);
+        m_hoaDecoder.processBlock(m_hoaField, hoaL, hoaR, Ivanna::BLOCK_SIZE);
+
+        m_hrtf->processBinauralScene(buffer);
+
+        for (size_t i = 0; i < Ivanna::BLOCK_SIZE; ++i) {
+            const float env = m_upmixEnv_.nextSample();
+            buffer->left[i]  = ivanna::supreme::SupremeTransitionEnvelope::mixSample(buffer->left[i],  hoaL[i], env);
+            buffer->right[i] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(buffer->right[i], hoaR[i], env);
+        }
+    } else if (!m_upmixEnv_.isSilent()) {
         m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
         m_upmixer.processBlock(buffer->left, buffer->right, m_hoaField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(m_hoaField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
-        // FIX (doble procesamiento binaural, 2026-09-16): processBinauralScene()
-        // se llamaba SIEMPRE aqui debajo, incluso con el upmixing activo. Eso
-        // encadenaba dos espacializadores binaurales completos: el HOA decoder
-        // ya distribuye la imagen en 8 altavoces virtuales convolucionados con
-        // HRTF (localizacion correcta por direccion), y processBinauralScene()
-        // es OTRO convolver HRTF de una sola posicion (pose de cabeza) que
-        // recolapsaba esa imagen ya espacializada a traves de un segundo
-        // filtro — coloracion audible (comb-filtering) y perdida de buena
-        // parte del beneficio del upmixing, no un refuerzo. Son dos rutas de
-        // espacializacion binaural ALTERNATIVAS, no etapas que se apilen: se
-        // omite la ruta HRTF de HrtfManager mientras el upmixing esta activo
-        // (mismo criterio que ya aplica m_hrtf->setWetDry()==0: bypass, no
-        // doble aplicacion). Al desactivar upmixing, HrtfManager retoma solo
-        // con una pequeña discontinuidad de historial FIR — inaudible, mismo
-        // orden de magnitud que cualquier cambio de banco/crossfade normal.
     } else {
         m_hrtf->processBinauralScene(buffer);
     }
@@ -349,8 +355,8 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // muestra se aplica dentro del loop del excitador — ver mix_eff). Si el
     // usuario arrastra el slider, el target salta pero el valor aplicado
     // recorre la distancia en rampa: sin escalón → sin clic.
-    if (m_goldenEarActive) {
-        applyGoldenEarGAN(buffer);  // contiene fast_tanh como limitador de salida
+    if (m_goldenEarActive || m_harmSmoothed_ > 1.0e-5f) {
+        applyGoldenEarGAN(buffer);  // contiene fast_tanh como limitador de salida y rampa suave a 0 si !m_goldenEarActive
     } else {
         // FIX (clipping cuando GoldenEar está desactivado): la cadena
         // applyMaskingCompensation + processBinauralScene puede empujar la
@@ -405,12 +411,13 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
     static constexpr float kMixBase = 0.12f;
     static constexpr float kHarmSlew = 1.0f / 8000.0f;
 
+    const float effectiveHarmTarget = m_goldenEarActive ? m_harmGainTarget_ : 0.0f;
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         // Perseguir el target UNA muestra más (slew por muestra, sin zipper).
-        if (m_harmSmoothed_ < m_harmGainTarget_)
-            m_harmSmoothed_ = std::min(m_harmSmoothed_ + kHarmSlew, m_harmGainTarget_);
-        else if (m_harmSmoothed_ > m_harmGainTarget_)
-            m_harmSmoothed_ = std::max(m_harmSmoothed_ - kHarmSlew, m_harmGainTarget_);
+        if (m_harmSmoothed_ < effectiveHarmTarget)
+            m_harmSmoothed_ = std::min(m_harmSmoothed_ + kHarmSlew, effectiveHarmTarget);
+        else if (m_harmSmoothed_ > effectiveHarmTarget)
+            m_harmSmoothed_ = std::max(m_harmSmoothed_ - kHarmSlew, effectiveHarmTarget);
         const float mix_eff = kMixBase * m_harmSmoothed_;
         // Pre-filtro LPF 8 kHz — canal izquierdo
         float xL = buffer->left[i];

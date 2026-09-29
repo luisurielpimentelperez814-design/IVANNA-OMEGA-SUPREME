@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -110,11 +111,21 @@ public:
         chirpPhase_ = 0.0f;
         chirpFreqHz_ = 17500.0f;
         silenceEnvelope_ = 0.0f;
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
 
         reset();
     }
 
     void reset() noexcept {
+        clearFilterStates();
+        declippedPeaks_.store(0u, std::memory_order_relaxed);
+        smoothBlDrive_ = blCompensationDrive_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+    }
+
+    void clearFilterStates() noexcept {
         bStateL_.fill(0.0f);
         bStateR_.fill(0.0f);
         allpassMemL_.fill(0.0f);
@@ -125,7 +136,6 @@ public:
         excursionEstR_ = 0.0f;
         declipPrev1L_ = 0.0f; declipPrev2L_ = 0.0f;
         declipPrev1R_ = 0.0f; declipPrev2R_ = 0.0f;
-        declippedPeaks_.store(0u, std::memory_order_relaxed);
         silenceEnvelope_ = 0.0f;
     }
 
@@ -216,19 +226,37 @@ public:
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
-        if (!enabled_.load(std::memory_order_relaxed)) return;
+        const bool thermSkip = thermalBypass_.load(std::memory_order_relaxed);
+        const bool isThermChange = (thermSkip != lastThermalBypass_);
+        lastThermalBypass_ = thermSkip;
+        const bool wantOn = enabled_.load(std::memory_order_relaxed) && !thermSkip;
+        const float targetEnv = wantOn ? 1.0f : 0.0f;
+        const TransitionProfile profile = (isThermChange || (thermSkip && transitionEnv_.isTransitioning()))
+            ? TransitionProfile::Thermal
+            : TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
+        if (!transitionEnv_.beginBlock(targetEnv, profile)) {
+            return;
+        }
+        if (wasSilent) {
+            clearFilterStates();
+        }
         ScopedFpDenormalsToZero ftzGuard{};
 
         const float fracDelay = computeSubSampleInverseGroupDelay(1000.0f);
         lastSubSampleDelay_.store(fracDelay, std::memory_order_relaxed);
-        const float blDrive = blCompensationDrive_.load(std::memory_order_relaxed);
-        const float effBeta1 = beta1_ * blDrive;
-        const float effBeta2 = beta2_ * blDrive;
+        const float targetBlDrive = blCompensationDrive_.load(std::memory_order_relaxed);
 
         uint32_t localDeclipped = 0u;
         for (size_t i = 0; i < numSamples; ++i) {
-            float inL = sanitize(left[i]);
-            float inR = sanitize(right[i]);
+            const float dryL = sanitize(left[i]);
+            const float dryR = sanitize(right[i]);
+            float inL = dryL;
+            float inR = dryR;
+
+            smoothBlDrive_ += 0.004f * (targetBlDrive - smoothBlDrive_);
+            const float effBeta1 = beta1_ * smoothBlDrive_;
+            const float effBeta2 = beta2_ * smoothBlDrive_;
 
             // 0. Master De-Clipper Cúbico de Hermite (restauración de crestas Loudness War a 0.00 ms)
             inL = reconstructClippedCrest(inL, declipPrev1L_, declipPrev2L_, localDeclipped);
@@ -268,16 +296,36 @@ public:
             processWarpedLatticeStep(fR, bStateR_, allpassMemR_);
 
             // 4. Compensación de retardo de grupo inverso sub-muestra (interpolador Lagrange cúbico)
-            left[i]  = std::clamp(applySubSampleDelay(fL, delayFracL_, fracDelay), -1.95f, 1.95f);
-            right[i] = std::clamp(applySubSampleDelay(fR, delayFracR_, fracDelay), -1.95f, 1.95f);
+            const float wetL = std::clamp(applySubSampleDelay(fL, delayFracL_, fracDelay), -1.95f, 1.95f);
+            const float wetR = std::clamp(applySubSampleDelay(fR, delayFracR_, fracDelay), -1.95f, 1.95f);
+
+            // 5. Mezcla continua libre de clics vía SupremeTransitionEnvelope
+            const float env = transitionEnv_.nextSample();
+            left[i]  = SupremeTransitionEnvelope::mixSample(dryL, wetL, env);
+            right[i] = SupremeTransitionEnvelope::mixSample(dryR, wetR, env);
         }
         if (localDeclipped > 0u) {
             declippedPeaks_.fetch_add(localDeclipped, std::memory_order_relaxed);
         }
+        if (transitionEnv_.isSilent()) {
+            clearFilterStates();
+        }
     }
 
-    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    void setEnabled(bool en) noexcept {
+        enabled_.store(en, std::memory_order_release);
+        if (!en && transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(0.0f);
+        }
+    }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
+    void setThermalBypass(bool skip) noexcept { thermalBypass_.store(skip, std::memory_order_release); }
+    bool isThermalBypass() const noexcept { return thermalBypass_.load(std::memory_order_acquire); }
+    void setTransitionTimesMs(float attackMs, float releaseMs, float thermalMs = 35.0f) noexcept {
+        transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
+    }
+    const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
     void setMicroChirpEnabled(bool en) noexcept { microChirpEnabled_.store(en, std::memory_order_release); }
     bool isMicroChirpEnabled() const noexcept { return microChirpEnabled_.load(std::memory_order_acquire); }
     void setBlCompensationDrive(float drive) noexcept {
@@ -400,9 +448,13 @@ private:
     float silenceEnvelope_{0.0f};
     float chirpPhase_{0.0f};
     float chirpFreqHz_{17500.0f};
+    float smoothBlDrive_{1.0f};
     uint32_t lfsrState_{0xA5A5F00Du};
+    bool lastThermalBypass_{false};
 
+    SupremeTransitionEnvelope transitionEnv_{};
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> thermalBypass_{false};
     std::atomic<bool> microChirpEnabled_{true};
     std::atomic<int> activeRouteArchetype_{0};
     std::atomic<uint32_t> declippedPeaks_{0u};

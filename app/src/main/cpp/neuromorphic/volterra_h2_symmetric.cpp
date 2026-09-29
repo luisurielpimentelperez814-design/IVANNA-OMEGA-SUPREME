@@ -59,6 +59,9 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
 
     if (m_h1) m_h1[0] = 1.0f;
 
+    m_transition_env.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+    m_transition_env.setImmediate(1.0f);
+
     m_kernels_ready.store(true, std::memory_order_release);
 }
 
@@ -100,8 +103,21 @@ void VolterraH2Symmetric::processInterleaved(
 ) noexcept {
     if (!input || !output) return;
 
-    if (!m_enabled.load(std::memory_order_acquire) || 
-        !m_kernels_ready.load(std::memory_order_acquire)) {
+    if (!m_kernels_ready.load(std::memory_order_acquire)) {
+        if (output != input) {
+            memcpy(output, input, num_frames * num_channels * sizeof(float));
+        }
+        return;
+    }
+
+    const bool wantEnabled = m_enabled.load(std::memory_order_acquire);
+    const bool thermal     = m_thermal_bypass.load(std::memory_order_relaxed);
+    const float targetGain = (wantEnabled && !thermal) ? 1.0f : 0.0f;
+    const auto profile     = thermal
+        ? ivanna::supreme::TransitionProfile::Thermal
+        : ivanna::supreme::TransitionProfile::Standard;
+
+    if (!m_transition_env.beginBlock(targetGain, profile)) {
         if (output != input) {
             memcpy(output, input, num_frames * num_channels * sizeof(float));
         }
@@ -135,9 +151,11 @@ void VolterraH2Symmetric::processInterleaved(
 #endif
 
     for (uint32_t n = 0; n < num_frames; ++n) {
+        const float env = m_transition_env.nextSample();
         for (uint32_t ch = 0; ch < num_channels; ++ch) {
             const uint32_t idx = n * num_channels + ch;
-            float x = input[idx];
+            const float dry = input[idx];
+            float x = dry;
 
             // Compuerta de ruido rápida contra el fango digital residual en el flujo
             if (std::abs(x) < 1e-30f) x = 0.0f;
@@ -247,7 +265,16 @@ void VolterraH2Symmetric::processInterleaved(
             if (y > 1.0f)  y = 1.0f;
             if (y < -1.0f) y = -1.0f;
 
-            output[idx] = y;
+            output[idx] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dry, y, env);
+        }
+    }
+
+    if (m_transition_env.isSilent() && m_delay_lines && m_delay_indices) {
+        for (uint32_t ch = 0; ch < num_channels; ++ch) {
+            if (m_delay_lines[ch]) {
+                memset(m_delay_lines[ch], 0, K * sizeof(float));
+            }
+            m_delay_indices[ch] = 0;
         }
     }
 }

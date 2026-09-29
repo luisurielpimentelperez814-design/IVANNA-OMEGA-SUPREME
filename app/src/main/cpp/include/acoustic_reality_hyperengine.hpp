@@ -49,6 +49,7 @@
 #include "../spatial/HrtfPersonalizer.hpp"
 #include "../spatial/HearingAdaptationEngine.hpp"
 #include "../spatial/StereoObjectDecomposer.hpp"
+#include "../supreme/SupremeTransitionEnvelope.hpp"
 #include "omega_control_bus.h"
 
 namespace ivanna::reality {
@@ -300,7 +301,11 @@ public:
         slowEnvL_ = slowEnvR_ = 0.0f;
         airStateL_ = airStateR_ = 0.0f;
         prevSampleL_ = prevSampleR_ = 0.0f;
+        normGainSmooth_ = 1.0f;
+        smoothContrast_ = 0.0f;
         clockTickUs_ = 0;
+        transitionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+        transitionEnv_.setImmediate(0.0f);
     }
 
     // Extrae el MicroDetailMap desde el AcousticGenome y las métricas actuales (hilo de control o RT).
@@ -380,14 +385,28 @@ public:
 
     // Pase RT-safe de inteligibilidad perceptual con CONSERVACIÓN ESTRICTA DE ENERGÍA (0 dB inflación de volumen).
     // Realza la articulación de micro-detalle en regiones de baja energía sin incrementar el RMS global del bloque.
+    // Protegido con SupremeTransitionEnvelope para evitar clics por bypass duro o saltos de contraste.
     void applyMicroIntelligibilityPass(float* __restrict bufL,
                                        float* __restrict bufR,
                                        size_t numSamples,
-                                       const MicroDetailMap& detailMap) noexcept
+                                       const MicroDetailMap& detailMap,
+                                       bool enabled = true,
+                                       bool thermalBypass = false) noexcept
     {
         if (!bufL || !bufR || numSamples == 0) return;
-        const float contrast = std::clamp(detailMap.intelligibilityContrast, 0.0f, 0.24f);
-        if (contrast < 1.0e-4f) return;
+        const float rawContrast = (enabled && !thermalBypass)
+            ? std::clamp(detailMap.intelligibilityContrast, 0.0f, 0.24f)
+            : 0.0f;
+        const float desiredActive = (rawContrast >= 1.0e-4f) ? 1.0f : 0.0f;
+        const auto profile = thermalBypass
+            ? ivanna::supreme::TransitionProfile::Thermal
+            : ivanna::supreme::TransitionProfile::Standard;
+
+        if (!transitionEnv_.beginBlock(desiredActive, profile)) {
+            normGainSmooth_ = 1.0f;
+            smoothContrast_ = 0.0f;
+            return;
+        }
 
         double energyBefore = 0.0;
         double energyAfter  = 0.0;
@@ -395,8 +414,15 @@ public:
         float fL = fastEnvL_, fR = fastEnvR_;
         float sL = slowEnvL_, sR = slowEnvR_;
         float aL = airStateL_, aR = airStateR_;
+        float cSmooth = smoothContrast_;
+
+        ivanna::supreme::SupremeTransitionEnvelope envPass2 = transitionEnv_;
 
         for (size_t i = 0; i < numSamples; ++i) {
+            const float env = transitionEnv_.nextSample();
+            cSmooth += 0.008f * (rawContrast - cSmooth);
+            const float effContrast = cSmooth * env;
+
             const float xL = bufL[i];
             const float xR = bufR[i];
             energyBefore += static_cast<double>(xL) * xL + static_cast<double>(xR) * xR;
@@ -420,8 +446,8 @@ public:
             // Desenmascaramiento adaptativo: actúa cuando el micro-transitorio emerge o en el velo de bajo nivel
             const float ratioL = (fL - sL) / (sL + 0.02f);
             const float ratioR = (fR - sR) / (sR + 0.02f);
-            const float modL = contrast * std::clamp(ratioL, -0.20f, 0.75f);
-            const float modR = contrast * std::clamp(ratioR, -0.20f, 0.75f);
+            const float modL = effContrast * std::clamp(ratioL, -0.20f, 0.75f);
+            const float modR = effContrast * std::clamp(ratioR, -0.20f, 0.75f);
 
             const float yL = xL + microL * modL;
             const float yR = xR + microR * modR;
@@ -434,19 +460,33 @@ public:
         fastEnvL_ = fL; fastEnvR_ = fR;
         slowEnvL_ = sL; slowEnvR_ = sR;
         airStateL_ = aL; airStateR_ = aR;
+        smoothContrast_ = cSmooth;
 
-        // Normalización exacta de potencia con rampa por muestra (cero saltos de ganancia entre bloques)
+        // Normalización exacta de potencia con rampa por muestra y fundido de envolvente (cero saltos)
         const float targetNormGain = (energyAfter > 1.0e-12 && energyBefore > 1.0e-12)
             ? std::clamp(static_cast<float>(std::sqrt(energyBefore / energyAfter)), 0.85f, 1.0f)
             : 1.0f;
         float g = normGainSmooth_;
         for (size_t i = 0; i < numSamples; ++i) {
+            const float env = envPass2.nextSample();
             g += 0.004f * (targetNormGain - g);
-            bufL[i] *= g;
-            bufR[i] *= g;
+            const float effectiveG = 1.0f + env * (g - 1.0f);
+            bufL[i] *= effectiveG;
+            bufR[i] *= effectiveG;
         }
         normGainSmooth_ = g;
+
+        if (transitionEnv_.isSilent()) {
+            fastEnvL_ = fastEnvR_ = 0.0f;
+            slowEnvL_ = slowEnvR_ = 0.0f;
+            airStateL_ = airStateR_ = 0.0f;
+            normGainSmooth_ = 1.0f;
+            smoothContrast_ = 0.0f;
+        }
     }
+
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    bool isTransitioning() const noexcept { return transitionEnv_.isTransitioning(); }
 
 private:
     float fastEnvL_{0.0f}, fastEnvR_{0.0f};
@@ -454,7 +494,9 @@ private:
     float airStateL_{0.0f}, airStateR_{0.0f};
     float prevSampleL_{0.0f}, prevSampleR_{0.0f};
     float normGainSmooth_{1.0f};
+    float smoothContrast_{0.0f};
     uint64_t clockTickUs_{0};
+    ivanna::supreme::SupremeTransitionEnvelope transitionEnv_{};
 };
 
 // ============================================================================

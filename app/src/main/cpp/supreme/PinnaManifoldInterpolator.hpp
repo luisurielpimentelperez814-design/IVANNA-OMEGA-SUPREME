@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -45,19 +46,60 @@ public:
 
     PinnaManifoldInterpolator() noexcept {
         initializeManifoldBasis();
+        transitionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+        slotXfadeEnv_.configure(48000.0f, 6.0f, 6.0f, 6.0f);
+        slotXfadeEnv_.setImmediate(1.0f);
         // Calibración de arranque Golden Ear derivada de los 255 archivos SOFA + 12 datasets IHR1
         calibrateFromLatents(0.28f, 0.34f, 0.0f, 48000.0f);
+        renderedSlot_ = activeFirSlot_.load(std::memory_order_relaxed) & 1u;
+        prevRenderedSlot_ = renderedSlot_;
+        reset();
+    }
+
+    void prepare(float sampleRate) noexcept {
+        sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
+        slotXfadeEnv_.configure(sampleRate_, 6.0f, 6.0f, 6.0f);
+        reset();
     }
 
     void reset() noexcept {
+        clearFilterStates();
+        const float initWet = (enabled_.load(std::memory_order_relaxed) &&
+                               !thermalBypass_.load(std::memory_order_relaxed))
+            ? std::clamp(wetMix_.load(std::memory_order_relaxed), 0.0f, 1.0f)
+            : 0.0f;
+        transitionEnv_.setImmediate(initWet);
+        slotXfadeEnv_.setImmediate(1.0f);
+    }
+
+    void clearFilterStates() noexcept {
         firHistoryL_.fill(0.0f);
         firHistoryR_.fill(0.0f);
         histWriteIdx_ = 0;
     }
 
-    void setEnabled(bool en) noexcept { enabled_.store(en, std::memory_order_release); }
+    void setEnabled(bool en) noexcept {
+        enabled_.store(en, std::memory_order_release);
+        if (!en && transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(0.0f);
+        }
+    }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
-    void setWetMix(float w) noexcept { wetMix_.store(std::clamp(w, 0.0f, 1.0f), std::memory_order_release); }
+    void setThermalBypass(bool skip) noexcept { thermalBypass_.store(skip, std::memory_order_release); }
+    bool isThermalBypass() const noexcept { return thermalBypass_.load(std::memory_order_acquire); }
+    void setTransitionTimesMs(float attackMs, float releaseMs, float thermalMs = 35.0f) noexcept {
+        transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
+    }
+    const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    void setWetMix(float w) noexcept {
+        const float clamped = std::clamp(w, 0.0f, 1.0f);
+        wetMix_.store(clamped, std::memory_order_release);
+        if (transitionEnv_.renderedBlocks == 0u && enabled_.load(std::memory_order_relaxed)) {
+            transitionEnv_.setImmediate(clamped);
+        }
+    }
     float wetMix() const noexcept { return wetMix_.load(std::memory_order_acquire); }
     float activeNotchFreqHz() const noexcept { return activeNotchHz_.load(std::memory_order_relaxed); }
     float activeItdMicroSeconds() const noexcept { return activeItdUs_.load(std::memory_order_relaxed); }
@@ -130,13 +172,35 @@ public:
      */
     void process(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
         if (!left || !right || numSamples == 0) return;
-        const float wet = wetMix_.load(std::memory_order_relaxed);
-        if (!enabled_.load(std::memory_order_relaxed) || wet <= 1.0e-5f) return;
+        const float rawWet   = std::clamp(wetMix_.load(std::memory_order_relaxed), 0.0f, 1.0f);
+        const bool thermSkip = thermalBypass_.load(std::memory_order_relaxed);
+        const bool isThermChange = (thermSkip != lastThermalBypass_);
+        lastThermalBypass_ = thermSkip;
+
+        const bool wantOn = enabled_.load(std::memory_order_relaxed) && !thermSkip;
+        const float targetWet = wantOn ? rawWet : 0.0f;
+        const TransitionProfile profile = (isThermChange || (thermSkip && transitionEnv_.isTransitioning()))
+            ? TransitionProfile::Thermal
+            : TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
+        if (!transitionEnv_.beginBlock(targetWet, profile)) {
+            return;
+        }
+        if (wasSilent) {
+            clearFilterStates();
+        }
 
         const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
-        const float* __restrict firL = activePairs_[slot].left.data();
-        const float* __restrict firR = activePairs_[slot].right.data();
-        const float dry = 1.0f - wet;
+        if (slot != renderedSlot_) {
+            prevRenderedSlot_ = renderedSlot_;
+            renderedSlot_     = slot;
+            slotXfadeEnv_.setImmediate(0.0f);
+            slotXfadeEnv_.setTarget(1.0f, TransitionProfile::FastParameter);
+        }
+        const float* __restrict firL = activePairs_[renderedSlot_].left.data();
+        const float* __restrict firR = activePairs_[renderedSlot_].right.data();
+        const float* __restrict prevFirL = activePairs_[prevRenderedSlot_].left.data();
+        const float* __restrict prevFirR = activePairs_[prevRenderedSlot_].right.data();
 
         for (size_t i = 0; i < numSamples; ++i) {
             const float inL = std::isfinite(left[i])  ? left[i]  : 0.0f;
@@ -174,9 +238,25 @@ public:
                 accR += firR[k] * hR[k];
             }
 #endif
+            if (slotXfadeEnv_.isTransitioning()) {
+                float prevAccL = 0.0f;
+                float prevAccR = 0.0f;
+                for (size_t k = 0; k < FIR_TAPS; ++k) {
+                    prevAccL += prevFirL[k] * hL[k];
+                    prevAccR += prevFirR[k] * hR[k];
+                }
+                const float xw = slotXfadeEnv_.nextSample();
+                accL = SupremeTransitionEnvelope::mixSample(prevAccL, accL, xw);
+                accR = SupremeTransitionEnvelope::mixSample(prevAccR, accR, xw);
+            }
 
-            left[i]  = std::clamp(dry * inL + wet * accL, -1.95f, 1.95f);
-            right[i] = std::clamp(dry * inR + wet * accR, -1.95f, 1.95f);
+            const float envWet = transitionEnv_.nextSample();
+            const float dry = 1.0f - envWet;
+            left[i]  = std::clamp(dry * inL + envWet * accL, -1.95f, 1.95f);
+            right[i] = std::clamp(dry * inR + envWet * accR, -1.95f, 1.95f);
+        }
+        if (transitionEnv_.isSilent()) {
+            clearFilterStates();
         }
     }
 
@@ -377,9 +457,16 @@ private:
     alignas(64) std::array<float, FIR_TAPS * 2> firHistoryL_{};
     alignas(64) std::array<float, FIR_TAPS * 2> firHistoryR_{};
     size_t histWriteIdx_{0};
+    float sampleRate_{48000.0f};
+    uint32_t renderedSlot_{0};
+    uint32_t prevRenderedSlot_{0};
+    bool lastThermalBypass_{false};
 
+    SupremeTransitionEnvelope transitionEnv_{};
+    SupremeTransitionEnvelope slotXfadeEnv_{};
     std::atomic<uint32_t> activeFirSlot_{0};
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> thermalBypass_{false};
     std::atomic<float> wetMix_{0.5f};
     std::atomic<float> activeNotchHz_{7800.0f};
     std::atomic<float> activeItdUs_{620.0f};

@@ -39,16 +39,27 @@ public:
         lowShelveR_ = 0.0f;
         highShelveL_ = 0.0f;
         highShelveR_ = 0.0f;
+        smoothLowGain_ = targetLowGain_;
+        smoothHighGain_ = targetHighGain_;
+        renderedBlocks_ = 0u;
     }
 
     void setProfile(const AudiogramProfile& prof) noexcept {
         profile_ = prof;
         recalculate();
+        if (renderedBlocks_ == 0u) {
+            smoothLowGain_ = targetLowGain_;
+            smoothHighGain_ = targetHighGain_;
+        }
     }
 
     void setFatigueLevel(float level) noexcept {
         fatigueLevel_ = std::clamp(level, 0.0f, 1.0f);
         recalculate();
+        if (renderedBlocks_ == 0u) {
+            smoothLowGain_ = targetLowGain_;
+            smoothHighGain_ = targetHighGain_;
+        }
     }
 
     /**
@@ -56,9 +67,12 @@ public:
      */
     void process(float* __restrict bufferL, float* __restrict bufferR, size_t numSamples) noexcept {
         if (!bufferL || !bufferR || numSamples == 0) return;
+        ++renderedBlocks_;
 
-        const float lowGain = targetLowGain_;
-        const float highGain = targetHighGain_;
+        const float targetLow = targetLowGain_;
+        const float targetHigh = targetHighGain_;
+        float lowGain = smoothLowGain_;
+        float highGain = smoothHighGain_;
 
         float sLowL = lowShelveL_;
         float sLowR = lowShelveR_;
@@ -66,6 +80,8 @@ public:
         float sHighR = highShelveR_;
 
         for (size_t i = 0; i < numSamples; ++i) {
+            lowGain  += 0.004f * (targetLow  - lowGain);
+            highGain += 0.004f * (targetHigh - highGain);
             float inL = bufferL[i];
             float inR = bufferR[i];
 
@@ -89,6 +105,8 @@ public:
         lowShelveR_ = sLowR;
         highShelveL_ = sHighL;
         highShelveR_ = sHighR;
+        smoothLowGain_ = lowGain;
+        smoothHighGain_ = highGain;
     }
 
 private:
@@ -113,6 +131,9 @@ private:
 
     float targetLowGain_{1.0f};
     float targetHighGain_{1.0f};
+    float smoothLowGain_{1.0f};
+    float smoothHighGain_{1.0f};
+    uint32_t renderedBlocks_{0u};
 
     float lowShelveL_{0.0f};
     float lowShelveR_{0.0f};

@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
+#include "../supreme/SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #  include <arm_neon.h>
@@ -58,21 +59,8 @@ public:
     // Función de transferencia inversa complementaria: H_inv(x) = x*(1 - α·env²)
     static constexpr float ALPHA_PRESTIN = 0.085f;  // coef. no-lineal OHC
 
-    // Q factor auditivo crítico por banda.
-    // FIX artefactos "láser": Q=3.0 en 8 kHz–16 kHz produce resonancia tonal
-    // audible (BPF muy estrecho cerca de Nyquist → ringing en transitorios).
-    // Reducimos Q en las 3 bandas superiores para ampliar el filtro y eliminar
-    // el pitido, manteniendo la selectividad en bandas medias/bajas.
-    static constexpr float Q_BY_BAND[NUM_BANDS] = {
-        3.0f,   // 120  Hz  — banda baja:   Q alto para buena selectividad
-        3.0f,   // 331  Hz
-        3.0f,   // 710  Hz
-        3.0f,   // 1390 Hz
-        2.5f,   // 2613 Hz  — transición
-        1.8f,   // 4807 Hz  — banda alta:   Q bajo → sin ringing
-        1.4f,   // 8736 Hz  — FIX "láser"
-        1.0f,   // 16000 Hz — Q=1 (Butterworth BPF, 2 oct de anchura)
-    };
+    // Q factor auditivo crítico (banda Greenwood)
+    static constexpr float Q_COCHLEAR    = 3.0f;
 
     // Constantes de tiempo Heun (OHC envelope follower)
     static constexpr float TAU_ATT_MS   = 10.0f;   // ataque   [ms]
@@ -108,12 +96,15 @@ public:
     float intensity_  = 0.35f;  // [0..1] — intensidad configurada
     float activeWet_  = 0.0f;   // rampa suave anti-click por muestra
     bool  enabled_    = false;  // on/off state (bypass por defecto hasta activación)
+    bool  thermalBypass_ = false;
+    ivanna::supreme::SupremeTransitionEnvelope transitionEnv_{};
 
     CochlearActiveInverseEngine() noexcept {
         prepare(48000.0f, 512);
         enabled_   = false;
         wetGain_   = 0.0f;
         activeWet_ = 0.0f;
+        transitionEnv_.setImmediate(0.0f);
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -121,12 +112,19 @@ public:
     // ────────────────────────────────────────────────────────────────────────
     void prepare(float sampleRate, int /*blockSize*/ = 512) noexcept {
         sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
+        transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
         prepareBands(chanL_, sampleRate_);
         prepareBands(chanR_, sampleRate_);
         reset();
     }
 
     void reset() noexcept {
+        clearFilterStates();
+        transitionEnv_.setImmediate(enabled_ ? wetGain_ : 0.0f);
+        activeWet_ = transitionEnv_.currentGain;
+    }
+
+    void clearFilterStates() noexcept {
         auto zeroState = [](ChannelState& ch) noexcept {
             for (int b = 0; b < NUM_BANDS; ++b) {
                 ch.x1[b] = ch.x2[b] = 0.0f;
@@ -152,18 +150,26 @@ public:
                  float* __restrict bufferR,
                  int numSamples) noexcept {
         if (!bufferL || !bufferR || numSamples <= 0) return;
-        const float targetWet = enabled_ ? wetGain_ : 0.0f;
-        if (targetWet <= 1.0e-6f && activeWet_ <= 1.0e-6f) {
+        const float targetWet = (enabled_ && !thermalBypass_) ? wetGain_ : 0.0f;
+        const auto profile = thermalBypass_
+            ? ivanna::supreme::TransitionProfile::Thermal
+            : ivanna::supreme::TransitionProfile::Standard;
+
+        if (!transitionEnv_.beginBlock(targetWet, profile)) {
+            activeWet_ = 0.0f;
             return;
         }
-        float wetEndL = activeWet_;
-        float wetEndR = activeWet_;
-        processMono(bufferL, numSamples, chanL_, targetWet, wetEndL);
-        processMono(bufferR, numSamples, chanR_, targetWet, wetEndR);
-        activeWet_ = wetEndL;
-        if (!enabled_ && activeWet_ <= 1.0e-6f) {
+
+        ivanna::supreme::SupremeTransitionEnvelope envL = transitionEnv_;
+        ivanna::supreme::SupremeTransitionEnvelope envR = transitionEnv_;
+        processMono(bufferL, numSamples, chanL_, envL);
+        processMono(bufferR, numSamples, chanR_, envR);
+        transitionEnv_ = envL;
+        activeWet_ = transitionEnv_.currentGain;
+
+        if (transitionEnv_.isSilent()) {
             activeWet_ = 0.0f;
-            reset();
+            clearFilterStates();
         }
     }
 
@@ -171,37 +177,42 @@ public:
         const float clamped = (wet < 0.0f) ? 0.0f : (wet > 1.0f) ? 1.0f : wet;
         intensity_ = clamped;
         wetGain_   = clamped;
-        // FIX artefactos: NO sobreescribir activeWet_ — la rampa en processMono()
-        // lleva suavemente hasta clamped. Antes: activeWet_=clamped → step change.
         enabled_   = (clamped > 0.0f);
+        if (transitionEnv_.renderedBlocks == 0u) {
+            transitionEnv_.setImmediate(clamped);
+            activeWet_ = clamped;
+        }
     }
 
     [[nodiscard]] float getWetGain() const noexcept { return wetGain_; }
 
     // ── API requerida por ivanna_spatial_jni.cpp (Ruta A helper) ─────────────
-    /** Activa o desactiva el motor. La ganancia sube/baja con rampa ~10 ms
-     *  (RAMP_COEFF=0.002 en processMono) para evitar clicks/pops al conmutar. */
+    /** Activa o desactiva el motor (wet=intensity_ si on, 0 si off). */
     void setEnabled(bool on) noexcept {
         enabled_ = on;
         if (on && intensity_ <= 1.0e-4f) {
             intensity_ = 0.35f;
         }
-        // FIX artefactos: wetGain_ es el TARGET de la rampa, no se aplica
-        // de golpe. La rampa en processMono() llega a él suavemente (~10 ms).
         wetGain_ = on ? intensity_ : 0.0f;
     }
 
-    /** Ajusta la intensidad de corrección [0..1]. Cambio suave vía rampa. */
-    void setIntensity(float w) noexcept {
-        intensity_ = (w < 0.0f) ? 0.0f : (w > 1.0f) ? 1.0f : w;
-        if (enabled_) wetGain_ = intensity_;  // target → rampa en processMono()
+    void setThermalBypass(bool thermalBypass) noexcept {
+        thermalBypass_ = thermalBypass;
     }
 
-    /** Devuelve true si el motor debe seguir procesando.
-     *  FIX artefactos: incluye la bajada de rampa (activeWet_ > ε) para que
-     *  process() no se corte a mitad del ramp-out → click al desactivar. */
+    /** Ajusta la intensidad de corrección [0..1] sin alterar el estado on/off. */
+    void setIntensity(float w) noexcept {
+        intensity_ = (w < 0.0f) ? 0.0f : (w > 1.0f) ? 1.0f : w;
+        if (enabled_) wetGain_ = intensity_;
+    }
+
+    /** Devuelve true si el motor está activo y la intensidad es perceptible (>0). */
     [[nodiscard]] bool isActive() const noexcept {
-        return enabled_ || (activeWet_ > 1.0e-4f);
+        return (enabled_ && !thermalBypass_ && (wetGain_ > 0.0f)) || !transitionEnv_.isSilent();
+    }
+
+    [[nodiscard]] float currentTransitionGain() const noexcept {
+        return transitionEnv_.currentGain;
     }
 
     CochlearActiveInverseEngine& cochlearEngine() noexcept { return *this; }
@@ -216,11 +227,10 @@ private:
         const float rel_c = 1.0f / (TAU_REL_MS * 0.001f * Fs);
         for (int b = 0; b < NUM_BANDS; ++b) {
             // Biquad BPF — Audio EQ Cookbook (constant skirt, unit peak)
-            // Q por banda: ver Q_BY_BAND[] — bandas altas con Q reducido (anti-láser)
             const float w0    = PI2 * CF[b] / Fs;
             const float sinW  = std::sin(w0);
             const float cosW  = std::cos(w0);
-            const float alpha = sinW / (2.0f * Q_BY_BAND[b]);  // Q per-banda
+            const float alpha = sinW / (2.0f * Q_COCHLEAR);
             const float a0    = 1.0f + alpha;
             const float inv_a0 = 1.0f / a0;          // ← única división en init
             ch.b0[b]  = alpha * inv_a0;               // b0/a0
@@ -239,15 +249,12 @@ private:
     // ────────────────────────────────────────────────────────────────────────
     void processMono(float* __restrict buf, int N,
                      ChannelState& __restrict ch,
-                     float targetWet,
-                     float& currentWet) noexcept {
+                     ivanna::supreme::SupremeTransitionEnvelope& env) noexcept {
         const float alpha_p  = ALPHA_PRESTIN;
         constexpr float INV8 = 0.125f;
-        constexpr float RAMP_COEFF = 0.002f; // ~10ms rampa suave anti-click @ 48kHz
 
         for (int n = 0; n < N; ++n) {
-            currentWet += RAMP_COEFF * (targetWet - currentWet);
-            const float wet = currentWet;
+            const float wet = env.nextSample();
             const float x = buf[n];
             float nl_cancel_sum = 0.0f;
 

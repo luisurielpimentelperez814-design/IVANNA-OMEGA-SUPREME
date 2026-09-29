@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <atomic>
+#include "../supreme/SupremeTransitionEnvelope.hpp"
 
 namespace ivanna {
 namespace dsp {
@@ -82,10 +83,25 @@ public:
      */
     void setEnabled(bool enabled) noexcept {
         m_enabled.store(enabled, std::memory_order_release);
+        if (m_transition_env.renderedBlocks == 0u) {
+            m_transition_env.setImmediate(enabled ? 1.0f : 0.0f);
+        }
+    }
+
+    void setThermalBypass(bool thermalBypass) noexcept {
+        m_thermal_bypass.store(thermalBypass, std::memory_order_relaxed);
     }
 
     bool isEnabled() const noexcept {
         return m_enabled.load(std::memory_order_acquire);
+    }
+
+    bool isSilent() const noexcept {
+        return m_transition_env.isSilent();
+    }
+
+    float currentTransitionGain() const noexcept {
+        return m_transition_env.currentGain;
     }
 
 private:
@@ -105,7 +121,9 @@ private:
 
     // Estado
     std::atomic<bool> m_enabled{true};
+    std::atomic<bool> m_thermal_bypass{false};
     std::atomic<bool> m_kernels_ready{false};
+    ivanna::supreme::SupremeTransitionEnvelope m_transition_env{};
 
     // Previene copia
     VolterraH2Symmetric(const VolterraH2Symmetric&) = delete;

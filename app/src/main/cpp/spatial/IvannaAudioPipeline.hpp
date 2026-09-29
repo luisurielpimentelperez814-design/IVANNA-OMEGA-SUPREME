@@ -20,6 +20,7 @@
 #include "../supreme/SnnNmfHoaUpmixer.hpp"
 #include "../supreme/PinnaManifoldInterpolator.hpp"
 #include "../supreme/ShmPipelineArbitrator.hpp"
+#include "../supreme/SupremeTransitionEnvelope.hpp"
 #include "../include/acoustic_reality_hyperengine.hpp"
 
 namespace ivanna::spatial {
@@ -60,6 +61,8 @@ public:
         snnNmfHoaUpmixer_.setEnabled(false);
         pinnaManifoldInterpolator_.setEnabled(false);
         shmMsoArbitrator_.setEnabled(false);
+        realityEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+        realityEnv_.setImmediate(0.0f);
         reset();
     }
 
@@ -96,6 +99,7 @@ public:
         pinnaManifoldInterpolator_.reset();
         shmMsoArbitrator_.reset();
         realityOrchestrator_.reset();
+        realityEnv_.setImmediate(realityReconstructionEnabled_ ? 1.0f : 0.0f);
         lastRealitySeq_ = 0;
     }
 
@@ -226,15 +230,24 @@ public:
         // ── FASE 8 & FASES 9–15: AcousticRealityOrchestrator + AcousticExecutiveBrain ──
         std::array<DecomposedObject, 4> activeObjs = decomposer_.getObjects();
         float itdScale = personalizer_.getItdScale();
-        if (realityReconstructionEnabled_) {
-            realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
-            if (activeRealityState_.sequence == 0) {
-                orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
+        const float targetReality = realityReconstructionEnabled_ ? 1.0f : 0.0f;
+        if (realityEnv_.beginBlock(targetReality)) {
+            if (realityReconstructionEnabled_) {
+                realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
+                if (activeRealityState_.sequence == 0) {
+                    orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
+                }
             }
-            const float k = activeRealityState_.realityIntensity;
+            float envVal = realityEnv_.currentGain;
+            for (size_t s = 0; s < numSamples; ++s) {
+                envVal = realityEnv_.nextSample();
+            }
+            const float k = std::clamp(activeRealityState_.realityIntensity * envVal, 0.0f, 1.0f);
             const auto& exec = activeRealityState_.cognitive.executiveDecision;
-            const float spreadMod = (exec.arbitratedWfsSpreadScale > 0.1f) ? exec.arbitratedWfsSpreadScale : 1.0f;
-            const float depthMod  = (exec.arbitratedObjectDepthScale > 0.1f) ? exec.arbitratedObjectDepthScale : 1.0f;
+            const float rawSpreadMod = (exec.arbitratedWfsSpreadScale > 0.1f) ? exec.arbitratedWfsSpreadScale : 1.0f;
+            const float rawDepthMod  = (exec.arbitratedObjectDepthScale > 0.1f) ? exec.arbitratedObjectDepthScale : 1.0f;
+            const float spreadMod = 1.0f + k * (rawSpreadMod - 1.0f);
+            const float depthMod  = 1.0f + k * (rawDepthMod  - 1.0f);
 
             for (size_t i = 0; i < 4; ++i) {
                 const auto& gSrc = activeRealityState_.genome.sources[i];
@@ -245,12 +258,13 @@ public:
             }
             std::array<float, 4> scaledErGains = activeRealityState_.timeline.room.earlyTapGains;
             const float erScale = (exec.arbitratedEarlyReflectionsScale > 0.1f) ? exec.arbitratedEarlyReflectionsScale : 1.0f;
-            for (float& eg : scaledErGains) eg *= erScale;
+            for (float& eg : scaledErGains) eg *= (1.0f + k * (erScale - 1.0f));
             spatialRenderer_.setEarlyReflectionGains(scaledErGains);
             physicalScene_.setWallAbsorption(activeRealityState_.genome.roomFingerprint.wallAbsorption);
-            itdScale = (exec.arbitratedHrtfItdScale > 0.1f)
+            const float targetItd = (exec.arbitratedHrtfItdScale > 0.1f)
                 ? exec.arbitratedHrtfItdScale
                 : activeRealityState_.personalField.customItdScale;
+            itdScale = itdScale * (1.0f - k) + targetItd * k;
         }
 
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage
@@ -267,11 +281,10 @@ public:
         // 5. Eje 3: Room partial inversion and virtual room projection
         roomEngine_.process(bufferL, bufferR, numSamples);
 
-        // 5b. Fase 2: MicroReality Extraction Pass (0 dB loudness inflation, perceptual intelligibility)
-        if (realityReconstructionEnabled_) {
-            realityOrchestrator_.microExtractor().applyMicroIntelligibilityPass(
-                bufferL, bufferR, numSamples, activeRealityState_.microMap);
-        }
+        // 5b. Fase 2: MicroReality Extraction Pass (con SupremeTransitionEnvelope anti-click)
+        realityOrchestrator_.microExtractor().applyMicroIntelligibilityPass(
+            bufferL, bufferR, numSamples, activeRealityState_.microMap,
+            realityReconstructionEnabled_, false);
 
         // 6. Eje 6: Hearing adaptation & fatigue protection
         hearingEngine_.process(bufferL, bufferR, numSamples);
@@ -314,6 +327,7 @@ private:
     // Acoustic Reality Reconstruction Hyperengine (Fases 1–8)
     ivanna::reality::AcousticRealityOrchestrator realityOrchestrator_{};
     ivanna::reality::AcousticRealityState        activeRealityState_{};
+    ivanna::supreme::SupremeTransitionEnvelope   realityEnv_{};
     uint64_t                                     lastRealitySeq_{0};
     uint64_t                                     realityTickUs_{0};
     bool                                         realityReconstructionEnabled_{false};
