@@ -178,17 +178,24 @@ object Iso226Calibrator {
         val totHigh     = clampDbForEq(high + cur.high)
         val totPresence = clampDbForEq(presence + cur.presence)
 
-        val maxBoostDb  = maxOf(0f, totLow, totMid, totHigh, totPresence)
-        val safeMaster  = (cur.master - maxBoostDb).coerceIn(-24f, cur.master)
+        // FIX: ParametricEQ::getOutputCompensationDb() en C++ ya resta
+        // automáticamente la compensación de headroom del stack de bandas sobre
+        // GainStage. Restar maxBoostDb aquí a cur.master (que por defecto es
+        // 0.8f lineal) producía un master negativo (p. ej. 0.8 - 5.0 = -4.2)
+        // que el JNI interpretaba como <= 0.001 lineal → -60 dB (corte/trueno).
+        // Además forzamos mix neutro (0.5f) si venía por encima para no
+        // inyectar ganancia pre-EQ antes de los biquads.
+        val safeMix     = cur.mix.coerceIn(0f, 0.5f)
+        val safeMaster  = cur.master
 
         DSPBridge.setParams(
-            drive = cur.drive, wet = cur.wet, mix = cur.mix,
+            drive = cur.drive, wet = cur.wet, mix = safeMix,
             alpha = cur.alpha, beta = cur.beta, gamma = cur.gamma,
             freq = cur.freq, resonance = cur.resonance,
             low = totLow, mid = totMid, high = totHigh,
             presence = totPresence, master = safeMaster
         )
-        Log.i(TAG, "ISO 226 → DSPBridge (delta acotado + headroom): low=${"%.2f".format(totLow)}dB mid=${"%.2f".format(totMid)}dB high=${"%.2f".format(totHigh)}dB presence=${"%.2f".format(totPresence)}dB master=${"%.2f".format(safeMaster)}dB (headroom -${"%.2f".format(maxBoostDb)}dB)")
+        Log.i(TAG, "ISO 226 → DSPBridge (delta acotado + headroom C++): low=${"%.2f".format(totLow)}dB mid=${"%.2f".format(totMid)}dB high=${"%.2f".format(totHigh)}dB presence=${"%.2f".format(totPresence)}dB master=${"%.2f".format(safeMaster)}")
     }
 
     // ── Aplicar al daemon Magisk vía socket ───────────────────────────────────

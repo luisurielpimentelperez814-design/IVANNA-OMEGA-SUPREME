@@ -416,15 +416,24 @@ class IvannaGlobalEffectManager(
         val offsetMb = (eqGainDb * 100f).toInt()  // dB → milliBels
         activeSessions.forEach { (sessionId, fx) ->
             runCatching {
-                // EQ: offset sobre las bandas del perfil activo
+                // EQ: offset sobre las bandas del perfil activo con auto-headroom
+                // para que subir sliders por encima de 0 dB no sature el mixer de Android
+                val maxBandMb = (0 until prof.eqBands.size).maxOfOrNull { b ->
+                    prof.eqBands[b] + offsetMb
+                } ?: 0
+                val headroomMb = if (maxBandMb > 0) (maxBandMb * 0.75f).toInt() else 0
                 fx.equalizer?.let { eq ->
                     if (!eq.enabled) return@let
                     val numBands = eq.numberOfBands.toInt()
+                    val range = runCatching { eq.bandLevelRange }.getOrNull()
+                    val minMb = range?.getOrNull(0)?.toInt() ?: -1500
+                    val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
                     for (band in 0 until numBands) {
                         val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
+                        val targetMb = (baseMb + offsetMb - headroomMb).coerceIn(minMb, maxMb)
                         eq.setBandLevel(
                             band.toShort(),
-                            (baseMb + offsetMb).coerceIn(-600, 600).toShort()
+                            targetMb.toShort()
                         )
                     }
                 }
@@ -614,11 +623,17 @@ class IvannaGlobalEffectManager(
     private fun applyProfileToSession(sessionId: Int, profile: IvannaEffectProfile) {
         val fx = activeSessions[sessionId] ?: return
         runCatching {
+            val maxBoostMb = profile.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0
+            val headroomMb = if (maxBoostMb > 300) ((maxBoostMb - 300) * 0.75f).toInt() else 0
             fx.equalizer?.let { eq ->
                 if (eq.enabled) {
                     val numBands = eq.numberOfBands.toInt()
+                    val range = runCatching { eq.bandLevelRange }.getOrNull()
+                    val minMb = range?.getOrNull(0)?.toInt() ?: -1500
+                    val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
                     for (band in 0 until minOf(numBands, profile.eqBands.size)) {
-                        eq.setBandLevel(band.toShort(), profile.eqBands[band].toShort())
+                        val levelMb = (profile.eqBands[band] - headroomMb).coerceIn(minMb, maxMb)
+                        eq.setBandLevel(band.toShort(), levelMb.toShort())
                     }
                 }
             }
@@ -628,7 +643,8 @@ class IvannaGlobalEffectManager(
             fx.virtualizer?.let { v ->
                 if (v.strengthSupported) v.setStrength(profile.virtualizerStrength)
             }
-            fx.loudness?.setTargetGain(profile.loudnessGainMb)
+            val safeLoudnessMb = (profile.loudnessGainMb - headroomMb).coerceAtLeast(0)
+            fx.loudness?.setTargetGain(safeLoudnessMb)
             fx.reverb?.let { rev ->
                 rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
                 rev.setDecayTime(profile.reverbDecayTimeMs)

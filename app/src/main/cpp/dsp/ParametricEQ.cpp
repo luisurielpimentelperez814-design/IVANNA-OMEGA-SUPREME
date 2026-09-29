@@ -26,39 +26,56 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     float b0 = 1.0f + alpha*A, b1 = -2.0f*c, b2 = 1.0f - alpha*A;
     float a0 = 1.0f + alpha/A, a1 = -2.0f*c, a2 = 1.0f - alpha/A;
     b0/=a0; b1/=a0; b2/=a0; a1/=a0; a2/=a0;
-    // Reutilizar el estado si la banda ya estaba activa (evita click al
-    // reajustar en caliente); si estaba inactiva, arranca limpia.
-    const bool wasActive = active_[b];
+    const bool newActive = (g > 0.02f || g < -0.02f);
+    // Si los coeficientes no cambiaron (p. ej. el usuario arrastra otra banda
+    // distinta), no reiniciar ni disparar crossfades innecesarios.
+    if (std::fabs(bandsL[b].b0 - b0) < 1e-6f &&
+        std::fabs(bandsL[b].b1 - b1) < 1e-6f &&
+        std::fabs(bandsL[b].b2 - b2) < 1e-6f &&
+        std::fabs(bandsL[b].a1 - a1) < 1e-6f &&
+        std::fabs(bandsL[b].a2 - a2) < 1e-6f) {
+        active_[b] = newActive;
+        return;
+    }
+    // Reutilizar el estado si la banda ya estaba activa o en fundido (evita
+    // click al reajustar en caliente); si estaba inactiva, arranca limpia.
+    const bool wasActive = active_[b] || (fade_[b] > 0);
     const float x1L = wasActive ? bandsL[b].x1 : 0.f, x2L = wasActive ? bandsL[b].x2 : 0.f;
     const float y1L = wasActive ? bandsL[b].y1 : 0.f, y2L = wasActive ? bandsL[b].y2 : 0.f;
     const float x1R = wasActive ? bandsR[b].x1 : 0.f, x2R = wasActive ? bandsR[b].x2 : 0.f;
     const float y1R = wasActive ? bandsR[b].y1 : 0.f, y2R = wasActive ? bandsR[b].y2 : 0.f;
     // Anti-zipper: guardar el filtro saliente como copia y arrancar un
-    // crossfade temporal (~15 ms) en process(). Sin esto, el salto de
-    // coeficientes mete un clic audible al arrastrar los faders de EQ.
-    // Si la banda estaba inactiva (filtro = identidad), no hace falta
-    // fundido — la salida vieja es bit-exacta a la entrada.
-    // FIX (tronidos al encender/apagar bandas o aplicar un preset con EQ):
-    // Antes, si wasActive era falso, fade_[b] se forzaba a 0 y la banda saltaba
-    // instantáneamente desde la identidad a +5dB, generando un fuerte thump.
-    // Ahora TODO cambio de parámetros genera un crossfade de 15ms. Si la
-    // banda estaba inactiva, bandsL[b] ya contiene coeficientes planos (identidad),
-    // por lo que prevL se inicializa limpiamente con un filtro transparente y 
-    // se hace un fade hacia la nueva EQ de manera segura.
-    if (fade_[b] == 0) {
+    // crossfade temporal (~15 ms) en process().
+    // FIX (tronido al arrastrar sliders continuamente): antes sólo se iniciaba
+    // el crossfade si fade_[b] == 0. Al mover un slider en la UI (eventos cada
+    // 8-16 ms < 15 ms de fade), las actualizaciones intermedias encontraban
+    // fade_[b] > 0 y machacaban bandsL[b] en seco cuando t ya iba cerca de 1.0,
+    // produciendo escalones audibles en pleno arrastre. Ahora, si ya había un
+    // fade en curso, consolidamos el filtro interpolado actual en prevL/prevR
+    // y reiniciamos limpiamente la rampa de 15 ms desde t=0.
+    if (fade_[b] > 0 && fadeLen_[b] > 0) {
+        const float t = 1.0f - (float)fade_[b] / (float)fadeLen_[b];
+        prevL[b].b0 = prevL[b].b0 + (bandsL[b].b0 - prevL[b].b0) * t;
+        prevL[b].b1 = prevL[b].b1 + (bandsL[b].b1 - prevL[b].b1) * t;
+        prevL[b].b2 = prevL[b].b2 + (bandsL[b].b2 - prevL[b].b2) * t;
+        prevL[b].a1 = prevL[b].a1 + (bandsL[b].a1 - prevL[b].a1) * t;
+        prevL[b].a2 = prevL[b].a2 + (bandsL[b].a2 - prevL[b].a2) * t;
+        prevL[b].x1 = x1L; prevL[b].x2 = x2L; prevL[b].y1 = y1L; prevL[b].y2 = y2L;
+        prevR[b].b0 = prevL[b].b0;
+        prevR[b].b1 = prevL[b].b1;
+        prevR[b].b2 = prevL[b].b2;
+        prevR[b].a1 = prevL[b].a1;
+        prevR[b].a2 = prevL[b].a2;
+        prevR[b].x1 = x1R; prevR[b].x2 = x2R; prevR[b].y1 = y1R; prevR[b].y2 = y2R;
+    } else {
         prevL[b] = bandsL[b];
         prevR[b] = bandsR[b];
-        fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
-        fade_[b] = fadeLen_[b];
     }
+    fadeLen_[b] = (int)(sampleRate_ * 0.015f);   // 15 ms
+    fade_[b] = fadeLen_[b];
     bandsL[b] = {b0,b1,b2,a1,a2,x1L,x2L,y1L,y2L};
     bandsR[b] = {b0,b1,b2,a1,a2,x1R,x2R,y1R,y2R};
-    // Umbral 0.02 dB: por debajo es inaudible (< 1/20 del JND de nivel) y la
-    // banda se marca inactiva para saltarse por completo en process().
-    // NOTA: si la banda queda inactiva pero hay un fundido en curso (usuario
-    // llevó el fader a 0 dB de golpe), process() debe dejar terminar el
-    // crossfade hacia la identidad — por eso fade_ se consulta aparte.
-    active_[b] = (g > 0.02f || g < -0.02f);
+    active_[b] = newActive;
 }
 
 void ParametricEQ::setParams(const DSPParams& p) noexcept {
@@ -131,12 +148,12 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     const float lowGroup  = std::max(0.f, p.low)             // Band 0
                           + std::max(0.f, p.low * 0.5f);      // Band 1
     const float maxStack  = std::max({highGroup, midGroup, lowGroup});
-    // Compensar solo cuando el stack supera 6 dB (por debajo es manejable).
-        // FIX(7): compensación 50%→80%, threshold 6dB→3dB
-    // Old (50%,6dB): stack=27→comp=10.5→overshoot=16.5dB→pumping visible
-    // New (80%,3dB): stack=27→comp=19.2→overshoot=7.8dB→dentro del knee
-    if (maxStack > 3.0f) {
-        eqOutputCompensationDb_ = (maxStack - 3.0f) * 0.80f;
+    const float otherSum  = std::max(0.f, (highGroup + midGroup + lowGroup) - maxStack);
+    // Compensar progresivamente desde 0 dB hacia arriba (sin zona muerta de 3 dB)
+    // para que cualquier boost por encima de 0 dB ajuste el headroom de GainStage
+    // sin saturar etapas posteriores.
+    if (maxStack > 0.0f) {
+        eqOutputCompensationDb_ = maxStack * 0.75f + otherSum * 0.25f;
     } else {
         eqOutputCompensationDb_ = 0.f;
     }

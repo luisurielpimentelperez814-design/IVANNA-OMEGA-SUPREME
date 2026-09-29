@@ -220,16 +220,30 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // Ataque inmediato si la muestra reventaria, release exponencial
         // cuando sobra headroom -> la reduccion se percibe como nivel, no
         // como distorsion (sin modulacion muestra-a-muestra de la suma).
-        const float headL = 1.0f - std::fabs(l);
-        const float headR = 1.0f - std::fabs(r);
+        // FIX CRÍTICO (tronido al subir EQ > 0 dB): el EQ corre ANTES del
+        // HarmonicExciter y la compensación de ganancia de salida (GainStage::
+        // processOutput) corre DESPUÉS. Cuando el usuario sube cualquier banda
+        // del EQ por encima de 0 dB, |l| y |dry| superan 1.0f al entrar aquí.
+        // Antes, headL = 1.0f - |l| se volvía NEGATIVO (< 0), haciendo que
+        // needL = headL / 1e-9f explotara a -1e8f y excScaleL_ quedara
+        // enganchado en valores negativos gigantes durante ~200 ms, saturando
+        // la salida a onda cuadrada ±1.0f ("truena el audio al subir de 0").
+        // Se acota headL/headR a >= 0.0f y scaleL/scaleR a [0.0f, 1.0f], y el
+        // techo final respeta |dry| si la señal seca ya viene con boost pre-GainStage.
+        float dryL = left[i >> 1];
+        float dryR = right[i >> 1];
+        const float peakRefL = std::max(std::fabs(l), std::fabs(dryL));
+        const float peakRefR = std::max(std::fabs(r), std::fabs(dryR));
+        const float headL = std::max(0.0f, 1.0f - peakRefL);
+        const float headR = std::max(0.0f, 1.0f - peakRefR);
         const float reqL = kExcCeiling * wetNow * std::fabs(excL);
         const float reqR = kExcCeiling * wetNow * std::fabs(excR);
         const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
         const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
         if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
         if (needR < scaleR) scaleR = needR; else scaleR = rel * scaleR + (1.0f - rel);
-        if (scaleL > 1.0f) scaleL = 1.0f;
-        if (scaleR > 1.0f) scaleR = 1.0f;
+        scaleL = std::clamp(scaleL, 0.0f, 1.0f);
+        scaleR = std::clamp(scaleR, 0.0f, 1.0f);
 
         // Mezcla con el MISMO wetNow que se usó para el headroom de arriba.
         // FIX overshoot 1e-6: antes wetNow convergía ANTES de la mezcla, así
@@ -239,8 +253,6 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         // FIX dry path: la señal seca DEBE ser el sample original (no pre-filtrado)
         // para que el timbre ≥8kHz pase intacto. La excitación (wet*excL*scaleL)
         // viene del path filtrado (≤8kHz) pero se mezcla sobre el dry original.
-        float dryL = left[i >> 1];
-        float dryR = right[i >> 1];
         float outL = dryL + kExcCeiling * wetNow * excL * scaleL;
         float outR = dryR + kExcCeiling * wetNow * excR * scaleR;
 
@@ -251,13 +263,14 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
         wetNow = wetSm * wetNow + (1.0f - wetSm) * wetTarget;
         wetNow_ = wetNow;
 
-        // Clamp numérico de seguridad: el headroom garantiza |out|<=1 en
-        // aritmética exacta, pero el redondeo FP del producto
-        // ceiling*wet*exc*scale puede dejar un residuo de ~1e-6 por encima
-        // del techo. El clamp solo atrapa ese residuo (inaudible) — el
-        // trabajo anti-clipping real lo sigue haciendo excScale_.
-        if (outL > 1.0f) outL = 1.0f; else if (outL < -1.0f) outL = -1.0f;
-        if (outR > 1.0f) outR = 1.0f; else if (outR < -1.0f) outR = -1.0f;
+        // Clamp numérico de seguridad: para entradas <= 1.0f el techo es 1.0f
+        // exacto (atrapa residuos FP ~1e-6). Si dry supera 1.0f por boost de
+        // EQ pre-GainStage, scaleL=0 ya anuló la excitación y no debemos
+        // recortar con onda cuadrada la señal seca antes de GainStage::processOutput.
+        const float ceilL = std::max(1.0f, std::fabs(dryL));
+        const float ceilR = std::max(1.0f, std::fabs(dryR));
+        if (outL > ceilL) outL = ceilL; else if (outL < -ceilL) outL = -ceilL;
+        if (outR > ceilR) outR = ceilR; else if (outR < -ceilR) outR = -ceilR;
 
         // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
         if (!std::isfinite(outL)) outL = 0.f;

@@ -875,6 +875,19 @@ static void recomputeSpatialWidthLocked() {
     g_pd.set_spatial_width(std::clamp(base * scale, 0.0f, 2.0f));
 }
 
+static inline float normalizeMasterToDb(float master) noexcept {
+    if (!std::isfinite(master)) return 0.0f;
+    // AudioState.masterGain (SoundScreen / DspStateUpdater) vive en [0.1 .. 2.0] lineal.
+    // DSPState.master / Iso226Calibrator vive en [-24 .. +18] dB (donde 0.0f = 0 dB unidad).
+    if (master >= 0.05f && master <= 2.0f) {
+        return std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
+    }
+    if (std::fabs(master) < 0.05f) {
+        return 0.0f; // 0.0 dB unidad (nunca silenciar a -60 dB cuando DSPState manda 0 dB)
+    }
+    return std::clamp(master, -60.0f, 6.0f);
+}
+
 // Requiere g_dspProcessMutex tomado por el llamador.
 static void recomputeEqFromBaseLocked() {
     const float iso  = g_fatigueIsoDb.load(std::memory_order_relaxed);
@@ -907,6 +920,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     // escribía a g_eq/g_comp/g_exciter/g_widener/g_gain sin el mutex →
     // data race en las estructuras de parámetros → valores corruptos →
     // crash o congelamiento al pulsar HRTF/DSP desde la UI.
+    g_eqBaseLow .store(std::clamp((float)low,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseMid .store(std::clamp((float)mid,  -24.0f, 24.0f), std::memory_order_relaxed);
+    g_eqBaseHigh.store(std::clamp((float)high, -24.0f, 24.0f), std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_uiMutex);
     g_params_ui = g_params;
     g_params_ui.drive = drive; g_params_ui.wet = wet;   g_params_ui.mix = mix;
@@ -914,10 +930,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     g_params_ui.freq  = freq;  g_params_ui.resonance = resonance;
     g_params_ui.low   = low;   g_params_ui.mid = mid;   g_params_ui.high = high;
     g_params_ui.presence = presence;
-    // FIX (mismo bug que nativeSetEQParams): master llega lineal [0.5..2.0],
-    // GainStage lo trata como dB → conversión incorrecta + overflow.
-    const float masterDbNsp = (master <= 0.001f) ? -60.0f
-        : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
+    const float masterDbNsp = normalizeMasterToDb(master);
     g_params_ui.master = masterDbNsp;
     // Publicar de forma diferida al hilo de audio vía g_params_dirty para no
     // mutar coeficientes biquad (g_eq/g_comp/g_exciter/g_widener/g_gain) en
@@ -2233,8 +2246,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     // Fix: misma conversión que nativeSetPerceptualGain(), con techo +6 dB
     // para dejarle headroom al SafetyLimiter (sin él, EQ + volumen max lo
     // saturan sistemáticamente).
-    const float masterDb = (master <= 0.001f) ? -60.0f
-        : std::clamp(20.0f * std::log10(master), -60.0f, 6.0f);
+    const float masterDb = normalizeMasterToDb(master);
     g_params.master = masterDb;
     // Aplicar compensación de headroom del EQ antes de configurar GainStage.
     // Sin esto, EQ peaks apilados (ej. high +8.4 dB × 2 bandas + presence) +
@@ -2366,12 +2378,18 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetDelta
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEta(JNIEnv*,jobject,jfloat v)   { g_nho_wet_eta.store(v<0.f?0.f:v>1.f?1.f:v,std::memory_order_relaxed); applyNhoWet(); }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmonicGain(JNIEnv*,jobject,jfloat v) {
     if (!std::isfinite(v)) return;
-    g_pd.set_nho_harmonic(v);
+    const float clampedV = std::clamp((float)v, 0.0f, 1.0f);
+    g_pd.set_nho_harmonic(std::clamp(clampedV, 0.0f, 0.65f));
+    {
+        std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+        g_params.presence = std::clamp((clampedV - 0.5f) * 24.0f, -12.0f, 12.0f);
+        recomputeEqFromBaseLocked();
+    }
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
     uint64_t seen = 0;
     if (bus.readLatest(snap, seen)) {
-        snap.harmonic_gain = std::clamp((float)v, 0.0f, 2.0f);
+        snap.harmonic_gain = std::clamp((float)v, 0.0f, 1.0f);
         bus.publish(snap);
     }
 }
