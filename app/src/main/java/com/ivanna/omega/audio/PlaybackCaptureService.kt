@@ -719,9 +719,31 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         }
                     }
 
-                    // OBJETIVO 3: ANTI-POP PROFESIONAL & DC-BLOCKING
+                    // OBJETIVO 3: ANTI-POP PROFESIONAL, DC-BLOCKING & SOFT-CEILING FINAL
                     budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.OUTPUT_STAGE) {
                         antiPopEngine.process(buffer, frames)
+                        // FIX (clipping post-DSPBridge en Ruta A): CinematicEngineHost,
+                        // IvannaSpatialEngine, IvannaNpeEngine y vibratoryProcessor corren
+                        // DESPUÉS de DSPBridge.process() (y por tanto después del
+                        // SafetyLimiter nativo). Aplicamos la misma curva racional C1
+                        // softCeil (-0.1 dBFS = 0.98855f, identidad lineal <= 0.8897f)
+                        // para garantizar 0 clips hacia AudioTrack y OmegaMetrics.
+                        val ceil = 0.98855f
+                        val knee = ceil * 0.9f
+                        val range = ceil - knee
+                        for (i in 0 until read) {
+                            val x = buffer[i]
+                            if (!x.isFinite()) {
+                                buffer[i] = 0f
+                            } else {
+                                val ax = kotlin.math.abs(x)
+                                if (ax > knee) {
+                                    val over = (ax - knee) / range
+                                    val y = knee + range * (over / (1f + over))
+                                    buffer[i] = if (x < 0f) -y else y
+                                }
+                            }
+                        }
                     }
 
                     // Cierre de presupuesto del bloque

@@ -143,13 +143,11 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     const float wetSm = wetSmooth_ > 0.f ? wetSmooth_ : 0.9995f;
 
     // Bypass perfecto: wet=0 debe ser bit-transparente.
-    // No actualizar estados internos ni tocar buffers DSP.
+    // No destruir los estados internos de los filtros IIR/DC-blocker durante
+    // reproducción (Supreme Acoustic State Continuity): la historia acústica
+    // permanece intacta y wetNow_ subirá con rampa suave (~15 ms) al reactivar.
     if (wetTarget <= 0.00001f && wetNow <= 0.00001f) {
-        // Bypass bit-exacto: no se tocan los buffers (L[i]==Lcopy[i] por
-        // construcción). Además se resetea el estado de los filtros para
-        // que al reactivar el efecto no quede cola de la señal anterior
-        // (discontinuidad audible en transitorios).
-        reset();
+        wetNow_ = 0.0f;
         return;
     }
 

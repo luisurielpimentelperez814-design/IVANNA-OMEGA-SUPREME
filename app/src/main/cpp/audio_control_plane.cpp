@@ -167,12 +167,14 @@ int control_apply_frame() noexcept {
     updates++;
 
     // Bass shelf: compensa impedancia/rolloff de graves de la ruta activa (AUX).
-    // FIX (acumulación): capturar base_low ANTES del boost. g_staging_frame.low
-    // se restaurará al valor base al final de esta función, para que el siguiente
-    // tick de 50ms no sume el boost encima de un valor ya boosteado. Sin este fix,
-    // route_bass_boost=3.5 dB pegaría el low shelf en +18 dB en ~250 ms y se
-    // quedaría ahí, destruyendo el balance tonal en cualquier ruta BT/AUX.
+    // FIX (acumulación): capturar base_low y base_high ANTES del boost de ruta y NAEL.
+    // g_staging_frame.low y g_staging_frame.high se restaurarán al valor base al
+    // final de esta función, para que el siguiente tick de 50ms no sume los boosts
+    // encima de un valor ya boosteado. Sin este fix, route_bass_boost o NAEL
+    // high_add pegaban los shelves en +18 dB en ~200 ms y se quedaban ahí,
+    // saturando la cadena DSP de forma permanente.
     const float pre_route_low = g_staging_frame.low;
+    const float pre_nael_high = g_staging_frame.high;
     f.low = std::clamp(pre_route_low + route_bass_boost, -18.f, 18.f);
     updates++;
 
@@ -315,9 +317,10 @@ int control_apply_frame() noexcept {
     // 5. Publish snapshot en el bus seqlock
     //    (el audio thread lo consumirá en el siguiente bloque)
     // ────────────────────────────────────────────────────────────────
-    g_control_bus.publish(f);             // publica con route boost activo
+    g_control_bus.publish(f);             // publica con route boost y NAEL activos
     g_staging_frame = f;
-    g_staging_frame.low = pre_route_low; // FIX: restaura base sin boost para el próximo tick
+    g_staging_frame.low  = pre_route_low; // FIX: restaura base sin boost para el próximo tick
+    g_staging_frame.high = pre_nael_high; // FIX: evita acumulación infinita de NAEL high_add (+18 dB)
 
     return updates;
 }

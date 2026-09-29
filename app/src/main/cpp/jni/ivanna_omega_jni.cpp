@@ -884,6 +884,13 @@ static void recomputeEqFromBaseLocked() {
     g_params.high = std::clamp(g_eqBaseHigh.load(std::memory_order_relaxed)
                                    + iso * (1.0f - prot), -24.0f, 24.0f);
     g_eq.setParams(g_params);
+    // FIX (headroom EQ en actualización perceptual/ISO): recalcular también la
+    // compensación de salida en GainStage cuando cambian las bandas del EQ.
+    const float comp  = g_eq.getOutputCompensationDb();
+    const float mDb   = g_params.master;
+    g_params.master   = std::clamp(mDb - comp, -60.0f, 6.0f);
+    g_gain.setParams(g_params);
+    g_params.master   = mDb;
 }
 
 JNIEXPORT void JNICALL
@@ -1299,9 +1306,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // 0.15dB es inaudible como salto puntual (umbral JND ~0.3-0.5dB
         // para tonos puros, más alto para música) pero evita el trigger
         // permanente sobre el residual del EMA.
-        const float targetTrimLin = (g_loudness_trim_enabled.load(std::memory_order_relaxed) && std::fabs(trim) > 0.15f)
+        const float rawTrimLin = (g_loudness_trim_enabled.load(std::memory_order_relaxed) && std::fabs(trim) > 0.15f)
             ? std::pow(10.f, std::clamp(trim, -12.f, 12.f) / 20.f)
             : 1.0f;
+        // FIX (headroom guard para LUFS auto-trim): impedir que el normalizador
+        // de sonoridad (-14 LUFS) empuje señales con alto factor de cresta por
+        // encima de -1.0 dBFS (0.891 lineal) hacia el SafetyLimiter.
+        const float lastPk = std::max(g_lastRawPeak.load(std::memory_order_relaxed), 0.1f);
+        const float maxSafeBoostLin = std::max(1.0f, 0.891f / lastPk);
+        const float targetTrimLin = std::min(rawTrimLin, maxSafeBoostLin);
         if (std::fabs(targetTrimLin - 1.0f) > 1e-4f || std::fabs(g_ats.loudnessTrimSmooth - 1.0f) > 1e-4f) {
             for (int i = 0; i < n; ++i) {
                 g_ats.loudnessTrimSmooth += 0.001f * (targetTrimLin - g_ats.loudnessTrimSmooth);
@@ -2214,8 +2227,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
     // 0 lineal → piso de -60 dB (silencio práctico), evita log10(0) = -inf.
     const float db  = (lin <= 0.001f) ? -60.0f
                                       : std::clamp(20.0f * std::log10(lin), -60.0f, 6.0f);
-    g_params.master = db;
+    const float comp = g_eq.getOutputCompensationDb();
+    g_params.master = std::clamp(db - comp, -60.0f, 6.0f);
     g_gain.setParams(g_params);
+    g_params.master = db;
 }
 
 JNIEXPORT void JNICALL

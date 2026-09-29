@@ -290,23 +290,48 @@ object IvannaAgentCore {
         // un hilo externo podia leer un lastPolicyName obsoleto de la caché
         // de CPU y reenviar/saltar políticas de forma inconsistente.
         @Volatile private var lastPolicyName: String? = null
+        @Volatile private var clipReliefStreak: Int = 0
 
         fun apply(policy: DecisionAgent.Policy): Boolean {
-            if (policy.name == lastPolicyName) return true  // ya aplicada
+            val isClipPolicy = policy.name == "clip-relief" || policy.name == "protect"
+            if (policy.name == lastPolicyName && !isClipPolicy) {
+                clipReliefStreak = 0
+                return true  // ya aplicada
+            }
+            if (isClipPolicy) {
+                clipReliefStreak = (clipReliefStreak + 1).coerceAtMost(6)
+            } else {
+                clipReliefStreak = 0
+            }
+            // Si el clipping persiste en ciclos sucesivos, escalar la reducción
+            // de ganancia progresivamente hasta extinguirlo (piso seguro 0.50f).
+            val effectiveGain = if (isClipPolicy && clipReliefStreak > 1) {
+                (policy.targetGain - (clipReliefStreak - 1) * 0.04f).coerceAtLeast(0.50f)
+            } else {
+                policy.targetGain
+            }
             var ok = false
 
             // Ruta daemon (system-wide, root): los 3 knobs adaptativos.
             if (OmegaEngineBridge.isConnected) {
                 ok = runCatching {
                     OmegaEngineBridge.pushAdaptiveState(
-                        policy.targetGain, policy.compAmount, policy.excReduction
+                        effectiveGain, policy.compAmount, policy.excReduction
                     )
                 }.getOrDefault(false)
             }
 
-            // Ruta in-process (sin root): ancho espacial suavizado por DSPBridge.
+            // Ruta in-process (Ruta A / sin root): aplicar ganancia perceptual,
+            // compresión, reducción de exciter y ancho espacial en DSPBridge.
+            // FIX CRÍTICO: antes solo se enviaba setStereoWidth() en Ruta A,
+            // ignorando por completo targetGain, compAmount y excReduction.
             if (DSPBridge.isLoaded) {
-                runCatching { DSPBridge.setStereoWidth(policy.spatialWidth) }
+                runCatching {
+                    DSPBridge.applyPerceptualGain(effectiveGain)
+                    DSPBridge.applyCompressorAmount(1.0f - policy.compAmount * 0.35f)
+                    DSPBridge.applyExciterReduction(policy.excReduction)
+                    DSPBridge.setStereoWidth(policy.spatialWidth)
+                }
                 ok = true
             }
 
@@ -314,7 +339,10 @@ object IvannaAgentCore {
             return ok
         }
 
-        fun resetHysteresis() { lastPolicyName = null }
+        fun resetHysteresis() {
+            lastPolicyName = null
+            clipReliefStreak = 0
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════

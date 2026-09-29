@@ -130,3 +130,48 @@ TEST(SafetyLimiterRegression, PassthroughBelowThreshold) {
     }
     EXPECT_EQ(limiter.getClipCount(), 0);
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regresión 9912 clips/ciclo: la atenuación limpia por lookahead de bloque
+// en régimen estacionario NO debe contarse como clipping sostenido
+// ────────────────────────────────────────────────────────────────────────────
+TEST(SafetyLimiterRegression, SustainedLimitingZeroFalsePositiveClips) {
+    ivanna::SafetyLimiter limiter;
+    limiter.setSampleRate(48000.0f);
+    limiter.setParams(); // default: threshold = 0.63096 (-4 dBFS), ceiling = 0.98855 (-0.1 dBFS)
+    limiter.reset();
+
+    const int N = 512;
+    std::vector<float> L(N), R(N);
+
+    // 1 bloque de warm-up para que el ataque de 1.5 ms (~72 muestras) converja
+    for (int i = 0; i < N; ++i) {
+        const float s = 1.28f * std::sin(2.0f * 3.14159265f * 440.0f * (float)i / 48000.0f);
+        L[i] = s;
+        R[i] = -s;
+    }
+    limiter.process(L.data(), R.data(), N);
+    limiter.resetClipCount();
+
+    // 1 segundo completo (93 bloques × 512 frames ≈ 47,616 frames @ 48 kHz)
+    // Con el bug anterior: ~9,912 clips/ciclo reportados pese a que ninguna
+    // muestra post-ganancia superaba el ceiling.
+    for (int b = 0; b < 93; ++b) {
+        for (int i = 0; i < N; ++i) {
+            const int sampleIdx = (b + 1) * N + i;
+            const float s = 1.28f * std::sin(2.0f * 3.14159265f * 440.0f * (float)sampleIdx / 48000.0f);
+            L[i] = s;
+            R[i] = -s;
+        }
+        limiter.process(L.data(), R.data(), N);
+        for (int i = 0; i < N; ++i) {
+            EXPECT_LE(std::fabs(L[i]), 0.9886f);
+            EXPECT_LE(std::fabs(R[i]), 0.9886f);
+        }
+    }
+
+    EXPECT_EQ(limiter.getClipCount(), 0)
+        << "La reducción de ganancia limpia del SafetyLimiter no debe generar falsos positivos de clipping sostenido";
+    EXPECT_GT(limiter.getGainReduction(), 1.5f)
+        << "gainReduction en dB debe seguir reportando la atenuación real para el AdaptiveDecisionEngine";
+}

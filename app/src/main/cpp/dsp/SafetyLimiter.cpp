@@ -105,9 +105,11 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
 
     // Sanitización de entrada: el limiter es la última barrera del DSP.
     // Ningún NaN/Inf puede entrar al cálculo de peak ni contaminar estados.
+    int clips = 0;
+    bool nonFinite = false;
     for (int i = 0; i < frames; ++i) {
-        if (!std::isfinite(L[i])) L[i] = 0.0f;
-        if (!std::isfinite(R[i])) R[i] = 0.0f;
+        if (!std::isfinite(L[i])) { L[i] = 0.0f; nonFinite = true; ++clips; }
+        if (!std::isfinite(R[i])) { R[i] = 0.0f; nonFinite = true; ++clips; }
     }
 
     // Lazy-init del coeficiente de release si nunca se llamo setSampleRate().
@@ -118,9 +120,7 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     // bloque antes de escribir una sola muestra, asi que ningun pico sale sin
     // su reduccion aplicada — sin delay line y sin latencia añadida.
     float peak  = 0.0f;
-    int   clips = 0;
     const float ceil_ = m_ceiling;
-    bool nonFinite = false;
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     {
@@ -145,19 +145,6 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         peak = std::max(peak, std::max(al, ar));
     }
 #endif
-
-    // Recuento de clips sobre la ENTRADA: exactamente un evento por muestra
-    // que supera el ceiling (convencion del Parche 6A, ver
-    // tests/test_regression_tuning.cpp — la seguridad dura de salida no
-    // vuelve a contar).
-    if (peak > ceil_ || nonFinite) {
-        for (int i = 0; i < frames; ++i) {
-            const float al = std::fabs(L[i]);
-            const float ar = std::fabs(R[i]);
-            if (!std::isfinite(al) || !std::isfinite(ar)) { ++clips; continue; }
-            if (al > ceil_ || ar > ceil_) ++clips;
-        }
-    }
 
     // Transparencia absoluta: material limpio sin reduccion residual sale
     // bit-exacto — y con la MISMA latencia (cero) que cuando el limiter actua.
@@ -213,15 +200,6 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
             if (gain < 0.0f) gain = 0.0f;
         }
 
-        if (!std::isfinite(L[i])) {
-            L[i] = 0.0f;
-            m_clipCount.fetch_add(1, std::memory_order_relaxed);
-        }
-        if (!std::isfinite(R[i])) {
-            R[i] = 0.0f;
-            m_clipCount.fetch_add(1, std::memory_order_relaxed);
-        }
-
         // Entrada defensiva: nunca permitir que NaN/Inf llegue al
         // multiplicador ni al estado audible. El limiter es la última barrera.
         const float inL = std::isfinite(L[i]) ? L[i] : 0.0f;
@@ -230,12 +208,21 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         float outL = inL * gain;
         float outR = inR * gain;
 
-        // Seguridad final: NaN/Inf a cero y saturacion SUAVE del residuo.
-        // El clip duro anterior (copysign al ceiling) aplanaba la cresta ->
-        // armonicos impares de banda ancha. softCeil() curva el excedente y
-        // solo toca el ultimo tramo antes del techo.
-        if (!std::isfinite(outL)) outL = 0.f;
-        if (!std::isfinite(outR)) outR = 0.f;
+        // FIX (falso positivo de 9912 clips/ciclo): antes se contaban como
+        // "clips" todas las muestras de ENTRADA que superaban ceil_ ANTES de
+        // aplicar la reducción de ganancia lineal por bloque (inL * gain).
+        // Un limitador con lookahead que atenúa limpiamente la señal con su
+        // envolvente de ganancia NO está clipeando; el recorte/clipping real
+        // solo ocurre si, tras aplicar `gain` (p. ej. durante los primeros
+        // samples de la rampa de ataque de 1.5 ms en un transitorio abrupto),
+        // la señal aún supera `ceil_` y obliga a actuar al saturador de techo.
+        if (!std::isfinite(outL) || !std::isfinite(outR)) {
+            ++clips;
+            outL = 0.f;
+            outR = 0.f;
+        } else if (std::fabs(outL) > ceil_ || std::fabs(outR) > ceil_) {
+            ++clips;
+        }
         outL = softCeil(outL, ceil_);
         outR = softCeil(outR, ceil_);
 

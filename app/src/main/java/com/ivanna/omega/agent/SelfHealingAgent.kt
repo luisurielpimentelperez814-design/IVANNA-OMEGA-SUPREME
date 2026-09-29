@@ -139,12 +139,17 @@ object SelfHealingAgent {
             // >24 clips desde el último chequeo ≈ clipping denso sostenido
             lastGainAction = now
             val ok = runCatching {
+                var applied = false
                 if (OmegaEngineBridge.isConnected) {
-                    OmegaEngineBridge.pushAdaptiveState(0.65f, 0.7f, 0.7f)
-                } else {
-                    DSPBridge.setStereoWidth(1.0f)  // al menos centrar
-                    true
+                    applied = OmegaEngineBridge.pushAdaptiveState(0.65f, 0.7f, 0.7f)
                 }
+                if (DSPBridge.isLoaded) {
+                    DSPBridge.applyPerceptualGain(0.65f)
+                    DSPBridge.applyExciterReduction(0.7f)
+                    DSPBridge.setStereoWidth(1.0f)
+                    applied = true
+                }
+                applied
             }.getOrDefault(false)
             record("clipping_sustained", "techo de ganancia de emergencia 0.65", ok,
                 "clipping denso ($clips acumulados) — protección de última instancia")
