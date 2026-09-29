@@ -155,10 +155,10 @@ public:
         const float d1 = x - prev1;
         const float d0 = prev1 - prev2;
         float out = x;
-        // Actuar únicamente sobre mesetas de recorte duro real (≥ 0.985 con derivada plana)
-        // para no distorsionar crestas legítimas de ondas senoidales o transitorios limpios.
-        if (absX > 0.985f && std::fabs(prev1) > 0.985f && std::fabs(d1) < 0.008f) {
-            const float curvature = std::clamp(std::fabs(d0) * 0.25f + (absX - 0.985f) * 0.20f, 0.001f, 0.012f);
+        // Actuar únicamente sobre mesetas de recorte duro real (≥ 0.95 con derivada plana |d1| < 1e-5)
+        // para restaurar crestas Loudness War sin tocar ondas senoidales limpias.
+        if (absX >= 0.95f && std::fabs(prev1) >= 0.95f && std::fabs(d1) < 1.0e-5f) {
+            const float curvature = std::clamp(std::fabs(d0) * 0.25f + (absX - 0.95f) * 0.20f, 0.001f, 0.015f);
             out = (x >= 0.0f) ? std::min(0.998f, x + curvature) : std::max(-0.998f, x - curvature);
             ++peakCounter;
         }
@@ -249,8 +249,8 @@ public:
                 const float phaseDither = static_cast<float>(static_cast<int32_t>(lfsrState_)) * 4.65661287e-10f * 0.02f;
                 chirpPhase_ += 2.0f * kPi * chirpFreqHz_ * invSampleRate_ + phaseDither;
                 if (chirpPhase_ > 2.0f * kPi) chirpPhase_ -= 2.0f * kPi;
-                // Amplitud -78 dBFS: por debajo del umbral absoluto de audición en 18 kHz (ISO 226)
-                microChirp = 1.25e-4f * std::sin(chirpPhase_);
+                // Amplitud -100 dBFS (1e-5): piso sub-16-bit estrictamente inaudible (ISO 226)
+                microChirp = 1.0e-5f * std::sin(chirpPhase_);
             }
 
             // 2. Pre-compensación no-lineal de excursión Bl(x) acotada para baja THD
@@ -403,7 +403,7 @@ private:
     uint32_t lfsrState_{0xA5A5F00Du};
 
     std::atomic<bool> enabled_{true};
-    std::atomic<bool> microChirpEnabled_{false};
+    std::atomic<bool> microChirpEnabled_{true};
     std::atomic<int> activeRouteArchetype_{0};
     std::atomic<uint32_t> declippedPeaks_{0u};
     std::atomic<float> blCompensationDrive_{1.0f};
