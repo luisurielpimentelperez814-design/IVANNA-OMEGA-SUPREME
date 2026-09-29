@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeAcousticContinuity.hpp"
 #include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__linux__) || defined(__ANDROID__)
@@ -290,6 +291,8 @@ public:
         std::array<float, HOA_CHANNELS> hoa16{};
 
         for (size_t i = 0; i < numSamples; ++i) {
+            const float resumeFactor = continuityMgr_.nextResumeFactor();
+            (void)resumeFactor;
             const float dryL = sanitize(left[i]);
             const float dryR = sanitize(right[i]);
 

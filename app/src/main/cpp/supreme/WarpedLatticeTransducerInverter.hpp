@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeAcousticContinuity.hpp"
 #include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -282,12 +283,13 @@ public:
 
         uint32_t localDeclipped = 0u;
         for (size_t i = 0; i < numSamples; ++i) {
+            const float resumeFactor = continuityMgr_.nextResumeFactor();
             const float dryL = sanitize(left[i]);
             const float dryR = sanitize(right[i]);
             float inL = dryL;
             float inR = dryR;
 
-            smoothBlDrive_ += 0.004f * (targetBlDrive - smoothBlDrive_);
+            smoothBlDrive_ += (0.004f * resumeFactor + 0.001f) * (targetBlDrive - smoothBlDrive_);
             const float effBeta1 = beta1_ * smoothBlDrive_;
             const float effBeta2 = beta2_ * smoothBlDrive_;
 

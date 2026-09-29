@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeAcousticContinuity.hpp"
 #include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -213,11 +214,13 @@ public:
         float maxPhaseDiscontinuity = 0.0f;
 
         for (size_t i = 0; i < numSamples; ++i) {
+            const float resumeFactor = continuityMgr_.nextResumeFactor();
             const float rawL = sanitize(left[i]);
             const float rawR = sanitize(right[i]);
 
-            smoothHarmonicGain_ += 0.004f * (targetGain - smoothHarmonicGain_);
-            smoothTapeDrive_    += 0.004f * (targetTape - smoothTapeDrive_);
+            const float glideStep = 0.004f * resumeFactor + 0.001f;
+            smoothHarmonicGain_ += glideStep * (targetGain - smoothHarmonicGain_);
+            smoothTapeDrive_    += glideStep * (targetTape - smoothTapeDrive_);
 
             const float inL = stepJilesAthertonTapeHysteresis(rawL, tapeMagL_, tapePrevHL_, smoothTapeDrive_);
             const float inR = stepJilesAthertonTapeHysteresis(rawR, tapeMagR_, tapePrevHR_, smoothTapeDrive_);

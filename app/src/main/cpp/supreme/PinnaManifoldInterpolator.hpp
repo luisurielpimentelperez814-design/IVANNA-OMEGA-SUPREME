@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <algorithm>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "SupremeAcousticContinuity.hpp"
 #include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -243,6 +244,8 @@ public:
         const float* __restrict prevFirR = activePairs_[prevRenderedSlot_].right.data();
 
         for (size_t i = 0; i < numSamples; ++i) {
+            const float resumeFactor = continuityMgr_.nextResumeFactor();
+            (void)resumeFactor;
             const float inL = std::isfinite(left[i])  ? left[i]  : 0.0f;
             const float inR = std::isfinite(right[i]) ? right[i] : 0.0f;
 

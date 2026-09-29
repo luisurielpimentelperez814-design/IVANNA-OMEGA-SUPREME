@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include "SupremeAcousticContinuity.hpp"
 #include "SupremeTransitionEnvelope.hpp"
 
 #if defined(__linux__) || defined(__ANDROID__)
@@ -409,8 +410,8 @@ public:
         const float targetItdNs = msoItdNs_.load(std::memory_order_relaxed);
 
         for (size_t i = 0; i < numSamples; ++i) {
-            const float resumeGlide = continuityMgr_.nextResumeFactor();
-            smoothItdNs_ += (0.005f * resumeGlide + 0.001f) * (targetItdNs - smoothItdNs_);
+            const float resumeFactor = continuityMgr_.nextResumeFactor();
+            smoothItdNs_ += (0.005f * resumeFactor + 0.001f) * (targetItdNs - smoothItdNs_);
             // Conversión de nanosegundos a fracción de muestra diferencial L/R alrededor de 0.5 muestras
             const float deltaSamples = (smoothItdNs_ * 1.0e-9f) * sr;
             const float fracL = std::clamp(0.5f - 0.5f * deltaSamples, 0.0f, 1.0f);
