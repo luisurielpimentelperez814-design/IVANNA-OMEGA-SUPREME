@@ -438,6 +438,9 @@ public:
         m.maxDeltaL = maxDL;
         m.maxDeltaR = maxDR;
         m.maxSampleDelta = std::max(maxDL, maxDR);
+        if (nonFinite) {
+            m.faultFlags |= FAULT_NON_FINITE;
+        }
 
         evaluateStageFaults(m);
         stageMetrics_[idx] = m;

@@ -252,6 +252,8 @@ public:
 
     IvannaAudioClassifier*     getClassifier()    const noexcept { return m_classifier; }
     IvannaVoiceProsodyEngine*  getProsodyEngine() const noexcept { return m_prosody; }
+    const IntelligentUpmixer&  getUpmixer()       const noexcept { return m_upmixer; }
+    IntelligentUpmixer&        getUpmixer()             noexcept { return m_upmixer; }
 
 private:
 
@@ -337,9 +339,9 @@ private:
     size_t m_inFifoCount = 0;
     size_t m_inFifoReadPos = 0;
     size_t m_inFifoWritePos = 0;
-    size_t m_outFifoCount = Ivanna::BLOCK_SIZE;
+    size_t m_outFifoCount = 0;
     size_t m_outFifoReadPos = 0;
-    size_t m_outFifoWritePos = Ivanna::BLOCK_SIZE;
+    size_t m_outFifoWritePos = 0;
 };
 
 } // namespace Ivanna
