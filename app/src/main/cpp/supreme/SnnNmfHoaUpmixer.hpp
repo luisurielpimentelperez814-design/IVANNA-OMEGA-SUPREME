@@ -289,6 +289,7 @@ public:
 
         std::array<float, NUM_STREAMS> streams{};
         std::array<float, HOA_CHANNELS> hoa16{};
+        uint32_t blockSpikes = 0u;
 
         for (size_t i = 0; i < numSamples; ++i) {
             const float resumeFactor = continuityMgr_.nextResumeFactor();
@@ -297,6 +298,7 @@ public:
             const float dryR = sanitize(right[i]);
 
             decomposeAndProjectSample(dryL, dryR, streams, hoa16);
+            blockSpikes += lastActiveSpikes_;
 
             // Decodificación binaural esférica con pesos max-rE
             float binL = 0.0f;
@@ -338,6 +340,7 @@ public:
             left[i]  = std::clamp((1.0f - 0.65f * envWet) * dryL + 0.65f * envWet * partL, -1.20f, 1.20f);
             right[i] = std::clamp((1.0f - 0.65f * envWet) * dryR + 0.65f * envWet * partR, -1.20f, 1.20f);
         }
+        lastActiveSpikes_ = blockSpikes;
         continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {
             continuityMgr_.suspend(left, right, numSamples);
@@ -380,6 +383,7 @@ public:
     void setSnnThreshold(float th) noexcept { snnThreshold_.store(std::clamp(th, 0.15f, 0.85f), std::memory_order_release); }
     float snnThreshold() const noexcept { return snnThreshold_.load(std::memory_order_acquire); }
     uint32_t lastActiveSpikes() const noexcept { return lastActiveSpikes_; }
+    bool hasSNNActivity() const noexcept { return lastActiveSpikes_ > 0; }
 
     /**
      * @brief Devuelve la máscara ortogonal normalizada (partición de la unidad) del flujo k ∈ [0, 3].
