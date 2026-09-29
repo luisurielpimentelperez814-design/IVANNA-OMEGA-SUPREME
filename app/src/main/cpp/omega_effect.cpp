@@ -18,6 +18,7 @@
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
+#include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -262,6 +263,7 @@ struct omega_effect_context_t {
     // llamadas para no perder los valores ya recibidos.
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
+    ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -747,8 +749,17 @@ static int32_t omega_process(effect_handle_t self,
             R[n] = inChunk[2 * n + 1];
         }
 
+        ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
+
         // Render binaural de objetos (VBAP + HRTF) + DSP de salida
         fc->processStereo(L, R, (size_t)chunk);
+        ctx->stabilityGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::ObjectRenderer,
+            L, R, (size_t)chunk, 1.25f, 0.96f);
+        if (fc->getUpmixer().isUpmixingEnabled()) {
+            (void)ctx->stabilityGuard.arbitration().claimSpatialSlot(
+                ivanna::supreme::AcousticModuleId::HoaBinauralDecoder);
+        }
         
         // FASE 3: Integración de TinyML Asíncrono
         auto* classifier = fc ? fc->getClassifier() : nullptr;
@@ -777,7 +788,9 @@ static int32_t omega_process(effect_handle_t self,
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
             if (adaptParams.applyISO226) {
-                float isoGain = std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f));
+                float isoGain = std::clamp(
+                    std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f)),
+                    0.50f, 1.35f);
                 for (int n = 0; n < chunk; ++n) {
                     L[n] *= isoGain;
                     R[n] *= isoGain;
@@ -786,7 +799,9 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // ── Anti-Dolby Neural Acoustic De-processing & Soundstage Sculpting ──
-        if (ctx->antiDolby) {
+        if (ctx->antiDolby &&
+            ctx->stabilityGuard.arbitration().claimWidenerSlot(
+                ivanna::supreme::AcousticModuleId::AntiDolby)) {
             Ivanna::AIModelOutput aiOut{};
             if (classifier && classifier->getModelOutput(aiOut)) {
                 ctx->antiDolby->updateFromNeuralContext(
@@ -800,7 +815,12 @@ static int32_t omega_process(effect_handle_t self,
             const float dt = static_cast<float>(chunk) / static_cast<float>(srNow > 0 ? srNow : 48000);
             ctx->antiDolby->tick(dt);
 
-            const float sideTarget = ctx->antiDolby->currentWidener();
+            const bool spatialAlreadyActive =
+                ctx->stabilityGuard.arbitration().activeSpatialModule !=
+                ivanna::supreme::AcousticModuleId::None;
+            const float sideTarget = spatialAlreadyActive
+                ? 1.0f
+                : std::clamp(ctx->antiDolby->currentWidener(), 0.75f, 1.35f);
             const float sideCoef = std::exp(-1.0f / (0.010f * (float)srNow));
             if (ctx->sideGainSmooth < 0.01f) ctx->sideGainSmooth = 1.0f;
 
@@ -812,21 +832,31 @@ static int32_t omega_process(effect_handle_t self,
                 L[n] = m + sv;
                 R[n] = m - sv;
             }
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::AntiDolby,
+                L, R, (size_t)chunk, 1.20f, 0.95f);
         }
 
         // Cable RIR: aplicar reverberación de sala con transición térmica suave.
         // RirConvolver mantiene rampa interna wetNow_ -> wetTarget y retorna en O(1)
         // cuando ambos llegan a cero (cero clics al entrar/salir de ThermalTier::LIMITED).
-        if (ctx->rirConvolver) {
+        if (ctx->rirConvolver &&
+            ctx->stabilityGuard.arbitration().claimRoomSlot(
+                ivanna::supreme::AcousticModuleId::RirConvolver)) {
             const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
-                ? ctx->pendingSnap.room_wet
+                ? std::clamp(ctx->pendingSnap.room_wet, 0.0f, 0.45f)
                 : 0.0f;
             ctx->rirConvolver->setWetDry(desiredRirWet);
             ctx->rirConvolver->process(L, R, chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::RirConvolver,
+                L, R, (size_t)chunk, 1.22f, 0.95f);
         }
 
         // ── Series de Volterra de 2º Orden Truncadas (con SupremeTransitionEnvelope) ──
-        if (ctx->volterraEngine) {
+        if (ctx->volterraEngine &&
+            ctx->stabilityGuard.arbitration().claimNonlinearSlot(
+                ivanna::supreme::AcousticModuleId::VolterraKernel)) {
             const bool wantVolterra = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
             ctx->volterraEngine->setEnabled(wantVolterra);
             ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
@@ -840,6 +870,9 @@ static int32_t omega_process(effect_handle_t self,
                     L[n] = outChunk[2 * n];
                     R[n] = outChunk[2 * n + 1];
                 }
+                ctx->stabilityGuard.enforceStageEnergyCeiling(
+                    ivanna::supreme::AcousticModuleId::VolterraKernel,
+                    L, R, (size_t)chunk, 1.20f, 0.95f);
             } else {
                 const int tailFrames = std::min(chunk, 64);
                 const int startFrame = chunk - tailFrames;
@@ -860,6 +893,9 @@ static int32_t omega_process(effect_handle_t self,
             ctx->cochlearEngine->setEnabled(cochOn);
             ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->cochlearEngine->process(L, R, (int)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::CochlearInverse,
+                L, R, (size_t)chunk, 1.20f, 0.95f);
         }
 
         // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B, Zero-Pop Transition Layer) ──
@@ -868,24 +904,42 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->supremeLattice) {
             ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeLattice->process(L, R, (size_t)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
+                L, R, (size_t)chunk, 1.20f, 0.95f);
         }
         if (ctx->supremeCvnn) {
             ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeCvnn->process(L, R, (size_t)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::SupremeAxis2_Transharmonic,
+                L, R, (size_t)chunk, 1.18f, 0.95f);
         }
         if (ctx->supremeSnnHoa) {
-            ctx->supremeSnnHoa->setThermalBypass(ctx->thermalSkipVolterra);
+            const bool allowSnnSpatial =
+                ctx->stabilityGuard.arbitration().claimSpatialSlot(
+                    ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa);
+            ctx->supremeSnnHoa->setThermalBypass(ctx->thermalSkipVolterra || !allowSnnSpatial);
             ctx->supremeSnnHoa->process(L, R, (size_t)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa,
+                L, R, (size_t)chunk, 1.18f, 0.95f);
         }
         if (ctx->supremePinna) {
             ctx->supremePinna->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremePinna->process(L, R, (size_t)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::SupremeAxis4_PinnaManifold,
+                L, R, (size_t)chunk, 1.18f, 0.95f);
         }
         if (ctx->supremeMsoFarrow) {
             const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
                                  ? ctx->config.outputCfg.samplingRate : 48000u;
             ctx->supremeMsoFarrow->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::SupremeAxis5_MsoFarrow,
+                L, R, (size_t)chunk, 1.18f, 0.95f);
         }
         // Fases 1-15: Acoustic Reality Reconstruction & Cognitive Evolution Pass (0 malloc, 0 mutex)
         {
@@ -894,10 +948,22 @@ static int32_t omega_process(effect_handle_t self,
             const bool realityActive = realityOrch.isEnabled() && (rSnap.sequence > 0);
             realityOrch.microExtractor().applyMicroIntelligibilityPass(
                 L, R, (size_t)chunk, rSnap.microMap, realityActive, ctx->thermalSkipVolterra);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::RealityReconstruction,
+                L, R, (size_t)chunk, 1.20f, 0.95f);
         }
 
         // Eje 6: compensación auditiva antes del limitador de seguridad final
-        if (ctx->hearingEngine) ctx->hearingEngine->process(L, R, chunk);
+        if (ctx->hearingEngine) {
+            ctx->hearingEngine->process(L, R, chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::PerceptualLoudness,
+                L, R, (size_t)chunk, 1.22f, 0.95f);
+        }
+
+        // FASE 4: Protección maestra pre-limiter (bloqueador DC, amortiguador anti-runaway,
+        // gobernador C2 de headroom continuo y continuidad C1 Hermite en fronteras).
+        ctx->stabilityGuard.processBlock(L, R, (size_t)chunk, 0.92f);
 
         // FIX (distorsion digital): ultimo eslabon real de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A.

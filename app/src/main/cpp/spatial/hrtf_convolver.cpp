@@ -396,11 +396,28 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         return;
     }
 
+    // 0. Garantizar invariante de conservación de muestras (inCount_ + outCount_ >= BLOCK)
+    //    cuando numSamples no es múltiplo exacto de BLOCK (ej. 128, 192 o 240 en AudioFlinger).
+    //    Cuando numSamples es múltiplo de BLOCK (256, 512), projectedOut >= numSamples desde
+    //    el primer bloque y no se añade ninguna muestra de cebado.
+    const uint32_t projectedOut = outCount_ + ((inCount_ + numSamples) / static_cast<uint32_t>(BLOCK)) * static_cast<uint32_t>(BLOCK);
+    if (projectedOut < numSamples && (inCount_ + outCount_) < static_cast<uint32_t>(BLOCK)) {
+        const uint32_t needPrime = static_cast<uint32_t>(BLOCK) - (inCount_ + outCount_);
+        for (uint32_t p = 0; p < needPrime && outCount_ < RING_BUFFER_SIZE; ++p) {
+            outQueue_L_[outWritePtr_] = 0.0f;
+            outQueue_R_[outWritePtr_] = 0.0f;
+            outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
+            ++outCount_;
+        }
+    }
+
     // 1. Inserción al búfer circular de entrada
     for (uint32_t i = 0; i < numSamples; ++i) {
         if (inCount_ < RING_BUFFER_SIZE) {
-            pendingIn_L_[inWritePtr_] = inputL[i];
-            pendingIn_R_[inWritePtr_] = inputR[i];
+            const float sL = std::isfinite(inputL[i]) ? inputL[i] : 0.0f;
+            const float sR = std::isfinite(inputR[i]) ? inputR[i] : 0.0f;
+            pendingIn_L_[inWritePtr_] = sL;
+            pendingIn_R_[inWritePtr_] = sR;
             inWritePtr_ = (inWritePtr_ + 1) % RING_BUFFER_SIZE;
             ++inCount_;
         }
@@ -417,9 +434,11 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
             newTargetPending_.store(false, std::memory_order_relaxed);
 
             if (std::abs(tAz - currentAzimuth_) > 0.1f ||
-                std::abs(tAgg - currentAggressiveness_) > 0.01f) {
+                std::abs(tAgg - currentAggressiveness_) > 0.01f ||
+                customHrirActive_.load(std::memory_order_relaxed)) {
                 updateFilterResponses(tAz, tAgg, false);
-                xfadeSamplesRemaining_.store(XFADE_DURATION_SAMPLES, std::memory_order_relaxed);
+                xfadeRemaining = XFADE_DURATION_SAMPLES;
+                xfadeSamplesRemaining_.store(xfadeRemaining, std::memory_order_relaxed);
             }
         }
 
@@ -435,14 +454,9 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         inCount_ -= BLOCK;
 
         // 2c. Preparar mono y FFT
-        // FIX: sin este guard, un NaN de upstream (EQ divergido, etc.)
-        // contamina todos los bins espectrales → salida toda NaN → SafetyLimiter
-        // clampea a 0 → tronido por cada bloque mientras dure la condición.
-        // Resetear el historial evita que el NaN persista en overlap-save.
         for (int i = 0; i < fftSize_; ++i) {
             float s = histL_[i] + histR_[i];
             if (!std::isfinite(s)) {
-                // Estado corrompido: limpiar historial para romper la cadena de NaN
                 std::fill(histL_.begin(), histL_.end(), 0.0f);
                 std::fill(histR_.begin(), histR_.end(), 0.0f);
                 s = 0.f;
@@ -494,7 +508,7 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
         fft_->inverse(yReR_.data(), yImR_.data());
         float scale = 1.0f / static_cast<float>(fftSize_);
 
-        // 2e. Salida con o sin crossfade
+        // 2e. Salida con o sin crossfade (SIEMPRE produce exactamente BLOCK muestras)
         xfadeRemaining = xfadeSamplesRemaining_.load(std::memory_order_relaxed);
         if (xfadeRemaining > 0) {
             // Convolución con filtro destino (B)
@@ -537,35 +551,29 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
             fft_->inverse(reL_.data(), imL_.data());
             fft_->inverse(reR_.data(), imR_.data());
 
-            // Interpolación muestra a muestra (progress dentro del bucle)
+            // FIX CRÍTICO (eliminación del sonido de hélice / pérdida de muestras):
+            // Jamás hacer `break` cuando `xfadeRemaining` llega a 0 a mitad de bloque,
+            // porque `inCount_` ya consumió las `BLOCK` muestras. Si `xfadeRemaining`
+            // llega a 0 dentro del bloque, el resto del bloque se emite directamente con
+            // el filtro destino (progress = 1.0), conservando 1:1 el flujo de muestras.
             for (int i = 0; i < BLOCK; ++i) {
-                xfadeRemaining = xfadeSamplesRemaining_.load(std::memory_order_relaxed);
-                if (xfadeRemaining <= 0) break; // seguridad
-
-                float progress = 1.0f - (static_cast<float>(xfadeRemaining) / XFADE_DURATION_SAMPLES);
-                progress = std::clamp(progress, 0.0f, 1.0f);
-
                 int outIdx = overlapSize + i;
                 float currL = yReL_[outIdx] * scale;
                 float currR = yReR_[outIdx] * scale;
                 float targL = reL_[outIdx] * scale;
                 float targR = reR_[outIdx] * scale;
 
-                // FIX (auditoría FASE 8, paso 2): crossfade de amplitud LINEAL
-                // entre el filtro HRTF actual y el destino. currL/R y targL/R
-                // son la misma fuente pasada por dos respuestas al impulso
-                // DISTINTAS (ángulo actual vs. ángulo destino) — están
-                // decorrelacionadas entre sí, no son la misma señal escalada.
-                // Con pesos lineales (1-progress)/progress, la suma de
-                // potencias en progress=0.5 es 0.5²+0.5²=0.5 (-3dB) en vez de
-                // 1 → caída de volumen audible a mitad de cualquier giro de
-                // azimuth, más notoria cuanto más rápido el giro (más
-                // crossfades encadenados). Ley de potencia constante:
-                // sqrt(1-progress)²+sqrt(progress)²=1 en todo el rango.
-                const float wCurr = std::sqrt(1.0f - progress);
-                const float wTarg = std::sqrt(progress);
-                float finalL = wCurr * currL + wTarg * targL;
-                float finalR = wCurr * currR + wTarg * targR;
+                float finalL = targL;
+                float finalR = targR;
+                if (xfadeRemaining > 0) {
+                    float progress = 1.0f - (static_cast<float>(xfadeRemaining) / static_cast<float>(XFADE_DURATION_SAMPLES));
+                    progress = std::clamp(progress, 0.0f, 1.0f);
+                    const float wCurr = std::sqrt(1.0f - progress);
+                    const float wTarg = std::sqrt(progress);
+                    finalL = wCurr * currL + wTarg * targL;
+                    finalR = wCurr * currR + wTarg * targR;
+                    --xfadeRemaining;
+                }
 
                 if (outCount_ < RING_BUFFER_SIZE) {
                     outQueue_L_[outWritePtr_] = finalL;
@@ -573,11 +581,12 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
                     outWritePtr_ = (outWritePtr_ + 1) % RING_BUFFER_SIZE;
                     ++outCount_;
                 }
-                xfadeSamplesRemaining_.store(xfadeRemaining - 1, std::memory_order_relaxed);
             }
 
-            // Si se consumió todo el crossfade, intercambiar filtros
-            if (xfadeSamplesRemaining_.load(std::memory_order_relaxed) == 0) {
+            xfadeSamplesRemaining_.store(xfadeRemaining, std::memory_order_relaxed);
+
+            // Si se consumió todo el crossfade, promover el filtro destino a actual
+            if (xfadeRemaining <= 0) {
                 std::swap(H_ReL_curr_, H_ReL_targ_);
                 std::swap(H_ImL_curr_, H_ImL_targ_);
                 std::swap(H_ReR_curr_, H_ReR_targ_);
@@ -585,8 +594,6 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
                 currentAzimuth_  = targetAzimuth_.load(std::memory_order_relaxed);
                 currentAggressiveness_ = targetAggressiveness_.load(std::memory_order_relaxed);
             }
-            // Si el bucle se rompió por xfadeRemaining==0, las muestras restantes del bloque
-            // se procesarán en el siguiente bucle (ya con el filtro actual).
         } else {
             // Sin crossfade: salida directa
             for (int i = 0; i < BLOCK; ++i) {
@@ -603,20 +610,27 @@ void HRTFConvolver::process(const float* inputL, const float* inputR,
 
     // 3. Entrega de muestras al buffer de salida del sistema
     uint32_t samplesToDeliver = std::min(numSamples, outCount_);
+    float lastDeliveredL = 0.0f;
+    float lastDeliveredR = 0.0f;
     for (uint32_t i = 0; i < samplesToDeliver; ++i) {
-        outputL[i] = outQueue_L_[outReadPtr_];
-        outputR[i] = outQueue_R_[outReadPtr_];
+        lastDeliveredL = outQueue_L_[outReadPtr_];
+        lastDeliveredR = outQueue_R_[outReadPtr_];
+        outputL[i] = lastDeliveredL;
+        outputR[i] = lastDeliveredR;
         outReadPtr_ = (outReadPtr_ + 1) % RING_BUFFER_SIZE;
         --outCount_;
     }
 
     if (samplesToDeliver < numSamples) {
-        uint32_t missing = numSamples - samplesToDeliver;
-        std::memset(outputL + samplesToDeliver, 0, missing * sizeof(float));
-        std::memset(outputR + samplesToDeliver, 0, missing * sizeof(float));
+        for (uint32_t i = samplesToDeliver; i < numSamples; ++i) {
+            lastDeliveredL *= 0.95f;
+            lastDeliveredR *= 0.95f;
+            outputL[i] = lastDeliveredL;
+            outputR[i] = lastDeliveredR;
+        }
     }
 
-    // 3. ITD interaural: delay fraccional por oido (post-convolucion)
+    // 4. ITD interaural: delay fraccional por oido (post-convolucion)
     applyItd(outputL, outputR, numSamples);
 }
 
@@ -639,29 +653,15 @@ void ivanna::HRTFConvolver::updateSafField(
         return;
     }
 
-    const HRIRPair& h =
-        safModifier_.current();
-
-    hrir_L_target_ = h.L;
-    hrir_R_target_ = h.R;
-
-    if (filterInitialized_ && fft_) {
-        std::fill(H_ReL_targ_.begin(), H_ReL_targ_.end(), 0.0f);
-        std::fill(H_ImL_targ_.begin(), H_ImL_targ_.end(), 0.0f);
-        std::fill(H_ReR_targ_.begin(), H_ReR_targ_.end(), 0.0f);
-        std::fill(H_ImR_targ_.begin(), H_ImR_targ_.end(), 0.0f);
-        const size_t copyL = std::min(h.L.size(), static_cast<size_t>(IR_LEN));
-        const size_t copyR = std::min(h.R.size(), static_cast<size_t>(IR_LEN));
-        if (copyL > 0) std::memcpy(H_ReL_targ_.data(), h.L.data(), copyL * sizeof(float));
-        if (copyR > 0) std::memcpy(H_ReR_targ_.data(), h.R.data(), copyR * sizeof(float));
-        fft_->forward(H_ReL_targ_.data(), H_ImL_targ_.data());
-        fft_->forward(H_ReR_targ_.data(), H_ImR_targ_.data());
+    const HRIRPair& h = safModifier_.current();
+    // Publicar el HRIR SAF mediante la cola lock-free loadCustomHrir / newTargetPending_
+    // para que el FFT se ejecute exclusivamente en el hilo de audio sin carrera de datos
+    // sobre H_ReL_targ_ / fft_ durante process().
+    const size_t len = std::min(h.L.size(), h.R.size());
+    if (len > 0) {
+        loadCustomHrir(h.L.data(), h.R.data(), len);
+    } else {
+        newTargetPending_.store(true, std::memory_order_release);
     }
-
-    // FIX: faltaba memory_order_release — el hilo de audio podía leer
-    // xfadeSamplesRemaining_ con el nuevo valor antes de ver los datos
-    // actualizados en H_ReL_targ_/H_ImL_targ_ (escritos por forward() arriba).
-    xfadeSamplesRemaining_.store(
-        XFADE_DURATION_SAMPLES, std::memory_order_release);
 }
 

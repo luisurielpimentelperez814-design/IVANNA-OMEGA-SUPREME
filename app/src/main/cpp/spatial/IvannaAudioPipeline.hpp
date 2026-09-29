@@ -21,6 +21,7 @@
 #include "../supreme/PinnaManifoldInterpolator.hpp"
 #include "../supreme/ShmPipelineArbitrator.hpp"
 #include "../supreme/SupremeTransitionEnvelope.hpp"
+#include "../supreme/SupremeAcousticStabilityGuard.hpp"
 #include "../include/acoustic_reality_hyperengine.hpp"
 
 namespace ivanna::spatial {
@@ -268,41 +269,78 @@ public:
         }
 
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage
+        stabilityGuard_.beginBlock(bufferL, bufferR, numSamples, false);
+        (void)stabilityGuard_.arbitration().claimSpatialSlot(ivanna::supreme::AcousticModuleId::ObjectRenderer);
         spatialRenderer_.renderObjects(objPtrs, activeObjs, bufferL, bufferR,
                                         numSamples, itdScale);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::ObjectRenderer,
+                                     bufferL, bufferR, numSamples, itdScale);
 
-        // 3. Eje 2: Apply personalized pinna/canal filter
-        personalizer_.processChannel(bufferL, numSamples);
-        personalizer_.processChannel(bufferR, numSamples);
+        // 3. Eje 2: Apply personalized pinna/canal filter (estado L/R aislado)
+        personalizer_.processStereo(bufferL, bufferR, numSamples);
 
         // 4. Eje 5: Physical scene occlusion and acoustic absorption
         physicalScene_.process(bufferL, bufferR, numSamples);
 
         // 5. Eje 3: Room partial inversion and virtual room projection
+        (void)stabilityGuard_.arbitration().claimRoomSlot(ivanna::supreme::AcousticModuleId::RoomProjection);
         roomEngine_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::RoomProjection,
+                                     bufferL, bufferR, numSamples, 1.0f);
 
         // 5b. Fase 2: MicroReality Extraction Pass (con SupremeTransitionEnvelope anti-click)
         realityOrchestrator_.microExtractor().applyMicroIntelligibilityPass(
             bufferL, bufferR, numSamples, activeRealityState_.microMap,
             realityReconstructionEnabled_, false);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::RealityReconstruction,
+                                     bufferL, bufferR, numSamples,
+                                     realityEnv_.currentGain);
 
         // 6. Eje 6: Hearing adaptation & fatigue protection
         hearingEngine_.process(bufferL, bufferR, numSamples);
 
         // 7. Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN)
         cochlearEngine_.process(bufferL, bufferR, static_cast<int>(numSamples));
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::CochlearInverse,
+                                     bufferL, bufferR, numSamples,
+                                     cochlearEngine_.currentTransitionGain());
 
         // 8. 5 Ejes de Supremacía Cuántico-Neuromórfica (Zero-Copy, Lock-Free):
         //    - Eje 3 Supremo: SNN INT8 + NMF Online -> HOA 4º Orden (16 canales)
         snnNmfHoaUpmixer_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa,
+                                     bufferL, bufferR, numSamples,
+                                     snnNmfHoaUpmixer_.currentTransitionGain());
         //    - Eje 4 Supremo: Pinna Manifold INR-SDF -> FIR 32-Tap Fase Mínima
         pinnaManifoldInterpolator_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::SupremeAxis4_PinnaManifold,
+                                     bufferL, bufferR, numSamples,
+                                     pinnaManifoldInterpolator_.currentTransitionGain());
         //    - Eje 2 Supremo: DDSP + CVNN Hilbert Analítico + Cancelación Activa IMD
         transharmonicSynth_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::SupremeAxis2_Transharmonic,
+                                     bufferL, bufferR, numSamples,
+                                     transharmonicSynth_.currentTransitionGain());
         //    - Eje 5 Supremo: Alineación MSO Farrow 5º Orden & Arbitraje SHM
         shmMsoArbitrator_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::SupremeAxis5_MsoFarrow,
+                                     bufferL, bufferR, numSamples,
+                                     shmMsoArbitrator_.currentTransitionGain());
         //    - Eje 1 Supremo: Celosía Deformada λ Bark + Inversión Bl(x) + Micro-Chirp
         warpedLatticeInverter_.process(bufferL, bufferR, numSamples);
+        stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
+                                     bufferL, bufferR, numSamples,
+                                     warpedLatticeInverter_.currentTransitionGain());
+
+        // 9. Capa Permanente: Supreme Acoustic Stability Guard (Headroom, Damping, Anti-Clip)
+        stabilityGuard_.processBlock(bufferL, bufferR, numSamples, 0.94f);
+    }
+
+    ivanna::supreme::SupremeAcousticStabilityGuard& stabilityGuard() noexcept {
+        return stabilityGuard_;
+    }
+    const ivanna::supreme::SupremeAcousticStabilityGuard& stabilityGuard() const noexcept {
+        return stabilityGuard_;
     }
 
 private:
@@ -323,6 +361,7 @@ private:
     ivanna::supreme::SnnNmfHoaUpmixer snnNmfHoaUpmixer_;
     ivanna::supreme::PinnaManifoldInterpolator pinnaManifoldInterpolator_;
     ivanna::supreme::SupremeMsoFarrowArbitrator shmMsoArbitrator_;
+    ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard_{};
 
     // Acoustic Reality Reconstruction Hyperengine (Fases 1–8)
     ivanna::reality::AcousticRealityOrchestrator realityOrchestrator_{};

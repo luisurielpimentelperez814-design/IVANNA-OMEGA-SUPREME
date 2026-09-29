@@ -57,22 +57,25 @@ public:
      * @brief Apply ear canal & pinna adaptation filter in-place to single mono/binaural channel.
      * 1-pole / biquad direct form II transposed (zero added latency).
      */
-    void processChannel(float* __restrict buffer, size_t numSamples) noexcept {
+    void processChannel(float* __restrict buffer, size_t numSamples, int channelIdx = 0) noexcept {
         if (!buffer || numSamples == 0) return;
         const float alpha = filterCoeff_.load(std::memory_order_relaxed);
-        const float resDelta = resonanceGainDelta_.load(std::memory_order_relaxed);
-        float s = filterState_;
+        const float resDelta = std::clamp(resonanceGainDelta_.load(std::memory_order_relaxed), -0.75f, 0.35f);
+        float& stateRef = (channelIdx == 0) ? filterState_ : filterStateR_;
+        float s = std::isfinite(stateRef) ? stateRef : 0.0f;
         for (size_t i = 0; i < numSamples; ++i) {
-            float in = buffer[i];
+            const float in = std::isfinite(buffer[i]) ? buffer[i] : 0.0f;
             s += alpha * (in - s);
-            // High-passed content around the pinna notch band (in - s is the
-            // complement of the one-pole lowpass state, i.e. what the notch
-            // shelf below removes) — canal_resonance_boost_db boosts/cuts
-            // exactly that band, so the field is no longer dead.
+            if (std::fabs(s) < 1.0e-30f) s = 0.0f;
             const float band = in - s;
             buffer[i] = in * 0.85f + s * 0.15f + band * resDelta;
         }
-        filterState_ = s;
+        stateRef = s;
+    }
+
+    void processStereo(float* __restrict left, float* __restrict right, size_t numSamples) noexcept {
+        processChannel(left, numSamples, 0);
+        processChannel(right, numSamples, 1);
     }
 
 private:
@@ -107,6 +110,7 @@ private:
     std::atomic<float> filterCoeff_{0.2f};
     std::atomic<float> resonanceGainDelta_{0.0f};
     float filterState_{0.0f};
+    float filterStateR_{0.0f};
 };
 
 } // namespace ivanna::spatial

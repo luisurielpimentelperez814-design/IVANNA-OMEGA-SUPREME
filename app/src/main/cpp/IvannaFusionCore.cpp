@@ -212,6 +212,30 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // IMPLEMENTATION_NOTES.md, no un hueco. `m_hoaField` es miembro (no
     // variable local) para no reservar memoria en el camino caliente en
     // cada bloque activo -- Upmixer solo redimensiona si BLOCK_SIZE cambia.
+    const bool wantWfs = g_wfs_enabled.load(std::memory_order_relaxed);
+    const float fadeStep = (m_sampleRateF > 0.f)
+        ? static_cast<float>(Ivanna::BLOCK_SIZE) / (0.020f * m_sampleRateF)
+        : 1.0f;
+    if (wantWfs && m_wfsFade < 1.0f)
+        m_wfsFade = m_wfsFade + fadeStep > 1.0f ? 1.0f : m_wfsFade + fadeStep;
+    else if (!wantWfs && m_wfsFade > 0.0f)
+        m_wfsFade = m_wfsFade - fadeStep < 0.0f ? 0.0f : m_wfsFade - fadeStep;
+
+    // Capturar entrada estéreo limpia pre-binaural para WFS (evita doble espacialización
+    // HOA/HRTF -> WFS en cascada que causaba filtro peine e inflación de ganancia).
+    if (m_wfsFade > 0.0f && m_wfsInit) {
+        const int n = Ivanna::BLOCK_SIZE;
+        if ((int)m_wfsInL.size() != n) {
+            m_wfsInL.assign(n, 0.f);  m_wfsInR.assign(n, 0.f);
+            m_wfsOutL.assign(n, 0.f); m_wfsOutR.assign(n, 0.f);
+            m_wfs.init(m_sampleRateF, n, 16);
+        }
+        for (int i = 0; i < n; ++i) {
+            m_wfsInL[i] = buffer->left[i];
+            m_wfsInR[i] = buffer->right[i];
+        }
+    }
+
     const bool upmixingActive = m_upmixer.isUpmixingEnabled() ||
                                  g_upmixing_enabled.load(std::memory_order_relaxed);
     m_upmixEnv_.setTarget(upmixingActive ? 1.0f : 0.0f);
@@ -241,33 +265,10 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         m_hrtf->processBinauralScene(buffer);
     }
 
-    // ── Wave Field Synthesis (2026-09-19) — capa final de espacialización ──
-    // Actúa SOBRE la salida ya espacializada (rama HOA o HRTF): las dos
-    // fuentes primarias L/R se posicionan a ±0.75 m y su campo se resintetiza
-    // sobre el array WFS (ancho escalado por g_wfs_spread). La mezcla con la
-    // señal seca es un CROSSFADE SMOOTHSTEP de 20 ms en AMBAS direcciones —
-    // nunca un switch duro: activar o desactivar WFS no produce clic, salto
-    // de fase ni de amplitud. Cuando m_wfsFade==0 (bypass) el coste es un
-    // branch + un load atómico por bloque: el renderer no se ejecuta.
+    // ── Wave Field Synthesis (2026-09-19) — arbitraje C1 con HOA/HRTF ──
     {
-        const bool wantWfs = g_wfs_enabled.load(std::memory_order_relaxed);
-        // Paso del fade por bloque: 20 ms @ sampleRate real.
-        const float fadeStep = (m_sampleRateF > 0.f)
-            ? static_cast<float>(Ivanna::BLOCK_SIZE) / (0.020f * m_sampleRateF)
-            : 1.0f;
-        if (wantWfs && m_wfsFade < 1.0f)
-            m_wfsFade = m_wfsFade + fadeStep > 1.0f ? 1.0f : m_wfsFade + fadeStep;
-        else if (!wantWfs && m_wfsFade > 0.0f)
-            m_wfsFade = m_wfsFade - fadeStep < 0.0f ? 0.0f : m_wfsFade - fadeStep;
-
         if (m_wfsFade > 0.0f && m_wfsInit) {
             const int n = Ivanna::BLOCK_SIZE;
-            if ((int)m_wfsInL.size() != n) {  // solo si BLOCK_SIZE cambia
-                m_wfsInL.assign(n, 0.f);  m_wfsInR.assign(n, 0.f);
-                m_wfsOutL.assign(n, 0.f); m_wfsOutR.assign(n, 0.f);
-                m_wfs.init(m_sampleRateF, n, 16);
-            }
-            for (int i = 0; i < n; ++i) { m_wfsInL[i] = buffer->left[i]; m_wfsInR[i] = buffer->right[i]; }
             for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
             const float spread = g_wfs_spread.load(std::memory_order_relaxed);
             const auto realitySnap = ivanna::reality::AcousticRealityOrchestrator::instance().stateBus().readLatestSnapshot();
@@ -301,10 +302,13 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
-    // ── Matriz Mid/Side con Slew-Limiter por muestra (setSpatialWidth + setRouteProfile) ──
+    // ── Matriz Mid/Side con Slew-Limiter por muestra (arbitrada con HOA/WFS) ──
     {
         static constexpr float kWidthSlew = 1.0f / 4096.0f;
-        const float targetW = std::clamp(m_spatialWidthTarget_ * m_routeWidenerMult_, 0.0f, 3.0f);
+        const float rawTargetW = std::clamp(m_spatialWidthTarget_ * m_routeWidenerMult_, 0.0f, 3.0f);
+        // Cuando HOA Upmixer o WFS ya sintetizaron la escena binaural 3D, neutralizar
+        // el ensanchamiento M/S redundante para preservar las claves ITD/ILD.
+        const float targetW = (upmixingActive || wantWfs) ? 1.0f : rawTargetW;
         if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                 if (m_spatialWidthSmoothed_ < targetW)

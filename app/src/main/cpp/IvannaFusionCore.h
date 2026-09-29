@@ -108,9 +108,9 @@ public:
         m_inFifoCount = 0;
         m_inFifoReadPos = 0;
         m_inFifoWritePos = 0;
-        m_outFifoCount = Ivanna::BLOCK_SIZE;
+        m_outFifoCount = 0;
         m_outFifoReadPos = 0;
-        m_outFifoWritePos = Ivanna::BLOCK_SIZE;
+        m_outFifoWritePos = 0;
         if (!m_inFifoL.empty()) std::fill(m_inFifoL.begin(), m_inFifoL.end(), 0.0f);
         if (!m_inFifoR.empty()) std::fill(m_inFifoR.begin(), m_inFifoR.end(), 0.0f);
         if (!m_outFifoL.empty()) std::fill(m_outFifoL.begin(), m_outFifoL.end(), 0.0f);
@@ -120,11 +120,24 @@ public:
     // Procesa N frames estéreo desinterleaved L/R en chunks de BLOCK_SIZE.
     // Llamado desde omega_process() en la ruta caliente de AudioFlinger.
     // Lock-free, zero-allocation carry-over ring buffer que garantiza que todo
-    // bloque enviado a process(&buf) tenga EXACTAMENTE 128 muestras REALES contiguas.
-    // Elimina de raíz los microcortes periódicos ("metralleta") y clics causados por
-    // residuo fraccional frames % 128 con zero-padding.
+    // bloque enviado a process(&buf) tenga EXACTAMENTE 128 muestras REALES contiguas,
+    // con latencia CERO cuando frames es múltiplo de 128 y conservación exacta
+    // (m_inFifoCount + m_outFifoCount == 128) para tamaños arbitrarios (96, 192, 240).
     void processStereo(float* left, float* right, size_t frames) noexcept {
         if (!left || !right || frames == 0) return;
+
+        // 0. Garantizar invariante m_inFifoCount + m_outFifoCount >= BLOCK_SIZE
+        //    únicamente cuando frames no es múltiplo exacto de BLOCK_SIZE (ej. 96, 192, 240).
+        if ((m_inFifoCount + m_outFifoCount < Ivanna::BLOCK_SIZE) &&
+            ((frames % Ivanna::BLOCK_SIZE) != 0 || (m_inFifoCount + m_outFifoCount) > 0)) {
+            const size_t need = Ivanna::BLOCK_SIZE - (m_inFifoCount + m_outFifoCount);
+            for (size_t i = 0; i < need; ++i) {
+                m_outFifoL[m_outFifoWritePos] = 0.0f;
+                m_outFifoR[m_outFifoWritePos] = 0.0f;
+                m_outFifoWritePos = (m_outFifoWritePos + 1) % kFifoCapacity;
+            }
+            m_outFifoCount += need;
+        }
 
         // 1. Ingreso de muestras crudas entrantes al FIFO de entrada
         for (size_t i = 0; i < frames; ++i) {

@@ -662,6 +662,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // igual que antes. Los motores auxiliares (NPE/Volterra/Concert)
                             // se saltan también: viven en la misma cadena local.
                             val systemWideActive = com.ivanna.omega.magisk.OmegaEngineBridge.isConnected
+                            val nativeDspHandled = !systemWideActive && DSPBridge.isLoaded
                             if (!systemWideActive) {
                                 DSPBridge.process(chunk, chunkFrames)
                             }
@@ -669,50 +670,45 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 analyzeTickCounter.incrementAndGet() % 50 == 0) {
                                 runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeAnalyzeAudio(chunk) }
                             }
-                            if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
-                                try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
-                            }
-                            // ── NPE Kotlin (ESN puro) ────────────────────
-                            // Corre en paralelo con el NPE nativo — añade
-                            // textura armónica no lineal desde el reservorio
-                            // de neuronas LIF/resonador/bursting/adaptativo.
-                            if (npeKotlinEnabled) {
-                                try {
-                                    val npeIn = chunk.copyOf()
-                                    val npeOut = npeKotlin.process(npeIn)
-                                    npeOut.copyInto(chunk)
-                                } catch (e: Exception) {
-                                    android.util.Log.e("IVANNA_DSP", "Crash NPE-Kotlin evitado: ${e.message}")
+                            // Árbitro de Ruta Única: si el daemon system-wide está activo o DSPBridge
+                            // nativo ya ejecutó la cadena maestra (Volterra C++, 5 Ejes, Spatial C++ y
+                            // SafetyLimiter), no apilar procesadores duplicados sobre el mismo bloque.
+                            if (!systemWideActive && !nativeDspHandled) {
+                                if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
+                                    try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
                                 }
-                            }
-
-                            // Volterra H2 (distorsión armónica) — FIX: antes vivía anidado
-                            // dentro de "if (npeKotlinEnabled)" por una llave mal cerrada,
-                            // así que si el usuario activaba Volterra pero NO el NPE-Kotlin,
-                            // el efecto nunca se ejecutaba a pesar del switch encendido.
-                            // Ahora es independiente, como indica VolterraSwitch.enabled.
-                            if (VolterraSwitch.enabled) {
-                                try {
-                                    val volterraOut = volterraProcessor.process(chunk)
-                                    volterraOut.copyInto(chunk)
-                                } catch (e: Exception) {
-                                    android.util.Log.e("IVANNA_DSP", "Crash Volterra evitado: ${e.message}")
+                                if (npeKotlinEnabled) {
+                                    try {
+                                        val npeIn = chunk.copyOf()
+                                        val npeOut = npeKotlin.process(npeIn)
+                                        npeOut.copyInto(chunk)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("IVANNA_DSP", "Crash NPE-Kotlin evitado: ${e.message}")
+                                    }
                                 }
-                            }
-                            if (com.ivanna.omega.dsp.ConcertMode.enabled) {
-                                com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
-                            }
-                            if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
-                                for (i in 0 until chunkFrames) {
-                                    spatialInL[i] = chunk[i * 2]
-                                    spatialInR[i] = chunk[i * 2 + 1]
+                                if (VolterraSwitch.enabled) {
+                                    try {
+                                        val volterraOut = volterraProcessor.process(chunk)
+                                        volterraOut.copyInto(chunk)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("IVANNA_DSP", "Crash Volterra evitado: ${e.message}")
+                                    }
                                 }
-                                com.ivanna.omega.spatial.IvannaSpatialEngine.shared.processStereoInput(
-                                    spatialInL, spatialInR, spatialOutL, spatialOutR, chunkFrames
-                                )
-                                for (i in 0 until chunkFrames) {
-                                    chunk[i * 2] = spatialOutL[i]
-                                    chunk[i * 2 + 1] = spatialOutR[i]
+                                if (com.ivanna.omega.dsp.ConcertMode.enabled) {
+                                    com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
+                                }
+                                if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
+                                    for (i in 0 until chunkFrames) {
+                                        spatialInL[i] = chunk[i * 2]
+                                        spatialInR[i] = chunk[i * 2 + 1]
+                                    }
+                                    com.ivanna.omega.spatial.IvannaSpatialEngine.shared.processStereoInput(
+                                        spatialInL, spatialInR, spatialOutL, spatialOutR, chunkFrames
+                                    )
+                                    for (i in 0 until chunkFrames) {
+                                        chunk[i * 2] = spatialOutL[i]
+                                        chunk[i * 2 + 1] = spatialOutR[i]
+                                    }
                                 }
                             }
                             val outputChunk = resampler.process(chunk)

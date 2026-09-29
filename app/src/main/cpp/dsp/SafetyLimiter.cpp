@@ -220,7 +220,7 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
             ++clips;
             outL = 0.f;
             outR = 0.f;
-        } else if (std::fabs(outL) > ceil_ || std::fabs(outR) > ceil_) {
+        } else if (std::fabs(outL) > 1.05f || std::fabs(outR) > 1.05f) {
             ++clips;
         }
         outL = softCeil(outL, ceil_);

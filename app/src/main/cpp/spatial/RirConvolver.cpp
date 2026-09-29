@@ -384,6 +384,25 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
 
     while (remaining > 0) {
         const int n = (remaining < BLOCK) ? remaining : BLOCK;
+
+        // ── Crossfade de IR (monótono de oldIr -> pendIr ANTES de convolucionar) ──
+        if (xfadeBlocks_ > 0) {
+            --xfadeBlocks_;
+            const float alpha = std::clamp(
+                static_cast<float>(xfadeBlocks_) / static_cast<float>(XFADE_BLOCKS),
+                0.0f, 1.0f);
+            const float beta = 1.0f - alpha;
+            for (int i = 0; i < FFT_SIZE; ++i) {
+                irReL_[i] = alpha * oldIrReL_[i] + beta * pendIrReL_[i];
+                irImL_[i] = alpha * oldIrImL_[i] + beta * pendIrImL_[i];
+                irReR_[i] = alpha * oldIrReR_[i] + beta * pendIrReR_[i];
+                irImR_[i] = alpha * oldIrImR_[i] + beta * pendIrImR_[i];
+            }
+            if (xfadeBlocks_ == 0) {
+                overlapLen_ = pendOverlapLen_;
+            }
+        }
+
         const int ol = (overlapLen_ < MAX_IR) ? overlapLen_ : MAX_IR - 1;
 
         // ── Overlap-save Head L (latencia 0, soporta cualquier n <= BLOCK) ──
@@ -570,19 +589,6 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             R[offset + i] = outR;
         }
         wetNow_ = wn;
-
-        // ── Crossfade de IR ───────────────────────────────────────────────
-        if (xfadeBlocks_ > 0) {
-            const float alpha = (float)xfadeBlocks_ / (float)(XFADE_BLOCKS + 1);
-            const float beta  = 1.0f - alpha;
-            for (int i = 0; i < FFT_SIZE; ++i) {
-                irReL_[i] = alpha * oldIrReL_[i] + beta * irReL_[i];
-                irImL_[i] = alpha * oldIrImL_[i] + beta * irImL_[i];
-                irReR_[i] = alpha * oldIrReR_[i] + beta * irReR_[i];
-                irImR_[i] = alpha * oldIrImR_[i] + beta * irImR_[i];
-            }
-            if (--xfadeBlocks_ == 0) overlapLen_ = pendOverlapLen_;
-        }
 
         offset    += n;
         remaining -= n;

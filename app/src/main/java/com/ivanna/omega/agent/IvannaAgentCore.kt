@@ -291,25 +291,32 @@ object IvannaAgentCore {
         // de CPU y reenviar/saltar políticas de forma inconsistente.
         @Volatile private var lastPolicyName: String? = null
         @Volatile private var clipReliefStreak: Int = 0
+        @Volatile private var recoveryHoldCycles: Int = 0
+        @Volatile private var currentEffectiveGain: Float = 1.0f
 
         fun apply(policy: DecisionAgent.Policy): Boolean {
             val isClipPolicy = policy.name == "clip-relief" || policy.name == "protect"
-            if (policy.name == lastPolicyName && !isClipPolicy) {
-                clipReliefStreak = 0
-                return true  // ya aplicada
-            }
             if (isClipPolicy) {
                 clipReliefStreak = (clipReliefStreak + 1).coerceAtMost(6)
+                recoveryHoldCycles = 3
+                val steppedTarget = (policy.targetGain - (clipReliefStreak - 1) * 0.03f).coerceAtLeast(0.62f)
+                currentEffectiveGain = minOf(currentEffectiveGain, steppedTarget)
+            } else if (recoveryHoldCycles > 0) {
+                recoveryHoldCycles -= 1
+                // Mantener la ganancia amortiguada durante el hold para evitar bombeo periódico
+            } else if (currentEffectiveGain < policy.targetGain) {
+                clipReliefStreak = 0
+                currentEffectiveGain = (currentEffectiveGain + 0.05f).coerceAtMost(policy.targetGain)
             } else {
                 clipReliefStreak = 0
+                currentEffectiveGain = policy.targetGain
             }
-            // Si el clipping persiste en ciclos sucesivos, escalar la reducción
-            // de ganancia progresivamente hasta extinguirlo (piso seguro 0.50f).
-            val effectiveGain = if (isClipPolicy && clipReliefStreak > 1) {
-                (policy.targetGain - (clipReliefStreak - 1) * 0.04f).coerceAtLeast(0.50f)
-            } else {
-                policy.targetGain
+
+            if (policy.name == lastPolicyName && !isClipPolicy &&
+                kotlin.math.abs(currentEffectiveGain - policy.targetGain) < 1e-3f) {
+                return true  // ya aplicada y ganancia estabilizada
             }
+            val effectiveGain = currentEffectiveGain
             var ok = false
 
             // Ruta daemon (system-wide, root): los 3 knobs adaptativos.

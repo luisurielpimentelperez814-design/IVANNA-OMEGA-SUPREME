@@ -155,25 +155,31 @@ class IvannaSpatialEngine private constructor() {
 
         var dryPow = 0.0
         var wetPow = 0.0
-        val modAmount = if (abs(azimuth) > 0.1f) sin(modPhase) * 0.5f else 0f
-        modPhase += 0.0003f
 
         for (i in 0 until n) {
-            val itdSamples = (sinAzimuth * itdMax).toInt()
-            val modOffset = (modAmount * 1.5f).toInt()
-            val totalDelayL = maxOf(0, -itdSamples + modOffset)
-            val totalDelayR = maxOf(0, itdSamples + modOffset)
+            val writePos = itdWriteIndex
+            delayedL[writePos] = inL[i] * ildL
+            delayedR[writePos] = inR[i] * ildR
 
-            val readIdxL = (itdWriteIndex - totalDelayL + itdMax) % itdMax
-            val readIdxR = (itdWriteIndex - totalDelayR + itdMax) % itdMax
-            val delayedSampleL = delayedL[readIdxL]
-            val delayedSampleR = delayedR[readIdxR]
+            val itdSamplesF = sinAzimuth * (itdMax - 3).coerceAtLeast(1).toFloat()
+            val delayLf = (-itdSamplesF).coerceIn(0f, (itdMax - 2).toFloat())
+            val delayRf = (itdSamplesF).coerceIn(0f, (itdMax - 2).toFloat())
+
+            val dL0 = delayLf.toInt()
+            val fracL = delayLf - dL0
+            val idxL0 = (writePos - dL0 + itdMax) % itdMax
+            val idxL1 = (writePos - dL0 - 1 + itdMax) % itdMax
+            val delayedSampleL = delayedL[idxL0] * (1f - fracL) + delayedL[idxL1] * fracL
+
+            val dR0 = delayRf.toInt()
+            val fracR = delayRf - dR0
+            val idxR0 = (writePos - dR0 + itdMax) % itdMax
+            val idxR1 = (writePos - dR0 - 1 + itdMax) % itdMax
+            val delayedSampleR = delayedR[idxR0] * (1f - fracR) + delayedR[idxR1] * fracR
+
+            itdWriteIndex = (writePos + 1) % itdMax
 
             dryPow += (inL[i] * inL[i] + inR[i] * inR[i]).toDouble()
-
-            delayedL[itdWriteIndex] = inL[i] * ildL
-            delayedR[itdWriteIndex] = inR[i] * ildR
-            itdWriteIndex = (itdWriteIndex + 1) % itdMax
 
             var sampleL = delayedSampleL
             var sampleR = delayedSampleR
@@ -187,7 +193,7 @@ class IvannaSpatialEngine private constructor() {
             val numTaps = if (reducedComplexity) 2 else 4
             val tapNorm = if (reducedComplexity) 0.5f else 0.25f
             for (j in 0 until numTaps) {
-                val delaySamples = (earlyReflectionTimes[j] * sampleRate / 1000f).toInt() % maxBlockSize
+                val delaySamples = ((earlyReflectionTimes[j] * sampleRate / 1000f).toInt()).coerceIn(1, maxBlockSize - 1)
                 val readIdx = (earlyWriteIndices[j] - delaySamples + maxBlockSize) % maxBlockSize
                 var reflected = earlyReflectionBuffers[j][readIdx] * earlyReflectionGains[j]
                 erLowpassState[j] += 0.3f * (reflected - erLowpassState[j])
@@ -224,18 +230,21 @@ class IvannaSpatialEngine private constructor() {
             crossfeedWriteIndex = (crossfeedWriteIndex + 1) % crossfeedDelaySamples
         }
 
-        // Normalización constant-power: iguala la energía de salida a la de
-        // entrada, suavizada entre bloques. Ninguna posición espacial puede
-        // subir ni bajar el volumen percibido.
+        // Normalización constant-power con rampa lineal muestra a muestra
+        // para eliminar saltos escalón de ganancia en fronteras de bloque.
+        val prevNormGain = normGain
         if (dryPow > 1e-9 && wetPow > 1e-9) {
-            val target = sqrt(dryPow / wetPow).toFloat().coerceIn(0.5f, 2f)
-            normGain += 0.25f * (target - normGain)
+            val target = sqrt(dryPow / wetPow).toFloat().coerceIn(0.65f, 1.35f)
+            normGain += 0.15f * (target - normGain)
         } else {
-            normGain += 0.25f * (1f - normGain)
+            normGain += 0.15f * (1f - normGain)
         }
+        val gainStep = if (n > 0) (normGain - prevNormGain) / n.toFloat() else 0f
+        var g = prevNormGain
         for (i in 0 until n) {
-            outL[i] = (outL[i] * normGain).coerceIn(-1f, 1f)
-            outR[i] = (outR[i] * normGain).coerceIn(-1f, 1f)
+            g += gainStep
+            outL[i] = (outL[i] * g).coerceIn(-0.98f, 0.98f)
+            outR[i] = (outR[i] * g).coerceIn(-0.98f, 0.98f)
         }
     }
 }

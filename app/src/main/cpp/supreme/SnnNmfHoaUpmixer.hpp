@@ -330,10 +330,10 @@ public:
             upolaHistoryR_[1] = upolaHistoryR_[0];
             upolaHistoryR_[0] = sanitize(binR);
 
-            // Mezcla equilloudness sin bombeo acústico ni discontinuidad por transición
+            // Mezcla equilloudness de ganancia unitaria sin inflación de energía ni discontinuidad
             const float envWet = transitionEnv_.nextSample();
-            left[i]  = std::clamp((1.0f - 0.35f * envWet) * dryL + envWet * partL, -1.95f, 1.95f);
-            right[i] = std::clamp((1.0f - 0.35f * envWet) * dryR + envWet * partR, -1.95f, 1.95f);
+            left[i]  = std::clamp((1.0f - 0.65f * envWet) * dryL + 0.65f * envWet * partL, -1.20f, 1.20f);
+            right[i] = std::clamp((1.0f - 0.65f * envWet) * dryR + 0.65f * envWet * partR, -1.20f, 1.20f);
         }
         continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {

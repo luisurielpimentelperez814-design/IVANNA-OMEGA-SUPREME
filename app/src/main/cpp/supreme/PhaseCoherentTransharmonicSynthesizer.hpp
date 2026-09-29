@@ -229,8 +229,8 @@ public:
                 inR, stateIR_, stateQR_, prevIR_, prevQR_,
                 oscPhaseR_, instFreqSmoothR_, envSlowR_, envFastR_, hpStateR_, maxPhaseDiscontinuity);
 
-            const float wetL = std::clamp(inL + smoothHarmonicGain_ * synthL, -1.95f, 1.95f);
-            const float wetR = std::clamp(inR + smoothHarmonicGain_ * synthR, -1.95f, 1.95f);
+            const float wetL = std::clamp(inL + 0.35f * smoothHarmonicGain_ * synthL, -1.20f, 1.20f);
+            const float wetR = std::clamp(inR + 0.35f * smoothHarmonicGain_ * synthR, -1.20f, 1.20f);
 
             const float env = transitionEnv_.nextSample();
             left[i]  = SupremeTransitionEnvelope::mixSample(rawL, wetL, env);
@@ -328,20 +328,20 @@ private:
 
         const float magSq = xI * xI + xQ * xQ + 1.0e-12f;
         const float mag = std::sqrt(magSq);
-        const float rawDPhi = std::clamp((xI * dQ - xQ * dI) / magSq, -kPi * 0.48f, kPi * 0.48f);
-
-        // Suavizado de derivada de fase para garantizar C^1-continuidad libre de aspereza metálica
-        const float prevSmooth = instFreqSmooth;
-        instFreqSmooth = sanitize(0.88f * instFreqSmooth + 0.12f * rawDPhi);
-        maxPhaseJump = std::max(maxPhaseJump, std::fabs(instFreqSmooth - prevSmooth));
-
-        // 3. Serie de Volterra de 2º orden en el plano complejo con cancelación activa de IMD:
-        //    El cuadrado analítico z^2 = (x_I^2 - x_Q^2) + j(2 x_I x_Q) genera exclusivamente
-        //    el armónico 2ω sin el término de diferencia (ω_1 - ω_2) que contamina un excitador real x^2.
-        //    Además, estimamos el batido de envolvente (IMD cruzado) y lo restamos destructivamente.
         envFast = sanitize(0.92f * envFast + 0.08f * mag);
         envSlow = sanitize(0.992f * envSlow + 0.008f * mag);
         const float imdBeatEnvelope = std::max(0.0f, envFast - envSlow);
+
+        // Regularización de Tikhonov sobre el denominador de fase analítica:
+        // Evita que los nulos de envolvente (magSq -> 0 en batidos musicales) disparen
+        // rawDPhi a ±π/2 y generen un barrido FM tipo sirena.
+        const float regDenom = std::max(magSq, 0.35f * envSlow * envSlow + 1.0e-3f);
+        const float rawDPhi = std::clamp((xI * dQ - xQ * dI) / regDenom, -kPi * 0.32f, kPi * 0.32f);
+
+        // Suavizado PLL de derivada de fase para garantizar C^1-continuidad libre de sirena FM
+        const float prevSmooth = instFreqSmooth;
+        instFreqSmooth = sanitize(0.96f * instFreqSmooth + 0.04f * rawDPhi);
+        maxPhaseJump = std::max(maxPhaseJump, std::fabs(instFreqSmooth - prevSmooth));
 
         const float invMag = 1.0f / (mag + 1.0e-9f);
         const float z2Real = (xI * xI - xQ * xQ) * invMag;

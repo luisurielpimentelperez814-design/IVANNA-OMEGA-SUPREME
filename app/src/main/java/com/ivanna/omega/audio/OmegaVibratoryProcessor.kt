@@ -27,27 +27,50 @@ class OmegaVibratoryProcessor(
 ) {
     private var gain = 1.0f   // ganancia actual del limitador
 
-    /** Procesa buffer PCM estéreo intercalado in-place. */
+    /** Procesa buffer PCM estéreo intercalado in-place (par L/R vinculado en fase). */
     fun process(audioData: FloatArray): FloatArray {
-        val d = drive.coerceIn(0f, 12f)
-        if (d < 0.01f) return audioData   // bypass si drive ≈ 0
+        val d = drive.coerceIn(0f, 4f)
+        if (d < 0.01f || audioData.isEmpty()) return audioData
 
-        val invD = 1f / (tanh(d).toFloat().coerceAtLeast(0.001f))
+        // Drive acotado para preservar micro-dinámica sin distorsión inter-armónica
+        val effDrive = 1f + 0.35f * d
+        val invD = 1f / (tanh(effDrive.toDouble()).toFloat().coerceAtLeast(0.001f))
 
-        for (i in audioData.indices) {
-            // 1. Saturación armónica suave
-            var s = (tanh((audioData[i] * d).toDouble()) * invD).toFloat()
+        var i = 0
+        val n = audioData.size
+        while (i + 1 < n) {
+            val inL = if (audioData[i].isFinite()) audioData[i] else 0f
+            val inR = if (audioData[i + 1].isFinite()) audioData[i + 1] else 0f
 
-            // 2. Limitador de pico — detecta y aplica ganancia de reducción
-            val level = abs(s)
-            gain = if (level * gain > limitThreshold) {
+            val sL = (tanh((inL * effDrive).toDouble()) * invD).toFloat()
+            val sR = (tanh((inR * effDrive).toDouble()) * invD).toFloat()
+
+            // Detector estéreo vinculado (L/R comparten la misma envolvente por frame)
+            val level = maxOf(abs(sL), abs(sR))
+            gain = if (level * gain > limitThreshold && level > 1e-6f) {
                 (limitThreshold / level).coerceAtMost(1f) * (1f - attackCoeff) + gain * attackCoeff
             } else {
                 (releaseCoeff * gain + (1f - releaseCoeff)).coerceAtMost(1f)
             }
-            audioData[i] = (s * gain).coerceIn(-1f, 1f)
+
+            audioData[i]     = softCeiling(sL * gain, limitThreshold)
+            audioData[i + 1] = softCeiling(sR * gain, limitThreshold)
+            i += 2
         }
         return audioData
+    }
+
+    private fun softCeiling(x: Float, ceiling: Float): Float {
+        if (!x.isFinite()) return 0f
+        val ax = abs(x)
+        val knee = ceiling * 0.88f
+        if (ax <= knee) return x
+        val span = (ceiling - knee).coerceAtLeast(1e-4f)
+        val excess = (ax - knee) / span
+        val e2 = excess * excess
+        val comp = excess * (27f + e2) / (27f + 9f * e2 + excess * e2)
+        val mag = knee + span * comp.coerceAtMost(1f)
+        return if (x >= 0f) mag else -mag
     }
 
     fun setDrive(d: Float)     { drive = d.coerceIn(0f, 12f) }

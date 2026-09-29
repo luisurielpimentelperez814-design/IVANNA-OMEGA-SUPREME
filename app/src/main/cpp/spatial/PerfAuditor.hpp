@@ -8,6 +8,9 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#if defined(__unix__) || defined(__linux__) || defined(__ANDROID__)
+#include <time.h>
+#endif
 #include "IvannaAudioPipeline.hpp"
 
 namespace ivanna::spatial {
@@ -116,12 +119,21 @@ public:
                           0.15f * std::sin(2.0f * 3.14159f * 2400.0f * t);
             }
 
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+            struct timespec ts0{}, ts1{};
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts0);
+            p.process(bufL.data(), bufR.data(), kBlockSize);
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts1);
+            double elapsedSec = static_cast<double>(ts1.tv_sec - ts0.tv_sec) +
+                                static_cast<double>(ts1.tv_nsec - ts0.tv_nsec) * 1.0e-9;
+#else
             auto t0 = std::chrono::high_resolution_clock::now();
             p.process(bufL.data(), bufR.data(), kBlockSize);
             auto t1 = std::chrono::high_resolution_clock::now();
+            double elapsedSec = std::chrono::duration<double>(t1 - t0).count();
+#endif
 
             double durationBlockSec = 512.0 / 48000.0;
-            double elapsedSec = std::chrono::duration<double>(t1 - t0).count();
             float cpuPct = static_cast<float>((elapsedSec / durationBlockSec) * 100.0);
 
             if (block < 10000) {

@@ -199,13 +199,15 @@ void VolterraH2Symmetric::processInterleaved(
             float* delay = m_delay_lines[ch];
             uint32_t& d_idx = m_delay_indices[ch];
 
-            delay[d_idx] = x;
-            d_idx = (d_idx + 1) % K;
+            const uint32_t write_idx = d_idx;
+            delay[write_idx] = x;
+            d_idx = (write_idx + 1) % K;
 
             // --- PROCESAMIENTO DEL NÚCLEO LINEAL H1 ---
+            // write_idx apunta a x[n] (k = 0); (write_idx + K - k) % K apunta a x[n - k].
             float y_linear = 0.0f;
             for (uint32_t k = 0; k < K; ++k) {
-                uint32_t delay_k = (d_idx + K - k) % K;
+                uint32_t delay_k = (write_idx + K - k) % K;
                 y_linear += m_h1[k] * delay[delay_k];
             }
 
@@ -213,7 +215,7 @@ void VolterraH2Symmetric::processInterleaved(
             float y_quad = 0.0f;
 
             for (uint32_t k = 0; k < K; ++k) {
-                uint32_t delay_k = (d_idx + K - k) % K;
+                uint32_t delay_k = (write_idx + K - k) % K;
                 float x_k = delay[delay_k];
                 
                 // Umbral psicoacústico inteligente (~-120 dBFS). Si la muestra es silencio, saltamos la fila completa
@@ -233,10 +235,10 @@ void VolterraH2Symmetric::processInterleaved(
                     float32x4_t v_h2 = vld1q_f32(&m_h2[h2_idx0]);
 
                     // Resolver punteros del buffer circular para los próximos 4 elementos de retraso
-                    uint32_t delay_l0 = (d_idx + K - l) % K;
-                    uint32_t delay_l1 = (d_idx + K - (l + 1)) % K;
-                    uint32_t delay_l2 = (d_idx + K - (l + 2)) % K;
-                    uint32_t delay_l3 = (d_idx + K - (l + 3)) % K;
+                    uint32_t delay_l0 = (write_idx + K - l) % K;
+                    uint32_t delay_l1 = (write_idx + K - (l + 1)) % K;
+                    uint32_t delay_l2 = (write_idx + K - (l + 2)) % K;
+                    uint32_t delay_l3 = (write_idx + K - (l + 3)) % K;
 
                     alignas(16) float samples_l[4] = {
                         delay[delay_l0],
@@ -266,7 +268,7 @@ void VolterraH2Symmetric::processInterleaved(
 
                 // Bucle de limpieza matemático para procesar muestras remanentes fuera del bloque de 4
                 for (; l < K; ++l) {
-                    uint32_t delay_l = (d_idx + K - l) % K;
+                    uint32_t delay_l = (write_idx + K - l) % K;
                     float x_l = delay[delay_l];
                     if (x_l == 0.0f) continue;
 
@@ -281,20 +283,18 @@ void VolterraH2Symmetric::processInterleaved(
             }
 
             float y = y_linear + y_quad;
+            if (!std::isfinite(y)) y = dry;
 
-            // 3. ECO PSICOACÚSTICO PASIVO (Cuando el motor Binaural está inactivo)
-            // Cuando la HRTF se apaga, inyecta un desfasador de compensación tonal para revivir el brillo
-            // y limpiar el sonido opaco o acartonado provocado por la distorsión asimétrica
-            bool is_binaural_active = false; // Mapear dinámicamente según el estado del framework espacial
-            if (!is_binaural_active) {
-                uint32_t prev_idx = (d_idx + K - 1) % K;
-                float x_prev = delay[prev_idx];
-                y = (y * 0.86f) + (x_prev * 0.14f); // Crossfade equilibrado en fase pasiva
+            // Saturador racional C1 (sin recorte duro ni filtro peine parásito)
+            const float ay = std::abs(y);
+            if (ay > 0.90f) {
+                constexpr float kKnee = 0.90f;
+                constexpr float kCeil = 0.995f;
+                constexpr float kRange = kCeil - kKnee;
+                const float over = (ay - kKnee) / kRange;
+                const float mag = kKnee + kRange * (over / (1.0f + over));
+                y = (y < 0.0f) ? -mag : mag;
             }
-
-            // Limitador estricto por hardware (Hard-Clipping) para bloquear desbordamientos e interrupciones en el DAC
-            if (y > 1.0f)  y = 1.0f;
-            if (y < -1.0f) y = -1.0f;
 
             output[idx] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dry, y, env);
         }

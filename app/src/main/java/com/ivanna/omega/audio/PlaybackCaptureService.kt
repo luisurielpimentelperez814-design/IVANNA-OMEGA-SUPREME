@@ -656,51 +656,60 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     )
                     IvannaSpatialEngine.setReducedComplexity(predictiveGovernor.isSpatialComplexityReduced)
 
-                    // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter / Coclear / 5 Ejes)
+                    val nativeMasterActive = DSPBridge.isLoaded
+
+                    // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter / Coclear / 5 Ejes + SafetyLimiter)
                     // Nunca omitir bloques alternos de filtros IIR con estado al cambiar de ventana
                     budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
                         DSPBridge.process(buffer, frames)
                     }
 
-                    // ETAPA 2: CINEMATIC ENGINE
-                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE) {
-                        runCatching { CinematicEngineHost.processBlock(buffer, read) }
-                    }
+                    // Árbitro de Ruta Única: si DSPBridge nativo está activo, ya ejecutó
+                    // espacialización C++, Volterra C++, 5 Ejes y SafetyLimiter. Ejecutar además
+                    // CinematicEngineHost, IvannaSpatialEngine (Kotlin), IvannaNpeEngine y
+                    // vibratoryProcessor sobre la salida limitada causaba triple saturación,
+                    // doble HRTF/peine y clipping post-limitador.
+                    if (!nativeMasterActive) {
+                        // ETAPA 2: CINEMATIC ENGINE (fallback solo cuando el motor C++ no está cargado)
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.CINEMATIC_ENGINE) {
+                            runCatching { CinematicEngineHost.processBlock(buffer, read) }
+                        }
 
-                    // ETAPA 3: SPATIAL AUDIO (HRTF / WFS)
-                    if (IvannaSpatialEngine.enabled) {
-                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO) {
-                            if (frames <= rtSpatialInL.size) {
-                                val inL  = rtSpatialInL
-                                val inR  = rtSpatialInR
-                                val outL = rtSpatialOutL
-                                val outR = rtSpatialOutR
-                                for (i in 0 until frames) {
-                                    inL[i] = buffer[i * 2]
-                                    inR[i] = buffer[i * 2 + 1]
-                                }
-                                runCatching {
-                                    IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                        // ETAPA 3: SPATIAL AUDIO (HRTF / WFS fallback Kotlin)
+                        if (IvannaSpatialEngine.enabled) {
+                            budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO) {
+                                if (frames <= rtSpatialInL.size) {
+                                    val inL  = rtSpatialInL
+                                    val inR  = rtSpatialInR
+                                    val outL = rtSpatialOutL
+                                    val outR = rtSpatialOutR
                                     for (i in 0 until frames) {
-                                        buffer[i * 2]     = outL[i]
-                                        buffer[i * 2 + 1] = outR[i]
+                                        inL[i] = buffer[i * 2]
+                                        inR[i] = buffer[i * 2 + 1]
+                                    }
+                                    runCatching {
+                                        IvannaSpatialEngine.shared.processStereoInput(inL, inR, outL, outR, frames)
+                                        for (i in 0 until frames) {
+                                            buffer[i * 2]     = outL[i]
+                                            buffer[i * 2 + 1] = outR[i]
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // ETAPA 4: VIBRATORY & NPE
-                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
-                        if (IvannaNpeEngine.isReady) {
-                            runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
-                        }
-                        IvannaBridgePlayer.activeInstance?.let { player ->
-                            if (player.npeKotlinEnabled) {
-                                runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+                        // ETAPA 4: VIBRATORY & NPE (fallback cuando DSPBridge no está cargado)
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
+                            if (IvannaNpeEngine.isReady) {
+                                runCatching { IvannaNpeEngine.processInterleavedStereo(buffer, frames) }
                             }
+                            IvannaBridgePlayer.activeInstance?.let { player ->
+                                if (player.npeKotlinEnabled) {
+                                    runCatching { player.processBlockThroughNpeKotlin(buffer).copyInto(buffer) }
+                                }
+                            }
+                            vibratoryProcessor.process(buffer)
                         }
-                        vibratoryProcessor.process(buffer)
                     }
 
                     // Rampa per-sample de la ganancia del stream procesado (Efecto Haas)
