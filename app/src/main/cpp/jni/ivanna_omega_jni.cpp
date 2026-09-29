@@ -147,10 +147,11 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 // g_cochlearEnabled : flag atómico leído en hot-path (relaxed)
 // g_cochlearIntensity: nivel wet [0..1] leído en hot-path (relaxed)
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
-std::atomic<bool>  g_cochlearEnabled{true};
-std::atomic<float> g_cochlearIntensity{1.0f};
+std::atomic<bool>  g_cochlearEnabled{false};
+std::atomic<float> g_cochlearIntensity{0.35f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
 static ivanna::spatial::IvannaAudioPipeline g_liveAudioPipeline;
+extern "C" void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int frames, float sampleRate) noexcept;
 namespace {
 struct LivePipelineAutoRegistrar {
     LivePipelineAutoRegistrar() noexcept {
@@ -810,8 +811,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
         pipe.prepare(static_cast<float>(sr), 512);
+        // Autoridad única en Ruta A/C: g_cochlearEngine. El motor coclear interno de
+        // g_liveAudioPipeline permanece desactivado para evitar doble procesado.
         pipe.cochlearEngine().setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
-        pipe.cochlearEngine().setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
+        pipe.cochlearEngine().setEnabled(false);
         pipe.pinnaManifoldInterpolator().calibrateFromLatents(
             ivanna::master::kMasterSafGoldenQNorm[2],
             ivanna::master::kMasterSafGoldenQNorm[3],
@@ -1568,8 +1571,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
             !g_wfs_enabled.load(std::memory_order_relaxed);
+        ivanna_pilstm_bridge_tick_block(g_ats.pdOutL, g_ats.pdOutR, n, srNow);
         pipe.processLiveSpatialAxes(
-            g_ats.pdOutL, g_ats.pdOutR, nSamples, srNow, allowLiveSpatial, 0.16f, true);
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, srNow, allowLiveSpatial, 0.16f,
+            /*runHearingStage=*/true, /*runCochlearStage=*/false);
         s_routeAGuard.enforceStageEnergyCeiling(
             ivanna::supreme::AcousticModuleId::ObjectRenderer,
             g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.20f, 0.95f);
@@ -1904,8 +1909,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
             !g_wfs_enabled.load(std::memory_order_relaxed);
+        ivanna_pilstm_bridge_tick_block(oL, oR, n, srNow);
         pipe.processLiveSpatialAxes(
-            oL, oR, nSamples, srNow, allowLiveSpatial, 0.16f, true);
+            oL, oR, nSamples, srNow, allowLiveSpatial, 0.16f,
+            /*runHearingStage=*/true, /*runCochlearStage=*/false);
         s_blkGuard.enforceStageEnergyCeiling(
             ivanna::supreme::AcousticModuleId::ObjectRenderer,
             oL, oR, nSamples, 1.20f, 0.95f);
@@ -2508,18 +2515,87 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     applyNhoWet();
 }
 
-// ── nativeSetCochlearEnabled (alias legacy — PiLstmBridge compat) ─────────────
-// Los símbolos canónicos (nativeSetCochlearInverseEnabled / nativeSetCochlearIntensity
-// / isCochlearActive) están definidos en ivanna_spatial_jni.cpp.
-// Este alias redirige el flag atómico para PiLstmBridge.setCochlearEnabled().
+// ── Autoridad Canónica Única para CochlearActiveInverseEngine (Rutas A, B y C) ──
+// Unifica las 3 rutas JNI competidoras (CochlearInverseViewModel, PiLstmBridge,
+// NativeBridge) en un único punto de control:
+//   - En Ruta A/C (proceso app): controla únicamente g_cochlearEngine (manteniendo
+//     g_liveAudioPipeline.cochlearEngine() apagado para impedir doble procesado).
+//   - En Ruta B (daemon + audioserver): publica en effectControlBus() y envía
+//     SET_COCHLEAR_INVERSE_ENABLED / SET_COCHLEAR_INTENSITY por @omega_command_socket.
+static void omegaSendCochlearToDaemon(bool enabled, float intensity) noexcept {
+    {
+        auto& bus = ivanna::effectControlBus();
+        ivanna::OmegaDspSnapshot snap;
+        uint64_t seen = 0;
+        if (bus.readLatest(snap, seen)) {
+            snap.cochlear_intensity = intensity;
+            if (enabled) snap.flags |= ivanna::OMEGA_FLAG_COCHLEAR_ON;
+            else         snap.flags &= ~ivanna::OMEGA_FLAG_COCHLEAR_ON;
+            bus.publish(snap);
+        }
+    }
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[160];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_COCHLEAR_INVERSE_ENABLED\",\"enabled\":%d}\n"
+            "{\"action\":\"SET_COCHLEAR_INTENSITY\",\"intensity\":%.4f}",
+            enabled ? 1 : 0, static_cast<double>(intensity));
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+extern "C" void ivanna_cochlear_set_enabled(bool on) noexcept {
+    g_cochlearEnabled.store(on, std::memory_order_release);
+    g_cochlearEngine.setEnabled(on);
+    auto* activePipe = ivanna::spatial::IvannaAudioPipeline::peekActiveInstance();
+    if (activePipe && activePipe != &g_liveAudioPipeline) {
+        activePipe->cochlearEngine().setEnabled(on);
+    } else {
+        g_liveAudioPipeline.cochlearEngine().setEnabled(false);
+    }
+    omegaSendCochlearToDaemon(on, g_cochlearIntensity.load(std::memory_order_relaxed));
+}
+
+extern "C" void ivanna_cochlear_set_intensity(float intensity) noexcept {
+    const float w = std::isfinite(intensity)
+        ? std::clamp(intensity, 0.0f, 1.0f)
+        : 0.35f;
+    g_cochlearIntensity.store(w, std::memory_order_relaxed);
+    g_cochlearEngine.setIntensity(w);
+    auto* activePipe = ivanna::spatial::IvannaAudioPipeline::peekActiveInstance();
+    if (activePipe && activePipe != &g_liveAudioPipeline) {
+        activePipe->cochlearEngine().setIntensity(w);
+    }
+    omegaSendCochlearToDaemon(g_cochlearEnabled.load(std::memory_order_relaxed), w);
+}
+
+extern "C" bool ivanna_cochlear_is_active() noexcept {
+    if (g_cochlearEngine.isActive() || g_cochlearEnabled.load(std::memory_order_relaxed)) {
+        return true;
+    }
+    auto* activePipe = ivanna::spatial::IvannaAudioPipeline::peekActiveInstance();
+    if (activePipe && activePipe != &g_liveAudioPipeline) {
+        return activePipe->cochlearEngine().isActive();
+    }
+    return false;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCochlearEnabled(
     JNIEnv*, jobject, jboolean enabled) {
-    // Sincroniza el atómico; el helper en spatial_jni también lo escribe vía
-    // nativeSetCochlearInverseEnabled. Ambas rutas son idempotentes.
-    const bool on = (enabled == JNI_TRUE);
-    g_cochlearEnabled.store(on, std::memory_order_release);
-    g_cochlearEngine.setEnabled(on);
+    ivanna_cochlear_set_enabled(enabled == JNI_TRUE);
 }
 
 // ── Puente app→daemon para Upmixing (HOA) ────────────────────────────────

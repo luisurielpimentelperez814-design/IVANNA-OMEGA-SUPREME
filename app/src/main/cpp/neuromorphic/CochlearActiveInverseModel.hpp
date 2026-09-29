@@ -62,6 +62,22 @@ public:
     // Q factor auditivo crítico (banda Greenwood)
     static constexpr float Q_COCHLEAR    = 3.0f;
 
+    // Q factor auditivo crítico por banda.
+    // FIX artefactos "láser": Q=3.0 en 8 kHz–16 kHz produce resonancia tonal
+    // audible (BPF muy estrecho cerca de Nyquist → ringing en transitorios).
+    // Reducimos Q en las bandas superiores para ampliar el filtro y eliminar
+    // el pitido, manteniendo la selectividad en bandas medias/bajas.
+    static constexpr float Q_BY_BAND[NUM_BANDS] = {
+        3.0f,   // 120  Hz  — banda baja:   Q alto para buena selectividad
+        3.0f,   // 331  Hz
+        3.0f,   // 710  Hz
+        3.0f,   // 1390 Hz
+        2.5f,   // 2613 Hz  — transición
+        1.8f,   // 4807 Hz  — banda alta:   Q bajo → sin ringing
+        1.4f,   // 8736 Hz  — FIX "láser"
+        1.0f    // 16000 Hz — Q=1 (Butterworth BPF, 2 oct de anchura)
+    };
+
     // Constantes de tiempo Heun (OHC envelope follower)
     static constexpr float TAU_ATT_MS   = 10.0f;   // ataque   [ms]
     static constexpr float TAU_REL_MS   = 80.0f;   // release  [ms]
@@ -199,6 +215,9 @@ public:
         ivanna::supreme::SupremeTransitionEnvelope envR = transitionEnv_;
         processMono(bufferL, numSamples, chanL_, envL);
         processMono(bufferR, numSamples, chanR_, envR);
+        for (int n = 0; n < numSamples; ++n) {
+            (void)continuityMgr_.nextResumeFactor();
+        }
         transitionEnv_ = envL;
         activeWet_ = transitionEnv_.currentGain;
         continuityMgr_.preserveState(bufferL, bufferR, static_cast<size_t>(numSamples));
@@ -276,10 +295,11 @@ private:
         const float rel_c = 1.0f / (TAU_REL_MS * 0.001f * Fs);
         for (int b = 0; b < NUM_BANDS; ++b) {
             // Biquad BPF — Audio EQ Cookbook (constant skirt, unit peak)
+            // Q por banda: ver Q_BY_BAND[] — bandas altas con Q reducido (anti-láser)
             const float w0    = PI2 * CF[b] / Fs;
             const float sinW  = std::sin(w0);
             const float cosW  = std::cos(w0);
-            const float alpha = sinW / (2.0f * Q_COCHLEAR);
+            const float alpha = sinW / (2.0f * Q_BY_BAND[b]);
             const float a0    = 1.0f + alpha;
             const float inv_a0 = 1.0f / a0;          // ← única división en init
             ch.b0[b]  = alpha * inv_a0;               // b0/a0

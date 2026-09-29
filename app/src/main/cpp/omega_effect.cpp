@@ -456,6 +456,9 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
     }
     if (ctx->audioPipeline) {
         ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
+        // Autoridad única coclear en Ruta B: ctx->cochlearEngine.
+        // El motor coclear interno de audioPipeline permanece desactivado en Ruta B.
+        ctx->audioPipeline->cochlearEngine().setEnabled(false);
         ctx->audioPipeline->setRealityReconstructionEnabled(realityOn);
         if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
             ctx->audioPipeline->realityOrchestrator().setRealityIntensity(s.intensity);
@@ -757,6 +760,31 @@ static int32_t omega_process(effect_handle_t self,
              frames, ctx->rtCapacity);
     }
 
+    // ── Pre-loop: sincronizar parámetros cocleares y térmicos UNA VEZ por callback ──
+    // FIX CRÍTICO-2 (artefactos/clicks): setEnabled/setIntensity producen cambios de
+    // estado si se llaman por cada chunk dentro de while(offset < frames). Aquí se
+    // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
+    const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
+    if (ctx->volterraEngine) {
+        ctx->volterraEngine->setEnabled(wantVolterraPre);
+        ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
+    }
+    if (ctx->cochlearEngine) {
+        const auto& snapPre = ctx->pendingSnap;
+        const bool  cochOnPre = (snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        const float intensityPre =
+            (std::isfinite(snapPre.cochlear_intensity) && snapPre.cochlear_intensity > 0.0f)
+                ? snapPre.cochlear_intensity
+                : ctx->cochlearIntensity;
+        ctx->cochlearEngine->setIntensity(intensityPre);
+        ctx->cochlearEngine->setEnabled(cochOnPre);
+        ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
+    }
+    if (ctx->supremeLattice)   ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
+    if (ctx->supremeCvnn)      ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
+    if (ctx->supremePinna)     ctx->supremePinna->setThermalBypass(ctx->thermalSkipVolterra);
+    if (ctx->supremeMsoFarrow) ctx->supremeMsoFarrow->setThermalBypass(ctx->thermalSkipVolterra);
+
     int offset = 0;
     while (offset < frames) {
         const int chunk = ((frames - offset) < ctx->rtCapacity)
@@ -783,13 +811,15 @@ static int32_t omega_process(effect_handle_t self,
 
         // Ejes 1–5 del pipeline espacial unificado (StereoObjectDecomposer,
         // ObjectSpatialRenderer, HrtfPersonalizer, PhysicalSceneRenderer, RoomProjectionEngine)
+        // FIX CRÍTICO-1: runHearingStage=false, runCochlearStage=false (sin doble procesado coclear)
         if (ctx->audioPipeline) {
             ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
             const uint32_t srPipe = (ctx->config.outputCfg.samplingRate != 0)
                                   ? ctx->config.outputCfg.samplingRate : 48000u;
             const bool allowPipeSpatial = !fc->getUpmixer().isUpmixingEnabled() && !fc->isWfsEnabled();
             ctx->audioPipeline->processLiveSpatialAxes(
-                L, R, (size_t)chunk, (float)srPipe, allowPipeSpatial, 0.16f, false);
+                L, R, (size_t)chunk, (float)srPipe, allowPipeSpatial, 0.16f,
+                /*runHearingStage=*/false, /*runCochlearStage=*/false);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::ObjectRenderer,
                 L, R, (size_t)chunk, 1.22f, 0.95f);
@@ -891,10 +921,7 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->volterraEngine &&
             ctx->stabilityGuard.arbitration().claimNonlinearSlot(
                 ivanna::supreme::AcousticModuleId::VolterraKernel)) {
-            const bool wantVolterra = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
-            ctx->volterraEngine->setEnabled(wantVolterra);
-            ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
-            if (wantVolterra || !ctx->volterraEngine->isSilent()) {
+            if (wantVolterraPre || !ctx->volterraEngine->isSilent()) {
                 for (int n = 0; n < chunk; ++n) {
                     outChunk[2 * n]     = L[n];
                     outChunk[2 * n + 1] = R[n];
@@ -918,14 +945,9 @@ static int32_t omega_process(effect_handle_t self,
             }
         }
 
-        // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine ──
-        const auto& snap = ctx->pendingSnap;
-        const bool cochOn = (snap.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine (Autoridad única Ruta B) ──
+        // Parámetros (setIntensity/setEnabled/setThermalBypass) aplicados pre-loop una vez por callback.
         if (ctx->cochlearEngine) {
-            const float intensity = (snap.cochlear_intensity > 0.0f) ? snap.cochlear_intensity : ctx->cochlearIntensity;
-            ctx->cochlearEngine->setIntensity(intensity);
-            ctx->cochlearEngine->setEnabled(cochOn);
-            ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->cochlearEngine->process(L, R, (int)chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::CochlearInverse,
@@ -936,14 +958,12 @@ static int32_t omega_process(effect_handle_t self,
         // Cada motor gestiona su propio SupremeTransitionEnvelope (attack 8ms, release 18ms,
         // thermal 35ms) y ahorra 100% de CPU únicamente cuando su envolvente llega a cero.
         if (ctx->supremeLattice) {
-            ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeLattice->process(L, R, (size_t)chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
                 L, R, (size_t)chunk, 1.20f, 0.95f);
         }
         if (ctx->supremeCvnn) {
-            ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeCvnn->process(L, R, (size_t)chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::SupremeAxis2_Transharmonic,
@@ -960,7 +980,6 @@ static int32_t omega_process(effect_handle_t self,
                 L, R, (size_t)chunk, 1.18f, 0.95f);
         }
         if (ctx->supremePinna) {
-            ctx->supremePinna->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremePinna->process(L, R, (size_t)chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::SupremeAxis4_PinnaManifold,
@@ -969,7 +988,6 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->supremeMsoFarrow) {
             const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
                                  ? ctx->config.outputCfg.samplingRate : 48000u;
-            ctx->supremeMsoFarrow->setThermalBypass(ctx->thermalSkipVolterra);
             ctx->supremeMsoFarrow->process(L, R, (size_t)chunk, (float)srNow);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::SupremeAxis5_MsoFarrow,
@@ -1168,7 +1186,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         ctx->cochlearEngine->prepare(static_cast<float>(sr), (ctx->rtCapacity > 0) ? ctx->rtCapacity : 4096);
                     }
                 }
-                ctx->cochlearIntensity = 1.0f;
+                ctx->cochlearIntensity = 0.35f;
                 // 5 Ejes de Supremacía Cuántico-Neuromórfica (instanciación fuera de RT)
                 if (!ctx->supremeLattice) {
                     ctx->supremeLattice = new (std::nothrow) ivanna::supreme::WarpedLatticeTransducerInverter();
@@ -1534,7 +1552,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rirConvolver = nullptr;
     ctx->cochlearEngine = nullptr;
     ctx->audioPipeline = nullptr;
-    ctx->cochlearIntensity = 1.0f;
+    ctx->cochlearIntensity = 0.35f;
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;

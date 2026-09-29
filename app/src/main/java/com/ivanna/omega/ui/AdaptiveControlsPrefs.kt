@@ -24,7 +24,7 @@ data class AdaptiveControlsState(
     val npeAgcTarget: Float = -14.0f,
     val npeAgcRate: Float = 0.62f,
     val npeHrtf: Boolean = true,
-    val npeCochlear: Boolean = true,
+    val npeCochlear: Boolean = false,
     val npeAdapt: Boolean = true,
     val npeManifold: Boolean = true,
     val spatialEnabled: Boolean = true,

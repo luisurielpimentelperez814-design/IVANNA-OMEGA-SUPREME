@@ -163,10 +163,11 @@ object PiLstmBridge {
         if (ready) IvannaNativeLib.nativeSetAdaptEnabled(en)
     }
     fun setCochlearEnabled(en: Boolean) {
-        // Eje Supremo: llama al motor CochlearActiveInverseEngine real (Cochlear-PINN).
-        // Anteriormente enrutaba erróneamente a nativeSetSpatialWet — ahora cableado
-        // directamente al JNI dedicado que controla g_cochlear_enabled en el hot-path.
-        if (ready) IvannaNativeLib.nativeSetCochlearEnabled(en)
+        // Eje Supremo: delega en la ruta canónica única (NativeBridge / IvannaNativeLib)
+        // que sincroniza g_cochlearEngine (Ruta A/C) y el daemon SHM (Ruta B) sin doble procesado.
+        if (ready) {
+            com.ivanna.omega.core.NativeBridge.safeSetCochlearInverseEnabled(en)
+        }
     }
     // Estado para restaurar tras bypass (FIX: antes harmonicGain se ponía a 0
     // al entrar en bypass y JAMÁS se restauraba al salir — el ajuste del

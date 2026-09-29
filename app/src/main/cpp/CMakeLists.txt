@@ -186,8 +186,7 @@ add_library(ivanna_omega SHARED
     # Fase 1: Orquestador central (UnifiedControlFrame + control_apply_frame)
     audio_control_plane.cpp
 
-    # Fase 4: NeuroCochlearManifold + VolterraH2Symmetric (motor cochlear)
-    neuromorphic/neuro_cochlear_manifold.cpp
+    # Fase 4: VolterraH2Symmetric (motor cochlear canónico: CochlearActiveInverseModel.hpp)
     neuromorphic/volterra_h2_symmetric.cpp
     hexagon/ivanna_fastrpc_client.cpp
 

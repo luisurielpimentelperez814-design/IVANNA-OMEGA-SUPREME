@@ -48,6 +48,21 @@ static int64_t            g_prev_ns       = 0;
 
 extern "C" {
 
+// Alimenta g_piLstmBridge.lstm desde el hot-path RT (nativeProcess / nativeProcessBlock)
+// sin asignaciones ni bloqueos, manteniendo viva la telemetría (nativeGetNpSat / nativeGetError).
+void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int frames, float sampleRate) noexcept {
+    if (!g_piLstmBridge_ready.load(std::memory_order_acquire) || !inL || !inR || frames <= 0) return;
+    const float sr = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
+    const int step = std::max(1, frames / 16);
+    const float dt = static_cast<float>(step) / sr;
+    for (int i = 0; i < frames; i += step) {
+        const float mono = 0.5f * (inL[i] + inR[i]);
+        if (std::isfinite(mono)) {
+            g_piLstmBridge.lstm.rk4_step(mono, dt);
+        }
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeInit(JNIEnv*, jobject) {
     g_piLstmBridge.reset();

@@ -236,7 +236,8 @@ public:
                                 float sampleRate = 48000.0f,
                                 bool allowSpatialRender = true,
                                 float baseSpatialWet = 0.18f,
-                                bool runHearingStage = true) noexcept {
+                                bool runHearingStage = true,
+                                bool runCochlearStage = false) noexcept {
         if (!bufferL || !bufferR || numSamples == 0) return;
         const float sr = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : sampleRate_;
         size_t offset = 0;
@@ -323,6 +324,12 @@ public:
             // 7. Eje 6: HearingAdaptationEngine (isófonas, sello ear-tip, presbicusia y fatiga)
             if (runHearingStage) {
                 hearingEngine_.process(chL, chR, chunk);
+            }
+
+            // 8. Eje Coclear (desactivado por defecto en rutas en vivo Ruta A/B para evitar
+            //    doble procesado con g_cochlearEngine / ctx->cochlearEngine)
+            if (runCochlearStage) {
+                cochlearEngine_.process(chL, chR, static_cast<int>(chunk));
             }
 
             offset += chunk;

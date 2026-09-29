@@ -78,9 +78,9 @@ struct OmegaDspState {
     float wfs_speaker_y[7] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
     float wfs_speaker_z[7] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
 
-    // Eje Supremo Coclear (Active Inverse)
-    bool cochlear_enabled = true;
-    float cochlear_intensity = 0.78f;
+    // Eje Supremo Coclear (Active Inverse) — opt-in desde UI
+    bool cochlear_enabled = false;
+    float cochlear_intensity = 0.35f;  // FIX artefactos: era 0.78f (demasiado agresivo)
 
     // Anti-Dolby SPSC Lock-Free Ring Buffer
     float spsc_ring_factor = 0.95f;

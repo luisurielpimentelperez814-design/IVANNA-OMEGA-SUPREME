@@ -1967,12 +1967,16 @@ public:
             snap.harmonic_gain * (1.0f - k + k * rs.perceptual.harmonicRestraintScale),
             0.0f, 2.0f);
 
-        // Intensidad coclear guiada por alivio perceptual
-        if ((snap.flags & OMEGA_FLAG_COCHLEAR_ON) != 0) {
-            snap.cochlear_intensity = std::clamp(
-                snap.cochlear_intensity * (1.0f - 0.3f * k) + rs.perceptual.cochlearReliefIntensity * (0.3f * k),
-                0.15f, 1.0f);
-        }
+        // FIX artefactos "subida y bajada": la modulación dinámica de cochlear_intensity
+        // (blend hasta 30% con cochlearReliefIntensity) producía oscilaciones de ganancia
+        // audibles si cochlearReliefIntensity cambiaba entre updates del Orchestrator.
+        // La intensidad cochlear ahora es controlada SOLO por el usuario (UI slider)
+        // y el daemon — el Orchestrator la observa pero NO la sobreescribe.
+        // if ((snap.flags & OMEGA_FLAG_COCHLEAR_ON) != 0) {
+        //     snap.cochlear_intensity = std::clamp(
+        //         snap.cochlear_intensity * (1.0f - 0.3f * k) + rs.perceptual.cochlearReliefIntensity * (0.3f * k),
+        //         0.15f, 1.0f);
+        // }
 
         snap.stampCrc();
     }

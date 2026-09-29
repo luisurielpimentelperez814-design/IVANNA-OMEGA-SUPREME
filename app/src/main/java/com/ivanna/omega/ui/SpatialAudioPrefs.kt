@@ -12,8 +12,8 @@ data class SpatialAudioState(
     val safEnabled: Boolean = true,
     val safIntensity: Float = 0.78f,
     val safAutoMode: Boolean = true,
-    val cochlearInverseEnabled: Boolean = true,
-    val cochlearIntensity: Float = 0.78f
+    val cochlearInverseEnabled: Boolean = false,
+    val cochlearIntensity: Float = 0.35f
 )
 
 object SpatialAudioPrefs {

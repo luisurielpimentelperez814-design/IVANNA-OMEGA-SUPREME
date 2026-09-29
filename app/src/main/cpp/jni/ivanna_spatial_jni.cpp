@@ -358,31 +358,20 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetAutoEqB
 extern ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
 extern std::atomic<bool>  g_cochlearEnabled;
 extern std::atomic<float> g_cochlearIntensity;
+extern "C" void ivanna_cochlear_set_enabled(bool on) noexcept;
+extern "C" void ivanna_cochlear_set_intensity(float w) noexcept;
+extern "C" bool ivanna_cochlear_is_active() noexcept;
 
 static inline void cochlearSetEnabledHelper(jboolean enabled) noexcept {
-    const bool on = (enabled == JNI_TRUE);
-    // Ruta A: pipeline IvannaAudioPipeline (gestiona su propio engine interno)
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setEnabled(on);
-    // Ruta B / hot-path DSPBridge & IvannaNativeLib: sincronizar g_cochlearEngine + atomic
-    g_cochlearEngine.setEnabled(on);
-    g_cochlearEnabled.store(on, std::memory_order_release);
+    ivanna_cochlear_set_enabled(enabled == JNI_TRUE);
 }
 
 static inline void cochlearSetIntensityHelper(jfloat intensity) noexcept {
-    const float w = std::isfinite(static_cast<float>(intensity))
-        ? (intensity < 0.f ? 0.f : (intensity > 1.f ? 1.f : static_cast<float>(intensity)))
-        : 0.35f;
-    // Ruta A: pipeline
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().setIntensity(w);
-    // Ruta B / hot-path manual: sincronizar g_cochlearEngine + atomic
-    g_cochlearEngine.setIntensity(w);
-    g_cochlearIntensity.store(w, std::memory_order_relaxed);
+    ivanna_cochlear_set_intensity(static_cast<float>(intensity));
 }
 
 static inline jboolean cochlearIsActiveHelper() noexcept {
-    const bool active = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().cochlearEngine().isActive()
-                     || g_cochlearEngine.isActive();
-    return active ? JNI_TRUE : JNI_FALSE;
+    return ivanna_cochlear_is_active() ? JNI_TRUE : JNI_FALSE;
 }
 
 static inline jfloat cochlearGetIntensityHelper() noexcept {

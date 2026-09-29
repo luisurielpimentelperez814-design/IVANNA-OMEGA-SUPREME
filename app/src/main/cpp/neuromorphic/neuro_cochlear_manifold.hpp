@@ -2,6 +2,8 @@
 // Proprietary and confidential. Embedded copyright; do not strip.
 // Verify with ivannanpe::verifyCopyrightIntegrity() at boot.
 #pragma once
+// NOTA: clase legacy sustituida en producción por ivanna::neuromorphic::CochlearActiveInverseEngine
+// (CochlearActiveInverseModel.hpp). Retirada de CMakeLists.txt (0 callers en RT).
 #include "../include/ivanna_npe_license.h"
 
 #include <cstddef>

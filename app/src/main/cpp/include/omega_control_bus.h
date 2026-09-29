@@ -317,7 +317,9 @@ struct OmegaDspSnapshot {
         s.upmixing_immersivity = 1.0f;
         s.wfs_enabled = 0;      // opt-in, coherente con ParameterStore default
         s.wfs_spread  = 1.0f;
-        s.cochlear_intensity = 1.0f;
+        s.cochlear_intensity = 0.35f;  // FIX artefactos: era 1.0f. Cochlear arranca OFF en el bus;
+                                       // el usuario lo activa desde el panel (SpatialAudioPrefs).
+                                       // Cuando se activa, 0.35 es perceptible sin coloring agresivo.
         s.supreme_lattice_bl_drive    = 1.0f;
         s.supreme_lattice_lambda      = 0.72f;
         s.supreme_cvnn_harmonic_gain  = 0.28f;
@@ -355,7 +357,9 @@ struct OmegaDspSnapshot {
                 | OMEGA_FLAG_ANTI_DOLBY_ON
                 | OMEGA_FLAG_VOLTERRA_ON
                 | OMEGA_FLAG_ATI_ON
-                | OMEGA_FLAG_COCHLEAR_ON
+                // OMEGA_FLAG_COCHLEAR_ON se omite del default: el motor coclear
+                // es opt-in desde la UI (panel COCLEAR). Activarlo en el bitmask
+                // default producía artefactos tipo "láser" en instalaciones nuevas.
                 | OMEGA_FLAG_SUPREME_LATTICE_ON
                 | OMEGA_FLAG_SUPREME_MICROCHIRP_ON
                 | OMEGA_FLAG_SUPREME_CVNN_ON
