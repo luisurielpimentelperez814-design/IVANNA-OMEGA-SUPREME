@@ -8,6 +8,7 @@
 #include "spatial/RirDataset.hpp"
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
+#include "spatial/IvannaAudioPipeline.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
@@ -264,6 +265,7 @@ struct omega_effect_context_t {
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
+    ivanna::spatial::IvannaAudioPipeline* audioPipeline;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -447,9 +449,27 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
             ctx->supremeMsoFarrow->setMsoItdNanoseconds(s.supreme_mso_itd_ns);
     }
     auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
-    realityOrch.setEnabled((s.flags & ivanna::OMEGA_FLAG_REALITY_RECON_ON) != 0);
+    const bool realityOn = (s.flags & ivanna::OMEGA_FLAG_REALITY_RECON_ON) != 0;
+    realityOrch.setEnabled(realityOn);
     if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
         realityOrch.setRealityIntensity(s.intensity);
+    }
+    if (ctx->audioPipeline) {
+        ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
+        ctx->audioPipeline->setRealityReconstructionEnabled(realityOn);
+        if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
+            ctx->audioPipeline->realityOrchestrator().setRealityIntensity(s.intensity);
+        }
+        const bool roomActive = (s.room_rt60_s >= 0.01f && s.room_wet > 0.001f);
+        ctx->audioPipeline->roomEngine().setProjectionWet(
+            roomActive ? std::clamp(s.room_wet * 0.45f, 0.0f, 0.45f) : 0.0f);
+        ctx->audioPipeline->roomEngine().setInversionGain(
+            roomActive ? std::clamp(0.25f + 0.25f * s.room_rt60_s, 0.15f, 0.65f) : 0.20f);
+        ctx->audioPipeline->physicalScene().setWallAbsorption(
+            roomActive ? std::clamp(1.0f / (1.0f + 1.8f * s.room_rt60_s), 0.12f, 0.88f) : 0.30f);
+        if (std::isfinite(s.listen_phon) && s.listen_phon >= 30.0f) {
+            ctx->audioPipeline->hearingEngine().setListeningSpl(std::clamp(s.listen_phon, 40.0f, 100.0f));
+        }
     }
 }
 
@@ -760,6 +780,20 @@ static int32_t omega_process(effect_handle_t self,
             (void)ctx->stabilityGuard.arbitration().claimSpatialSlot(
                 ivanna::supreme::AcousticModuleId::HoaBinauralDecoder);
         }
+
+        // Ejes 1–5 del pipeline espacial unificado (StereoObjectDecomposer,
+        // ObjectSpatialRenderer, HrtfPersonalizer, PhysicalSceneRenderer, RoomProjectionEngine)
+        if (ctx->audioPipeline) {
+            ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
+            const uint32_t srPipe = (ctx->config.outputCfg.samplingRate != 0)
+                                  ? ctx->config.outputCfg.samplingRate : 48000u;
+            const bool allowPipeSpatial = !fc->getUpmixer().isUpmixingEnabled() && !fc->isWfsEnabled();
+            ctx->audioPipeline->processLiveSpatialAxes(
+                L, R, (size_t)chunk, (float)srPipe, allowPipeSpatial, 0.16f, false);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::ObjectRenderer,
+                L, R, (size_t)chunk, 1.22f, 0.95f);
+        }
         
         // FASE 3: Integración de TinyML Asíncrono
         auto* classifier = fc ? fc->getClassifier() : nullptr;
@@ -954,7 +988,12 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // Eje 6: compensación auditiva antes del limitador de seguridad final
-        if (ctx->hearingEngine) {
+        if (ctx->audioPipeline) {
+            ctx->audioPipeline->hearingEngine().process(L, R, (size_t)chunk);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::PerceptualLoudness,
+                L, R, (size_t)chunk, 1.22f, 0.95f);
+        } else if (ctx->hearingEngine) {
             ctx->hearingEngine->process(L, R, chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::PerceptualLoudness,
@@ -1096,6 +1135,15 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // audio mientras tanto.
                 if (!ctx->hearingEngine) {
                     ctx->hearingEngine = new (std::nothrow) ivanna::spatial::HearingAdaptationEngine();
+                }
+                if (!ctx->audioPipeline) {
+                    ctx->audioPipeline = new (std::nothrow) ivanna::spatial::IvannaAudioPipeline();
+                }
+                if (ctx->audioPipeline) {
+                    ctx->audioPipeline->prepare(
+                        static_cast<float>(sr),
+                        ivanna::spatial::IvannaAudioPipeline::MAX_BLOCK_SIZE);
+                    ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
                 }
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
@@ -1485,6 +1533,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->antiDolby = nullptr;
     ctx->rirConvolver = nullptr;
     ctx->cochlearEngine = nullptr;
+    ctx->audioPipeline = nullptr;
     ctx->cochlearIntensity = 1.0f;
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
@@ -1587,6 +1636,13 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->hearingEngine) {
             delete ctx->hearingEngine;
             ctx->hearingEngine = nullptr;
+        }
+        if (ctx->audioPipeline) {
+            if (ivanna::spatial::IvannaAudioPipeline::peekActiveInstance() == ctx->audioPipeline) {
+                ivanna::spatial::IvannaAudioPipeline::setActiveInstance(nullptr);
+            }
+            delete ctx->audioPipeline;
+            ctx->audioPipeline = nullptr;
         }
         if (ctx->rirConvolver) {
             delete ctx->rirConvolver;

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <array>
+#include <atomic>
 #include <memory>
 #include "StereoObjectDecomposer.hpp"
 #include "HrtfPersonalizer.hpp"
@@ -47,13 +48,10 @@ public:
     static constexpr size_t MAX_BLOCK_SIZE = 512;
 
     IvannaAudioPipeline() noexcept {
-        // Prepare the cochlear engine with the default sample rate.
+        // Prepare all spatial & supreme engines with the default sample rate.
         // If the host calls prepare() explicitly (recommended), this is a
-        // harmless no-op (state is reset either way).
-        cochlearEngine_.prepare(48000.0f, static_cast<int>(MAX_BLOCK_SIZE));
-        warpedLatticeInverter_.prepare(48000.0f);
-        transharmonicSynth_.prepare(48000.0f);
-        snnNmfHoaUpmixer_.prepare(48000.0f);
+        // harmless re-init (state is reset either way).
+        prepare(48000.0f, MAX_BLOCK_SIZE);
         // Por defecto en bypass en construcción base para preservar el presupuesto
         // estricto de PerfAuditorTest.WithinBudgetCompliance; se activan lock-free
         // desde la UI / JNI / PersistedStateRestorer en tiempo real.
@@ -62,30 +60,43 @@ public:
         snnNmfHoaUpmixer_.setEnabled(false);
         pinnaManifoldInterpolator_.setEnabled(false);
         shmMsoArbitrator_.setEnabled(false);
-        realityEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
         realityEnv_.setImmediate(0.0f);
         reset();
+    }
+
+    void prepare(float sampleRate, size_t maxBlock = MAX_BLOCK_SIZE) noexcept {
+        const float sr = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
+        const int blk  = static_cast<int>(std::clamp<size_t>(maxBlock, 16u, MAX_BLOCK_SIZE));
+        sampleRate_ = sr;
+        decomposer_.prepare(sr, blk);
+        cochlearEngine_.prepare(sr, blk);
+        warpedLatticeInverter_.prepare(sr);
+        transharmonicSynth_.prepare(sr);
+        snnNmfHoaUpmixer_.prepare(sr);
+        realityEnv_.configure(sr, 8.0f, 18.0f, 35.0f);
     }
 
     /**
      * @brief Returns the process-wide active pipeline instance.
      *
-     * Used by ivanna_spatial_jni.cpp helpers (Ruta A) to forward control
-     * changes (enable/intensity) to the pipeline's cochlear engine.
-     * Returns a static no-op instance when no Android audio session is running
-     * (e.g. host-side unit tests) so helpers never dereference a null pointer.
+     * Used by ivanna_spatial_jni.cpp and ivanna_omega_jni.cpp helpers to forward
+     * control changes to the live pipeline engines.
+     * Returns a static fallback instance when no Android audio session has been
+     * registered yet (e.g. standalone unit tests) so callers never dereference nullptr.
      */
     static IvannaAudioPipeline& getActiveInstance() noexcept {
-        // Static singleton — zero heap; constructed once on first call.
-        // In the Android audio path, omega_effect.cpp registers the live
-        // instance via setActiveInstance(). In tests / no audio session,
-        // the placeholder instance is returned (safe no-op).
         static IvannaAudioPipeline s_placeholder;
-        return (s_active_ != nullptr) ? *s_active_ : s_placeholder;
+        IvannaAudioPipeline* active = s_active_.load(std::memory_order_acquire);
+        return (active != nullptr) ? *active : s_placeholder;
     }
 
-    /** Register / unregister the live pipeline from the audio thread. */
-    static void setActiveInstance(IvannaAudioPipeline* p) noexcept { s_active_ = p; }
+    /** Register / unregister the live pipeline from the audio/init thread. */
+    static void setActiveInstance(IvannaAudioPipeline* p) noexcept {
+        s_active_.store(p, std::memory_order_release);
+    }
+    static IvannaAudioPipeline* peekActiveInstance() noexcept {
+        return s_active_.load(std::memory_order_acquire);
+    }
 
     void reset() noexcept {
         decomposer_.reset();
@@ -212,12 +223,128 @@ public:
     }
 
     /**
+     * @brief Executes Ejes 1–6 (StereoObjectDecomposer, ObjectSpatialRenderer,
+     *        HrtfPersonalizer, PhysicalSceneRenderer, RoomProjectionEngine,
+     *        HearingAdaptationEngine) in-place on arbitrary block sizes for live
+     *        production routes (Ruta A/C in ivanna_omega_jni.cpp & Ruta B in omega_effect.cpp).
+     *
+     * Zero heap allocations, zero locks, 0.00 ms added algorithmic latency.
+     */
+    void processLiveSpatialAxes(float* __restrict bufferL,
+                                float* __restrict bufferR,
+                                size_t numSamples,
+                                float sampleRate = 48000.0f,
+                                bool allowSpatialRender = true,
+                                float baseSpatialWet = 0.18f,
+                                bool runHearingStage = true) noexcept {
+        if (!bufferL || !bufferR || numSamples == 0) return;
+        const float sr = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : sampleRate_;
+        size_t offset = 0;
+        while (offset < numSamples) {
+            const size_t chunk = std::min(numSamples - offset, MAX_BLOCK_SIZE);
+            float* chL = bufferL + offset;
+            float* chR = bufferR + offset;
+
+            // 1. Eje 1: Descomponer estéreo en 4 objetos discretos (CENTER, LEFT, RIGHT, AMBIENT)
+            float* objPtrs[4] = {
+                objectBuffers_[0].data(),
+                objectBuffers_[1].data(),
+                objectBuffers_[2].data(),
+                objectBuffers_[3].data()
+            };
+            decomposer_.decompose(chL, chR, objPtrs, chunk);
+
+            // 2. Acoplamiento con AcousticRealityOrchestrator + Eje 2 ITD
+            std::array<DecomposedObject, 4> activeObjs = decomposer_.getObjects();
+            float itdScale = personalizer_.getItdScale();
+            float realityK = 0.0f;
+            const float targetReality = realityReconstructionEnabled_ ? 1.0f : 0.0f;
+            if (realityEnv_.beginBlock(targetReality)) {
+                if (realityReconstructionEnabled_) {
+                    realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
+                    if (activeRealityState_.sequence == 0) {
+                        orchestrateRealityFromBlock(chL, chR, chunk, sr);
+                    }
+                }
+                float envVal = realityEnv_.currentGain;
+                for (size_t s = 0; s < chunk; ++s) {
+                    envVal = realityEnv_.nextSample();
+                }
+                realityK = std::clamp(activeRealityState_.realityIntensity * envVal, 0.0f, 1.0f);
+                const auto& exec = activeRealityState_.cognitive.executiveDecision;
+                const float rawSpreadMod = (exec.arbitratedWfsSpreadScale > 0.1f) ? exec.arbitratedWfsSpreadScale : 1.0f;
+                const float rawDepthMod  = (exec.arbitratedObjectDepthScale > 0.1f) ? exec.arbitratedObjectDepthScale : 1.0f;
+                const float spreadMod = 1.0f + realityK * (rawSpreadMod - 1.0f);
+                const float depthMod  = 1.0f + realityK * (rawDepthMod  - 1.0f);
+
+                for (size_t i = 0; i < 4; ++i) {
+                    const auto& gSrc = activeRealityState_.genome.sources[i];
+                    activeObjs[i].position.x = (activeObjs[i].position.x * (1.0f - realityK) + gSrc.posX * realityK) * spreadMod;
+                    activeObjs[i].position.y = (activeObjs[i].position.y * (1.0f - realityK) + gSrc.posY * realityK) * depthMod;
+                    activeObjs[i].position.z = gSrc.posZ * realityK;
+                    activeObjs[i].gain *= (1.0f - realityK) + realityK * activeRealityState_.neuralProposal.sourceSeparationWeights[i];
+                }
+                std::array<float, 4> scaledErGains = activeRealityState_.timeline.room.earlyTapGains;
+                const float erScale = (exec.arbitratedEarlyReflectionsScale > 0.1f) ? exec.arbitratedEarlyReflectionsScale : 1.0f;
+                for (float& eg : scaledErGains) eg *= (1.0f + realityK * (erScale - 1.0f));
+                spatialRenderer_.setEarlyReflectionGains(scaledErGains);
+                physicalScene_.setWallAbsorption(activeRealityState_.genome.roomFingerprint.wallAbsorption);
+                const float targetItd = (exec.arbitratedHrtfItdScale > 0.1f)
+                    ? exec.arbitratedHrtfItdScale
+                    : activeRealityState_.personalField.customItdScale;
+                itdScale = itdScale * (1.0f - realityK) + targetItd * realityK;
+            }
+
+            // 3. Eje 4: ObjectSpatialRenderer con mezcla húmeda controlada (ITD + ILD + ER)
+            const float wetObj = allowSpatialRender
+                ? std::clamp(baseSpatialWet + 0.22f * realityK, 0.0f, 0.45f)
+                : 0.0f;
+            if (wetObj > 1.0e-4f) {
+                spatialRenderer_.renderObjects(
+                    objPtrs, activeObjs,
+                    spatialScratchL_.data(), spatialScratchR_.data(),
+                    chunk, itdScale);
+                const float dryObj = 1.0f - 0.35f * wetObj;
+                for (size_t i = 0; i < chunk; ++i) {
+                    chL[i] = chL[i] * dryObj + spatialScratchL_[i] * wetObj;
+                    chR[i] = chR[i] * dryObj + spatialScratchR_[i] * wetObj;
+                }
+            }
+
+            // 4. Eje 2: HrtfPersonalizer (filtro antropométrico de pinna/canal auditivo)
+            personalizer_.processStereo(chL, chR, chunk);
+
+            // 5. Eje 5: PhysicalSceneRenderer (oclusión y absorción acústica de paredes)
+            physicalScene_.process(chL, chR, chunk);
+
+            // 6. Eje 3: RoomProjectionEngine (de-reverberación WPE de fase mínima + proyección)
+            roomEngine_.process(chL, chR, chunk);
+
+            // 7. Eje 6: HearingAdaptationEngine (isófonas, sello ear-tip, presbicusia y fatiga)
+            if (runHearingStage) {
+                hearingEngine_.process(chL, chR, chunk);
+            }
+
+            offset += chunk;
+        }
+    }
+
+    /**
      * @brief Renders an audio block through the complete 7-axis + 5 Supreme Axes pipeline.
      *
      * Latencia algorítmica total añadida: 0.00 ms.
      */
     void process(float* __restrict bufferL, float* __restrict bufferR, size_t numSamples) noexcept {
-        if (!bufferL || !bufferR || numSamples == 0 || numSamples > MAX_BLOCK_SIZE) return;
+        if (!bufferL || !bufferR || numSamples == 0) return;
+        if (numSamples > MAX_BLOCK_SIZE) {
+            size_t offset = 0;
+            while (offset < numSamples) {
+                const size_t chunk = std::min(numSamples - offset, MAX_BLOCK_SIZE);
+                process(bufferL + offset, bufferR + offset, chunk);
+                offset += chunk;
+            }
+            return;
+        }
 
         // 1. Eje 1: Decompose stereo into 4 discrete objects
         float* objPtrs[4] = {
@@ -373,9 +500,13 @@ private:
 
     // Static scratch memory for zero-allocation hot-path guarantee
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};
+    alignas(16) std::array<float, MAX_BLOCK_SIZE> spatialScratchL_{};
+    alignas(16) std::array<float, MAX_BLOCK_SIZE> spatialScratchR_{};
+    float sampleRate_{48000.0f};
 
-    // Singleton pointer — set by omega_effect.cpp; null outside Android audio session
-    inline static IvannaAudioPipeline* s_active_ = nullptr;
+    // Atomic singleton pointer — registered by ivanna_omega_jni.cpp (Ruta A/C)
+    // and omega_effect.cpp (Ruta B); null only before first engine init
+    inline static std::atomic<IvannaAudioPipeline*> s_active_{nullptr};
 };
 
 } // namespace ivanna::spatial

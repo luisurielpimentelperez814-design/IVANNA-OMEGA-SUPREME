@@ -16,13 +16,18 @@
 #include <jni.h>
 
 using ivanna::safRoomOptimizer;
+extern "C" void ivanna_saf_apply_latent(const float q[7]);
 
 extern "C" {
 
 // α*(R_t, H_t, S_t) — one Riemannian step; returns the step size used
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_saf_SaFRoomBridge_nativeSafrStep(JNIEnv*, jclass) {
-    return safRoomOptimizer().step();
+    const float alpha = safRoomOptimizer().step();
+    float q[7]{};
+    safRoomOptimizer().getParams(q);
+    ivanna_saf_apply_latent(q);
+    return alpha;
 }
 
 // Room acoustics context R_t

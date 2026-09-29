@@ -150,6 +150,14 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 std::atomic<bool>  g_cochlearEnabled{true};
 std::atomic<float> g_cochlearIntensity{1.0f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
+static ivanna::spatial::IvannaAudioPipeline g_liveAudioPipeline;
+namespace {
+struct LivePipelineAutoRegistrar {
+    LivePipelineAutoRegistrar() noexcept {
+        ivanna::spatial::IvannaAudioPipeline::setActiveInstance(&g_liveAudioPipeline);
+    }
+} g_livePipelineRegistrar;
+} // namespace
 
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static DSPParams      g_params;
@@ -796,16 +804,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         // NO detach — se une en JNI_OnUnload antes de los destructores.
     }
     {
+        ivanna::spatial::IvannaAudioPipeline::setActiveInstance(&g_liveAudioPipeline);
         g_cochlearEngine.prepare(static_cast<float>(sr), 512);
         g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
         g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
-        pipe.cochlearEngine().prepare(static_cast<float>(sr), 512);
+        pipe.prepare(static_cast<float>(sr), 512);
         pipe.cochlearEngine().setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
         pipe.cochlearEngine().setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
-        pipe.warpedLatticeInverter().prepare((float)sr);
-        pipe.transharmonicSynth().prepare((float)sr);
-        pipe.snnNmfHoaUpmixer().prepare((float)sr);
         pipe.pinnaManifoldInterpolator().calibrateFromLatents(
             ivanna::master::kMasterSafGoldenQNorm[2],
             ivanna::master::kMasterSafGoldenQNorm[3],
@@ -1550,7 +1556,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
     g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
 
-    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica + Acoustic Reality Hyperengine (Ruta A / Ruta C) ──
+    // ── Ejes 1–6 Espaciales + 5 Ejes de Supremacía + Acoustic Reality Hyperengine (Ruta A / Ruta C) ──
     {
         static ivanna::supreme::SupremeAcousticStabilityGuard s_routeAGuard{};
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
@@ -1558,6 +1564,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const size_t nSamples = static_cast<size_t>(n);
 
         s_routeAGuard.beginBlock(g_ats.pdOutL, g_ats.pdOutR, nSamples, false);
+
+        const bool allowLiveSpatial =
+            !g_upmixing_enabled.load(std::memory_order_relaxed) &&
+            !g_wfs_enabled.load(std::memory_order_relaxed);
+        pipe.processLiveSpatialAxes(
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, srNow, allowLiveSpatial, 0.16f, true);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::ObjectRenderer,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.20f, 0.95f);
 
         pipe.snnNmfHoaUpmixer().process(g_ats.pdOutL, g_ats.pdOutR, nSamples);
         s_routeAGuard.enforceStageEnergyCeiling(
@@ -1644,6 +1659,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
     g_widener.reset(); g_gain.reset();
     g_safety_limiter.reset(); g_pd.reset();
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().reset();
     LOGI("OPE reset");
 }
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1712,10 +1728,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         // NO detach — se une en JNI_OnUnload antes de los destructores.
     }
     {
+        ivanna::spatial::IvannaAudioPipeline::setActiveInstance(&g_liveAudioPipeline);
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
-        pipe.warpedLatticeInverter().prepare((float)sr);
-        pipe.transharmonicSynth().prepare((float)sr);
-        pipe.snnNmfHoaUpmixer().prepare((float)sr);
+        pipe.prepare(static_cast<float>(sr), 512);
         pipe.pinnaManifoldInterpolator().calibrateFromLatents(
             ivanna::master::kMasterSafGoldenQNorm[2],
             ivanna::master::kMasterSafGoldenQNorm[3],
@@ -1878,7 +1893,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
     g_cochlearEngine.process(oL, oR, n);
 
-    // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
+    // ── Ejes 1–6 Espaciales + 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta A / Ruta C) ─────────
     {
         static ivanna::supreme::SupremeAcousticStabilityGuard s_blkGuard{};
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
@@ -1886,6 +1901,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         const size_t nSamples = static_cast<size_t>(n);
 
         s_blkGuard.beginBlock(oL, oR, nSamples, false);
+        const bool allowLiveSpatial =
+            !g_upmixing_enabled.load(std::memory_order_relaxed) &&
+            !g_wfs_enabled.load(std::memory_order_relaxed);
+        pipe.processLiveSpatialAxes(
+            oL, oR, nSamples, srNow, allowLiveSpatial, 0.16f, true);
+        s_blkGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::ObjectRenderer,
+            oL, oR, nSamples, 1.20f, 0.95f);
         pipe.snnNmfHoaUpmixer().process(oL, oR, nSamples);
         s_blkGuard.enforceStageEnergyCeiling(
             ivanna::supreme::AcousticModuleId::SupremeAxis3_SnnNmfHoa,
@@ -2356,6 +2379,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
     // calibrador ISO 226 hasta saturar el EQ y reventar el audio.
     g_fatigueIsoDb  .store(std::clamp(iso,     -12.0f, 12.0f), std::memory_order_relaxed);
     g_fatigueProtect.store(std::clamp(fatigue,   0.0f,  1.0f), std::memory_order_relaxed);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .hearingEngine().setListeningSpl(std::clamp(70.0f + fatigue * 22.0f - iso * 0.8f, 45.0f, 98.0f));
 
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     recomputeEqFromBaseLocked();
@@ -2369,6 +2394,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
     g_gain.reset();
     g_safety_limiter.reset();
     g_pd.reset();
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().reset();
 }
 // PDEngine / NHO setters exposed to Kotlin
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAlpha(JNIEnv*,jobject,jfloat v) { g_pd.set_nho_alpha(v); }
@@ -3206,6 +3232,12 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
     g_localRoomWet.store(active ? static_cast<float>(wet) : 0.0f, std::memory_order_release);
     g_localRoomIdx.store(active ? static_cast<int32_t>(roomIdx) : -1, std::memory_order_release);
     g_adaptiveEngine.setEnvironmentRT60(active ? static_cast<float>(rt60S) : 0.30f);
+    {
+        auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+        pipe.roomEngine().setProjectionWet(active ? std::clamp(static_cast<float>(wet) * 0.45f, 0.0f, 0.45f) : 0.0f);
+        pipe.roomEngine().setInversionGain(active ? std::clamp(0.25f + 0.25f * static_cast<float>(rt60S), 0.15f, 0.65f) : 0.20f);
+        pipe.physicalScene().setWallAbsorption(active ? std::clamp(1.0f / (1.0f + 1.8f * static_cast<float>(rt60S)), 0.12f, 0.88f) : 0.30f);
+    }
 
     // Sincronizar también el OmegaControlBus local para que DSPBridge_nativeProcess
     // (que lee effectControlBus().readLatest) no re-active una sala vieja.

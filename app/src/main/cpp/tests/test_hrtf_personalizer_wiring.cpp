@@ -116,3 +116,45 @@ TEST(ObjectSpatialRendererWiring, PannedObjectProducesInterauralDelayWithItdScal
         EXPECT_TRUE(std::isfinite(outR1[i]));
     }
 }
+
+TEST(ObjectSpatialRendererWiring, LivePipelineActiveInstanceWiringAndChunkedAxes) {
+    IvannaAudioPipeline livePipe;
+    livePipe.prepare(48000.0f, IvannaAudioPipeline::MAX_BLOCK_SIZE);
+    IvannaAudioPipeline::setActiveInstance(&livePipe);
+    EXPECT_EQ(IvannaAudioPipeline::peekActiveInstance(), &livePipe);
+    EXPECT_EQ(&IvannaAudioPipeline::getActiveInstance(), &livePipe);
+
+    // Control Ejes 2, 3, 5, 6 through getActiveInstance()
+    UserPinnaProfile pinna{};
+    pinna.head_circumference_cm = 60.0f;
+    pinna.ear_pinna_size_mm = 70.0f;
+    pinna.canal_resonance_boost_db = 2.5f;
+    IvannaAudioPipeline::getActiveInstance().personalizer().setProfile(pinna);
+    IvannaAudioPipeline::getActiveInstance().roomEngine().setInversionGain(0.35f);
+    IvannaAudioPipeline::getActiveInstance().roomEngine().setProjectionWet(0.22f);
+    IvannaAudioPipeline::getActiveInstance().physicalScene().setOcclusion(0.15f);
+    IvannaAudioPipeline::getActiveInstance().physicalScene().setWallAbsorption(0.42f);
+    IvannaAudioPipeline::getActiveInstance().hearingEngine().setListeningSpl(62.0f);
+
+    // Process a 1024-sample block (> MAX_BLOCK_SIZE) via processLiveSpatialAxes
+    constexpr size_t kLargeBlock = 1024;
+    std::vector<float> bufL(kLargeBlock), bufR(kLargeBlock);
+    for (size_t i = 0; i < kLargeBlock; ++i) {
+        bufL[i] = 0.45f * std::sin(2.0f * 3.14159265f * 440.0f * static_cast<float>(i) / 48000.0f);
+        bufR[i] = 0.35f * std::cos(2.0f * 3.14159265f * 660.0f * static_cast<float>(i) / 48000.0f);
+    }
+    IvannaAudioPipeline::getActiveInstance().processLiveSpatialAxes(
+        bufL.data(), bufR.data(), kLargeBlock, 48000.0f, true, 0.18f, true);
+
+    double energy = 0.0;
+    for (size_t i = 0; i < kLargeBlock; ++i) {
+        EXPECT_TRUE(std::isfinite(bufL[i]));
+        EXPECT_TRUE(std::isfinite(bufR[i]));
+        energy += static_cast<double>(bufL[i]) * bufL[i] + static_cast<double>(bufR[i]) * bufR[i];
+    }
+    EXPECT_GT(energy, 1.0e-3);
+
+    IvannaAudioPipeline::setActiveInstance(nullptr);
+    EXPECT_EQ(IvannaAudioPipeline::peekActiveInstance(), nullptr);
+}
+

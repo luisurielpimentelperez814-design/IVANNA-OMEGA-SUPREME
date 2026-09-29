@@ -251,4 +251,38 @@ object NativeBridge {
         if (isLoaded) runCatching { getCognitiveEvolutionTelemetrySnapshot() }.getOrNull()
             ?: floatArrayOf(0f, 0.84f, 0.80f, 0.76f, 0.62f, 0.88f, 0.86f, 0.84f, 0.90f, 0.94f, 0.91f, 0f, 0.96f, 0.92f, 0.89f, 12f)
         else floatArrayOf(0f, 0.84f, 0.80f, 0.76f, 0.62f, 0.88f, 0.86f, 0.84f, 0.90f, 0.94f, 0.91f, 0f, 0.96f, 0.92f, 0.89f, 12f)
+
+    // ── EJES ESPACIALES 3, 5, 6: RoomProjection, PhysicalScene, HearingAdaptation ──
+    @JvmStatic external fun setRoomProjectionParams(inversionGain: Float, projectionWet: Float)
+    @JvmStatic external fun setPhysicalSceneParams(occlusionFactor: Float, wallAbsorption: Float)
+    @JvmStatic external fun setHearingAdaptationParams(
+        earTipSeal: Float,
+        listeningSplDb: Float,
+        lossLowDb: Float,
+        lossMidDb: Float,
+        lossHighDb: Float,
+        lossUltraHighDb: Float
+    )
+
+    fun safeSetRoomProjectionParams(inversionGain: Float = 0.40f, projectionWet: Float = 0.25f) {
+        if (isLoaded) runCatching { setRoomProjectionParams(inversionGain, projectionWet) }
+    }
+    fun safeSetPhysicalSceneParams(occlusionFactor: Float = 0.0f, wallAbsorption: Float = 0.30f) {
+        if (isLoaded) runCatching { setPhysicalSceneParams(occlusionFactor, wallAbsorption) }
+    }
+    fun safeSetHearingAdaptationParams(
+        earTipSeal: Float = 1.0f,
+        listeningSplDb: Float = 75.0f,
+        lossLowDb: Float = 0.0f,
+        lossMidDb: Float = 0.0f,
+        lossHighDb: Float = 0.0f,
+        lossUltraHighDb: Float = 0.0f
+    ) {
+        if (isLoaded) runCatching {
+            setHearingAdaptationParams(
+                earTipSeal, listeningSplDb,
+                lossLowDb, lossMidDb, lossHighDb, lossUltraHighDb
+            )
+        }
+    }
 }

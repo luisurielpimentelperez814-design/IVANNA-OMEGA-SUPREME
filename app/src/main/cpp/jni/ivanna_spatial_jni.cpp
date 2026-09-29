@@ -764,10 +764,43 @@ Java_com_ivanna_omega_core_NativeBridge_setPersonalAuditoryProfile(
     in.deviceClass  = static_cast<ivanna::reality::DeviceTransducerClass>(std::clamp(static_cast<int>(transducerType), 0, 4));
     auto& orch = ivanna::reality::AcousticRealityOrchestrator::instance();
     orch.personalModel().setListenerInput(in);
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().realityOrchestrator().personalModel().setListenerInput(in);
+    auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+    pipe.realityOrchestrator().personalModel().setListenerInput(in);
+    pipe.personalizer().setProfile(in.pinnaProfile);
     if (orch.isEnabled()) {
         refreshCognitiveSnapshotWithSeed(orch);
     }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setRoomProjectionParams(
+    JNIEnv*, jclass, jfloat inversionGain, jfloat projectionWet) {
+    auto& room = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().roomEngine();
+    room.setInversionGain(inversionGain);
+    room.setProjectionWet(projectionWet);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setPhysicalSceneParams(
+    JNIEnv*, jclass, jfloat occlusionFactor, jfloat wallAbsorption) {
+    auto& scene = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().physicalScene();
+    scene.setOcclusion(occlusionFactor);
+    scene.setWallAbsorption(wallAbsorption);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setHearingAdaptationParams(
+    JNIEnv*, jclass, jfloat earTipSeal, jfloat listeningSplDb,
+    jfloat lossLowDb, jfloat lossMidDb, jfloat lossHighDb, jfloat lossUltraHighDb) {
+    auto& hearing = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().hearingEngine();
+    hearing.setEarTipSeal(earTipSeal);
+    hearing.setListeningSpl(listeningSplDb);
+    ivanna::spatial::AudiogramProfile prof{};
+    prof.loss_low_db        = lossLowDb;
+    prof.loss_mid_db        = lossMidDb;
+    prof.loss_high_db       = lossHighDb;
+    prof.loss_ultra_high_db = lossUltraHighDb;
+    hearing.setAudiogram(prof);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
