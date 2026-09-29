@@ -588,8 +588,10 @@ add_test(NAME test_perf_auditor COMMAND test_perf_auditor)
 # EJE 2/4 — auditoria 2026-09-24: canal_resonance_boost_db e itdScale_
 # (HrtfPersonalizer) estaban calculados pero sin ningun consumidor real.
 add_executable(test_hrtf_personalizer_wiring
-  test_hrtf_personalizer_wiring.cpp)
-target_link_libraries(test_hrtf_personalizer_wiring PRIVATE GTest::gtest_main)
+  test_hrtf_personalizer_wiring.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_hrtf_personalizer_wiring PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_hrtf_personalizer_wiring PRIVATE .. ../include ../spatial host_stubs)
 target_compile_options(test_hrtf_personalizer_wiring PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
