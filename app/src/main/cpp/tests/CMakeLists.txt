@@ -688,5 +688,29 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_supreme_zero_pop_transition)
 
+# ── SUPREME ACOUSTIC STATE CONTINUITY ARCHITECTURE ──
+add_executable(test_supreme_acoustic_continuity
+  test_supreme_acoustic_continuity.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/WfsRenderer.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+)
+target_link_libraries(test_supreme_acoustic_continuity PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_supreme_acoustic_continuity PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_supreme_acoustic_continuity PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_supreme_acoustic_continuity PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_supreme_acoustic_continuity PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_supreme_acoustic_continuity)
+
 
 

@@ -401,11 +401,26 @@ public:
         const auto profile = thermalBypass
             ? ivanna::supreme::TransitionProfile::Thermal
             : ivanna::supreme::TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
 
         if (!transitionEnv_.beginBlock(desiredActive, profile)) {
             normGainSmooth_ = 1.0f;
             smoothContrast_ = 0.0f;
+            const float endL = std::isfinite(bufL[numSamples - 1]) ? bufL[numSamples - 1] : 0.0f;
+            const float endR = std::isfinite(bufR[numSamples - 1]) ? bufR[numSamples - 1] : 0.0f;
+            airStateL_ += 0.34f * (endL - airStateL_);
+            airStateR_ += 0.34f * (endR - airStateR_);
+            continuityMgr_.suspend(bufL, bufR, numSamples);
             return;
+        }
+        if (wasSilent) {
+            continuityMgr_.resume();
+            continuityMgr_.state().sanitizeScalar(fastEnvL_);
+            continuityMgr_.state().sanitizeScalar(fastEnvR_);
+            continuityMgr_.state().sanitizeScalar(slowEnvL_);
+            continuityMgr_.state().sanitizeScalar(slowEnvR_);
+            continuityMgr_.state().sanitizeScalar(airStateL_);
+            continuityMgr_.state().sanitizeScalar(airStateR_);
         }
 
         double energyBefore = 0.0;
@@ -475,18 +490,25 @@ public:
             bufR[i] *= effectiveG;
         }
         normGainSmooth_ = g;
+        continuityMgr_.preserveState(bufL, bufR, numSamples);
 
         if (transitionEnv_.isSilent()) {
-            fastEnvL_ = fastEnvR_ = 0.0f;
-            slowEnvL_ = slowEnvR_ = 0.0f;
-            airStateL_ = airStateR_ = 0.0f;
             normGainSmooth_ = 1.0f;
             smoothContrast_ = 0.0f;
+            continuityMgr_.suspend(bufL, bufR, numSamples);
         }
     }
 
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
     bool isTransitioning() const noexcept { return transitionEnv_.isTransitioning(); }
+    const ivanna::supreme::SupremeStateContinuityManager& continuityManager() const noexcept {
+        return continuityMgr_;
+    }
+    float preservedStateEnergy() const noexcept {
+        return fastEnvL_ * fastEnvL_ + fastEnvR_ * fastEnvR_
+             + slowEnvL_ * slowEnvL_ + slowEnvR_ * slowEnvR_
+             + airStateL_ * airStateL_ + airStateR_ * airStateR_;
+    }
 
 private:
     float fastEnvL_{0.0f}, fastEnvR_{0.0f};
@@ -497,6 +519,7 @@ private:
     float smoothContrast_{0.0f};
     uint64_t clockTickUs_{0};
     ivanna::supreme::SupremeTransitionEnvelope transitionEnv_{};
+    ivanna::supreme::SupremeStateContinuityManager continuityMgr_{};
 };
 
 // ============================================================================

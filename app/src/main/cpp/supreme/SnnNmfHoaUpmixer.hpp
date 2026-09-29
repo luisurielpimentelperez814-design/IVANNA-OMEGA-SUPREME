@@ -106,19 +106,7 @@ public:
         }
 
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
-        reset();
-    }
-
-    void reset() noexcept {
-        clearFilterStates();
-        const float initWet = (enabled_.load(std::memory_order_relaxed) &&
-                               !thermalBypass_.load(std::memory_order_relaxed))
-            ? std::clamp(immersivity_.load(std::memory_order_relaxed), 0.0f, 1.0f)
-            : 0.0f;
-        transitionEnv_.setImmediate(initWet);
-    }
-
-    void clearFilterStates() noexcept {
+        continuityMgr_.configure(sampleRate_, 5.0f);
         snnMembranePotential_.fill(0.0f);
         for (size_t k = 0; k < NUM_STREAMS; ++k) {
             nmfActivationH_[k] = ivanna::master::kMasterNmfStreamPrior[k];
@@ -131,6 +119,31 @@ public:
         corrRunning_ = 0.0f;
         energyRunning_ = 1.0e-6f;
         lastActiveSpikes_ = 0;
+        reset();
+    }
+
+    void reset() noexcept {
+        const float initWet = (enabled_.load(std::memory_order_relaxed) &&
+                               !thermalBypass_.load(std::memory_order_relaxed))
+            ? std::clamp(immersivity_.load(std::memory_order_relaxed), 0.0f, 1.0f)
+            : 0.0f;
+        transitionEnv_.setImmediate(initWet);
+        continuityMgr_.validateStateArray(snnMembranePotential_);
+        continuityMgr_.validateStateArray(nmfActivationH_);
+        continuityMgr_.validateStateArray(upolaHistoryL_);
+        continuityMgr_.validateStateArray(upolaHistoryR_);
+        continuityMgr_.validateState();
+    }
+
+    void preserveAcousticState(const float* __restrict left, const float* __restrict right, size_t numSamples) noexcept {
+        continuityMgr_.preserveState(left, right, numSamples);
+        continuityMgr_.preserveLinearDelayHistory(upolaHistoryL_, left, numSamples);
+        continuityMgr_.preserveLinearDelayHistory(upolaHistoryR_, right, numSamples);
+        continuityMgr_.validateStateArray(snnMembranePotential_);
+        continuityMgr_.validateStateArray(nmfActivationH_);
+        continuityMgr_.validateStateArray(upolaHistoryL_);
+        continuityMgr_.validateStateArray(upolaHistoryR_);
+        continuityMgr_.validateState();
     }
 
     [[gnu::always_inline]] inline float sanitize(float x) const noexcept {
@@ -261,10 +274,16 @@ public:
             : TransitionProfile::Standard;
         const bool wasSilent = transitionEnv_.isSilent();
         if (!transitionEnv_.beginBlock(targetWet, profile)) {
+            preserveAcousticState(left, right, numSamples);
+            continuityMgr_.suspend(left, right, numSamples);
             return;
         }
         if (wasSilent) {
-            clearFilterStates();
+            continuityMgr_.resume();
+            continuityMgr_.validateStateArray(snnMembranePotential_);
+            continuityMgr_.validateStateArray(nmfActivationH_);
+            continuityMgr_.validateStateArray(upolaHistoryL_);
+            continuityMgr_.validateStateArray(upolaHistoryR_);
         }
 
         std::array<float, NUM_STREAMS> streams{};
@@ -316,8 +335,9 @@ public:
             left[i]  = std::clamp((1.0f - 0.35f * envWet) * dryL + envWet * partL, -1.95f, 1.95f);
             right[i] = std::clamp((1.0f - 0.35f * envWet) * dryR + envWet * partR, -1.95f, 1.95f);
         }
+        continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {
-            clearFilterStates();
+            continuityMgr_.suspend(left, right, numSamples);
         }
     }
 
@@ -334,7 +354,18 @@ public:
         transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
     }
     const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    const SupremeStateContinuityManager& continuityManager() const noexcept { return continuityMgr_; }
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    float preservedStateEnergy() const noexcept {
+        float e = 0.0f;
+        for (size_t k = 0; k < NUM_STREAMS; ++k) {
+            e += std::fabs(nmfActivationH_[k]) + std::fabs(snnMembranePotential_[k]);
+        }
+        for (size_t p = 0; p < UPOLA_PARTITIONS; ++p) {
+            e += std::fabs(upolaHistoryL_[p]) + std::fabs(upolaHistoryR_[p]);
+        }
+        return e;
+    }
     void setImmersivity(float w) noexcept {
         const float clamped = std::clamp(w, 0.0f, 1.0f);
         immersivity_.store(clamped, std::memory_order_release);
@@ -418,6 +449,7 @@ private:
     bool lastThermalBypass_{false};
 
     SupremeTransitionEnvelope transitionEnv_{};
+    SupremeStateContinuityManager continuityMgr_{};
     std::atomic<bool> enabled_{true};
     std::atomic<bool> thermalBypass_{false};
     std::atomic<float> immersivity_{0.5f};

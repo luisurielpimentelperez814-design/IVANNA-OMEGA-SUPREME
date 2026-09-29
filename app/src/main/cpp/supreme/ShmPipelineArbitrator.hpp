@@ -37,15 +37,35 @@ public:
     static constexpr size_t NUM_TAPS = ORDER + 1; // 6 muestras de línea de retardo
 
     FarrowOrder5Delay() noexcept {
-        reset();
-    }
-
-    void reset() noexcept {
         delayLine_.fill(0.0f);
+        hasRealHistory_ = false;
     }
 
-    void seedConstant(float x) noexcept {
-        delayLine_.fill(sanitize(x));
+    /**
+     * @brief Conserva las últimas NUM_TAPS (6) muestras reales del bloque de audio
+     *        durante Soft Suspension (costo O(1) = 6 floats por bloque, sin evaluar
+     *        el polinomio de Horner), garantizando que al reactivar el motor la
+     *        línea de retardo contenga la historia física exacta de la onda.
+     */
+    [[gnu::always_inline]] inline void preserveBlockTail(
+        const float* __restrict input,
+        size_t numSamples) noexcept
+    {
+        if (!input || numSamples == 0) return;
+        const size_t copyCount = std::min(NUM_TAPS, numSamples);
+        if (copyCount < NUM_TAPS) {
+            for (size_t k = NUM_TAPS - 1; k >= copyCount; --k) {
+                delayLine_[k] = delayLine_[k - copyCount];
+            }
+        }
+        for (size_t k = 0; k < copyCount; ++k) {
+            delayLine_[k] = sanitize(input[numSamples - 1 - k]);
+        }
+        hasRealHistory_ = true;
+    }
+
+    [[gnu::always_inline]] inline void validateState(SupremeStateContinuityManager& mgr) noexcept {
+        mgr.validateStateArray(delayLine_);
     }
 
     [[gnu::always_inline]] inline float sanitize(float x) const noexcept {
@@ -53,15 +73,26 @@ public:
     }
 
     /**
-     * @brief Procesa una muestra con retardo fraccional continuo μ ∈ [-0.5, 0.5]
-     *        centrado en el tap intermedio (retardo base entero = 2 muestras).
+     * @brief Procesa una muestra con retardo fraccional continuo μ ∈ [0.0, 1.0]
+     *        centrado en el tap intermedio (retardo base entero = 2 muestras)
+     *        sobre la historia acústica real conservada.
      */
     [[gnu::always_inline]] inline float processSample(float input, float fractionalDelay) noexcept {
-        // Desplazamiento de registro en línea de caché L1 (6 floats = 24 bytes)
-        for (size_t k = NUM_TAPS - 1; k > 0; --k) {
-            delayLine_[k] = delayLine_[k - 1];
+        const float cleanIn = sanitize(input);
+        if (!hasRealHistory_) {
+            // Arranque en frío del stream (bloque 0, muestra 0): inicializar línea
+            // con la muestra entrante real; a partir de aquí la historia es inmortal.
+            for (size_t k = 0; k < NUM_TAPS; ++k) {
+                delayLine_[k] = cleanIn;
+            }
+            hasRealHistory_ = true;
+        } else {
+            // Desplazamiento de registro en línea de caché L1 (6 floats = 24 bytes)
+            for (size_t k = NUM_TAPS - 1; k > 0; --k) {
+                delayLine_[k] = delayLine_[k - 1];
+            }
+            delayLine_[0] = cleanIn;
         }
-        delayLine_[0] = sanitize(input);
 
         // Retardo fraccional acotado alrededor del centro simétrico (entre x[2] y x[3])
         const float d = std::clamp(fractionalDelay, 0.0f, 1.0f);
@@ -98,8 +129,16 @@ public:
         return sanitize(acc);
     }
 
+    [[nodiscard]] const std::array<float, NUM_TAPS>& history() const noexcept { return delayLine_; }
+    [[nodiscard]] float historyEnergy() const noexcept {
+        float e = 0.0f;
+        for (size_t k = 0; k < NUM_TAPS; ++k) e += std::fabs(delayLine_[k]);
+        return e;
+    }
+
 private:
     alignas(32) std::array<float, NUM_TAPS> delayLine_{};
+    bool hasRealHistory_{false};
 };
 
 /**
@@ -228,12 +267,14 @@ public:
     SupremeMsoFarrowArbitrator() noexcept {
         attachSharedMemory();
         transitionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+        continuityMgr_.configure(48000.0f, 5.0f);
         reset();
     }
 
     void prepare(float sampleRate) noexcept {
         sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
+        continuityMgr_.configure(sampleRate_, 5.0f);
         reset();
     }
 
@@ -254,12 +295,22 @@ public:
     SupremeMsoFarrowArbitrator& operator=(const SupremeMsoFarrowArbitrator&) = delete;
 
     void reset() noexcept {
-        farrowL_.reset();
-        farrowR_.reset();
         smoothItdNs_ = msoItdNs_.load(std::memory_order_relaxed);
         const bool en = enabled_.load(std::memory_order_relaxed) &&
                         !thermalBypass_.load(std::memory_order_relaxed);
         transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+        farrowL_.validateState(continuityMgr_);
+        farrowR_.validateState(continuityMgr_);
+        continuityMgr_.validateState();
+    }
+
+    void preserveAcousticState(const float* __restrict left, const float* __restrict right, size_t numSamples) noexcept {
+        continuityMgr_.preserveState(left, right, numSamples);
+        farrowL_.preserveBlockTail(left, numSamples);
+        farrowR_.preserveBlockTail(right, numSamples);
+        farrowL_.validateState(continuityMgr_);
+        farrowR_.validateState(continuityMgr_);
+        continuityMgr_.validateState();
     }
 
     bool isCrossProcessShmMapped() const noexcept {
@@ -279,7 +330,11 @@ public:
         transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
     }
     const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    const SupremeStateContinuityManager& continuityManager() const noexcept { return continuityMgr_; }
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    float preservedStateEnergy() const noexcept {
+        return farrowL_.historyEnergy() + farrowR_.historyEnergy();
+    }
 
     void setMsoItdNanoseconds(float ns) noexcept {
         const float clamped = std::clamp(ns, -750000.0f, 750000.0f);
@@ -337,19 +392,25 @@ public:
         const bool wasSilent = transitionEnv_.isSilent();
         if (!transitionEnv_.beginBlock(targetEnv, profile)) {
             smoothItdNs_ = msoItdNs_.load(std::memory_order_relaxed);
+            // NIVEL 2 — Soft Suspension: conservar las últimas 6 muestras reales en
+            // la línea de retardo de Farrow sin evaluar Horner (0 pérdida de historia)
+            preserveAcousticState(left, right, numSamples);
+            continuityMgr_.suspend(left, right, numSamples);
             return;
         }
         if (wasSilent) {
-            // Sembrar la línea de retardo de Farrow con la primera muestra evita el
-            // escalón de arranque de 2.5 muestras cuando se activa desde silencio.
-            farrowL_.seedConstant(left[0]);
-            farrowR_.seedConstant(right[0]);
+            // NIVEL 3 — Smooth State Resume: recuperación continua desde la historia
+            // real conservada en farrowL_/farrowR_ (jamás se usa seedConstant ni reset)
+            continuityMgr_.resume();
+            farrowL_.validateState(continuityMgr_);
+            farrowR_.validateState(continuityMgr_);
         }
 
         const float targetItdNs = msoItdNs_.load(std::memory_order_relaxed);
 
         for (size_t i = 0; i < numSamples; ++i) {
-            smoothItdNs_ += 0.005f * (targetItdNs - smoothItdNs_);
+            const float resumeGlide = continuityMgr_.nextResumeFactor();
+            smoothItdNs_ += (0.005f * resumeGlide + 0.001f) * (targetItdNs - smoothItdNs_);
             // Conversión de nanosegundos a fracción de muestra diferencial L/R alrededor de 0.5 muestras
             const float deltaSamples = (smoothItdNs_ * 1.0e-9f) * sr;
             const float fracL = std::clamp(0.5f - 0.5f * deltaSamples, 0.0f, 1.0f);
@@ -364,9 +425,9 @@ public:
             left[i]  = SupremeTransitionEnvelope::mixSample(dryL, wetL, env);
             right[i] = SupremeTransitionEnvelope::mixSample(dryR, wetR, env);
         }
+        continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {
-            farrowL_.reset();
-            farrowR_.reset();
+            continuityMgr_.suspend(left, right, numSamples);
         }
     }
 
@@ -425,6 +486,7 @@ private:
     FarrowOrder5Delay farrowL_{};
     FarrowOrder5Delay farrowR_{};
     SupremeTransitionEnvelope transitionEnv_{};
+    SupremeStateContinuityManager continuityMgr_{};
     ShmArbitrationControlBlock shmLocal_{};
     ShmArbitrationControlBlock* mappedBlock_{&shmLocal_};
     int shmFd_{-1};

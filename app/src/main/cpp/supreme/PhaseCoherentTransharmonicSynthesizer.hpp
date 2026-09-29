@@ -77,20 +77,7 @@ public:
         hpA2_ =  (1.0f - alpha) * a0Inv;
 
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
-        reset();
-    }
-
-    void reset() noexcept {
-        clearFilterStates();
-        smoothHarmonicGain_ = harmonicGain_.load(std::memory_order_relaxed);
-        smoothTapeDrive_    = analogTapeDrive_.load(std::memory_order_relaxed);
-        const bool en = enabled_.load(std::memory_order_relaxed) &&
-                        !thermalBypass_.load(std::memory_order_relaxed) &&
-                        (smoothHarmonicGain_ > 1.0e-5f || smoothTapeDrive_ > 1.0e-5f);
-        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
-    }
-
-    void clearFilterStates() noexcept {
+        continuityMgr_.configure(sampleRate_, 5.0f);
         stateIL_.fill(0.0f); stateQL_.fill(0.0f);
         stateIR_.fill(0.0f); stateQR_.fill(0.0f);
         prevIL_ = 0.0f; prevQL_ = 0.0f;
@@ -104,6 +91,42 @@ public:
         hpStateL_.fill(0.0f);
         hpStateR_.fill(0.0f);
         lastPhaseDerivativeContinuity_ = 0.0f;
+        reset();
+    }
+
+    void reset() noexcept {
+        smoothHarmonicGain_ = harmonicGain_.load(std::memory_order_relaxed);
+        smoothTapeDrive_    = analogTapeDrive_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed) &&
+                        (smoothHarmonicGain_ > 1.0e-5f || smoothTapeDrive_ > 1.0e-5f);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+        continuityMgr_.validateStateArray(stateIL_);
+        continuityMgr_.validateStateArray(stateQL_);
+        continuityMgr_.validateStateArray(stateIR_);
+        continuityMgr_.validateStateArray(stateQR_);
+        continuityMgr_.validateStateArray(hpStateL_);
+        continuityMgr_.validateStateArray(hpStateR_);
+        continuityMgr_.validateState();
+    }
+
+    void preserveAcousticState(const float* __restrict left, const float* __restrict right, size_t numSamples) noexcept {
+        continuityMgr_.preserveState(left, right, numSamples);
+        if (left && right && numSamples > 0) {
+            const float endL = sanitize(left[numSamples - 1]);
+            const float endR = sanitize(right[numSamples - 1]);
+            tapePrevHL_ = endL * (1.0f + 0.85f * smoothTapeDrive_);
+            tapePrevHR_ = endR * (1.0f + 0.85f * smoothTapeDrive_);
+        }
+        continuityMgr_.state().preservedPhaseRadL = oscPhaseL_;
+        continuityMgr_.state().preservedPhaseRadR = oscPhaseR_;
+        continuityMgr_.validateStateArray(stateIL_);
+        continuityMgr_.validateStateArray(stateQL_);
+        continuityMgr_.validateStateArray(stateIR_);
+        continuityMgr_.validateStateArray(stateQR_);
+        continuityMgr_.validateStateArray(hpStateL_);
+        continuityMgr_.validateStateArray(hpStateR_);
+        continuityMgr_.validateState();
     }
 
     [[gnu::always_inline]] inline float sanitize(float x) const noexcept {
@@ -178,10 +201,13 @@ public:
         if (!transitionEnv_.beginBlock(targetEnv, profile)) {
             smoothHarmonicGain_ = targetGain;
             smoothTapeDrive_    = targetTape;
+            preserveAcousticState(left, right, numSamples);
+            continuityMgr_.suspend(left, right, numSamples);
             return;
         }
         if (wasSilent) {
-            clearFilterStates();
+            continuityMgr_.resume();
+            preserveAcousticState(left, right, 1);
         }
 
         float maxPhaseDiscontinuity = 0.0f;
@@ -212,8 +238,11 @@ public:
         }
 
         lastPhaseDerivativeContinuity_ = maxPhaseDiscontinuity;
+        continuityMgr_.preserveState(left, right, numSamples);
+        continuityMgr_.state().preservedPhaseRadL = oscPhaseL_;
+        continuityMgr_.state().preservedPhaseRadR = oscPhaseR_;
         if (transitionEnv_.isSilent()) {
-            clearFilterStates();
+            continuityMgr_.suspend(left, right, numSamples);
         }
     }
 
@@ -230,7 +259,17 @@ public:
         transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
     }
     const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    const SupremeStateContinuityManager& continuityManager() const noexcept { return continuityMgr_; }
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    float preservedStateEnergy() const noexcept {
+        float e = std::fabs(tapeMagL_) + std::fabs(tapeMagR_) +
+                  std::fabs(oscPhaseL_) + std::fabs(oscPhaseR_);
+        for (size_t s = 0; s < HILBERT_STAGES; ++s) {
+            e += std::fabs(stateIL_[s]) + std::fabs(stateQL_[s]) +
+                 std::fabs(stateIR_[s]) + std::fabs(stateQR_[s]);
+        }
+        return e;
+    }
     void setHarmonicGain(float g) noexcept {
         const float clamped = std::clamp(g, 0.0f, 1.0f);
         harmonicGain_.store(clamped, std::memory_order_release);
@@ -388,6 +427,7 @@ private:
     bool lastThermalBypass_{false};
 
     SupremeTransitionEnvelope transitionEnv_{};
+    SupremeStateContinuityManager continuityMgr_{};
     std::atomic<bool> enabled_{true};
     std::atomic<bool> thermalBypass_{false};
     std::atomic<float> harmonicGain_{0.25f};

@@ -296,16 +296,20 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
                           float* outL, float* outR, int frames) noexcept {
     if (frames <= 0 || outL == nullptr || outR == nullptr) return;
     if (numActiveObjects_ == 0) return;
-    if (enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f) return;
     if (objectInputs == nullptr || numObjects <= 0) return;
     enableWfsDenormalGuard();   // FTZ/DAZ: sin microcode assists en el hilo RT
 
     const int M = maxDelayTap_;
     const float invFrames = 1.0f / static_cast<float>(frames);
+    const bool softSuspended = (enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f);
 
     // ── 0) Envolventes de activación: rampa lineal por bloque hacia el
     //       objetivo (fade-out glitch-free en removeObject; las fuentes
     //       vivas permanecen en 1). Se calcula el paso ANTES del bloque.
+    //       En Soft Suspension (softSuspended == true), mantenemos alimentadas
+    //       las líneas de propagación slot.line con el audio real entrante
+    //       y retornamos antes del bucle O(altavoces × objetos) de síntesis,
+    //       garantizando continuidad acústica exacta al reactivar WFS.
     int inputIdx = 0;
     for (int si = 0; si < kMaxObjects; ++si) {
         SourceSlot& slot = slots_[static_cast<size_t>(si)];
@@ -345,6 +349,10 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             }
             slot.writePos = wp;
         }
+    }
+
+    if (softSuspended) {
+        return;
     }
 
     // ── 2+3) Síntesis del campo y mezcla binaural en UN solo pase por

@@ -49,6 +49,10 @@ public:
         transitionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
         slotXfadeEnv_.configure(48000.0f, 6.0f, 6.0f, 6.0f);
         slotXfadeEnv_.setImmediate(1.0f);
+        continuityMgr_.configure(48000.0f, 5.0f);
+        firHistoryL_.fill(0.0f);
+        firHistoryR_.fill(0.0f);
+        histWriteIdx_ = 0;
         // Calibración de arranque Golden Ear derivada de los 255 archivos SOFA + 12 datasets IHR1
         calibrateFromLatents(0.28f, 0.34f, 0.0f, 48000.0f);
         renderedSlot_ = activeFirSlot_.load(std::memory_order_relaxed) & 1u;
@@ -60,23 +64,45 @@ public:
         sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
         slotXfadeEnv_.configure(sampleRate_, 6.0f, 6.0f, 6.0f);
+        continuityMgr_.configure(sampleRate_, 5.0f);
         reset();
     }
 
     void reset() noexcept {
-        clearFilterStates();
         const float initWet = (enabled_.load(std::memory_order_relaxed) &&
                                !thermalBypass_.load(std::memory_order_relaxed))
             ? std::clamp(wetMix_.load(std::memory_order_relaxed), 0.0f, 1.0f)
             : 0.0f;
         transitionEnv_.setImmediate(initWet);
         slotXfadeEnv_.setImmediate(1.0f);
+        continuityMgr_.validateStateArray(firHistoryL_);
+        continuityMgr_.validateStateArray(firHistoryR_);
+        continuityMgr_.validateState();
     }
 
-    void clearFilterStates() noexcept {
-        firHistoryL_.fill(0.0f);
-        firHistoryR_.fill(0.0f);
-        histWriteIdx_ = 0;
+    /**
+     * @brief Alimenta el anillo doblemente espejado FIR con la cola real del bloque
+     *        durante Soft Suspension (costo O(FIR_TAPS) por bloque, 0 MACs FIR),
+     *        garantizando continuidad matemática exacta al reactivar.
+     */
+    void preserveAcousticState(const float* __restrict left, const float* __restrict right, size_t numSamples) noexcept {
+        continuityMgr_.preserveState(left, right, numSamples);
+        if (left && right && numSamples > 0) {
+            const size_t tailCount = std::min(numSamples, FIR_TAPS);
+            const size_t startIdx  = numSamples - tailCount;
+            for (size_t i = startIdx; i < numSamples; ++i) {
+                const float inL = std::isfinite(left[i])  ? left[i]  : 0.0f;
+                const float inR = std::isfinite(right[i]) ? right[i] : 0.0f;
+                histWriteIdx_ = (histWriteIdx_ == 0) ? (FIR_TAPS - 1) : (histWriteIdx_ - 1);
+                firHistoryL_[histWriteIdx_]            = inL;
+                firHistoryL_[histWriteIdx_ + FIR_TAPS] = inL;
+                firHistoryR_[histWriteIdx_]            = inR;
+                firHistoryR_[histWriteIdx_ + FIR_TAPS] = inR;
+            }
+        }
+        continuityMgr_.validateStateArray(firHistoryL_);
+        continuityMgr_.validateStateArray(firHistoryR_);
+        continuityMgr_.validateState();
     }
 
     void setEnabled(bool en) noexcept {
@@ -92,7 +118,15 @@ public:
         transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
     }
     const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    const SupremeStateContinuityManager& continuityManager() const noexcept { return continuityMgr_; }
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    float preservedStateEnergy() const noexcept {
+        float e = 0.0f;
+        for (size_t k = 0; k < FIR_TAPS; ++k) {
+            e += std::fabs(firHistoryL_[k]) + std::fabs(firHistoryR_[k]);
+        }
+        return e;
+    }
     void setWetMix(float w) noexcept {
         const float clamped = std::clamp(w, 0.0f, 1.0f);
         wetMix_.store(clamped, std::memory_order_release);
@@ -184,10 +218,16 @@ public:
             : TransitionProfile::Standard;
         const bool wasSilent = transitionEnv_.isSilent();
         if (!transitionEnv_.beginBlock(targetWet, profile)) {
+            // NIVEL 2 — Soft Suspension: conservar historial FIR real sin gastar MACs de convolución
+            preserveAcousticState(left, right, numSamples);
+            continuityMgr_.suspend(left, right, numSamples);
             return;
         }
         if (wasSilent) {
-            clearFilterStates();
+            // NIVEL 3 — Smooth State Resume: reactivación sobre las 32 muestras reales previas
+            continuityMgr_.resume();
+            continuityMgr_.validateStateArray(firHistoryL_);
+            continuityMgr_.validateStateArray(firHistoryR_);
         }
 
         const uint32_t slot = activeFirSlot_.load(std::memory_order_acquire) & 1u;
@@ -255,8 +295,9 @@ public:
             left[i]  = std::clamp(dry * inL + envWet * accL, -1.95f, 1.95f);
             right[i] = std::clamp(dry * inR + envWet * accR, -1.95f, 1.95f);
         }
+        continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {
-            clearFilterStates();
+            continuityMgr_.suspend(left, right, numSamples);
         }
     }
 
@@ -464,6 +505,7 @@ private:
 
     SupremeTransitionEnvelope transitionEnv_{};
     SupremeTransitionEnvelope slotXfadeEnv_{};
+    SupremeStateContinuityManager continuityMgr_{};
     std::atomic<uint32_t> activeFirSlot_{0};
     std::atomic<bool> enabled_{true};
     std::atomic<bool> thermalBypass_{false};

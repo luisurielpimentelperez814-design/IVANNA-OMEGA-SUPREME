@@ -95,6 +95,31 @@ void VolterraH2Symmetric::updateKernels(
     m_kernels_ready.store(true, std::memory_order_release);
 }
 
+void VolterraH2Symmetric::preserveInterleavedTail(
+    const float* input,
+    uint32_t num_frames,
+    uint32_t num_channels
+) noexcept {
+    if (!input || num_frames == 0 || !m_delay_lines || !m_delay_indices) return;
+    const uint32_t K = m_kernel_length;
+    if (K == 0) return;
+    const uint32_t chCount = std::min(num_channels, m_channels);
+    const uint32_t tailFrames = std::min(num_frames, K);
+    const uint32_t startFrame = num_frames - tailFrames;
+    for (uint32_t n = startFrame; n < num_frames; ++n) {
+        for (uint32_t ch = 0; ch < chCount; ++ch) {
+            float* delay = m_delay_lines[ch];
+            if (!delay) continue;
+            uint32_t& d_idx = m_delay_indices[ch];
+            float x = input[n * num_channels + ch];
+            if (!std::isfinite(x) || std::abs(x) < 1e-30f) x = 0.0f;
+            delay[d_idx] = x;
+            d_idx = (d_idx + 1) % K;
+        }
+    }
+    m_continuity_mgr.preserveState();
+}
+
 void VolterraH2Symmetric::processInterleaved(
     const float* input,
     float* output,
@@ -116,12 +141,18 @@ void VolterraH2Symmetric::processInterleaved(
     const auto profile     = thermal
         ? ivanna::supreme::TransitionProfile::Thermal
         : ivanna::supreme::TransitionProfile::Standard;
+    const bool wasSilent   = m_transition_env.isSilent();
 
     if (!m_transition_env.beginBlock(targetGain, profile)) {
+        preserveInterleavedTail(input, num_frames, num_channels);
+        m_continuity_mgr.suspend();
         if (output != input) {
             memcpy(output, input, num_frames * num_channels * sizeof(float));
         }
         return;
+    }
+    if (wasSilent) {
+        m_continuity_mgr.resume();
     }
 
     if (num_channels > m_channels) {
@@ -269,13 +300,9 @@ void VolterraH2Symmetric::processInterleaved(
         }
     }
 
-    if (m_transition_env.isSilent() && m_delay_lines && m_delay_indices) {
-        for (uint32_t ch = 0; ch < num_channels; ++ch) {
-            if (m_delay_lines[ch]) {
-                memset(m_delay_lines[ch], 0, K * sizeof(float));
-            }
-            m_delay_indices[ch] = 0;
-        }
+    m_continuity_mgr.preserveState();
+    if (m_transition_env.isSilent()) {
+        m_continuity_mgr.suspend();
     }
 }
 

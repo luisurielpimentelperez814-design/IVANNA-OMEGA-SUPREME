@@ -48,14 +48,30 @@ public:
     }
 
     void reset() noexcept {
-        envStateL_ = 0.0f;
-        envStateR_ = 0.0f;
-        envFastL_  = 0.0f;
-        envFastR_  = 0.0f;
-        wpeHistL_.fill(0.0f);
-        wpeHistR_.fill(0.0f);
-        wpeWriteIdx_ = 0;
         inversionEnv_.setImmediate(inversionGain_.load(std::memory_order_relaxed));
+        continuityMgr_.validateStateArray(wpeHistL_);
+        continuityMgr_.validateStateArray(wpeHistR_);
+        continuityMgr_.state().sanitizeScalar(envStateL_);
+        continuityMgr_.state().sanitizeScalar(envStateR_);
+        continuityMgr_.state().sanitizeScalar(envFastL_);
+        continuityMgr_.state().sanitizeScalar(envFastR_);
+        continuityMgr_.validateState();
+    }
+
+    void preserveWpeTail(const float* __restrict bufferL,
+                         const float* __restrict bufferR,
+                         size_t numSamples) noexcept {
+        if (!bufferL || !bufferR || numSamples == 0) return;
+        const size_t tailCount = std::min<size_t>(numSamples, 32u);
+        const size_t startIdx  = numSamples - tailCount;
+        int wIdx = wpeWriteIdx_;
+        for (size_t i = startIdx; i < numSamples; ++i) {
+            wIdx = (wIdx - 1) & 31;
+            wpeHistL_[wIdx] = std::isfinite(bufferL[i]) ? bufferL[i] : 0.0f;
+            wpeHistR_[wIdx] = std::isfinite(bufferR[i]) ? bufferR[i] : 0.0f;
+        }
+        wpeWriteIdx_ = wIdx;
+        continuityMgr_.preserveState(bufferL, bufferR, numSamples);
     }
 
     /**
@@ -65,10 +81,16 @@ public:
         if (!bufferL || !bufferR || numSamples == 0) return;
 
         const float invGain = inversionGain_.load(std::memory_order_relaxed);
+        const bool wasSilent = inversionEnv_.isSilent();
 
         // 1. De-Reverberación de Fase Mínima por Predicción Lineal Ponderada (WPE) libre de divisiones
-        //    Protegida por SupremeTransitionEnvelope para evitar clics al activar/desactivar WPE.
+        //    Protegida por SupremeTransitionEnvelope + SupremeStateContinuityManager (cero destrucción de historial).
         if (inversionEnv_.beginBlock(invGain)) {
+            if (wasSilent) {
+                continuityMgr_.resume();
+                continuityMgr_.validateStateArray(wpeHistL_);
+                continuityMgr_.validateStateArray(wpeHistR_);
+            }
             float envFastL = envFastL_, envSlowL = envStateL_;
             float envFastR = envFastR_, envSlowR = envStateR_;
             int wIdx = wpeWriteIdx_;
@@ -115,12 +137,13 @@ public:
             }
             envFastL_  = envFastL; envStateL_ = envSlowL;
             envFastR_  = envFastR; envStateR_ = envSlowR;
+            continuityMgr_.preserveState(bufferL, bufferR, numSamples);
             if (inversionEnv_.isSilent()) {
-                envStateL_ = envStateR_ = envFastL_ = envFastR_ = 0.0f;
-                wpeHistL_.fill(0.0f);
-                wpeHistR_.fill(0.0f);
-                wpeWriteIdx_ = 0;
+                continuityMgr_.suspend(bufferL, bufferR, numSamples);
             }
+        } else {
+            preserveWpeTail(bufferL, bufferR, numSamples);
+            continuityMgr_.suspend(bufferL, bufferR, numSamples);
         }
 
         // 2. Virtual Room Projection via RirConvolver (su propio wetNow_ hace rampa suave a 0)
@@ -131,6 +154,19 @@ public:
 
     Ivanna::RirConvolver& getConvolver() noexcept {
         return convolver_;
+    }
+
+    const ivanna::supreme::SupremeStateContinuityManager& continuityManager() const noexcept {
+        return continuityMgr_;
+    }
+
+    float preservedStateEnergy() const noexcept {
+        float energy = envStateL_ * envStateL_ + envStateR_ * envStateR_
+                     + envFastL_ * envFastL_ + envFastR_ * envFastR_;
+        for (size_t i = 0; i < wpeHistL_.size(); ++i) {
+            energy += wpeHistL_[i] * wpeHistL_[i] + wpeHistR_[i] * wpeHistR_[i];
+        }
+        return energy;
     }
 
 private:
@@ -147,6 +183,7 @@ private:
     int wpeWriteIdx_{0};
     std::array<float, 4> wpeTap_{0.42f, 0.28f, 0.18f, 0.12f};
     ivanna::supreme::SupremeTransitionEnvelope inversionEnv_{};
+    ivanna::supreme::SupremeStateContinuityManager continuityMgr_{};
 };
 
 } // namespace ivanna::spatial

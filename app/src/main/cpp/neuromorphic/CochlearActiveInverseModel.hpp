@@ -98,6 +98,7 @@ public:
     bool  enabled_    = false;  // on/off state (bypass por defecto hasta activación)
     bool  thermalBypass_ = false;
     ivanna::supreme::SupremeTransitionEnvelope transitionEnv_{};
+    ivanna::supreme::SupremeStateContinuityManager continuityMgr_{};
 
     CochlearActiveInverseEngine() noexcept {
         prepare(48000.0f, 512);
@@ -113,27 +114,54 @@ public:
     void prepare(float sampleRate, int /*blockSize*/ = 512) noexcept {
         sampleRate_ = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
+        continuityMgr_.configure(sampleRate_, 5.0f);
         prepareBands(chanL_, sampleRate_);
         prepareBands(chanR_, sampleRate_);
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            chanL_.x1[b] = chanL_.x2[b] = chanL_.y1[b] = chanL_.y2[b] = chanL_.env[b] = 0.0f;
+            chanR_.x1[b] = chanR_.x2[b] = chanR_.y1[b] = chanR_.y2[b] = chanR_.env[b] = 0.0f;
+        }
         reset();
     }
 
     void reset() noexcept {
-        clearFilterStates();
         transitionEnv_.setImmediate(enabled_ ? wetGain_ : 0.0f);
         activeWet_ = transitionEnv_.currentGain;
+        validateAcousticState();
     }
 
-    void clearFilterStates() noexcept {
-        auto zeroState = [](ChannelState& ch) noexcept {
-            for (int b = 0; b < NUM_BANDS; ++b) {
-                ch.x1[b] = ch.x2[b] = 0.0f;
-                ch.y1[b] = ch.y2[b] = 0.0f;
-                ch.env[b] = 0.0f;
-            }
-        };
-        zeroState(chanL_);
-        zeroState(chanR_);
+    void validateAcousticState() noexcept {
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            continuityMgr_.state().sanitizeScalar(chanL_.x1[b]);
+            continuityMgr_.state().sanitizeScalar(chanL_.x2[b]);
+            continuityMgr_.state().sanitizeScalar(chanL_.y1[b]);
+            continuityMgr_.state().sanitizeScalar(chanL_.y2[b]);
+            continuityMgr_.state().sanitizeScalar(chanL_.env[b]);
+            continuityMgr_.state().sanitizeScalar(chanR_.x1[b]);
+            continuityMgr_.state().sanitizeScalar(chanR_.x2[b]);
+            continuityMgr_.state().sanitizeScalar(chanR_.y1[b]);
+            continuityMgr_.state().sanitizeScalar(chanR_.y2[b]);
+            continuityMgr_.state().sanitizeScalar(chanR_.env[b]);
+        }
+        continuityMgr_.validateState();
+    }
+
+    void preserveAcousticState(const float* __restrict bufferL,
+                               const float* __restrict bufferR,
+                               int numSamples) noexcept {
+        if (!bufferL || !bufferR || numSamples <= 0) return;
+        continuityMgr_.preserveState(bufferL, bufferR, static_cast<size_t>(numSamples));
+        const float x1L = std::isfinite(bufferL[numSamples - 1]) ? bufferL[numSamples - 1] : 0.0f;
+        const float x1R = std::isfinite(bufferR[numSamples - 1]) ? bufferR[numSamples - 1] : 0.0f;
+        const float x2L = (numSamples >= 2 && std::isfinite(bufferL[numSamples - 2])) ? bufferL[numSamples - 2] : x1L;
+        const float x2R = (numSamples >= 2 && std::isfinite(bufferR[numSamples - 2])) ? bufferR[numSamples - 2] : x1R;
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            chanL_.x2[b] = x2L;
+            chanL_.x1[b] = x1L;
+            chanR_.x2[b] = x2R;
+            chanR_.x1[b] = x1R;
+        }
+        validateAcousticState();
     }
 
     /**
@@ -154,10 +182,17 @@ public:
         const auto profile = thermalBypass_
             ? ivanna::supreme::TransitionProfile::Thermal
             : ivanna::supreme::TransitionProfile::Standard;
+        const bool wasSilent = transitionEnv_.isSilent();
 
         if (!transitionEnv_.beginBlock(targetWet, profile)) {
             activeWet_ = 0.0f;
+            preserveAcousticState(bufferL, bufferR, numSamples);
+            continuityMgr_.suspend(bufferL, bufferR, static_cast<size_t>(numSamples));
             return;
+        }
+        if (wasSilent) {
+            continuityMgr_.resume();
+            validateAcousticState();
         }
 
         ivanna::supreme::SupremeTransitionEnvelope envL = transitionEnv_;
@@ -166,10 +201,11 @@ public:
         processMono(bufferR, numSamples, chanR_, envR);
         transitionEnv_ = envL;
         activeWet_ = transitionEnv_.currentGain;
+        continuityMgr_.preserveState(bufferL, bufferR, static_cast<size_t>(numSamples));
 
         if (transitionEnv_.isSilent()) {
             activeWet_ = 0.0f;
-            clearFilterStates();
+            continuityMgr_.suspend(bufferL, bufferR, static_cast<size_t>(numSamples));
         }
     }
 
@@ -213,6 +249,19 @@ public:
 
     [[nodiscard]] float currentTransitionGain() const noexcept {
         return transitionEnv_.currentGain;
+    }
+
+    [[nodiscard]] const ivanna::supreme::SupremeStateContinuityManager& continuityManager() const noexcept {
+        return continuityMgr_;
+    }
+
+    [[nodiscard]] float preservedStateEnergy() const noexcept {
+        float e = 0.0f;
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            e += std::fabs(chanL_.x1[b]) + std::fabs(chanL_.y1[b]) + std::fabs(chanL_.env[b]) +
+                 std::fabs(chanR_.x1[b]) + std::fabs(chanR_.y1[b]) + std::fabs(chanR_.env[b]);
+        }
+        return e;
     }
 
     CochlearActiveInverseEngine& cochlearEngine() noexcept { return *this; }

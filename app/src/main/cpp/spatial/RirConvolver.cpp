@@ -320,64 +320,35 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
 
 void RirConvolver::unload() noexcept {
     wetDry_.store(0.0f, std::memory_order_relaxed);
-    loaded_.store(false, std::memory_order_release);
     pending_.store(false, std::memory_order_relaxed);
-    clearHistoryPending_.store(true, std::memory_order_release);
-    std::memset(overlapL_, 0, sizeof overlapL_);
-    std::memset(overlapR_, 0, sizeof overlapR_);
-    std::memset(tailInL_, 0, sizeof tailInL_);
-    std::memset(tailInR_, 0, sizeof tailInR_);
-    std::memset(tailHistL_, 0, sizeof tailHistL_);
-    std::memset(tailHistR_, 0, sizeof tailHistR_);
-    std::memset(tailOutL_, 0, sizeof tailOutL_);
-    std::memset(tailOutR_, 0, sizeof tailOutR_);
-    tailPos_ = 0;
-    std::memset(crossHistL_, 0, sizeof crossHistL_);
-    std::memset(crossHistR_, 0, sizeof crossHistR_);
-    crossWriteIdx_ = 0;
-    xtcLpL_ = 0.0f; xtcLpR_ = 0.0f;
-    xtcBassL_ = 0.0f; xtcBassR_ = 0.0f;
-    dcX1L_ = 0.0f; dcY1L_ = 0.0f;
-    dcX1R_ = 0.0f; dcY1R_ = 0.0f;
-    wetNow_ = 0.0f;
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {
     enableRirDenormalGuard();   // FTZ/DAZ en el hilo de audio
     const float wetTarget = std::clamp(wetDry_.load(std::memory_order_relaxed), 0.0f, 1.0f);
 
-    if (clearHistoryPending_.exchange(false, std::memory_order_acq_rel)) {
-        std::memset(overlapL_, 0, sizeof overlapL_);
-        std::memset(overlapR_, 0, sizeof overlapR_);
-        std::memset(tailInL_, 0, sizeof tailInL_);
-        std::memset(tailInR_, 0, sizeof tailInR_);
-        std::memset(tailHistL_, 0, sizeof tailHistL_);
-        std::memset(tailHistR_, 0, sizeof tailHistR_);
-        std::memset(tailOutL_, 0, sizeof tailOutL_);
-        std::memset(tailOutR_, 0, sizeof tailOutR_);
-        tailPos_ = 0;
-        std::memset(crossHistL_, 0, sizeof crossHistL_);
-        std::memset(crossHistR_, 0, sizeof crossHistR_);
-        if (!fdlReL_.empty()) std::fill(fdlReL_.begin(), fdlReL_.end(), 0.f);
-        if (!fdlImL_.empty()) std::fill(fdlImL_.begin(), fdlImL_.end(), 0.f);
-        if (!fdlReR_.empty()) std::fill(fdlReR_.begin(), fdlReR_.end(), 0.f);
-        if (!fdlImR_.empty()) std::fill(fdlImR_.begin(), fdlImR_.end(), 0.f);
-        fdlIndex_ = 0;
-        crossWriteIdx_ = 0;
-        xtcLpL_ = 0.0f; xtcLpR_ = 0.0f;
-        xtcBassL_ = 0.0f; xtcBassR_ = 0.0f;
-        dcX1L_ = 0.0f; dcY1L_ = 0.0f;
-        dcX1R_ = 0.0f; dcY1R_ = 0.0f;
-        wetNow_ = 0.0f;
-    }
-
     if (wetSmooth_ <= 0.f) {
         wetSmooth_ = (float)std::exp(-1.0 / (48000.0 * 0.010));  // ~10 ms @48k
     }
 
-    // Bypass limpio: cuando tanto el target como el suavizado están en 0
+    // Soft Suspension: cuando tanto el target como el suavizado están en 0,
+    // preservamos las últimas `ol` muestras reales en overlapL_/overlapR_
+    // sin ejecutar FFTs ni destruir la historia acústica.
     if (wetTarget < 1e-4f && wetNow_ < 1e-4f) {
         wetNow_ = 0.0f;
+        const int ol = (overlapLen_ < MAX_IR) ? overlapLen_ : MAX_IR - 1;
+        if (ol > 0 && L && R && frames > 0) {
+            if (frames >= ol) {
+                std::memcpy(overlapL_, L + (frames - ol), (size_t)ol * sizeof(float));
+                std::memcpy(overlapR_, R + (frames - ol), (size_t)ol * sizeof(float));
+            } else {
+                const int keep = ol - frames;
+                std::memmove(overlapL_, overlapL_ + frames, (size_t)keep * sizeof(float));
+                std::memmove(overlapR_, overlapR_ + frames, (size_t)keep * sizeof(float));
+                std::memcpy(overlapL_ + keep, L, (size_t)frames * sizeof(float));
+                std::memcpy(overlapR_ + keep, R, (size_t)frames * sizeof(float));
+            }
+        }
         return;
     }
     if (!loaded_.load(std::memory_order_acquire)) return;

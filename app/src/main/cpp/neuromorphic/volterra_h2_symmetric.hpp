@@ -104,6 +104,16 @@ public:
         return m_transition_env.currentGain;
     }
 
+    const ivanna::supreme::SupremeStateContinuityManager& continuityManager() const noexcept {
+        return m_continuity_mgr;
+    }
+
+    void preserveInterleavedTail(
+        const float* input,
+        uint32_t num_frames,
+        uint32_t num_channels
+    ) noexcept;
+
 private:
     uint32_t m_kernel_length;
     uint32_t m_channels;
@@ -124,6 +134,7 @@ private:
     std::atomic<bool> m_thermal_bypass{false};
     std::atomic<bool> m_kernels_ready{false};
     ivanna::supreme::SupremeTransitionEnvelope m_transition_env{};
+    ivanna::supreme::SupremeStateContinuityManager m_continuity_mgr{};
 
     // Previene copia
     VolterraH2Symmetric(const VolterraH2Symmetric&) = delete;

@@ -112,20 +112,8 @@ public:
         chirpFreqHz_ = 17500.0f;
         silenceEnvelope_ = 0.0f;
         transitionEnv_.configure(sampleRate_, 8.0f, 18.0f, 35.0f);
+        continuityMgr_.configure(sampleRate_, 5.0f);
 
-        reset();
-    }
-
-    void reset() noexcept {
-        clearFilterStates();
-        declippedPeaks_.store(0u, std::memory_order_relaxed);
-        smoothBlDrive_ = blCompensationDrive_.load(std::memory_order_relaxed);
-        const bool en = enabled_.load(std::memory_order_relaxed) &&
-                        !thermalBypass_.load(std::memory_order_relaxed);
-        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
-    }
-
-    void clearFilterStates() noexcept {
         bStateL_.fill(0.0f);
         bStateR_.fill(0.0f);
         allpassMemL_.fill(0.0f);
@@ -136,7 +124,44 @@ public:
         excursionEstR_ = 0.0f;
         declipPrev1L_ = 0.0f; declipPrev2L_ = 0.0f;
         declipPrev1R_ = 0.0f; declipPrev2R_ = 0.0f;
-        silenceEnvelope_ = 0.0f;
+        declippedPeaks_.store(0u, std::memory_order_relaxed);
+        smoothBlDrive_ = blCompensationDrive_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+    }
+
+    void reset() noexcept {
+        smoothBlDrive_ = blCompensationDrive_.load(std::memory_order_relaxed);
+        const bool en = enabled_.load(std::memory_order_relaxed) &&
+                        !thermalBypass_.load(std::memory_order_relaxed);
+        transitionEnv_.setImmediate(en ? 1.0f : 0.0f);
+        continuityMgr_.validateStateArray(bStateL_);
+        continuityMgr_.validateStateArray(bStateR_);
+        continuityMgr_.validateStateArray(allpassMemL_);
+        continuityMgr_.validateStateArray(allpassMemR_);
+        continuityMgr_.validateState();
+    }
+
+    /**
+     * @brief Soft-reset de continuidad: valida y preserva el estado acústico sin
+     *        destruir las líneas de retardo ni la memoria allpass durante reproducción.
+     */
+    void preserveAcousticState(const float* __restrict left, const float* __restrict right, size_t numSamples) noexcept {
+        continuityMgr_.preserveState(left, right, numSamples);
+        continuityMgr_.preserveLinearDelayHistory(delayFracL_, left, numSamples);
+        continuityMgr_.preserveLinearDelayHistory(delayFracR_, right, numSamples);
+        if (left && right && numSamples >= 2) {
+            declipPrev2L_ = sanitize(left[numSamples - 2]);
+            declipPrev1L_ = sanitize(left[numSamples - 1]);
+            declipPrev2R_ = sanitize(right[numSamples - 2]);
+            declipPrev1R_ = sanitize(right[numSamples - 1]);
+        }
+        continuityMgr_.validateStateArray(bStateL_);
+        continuityMgr_.validateStateArray(bStateR_);
+        continuityMgr_.validateStateArray(allpassMemL_);
+        continuityMgr_.validateStateArray(allpassMemR_);
+        continuityMgr_.validateState();
     }
 
     /**
@@ -236,10 +261,18 @@ public:
             : TransitionProfile::Standard;
         const bool wasSilent = transitionEnv_.isSilent();
         if (!transitionEnv_.beginBlock(targetEnv, profile)) {
+            // NIVEL 2 — Soft Suspension: preservar historia real de frontera y filtros sin borrar memoria
+            preserveAcousticState(left, right, numSamples);
+            continuityMgr_.suspend(left, right, numSamples);
             return;
         }
         if (wasSilent) {
-            clearFilterStates();
+            // NIVEL 3 — Smooth State Resume: reactivación continua sobre historia conservada
+            continuityMgr_.resume();
+            continuityMgr_.validateStateArray(bStateL_);
+            continuityMgr_.validateStateArray(bStateR_);
+            continuityMgr_.validateStateArray(allpassMemL_);
+            continuityMgr_.validateStateArray(allpassMemR_);
         }
         ScopedFpDenormalsToZero ftzGuard{};
 
@@ -307,8 +340,9 @@ public:
         if (localDeclipped > 0u) {
             declippedPeaks_.fetch_add(localDeclipped, std::memory_order_relaxed);
         }
+        continuityMgr_.preserveState(left, right, numSamples);
         if (transitionEnv_.isSilent()) {
-            clearFilterStates();
+            continuityMgr_.suspend(left, right, numSamples);
         }
     }
 
@@ -325,7 +359,19 @@ public:
         transitionEnv_.configure(sampleRate_, attackMs, releaseMs, thermalMs);
     }
     const SupremeTransitionEnvelope& transitionEnvelope() const noexcept { return transitionEnv_; }
+    const SupremeStateContinuityManager& continuityManager() const noexcept { return continuityMgr_; }
     float currentTransitionGain() const noexcept { return transitionEnv_.currentGain; }
+    float preservedStateEnergy() const noexcept {
+        float e = 0.0f;
+        for (size_t m = 0; m < ORDER; ++m) {
+            e += std::fabs(bStateL_[m]) + std::fabs(bStateR_[m]) +
+                 std::fabs(allpassMemL_[m]) + std::fabs(allpassMemR_[m]);
+        }
+        for (size_t k = 0; k < 4; ++k) {
+            e += std::fabs(delayFracL_[k]) + std::fabs(delayFracR_[k]);
+        }
+        return e;
+    }
     void setMicroChirpEnabled(bool en) noexcept { microChirpEnabled_.store(en, std::memory_order_release); }
     bool isMicroChirpEnabled() const noexcept { return microChirpEnabled_.load(std::memory_order_acquire); }
     void setBlCompensationDrive(float drive) noexcept {
@@ -453,6 +499,7 @@ private:
     bool lastThermalBypass_{false};
 
     SupremeTransitionEnvelope transitionEnv_{};
+    SupremeStateContinuityManager continuityMgr_{};
     std::atomic<bool> enabled_{true};
     std::atomic<bool> thermalBypass_{false};
     std::atomic<bool> microChirpEnabled_{true};

@@ -693,6 +693,21 @@ static int32_t omega_process(effect_handle_t self,
     }
 
     if (!ctx->masterBypassEnv.beginBlock(wantMasterActive ? 1.0f : 0.0f, masterProfile)) {
+        if (ctx->rtL && ctx->rtR && ctx->rtCapacity > 0) {
+            const int tailFrames = std::min(frames, std::min(ctx->rtCapacity, 64));
+            const int startFrame = frames - tailFrames;
+            for (int n = 0; n < tailFrames; ++n) {
+                ctx->rtL[n] = in[2 * (startFrame + n)];
+                ctx->rtR[n] = in[2 * (startFrame + n) + 1];
+            }
+            if (ctx->cochlearEngine)   ctx->cochlearEngine->preserveAcousticState(ctx->rtL, ctx->rtR, tailFrames);
+            if (ctx->supremeLattice)   ctx->supremeLattice->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
+            if (ctx->supremeCvnn)      ctx->supremeCvnn->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
+            if (ctx->supremeSnnHoa)    ctx->supremeSnnHoa->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
+            if (ctx->supremePinna)     ctx->supremePinna->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
+            if (ctx->supremeMsoFarrow) ctx->supremeMsoFarrow->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
+            if (ctx->volterraEngine)   ctx->volterraEngine->preserveInterleavedTail(in + 2 * startFrame, (uint32_t)tailFrames, 2u);
+        }
         memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
         return 0;
     }
@@ -825,6 +840,14 @@ static int32_t omega_process(effect_handle_t self,
                     L[n] = outChunk[2 * n];
                     R[n] = outChunk[2 * n + 1];
                 }
+            } else {
+                const int tailFrames = std::min(chunk, 64);
+                const int startFrame = chunk - tailFrames;
+                for (int n = 0; n < tailFrames; ++n) {
+                    outChunk[2 * n]     = L[startFrame + n];
+                    outChunk[2 * n + 1] = R[startFrame + n];
+                }
+                ctx->volterraEngine->preserveInterleavedTail(outChunk, (uint32_t)tailFrames, 2u);
             }
         }
 
