@@ -2,6 +2,7 @@
 #include "../spatial/HrtfPersonalizer.hpp"
 #include "../spatial/ObjectSpatialRenderer.hpp"
 #include "../spatial/StereoObjectDecomposer.hpp"
+#include "../spatial/IvannaAudioPipeline.hpp"
 #include <cmath>
 #include <vector>
 
