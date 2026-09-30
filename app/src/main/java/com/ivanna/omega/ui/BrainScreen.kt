@@ -289,14 +289,70 @@ private fun EvolutionTab(
 // ── Tab LAB ───────────────────────────────────────────────────────────────────
 @Composable
 private fun LabTab() {
+    val scope = rememberCoroutineScope()
     var reportText by remember { mutableStateOf("Presiona MEDIR para iniciar") }
     var measureResult by remember { mutableStateOf<FloatArray?>(null) }
+    var perceptualCues by remember { mutableStateOf<FloatArray?>(null) }
+    var audioSpectrum by remember { mutableStateOf<FloatArray?>(null) }
+    var phaseEnergy by remember { mutableFloatStateOf(0f) }
+    var labAutoFrames by remember { mutableIntStateOf(0) }
+    var neuralBenchUs by remember { mutableStateOf<FloatArray?>(null) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (IvannaNativeLib.isLoaded) {
+                perceptualCues = IvannaNativeLib.guardedNative(null) { IvannaNativeLib.nativeGetPerceptualCues() }
+                audioSpectrum = IvannaNativeLib.guardedNative(null) { IvannaNativeLib.nativeGetAudioSpectrum() }
+                phaseEnergy = IvannaNativeLib.guardedNative(0f) { IvannaNativeLib.nativeGetPhaseEnergy() }
+                labAutoFrames = IvannaNativeLib.guardedNative(0) { IvannaNativeLib.nativeGetLabAutoFrameCount() }
+            }
+            kotlinx.coroutines.delay(500L)
+        }
+    }
 
     GlassCard("IVANNA LAB", NeonMagenta, "Medición · Análisis · Reporte") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(reportText, color = TextMuted, fontSize = 10.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 modifier = Modifier.fillMaxWidth())
+
+            Text(
+                "AUTO-FEED FRAMES: $labAutoFrames · PHASE ENERGY: ${"%.4f".format(phaseEnergy)}",
+                color = AuroraCyan,
+                fontSize = 10.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
+            perceptualCues?.let { cues ->
+                if (cues.size >= 4) {
+                    Text(
+                        "CUES [L=${"%.2f".format(cues[0])} T=${"%.2f".format(cues[1])} S=${"%.2f".format(cues[2])} R=${"%.2f".format(cues[3])}]",
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
+            audioSpectrum?.let { spec ->
+                if (spec.isNotEmpty()) {
+                    val avgEnv = spec.average().toFloat()
+                    Text(
+                        "ESPECTRO BEB (${spec.size} bandas) · ENV MEDIA: ${"%.4f".format(avgEnv)}",
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
+            neuralBenchUs?.let { b ->
+                if (b.size >= 4) {
+                    Text(
+                        "BENCH NEURAL (µs/256f): NHO=${"%.1f".format(b[0])} BEB=${"%.1f".format(b[1])} SP=${"%.1f".format(b[2])} TOT=${"%.1f".format(b[3])}",
+                        color = PhosphorGreen,
+                        fontSize = 10.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
 
             measureResult?.let { m ->
                 val labLabels = listOf(
@@ -349,6 +405,23 @@ private fun LabTab() {
                     colors = ButtonDefaults.buttonColors(containerColor = NeonMagenta.copy(alpha = 0.2f), contentColor = NeonMagenta),
                     modifier = Modifier.weight(1f)
                 ) { Text("MEDIR", fontSize = 11.sp) }
+
+                Button(
+                    onClick = {
+                        if (IvannaNativeLib.isLoaded) {
+                            scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                                val res = IvannaNativeLib.guardedNative(null) {
+                                    IvannaNativeLib.nativeRunNeuralBenchmarks()
+                                }
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    neuralBenchUs = res
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan.copy(alpha = 0.2f), contentColor = AuroraCyan),
+                    modifier = Modifier.weight(1f)
+                ) { Text("BENCH", fontSize = 11.sp) }
             }
         }
     }

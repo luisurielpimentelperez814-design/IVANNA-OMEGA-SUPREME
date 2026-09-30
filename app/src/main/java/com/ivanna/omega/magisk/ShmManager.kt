@@ -96,9 +96,24 @@ object ShmManager {
     private const val DAEMON_SOCKET = "omega_daemon_socket"
     private const val HANDSHAKE_TIMEOUT_MS = 1500
 
+    private external fun nativeMlock(addr: Long, len: Long): Int
     private external fun nativeMlockBuffer(buffer: ByteBuffer): Int
     private external fun nativeMapSharedFd(fd: FileDescriptor, size: Int): ByteBuffer?
     private external fun nativeUnmapSharedFd(buffer: ByteBuffer): Int
+
+    private fun lockDirectBuffer(buf: ByteBuffer): Int {
+        val rawAddr = runCatching {
+            val f = java.nio.Buffer::class.java.getDeclaredField("address")
+            f.isAccessible = true
+            f.getLong(buf)
+        }.getOrDefault(0L)
+        if (rawAddr != 0L && buf.capacity() > 0) {
+            val rc = runCatching { nativeMlock(rawAddr, buf.capacity().toLong()) }.getOrDefault(-1)
+            if (rc == 0) return 0
+            Log.w(TAG, "nativeMlock(addr=0x${rawAddr.toString(16)}, len=${buf.capacity()}) devolvió $rc — intentando nativeMlockBuffer")
+        }
+        return runCatching { nativeMlockBuffer(buf) }.getOrDefault(-1)
+    }
 
     private val loaded = NativeLibraryLoader.ensureLoaded()
     private val initialized = AtomicBoolean(false)
@@ -143,9 +158,13 @@ object ShmManager {
             // al revés) se rechaza aquí y se degrada a región local en vez
             // de leer basura como si fuera telemetría del daemon.
             if (isDaemonHeaderValid(daemonBuf)) {
+                val mlockDaemon = lockDirectBuffer(daemonBuf)
+                if (mlockDaemon != 0) {
+                    Log.w(TAG, "mlock() sobre SHM del daemon devolvió $mlockDaemon — continuando sin pin RAM")
+                }
                 mappedBuffer = daemonBuf
                 mappedFromDaemon = true
-                Log.i(TAG, "SHM del daemon mapeada via SCM_RIGHTS (${daemonBuf.capacity()}B, header OK)")
+                Log.i(TAG, "SHM del daemon mapeada via SCM_RIGHTS (${daemonBuf.capacity()}B, header OK, mlock=${mlockDaemon == 0})")
                 return
             }
             Log.e(TAG, "SHM del daemon con header inválido (magic/version) — rechazada, fallback a local")
@@ -169,7 +188,7 @@ object ShmManager {
                 initialized.set(false)
                 return
             }
-            val mlockResult = nativeMlockBuffer(buf)
+            val mlockResult = lockDirectBuffer(buf)
             if (mlockResult != 0) {
                 Log.w(TAG, "mlock() falló (ret=$mlockResult) — región puede paginarse")
             }

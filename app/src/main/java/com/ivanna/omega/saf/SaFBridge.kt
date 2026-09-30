@@ -19,6 +19,7 @@ object SaFBridge {
     external fun nativeSaFInit(jsonPath: String): Boolean
 
     @JvmStatic external fun nativeSaFFeedback(direction: Int, correct: Boolean)
+    @JvmStatic external fun nativeSaFGetStatus(): FloatArray?
     @JvmStatic external fun nativeSaFGetParams(): FloatArray?
     @JvmStatic external fun nativeSaFGetIteration(): Int
     @JvmStatic external fun nativeSaFReset()

@@ -767,6 +767,36 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME UnifiedMasterV3SafetyBench COMMAND test_unified_master_v3_safety_bench)
 
+# ── FASE 2: 12 nativos conectados con external fun y consumidores Kotlin ──────
+add_executable(test_phase2_jni_natives
+  test_phase2_jni_natives.cpp
+  ../phase_oracle.cpp
+  ../shm_hyperplane.cpp
+  ../spatial/spatial_engine.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../SafPcaDecoder.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../SafModelLoader.cpp
+  ../HRTFBinLoader.cpp
+  ../evolutionary_kernel_v2.cpp
+  ../audio_control_plane.cpp
+  ../daemon/core/android_log_compat.cpp
+)
+target_link_libraries(test_phase2_jni_natives PRIVATE GTest::gtest_main Threads::Threads m)
+target_include_directories(test_phase2_jni_natives PRIVATE
+  ..
+  ../include
+  ../spatial
+  host_stubs
+)
+target_compile_options(test_phase2_jni_natives PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_phase2_jni_natives PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_phase2_jni_natives PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+set_target_properties(test_phase2_jni_natives PROPERTIES ENABLE_EXPORTS ON)
+add_test(NAME test_phase2_jni_natives COMMAND test_phase2_jni_natives)
+
 
 
 

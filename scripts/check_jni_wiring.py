@@ -281,7 +281,7 @@ def parse_cpp_jni_symbols(compiled_sources: Set[Path]) -> Tuple[Dict[str, List[T
         if cpp_file.suffix not in {".cpp", ".c", ".cc", ".h", ".hpp"}:
             continue
         rel_cpp = cpp_file.resolve().relative_to(CPP_ROOT.resolve())
-        if rel_cpp.parts[0] == "tests":
+        if rel_cpp.parts[0] in {"tests", "legacy_no_build", "third_party"}:
             continue
         rel_root = cpp_file.relative_to(ROOT)
         in_cmake = (rel_cpp in compiled_sources) or (cpp_file.suffix in {".h", ".hpp"})

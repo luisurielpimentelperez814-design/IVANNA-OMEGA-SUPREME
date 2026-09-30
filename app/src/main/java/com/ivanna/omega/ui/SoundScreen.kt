@@ -255,12 +255,27 @@ private fun DynamicsTab(
     Spacer(Modifier.height(4.dp))
 
     // Bug C fix — estado levantado a prefs en lugar de remember local
-    GlassCard("AGC — Control Automático de Ganancia", AuroraCyan, "Motor A · PDEngine") {
+    GlassCard("AGC · LOUDNESS LUFS", AuroraCyan, "Motor A · PDEngine · ITU-R BS.1770") {
+        var loudnessTrimOn by remember { mutableStateOf(true) }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IvannaSliderRow("TARGET AGC", prefs.agcTarget, -36f, 0f, "dB") { v ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("LOUDNESS TRIM ACTIVO", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = loudnessTrimOn,
+                    onCheckedChange = { en ->
+                        loudnessTrimOn = en
+                        if (IvannaNativeLib.isLoaded) {
+                            runCatching { IvannaNativeLib.nativeSetLoudnessTrimEnabled(en) }
+                        }
+                    }
+                )
+            }
+            IvannaSliderRow("TARGET AGC / LUFS", prefs.agcTarget, -36f, -6f, "LUFS") { v ->
                 updatePrefs { it.copy(agcTarget = v) }
-                if (IvannaNativeLib.isLoaded)
+                if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetNPMax(v / -36f) }
+                    runCatching { IvannaNativeLib.nativeSetLoudnessTarget(v) }
+                }
             }
             IvannaSliderRow("VELOCIDAD", prefs.agcRate, 0f, 1f, "") { v ->
                 updatePrefs { it.copy(agcRate = v) }
@@ -290,7 +305,10 @@ private fun BinauralTab(
                     checked = hrtfEnabled,
                     onCheckedChange = { en ->
                         AudioStateManager.updateState { it.copy(binaural = en) }
-                        if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
+                        if (IvannaNativeLib.isLoaded) {
+                            runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
+                            runCatching { IvannaNativeLib.nativeSetBinauralEnabled(en) }
+                        }
                         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = en
                     }
                 )
@@ -310,7 +328,10 @@ private fun BinauralTab(
                 updatePrefs { it.copy(binauralAzimuth = v) }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
-                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
+                if (IvannaNativeLib.isLoaded) {
+                    runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
+                    runCatching { IvannaNativeLib.nativeSetBinauralPositionRad(rad, (audioState.spatialWidth / 2f).coerceIn(0f, 1f)) }
+                }
             }
             // FIX: ELEVACIÓN persistía en prefs pero no llamaba a ningún motor
             // espacial ni función nativa — la elevación era decorativa.

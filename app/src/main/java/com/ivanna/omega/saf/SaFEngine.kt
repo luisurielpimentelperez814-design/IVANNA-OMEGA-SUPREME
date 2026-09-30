@@ -43,7 +43,8 @@ data class SaFState(
     val params      : FloatArray = FloatArray(7),
     val errorEnergy : Float      = 0f,
     val converged   : Boolean    = false,
-    val jniLoaded   : Boolean    = false
+    val jniLoaded   : Boolean    = false,
+    val modelLoaded : Boolean    = false
 )
 
 // ── Engine ────────────────────────────────────────────────────────────────────
@@ -83,8 +84,11 @@ class SaFEngine(private val context: Context) {
                 // versión checksum-protegida — sella contra truncado/bit-flip y
                 // es recuperable aunque el TXT nativo quede a medias.
                 val prefsSnap = SaFCalibrationPrefs.load(context)
+                val safStatus     = snapshot { SaFBridge.nativeSaFGetStatus() }
+                val statusParams  = if (safStatus != null && safStatus.size >= 7) safStatus.copyOfRange(0, 7) else null
+                val modelOk       = safStatus != null && safStatus.size >= 8 && safStatus[7] >= 0.5f
                 val nativeIter    = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
-                val nativeParams  = if (restored) snapshot { SaFBridge.nativeSaFGetParams() } ?: FloatArray(7) else FloatArray(7)
+                val nativeParams  = if (restored) (snapshot { SaFBridge.nativeSaFGetParams() } ?: statusParams ?: FloatArray(7)) else (statusParams ?: FloatArray(7))
                 val nativeConv    = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
                 // Resolución de divergencia: iteración más alta gana. En empate,
                 // el binario sellado (prefs) tiene prioridad sobre el TXT nativo.
@@ -94,6 +98,7 @@ class SaFEngine(private val context: Context) {
                 val conv   = ((if (usePrefs) prefsSnap.converged else nativeConv)) && iter > 0
                 _state.value = SaFState(
                     jniLoaded   = loaded,
+                    modelLoaded = modelOk,
                     iteration   = iter,
                     params      = params,
                     converged   = conv,
@@ -166,8 +171,11 @@ class SaFEngine(private val context: Context) {
                 // syncToRoomBridge() corre dentro de runCalibrationStep() → λ_t real
             }
 
+            val safStatus = snapshot { SaFBridge.nativeSaFGetStatus() }
             val iter     = snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0
-            val params   = snapshot { SaFBridge.nativeSaFGetParams() }    ?: FloatArray(7)
+            val params   = snapshot { SaFBridge.nativeSaFGetParams() }
+                ?: (if (safStatus != null && safStatus.size >= 7) safStatus.copyOfRange(0, 7) else FloatArray(7))
+            val modelOk  = safStatus != null && safStatus.size >= 8 && safStatus[7] >= 0.5f
             val energy   = snapshot { SaFBridge.nativeSaFGetError() }     ?: 0f
             val conv     = snapshot { SaFBridge.nativeSaFIsConverged() }  ?: false
 
@@ -206,7 +214,8 @@ class SaFEngine(private val context: Context) {
                 params      = params,
                 errorEnergy = energy,
                 converged   = conv,
-                jniLoaded   = IvannaNativeLib.isLoaded
+                jniLoaded   = IvannaNativeLib.isLoaded,
+                modelLoaded = modelOk
             )
 
             // FIX (tonos): emitir el estímulo de la siguiente dirección al

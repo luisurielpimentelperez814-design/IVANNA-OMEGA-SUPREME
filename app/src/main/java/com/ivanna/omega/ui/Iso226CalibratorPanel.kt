@@ -83,6 +83,14 @@ fun Iso226CalibratorPanel(
 
     val isCalibrated = Iso226Calibrator.isCalibrated
 
+    var naelActive by remember {
+        mutableStateOf(
+            if (com.ivanna.omega.core.IvannaNativeLib.isLoaded)
+                runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeIsIso226Enabled() }.getOrDefault(false)
+            else false
+        )
+    }
+
     // Colores del tema (realineado a Aurora Obsidiana — antes grises planos
     // 0D0D0F/111114/888899 que rompían la coherencia con las demás pantallas)
     val panelBg    = ObsidianVoid
@@ -120,6 +128,15 @@ fun Iso226CalibratorPanel(
                     fontFamily = FontFamily.Monospace
                 )
             }
+            Switch(
+                checked = naelActive,
+                onCheckedChange = { en ->
+                    naelActive = en
+                    if (com.ivanna.omega.core.IvannaNativeLib.isLoaded) {
+                        runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeSetNaelEnabled(en) }
+                    }
+                }
+            )
             if (isCalibrated) {
                 Text(
                     "✓",

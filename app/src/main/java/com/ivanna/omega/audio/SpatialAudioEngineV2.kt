@@ -58,10 +58,15 @@ class SpatialAudioEngineV2 {
 
     val running: Boolean get() = isRunning
 
+    private external fun nativeInitSpatial(sampleRate: Int)
+
     fun start() {
         if (isRunning) return
         try {
             Log.i(TAG, "Iniciando motor binaural (modo análisis/telemetría)...")
+            if (IvannaNativeLib.isLoaded) {
+                runCatching { nativeInitSpatial(sampleRate) }
+            }
             val initialized = IvannaNativeLib.nativeInitSpatialEngine(sampleRate, bufferSize)
             if (!initialized) {
                 Log.e(TAG, "nativeInitSpatialEngine retornó false")

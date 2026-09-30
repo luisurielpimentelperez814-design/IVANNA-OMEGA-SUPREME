@@ -101,6 +101,7 @@ object IvannaNativeLib {
     // ═══════════════════════════════════════════════════════════════════════
     external fun nativePredictSamples(audioBuffer: FloatArray, sampleCount: Int): FloatArray
     external fun nativeGetPhaseState(): Float
+    external fun nativeGetPhaseEnergy(): Float
     external fun nativeSetPhaseParameters(alpha: Float, beta: Float, gamma: Float): Boolean
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -249,17 +250,23 @@ object IvannaNativeLib {
     // al bus seqlock. Sin coste en el hilo de audio: sólo lee output_lufs
     // ya publicado por g_loudnessMeter.
     external fun nativeSetNaelEnabled(enabled: Boolean)
+    external fun nativeIsIso226Enabled(): Boolean
 
     /** FloatArray[10]: corrección en dB por banda ISO 1/1-oct:
      *  31.5 / 63 / 125 / 250 / 500 / 1k / 2k / 4k / 8k / 16k Hz. */
     external fun nativeGetNaelCorrections(): FloatArray?
 
-    // ═══ IvannaLab auto-feed (Ruta A, nativeProcess) ═════════════════
-    // Cuando enabled=true, nativeProcess llama g_lab.feed() 1 de cada
-    // 100 bloques con la salida ya procesada. Las funciones nativeLab*
-    // de abajo siguen disponibles para control manual (no se tocan).
+    // ═══ IvannaLab auto-feed + Loudness + Telemetría LAB (FASE 2) ════════
     external fun nativeSetLabAutoEnabled(enabled: Boolean)
     external fun nativeIsLabAutoEnabled(): Boolean
+    external fun nativeGetLabAutoFrameCount(): Int
+    external fun nativeSetLoudnessTarget(targetLufs: Float)
+    external fun nativeSetLoudnessTrimEnabled(enabled: Boolean)
+    external fun nativeGetAudioSpectrum(): FloatArray?
+    external fun nativeGetPerceptualCues(): FloatArray?
+    external fun nativeRunNeuralBenchmarks(): FloatArray?
+    external fun nativeSetBinauralEnabled(enabled: Boolean)
+    external fun nativeSetBinauralPositionRad(azimuthRad: Float, aggressiveness: Float)
 
     // ═══ Music Intelligence Engine (IME) ════════════════════════════════
     external fun nativeImeSetEnabled(enabled: Boolean)

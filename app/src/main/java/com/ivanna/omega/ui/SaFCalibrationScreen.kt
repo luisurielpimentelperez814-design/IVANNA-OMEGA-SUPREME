@@ -109,7 +109,7 @@ fun SaFCalibrationScreen(
         }
 
         // ── Status pill ───────────────────────────────────────────────────
-        PhaseBadge(state.phase, state.iteration)
+        PhaseBadge(state.phase, state.iteration, state.modelLoaded)
 
         // ── Geometría de pinna (TAREA 4): solo antes de calibrar ──────────
         // 3 medidas del oído → sujeto HRTF más cercano del dataset SOFA.
@@ -142,11 +142,12 @@ fun SaFCalibrationScreen(
 
 // ── Phase badge ───────────────────────────────────────────────────────────────
 @Composable
-private fun PhaseBadge(phase: SaFPhase, iter: Int) {
+private fun PhaseBadge(phase: SaFPhase, iter: Int, modelLoaded: Boolean = false) {
+    val rirOk = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
     val (text, color) = when (phase) {
-        SaFPhase.IDLE        -> (if (runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)) "LISTO · DATASET OK" else "EN ESPERA") to TextMuted
+        SaFPhase.IDLE        -> (if (rirOk || modelLoaded) "LISTO · SAF:${if (modelLoaded) "OK" else "--"} · RIR:${if (rirOk) "OK" else "--"}" else "EN ESPERA") to TextMuted
         SaFPhase.CALIBRATING -> "CALIBRANDO · iter $iter"  to AmberSignal
-        SaFPhase.DONE        -> "CONVERGIDO ✓" to PhosphorGreen
+        SaFPhase.DONE        -> "CONVERGIDO ✓ · SAF:${if (modelLoaded) "OK" else "--"}" to PhosphorGreen
     }
     Surface(
         color  = color.copy(alpha = 0.10f),
