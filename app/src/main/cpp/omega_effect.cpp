@@ -785,7 +785,7 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->unifiedPipeline) {
             auto localUnifiedSnap = unifiedSnapPre;
             localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
-            if (aiEnabled && ctx->antiDolby) {
+            if (ctx->antiDolby) {
                 localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::AntiDolbyClassic, false);
             }
             ctx->unifiedPipeline->syncFromSnapshotPreLoop(localUnifiedSnap);
