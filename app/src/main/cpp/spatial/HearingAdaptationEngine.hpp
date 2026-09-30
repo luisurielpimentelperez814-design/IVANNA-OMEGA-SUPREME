@@ -15,6 +15,10 @@ struct AudiogramProfile {
     float loss_2khz_db{0.0f};
     float loss_4khz_db{0.0f};
     float loss_8khz_db{0.0f};
+    float loss_low_db{0.0f};
+    float loss_mid_db{0.0f};
+    float loss_high_db{0.0f};
+    float loss_ultra_high_db{0.0f};
     float listening_duration_mins{0.0f};
     float ear_tip_seal_factor{1.0f}; // [0, 1] 1 = perfect seal
 };
@@ -46,6 +50,38 @@ public:
 
     void setProfile(const AudiogramProfile& prof) noexcept {
         profile_ = prof;
+        if (prof.loss_low_db != 0.0f && prof.loss_250hz_db == 0.0f) {
+            profile_.loss_250hz_db = prof.loss_low_db;
+            profile_.loss_500hz_db = prof.loss_low_db;
+        }
+        if (prof.loss_mid_db != 0.0f && prof.loss_1khz_db == 0.0f) {
+            profile_.loss_1khz_db = prof.loss_mid_db;
+            profile_.loss_2khz_db = prof.loss_mid_db;
+        }
+        if (prof.loss_high_db != 0.0f && prof.loss_4khz_db == 0.0f) {
+            profile_.loss_4khz_db = prof.loss_high_db;
+        }
+        if (prof.loss_ultra_high_db != 0.0f && prof.loss_8khz_db == 0.0f) {
+            profile_.loss_8khz_db = prof.loss_ultra_high_db;
+        }
+        recalculate();
+        if (renderedBlocks_ == 0u) {
+            smoothLowGain_ = targetLowGain_;
+            smoothHighGain_ = targetHighGain_;
+        }
+    }
+
+    void setAudiogram(const AudiogramProfile& prof) noexcept {
+        const float prevSeal = profile_.ear_tip_seal_factor;
+        setProfile(prof);
+        if (prof.ear_tip_seal_factor == 1.0f && prevSeal != 1.0f) {
+            profile_.ear_tip_seal_factor = prevSeal;
+            recalculate();
+        }
+    }
+
+    void setEarTipSeal(float sealFactor) noexcept {
+        profile_.ear_tip_seal_factor = std::clamp(std::isfinite(sealFactor) ? sealFactor : 1.0f, 0.2f, 1.0f);
         recalculate();
         if (renderedBlocks_ == 0u) {
             smoothLowGain_ = targetLowGain_;
@@ -54,13 +90,23 @@ public:
     }
 
     void setFatigueLevel(float level) noexcept {
-        fatigueLevel_ = std::clamp(level, 0.0f, 1.0f);
+        fatigueLevel_ = std::clamp(std::isfinite(level) ? level : 0.0f, 0.0f, 1.0f);
         recalculate();
         if (renderedBlocks_ == 0u) {
             smoothLowGain_ = targetLowGain_;
             smoothHighGain_ = targetHighGain_;
         }
     }
+
+    void setListeningSpl(float splDb) noexcept {
+        const float clampedSpl = std::clamp(std::isfinite(splDb) ? splDb : 75.0f, 40.0f, 100.0f);
+        listeningSplDb_ = clampedSpl;
+        // Normalizar SPL [70..100 dB] -> nivel de fatiga auditiva ISO 226 [0..1]
+        const float derivedFatigue = std::clamp((clampedSpl - 70.0f) / 28.0f, 0.0f, 1.0f);
+        setFatigueLevel(derivedFatigue);
+    }
+
+    [[nodiscard]] float listeningSpl() const noexcept { return listeningSplDb_; }
 
     /**
      * @brief Process stereo block with equal-loudness + presbycusis + fatigue protection.
@@ -128,6 +174,7 @@ private:
 
     AudiogramProfile profile_{};
     float fatigueLevel_{0.0f};
+    float listeningSplDb_{75.0f};
 
     float targetLowGain_{1.0f};
     float targetHighGain_{1.0f};

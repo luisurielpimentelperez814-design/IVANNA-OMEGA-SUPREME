@@ -60,9 +60,11 @@ static bool g_phase_oracle_refined_init = false;
 
 // ── Bus + staging frame propiedad de ivanna_omega_jni.cpp ───────
 // Se exponen no-static para poder publicar desde aquí también.
+// En binarios que no enlazan ivanna_omega_jni.cpp (libomega_effect.so, tests host),
+// las definiciones weak satisfacen al linker sin conflicto ODR.
 namespace ivanna {
-    extern ControlFrameBus g_control_bus;
-    extern ControlFrame    g_staging_frame;
+    __attribute__((weak)) ControlFrameBus g_control_bus{};
+    __attribute__((weak)) ControlFrame    g_staging_frame{};
 }
 
 // ── Implementation: control_apply_frame() ───────────────────────
@@ -76,12 +78,12 @@ namespace ivanna {
 // Devuelve el número de campos ajustados por la fusión (para debug/telemetry).
 
 // phase_oracle_velocity() — definida en phase_oracle.cpp (Kalman cúbico 384kHz)
-extern "C" float phase_oracle_velocity();
+extern "C" __attribute__((weak)) float phase_oracle_velocity() { return 0.0f; }
 
 // FASE 2: sesgo aprendido — definida en ivanna_omega_jni.cpp. Devuelve 0.f
 // si la JVM todavía no está conectada o el método no está cacheado (por
 // ejemplo, si se llama antes de que MainActivity instancie LearningBias).
-extern "C" float learning_bias_get(const char* param_key);
+extern "C" __attribute__((weak)) float learning_bias_get(const char*) { return 0.0f; }
 
 int control_apply_frame() noexcept {
     using namespace ivanna;

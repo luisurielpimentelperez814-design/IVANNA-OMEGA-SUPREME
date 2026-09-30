@@ -54,6 +54,7 @@ inline const std::array<VirtualSpeaker, kNumVirtualSpeakers> kVirtualSpeakers = 
     std::array<VirtualSpeaker, kNumVirtualSpeakers> spk{};
     const float phi = 1.618033988749895f;
     const float norm = std::sqrt(1.f + phi*phi);
+    (void)norm;
 
     // 6 speakers en el ecuador
     for (int i = 0; i < 6; ++i) {

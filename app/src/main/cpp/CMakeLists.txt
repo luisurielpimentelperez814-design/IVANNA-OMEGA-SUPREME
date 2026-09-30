@@ -186,9 +186,21 @@ add_library(ivanna_omega SHARED
     # Fase 1: Orquestador central (UnifiedControlFrame + control_apply_frame)
     audio_control_plane.cpp
 
-    # Fase 4: VolterraH2Symmetric (motor cochlear canónico: CochlearActiveInverseModel.hpp)
+    # Fase 4 / Oleada 6: NeuroCochlearManifold + VolterraH2Symmetric
+    neuromorphic/neuro_cochlear_manifold.cpp
     neuromorphic/volterra_h2_symmetric.cpp
     hexagon/ivanna_fastrpc_client.cpp
+
+    # Oleadas 2–5 (Prompt Maestro v3 — Cadena Declarativa Unificada)
+    Psychoacoustics.cpp
+    SofaHRTFLoader.cpp
+    SafHRTFBridge.cpp
+    IvannaVoiceProsodyEngine.cpp
+    EvolutionaryEQ.cpp
+    IvannaTinyML.cpp
+    IvannaNeuromorphicTinyML.cpp
+    IvannaSelfHealingEngine.cpp
+    IvannaSuperAgentMemory.cpp
 
     # Fase H: loader FastRPC canonico del Hexagon cDSP (ivanna::hexagon::rt).
     # La fachada NpeEngine de Fase H fue retirada (cero consumidores); la
@@ -294,6 +306,16 @@ add_library(omega_effect SHARED
     IvannaAudioClassifier.cpp
     IvannaVoiceProsodyEngine.cpp
     IvannaSuperAgentMemory.cpp
+    IvannaSelfHealingEngine.cpp
+    IvannaTinyML.cpp
+    IvannaNeuromorphicTinyML.cpp
+    SofaHRTFLoader.cpp
+    SafHRTFBridge.cpp
+    saf_latent_bridge.cpp
+    SaFStimulusRenderer.cpp
+    audio_control_plane.cpp
+    neuromorphic/ivanna_neural_upmixer.cpp
+    neuromorphic/neuro_cochlear_manifold.cpp
     spatial/IntelligentUpmixer.cpp
     spatial/WfsRenderer.cpp
     spatial/HoaBinauralDecoder.cpp

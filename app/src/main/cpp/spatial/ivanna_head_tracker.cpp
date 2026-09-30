@@ -51,8 +51,11 @@ void HeadTracker::update(const float rotationVector[4], float timestampMs) noexc
     poseHistory_[idx] = newPose;
     historyWriteIdx_.fetch_add(1, std::memory_order_release);
 
-    previousPose_ = currentPose_.load(std::memory_order_relaxed);
-    currentPose_.store(newPose, std::memory_order_release);
+    const uint32_t curSlot = activePoseSlot_.load(std::memory_order_relaxed) & 1u;
+    previousPose_ = currentPoseSlots_[curSlot];
+    const uint32_t nextSlot = curSlot ^ 1u;
+    currentPoseSlots_[nextSlot] = newPose;
+    activePoseSlot_.store(nextSlot, std::memory_order_release);
     lastTimestampMs_ = timestampMs;
 }
 
@@ -77,7 +80,10 @@ HeadPose HeadTracker::getPoseForAudioFrame(float audioFrameTimeMs) const noexcep
         }
     }
 
-    if (!before && !after) return currentPose_.load(std::memory_order_acquire);
+    if (!before && !after) {
+        const uint32_t slot = activePoseSlot_.load(std::memory_order_acquire) & 1u;
+        return currentPoseSlots_[slot];
+    }
     if (!before) return *after;
     if (!after) return *before;
 
@@ -95,7 +101,9 @@ HeadPose HeadTracker::getPoseForAudioFrame(float audioFrameTimeMs) const noexcep
 void HeadTracker::reset() noexcept {
     HeadPose identity;
     identity.orientation.w = 1.f;
-    currentPose_.store(identity, std::memory_order_relaxed);
+    currentPoseSlots_[0] = identity;
+    currentPoseSlots_[1] = identity;
+    activePoseSlot_.store(0u, std::memory_order_release);
     previousPose_ = identity;
     lastTimestampMs_ = 0.f;
     for (auto& p : poseHistory_) p = HeadPose{};

@@ -714,5 +714,55 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_supreme_acoustic_continuity)
 
+# ── PROMPT MAESTRO v3: UNIFIED STAGE ARCHITECTURE & SAFETY BENCH (FASES 1–6) ──
+add_executable(test_unified_master_v3_safety_bench
+  test_unified_master_v3_safety_bench.cpp
+  ../audio_control_plane.cpp
+  ../Psychoacoustics.cpp
+  ../SofaHRTFLoader.cpp
+  ../SafHRTFBridge.cpp
+  ../SafPcaDecoder.cpp
+  ../SafModelLoader.cpp
+  ../SafGlobalBridge.cpp
+  ../saf_latent_bridge.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../HRTFBinLoader.cpp
+  ../IvannaVoiceProsodyEngine.cpp
+  ../EvolutionaryEQ.cpp
+  ../neuromorphic/ivanna_neural_upmixer.cpp
+  ../anti_dolby.cpp
+  ../neuromorphic/AntiDolbyAI.cpp
+  ../neuromorphic/neuro_cochlear_manifold.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+  ../hexagon/ivanna_fastrpc_client.cpp
+  ../hexagon/ivanna_dsp.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../IvannaTinyML.cpp
+  ../IvannaNeuromorphicTinyML.cpp
+  ../SaFOptimizer.cpp
+  ../SaFStimulusRenderer.cpp
+  ../SafSpatialModifier.cpp
+  ../IvannaSelfHealingEngine.cpp
+  ../IvannaSuperAgentMemory.cpp
+)
+target_link_libraries(test_unified_master_v3_safety_bench PRIVATE GTest::gtest_main Threads::Threads m dl)
+target_include_directories(test_unified_master_v3_safety_bench PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_unified_master_v3_safety_bench PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_unified_master_v3_safety_bench PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_unified_master_v3_safety_bench PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME UnifiedMasterV3SafetyBench COMMAND test_unified_master_v3_safety_bench)
+
+
 
 

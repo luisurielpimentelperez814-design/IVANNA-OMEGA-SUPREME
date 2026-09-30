@@ -20,6 +20,7 @@
 #include "supreme/ShmPipelineArbitrator.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
+#include "include/omega_wave_stages.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -266,6 +267,7 @@ struct omega_effect_context_t {
     ivanna::OmegaDspSnapshot pendingSnap;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
+    ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -771,14 +773,20 @@ static int32_t omega_process(effect_handle_t self,
     }
     if (ctx->cochlearEngine) {
         const auto& snapPre = ctx->pendingSnap;
-        const bool  cochOnPre = (snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0;
+        const auto unifiedSnapPre = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
+        const bool  cochOnPre = ((snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0) || unifiedSnapPre.cochlearEnabled;
         const float intensityPre =
             (std::isfinite(snapPre.cochlear_intensity) && snapPre.cochlear_intensity > 0.0f)
                 ? snapPre.cochlear_intensity
-                : ctx->cochlearIntensity;
+                : (unifiedSnapPre.cochlearEnabled ? unifiedSnapPre.cochlearIntensity : ctx->cochlearIntensity);
         ctx->cochlearEngine->setIntensity(intensityPre);
-        ctx->cochlearEngine->setEnabled(cochOnPre);
+        ctx->cochlearEngine->setEnabled(cochOnPre && (unifiedSnapPre.activeCochlearVariant == 0u));
         ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
+        if (ctx->unifiedPipeline) {
+            auto localUnifiedSnap = unifiedSnapPre;
+            localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
+            ctx->unifiedPipeline->syncFromSnapshotPreLoop(localUnifiedSnap);
+        }
     }
     if (ctx->supremeLattice)   ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
     if (ctx->supremeCvnn)      ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
@@ -952,6 +960,9 @@ static int32_t omega_process(effect_handle_t self,
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::CochlearInverse,
                 L, R, (size_t)chunk, 1.20f, 0.95f);
+        }
+        if (ctx->unifiedPipeline) {
+            ctx->unifiedPipeline->process(L, R, (size_t)chunk, /*syncFromBusPreLoop=*/false);
         }
 
         // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B, Zero-Pop Transition Layer) ──
@@ -1162,6 +1173,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         static_cast<float>(sr),
                         ivanna::spatial::IvannaAudioPipeline::MAX_BLOCK_SIZE);
                     ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
+                }
+                if (!ctx->unifiedPipeline) {
+                    ctx->unifiedPipeline = new (std::nothrow) ivanna::unified::DeclarativeUnifiedPipeline();
+                }
+                if (ctx->unifiedPipeline) {
+                    ctx->unifiedPipeline->prepare(static_cast<float>(sr), 512);
                 }
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
@@ -1552,6 +1569,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rirConvolver = nullptr;
     ctx->cochlearEngine = nullptr;
     ctx->audioPipeline = nullptr;
+    ctx->unifiedPipeline = nullptr;
     ctx->cochlearIntensity = 0.35f;
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
@@ -1661,6 +1679,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             }
             delete ctx->audioPipeline;
             ctx->audioPipeline = nullptr;
+        }
+        if (ctx->unifiedPipeline) {
+            delete ctx->unifiedPipeline;
+            ctx->unifiedPipeline = nullptr;
         }
         if (ctx->rirConvolver) {
             delete ctx->rirConvolver;

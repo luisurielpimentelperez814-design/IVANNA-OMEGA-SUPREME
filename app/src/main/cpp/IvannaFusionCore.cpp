@@ -142,6 +142,9 @@ void IvannaFusionEngine::setGoldenEarMode(bool enable) {
 void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
     g_wfs_enabled.store(enable, std::memory_order_relaxed);
 }
+bool IvannaFusionEngine::isWfsEnabled() const noexcept {
+    return g_wfs_enabled.load(std::memory_order_relaxed);
+}
 void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
     if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);
 }

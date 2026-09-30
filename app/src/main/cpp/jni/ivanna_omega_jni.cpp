@@ -147,10 +147,12 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 // g_cochlearEnabled : flag atómico leído en hot-path (relaxed)
 // g_cochlearIntensity: nivel wet [0..1] leído en hot-path (relaxed)
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
+#include "../include/omega_wave_stages.hpp"
 std::atomic<bool>  g_cochlearEnabled{false};
 std::atomic<float> g_cochlearIntensity{0.35f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
 static ivanna::spatial::IvannaAudioPipeline g_liveAudioPipeline;
+static ivanna::unified::DeclarativeUnifiedPipeline g_unifiedPipeline;
 extern "C" void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int frames, float sampleRate) noexcept;
 namespace {
 struct LivePipelineAutoRegistrar {
@@ -820,6 +822,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
             ivanna::master::kMasterSafGoldenQNorm[3],
             ivanna::master::kMasterSafGoldenQNorm[0],
             (float)sr);
+        g_unifiedPipeline.prepare(static_cast<float>(sr), 512);
     }
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
@@ -1554,10 +1557,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
     }
 
-    // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
-    // Latencia añadida: 0.00 ms. Cero allocs. Rampa suave interna al activar/desactivar.
-    g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
-    g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
+    // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) + Cadena Declarativa Unificada ──
+    {
+        const auto unifiedSnap = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
+        const bool cochFlag = g_cochlearEnabled.load(std::memory_order_relaxed) || unifiedSnap.cochlearEnabled;
+        // Regla 1.2 (Exclusión mutua de familia Cochlear): si activeCochlearVariant == 1
+        // (NeuroCochlearManifold), se desactiva g_cochlearEngine para que corra únicamente B.
+        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
+        g_cochlearEngine.setEnabled(cochFlag && (unifiedSnap.activeCochlearVariant == 0u));
+        g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
+
+        auto localUnifiedSnap = unifiedSnap;
+        localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
+        g_unifiedPipeline.syncFromSnapshotPreLoop(localUnifiedSnap);
+        g_unifiedPipeline.process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), /*syncFromBusPreLoop=*/false);
+    }
 
     // ── Ejes 1–6 Espaciales + 5 Ejes de Supremacía + Acoustic Reality Hyperengine (Ruta A / Ruta C) ──
     {
@@ -2565,6 +2579,8 @@ extern "C" void ivanna_cochlear_set_enabled(bool on) noexcept {
     } else {
         g_liveAudioPipeline.cochlearEngine().setEnabled(false);
     }
+    ivanna::unified::UnifiedParamSnapshotBus::instance().setCochlearUnified(
+        on, g_cochlearIntensity.load(std::memory_order_relaxed));
     omegaSendCochlearToDaemon(on, g_cochlearIntensity.load(std::memory_order_relaxed));
 }
 
@@ -2578,6 +2594,8 @@ extern "C" void ivanna_cochlear_set_intensity(float intensity) noexcept {
     if (activePipe && activePipe != &g_liveAudioPipeline) {
         activePipe->cochlearEngine().setIntensity(w);
     }
+    ivanna::unified::UnifiedParamSnapshotBus::instance().setCochlearUnified(
+        g_cochlearEnabled.load(std::memory_order_relaxed), w);
     omegaSendCochlearToDaemon(g_cochlearEnabled.load(std::memory_order_relaxed), w);
 }
 

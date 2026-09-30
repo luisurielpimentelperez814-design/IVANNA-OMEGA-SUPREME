@@ -107,7 +107,8 @@ public:
     void reset() noexcept;
 
 private:
-    std::atomic<HeadPose> currentPose_{};
+    HeadPose currentPoseSlots_[2]{};
+    std::atomic<uint32_t> activePoseSlot_{0};
     HeadPose previousPose_{};
     float lastTimestampMs_ = 0.f;
 

@@ -53,8 +53,10 @@ private:
     std::atomic<int> m_write_index;
     std::atomic<int> m_read_index;
 
-    // Atomic output for safe reading in the DSP path
-    std::atomic<AIModelOutput*> m_current_output;
+    // Pre-allocated double-buffered output for zero-malloc lock-free reading in the DSP path
+    AIModelOutput m_output_slots[2]{};
+    std::atomic<int> m_active_slot{0};
+    std::atomic<AIModelOutput*> m_current_output{nullptr};
 };
 
 } // namespace Ivanna

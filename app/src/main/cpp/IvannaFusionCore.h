@@ -66,6 +66,7 @@ public:
     // WfsRenderer (llamado desde omega_apply_snapshot, hilo de control, NO
     // el hilo de audio — mismo criterio ya establecido para setObject()).
     void setWfsEnabled(bool enable) noexcept;
+    bool isWfsEnabled() const noexcept;
     void setWfsSpread(float spread) noexcept;
     // x/y/z: coordenadas de SALA absolutas (metros; x=ancho,y=altura,
     // z=profundidad), 7 altavoces, orden FL,FR,SL,SR,TL,TR,SW — mismo

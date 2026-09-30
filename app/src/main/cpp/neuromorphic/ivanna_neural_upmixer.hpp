@@ -64,7 +64,7 @@ public:
     void release() noexcept;
 
 private:
-    bool enabled_ = true;
+    bool enabled_ = false;
     float sampleRate_ = 96000.f;
     int blockSize_ = 512;
 

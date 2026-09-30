@@ -16,9 +16,13 @@ IvannaNeuromorphicTinyML::IvannaNeuromorphicTinyML() {
 IvannaNeuromorphicTinyML::~IvannaNeuromorphicTinyML() = default;
 
 void IvannaNeuromorphicTinyML::processAudioFrame(const float* __restrict input_buffer, size_t num_samples) {
-    (void)num_samples;
+    if (!input_buffer || num_samples == 0) return;
+    std::memset(m_buffers->windowed_frame.data(), 0, sizeof(float) * NUM_MFCC_BINS);
+    const size_t copy_count = std::min<size_t>(num_samples, NUM_MFCC_BINS);
+    std::memcpy(m_buffers->windowed_frame.data(), input_buffer, sizeof(float) * copy_count);
+
     // 1. Wait-free pre-processing: Apply feature extraction using NEON / SIMD
-    extractFeaturesNEON(input_buffer, m_buffers->mfcc_features.data());
+    extractFeaturesNEON(m_buffers->windowed_frame.data(), m_buffers->mfcc_features.data());
 
     // 2. Perform Inference: Depthwise separable CNN step
     alignas(ALIGNMENT) float temp_embedding[EMBEDDING_SIZE];
