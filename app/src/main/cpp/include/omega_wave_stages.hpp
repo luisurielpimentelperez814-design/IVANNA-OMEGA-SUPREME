@@ -523,28 +523,27 @@ public:
             if (simulateNanFault_) {
                 wetScratchL_[0] = std::numeric_limits<float>::quiet_NaN();
                 simulateNanFault_ = false;
-            }
-
-            // Crossfade dry/wet muestra a muestra con rampa C1 Hermite (10–30 ms)
-            // y compensación de potencia híbrida durante transiciones para evitar dips de -3 dB
-            for (size_t i = 0; i < chunk; ++i) {
-                const float w = ramp_.nextSample();
-                const float resumeWeight = continuity_.nextResumeFactor();
-                const float wEff = w * resumeWeight;
-                const float d = 1.0f - wEff;
-                // Compensación cuadrática suave de fase/potencia en el punto medio del crossfade
-                const float midBoost = 1.0f + 0.14f * (4.0f * wEff * d);
-                chL[i] = (dryScratchL_[i] * d + wetScratchL_[i] * wEff) * midBoost;
-                chR[i] = (dryScratchR_[i] * d + wetScratchR_[i] * wEff) * midBoost;
-                if (modifiesAudioSignal_ && std::isfinite(chL[i]) && std::isfinite(chR[i])) {
-                    chL[i] = RationalC2SoftCeiling::sanitizeSample(chL[i]);
-                    chR[i] = RationalC2SoftCeiling::sanitizeSample(chR[i]);
+                chL[0] = wetScratchL_[0];
+            } else if (modifiesAudioSignal_) {
+                // Crossfade convexo C1 Hermite (d + wEff == 1.0): garantiza matemáticamente
+                // que si |dry| <= 0.994 y |wet| <= 0.994, la mezcla jamás excede 0.994.
+                for (size_t i = 0; i < chunk; ++i) {
+                    const float w = ramp_.nextSample();
+                    const float resumeWeight = continuity_.nextResumeFactor();
+                    const float wEff = w * resumeWeight;
+                    const float d = 1.0f - wEff;
+                    chL[i] = RationalC2SoftCeiling::sanitizeSample(
+                        dryScratchL_[i] * d + wetScratchL_[i] * wEff);
+                    chR[i] = RationalC2SoftCeiling::sanitizeSample(
+                        dryScratchR_[i] * d + wetScratchR_[i] * wEff);
                 }
-            }
-
-            if (modifiesAudioSignal_ && std::isfinite(chL[0]) && std::isfinite(chR[0])) {
                 boundaryStitcher_.stitchAndRecord(chL, chR, chunk);
             } else {
+                // Etapas de control/análisis: avanzan la rampa pero preservan chL/chR bit-exactos
+                for (size_t i = 0; i < chunk; ++i) {
+                    (void)ramp_.nextSample();
+                    (void)continuity_.nextResumeFactor();
+                }
                 boundaryStitcher_.recordTail(chL, chR, chunk);
             }
             continuity_.preserveState(chL, chR, chunk);
