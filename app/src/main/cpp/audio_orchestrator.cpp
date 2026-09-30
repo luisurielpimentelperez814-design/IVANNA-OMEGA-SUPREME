@@ -9,6 +9,7 @@
 #include <mutex>
 #include <android/log.h>
 
+#include "audio_orchestrator.h"
 #include "omega_shared.h"
 #include "audio_control_plane.hpp"
 #include "evolutionary_kernel.h"

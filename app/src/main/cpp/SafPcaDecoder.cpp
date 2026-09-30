@@ -1,4 +1,5 @@
 #include "SafPcaDecoder.hpp"
+#include "SafPcaHRTFBridge.hpp"
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include <algorithm>
 

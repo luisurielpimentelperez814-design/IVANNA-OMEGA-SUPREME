@@ -30,6 +30,9 @@
 // ============================================================================
 
 #include "ivanna_dsp_rt.hpp"
+#include "hexagon_dsp_integration.hpp"
+#include "ivanna_dsp.h"
+#include "ivanna_dsp.hpp"
 
 #include <atomic>
 #include <cstdint>

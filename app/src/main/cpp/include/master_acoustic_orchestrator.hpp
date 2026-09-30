@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "experimental/adaptive_engine/adaptive_decision_engine.hpp"
+#include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
 #include "omega_control_bus.h"
 #include "acoustic_reality_hyperengine.hpp"
 #include <cmath>

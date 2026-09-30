@@ -27,6 +27,10 @@
 #include "audio_control_plane.hpp"
 #include "control_frame.hpp"
 #include "phase_oracle_engine.hpp"
+#include "phase_oracle_refinements.hpp"
+#include "evolutionary_adapter.hpp"
+#include "evolutionary_adapter_enhanced.hpp"
+#include "include/audio_bus.h"
 #include "equal_loudness.hpp"
 #include <algorithm>
 #include <atomic>

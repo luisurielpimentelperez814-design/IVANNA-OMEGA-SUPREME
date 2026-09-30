@@ -1,6 +1,8 @@
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 #include "adaptive_decision_engine.hpp"
 #include "../../include/acoustic_reality_hyperengine.hpp"
+#include "../../include/acoustic_cognitive_evolution_engine.hpp"
+#include "../../include/master_acoustic_orchestrator.hpp"
 
 #include <algorithm>
 #include <chrono>

@@ -1,0 +1,117 @@
+// © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
+// ============================================================================
+// test_phase4_5_header_rt_wiring.cpp
+// Verificación host GTest de los 22 headers de producción consolidados en
+// Fase 4 (0 huérfanos en check_header_wiring.py) y las garantías de RT-Safety
+// de Fase 5.
+// ============================================================================
+
+#include <gtest/gtest.h>
+#include <cmath>
+#include <vector>
+
+#include "../SafPcaHRTFBridge.hpp"
+#include "../audio_orchestrator.h"
+#include "../daemon/core/OmegaDspSnapshot.h"
+#include "../evolutionary_adapter.hpp"
+#include "../evolutionary_adapter_enhanced.hpp"
+#include "../hexagon/hexagon_dsp_integration.hpp"
+#include "../hexagon/ivanna_dsp.h"
+#include "../hexagon/ivanna_dsp.hpp"
+#include "../include/acoustic_cognitive_evolution_engine.hpp"
+#include "../include/anti_dolby.h"
+#include "../include/audio_bus.h"
+#include "../include/hrtf_lut.h"
+#include "../include/master_acoustic_orchestrator.hpp"
+#include "../include/saf_feedback.h"
+#include "../include/saf_socket_update.h"
+#include "../include/volterra_h2_symmetric.hpp"
+#include "../neuromorphic/ivanna_synthesizer.hpp"
+#include "../phase_oracle_refinements.hpp"
+#include "../spatial/HybridRenderer.hpp"
+#include "../spatial/PerfAuditor.hpp"
+#include "../spatial/RoomSimulator.hpp"
+#include "../spatial/SpatialRenderer.hpp"
+
+// Definido en evolutionary_adapter_enhanced.hpp como extern
+EvolutionaryGenomeMapping g_evo_adapter{};
+
+TEST(Phase45HeaderRtWiring, AllProductionHeadersInstantiateAndOperateCleanly) {
+    // 1. Daemon OmegaDspSnapshot CRC32
+    omega::OmegaDspSnapshot daemonSnap{};
+    daemonSnap.crc32 = daemonSnap.computeCRC32();
+    EXPECT_TRUE(daemonSnap.isValid());
+
+    // 2. EvolutionaryAdapter + EvolutionaryGenomeMapping
+    ivanna::EvolutionaryAdapter adapter{};
+    adapter.init(1337u);
+    adapter.update_audio_features(0.8f, 0.1f, 0.5f);
+    uint32_t rng = 1337u;
+    adapter.evolve_one_generation(rng);
+    EXPECT_TRUE(adapter.best_params().valid);
+    EXPECT_EQ(adapter.get_generation(), 1u);
+
+    g_evo_adapter.init();
+    float fakeGenome[256];
+    for (int i = 0; i < 256; ++i) fakeGenome[i] = 0.6f;
+    g_evo_adapter.update_best_genome(fakeGenome, 0.95f);
+    g_evo_adapter.apply_mapping();
+    EXPECT_GT(g_evo_adapter.get_dsp_drive(), 1.0f);
+    EXPECT_EQ(g_evo_adapter.get_generation(), 1);
+
+    // 3. KalmanPhasePredictor (phase_oracle_refinements.hpp)
+    KalmanPhasePredictor kalman{};
+    kalman.init(48000.0f);
+    kalman.predict_step();
+    kalman.update_step(120.0f, 0.9f);
+    EXPECT_GT(kalman.get_refined_period(), 0.0f);
+    EXPECT_GE(kalman.get_coherence(), 0.0f);
+
+    // 4. SAF feedback & socket update (saf_feedback.h / saf_socket_update.h)
+    updateSAFFeedback(0.5f);
+    const float safGain = calculateSAFGain();
+    EXPECT_GE(safGain, 0.1f);
+    EXPECT_LE(safGain, 2.0f);
+    updateSAFFromJson(1.1f, 0.4f, 0.3f, 0.8f);
+    EXPECT_FLOAT_EQ(g_saf_state.gain.load(), 1.1f);
+
+    // 5. HRTF LUT (hrtf_lut.h)
+    EXPECT_EQ(hrtf_gain_L[0], 32767);
+    EXPECT_EQ(hrtf_gain_R[63], 32767);
+
+    // 6. VolterraH2Symmetric canonical forwarder (include/volterra_h2_symmetric.hpp)
+    ivanna::dsp::VolterraH2Symmetric volterra(16, 2);
+    EXPECT_TRUE(volterra.isEnabled());
+
+    // 7. Synthesizer canonical forwarder (neuromorphic/ivanna_synthesizer.hpp)
+    ivanna::acoustic::Synthesizer synth(48000.0f, 50.0f);
+    synth.setTargetParameters(0.3f, 0.2f, 0.1f, 0.4f, 0.5f);
+    synth.smoothTick(128, 48000.0f);
+    float sig[5]{};
+    synth.getSignature(sig);
+    EXPECT_TRUE(std::isfinite(sig[0]));
+
+    // 8. Spatial headers: RoomSimulator, BinauralRenderer, HybridRenderer
+    Ivanna::RoomSimulator roomSim{};
+    Ivanna::RoomConfig rc{};
+    rc.wetMix = 0.3f;
+    roomSim.setConfig(rc);
+    float inL[16]{1.0f}, inR[16]{1.0f}, outL[16]{}, outR[16]{};
+    roomSim.processStereo(inL, inR, outL, outR, 16);
+    EXPECT_GT( std::fabs(outL[0]), 0.0f );
+
+    Ivanna::BinauralRenderer binRenderer{};
+    binRenderer.processBinaural(inL, outL, outR, 16, Ivanna::Vector3D{0.0f, 1.0f, 0.0f});
+    EXPECT_GT( std::fabs(outL[0]), 0.0f );
+
+    Ivanna::HybridRenderer hybrid{};
+    hybrid.setRoomConfig(rc);
+    float inStereo[32]{1.0f, 1.0f}, outStereo[32]{};
+    hybrid.renderBinaural(inStereo, outStereo, 16);
+    EXPECT_GT( std::fabs(outStereo[0]), 0.0f );
+
+    // 9. Hexagon stub & integration headers
+    ivanna_dsp_handle_t h = nullptr;
+    EXPECT_EQ(ivanna_dsp_open(&h), -1);
+    EXPECT_NE(ivanna::hexagon::active_library(), nullptr);
+}

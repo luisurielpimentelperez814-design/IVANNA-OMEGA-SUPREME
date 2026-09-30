@@ -1,6 +1,9 @@
 #include "saf_runtime.h"
+#include "saf_feedback.h"
+#include "saf_socket_update.h"
 
 SAFState g_saf_state;
+SAFMetrics g_saf_metrics;
 
 
 // ==========================================================

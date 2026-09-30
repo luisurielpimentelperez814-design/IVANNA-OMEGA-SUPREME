@@ -8,6 +8,8 @@
 // Libre de locks, seguro para RT.
 // ============================================================================
 #include "HRTFInterpolator.hpp"
+#include "HybridRenderer.hpp"
+#include "SpatialRenderer.hpp"
 #include "spatial/HRTFDatabase.h"
 #include <cmath>
 #include <cstring>

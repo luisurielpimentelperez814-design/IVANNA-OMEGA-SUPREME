@@ -972,10 +972,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
 }
 
+struct NonBlockingDspProcessGuard {
+    bool acquired;
+    NonBlockingDspProcessGuard() noexcept : acquired(g_dspProcessMutex.try_lock()) {}
+    ~NonBlockingDspProcessGuard() noexcept {
+        if (acquired) g_dspProcessMutex.unlock();
+    }
+};
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
+    NonBlockingDspProcessGuard dspGuard;
+    if (!dspGuard.acquired) return;
     if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
         if (g_uiMutex.try_lock()) {
             g_params = g_params_ui;

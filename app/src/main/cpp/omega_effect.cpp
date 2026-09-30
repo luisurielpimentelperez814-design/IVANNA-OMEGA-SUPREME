@@ -754,12 +754,10 @@ static int32_t omega_process(effect_handle_t self,
     // bloques grandes), ya NO se hace bypass silencioso a plano. Se procesa
     // el bloque completo en chunks de a lo sumo rtCapacity frames, reutilizando
     // los mismos buffers L/R — sin malloc, sin locks, mismo coste de memoria.
-    // Solo se logea UNA vez por instancia (flag en el ctx, no en el hot path)
-    // para no inundar logcat desde el callback de audio.
+    // Solo se registra UNA vez por instancia (flag en el ctx, sin I/O de logd
+    // en el callback RT) para preservar determinismo estricto de tiempo real.
     if (frames > ctx->rtCapacity && !ctx->chunkedWarned) {
         ctx->chunkedWarned = true;
-        LOGW("omega_process: frameCount=%d > rtCapacity=%d — procesando en chunks (sin bypass)",
-             frames, ctx->rtCapacity);
     }
 
     // ── Pre-loop: sincronizar parámetros cocleares y térmicos UNA VEZ por callback ──

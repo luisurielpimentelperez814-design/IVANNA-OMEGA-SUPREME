@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <vector>
 #include <cmath>
+#include <cstring>
 #include <algorithm>
+#include "RoomSimulator.hpp"
 
 namespace Ivanna {
 
@@ -22,35 +24,38 @@ class BinauralRenderer {
 public:
     static constexpr size_t HRTF_TAPS = 128;
 
-    BinauralRenderer();
-    void setOrientation(const Quaternion& quat);
-    void processBinaural(const float* inMono, float* outLeft, float* outRight, size_t numFrames, Vector3D position);
+    BinauralRenderer() noexcept {
+        std::memset(m_hrtfLeft, 0, sizeof(m_hrtfLeft));
+        std::memset(m_hrtfRight, 0, sizeof(m_hrtfRight));
+        std::memset(m_history, 0, sizeof(m_history));
+        m_hrtfLeft[0] = 1.0f;
+        m_hrtfRight[0] = 1.0f;
+    }
+
+    void setOrientation(const Quaternion& quat) noexcept {
+        m_orientation = quat;
+    }
+
+    void processBinaural(const float* inMono, float* outLeft, float* outRight,
+                         size_t numFrames, Vector3D position) noexcept {
+        if (!inMono || !outLeft || !outRight) return;
+        const float pan = std::clamp(position.x, -1.0f, 1.0f);
+        const float gL = std::sqrt(0.5f * (1.0f - pan));
+        const float gR = std::sqrt(0.5f * (1.0f + pan));
+        for (size_t i = 0; i < numFrames; ++i) {
+            m_history[m_histIdx] = inMono[i];
+            m_histIdx = (m_histIdx + 1) % HRTF_TAPS;
+            outLeft[i] = inMono[i] * gL * m_hrtfLeft[0];
+            outRight[i] = inMono[i] * gR * m_hrtfRight[0];
+        }
+    }
 
 private:
-
     float m_hrtfLeft[HRTF_TAPS];
     float m_hrtfRight[HRTF_TAPS];
     float m_history[HRTF_TAPS];
     size_t m_histIdx{0};
     Quaternion m_orientation;
-};
-
-class RoomSimulator {
-public:
-    RoomSimulator();
-    void setParameters(float roomSize, float absorption, float dampening);
-    void processReverb(const float* inL, const float* inR, float* outL, float* outR, size_t numFrames);
-
-private:
-    float m_roomSize{0.5f};
-    float m_absorption{0.3f};
-    float m_dampening{0.4f};
-
-    // Feedback Delay Lines
-    std::vector<float> m_delayBufferL;
-    std::vector<float> m_delayBufferR;
-    size_t m_delayIdxL{0};
-    size_t m_delayIdxR{0};
 };
 
 } // namespace Ivanna

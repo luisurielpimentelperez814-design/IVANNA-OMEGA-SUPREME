@@ -102,8 +102,12 @@ public:
         b.latency_ms_algorithmic = measureAlgorithmicLatencyMs(p, kSampleRate);
         const size_t totalBlocks = static_cast<size_t>((duration_s * kSampleRate) / kBlockSize);
 
-        std::vector<float> bufL(kBlockSize);
-        std::vector<float> bufR(kBlockSize);
+        std::vector<float> bufL(kBlockSize, 0.0f);
+        std::vector<float> bufR(kBlockSize, 0.0f);
+        // Warmup de caché L1I/L1D (1 bloque) y reset para medir régimen estacionario real
+        p.process(bufL.data(), bufR.data(), kBlockSize);
+        p.reset();
+
         std::vector<float> cpuSamples;
         cpuSamples.reserve(std::min(totalBlocks, size_t(10000)));
 
@@ -155,7 +159,9 @@ public:
             double sum = 0;
             for (float val : cpuSamples) sum += val;
             b.cpu_pct_avg = static_cast<float>(sum / cpuSamples.size());
-            size_t p99Idx = static_cast<size_t>(cpuSamples.size() * 0.99);
+            size_t p99Idx = (cpuSamples.size() >= 100)
+                ? static_cast<size_t>(cpuSamples.size() * 0.99)
+                : (cpuSamples.size() > 2 ? cpuSamples.size() - 2 : 0);
             b.cpu_pct_p99 = cpuSamples[std::min(p99Idx, cpuSamples.size() - 1)];
         }
 

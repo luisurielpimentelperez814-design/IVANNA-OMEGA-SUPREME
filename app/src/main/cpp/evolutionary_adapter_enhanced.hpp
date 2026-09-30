@@ -177,5 +177,3 @@ struct EvolutionaryGenomeMapping {
 
 // ── Global singleton ──────────────────────────────────────────
 extern EvolutionaryGenomeMapping g_evo_adapter;
-
-#endif  // EVOLUTIONARY_ADAPTER_ENHANCED_HPP

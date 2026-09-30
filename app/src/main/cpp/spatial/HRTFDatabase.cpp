@@ -1,4 +1,5 @@
 #include "HRTFDatabase.h"
+#include "../include/hrtf_lut.h"
 
 namespace Ivanna {
 

@@ -22,6 +22,7 @@
 #include "../spatial/ivanna_object_renderer.hpp"
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
 #include "../spatial/IvannaAudioPipeline.hpp"
+#include "../spatial/PerfAuditor.hpp"
 #include "../include/audio_thread_priority.h"
 
 namespace {

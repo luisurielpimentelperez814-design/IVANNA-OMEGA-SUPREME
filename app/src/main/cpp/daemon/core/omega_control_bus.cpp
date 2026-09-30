@@ -8,6 +8,7 @@
  */
 
 #include "../../include/omega_control_bus.h"
+#include "OmegaDspSnapshot.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>

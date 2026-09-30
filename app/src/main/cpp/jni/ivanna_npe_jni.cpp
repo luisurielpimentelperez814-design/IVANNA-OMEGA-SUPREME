@@ -45,6 +45,7 @@
 #include "../neuromorphic/nho_engine.hpp"
 #include "../neuromorphic/lif_neuron_pool.hpp"
 #include "../neuromorphic/biquad_envelope_bank.hpp"
+#include "../neuromorphic/ivanna_synthesizer.hpp"
 #include "../neuromorphic/autonomous_brain.hpp"
 #include "../hexagon/ivanna_fastrpc_client.hpp"
 #include "../hexagon/ivanna_dsp_rt.hpp"

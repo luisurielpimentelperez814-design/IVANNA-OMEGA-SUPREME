@@ -151,10 +151,9 @@ public:
 
         // Evaluar
         float best = -1.f;
-        int   best_idx = 0;
         for (int i = 0; i < EVO_POP; ++i) {
             pop[i].fitness = evaluate(pop[i].genome);
-            if (pop[i].fitness > best) { best = pop[i].fitness; best_idx = i; }
+            if (pop[i].fitness > best) { best = pop[i].fitness; }
         }
         best_fitness = best;
 

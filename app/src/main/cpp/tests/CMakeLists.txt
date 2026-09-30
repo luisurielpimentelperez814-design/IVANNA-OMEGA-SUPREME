@@ -826,6 +826,40 @@ endif()
 set_target_properties(test_phase3_jni_callers PROPERTIES ENABLE_EXPORTS ON)
 add_test(NAME test_phase3_jni_callers COMMAND test_phase3_jni_callers)
 
+# ── FASE 4 y 5: 22 headers de producción consolidados + RT-Safety ─────────────
+add_executable(test_phase4_5_header_rt_wiring
+  test_phase4_5_header_rt_wiring.cpp
+  ../SafPcaDecoder.cpp
+  ../SafModelLoader.cpp
+  ../saf_runtime.cpp
+  ../anti_dolby.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+  ../hexagon/ivanna_dsp.cpp
+  ../spatial/HRTFDatabase.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/RirConvolver.cpp
+  ../experimental/adaptive_engine/adaptive_decision_engine.cpp
+  ../daemon/core/omega_control_bus.cpp
+  ../daemon/core/android_log_compat.cpp
+)
+target_link_libraries(test_phase4_5_header_rt_wiring PRIVATE GTest::gtest_main Threads::Threads m dl)
+target_include_directories(test_phase4_5_header_rt_wiring PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../hexagon
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_phase4_5_header_rt_wiring PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_phase4_5_header_rt_wiring PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_phase4_5_header_rt_wiring PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_phase4_5_header_rt_wiring COMMAND test_phase4_5_header_rt_wiring)
+
 
 
 

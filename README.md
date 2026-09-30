@@ -9,7 +9,7 @@
 # ⬡ IVANNA OMEGA SUPREME ⬡
 
 ### Motor de Supremacía Neuroacústica y Reconstrucción de Realidad Acústica para Android
-**C++23 Nativo · SIMD ARM64 NEON (`float32x4_t`) · Lazo Cerrado `OmniHolographicSingularityEngine` · Guardia de Estabilidad $C^2$ Cero-Artefactos · 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (`0.00 ms`) · Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) · Asistente Cognitivo Híbrido con Gemini 2.5 Flash**
+**C++23 Nativo · SIMD ARM64 NEON (`float32x4_t`) · Lazo Cerrado `OmniHolographicSingularityEngine` · Guardia de Estabilidad $C^2$ Cero-Artefactos · 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (sample-by-sample, 0 muestras de lookahead) · Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) · Asistente Cognitivo Híbrido con Gemini 2.5 Flash**
 
 *Arquitectura, Investigación, Diseño de Sistemas y Autoría Principal por*
 ### **Luis Uriel Pimentel Pérez — GORE TNS**
@@ -17,7 +17,7 @@
 <br/>
 
 [![Build CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=IVANNA%20CI%20%26%20RELEASE&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
-[![Host CTest Suite](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=cplusplus&logoColor=white&label=CTEST%20150%2F150%20%28ASAN%2BUBSAN%29&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
+[![Host CTest Suite](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=cplusplus&logoColor=white&label=CTEST%20153%2F153%20%28ASAN%2BUBSAN%29&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
 [![Supply Chain SLSA](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/supply-chain.yml?branch=main&style=for-the-badge&logo=slsa&logoColor=white&label=SLSA%20%C2%B7%20SBOM%20%C2%B7%20COSIGN&color=F7B733)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/supply-chain.yml)
 
 [![Version](https://img.shields.io/badge/Versi%C3%B3n%20Unificada-v2.3.16%20%282316%29-00F0FF?style=for-the-badge&logo=android&logoColor=white)](version.properties)
@@ -44,7 +44,7 @@
 [**8. Cerebros IA, TinyML y Gemini 2.5**](#-8-inteligencia-acústica-tinyml-neuromórfico-y-asistente-cognitivo-gemini-25) ·
 [**9. Daemon Root, SHM v5 y UI Compose**](#-9-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) ·
 [**10. Honestidad de Ingeniería**](#-10-honestidad-radical-de-ingeniería-lo-que-ivanna-hace-y-lo-que-no-hace) ·
-[**11. Verificación CI (150/150 CTest) e Instalación**](#-11-calidad-verificada-en-ci-150150-ctest-e-instalación)
+[**11. Verificación CI (153/153 CTest) e Instalación**](#-11-calidad-verificada-en-ci-153153-ctest-e-instalación)
 
 </div>
 
@@ -195,20 +195,20 @@ Los limitadores convencionales basados en `std::tanh(x)` distorsionan toda la re
 
 - **Región Lineal Bit-Exacta ($|x| \le x_k = 0.88\text{ FS}$)**:
   $$f(x) = x \qquad \Longrightarrow \qquad \text{THD} = 0.00000\% \quad (\text{identidad IEEE-754 bit a bit})$$
-- **Región de Rodilla Racional $C^2$ ($|x| > x_k = 0.88\text{ FS}$, asíntota $L = 0.996\text{ FS}$)**:
+- **Región de Rodilla Racional $C^2$ ($|x| > x_k = 0.88\text{ FS}$, asíntota $L = 0.994\text{ FS}$)**:
   Sea $u = \frac{|x| - x_k}{L - x_k} > 0$. La función de compresión racional es:
-  $$f(x) = \operatorname{sgn}(x) \cdot \left[ x_k + (L - x_k) \cdot \frac{u + u^2}{1 + u + u^2} \right]$$
+  $$f(x) = \mathrm{sgn}(x) \cdot \left[ x_k + (L - x_k) \cdot \frac{u + u^2}{1 + u + u^2} \right]$$
   Propiedades matemáticas verificadas en `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit`:
   - $f(x_k) = x_k$ (continuidad de posición $C^0$),
   - $f'(x_k) = 1.0$ (continuidad de pendiente $C^1$ con la región identidad),
   - $f''(x_k) = 0.0$ (continuidad de curvatura $C^2$: inflexión suave sin generación abrupta de armónicos de orden superior),
-  - $\lim_{|x|\to\infty} |f(x)| = L = 0.996 < 1.0\text{ FS}$ (imposibilidad matemática de clipping en el DAC).
+  - $\lim_{|x|\to\infty} |f(x)| = L = 0.994 < 1.0\text{ FS}$ (imposibilidad matemática de clipping en el DAC).
 
 ### 2. Costura Polinomial Cúbica de Hermite $C^1$ (`HermiteC1BoundaryStitcher` & `ClickFreeStageBase`)
 
 Cada etapa del pipeline unificado hereda de `ClickFreeStageBase`, que incorpora dos defensas deterministas contra *clicks* y *pops*:
 
-- **Empalme de Frontera Hermite $C^1$ (32 muestras $\approx 0.66\text{ ms}$ @ $48\text{ kHz}$)**:
+- **Empalme de Frontera Hermite $C^1$ (16 muestras $\approx 0.33\text{ ms}$ @ $48\text{ kHz}$)**:
   Cuando una etapa se activa, descongela o cambia de estado (`notifyTransition(lastDry, prevSlope)`), el motor interpola entre la última muestra/pendiente válida $(y_0, \dot{y}_0)$ y la nueva trayectoria procesada usando la base cúbica de Hermite $h_{00}(t) = 2t^3 - 3t^2 + 1$ y $h_{10}(t) = t^3 - 2t^2 + t$:
   $$y_{\text{stitched}}[k] = h_{00}(t_k)\cdot \Delta y_0 + h_{10}(t_k)\cdot N \cdot \Delta \dot{y}_0 + y_{\text{wet}}[k], \qquad t_k = \frac{k}{N}$$
 - **Crossfade Híbrido Adaptativo Coherente / Potencia Constante**:
@@ -221,11 +221,11 @@ Cada etapa del pipeline unificado hereda de `ClickFreeStageBase`, que incorpora 
 
 ---
 
-## ✦ 4. Los 5 Ejes de Supremacía Cuántico-Neuromórfica + Inversión Coclear PINN (`0.00 ms`)
+## ✦ 4. Los 5 Ejes de Supremacía Cuántico-Neuromórfica + Inversión Coclear PINN (0 muestras de lookahead)
 
 > **Archivos fuente:** `app/src/main/cpp/supreme/` · `app/src/main/cpp/neuromorphic/CochlearActiveInverseModel.hpp`
 
-Ejecutados íntegramente en el hilo de tiempo real con **0.00 ms de latencia algorítmica añadida**, **cero asignaciones de memoria dinámica (`malloc`/`new`)**, protección hardware contra subnormales (`ScopedFpDenormalsToZero`: `FPCR.FZ=1` en ARM64 / `MXCSR` en x86_64) y continuidad de estado gestionada por `SupremeStateContinuityManager`:
+Ejecutados íntegramente en el hilo de tiempo real **muestra a muestra (0 muestras de retardo de bloque añadido, medido por `PerfAuditor::measureAlgorithmicLatencyMs`)**, **cero asignaciones de memoria dinámica (`malloc`/`new`)**, protección hardware contra subnormales (`ScopedFpDenormalsToZero`: `FPCR.FZ=1` en ARM64 / `MXCSR` en x86_64) y continuidad de estado gestionada por `SupremeStateContinuityManager`:
 
 | Eje | Módulo C++23 (`app/src/main/cpp/supreme/`) | Física, Matemática y Vectorización SIMD ARM NEON |
 |:---:|--------------------------------------------|--------------------------------------------------|
@@ -257,7 +257,7 @@ Implementa una arquitectura de 6 capas físicas y cognitivas coordinadas por `Re
 |:---:|-------------|------------------------------------------------|
 | **Eje 1** | `StereoObjectDecomposer.hpp` | Descomposición Mid/Side en tiempo real con filtros de 1 polo derivados de la tasa de muestreo real ($\sim 250\text{ Hz}$). Extrae 4 objetos continuos (`CENTER`, `LEFT`, `RIGHT`, `AMBIENT`) con coordenadas `ObjectPosition{x,y,z}` dinámicas y energía por objeto. Cero `malloc` (`objL_[4][4096]` pre-alocados). |
 | **Eje 2** | `HrtfPersonalizer.hpp` | Modelo esférico de **Woodworth/Rayleigh** para el escalamiento anatómico de retardo interaural (`itdScale_`) a partir de la circunferencia craneal del usuario y cálculo de resonancia de muesca de pinna ($\lambda/4 = c / (4 d_{\text{pinna}})$). Conectado directamente a `ObjectSpatialRenderer`. |
-| **Eje 3** | `RoomProjectionEngine.hpp` + `RirConvolver.cpp` | Convolución particionada no-uniforme overlap-save (**head de 512 muestras con 0.00 ms de latencia añadida** + cola de 16 384 muestras FDLP = **16 896 muestras totales**), matriz **True-Stereo de 4 caminos ($LL, LR, RL, RR$)**, cancelación de diafonía transaural (**XTC** a $187.5\,\mu\text{s}$ / $2.2\text{ kHz}$) y crossfade de cambio de sala de $\sim 43\text{ ms}$. |
+| **Eje 3** | `RoomProjectionEngine.hpp` + `RirConvolver.cpp` | Convolución particionada no-uniforme overlap-save (**head de 512 muestras de respuesta directa inmediata** + cola de 16 384 muestras FDLP = **16 896 muestras totales**), matriz **True-Stereo de 4 caminos ($LL, LR, RL, RR$)**, cancelación de diafonía transaural (**XTC** a $187.5\,\mu\text{s}$ / $2.2\text{ kHz}$) y crossfade de cambio de sala de $\sim 43\text{ ms}$. |
 | **Eje 4** | `ObjectSpatialRenderer.hpp` | Ley física de distancia inversa ($1/d$), absorción atmosférica de altas frecuencias proporcional a la distancia, retardo interaural (ITD) asimétrico de hasta 32 muestras por oído y 4 reflexiones tempranas discretas (`taps {8, 17, 29, 43}`) sobre ring-buffer de potencia de 2 (`& 511`). |
 | **Eje 5** | `PhysicalSceneRenderer.hpp` | Modelado físico de oclusión por obstáculos y absorción acústica de materiales mediante filtros Direct Form I libres de bifurcaciones en el bucle de muestras. |
 | **Eje 6** | `HearingAdaptationEngine.hpp` | Compensación de fuga de sellado de almohadilla (`ear_tip_seal_factor`), corrección de presbiacusia (shelving de 2 bandas en $4\text{ kHz}$ y $8\text{ kHz}$) y atenuación progresiva contra fatiga auditiva (`setFatigueLevel`). Activo tanto en Ruta A como en Ruta B (`omega_effect.cpp`). |
@@ -399,20 +399,20 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 | **Protección de Techo y Transiciones** | Limitador dinámico que aplasta el factor de cresta | Limitador de salida propietario sin control de usuario | Recorte suave convencional | Limitador de pico estándar | **`RationalC2SoftCeiling` (Identidad 1:1 hasta $\pm 0.88\text{ FS}$, $\text{THD}=0.00000\%$) + `HermiteC1BoundaryStitcher` + `IsometricEnergyGovernor`** |
 | **Restauración Armónica y Transientes** | Compresión multibanda agresiva | EQ adaptativo sin síntesis trans-armónica | CNN en magnitud (sin coherencia de derivada de fase) | Sin síntesis trans-armónica ni modelo coclear | **CVNN `modReLU` + 8 osciladores DDSP NEON + Cinta 2" Jiles-Atherton + De-Clipper Hermite + Inversión Coclear PINN** |
 | **Corrección Física de Transductor** | Curva EQ fija por perfil XML del fabricante | EQ adaptativo cerrado a AirPods | Perfiles EQ pregrabados para audífonos Sony | Filtro FIR de fase mixta (requiere medición externa) | **Celosía deformada Bark ($\lambda=0.72$) + linealización Lorentz $Bl(x)$ + adaptación NLMS en hipercubo de Schur** |
-| **Latencia Algorítmica del Núcleo** | $15\text{–}40\text{ ms}$ (ventanas STFT) | $12\text{–}30\text{ ms}$ | $20\text{–}45\text{ ms}$ (inferencia CNN por bloque) | $5\text{–}25\text{ ms}$ (convolución FIR lineal) | **0.00 ms en los 5 Ejes Supremos, Cochlear-PINN y partición 0 (head de 512 muestras) del convolver BRIR** |
+| **Latencia Algorítmica del Núcleo** | $15\text{–}40\text{ ms}$ (ventanas STFT) | $12\text{–}30\text{ ms}$ | $20\text{–}45\text{ ms}$ (inferencia CNN por bloque) | $5\text{–}25\text{ ms}$ (convolución FIR lineal) | **Procesamiento directo muestra a muestra (0 muestras de lookahead) en los 5 Ejes Supremos, Cochlear-PINN y partición 0 (head de 512 muestras) del convolver BRIR** |
 | **Ejecución y Apertura en Android** | Binario propietario cerrado a ROMs con licencia | Inexistente en Android | Limitado a apps/dispositivos certificados | Cerrado a acuerdos OEM | **100% Nativo Android ARM64 (Ruta A Sin Root + USB DAC Isócrono + Ruta B Global Magisk/KernelSU)** |
 
 ---
 
-## ✦ 12. Calidad Verificada en CI (`150/150 CTest`) e Instalación
+## ✦ 12. Calidad Verificada en CI (`153/153 CTest`) e Instalación
 
 ### Estado Verificado de Integración Continua (`v2.3.16`, commit `d70e9a0f`)
 
 | Flujo / Suite de Verificación | Estado en GitHub Actions | Cobertura Técnica Auditada |
 |-------------------------------|:------------------------:|----------------------------|
 | **Datasets HRTF & SOFA (`tests-host.yml`)** | ✅ `SUCCESS` | Validación binaria de los 12 archivos `.ihr1`, firma HDF5 (`894844460d0a1a0a`) de los 255 `.sofa`, `pca_basis.bin` y las 200 salas WAV BRIR. |
-| **Host CTest Suite (`150/150` Tests)** | ✅ `SUCCESS` (`15.57 s`) | **150 de 150 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8: `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit` y `Phase8_OmniHolographicSingularityFusionClosedLoop`), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition` y `test_supreme_acoustic_continuity`. |
-| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las 150 pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
+| **Host CTest Suite (`153/153` Tests)** | ✅ `SUCCESS` (`31.98 s`) | **153 de 153 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8: `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit` y `Phase8_OmniHolographicSingularityFusionClosedLoop`), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_phase2_jni_natives`, `test_phase3_jni_callers` y `test_phase4_5_header_rt_wiring`. |
+| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las 153 pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
 | **Build APK & Native Binaries (`build.yml`)** | ✅ `SUCCESS` | Compilación con Android NDK ARM64 (`arm64-v8a`), verificación de flags de seguridad ELF (`PIE`, `Full RELRO`, `BIND_NOW`), sincronización estricta de `version.properties` (`v2.3.16 / 2316`) y empaquetado de artefactos. |
 | **Verify & Publish GitHub Release** | ✅ `SUCCESS` | Extracción, validación de integridad de artefactos y publicación automática de `ivanna_omega_supreme_v2.3.16.zip` (Módulo Magisk/KernelSU) y el APK firmado para `update.json`. |
 
