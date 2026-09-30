@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 
 echo "[pre-commit] 0.1 check_jni_wiring.py"
-python3 "$ROOT/scripts/check_jni_wiring.py" --ratchet
+python3 "$ROOT/scripts/check_jni_wiring.py"
 
 echo "[pre-commit] 0.2 check_header_wiring.py"
 python3 "$ROOT/scripts/check_header_wiring.py" --ratchet

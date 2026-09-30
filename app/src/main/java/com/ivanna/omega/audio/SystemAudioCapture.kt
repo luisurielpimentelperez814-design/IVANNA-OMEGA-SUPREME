@@ -73,6 +73,7 @@ class SystemAudioCapture private constructor(private val context: Context) {
             lastRmsDb     = -96f
             lastPeakDb    = -96f
             lastPcmBase64 = ""
+            try { nativeResetMetrics() } catch (_: UnsatisfiedLinkError) {}
         }
 
         @Volatile private var instance: SystemAudioCapture? = null
@@ -209,8 +210,15 @@ class SystemAudioCapture private constructor(private val context: Context) {
                         onBuffer?.invoke(buf)
 
                         // ── Feed motor DSP nativo C++ ──────────────────────
-                        try { nativeFeedBuffer(buf, bytesRead) }
-                        catch (_: UnsatisfiedLinkError) {}
+                        try {
+                            nativeFeedBuffer(buf, bytesRead)
+                            if (nativeHasData()) {
+                                val natRms = nativeGetLastRmsDb()
+                                val natPeak = nativeGetLastPeakDb()
+                                if (natRms.isFinite() && natRms > -120f) lastRmsDb = natRms
+                                if (natPeak.isFinite() && natPeak > -120f) lastPeakDb = natPeak
+                            }
+                        } catch (_: UnsatisfiedLinkError) {}
 
                         // ── Cómputo RMS + Peak float32 (bit-exact) ────────
                         // [FIX-4] Guard floatsRead > 0 antes del loop:

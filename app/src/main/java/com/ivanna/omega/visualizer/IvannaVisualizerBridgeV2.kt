@@ -62,6 +62,15 @@ object IvannaVisualizerBridgeV2 {
 
     /** Compatibilidad: devuelve nuevo array (legacy, preferir sampleInto). */
     fun sample(): FloatArray {
+        val h = handle.get()
+        if (h != 0L && IvannaVisualizerNativeV2.isLoaded) {
+            return runCatching { IvannaVisualizerNativeV2.nativeVisV2Sample(h) }
+                .getOrElse {
+                    val arr = FloatArray(BAND_COUNT)
+                    sampleInto(arr)
+                    arr
+                }
+        }
         val arr = FloatArray(BAND_COUNT)
         sampleInto(arr)
         return arr

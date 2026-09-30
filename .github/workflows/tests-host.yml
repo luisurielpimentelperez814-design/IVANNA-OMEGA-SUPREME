@@ -84,7 +84,7 @@ jobs:
         if: matrix.san == ''
         run: |
           set -euo pipefail
-          python3 scripts/check_jni_wiring.py --ratchet
+          python3 scripts/check_jni_wiring.py
           python3 scripts/check_header_wiring.py --ratchet
           python3 scripts/check_rt_safety.py --ratchet
           python3 scripts/check_build_flags.py

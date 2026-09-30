@@ -55,7 +55,9 @@ object IvannaNpeEngine {
         bufInR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufOutL = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufOutR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
-        Log.i(TAG, "init sr=$sampleRate maxBlockFrames=$maxBlockFrames handle=$handle")
+        val buildTag = runCatching { IvannaNpeNative.nativeGetBuildTag() }.getOrDefault("npe")
+        val copyright = runCatching { IvannaNpeNative.nativeGetCopyright() }.getOrDefault("")
+        Log.i(TAG, "init sr=$sampleRate maxBlockFrames=$maxBlockFrames handle=$handle tag=$buildTag $copyright")
     }
 
     /** Tiempo de la última inferencia en microsegundos. -1 si aún no se ha ejecutado. */
@@ -165,6 +167,29 @@ object IvannaNpeEngine {
     /** [cpuLoad, rmsOut, agcGain, spectralEntropy, lifFireRateHz, transientCue, spatialCue, residualCue] */
     fun getMetrics(): FloatArray =
         if (handle != 0L) (IvannaNpeNative.nativeGetMetrics(handle) ?: FloatArray(8)) else FloatArray(8)
+
+    fun setParameters(
+        alpha: Float, beta: Float, gamma: Float, delta: Float,
+        eta: Float, zeta: Float,
+        srNoiseFloor: Float = -60f, syncThreshold: Float = 0.5f, noiseGainFar: Float = 0.2f,
+        phi: Float = 0.5f, damping: Float = 0.3f, nonlinearity: Float = cachedHarmonicGain, coupling: Float = 0.5f
+    ) {
+        if (handle != 0L) {
+            IvannaNpeNative.nativeSetParameters(
+                handle, alpha, beta, gamma, delta, eta, zeta,
+                srNoiseFloor, syncThreshold, noiseGainFar, phi, damping, nonlinearity, coupling
+            )
+        }
+    }
+
+    fun snapshotScope(dst: FloatBuffer, maxFrames: Int): Int =
+        if (handle != 0L) IvannaNpeNative.nativeSnapshotScope(handle, dst, maxFrames) else 0
+
+    fun getBuildTag(): String =
+        if (IvannaNpeNative.isLoaded) runCatching { IvannaNpeNative.nativeGetBuildTag() }.getOrDefault("offline") else "offline"
+
+    fun getCopyright(): String =
+        if (IvannaNpeNative.isLoaded) runCatching { IvannaNpeNative.nativeGetCopyright() }.getOrDefault("") else ""
 
     fun reset() {
         if (handle != 0L) IvannaNpeNative.nativeReset(handle)

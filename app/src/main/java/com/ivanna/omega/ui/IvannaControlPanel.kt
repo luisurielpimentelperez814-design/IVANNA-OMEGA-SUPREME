@@ -154,8 +154,29 @@ fun IvannaControlPanel(
     var phaseOracleIntensity by remember { mutableFloatStateOf(savedState.phaseOracleIntensity) }
     var antiDolbyThreshold by remember { mutableFloatStateOf(savedState.antiDolbyThreshold) }
     var spatialSuppression by remember { mutableFloatStateOf(savedState.spatialSuppression) }
-    var spscRingFactor by remember { mutableFloatStateOf(savedState.spscRingFactor) }
+    var spscRingFactor by remember {
+        mutableFloatStateOf(
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeGetSpscRingFactor() }.getOrDefault(savedState.spscRingFactor)
+            else savedState.spscRingFactor
+        )
+    }
     var tinymlInferenceGain by remember { mutableFloatStateOf(savedState.tinymlInferenceGain) }
+    var volterraEnabled by remember {
+        mutableStateOf(
+            if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsVolterraEnabled() }.getOrDefault(true) else true
+        )
+    }
+    var fastRpcEnabled by remember {
+        mutableStateOf(
+            if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsFastRpcEnabled() }.getOrDefault(false) else false
+        )
+    }
+    var atiEnabled by remember {
+        mutableStateOf(
+            if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsAtiEnabled() }.getOrDefault(true) else true
+        )
+    }
 
     // Persistencia inmediata en cada cambio para todos los controles del panel.
     // FIX: phaseOracleIntensity y omegaMode sólo se guardaban en DisposableEffect
@@ -519,6 +540,21 @@ fun IvannaControlPanel(
                     runCatching {
                         IvannaNativeLib.nativeSetAntiDolbyIntensity(antiDolbyThreshold * it.coerceIn(0f, 2f))
                     }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlagToggle("VOLTERRA H2", volterraEnabled, AuroraCyan, Modifier.weight(1f)) { en ->
+                    volterraEnabled = en
+                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetVolterraEnabled(en) }
+                }
+                FlagToggle("FASTRPC cDSP", fastRpcEnabled, PhosphorGreen, Modifier.weight(1f)) { en ->
+                    fastRpcEnabled = en
+                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetFastRpcEnabled(en) }
+                }
+                FlagToggle("ATI GUARD", atiEnabled, NeonMagenta, Modifier.weight(1f)) { en ->
+                    atiEnabled = en
+                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAtiEnabled(en) }
                 }
             }
         }

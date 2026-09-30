@@ -27,24 +27,36 @@ static std::atomic<float> g_last_peak_db{-120.0f};
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_SystemAudioCapture_nativeFeedBuffer(JNIEnv* env, jobject /*thiz*/, 
-                                                                 jfloatArray audio_data, jint length) {
+                                                                 jobject audio_data, jint length) {
     if (!audio_data || length <= 0) return;
-    
-    jfloat* data = env->GetFloatArrayElements(audio_data, nullptr);
-    if (!data) return;
+
+    const float* direct_ptr = static_cast<const float*>(env->GetDirectBufferAddress(audio_data));
+    jfloatArray arr = nullptr;
+    jfloat* arr_ptr = nullptr;
+    int sample_count = length;
+
+    if (direct_ptr != nullptr) {
+        // Direct ByteBuffer passed with size in bytes from SystemAudioCapture.kt
+        sample_count = length / static_cast<int>(sizeof(float));
+    } else {
+        arr = static_cast<jfloatArray>(audio_data);
+        arr_ptr = env->GetFloatArrayElements(arr, nullptr);
+        direct_ptr = arr_ptr;
+    }
+    if (!direct_ptr || sample_count <= 0) return;
     
     std::lock_guard<std::mutex> lock(g_buffer_mutex);
     
     // Calcular RMS y peak
     float sum_sq = 0.0f;
     float peak = 0.0f;
-    for (int i = 0; i < length; ++i) {
-        float sample = data[i];
+    for (int i = 0; i < sample_count; ++i) {
+        float sample = direct_ptr[i];
         sum_sq += sample * sample;
         if (fabsf(sample) > peak) peak = fabsf(sample);
     }
     
-    float rms = sqrtf(sum_sq / length);
+    float rms = sqrtf(sum_sq / sample_count);
     float rms_db = (rms > 0.0f) ? (20.0f * log10f(rms)) : -120.0f;
     float peak_db = (peak > 0.0f) ? (20.0f * log10f(peak)) : -120.0f;
     
@@ -53,15 +65,17 @@ Java_com_ivanna_omega_audio_SystemAudioCapture_nativeFeedBuffer(JNIEnv* env, job
     
     // Copiar al buffer circular
     int write_pos = g_write_pos.load();
-    for (int i = 0; i < length; ++i) {
-        g_audio_buffer[write_pos] = data[i];
+    for (int i = 0; i < sample_count; ++i) {
+        g_audio_buffer[write_pos] = direct_ptr[i];
         write_pos = (write_pos + 1) % BUFFER_SIZE;
     }
     g_write_pos.store(write_pos);
     
-    env->ReleaseFloatArrayElements(audio_data, data, JNI_ABORT);
+    if (arr_ptr != nullptr) {
+        env->ReleaseFloatArrayElements(arr, arr_ptr, JNI_ABORT);
+    }
     
-    LOGI("nativeFeedBuffer: %d samples, RMS=%.1f dB, Peak=%.1f dB", length, rms_db, peak_db);
+    LOGI("nativeFeedBuffer: %d samples, RMS=%.1f dB, Peak=%.1f dB", sample_count, rms_db, peak_db);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -797,6 +797,35 @@ endif()
 set_target_properties(test_phase2_jni_natives PROPERTIES ENABLE_EXPORTS ON)
 add_test(NAME test_phase2_jni_natives COMMAND test_phase2_jni_natives)
 
+# ── FASE 3: 41 external fun conectadas con llamadores reales en Kotlin ─────────
+add_executable(test_phase3_jni_callers
+  test_phase3_jni_callers.cpp
+  ../ivanna_hires_jni.cpp
+  ../system_audio_capture.cpp
+  ../jni/saf_stimulus_jni.cpp
+  ../SaFStimulusRenderer.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../SafPcaDecoder.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../SafModelLoader.cpp
+  ../HRTFBinLoader.cpp
+  ../daemon/core/android_log_compat.cpp
+)
+target_link_libraries(test_phase3_jni_callers PRIVATE GTest::gtest_main Threads::Threads m)
+target_include_directories(test_phase3_jni_callers PRIVATE
+  ..
+  ../include
+  ../spatial
+  host_stubs
+)
+target_compile_options(test_phase3_jni_callers PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_phase3_jni_callers PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_phase3_jni_callers PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+set_target_properties(test_phase3_jni_callers PROPERTIES ENABLE_EXPORTS ON)
+add_test(NAME test_phase3_jni_callers COMMAND test_phase3_jni_callers)
+
 
 
 

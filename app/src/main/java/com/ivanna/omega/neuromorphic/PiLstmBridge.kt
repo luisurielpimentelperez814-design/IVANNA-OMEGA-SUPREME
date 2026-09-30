@@ -167,6 +167,7 @@ object PiLstmBridge {
         // que sincroniza g_cochlearEngine (Ruta A/C) y el daemon SHM (Ruta B) sin doble procesado.
         if (ready) {
             com.ivanna.omega.core.NativeBridge.safeSetCochlearInverseEnabled(en)
+            runCatching { IvannaNativeLib.nativeSetCochlearEnabled(en) }
         }
     }
     // Estado para restaurar tras bypass (FIX: antes harmonicGain se ponía a 0

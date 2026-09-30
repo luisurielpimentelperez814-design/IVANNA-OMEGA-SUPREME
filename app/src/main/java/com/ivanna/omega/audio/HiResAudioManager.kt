@@ -43,7 +43,14 @@ object HiResAudioManager {
     fun loadPersisted(context: Context) {
         runCatching {
             val p = prefs(context)
-            val r = p.getInt(KEY_RATE, currentRate); val d = p.getInt(KEY_DEPTH, currentDepth)
+            val nativeRate = if (com.ivanna.omega.core.IvannaNativeLib.isLoaded)
+                runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeGetConfiguredSampleRate() }.getOrDefault(currentRate)
+            else currentRate
+            val nativeDepth = if (com.ivanna.omega.core.IvannaNativeLib.isLoaded)
+                runCatching { com.ivanna.omega.core.IvannaNativeLib.nativeGetConfiguredBitDepth() }.getOrDefault(currentDepth)
+            else currentDepth
+            val r = p.getInt(KEY_RATE, nativeRate)
+            val d = p.getInt(KEY_DEPTH, nativeDepth)
             if (r in VALID_RATES) currentRate = r
             if (d in VALID_DEPTHS) currentDepth = d
         }

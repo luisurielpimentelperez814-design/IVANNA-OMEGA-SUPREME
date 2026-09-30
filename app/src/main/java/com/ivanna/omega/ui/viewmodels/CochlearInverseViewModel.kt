@@ -78,6 +78,12 @@ class CochlearInverseViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    fun isNativeCochlearActive(): Boolean =
+        IvannaNativeLib.guardedNative(false) { IvannaNativeLib.nativeIsCochlearActive() }
+
+    fun getNativeCochlearIntensity(): Float =
+        IvannaNativeLib.guardedNative(_cochlearIntensity.value) { IvannaNativeLib.nativeGetCochlearIntensity() }
+
     companion object {
         private const val PREFS_NAME       = "ivanna_cochlear_prefs_v1"
         private const val KEY_ENABLED      = "cochlear_enabled"

@@ -164,6 +164,38 @@ class AudioEngine {
             .onFailure { Log.w(TAG, "logBenchmark: $it") }
     }
 
+    fun getLufs(): Float {
+        if (!libLoaded) return -70f
+        return runCatching { nativeGetLufs() }.getOrDefault(-70f)
+    }
+
+    fun getPeakDbfs(): Float {
+        if (!libLoaded) return -96f
+        return runCatching { nativeGetPeakDbfs() }.getOrDefault(-96f)
+    }
+
+    fun setRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
+        if (!libLoaded) return
+        val b = if (bassBoostDb.isFinite()) bassBoostDb.coerceIn(-18f, 18f) else 0f
+        val d = if (dialogBoostDb.isFinite()) dialogBoostDb.coerceIn(-18f, 18f) else 0f
+        val w = if (widenerMult.isFinite()) widenerMult.coerceIn(0f, 3f) else 1f
+        runCatching { nativeSetRouteProfile(b, d, w) }
+            .onFailure { Log.w(TAG, "setRouteProfile: $it") }
+    }
+
+    fun setAntiDolbyScores(speech: Float, music: Float, bass: Float) {
+        if (!libLoaded) return
+        val s = if (speech.isFinite()) speech.coerceIn(0f, 1f) else 0f
+        val m = if (music.isFinite()) music.coerceIn(0f, 1f) else 0f
+        val b = if (bass.isFinite()) bass.coerceIn(0f, 1f) else 0f
+        runCatching { nativeSetAntiDolbyScores(s, m, b) }
+            .onFailure { Log.w(TAG, "setAntiDolbyScores: $it") }
+    }
+
+    fun logCurrentBenchmark(speech: Float, music: Float, bass: Float, dolbyState: Int) {
+        logBenchmark(getLufs(), getPeakDbfs(), speech, music, bass, dolbyState)
+    }
+
     fun getBenchmarkPath(): String? {
         if (!libLoaded) return null
         return runCatching { nativeGetBenchmarkPath() }.getOrNull()

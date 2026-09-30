@@ -149,10 +149,20 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
             audioEngine.setBypass(profile.audioEngine.bypass)
 
             // Aplicar ruta de audio
+            audioEngine.setRouteProfile(
+                profile.route.bassBoostDb,
+                profile.route.dialogBoostDb,
+                profile.route.widenerMult
+            )
             AudioEngine.nativeSetRouteProfileStatic(
                 profile.route.bassBoostDb,
                 profile.route.dialogBoostDb,
                 profile.route.widenerMult
+            )
+            audioEngine.setAntiDolbyScores(
+                profile.antiDolby.speechThreshold,
+                (1f - profile.antiDolby.speechThreshold - profile.antiDolby.bassThreshold).coerceIn(0f, 1f),
+                profile.antiDolby.bassThreshold
             )
 
             currentProfileId = profileId

@@ -108,6 +108,14 @@ class SaFStimulusPlayer(
 
     @Volatile private var currentTrack: AudioTrack? = null
     @Volatile private var currentJob: Job? = null
+    @Volatile private var nativeStimulusReady: Boolean = false
+
+    private fun ensureNativeStimulus(): Boolean {
+        if (nativeStimulusReady) return true
+        if (!com.ivanna.omega.core.IvannaNativeLib.isLoaded) return false
+        nativeStimulusReady = runCatching { SaFBridge.nativeInitStimulus() }.getOrDefault(false)
+        return nativeStimulusReady
+    }
 
     /**
      * Emite el chirp binaural correspondiente a la dirección dada.
@@ -120,7 +128,12 @@ class SaFStimulusPlayer(
         stop() // cancela cualquier reproducción previa; siempre seguro
         val myGen = generation.incrementAndGet()
 
-        val samples = renderStereo(direction)
+        val nativeSamples = if (ensureNativeStimulus()) {
+            runCatching {
+                SaFBridge.nativeGenerateStimulus(direction.azimuth, direction.elevation)
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+        } else null
+        val samples = nativeSamples ?: renderStereo(direction)
         val minBuf = AudioTrack.getMinBufferSize(
             sampleRateHz,
             AudioFormat.CHANNEL_OUT_STEREO,

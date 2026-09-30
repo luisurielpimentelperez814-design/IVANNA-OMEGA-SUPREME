@@ -296,6 +296,13 @@ private fun LabTab() {
     var audioSpectrum by remember { mutableStateOf<FloatArray?>(null) }
     var phaseEnergy by remember { mutableFloatStateOf(0f) }
     var labAutoFrames by remember { mutableIntStateOf(0) }
+    var labAutoEnabled by remember {
+        mutableStateOf(
+            if (IvannaNativeLib.isLoaded)
+                IvannaNativeLib.guardedNative(true) { IvannaNativeLib.nativeIsLabAutoEnabled() }
+            else true
+        )
+    }
     var neuralBenchUs by remember { mutableStateOf<FloatArray?>(null) }
 
     LaunchedEffect(Unit) {
@@ -305,6 +312,7 @@ private fun LabTab() {
                 audioSpectrum = IvannaNativeLib.guardedNative(null) { IvannaNativeLib.nativeGetAudioSpectrum() }
                 phaseEnergy = IvannaNativeLib.guardedNative(0f) { IvannaNativeLib.nativeGetPhaseEnergy() }
                 labAutoFrames = IvannaNativeLib.guardedNative(0) { IvannaNativeLib.nativeGetLabAutoFrameCount() }
+                labAutoEnabled = IvannaNativeLib.guardedNative(labAutoEnabled) { IvannaNativeLib.nativeIsLabAutoEnabled() }
             }
             kotlinx.coroutines.delay(500L)
         }
@@ -312,6 +320,27 @@ private fun LabTab() {
 
     GlassCard("IVANNA LAB", NeonMagenta, "Medición · Análisis · Reporte") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "AUTO-FEED LAB (${if (labAutoEnabled) "ON" else "OFF"})",
+                    color = if (labAutoEnabled) PhosphorGreen else TextMuted,
+                    fontSize = 10.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+                Switch(
+                    checked = labAutoEnabled,
+                    onCheckedChange = { en ->
+                        labAutoEnabled = en
+                        if (IvannaNativeLib.isLoaded) {
+                            IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetLabAutoEnabled(en) }
+                        }
+                    }
+                )
+            }
             Text(reportText, color = TextMuted, fontSize = 10.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 modifier = Modifier.fillMaxWidth())

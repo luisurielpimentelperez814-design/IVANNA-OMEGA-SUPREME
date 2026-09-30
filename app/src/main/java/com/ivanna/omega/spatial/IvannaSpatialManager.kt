@@ -27,6 +27,7 @@ object IvannaSpatialManager {
     private const val BLOCK_SIZE  = 512   // debe coincidir con BLOCK en hrtf_convolver.hpp
 
     @Volatile internal var rendererHandle: Long = 0L
+    @Volatile internal var upmixerHandle: Long = 0L
     private var headTracker: IvannaHeadTracker? = null
     @Volatile var ready: Boolean = false
         private set
@@ -34,6 +35,14 @@ object IvannaSpatialManager {
         private set
 
     // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
+    private val stereoInBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * 2 * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+    private val stemsOutBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * 4 * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
     private val inLBuf: FloatBuffer = ByteBuffer
         .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
         .order(ByteOrder.nativeOrder())
@@ -74,12 +83,23 @@ object IvannaSpatialManager {
                 tracker.init()
                 tracker.start()
                 runCatching { IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle) }
-                
+
+                // Inicializar NeuralUpmixer (4 stems) y sincronizar objetos activos [FIX-SILENCE]
+                val upmixer = runCatching {
+                    IvannaSpatialNative.nativeUpmixerCreate("", SAMPLE_RATE.toFloat(), BLOCK_SIZE)
+                }.getOrDefault(0L)
+                if (upmixer != 0L) {
+                    runCatching {
+                        IvannaSpatialNative.nativeUpmixerSetEnabled(upmixer, true)
+                        IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
+                    }
+                }
 
                 val subject = HrtfSubjectSelector.activate(
                     context, handle, headWidthMm, headDepthMm, sex)
                 synchronized(lock) {
                     rendererHandle = handle
+                    upmixerHandle = upmixer
                     headTracker = tracker
                     activeSubject  = subject
                     ready = true
@@ -160,15 +180,55 @@ object IvannaSpatialManager {
         headTracker?.start()
     }
 
+    fun setReverbLevel(level: Float) {
+        val h = rendererHandle
+        if (ready && h != 0L) {
+            runCatching { IvannaSpatialNative.nativeObjectRendererSetReverb(h, level.coerceIn(0f, 1f)) }
+        }
+    }
+
+    fun setUpmixerEnabled(enabled: Boolean) {
+        val u = upmixerHandle
+        if (ready && u != 0L) {
+            runCatching { IvannaSpatialNative.nativeUpmixerSetEnabled(u, enabled) }
+        }
+    }
+
+    fun setStemPosition(stemType: Int, x: Float, y: Float, z: Float, width: Float) {
+        val h = rendererHandle
+        val u = upmixerHandle
+        if (ready && h != 0L && u != 0L) {
+            runCatching {
+                IvannaSpatialNative.nativeUpmixerSetStemPosition(u, stemType, x, y, z, width)
+                IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+            }
+        }
+    }
+
+    fun reset() {
+        val h = rendererHandle
+        val u = upmixerHandle
+        if (h != 0L) runCatching { IvannaSpatialNative.nativeObjectRendererReset(h) }
+        if (u != 0L) runCatching { IvannaSpatialNative.nativeUpmixerReset(u) }
+    }
+
+    fun isCochlearActive(): Boolean =
+        if (IvannaSpatialNative.isLoaded) runCatching { IvannaSpatialNative.nativeIsCochlearActive() }.getOrDefault(false) else false
+
     fun release() {
         synchronized(lock) {
             val h = rendererHandle
+            val u = upmixerHandle
             if (h != 0L) {
                 runCatching { IvannaSpatialNative.nativeObjectRendererDestroy(h) }
+            }
+            if (u != 0L) {
+                runCatching { IvannaSpatialNative.nativeUpmixerDestroy(u) }
             }
             headTracker?.release()
             headTracker = null
             rendererHandle = 0L
+            upmixerHandle = 0L
             ready = false
             activeSubject = "none"
         }
@@ -205,14 +265,32 @@ object IvannaSpatialManager {
         try {
             outLBuf.clear()
             outRBuf.clear()
-            IvannaSpatialNative.nativeObjectRendererRenderBlock(
-                h,
-                inLBuf,   // objectsBuffer / entrada direct
-                0,        // numObjects
-                outLBuf,  // outLeftBuffer (direct)
-                outRBuf,  // outRightBuffer (direct)
-                n
-            )
+            val u = upmixerHandle
+            if (u != 0L) {
+                stereoInBuf.clear()
+                stereoInBuf.put(buffer, 0, n * 2)
+                stereoInBuf.position(0)
+                stemsOutBuf.clear()
+                IvannaSpatialNative.nativeUpmixerProcess(u, stereoInBuf, stemsOutBuf, n)
+                stemsOutBuf.position(0)
+                IvannaSpatialNative.nativeObjectRendererRenderBlock(
+                    h,
+                    stemsOutBuf,
+                    4,
+                    outLBuf,
+                    outRBuf,
+                    n
+                )
+            } else {
+                IvannaSpatialNative.nativeObjectRendererRenderBlock(
+                    h,
+                    inLBuf,
+                    0,
+                    outLBuf,
+                    outRBuf,
+                    n
+                )
+            }
         } catch (e: UnsatisfiedLinkError) {
             // Si la función nativa no está disponible con esta firma, no rompa el hilo
             return

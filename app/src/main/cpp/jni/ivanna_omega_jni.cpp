@@ -2459,7 +2459,9 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNPMax
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*,jobject,jint,jfloat g) {
     if (std::isfinite(g)) g_pd.spatial.set_wet(std::clamp((float)g, 0.0f, 1.0f));
 }
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*,jobject,jint,jfloat) {}
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*,jobject,jint,jfloat d) {
+    if (std::isfinite(d)) g_pd.spatial.set_width(std::clamp(static_cast<float>(d) / 23.0f, 0.25f, 2.0f));
+}
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*,jobject) { g_pd.reset(); }
 // ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
 // UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
