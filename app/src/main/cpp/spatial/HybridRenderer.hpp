@@ -36,6 +36,10 @@ public:
         m_roomSimulator.setConfig(config);
     }
 
+    const HRTFInterpolator& hrtfInterpolator() const noexcept {
+        return m_hrtfInterpolator;
+    }
+
     void renderBinaural(const float* inStereo, float* outStereo, size_t frameCount) noexcept {
         if (!inStereo || !outStereo || frameCount == 0) return;
         const size_t n = std::min(frameCount, MAX_FRAMES);

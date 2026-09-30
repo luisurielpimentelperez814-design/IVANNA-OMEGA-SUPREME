@@ -19,6 +19,9 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * BrainScreen — Sección CEREBRO unificada.
