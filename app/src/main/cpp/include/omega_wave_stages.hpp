@@ -297,11 +297,12 @@ private:
             ivanna::experimental::AdaptiveState adState{};
             adState.target_gain   = 1.0f;
             adState.spatial_width = std::clamp(1.0f + 0.3f * res.safSpatialAggressiveness, 0.8f, 1.35f);
-            adState.voice_protect = (res.voiceScore > 0.45f);
+            adState.voice_protection_amount = std::clamp(res.voiceScore, 0.0f, 1.0f);
 
+            std::array<ivanna::spatial::DecomposedObject, 4> decomposedObjs{};
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
-            realityOrch.updateControlTickOutOfRt(adState, rawM, /*listenerFatigue=*/0.08f, /*thermalTier=*/0u);
-            const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+            const auto rSnap = realityOrch.orchestrateCycle(
+                rawM, adState, decomposedObjs, /*sideRatio=*/0.35f, /*lowRatio=*/0.35f, pkt.sampleRate);
 
             const float bridgeCue = ivanna::PhaseOracleBridge::transient_cue();
             res.singularityField.holographicDepthMeters = std::clamp(
@@ -311,13 +312,13 @@ private:
                 0.75f * rSnap.genome.microEvents.subbandPhaseCoherence + 0.25f * (1.0f - 0.2f * bridgeCue),
                 0.25f, 1.0f);
             res.singularityField.cochlearMaskingRelief = std::clamp(
-                0.16f + 0.22f * res.voiceScore + 0.12f * rSnap.cognitiveIntent.vocalClarityPriority,
+                0.16f + 0.22f * res.voiceScore + 0.12f * rSnap.cognitive.intent.vocalCentralityIndex,
                 0.08f, 0.55f);
             res.singularityField.subSampleParallaxSamples = std::clamp(
-                0.14f + 0.18f * res.safLatentQ[0] + 0.08f * rSnap.cognitiveIntent.depthExpansionTarget,
+                0.14f + 0.18f * res.safLatentQ[0] + 0.08f * rSnap.cognitive.intent.sceneScaleIndex,
                 -0.42f, 0.42f);
             res.singularityField.realityPresenceIndex = std::clamp(
-                rSnap.perceptualScores.presence * 0.6f + rSnap.perceptualScores.naturalness * 0.4f,
+                rSnap.perceptual.scores.presence * 0.6f + rSnap.perceptual.scores.naturalness * 0.4f,
                 0.35f, 1.0f);
             res.singularityField.harmonicAirProjection = std::clamp(
                 0.12f + 0.18f * res.musicScore + 0.08f * std::clamp(res.synthTrebleAir, 0.0f, 1.0f),
