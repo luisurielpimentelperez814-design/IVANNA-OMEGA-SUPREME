@@ -260,4 +260,130 @@ TEST(UnifiedMasterV3SafetyBench, Phase6_AsyncHeavyWorkerSpscAndSuperAgentMemoryP
     UnifiedParamSnapshotBus::instance().resetToAllOff();
 }
 
+TEST(UnifiedMasterV3SafetyBench, Phase7_ZeroArtifactZeroClipAndEnergyConservationAudit) {
+    UnifiedParamSnapshotBus::instance().resetToAllOff();
+    DeclarativeUnifiedPipeline pipeline;
+    pipeline.prepare(kSampleRate, kBlockSize);
+    pipeline.reset();
+
+    // Activar simultáneamente todas las etapas compatibles de Oleadas 1–4 + Fusión Holográfica
+    UnifiedParameterSnapshot snap{};
+    snap.setStageEnabled(StageId::PhaseOracleControl, true);
+    snap.setStageEnabled(StageId::PsychoacousticsAnalysis, true);
+    snap.setStageEnabled(StageId::SofaSafAnalysisBridge, true);
+    snap.setStageEnabled(StageId::VoiceProsody, true);
+    snap.setStageEnabled(StageId::LifNeuronPool, true);
+    snap.setStageEnabled(StageId::EvolutionaryEq, true);
+    snap.setStageEnabled(StageId::NeuralUpmixer, true);
+    snap.setStageEnabled(StageId::AntiDolbyClassic, true);
+    snap.setStageEnabled(StageId::AcousticSynthesis, true);
+    snap.setStageEnabled(StageId::SafOptimizerSuite, true);
+    snap.setStageEnabled(StageId::CochlearPinn, true);
+    snap.holographicSingularityEnabled = true;
+    UnifiedParamSnapshotBus::instance().publish(snap);
+
+    std::array<float, kBlockSize> L{}, R{};
+    float phase = 0.0f;
+    float prevEndL = 0.0f;
+    bool  hasPrevBlock = false;
+    double sumDcL = 0.0;
+    double sumDcR = 0.0;
+    double inEnergySum  = 0.0;
+    double outEnergySum = 0.0;
+    size_t totalSamples = 0;
+
+    // 40 bloques de tono alto nivel (0.94 FS) para auditar ausencia de hard-clipping y gain-stacking
+    for (int b = 0; b < 40; ++b) {
+        fillSineStereo(L.data(), R.data(), kBlockSize, 997.0f, 0.94f, phase);
+        for (size_t i = 0; i < kBlockSize; ++i) {
+            inEnergySum += static_cast<double>(L[i] * L[i] + R[i] * R[i]);
+        }
+
+        pipeline.process(L.data(), R.data(), kBlockSize);
+        assertBufferHealthy(L.data(), R.data(), kBlockSize, 0.995f);
+
+        if (hasPrevBlock && b > 2) {
+            const float boundaryJump = std::fabs(L[0] - prevEndL);
+            EXPECT_LT(boundaryJump, 0.25f) << "Inter-block click at block " << b;
+        }
+        prevEndL = L[kBlockSize - 1];
+        hasPrevBlock = true;
+
+        // Verificar ausencia de flat-topping (hard clipping sostenido)
+        uint32_t consecutiveNearCeiling = 0;
+        for (size_t i = 0; i < kBlockSize; ++i) {
+            sumDcL += static_cast<double>(L[i]);
+            sumDcR += static_cast<double>(R[i]);
+            outEnergySum += static_cast<double>(L[i] * L[i] + R[i] * R[i]);
+            if (std::fabs(L[i]) >= 0.9945f) {
+                ++consecutiveNearCeiling;
+            } else {
+                consecutiveNearCeiling = 0;
+            }
+            EXPECT_LE(consecutiveNearCeiling, 2u) << "Hard-clipping flat-top detected at block " << b;
+        }
+        totalSamples += kBlockSize;
+    }
+
+    const double meanDcL = std::fabs(sumDcL / static_cast<double>(totalSamples));
+    const double meanDcR = std::fabs(sumDcR / static_cast<double>(totalSamples));
+    EXPECT_LT(meanDcL, 0.015);
+    EXPECT_LT(meanDcR, 0.015);
+
+    const double rmsRatio = std::sqrt(outEnergySum / std::max(1.0e-9, inEnergySum));
+    EXPECT_GT(rmsRatio, 0.65);
+    EXPECT_LT(rmsRatio, 1.18);
+    EXPECT_EQ(pipeline.watchdog().totalFaults(), 0u);
+
+    UnifiedParamSnapshotBus::instance().resetToAllOff();
+}
+
+TEST(UnifiedMasterV3SafetyBench, Phase8_OmniHolographicSingularityFusionClosedLoop) {
+    UnifiedParamSnapshotBus::instance().resetToAllOff();
+    DeclarativeUnifiedPipeline pipeline;
+    pipeline.prepare(kSampleRate, kBlockSize);
+    pipeline.reset();
+
+    UnifiedParameterSnapshot snap{};
+    snap.setStageEnabled(StageId::PhaseOracleControl, true);
+    snap.setStageEnabled(StageId::TinyMlClassifier, true);
+    snap.setStageEnabled(StageId::NeuromorphicTinyMl, true);
+    snap.setStageEnabled(StageId::AutonomousBrain, true);
+    snap.setStageEnabled(StageId::AntiDolbyAi, true);
+    snap.setStageEnabled(StageId::AcousticSynthesis, true);
+    snap.setStageEnabled(StageId::NeuroCochlearManifold, true);
+    snap.activeCochlearVariant = 1u;
+    snap.activeAntiDolbyVariant = 1u;
+    snap.holographicSingularityEnabled = true;
+    UnifiedParamSnapshotBus::instance().publish(snap);
+
+    std::array<float, kBlockSize> L{}, R{};
+    float phase = 0.0f;
+    for (int b = 0; b < 6; ++b) {
+        fillSineStereo(L.data(), R.data(), kBlockSize, 528.0f, 0.65f, phase);
+        pipeline.process(L.data(), R.data(), kBlockSize);
+        assertBufferHealthy(L.data(), R.data(), kBlockSize, 0.995f);
+    }
+
+    HeavyWorkerEngine::instance().drainPendingSynchronously();
+    const auto res = HeavyWorkerEngine::instance().readLatestValid();
+    EXPECT_GT(res.singularityField.fusionEpoch, 0u);
+    EXPECT_GE(res.singularityField.holographicDepthMeters, 0.5f);
+    EXPECT_LE(res.singularityField.holographicDepthMeters, 5.5f);
+    EXPECT_GE(res.singularityField.transientPhaseCoherence, 0.25f);
+    EXPECT_LE(res.singularityField.transientPhaseCoherence, 1.0f);
+    EXPECT_GE(res.singularityField.realityPresenceIndex, 0.35f);
+
+    // Procesar bloques adicionales con el tensor de singularidad actualizado
+    for (int b = 0; b < 6; ++b) {
+        fillSineStereo(L.data(), R.data(), kBlockSize, 528.0f, 0.65f, phase);
+        pipeline.process(L.data(), R.data(), kBlockSize);
+        assertBufferHealthy(L.data(), R.data(), kBlockSize, 0.995f);
+    }
+
+    EXPECT_EQ(pipeline.watchdog().totalFaults(), 0u);
+    HeavyWorkerEngine::instance().stopWorker();
+    UnifiedParamSnapshotBus::instance().resetToAllOff();
+}
+
 } // namespace

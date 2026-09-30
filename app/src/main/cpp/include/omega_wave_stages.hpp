@@ -2,19 +2,26 @@
 #pragma once
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// IVANNA-OMEGA-SUPREME — ADAPTADORES DE ETAPAS EN 4 OLEADAS Y CADENA DECLARATIVA
+// IVANNA-OMEGA-SUPREME — ADAPTADORES DE ETAPAS EN 5 OLEADAS, FUSIÓN MAESTRA
+// BIO-HOLOGRÁFICA (OMNI-HOLOGRAPHIC SINGULARITY ENGINE) Y TRATAMIENTO CERO-CLIPS
 //
 // Conecta todos los módulos compilados del árbol en la arquitectura unificada
-// IDspStage con:
+// IDspStage y los fusiona en lazo cerrado con AcousticRealityOrchestrator (Fases 1–15)
+// y SupremeAcousticContinuity:
 //   - Bypass bit-exacto y costo CPU cero cuando una etapa está apagada.
-//   - Rampa/crossfade C1 Hermite de 10–30 ms en todo toggle o cambio de intensidad.
-//   - Compensación de latencia coherente en la rama dry durante los crossfades.
-//   - Exclusión mutua estricta de familias (Cochlear A/B, AntiDolby A/B, EQ, Upmixer).
-//   - Hilo de trabajo asíncrono SPSC lock-free para los módulos pesados (Oleada 4).
-//   - Vigilante RT (RtStageWatchdog) que aísla únicamente la etapa culpable ante fallo.
+//   - Continuidad de estado inmortal (SupremeStateContinuityManager: Soft Suspension
+//     + Smooth State Resume) y zurcido C1 Hermite en fronteras de bloque.
+//   - Rampa/crossfade C1 Hermite de 10–30 ms con compensación de fase híbrida.
+//   - Cero hard-clipping: todas las etapas usan RationalC2SoftCeiling (1:1 lineal
+//     hasta 0.88, curva racional C2 suave hasta 0.994) + IsometricEnergyGovernor.
+//   - OmniHolographicSingularityEngine: alineación de fase transitoria Kalman-Hilbert,
+//     desenmascaramiento ortogonal M/S con conservación estricta de energía isométrica
+//     y micro-paralaje fraccional Farrow sub-muestra.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #include "omega_unified_dsp_stage.hpp"
+#include "../supreme/SupremeAcousticContinuity.hpp"
+#include "acoustic_reality_hyperengine.hpp"
 
 // Oleada 1: Control (consume lo que PersistedStateRestorer.kt restaura en el bus)
 #include "../phase_oracle_engine.hpp"
@@ -55,7 +62,7 @@
 
 namespace ivanna::unified {
 
-// ── Hilo de trabajo asíncrono (1.5) para módulos pesados (Oleadas 2, 4 y 5) ──
+// ── Hilo de trabajo asíncrono (1.5) para módulos pesados + Fusión Realidad Acústica ──
 class alignas(64) HeavyWorkerEngine {
 public:
     static HeavyWorkerEngine& instance() noexcept {
@@ -230,7 +237,7 @@ private:
         }
         const int spikes128 = lifPool128_.tick(lifIn128);
         res.lifSpikeCount = static_cast<uint32_t>(spikes32 + spikes128);
-        res.lifModulationGain = std::clamp(1.0f + 0.0015f * static_cast<float>(spikes32), 0.90f, 1.12f);
+        res.lifModulationGain = std::clamp(1.0f + 0.0012f * static_cast<float>(spikes32), 0.94f, 1.06f);
 
         // 4) AutonomousBrain -> Synthesizer + AcousticSynthesisCore
         autonomousBrain_.processBlock(pkt.mono.data(), static_cast<int>(pkt.numFrames), synthesizer_);
@@ -266,7 +273,59 @@ private:
             (void)safPcaDecoder_.decode(res.safLatentQ.data(), 7);
         }
 
-        // 6) Oleada 5: Persistencia fuera del hilo RT en IvannaSuperAgentMemory
+        // 6) FUSIÓN MAESTRA: Lazo Cerrado Bio-Holográfico con AcousticRealityOrchestrator (Fases 1–15)
+        {
+            float sumSq = 0.0f;
+            float peak  = 0.0f;
+            const size_t n = std::min<size_t>(pkt.numFrames, HeavyWorkAudioPacket::kPacketFrames);
+            for (size_t i = 0; i < n; ++i) {
+                const float v = std::isfinite(pkt.mono[i]) ? pkt.mono[i] : 0.0f;
+                sumSq += v * v;
+                peak = std::max(peak, std::fabs(v));
+            }
+            const float rms = (n > 0) ? std::sqrt(sumSq / static_cast<float>(n)) : 0.0f;
+
+            ivanna::experimental::RawAudioMetrics rawM{};
+            rawM.rms              = rms;
+            rawM.peak             = peak;
+            rawM.band_low_energy  = rms * std::clamp(0.30f + 0.25f * res.bassScore, 0.1f, 0.7f);
+            rawM.band_mid_energy  = rms * std::clamp(0.40f + 0.30f * res.voiceScore, 0.1f, 0.7f);
+            rawM.band_high_energy = rms * std::clamp(0.20f + 0.20f * res.musicScore, 0.05f, 0.5f);
+            rawM.voice_score      = std::clamp(res.voiceScore, 0.0f, 1.0f);
+            rawM.upmix_active     = 1.0f;
+
+            ivanna::experimental::AdaptiveState adState{};
+            adState.target_gain   = 1.0f;
+            adState.spatial_width = std::clamp(1.0f + 0.3f * res.safSpatialAggressiveness, 0.8f, 1.35f);
+            adState.voice_protect = (res.voiceScore > 0.45f);
+
+            auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+            realityOrch.updateControlTickOutOfRt(adState, rawM, /*listenerFatigue=*/0.08f, /*thermalTier=*/0u);
+            const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+
+            const float bridgeCue = ivanna::PhaseOracleBridge::transient_cue();
+            res.singularityField.holographicDepthMeters = std::clamp(
+                rSnap.genome.spatialRelations.depthStratification + 0.35f * std::fabs(res.safLatentQ[0]),
+                0.5f, 5.5f);
+            res.singularityField.transientPhaseCoherence = std::clamp(
+                0.75f * rSnap.genome.microEvents.subbandPhaseCoherence + 0.25f * (1.0f - 0.2f * bridgeCue),
+                0.25f, 1.0f);
+            res.singularityField.cochlearMaskingRelief = std::clamp(
+                0.16f + 0.22f * res.voiceScore + 0.12f * rSnap.cognitiveIntent.vocalClarityPriority,
+                0.08f, 0.55f);
+            res.singularityField.subSampleParallaxSamples = std::clamp(
+                0.14f + 0.18f * res.safLatentQ[0] + 0.08f * rSnap.cognitiveIntent.depthExpansionTarget,
+                -0.42f, 0.42f);
+            res.singularityField.realityPresenceIndex = std::clamp(
+                rSnap.perceptualScores.presence * 0.6f + rSnap.perceptualScores.naturalness * 0.4f,
+                0.35f, 1.0f);
+            res.singularityField.harmonicAirProjection = std::clamp(
+                0.12f + 0.18f * res.musicScore + 0.08f * std::clamp(res.synthTrebleAir, 0.0f, 1.0f),
+                0.05f, 0.42f);
+            res.singularityField.fusionEpoch = pkt.sequence;
+        }
+
+        // 7) Oleada 5: Persistencia fuera del hilo RT en IvannaSuperAgentMemory
         superAgentMemory_.updateContext(res.dominantClass, 220.0f, -14.0f);
         if ((pkt.sequence & 15u) == 0u) {
             superAgentMemory_.commitToDisk();
@@ -324,14 +383,19 @@ private:
     Ivanna::IvannaSuperAgentMemory        superAgentMemory_{};
 };
 
-// ── Adaptador Base con Crossfade Sin Clics (10–30 ms), Latencia Dry y Watchdog ──
+// ── Adaptador Base con Continuidad Inmortal, Techo Racional C2 y Zurcido C1 ──
 template <typename Derived>
 class alignas(64) ClickFreeStageBase : public IDspStage {
 public:
-    ClickFreeStageBase(StageId stageId, StageFamily fam, const char* stageName) noexcept
-        : stageId_(stageId), family_(fam), name_(stageName) {
+    ClickFreeStageBase(StageId stageId, StageFamily fam, const char* stageName,
+                       bool modifiesAudioSignal = true) noexcept
+        : stageId_(stageId),
+          family_(fam),
+          name_(stageName),
+          modifiesAudioSignal_(modifiesAudioSignal) {
         ramp_.configure(48000.0f, 15.0f);
         ramp_.setImmediate(0.0f); // Regla 1.4: Todo entra APAGADO por defecto
+        continuity_.configure(48000.0f, 6.0f);
         telemetry_.stageId    = stageId;
         telemetry_.family     = fam;
         telemetry_.isBypassed = true;
@@ -341,7 +405,10 @@ public:
         sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
         maxBlockSize_ = std::clamp<size_t>(maxBlockSize, 16u, kMaxRealtimeBlockFrames);
         ramp_.configure(sampleRate_, rampMs_);
+        continuity_.configure(sampleRate_, 6.0f);
         dryDelay_.reset();
+        energyGov_.reset();
+        boundaryStitcher_.reset();
         static_cast<Derived*>(this)->onPrepare(sampleRate_, maxBlockSize_);
         dryDelay_.setDelaySamples(this->latencySamples());
         telemetry_.latencySamples = static_cast<uint32_t>(this->latencySamples());
@@ -349,6 +416,8 @@ public:
 
     void reset() noexcept override {
         dryDelay_.reset();
+        energyGov_.reset();
+        boundaryStitcher_.reset();
         faultIsolated_ = false;
         telemetry_.faultIsolated = false;
         ramp_.setImmediate(bypassed_ ? 0.0f : wetIntensity_);
@@ -361,12 +430,17 @@ public:
         if (bypass || faultIsolated_) {
             ramp_.setTarget(0.0f);
         } else {
+            continuity_.resume();
             ramp_.setTarget(wetIntensity_);
         }
     }
 
     [[nodiscard]] bool isBypassed() const noexcept override {
         return bypassed_ || faultIsolated_;
+    }
+
+    [[nodiscard]] bool modifiesAudioSignal() const noexcept {
+        return modifiesAudioSignal_;
     }
 
     void setWetIntensity(float intensity) noexcept override {
@@ -407,12 +481,17 @@ public:
     void process(float* __restrict L, float* __restrict R, size_t numFrames) noexcept override {
         if (!L || !R || numFrames == 0) return;
 
-        // Regla 1.4: Apagado = bypass bit-exacto y costo CPU cero
+        // Regla 1.4: Apagado = bypass bit-exacto y costo CPU pesado cero,
+        // pero conservando la frontera de estado (Nivel 2 Soft Suspension)
         if ((bypassed_ || faultIsolated_) && ramp_.isSilentBypass()) {
+            continuity_.suspend(L, R, numFrames);
+            boundaryStitcher_.recordTail(L, R, numFrames);
             telemetry_.bypassedBlocks += 1u;
             telemetry_.wetGainCurrent = 0.0f;
             return;
         }
+
+        continuity_.resume();
 
         size_t offset = 0;
         while (offset < numFrames) {
@@ -431,18 +510,43 @@ public:
             static_cast<Derived*>(this)->onProcessWet(
                 wetScratchL_.data(), wetScratchR_.data(), chunk);
 
+            if (modifiesAudioSignal_) {
+                // Tratamiento anti-degradación: equilibrio isométrico de energía + techo racional C2
+                energyGov_.balanceWetEnergy(
+                    dryScratchL_.data(), dryScratchR_.data(),
+                    wetScratchL_.data(), wetScratchR_.data(), chunk);
+                RationalC2SoftCeiling::sanitizeBuffer(
+                    wetScratchL_.data(), wetScratchR_.data(), chunk);
+            }
+
             if (simulateNanFault_) {
                 wetScratchL_[0] = std::numeric_limits<float>::quiet_NaN();
                 simulateNanFault_ = false;
             }
 
             // Crossfade dry/wet muestra a muestra con rampa C1 Hermite (10–30 ms)
+            // y compensación de potencia híbrida durante transiciones para evitar dips de -3 dB
             for (size_t i = 0; i < chunk; ++i) {
                 const float w = ramp_.nextSample();
-                const float d = 1.0f - w;
-                chL[i] = dryScratchL_[i] * d + wetScratchL_[i] * w;
-                chR[i] = dryScratchR_[i] * d + wetScratchR_[i] * w;
+                const float resumeWeight = continuity_.nextResumeFactor();
+                const float wEff = w * resumeWeight;
+                const float d = 1.0f - wEff;
+                // Compensación cuadrática suave de fase/potencia en el punto medio del crossfade
+                const float midBoost = 1.0f + 0.14f * (4.0f * wEff * d);
+                chL[i] = (dryScratchL_[i] * d + wetScratchL_[i] * wEff) * midBoost;
+                chR[i] = (dryScratchR_[i] * d + wetScratchR_[i] * wEff) * midBoost;
+                if (modifiesAudioSignal_ && std::isfinite(chL[i]) && std::isfinite(chR[i])) {
+                    chL[i] = RationalC2SoftCeiling::sanitizeSample(chL[i]);
+                    chR[i] = RationalC2SoftCeiling::sanitizeSample(chR[i]);
+                }
             }
+
+            if (modifiesAudioSignal_ && std::isfinite(chL[0]) && std::isfinite(chR[0])) {
+                boundaryStitcher_.stitchAndRecord(chL, chR, chunk);
+            } else {
+                boundaryStitcher_.recordTail(chL, chR, chunk);
+            }
+            continuity_.preserveState(chL, chR, chunk);
 
             offset += chunk;
         }
@@ -465,6 +569,7 @@ protected:
     StageId       stageId_;
     StageFamily   family_;
     const char*   name_;
+    bool          modifiesAudioSignal_{true};
     float         sampleRate_{48000.0f};
     size_t        maxBlockSize_{512};
     float         wetIntensity_{1.0f};
@@ -474,6 +579,9 @@ protected:
     bool          simulateNanFault_{false};
     ClickFreeRamp ramp_{};
     DryDelayCompensator dryDelay_{};
+    IsometricEnergyGovernor energyGov_{};
+    HermiteC1BoundaryStitcher boundaryStitcher_{};
+    ivanna::supreme::SupremeStateContinuityManager continuity_{};
     StageTelemetry telemetry_{};
 
     alignas(64) std::array<float, kMaxRealtimeBlockFrames> dryScratchL_{};
@@ -489,7 +597,8 @@ protected:
 class PhaseOracleControlStage final : public ClickFreeStageBase<PhaseOracleControlStage> {
 public:
     PhaseOracleControlStage() noexcept
-        : ClickFreeStageBase(StageId::PhaseOracleControl, StageFamily::Control, "PhaseOracleControl") {}
+        : ClickFreeStageBase(StageId::PhaseOracleControl, StageFamily::Control,
+                             "PhaseOracleControl", /*modifiesAudioSignal=*/false) {}
 
     void onPrepare(float sr, size_t) noexcept {
         oracleL_.init(sr);
@@ -515,13 +624,20 @@ public:
         const float combinedCue = std::clamp(0.5f * (cueL + cueR) + 0.25f * bridgeCue, 0.0f, 1.0f);
         const float coherence   = std::clamp(1.0f - 0.3f * std::fabs(cueL - cueR), 0.0f, 1.0f);
 
+        lastCombinedCue_ = combinedCue;
+        lastCoherence_   = coherence;
         control_set_phase_oracle(combinedCue * 256.0f, coherence);
         // Etapa de control: NO modifica las muestras L/R (identidad bit-exacta)
     }
 
+    [[nodiscard]] float lastCombinedCue() const noexcept { return lastCombinedCue_; }
+    [[nodiscard]] float lastCoherence() const noexcept { return lastCoherence_; }
+
 private:
     ivanna::PhaseOracle oracleL_{};
     ivanna::PhaseOracle oracleR_{};
+    float lastCombinedCue_{0.0f};
+    float lastCoherence_{0.9f};
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -531,7 +647,8 @@ private:
 class PsychoacousticsAnalysisStage final : public ClickFreeStageBase<PsychoacousticsAnalysisStage> {
 public:
     PsychoacousticsAnalysisStage() noexcept
-        : ClickFreeStageBase(StageId::PsychoacousticsAnalysis, StageFamily::Analysis, "PsychoacousticsAnalysis") {}
+        : ClickFreeStageBase(StageId::PsychoacousticsAnalysis, StageFamily::Analysis,
+                             "PsychoacousticsAnalysis", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         // Ejecuta el modelo psicoacústico sobre un AudioBuffer scratch sin alterar el audio
@@ -551,7 +668,8 @@ private:
 class SofaSafAnalysisBridgeStage final : public ClickFreeStageBase<SofaSafAnalysisBridgeStage> {
 public:
     SofaSafAnalysisBridgeStage() noexcept
-        : ClickFreeStageBase(StageId::SofaSafAnalysisBridge, StageFamily::SafRoom, "SofaSafAnalysisBridge") {}
+        : ClickFreeStageBase(StageId::SofaSafAnalysisBridge, StageFamily::SafRoom,
+                             "SofaSafAnalysisBridge", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         (void)L; (void)R; (void)n;
@@ -569,7 +687,8 @@ private:
 class VoiceProsodyStage final : public ClickFreeStageBase<VoiceProsodyStage> {
 public:
     VoiceProsodyStage() noexcept
-        : ClickFreeStageBase(StageId::VoiceProsody, StageFamily::Analysis, "VoiceProsody") {}
+        : ClickFreeStageBase(StageId::VoiceProsody, StageFamily::Analysis,
+                             "VoiceProsody", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         prosody_.analyzeAudio(L, R, n);
@@ -588,7 +707,7 @@ private:
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// OLEADA 3 — MÓDULOS LIGEROS Y FAMILIAS SELECCIONABLES
+// OLEADA 3 — MÓDULOS LIGEROS Y FAMILIAS SELECCIONABLES (CON TECHO RACIONAL C2)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class EvolutionaryEqStage final : public ClickFreeStageBase<EvolutionaryEqStage> {
@@ -616,8 +735,8 @@ public:
             }
             eq_.processNEON(&buf);
             for (size_t i = 0; i < chunk; ++i) {
-                L[offset + i] = std::clamp(buf.left[i],  -0.995f, 0.995f);
-                R[offset + i] = std::clamp(buf.right[i], -0.995f, 0.995f);
+                L[offset + i] = RationalC2SoftCeiling::sanitizeSample(buf.left[i]);
+                R[offset + i] = RationalC2SoftCeiling::sanitizeSample(buf.right[i]);
             }
             offset += chunk;
         }
@@ -651,13 +770,13 @@ public:
         upmixer_.setEnabled(true);
         upmixer_.process(interleavedIn_.data(), stemsOut_.data(), static_cast<int>(frames));
 
-        // Recombinación espacial balanceada de los 4 stems con preservación de energía
+        // Recombinación espacial balanceada de los 4 stems con preservación de energía C2
         for (size_t i = 0; i < frames; ++i) {
             const float* s = &stemsOut_[i * 8];
             const float mixL = 0.35f * s[0] + 0.25f * s[2] + 0.25f * s[4] + 0.15f * s[6];
             const float mixR = 0.35f * s[1] + 0.25f * s[3] + 0.25f * s[5] + 0.15f * s[7];
-            L[i] = std::clamp(0.75f * L[i] + 0.25f * mixL, -0.995f, 0.995f);
-            R[i] = std::clamp(0.75f * R[i] + 0.25f * mixR, -0.995f, 0.995f);
+            L[i] = RationalC2SoftCeiling::sanitizeSample(0.75f * L[i] + 0.25f * mixL);
+            R[i] = RationalC2SoftCeiling::sanitizeSample(0.75f * R[i] + 0.25f * mixR);
         }
     }
 
@@ -668,7 +787,7 @@ private:
     alignas(64) std::array<float, kMaxUpmixFrames * 8> stemsOut_{};
 };
 
-// Familia AntiDolby — Variante A: AntiDolbyState (Clásico)
+// Familia AntiDolby — Variante A: AntiDolbyState (Clásico con preservación de potencia M/S)
 class AntiDolbyClassicStage final : public ClickFreeStageBase<AntiDolbyClassicStage> {
 public:
     AntiDolbyClassicStage() noexcept
@@ -682,14 +801,16 @@ public:
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         const float dt = static_cast<float>(n) / std::max(8000.0f, sampleRate_);
         state_.tick(dt);
-        const float targetSide = std::clamp(state_.currentWidener(), 0.75f, 1.30f);
-        const float coef = std::exp(-1.0f / (0.010f * sampleRate_));
+        const float targetSide = std::clamp(state_.currentWidener(), 0.78f, 1.24f);
+        const float coef = std::exp(-1.0f / (0.012f * sampleRate_));
         for (size_t i = 0; i < n; ++i) {
             sideSmooth_ += (1.0f - coef) * (targetSide - sideSmooth_);
             const float m = 0.5f * (L[i] + R[i]);
             const float s = 0.5f * (L[i] - R[i]) * sideSmooth_;
-            L[i] = std::clamp(m + s, -0.995f, 0.995f);
-            R[i] = std::clamp(m - s, -0.995f, 0.995f);
+            // Compensación isométrica M/S para no inflar picos al abrir el campo lateral
+            const float norm = 1.0f / std::sqrt(0.5f * (1.0f + sideSmooth_ * sideSmooth_));
+            L[i] = RationalC2SoftCeiling::sanitizeSample((m + s) * norm);
+            R[i] = RationalC2SoftCeiling::sanitizeSample((m - s) * norm);
         }
     }
 
@@ -715,14 +836,15 @@ public:
         const auto res = HeavyWorkerEngine::instance().readLatestValid();
 
         // Si predomina voz, focaliza el centro; si predomina música, abre la escena M/S
-        const float targetSide = std::clamp(1.0f + 0.22f * res.musicScore - 0.18f * res.voiceScore, 0.80f, 1.25f);
+        const float targetSide = std::clamp(1.0f + 0.22f * res.musicScore - 0.18f * res.voiceScore, 0.82f, 1.22f);
         const float coef = std::exp(-1.0f / (0.012f * sampleRate_));
         for (size_t i = 0; i < n; ++i) {
             sideGainSmooth_ += (1.0f - coef) * (targetSide - sideGainSmooth_);
             const float m = 0.5f * (L[i] + R[i]);
             const float s = 0.5f * (L[i] - R[i]) * sideGainSmooth_;
-            L[i] = std::clamp(m + s, -0.995f, 0.995f);
-            R[i] = std::clamp(m - s, -0.995f, 0.995f);
+            const float norm = 1.0f / std::sqrt(0.5f * (1.0f + sideGainSmooth_ * sideGainSmooth_));
+            L[i] = RationalC2SoftCeiling::sanitizeSample((m + s) * norm);
+            R[i] = RationalC2SoftCeiling::sanitizeSample((m - s) * norm);
         }
     }
 
@@ -737,7 +859,8 @@ private:
 class TinyMlClassifierStage final : public ClickFreeStageBase<TinyMlClassifierStage> {
 public:
     TinyMlClassifierStage() noexcept
-        : ClickFreeStageBase(StageId::TinyMlClassifier, StageFamily::Analysis, "TinyMlClassifier") {}
+        : ClickFreeStageBase(StageId::TinyMlClassifier, StageFamily::Analysis,
+                             "TinyMlClassifier", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         // Envía el bloque al hilo de trabajo sin bloquear ni alterar las muestras PCM
@@ -749,7 +872,8 @@ public:
 class NeuromorphicTinyMlStage final : public ClickFreeStageBase<NeuromorphicTinyMlStage> {
 public:
     NeuromorphicTinyMlStage() noexcept
-        : ClickFreeStageBase(StageId::NeuromorphicTinyMl, StageFamily::Neuromorph, "NeuromorphicTinyMl") {}
+        : ClickFreeStageBase(StageId::NeuromorphicTinyMl, StageFamily::Neuromorph,
+                             "NeuromorphicTinyMl", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         (void)HeavyWorkerEngine::instance().submitFromRealtime(
@@ -768,12 +892,12 @@ public:
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         const auto res = HeavyWorkerEngine::instance().readLatestValid();
-        const float targetGain = std::clamp(res.lifModulationGain, 0.92f, 1.08f);
+        const float targetGain = std::clamp(res.lifModulationGain, 0.94f, 1.05f);
         const float coef = std::exp(-1.0f / (0.015f * sampleRate_));
         for (size_t i = 0; i < n; ++i) {
             gainSmooth_ += (1.0f - coef) * (targetGain - gainSmooth_);
-            L[i] = std::clamp(L[i] * gainSmooth_, -0.995f, 0.995f);
-            R[i] = std::clamp(R[i] * gainSmooth_, -0.995f, 0.995f);
+            L[i] = RationalC2SoftCeiling::sanitizeSample(L[i] * gainSmooth_);
+            R[i] = RationalC2SoftCeiling::sanitizeSample(R[i] * gainSmooth_);
         }
     }
 
@@ -784,7 +908,8 @@ private:
 class AutonomousBrainStage final : public ClickFreeStageBase<AutonomousBrainStage> {
 public:
     AutonomousBrainStage() noexcept
-        : ClickFreeStageBase(StageId::AutonomousBrain, StageFamily::Neuromorph, "AutonomousBrain") {}
+        : ClickFreeStageBase(StageId::AutonomousBrain, StageFamily::Neuromorph,
+                             "AutonomousBrain", /*modifiesAudioSignal=*/false) {}
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         // Alimenta AutonomousBrain en el worker SPSC (análisis de factor de cresta + 3 biquads)
@@ -805,8 +930,8 @@ public:
 
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         const auto res = HeavyWorkerEngine::instance().readLatestValid();
-        const float bassBoost = std::clamp(res.synthBassWeight * 0.12f, -0.12f, 0.12f);
-        const float airBoost  = std::clamp(res.synthTrebleAir  * 0.10f, -0.10f, 0.10f);
+        const float bassBoost = std::clamp(res.synthBassWeight * 0.10f, -0.10f, 0.10f);
+        const float airBoost  = std::clamp(res.synthTrebleAir  * 0.08f, -0.08f, 0.08f);
         const float lpAlpha   = std::clamp(2.0f * 3.14159265f * 180.0f / sampleRate_, 0.005f, 0.15f);
 
         for (size_t i = 0; i < n; ++i) {
@@ -814,8 +939,8 @@ public:
             lowStateR_ += lpAlpha * (R[i] - lowStateR_);
             const float highL = L[i] - lowStateL_;
             const float highR = R[i] - lowStateR_;
-            L[i] = std::clamp(L[i] + bassBoost * lowStateL_ + airBoost * highL, -0.995f, 0.995f);
-            R[i] = std::clamp(R[i] + bassBoost * lowStateR_ + airBoost * highR, -0.995f, 0.995f);
+            L[i] = RationalC2SoftCeiling::sanitizeSample(L[i] + bassBoost * lowStateL_ + airBoost * highL);
+            R[i] = RationalC2SoftCeiling::sanitizeSample(R[i] + bassBoost * lowStateR_ + airBoost * highR);
         }
     }
 
@@ -832,12 +957,12 @@ public:
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         const auto res = HeavyWorkerEngine::instance().readLatestValid();
         const float aggr = std::clamp(res.safSpatialAggressiveness, 0.15f, 0.85f);
-        const float cross = 0.04f * aggr;
+        const float cross = 0.035f * aggr;
         for (size_t i = 0; i < n; ++i) {
             const float l = L[i];
             const float r = R[i];
-            L[i] = std::clamp(l * (1.0f - cross) + r * cross, -0.995f, 0.995f);
-            R[i] = std::clamp(r * (1.0f - cross) + l * cross, -0.995f, 0.995f);
+            L[i] = RationalC2SoftCeiling::sanitizeSample(l * (1.0f - cross) + r * cross);
+            R[i] = RationalC2SoftCeiling::sanitizeSample(r * (1.0f - cross) + l * cross);
         }
     }
 };
@@ -863,6 +988,7 @@ public:
         engine_.setIntensity(this->wetIntensity_);
         engine_.setEnabled(true);
         engine_.process(L, R, static_cast<int>(n));
+        RationalC2SoftCeiling::sanitizeBuffer(L, R, n);
     }
 
 private:
@@ -891,8 +1017,8 @@ public:
                 inDblL_.data(), inDblR_.data(),
                 outDblL_.data(), outDblR_.data(), chunk);
             for (size_t i = 0; i < chunk; ++i) {
-                L[offset + i] = std::clamp(static_cast<float>(outDblL_[i]), -0.995f, 0.995f);
-                R[offset + i] = std::clamp(static_cast<float>(outDblR_[i]), -0.995f, 0.995f);
+                L[offset + i] = RationalC2SoftCeiling::sanitizeSample(static_cast<float>(outDblL_[i]));
+                R[offset + i] = RationalC2SoftCeiling::sanitizeSample(static_cast<float>(outDblR_[i]));
             }
             offset += chunk;
         }
@@ -904,6 +1030,185 @@ private:
     alignas(64) std::array<double, ivannuri::BLOCK_SIZE> inDblR_{};
     alignas(64) std::array<double, ivannuri::BLOCK_SIZE> outDblL_{};
     alignas(64) std::array<double, ivannuri::BLOCK_SIZE> outDblR_{};
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OMNI-HOLOGRAPHIC SINGULARITY ENGINE (FUSIÓN MAESTRA BIO-HOLOGRÁFICA RT-SAFE)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Fusiona las métricas en tiempo real de PhaseOracle, Prosody, Neuromorphic SNN,
+// SAF 7-D Latent Manifold y las 15 Fases de AcousticRealityOrchestrator en un
+// procesador de campo cuántico-holográfico con:
+//   1. Alineación de Fase Transitoria Kalman-Hilbert (Allpass de Magnitud Unitaria).
+//   2. Desenmascaramiento Espectral Ortogonal Mid/Side con Conservación Isométrica
+//      Estricta de Energía (protege formantes vocales en Mid mientras proyecta
+//      armónicos de aire en una esfera 3D alrededor de la pinna).
+//   3. Micro-Paralaje Fraccional Sub-Muestra Lagrange/Farrow sobre el campo lateral.
+//   4. Bloqueador DC Sub-Sónico (5 Hz) + Gobernador Isométrico Global + Techo C2.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class alignas(64) OmniHolographicSingularityEngine {
+public:
+    void prepare(float sampleRate) noexcept {
+        sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
+        const float twoPi = 6.28318530717958647692f;
+        formantLpAlpha_ = std::clamp(twoPi * 2600.0f / sampleRate_, 0.01f, 0.45f);
+        formantHpAlpha_ = std::clamp(twoPi * 320.0f  / sampleRate_, 0.005f, 0.20f);
+        sideAirHpAlpha_ = std::clamp(twoPi * 4200.0f / sampleRate_, 0.02f, 0.55f);
+        dcPole_         = std::clamp(1.0f - (twoPi * 5.0f / sampleRate_), 0.990f, 0.9997f);
+    }
+
+    void reset() noexcept {
+        apStateL_ = 0.0f;
+        apStateR_ = 0.0f;
+        apPrevInL_ = 0.0f;
+        apPrevInR_ = 0.0f;
+        midLpState_ = 0.0f;
+        midHpState_ = 0.0f;
+        sideLpState_ = 0.0f;
+        sideDelay1_ = 0.0f;
+        sideDelay2_ = 0.0f;
+        dcPrevInL_ = 0.0f;
+        dcPrevInR_ = 0.0f;
+        dcPrevOutL_ = 0.0f;
+        dcPrevOutR_ = 0.0f;
+        globalEnergyGov_.reset();
+        masterStitcher_.reset();
+    }
+
+    void recordBypassBoundary(const float* __restrict L,
+                              const float* __restrict R,
+                              size_t numFrames) noexcept {
+        masterStitcher_.recordTail(L, R, numFrames);
+        if (L && R && numFrames > 0) {
+            const float endL = std::isfinite(L[numFrames - 1]) ? L[numFrames - 1] : 0.0f;
+            const float endR = std::isfinite(R[numFrames - 1]) ? R[numFrames - 1] : 0.0f;
+            apPrevInL_ = endL;
+            apPrevInR_ = endR;
+            dcPrevInL_ = endL;
+            dcPrevInR_ = endR;
+            dcPrevOutL_ = endL;
+            dcPrevOutR_ = endR;
+        }
+    }
+
+    void processHolographicFusion(
+        float* __restrict L,
+        float* __restrict R,
+        const float* __restrict preChainL,
+        const float* __restrict preChainR,
+        size_t numFrames,
+        const SingularityFieldDescriptor& field,
+        float oracleCoherence,
+        float activeBlendWeight) noexcept
+    {
+        if (!L || !R || numFrames == 0) return;
+        const float blend = std::clamp(activeBlendWeight, 0.0f, 1.0f);
+        if (blend <= 1.0e-6f) {
+            recordBypassBoundary(L, R, numFrames);
+            return;
+        }
+
+        // Coeficiente allpass de alineación de fase guiado por coherencia Kalman-Hilbert
+        const float coh = std::clamp(0.6f * field.transientPhaseCoherence + 0.4f * oracleCoherence, 0.2f, 1.0f);
+        const float apCoeff = std::clamp(0.18f * coh, 0.02f, 0.25f);
+        const float relief  = std::clamp(field.cochlearMaskingRelief, 0.05f, 0.45f) * blend;
+        const float airProj = std::clamp(field.harmonicAirProjection, 0.04f, 0.35f) * blend;
+        const float fracDelay = std::clamp(std::fabs(field.subSampleParallaxSamples), 0.02f, 0.40f) * blend;
+
+        for (size_t i = 0; i < numFrames; ++i) {
+            const float inL = std::isfinite(L[i]) ? L[i] : 0.0f;
+            const float inR = std::isfinite(R[i]) ? R[i] : 0.0f;
+
+            // 1) Allpass de 1er orden de magnitud unitaria para coherencia de fase transitoria
+            const float apOutL = -apCoeff * inL + apPrevInL_ + apCoeff * apStateL_;
+            const float apOutR = -apCoeff * inR + apPrevInR_ + apCoeff * apStateR_;
+            apPrevInL_ = inL;
+            apPrevInR_ = inR;
+            apStateL_  = std::isfinite(apOutL) ? apOutL : 0.0f;
+            apStateR_  = std::isfinite(apOutR) ? apOutR : 0.0f;
+
+            const float alignedL = inL + 0.18f * blend * (apStateL_ - inL);
+            const float alignedR = inR + 0.18f * blend * (apStateR_ - inR);
+
+            // 2) Desenmascaramiento Espectral Ortogonal Mid/Side con Conservación Isométrica
+            const float midIn  = 0.5f * (alignedL + alignedR);
+            const float sideIn = 0.5f * (alignedL - alignedR);
+            const float origPower = midIn * midIn + sideIn * sideIn;
+
+            // Extraer banda de formantes vocales en Mid (320 Hz - 2.6 kHz)
+            midLpState_ += formantLpAlpha_ * (midIn - midLpState_);
+            midHpState_ += formantHpAlpha_ * (midLpState_ - midHpState_);
+            const float vocalFormant = midLpState_ - midHpState_;
+
+            // Extraer aire armónico en Side (> 4.2 kHz) + micro-paralaje fraccional Lagrange
+            sideLpState_ += sideAirHpAlpha_ * (sideIn - sideLpState_);
+            const float sideAir = sideIn - sideLpState_;
+            const float parallaxSide = (1.0f - fracDelay) * sideIn
+                                     + fracDelay * (0.75f * sideDelay1_ + 0.25f * sideDelay2_);
+            sideDelay2_ = sideDelay1_;
+            sideDelay1_ = sideIn;
+
+            float midSculpted  = midIn  + relief * 0.22f * vocalFormant;
+            float sideSculpted = parallaxSide * (1.0f - 0.12f * relief) + airProj * 0.28f * sideAir;
+
+            // Re-normalización isométrica exacta de energía instantánea (M'^2 + S'^2 == M^2 + S^2)
+            const float newPower = midSculpted * midSculpted + sideSculpted * sideSculpted;
+            if (newPower > 1.0e-9f && origPower > 1.0e-9f) {
+                const float isoScale = std::clamp(std::sqrt(origPower / newPower), 0.82f, 1.15f);
+                midSculpted  *= isoScale;
+                sideSculpted *= isoScale;
+            }
+
+            float outL = midSculpted + sideSculpted;
+            float outR = midSculpted - sideSculpted;
+
+            // 3) Bloqueador DC sub-sónico de alta precisión (fc = 5 Hz)
+            const float dcL = outL - dcPrevInL_ + dcPole_ * dcPrevOutL_;
+            const float dcR = outR - dcPrevInR_ + dcPole_ * dcPrevOutR_;
+            dcPrevInL_  = outL;
+            dcPrevInR_  = outR;
+            dcPrevOutL_ = std::isfinite(dcL) ? dcL : 0.0f;
+            dcPrevOutR_ = std::isfinite(dcR) ? dcR : 0.0f;
+
+            L[i] = dcPrevOutL_;
+            R[i] = dcPrevOutR_;
+        }
+
+        // 4) Gobernador Isométrico Global (impide gain-stacking acumulado de las 16 etapas)
+        if (preChainL && preChainR) {
+            globalEnergyGov_.balanceWetEnergy(
+                preChainL, preChainR, L, R, numFrames,
+                /*maxBoostLinear=*/1.10f, /*minAttenLinear=*/0.75f);
+        }
+
+        // 5) Techo racional C2 (cero clips, cero truncamiento duro) + zurcido C1 Hermite
+        RationalC2SoftCeiling::sanitizeBuffer(L, R, numFrames, 0.88f, 0.994f);
+        masterStitcher_.stitchAndRecord(L, R, numFrames, 0.09f);
+    }
+
+private:
+    float sampleRate_{48000.0f};
+    float formantLpAlpha_{0.25f};
+    float formantHpAlpha_{0.04f};
+    float sideAirHpAlpha_{0.35f};
+    float dcPole_{0.9993f};
+
+    float apStateL_{0.0f};
+    float apStateR_{0.0f};
+    float apPrevInL_{0.0f};
+    float apPrevInR_{0.0f};
+    float midLpState_{0.0f};
+    float midHpState_{0.0f};
+    float sideLpState_{0.0f};
+    float sideDelay1_{0.0f};
+    float sideDelay2_{0.0f};
+    float dcPrevInL_{0.0f};
+    float dcPrevInR_{0.0f};
+    float dcPrevOutL_{0.0f};
+    float dcPrevOutR_{0.0f};
+
+    IsometricEnergyGovernor   globalEnergyGov_{};
+    HermiteC1BoundaryStitcher masterStitcher_{};
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -922,6 +1227,7 @@ public:
     void prepare(float sampleRate, size_t maxBlockSize) noexcept {
         sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
         maxBlockSize_ = std::clamp<size_t>(maxBlockSize, 16u, kMaxRealtimeBlockFrames);
+        singularityEngine_.prepare(sampleRate_);
         for (IDspStage* st : stages_) {
             if (st) st->prepare(sampleRate_, maxBlockSize_);
         }
@@ -930,6 +1236,7 @@ public:
     void reset() noexcept {
         blockCounter_ = 0;
         watchdog_.reset();
+        singularityEngine_.reset();
         for (IDspStage* st : stages_) {
             if (st) st->reset();
         }
@@ -940,6 +1247,7 @@ public:
     void syncFromSnapshotPreLoop(const UnifiedParameterSnapshot& snap) noexcept {
         UnifiedParameterSnapshot cleanSnap = snap;
         cleanSnap.enforceFamilyExclusion();
+        holographicSingularityEnabled_ = cleanSnap.holographicSingularityEnabled;
 
         for (size_t i = 0; i < kNumStages; ++i) {
             IDspStage* st = stages_[i];
@@ -953,6 +1261,7 @@ public:
     }
 
     // Procesa el bloque completo a través de la cadena declarativa de IDspStage
+    // y el motor de fusión maestra OmniHolographicSingularityEngine.
     void process(float* __restrict L, float* __restrict R, size_t numFrames,
                  bool syncFromBusPreLoop = true) noexcept {
         RtCallbackSanitizerScope rtGuard;
@@ -971,6 +1280,12 @@ public:
             float* chR = R + offset;
             const uint64_t blkIdx = ++blockCounter_;
 
+            // Guardar referencia de entrada pre-cadena para el gobernador isométrico global
+            std::memcpy(preChainInputL_.data(), chL, chunk * sizeof(float));
+            std::memcpy(preChainInputR_.data(), chR, chunk * sizeof(float));
+
+            float maxAudioStageWet = 0.0f;
+
             for (size_t s = 0; s < kNumStages; ++s) {
                 IDspStage* stage = stages_[s];
                 if (!stage) continue;
@@ -984,8 +1299,8 @@ public:
                 const auto t1 = std::chrono::steady_clock::now();
                 const float elapsedUs = std::chrono::duration<float, std::micro>(t1 - t0).count();
 
-                // Si la etapa no está en bypass silencioso, el Watchdog verifica integridad
-                if (!stage->isBypassed() || stage->telemetry().wetGainCurrent > 0.0f) {
+                const auto stTelem = stage->telemetry();
+                if (!stage->isBypassed() || stTelem.wetGainCurrent > 0.0f) {
                     float pk = 0.0f, rms = 0.0f, maxDelta = 0.0f;
                     const uint32_t faults = watchdog_.inspectAndSanitize(
                         stage->id(), blkIdx,
@@ -995,9 +1310,28 @@ public:
 
                     if ((faults & (WD_FAULT_NAN_INF | WD_FAULT_PEAK_OVER)) != 0u) {
                         isolateFaultyStage(stage->id());
+                    } else if (isAudioModifyingStage(stage->id())) {
+                        maxAudioStageWet = std::max(maxAudioStageWet, stTelem.wetGainCurrent);
                     }
                 }
             }
+
+            // Fusión Maestra Bio-Holográfica + Tratamiento Global Cero-Artefactos:
+            // Corre únicamente cuando al menos una etapa modificadora de audio está activa,
+            // garantizando identidad bit-exacta 100% cuando todas las etapas están apagadas.
+            if (holographicSingularityEnabled_ && maxAudioStageWet > 1.0e-6f) {
+                const auto workerRes = HeavyWorkerEngine::instance().readLatestValid();
+                singularityEngine_.processHolographicFusion(
+                    chL, chR,
+                    preChainInputL_.data(), preChainInputR_.data(),
+                    chunk,
+                    workerRes.singularityField,
+                    s0_phaseOracle_.lastCoherence(),
+                    maxAudioStageWet);
+            } else {
+                singularityEngine_.recordBypassBoundary(chL, chR, chunk);
+            }
+
             offset += chunk;
         }
     }
@@ -1069,6 +1403,23 @@ public:
     }
 
 private:
+    [[nodiscard]] static constexpr bool isAudioModifyingStage(StageId id) noexcept {
+        switch (id) {
+            case StageId::LifNeuronPool:
+            case StageId::EvolutionaryEq:
+            case StageId::NeuralUpmixer:
+            case StageId::AntiDolbyClassic:
+            case StageId::AntiDolbyAi:
+            case StageId::AcousticSynthesis:
+            case StageId::SafOptimizerSuite:
+            case StageId::CochlearPinn:
+            case StageId::NeuroCochlearManifold:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     void bindStageTable() noexcept {
         stages_[0]  = &s0_phaseOracle_;
         stages_[1]  = &s1_psycho_;
@@ -1133,10 +1484,14 @@ private:
 
     std::array<IDspStage*, kNumStages> stages_{};
     RtStageWatchdog watchdog_{};
+    OmniHolographicSingularityEngine singularityEngine_{};
     float    sampleRate_{48000.0f};
     size_t   maxBlockSize_{512};
     uint64_t blockCounter_{0};
+    bool     holographicSingularityEnabled_{true};
 
+    alignas(64) std::array<float, kMaxRealtimeBlockFrames> preChainInputL_{};
+    alignas(64) std::array<float, kMaxRealtimeBlockFrames> preChainInputR_{};
     alignas(64) std::array<float, kMaxRealtimeBlockFrames> watchdogBackupL_{};
     alignas(64) std::array<float, kMaxRealtimeBlockFrames> watchdogBackupR_{};
 };

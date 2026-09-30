@@ -1557,23 +1557,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         }
     }
 
-    // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) + Cadena Declarativa Unificada ──
-    {
-        const auto unifiedSnap = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
-        const bool cochFlag = g_cochlearEnabled.load(std::memory_order_relaxed) || unifiedSnap.cochlearEnabled;
-        // Regla 1.2 (Exclusión mutua de familia Cochlear): si activeCochlearVariant == 1
-        // (NeuroCochlearManifold), se desactiva g_cochlearEngine para que corra únicamente B.
-        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
-        g_cochlearEngine.setEnabled(cochFlag && (unifiedSnap.activeCochlearVariant == 0u));
-        g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
-
-        auto localUnifiedSnap = unifiedSnap;
-        localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
-        g_unifiedPipeline.syncFromSnapshotPreLoop(localUnifiedSnap);
-        g_unifiedPipeline.process(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n), /*syncFromBusPreLoop=*/false);
-    }
-
-    // ── Ejes 1–6 Espaciales + 5 Ejes de Supremacía + Acoustic Reality Hyperengine (Ruta A / Ruta C) ──
+    // ── Eje Supremo: Inversión Biomecánica Coclear Activa + Cadena Declarativa + 5 Ejes de Supremacía (Ruta A / Ruta C) ──
     {
         static ivanna::supreme::SupremeAcousticStabilityGuard s_routeAGuard{};
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
@@ -1581,6 +1565,25 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const size_t nSamples = static_cast<size_t>(n);
 
         s_routeAGuard.beginBlock(g_ats.pdOutL, g_ats.pdOutR, nSamples, false);
+
+        const auto unifiedSnap = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
+        const bool cochFlag = g_cochlearEnabled.load(std::memory_order_relaxed) || unifiedSnap.cochlearEnabled;
+        // Regla 1.2 (Exclusión mutua de familia Cochlear): si activeCochlearVariant == 1
+        // (NeuroCochlearManifold), se desactiva g_cochlearEngine para que corra únicamente B.
+        g_cochlearEngine.setIntensity(g_cochlearIntensity.load(std::memory_order_relaxed));
+        g_cochlearEngine.setEnabled(cochFlag && (unifiedSnap.activeCochlearVariant == 0u));
+        g_cochlearEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::CochlearInverse,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
+
+        auto localUnifiedSnap = unifiedSnap;
+        localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
+        g_unifiedPipeline.syncFromSnapshotPreLoop(localUnifiedSnap);
+        g_unifiedPipeline.process(g_ats.pdOutL, g_ats.pdOutR, nSamples, /*syncFromBusPreLoop=*/false);
+        s_routeAGuard.enforceStageEnergyCeiling(
+            ivanna::supreme::AcousticModuleId::NeuroCochlearManifold,
+            g_ats.pdOutL, g_ats.pdOutR, nSamples, 1.18f, 0.95f);
 
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&

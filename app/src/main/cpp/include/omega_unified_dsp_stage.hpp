@@ -38,6 +38,168 @@ struct RtCallbackSanitizerScope {
     return g_inRealtimeAudioCallback;
 }
 
+// ── Techo Racional C2 (Cero Hard-Clipping, Cero Aliasing Armónico Impar) ──
+// Exactamente lineal (identidad 1:1 bit-exacta) para |x| <= knee (0.88).
+// Para |x| > knee aplica un saturador racional Padé C2 con f(knee)=knee,
+// f'(knee)=1 y f''(knee)=0, acotado asintóticamente a limit (0.994 < 0.999).
+struct RationalC2SoftCeiling {
+    [[gnu::always_inline]] static inline float sanitizeSample(
+        float x,
+        float knee = 0.88f,
+        float limit = 0.994f) noexcept
+    {
+        if (!std::isfinite(x)) return 0.0f;
+        const float ax = std::fabs(x);
+        if (ax < 1.0e-30f) return 0.0f; // Flush subnormales IEEE-754
+        if (ax <= knee) return x;        // Región 100% lineal bit-exacta (0% THD)
+
+        const float span = std::max(1.0e-4f, limit - knee);
+        const float u    = ax - knee;
+        const float s2   = span * span;
+        const float su   = span * u;
+        const float compressed = knee + (u * (s2 + su)) / (s2 + su + u * u);
+        return std::copysign(std::min(compressed, limit), x);
+    }
+
+    [[gnu::always_inline]] static inline void sanitizeBuffer(
+        float* __restrict L,
+        float* __restrict R,
+        size_t numFrames,
+        float knee = 0.88f,
+        float limit = 0.994f) noexcept
+    {
+        if (!L || !R) return;
+        for (size_t i = 0; i < numFrames; ++i) {
+            L[i] = sanitizeSample(L[i], knee, limit);
+            R[i] = sanitizeSample(R[i], knee, limit);
+        }
+    }
+};
+
+// ── Zurcidor de Frontera C1 Hermite (Elimina clics/pops entre bloques y toggles) ──
+class alignas(64) HermiteC1BoundaryStitcher {
+public:
+    void reset() noexcept {
+        lastL_ = 0.0f;
+        lastR_ = 0.0f;
+        derivL_ = 0.0f;
+        derivR_ = 0.0f;
+        primed_ = false;
+    }
+
+    [[gnu::always_inline]] inline void stitchAndRecord(
+        float* __restrict L,
+        float* __restrict R,
+        size_t numFrames,
+        float maxAllowedStep = 0.09f) noexcept
+    {
+        if (!L || !R || numFrames == 0) return;
+        if (primed_) {
+            const float expectedL = std::clamp(lastL_ + derivL_, -0.994f, 0.994f);
+            const float expectedR = std::clamp(lastR_ + derivR_, -0.994f, 0.994f);
+            const float errL = L[0] - expectedL;
+            const float errR = R[0] - expectedR;
+
+            if (std::fabs(errL) > maxAllowedStep || std::fabs(errR) > maxAllowedStep) {
+                const float corrL = (std::fabs(errL) > maxAllowedStep)
+                    ? (errL - std::copysign(maxAllowedStep, errL)) : 0.0f;
+                const float corrR = (std::fabs(errR) > maxAllowedStep)
+                    ? (errR - std::copysign(maxAllowedStep, errR)) : 0.0f;
+                const size_t stitchLen = std::min<size_t>(numFrames, 16u);
+                const float invLen = 1.0f / static_cast<float>(stitchLen);
+                for (size_t i = 0; i < stitchLen; ++i) {
+                    const float t = static_cast<float>(i) * invLen;
+                    const float env = (1.0f - t) * (1.0f - t) * (1.0f + 2.0f * t);
+                    L[i] = RationalC2SoftCeiling::sanitizeSample(L[i] - corrL * env);
+                    R[i] = RationalC2SoftCeiling::sanitizeSample(R[i] - corrR * env);
+                }
+            }
+        }
+        recordTail(L, R, numFrames);
+    }
+
+    [[gnu::always_inline]] inline void recordTail(
+        const float* __restrict L,
+        const float* __restrict R,
+        size_t numFrames) noexcept
+    {
+        if (!L || !R || numFrames == 0) return;
+        const float endL = std::isfinite(L[numFrames - 1]) ? L[numFrames - 1] : 0.0f;
+        const float endR = std::isfinite(R[numFrames - 1]) ? R[numFrames - 1] : 0.0f;
+        if (numFrames >= 2) {
+            const float prevL = std::isfinite(L[numFrames - 2]) ? L[numFrames - 2] : endL;
+            const float prevR = std::isfinite(R[numFrames - 2]) ? R[numFrames - 2] : endR;
+            derivL_ = std::clamp(endL - prevL, -0.25f, 0.25f);
+            derivR_ = std::clamp(endR - prevR, -0.25f, 0.25f);
+        } else {
+            derivL_ = 0.0f;
+            derivR_ = 0.0f;
+        }
+        lastL_  = endL;
+        lastR_  = endR;
+        primed_ = true;
+    }
+
+private:
+    float lastL_{0.0f};
+    float lastR_{0.0f};
+    float derivL_{0.0f};
+    float derivR_{0.0f};
+    bool  primed_{false};
+};
+
+// ── Gobernador Isométrico de Energía (Previene Gain-Stacking entre Etapas) ──
+class alignas(64) IsometricEnergyGovernor {
+public:
+    void reset() noexcept {
+        gainSmooth_ = 1.0f;
+    }
+
+    [[gnu::always_inline]] inline void balanceWetEnergy(
+        const float* __restrict dryL,
+        const float* __restrict dryR,
+        float* __restrict wetL,
+        float* __restrict wetR,
+        size_t numFrames,
+        float maxBoostLinear = 1.08f,
+        float minAttenLinear = 0.78f) noexcept
+    {
+        if (!dryL || !dryR || !wetL || !wetR || numFrames == 0) return;
+        float drySumSq = 0.0f;
+        float wetSumSq = 0.0f;
+        for (size_t i = 0; i < numFrames; ++i) {
+            const float dl = dryL[i];
+            const float dr = dryR[i];
+            const float wl = std::isfinite(wetL[i]) ? wetL[i] : dl;
+            const float wr = std::isfinite(wetR[i]) ? wetR[i] : dr;
+            drySumSq += dl * dl + dr * dr;
+            wetSumSq += wl * wl + wr * wr;
+        }
+
+        float targetGain = 1.0f;
+        if (drySumSq > 1.0e-7f && wetSumSq > 1.0e-7f) {
+            const float ratio = std::sqrt(drySumSq / wetSumSq);
+            if (ratio < 1.0f / maxBoostLinear) {
+                targetGain = std::clamp(ratio * maxBoostLinear, minAttenLinear, 1.0f);
+            } else if (ratio > 1.0f) {
+                targetGain = std::min(1.0f + 0.35f * (ratio - 1.0f), maxBoostLinear);
+            }
+        }
+
+        const float alpha = (targetGain < gainSmooth_) ? 0.08f : 0.015f;
+        for (size_t i = 0; i < numFrames; ++i) {
+            gainSmooth_ += alpha * (targetGain - gainSmooth_);
+            wetL[i] *= gainSmooth_;
+            wetR[i] *= gainSmooth_;
+        }
+    }
+
+    [[nodiscard]] float currentGain() const noexcept { return gainSmooth_; }
+
+private:
+    float gainSmooth_{1.0f};
+};
+
 // ── Familias de etapas con reglas de exclusión mutua (1.2) ──
 enum class StageFamily : uint8_t {
     Control    = 0, // PhaseOracle / PersistedStateRestorer
@@ -276,6 +438,17 @@ struct alignas(64) HeavyWorkAudioPacket {
     std::array<float, 64>            melFeatures{};
 };
 
+// ── Descriptor del Campo de Singularidad Bio-Holográfica (Fusión Maestra) ──
+struct alignas(32) SingularityFieldDescriptor {
+    float holographicDepthMeters{1.85f};     // Profundidad tridimensional del evento [0.4, 6.0] m
+    float transientPhaseCoherence{0.88f};    // Coherencia de fase inter-banda Kalman-Hilbert [0, 1]
+    float cochlearMaskingRelief{0.24f};      // Desenmascaramiento ortogonal M/S de formantes [0, 0.65]
+    float subSampleParallaxSamples{0.18f};   // Paralaje binaural sub-muestra Farrow [-0.45, +0.45]
+    float realityPresenceIndex{0.78f};       // Índice de presencia física real (Fases 1–15) [0, 1]
+    float harmonicAirProjection{0.22f};      // Proyección armónica trans-espectral en campo lateral [0, 0.5]
+    uint64_t fusionEpoch{0};                 // Época monotónica de actualización de singularidad
+};
+
 struct alignas(64) HeavyWorkerResult {
     uint64_t sequence{0};
     bool     valid{true};
@@ -294,6 +467,7 @@ struct alignas(64) HeavyWorkerResult {
     float    synthClarity{0.0f};
     std::array<float, 7> safLatentQ{{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}};
     float    safSpatialAggressiveness{0.35f};
+    SingularityFieldDescriptor singularityField{};
 };
 
 // ── Snapshot de parámetros unificado (1 sola lectura pre-loop por callback, 1.3) ──
@@ -310,6 +484,7 @@ struct alignas(64) UnifiedParameterSnapshot {
     uint8_t activeAntiDolbyVariant{0}; // 0 = AntiDolbyClassic (A), 1 = AntiDolbyAi (B)
     float   phaseOracleProcessNoise{1.0e-4f};
     float   phaseOracleMeasurementNoise{1.0e-2f};
+    bool    holographicSingularityEnabled{true}; // Fusión Bio-Holográfica activa cuando hay etapas de audio activas
 
     [[nodiscard]] constexpr bool isStageEnabled(StageId id) const noexcept {
         const uint32_t bit = 1u << static_cast<uint32_t>(id);

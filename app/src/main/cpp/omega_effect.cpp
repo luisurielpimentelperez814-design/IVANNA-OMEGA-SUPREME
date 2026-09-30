@@ -785,6 +785,9 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->unifiedPipeline) {
             auto localUnifiedSnap = unifiedSnapPre;
             localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
+            if (aiEnabled && ctx->antiDolby) {
+                localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::AntiDolbyClassic, false);
+            }
             ctx->unifiedPipeline->syncFromSnapshotPreLoop(localUnifiedSnap);
         }
     }
@@ -963,6 +966,9 @@ static int32_t omega_process(effect_handle_t self,
         }
         if (ctx->unifiedPipeline) {
             ctx->unifiedPipeline->process(L, R, (size_t)chunk, /*syncFromBusPreLoop=*/false);
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::NeuroCochlearManifold,
+                L, R, (size_t)chunk, 1.18f, 0.95f);
         }
 
         // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Ruta B, Zero-Pop Transition Layer) ──
