@@ -5,7 +5,10 @@
 
 namespace Ivanna {
 
+#ifndef IVANNA_HRTF_TAPS_DEFINED
+#define IVANNA_HRTF_TAPS_DEFINED
 constexpr size_t HRTF_TAPS = 128;
+#endif
 constexpr size_t HRTF_AZIMUTHS = 24;  // Cada 15 grados (0..360)
 constexpr size_t HRTF_ELEVATIONS = 7; // -45, -30, -15, 0, 15, 30, 45 grados
 

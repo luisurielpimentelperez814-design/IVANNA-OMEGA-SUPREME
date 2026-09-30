@@ -8,7 +8,10 @@
 #include <cstring>
 
 namespace Ivanna {
+#ifndef IVANNA_HRTF_TAPS_DEFINED
+#define IVANNA_HRTF_TAPS_DEFINED
 constexpr size_t HRTF_TAPS = 128;
+#endif
 constexpr int XFADE_FRAMES = 128;
 
 class HrtfManager {
