@@ -285,4 +285,40 @@ object NativeBridge {
             )
         }
     }
+
+    // ── MOTOR HÍBRIDO MAGISTRAL (HRTF KEMAR 128-Tap + Sala Schroeder/Moorer) ──
+    @JvmStatic external fun setHybridMagistralParams(
+        enabled: Boolean,
+        binauralWet: Float,
+        virtualAzimuthDeg: Float,
+        virtualElevationDeg: Float,
+        roomSize: Float,
+        roomAbsorption: Float,
+        roomDampening: Float,
+        roomWetMix: Float
+    )
+    @JvmStatic external fun getHybridMagistralTelemetry(): FloatArray?
+
+    fun safeSetHybridMagistralParams(
+        enabled: Boolean = true,
+        binauralWet: Float = 0.65f,
+        virtualAzimuthDeg: Float = 30.0f,
+        virtualElevationDeg: Float = 0.0f,
+        roomSize: Float = 0.55f,
+        roomAbsorption: Float = 0.35f,
+        roomDampening: Float = 0.40f,
+        roomWetMix: Float = 0.25f
+    ) {
+        if (isLoaded) runCatching {
+            setHybridMagistralParams(
+                enabled, binauralWet, virtualAzimuthDeg, virtualElevationDeg,
+                roomSize, roomAbsorption, roomDampening, roomWetMix
+            )
+        }
+    }
+
+    fun safeGetHybridMagistralTelemetry(): FloatArray =
+        if (isLoaded) runCatching { getHybridMagistralTelemetry() }.getOrNull()
+            ?: floatArrayOf(1f, 0.65f, 30f, 0f, 0.55f, 0.35f, 0.40f, 0.25f)
+        else floatArrayOf(1f, 0.65f, 30f, 0f, 0.55f, 0.35f, 0.40f, 0.25f)
 }

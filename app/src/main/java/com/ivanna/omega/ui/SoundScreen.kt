@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.ui.theme.*
 
@@ -296,6 +297,28 @@ private fun BinauralTab(
     // Bug B fix — hrtfEnabled derivado del audioState para que re-sincronice
     // si la fuente cambia externamente (no val plana ni remember sin key)
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
+    var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
+
+    fun syncHybridToNative(s: AdaptiveControlsState) {
+        NativeBridge.safeSetHybridMagistralParams(
+            enabled             = s.hybridMagistralEnabled,
+            binauralWet         = s.hybridBinauralWet,
+            virtualAzimuthDeg   = if (kotlin.math.abs(s.binauralAzimuth) > 1f) s.binauralAzimuth else 30f,
+            virtualElevationDeg = s.binauralElevation,
+            roomSize            = s.hybridRoomSize,
+            roomAbsorption      = s.hybridRoomAbsorption,
+            roomDampening       = s.hybridRoomDampening,
+            roomWetMix          = s.hybridRoomWetMix
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        syncHybridToNative(prefs)
+        while (true) {
+            hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
+            kotlinx.coroutines.delay(250L)
+        }
+    }
 
     GlassCard("HRTF BINAURAL", AuroraCyan, "KEMAR subject_165 · 24 azimuts · 7 elevaciones") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -325,28 +348,88 @@ private fun BinauralTab(
                 )
             }
             IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
-                updatePrefs { it.copy(binauralAzimuth = v) }
+                val next = prefs.copy(binauralAzimuth = v)
+                updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
                 if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
                     runCatching { IvannaNativeLib.nativeSetBinauralPositionRad(rad, (audioState.spatialWidth / 2f).coerceIn(0f, 1f)) }
                 }
+                syncHybridToNative(next)
             }
             // FIX: ELEVACIÓN persistía en prefs pero no llamaba a ningún motor
             // espacial ni función nativa — la elevación era decorativa.
-            // Wired → IvannaSpatialEngine.setElevation (que a su vez llama
-            // nativeSetSpatialParams con JSON azimuth+elevation).
+            // Wired → IvannaSpatialEngine.setElevation + HybridRenderer nativo.
             IvannaSliderRow("ELEVACIÓN", prefs.binauralElevation, -45f, 45f, "°") { v ->
-                updatePrefs { it.copy(binauralElevation = v) }
+                val next = prefs.copy(binauralElevation = v)
+                updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setElevation(rad)
+                syncHybridToNative(next)
             }
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setWidth(v)
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetSpatialWidthDirect(v) }
             }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    GlassCard(
+        "MOTOR HÍBRIDO MAGISTRAL",
+        NeonMagenta,
+        "FIR KEMAR 128-Tap + Sala Acústica Schroeder/Moorer + Difusión All-Pass"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("CONVOLUCIÓN HÍBRIDA + SALA ACTIVA", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = prefs.hybridMagistralEnabled,
+                    onCheckedChange = { en ->
+                        val next = prefs.copy(hybridMagistralEnabled = en)
+                        updatePrefs { next }
+                        syncHybridToNative(next)
+                    }
+                )
+            }
+            IvannaSliderRow("MEZCLA BINAURAL 128-TAP", prefs.hybridBinauralWet, 0f, 1f, "") { v ->
+                val next = prefs.copy(hybridBinauralWet = v)
+                updatePrefs { next }
+                syncHybridToNative(next)
+            }
+            IvannaSliderRow("TAMAÑO DE SALA ACÚSTICA", prefs.hybridRoomSize, 0.1f, 1f, "x") { v ->
+                val next = prefs.copy(hybridRoomSize = v)
+                updatePrefs { next }
+                syncHybridToNative(next)
+            }
+            IvannaSliderRow("ABSORCIÓN DE PAREDES", prefs.hybridRoomAbsorption, 0.05f, 0.95f, "") { v ->
+                val next = prefs.copy(hybridRoomAbsorption = v)
+                updatePrefs { next }
+                syncHybridToNative(next)
+            }
+            IvannaSliderRow("AMORTIGUAMIENTO AIRE HF", prefs.hybridRoomDampening, 0.05f, 0.90f, "") { v ->
+                val next = prefs.copy(hybridRoomDampening = v)
+                updatePrefs { next }
+                syncHybridToNative(next)
+            }
+            IvannaSliderRow("REVERB SALA SCHROEDER (WET)", prefs.hybridRoomWetMix, 0f, 0.75f, "") { v ->
+                val next = prefs.copy(hybridRoomWetMix = v)
+                updatePrefs { next }
+                syncHybridToNative(next)
+            }
+            Text(
+                "DSP EN VIVO: ${if (hybridTele.getOrElse(0) { 1f } > 0.5f) "ONLINE" else "BYPASS"} · " +
+                "AZ=${"%.1f".format(hybridTele.getOrElse(2) { 30f })}° · " +
+                "EL=${"%.1f".format(hybridTele.getOrElse(3) { 0f })}° · " +
+                "RT-SALA=${"%.2f".format(hybridTele.getOrElse(4) { 0.55f })} · " +
+                "DAMP=${"%.2f".format(hybridTele.getOrElse(6) { 0.40f })}",
+                color = PhosphorGreen,
+                fontSize = 10.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
         }
     }
 }

@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.3.16
-versionCode=2316
+version=v2.3.17
+versionCode=2317
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.3.16: Supreme Acoustic Stability Guard (C2 Padé Soft-Ceiling, Single-Path Spatial/Nonlinear Arbitration, Zero-Latency FIFO, Fractional ITD, Linked Stereo Vibratory Envelope).
+description=v2.3.17: Magistral Hybrid 128-Tap KEMAR Binaural + Schroeder/Moorer Room Engine, 6DoF Quaternion Spatial Renderer, Kalman Period Refiner & Complete End-to-End UI Wiring.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

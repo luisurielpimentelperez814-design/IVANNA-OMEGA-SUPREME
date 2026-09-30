@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
@@ -45,8 +46,30 @@ import java.io.File
 fun SpatialControlPanel(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     var cfg by remember { mutableStateOf(SpatialControlStore.load(context)) }
+    var adaptivePrefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
+    var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
     val metrics by OmegaMetrics.shared.collectAsState()
     var hrtfSubjectReply by remember { mutableStateOf("") }
+
+    fun syncHybrid(s: AdaptiveControlsState) {
+        AdaptiveControlsPrefs.save(context, s)
+        adaptivePrefs = s
+        NativeBridge.safeSetHybridMagistralParams(
+            enabled             = s.hybridMagistralEnabled,
+            binauralWet         = s.hybridBinauralWet,
+            virtualAzimuthDeg   = if (kotlin.math.abs(s.binauralAzimuth) > 1f) s.binauralAzimuth else 30f,
+            virtualElevationDeg = s.binauralElevation,
+            roomSize            = s.hybridRoomSize,
+            roomAbsorption      = s.hybridRoomAbsorption,
+            roomDampening       = s.hybridRoomDampening,
+            roomWetMix          = s.hybridRoomWetMix
+        )
+        hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
+    }
+
+    LaunchedEffect(Unit) {
+        syncHybrid(adaptivePrefs)
+    }
 
     fun apply(c: SpatialControlStore.SpatialConfig) {
         cfg = c
@@ -166,6 +189,35 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 },
                 color = if (model?.exists() == true) PhosphorGreen else AmberSignal,
                 fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        // ── MOTOR HÍBRIDO MAGISTRAL (HRTF 128-TAP + SALA SCHROEDER) ──
+        PanelCard("HÍBRIDO MAGISTRAL — ${if (adaptivePrefs.hybridMagistralEnabled) "ACTIVO" else "BYPASS"}", PhosphorGreen) {
+            ToggleRow("Convolución Híbrida 128-Tap + Sala", adaptivePrefs.hybridMagistralEnabled) {
+                syncHybrid(adaptivePrefs.copy(hybridMagistralEnabled = it))
+            }
+            SliderRow("Mezcla Binaural KEMAR", adaptivePrefs.hybridBinauralWet, 0f..1f) {
+                syncHybrid(adaptivePrefs.copy(hybridBinauralWet = it))
+            }
+            SliderRow("Tamaño de Sala Schroeder", adaptivePrefs.hybridRoomSize, 0.1f..1f) {
+                syncHybrid(adaptivePrefs.copy(hybridRoomSize = it))
+            }
+            SliderRow("Absorción de Paredes", adaptivePrefs.hybridRoomAbsorption, 0.05f..0.95f) {
+                syncHybrid(adaptivePrefs.copy(hybridRoomAbsorption = it))
+            }
+            SliderRow("Amortiguamiento Aire HF", adaptivePrefs.hybridRoomDampening, 0.05f..0.90f) {
+                syncHybrid(adaptivePrefs.copy(hybridRoomDampening = it))
+            }
+            SliderRow("Mezcla Reverb Schroeder", adaptivePrefs.hybridRoomWetMix, 0f..0.75f) {
+                syncHybrid(adaptivePrefs.copy(hybridRoomWetMix = it))
+            }
+            Text(
+                "Az=${"%.1f".format(hybridTele.getOrElse(2) { 30f })}° · " +
+                "El=${"%.1f".format(hybridTele.getOrElse(3) { 0f })}° · " +
+                "Sala=${"%.2f".format(hybridTele.getOrElse(4) { 0.55f })} · " +
+                "Damp=${"%.2f".format(hybridTele.getOrElse(6) { 0.40f })}",
+                color = AuroraCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace
+            )
         }
 
         // ── Telemetría bidireccional (DSP → UI) ──

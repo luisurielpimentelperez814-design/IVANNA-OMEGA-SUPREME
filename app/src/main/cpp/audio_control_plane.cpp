@@ -60,7 +60,11 @@ UnifiedControlFrame g_control_frame;
 // de control, para poblar telemetría que antes era permanentemente cero.
 // Regla de oro: no se borra nada, solo se enciende lo que ya existía.
 static ivanna::PhaseOracle g_phase_oracle_refined;
+static KalmanPhasePredictor g_kalman_period_refiner;
+static ivanna::EvolutionaryAdapter g_inline_evo_adapter;
+static uint32_t g_inline_evo_rng = 0x9E3779B9u;
 static bool g_phase_oracle_refined_init = false;
+__attribute__((weak)) EvolutionaryGenomeMapping g_evo_adapter{};
 
 // ── Bus + staging frame propiedad de ivanna_omega_jni.cpp ───────
 // Se exponen no-static para poder publicar desde aquí también.
@@ -150,14 +154,29 @@ int control_apply_frame() noexcept {
     // estos dos campos no tenían ningún lector antes de este cambio.
     if (!g_phase_oracle_refined_init) {
         g_phase_oracle_refined.init(96000.f);
+        g_kalman_period_refiner.init(96000.f);
+        g_inline_evo_adapter.init(0x9E3779B9u);
+        g_evo_adapter.init();
         g_phase_oracle_refined_init = true;
     }
     g_phase_oracle_refined.tick(phase_vel);
-    const float T_refined = g_phase_oracle_refined.predict_next();
+    float T_refined = g_phase_oracle_refined.predict_next();
     // FIX (PhaseOracle inflado en silencio): phase_vel==0 converge P0->0
     // via Kalman -> coherence=1.0 en silencio absoluto. Neutral=0.5.
     const float coherence = (phase_vel == 0.0f) ? 0.5f :
         std::clamp(1.f / (1.f + g_phase_oracle_refined.P0 * 4.f), 0.f, 1.f);
+    if (phase_vel != 0.0f) {
+        g_kalman_period_refiner.predict_step();
+        g_kalman_period_refiner.update_step(std::max(1.0f, std::fabs(T_refined)), coherence);
+        T_refined = 0.75f * T_refined + 0.25f * g_kalman_period_refiner.get_refined_period();
+    }
+    if (evo_active) {
+        g_inline_evo_adapter.update_audio_features(
+            yamnet_voice,
+            std::clamp(std::fabs(phase_vel) * 0.005f, 0.0f, 1.0f),
+            yamnet_bass);
+        g_inline_evo_adapter.evolve_one_generation(g_inline_evo_rng);
+    }
     control_set_phase_oracle(T_refined, coherence);
     updates++;
 

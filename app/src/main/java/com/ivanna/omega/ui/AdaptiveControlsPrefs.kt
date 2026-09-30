@@ -59,7 +59,14 @@ data class AdaptiveControlsState(
     val compressorThreshold: Float = -16f,
     val compressorRatio: Float = 2.4f,
     val compressorAttack: Float = 12f,
-    val compressorRelease: Float = 110f
+    val compressorRelease: Float = 110f,
+    // Motor Híbrido Magistral (HRTF KEMAR 128-Tap + Sala Schroeder/Moorer)
+    val hybridMagistralEnabled: Boolean = true,
+    val hybridBinauralWet: Float = 0.65f,
+    val hybridRoomSize: Float = 0.55f,
+    val hybridRoomAbsorption: Float = 0.35f,
+    val hybridRoomDampening: Float = 0.40f,
+    val hybridRoomWetMix: Float = 0.25f
 )
 
 object AdaptiveControlsPrefs {
@@ -120,7 +127,13 @@ object AdaptiveControlsPrefs {
                 compressorThreshold  = p.getFloat("compressorThreshold", d.compressorThreshold),
                 compressorRatio      = p.getFloat("compressorRatio", d.compressorRatio),
                 compressorAttack     = p.getFloat("compressorAttack", d.compressorAttack),
-                compressorRelease    = p.getFloat("compressorRelease", d.compressorRelease)
+                compressorRelease    = p.getFloat("compressorRelease", d.compressorRelease),
+                hybridMagistralEnabled = p.getBoolean("hybridMagistralEnabled", d.hybridMagistralEnabled),
+                hybridBinauralWet      = p.getFloat("hybridBinauralWet", d.hybridBinauralWet),
+                hybridRoomSize         = p.getFloat("hybridRoomSize", d.hybridRoomSize),
+                hybridRoomAbsorption   = p.getFloat("hybridRoomAbsorption", d.hybridRoomAbsorption),
+                hybridRoomDampening    = p.getFloat("hybridRoomDampening", d.hybridRoomDampening),
+                hybridRoomWetMix       = p.getFloat("hybridRoomWetMix", d.hybridRoomWetMix)
             )
         } catch (e: Exception) {
             AdaptiveControlsState()
@@ -182,6 +195,12 @@ object AdaptiveControlsPrefs {
                 .putFloat("compressorRatio", s.compressorRatio)
                 .putFloat("compressorAttack", s.compressorAttack)
                 .putFloat("compressorRelease", s.compressorRelease)
+                .putBoolean("hybridMagistralEnabled", s.hybridMagistralEnabled)
+                .putFloat("hybridBinauralWet", s.hybridBinauralWet)
+                .putFloat("hybridRoomSize", s.hybridRoomSize)
+                .putFloat("hybridRoomAbsorption", s.hybridRoomAbsorption)
+                .putFloat("hybridRoomDampening", s.hybridRoomDampening)
+                .putFloat("hybridRoomWetMix", s.hybridRoomWetMix)
                 .apply()
         } catch (e: Exception) {
             // no romper la UI

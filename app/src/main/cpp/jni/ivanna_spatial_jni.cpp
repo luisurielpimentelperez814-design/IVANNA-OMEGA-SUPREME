@@ -22,8 +22,12 @@
 #include "../spatial/ivanna_object_renderer.hpp"
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
 #include "../spatial/IvannaAudioPipeline.hpp"
+#include "../spatial/HybridRenderer.hpp"
+#include "../spatial/SpatialRenderer.hpp"
 #include "../spatial/PerfAuditor.hpp"
 #include "../include/audio_thread_priority.h"
+
+static Ivanna::HybridRenderer g_hybridMagistralRenderer;
 
 namespace {
 inline ivanna::spatial::HeadTracker* toHeadTracker(jlong h) {
@@ -170,12 +174,16 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererRenderBloc
     if (!objectsIn || !outL || !outR) return;
 
     renderer->renderBlock(objectsIn, numObjects, outL, outR, numFrames);
+    if (g_hybridMagistralRenderer.isEnabled() && numFrames > 0) {
+        g_hybridMagistralRenderer.renderPlanar(outL, outR, static_cast<size_t>(numFrames));
+    }
 }
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererReset(JNIEnv*, jclass, jlong handle) {
     auto* renderer = toObjectRenderer(handle);
     if (renderer) renderer->reset();
+    g_hybridMagistralRenderer.reset();
 }
 
 // [FIX-SILENCE] Puentea las posiciones de stem del upmixer (kStemPositions
@@ -876,6 +884,32 @@ Java_com_ivanna_omega_core_NativeBridge_getCognitiveEvolutionTelemetrySnapshot(J
     c[15] = static_cast<float>(cog.recalledMemory.observations);    // Memory Consolidations
 
     env->SetFloatArrayRegion(outArr, 0, 16, c);
+    return outArr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_NativeBridge_setHybridMagistralParams(
+    JNIEnv*, jclass, jboolean enabled, jfloat binauralWet,
+    jfloat virtualAzimuthDeg, jfloat virtualElevationDeg,
+    jfloat roomSize, jfloat roomAbsorption,
+    jfloat roomDampening, jfloat roomWetMix) {
+    g_hybridMagistralRenderer.setEnabled(enabled == JNI_TRUE);
+    g_hybridMagistralRenderer.setBinauralWet(binauralWet);
+    g_hybridMagistralRenderer.setVirtualAngles(virtualAzimuthDeg, virtualElevationDeg);
+    g_hybridMagistralRenderer.setRoomParameters(roomSize, roomAbsorption, roomDampening, roomWetMix, 0.38f);
+
+    auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+    pipe.roomEngine().setProjectionWet(roomWetMix);
+    pipe.physicalScene().setWallAbsorption(roomAbsorption);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getHybridMagistralTelemetry(JNIEnv* env, jclass) {
+    jfloatArray outArr = env->NewFloatArray(8);
+    if (!outArr) return nullptr;
+    float tele[8]{};
+    g_hybridMagistralRenderer.getTelemetry(tele);
+    env->SetFloatArrayRegion(outArr, 0, 8, tele);
     return outArr;
 }
 

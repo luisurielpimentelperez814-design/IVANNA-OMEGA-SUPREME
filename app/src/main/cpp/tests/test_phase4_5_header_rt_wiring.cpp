@@ -95,20 +95,33 @@ TEST(Phase45HeaderRtWiring, AllProductionHeadersInstantiateAndOperateCleanly) {
     Ivanna::RoomSimulator roomSim{};
     Ivanna::RoomConfig rc{};
     rc.wetMix = 0.3f;
+    rc.stereoSpread = 0.4f;
     roomSim.setConfig(rc);
+    roomSim.setParameters(0.6f, 0.35f, 0.42f);
+    roomSim.setWetMix(0.3f);
     float inL[16]{1.0f}, inR[16]{1.0f}, outL[16]{}, outR[16]{};
     roomSim.processStereo(inL, inR, outL, outR, 16);
     EXPECT_GT( std::fabs(outL[0]), 0.0f );
+    EXPECT_FLOAT_EQ(roomSim.getRoomSize(), 0.6f);
 
     Ivanna::BinauralRenderer binRenderer{};
-    binRenderer.processBinaural(inL, outL, outR, 16, Ivanna::Vector3D{0.0f, 1.0f, 0.0f});
-    EXPECT_GT( std::fabs(outL[0]), 0.0f );
+    binRenderer.setOrientation(Ivanna::Quaternion{0.9659f, 0.0f, 0.2588f, 0.0f});
+    binRenderer.processBinaural(inL, outL, outR, 16, Ivanna::Vector3D{0.35f, 1.0f, 0.1f});
+    EXPECT_GT( std::fabs(outL[0]) + std::fabs(outR[0]), 0.0f );
 
     Ivanna::HybridRenderer hybrid{};
-    hybrid.setRoomConfig(rc);
+    hybrid.setEnabled(true);
+    hybrid.setBinauralWet(0.7f);
+    hybrid.setVirtualAngles(35.0f, 10.0f);
+    hybrid.setRoomParameters(0.6f, 0.35f, 0.4f, 0.28f, 0.38f);
     float inStereo[32]{1.0f, 1.0f}, outStereo[32]{};
     hybrid.renderBinaural(inStereo, outStereo, 16);
-    EXPECT_GT( std::fabs(outStereo[0]), 0.0f );
+    EXPECT_GT( std::fabs(outStereo[0]) + std::fabs(outStereo[1]), 0.0f );
+    float tele[8]{};
+    hybrid.getTelemetry(tele);
+    EXPECT_FLOAT_EQ(tele[0], 1.0f);
+    EXPECT_FLOAT_EQ(tele[1], 0.7f);
+    EXPECT_FLOAT_EQ(tele[2], 35.0f);
 
     // 9. Hexagon stub & integration headers
     ivanna_dsp_handle_t h = nullptr;
