@@ -150,6 +150,19 @@ public:
         float headWidth,
         float sampleRate = 48000.0f) noexcept
     {
+        if (hasLastCalibratedLatents_ &&
+            std::fabs(conchaDepth - lastCalibConcha_) < 1.0e-5f &&
+            std::fabs(helixCurl   - lastCalibHelix_)  < 1.0e-5f &&
+            std::fabs(headWidth   - lastCalibHead_)   < 1.0e-5f &&
+            std::fabs(sampleRate  - lastCalibSr_)     < 1.0f) {
+            return;
+        }
+        hasLastCalibratedLatents_ = true;
+        lastCalibConcha_ = conchaDepth;
+        lastCalibHelix_  = helixCurl;
+        lastCalibHead_   = headWidth;
+        lastCalibSr_     = sampleRate;
+
         std::array<float, 24> syntheticPatch{};
         for (size_t i = 0; i < syntheticPatch.size(); ++i) {
             const float fi = static_cast<float>(i);
@@ -505,6 +518,11 @@ private:
     uint32_t renderedSlot_{0};
     uint32_t prevRenderedSlot_{0};
     bool lastThermalBypass_{false};
+    bool hasLastCalibratedLatents_{false};
+    float lastCalibConcha_{0.0f};
+    float lastCalibHelix_{0.0f};
+    float lastCalibHead_{0.0f};
+    float lastCalibSr_{48000.0f};
 
     SupremeTransitionEnvelope transitionEnv_{};
     SupremeTransitionEnvelope slotXfadeEnv_{};

@@ -451,14 +451,6 @@ fun OmegaApp() {
                 }
             }
             composable("adaptive") {
-                DisposableEffect(Unit) {
-                    if (IvannaNativeLib.isLoaded)
-                        runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(false) }
-                    onDispose {
-                        if (IvannaNativeLib.isLoaded)
-                            runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(true) }
-                    }
-                }
                 com.ivanna.omega.ui.AdaptiveEngineScreen(
                     voiceProtectionManager = voiceProtectionManager,
                     backend = adaptiveBackend,

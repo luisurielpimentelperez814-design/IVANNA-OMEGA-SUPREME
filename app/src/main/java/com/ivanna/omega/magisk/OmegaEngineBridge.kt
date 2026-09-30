@@ -162,7 +162,12 @@ object OmegaEngineBridge {
         }
     }
 
-    fun sendCommand(payload: JSONObject): Boolean {
+    private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "omega-bridge-io").apply { isDaemon = true }
+    }
+
+    @Synchronized
+    private fun sendCommandBlocking(payload: JSONObject): Boolean {
         return try {
             val t0 = System.nanoTime()
             val socket = ensureSocket()?: return false
@@ -182,6 +187,17 @@ object OmegaEngineBridge {
             persistentChannel = null
             false
         }
+    }
+
+    fun sendCommand(payload: JSONObject): Boolean {
+        val isMainThread = runCatching {
+            android.os.Looper.getMainLooper()?.thread === Thread.currentThread()
+        }.getOrDefault(false)
+        if (isMainThread) {
+            ioExecutor.execute { sendCommandBlocking(payload) }
+            return isConnected
+        }
+        return sendCommandBlocking(payload)
     }
     @Synchronized
     fun requestCommand(payload: JSONObject): JSONObject? {

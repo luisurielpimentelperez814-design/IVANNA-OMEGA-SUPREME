@@ -33,6 +33,7 @@ void HarmonicExciter::reset() {
     // sin esto, tras un reset() driveNow_ quedaría a mitad de una
     // convergencia anterior en vez de arrancar ya en el objetivo actual.
     driveNow_ = drive_;
+    lastSampleRate_ = 0;
 }
 
 void HarmonicExciter::setParams(const DSPParams& p) {
@@ -43,6 +44,12 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     wet_ = p.wet;
     dry_ = 1.0f - p.wet;
 
+    const int srInt = p.sampleRate > 0 ? p.sampleRate : 48000;
+    if (srInt == lastSampleRate_) {
+        return;
+    }
+    lastSampleRate_ = srInt;
+
     // Anti-zipper: coeficiente del one-pole que suaviza el wet EFECTIVO en
     // process(). wetNow_/wetSmooth_ estaban declarados en el header pero
     // nunca se cableaban — el mix usaba el wet calculado por bloque y cada
@@ -50,7 +57,7 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     // un escalón de ganancia audible. ~15 ms a tasa OS (el loop de mezcla
     // corre a sampleRate * OS_FACTOR).
     {
-        const double srOS = (double)p.sampleRate * (double)OS_FACTOR;
+        const double srOS = (double)srInt * (double)OS_FACTOR;
         wetSmooth_ = (float)std::exp(-1.0 / (srOS * 0.015));
         // FIX (discontinuidad real, ver header): mismo coeficiente/tiempo
         // que wetSmooth_ — consistencia de "sensación" entre ambos
@@ -58,7 +65,7 @@ void HarmonicExciter::setParams(const DSPParams& p) {
         driveSmooth_ = wetSmooth_;
     }
 
-    double sampleRateOS = (double)p.sampleRate * (double)OS_FACTOR;
+    double sampleRateOS = (double)srInt * (double)OS_FACTOR;
 
     // ── Post-clip anti-alias LPF (rebajado 18kHz → 12kHz) ────────────────────
     // FIX: el LPF a 18kHz a tasa OS (96kHz) sólo atenuaba -8 dB en 24kHz
@@ -81,7 +88,12 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     osLpfL_.b2 = osLpfL_.b0;
     osLpfL_.a1 = (float)(-2.0 * cwOS * a0OS_inv);
     osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
-    osLpfR_ = osLpfL_;
+    // FIX CRÍTICO: copiar SOLO coeficientes, nunca sobrescribir z1/z2 de R con L
+    osLpfR_.b0 = osLpfL_.b0;
+    osLpfR_.b1 = osLpfL_.b1;
+    osLpfR_.b2 = osLpfL_.b2;
+    osLpfR_.a1 = osLpfL_.a1;
+    osLpfR_.a2 = osLpfL_.a2;
 
     // ── Pre-saturation LPF a 8kHz (tasa BASE, mismos coefs en ambas ramas) ──
     // Butterworth 2° orden, fc=8000 Hz, sr=p.sampleRate (48000 Hz), Q=0.7071:
@@ -90,8 +102,9 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     // Con input limitado a ≤8kHz, H3 del softclip va a ≤24kHz = Nyquist base.
     // No tiene estado en el loop de OS — se aplica antes del upsample.
     {
-        double sr = (double)p.sampleRate;
+        double sr = (double)srInt;
         double fc_pre = 8000.0;
+        if (fc_pre > sr * 0.45) fc_pre = sr * 0.45;
         double K = std::tan(M_PI * fc_pre / sr);
         double KK = K * K;
         double Q = 0.707106781;
@@ -101,7 +114,11 @@ void HarmonicExciter::setParams(const DSPParams& p) {
         preLpfL_.b2 = preLpfL_.b0;
         preLpfL_.a1 = (float)(2.0 * (KK - 1.0) / norm_pre);
         preLpfL_.a2 = (float)((1.0 - K / Q + KK) / norm_pre);
-        preLpfR_ = preLpfL_;
+        preLpfR_.b0 = preLpfL_.b0;
+        preLpfR_.b1 = preLpfL_.b1;
+        preLpfR_.b2 = preLpfL_.b2;
+        preLpfR_.a1 = preLpfL_.a1;
+        preLpfR_.a2 = preLpfL_.a2;
     }
 
     double hpfFc = 3000.0;
@@ -109,7 +126,7 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfL_.setHighpass(hpfFc, 0.707, sampleRateOS);
     hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
 
-    excRelCoef_ = std::exp(-1.0f / ((float)p.sampleRate * OS_FACTOR * 0.020f));
+    excRelCoef_ = std::exp(-1.0f / ((float)srInt * OS_FACTOR * 0.020f));
 }
 
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {

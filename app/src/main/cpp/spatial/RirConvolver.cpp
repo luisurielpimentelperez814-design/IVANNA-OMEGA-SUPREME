@@ -101,6 +101,9 @@ void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
 void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexcept {
     const int sr = (sampleRate > 8000) ? sampleRate : 48000;
     const float rt60 = std::clamp(rt60S, 0.18f, 1.80f);
+    if (!needsMasterStudioBrirSynthesis(rt60, sr)) {
+        return;
+    }
     const int irLen = std::min(MAX_IR + 4 * BLOCK, static_cast<int>(rt60 * static_cast<float>(sr)));
     std::vector<float> irL(irLen, 0.0f), irR(irLen, 0.0f);
 
@@ -138,10 +141,14 @@ void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexc
         irR[n] *= invNorm;
     }
     load(irL.data(), irR.data(), irLen);
+    lastSynthRt60_ = rt60;
+    lastSynthSr_   = sr;
 }
 
 void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept {
     if (!irL || !irR || irLen <= 0) return;
+    lastSynthRt60_ = -1.0f;
+    lastSynthSr_   = 0;
 
     // ── FIX CRÍTICO (2026-09-28): Eliminación de DC Offset + Normalización L2 Unit-Energy ──
     // Los WAVs de RIR medidos en disco no están normalizados en energía L2: salas con

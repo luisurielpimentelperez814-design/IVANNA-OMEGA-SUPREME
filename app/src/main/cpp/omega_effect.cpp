@@ -519,6 +519,7 @@ static std::atomic<bool>       g_rirBStarted{false};
 static std::vector<omega_effect_context_t*> g_rirBLive;   // ctx vivos
 static omega_effect_context_t* g_rirBCtx = nullptr;       // petición pendiente
 static int32_t                 g_rirBIdx = -1;
+static float                   g_rirBSynthRt60 = -1.0f;
 // Motor adaptativo y cognitivo out-of-RT para el proceso audioserver (Ruta B):
 // ejecuta controlLoop() @ 50ms en hilo de control independiente y alimenta
 // AcousticRealityOrchestrator::instance().orchestrateCycle() sin tocar el hilo RT.
@@ -533,11 +534,28 @@ static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
 static void omega_rir_worker_loop() {
     std::unique_lock<std::mutex> lk(g_rirBMtx);
     while (true) {
-        g_rirBCv.wait(lk, [] { return g_rirBIdx >= 0; });
+        g_rirBCv.wait(lk, [] { return g_rirBIdx >= 0 || g_rirBSynthRt60 > 0.0f; });
         omega_effect_context_t* ctx = g_rirBCtx;
         const int32_t idx = g_rirBIdx;
-        g_rirBIdx = -1; g_rirBCtx = nullptr;
-        if (idx < 0 || !ctx) continue;
+        const float synthRt60 = g_rirBSynthRt60;
+        g_rirBIdx = -1;
+        g_rirBSynthRt60 = -1.0f;
+        g_rirBCtx = nullptr;
+        if (!ctx) continue;
+
+        if (synthRt60 > 0.0f && idx < 0) {
+            if (!omega_rir_ctx_alive_locked(ctx) || !ctx->rirConvolver) continue;
+            const uint32_t srSession = (ctx->config.outputCfg.samplingRate != 0)
+                                     ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float* q = (ctx->pendingSnap.saf_q_valid == 1u)
+                ? ctx->pendingSnap.saf_q
+                : ivanna::master::kMasterSafGoldenQ;
+            ctx->rirConvolver->applySofaCoupling(q);
+            ctx->rirConvolver->synthesizeMasterStudioBrir(synthRt60, static_cast<int>(srSession));
+            continue;
+        }
+
+        if (idx < 0) continue;
         Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
         if (!ds) continue;
         // Fase lenta SIN el mutex: disco + alloc (ds es proceso-global,
@@ -586,9 +604,20 @@ static void omega_rir_worker_loop() {
 // Llamable desde el hilo de audio: publicación breve bajo mutex (contención
 // ~cero — el worker solo lo retiene para registro/entrega, nunca para disco).
 static void omega_rir_post_load(omega_effect_context_t* ctx, size_t roomIdx) noexcept {
-    std::lock_guard<std::mutex> lk(g_rirBMtx);
+    std::unique_lock<std::mutex> lk(g_rirBMtx, std::try_to_lock);
+    if (!lk.owns_lock()) return;
     g_rirBCtx = ctx;
     g_rirBIdx = (int32_t)roomIdx;
+    g_rirBSynthRt60 = -1.0f;
+    g_rirBCv.notify_one();
+}
+
+static void omega_rir_post_synth(omega_effect_context_t* ctx, float rt60S) noexcept {
+    std::unique_lock<std::mutex> lk(g_rirBMtx, std::try_to_lock);
+    if (!lk.owns_lock()) return;
+    g_rirBCtx = ctx;
+    g_rirBIdx = -1;
+    g_rirBSynthRt60 = rt60S;
     g_rirBCv.notify_one();
 }
 
@@ -598,21 +627,7 @@ static void omega_rir_post_load(omega_effect_context_t* ctx, size_t roomIdx) noe
 // RirConvolver (lock-free, el proceso() del próximo bloque la absorbe).
 static inline void omega_apply_room(omega_effect_context_t* ctx,
                                     const ivanna::OmegaDspSnapshot& s) noexcept {
-    if (!ctx) return;
-
-    // Lazy-init del dataset (cargado una sola vez por proceso audioserver)
-    // FIX (log real CI 2026-08-13): la API real de Ivanna::RirDataset difiere
-    // de lo que este archivo asumía — verificado contra spatial/RirDataset.hpp/.cpp
-    // (la clase que YO construí y probé contra las 200 salas reales), no adivinado:
-    //   - load(dir) toma UN argumento (deriva "<dir>/metadata.csv" internamente),
-    //     no load(dir, csvPath).
-    //   - roomCount(), no size().
-    //   - findNearestByRT60(rt60) devuelve size_t (índice), no un puntero a una
-    //     struct con .ir embebido — la IR se carga aparte vía loadImpulseResponse().
-    // Audio thread (RT): solo acquire-load. Si el dataset aún no se publicó
-    // (SET_CONFIG no corrió o la carga falló) -> bypass seco, SIN tocar disco
-    // ni hacer malloc en este hilo.
-    if (!ctx->rirConvolver) return;
+    if (!ctx || !ctx->rirConvolver) return;
 
     const float rt60 = s.room_rt60_s;
     const float wet  = s.room_wet;
@@ -628,8 +643,10 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     if (!ds || ds->roomCount() == 0) {
         const uint32_t srNow = (ctx->config.outputCfg.samplingRate != 0)
                              ? ctx->config.outputCfg.samplingRate : 48000u;
-        ctx->rirConvolver->synthesizeMasterStudioBrir(rt60, static_cast<int>(srNow));
         ctx->rirConvolver->setWetDry(wet);
+        if (ctx->rirConvolver->needsMasterStudioBrirSynthesis(rt60, static_cast<int>(srNow))) {
+            omega_rir_post_synth(ctx, rt60);
+        }
         return;
     }
 
@@ -1250,6 +1267,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->rirConvolver) {
                     ctx->rirConvolver = new Ivanna::RirConvolver();
                     ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+                    ctx->rirConvolver->synthesizeMasterStudioBrir(0.34f, static_cast<int>(sr));
                     ctx->rirConvolver->setWetDry(0.0f);
                 }
                 // FIX RT (2026-08-27): arrancar el worker de carga de IR

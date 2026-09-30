@@ -66,17 +66,22 @@ fun ControlTabScreen(
     val adaptiveTelemetryRaw by adaptiveBack.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
-    val antiDolbyController = remember {
+    val antiDolbyController = remember(context) {
         AntiDolbyController(context).also { ctrl ->
-            ctrl.initialize()
             ctrl.onDspUpdate = { exciter, width, eqGainDb ->
                 dsp.value = dsp.value.copy(wet = exciter, stereoWidth = width)
                 dsp.value.pushToNative()
                 if (IvannaNativeLib.isLoaded)
                     IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetEQParams(eqGainDb, eqGainDb, eqGainDb, dsp.value.master) }
             }
+        }
+    }
+
+    LaunchedEffect(antiDolbyController) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            antiDolbyController.initialize()
             if (paramStore.isAntiDolbyEnabled()) {
-                ctrl.enableAntiDolby()
+                antiDolbyController.enableAntiDolby()
             }
         }
     }

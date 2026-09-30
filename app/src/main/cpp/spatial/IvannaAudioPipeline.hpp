@@ -11,6 +11,7 @@
 #include "ObjectSpatialRenderer.hpp"
 #include "PhysicalSceneRenderer.hpp"
 #include "HearingAdaptationEngine.hpp"
+#include "HybridRenderer.hpp"
 // Eje Supremo Neuroacústico (Eje 7): Inversión Biomecánica Coclear Activa
 // Cancelación de no-linealidades OHC (prestina) con resolución sub-microsegundo
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
@@ -60,6 +61,7 @@ public:
         snnNmfHoaUpmixer_.setEnabled(false);
         pinnaManifoldInterpolator_.setEnabled(false);
         shmMsoArbitrator_.setEnabled(false);
+        hybridMagistralRenderer_.setEnabled(false);
         realityEnv_.setImmediate(0.0f);
         reset();
     }
@@ -110,6 +112,7 @@ public:
         snnNmfHoaUpmixer_.reset();
         pinnaManifoldInterpolator_.reset();
         shmMsoArbitrator_.reset();
+        hybridMagistralRenderer_.reset();
         realityOrchestrator_.reset();
         realityEnv_.setImmediate(realityReconstructionEnabled_ ? 1.0f : 0.0f);
         lastRealitySeq_ = 0;
@@ -161,6 +164,12 @@ public:
     }
     ivanna::supreme::SupremeMsoFarrowArbitrator& shmMsoArbitrator() noexcept {
         return shmMsoArbitrator_;
+    }
+    Ivanna::HybridRenderer& hybridMagistralRenderer() noexcept {
+        return hybridMagistralRenderer_;
+    }
+    const Ivanna::HybridRenderer& hybridMagistralRenderer() const noexcept {
+        return hybridMagistralRenderer_;
     }
 
     /**
@@ -321,6 +330,11 @@ public:
             // 6. Eje 3: RoomProjectionEngine (de-reverberación WPE de fase mínima + proyección)
             roomEngine_.process(chL, chR, chunk);
 
+            // 6b. Motor Híbrido Magistral (HRTF KEMAR 128-Tap + Sala Acústica Schroeder/Moorer)
+            if (allowSpatialRender) {
+                hybridMagistralRenderer_.renderPlanar(chL, chR, chunk);
+            }
+
             // 7. Eje 6: HearingAdaptationEngine (isófonas, sello ear-tip, presbicusia y fatiga)
             if (runHearingStage) {
                 hearingEngine_.process(chL, chR, chunk);
@@ -419,6 +433,7 @@ public:
         // 5. Eje 3: Room partial inversion and virtual room projection
         (void)stabilityGuard_.arbitration().claimRoomSlot(ivanna::supreme::AcousticModuleId::RoomProjection);
         roomEngine_.process(bufferL, bufferR, numSamples);
+        hybridMagistralRenderer_.renderPlanar(bufferL, bufferR, numSamples);
         stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::RoomProjection,
                                      bufferL, bufferR, numSamples, 1.0f);
 
@@ -495,6 +510,7 @@ private:
     ivanna::supreme::SnnNmfHoaUpmixer snnNmfHoaUpmixer_;
     ivanna::supreme::PinnaManifoldInterpolator pinnaManifoldInterpolator_;
     ivanna::supreme::SupremeMsoFarrowArbitrator shmMsoArbitrator_;
+    Ivanna::HybridRenderer hybridMagistralRenderer_{};
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard_{};
 
     // Acoustic Reality Reconstruction Hyperengine (Fases 1–8)

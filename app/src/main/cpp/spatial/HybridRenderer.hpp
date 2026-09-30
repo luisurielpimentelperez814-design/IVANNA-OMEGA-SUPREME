@@ -153,17 +153,66 @@ public:
 
     void renderPlanar(float* inOutL, float* inOutR, size_t frameCount) noexcept {
         if (!inOutL || !inOutR || frameCount == 0) return;
-        const size_t n = std::min(frameCount, MAX_FRAMES);
-        float interleavedIn[MAX_FRAMES * 2];
-        float interleavedOut[MAX_FRAMES * 2];
-        for (size_t i = 0; i < n; ++i) {
-            interleavedIn[2 * i]     = inOutL[i];
-            interleavedIn[2 * i + 1] = inOutR[i];
+        const bool wantOn = m_enabled.load(std::memory_order_relaxed);
+        if (!wantOn && m_enableSmooth <= 1.0e-5f) {
+            return;
         }
-        renderBinaural(interleavedIn, interleavedOut, n);
-        for (size_t i = 0; i < n; ++i) {
-            inOutL[i] = interleavedOut[2 * i];
-            inOutR[i] = interleavedOut[2 * i + 1];
+
+        if (m_filtersDirty.exchange(false, std::memory_order_acq_rel)) {
+            refreshHrtfPair();
+        }
+
+        const float targetEnable = wantOn ? 1.0f : 0.0f;
+        const float binWet = m_binauralWet.load(std::memory_order_relaxed);
+        const float binDry = 1.0f - 0.55f * binWet;
+        constexpr size_t kActiveTaps = 32;
+
+        size_t offset = 0;
+        while (offset < frameCount) {
+            const size_t n = std::min(frameCount - offset, MAX_FRAMES);
+            float* chL = inOutL + offset;
+            float* chR = inOutR + offset;
+
+            float tmpL[MAX_FRAMES]{};
+            float tmpR[MAX_FRAMES]{};
+            float dryBufL[MAX_FRAMES]{};
+            float dryBufR[MAX_FRAMES]{};
+
+            for (size_t i = 0; i < n; ++i) {
+                const float xL = chL[i];
+                const float xR = chR[i];
+                dryBufL[i] = xL;
+                dryBufR[i] = xR;
+
+                m_delayHistoryL[m_histPos] = xL;
+                m_delayHistoryR[m_histPos] = xR;
+
+                float convL = 0.0f;
+                float convR = 0.0f;
+                size_t p = m_histPos;
+                for (size_t t = 0; t < kActiveTaps; ++t) {
+                    const float sL = m_delayHistoryL[p];
+                    const float sR = m_delayHistoryR[p];
+                    convL += sL * m_hrtfLL[t] + sR * m_hrtfRL[t];
+                    convR += sL * m_hrtfLR[t] + sR * m_hrtfRR[t];
+                    p = (p == 0) ? (HRTF_TAPS - 1) : (p - 1);
+                }
+                m_histPos = (m_histPos + 1) & (HRTF_TAPS - 1);
+
+                tmpL[i] = binDry * xL + binWet * convL;
+                tmpR[i] = binDry * xR + binWet * convR;
+            }
+
+            m_roomSimulator.processStereo(tmpL, tmpR, tmpL, tmpR, n);
+
+            for (size_t i = 0; i < n; ++i) {
+                m_enableSmooth += 0.004f * (targetEnable - m_enableSmooth);
+                const float g = std::clamp(m_enableSmooth, 0.0f, 1.0f);
+                chL[i] = dryBufL[i] * (1.0f - g) + tmpL[i] * g;
+                chR[i] = dryBufR[i] * (1.0f - g) + tmpR[i] * g;
+            }
+
+            offset += n;
         }
     }
 
@@ -224,6 +273,7 @@ private:
     std::atomic<float> m_binauralWet{0.65f};
     std::atomic<float> m_virtualAzimuthDeg{30.0f};
     std::atomic<float> m_virtualElevationDeg{0.0f};
+    float              m_enableSmooth{0.0f};
 
     static constexpr size_t MAX_FRAMES = 1024;
     float m_delayHistoryL[HRTF_TAPS]{};

@@ -82,6 +82,7 @@ private:
     // release suave (~20 ms) para no modular el timbre muestra a muestra.
     float excScaleL_ = 1.f, excScaleR_ = 1.f;
     float excRelCoef_ = 0.999f;   // recalculado en setParams() (tasa OS)
+    int lastSampleRate_ = 0;      // guarda para no recalcular filtros si sr no cambia
 };
 
 } // namespace ivanna

@@ -270,8 +270,27 @@ public:
         }
     }
 
-    void set_mode(int m)           noexcept { mode.store(std::clamp(m, 0, 2)); }
-    int  get_mode()          const noexcept { return mode.load(); }
+    void set_mode(int m) noexcept {
+        const int clamped = std::clamp(m, 0, 3);
+        mode.store(clamped, std::memory_order_relaxed);
+        if (clamped == 0) {
+            g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+        } else if (clamped == 1) {
+            // ESTUDIO: mastering neutro, sin cruce binaural forzado ni mutación evolutiva
+            g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+            set_binaural_enabled(false);
+        } else if (clamped == 2) {
+            // BINAURAL: renderizado HRTF + escena 3D activa, sin sobreescritura evolutiva
+            g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+            set_binaural_enabled(true);
+        } else if (clamped == 3) {
+            // EVOLUTIVO: escena binaural + micro-adaptación genética activa
+            set_binaural_enabled(true);
+            start_evo_thread();
+            g_control_frame.evolutionary_active.store(true, std::memory_order_release);
+        }
+    }
+    int  get_mode()          const noexcept { return mode.load(std::memory_order_relaxed); }
     void set_spatial_angle(float d) noexcept { spatial.set_angle_deg(d); }
     void set_spatial_width(float w) noexcept { spatial.set_width(w); }
     void set_nho_alpha(float v)     noexcept { nho.set_alpha(v); }
@@ -303,14 +322,9 @@ public:
         bool expected = false;
         if (!evo_running_.compare_exchange_strong(expected, true)) return;  // already started
         evo_initialize_population();
-        // FIX: activa el orquestador central para este genoma. Antes,
-        // evolutionary_active quedaba en false para siempre y
-        // control_set_evo_genome() jamás tenía llamador — el kernel evolutivo
-        // evolucionaba en el vacío, sin que el genoma ganador tocara nada
-        // fuera de z[]/harmonic_gain. Regla de oro: no se borra el mecanismo
-        // legado (z[]/harmonic_gain sigue igual), solo se enciende el que
-        // faltaba (NHO alpha/beta/harmonic + Spatial angle/width).
-        g_control_frame.evolutionary_active.store(true, std::memory_order_release);
+        if (mode.load(std::memory_order_relaxed) == 3) {
+            g_control_frame.evolutionary_active.store(true, std::memory_order_release);
+        }
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
             while (evo_running_.load(std::memory_order_acquire)) {
@@ -375,8 +389,11 @@ private:
             const float genome_z = (float)evo_staging_[i] * INV255 * 2.f - 1.f;
             z[i] = z[i] * 0.8f + genome_z * 0.2f;
         }
-        // Byte 32: harmonic gain [0,255] → [0,2]
-        nho.set_harmonic_gain((float)evo_staging_[32] * INV255 * 2.f);
+        if (g_control_frame.evolutionary_active.load(std::memory_order_relaxed)) {
+            // Byte 32: micro-modulación suave [0.85x..1.15x] sobre la ganancia armónica actual
+            const float mod = 0.85f + ((float)evo_staging_[32] * INV255) * 0.30f;
+            nho.set_harmonic_gain(std::clamp(nho.harmonic_gain.load(std::memory_order_relaxed) * mod, 0.0f, 2.0f));
+        }
     }
 };
 

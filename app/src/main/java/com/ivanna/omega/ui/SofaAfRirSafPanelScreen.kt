@@ -103,9 +103,30 @@ fun SofaAfRirSafPanelScreen(
     // ── Daemon ───────────────────────────────────────────────────────────────
     var daemonConnected by remember { mutableStateOf(OmegaEngineBridge.isConnected) }
 
-    // ── Carga inicial de preferencias ─────────────────────────────────────────
+    // ── Motor Híbrido Magistral (VBAP 3D + Ambisonics + HRTF 128-tap + Sala) ─
+    val initHybrid = remember { com.ivanna.omega.core.NativeBridge.safeGetHybridMagistralTelemetry() }
+    var hybridEnabled by remember { mutableStateOf(initHybrid.getOrElse(0) { 1f } >= 0.5f) }
+    var hybridBinauralWet by remember { mutableStateOf(initHybrid.getOrElse(1) { 0.65f }) }
+    var hybridAzimuthDeg by remember { mutableStateOf(initHybrid.getOrElse(2) { 30f }) }
+    var hybridElevationDeg by remember { mutableStateOf(initHybrid.getOrElse(3) { 0f }) }
+    var hybridRoomSize by remember { mutableStateOf(initHybrid.getOrElse(4) { 0.55f }) }
+    var hybridRoomWet by remember { mutableStateOf(initHybrid.getOrElse(7) { 0.25f }) }
+
+    fun applyHybridMagistral() {
+        com.ivanna.omega.core.NativeBridge.safeSetHybridMagistralParams(
+            enabled = hybridEnabled,
+            binauralWet = hybridBinauralWet,
+            virtualAzimuthDeg = hybridAzimuthDeg,
+            virtualElevationDeg = hybridElevationDeg,
+            roomSize = hybridRoomSize,
+            roomAbsorption = 0.35f,
+            roomDampening = 0.40f,
+            roomWetMix = hybridRoomWet
+        )
+    }
+
+    // ── Carga inicial de preferencias (fuera del hilo UI) ─────────────────────
     LaunchedEffect(Unit) {
-        OmegaEngineBridge.ensureRirDataset(ctx)
         val st = SpatialAudioPrefs.load(ctx)
         rirEnabled   = st.rirEnabled
         rirRt60      = st.rirRt60
@@ -113,33 +134,38 @@ fun SofaAfRirSafPanelScreen(
         rirWet       = st.rirWet
         safIntensity = st.safIntensity
         safEnabled   = st.safEnabled
-        if (!st.rirEnabled) {
-            OmegaEngineBridge.disableRoom()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            OmegaEngineBridge.ensureRirDataset(ctx)
+            if (!st.rirEnabled) {
+                OmegaEngineBridge.disableRoom()
+            }
         }
     }
 
-    // ── Polling de telemetría (500 ms) ────────────────────────────────────────
+    // ── Polling de telemetría (500 ms en Dispatchers.IO) ─────────────────────
     LaunchedEffect(Unit) {
-        while (true) {
-            hrtfReady   = IvannaSpatialManager.ready
-            hrtfSubject = IvannaSpatialManager.activeSubject
-            hrtfLoaded  = IvannaSpatialManager.isHrtfDatasetLoaded()
-            daemonConnected = OmegaEngineBridge.isConnected
-            rirDatasetLoaded = OmegaEngineBridge.isRirDatasetLoaded()
-            if (rirDatasetLoaded && rirRoomLines.isEmpty()) {
-                val cnt = OmegaEngineBridge.rirRoomCount()
-                if (cnt > 0) rirRoomLines = (0 until cnt).map { i ->
-                    "#" + i + "  " + (OmegaEngineBridge.rirRoomInfo(i) ?: "?")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            while (true) {
+                hrtfReady   = IvannaSpatialManager.ready
+                hrtfSubject = IvannaSpatialManager.activeSubject
+                hrtfLoaded  = IvannaSpatialManager.isHrtfDatasetLoaded()
+                daemonConnected = OmegaEngineBridge.isConnected
+                rirDatasetLoaded = OmegaEngineBridge.isRirDatasetLoaded()
+                if (rirDatasetLoaded && rirRoomLines.isEmpty()) {
+                    val cnt = OmegaEngineBridge.rirRoomCount()
+                    if (cnt > 0) rirRoomLines = (0 until cnt).map { i ->
+                        "#" + i + "  " + (OmegaEngineBridge.rirRoomInfo(i) ?: "?")
+                    }
                 }
-            }
 
-            runCatching {
-                safConverged  = SaFBridge.nativeSaFIsConverged()
-                safError      = SaFBridge.nativeSaFGetError()
-                safIteration  = SaFBridge.nativeSaFGetIteration()
-                safDiag       = SaFRoomBridge.getDiagnostics()
+                runCatching {
+                    safConverged  = SaFBridge.nativeSaFIsConverged()
+                    safError      = SaFBridge.nativeSaFGetError()
+                    safIteration  = SaFBridge.nativeSaFGetIteration()
+                    safDiag       = SaFRoomBridge.getDiagnostics()
+                }
+                delay(500)
             }
-            delay(500)
         }
     }
 
@@ -571,11 +597,67 @@ fun SofaAfRirSafPanelScreen(
         }
 
         // ════════════════════════════════════════════════════════════════
+        // SECCIÓN 3B: MOTOR HÍBRIDO MAGISTRAL (VBAP 3D + AMBISONICS + HRTF)
+        // ════════════════════════════════════════════════════════════════
+        SectionCard(
+            title    = "MOTOR HÍBRIDO MAGISTRAL",
+            subtitle = "VBAP 3D · Ambisonics 1er Orden · HRTF KEMAR 128-tap + Schroeder/Moorer",
+            accent   = AuroraCyan,
+            icon     = Icons.Default.SurroundSound,
+            statusText = if (hybridEnabled) "ACTIVO" else "BYPASS",
+            statusOk   = hybridEnabled
+        ) {
+            IvannaToggleRow("Renderizador Híbrido Magistral", hybridEnabled, AuroraCyan) {
+                hybridEnabled = it; applyHybridMagistral()
+            }
+            IvannaSlider(
+                label     = "Mezcla Binaural HRTF",
+                value     = hybridBinauralWet,
+                min       = 0f, max = 1f,
+                color     = AuroraCyan,
+                valueText = "${"%.0f".format(hybridBinauralWet * 100)} %",
+                enabled   = hybridEnabled
+            ) { hybridBinauralWet = it; applyHybridMagistral() }
+            IvannaSlider(
+                label     = "Azimut Virtual 3D",
+                value     = hybridAzimuthDeg,
+                min       = 5f, max = 90f,
+                color     = AuroraCyan,
+                valueText = "${"%.0f".format(hybridAzimuthDeg)}°",
+                enabled   = hybridEnabled
+            ) { hybridAzimuthDeg = it; applyHybridMagistral() }
+            IvannaSlider(
+                label     = "Elevación Virtual 3D",
+                value     = hybridElevationDeg,
+                min       = -45f, max = 45f,
+                color     = AuroraCyan,
+                valueText = "${"%.0f".format(hybridElevationDeg)}°",
+                enabled   = hybridEnabled
+            ) { hybridElevationDeg = it; applyHybridMagistral() }
+            IvannaSlider(
+                label     = "Tamaño Sala Schroeder/Moorer",
+                value     = hybridRoomSize,
+                min       = 0.1f, max = 1f,
+                color     = AuroraCyan,
+                valueText = "${"%.2f".format(hybridRoomSize)}",
+                enabled   = hybridEnabled
+            ) { hybridRoomSize = it; applyHybridMagistral() }
+            IvannaSlider(
+                label     = "Mezcla Sala Híbrida (Wet)",
+                value     = hybridRoomWet,
+                min       = 0f, max = 0.60f,
+                color     = AuroraCyan,
+                valueText = "${"%.0f".format(hybridRoomWet * 100)} %",
+                enabled   = hybridEnabled
+            ) { hybridRoomWet = it; applyHybridMagistral() }
+        }
+
+        // ════════════════════════════════════════════════════════════════
         // SECCIÓN 4: Resumen de estado del pipeline completo
         // ════════════════════════════════════════════════════════════════
         SectionCard(
             title    = "ESTADO DEL PIPELINE ESPACIAL",
-            subtitle = "Resumen de cadena SOFA → RIR → SAF",
+            subtitle = "Resumen de cadena SOFA → RIR → SAF → HÍBRIDO",
             accent   = AuroraCyan,
             icon     = Icons.Default.AccountTree,
             statusText = "RESUMEN",
@@ -604,6 +686,10 @@ fun SofaAfRirSafPanelScreen(
 
             PipelineStage("HRTF · SOFA", hrtfReady,
                 "Sujeto: $hrtfSubject · Intensidad: ${"%.0f".format(sofaIntensity * 100)}%")
+            HorizontalDivider(color = ObsidianEdge.copy(0.2f), thickness = 0.5.dp,
+                modifier = Modifier.padding(start = 24.dp))
+            PipelineStage("Híbrido Magistral (VBAP + Ambisonics + HRTF)", hybridEnabled,
+                "Azimut ±${"%.0f".format(hybridAzimuthDeg)}° · Binaural ${"%.0f".format(hybridBinauralWet * 100)}% · Sala ${"%.0f".format(hybridRoomWet * 100)}%")
             HorizontalDivider(color = ObsidianEdge.copy(0.2f), thickness = 0.5.dp,
                 modifier = Modifier.padding(start = 24.dp))
             PipelineStage("RIR · Sala", rirEnabled,

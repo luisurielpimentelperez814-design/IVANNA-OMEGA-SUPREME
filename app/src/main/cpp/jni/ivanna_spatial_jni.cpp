@@ -893,12 +893,18 @@ Java_com_ivanna_omega_core_NativeBridge_setHybridMagistralParams(
     jfloat virtualAzimuthDeg, jfloat virtualElevationDeg,
     jfloat roomSize, jfloat roomAbsorption,
     jfloat roomDampening, jfloat roomWetMix) {
-    g_hybridMagistralRenderer.setEnabled(enabled == JNI_TRUE);
+    const bool en = (enabled == JNI_TRUE);
+    g_hybridMagistralRenderer.setEnabled(en);
     g_hybridMagistralRenderer.setBinauralWet(binauralWet);
     g_hybridMagistralRenderer.setVirtualAngles(virtualAzimuthDeg, virtualElevationDeg);
     g_hybridMagistralRenderer.setRoomParameters(roomSize, roomAbsorption, roomDampening, roomWetMix, 0.38f);
 
     auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
+    auto& pipeHybrid = pipe.hybridMagistralRenderer();
+    pipeHybrid.setEnabled(en);
+    pipeHybrid.setBinauralWet(binauralWet);
+    pipeHybrid.setVirtualAngles(virtualAzimuthDeg, virtualElevationDeg);
+    pipeHybrid.setRoomParameters(roomSize, roomAbsorption, roomDampening, roomWetMix, 0.38f);
     pipe.roomEngine().setProjectionWet(roomWetMix);
     pipe.physicalScene().setWallAbsorption(roomAbsorption);
 }
@@ -908,7 +914,9 @@ Java_com_ivanna_omega_core_NativeBridge_getHybridMagistralTelemetry(JNIEnv* env,
     jfloatArray outArr = env->NewFloatArray(8);
     if (!outArr) return nullptr;
     float tele[8]{};
-    g_hybridMagistralRenderer.getTelemetry(tele);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+        .hybridMagistralRenderer()
+        .getTelemetry(tele);
     env->SetFloatArrayRegion(outArr, 0, 8, tele);
     return outArr;
 }

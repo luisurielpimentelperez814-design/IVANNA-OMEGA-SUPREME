@@ -72,6 +72,13 @@ public:
     float transauralXtcStrength() const noexcept { return xtcStrength_.load(std::memory_order_relaxed); }
     void applySofaCoupling(const float q[7]) noexcept;
     void synthesizeMasterStudioBrir(float rt60S = 0.34f, int sampleRate = 48000) noexcept;
+    bool needsMasterStudioBrirSynthesis(float rt60S, int sampleRate) const noexcept {
+        const int sr = (sampleRate > 8000) ? sampleRate : 48000;
+        const float rt60 = std::clamp(rt60S, 0.18f, 1.80f);
+        return !(loaded_.load(std::memory_order_acquire) &&
+                 lastSynthSr_ == sr &&
+                 (rt60 - lastSynthRt60_ < 0.005f && lastSynthRt60_ - rt60 < 0.005f));
+    }
     void setWetDry(float wet) noexcept { wetDry_.store(wet, std::memory_order_relaxed); }
     float wetDry() const noexcept      { return wetDry_.load(std::memory_order_relaxed); }
 
@@ -130,6 +137,8 @@ private:
     // de ganancia = tronido). Se suaviza por muestra con un one-pole.
     float wetNow_    = 0.0f;   // wet efectivo suavizado (muestra a muestra)
     float wetSmooth_ = 0.0f;   // coef. one-pole; 0 = se deriva de sampleRate
+    float lastSynthRt60_ = -1.0f;
+    int   lastSynthSr_   = 0;
     std::atomic<bool>  loaded_{false};
     std::atomic<bool>  pending_{false};
     std::atomic<bool>  clearHistoryPending_{false};

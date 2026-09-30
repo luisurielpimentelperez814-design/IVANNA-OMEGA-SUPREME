@@ -123,6 +123,9 @@ object IvannaSpatialManager {
         // seguía con el dataset anterior. Normalizamos SIEMPRE al ID de
         // archivo real antes de cruzar el JNI.
         val resolved = HrtfSubjectSelector.resolveSubjectId(subjectId)
+        if (resolved == activeSubject && isHrtfDatasetLoaded()) {
+            return true
+        }
         return runCatching {
             IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(h, resolved)
             activeSubject = resolved

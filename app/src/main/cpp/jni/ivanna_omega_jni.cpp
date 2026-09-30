@@ -180,6 +180,7 @@ static std::atomic<Ivanna::RirConvolver*> g_rirConvolver{nullptr};
 // lectura de disco + la FFT del IR y la entrega vía RirConvolver::load()
 // (que ya es thread-safe con process() vía pending_ + crossfade).
 static std::atomic<int32_t>       g_rirPendingIdx{-1};
+static std::atomic<float>         g_rirPendingSynthRt60{-1.0f};
 static std::atomic<float>         g_localRoomRt60{0.34f};
 static std::atomic<float>         g_localRoomWet{0.22f};
 static std::atomic<int32_t>       g_localRoomIdx{51};
@@ -196,14 +197,26 @@ static void rirWorkerLoop() {
     while (true) {
         g_rirWorkerCv.wait(lk, [] {
             return !g_rirWorkerRunning.load(std::memory_order_acquire)
-                || g_rirPendingIdx.load(std::memory_order_acquire) >= 0;
+                || g_rirPendingIdx.load(std::memory_order_acquire) >= 0
+                || g_rirPendingSynthRt60.load(std::memory_order_acquire) > 0.0f;
         });
         if (!g_rirWorkerRunning.load(std::memory_order_acquire)) return;
+        const float synthRt60 = g_rirPendingSynthRt60.exchange(-1.0f, std::memory_order_acq_rel);
         const int32_t idx = g_rirPendingIdx.exchange(-1, std::memory_order_acq_rel);
-        if (idx < 0) continue;
         Ivanna::RirDataset*   ds   = g_rirDataset.load(std::memory_order_acquire);
         Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
-        if (!ds || !conv) continue;
+        if (!conv) continue;
+        if (synthRt60 > 0.0f && idx < 0) {
+            lk.unlock();
+            if (g_localRoomRt60.load(std::memory_order_acquire) >= 0.01f &&
+                g_localRoomWet.load(std::memory_order_acquire) > 0.001f) {
+                conv->applySofaCoupling(g_localSafQ);
+                conv->synthesizeMasterStudioBrir(synthRt60, (int)g_params.sampleRate);
+            }
+            lk.lock();
+            continue;
+        }
+        if (idx < 0 || !ds) continue;
         lk.unlock();  // no retener el mutex durante disco + FFT
         std::vector<float> irL, irR;
         int sr = 0;
@@ -680,10 +693,18 @@ static std::mutex g_dspProcessMutex;
 static std::mutex g_uiMutex;
 static ivanna::DSPParams g_params_ui;
 static std::atomic<bool> g_params_dirty{false};
+static std::atomic<bool> g_eq_dirty{false};
+static std::atomic<bool> g_comp_dirty{false};
+static std::atomic<float> g_compPendingAttackMs{-1.0f};
+static std::atomic<float> g_compPendingReleaseMs{-1.0f};
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) { LOGE("Bad SR: %d", sr); return; }
+    if (g_initialized.load(std::memory_order_acquire)
+        && (g_params.sampleRate == static_cast<uint32_t>(sr))) {
+        return;
+    }
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const bool alreadyInitSameSr = g_initialized.load(std::memory_order_acquire)
                                 && (g_params.sampleRate == static_cast<uint32_t>(sr));
@@ -786,6 +807,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
         const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
         const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
+        conv->synthesizeMasterStudioBrir(initRt60 >= 0.01f ? initRt60 : 0.34f, sr);
         if (initRt60 >= 0.01f && initWet > 0.001f) {
             conv->setWetDry(initWet);
             if (ds && ds->isLoaded() && ds->roomCount() > 0) {
@@ -794,13 +816,15 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
                     ? reqIdx
                     : static_cast<int32_t>(ds->findNearestSmart(initRt60));
                 g_rirPendingIdx.store(targetIdx, std::memory_order_release);
-            } else {
-                conv->synthesizeMasterStudioBrir(initRt60, sr);
             }
         } else {
             conv->setWetDry(0.0f);
         }
         g_rirConvolver.store(conv, std::memory_order_release);
+    }
+    {
+        std::lock_guard<std::mutex> uiLock(g_uiMutex);
+        g_params_ui = g_params;
     }
     if (!g_rirWorkerRunning.exchange(true, std::memory_order_acq_rel)) {
         g_rirWorkerThread = std::thread(rirWorkerLoop);
@@ -868,15 +892,15 @@ static std::atomic<float> g_thermalCompScale   {1.0f};   // 1 = sin recorte tér
 static std::atomic<float> g_spatialBaseWidth   {1.32f};
 static std::atomic<float> g_thermalSpatialScale{1.0f};   // 1 = sin recorte térmico
 
-// Requiere g_dspProcessMutex tomado por el llamador.
+// Requiere g_dspProcessMutex tomado por el llamador (hilo de audio).
 static void recomputeCompressorLocked() {
+    const float att = g_compPendingAttackMs.exchange(-1.0f, std::memory_order_acq_rel);
+    const float rel = g_compPendingReleaseMs.exchange(-1.0f, std::memory_order_acq_rel);
+    if (att > 0.0f) g_comp.setAttack(att);
+    if (rel > 0.0f) g_comp.setRelease(rel);
     const float scale = std::clamp(g_thermalCompScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
     const float baseThr   = g_compBaseThresholdDb.load(std::memory_order_relaxed);
     const float baseRatio = g_compBaseRatio.load(std::memory_order_relaxed);
-    // scale=1 → compresor exactamente como lo pidió la IA/usuario.
-    // scale→0 → threshold migra hacia 0 dB (deja de engancharse) y ratio
-    // hacia 1:1 (sin compresión) — mismo efecto que perseguía el escritor
-    // térmico original, pero componiendo sobre la base en vez de pisarla.
     g_comp.setThreshold(baseThr * scale);
     g_comp.setRatio(1.0f + (baseRatio - 1.0f) * scale);
 }
@@ -900,7 +924,7 @@ static inline float normalizeMasterToDb(float master) noexcept {
     return std::clamp(master, -60.0f, 6.0f);
 }
 
-// Requiere g_dspProcessMutex tomado por el llamador.
+// Requiere g_dspProcessMutex tomado por el llamador (hilo de audio).
 static void recomputeEqFromBaseLocked() {
     const float iso  = g_fatigueIsoDb.load(std::memory_order_relaxed);
     const float prot = g_fatigueProtect.load(std::memory_order_relaxed);
@@ -910,13 +934,52 @@ static void recomputeEqFromBaseLocked() {
     g_params.high = std::clamp(g_eqBaseHigh.load(std::memory_order_relaxed)
                                    + iso * (1.0f - prot), -24.0f, 24.0f);
     g_eq.setParams(g_params);
-    // FIX (headroom EQ en actualización perceptual/ISO): recalcular también la
-    // compensación de salida en GainStage cuando cambian las bandas del EQ.
     const float comp  = g_eq.getOutputCompensationDb();
     const float mDb   = g_params.master;
     g_params.master   = std::clamp(mDb - comp, -60.0f, 6.0f);
     g_gain.setParams(g_params);
     g_params.master   = mDb;
+}
+
+static void drainPendingDspParamsLocked() noexcept {
+    if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
+        if (g_uiMutex.try_lock()) {
+            const uint32_t currentSr = g_params.sampleRate;
+            g_params = g_params_ui;
+            if (g_params.sampleRate == 0 && currentSr > 0) {
+                g_params.sampleRate = currentSr;
+            }
+            g_uiMutex.unlock();
+
+            g_eq.setParams(g_params);
+            g_comp.setParams(g_params);
+            g_exciter.setParams(g_params);
+            g_widener.setParams(g_params);
+            const float compNsp = g_eq.getOutputCompensationDb();
+            const float masterDbNsp = g_params.master;
+            g_params.master = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
+            g_gain.setParams(g_params);
+            g_params.master = masterDbNsp;
+
+            g_pd.set_nho_alpha(g_params.alpha);
+            g_pd.set_nho_beta(g_params.beta);
+            g_nho_wet_exciter.store(g_params.wet * 0.5f, std::memory_order_relaxed);
+            applyNhoWet();
+        } else {
+            g_params_dirty.store(true, std::memory_order_release);
+        }
+    }
+    if (g_eq_dirty.exchange(false, std::memory_order_acquire)) {
+        if (g_uiMutex.try_lock()) {
+            g_params.presence = g_params_ui.presence;
+            g_params.master   = g_params_ui.master;
+            g_uiMutex.unlock();
+        }
+        recomputeEqFromBaseLocked();
+    }
+    if (g_comp_dirty.exchange(false, std::memory_order_acquire)) {
+        recomputeCompressorLocked();
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -927,16 +990,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     jfloat freq,  jfloat resonance,
     jfloat low,   jfloat mid,  jfloat high,
     jfloat presence, jfloat master) {
-    // FIX (data race → SIGSEGV/freeze en ARM64): nativeProcess sostiene
-    // g_dspProcessMutex durante todo el bloque (~10ms). nativeSetParams
-    // escribía a g_eq/g_comp/g_exciter/g_widener/g_gain sin el mutex →
-    // data race en las estructuras de parámetros → valores corruptos →
-    // crash o congelamiento al pulsar HRTF/DSP desde la UI.
     g_eqBaseLow .store(std::clamp((float)low,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseMid .store(std::clamp((float)mid,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseHigh.store(std::clamp((float)high, -24.0f, 24.0f), std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_uiMutex);
-    g_params_ui = g_params;
+    if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
     g_params_ui.drive = drive; g_params_ui.wet = wet;   g_params_ui.mix = mix;
     g_params_ui.alpha = alpha; g_params_ui.beta = beta; g_params_ui.gamma = gamma_v;
     g_params_ui.freq  = freq;  g_params_ui.resonance = resonance;
@@ -944,9 +1002,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetParams(
     g_params_ui.presence = presence;
     const float masterDbNsp = normalizeMasterToDb(master);
     g_params_ui.master = masterDbNsp;
-    // Publicar de forma diferida al hilo de audio vía g_params_dirty para no
-    // mutar coeficientes biquad (g_eq/g_comp/g_exciter/g_widener/g_gain) en
-    // paralelo mientras nativeProcess ejecuta el bloque actual.
     g_params_dirty.store(true, std::memory_order_release);
     // NHO parameters mapped from DSP params (suavizados internamente por muestra)
     g_pd.set_nho_alpha(alpha);
@@ -985,29 +1040,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
     NonBlockingDspProcessGuard dspGuard;
     if (!dspGuard.acquired) return;
-    if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
-        if (g_uiMutex.try_lock()) {
-            g_params = g_params_ui;
-            g_uiMutex.unlock();
-            
-            g_eq.setParams(g_params);
-            g_comp.setParams(g_params);
-            g_exciter.setParams(g_params);
-            g_widener.setParams(g_params);
-            const float compNsp = g_eq.getOutputCompensationDb();
-            const float masterDbNsp = g_params.master;
-            g_params.master = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
-            g_gain.setParams(g_params);
-            g_params.master = masterDbNsp;
-            
-            g_pd.set_nho_alpha(g_params.alpha);
-            g_pd.set_nho_beta(g_params.beta);
-            g_nho_wet_exciter.store(g_params.wet * 0.5f, std::memory_order_relaxed);
-            applyNhoWet();
-        } else {
-            g_params_dirty.store(true, std::memory_order_release);
-        }
-    }
+    drainPendingDspParamsLocked();
     // FTZ+DAZ una sola vez por hilo de audio: elimina el costo 10-100x de
     // operar sobre números subnormales IEEE 754 (endémicos en filtros IIR
     // cuyos estados decaen hacia cero). thread_local → cero overhead en
@@ -1484,15 +1517,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
         const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||
                                              g_wfs_enabled.load(std::memory_order_relaxed));
-        const float effectiveWidenAmount = spatialHierarchyActive ? 0.0f : combinedWidenAmount;
-        if (effectiveWidenAmount > 0.005f) {
-            const float sideMul = 1.f + effectiveWidenAmount;
+        const float targetWidenAmount = spatialHierarchyActive ? 0.0f : combinedWidenAmount;
+        static float s_effectiveWidenSmooth = 0.0f;
+        if (targetWidenAmount > 0.001f || s_effectiveWidenSmooth > 0.001f) {
             for (int i = 0; i < n; ++i) {
+                s_effectiveWidenSmooth += 0.002f * (targetWidenAmount - s_effectiveWidenSmooth);
+                const float sideMul = 1.f + s_effectiveWidenSmooth;
                 const float mid  = (g_ats.pdOutL[i] + g_ats.pdOutR[i]) * 0.5f;
                 const float side = (g_ats.pdOutL[i] - g_ats.pdOutR[i]) * 0.5f * sideMul;
                 g_ats.pdOutL[i] = mid + side;
                 g_ats.pdOutR[i] = mid - side;
             }
+        } else {
+            s_effectiveWidenSmooth = 0.0f;
         }
     }
     // ── RIR en Ruta A: reverberación de sala real ──────────────────────────
@@ -1527,8 +1564,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                 s_rirConvolver->setWetDry(0.f);
                 s_rirConvolver->unload();
             } else if (!s_rirDataset || s_rirDataset->roomCount() == 0) {
-                s_rirConvolver->synthesizeMasterStudioBrir(rt60, (int)g_params.sampleRate);
                 s_rirConvolver->setWetDry(wet);
+                if (s_rirConvolver->needsMasterStudioBrirSynthesis(rt60, (int)g_params.sampleRate)) {
+                    g_rirPendingSynthRt60.store(rt60, std::memory_order_release);
+                    g_rirWorkerCv.notify_one();
+                }
             } else {
                 static int32_t s_rirLastIdx = -1;
                 const size_t roomIdx = (rirSnap.room_idx >= 0 && static_cast<size_t>(rirSnap.room_idx) < s_rirDataset->roomCount())
@@ -1699,6 +1739,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) return JNI_FALSE;  // paridad con nativeInit (9f99d4e6): nativas directas hasta 384k
+    if (g_initialized.load(std::memory_order_acquire) && g_params.sampleRate == static_cast<uint32_t>(sr)) {
+        return JNI_TRUE;
+    }
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     if (g_initialized.load(std::memory_order_acquire) && g_params.sampleRate == static_cast<uint32_t>(sr)) {
         return JNI_TRUE;
@@ -1736,6 +1779,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
         const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
         const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
+        conv->synthesizeMasterStudioBrir(initRt60 >= 0.01f ? initRt60 : 0.34f, sr);
         if (initRt60 >= 0.01f && initWet > 0.001f) {
             conv->setWetDry(initWet);
             if (ds && ds->isLoaded() && ds->roomCount() > 0) {
@@ -1744,13 +1788,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
                     ? reqIdx
                     : static_cast<int32_t>(ds->findNearestSmart(initRt60));
                 g_rirPendingIdx.store(targetIdx, std::memory_order_release);
-            } else {
-                conv->synthesizeMasterStudioBrir(initRt60, sr);
             }
         } else {
             conv->setWetDry(0.0f);
         }
         g_rirConvolver.store(conv, std::memory_order_release);
+    }
+    {
+        std::lock_guard<std::mutex> uiLock(g_uiMutex);
+        g_params_ui = g_params;
     }
     // FIX RT: arrancar el worker de carga de IR (hilo de control, joinable).
     // Idempotente — nativeInitDSP puede re-llamarse por cambio de SR.
@@ -1779,24 +1825,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray outL, jfloatArray outR,
     jint frames) {
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    if (g_params_dirty.exchange(false, std::memory_order_acquire)) {
-        if (g_uiMutex.try_lock()) {
-            g_params = g_params_ui;
-            g_uiMutex.unlock();
-            
-            g_eq.setParams(g_params);
-            g_comp.setParams(g_params);
-            g_exciter.setParams(g_params);
-            g_widener.setParams(g_params);
-            const float compNsp = g_eq.getOutputCompensationDb();
-            const float masterDbNsp = g_params.master;
-            g_params.master = std::clamp(masterDbNsp - compNsp, -60.0f, 6.0f);
-            g_gain.setParams(g_params);
-            g_params.master = masterDbNsp;
-        } else {
-            g_params_dirty.store(true, std::memory_order_release);
-        }
-    }
+    drainPendingDspParamsLocked();
     if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
@@ -2235,106 +2264,54 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(
     JNIEnv* env, jobject, jfloatArray params) {
     if (!params) return;
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     jfloat* p = env->GetFloatArrayElements(params, nullptr);
     if (!p) return;
     const int n = env->GetArrayLength(params);
-    if (n>=1)  g_params.drive     = p[0];
-    if (n>=2)  g_params.wet       = p[1];
-    if (n>=3)  g_params.mix       = p[2];
-    if (n>=4)  g_params.alpha     = p[3];
-    if (n>=5)  g_params.beta      = p[4];
-    if (n>=6)  g_params.gamma     = p[5];
-    if (n>=7)  g_params.freq      = p[6];
-    if (n>=8)  g_params.resonance = p[7];
-    if (n>=9)  g_params.low       = p[8];
-    if (n>=10) g_params.mid       = p[9];
-    if (n>=11) g_params.high      = p[10];
-    if (n>=12) g_params.presence  = p[11];
-    if (n>=13) g_params.master    = p[12];
+    {
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        if (n>=1)  g_params_ui.drive     = p[0];
+        if (n>=2)  g_params_ui.wet       = p[1];
+        if (n>=3)  g_params_ui.mix       = p[2];
+        if (n>=4)  g_params_ui.alpha     = p[3];
+        if (n>=5)  g_params_ui.beta      = p[4];
+        if (n>=6)  g_params_ui.gamma     = p[5];
+        if (n>=7)  g_params_ui.freq      = p[6];
+        if (n>=8)  g_params_ui.resonance = p[7];
+        if (n>=9)  g_params_ui.low       = p[8];
+        if (n>=10) g_params_ui.mid       = p[9];
+        if (n>=11) g_params_ui.high      = p[10];
+        if (n>=12) g_params_ui.presence  = p[11];
+        if (n>=13) g_params_ui.master    = p[12];
+        g_eqBaseLow .store(std::clamp(g_params_ui.low,  -24.0f, 24.0f), std::memory_order_relaxed);
+        g_eqBaseMid .store(std::clamp(g_params_ui.mid,  -24.0f, 24.0f), std::memory_order_relaxed);
+        g_eqBaseHigh.store(std::clamp(g_params_ui.high, -24.0f, 24.0f), std::memory_order_relaxed);
+        g_params_dirty.store(true, std::memory_order_release);
+    }
     env->ReleaseFloatArrayElements(params, p, JNI_ABORT);
-    g_eq.setParams(g_params); g_comp.setParams(g_params);
-    g_exciter.setParams(g_params); g_widener.setParams(g_params);
-    // FIX (headroom EQ): este path era el único de los 5 call-sites de
-    // g_gain.setParams() que NO aplicaba la compensación de stack de bandas
-    // del EQ antes de configurar GainStage. AdaptiveBackend.kt llama a
-    // nativeSetParams(FloatArray) con EQ peaks que pueden apilar >10 dB;
-    // sin compensación, el SafetyLimiter actuaba en modo compresión extrema
-    // desde aquí → pumping / distorsión audible en ajustes adaptativos.
-    // Mismo patrón que nativeSetParams(drive,wet,...) l.820, nativeProcess
-    // l.862, nativeInitDirect l.1493 y nativeInit l.634.
-    { const float c   = g_eq.getOutputCompensationDb();
-      const float mDb = g_params.master;
-      g_params.master = std::clamp(mDb - c, -60.0f, 6.0f);
-      g_gain.setParams(g_params);
-      g_params.master = mDb; }
 }
-// FIX CRÍTICO DE REGRESIÓN: esta función desapareció de una reescritura en
-// paralelo de este archivo, pero IvannaNativeLib.kt (Kotlin) sigue
-// declarando "external fun nativeSetEQParams(...)" y AdaptiveBackend.kt la
-// sigue llamando en cada movimiento de slider de EQ — sin este symbol el
-// primer toque a un slider tira UnsatisfiedLinkError y crashea la app.
-// Motivo original del fix (ver AdaptiveBackend.kt): nativeSetParams(FloatArray)
-// de abajo sobreescribe TODO g_params y dispara setParams() en
-// g_eq+g_comp+g_exciter+g_widener+g_gain — si el caller solo llena
-// low/mid/high/master (como hacía la versión vieja de applyEQ), el resto
-// llega en 0 y apaga comp/exciter. Este setter solo toca esos 4 campos y
-// solo reconfigura g_eq/g_gain.
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEQParams(
     JNIEnv*, jobject,
     jfloat low, jfloat mid, jfloat high, jfloat master) {
     if (!std::isfinite(low) || !std::isfinite(mid) || !std::isfinite(high)
         || !std::isfinite(master)) return;
-    // Base absoluta del EQ manual — ISO 226 / fatiga se suman encima sin
-    // acumularse (ver recomputeEqFromBaseLocked).
     g_eqBaseLow .store(std::clamp((float)low,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseMid .store(std::clamp((float)mid,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseHigh.store(std::clamp((float)high, -24.0f, 24.0f), std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    recomputeEqFromBaseLocked();
-    // FIX (ganancia errónea / audio que revienta): el Kotlin pasa `master`
-    // como multiplicador lineal [0.5 .. 2.0] desde el slider VOLUMEN.
-    // GainStage::setParams() hace outputGain_ = dbToLin(p.master), tratándolo
-    // como dB → dbToLin(2.0) = 1.26x en vez del 2.0x que el usuario pide, y
-    // dbToLin(2.0) + EQ peaks de hasta +14 dB = SafetyLimiter en comprensión
-    // extrema → pumping / distorsión audible ("revienta el audio").
-    // Fix: misma conversión que nativeSetPerceptualGain(), con techo +6 dB
-    // para dejarle headroom al SafetyLimiter (sin él, EQ + volumen max lo
-    // saturan sistemáticamente).
     const float masterDb = normalizeMasterToDb(master);
-    g_params.master = masterDb;
-    // Aplicar compensación de headroom del EQ antes de configurar GainStage.
-    // Sin esto, EQ peaks apilados (ej. high +8.4 dB × 2 bandas + presence) +
-    // VOLUMEN = SafetyLimiter en trabajo extremo → pumping / "audio que revienta".
-    const float comp = g_eq.getOutputCompensationDb();
-    g_params.master  = std::clamp(masterDb - comp, -60.0f, 6.0f);
-    g_gain.setParams(g_params);
-    g_params.master  = masterDb;  // restaurar para que otras lecturas de g_params sean correctas
+    {
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        g_params_ui.low    = std::clamp((float)low,  -24.0f, 24.0f);
+        g_params_ui.mid    = std::clamp((float)mid,  -24.0f, 24.0f);
+        g_params_ui.high   = std::clamp((float)high, -24.0f, 24.0f);
+        g_params_ui.master = masterDb;
+    }
+    g_eq_dirty.store(true, std::memory_order_release);
 }
-// ═══════════════════════════════════════════════════════════════════════════════
-// Canal PERCEPTUAL (DSPBridge.applyPerceptualGain / applyCompressorAmount /
-// applyExciterReduction / applySpatialWidth / applyPerceptualEQ)
-//
-// FIX (UnsatisfiedLinkError en producción): IvannaNativeLib.kt declaraba estos
-// 5 `external fun` y IvannaBridgePlayer.kt:368-372 los llama en CADA update
-// perceptual del player, pero NO existía ningún símbolo JNI correspondiente en
-// la .so — el primer update perceptual tiraba UnsatisfiedLinkError y mataba el
-// loop de reproducción. Se implementan REALES sobre el mismo control plane que
-// ya usa nativeSetEQParams / nativeSetCompressorParams (g_params + g_eq/g_comp/
-// g_exciter/g_gain/g_pd), sin tocar nativeSetParams (que reescribe TODO g_params).
-//
-// Semántica de entrada (fijada por DSPBridge, que ya hace el clamp):
-//   gain        [0..2]    lineal   → g_params.master en dB
-//   amount      [0..1]    0=sin compresión … 1=compresión máxima
-//   reduction   [0..1]    0=exciter al default … 1=exciter apagado
-//   width       [0.5..2]  ancho estéreo directo (misma unidad que
-//                         nativeSetSpatialWidthDirect)
-//   low/mid/high  dB      idéntico a nativeSetEQParams (master intacto)
 namespace {
-// Wet del exciter por defecto — DSPParams::wet en include/dsp_types.h.
-// La reducción es relativa a esta base, no acumulativa sobre g_params.wet,
-// para que llamadas repetidas con el mismo valor sean idempotentes.
 constexpr float kExciterWetBase = 0.32f;
 } // namespace
 
@@ -2342,44 +2319,42 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
     JNIEnv*, jobject, jfloat gain) {
     if (!std::isfinite(gain)) return;
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const float lin = std::clamp(gain, 0.0f, 2.0f);
-    // 0 lineal → piso de -60 dB (silencio práctico), evita log10(0) = -inf.
     const float db  = (lin <= 0.001f) ? -60.0f
                                       : std::clamp(20.0f * std::log10(lin), -60.0f, 6.0f);
-    const float comp = g_eq.getOutputCompensationDb();
-    g_params.master = std::clamp(db - comp, -60.0f, 6.0f);
-    g_gain.setParams(g_params);
-    g_params.master = db;
+    {
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        g_params_ui.master = db;
+    }
+    g_eq_dirty.store(true, std::memory_order_release);
 }
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorAmount(
     JNIEnv*, jobject, jfloat amount) {
     if (!std::isfinite(amount)) return;
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    // amount es la escala térmica [0..1] (ThermalGovernor ya la calcula como
-    // "1f - cut"), no un valor absoluto — ver recomputeCompressorLocked().
     g_thermalCompScale.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
-    recomputeCompressorLocked();
+    g_comp_dirty.store(true, std::memory_order_release);
 }
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetExciterReduction(
     JNIEnv*, jobject, jfloat reduction) {
     if (!std::isfinite(reduction)) return;
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const float r = std::clamp(reduction, 0.0f, 1.0f);
-    g_params.wet = kExciterWetBase * (1.0f - r);
-    g_exciter.setParams(g_params);
+    {
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        g_params_ui.wet = kExciterWetBase * (1.0f - r);
+    }
+    g_params_dirty.store(true, std::memory_order_release);
 }
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidth(
     JNIEnv*, jobject, jfloat width) {
     if (!std::isfinite(width)) return;
-    // width aquí es la escala térmica [0..1] que ya calcula ThermalGovernor.kt
-    // ("1f - spatialCut"), no el ancho final — ver recomputeSpatialWidthLocked().
     g_thermalSpatialScale.store(std::clamp(width, 0.0f, 1.0f), std::memory_order_relaxed);
     recomputeSpatialWidthLocked();
 }
@@ -2388,13 +2363,10 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualEQ(
     JNIEnv*, jobject, jfloat lowDb, jfloat midDb, jfloat highDb) {
     if (!std::isfinite(lowDb) || !std::isfinite(midDb) || !std::isfinite(highDb)) return;
-    // Nueva base absoluta del EQ perceptual; los offsets ISO/fatiga vigentes
-    // se re-aplican sobre ella (no se acumulan).
     g_eqBaseLow .store(std::clamp(lowDb,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseMid .store(std::clamp(midDb,  -24.0f, 24.0f), std::memory_order_relaxed);
     g_eqBaseHigh.store(std::clamp(highDb, -24.0f, 24.0f), std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    recomputeEqFromBaseLocked();
+    g_eq_dirty.store(true, std::memory_order_release);
 }
 
 
@@ -2407,16 +2379,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
     if (!std::isfinite(iso) || !std::isfinite(fatigue))
         return;
 
-    // IDEMPOTENTE: se guarda el offset y el EQ se recalcula desde la base.
-    // Antes esto era `g_params.high += ...` — acumulaba en cada llamada del
-    // calibrador ISO 226 hasta saturar el EQ y reventar el audio.
     g_fatigueIsoDb  .store(std::clamp(iso,     -12.0f, 12.0f), std::memory_order_relaxed);
     g_fatigueProtect.store(std::clamp(fatigue,   0.0f,  1.0f), std::memory_order_relaxed);
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
         .hearingEngine().setListeningSpl(std::clamp(70.0f + fatigue * 22.0f - iso * 0.8f, 45.0f, 98.0f));
 
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    recomputeEqFromBaseLocked();
+    g_eq_dirty.store(true, std::memory_order_release);
 }
 
 JNIEXPORT void JNICALL
@@ -2440,10 +2408,11 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmo
     const float clampedV = std::clamp((float)v, 0.0f, 1.0f);
     g_pd.set_nho_harmonic(std::clamp(clampedV, 0.0f, 0.65f));
     {
-        std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-        g_params.presence = std::clamp((clampedV - 0.5f) * 24.0f, -12.0f, 12.0f);
-        recomputeEqFromBaseLocked();
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        g_params_ui.presence = std::clamp((clampedV - 0.5f) * 24.0f, -12.0f, 12.0f);
     }
+    g_eq_dirty.store(true, std::memory_order_release);
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
     uint64_t seen = 0;
@@ -2472,25 +2441,14 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRefle
     if (std::isfinite(d)) g_pd.spatial.set_width(std::clamp(static_cast<float>(d) / 23.0f, 0.25f, 2.0f));
 }
 JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitPILSTM(JNIEnv*,jobject) { g_pd.reset(); }
-// ── FIX: cableado UI v3.0 → Compresor y Motor Espacial (parámetros que la
-// UI ya exponía por callback pero que no tenían contraparte JNI dedicada) ──
-// Compresor (GlassCard "COMPRESOR"): threshold en dB [-24..0], ratio [1..20]:1,
-// attack/release en ms — extendido para el control adaptativo @10Hz que ya
-// los pasaba (MainActivity.kt) mientras el JNI solo aceptaba 2 args (build
-// roto en CI: "Too many arguments"). setAttack()/setRelease() ya existían
-// en Compressor.h, solo faltaba exponerlos acá.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
     JNIEnv*, jobject, jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs) {
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    // Base de la IA/usuario — el escritor térmico (nativeSetCompressorAmount)
-    // la escala, nunca la sustituye. attack/release no los toca el térmico,
-    // se aplican directo.
     g_compBaseThresholdDb.store(thresholdDb, std::memory_order_relaxed);
     g_compBaseRatio.store(ratio, std::memory_order_relaxed);
-    g_comp.setAttack(attackMs);
-    g_comp.setRelease(releaseMs);
-    recomputeCompressorLocked();
+    g_compPendingAttackMs.store(attackMs, std::memory_order_relaxed);
+    g_compPendingReleaseMs.store(releaseMs, std::memory_order_relaxed);
+    g_comp_dirty.store(true, std::memory_order_release);
 }
 // NHO/Espacial (GlassCard "NHO / ESPACIAL"): ángulo en radianes, ancho directo,
 // y mezcla wet del efecto espacial NHO.
@@ -3382,8 +3340,9 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
             : static_cast<int32_t>(ds->findNearestSmart(rt60S));
         g_rirPendingIdx.store(targetIdx, std::memory_order_release);
         g_rirWorkerCv.notify_one();
-    } else {
-        conv->synthesizeMasterStudioBrir(rt60S, static_cast<int>(g_params.sampleRate));
+    } else if (conv->needsMasterStudioBrirSynthesis(rt60S, static_cast<int>(g_params.sampleRate))) {
+        g_rirPendingSynthRt60.store(rt60S, std::memory_order_release);
+        g_rirWorkerCv.notify_one();
     }
 }
 

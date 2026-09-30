@@ -55,53 +55,73 @@ fun SpatialAudioPanel(
     var roomStatus by remember { mutableStateOf("") }
     var safStatus by remember { mutableStateOf("") }
 
-    // Restore al arrancar: empuja lo persistido al motor (FASE 3 pasos 1-4)
-    LaunchedEffect(Unit) {
-        if (state.hrtfEnabled) {
-            IvannaSpatialEngine.enabled = true
-            IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
-        }
-        if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
-        if (state.safEnabled) {
-            runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
-            // Propagar q[7] real al daemon en el restore — sin esto el DSP
-            // arrancaba sin la calibración SAF aunque el switch persistido
-            // fuera "activo".
-            val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
-            OmegaEngineBridge.pushSafLatentQ(
-                FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
-                gain = state.safIntensity
-            )
-        }
-        runCatching {
-            com.ivanna.omega.core.NativeBridge.setCochlearInverseEnabled(state.cochlearInverseEnabled)
-            com.ivanna.omega.core.NativeBridge.setCochlearIntensity(state.cochlearIntensity)
-            SupremeAxesPrefs.applyToNative(supremeState)
-        }
-        while (true) {
-            hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
-            activeSubject = IvannaSpatialManager.currentHrtfSubject()
-            roomStatus    = OmegaEngineBridge.getRoomStatus()?.toString() ?: "daemon sin sala activa"
-            safStatus     = runCatching {
-                if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
-            }.getOrDefault("modelo no cargado")
+    // Estado del Motor Híbrido Magistral (VBAP 3D + Ambisonics + HRTF KEMAR 128-tap + Schroeder/Moorer)
+    val initialHybridTelem = remember { com.ivanna.omega.core.NativeBridge.safeGetHybridMagistralTelemetry() }
+    var hybridEnabled by remember { mutableStateOf(initialHybridTelem.getOrElse(0) { 1f } >= 0.5f) }
+    var hybridBinauralWet by remember { mutableStateOf(initialHybridTelem.getOrElse(1) { 0.65f }) }
+    var hybridAzimuthDeg by remember { mutableStateOf(initialHybridTelem.getOrElse(2) { 30f }) }
+    var hybridElevationDeg by remember { mutableStateOf(initialHybridTelem.getOrElse(3) { 0f }) }
+    var hybridRoomSize by remember { mutableStateOf(initialHybridTelem.getOrElse(4) { 0.55f }) }
+    var hybridAbsorption by remember { mutableStateOf(initialHybridTelem.getOrElse(5) { 0.35f }) }
+    var hybridDampening by remember { mutableStateOf(initialHybridTelem.getOrElse(6) { 0.40f }) }
+    var hybridRoomWet by remember { mutableStateOf(initialHybridTelem.getOrElse(7) { 0.25f }) }
 
-            // FIX (descableado): "Modo automático" solo se guardaba en prefs y no
-            // hacía absolutamente nada. Ahora, con SAF activo, ejecuta un paso real
-            // del optimizador Riemanniano (SaFRoomBridge.step) alimentado con el
-            // estado de sala actual y republica el q[7] resultante al daemon.
-            if (state.safEnabled && state.safAutoMode) {
-                runCatching {
-                    com.ivanna.omega.saf.SaFRoomBridge.setRoomState(state.rirRt60, 0f, 0f)
-                    com.ivanna.omega.saf.SaFRoomBridge.step()
-                    val qa = com.ivanna.omega.saf.SaFRoomBridge.getParams()
-                    OmegaEngineBridge.pushSafLatentQ(
-                        FloatArray(7) { i -> qa.getOrElse(i) { 0f } * state.safIntensity },
-                        gain = state.safIntensity
-                    )
-                }
+    fun pushHybridMagistral() {
+        com.ivanna.omega.core.NativeBridge.safeSetHybridMagistralParams(
+            enabled = hybridEnabled,
+            binauralWet = hybridBinauralWet,
+            virtualAzimuthDeg = hybridAzimuthDeg,
+            virtualElevationDeg = hybridElevationDeg,
+            roomSize = hybridRoomSize,
+            roomAbsorption = hybridAbsorption,
+            roomDampening = hybridDampening,
+            roomWetMix = hybridRoomWet
+        )
+    }
+
+    // Restore al arrancar: empuja lo persistido al motor (FASE 3 pasos 1-4) fuera del hilo UI
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (state.hrtfEnabled) {
+                IvannaSpatialEngine.enabled = true
+                IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
             }
-            delay(1000)
+            if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
+            if (state.safEnabled) {
+                runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
+                val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+                OmegaEngineBridge.pushSafLatentQ(
+                    FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
+                    gain = state.safIntensity
+                )
+            }
+            runCatching {
+                com.ivanna.omega.core.NativeBridge.setCochlearInverseEnabled(state.cochlearInverseEnabled)
+                com.ivanna.omega.core.NativeBridge.setCochlearIntensity(state.cochlearIntensity)
+                SupremeAxesPrefs.applyToNative(supremeState)
+                pushHybridMagistral()
+            }
+            while (true) {
+                hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
+                activeSubject = IvannaSpatialManager.currentHrtfSubject()
+                roomStatus    = OmegaEngineBridge.getRoomStatus()?.toString() ?: "Studio BRIR procedimental activo"
+                safStatus     = runCatching {
+                    if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
+                }.getOrDefault("modelo no cargado")
+
+                if (state.safEnabled && state.safAutoMode) {
+                    runCatching {
+                        com.ivanna.omega.saf.SaFRoomBridge.setRoomState(state.rirRt60, 0f, 0f)
+                        com.ivanna.omega.saf.SaFRoomBridge.step()
+                        val qa = com.ivanna.omega.saf.SaFRoomBridge.getParams()
+                        OmegaEngineBridge.pushSafLatentQ(
+                            FloatArray(7) { i -> qa.getOrElse(i) { 0f } * state.safIntensity },
+                            gain = state.safIntensity
+                        )
+                    }
+                }
+                delay(1000)
+            }
         }
     }
 
@@ -226,6 +246,60 @@ fun SpatialAudioPanel(
             }
             RowSwitch("Modo automático", state.safAutoMode) { on -> update { it.copy(safAutoMode = on) } }
             Text("Modelo: $safStatus", color = TextMuted, fontSize = 10.sp)
+        }
+
+        // ── MOTOR HÍBRIDO MAGISTRAL (VBAP 3D + AMBISONICS + HRTF + SALA) ──
+        SpatialCard(
+            "MOTOR HÍBRIDO MAGISTRAL",
+            "VBAP 3D → Ambisonics 1er Orden → HRTF KEMAR 128-tap + Schroeder/Moorer"
+        ) {
+            RowSwitch("Motor Híbrido Magistral Activo", hybridEnabled) { on ->
+                hybridEnabled = on
+                pushHybridMagistral()
+            }
+            LabeledSlider("Mezcla Binaural HRTF", hybridBinauralWet, 0f..1f, "%.2f") { v ->
+                hybridBinauralWet = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Azimut Virtual 3D", hybridAzimuthDeg, 5f..90f, "%.0f°") { v ->
+                hybridAzimuthDeg = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Elevación Virtual 3D", hybridElevationDeg, -45f..45f, "%.0f°") { v ->
+                hybridElevationDeg = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Tamaño Sala Acústica", hybridRoomSize, 0.1f..1f, "%.2f") { v ->
+                hybridRoomSize = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Absorción de Pared", hybridAbsorption, 0.05f..0.95f, "%.2f") { v ->
+                hybridAbsorption = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Amortiguamiento HF", hybridDampening, 0.05f..0.95f, "%.2f") { v ->
+                hybridDampening = v
+                pushHybridMagistral()
+            }
+            LabeledSlider("Mezcla Sala (Wet)", hybridRoomWet, 0f..0.60f, "%.2f") { v ->
+                hybridRoomWet = v
+                pushHybridMagistral()
+            }
+        }
+
+        // ── PIPELINE ESPACIAL EN VIVO ─────────────────────────────────────
+        SpatialCard(
+            "PIPELINE ESPACIAL EN VIVO",
+            "Cadena unificada Zero-Pop · SPSC Lock-Free · Crossfade 512 muestras"
+        ) {
+            Text(
+                text = "1. Separación de Objetos + VBAP 3D (${"%.0f".format(hybridAzimuthDeg)}°)\n" +
+                       "2. Codificación Ambisonics B-Format (W, X, Y, Z) → Virtual 7.1.4\n" +
+                       "3. Convolución Binaural HRTF ($activeSubject) + Híbrido Magistral (${if (hybridEnabled) "ON" else "BYPASS"})\n" +
+                       "4. Proyección de Sala RIR (${if (state.rirEnabled) "RT60 ${"%.2f".format(state.rirRt60)}s" else "BYPASS"}) + SAF Φ_∞",
+                color = AuroraCyan,
+                fontSize = 10.sp
+            )
         }
 
         // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (C++23 Lock-Free) ──
