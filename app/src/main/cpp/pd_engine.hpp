@@ -392,7 +392,7 @@ private:
         if (g_control_frame.evolutionary_active.load(std::memory_order_relaxed)) {
             // Byte 32: micro-modulación suave [0.85x..1.15x] sobre la ganancia armónica actual
             const float mod = 0.85f + ((float)evo_staging_[32] * INV255) * 0.30f;
-            nho.set_harmonic_gain(std::clamp(nho.harmonic_gain.load(std::memory_order_relaxed) * mod, 0.0f, 2.0f));
+            nho.set_harmonic_gain(std::clamp(nho.harmonic_gain * mod, 0.0f, 2.0f));
         }
     }
 };
