@@ -468,6 +468,8 @@ add_dependencies(test_oem_stability_suite gtest)
 add_executable(test_acoustic_reality_hyperengine
     tests/regression/test_acoustic_reality_hyperengine.cpp
     spatial/RirConvolver.cpp
+    spatial/HRTFInterpolator.cpp
+    spatial/HRTFDatabase.cpp
 )
 target_include_directories(test_acoustic_reality_hyperengine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -484,6 +486,8 @@ add_test(NAME acoustic_reality_hyperengine COMMAND test_acoustic_reality_hyperen
 add_executable(test_supreme_acoustic_continuity
     tests/test_supreme_acoustic_continuity.cpp
     spatial/RirConvolver.cpp
+    spatial/HRTFInterpolator.cpp
+    spatial/HRTFDatabase.cpp
     spatial/WfsRenderer.cpp
     neuromorphic/volterra_h2_symmetric.cpp
 )

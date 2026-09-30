@@ -579,6 +579,8 @@ set_tests_properties(test_wfs_object_decomposition PROPERTIES FAIL_REGULAR_EXPRE
 add_executable(test_perf_auditor
   test_perf_auditor.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
 )
 target_link_libraries(test_perf_auditor PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_perf_auditor PRIVATE .. ../include ../spatial host_stubs)
@@ -594,6 +596,8 @@ add_test(NAME test_perf_auditor COMMAND test_perf_auditor)
 add_executable(test_hrtf_personalizer_wiring
   test_hrtf_personalizer_wiring.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
 )
 target_link_libraries(test_hrtf_personalizer_wiring PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_hrtf_personalizer_wiring PRIVATE .. ../include ../spatial host_stubs)
@@ -632,6 +636,8 @@ gtest_discover_tests(test_cochlear_inverse_model)
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
 )
 target_link_libraries(test_supreme_five_axes PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_supreme_five_axes PRIVATE
@@ -653,6 +659,8 @@ gtest_discover_tests(test_supreme_five_axes)
 add_executable(test_acoustic_reality_hyperengine
   regression/test_acoustic_reality_hyperengine.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
 )
 target_link_libraries(test_acoustic_reality_hyperengine PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_acoustic_reality_hyperengine PRIVATE
@@ -675,6 +683,8 @@ gtest_discover_tests(test_acoustic_reality_hyperengine)
 add_executable(test_supreme_zero_pop_transition
   test_supreme_zero_pop_transition.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
   ../neuromorphic/volterra_h2_symmetric.cpp
 )
 target_link_libraries(test_supreme_zero_pop_transition PRIVATE GTest::gtest_main Threads::Threads)
@@ -698,6 +708,8 @@ gtest_discover_tests(test_supreme_zero_pop_transition)
 add_executable(test_supreme_acoustic_continuity
   test_supreme_acoustic_continuity.cpp
   ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
   ../spatial/WfsRenderer.cpp
   ../neuromorphic/volterra_h2_symmetric.cpp
 )
