@@ -3393,24 +3393,4 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativePushLocalSafLatent(
     }
 }
 
-// ── Music Intelligence Engine (IME) ──────────────────────────────────────────
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(
-    JNIEnv*, jobject, jboolean enabled) {
-    auto* s = reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque());
-    if (s) {
-        s->enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
-    }
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(
-    JNIEnv* env, jobject) {
-    char buf[512] = {0};
-    int n = ivanna::ime::imeDecideNowJson(buf, sizeof(buf));
-    if (n <= 0) {
-        return env->NewStringUTF("{}");
-    }
-    return env->NewStringUTF(buf);
-}
 

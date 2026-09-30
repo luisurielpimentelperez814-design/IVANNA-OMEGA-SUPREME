@@ -390,32 +390,11 @@ int evo_load_state() {
     std::fclose(f); return ok ? 1 : 0;
 }
 
-#ifdef IVANNA_HAVE_JNI
-JNIEXPORT jint JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jclass) {
-    return (jint)g_population.generation;
+int evo_is_initialized(void) {
+    return g_initialized.load(std::memory_order_acquire) ? 1 : 0;
 }
 
-// FIX: declarada en Kotlin como `external fun nativeInitializeEvolution(...): Boolean`
-// pero implementada aquí como `void` — la JVM leía basura del registro de
-// retorno, así que "Error al inicializar" aparecía de forma aleatoria aunque
-// la población quedara bien creada. Ahora devuelve jboolean real.
-JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(JNIEnv*, jclass,
-        jint popSize, jint generations) {
-    (void)popSize; (void)generations;
-    evo_initialize_population();
-    return g_initialized.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
-}
-
-// FIX: `nativeEvolveStep()` estaba declarada en IvannaNativeLib y llamada desde
-// el botón "PASO" de BrainScreen, pero NINGÚN .cpp la implementaba →
-// UnsatisfiedLinkError garantizado al pulsar el botón. Implementada sobre el
-// motor v2: una generación por llamada, y devuelve false cuando el mejor
-// fitness deja de mejorar (convergencia), que es exactamente lo que la UI
-// interpreta para detener el bucle.
-JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jclass) {
+int evo_evolve_step_with_convergence(void) {
     if (!g_initialized.load(std::memory_order_acquire)) {
         evo_initialize_population();
     }
@@ -429,22 +408,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jclass) {
         ++g_stallCount;
     }
     g_lastBestFitness = after;
-    return (g_stallCount >= EVO_CONVERGENCE_STALL) ? JNI_FALSE : JNI_TRUE;
+    return (g_stallCount >= EVO_CONVERGENCE_STALL) ? 0 : 1;
 }
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(JNIEnv*, jclass, jfloat rate) {
-    evo_set_mutation_rate((float)rate);
-}
-
-// FIX: `nativeGetMutationRate()` también estaba declarada y llamada
-// (CmaEsFitnessPanel, al abrir el panel) sin implementación nativa →
-// UnsatisfiedLinkError al entrar en la pantalla.
-JNIEXPORT jfloat JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(JNIEnv*, jclass) {
-    return (jfloat)evo_get_mutation_rate();
-}
-
-#endif // IVANNA_HAVE_JNI
 
 } // extern "C"

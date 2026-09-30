@@ -433,14 +433,16 @@ target_compile_options(ivanna_benchmark PRIVATE -O2 -Wall -Wextra)
 add_executable(test_evolutionary_kernel
   test_evolutionary_kernel.cpp
   ../evolutionary_kernel_v2.cpp
+  ../jni/evolutionary_kernel_jni.cpp
 )
 target_link_libraries(test_evolutionary_kernel PRIVATE GTest::gtest_main)
-target_include_directories(test_evolutionary_kernel PRIVATE .. ../include)
+target_include_directories(test_evolutionary_kernel PRIVATE .. ../include host_stubs)
 target_compile_options(test_evolutionary_kernel PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
   target_compile_options(test_evolutionary_kernel PRIVATE ${IVANNA_SAN_FLAGS})
   target_link_options(test_evolutionary_kernel PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
+set_target_properties(test_evolutionary_kernel PROPERTIES ENABLE_EXPORTS ON)
 add_test(NAME test_evolutionary_kernel COMMAND test_evolutionary_kernel)
 
 # ── EQ evolutivo 512 bandas (EvolutionaryEQ.cpp real): barrera de regresión ──
@@ -538,6 +540,7 @@ add_executable(test_ime_bridge
   ../music_intelligence/MusicFeatureExtractor.cpp
   ../music_intelligence/MusicIntelligenceEngine.cpp
   ../music_intelligence/ImeBridge.cpp
+  ../jni/ivanna_ime_jni.cpp
 )
 target_include_directories(test_ime_bridge PRIVATE .. ../include ../music_intelligence host_stubs)
 target_compile_options(test_ime_bridge PRIVATE -Wall -Wextra)
@@ -545,6 +548,7 @@ if(IVANNA_SAN_FLAGS)
   target_compile_options(test_ime_bridge PRIVATE ${IVANNA_SAN_FLAGS})
   target_link_options(test_ime_bridge PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
+set_target_properties(test_ime_bridge PROPERTIES ENABLE_EXPORTS ON)
 add_test(NAME test_ime_bridge COMMAND test_ime_bridge)
 set_tests_properties(test_ime_bridge PROPERTIES FAIL_REGULAR_EXPRESSION "FALLARON")
 

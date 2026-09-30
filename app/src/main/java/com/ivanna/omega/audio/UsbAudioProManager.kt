@@ -561,7 +561,7 @@ class UsbAudioProManager private constructor(context: Context) {
         // Delega al hilo nativo via JNI; el hilo URB entrega al DAC en modo
         // asíncrono (el DAC marca el reloj, nosotros seguimos su cadencia).
         // Guard de enlace: si libivanna_omega no cargo (perfil sin root, ABI
-        // no cubierta), el external fun lanza UnsatisfiedLinkError y antes
+        // no cubierta), la llamada nativa lanza UnsatisfiedLinkError y antes
         // tumbaba al llamador (openDirectPath). Ahora degrada con telemetria
         // honesta: la ruta USB existe pero el motor isocrono NO — el audio
         // sigue por el triple buffer/AudioTrack, y isIsochronous() lo dice.

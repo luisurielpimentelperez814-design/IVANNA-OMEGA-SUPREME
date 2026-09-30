@@ -1,9 +1,15 @@
 // test_ime_bridge.cpp — pruebas obligatorias del bucle IME (PASO 8).
 #include "../music_intelligence/MusicIntelligenceEngine.hpp"
 #include "../music_intelligence/ImeBridge.hpp"
+#include <jni.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+
+extern "C" {
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(JNIEnv*, jobject, jboolean);
+JNIEXPORT jstring JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(JNIEnv*, jobject);
+}
 
 using namespace ivanna::ime;
 static int failures = 0;
@@ -40,7 +46,20 @@ int main() {
     char json[512];
     const int n = imeDecideNowJson(json, sizeof(json));
     CHECK(n > 0, "imeDecideNowJson produce JSON");
-    CHECK(std::strstr(json, "\"style\":") && std::strstr(json, "\"blocks\":"), "JSON con style y blocks");
+    CHECK(json[0] == '{' && json[std::strlen(json) - 1] == '}', "JSON bien delimitado por llaves");
+    CHECK(std::strstr(json, "\"style\":") && std::strstr(json, "\"blocks\":") &&
+          std::strstr(json, "\"confidence\":") && std::strstr(json, "\"wfsSpread\":") &&
+          std::strstr(json, "\"hrtfDepth\":") && std::strstr(json, "\"eqTiltDb\":") &&
+          std::strstr(json, "\"dynamicsAmount\":") && std::strstr(json, "\"envDepth\":"),
+          "JSON contiene todos los campos requeridos por MusicIntelligenceWorker");
+    char tiny[8];
+    CHECK(imeDecideNowJson(tiny, sizeof(tiny)) == 0, "buffer insuficiente devuelve 0 para fallback {}");
+
+    JNIEnv env{};
+    Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(&env, nullptr, JNI_TRUE);
+    jstring jdec = Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(&env, nullptr);
+    const char* cdec = env.GetStringUTFChars(jdec, nullptr);
+    CHECK(cdec != nullptr && std::strstr(cdec, "\"style\":") != nullptr, "JNI nativeImeDecideNow devuelve JSON valido");
 
     if (failures == 0) std::printf("PASSED: test_ime_bridge OK\n");
     return failures ? 1 : 0;

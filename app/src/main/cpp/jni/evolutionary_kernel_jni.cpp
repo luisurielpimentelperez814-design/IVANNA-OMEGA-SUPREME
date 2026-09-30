@@ -1,18 +1,53 @@
+// evolutionary_kernel_jni.cpp — Puente JNI unificado para EvolutionaryKernel v2
+// Paquete canónico: com.ivanna.omega.core.IvannaNativeLib (usado por BrainScreen.kt:274 y CmaEsFitnessPanel.kt)
 #include <jni.h>
-#include "../evolutionary_kernel_v2.hpp"
 #include <android/log.h>
+#include <exception>
 
 #define LOG_TAG "IVANNA_EVO_JNI"
 
 extern "C" {
+void  evo_initialize_population(void);
+int   evo_is_initialized(void);
+int   evo_evolve_step_with_convergence(void);
+int   evo_get_generation(void);
+void  evo_set_mutation_rate(float rate);
+float evo_get_mutation_rate(void);
 
-JNIEXPORT jboolean JNICALL 
-Java_com_ivanna_omega_IvannaNativeLib_nativeEvolveStep(JNIEnv *env, jclass clazz) {
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
+    return static_cast<jint>(evo_get_generation());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
+    JNIEnv*, jobject, jint popSize, jint generations) {
+    (void)popSize;
+    (void)generations;
+#if defined(__EXCEPTIONS)
     try {
-        auto& kernel = ivanna::EvolutionaryKernel::instance();
-        kernel.evolveStep();
-        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "evolveStep() OK");
-        return JNI_TRUE;
+        evo_initialize_population();
+        return evo_is_initialized() ? JNI_TRUE : JNI_FALSE;
+    } catch (const std::exception& e) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "nativeInitializeEvolution() exception: %s", e.what());
+        return JNI_FALSE;
+    } catch (...) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "nativeInitializeEvolution() unknown exception");
+        return JNI_FALSE;
+    }
+#else
+    evo_initialize_population();
+    return evo_is_initialized() ? JNI_TRUE : JNI_FALSE;
+#endif
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject) {
+#if defined(__EXCEPTIONS)
+    try {
+        const int cont = evo_evolve_step_with_convergence();
+        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "evolveStep() OK (cont=%d)", cont);
+        return cont ? JNI_TRUE : JNI_FALSE;
     } catch (const std::exception& e) {
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "evolveStep() exception: %s", e.what());
         return JNI_FALSE;
@@ -20,15 +55,25 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeEvolveStep(JNIEnv *env, jclass clazz
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "evolveStep() unknown exception");
         return JNI_FALSE;
     }
+#else
+    const int cont = evo_evolve_step_with_convergence();
+    __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "evolveStep() OK (cont=%d)", cont);
+    return cont ? JNI_TRUE : JNI_FALSE;
+#endif
 }
 
-JNIEXPORT jfloat JNICALL 
-Java_com_ivanna_omega_IvannaNativeLib_nativeGetMutationRate(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(JNIEnv*, jobject, jfloat rate) {
+    evo_set_mutation_rate(static_cast<float>(rate));
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(JNIEnv*, jobject) {
+#if defined(__EXCEPTIONS)
     try {
-        auto& kernel = ivanna::EvolutionaryKernel::instance();
-        float rate = kernel.getMutationRate();
+        const float rate = evo_get_mutation_rate();
         __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "getMutationRate() = %.6f", rate);
-        return rate;
+        return static_cast<jfloat>(rate);
     } catch (const std::exception& e) {
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "getMutationRate() exception: %s", e.what());
         return 0.0f;
@@ -36,6 +81,11 @@ Java_com_ivanna_omega_IvannaNativeLib_nativeGetMutationRate(JNIEnv *env, jclass 
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "getMutationRate() unknown exception");
         return 0.0f;
     }
+#else
+    const float rate = evo_get_mutation_rate();
+    __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "getMutationRate() = %.6f", rate);
+    return static_cast<jfloat>(rate);
+#endif
 }
 
 } // extern "C"

@@ -117,12 +117,14 @@ add_library(ivanna_omega SHARED
     # tonality consistency). Los símbolos JNI son 100% compatibles con la v1
     # (mismo conjunto de funciones extern "C") — drop-in replacement.
     evolutionary_kernel_v2.cpp
+    jni/evolutionary_kernel_jni.cpp
     neuromorphic/ivanna_neural_upmixer.cpp
 
     # Music Intelligence Engine (IME)
     music_intelligence/MusicFeatureExtractor.cpp
     music_intelligence/MusicIntelligenceEngine.cpp
     music_intelligence/ImeBridge.cpp
+    jni/ivanna_ime_jni.cpp
 
     # System audio integration
     shm_hyperplane.cpp

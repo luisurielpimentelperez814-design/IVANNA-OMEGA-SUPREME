@@ -235,7 +235,7 @@ private fun DynamicsTab(
                 AudioStateManager.updateState { it.copy(compressorAttack = v) }
                 updatePrefs { it.copy(compressorAttack = v) }
                 // FIX: nativeSetGamma controla attack/release timing en el DSP.
-                // Nunca se llamaba desde UI aunque el external fun existía declarado.
+                // Nunca se llamaba desde UI aunque la declaración JNI existía.
                 // Derivación: gamma = attackMs/200 (normalizado 0..1 para release).
                 val gamma = (v / 200f).coerceIn(0f, 1f)
                 if (IvannaNativeLib.isLoaded) {

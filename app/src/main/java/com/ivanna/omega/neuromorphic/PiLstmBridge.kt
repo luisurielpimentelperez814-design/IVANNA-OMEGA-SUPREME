@@ -80,8 +80,8 @@ object PiLstmBridge {
 
     // FIX (huérfano JNI): pi_lstm_bridge_jni.cpp:223 implementa
     // Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeResetTelemetry
-    // (reset de g_residual_ema + g_prev_h/g_prev_c/g_prev_ns) pero ningún
-    // external fun lo exponía — 0 callers posibles desde Kotlin. El propio
+    // (reset de g_residual_ema + g_prev_h/g_prev_c/g_prev_ns) pero ninguna
+    // declaracion JNI lo exponía — 0 callers posibles desde Kotlin. El propio
     // comentario C++ (líneas 218-221) documenta el caso de uso: al cambiar
     // de pista o reinicializar el motor, la EMA del residual arrastra el
     // transitorio anterior y contamina getError(). Se expone como wrapper
@@ -195,7 +195,7 @@ object PiLstmBridge {
     private external fun nativeSetNPMax(v: Float)
 
     fun setClarity(clarity: Float) {
-        // FIX (UnsatisfiedLinkError latente): llamaba external fun sin guard
+        // FIX (UnsatisfiedLinkError latente): llamaba al metodo nativo sin guard
         // 'ready' — crasheaba si la librería nativa no cargó.
         if (!ready) return
         // Mapear claridad (0-1) a ganancia de armónicos y lateral inhibition

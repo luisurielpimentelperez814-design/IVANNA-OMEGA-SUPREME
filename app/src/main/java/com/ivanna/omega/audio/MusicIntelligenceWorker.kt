@@ -92,10 +92,26 @@ object MusicIntelligenceWorker {
         }
     }
 
+    fun decideNowLive(): ImeState {
+        tick()
+        return _state.value
+    }
+
     private fun tick() {
-        if (!IvannaNativeLib.isLoaded) return
-        val rawJson: String = IvannaNativeLib.nativeImeDecideNow()
-        val o = JSONObject(rawJson)
+        val rawJson: String = try {
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.nativeImeDecideNow().ifBlank { "{}" }
+            } else {
+                "{}"
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "nativeImeDecideNow link error: ${e.message}")
+            "{}"
+        } catch (e: Throwable) {
+            Log.w(TAG, "nativeImeDecideNow failed: ${e.message}")
+            "{}"
+        }
+        val o = runCatching { JSONObject(rawJson) }.getOrElse { JSONObject("{}") }
         val blocks = o.optLong("blocks", 0L)
         val conf = o.optDouble("confidence", 0.0).toFloat()
         val tWfs  = o.optDouble("wfsSpread", 0.5).toFloat()
@@ -104,7 +120,7 @@ object MusicIntelligenceWorker {
         val tDyn  = o.optDouble("dynamicsAmount", 1.0).toFloat()
         val tEnv  = o.optDouble("envDepth", 0.3).toFloat()
         _state.value = _state.value.copy(
-            active = true, style = o.optString("style", "—"), confidence = conf,
+            active = enabled, style = o.optString("style", "—"), confidence = conf,
             wfsSpread = tWfs, hrtfDepth = tHrtf, eqTiltDb = tTilt,
             dynamicsAmount = tDyn, envDepth = tEnv,
             blocks = blocks, adaptMs = o.optLong("adaptMs", 0L))

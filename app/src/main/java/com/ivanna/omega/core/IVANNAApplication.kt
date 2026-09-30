@@ -355,7 +355,7 @@ class IVANNAApplication : Application() {
                     .onFailure { Log.w(TAG, "SelfHealingAgent no arrancó (no fatal): ${it.message}") }
 
                 // 2. Daemon Magisk (puede fallar sin root — no es fatal).
-                // FIX (re-aplicado): OmegaDaemon.kt declara 18 external fun sin
+                // FIX (re-aplicado): OmegaDaemon.kt declara 18 metodos nativos sin
                 // NINGUNA implementación JNI en C++ (verificado con grep: 0
                 // símbolos magisk_OmegaDaemon_* en app/src/main/cpp/). Por tanto
                 // nativeStart() lanza UnsatisfiedLinkError en CADA arranque, y

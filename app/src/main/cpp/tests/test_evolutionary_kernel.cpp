@@ -15,6 +15,7 @@
 // ============================================================================
 
 #include <gtest/gtest.h>
+#include <jni.h>
 #include <cmath>
 
 extern "C" {
@@ -24,6 +25,12 @@ float evo_best_fitness(void);
 int   evo_get_generation(void);
 void  evo_set_mutation_rate(float rate);
 float evo_get_mutation_rate(void);
+
+JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(JNIEnv*, jobject, jint, jint);
+JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject);
+JNIEXPORT jint JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(JNIEnv*, jobject, jfloat);
+JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(JNIEnv*, jobject);
 }
 
 TEST(EvolutionaryKernelV2, InitializeProducesValidPopulation) {
@@ -74,3 +81,15 @@ TEST(EvolutionaryKernelV2, EvolveIsStableUnderExtremeMutationRate) {
     }
     evo_set_mutation_rate(0.01f);
 }
+
+TEST(EvolutionaryKernelV2, UnifiedJniSymbolsEndToEnd) {
+    JNIEnv env{};
+    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(&env, nullptr, 128, 50), JNI_TRUE);
+    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(&env, nullptr), 0);
+    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(&env, nullptr), JNI_TRUE);
+    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(&env, nullptr), 1);
+    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(&env, nullptr, 0.075f);
+    EXPECT_NEAR(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetMutationRate(&env, nullptr), 0.075f, 1e-6f);
+    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(&env, nullptr, 0.01f);
+}
+

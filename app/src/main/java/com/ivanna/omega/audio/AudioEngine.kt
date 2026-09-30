@@ -142,7 +142,7 @@ class AudioEngine {
     private external fun nativeSetRouteProfile(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float)
     private external fun nativeSetManifoldEnabled(enabled: Boolean)
     // Auditoria 2026-08-19: nativeProcessAudio (in/out por bloque) fue eliminada.
-    // Era la unica external fun del proyecto sin simbolo JNI y sin caller: si algun
+    // Era la unica declaracion nativa del proyecto sin simbolo JNI y sin caller: si algun
     // dia se hubiese llamado, habria lanzado UnsatisfiedLinkError. El procesado real
     // pasa por nativeSetGain/nativeSetExciter/... (parametros, si implementados).
     private external fun nativeGetLufs(): Float

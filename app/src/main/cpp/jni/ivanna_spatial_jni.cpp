@@ -462,6 +462,11 @@ Java_com_ivanna_omega_core_NativeBridge_getCochlearIntensity(JNIEnv*, jclass) {
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_getCochlearIntensity(JNIEnv*, jobject) {
+    return cochlearGetIntensityHelper();
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearIntensity(JNIEnv*, jobject) {
     return cochlearGetIntensityHelper();
 }

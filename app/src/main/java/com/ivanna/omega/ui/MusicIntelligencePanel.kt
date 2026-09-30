@@ -24,6 +24,9 @@ fun MusicIntelligencePanel(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val st by MusicIntelligenceWorker.state.collectAsState()
     var enabled by remember { mutableStateOf(MusicIntelligenceWorker.isEnabled(ctx)) }
+    LaunchedEffect(enabled) {
+        MusicIntelligenceWorker.decideNowLive()
+    }
     val bg = Color(0xFF0A0E14); val accent = Color(0xFF00E5FF); val dim = Color(0xFF9AA4B2)
 
     Column(
