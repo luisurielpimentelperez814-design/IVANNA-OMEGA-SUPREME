@@ -244,7 +244,7 @@ public:
                 // buffer de paso local (ver FIX TSan en publish) — elimina
                 // el UB de la copia de struct no atómica concurrente y el
                 // strict-aliasing de reinterpretar el struct como atomic*.
-                uint32_t buf[Slot::kWords];
+                uint32_t buf[Slot::kWords]{};
                 for (size_t i = 0; i < Slot::kWords; ++i)
                     buf[i] = slot.words[i].load(std::memory_order_relaxed);
                 std::memcpy(&snap, buf, sizeof(snap));
@@ -322,7 +322,7 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
-            uint32_t buf[kWords];
+            uint32_t buf[kWords]{};
             for (size_t i = 0; i < kWords; ++i)
                 buf[i] = words_[i].load(std::memory_order_relaxed);
             std::memcpy(&snap, buf, sizeof(snap));

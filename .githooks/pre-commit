@@ -1,4 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
+
+echo "[pre-commit] 0.1 check_jni_wiring.py"
+python3 "$ROOT/scripts/check_jni_wiring.py" --ratchet
+
+echo "[pre-commit] 0.2 check_header_wiring.py"
+python3 "$ROOT/scripts/check_header_wiring.py" --ratchet
+
+echo "[pre-commit] 0.3 check_rt_safety.py"
+python3 "$ROOT/scripts/check_rt_safety.py" --ratchet
+
+echo "[pre-commit] 0.4 check_build_flags.py"
+python3 "$ROOT/scripts/check_build_flags.py"
+
+echo "[pre-commit] 0.5 check_docs_claims.py"
+python3 "$ROOT/scripts/check_docs_claims.py" --ratchet
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "[pre-commit] 0.6 gitleaks staged check"
+  gitleaks protect --staged --config "$ROOT/.gitleaks.toml" --no-banner
+fi
+
+if command -v cppcheck >/dev/null 2>&1; then
+  echo "[pre-commit] 0.6 cppcheck static analysis"
+  cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
+    "$ROOT/app/src/main/cpp/omega_effect.cpp" \
+    "$ROOT/app/src/main/cpp/IvannaFusionCore.cpp"
+fi
+
+echo "[pre-commit] Host CTest suite"
 "$ROOT/scripts/run_ctest.sh"
+

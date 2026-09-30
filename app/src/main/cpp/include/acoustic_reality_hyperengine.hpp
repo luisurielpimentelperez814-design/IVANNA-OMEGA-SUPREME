@@ -732,7 +732,7 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
-            uint32_t buf[kWords];
+            uint32_t buf[kWords]{};
             for (size_t i = 0; i < kWords; ++i) {
                 buf[i] = words_[i].load(std::memory_order_relaxed);
             }
@@ -1739,7 +1739,7 @@ public:
         for (;;) {
             g1 = guard_.load(std::memory_order_acquire);
             if (g1 & 1u) continue;
-            uint32_t buf[kWords];
+            uint32_t buf[kWords]{};
             for (size_t i = 0; i < kWords; ++i) {
                 buf[i] = words_[i].load(std::memory_order_relaxed);
             }

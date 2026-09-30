@@ -75,7 +75,25 @@ jobs:
           bash -n scripts/run_ctest.sh
 
       - name: Configurar, compilar y correr CTest (33→60 targets, GTest vendoreado, offline)
-        run: bash scripts/run_ctest.sh
+        run: |
+          set -o pipefail
+          bash scripts/run_ctest.sh | tee /tmp/ctest_run.log
+          python3 scripts/check_docs_claims.py --generate-from-log /tmp/ctest_run.log
+
+      - name: Fase 0 — Herramientas de verdad (0.1–0.5 + cppcheck + gitleaks)
+        if: matrix.san == ''
+        run: |
+          set -euo pipefail
+          python3 scripts/check_jni_wiring.py --ratchet
+          python3 scripts/check_header_wiring.py --ratchet
+          python3 scripts/check_rt_safety.py --ratchet
+          python3 scripts/check_build_flags.py
+          python3 scripts/check_docs_claims.py --ratchet
+          if command -v cppcheck >/dev/null 2>&1 || sudo apt-get install -y -qq cppcheck; then
+            cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
+              app/src/main/cpp/omega_effect.cpp \
+              app/src/main/cpp/IvannaFusionCore.cpp
+          fi
 
       - name: Resumen
         if: always()

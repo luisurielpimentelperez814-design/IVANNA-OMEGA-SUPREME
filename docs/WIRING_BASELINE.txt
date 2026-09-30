@@ -1,0 +1,141 @@
+=== [0.1] CHECK JNI WIRING REPORT ===
+Total Kotlin `external fun` declarations : 299
+Total C++ `Java_*` symbols               : 314
+Compiled CMake C/C++ sources             : 94
+
+[FAIL] Comentarios ambiguos con 'external fun <palabra>' (6):
+  - app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt:145 -> 'del'
+  - app/src/main/java/com/ivanna/omega/audio/UsbAudioProManager.kt:564 -> 'lanza'
+  - app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt:358 -> 'sin'
+  - app/src/main/java/com/ivanna/omega/neuromorphic/PiLstmBridge.kt:84 -> 'lo'
+  - app/src/main/java/com/ivanna/omega/neuromorphic/PiLstmBridge.kt:198 -> 'sin'
+  - app/src/main/java/com/ivanna/omega/ui/SoundScreen.kt:238 -> 'existía'
+
+[FAIL] `external fun` SIN símbolo JNI compilado (1):
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:340 -> com.ivanna.omega.core.IvannaNativeLib.getCochlearIntensity (sin símbolo C++ (esperado: Java_com_ivanna_omega_core_IvannaNativeLib_getCochlearIntensity))
+
+[FAIL] `.cpp` con `Java_*` FUERA de CMake (5):
+  - app/src/main/cpp/jni/evolutionary_kernel_jni.cpp:10 -> Java_com_ivanna_omega_IvannaNativeLib_nativeEvolveStep
+  - app/src/main/cpp/jni/evolutionary_kernel_jni.cpp:26 -> Java_com_ivanna_omega_IvannaNativeLib_nativeGetMutationRate
+  - app/src/main/cpp/jni/ivanna_ime_jni.cpp:19 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled
+  - app/src/main/cpp/jni/ivanna_ime_jni.cpp:25 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow
+  - app/src/main/cpp/legacy_no_build/ivanna_jni_unified.cpp:4 -> Java_com_ivanna_omega_unified_IvannaUnifiedNative_initEngine
+
+[FAIL] Símbolos C++ `Java_*` SIN `external fun` en Kotlin (16):
+  - app/src/main/cpp/jni/evolutionary_kernel_jni.cpp:10 -> Java_com_ivanna_omega_IvannaNativeLib_nativeEvolveStep [FUERA de CMake]
+  - app/src/main/cpp/jni/evolutionary_kernel_jni.cpp:26 -> Java_com_ivanna_omega_IvannaNativeLib_nativeGetMutationRate [FUERA de CMake]
+  - app/src/main/cpp/spatial/spatial_engine.cpp:165 -> Java_com_ivanna_omega_audio_SpatialAudioEngineV2_nativeInitSpatial [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2102 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAudioSpectrum [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2075 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetLabAutoFrameCount [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2115 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPerceptualCues [en CMake]
+  - app/src/main/cpp/phase_oracle.cpp:121 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPhaseEnergy [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2038 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsIso226Enabled [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2130 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeRunNeuralBenchmarks [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2500 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBinauralEnabled [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2506 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBinauralPositionRad [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2081 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLoudnessTarget [en CMake]
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:2096 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetLoudnessTrimEnabled [en CMake]
+  - app/src/main/cpp/shm_hyperplane.cpp:35 -> Java_com_ivanna_omega_magisk_ShmManager_nativeMlock [en CMake]
+  - app/src/main/cpp/SaFJniBridge.cpp:58 -> Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetStatus [en CMake]
+  - app/src/main/cpp/legacy_no_build/ivanna_jni_unified.cpp:4 -> Java_com_ivanna_omega_unified_IvannaUnifiedNative_initEngine [FUERA de CMake]
+
+[FAIL] `external fun` SIN llamador en Kotlin (41):
+  - app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt:142 -> com.ivanna.omega.audio.AudioEngine.nativeSetRouteProfile
+  - app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt:148 -> com.ivanna.omega.audio.AudioEngine.nativeGetLufs
+  - app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt:149 -> com.ivanna.omega.audio.AudioEngine.nativeGetPeakDbfs
+  - app/src/main/java/com/ivanna/omega/audio/AudioEngine.kt:150 -> com.ivanna.omega.audio.AudioEngine.nativeSetAntiDolbyScores
+  - app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:89 -> com.ivanna.omega.audio.SystemAudioCapture.nativeHasData
+  - app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:92 -> com.ivanna.omega.audio.SystemAudioCapture.nativeGetLastRmsDb
+  - app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:93 -> com.ivanna.omega.audio.SystemAudioCapture.nativeGetLastPeakDb
+  - app/src/main/java/com/ivanna/omega/audio/SystemAudioCapture.kt:94 -> com.ivanna.omega.audio.SystemAudioCapture.nativeResetMetrics
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:74 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetCochlearEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:79 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetReflectionGain
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:80 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetReflectionDelay
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:261 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetLabAutoEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:262 -> com.ivanna.omega.core.IvannaNativeLib.nativeIsLabAutoEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:269 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetVolterraEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:270 -> com.ivanna.omega.core.IvannaNativeLib.nativeIsVolterraEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:271 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetFastRpcEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:272 -> com.ivanna.omega.core.IvannaNativeLib.nativeIsFastRpcEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:273 -> com.ivanna.omega.core.IvannaNativeLib.nativeSetAtiEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:274 -> com.ivanna.omega.core.IvannaNativeLib.nativeIsAtiEnabled
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:276 -> com.ivanna.omega.core.IvannaNativeLib.nativeGetSpscRingFactor
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:286 -> com.ivanna.omega.core.IvannaNativeLib.nativeIsCochlearActive
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:287 -> com.ivanna.omega.core.IvannaNativeLib.nativeGetCochlearIntensity
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:331 -> com.ivanna.omega.core.IvannaNativeLib.nativeGetConfiguredSampleRate
+  - app/src/main/java/com/ivanna/omega/core/IvannaNativeLib.kt:332 -> com.ivanna.omega.core.IvannaNativeLib.nativeGetConfiguredBitDepth
+  - app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:53 -> com.ivanna.omega.neuromorphic.IvannaNpeNative.nativeSetParameters
+  - app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:66 -> com.ivanna.omega.neuromorphic.IvannaNpeNative.nativeSnapshotScope
+  - app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:112 -> com.ivanna.omega.neuromorphic.IvannaNpeNative.nativeGetCopyright
+  - app/src/main/java/com/ivanna/omega/neuromorphic/IvannaNpeNative.kt:113 -> com.ivanna.omega.neuromorphic.IvannaNpeNative.nativeGetBuildTag
+  - app/src/main/java/com/ivanna/omega/saf/SaFBridge.kt:10 -> com.ivanna.omega.saf.SaFBridge.nativeInitStimulus
+  - app/src/main/java/com/ivanna/omega/saf/SaFBridge.kt:13 -> com.ivanna.omega.saf.SaFBridge.nativeGenerateStimulus
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:36 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeObjectRendererSetReverb
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:41 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeObjectRendererReset
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:49 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeObjectRendererSyncStemObjects
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:57 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerCreate
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:58 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerDestroy
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:59 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerProcess
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:60 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerSetEnabled
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:61 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerSetStemPosition
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:62 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeUpmixerReset
+  - app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialNative.kt:71 -> com.ivanna.omega.spatial.IvannaSpatialNative.nativeIsCochlearActive
+  - app/src/main/java/com/ivanna/omega/visualizer/IvannaVisualizerNativeV2.kt:23 -> com.ivanna.omega.visualizer.IvannaVisualizerNativeV2.nativeVisV2Sample
+
+[SUMMARY] Total hallazgos JNI: 69
+
+=== [0.2] CHECK HEADER WIRING REPORT ===
+Total production headers (.h/.hpp) : 142
+Reached from compiled CMake TUs    : 120
+Orphan headers                     : 22
+
+[FAIL] Headers de producción huérfanos (22):
+  - app/src/main/cpp/SafPcaHRTFBridge.hpp
+  - app/src/main/cpp/audio_orchestrator.h
+  - app/src/main/cpp/daemon/core/OmegaDspSnapshot.h
+  - app/src/main/cpp/evolutionary_adapter.hpp
+  - app/src/main/cpp/evolutionary_adapter_enhanced.hpp
+  - app/src/main/cpp/hexagon/hexagon_dsp_integration.hpp
+  - app/src/main/cpp/hexagon/ivanna_dsp.h
+  - app/src/main/cpp/hexagon/ivanna_dsp.hpp
+  - app/src/main/cpp/include/acoustic_cognitive_evolution_engine.hpp
+  - app/src/main/cpp/include/anti_dolby.h
+  - app/src/main/cpp/include/audio_bus.h
+  - app/src/main/cpp/include/hrtf_lut.h
+  - app/src/main/cpp/include/master_acoustic_orchestrator.hpp
+  - app/src/main/cpp/include/saf_feedback.h
+  - app/src/main/cpp/include/saf_socket_update.h
+  - app/src/main/cpp/include/volterra_h2_symmetric.hpp
+  - app/src/main/cpp/neuromorphic/ivanna_synthesizer.hpp
+  - app/src/main/cpp/phase_oracle_refinements.hpp
+  - app/src/main/cpp/spatial/HybridRenderer.hpp
+  - app/src/main/cpp/spatial/PerfAuditor.hpp
+  - app/src/main/cpp/spatial/RoomSimulator.hpp
+  - app/src/main/cpp/spatial/SpatialRenderer.hpp
+
+=== [0.3] CHECK RT-SAFETY STATIC REPORT ===
+Analizando 11 puntos de entrada RT y sus callees de 1.er nivel...
+
+Funciones RT verificadas: 5/11
+[FAIL] Violaciones de RT-Safety detectadas (3):
+  - app/src/main/cpp/omega_effect.cpp:761 [RT entry: omega_process] (android_log): `LOGW(                                                                                  ,`
+  - app/src/main/cpp/omega_effect.cpp:48 [1st-level callee `LOGW` from `omega_process`] (android_log): `#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)`
+  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:978 [RT entry: Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess] (mutex/lock): `std::lock_guard<std::mutex> lock(g_dspProcessMutex);`
+
+=== [0.4] CHECK BUILD FLAGS REPORT ===
+Archivos CMake/Gradle auditados: 6
+[PASS] 0 flags prohibidos (-ffast-math / -Ofast / -ffinite-math-only).
+
+=== [0.5] CHECK DOCS CLAIMS REPORT ===
+[FAIL] Afirmaciones documentales no verificadas (11):
+  - README.md:12 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - README.md:47 contiene '150/150' hardcodeado sin telemetry/ctest_summary.json generado por CI
+  - README.md:200 contiene '\operatorname' (usar '\mathrm{sgn}')
+  - README.md:224 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - README.md:228 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - README.md:260 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - README.md:402 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - README.md:407 contiene '150/150' hardcodeado sin telemetry/ctest_summary.json generado por CI
+  - README.md:414 contiene '150/150' hardcodeado sin telemetry/ctest_summary.json generado por CI
+  - LÉAME.md:7 contiene afirmación '0.00 ms' sin medición empírica adjunta
+  - LÉAME.md:32 contiene afirmación '0.00 ms' sin medición empírica adjunta

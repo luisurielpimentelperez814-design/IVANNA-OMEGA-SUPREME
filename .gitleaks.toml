@@ -1,0 +1,19 @@
+title = "IVANNA-OMEGA-SUPREME Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exclusiones de directorios de compilación, dependencias y constantes de nombres de preferencias"
+paths = [
+  '''^node_modules/''',
+  '''^build/''',
+  '''^app/build/''',
+  '''^dist/''',
+  '''^vendor/''',
+  '''^\.git/''',
+]
+regexes = [
+  '''KEY_ISO226_REF_PHON\s*=\s*"iso226_ref_phon"''',
+  '''KEY_ISO226_CALIBRATED\s*=\s*"iso226_calibrated"''',
+]
