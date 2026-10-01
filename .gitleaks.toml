@@ -1,19 +1,36 @@
-title = "IVANNA-OMEGA-SUPREME Gitleaks Configuration"
+title = "IVANNA-OMEGA-SUPREME Gitleaks Configuration (Fase A6)"
 
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Exclusiones de directorios de compilación, dependencias y constantes de nombres de preferencias"
+description = "Allowlist explícita para configuración cliente Firebase/Google Services y archivos de reglas"
 paths = [
-  '''^node_modules/''',
-  '''^build/''',
-  '''^app/build/''',
-  '''^dist/''',
-  '''^vendor/''',
-  '''^\.git/''',
+    '''(^|/)google-services\.json$''',
+    '''^\.gitleaks\.toml$''',
 ]
-regexes = [
-  '''KEY_ISO226_REF_PHON\s*=\s*"iso226_ref_phon"''',
-  '''KEY_ISO226_CALIBRATED\s*=\s*"iso226_calibrated"''',
-]
+
+[[rules]]
+id = "gcp-or-gemini-api-key"
+description = "Clave de API de Google Cloud / Gemini (prefijo AIza)"
+regex = '''AIza[0-9A-Za-z_\-]{16,45}'''
+tags = ["key", "google", "gemini", "gcp"]
+
+[[rules]]
+id = "github-classic-pat"
+description = "Token de acceso personal clásico de GitHub (ghp_, gho_, ghu_, ghs_, ghr_)"
+regex = '''(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36,255}'''
+tags = ["key", "github", "pat"]
+
+[[rules]]
+id = "github-fine-grained-pat"
+description = "Token de acceso personal fine-grained de GitHub (github_pat_)"
+regex = '''github_pat_[0-9A-Za-z_]{22,255}'''
+tags = ["key", "github", "pat"]
+
+[[rules]]
+id = "kotlin-ts-hardcoded-api-key"
+description = "Asignación literal de API_KEY = \"...\" en Kotlin o TypeScript"
+regex = '''(?i)\b(?:const\s+val|val|var|const|let)\s+[A-Za-z0-9_]*API_KEY[A-Za-z0-9_]*\s*(?::\s*String\s*)?=\s*"([^"$\n]{8,})"'''
+path = '''\.(?:kt|kts|ts|tsx|js|jsx)$'''
+tags = ["key", "hardcoded", "kotlin", "typescript"]

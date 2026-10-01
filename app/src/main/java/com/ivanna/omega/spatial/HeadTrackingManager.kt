@@ -36,6 +36,7 @@ class HeadTrackingManager(private val context: Context, private val trackerHandl
 
     fun start() {
         if (isTracking) return
+        recenter()
         rotationSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST)
         }

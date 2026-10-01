@@ -551,6 +551,8 @@ fun IvannaControlPanel(
                 FlagToggle("FASTRPC cDSP", fastRpcEnabled, PhosphorGreen, Modifier.weight(1f)) { en ->
                     fastRpcEnabled = en
                     if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetFastRpcEnabled(en) }
+                    if (en) com.ivanna.omega.neuromorphic.IvannaDspManager.enable()
+                    else com.ivanna.omega.neuromorphic.IvannaDspManager.disable()
                 }
                 FlagToggle("ATI GUARD", atiEnabled, NeonMagenta, Modifier.weight(1f)) { en ->
                     atiEnabled = en
@@ -813,15 +815,42 @@ fun IvannaControlPanel(
                 StatBlock("CONF.", "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
                 StatBlock("ASPEREZA", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
             }
+            val npeSig = remember(npeInferenceUs) { IvannaNpeEngine.getSynthSignature() }
+            val npeBuildTag = remember { IvannaNpeEngine.getBuildTag() }
+            val npeCopyright = remember { IvannaNpeEngine.getCopyright() }
+            val lstmNpSat = remember(npeInferenceUs) { com.ivanna.omega.neuromorphic.PiLstmBridge.getNpSat() }
+            val lstmError = remember(npeInferenceUs) { com.ivanna.omega.neuromorphic.PiLstmBridge.getError() }
+            if (npeSig.size >= 5) {
+                Text(
+                    "FIRMA 5B (dB): SUB=${"%+.1f".format(npeSig[0])} · BASS=${"%+.1f".format(npeSig[1])} · " +
+                    "MID=${"%+.1f".format(npeSig[2])} · PRES=${"%+.1f".format(npeSig[3])} · AIR=${"%+.1f".format(npeSig[4])} · " +
+                    "NP=${"%.2f".format(lstmNpSat)} · ERR=${"%.4f".format(lstmError)}",
+                    color = AuroraCyan,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
             Spacer(Modifier.height(4.dp))
             AuroraSlider("GANANCIA ARMÓNICA · NHO", npeHarmonic, 0f..2f, unit = "×") {
-                npeHarmonic = it; onNpeHarmonicChange(it)
+                npeHarmonic = it
+                onNpeHarmonicChange(it)
+                IvannaNpeEngine.setParameters(
+                    alpha = npeOhcCompression,
+                    beta = npeLateralInhib,
+                    gamma = 1.0f,
+                    delta = npeAgcRate,
+                    eta = 0.5f,
+                    zeta = npeLateralInhib,
+                    nonlinearity = it
+                )
             }
             AuroraSlider("INHIBICIÓN LATERAL", npeLateralInhib, 0f..1f) {
                 npeLateralInhib = it; onNpeLateralInhibChange(it)
             }
             AuroraSlider("COMPRESIÓN OHC", npeOhcCompression, 0f..1f) {
-                npeOhcCompression = it; onNpeOhcCompressionChange(it)
+                npeOhcCompression = it
+                onNpeOhcCompressionChange(it)
+                com.ivanna.omega.neuromorphic.PiLstmBridge.setOdeDamping(it * 2.5f)
             }
             AuroraSlider("MASTER GAIN", npeMasterGain, -18f..18f, unit = "dB") {
                 npeMasterGain = it; onNpeMasterGainChange(it)
@@ -852,6 +881,27 @@ fun IvannaControlPanel(
                     onSpatialEnabledChange(false)
                 }
                 onNpeManifoldChange(it)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "$npeBuildTag ${if (npeCopyright.isNotBlank()) "· $npeCopyright" else ""}",
+                    color = TextMuted,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(
+                    onClick = {
+                        IvannaNpeEngine.reset()
+                        com.ivanna.omega.neuromorphic.PiLstmBridge.resetTelemetry()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("RESET NPE", fontSize = 10.sp) }
             }
         }
 

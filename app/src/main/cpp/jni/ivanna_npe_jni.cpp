@@ -168,19 +168,22 @@ public:
                         float eta, float zeta, float sr_noise_floor,
                         float sync_threshold, float noise_gain_far, float phi,
                         float damping, float nonlinearity, float coupling) noexcept {
-        nho_.set_alpha(alpha);
-        nho_.set_beta(beta);
+        if (!std::isfinite(alpha) || !std::isfinite(beta) || !std::isfinite(gamma) || !std::isfinite(delta)) return;
+        nho_.set_alpha(std::clamp(alpha, 0.f, 2.f));
+        nho_.set_beta(std::clamp(beta, 0.f, 2.f));
         nho_.set_mu(std::clamp(delta, 0.f, 1.f));
         nho_.set_wet(std::clamp(phi, 0.f, 1.f));
-        nho_.set_harmonic_gain(std::clamp(nonlinearity, 0.f, 2.f));
+        const float nonlinClamped = std::clamp(nonlinearity, 0.f, 2.f);
+        harmonic_gain_ = nonlinClamped;
+        nho_.set_harmonic_gain(nonlinClamped);
         current_scale_   = std::clamp(gamma, 0.f, 4.f);
-        eta_             = eta;
+        eta_             = std::clamp(eta, 0.f, 5.f);
         zeta_inhib_      = std::clamp(zeta, 0.f, 1.f);
-        noise_floor_lin_ = db_to_lin(sr_noise_floor);
-        sync_threshold_  = sync_threshold;
-        noise_gain_far_  = noise_gain_far;
+        noise_floor_lin_ = db_to_lin(std::clamp(sr_noise_floor, -120.f, 0.f));
+        sync_threshold_  = std::clamp(sync_threshold, 0.f, 1.f);
+        noise_gain_far_  = std::clamp(noise_gain_far, 0.f, 2.f);
         envBank_.env_release = std::clamp(0.010f * (1.f + damping), 0.001f, 0.2f);
-        coupling_ = coupling;
+        coupling_ = std::clamp(coupling, 0.f, 1.f);
     }
 
     // ── Procesamiento estéreo — corazón del motor ───────────────────────────
@@ -298,8 +301,9 @@ public:
 
             const float mono = 0.5f * (outL[i] + outR[i]);
             update_velocity(mono, sample_rate_);
-            scope_[scope_write_] = mono;
-            scope_write_ = (scope_write_ + 1) % SCOPE_SIZE;
+            const int w = scope_write_.load(std::memory_order_relaxed);
+            scope_[w] = mono;
+            scope_write_.store((w + 1) % SCOPE_SIZE, std::memory_order_release);
 
             if (i < mono_cap) mono_buf[i] = mono;
 
@@ -364,19 +368,25 @@ public:
     }
 
     void process(const float* in, float* out, int n) noexcept {
-        // Motor es intrínsecamente estéreo — mono: duplicar canal.
-        thread_local std::vector<float> tmpL, tmpR;
-        tmpL.assign(in, in + n);
-        tmpR.assign(in, in + n);
-        std::vector<float> oL(n), oR(n);
-        processStereo(tmpL.data(), tmpR.data(), oL.data(), oR.data(), n);
-        for (int i = 0; i < n; ++i) out[i] = 0.5f * (oL[i] + oR[i]);
+        if (!in || !out || n <= 0) return;
+        constexpr int kChunk = 512;
+        float oL[kChunk];
+        float oR[kChunk];
+        int offset = 0;
+        while (offset < n) {
+            const int blk = std::min(n - offset, kChunk);
+            processStereo(in + offset, in + offset, oL, oR, blk);
+            for (int i = 0; i < blk; ++i) out[offset + i] = 0.5f * (oL[i] + oR[i]);
+            offset += blk;
+        }
     }
 
     int snapshotScope(float* dst, int max_frames) noexcept {
+        if (!dst || max_frames <= 0) return 0;
         const int count = std::min(max_frames, SCOPE_SIZE);
+        const int writePos = scope_write_.load(std::memory_order_acquire);
         for (int i = 0; i < count; ++i) {
-            const int idx = (scope_write_ - count + i + SCOPE_SIZE * 2) % SCOPE_SIZE;
+            const int idx = (writePos - count + i + SCOPE_SIZE * 2) % SCOPE_SIZE;
             dst[i] = scope_[idx];
         }
         return count;
@@ -457,7 +467,7 @@ private:
     float rms_envelope_ = 0.f;
 
     float scope_[SCOPE_SIZE]{};
-    int   scope_write_ = 0;
+    std::atomic<int> scope_write_{0};
 
     std::mutex metrics_mtx_;
     std::array<float, 8> last_metrics_{};

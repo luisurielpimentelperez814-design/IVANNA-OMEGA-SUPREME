@@ -23,7 +23,10 @@ import androidx.compose.ui.unit.sp
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.neuromorphic.IvannaNpeNative
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
+import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -52,18 +55,36 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
     // (alimentado por PlaybackCaptureService.processBlock en cada bloque de
     // captura — fuente real, no la interpolación 3→64 ni el fallback sintético).
     val bark64Buf = remember { FloatArray(IvannaVisualizerBark64Bridge.BAND_COUNT) }
+    val npeScopeBuf = remember { IvannaNpeNative.allocFloatBuffer(1024) }
+    var liveScopeSamples by remember { mutableStateOf<FloatArray?>(null) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
             delay(50L); tick = System.currentTimeMillis()
+            if (IvannaNpeEngine.isReady) {
+                runCatching {
+                    npeScopeBuf.clear()
+                    val count = IvannaNpeEngine.snapshotScope(npeScopeBuf, 1024)
+                    if (count > 0) {
+                        val snap = FloatArray(count)
+                        for (i in 0 until count) snap[i] = npeScopeBuf.get(i)
+                        liveScopeSamples = snap
+                    }
+                }
+            }
             // Prioridad de fuentes para el espectro:
             //   1. Bark64 nativo (64 bandas reales, captura del sistema activa)
-            //   2. nativeGetBandEnergies (3 bandas low/mid/high, reproductor local)
-            //   3. fftFallback (sintético, solo cuando no hay ninguna fuente)
+            //   2. IvannaVisualizerBridgeV2.sample() (13 bandas perceptuales reales)
+            //   3. nativeGetBandEnergies (3 bandas low/mid/high, reproductor local)
+            //   4. fftFallback (sintético, solo cuando no hay ninguna fuente)
             if (IvannaVisualizerBark64Bridge.isReady) {
                 runCatching {
                     IvannaVisualizerBark64Bridge.sampleInto(bark64Buf)
                     bandEnergies = bark64Buf.copyOf()
+                }
+            } else if (IvannaVisualizerBridgeV2.isReady) {
+                runCatching {
+                    bandEnergies = IvannaVisualizerBridgeV2.sample()
                 }
             } else if (IvannaNativeLib.isLoaded) {
                 runCatching { bandEnergies = IvannaNativeLib.nativeGetBandEnergies() }
@@ -71,7 +92,9 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
         }
     }
 
-    val oscData = remember(tick, signal, fundHz) { buildOscillo(signal, fundHz, tick) }
+    val oscData = remember(tick, signal, fundHz, liveScopeSamples) {
+        buildOscillo(signal, fundHz, tick, liveScopeSamples)
+    }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         GlassCard("GENERADOR DE SEÑAL DE PRUEBA", AmberSignal) {
@@ -152,6 +175,12 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
                 val bands64 = FloatArray(nBands) { i ->
                     if (real != null && real.size >= 64) {
                         real[i].coerceIn(0f, 1f)
+                    } else if (real != null && real.size >= IvannaVisualizerBridgeV2.BAND_COUNT) {
+                        val pos = (i.toFloat() / (nBands - 1).toFloat()) * (real.size - 1)
+                        val idx0 = pos.toInt().coerceIn(0, real.size - 1)
+                        val idx1 = (idx0 + 1).coerceAtMost(real.size - 1)
+                        val frac = pos - idx0
+                        (real[idx0] * (1f - frac) + real[idx1] * frac).coerceIn(0f, 1f)
                     } else if (real != null && real.size >= 3) {
                         val t = i / (nBands - 1).toFloat()  // 0..1
                         // Bandas reales: low=[0..21], mid=[22..42], high=[43..63]
@@ -187,7 +216,12 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
     }
 }
 
-private fun buildOscillo(type: SignalKind, fundHz: Float, tick: Long): Pair<FloatArray, FloatArray> {
+private fun buildOscillo(
+    type: SignalKind,
+    fundHz: Float,
+    tick: Long,
+    liveScope: FloatArray? = null
+): Pair<FloatArray, FloatArray> {
     val n = 1024; val raw = FloatArray(n); val dsp = FloatArray(n)
     val t = tick / 1000.0; val cy = fundHz / 100f
     for (i in 0 until n) {
@@ -201,6 +235,16 @@ private fun buildOscillo(type: SignalKind, fundHz: Float, tick: Long): Pair<Floa
         }
         val d = raw[i] * 1.8f
         dsp[i] = (d / (1f + abs(d))).coerceIn(-1f, 1f)
+    }
+    if (liveScope != null && liveScope.any { abs(it) > 1e-5f }) {
+        val lim = minOf(n, liveScope.size)
+        for (i in 0 until lim) dsp[i] = liveScope[i].coerceIn(-1f, 1f)
+    } else if (IvannaNpeEngine.isReady) {
+        val monoCopy = raw.copyOf()
+        runCatching {
+            IvannaNpeEngine.processMono(monoCopy, n)
+            for (i in 0 until n) dsp[i] = monoCopy[i].coerceIn(-1f, 1f)
+        }
     }
     return raw to dsp
 }

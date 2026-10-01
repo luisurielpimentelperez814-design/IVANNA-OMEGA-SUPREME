@@ -29,6 +29,23 @@ object PiLstmBridge {
 
     private var lastAlpha = 0.8f
     private var lastBeta = 0.25f
+    private var lastGamma = 1.0f
+    private var lastDelta = 0.5f
+    private var lastEta = 0.5f
+
+    private fun syncNpeParameters() {
+        runCatching {
+            IvannaNpeEngine.setParameters(
+                alpha = lastAlpha,
+                beta = lastBeta,
+                gamma = lastGamma,
+                delta = lastDelta,
+                eta = lastEta,
+                zeta = 0.3f,
+                nonlinearity = lastHarmonicGain
+            )
+        }
+    }
 
     fun setAlpha(v: Float) {
         lastAlpha = v
@@ -36,6 +53,7 @@ object PiLstmBridge {
             nativeSetAlpha(v)
             runCatching { IvannaNativeLib.nativeSetAlpha(v) }
             runCatching { IvannaNpeEngine.setOhcParams(lastAlpha, lastBeta) }
+            syncNpeParameters()
         }
     }
     fun setBeta(v: Float) {
@@ -44,18 +62,23 @@ object PiLstmBridge {
             nativeSetBeta(v)
             runCatching { IvannaNativeLib.nativeSetBeta(v) }
             runCatching { IvannaNpeEngine.setOhcParams(lastAlpha, lastBeta) }
+            syncNpeParameters()
         }
     }
     fun setGamma(v: Float) {
+        lastGamma = v
         if (ready) {
             nativeSetGamma(v)
             runCatching { IvannaNativeLib.nativeSetGamma(v) }
+            syncNpeParameters()
         }
     }
     fun setDelta(v: Float) {
+        lastDelta = v
         if (ready) {
             nativeSetDelta(v)
             runCatching { IvannaNativeLib.nativeSetDelta(v) }
+            syncNpeParameters()
         }
     }
     private var lastHarmonicGain = 0.2f
@@ -125,9 +148,11 @@ object PiLstmBridge {
 
     /** Amortiguamiento η de la ODE (rango 0..5) — su propósito REAL. */
     fun setOdeDamping(eta: Float) {
+        lastEta = eta.coerceIn(0f, 5f)
         if (ready) {
-            nativeSetEta(eta.coerceIn(0f, 5f))
-            runCatching { IvannaNativeLib.nativeSetEta((eta / 5f).coerceIn(0f, 1f)) }
+            nativeSetEta(lastEta)
+            runCatching { IvannaNativeLib.nativeSetEta((lastEta / 5f).coerceIn(0f, 1f)) }
+            syncNpeParameters()
         }
     }
 
@@ -152,8 +177,8 @@ object PiLstmBridge {
                     }
             }
             runCatching { IvannaNpeEngine.setAgcParams(safeTarget, safeRate) }
-            runCatching { IvannaNativeLib.nativeSetNPMax(gain) }
-            runCatching { IvannaNativeLib.nativeSetDelta(safeRate) }
+            setNeuroplasticityMax((gain * 10f).coerceIn(0.1f, 10f))
+            setDelta(safeRate)
         } catch (t: Throwable) {
             android.util.Log.e("IVANNA_OMEGA_LSTM", "setAgc safe fallback error", t)
         }

@@ -224,6 +224,22 @@ object SupremeAxesPrefs {
             sensitivityScore = 1.0f
         )
         NativeBridge.safeSetRealityReconstructionEnabled(s.realityReconstructionEnabled)
+        NativeBridge.safeSetRoomProjectionParams(
+            inversionGain = (0.40f * s.realityIntensity).coerceIn(0f, 1f),
+            projectionWet = (0.25f * s.realityIntensity).coerceIn(0f, 1f)
+        )
+        NativeBridge.safeSetPhysicalSceneParams(
+            occlusionFactor = 0.0f,
+            wallAbsorption  = (0.30f + 0.15f * s.realityIntensity).coerceIn(0.05f, 0.95f)
+        )
+        NativeBridge.safeSetHearingAdaptationParams(
+            earTipSeal      = 1.0f,
+            listeningSplDb  = 75.0f,
+            lossLowDb       = 0.0f,
+            lossMidDb       = 0.0f,
+            lossHighDb      = 0.0f,
+            lossUltraHighDb = 0.0f
+        )
 
         // Sincronizar también Ruta B (Daemon + AudioFlinger HAL Effect)
         pushToDaemonRutaB(s)

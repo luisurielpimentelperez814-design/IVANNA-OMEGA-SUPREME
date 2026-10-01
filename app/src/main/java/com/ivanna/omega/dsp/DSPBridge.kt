@@ -67,6 +67,13 @@ object DSPBridge {
     ) {
         if (!loaded) return
         nativeSetParams(drive, wet, mix, alpha, beta, gamma, freq, resonance, low, mid, high, presence, master)
+        if (IvannaNativeLib.isLoaded) {
+            runCatching {
+                IvannaNativeLib.nativeSetParams(
+                    floatArrayOf(drive, wet, mix, alpha, beta, gamma, freq, resonance, low, mid, high, presence, master)
+                )
+            }
+        }
     }
 
     // FIX (tuning magistral): antes el ancho estéreo (DSPState.stereoWidth)

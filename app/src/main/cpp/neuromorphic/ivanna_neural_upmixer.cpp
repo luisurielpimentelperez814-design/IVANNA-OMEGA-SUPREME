@@ -10,56 +10,56 @@
 namespace ivanna::ai {
 
 bool NeuralUpmixer::init(float sampleRate, int blockSize) {
-    sampleRate_ = sampleRate;
+    sampleRate_ = (sampleRate > 8000.f) ? sampleRate : 48000.f;
     blockSize_ = blockSize;
 
     bassStateL_ = bassStateR_ = 0.f;
     vocalStateL_ = vocalStateR_ = 0.f;
+    drumPrevMono_ = 0.f;
+    drumEnv_ = 0.f;
+    drumPrevSide_ = 0.f;
+    xfadeGain_ = enabled_.load(std::memory_order_acquire) ? 1.f : 0.f;
 
     ivanna::audio::enableAudioThreadFastMathOnce();
     return true;
 }
 
 void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept {
-    if (!enabled_) {
-        // Passthrough: todo a "Other" stem
-        for (int n = 0; n < numFrames; ++n) {
-            out[n*8 + 0] = 0.f; out[n*8 + 1] = 0.f;   // Vocals
-            out[n*8 + 2] = 0.f; out[n*8 + 3] = 0.f;   // Drums
-            out[n*8 + 4] = 0.f; out[n*8 + 5] = 0.f;   // Bass
-            out[n*8 + 6] = in[n*2]; out[n*8 + 7] = in[n*2 + 1];  // Other
-        }
-        return;
-    }
+    if (!in || !out || numFrames <= 0) return;
+
+    const float target = enabled_.load(std::memory_order_acquire) ? 1.f : 0.f;
+    const float rampSamples = std::max(64.f, 0.020f * sampleRate_);
+    const float step = 1.f / rampSamples;
 
     // Coeficientes de filtro adaptados a sampleRate
-    float bassCoeff = 200.f / (sampleRate_ + 200.f);      // ~200Hz cutoff
-    float vocalCoeff = 2000.f / (sampleRate_ + 2000.f);   // ~2kHz cutoff
+    const float bassCoeff = 200.f / (sampleRate_ + 200.f);      // ~200Hz cutoff
+    const float vocalCoeff = 2000.f / (sampleRate_ + 2000.f);   // ~2kHz cutoff
 
     for (int n = 0; n < numFrames; ++n) {
-        float L = in[n*2];
-        float R = in[n*2 + 1];
-        float mono = (L + R) * 0.5f;
-        float side = (L - R) * 0.5f;
+        if (xfadeGain_ < target) {
+            xfadeGain_ = std::min(target, xfadeGain_ + step);
+        } else if (xfadeGain_ > target) {
+            xfadeGain_ = std::max(target, xfadeGain_ - step);
+        }
+        const float w = xfadeGain_;
 
-        // Filtro paso-bajo para bass (integrador leaky)
+        const float L = in[n*2];
+        const float R = in[n*2 + 1];
+        const float mono = (L + R) * 0.5f;
+        const float side = (L - R) * 0.5f;
+
+        // Mantener estados de filtro calientes incluso en bypass para que al activar
+        // el crossfade nunca arranque desde un escalón de estado frío.
         bassStateL_ += bassCoeff * (L - bassStateL_);
         bassStateR_ += bassCoeff * (R - bassStateR_);
-        float bassL = bassStateL_;
-        float bassR = bassStateR_;
+        const float bassL = bassStateL_;
+        const float bassR = bassStateR_;
 
-        // Filtro paso-bajo para vocals (integrador leaky más rápido)
         vocalStateL_ += vocalCoeff * (L - vocalStateL_);
         vocalStateR_ += vocalCoeff * (R - vocalStateR_);
-        float vocalL = vocalStateL_ - bassStateL_;  // Restar bass
-        float vocalR = vocalStateR_ - bassStateR_;
+        const float vocalL = vocalStateL_ - bassStateL_;
+        const float vocalR = vocalStateR_ - bassStateR_;
 
-        // Drums = transitorios con envolvente (attack instantáneo,
-        // release ~5ms) en vez del |delta|*2 crudo anterior, que metía un
-        // click de alta frecuencia por muestra y copiaba el mismo valor a
-        // L y R (transitorios sin imagen estéreo). La envolvente suaviza
-        // el release y el delta de side reparte el golpe en el campo
-        // estéreo.
         const float drumDelta = mono - drumPrevMono_;
         drumPrevMono_ = mono;
         const float drumAbs = std::fabs(drumDelta) * 2.f;
@@ -67,31 +67,33 @@ void NeuralUpmixer::process(const float* in, float* out, int numFrames) noexcept
                                         : drumEnv_ + 0.09f * (drumAbs - drumEnv_);
         const float sideDelta = side - drumPrevSide_;
         drumPrevSide_ = side;
-        float drumL = drumEnv_ * 0.5f + sideDelta;
-        float drumR = drumEnv_ * 0.5f - sideDelta;
+        const float drumL = drumEnv_ * 0.5f + sideDelta;
+        const float drumR = drumEnv_ * 0.5f - sideDelta;
 
-        // Other = residuo espectral. REFINAMIENTO: ahora también descuenta
-        // el stem de drums — antes los transitorios quedaban íntegros en
-        // Other Y duplicados en Drums, inflando la energía percibida en
-        // cada golpe. Con esta resta, la suma de los 4 stems reconstruye
-        // la entrada salvo el suavizado de la envolvente de drums.
-        float otherL = L - vocalL - bassL - drumL;
-        float otherR = R - vocalR - bassR - drumR;
+        const float otherL = L - vocalL - bassL - drumL;
+        const float otherR = R - vocalR - bassR - drumR;
 
-        // Normalizar y escribir
-        out[n*8 + 0] = vocalL; out[n*8 + 1] = vocalR;
-        out[n*8 + 2] = drumL;  out[n*8 + 3] = drumR;
-        out[n*8 + 4] = bassL;  out[n*8 + 5] = bassR;
-        out[n*8 + 6] = otherL; out[n*8 + 7] = otherR;
+        // Crossfade continuo entre passthrough (todo en Other) y 4 stems separados:
+        // En todo instante t, la suma de los 4 stems conserva L y R sin salto.
+        out[n*8 + 0] = w * vocalL;
+        out[n*8 + 1] = w * vocalR;
+        out[n*8 + 2] = w * drumL;
+        out[n*8 + 3] = w * drumR;
+        out[n*8 + 4] = w * bassL;
+        out[n*8 + 5] = w * bassR;
+        out[n*8 + 6] = (1.f - w) * L + w * otherL;
+        out[n*8 + 7] = (1.f - w) * R + w * otherR;
     }
 }
 
-void NeuralUpmixer::stemsToObjects(const float* stems, int numFrames,
+void NeuralUpmixer::stemsToObjects(const float* /*stems*/, int /*numFrames*/,
                                    std::vector<spatial::AudioObject>& objects) noexcept {
     objects.clear();
     objects.reserve(4);
 
-    const auto& positions = useCustomPositions_ ? customPositions_ : kStemPositions;
+    const bool useCustom = useCustomPositions_.load(std::memory_order_acquire);
+    const int readIdx = activePosBuf_.load(std::memory_order_acquire);
+    const auto& positions = useCustom ? customPositionsBuf_[readIdx] : kStemPositions;
 
     for (int i = 0; i < 4; ++i) {
         spatial::AudioObject obj;
@@ -107,12 +109,30 @@ void NeuralUpmixer::stemsToObjects(const float* stems, int numFrames,
     }
 }
 
-void NeuralUpmixer::setStemPosition(StemType stem, float x, float y, float z, float width) {
-    int idx = static_cast<int>(stem);
+void NeuralUpmixer::setStemPosition(StemType stem, float x, float y, float z, float width) noexcept {
+    const int idx = static_cast<int>(stem);
     if (idx >= 0 && idx < 4) {
-        customPositions_[idx] = {x, y, z, width, customPositions_[idx].gain};
-        useCustomPositions_ = true;
+        const int curIdx = activePosBuf_.load(std::memory_order_acquire);
+        const int nextIdx = 1 - curIdx;
+        customPositionsBuf_[nextIdx] = customPositionsBuf_[curIdx];
+        customPositionsBuf_[nextIdx][idx] = {
+            std::clamp(x, -2.f, 2.f),
+            std::clamp(y, -2.f, 2.f),
+            std::clamp(z, -2.f, 2.f),
+            std::clamp(width, 0.02f, 1.f),
+            customPositionsBuf_[curIdx][idx].gain
+        };
+        activePosBuf_.store(nextIdx, std::memory_order_release);
+        useCustomPositions_.store(true, std::memory_order_release);
     }
+}
+
+StemPosition NeuralUpmixer::getStemPosition(StemType stem) const noexcept {
+    const int idx = static_cast<int>(stem);
+    if (idx < 0 || idx >= 4) return {0.f, 0.f, 1.f, 0.15f, 1.f};
+    const bool useCustom = useCustomPositions_.load(std::memory_order_acquire);
+    const int readIdx = activePosBuf_.load(std::memory_order_acquire);
+    return useCustom ? customPositionsBuf_[readIdx][idx] : kStemPositions[idx];
 }
 
 void NeuralUpmixer::reset() noexcept {

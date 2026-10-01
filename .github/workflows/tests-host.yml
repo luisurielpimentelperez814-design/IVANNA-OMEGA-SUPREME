@@ -85,10 +85,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/check_jni_wiring.py
-          python3 scripts/check_header_wiring.py --ratchet
-          python3 scripts/check_rt_safety.py --ratchet
+          python3 scripts/check_kotlin_wrapper_wiring.py
+          python3 scripts/check_header_wiring.py
+          python3 scripts/check_rt_safety.py
           python3 scripts/check_build_flags.py
-          python3 scripts/check_docs_claims.py --ratchet
+          python3 scripts/check_docs_claims.py
           if command -v cppcheck >/dev/null 2>&1 || sudo apt-get install -y -qq cppcheck; then
             cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
               app/src/main/cpp/omega_effect.cpp \

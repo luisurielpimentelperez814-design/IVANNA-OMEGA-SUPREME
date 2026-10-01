@@ -103,6 +103,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsOutL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsOutR.assign(Ivanna::BLOCK_SIZE, 0.0f);
+    m_hoaField.assign(Ivanna::BLOCK_SIZE, HoaVector{0});
 
     m_inFifoL.assign(kFifoCapacity, 0.0f);
     m_inFifoR.assign(kFifoCapacity, 0.0f);
@@ -226,13 +227,12 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
 
     // Capturar entrada estéreo limpia pre-binaural para WFS (evita doble espacialización
     // HOA/HRTF -> WFS en cascada que causaba filtro peine e inflación de ganancia).
-    if (m_wfsFade > 0.0f && m_wfsInit) {
+    if (m_wfsFade > 0.0f && m_wfsInit &&
+        m_wfsInL.size() >= Ivanna::BLOCK_SIZE &&
+        m_wfsInR.size() >= Ivanna::BLOCK_SIZE &&
+        m_wfsOutL.size() >= Ivanna::BLOCK_SIZE &&
+        m_wfsOutR.size() >= Ivanna::BLOCK_SIZE) {
         const int n = Ivanna::BLOCK_SIZE;
-        if ((int)m_wfsInL.size() != n) {
-            m_wfsInL.assign(n, 0.f);  m_wfsInR.assign(n, 0.f);
-            m_wfsOutL.assign(n, 0.f); m_wfsOutR.assign(n, 0.f);
-            m_wfs.init(m_sampleRateF, n, 16);
-        }
         for (int i = 0; i < n; ++i) {
             m_wfsInL[i] = buffer->left[i];
             m_wfsInR[i] = buffer->right[i];

@@ -102,8 +102,12 @@ public:
 
     // reverbLevel_ gobierna tanto el fallback FDN como el wet del RIR real
     void setReverbLevel(float level) noexcept {
-        reverbLevel_ = std::clamp(level, 0.f, 1.f);
-        if (rirConvolver_) rirConvolver_->setWetDry(reverbLevel_);
+        const float clamped = std::clamp(level, 0.f, 1.f);
+        reverbLevel_.store(clamped, std::memory_order_relaxed);
+        if (rirConvolver_) rirConvolver_->setWetDry(clamped);
+    }
+    float reverbLevel() const noexcept {
+        return reverbLevel_.load(std::memory_order_relaxed);
     }
     AutoEqFilter& getAutoEq() noexcept { return autoEq_; }
 
@@ -211,7 +215,7 @@ private:
 
     HeadTracker*   headTracker_ = nullptr;
     AutoEqFilter   autoEq_;
-    float          reverbLevel_ = 0.3f;
+    std::atomic<float> reverbLevel_{0.3f};
     std::array<float, 7> saf_q_{};
 
     // Azimut base por speaker (grados) — atan2(y,x) computado en init(),

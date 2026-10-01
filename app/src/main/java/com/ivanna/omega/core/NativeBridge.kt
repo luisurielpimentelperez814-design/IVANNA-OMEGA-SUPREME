@@ -22,6 +22,14 @@ object NativeBridge {
         }
         try {
             setCochlearInverseEnabled(enabled)
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.setCochlearInverseEnabled(enabled)
+                IvannaNativeLib.nativeSetCochlearInverseEnabled(enabled)
+            }
+            if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+                com.ivanna.omega.spatial.IvannaSpatialNative.setCochlearInverseEnabled(enabled)
+                com.ivanna.omega.spatial.IvannaSpatialNative.nativeSetCochlearInverseEnabled(enabled)
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to call setCochlearInverseEnabled", t)
         }
@@ -34,6 +42,14 @@ object NativeBridge {
         }
         try {
             setCochlearIntensity(intensity)
+            if (IvannaNativeLib.isLoaded) {
+                IvannaNativeLib.setCochlearIntensity(intensity)
+                IvannaNativeLib.nativeSetCochlearIntensity(intensity)
+            }
+            if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+                com.ivanna.omega.spatial.IvannaSpatialNative.setCochlearIntensity(intensity)
+                com.ivanna.omega.spatial.IvannaSpatialNative.nativeSetCochlearIntensity(intensity)
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to call setCochlearIntensity", t)
         }
@@ -42,7 +58,12 @@ object NativeBridge {
     fun safeIsCochlearActive(): Boolean {
         if (!isLoaded) return false
         return try {
-            isCochlearActive()
+            val active = isCochlearActive()
+            val libActive = if (IvannaNativeLib.isLoaded) IvannaNativeLib.isCochlearActive() else active
+            val spActive = if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+                com.ivanna.omega.spatial.IvannaSpatialNative.isCochlearActive()
+            } else active
+            active || libActive || spActive
         } catch (t: Throwable) {
             false
         }
@@ -51,7 +72,12 @@ object NativeBridge {
     fun safeGetCochlearIntensity(): Float {
         if (!isLoaded) return 0.35f
         return try {
-            getCochlearIntensity()
+            val primary = getCochlearIntensity()
+            if (IvannaNativeLib.isLoaded) {
+                val mirror = IvannaNativeLib.getCochlearIntensity()
+                if (mirror.isFinite() && mirror > 0f) return primary
+            }
+            primary
         } catch (t: Throwable) {
             0.35f
         }

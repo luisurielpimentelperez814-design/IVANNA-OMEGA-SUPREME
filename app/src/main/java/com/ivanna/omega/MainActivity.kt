@@ -197,6 +197,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { com.ivanna.omega.spatial.IvannaSpatialManager.release() }
+        val shm: ShmManager = ShmManager.getInstance()
+        runCatching { shm.release() }
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSaveEvoState() }
             runCatching { IvannaNativeLib.nativeDestroyAdaptiveEngine() }
@@ -563,6 +566,14 @@ fun OmegaApp() {
             // llegar a ella. Ahora es el destino del CTA "PERCEPTUAL BRAIN CORTEX".
             composable(IvannaRoute.PERCEPTUAL_CORTEX) {
                 val brainEngine = remember { PerceptualBrainEngine() }
+                val decisionEngine: PerceptualDecisionEngine = remember { PerceptualDecisionEngine() }
+                LaunchedEffect(brainEngine) {
+                    brainEngine.snapshot.collectLatest { snap ->
+                        if (snap.dataAvailable) {
+                            decisionEngine.dispatchRecommendations(decisionEngine.evaluate(snap))
+                        }
+                    }
+                }
                 PerceptualBrainDashboard(
                     engine = brainEngine,
                     onBack = { nav.popBackStack() },
@@ -661,11 +672,14 @@ fun OmegaApp() {
                 val state by vm.state.collectAsState()
                 val expert by vm.expertMode.collectAsState()
                 com.ivanna.omega.ui.oem.OemSpatialScreen(
-                    state       = state,
-                    expertMode  = expert,
-                    onBack      = { nav.popBackStack() },
-                    onSetWidth  = { vm.setSpatialWidth(it) },
-                    onSetAngle  = { vm.setSpatialAngle(it) },
+                    state            = state,
+                    expertMode       = expert,
+                    onBack           = { nav.popBackStack() },
+                    onSetWidth       = { vm.setSpatialWidth(it) },
+                    onSetAngle       = { vm.setSpatialAngle(it) },
+                    onSetHrtfEnabled = { vm.setHrtfEnabled(it) },
+                    onSafFeedback    = { dir, pos -> vm.safFeedback(dir, pos) },
+                    onSafReset       = { vm.safReset() },
                 )
             }
             composable("oem_acoustic") {
@@ -683,9 +697,10 @@ fun OmegaApp() {
                 val state by vm.state.collectAsState()
                 val expert by vm.expertMode.collectAsState()
                 com.ivanna.omega.ui.oem.OemAiScreen(
-                    state      = state,
-                    expertMode = expert,
-                    onBack     = { nav.popBackStack() },
+                    state             = state,
+                    expertMode        = expert,
+                    onBack            = { nav.popBackStack() },
+                    onSetAdaptEnabled = { vm.setAdaptEnabled(it) },
                 )
             }
             composable("oem_thermal") {
@@ -1200,7 +1215,7 @@ fun DashboardScreen(
             },
             routeState = routeState,
             initialAutoMode  = paramStore.isAutoModeEnabled(),
-            initialOmegaMode = paramStore.getOmegaMode(),
+            initialOmegaMode = paramStore.getOmegaMode().takeIf { it in 0..2 } ?: com.ivanna.omega.core.OmegaEngine.getMode(),
             onPresetSelected = { presetName ->
                 val profile = ProfilesLoader.load(context)
                     .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
@@ -1224,6 +1239,7 @@ fun DashboardScreen(
             },
             onOmegaModeChange = { mode ->
                 paramStore.setOmegaMode(mode)
+                com.ivanna.omega.core.OmegaEngine.setMode(mode)
                 OmegaEngineBridge.setIntensity(mode / 2f)
             },
             onPhaseOracleChange = { intensity ->

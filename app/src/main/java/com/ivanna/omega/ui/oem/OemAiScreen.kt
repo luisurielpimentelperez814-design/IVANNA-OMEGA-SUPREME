@@ -18,7 +18,12 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.ui.theme.*
 
 @Composable
-fun OemAiScreen(state: OemState, expertMode: Boolean, onBack: () -> Unit) {
+fun OemAiScreen(
+    state: OemState,
+    expertMode: Boolean,
+    onBack: () -> Unit,
+    onSetAdaptEnabled: (Boolean) -> Unit = {}
+) {
     Column(
         Modifier.fillMaxSize().background(ObsidianVoid)
             .windowInsetsPadding(WindowInsets.systemBars)
@@ -46,6 +51,7 @@ fun OemAiScreen(state: OemState, expertMode: Boolean, onBack: () -> Unit) {
                     Text("CLASIFICADOR DE CONTENIDO", color = TextMuted, fontSize = 8.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Surface(shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.clickable { onSetAdaptEnabled(!state.adaptiveRunning) },
                         color = if (state.adaptiveRunning) NeonMagenta.copy(0.15f) else ObsidianEdge) {
                         Text(if (state.adaptiveRunning) "ADAPTANDO" else "FALLBACK",
                             color = if (state.adaptiveRunning) NeonMagenta else TextMuted,

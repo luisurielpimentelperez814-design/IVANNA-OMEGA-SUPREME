@@ -5,17 +5,20 @@ ROOT="$(git rev-parse --show-toplevel)"
 echo "[pre-commit] 0.1 check_jni_wiring.py"
 python3 "$ROOT/scripts/check_jni_wiring.py"
 
+echo "[pre-commit] A2 check_kotlin_wrapper_wiring.py"
+python3 "$ROOT/scripts/check_kotlin_wrapper_wiring.py"
+
 echo "[pre-commit] 0.2 check_header_wiring.py"
-python3 "$ROOT/scripts/check_header_wiring.py" --ratchet
+python3 "$ROOT/scripts/check_header_wiring.py"
 
 echo "[pre-commit] 0.3 check_rt_safety.py"
-python3 "$ROOT/scripts/check_rt_safety.py" --ratchet
+python3 "$ROOT/scripts/check_rt_safety.py"
 
 echo "[pre-commit] 0.4 check_build_flags.py"
 python3 "$ROOT/scripts/check_build_flags.py"
 
 echo "[pre-commit] 0.5 check_docs_claims.py"
-python3 "$ROOT/scripts/check_docs_claims.py" --ratchet
+python3 "$ROOT/scripts/check_docs_claims.py"
 
 if command -v gitleaks >/dev/null 2>&1; then
   echo "[pre-commit] 0.6 gitleaks staged check"

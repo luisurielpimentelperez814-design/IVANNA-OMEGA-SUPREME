@@ -48,8 +48,12 @@ fun SaFCalibrationScreen(
 ) {
     val onBack = onDismiss
     val context = LocalContext.current
-    val engine  = remember { SaFEngine(context).also { it.initialize() } }
+    val engine: SaFEngine = remember { SaFEngine(context) }
     val state   by engine.state.collectAsState()
+
+    LaunchedEffect(engine) {
+        engine.initialize()
+    }
 
     // FIX (hilo suelto documentado en AGENT_CLAIMS.md — "Motor SAF de
     // calibración HRTF"): release() ya existía, idempotente y tolerante a

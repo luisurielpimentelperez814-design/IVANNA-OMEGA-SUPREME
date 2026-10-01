@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +44,12 @@ class CochlearInverseViewModel(application: Application) : AndroidViewModel(appl
     )
     val cochlearIntensity: StateFlow<Float> = _cochlearIntensity.asStateFlow()
 
+    private val _nativeCochlearActive = MutableStateFlow(false)
+    val nativeCochlearActive: StateFlow<Boolean> = _nativeCochlearActive.asStateFlow()
+
+    private val _nativeCochlearIntensity = MutableStateFlow(DEFAULT_INTENSITY)
+    val nativeCochlearIntensity: StateFlow<Float> = _nativeCochlearIntensity.asStateFlow()
+
     init {
         // Restaurar estado al motor nativo en el arranque (p.ej. servicio reiniciado)
         applyToNative(
@@ -56,33 +63,44 @@ class CochlearInverseViewModel(application: Application) : AndroidViewModel(appl
     fun setCochlearEnabled(enabled: Boolean) {
         _cochlearEnabled.value = enabled
         prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
-        IvannaNativeLib.guardedNative(Unit) {
-            IvannaNativeLib.nativeSetCochlearInverseEnabled(enabled)
-        }
+        NativeBridge.safeSetCochlearInverseEnabled(enabled)
+        isNativeCochlearActive()
+        getNativeCochlearIntensity()
     }
 
     fun setCochlearIntensity(intensity: Float) {
         val clamped = intensity.coerceIn(0f, 1f)
         _cochlearIntensity.value = clamped
         prefs.edit().putFloat(KEY_INTENSITY, clamped).apply()
-        IvannaNativeLib.guardedNative(Unit) {
-            IvannaNativeLib.nativeSetCochlearIntensity(clamped)
-        }
+        NativeBridge.safeSetCochlearIntensity(clamped)
+        isNativeCochlearActive()
+        getNativeCochlearIntensity()
     }
 
     /** Aplica el estado guardado al motor (llama ambos setters nativos). */
     private fun applyToNative(enabled: Boolean, intensity: Float) {
-        IvannaNativeLib.guardedNative(Unit) {
-            IvannaNativeLib.nativeSetCochlearIntensity(intensity)
-            IvannaNativeLib.nativeSetCochlearInverseEnabled(enabled)
-        }
+        NativeBridge.safeSetCochlearIntensity(intensity)
+        NativeBridge.safeSetCochlearInverseEnabled(enabled)
+        isNativeCochlearActive()
+        getNativeCochlearIntensity()
     }
 
-    fun isNativeCochlearActive(): Boolean =
-        IvannaNativeLib.guardedNative(false) { IvannaNativeLib.nativeIsCochlearActive() }
+    fun isNativeCochlearActive(): Boolean {
+        val active = IvannaNativeLib.guardedNative(false) {
+            NativeBridge.safeIsCochlearActive() || IvannaNativeLib.nativeIsCochlearActive()
+        }
+        _nativeCochlearActive.value = active
+        return active
+    }
 
-    fun getNativeCochlearIntensity(): Float =
-        IvannaNativeLib.guardedNative(_cochlearIntensity.value) { IvannaNativeLib.nativeGetCochlearIntensity() }
+    fun getNativeCochlearIntensity(): Float {
+        val current = IvannaNativeLib.guardedNative(_cochlearIntensity.value) {
+            val v = NativeBridge.safeGetCochlearIntensity()
+            if (v.isFinite()) v else IvannaNativeLib.nativeGetCochlearIntensity()
+        }
+        _nativeCochlearIntensity.value = current
+        return current
+    }
 
     companion object {
         private const val PREFS_NAME       = "ivanna_cochlear_prefs_v1"

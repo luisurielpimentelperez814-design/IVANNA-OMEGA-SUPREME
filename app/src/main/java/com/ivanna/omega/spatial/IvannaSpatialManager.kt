@@ -33,6 +33,12 @@ object IvannaSpatialManager {
         private set
     @Volatile var activeSubject: String = "none"
         private set
+    @Volatile var reverbLevel: Float = 0.25f
+        private set
+    private val upmixerEnabledAtomic = java.util.concurrent.atomic.AtomicBoolean(true)
+    val isUpmixerEnabled: Boolean
+        get() = upmixerEnabledAtomic.get()
+    private var upmixXfadeGain: Float = 1.0f
 
     // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
     private val stereoInBuf: FloatBuffer = ByteBuffer
@@ -40,7 +46,7 @@ object IvannaSpatialManager {
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
     private val stemsOutBuf: FloatBuffer = ByteBuffer
-        .allocateDirect(BLOCK_SIZE * 4 * java.lang.Float.BYTES)
+        .allocateDirect(BLOCK_SIZE * 8 * java.lang.Float.BYTES)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
     private val inLBuf: FloatBuffer = ByteBuffer
@@ -184,13 +190,16 @@ object IvannaSpatialManager {
     }
 
     fun setReverbLevel(level: Float) {
+        val clamped = level.coerceIn(0f, 1f)
+        reverbLevel = clamped
         val h = rendererHandle
         if (ready && h != 0L) {
-            runCatching { IvannaSpatialNative.nativeObjectRendererSetReverb(h, level.coerceIn(0f, 1f)) }
+            runCatching { IvannaSpatialNative.nativeObjectRendererSetReverb(h, clamped) }
         }
     }
 
     fun setUpmixerEnabled(enabled: Boolean) {
+        upmixerEnabledAtomic.set(enabled)
         val u = upmixerHandle
         if (ready && u != 0L) {
             runCatching { IvannaSpatialNative.nativeUpmixerSetEnabled(u, enabled) }
@@ -213,10 +222,13 @@ object IvannaSpatialManager {
         val u = upmixerHandle
         if (h != 0L) runCatching { IvannaSpatialNative.nativeObjectRendererReset(h) }
         if (u != 0L) runCatching { IvannaSpatialNative.nativeUpmixerReset(u) }
+        val tracker: IvannaHeadTracker? = headTracker
+        tracker?.reset()
     }
 
     fun isCochlearActive(): Boolean =
-        if (IvannaSpatialNative.isLoaded) runCatching { IvannaSpatialNative.nativeIsCochlearActive() }.getOrDefault(false) else false
+        com.ivanna.omega.core.NativeBridge.safeIsCochlearActive() ||
+            (if (IvannaSpatialNative.isLoaded) runCatching { IvannaSpatialNative.nativeIsCochlearActive() }.getOrDefault(false) else false)
 
     fun release() {
         synchronized(lock) {
@@ -299,16 +311,26 @@ object IvannaSpatialManager {
             return
         }
 
-        // Extraer salida desde FloatBuffers directos a arrays y reinterleaving
+        // Extraer salida desde FloatBuffers directos a arrays y reinterleaving con crossfade atómico
         outLBuf.position(0)
         outRBuf.position(0)
         outLBuf.get(outL, 0, n)
         outRBuf.get(outR, 0, n)
 
+        val targetGain = if (upmixerEnabledAtomic.get()) 1.0f else 0.0f
+        val rampStep = 1.0f / 512.0f
         i = 0
         while (i < n) {
-            buffer[i * 2]     = outL[i]
-            buffer[i * 2 + 1] = outR[i]
+            if (upmixXfadeGain < targetGain) {
+                upmixXfadeGain = minOf(targetGain, upmixXfadeGain + rampStep)
+            } else if (upmixXfadeGain > targetGain) {
+                upmixXfadeGain = maxOf(targetGain, upmixXfadeGain - rampStep)
+            }
+            val w = upmixXfadeGain
+            val drySampleL = buffer[i * 2]
+            val drySampleR = buffer[i * 2 + 1]
+            buffer[i * 2]     = drySampleL * (1.0f - w) + outL[i] * w
+            buffer[i * 2 + 1] = drySampleR * (1.0f - w) + outR[i] * w
             i++
         }
     }

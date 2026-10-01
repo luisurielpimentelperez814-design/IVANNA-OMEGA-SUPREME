@@ -235,7 +235,10 @@ class AudioPipeline {
                 // procesado directamente por AudioTrack -> AudioFlinger -> snd-usb-audio
                 // (mismo path que AUX/Speaker/Bluetooth). Solo se alimenta writeAudio
                 // si el bypass URB directo fue abierto explícitamente.
-                usbManagerRef?.let { if (it.isDirectBypassActive()) it.writeAudio(buf, read / 2) }
+                val usbManager: UsbAudioProManager? = usbManagerRef
+                if (usbManager != null && usbManager.isDirectBypassActive()) {
+                    usbManager.writeAudio(buf, read / 2)
+                }
 
                 track.write(buf, 0, read, AudioTrack.WRITE_BLOCKING)
             }

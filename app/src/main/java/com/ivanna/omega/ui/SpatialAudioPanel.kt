@@ -86,6 +86,7 @@ fun SpatialAudioPanel(
                 IvannaSpatialEngine.enabled = true
                 IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
             }
+            IvannaSpatialManager.setReverbLevel(state.objectReverbLevel)
             if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
             if (state.safEnabled) {
                 runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
@@ -96,15 +97,17 @@ fun SpatialAudioPanel(
                 )
             }
             runCatching {
-                com.ivanna.omega.core.NativeBridge.setCochlearInverseEnabled(state.cochlearInverseEnabled)
-                com.ivanna.omega.core.NativeBridge.setCochlearIntensity(state.cochlearIntensity)
+                com.ivanna.omega.core.NativeBridge.safeSetCochlearInverseEnabled(state.cochlearInverseEnabled)
+                com.ivanna.omega.core.NativeBridge.safeSetCochlearIntensity(state.cochlearIntensity)
                 SupremeAxesPrefs.applyToNative(supremeState)
                 pushHybridMagistral()
             }
             while (true) {
                 hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
                 activeSubject = IvannaSpatialManager.currentHrtfSubject()
-                roomStatus    = OmegaEngineBridge.getRoomStatus()?.toString() ?: "Studio BRIR procedimental activo"
+                val cochlearNat = IvannaSpatialManager.isCochlearActive()
+                roomStatus    = (OmegaEngineBridge.getRoomStatus()?.toString() ?: "Studio BRIR procedimental activo") +
+                                (if (cochlearNat) " · PINN ON" else "")
                 safStatus     = runCatching {
                     if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
                 }.getOrDefault("modelo no cargado")
@@ -207,7 +210,11 @@ fun SpatialAudioPanel(
                 update { it.copy(rirWet = v) }
                 if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, v)
             }
-            Text("Motor: $roomStatus", color = TextMuted, fontSize = 10.sp)
+            LabeledSlider("Reverb de objetos", state.objectReverbLevel, 0f..1f, "%.2f") { v ->
+                update { it.copy(objectReverbLevel = v) }
+                IvannaSpatialManager.setReverbLevel(v)
+            }
+            Text("Motor: $roomStatus · ObjReverb=${"%.2f".format(IvannaSpatialManager.reverbLevel)}", color = TextMuted, fontSize = 10.sp)
         }
 
         // ── SAF ───────────────────────────────────────────────────────────

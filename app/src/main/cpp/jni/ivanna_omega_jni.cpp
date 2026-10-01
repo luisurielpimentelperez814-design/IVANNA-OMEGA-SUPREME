@@ -1824,14 +1824,19 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray inL, jfloatArray inR,
     jfloatArray outL, jfloatArray outR,
     jint frames) {
-    std::lock_guard<std::mutex> lock(g_dspProcessMutex);
-    drainPendingDspParamsLocked();
-    if (!g_initialized.load(std::memory_order_acquire) || frames <= 0) return;
+    if (frames <= 0) return;
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
     const int n = std::min((int)frames, 2048);
     if (!copyJFloat(env, inL, lBuf, n)) return;
     if (!copyJFloat(env, inR, rBuf, n)) return;
+    NonBlockingDspProcessGuard dspGuard;
+    if (!dspGuard.acquired || !g_initialized.load(std::memory_order_acquire)) {
+        writeJFloat(env, outL, lBuf, n);
+        writeJFloat(env, outR, rBuf, n);
+        return;
+    }
+    drainPendingDspParamsLocked();
     // DSP chain
     // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
     // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth

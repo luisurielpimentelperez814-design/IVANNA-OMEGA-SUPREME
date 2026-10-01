@@ -27,6 +27,9 @@ fun OemSpatialScreen(
     onBack: () -> Unit,
     onSetWidth: (Float) -> Unit,
     onSetAngle: (Float) -> Unit,
+    onSetHrtfEnabled: (Boolean) -> Unit = {},
+    onSafFeedback: (Int, Boolean) -> Unit = { _, _ -> },
+    onSafReset: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().background(ObsidianVoid)
@@ -57,6 +60,7 @@ fun OemSpatialScreen(
                     Text("HRTF · SOFA", color = TextMuted, fontSize = 8.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Surface(shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.clickable { onSetHrtfEnabled(!state.hrtfReady) },
                         color = if (state.hrtfReady) PhosphorGreen.copy(0.15f) else CoralWarn.copy(0.15f)) {
                         Text(
                             if (state.hrtfReady) "CARGADO ✓" else "NO INICIALIZADO",
@@ -116,6 +120,14 @@ fun OemSpatialScreen(
                     var angle by remember { mutableFloatStateOf(0f) }
                     OemSliderRow("Ángulo (°)", angle, -180f, 180f, "${"%.0f".format(angle)}°") {
                         angle = it; onSetAngle(it)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onSafFeedback(0, true) }, modifier = Modifier.weight(1f)) {
+                            Text("SAF +", fontSize = 9.sp, color = PhosphorGreen)
+                        }
+                        OutlinedButton(onClick = { onSafReset() }, modifier = Modifier.weight(1f)) {
+                            Text("SAF RESET", fontSize = 9.sp, color = AmberSignal)
+                        }
                     }
                 }
             }

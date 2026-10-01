@@ -25,6 +25,7 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.audio.IvannaLabMonitor
+import com.ivanna.omega.visualizer.IvannaVisualizerBridge
 import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import com.ivanna.omega.audio.engine.AdaptiveLatencyController
@@ -475,11 +476,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             }
             if (!setupHardware()) {
                 cleanupHardwareOnly()
+                val sysCap: SystemAudioCapture = SystemAudioCapture.getInstance(context)
+                runCatching { sysCap.startCapture() }
                 onError("Hardware de audio no inicializado")
                 return
             }
+            IvannaVisualizerBridge.init(SAMPLE_RATE, BLOCK_FRAMES)
             IvannaVisualizerBridgeV2.init(SAMPLE_RATE, BLOCK_FRAMES)
             IvannaVisualizerBark64Bridge.init(SAMPLE_RATE, BLOCK_FRAMES)
+            val estDeviceLatencyMs = (BLOCK_FRAMES * 1000f) / SAMPLE_RATE.toFloat()
+            IvannaVisualizerBridge.setDeviceLatencyMs(estDeviceLatencyMs)
+            IvannaVisualizerBridgeV2.setDeviceLatencyMs(estDeviceLatencyMs)
             // FIX: arrancar medición automática Lab (THD/LUFS/SNR cada 30s)
             IvannaLabMonitor.startAutoMeasure()
             voiceController = VoiceController(context)
@@ -512,6 +519,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             active = false
             masterTiming.reset()
             antiPopEngine.reset()
+            val sysCap: SystemAudioCapture = SystemAudioCapture.getInstance(context)
+            runCatching { sysCap.stopCapture() }
+            IvannaVisualizerBridge.reset()
+            IvannaVisualizerBridgeV2.reset()
+            IvannaVisualizerBark64Bridge.reset()
             workerHandler?.removeCallbacksAndMessages(null)
             workerThread?.quitSafely()
             workerHandler = null
@@ -538,6 +550,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             audioRecord?.stop(); audioRecord?.release(); audioRecord = null
             spatialEngine.stop()
             voiceProtection?.release(); voiceProtection = null
+            IvannaVisualizerBridge.release()
             IvannaVisualizerBridgeV2.release()
             IvannaVisualizerBark64Bridge.release()
             IvannaLabMonitor.stopAutoMeasure()
@@ -675,10 +688,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                             runCatching { CinematicEngineHost.processBlock(buffer, read) }
                         }
 
-                        // ETAPA 3: SPATIAL AUDIO (HRTF / WFS fallback Kotlin)
+                        // ETAPA 3: SPATIAL AUDIO (ObjectRenderer + Upmixer C++ o fallback HRTF/WFS)
                         if (IvannaSpatialEngine.enabled) {
                             budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.SPATIAL_AUDIO) {
-                                if (frames <= rtSpatialInL.size) {
+                                if (com.ivanna.omega.spatial.IvannaSpatialManager.ready) {
+                                    runCatching {
+                                        com.ivanna.omega.spatial.IvannaSpatialManager.renderBlock(buffer, frames)
+                                    }
+                                } else if (frames <= rtSpatialInL.size) {
                                     val inL  = rtSpatialInL
                                     val inR  = rtSpatialInR
                                     val outL = rtSpatialOutL
@@ -797,6 +814,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val monoFrames = minOf(effectiveFrames, mono.size)
                     for (i in 0 until monoFrames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, monoFrames) }
+                    runCatching { IvannaVisualizerBridge.processBlock(mono, monoFrames) }
                     runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
                     runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
                     

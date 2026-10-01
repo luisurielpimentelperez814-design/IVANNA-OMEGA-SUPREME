@@ -101,6 +101,8 @@ public:
         m_sampleRateF = sr;
         m_upmixer.prepare(sr);
         m_hoaDecoder.prepare(sr, 8);
+        m_wfs.init(sr, Ivanna::BLOCK_SIZE, 16);
+        m_wfsInit = true;
         resetFifo();
         runAcousticProfiling();
     }

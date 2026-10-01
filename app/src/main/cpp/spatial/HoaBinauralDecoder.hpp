@@ -15,6 +15,8 @@ namespace Ivanna {
  */
 class HoaBinauralDecoder {
 public:
+    static constexpr std::size_t kMaxBlockFrames = 8192;
+
     HoaBinauralDecoder() = default;
     ~HoaBinauralDecoder() = default;
 
@@ -56,17 +58,17 @@ private:
         HoaVector decodeGains;
         ivanna::HRTFConvolver convolver;
         
-        // Intermediate mono buffer for decoding HOA -> Speaker
-        std::vector<float> monoBuffer;
+        // Buffer mono pre-alojado de capacidad fija para decodificar HOA -> Speaker sin malloc en RT
+        alignas(64) std::array<float, kMaxBlockFrames> monoBuffer{};
     };
     
     // unique_ptr: HRTFConvolver contiene std::atomic (ni copiable ni movible),
     // asi que vector<VirtualSpeaker> plano no compila (resize exige move).
     std::vector<std::unique_ptr<VirtualSpeaker>> speakers_;
     
-    // Internal mix buffers
-    std::vector<float> mixL_;
-    std::vector<float> mixR_;
+    // Internal mix buffers pre-alojados de capacidad fija (cero resize en RT)
+    alignas(64) std::array<float, kMaxBlockFrames> mixL_{};
+    alignas(64) std::array<float, kMaxBlockFrames> mixR_{};
 };
 
 } // namespace Ivanna

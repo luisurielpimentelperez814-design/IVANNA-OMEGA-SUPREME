@@ -192,6 +192,12 @@ class AudioEngine {
             .onFailure { Log.w(TAG, "setAntiDolbyScores: $it") }
     }
 
+    fun setManifoldEnabled(enabled: Boolean) {
+        if (!libLoaded) return
+        runCatching { nativeSetManifoldEnabled(enabled) }
+            .onFailure { Log.w(TAG, "setManifoldEnabled: $it") }
+    }
+
     fun logCurrentBenchmark(speech: Float, music: Float, bass: Float, dolbyState: Int) {
         logBenchmark(getLufs(), getPeakDbfs(), speech, music, bass, dolbyState)
     }

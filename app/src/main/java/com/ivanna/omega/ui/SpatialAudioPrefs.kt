@@ -9,6 +9,7 @@ data class SpatialAudioState(
     val rirEnabled: Boolean = true,
     val rirRt60: Float = 0.34f,
     val rirWet: Float = 0.22f,
+    val objectReverbLevel: Float = 0.25f,
     val safEnabled: Boolean = true,
     val safIntensity: Float = 0.78f,
     val safAutoMode: Boolean = true,
@@ -35,14 +36,15 @@ object SpatialAudioPrefs {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val d = SpatialAudioState()
         return SpatialAudioState(
-            hrtfEnabled  = p.getBoolean("hrtfEnabled", d.hrtfEnabled),
-            hrtfSubject  = p.getString("hrtfSubject", d.hrtfSubject) ?: d.hrtfSubject,
-            rirEnabled   = p.getBoolean("rirEnabled", d.rirEnabled),
-            rirRt60      = p.getFloat("rirRt60", d.rirRt60),
-            rirWet       = p.getFloat("rirWet", d.rirWet),
-            safEnabled   = p.getBoolean("safEnabled", d.safEnabled),
-            safIntensity = p.getFloat("safIntensity", d.safIntensity),
-            safAutoMode  = p.getBoolean("safAutoMode", d.safAutoMode),
+            hrtfEnabled       = p.getBoolean("hrtfEnabled", d.hrtfEnabled),
+            hrtfSubject       = p.getString("hrtfSubject", d.hrtfSubject) ?: d.hrtfSubject,
+            rirEnabled        = p.getBoolean("rirEnabled", d.rirEnabled),
+            rirRt60           = p.getFloat("rirRt60", d.rirRt60),
+            rirWet            = p.getFloat("rirWet", d.rirWet),
+            objectReverbLevel = p.getFloat("objectReverbLevel", d.objectReverbLevel),
+            safEnabled        = p.getBoolean("safEnabled", d.safEnabled),
+            safIntensity      = p.getFloat("safIntensity", d.safIntensity),
+            safAutoMode       = p.getBoolean("safAutoMode", d.safAutoMode),
             cochlearInverseEnabled = p.getBoolean("cochlearInverseEnabled", d.cochlearInverseEnabled),
             cochlearIntensity = p.getFloat("cochlearIntensity", d.cochlearIntensity)
         )
@@ -56,6 +58,7 @@ object SpatialAudioPrefs {
             .putBoolean("rirEnabled", s.rirEnabled)
             .putFloat("rirRt60", s.rirRt60)
             .putFloat("rirWet", s.rirWet)
+            .putFloat("objectReverbLevel", s.objectReverbLevel)
             .putBoolean("safEnabled", s.safEnabled)
             .putFloat("safIntensity", s.safIntensity)
             .putBoolean("safAutoMode", s.safAutoMode)

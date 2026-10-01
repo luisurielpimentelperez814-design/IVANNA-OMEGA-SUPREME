@@ -103,19 +103,15 @@ void HoaBinauralDecoder::setHrtfProfile(std::shared_ptr<ivanna::SyntheticHRTF> p
 
 void HoaBinauralDecoder::processBlock(const std::vector<HoaVector>& inField, float* outL, float* outR, std::size_t numFrames) noexcept {
     if (inField.empty() || outL == nullptr || outR == nullptr || numFrames == 0) return;
+    const std::size_t frames = std::min(numFrames, std::min(inField.size(), kMaxBlockFrames));
 
     // Clear output
     std::fill(outL, outL + numFrames, 0.0f);
     std::fill(outR, outR + numFrames, 0.0f);
 
-    mixL_.resize(numFrames);
-    mixR_.resize(numFrames);
-
     for (auto& speaker : speakers_) {
-        speaker->monoBuffer.resize(numFrames);
-        
         // 1. Decode HOA to this virtual speaker
-        for (std::size_t i = 0; i < numFrames; ++i) {
+        for (std::size_t i = 0; i < frames; ++i) {
             float sample = 0.0f;
             const auto& field = inField[i];
             for (int ch = 0; ch < kHoaNumChannels; ++ch) {
@@ -125,17 +121,17 @@ void HoaBinauralDecoder::processBlock(const std::vector<HoaVector>& inField, flo
         }
         
         // 2. Convolve virtual speaker signal with HRTF
-        std::fill(mixL_.begin(), mixL_.end(), 0.0f);
-        std::fill(mixR_.begin(), mixR_.end(), 0.0f);
+        std::fill(mixL_.begin(), mixL_.begin() + frames, 0.0f);
+        std::fill(mixR_.begin(), mixR_.begin() + frames, 0.0f);
         
         // HRTFConvolver::process toma entrada STEREO (inputL, inputR).
         // Una fuente mono de altavoz virtual se alimenta en ambos canales
         // (equivalente a fuente centrada que luego se espacializa por azimuth).
         speaker->convolver.process(speaker->monoBuffer.data(), speaker->monoBuffer.data(),
-                                  mixL_.data(), mixR_.data(), static_cast<uint32_t>(numFrames));
+                                  mixL_.data(), mixR_.data(), static_cast<uint32_t>(frames));
         
         // 3. Accumulate to final binaural output
-        for (std::size_t i = 0; i < numFrames; ++i) {
+        for (std::size_t i = 0; i < frames; ++i) {
             outL[i] += mixL_[i];
             outR[i] += mixR_[i];
         }

@@ -92,6 +92,31 @@ object IvannaNpeEngine {
         }
     }
 
+    /**
+     * Procesa in-place un buffer mono usando IvannaNpeNative.nativeProcess.
+     */
+    fun processMono(buffer: FloatArray, numFrames: Int = buffer.size) {
+        val n = numFrames.coerceAtMost(buffer.size)
+        if (handle == 0L || n <= 0 || n > maxFrames) return
+        val inBuf = bufInL ?: return
+        val outBuf = bufOutL ?: return
+
+        inBuf.clear()
+        outBuf.clear()
+        for (i in 0 until n) {
+            inBuf.put(buffer[i])
+        }
+        inBuf.flip()
+
+        val t0 = System.nanoTime()
+        IvannaNpeNative.nativeProcess(handle, inBuf, outBuf, n)
+        lastInferenceUs = (System.nanoTime() - t0) / 1_000L
+
+        for (i in 0 until n) {
+            buffer[i] = outBuf.get(i)
+        }
+    }
+
     private var cachedHarmonicGain: Float = 0.60f
     private var cachedLateralInhib: Float = 0.50f
     private var cachedOhcComp: Float = 0.40f

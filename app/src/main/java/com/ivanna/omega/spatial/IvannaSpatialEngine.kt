@@ -11,6 +11,12 @@ class IvannaSpatialEngine private constructor() {
         @Volatile var enabled: Boolean = true
         val reducedComplexity: Boolean
             get() = shared.reducedComplexity
+        val distanceMeters: Float
+            get() = shared.distance
+        val reflectionDelayMs: Float
+            get() = shared.earlyReflectionTimes[0] * shared.distance
+        val reflectionGain: Float
+            get() = shared.earlyReflectionGains[0] / sqrt(shared.distance.coerceAtLeast(0.5f))
 
         fun setAzimuth(rad: Float) { shared.azimuthRad = rad }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }

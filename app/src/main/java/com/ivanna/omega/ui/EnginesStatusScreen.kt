@@ -53,6 +53,9 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
     var hrtfSubject    by remember { mutableStateOf("none") }
     var headTracking   by remember { mutableStateOf(false) }
     var usbStreaming   by remember { mutableStateOf(false) }
+    var usbIso         by remember { mutableStateOf(false) }
+    var usbStats       by remember { mutableStateOf(IntArray(6)) }
+    var usbFeedback    by remember { mutableStateOf(IntArray(4)) }
     var nativeLoaded   by remember { mutableStateOf(false) }
     var daemonAlive    by remember { mutableStateOf(false) }
     var spatialWidth   by remember { mutableStateOf(0f) }
@@ -83,7 +86,11 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             headTracking = IvannaSpatialManager.ready
 
             // USB Pro
-            usbStreaming = UsbAudioProManager.getInstance(ctx).isActive()
+            val usbMgr: UsbAudioProManager = UsbAudioProManager.getInstance(ctx)
+            usbStreaming = usbMgr.isActive()
+            usbIso       = usbMgr.isIsochronous()
+            usbStats     = usbMgr.engineStats()
+            usbFeedback  = usbMgr.feedbackInfo()
 
             // Telemetría adaptativa
             if (nativeLoaded) {
@@ -209,11 +216,11 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             EngineCard(
                 icon   = Icons.Default.Usb,
                 title  = "USB AUDIO PRO MANAGER",
-                status = if (usbStreaming) "Streaming activo (OTG directo · 384kHz/32bit)"
+                status = if (usbStreaming) "Streaming activo (OTG directo · 384kHz/32bit · ISO=$usbIso)"
                          else "En espera — conecta un DAC USB",
                 ok     = usbStreaming,
                 detail = if (usbStreaming)
-                    "Stream isochronous directo al endpoint USB · bypass mezclador Android · latencia hardware"
+                    "Stream isochronous ($usbIso) directo al endpoint USB · URBs=${usbStats.getOrElse(0) { 0 }}/${usbStats.getOrElse(1) { 0 }} · xruns=${usbStats.getOrElse(3) { 0 }} · UAC fb=${usbFeedback.getOrElse(0) { 0 }}"
                 else
                     "Conecta un DAC USB OTG compatible.\nEl manager detecta automáticamente CLASS=AUDIO " +
                     "SUBCLASS=STREAMING y abre el endpoint sin pasar por AudioFlinger."
@@ -297,11 +304,13 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
                 2 -> "Claridad Vocal"
                 else -> "Expansión Ambiental"
             }
+            val realityActive = supState.realityReconstructionEnabled &&
+                com.ivanna.omega.core.NativeBridge.safeIsRealityReconstructionEnabled()
             EngineCard(
                 icon   = Icons.Default.Psychology,
                 title  = "SISTEMA NERVIOSO SUPERIOR · COGNICIÓN (FASES 1–15)",
-                status = "${if (supState.realityReconstructionEnabled) "ACTIVO" else "BYPASS"} · Realismo $realismPct% · Juez $judgePct% · Homeostasis $homeoPct%",
-                ok     = nativeLoaded && supState.realityReconstructionEnabled,
+                status = "${if (realityActive) "ACTIVO" else "BYPASS"} · Realismo $realismPct% · Juez $judgePct% · Homeostasis $homeoPct%",
+                ok     = nativeLoaded && realityActive,
                 detail = buildString {
                     append("Fases 1–8 (Órganos Acústicos): Genome · MicroReality · TimeMachine (SOURCE→ROOM→AIR→EAR) · RoomProjection · Intensidad ${(supState.realityIntensity * 100f).toInt()}%\n")
                     append("Fase 9 (AcousticCognitiveCore): Prioridad 1º = $topPrioName\n")

@@ -2,6 +2,7 @@
 
 #include "HoaGainMatrix.hpp"
 #include "TransientDetector.hpp"
+#include <array>
 #include <vector>
 #include <cmath>
 #include <cstddef>
@@ -27,12 +28,13 @@ namespace Ivanna {
  *  - Transientes: detector real sobre el MONO (no sobre un canal suelto).
  *    Cuando dispara, se ensancha la apertura lateral (aire percibido), nunca
  *    elevación real.
- *  - Inmersividad suavizada por muestra (sin zipper). Sin malloc en el camino
- *    caliente salvo el primer dimensionado.
+ *  - Inmersividad suavizada por muestra (sin zipper). Cero malloc en RT.
  */
 
 class IntelligentUpmixer {
 public:
+    static constexpr std::size_t kMaxBlockFrames = 8192;
+
     IntelligentUpmixer() = default;
     ~IntelligentUpmixer() = default;
 
@@ -45,11 +47,24 @@ public:
     float getImmersivity() const noexcept { return targetImmersivity_; }
 
     /**
-     * Procesa un bloque estéreo y produce un campo HOA por muestra.
-     * `outField` se redimensiona a numFrames sólo si difiere (evita churn).
+     * Sobrecarga RT primaria (cero asignaciones dinámicas): opera sobre un
+     * arreglo pre-alojado de `HoaVector` de longitud `numFrames`.
      */
     void processBlock(const float* inL, const float* inR,
-                      std::vector<HoaVector>& outField, std::size_t numFrames) noexcept;
+                      HoaVector* outField, std::size_t numFrames) noexcept;
+
+    /**
+     * Sobrecarga compatible con `std::vector<HoaVector>`. Si `outField` ya
+     * fue pre-dimensionado a `numFrames` (como en `IvannaFusionEngine` y
+     * `test_rt_no_alloc`), no realiza ninguna asignación.
+     */
+    void processBlock(const float* inL, const float* inR,
+                      std::vector<HoaVector>& outField, std::size_t numFrames) noexcept {
+        if (outField.size() != numFrames) {
+            outField.resize(numFrames);
+        }
+        processBlock(inL, inR, outField.data(), numFrames);
+    }
 
 private:
     bool  enabled_             = false;
@@ -68,7 +83,7 @@ private:
     float transientWidth_ = 1.0f;    // estrechamiento en el ataque (recupera en rampa)
     float blockMix_     = 0.0f;      // crossfade seco→upmix en toggle (0=seco,1=upmix)
 
-    std::vector<float> monoBuf_;
+    alignas(64) std::array<float, kMaxBlockFrames> monoBuf_{};
     ivanna::TransientDetector transientDetector_;
 };
 

@@ -24,6 +24,8 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.saf.SaFBridge
+import com.ivanna.omega.spatial.IvannaSpatialEngine
+import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.spatial.SpatialControlStore
 import com.ivanna.omega.ui.theme.*
 import org.json.JSONObject
@@ -68,12 +70,15 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     }
 
     LaunchedEffect(Unit) {
+        IvannaSpatialEngine.setDistance(cfg.reflectionDistance)
         syncHybrid(adaptivePrefs)
     }
 
     fun apply(c: SpatialControlStore.SpatialConfig) {
         cfg = c
         SpatialControlStore.save(context, c)
+        // Distancia / Reflexiones → IvannaSpatialEngine (nativeSetReflectionDelay/Gain)
+        IvannaSpatialEngine.setDistance(c.reflectionDistance)
         // HRTF enable → motor in-process
         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(c.hrtfEnabled) }
         // Sujeto → ancla SAF + daemon
@@ -98,6 +103,12 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 put("timestamp", System.currentTimeMillis())
             })
         }
+        // Upmixer 4-Stems + posiciones 3D → IvannaSpatialManager
+        IvannaSpatialManager.setUpmixerEnabled(c.upmixerEnabled)
+        IvannaSpatialManager.setStemPosition(0, c.stem0X, c.stem0Y, c.stem0Z, c.stem0Width)
+        IvannaSpatialManager.setStemPosition(1, c.stem1X, c.stem1Y, c.stem1Z, c.stem1Width)
+        IvannaSpatialManager.setStemPosition(2, c.stem2X, c.stem2Y, c.stem2Z, c.stem2Width)
+        IvannaSpatialManager.setStemPosition(3, c.stem3X, c.stem3Y, c.stem3Z, c.stem3Width)
     }
 
     // Estado real de carga de datasets (filesystem, no simulado)
@@ -157,6 +168,15 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         PanelCard("RIR — REVERB DE SALA", AuroraCyan) {
             ToggleRow("Activar reverb RIR", cfg.rirEnabled) { apply(cfg.copy(rirEnabled = it)) }
             SliderRow("Mezcla wet", cfg.rirWet, 0f..0.6f) { apply(cfg.copy(rirWet = it)) }
+            SliderRow("Distancia/Reflexiones", cfg.reflectionDistance, 0.5f..2.0f) {
+                apply(cfg.copy(reflectionDistance = it))
+            }
+            Text(
+                "Reflexiones: dist=${"%.2f".format(IvannaSpatialEngine.distanceMeters)} m · " +
+                "delay=${"%.1f".format(IvannaSpatialEngine.reflectionDelayMs)} ms · " +
+                "gain=${"%.2f".format(IvannaSpatialEngine.reflectionGain)}",
+                color = AuroraCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace
+            )
             if (rooms.isNotEmpty()) {
                 Text("Sala (${rooms.size} medidas):", color = TextSecondary, fontSize = 11.sp)
                 val room = rooms[cfg.rirRoom.coerceIn(0, rooms.size - 1)]
@@ -189,6 +209,54 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 },
                 color = if (model?.exists() == true) PhosphorGreen else AmberSignal,
                 fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        // ── UPMIXER 4-STEMS 3D (B2: setUpmixerEnabled + setStemPosition) ──
+        PanelCard("UPMIXER 4-STEMS 3D — ${if (cfg.upmixerEnabled) "ACTIVO" else "BYPASS"}", AuroraCyan) {
+            ToggleRow("Activar Upmixer Neural (Crossfade Atómico)", cfg.upmixerEnabled) {
+                apply(cfg.copy(upmixerEnabled = it))
+            }
+            Text("Stem activo:", color = TextSecondary, fontSize = 11.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SpatialControlStore.STEMS.forEachIndexed { idx, label ->
+                    val sel = cfg.selectedStem == idx
+                    Text(
+                        label,
+                        color = if (sel) AuroraCyan else TextMuted,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .border(1.dp, if (sel) AuroraCyan else ObsidianEdge, RoundedCornerShape(6.dp))
+                            .clickable { apply(cfg.copy(selectedStem = idx)) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            val curX = when (cfg.selectedStem) { 0 -> cfg.stem0X; 1 -> cfg.stem1X; 2 -> cfg.stem2X; else -> cfg.stem3X }
+            val curY = when (cfg.selectedStem) { 0 -> cfg.stem0Y; 1 -> cfg.stem1Y; 2 -> cfg.stem2Y; else -> cfg.stem3Y }
+            val curZ = when (cfg.selectedStem) { 0 -> cfg.stem0Z; 1 -> cfg.stem1Z; 2 -> cfg.stem2Z; else -> cfg.stem3Z }
+            val curW = when (cfg.selectedStem) { 0 -> cfg.stem0Width; 1 -> cfg.stem1Width; 2 -> cfg.stem2Width; else -> cfg.stem3Width }
+
+            fun updateSelectedStem(nx: Float = curX, ny: Float = curY, nz: Float = curZ, nw: Float = curW) {
+                val updated = when (cfg.selectedStem) {
+                    0 -> cfg.copy(stem0X = nx, stem0Y = ny, stem0Z = nz, stem0Width = nw)
+                    1 -> cfg.copy(stem1X = nx, stem1Y = ny, stem1Z = nz, stem1Width = nw)
+                    2 -> cfg.copy(stem2X = nx, stem2Y = ny, stem2Z = nz, stem2Width = nw)
+                    else -> cfg.copy(stem3X = nx, stem3Y = ny, stem3Z = nz, stem3Width = nw)
+                }
+                apply(updated)
+            }
+
+            SliderRow("Posición X (Izq/Der)", curX, -1.5f..1.5f) { updateSelectedStem(nx = it) }
+            SliderRow("Posición Y (Elevación)", curY, -1.5f..1.5f) { updateSelectedStem(ny = it) }
+            SliderRow("Posición Z (Profundidad)", curZ, -1.5f..1.5f) { updateSelectedStem(nz = it) }
+            SliderRow("Anchura Objeto (Width)", curW, 0.05f..1.0f) { updateSelectedStem(nw = it) }
+            TextButton(onClick = {
+                com.ivanna.omega.spatial.IvannaSpatialManager.reset()
+                apply(SpatialControlStore.Config())
+            }) {
+                Text("REINICIAR ESCENA 3D / STEMS", color = AuroraCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
         }
 
         // ── MOTOR HÍBRIDO MAGISTRAL (HRTF 128-TAP + SALA SCHROEDER) ──

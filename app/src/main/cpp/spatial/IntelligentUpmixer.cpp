@@ -40,14 +40,10 @@ void IntelligentUpmixer::setImmersivity(float value) noexcept {
 }
 
 void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
-                                      std::vector<HoaVector>& outField,
+                                      HoaVector* outField,
                                       std::size_t numFrames) noexcept {
-    // Reserva una sola vez: resize() repetido en el hot path puede realojar
-    // el vector si numFrames varía entre bloques; reserve() al tamaño máximo
-    // visto elimina toda realocación posterior.
-    if (outField.capacity() < numFrames) outField.reserve(numFrames);
-    if (outField.size() != numFrames) outField.resize(numFrames);
-    if (numFrames == 0 || inL == nullptr || inR == nullptr) return;
+    if (numFrames == 0 || inL == nullptr || inR == nullptr || outField == nullptr) return;
+    const std::size_t frames = std::min(numFrames, kMaxBlockFrames);
 
     // Bases con ENERGÍA UNITARIA exacta (encodeUnitPower): la energía del campo
     // no depende del azimut ni de cuántas fuentes se mezclen — la inmersividad
@@ -85,7 +81,7 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     // curso — evita el coste del crossover/detector de transientes en el
     // caso comun (upmixing apagado, que es el valor por defecto real).
     if (!enabled_ && blockMix_ <= 0.0f) {
-        for (std::size_t i = 0; i < numFrames; ++i) {
+        for (std::size_t i = 0; i < frames; ++i) {
             HoaVector out = {0};
             HoaGainMatrix::accumulate(out, encNarrowL, sanitize(inL[i]));
             HoaGainMatrix::accumulate(out, encNarrowR, sanitize(inR[i]));
@@ -98,17 +94,16 @@ void IntelligentUpmixer::processBlock(const float* inL, const float* inR,
     // mid (que cancela golpes paneados) ni sobre un solo canal. El resultado SÍ
     // se usa: en el ataque se estrecha el ancho (transiente localizado al
     // frente) y se recupera en rampa de ~20 ms.
-    if (monoBuf_.size() != numFrames) monoBuf_.resize(numFrames);
-    for (std::size_t i = 0; i < numFrames; ++i) {
+    for (std::size_t i = 0; i < frames; ++i) {
         const float a = std::fabs(sanitize(inL[i]));
         const float b = std::fabs(sanitize(inR[i]));
         monoBuf_[i] = a > b ? a : b;
     }
-    const bool hasTransients = transientDetector_.processBlock(monoBuf_.data(), numFrames);
+    const bool hasTransients = transientDetector_.processBlock(monoBuf_.data(), frames);
     const float transTarget  = hasTransients ? 0.55f : 1.0f; // estrechar en el ataque
     const float transA       = 1.0f - std::exp(-1.0f / (sampleRate_ * kTransRecoverMs * 0.001f));
 
-    for (std::size_t i = 0; i < numFrames; ++i) {
+    for (std::size_t i = 0; i < frames; ++i) {
         const float l = sanitize(inL[i]);
         const float r = sanitize(inR[i]);
 

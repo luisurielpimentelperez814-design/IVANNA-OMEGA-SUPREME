@@ -71,6 +71,9 @@ fun BenchmarkScreen(onBack: () -> Unit) {
                         Text("Comparativa (Datos Reales)", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         val latMs   = json.optDouble("latency_ms", -1.0)
+                        val lufsDb  = json.optDouble("lufs_db", -70.0)
+                        val peakDb  = json.optDouble("peak_dbfs", -96.0)
+                        val csvPath = json.optString("benchmark_csv_path", "")
                         val itdUs   = json.optDouble("itd_error_us", -1.0)
                         val ildDb   = json.optDouble("ild_error_db", -1.0)
                         val freqDb  = json.optDouble("frequency_response_deviation_db", -1.0)
@@ -79,9 +82,13 @@ fun BenchmarkScreen(onBack: () -> Unit) {
                         fun d(v: Double, unit: String, dec: Int = 2) =
                             if (v < 0) "—" else "${"%.${dec}f".format(v)} $unit"
                         Text("Latencia DSP round-trip: ${d(latMs, "ms")}")
+                        Text("Loudness BS.1770-4: ${"%.2f".format(lufsDb)} LUFS  ·  Peak: ${"%.2f".format(peakDb)} dBFS")
                         Text("Error ITD: ${d(itdUs, "µs")}  ·  ILD: ${d(ildDb, "dB")}")
                         Text("Desv. respuesta frecuencial: ${d(freqDb, "dB rms")}")
                         Text("Memoria JVM: ${if (memMb > 0) "$memMb MB" else "—"}")
+                        if (csvPath.isNotBlank()) {
+                            Text("CSV Export: $csvPath", style = MaterialTheme.typography.bodySmall)
+                        }
                         if (src.isNotBlank()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(

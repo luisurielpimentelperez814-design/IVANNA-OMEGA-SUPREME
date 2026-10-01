@@ -38,6 +38,7 @@ object SaFRoomBridge {
      */
     fun setRoomState(rt60: Float, drr: Float, roomMode: Float = 0f) {
         if (loaded) runCatching { nativeSafrSetRoom(rt60, drr, roomMode) }
+        runCatching { com.ivanna.omega.spatial.AdaptiveEnvironmentBridge.updateEnvironmentRT60(rt60) }
     }
 
     // ── Estado HRTF H_t ───────────────────────────────────────────────────────

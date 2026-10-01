@@ -18,6 +18,8 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 static constexpr const char* BENCHMARK_PATH = "/data/local/tmp/ivanna_benchmark.csv";
+static constexpr const char* BENCHMARK_FALLBACK_PATH = "/tmp/ivanna_benchmark.csv";
+static const char* g_active_benchmark_path = BENCHMARK_PATH;
 static bool g_benchmark_initialized = false;
 
 struct BenchmarkEntry {
@@ -35,10 +37,19 @@ static void omega_benchmark_init() {
 
     std::ofstream file(BENCHMARK_PATH, std::ios::out | std::ios::trunc);
     if (file.is_open()) {
+        g_active_benchmark_path = BENCHMARK_PATH;
+    } else {
+        file.clear();
+        file.open(BENCHMARK_FALLBACK_PATH, std::ios::out | std::ios::trunc);
+        if (file.is_open()) {
+            g_active_benchmark_path = BENCHMARK_FALLBACK_PATH;
+        }
+    }
+    if (file.is_open()) {
         file << "timestamp,lufs_integrated,peak_dbfs,yamnet_speech,yamnet_music,yamnet_bass,dolby_state\n";
         file.close();
         g_benchmark_initialized = true;
-        LOGI("Benchmark inicializado: %s", BENCHMARK_PATH);
+        LOGI("Benchmark inicializado: %s", g_active_benchmark_path);
     }
 }
 
@@ -53,11 +64,14 @@ extern "C" void omega_benchmark_log(
     if (!g_benchmark_initialized) omega_benchmark_init();
 
     time_t now = time(nullptr);
-    struct tm* tm_info = localtime(&now);
-    char timeStr[32];
-    strftime(timeStr, sizeof(timeStr), "%Y-%m-%dT%H:%M:%S", tm_info);
+    struct tm tm_buf{};
+    struct tm* tm_info = localtime_r(&now, &tm_buf);
+    char timeStr[32] = "1970-01-01T00:00:00";
+    if (tm_info) {
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%dT%H:%M:%S", tm_info);
+    }
 
-    std::ofstream file(BENCHMARK_PATH, std::ios::out | std::ios::app);
+    std::ofstream file(g_active_benchmark_path, std::ios::out | std::ios::app);
     if (file.is_open()) {
         file << timeStr << ","
              << lufs << ","
@@ -93,5 +107,6 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeGetBenchmarkPath(
     JNIEnv* env,
     jobject /*thiz*/
 ) {
-    return env->NewStringUTF(BENCHMARK_PATH);
+    if (!g_benchmark_initialized) omega_benchmark_init();
+    return env->NewStringUTF(g_active_benchmark_path);
 }

@@ -9,7 +9,7 @@
 # ⬡ IVANNA OMEGA SUPREME ⬡
 
 ### Motor de Supremacía Neuroacústica y Reconstrucción de Realidad Acústica para Android
-**C++23 Nativo · SIMD ARM64 NEON (`float32x4_t`) · Lazo Cerrado `OmniHolographicSingularityEngine` · Guardia de Estabilidad $C^2$ Cero-Artefactos · 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (sample-by-sample, 0 muestras de lookahead) · Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) · Asistente Cognitivo Híbrido con Gemini 2.5 Flash**
+**C++20 Nativo · SIMD ARM64 NEON (`float32x4_t`) · Lazo Cerrado `OmniHolographicSingularityEngine` · Guardia de Estabilidad $C^2$ Cero-Artefactos · 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (sample-by-sample, 0 muestras de lookahead) · Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) · Asistente Cognitivo Híbrido con Gemini 2.5 Flash**
 
 *Arquitectura, Investigación, Diseño de Sistemas y Autoría Principal por*
 ### **Luis Uriel Pimentel Pérez — GORE TNS**
@@ -22,14 +22,14 @@
 
 [![Version](https://img.shields.io/badge/Versi%C3%B3n%20Unificada-v2.3.16%20%282316%29-00F0FF?style=for-the-badge&logo=android&logoColor=white)](version.properties)
 [![Android SDK](https://img.shields.io/badge/Android-9.0%20%E2%86%92%2015%20%28API%2028%E2%80%9335%29-3DDC84?style=for-the-badge&logo=android&logoColor=white)](app/build.gradle.kts)
-[![Native Core](https://img.shields.io/badge/N%C3%BAcleo%20DSP-332%20Archivos%20C%2B%2B23%20%28112.4K%20LOC%29-6FF3FF?style=for-the-badge&logo=cplusplus&logoColor=white)](app/src/main/cpp/)
+[![Native Core](https://img.shields.io/badge/N%C3%BAcleo%20DSP-332%20Archivos%20C%2B%2B20%20%28112.4K%20LOC%29-6FF3FF?style=for-the-badge&logo=cplusplus&logoColor=white)](app/src/main/cpp/)
 [![UI Compose](https://img.shields.io/badge/UI%20Aurora%20Obsidiana-221%20Archivos%20Kotlin%20%2850.1K%20LOC%29-A97FFF?style=for-the-badge&logo=kotlin&logoColor=white)](app/src/main/java/com/ivanna/omega/)
 [![Spatial Datasets](https://img.shields.io/badge/Datasets%20Reales-255%20SOFA%20%C2%B7%207D%20SAF%20%C2%B7%20200%20BRIR%20%C2%B7%2012%20IHR1-FF2E93?style=for-the-badge)](app/src/main/cpp/spatial/SofaSafRirMasterKnowledge.hpp)
 [![Author](https://img.shields.io/badge/Autor-Luis%20Uriel%20Pimentel%20P%C3%A9rez%20%28GORE%20TNS%29-FFD166?style=for-the-badge)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME)
 
 <br/>
 
-> **«No es un ecualizador ni un wrapper sobre efectos de Android. Es un sistema operativo acústico completo escrito en C++23 y ARM64 NEON, con física de transductores, inversión biomecánica coclear, espacialización holográfica entrenada sobre mediciones reales, protección matemática $C^2$ contra distorsión y un cerebro neuromórfico en lazo cerrado que escucha cada muestra y decide cómo debe sonar.»**
+> **«No es un ecualizador ni un wrapper sobre efectos de Android. Es un sistema operativo acústico completo escrito en C++20 y ARM64 NEON, con física de transductores, inversión biomecánica coclear, espacialización holográfica entrenada sobre mediciones reales, protección matemática $C^2$ contra distorsión y un cerebro neuromórfico en lazo cerrado que escucha cada muestra y decide cómo debe sonar.»**
 > — *Luis Uriel Pimentel Pérez (GORE TNS)*
 
 ---
@@ -67,7 +67,7 @@ Cuando escuchas música, películas o videojuegos en un teléfono Android, el so
    - No usa efectos de eco artificiales. Viene entrenado con **255 mediciones anatómicas de oído humano (SOFA)**, un **modelo matemático de 7 dimensiones de pabellón auricular (SAF de 214 sujetos)** y **200 salas acústicas reales grabadas (BRIR)**, arrancando calibrado desde el instante en que abres la aplicación.
 4. **Funciona con Root (en todo el sistema) y Sin Root (en la app, por captura y por DAC USB-C directo)**:
    - Si tienes **Magisk o KernelSU (Ruta B)**, se instala dentro del servidor de audio nativo de Android (`audioserver`) para procesar todas las aplicaciones del teléfono.
-   - Si **no tienes Root (Ruta A)**, ejecuta exactamente el mismo motor C++23, los mismos 5 Ejes Supremos y las mismas 200 salas reales desde la aplicación, mediante captura `MediaProjection` o enviando audio puro directamente a tu **DAC USB-C** por transferencia isócrona de hardware (`usbfs`).
+   - Si **no tienes Root (Ruta A)**, ejecuta exactamente el mismo motor C++20, los mismos 5 Ejes Supremos y las mismas 200 salas reales desde la aplicación, mediante captura `MediaProjection` o enviando audio puro directamente a tu **DAC USB-C** por transferencia isócrona de hardware (`usbfs`).
 
 ---
 
@@ -89,11 +89,11 @@ flowchart TB
     end
 
     subgraph ROUTEA["RUTA A · En Proceso JNI Lock-Free (Sin Root / Híbrido)"]
-        JNI["libivanna_omega.so (JNI C++23 · ARM64 NEON)"]
+        JNI["libivanna_omega.so (JNI C++20 · ARM64 NEON)"]
         DAEMON <-->|"@omega_daemon_socket (Unix) / Fallback TCP 127.0.0.1:12121"| JNI
     end
 
-    subgraph CORE["Núcleo Unificado C++23 por Sesión (0 malloc · 0 locks en Hot-Path)"]
+    subgraph CORE["Núcleo Unificado C++20 por Sesión (0 malloc · 0 locks en Hot-Path)"]
         FUSION["IvannaFusionEngine + Cadena DSP 9 Etapas + 7 Ejes Espaciales"]
         AXES["5 Ejes Cuántico-Neuromórficos + CochlearActiveInverseEngine (PINN)"]
         UNIFIED["DeclarativeUnifiedPipeline (5 Etapas) + OmniHolographicSingularityEngine"]
@@ -227,7 +227,7 @@ Cada etapa del pipeline unificado hereda de `ClickFreeStageBase`, que incorpora 
 
 Ejecutados íntegramente en el hilo de tiempo real **muestra a muestra (0 muestras de retardo de bloque añadido, medido por `PerfAuditor::measureAlgorithmicLatencyMs`)**, **cero asignaciones de memoria dinámica (`malloc`/`new`)**, protección hardware contra subnormales (`ScopedFpDenormalsToZero`: `FPCR.FZ=1` en ARM64 / `MXCSR` en x86_64) y continuidad de estado gestionada por `SupremeStateContinuityManager`:
 
-| Eje | Módulo C++23 (`app/src/main/cpp/supreme/`) | Física, Matemática y Vectorización SIMD ARM NEON |
+| Eje | Módulo C++20 (`app/src/main/cpp/supreme/`) | Física, Matemática y Vectorización SIMD ARM NEON |
 |:---:|--------------------------------------------|--------------------------------------------------|
 | **Eje 1** | `WarpedLatticeTransducerInverter.hpp`<br/>*(Anti-Dirac + De-Clipper Hermite)* | • **De-Clipper Cúbico de Hermite**: detecta mesetas recortadas ($|x| > 0.95, |\Delta x| < 10^{-5}$) y reconstruye la cresta perdida por interpolación polinómica cúbica.<br/>• **Celosía de Fase Mínima Deformada en Escala Bark** ($\lambda \approx 0.72$ @ $48\text{ kHz}$) con arquetipos específicos por ruta (`#0` AUX/USB, `#1` Bluetooth, `#2` Altavoz).<br/>• **Linealización Electrodinámica Lorentz $Bl(x)$** de bobina móvil + adaptación NLMS restringida al hipercubo de estabilidad de Schur ($|\kappa_m| < 0.95$) con sonda Micro-Chirp enmascarada ($-100\text{ dBFS}$). |
 | **Eje 2** | `PhaseCoherentTransharmonicSynthesizer.hpp`<br/>*(Anti-DSEE + Cinta 2" Jiles-Atherton)* | • **Red Neuronal en Dominio Complejo (CVNN)** con activación `modReLU` equivariante de fase: restaura armónicos superiores preservando la derivada de fase instantánea.<br/>• **8 Osciladores DDSP en Cuadratura** vectorizados en registros `float32x4_t` ARM NEON.<br/>• **Cancelación Activa Cuadrática de Distorsión por Intermodulación (IMD)** + modelo físico de histéresis magnética de **Jiles-Atherton** ($M = M_s \mathcal{L}(H_e/a)$) de cinta analógica de 2 pulgadas a 30 IPS. |
@@ -377,7 +377,7 @@ Tanto en **Root (`omega_effect.cpp`)** como **Sin Root (`ivanna_omega_jni.cpp` +
 Este proyecto mantiene una política estricta de **cero inflación de marketing**: cada afirmación de este documento corresponde a código fuente real compilado y auditado en CI, y las limitaciones físicas o de sistema operativo se declaran explícitamente:
 
 1. **En dispositivos sin Root (Ruta A), las políticas DRM de Android se respetan**:
-   - Sin Root no existe inyección dentro del proceso del sistema `audioserver` (Ruta B). En modo sin Root, el reproductor interno de IVANNA, la salida USB-C DAC directa y todas las aplicaciones que permiten `MediaProjection` ejecutan el **100% del motor C++23 (`libivanna_omega.so`), el `OmniHolographicSingularityEngine`, el `SupremeAcousticStabilityGuard`, los 5 Ejes Supremos y las 200 salas BRIR**, mientras que las apps que bloquean explícitamente la captura por DRM solo reciben los efectos estándar de sesión de Android.
+   - Sin Root no existe inyección dentro del proceso del sistema `audioserver` (Ruta B). En modo sin Root, el reproductor interno de IVANNA, la salida USB-C DAC directa y todas las aplicaciones que permiten `MediaProjection` ejecutan el **100% del motor C++20 (`libivanna_omega.so`), el `OmniHolographicSingularityEngine`, el `SupremeAcousticStabilityGuard`, los 5 Ejes Supremos y las 200 salas BRIR**, mientras que las apps que bloquean explícitamente la captura por DRM solo reciben los efectos estándar de sesión de Android.
 2. **Offloading Hexagon cDSP (`app/src/main/cpp/hexagon/ivanna_dsp.cpp`)**:
    - El cargador dinámico `dlopen` (`libcdsprpc.so` / `libadsprpc.so`), el contrato IDL unificado (`ivanna_dsp.idl`) y el puente JNI (`nativeDsp*`) están implementados, saneados contra corrupción de heap y enlazados con `-z defs`. Sin embargo, dado que el binario `skel` firmado por QAIC del SDK propietario de Qualcomm depende de la firma OEM de cada fabricante, **el procesamiento de audio en producción se ejecuta al 100% sobre la CPU ARM64 + SIMD NEON**, y la telemetría reporta honestamente cuando el cDSP no está activo en lugar de simularlo.
 3. **Contadores Hardware PMU (`PMCCNTR_EL0`)**:
@@ -435,7 +435,7 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 # 1. Instalar hooks de pre-commit (idempotente)
 bash scripts/setup-hooks.sh
 
-# 2. Ejecutar la suite completa de 150 tests nativos C++23 en host (normal)
+# 2. Ejecutar la suite completa de 153 tests nativos C++20 en host (normal)
 bash scripts/run_ctest.sh
 
 # 3. Ejecutar la suite completa bajo AddressSanitizer + UndefinedBehaviorSanitizer
@@ -444,7 +444,7 @@ IVANNA_SAN=asan bash scripts/run_ctest.sh
 # 4. Regenerar y auditar el entrenamiento conjunto 255-SOFA + 7D-SAF + 200-RIR
 python3 scripts/train_sofa_saf_rir_master.py
 
-# 5. Compilar el APK Android (arm64-v8a, C++23 + SIMD ARM NEON)
+# 5. Compilar el APK Android (arm64-v8a, C++20 + SIMD ARM NEON)
 ./gradlew assembleDebug
 ```
 
@@ -457,7 +457,7 @@ python3 scripts/train_sofa_saf_rir_master.py
 **Creado, Arquitecturado y Desarrollado por**
 ## **Luis Uriel Pimentel Pérez — GORE TNS**
 
-*1 428+ commits de ingeniería acústica, física de transductores, inteligencia neuromórfica y programación de sistemas C++23/ARM64.*
+*1 428+ commits de ingeniería acústica, física de transductores, inteligencia neuromórfica y programación de sistemas C++20/ARM64.*
 *Construido muestra a muestra. Auditado commit a commit. Verificado línea por línea.*
 
 **© 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.**

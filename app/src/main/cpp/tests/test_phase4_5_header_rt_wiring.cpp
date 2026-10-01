@@ -110,6 +110,8 @@ TEST(Phase45HeaderRtWiring, AllProductionHeadersInstantiateAndOperateCleanly) {
     EXPECT_GT( std::fabs(outL[0]) + std::fabs(outR[0]), 0.0f );
 
     Ivanna::HybridRenderer hybrid{};
+    static_assert(Ivanna::HybridRenderer::kActiveTaps == 128, "HybridRenderer must execute full 128-tap FIR");
+    EXPECT_EQ(Ivanna::HybridRenderer::kActiveTaps, 128u);
     hybrid.setEnabled(true);
     hybrid.setBinauralWet(0.7f);
     hybrid.setVirtualAngles(35.0f, 10.0f);

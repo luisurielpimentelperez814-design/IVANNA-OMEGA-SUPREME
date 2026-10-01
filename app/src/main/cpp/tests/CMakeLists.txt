@@ -814,7 +814,17 @@ add_executable(test_phase3_jni_callers
   test_phase3_jni_callers.cpp
   ../ivanna_hires_jni.cpp
   ../system_audio_capture.cpp
+  ../benchmark_logger.cpp
   ../jni/saf_stimulus_jni.cpp
+  ../jni/ivanna_npe_jni.cpp
+  ../jni/ivanna_visualizer_jni.cpp
+  ../jni/ivanna_visualizer_v2_jni.cpp
+  ../jni/ivanna_visualizer_bark64_jni.cpp
+  ../phase_oracle.cpp
+  ../neuromorphic/neuro_cochlear_manifold.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+  ../hexagon/ivanna_fastrpc_client.cpp
+  ../hexagon/ivanna_dsp.cpp
   ../SaFStimulusRenderer.cpp
   ../spatial/hrtf_convolver.cpp
   ../SafPcaDecoder.cpp
@@ -823,11 +833,12 @@ add_executable(test_phase3_jni_callers
   ../HRTFBinLoader.cpp
   ../daemon/core/android_log_compat.cpp
 )
-target_link_libraries(test_phase3_jni_callers PRIVATE GTest::gtest_main Threads::Threads m)
+target_link_libraries(test_phase3_jni_callers PRIVATE GTest::gtest_main Threads::Threads m dl)
 target_include_directories(test_phase3_jni_callers PRIVATE
   ..
   ../include
   ../spatial
+  ../neuromorphic
   host_stubs
 )
 target_compile_options(test_phase3_jni_callers PRIVATE -Wall -Wextra)
@@ -871,6 +882,60 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_phase4_5_header_rt_wiring PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 add_test(NAME test_phase4_5_header_rt_wiring COMMAND test_phase4_5_header_rt_wiring)
+
+# ── FASE A4: Detector dinámico en host de 0 malloc / 0 new en callbacks RT ───
+add_executable(test_rt_no_alloc
+  test_rt_no_alloc.cpp
+  ../audio_control_plane.cpp
+  ../Psychoacoustics.cpp
+  ../SofaHRTFLoader.cpp
+  ../SafHRTFBridge.cpp
+  ../SafPcaDecoder.cpp
+  ../SafModelLoader.cpp
+  ../SafGlobalBridge.cpp
+  ../saf_latent_bridge.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../HRTFBinLoader.cpp
+  ../IvannaVoiceProsodyEngine.cpp
+  ../EvolutionaryEQ.cpp
+  ../neuromorphic/ivanna_neural_upmixer.cpp
+  ../anti_dolby.cpp
+  ../neuromorphic/AntiDolbyAI.cpp
+  ../neuromorphic/neuro_cochlear_manifold.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+  ../hexagon/ivanna_fastrpc_client.cpp
+  ../hexagon/ivanna_dsp.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
+  ../spatial/IntelligentUpmixer.cpp
+  ../spatial/HoaBinauralDecoder.cpp
+  ../spatial/WfsRenderer.cpp
+  ../IvannaTinyML.cpp
+  ../IvannaNeuromorphicTinyML.cpp
+  ../SaFOptimizer.cpp
+  ../SaFStimulusRenderer.cpp
+  ../SafSpatialModifier.cpp
+  ../IvannaSelfHealingEngine.cpp
+  ../IvannaSuperAgentMemory.cpp
+)
+target_link_libraries(test_rt_no_alloc PRIVATE GTest::gtest_main Threads::Threads m dl)
+target_include_directories(test_rt_no_alloc PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_rt_no_alloc PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_rt_no_alloc PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_rt_no_alloc PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_rt_no_alloc COMMAND test_rt_no_alloc)
 
 
 

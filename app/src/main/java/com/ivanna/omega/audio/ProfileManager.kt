@@ -148,21 +148,24 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
             audioEngine.setWidth(width)
             audioEngine.setBypass(profile.audioEngine.bypass)
 
-            // Aplicar ruta de audio
+            // Aplicar ruta de audio (vía instancia única de AudioEngine, sin duplicar chamada estática)
             audioEngine.setRouteProfile(
                 profile.route.bassBoostDb,
                 profile.route.dialogBoostDb,
                 profile.route.widenerMult
             )
-            AudioEngine.nativeSetRouteProfileStatic(
-                profile.route.bassBoostDb,
-                profile.route.dialogBoostDb,
-                profile.route.widenerMult
-            )
+            val musicScore = (1f - profile.antiDolby.speechThreshold - profile.antiDolby.bassThreshold).coerceIn(0f, 1f)
             audioEngine.setAntiDolbyScores(
                 profile.antiDolby.speechThreshold,
-                (1f - profile.antiDolby.speechThreshold - profile.antiDolby.bassThreshold).coerceIn(0f, 1f),
+                musicScore,
                 profile.antiDolby.bassThreshold
+            )
+            audioEngine.setManifoldEnabled(!profile.audioEngine.bypass)
+            audioEngine.logCurrentBenchmark(
+                speech = profile.antiDolby.speechThreshold,
+                music = musicScore,
+                bass = profile.antiDolby.bassThreshold,
+                dolbyState = 0
             )
 
             currentProfileId = profileId
@@ -324,7 +327,7 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
 
             if (IvannaNativeLib.isLoaded) {
                 runCatching {
-                    AudioEngine.nativeSetRouteProfileStatic(
+                    audioEngine.setRouteProfile(
                         profile.route.bassBoostDb.safe(0f, -18f, 18f),
                         profile.route.dialogBoostDb.safe(0f, -18f, 18f),
                         profile.route.widenerMult.safe(1f, 0f, 3f)
@@ -339,7 +342,9 @@ class ProfileManager(private val context: Context, private val audioEngine: Audi
                 val nBa = if (total > 0f) ba / total else 0.33f
                 val nMu = if (total > 0f) mu / total else 0.33f
                 runCatching {
-                    AudioEngine.nativeSetAntiDolbyScoresStatic(nSp, nMu, nBa)
+                    audioEngine.setAntiDolbyScores(nSp, nMu, nBa)
+                    audioEngine.setManifoldEnabled(!profile.audioEngine.bypass)
+                    audioEngine.logCurrentBenchmark(nSp, nMu, nBa, 0)
                 }.onFailure { Log.e(TAG, "antiDolby scores: $it") }
             }
 
