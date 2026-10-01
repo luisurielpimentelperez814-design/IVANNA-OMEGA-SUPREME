@@ -731,8 +731,7 @@ endif()
 gtest_discover_tests(test_supreme_acoustic_continuity)
 
 # ── PROMPT MAESTRO v3: UNIFIED STAGE ARCHITECTURE & SAFETY BENCH (FASES 1–6) ──
-add_executable(test_unified_master_v3_safety_bench
-  test_unified_master_v3_safety_bench.cpp
+add_library(ivanna_unified_pipeline_under_test STATIC
   ../audio_control_plane.cpp
   ../Psychoacoustics.cpp
   ../SofaHRTFLoader.cpp
@@ -762,8 +761,7 @@ add_executable(test_unified_master_v3_safety_bench
   ../IvannaSelfHealingEngine.cpp
   ../IvannaSuperAgentMemory.cpp
 )
-target_link_libraries(test_unified_master_v3_safety_bench PRIVATE GTest::gtest_main Threads::Threads m dl)
-target_include_directories(test_unified_master_v3_safety_bench PRIVATE
+target_include_directories(ivanna_unified_pipeline_under_test PUBLIC
   ..
   ../include
   ../spatial
@@ -772,6 +770,16 @@ target_include_directories(test_unified_master_v3_safety_bench PRIVATE
   ../experimental/adaptive_engine
   host_stubs
 )
+target_compile_options(ivanna_unified_pipeline_under_test PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(ivanna_unified_pipeline_under_test PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(ivanna_unified_pipeline_under_test PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+
+add_executable(test_unified_master_v3_safety_bench
+  test_unified_master_v3_safety_bench.cpp
+)
+target_link_libraries(test_unified_master_v3_safety_bench PRIVATE ivanna_unified_pipeline_under_test GTest::gtest_main Threads::Threads m dl)
 target_compile_options(test_unified_master_v3_safety_bench PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
   target_compile_options(test_unified_master_v3_safety_bench PRIVATE ${IVANNA_SAN_FLAGS})
@@ -888,50 +896,13 @@ add_test(NAME test_phase4_5_header_rt_wiring COMMAND test_phase4_5_header_rt_wir
 # ── FASE A4: Detector dinámico en host de 0 malloc / 0 new en callbacks RT ───
 add_executable(test_rt_no_alloc
   test_rt_no_alloc.cpp
-  ../audio_control_plane.cpp
-  ../Psychoacoustics.cpp
-  ../SofaHRTFLoader.cpp
-  ../SafHRTFBridge.cpp
-  ../SafPcaDecoder.cpp
-  ../SafModelLoader.cpp
-  ../SafGlobalBridge.cpp
-  ../saf_latent_bridge.cpp
-  ../SafHRTFDatasetBridge.cpp
-  ../HRTFBinLoader.cpp
-  ../IvannaVoiceProsodyEngine.cpp
-  ../EvolutionaryEQ.cpp
-  ../neuromorphic/ivanna_neural_upmixer.cpp
-  ../anti_dolby.cpp
-  ../neuromorphic/AntiDolbyAI.cpp
-  ../neuromorphic/neuro_cochlear_manifold.cpp
-  ../neuromorphic/volterra_h2_symmetric.cpp
-  ../hexagon/ivanna_fastrpc_client.cpp
-  ../hexagon/ivanna_dsp.cpp
-  ../spatial/RirConvolver.cpp
-  ../spatial/hrtf_convolver.cpp
   ../spatial/HRTFInterpolator.cpp
   ../spatial/HRTFDatabase.cpp
   ../spatial/IntelligentUpmixer.cpp
   ../spatial/HoaBinauralDecoder.cpp
   ../spatial/WfsRenderer.cpp
-  ../IvannaTinyML.cpp
-  ../IvannaNeuromorphicTinyML.cpp
-  ../SaFOptimizer.cpp
-  ../SaFStimulusRenderer.cpp
-  ../SafSpatialModifier.cpp
-  ../IvannaSelfHealingEngine.cpp
-  ../IvannaSuperAgentMemory.cpp
 )
-target_link_libraries(test_rt_no_alloc PRIVATE GTest::gtest_main Threads::Threads m dl)
-target_include_directories(test_rt_no_alloc PRIVATE
-  ..
-  ../include
-  ../spatial
-  ../neuromorphic
-  ../supreme
-  ../experimental/adaptive_engine
-  host_stubs
-)
+target_link_libraries(test_rt_no_alloc PRIVATE ivanna_unified_pipeline_under_test GTest::gtest_main Threads::Threads m dl)
 target_compile_options(test_rt_no_alloc PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
   target_compile_options(test_rt_no_alloc PRIVATE ${IVANNA_SAN_FLAGS})

@@ -33,7 +33,7 @@ jobs:
       - name: Configure (Release)
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build-tests -j
+        run: cmake --build build-tests -j4
       - name: Run tests
         run: ctest --test-dir build-tests --output-on-failure
 

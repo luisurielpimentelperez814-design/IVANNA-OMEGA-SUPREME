@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 check_docs_claims.py — Fase A5 Gate de afirmaciones documentales contra código real y herramientas A3/A4.
 
 Falla (exit 1) si `README.md` o `LÉAME.md`:
