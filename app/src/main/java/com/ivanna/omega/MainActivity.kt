@@ -198,8 +198,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         runCatching { com.ivanna.omega.spatial.IvannaSpatialManager.release() }
-        val shm: ShmManager = ShmManager.getInstance()
-        runCatching { shm.release() }
+        runCatching { ShmManager.release() }
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSaveEvoState() }
             runCatching { IvannaNativeLib.nativeDestroyAdaptiveEngine() }

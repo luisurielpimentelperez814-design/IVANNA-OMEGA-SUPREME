@@ -253,7 +253,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
             SliderRow("Anchura Objeto (Width)", curW, 0.05f..1.0f) { updateSelectedStem(nw = it) }
             TextButton(onClick = {
                 com.ivanna.omega.spatial.IvannaSpatialManager.reset()
-                apply(SpatialControlStore.Config())
+                apply(SpatialControlStore.SpatialConfig())
             }) {
                 Text("REINICIAR ESCENA 3D / STEMS", color = AuroraCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }

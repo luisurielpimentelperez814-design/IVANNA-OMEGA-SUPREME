@@ -71,7 +71,7 @@ object BenchmarkRunner {
         // 3. Medición real BS.1770-4 LUFS, Peak dBFS y registro CSV nativo + sandbox
         val audioEngine = AudioEngine()
         audioEngine.initialize(48000)
-        audioEngine.init(48000)
+        com.ivanna.omega.dsp.DSPBridge.init(48000)
         audioEngine.setMasterGain(0.0f)
         if (IvannaNativeLib.isLoaded) {
             val benchFrames = 256

@@ -1832,8 +1832,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     if (!copyJFloat(env, inR, rBuf, n)) return;
     NonBlockingDspProcessGuard dspGuard;
     if (!dspGuard.acquired || !g_initialized.load(std::memory_order_acquire)) {
-        writeJFloat(env, outL, lBuf, n);
-        writeJFloat(env, outR, rBuf, n);
+        jfloat* pL = outL ? env->GetFloatArrayElements(outL, nullptr) : nullptr;
+        jfloat* pR = outR ? env->GetFloatArrayElements(outR, nullptr) : nullptr;
+        if (pL) { memcpy(pL, lBuf, n * sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
+        if (pR) { memcpy(pR, rBuf, n * sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
         return;
     }
     drainPendingDspParamsLocked();

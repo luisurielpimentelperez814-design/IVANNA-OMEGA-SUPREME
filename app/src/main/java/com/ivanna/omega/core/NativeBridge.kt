@@ -26,7 +26,7 @@ object NativeBridge {
                 IvannaNativeLib.setCochlearInverseEnabled(enabled)
                 IvannaNativeLib.nativeSetCochlearInverseEnabled(enabled)
             }
-            if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+            if (com.ivanna.omega.spatial.IvannaSpatialNative.isLoaded) {
                 com.ivanna.omega.spatial.IvannaSpatialNative.setCochlearInverseEnabled(enabled)
                 com.ivanna.omega.spatial.IvannaSpatialNative.nativeSetCochlearInverseEnabled(enabled)
             }
@@ -46,7 +46,7 @@ object NativeBridge {
                 IvannaNativeLib.setCochlearIntensity(intensity)
                 IvannaNativeLib.nativeSetCochlearIntensity(intensity)
             }
-            if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+            if (com.ivanna.omega.spatial.IvannaSpatialNative.isLoaded) {
                 com.ivanna.omega.spatial.IvannaSpatialNative.setCochlearIntensity(intensity)
                 com.ivanna.omega.spatial.IvannaSpatialNative.nativeSetCochlearIntensity(intensity)
             }
@@ -60,7 +60,7 @@ object NativeBridge {
         return try {
             val active = isCochlearActive()
             val libActive = if (IvannaNativeLib.isLoaded) IvannaNativeLib.isCochlearActive() else active
-            val spActive = if (com.ivanna.omega.spatial.IvannaSpatialNative.loaded) {
+            val spActive = if (com.ivanna.omega.spatial.IvannaSpatialNative.isLoaded) {
                 com.ivanna.omega.spatial.IvannaSpatialNative.isCochlearActive()
             } else active
             active || libActive || spActive

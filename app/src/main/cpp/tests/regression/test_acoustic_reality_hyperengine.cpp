@@ -357,7 +357,16 @@ TEST(AcousticRealityHyperengineValidation, 5_CpuLoadRealTimeBudget) {
     const double blockDurationUs = (static_cast<double>(kBlockSize) / kSampleRate) * 1.0e6; // 5333.3 us
     const double cpuLoadPercent = (avgBlockUs / blockDurationUs) * 100.0;
 
-    EXPECT_LT(cpuLoadPercent, 15.0)
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+#if !defined(__OPTIMIZE__) || defined(IVANNA_SANITIZER_ACTIVE) || defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+    constexpr double kMaxCpuBudgetPct = 60.0; // ASan/UBSan/TSan instrumentation + parallel CTest runner overhead
+#else
+    constexpr double kMaxCpuBudgetPct = 15.0;
+#endif
+
+    EXPECT_LT(cpuLoadPercent, kMaxCpuBudgetPct)
         << "La carga CPU del audio thread debe mantenerse muy por debajo del presupuesto RT (medido: "
         << cpuLoadPercent << "%, " << avgBlockUs << " us/bloque)";
 }
