@@ -285,10 +285,11 @@ TEST(Phase3JniCallersTest, VisualizerBridgesProcessAndSampleEndToEnd) {
     Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2ProcessBlockFromNPE(&env, nullptr, h2, &monoBuf, kFrames);
 
     jfloatArray s1 = Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisSample(&env, nullptr, h1);
-    jfloatArray s2 = Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2Sample(&env, nullptr, h2);
     ASSERT_NE(s1, nullptr);
-    ASSERT_NE(s2, nullptr);
     EXPECT_EQ(env.GetArrayLength(s1), 3);
+
+    jfloatArray s2 = Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2Sample(&env, nullptr, h2);
+    ASSERT_NE(s2, nullptr);
     EXPECT_EQ(env.GetArrayLength(s2), 13);
 
     Java_com_ivanna_omega_visualizer_IvannaVisualizerNative_nativeVisReset(&env, nullptr, h1);

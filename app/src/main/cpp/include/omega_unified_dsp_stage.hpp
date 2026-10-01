@@ -557,6 +557,12 @@ public:
         if (intensity >= 0.0f && std::isfinite(intensity)) {
             cur.stageIntensity[static_cast<size_t>(id)] = std::clamp(intensity, 0.0f, 1.0f);
         }
+        if (id == StageId::CochlearPinn || id == StageId::NeuroCochlearManifold) {
+            cur.cochlearEnabled = enabled;
+            if (intensity >= 0.0f && std::isfinite(intensity)) {
+                cur.cochlearIntensity = std::clamp(intensity, 0.0f, 1.0f);
+            }
+        }
         if (id == StageId::CochlearPinn && enabled) {
             cur.activeCochlearVariant = 0u;
             cur.setStageEnabled(StageId::NeuroCochlearManifold, false);
