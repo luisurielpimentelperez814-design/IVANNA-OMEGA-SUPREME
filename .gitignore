@@ -44,3 +44,4 @@ google-services.json
 Thumbs.db
 *.log
 build-tests/
+__pycache__/

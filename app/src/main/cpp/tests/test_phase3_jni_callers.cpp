@@ -114,7 +114,6 @@ TEST(Phase3JniCallersTest, SafStimulusInitJni) {
 
 TEST(Phase3JniCallersTest, ObjectRendererSetReverbLevelObservableAndClamped) {
     ivanna::spatial::ObjectRenderer renderer;
-    renderer.init(48000.0f, 64);
     renderer.setReverbLevel(0.42f);
     EXPECT_NEAR(renderer.reverbLevel(), 0.42f, 1e-6f);
     renderer.setReverbLevel(1.8f);

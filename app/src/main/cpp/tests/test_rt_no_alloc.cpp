@@ -140,6 +140,8 @@ TEST(RtNoAllocDetectorTest, RouteB_SpatialAndConvolver_10000BlocksZeroAlloc) {
 
     ivanna::spatial::WfsRenderer wfs;
     wfs.init(kSampleRate, static_cast<int>(kBlockFrames), 8);
+    wfs.setObject(0, -0.5f, 1.2f, 0.8f);
+    wfs.setObject(1,  0.5f, 1.2f, 0.8f);
 
     Ivanna::RirConvolver rir;
     rir.synthesizeMasterStudioBrir(0.34f, static_cast<int>(kSampleRate));
@@ -149,12 +151,13 @@ TEST(RtNoAllocDetectorTest, RouteB_SpatialAndConvolver_10000BlocksZeroAlloc) {
     alignas(64) float inR[kBlockFrames]{};
     alignas(64) float outL[kBlockFrames]{};
     alignas(64) float outR[kBlockFrames]{};
+    const float* objIns[2] = {inL, inR};
 
     // Warm-up de 1 bloque para asegurar que buffers estén dimensionados
     fillTestSignal(inL, inR, kBlockFrames, 0);
     upmixer.processBlock(inL, inR, hoaField, kBlockFrames);
     hoaDecoder.processBlock(hoaField, outL, outR, kBlockFrames);
-    wfs.process(outL, outR, outL, outR, static_cast<int>(kBlockFrames));
+    wfs.process(objIns, 2, outL, outR, static_cast<int>(kBlockFrames));
     rir.process(outL, outR, static_cast<int>(kBlockFrames));
 
     g_rtAllocCount.store(0, std::memory_order_relaxed);
@@ -172,7 +175,7 @@ TEST(RtNoAllocDetectorTest, RouteB_SpatialAndConvolver_10000BlocksZeroAlloc) {
             ivanna::unified::RtCallbackSanitizerScope rtScope;
             upmixer.processBlock(inL, inR, hoaField, kBlockFrames);
             hoaDecoder.processBlock(hoaField, outL, outR, kBlockFrames);
-            wfs.process(outL, outR, outL, outR, static_cast<int>(kBlockFrames));
+            wfs.process(objIns, 2, outL, outR, static_cast<int>(kBlockFrames));
             rir.process(outL, outR, static_cast<int>(kBlockFrames));
         }
     }
