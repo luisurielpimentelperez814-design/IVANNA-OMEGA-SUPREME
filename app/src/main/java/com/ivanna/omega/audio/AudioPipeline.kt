@@ -231,12 +231,11 @@ class AudioPipeline {
 
                 for (i in 0 until read) buf[i] = buf[i].coerceIn(-1f, 1f)
 
-                // FIX (cableado real): si hay un DAC USB en modo directo activo,
-                // el audio ya procesado también se manda al path bit-perfect
-                // (bypass del mezclador de Android), además del AudioTrack normal
-                // (que sigue sonando por el mixer mientras el consumidor nativo
-                // async del DAC — hoy stub de logging — no reemplace la salida).
-                usbManagerRef?.let { if (it.isActive()) it.writeAudio(buf, read / 2) }
+                // En el path unificado (default), el DAC Tipo-C recibe el audio
+                // procesado directamente por AudioTrack -> AudioFlinger -> snd-usb-audio
+                // (mismo path que AUX/Speaker/Bluetooth). Solo se alimenta writeAudio
+                // si el bypass URB directo fue abierto explícitamente.
+                usbManagerRef?.let { if (it.isDirectBypassActive()) it.writeAudio(buf, read / 2) }
 
                 track.write(buf, 0, read, AudioTrack.WRITE_BLOCKING)
             }

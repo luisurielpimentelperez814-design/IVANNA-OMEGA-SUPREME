@@ -207,7 +207,11 @@ struct omega_effect_context_t {
     Ivanna::RirDataset*   rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
     float* rtL;                     // AUDIT FIX: buffer L preasignado (realtime)
     float* rtR;                     // AUDIT FIX: buffer R preasignado (realtime)
+    float* rtDryL;                  // FIX USB-C DAC in-place: copia dry L inmune a aliasing inBuf==outBuf
+    float* rtDryR;                  // FIX USB-C DAC in-place: copia dry R inmune a aliasing inBuf==outBuf
+    float* rtVolterraScratch;       // Scratch intercalado 2*OMEGA_RT_MAX_FRAMES para Volterra sin pisar outBuf
     int    rtCapacity;              // frames que caben en rtL/rtR
+    uint32_t lastConfiguredSr;      // SR previa para detectar hotplug de DAC Tipo-C (48k <-> 96k/192k)
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     ivanna::adaptive::AdaptiveEngineV2* adaptiveEngine;
@@ -679,6 +683,126 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     omega_rir_post_load(ctx, roomIdx);
 }
 
+/* ── Conversión multi-formato PCM sin allocs para AudioFlinger / DAC USB-C ──
+ * Cuando se conecta un DAC Tipo-C, AudioFlinger o el HAL USB pueden configurar
+ * la cadena de efectos en PCM_16_BIT (0x01), PCM_32_BIT (0x03), PCM_8_24_BIT (0x04)
+ * o PCM_24_BIT_PACKED (0x06) además de PCM_FLOAT (0x05). Interpretar esos buffers
+ * enteros directamente como IEEE-754 float (inBuf->f32) producía ruido de estática
+ * a fondo de escala ("como tierra mal aterrizada"). Estos helpers normalizan a
+ * float [-1, 1] en la entrada y re-empaquetan al formato exacto de salida. */
+static inline size_t omega_bytes_per_sample(uint8_t fmt) noexcept {
+    switch (fmt) {
+        case 0x01u: return 2u; // AUDIO_FORMAT_PCM_16_BIT
+        case 0x06u: return 3u; // AUDIO_FORMAT_PCM_24_BIT_PACKED
+        default:    return 4u; // PCM_FLOAT (0x05), PCM_32_BIT (0x03), PCM_8_24_BIT (0x04), 0 (default float)
+    }
+}
+
+static inline void omega_deinterleave_chunk(const void* rawIn, uint8_t fmt,
+                                            int frameOffset, int chunkFrames,
+                                            float* dstL, float* dstR) noexcept {
+    if (!rawIn || chunkFrames <= 0) return;
+    switch (fmt) {
+        case 0x01u: { // AUDIO_FORMAT_PCM_16_BIT (S16_LE)
+            const int16_t* s16 = static_cast<const int16_t*>(rawIn) + (size_t)frameOffset * 2u;
+            constexpr float kScale16 = 1.0f / 32768.0f;
+            for (int n = 0; n < chunkFrames; ++n) {
+                dstL[n] = static_cast<float>(s16[2 * n])     * kScale16;
+                dstR[n] = static_cast<float>(s16[2 * n + 1]) * kScale16;
+            }
+            break;
+        }
+        case 0x03u: { // AUDIO_FORMAT_PCM_32_BIT (S32_LE)
+            const int32_t* s32 = static_cast<const int32_t*>(rawIn) + (size_t)frameOffset * 2u;
+            constexpr float kScale32 = 1.0f / 2147483648.0f;
+            for (int n = 0; n < chunkFrames; ++n) {
+                dstL[n] = static_cast<float>(s32[2 * n])     * kScale32;
+                dstR[n] = static_cast<float>(s32[2 * n + 1]) * kScale32;
+            }
+            break;
+        }
+        case 0x04u: { // AUDIO_FORMAT_PCM_8_24_BIT (Q8.23 en int32_t)
+            const int32_t* q24 = static_cast<const int32_t*>(rawIn) + (size_t)frameOffset * 2u;
+            constexpr float kScale24 = 1.0f / 8388608.0f;
+            for (int n = 0; n < chunkFrames; ++n) {
+                dstL[n] = std::clamp(static_cast<float>(q24[2 * n])     * kScale24, -1.0f, 1.0f);
+                dstR[n] = std::clamp(static_cast<float>(q24[2 * n + 1]) * kScale24, -1.0f, 1.0f);
+            }
+            break;
+        }
+        case 0x06u: { // AUDIO_FORMAT_PCM_24_BIT_PACKED (3B LE con signo)
+            const uint8_t* p = static_cast<const uint8_t*>(rawIn) + (size_t)frameOffset * 6u;
+            constexpr float kScale24 = 1.0f / 8388608.0f;
+            for (int n = 0; n < chunkFrames; ++n) {
+                const int32_t iL = (static_cast<int32_t>(static_cast<int8_t>(p[2])) << 16) |
+                                   (static_cast<int32_t>(p[1]) << 8) |
+                                    static_cast<int32_t>(p[0]);
+                const int32_t iR = (static_cast<int32_t>(static_cast<int8_t>(p[5])) << 16) |
+                                   (static_cast<int32_t>(p[4]) << 8) |
+                                    static_cast<int32_t>(p[3]);
+                dstL[n] = static_cast<float>(iL) * kScale24;
+                dstR[n] = static_cast<float>(iR) * kScale24;
+                p += 6;
+            }
+            break;
+        }
+        default: { // AUDIO_FORMAT_PCM_FLOAT (0x05) o 0 (default en tests)
+            const float* f32 = static_cast<const float*>(rawIn) + (size_t)frameOffset * 2u;
+            for (int n = 0; n < chunkFrames; ++n) {
+                const float l = f32[2 * n];
+                const float r = f32[2 * n + 1];
+                dstL[n] = std::isfinite(l) ? l : 0.0f;
+                dstR[n] = std::isfinite(r) ? r : 0.0f;
+            }
+            break;
+        }
+    }
+}
+
+static inline void omega_write_output_frame(void* rawOut, uint8_t fmt,
+                                            int frameIdx, float l, float r) noexcept {
+    const float cL = std::isfinite(l) ? std::clamp(l, -1.0f, 1.0f) : 0.0f;
+    const float cR = std::isfinite(r) ? std::clamp(r, -1.0f, 1.0f) : 0.0f;
+    switch (fmt) {
+        case 0x01u: { // AUDIO_FORMAT_PCM_16_BIT
+            int16_t* s16 = static_cast<int16_t*>(rawOut) + (size_t)frameIdx * 2u;
+            s16[0] = static_cast<int16_t>(std::lrintf(cL * 32767.0f));
+            s16[1] = static_cast<int16_t>(std::lrintf(cR * 32767.0f));
+            break;
+        }
+        case 0x03u: { // AUDIO_FORMAT_PCM_32_BIT
+            int32_t* s32 = static_cast<int32_t*>(rawOut) + (size_t)frameIdx * 2u;
+            s32[0] = static_cast<int32_t>(cL * 2147483392.0f);
+            s32[1] = static_cast<int32_t>(cR * 2147483392.0f);
+            break;
+        }
+        case 0x04u: { // AUDIO_FORMAT_PCM_8_24_BIT (Q8.23)
+            int32_t* q24 = static_cast<int32_t*>(rawOut) + (size_t)frameIdx * 2u;
+            q24[0] = static_cast<int32_t>(std::lrintf(cL * 8388607.0f));
+            q24[1] = static_cast<int32_t>(std::lrintf(cR * 8388607.0f));
+            break;
+        }
+        case 0x06u: { // AUDIO_FORMAT_PCM_24_BIT_PACKED (3B LE)
+            uint8_t* p = static_cast<uint8_t*>(rawOut) + (size_t)frameIdx * 6u;
+            const uint32_t uL = static_cast<uint32_t>(static_cast<int32_t>(std::lrintf(cL * 8388607.0f)));
+            const uint32_t uR = static_cast<uint32_t>(static_cast<int32_t>(std::lrintf(cR * 8388607.0f)));
+            p[0] = static_cast<uint8_t>(uL & 0xFFu);
+            p[1] = static_cast<uint8_t>((uL >> 8) & 0xFFu);
+            p[2] = static_cast<uint8_t>((uL >> 16) & 0xFFu);
+            p[3] = static_cast<uint8_t>(uR & 0xFFu);
+            p[4] = static_cast<uint8_t>((uR >> 8) & 0xFFu);
+            p[5] = static_cast<uint8_t>((uR >> 16) & 0xFFu);
+            break;
+        }
+        default: { // AUDIO_FORMAT_PCM_FLOAT (0x05) o 0
+            float* f32 = static_cast<float*>(rawOut) + (size_t)frameIdx * 2u;
+            f32[0] = std::isfinite(l) ? l : 0.0f;
+            f32[1] = std::isfinite(r) ? r : 0.0f;
+            break;
+        }
+    }
+}
+
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
 static int32_t omega_process(effect_handle_t self,
                              audio_buffer_t *inBuf, audio_buffer_t *outBuf) {
@@ -687,14 +811,17 @@ static int32_t omega_process(effect_handle_t self,
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
 
     const int frames = (int)inBuf->frameCount;
-    const float* in = inBuf->f32;
-    float* out = outBuf->f32;
+    const uint8_t inFmt  = ctx->config.inputCfg.format;
+    const uint8_t outFmt = (ctx->config.outputCfg.format != 0u) ? ctx->config.outputCfg.format : inFmt;
+    const size_t frameBytes = omega_bytes_per_sample(inFmt) * 2u;
 
     // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
     // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
     IvannaFusionEngine* fc = ctx->fusionCore;
     if (!fc) {
-        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        if (outBuf->raw != inBuf->raw) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
+        }
         return 0;
     }
 
@@ -740,31 +867,41 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->rtL && ctx->rtR && ctx->rtCapacity > 0) {
             const int tailFrames = std::min(frames, std::min(ctx->rtCapacity, 64));
             const int startFrame = frames - tailFrames;
-            for (int n = 0; n < tailFrames; ++n) {
-                ctx->rtL[n] = in[2 * (startFrame + n)];
-                ctx->rtR[n] = in[2 * (startFrame + n) + 1];
-            }
+            omega_deinterleave_chunk(inBuf->raw, inFmt, startFrame, tailFrames, ctx->rtL, ctx->rtR);
             if (ctx->cochlearEngine)   ctx->cochlearEngine->preserveAcousticState(ctx->rtL, ctx->rtR, tailFrames);
             if (ctx->supremeLattice)   ctx->supremeLattice->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
             if (ctx->supremeCvnn)      ctx->supremeCvnn->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
             if (ctx->supremeSnnHoa)    ctx->supremeSnnHoa->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
             if (ctx->supremePinna)     ctx->supremePinna->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
             if (ctx->supremeMsoFarrow) ctx->supremeMsoFarrow->preserveAcousticState(ctx->rtL, ctx->rtR, (size_t)tailFrames);
-            if (ctx->volterraEngine)   ctx->volterraEngine->preserveInterleavedTail(in + 2 * startFrame, (uint32_t)tailFrames, 2u);
+            if (ctx->volterraEngine && ctx->rtVolterraScratch) {
+                for (int n = 0; n < tailFrames; ++n) {
+                    ctx->rtVolterraScratch[2 * n]     = ctx->rtL[n];
+                    ctx->rtVolterraScratch[2 * n + 1] = ctx->rtR[n];
+                }
+                ctx->volterraEngine->preserveInterleavedTail(ctx->rtVolterraScratch, (uint32_t)tailFrames, 2u);
+            }
         }
-        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+        if (outBuf->raw != inBuf->raw) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
+        }
         return 0;
     }
 
     // AUDIT FIX (realtime allocation): buffers L/R preasignados en el ctx
     // (SET_CONFIG). Si vinieran sin reservar (calloc falló en SET_CONFIG)
     // se cae a passthrough — jamás asignar en el hilo de audio.
-    if (!ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
-        memmove(outBuf->raw, inBuf->raw, (size_t)frames * 2u * sizeof(float));
+    if (!ctx->rtL || !ctx->rtR || !ctx->rtDryL || !ctx->rtDryR || !ctx->rtVolterraScratch || ctx->rtCapacity <= 0) {
+        if (outBuf->raw != inBuf->raw) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
+        }
         return 0;
     }
     float* L = ctx->rtL;
     float* R = ctx->rtR;
+    float* dryBufL = ctx->rtDryL;
+    float* dryBufR = ctx->rtDryR;
+    float* volterraScratch = ctx->rtVolterraScratch;
 
     // AUDIT FIX (rigid buffer / silent bypass): si el bloque entrante excede
     // la capacidad preasignada (p.ej. AudioFlinger con LDAC/LHDC puede lanzar
@@ -812,16 +949,14 @@ static int32_t omega_process(effect_handle_t self,
     if (ctx->supremeMsoFarrow) ctx->supremeMsoFarrow->setThermalBypass(ctx->thermalSkipVolterra);
 
     int offset = 0;
+    float sumSq = 0.0f, pk = 0.0f;
     while (offset < frames) {
         const int chunk = ((frames - offset) < ctx->rtCapacity)
                           ? (frames - offset) : ctx->rtCapacity;
-        const float* inChunk  = in  + (size_t)offset * 2u;
-        float*       outChunk = out + (size_t)offset * 2u;
 
-        for (int n = 0; n < chunk; ++n) {
-            L[n] = inChunk[2 * n];
-            R[n] = inChunk[2 * n + 1];
-        }
+        omega_deinterleave_chunk(inBuf->raw, inFmt, offset, chunk, L, R);
+        std::memcpy(dryBufL, L, (size_t)chunk * sizeof(float));
+        std::memcpy(dryBufR, R, (size_t)chunk * sizeof(float));
 
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
 
@@ -944,18 +1079,20 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // ── Series de Volterra de 2º Orden Truncadas (con SupremeTransitionEnvelope) ──
+        // FIX (aliasing inBuf==outBuf en AudioFlinger): usar volterraScratch preasignado
+        // en lugar de outChunk para no sobreescribir el buffer de entrada in-place.
         if (ctx->volterraEngine &&
             ctx->stabilityGuard.arbitration().claimNonlinearSlot(
                 ivanna::supreme::AcousticModuleId::VolterraKernel)) {
             if (wantVolterraPre || !ctx->volterraEngine->isSilent()) {
                 for (int n = 0; n < chunk; ++n) {
-                    outChunk[2 * n]     = L[n];
-                    outChunk[2 * n + 1] = R[n];
+                    volterraScratch[2 * n]     = L[n];
+                    volterraScratch[2 * n + 1] = R[n];
                 }
-                ctx->volterraEngine->processInterleaved(outChunk, outChunk, (uint32_t)chunk, 2);
+                ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
                 for (int n = 0; n < chunk; ++n) {
-                    L[n] = outChunk[2 * n];
-                    R[n] = outChunk[2 * n + 1];
+                    L[n] = volterraScratch[2 * n];
+                    R[n] = volterraScratch[2 * n + 1];
                 }
                 ctx->stabilityGuard.enforceStageEnergyCeiling(
                     ivanna::supreme::AcousticModuleId::VolterraKernel,
@@ -964,10 +1101,10 @@ static int32_t omega_process(effect_handle_t self,
                 const int tailFrames = std::min(chunk, 64);
                 const int startFrame = chunk - tailFrames;
                 for (int n = 0; n < tailFrames; ++n) {
-                    outChunk[2 * n]     = L[startFrame + n];
-                    outChunk[2 * n + 1] = R[startFrame + n];
+                    volterraScratch[2 * n]     = L[startFrame + n];
+                    volterraScratch[2 * n + 1] = R[startFrame + n];
                 }
-                ctx->volterraEngine->preserveInterleavedTail(outChunk, (uint32_t)tailFrames, 2u);
+                ctx->volterraEngine->preserveInterleavedTail(volterraScratch, (uint32_t)tailFrames, 2u);
             }
         }
 
@@ -1061,14 +1198,20 @@ static int32_t omega_process(effect_handle_t self,
         // Interleave -> salida con Autonomous Stability Sanitizer y rampa Master/Thermal Zero-Pop
         for (int n = 0; n < chunk; ++n) {
             const float masterEnv = ctx->masterBypassEnv.nextSample();
-            const float dryL = inChunk[2 * n];
-            const float dryR = inChunk[2 * n + 1];
+            const float dryL = dryBufL[n];
+            const float dryR = dryBufR[n];
             float l = L[n];
             float r = R[n];
             if (!std::isfinite(l)) l = dryL;
             if (!std::isfinite(r)) r = dryR;
-            outChunk[2 * n]     = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryL, l, masterEnv);
-            outChunk[2 * n + 1] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryR, r, masterEnv);
+            const float outL = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryL, l, masterEnv);
+            const float outR = ivanna::supreme::SupremeTransitionEnvelope::mixSample(dryR, r, masterEnv);
+            sumSq += outL * outL + outR * outR;
+            const float absL = std::fabs(outL);
+            const float absR = std::fabs(outR);
+            if (absL > pk) pk = absL;
+            if (absR > pk) pk = absR;
+            omega_write_output_frame(outBuf->raw, outFmt, offset + n, outL, outR);
         }
         offset += chunk;
     }
@@ -1080,14 +1223,7 @@ static int32_t omega_process(effect_handle_t self,
     // Sin esto: audioRouteBridgeLoop() nunca detecta Ruta B activa porque
     // omega_daemon_get_shared_state() usa SHM compartida; UI refleja audio cuando el daemon está conectado.
     {
-        const float *proc = outBuf->f32;
         const uint32_t outFrames = (uint32_t)frames;
-        float sumSq = 0.0f, pk = 0.0f;
-        for (uint32_t i = 0; i < outFrames * 2u; ++i) {
-            const float s = proc[i];
-            sumSq += s * s;
-            if (s > pk) pk = s; else if (-s > pk) pk = -s;
-        }
         const float rms = (outFrames > 0)
             ? __builtin_sqrtf(sumSq / (float)(outFrames * 2u)) : 0.0f;
         ctx->pendingSnap.raw_rms   = rms;
@@ -1130,7 +1266,13 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
     switch (cmdCode) {
         case EFFECT_CMD_INIT:
+            if (ctx) ctx->stabilityGuard.reset();
+            break;
         case EFFECT_CMD_RESET:
+            if (ctx) {
+                ctx->stabilityGuard.reset();
+                g_hrtf_flush_req.store(true, std::memory_order_release);
+            }
             break;
         case EFFECT_CMD_SET_CONFIG:
             if (pCmdData && cmdSize == sizeof(effect_config_t)) {
@@ -1138,6 +1280,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 uint32_t sr = ctx->config.outputCfg.samplingRate;
                 if (sr == 0) sr = ctx->config.inputCfg.samplingRate;
                 if (sr == 0) sr = 48000;
+                const bool srChanged = (ctx->lastConfiguredSr != 0u && ctx->lastConfiguredSr != sr);
+                ctx->lastConfiguredSr = sr;
                 // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
@@ -1162,8 +1306,21 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     ctx->rtR = reinterpret_cast<float*>(
                         calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
                 }
+                if (!ctx->rtDryL) {
+                    ctx->rtDryL = reinterpret_cast<float*>(
+                        calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+                }
+                if (!ctx->rtDryR) {
+                    ctx->rtDryR = reinterpret_cast<float*>(
+                        calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+                }
+                if (!ctx->rtVolterraScratch) {
+                    ctx->rtVolterraScratch = reinterpret_cast<float*>(
+                        calloc((size_t)OMEGA_RT_MAX_FRAMES * 2u, sizeof(float)));
+                }
                 ctx->rtCapacity =
-                    (ctx->rtL && ctx->rtR) ? OMEGA_RT_MAX_FRAMES : 0;
+                    (ctx->rtL && ctx->rtR && ctx->rtDryL && ctx->rtDryR && ctx->rtVolterraScratch)
+                        ? OMEGA_RT_MAX_FRAMES : 0;
                 // Limiter por sesion: misma instancia que la Ruta A usa en
                 // ivanna_omega_jni.cpp (g_safety_limiter) pero por-contexto,
                 // asi dos sesiones simultaneas no comparten estado de gain-
@@ -1223,20 +1380,28 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     if (ctx->cochlearEngine) {
                         ctx->cochlearEngine->prepare(static_cast<float>(sr), (ctx->rtCapacity > 0) ? ctx->rtCapacity : 4096);
                     }
+                } else if (srChanged) {
+                    ctx->cochlearEngine->prepare(static_cast<float>(sr), (ctx->rtCapacity > 0) ? ctx->rtCapacity : 4096);
                 }
                 ctx->cochlearIntensity = 0.35f;
                 // 5 Ejes de Supremacía Cuántico-Neuromórfica (instanciación fuera de RT)
                 if (!ctx->supremeLattice) {
                     ctx->supremeLattice = new (std::nothrow) ivanna::supreme::WarpedLatticeTransducerInverter();
                     if (ctx->supremeLattice) ctx->supremeLattice->prepare(static_cast<float>(sr));
+                } else if (srChanged) {
+                    ctx->supremeLattice->prepare(static_cast<float>(sr));
                 }
                 if (!ctx->supremeCvnn) {
                     ctx->supremeCvnn = new (std::nothrow) ivanna::supreme::PhaseCoherentTransharmonicSynthesizer();
                     if (ctx->supremeCvnn) ctx->supremeCvnn->prepare(static_cast<float>(sr));
+                } else if (srChanged) {
+                    ctx->supremeCvnn->prepare(static_cast<float>(sr));
                 }
                 if (!ctx->supremeSnnHoa) {
                     ctx->supremeSnnHoa = new (std::nothrow) ivanna::supreme::SnnNmfHoaUpmixer();
                     if (ctx->supremeSnnHoa) ctx->supremeSnnHoa->prepare(static_cast<float>(sr));
+                } else if (srChanged) {
+                    ctx->supremeSnnHoa->prepare(static_cast<float>(sr));
                 }
                 if (!ctx->supremePinna) {
                     ctx->supremePinna = new (std::nothrow) ivanna::supreme::PinnaManifoldInterpolator();
@@ -1251,6 +1416,13 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     ctx->lastPinnaConcha = ivanna::master::kMasterSafGoldenQNorm[2];
                     ctx->lastPinnaHelix  = ivanna::master::kMasterSafGoldenQNorm[3];
                     ctx->lastPinnaHead   = ivanna::master::kMasterSafGoldenQNorm[0];
+                } else if (srChanged) {
+                    ctx->supremePinna->calibrateFromLatents(
+                        ctx->lastPinnaConcha, ctx->lastPinnaHelix, ctx->lastPinnaHead, static_cast<float>(sr));
+                }
+                if (srChanged) {
+                    ctx->stabilityGuard.reset();
+                    g_hrtf_flush_req.store(true, std::memory_order_release);
                 }
                 if (ctx->fusionCore) {
                     ctx->fusionCore->setSafLatentParams(ivanna::master::kMasterSafGoldenQ);
@@ -1535,6 +1707,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             *replySize = total;
         } break;
         case EFFECT_CMD_SET_DEVICE:
+            if (ctx) {
+                ctx->stabilityGuard.reset();
+                g_hrtf_flush_req.store(true, std::memory_order_release);
+            }
+            break;
         case EFFECT_CMD_SET_VOLUME:
         case EFFECT_CMD_SET_AUDIO_MODE:
             break;
@@ -1745,6 +1922,9 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         // AUDIT FIX (realtime allocation): liberar buffers RT preasignados.
         if (ctx->rtL) { free(ctx->rtL); ctx->rtL = nullptr; }
         if (ctx->rtR) { free(ctx->rtR); ctx->rtR = nullptr; }
+        if (ctx->rtDryL) { free(ctx->rtDryL); ctx->rtDryL = nullptr; }
+        if (ctx->rtDryR) { free(ctx->rtDryR); ctx->rtDryR = nullptr; }
+        if (ctx->rtVolterraScratch) { free(ctx->rtVolterraScratch); ctx->rtVolterraScratch = nullptr; }
         ctx->rtCapacity = 0;
         free(ctx);
     }

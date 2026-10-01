@@ -171,7 +171,12 @@ struct AsyncEngine {
     int  interval      = 1;      // bInterval (microframes de 125 µs)
     int  sampleRate    = 384000;
     int  channels      = 2;
-    int  bytesPerFrame = 8;      // S32_LE estéreo
+    int  bytesPerSample = 4;     // 2=S16_LE, 3=S24_3LE, 4=S32_LE
+    int  bytesPerFrame = 8;      // S32_LE estéreo por defecto
+
+    // Evita bombardear el bus USB con URBs a 1000 Hz en vacío antes de que el
+    // productor haya entregado el primer bloque real de audio.
+    std::atomic<bool> hasAudioData{false};
 
     // Feedback UAC (isoc IN). hasFeedback=false => comportamiento identico
     // al motor original (fpp fijo, sin corrector) — ver nativeConfigureEndpoint.
@@ -330,6 +335,48 @@ int nextPacketFrames(AsyncEngine& e, int fppBase) {
 // en un stride fijo. Sin feedback (hasFeedback=false), nextPacketFrames
 // devuelve siempre fppBase y esto degenera exactamente al comportamiento
 // anterior (mismo tamano en los 8 paquetes) — cero regresion para ese caso.
+// Empaqueta frames S32_LE del anillo al formato físico real del endpoint
+// (16-bit S16_LE, 24-bit empaquetado S24_3LE, o 32-bit S32_LE), evitando el
+// desbordamiento de buffer y el desalineamiento de bits que producían ruido
+// de estática cuando el DAC operaba a 16 o 24 bits.
+void packFramesFromRing(AsyncEngine& e, uint8_t* dstBytes, int frames) noexcept {
+    if (!dstBytes || frames <= 0) return;
+    static thread_local int32_t s32Scratch[4096 * kMaxChannels];
+    const int ch = e.channels > 0 ? e.channels : 2;
+    const int bps = (e.bytesPerSample == 2 || e.bytesPerSample == 3 || e.bytesPerSample == 4)
+                    ? e.bytesPerSample : 4;
+    int remaining = frames;
+    uint8_t* out = dstBytes;
+    while (remaining > 0) {
+        const int chunk = remaining > 4096 ? 4096 : remaining;
+        if (e.hasAudioData.load(std::memory_order_acquire)) {
+            e.ring.readFrames(s32Scratch, chunk);
+        } else {
+            std::memset(s32Scratch, 0, (size_t)chunk * ch * sizeof(int32_t));
+        }
+        const int totalSamples = chunk * ch;
+        if (bps == 4) {
+            std::memcpy(out, s32Scratch, (size_t)totalSamples * 4u);
+            out += (size_t)totalSamples * 4u;
+        } else if (bps == 3) {
+            for (int i = 0; i < totalSamples; ++i) {
+                const uint32_t u = static_cast<uint32_t>(s32Scratch[i] >> 8);
+                out[0] = static_cast<uint8_t>(u & 0xFFu);
+                out[1] = static_cast<uint8_t>((u >> 8) & 0xFFu);
+                out[2] = static_cast<uint8_t>((u >> 16) & 0xFFu);
+                out += 3;
+            }
+        } else {
+            for (int i = 0; i < totalSamples; ++i) {
+                const int16_t s16 = static_cast<int16_t>(s32Scratch[i] >> 16);
+                std::memcpy(out, &s16, sizeof(int16_t));
+                out += 2;
+            }
+        }
+        remaining -= chunk;
+    }
+}
+
 bool fillAndSubmit(AsyncEngine& e, UrbSlot& slot, int fppBase) {
     usbdevfs_urb* u = slot.urb;
     std::memset(u, 0, sizeof(usbdevfs_urb));
@@ -347,8 +394,7 @@ bool fillAndSubmit(AsyncEngine& e, UrbSlot& slot, int fppBase) {
         u->iso_frame_desc[p].length = (unsigned int)bytesThisPacket;
         u->iso_frame_desc[p].actual_length = 0;
         u->iso_frame_desc[p].status = 0;
-        int32_t* dst = (int32_t*)(slot.buf + byteOffset);
-        e.ring.readFrames(dst, framesThisPacket);
+        packFramesFromRing(e, slot.buf + byteOffset, framesThisPacket);
         byteOffset += bytesThisPacket;
     }
     u->buffer_length = byteOffset;
@@ -489,7 +535,12 @@ void runWriteEngine(AsyncEngine& e) {
     int64_t next = now_ns();
 
     while (!e.stopRequested.load(std::memory_order_acquire)) {
-        e.ring.readFrames((int32_t*)buf, chunkFrames);
+        if (!e.hasAudioData.load(std::memory_order_acquire)) {
+            usleep(2000);
+            next = now_ns();
+            continue;
+        }
+        packFramesFromRing(e, buf, chunkFrames);
         ssize_t w = ::write(e.fd, buf, chunkBytes);
         if (w < 0) {
             if (errno == EINTR) continue;
@@ -568,8 +619,12 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(JNIEnv* /*
     }
 
     g_engine.fd = dupFd;
-    g_engine.bytesPerFrame = g_engine.channels * 4;   // S32_LE
+    if (g_engine.bytesPerSample != 2 && g_engine.bytesPerSample != 3 && g_engine.bytesPerSample != 4) {
+        g_engine.bytesPerSample = 4;
+    }
+    g_engine.bytesPerFrame = g_engine.channels * g_engine.bytesPerSample;
     g_engine.ring.configure(g_engine.channels);
+    g_engine.hasAudioData.store(false, std::memory_order_release);
     g_engine.stopRequested.store(false, std::memory_order_release);
     g_engine.submitted.store(0, std::memory_order_relaxed);
     g_engine.completed.store(0, std::memory_order_relaxed);
@@ -626,8 +681,11 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     if (sampleRate > 0)    g_engine.sampleRate    = sampleRate;
     if (channels > 0 && channels <= kMaxChannels) g_engine.channels = channels;
     int bytes = (bitDepth > 0 ? bitDepth : 32) / 8;
-    g_engine.bytesPerFrame = g_engine.channels * (bytes > 0 ? bytes : 4);
+    if (bytes != 2 && bytes != 3 && bytes != 4) bytes = 4;
+    g_engine.bytesPerSample = bytes;
+    g_engine.bytesPerFrame = g_engine.channels * bytes;
     g_engine.ring.configure(g_engine.channels);
+    g_engine.hasAudioData.store(false, std::memory_order_release);
 
     // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
     // envia como -1 si el DAC no expone el endpoint) => hasFeedback=false y
@@ -702,6 +760,9 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
         offset    += chunk;
         remaining -= chunk;
     }
+    if (written > 0) {
+        g_engine.hasAudioData.store(true, std::memory_order_release);
+    }
     env->ReleaseFloatArrayElements(samples, src, JNI_ABORT);
     return written;
 }
@@ -732,7 +793,11 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeIsIsochronous(
 // ── Símbolos externos para el pipeline nativo (sin pasar por Kotlin) ────────
 extern "C" int  ivanna_usb_pro_write(const int32_t* frames, int count) {
     if (!g_engine.running.load(std::memory_order_acquire)) return 0;
-    return g_engine.ring.writeFrames(frames, count);
+    const int w = g_engine.ring.writeFrames(frames, count);
+    if (w > 0) {
+        g_engine.hasAudioData.store(true, std::memory_order_release);
+    }
+    return w;
 }
 extern "C" bool ivanna_usb_pro_active() {
     return g_engine.running.load(std::memory_order_acquire);

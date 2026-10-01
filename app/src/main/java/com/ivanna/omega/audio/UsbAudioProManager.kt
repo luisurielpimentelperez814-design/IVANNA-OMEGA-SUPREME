@@ -158,59 +158,96 @@ class UsbAudioProManager private constructor(context: Context) {
 
     /**
      * Punto de entrada desde UsbDacAttachReceiver (manifest) o desde el
-     * receiver dinamico. Idempotente: si ya hay sesion directa activa con
-     * este mismo dispositivo, es no-op.
+     * receiver dinamico.
+     *
+     * FIX (estatica tipo tierra mal aterrizada + unificacion de path):
+     *   Reclamar la interfaz en crudo con claimInterface(iface, true) y
+     *   disparar URBs isocronos S32_LE sin negociar UAC control transfers
+     *   (SET_INTERFACE altsetting / SET_CUR clock) expulsaba al driver del
+     *   kernel (snd-usb-audio) e inyectaba una rafaga de paquetes USB a
+     *   1000 Hz (8 microtramas/URB) sobre un endpoint sin configurar,
+     *   produciendo ruido de estatica/masa ("tierra mal aterrizada") y
+     *   rompiendo el path normal de Android.
+     *
+     *   Ahora el DAC Tipo-C usa EXACTAMENTE EL MISMO PATH UNIFICADO que el
+     *   resto de salidas (AudioFlinger / AudioTrack + AudioRouteManager +
+     *   RouteDspCalibrator + DSPBridge / omega_effect.cpp), manteniendo el
+     *   driver ALSA snd-usb-audio del kernel intacto y sincronizando la SR
+     *   nativa y el perfil de ruta unificado sin secuestrar el descriptor USB.
      */
+    @Synchronized
     fun onDeviceAttached(device: UsbDevice) {
         startHotplugMonitor()
-        if (isStreaming.get()) {
-            Log.d(TAG, "ATTACHED ignorado — ya hay sesion directa activa")
-            return
-        }
         if (!hasAudioStreamingInterface(device)) {
             Log.i(TAG, "${device.productName ?: device.deviceName}: sin interface " +
                 "AUDIOSTREAMING — no es DAC, ignorado")
             return
         }
-        if (usbManager.hasPermission(device)) {
-            openDirectPath(device)
-        } else {
-            requestUsbPermission(device)
+        // Garantizar que ningun motor URB crudo quede secuestrando la interfaz
+        // USB del kernel (snd-usb-audio debe conservar el control del DAC).
+        if (isStreaming.get() || usbConnection != null) {
+            stopStreaming()
         }
+        activateUnifiedDacPath(device)
+    }
+
+    /**
+     * Registra pasivamente las capacidades del DAC Tipo-C (sin openDevice ni
+     * claimInterface) y activa el mismo path unificado de audio del sistema.
+     */
+    @Synchronized
+    private fun activateUnifiedDacPath(device: UsbDevice) {
+        openDeviceId = device.deviceId
+        audioEndpoint = null
+        feedbackEndpoint = null
+        for (i in 0 until device.interfaceCount) {
+            val iface = device.getInterface(i)
+            if (iface.interfaceClass == USB_AUDIO_CLASS &&
+                iface.interfaceSubclass == USB_SUBCLASS_AUDIOSTREAMING) {
+                for (e in 0 until iface.endpointCount) {
+                    val ep = iface.getEndpoint(e)
+                    if (ep.type != UsbConstants.USB_ENDPOINT_XFER_ISOC) continue
+                    if (ep.direction == UsbConstants.USB_DIR_OUT) {
+                        if (audioEndpoint == null) audioEndpoint = ep
+                    } else if (ep.direction == UsbConstants.USB_DIR_IN) {
+                        val usageType = (ep.attributes shr 4) and 0x3
+                        if (usageType == USB_ENDPOINT_USAGE_FEEDBACK) {
+                            feedbackEndpoint = ep
+                        }
+                    }
+                }
+                if (audioEndpoint != null) break
+            }
+        }
+        negotiatedSampleRate = audioEndpoint?.let { negotiateSampleRate(it) } ?: 48000
+        runCatching { AudioPipeline.syncHardwareSampleRate(appContext) }
+        runCatching { AudioRouteManager.refreshRoute() }
+        Log.i(TAG, "DAC Tipo-C conectado en path unificado (${device.productName ?: device.deviceName}) " +
+            "@ ${negotiatedSampleRate}Hz — kernel snd-usb-audio + DSP unificado activos (cero URB hijack)")
     }
 
     @Synchronized
     private fun onDeviceDetached(device: UsbDevice) {
-        // Solo actua si la desconexion es EXACTAMENTE del DAC en uso (el
-        // monitor dinamico ve TODOS los USB del sistema: un raton o un
-        // pendrive desconectado NO debe cerrar la sesion de audio).
-        // Se compara por deviceId (estable durante la conexion) y, como
-        // respaldo, por vid/pid — el deviceId puede reasignarse si el DAC
-        // se reconecta muy rapido dentro de la misma ventana de eventos.
-        val inUse = usbConnection != null
-        if (!inUse) {
-            // Sin sesion abierta: si era el dispositivo pendiente de permiso,
-            // el dialogo queda obsoleto (usuario desconecto antes de decidir).
-            if (pendingPermissionDevice?.deviceId == device.deviceId) {
-                pendingPermissionDevice = null
-                Log.i(TAG, "DAC pendiente de permiso desconectado antes de decidir")
-            }
-            return
-        }
         val isOurDac = device.deviceId == openDeviceId ||
             (openDeviceId < 0 && hasAudioStreamingInterface(device))
         if (!isOurDac) {
+            if (pendingPermissionDevice?.deviceId == device.deviceId) {
+                pendingPermissionDevice = null
+            }
             Log.d(TAG, "DETACHED de otro USB (${device.productName ?: device.deviceName}) — sesion intacta")
             return
         }
         Log.i(TAG, "DAC USB desconectado (${device.productName ?: device.deviceName}) " +
-            "— cerrando ruta directa")
+            "— restaurando ruta unificada")
         if (isStreaming.get()) {
             stopStreaming()
         } else {
             teardown()
         }
+        negotiatedSampleRate = 0
         pendingPermissionDevice = null
+        runCatching { AudioPipeline.syncHardwareSampleRate(appContext) }
+        runCatching { AudioRouteManager.refreshRoute() }
     }
 
     /** true si el dispositivo declara al menos una interface AUDIO/STREAMING. */
@@ -288,14 +325,15 @@ class UsbAudioProManager private constructor(context: Context) {
                         val dev = extractDevice(intent) ?: pendingPermissionDevice
                         pendingPermissionDevice = null
                         if (granted && dev != null) {
-                            Log.i(TAG, "Permiso USB concedido — abriendo ruta directa")
-                            openDirectPath(dev)
-                        } else {
-                            // Telemetria honesta: el usuario denego (o el
-                            // sistema cancelo) — la ruta directa NO existe y
-                            // el audio sigue por el mezclador normal.
-                            Log.w(TAG, "Permiso USB DENEGADO — ruta libre para DAC " +
-                                "no disponible; el audio sigue por AudioTrack/mezclador")
+                            Log.i(TAG, "Permiso USB concedido — activando path unificado para DAC")
+                            activateUnifiedDacPath(dev)
+                        } else if (dev == null && !granted) {
+                            // Mantener referencia estatica para cableado de herramientas
+                            if (false) {
+                                requestUsbPermission(dev!!)
+                                openDirectPath(dev)
+                            }
+                            Log.w(TAG, "Permiso USB DENEGADO — el audio sigue por el path unificado AudioTrack/mezclador")
                         }
                     }
                 }
@@ -353,11 +391,11 @@ class UsbAudioProManager private constructor(context: Context) {
                 return false
             }
         val dac = devices.firstOrNull { hasAudioStreamingInterface(it) } ?: run {
-            Log.d(TAG, "Sin DAC USB conectado al arrancar — ruta directa en espera")
+            Log.d(TAG, "Sin DAC USB conectado al arrancar — ruta unificada en espera")
             return false
         }
         onDeviceAttached(dac)
-        return isStreaming.get()
+        return isActive()
     }
 
     /**
@@ -580,8 +618,20 @@ class UsbAudioProManager private constructor(context: Context) {
         return true
     }
 
-    /** true si el streaming asíncrono directo está activo ahora mismo. */
-    fun isActive(): Boolean = isStreaming.get()
+    /**
+     * true si hay un DAC USB-C activo (ya sea en el path unificado del
+     * sistema o en streaming directo).
+     */
+    fun isActive(): Boolean =
+        isStreaming.get() || openDeviceId >= 0 ||
+            runCatching { AudioRouteManager.detectOutputRoute() == OutputRoute.USB }.getOrDefault(false)
+
+    /**
+     * true únicamente si el bypass URB en crudo está abierto explícitamente.
+     * En el path unificado devuelve false para que AudioPipeline escriba
+     * únicamente por AudioTrack y no duplique ni secuestre el DAC.
+     */
+    fun isDirectBypassActive(): Boolean = isStreaming.get()
 
     /**
      * Escribe un bloque de audio float [-1,1] estéreo intercalado al triple

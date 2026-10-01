@@ -40,9 +40,9 @@ class AdaptiveLatencyController(
     companion object {
         private const val TAG = "AdaptiveLatencyCtrl"
 
-        // Headroom targets en milisegundos
-        const val HEADROOM_USB_DAC_MS = 15.0f
-        const val HEADROOM_WIRED_MS   = 16.0f
+        // Headroom targets en milisegundos (unificado para DAC USB-C, cable y altavoz)
+        const val HEADROOM_USB_DAC_MS = 20.0f
+        const val HEADROOM_WIRED_MS   = 20.0f
         const val HEADROOM_SPEAKER_MS = 20.0f
         const val HEADROOM_BT_MS      = 52.0f
 
@@ -51,6 +51,7 @@ class AdaptiveLatencyController(
     }
 
     private val audioTs = AudioTimestamp()
+    private var configuredTrackBufferMs: Float = 0f
 
     @Volatile var currentRoute: OutputRouteType = OutputRouteType.SPEAKER
         private set
@@ -102,12 +103,14 @@ class AdaptiveLatencyController(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val device = try { track.routedDevice } catch (_: Throwable) { null }
             if (device != null) {
+                val prevRoute = currentRoute
                 when (device.type) {
                     AudioDeviceInfo.TYPE_USB_DEVICE,
-                    AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                    AudioDeviceInfo.TYPE_USB_HEADSET,
+                    AudioDeviceInfo.TYPE_USB_ACCESSORY -> {
                         currentRoute = OutputRouteType.USB_DAC
                         routeName = "USB-DAC"
-                        activeCodec = "USB_HiRes"
+                        activeCodec = "PCM_FLOAT"
                     }
                     AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
                     AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
@@ -118,10 +121,11 @@ class AdaptiveLatencyController(
                         activeCodec = "LDAC/AAC"
                     }
                     AudioDeviceInfo.TYPE_WIRED_HEADSET,
-                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> {
+                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                    AudioDeviceInfo.TYPE_AUX_LINE -> {
                         currentRoute = OutputRouteType.WIRED
                         routeName = "Headphone"
-                        activeCodec = "PCM_32BIT"
+                        activeCodec = "PCM_FLOAT"
                     }
                     AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> {
                         currentRoute = OutputRouteType.SPEAKER
@@ -133,6 +137,11 @@ class AdaptiveLatencyController(
                         routeName = "Speaker"
                         activeCodec = "PCM_FLOAT"
                     }
+                }
+                if (currentRoute != prevRoute) {
+                    lastHwTimestampNs = 0L
+                    lastHwFramePos = 0L
+                    measuredJitterMs = 0f
                 }
             }
         }
@@ -211,14 +220,15 @@ class AdaptiveLatencyController(
             lastHwTimestampNs = hwTimestampNs
             lastHwFramePos = hwFramePos
 
-            // 3. Adaptación del target de headroom
-            val baseHeadroomMs = when (currentRoute) {
+            // 3. Adaptación del target de headroom (nunca menor al buffer WRITE_BLOCKING real)
+            val routeBaseMs = when (currentRoute) {
                 OutputRouteType.USB_DAC   -> HEADROOM_USB_DAC_MS
                 OutputRouteType.WIRED     -> HEADROOM_WIRED_MS
                 OutputRouteType.SPEAKER   -> HEADROOM_SPEAKER_MS
                 OutputRouteType.BLUETOOTH -> HEADROOM_BT_MS
                 OutputRouteType.UNKNOWN   -> HEADROOM_SPEAKER_MS
             }
+            val baseHeadroomMs = max(routeBaseMs, configuredTrackBufferMs)
 
             // Compensación por jitter y carga de DSP
             val jitterPenaltyMs = if (measuredJitterMs > 3.0f) (measuredJitterMs * 1.2f) else 0f
@@ -239,6 +249,11 @@ class AdaptiveLatencyController(
     }
 
     fun configure(rate: Int = sampleRate, targetTrackBuf: Int = 0) {
+        val effRate = if (rate > 0) rate else sampleRate
+        // PCM_FLOAT estéreo = 8 bytes por frame
+        configuredTrackBufferMs = if (targetTrackBuf > 0 && effRate > 0) {
+            ((targetTrackBuf / 8f) * 1000f / effRate).coerceIn(0f, 65f)
+        } else 0f
         reset()
     }
 

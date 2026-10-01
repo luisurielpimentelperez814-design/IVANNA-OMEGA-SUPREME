@@ -81,19 +81,30 @@ object AudioRouteManager {
         return detectOutputRoute(am)
     }
 
+    /**
+     * Re-evalúa inmediatamente la ruta de salida activa y aplica su perfil
+     * en el pipeline unificado (AudioEngine + OmegaEngineBridge + HRTF).
+     * Llamado por UsbAudioProManager / UsbDacAttachReceiver al conectar o
+     * desconectar un DAC Tipo-C para que use exactamente el mismo path.
+     */
+    fun refreshRoute() {
+        val am = audioManager ?: return
+        applyRoute(detectOutputRoute(am))
+    }
+
     fun detectOutputRoute(am: AudioManager): OutputRoute {
         val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         return when {
             outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET } ->
                 OutputRoute.BLUETOOTH
             outputs.any {
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_AUX_LINE
-            } -> OutputRoute.WIRED_AUX
-            outputs.any {
                 it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
                 it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
             } -> OutputRoute.USB
+            outputs.any {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_AUX_LINE
+            } -> OutputRoute.WIRED_AUX
             outputs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER } -> OutputRoute.SPEAKER
             else -> OutputRoute.UNKNOWN
         }
@@ -103,9 +114,9 @@ object AudioRouteManager {
         // SBC/AAC pierden presencia 2-4kHz y el estéreo se degrada al
         // recodificar; se compensa diálogo y se reduce ancho.
         OutputRoute.BLUETOOTH -> btProfile()
-        // AUX cableado: rolloff de graves común por impedancia de salida.
-        OutputRoute.WIRED_AUX -> RouteProfile(bassBoostDb = 2.0f, dialogBoostDb = 1.0f, widenerMult = 1.0f)
-        // USB-C: DAC dedicado, sin compensación necesaria.
+        // AUX cableado y USB-C DAC: mismo path unificado de línea/audífonos
+        // con respuesta limpia y compensación coherente.
+        OutputRoute.WIRED_AUX,
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
         OutputRoute.SPEAKER, OutputRoute.UNKNOWN -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
     }
@@ -190,6 +201,7 @@ object AudioRouteManager {
         val previousRoute = currentRoute
         currentRoute = route
         appContextRef?.let { ctx ->
+            runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
             Thread({
                 runCatching { BluetoothAudioProfiler.refresh(ctx) }
             }, "BtAudioProfilerRefresh").start()
