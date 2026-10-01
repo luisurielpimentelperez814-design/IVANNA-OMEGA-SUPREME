@@ -142,6 +142,12 @@ public:
     }
     void set_width(float w) noexcept { width = std::clamp(w, 0.f, 2.f); }
     void set_wet(float w)   noexcept { wet   = std::clamp(w, 0.f, 1.f); }
+
+    float target_width()   const noexcept { return width; }
+    float target_wet()     const noexcept { return wet; }
+    float smoothed_theta() const noexcept { return thetaSmooth_; }
+    float smoothed_width() const noexcept { return widthSmooth_; }
+    float smoothed_wet()   const noexcept { return wetSmooth_; }
 };
 
 } // namespace ivanna

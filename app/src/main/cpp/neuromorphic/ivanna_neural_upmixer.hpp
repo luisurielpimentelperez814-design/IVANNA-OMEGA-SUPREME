@@ -15,6 +15,8 @@
 #include "../spatial/ivanna_object_renderer.hpp"
 #include <vector>
 #include <array>
+#include <atomic>
+#include <algorithm>
 
 namespace ivanna::ai {
 
@@ -55,21 +57,25 @@ public:
     void stemsToObjects(const float* stems, int numFrames,
                         std::vector<spatial::AudioObject>& objects) noexcept;
 
-    void setEnabled(bool enabled) noexcept { enabled_ = enabled; }
-    bool isEnabled() const noexcept { return enabled_; }
+    void setEnabled(bool enabled) noexcept { enabled_.store(enabled, std::memory_order_release); }
+    bool isEnabled() const noexcept { return enabled_.load(std::memory_order_acquire); }
+    float crossfadeEnvelope() const noexcept { return xfadeGain_; }
 
-    void setStemPosition(StemType stem, float x, float y, float z, float width);
+    void setStemPosition(StemType stem, float x, float y, float z, float width) noexcept;
+    StemPosition getStemPosition(StemType stem) const noexcept;
 
     void reset() noexcept;
     void release() noexcept;
 
 private:
-    bool enabled_ = false;
+    std::atomic<bool> enabled_{false};
+    float xfadeGain_ = 0.f;
     float sampleRate_ = 96000.f;
     int blockSize_ = 512;
 
-    std::array<StemPosition, 4> customPositions_ = kStemPositions;
-    bool useCustomPositions_ = false;
+    std::array<std::array<StemPosition, 4>, 2> customPositionsBuf_ = {kStemPositions, kStemPositions};
+    std::atomic<int> activePosBuf_{0};
+    std::atomic<bool> useCustomPositions_{false};
 
     // Filtros paso-bajo/paso-alto simples para separación espectral
     float bassStateL_ = 0.f, bassStateR_ = 0.f;

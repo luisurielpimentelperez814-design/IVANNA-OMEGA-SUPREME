@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 #include <jni.h>
 #include <cmath>
+#include <cstring>
+#include <cstdio>
+#include <vector>
+#include "include/omega_unified_dsp_stage.hpp"
 #include "../spatial/ivanna_object_renderer.hpp"
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
 #include "../spatial/cue_based_spatial.hpp"
@@ -10,17 +14,6 @@ JNIEXPORT jint JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetConfi
 JNIEXPORT jint JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetConfiguredBitDepth(JNIEnv*, jclass);
 JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSampleRate(JNIEnv*, jclass, jint);
 JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetBitDepth(JNIEnv*, jclass, jint);
-
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(JNIEnv*, jobject, jint, jfloat);
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(JNIEnv*, jobject, jint, jfloat);
-
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_NativeBridge_setCochlearInverseEnabled(JNIEnv*, jclass, jboolean);
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_NativeBridge_setCochlearIntensity(JNIEnv*, jclass, jfloat);
-JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_NativeBridge_isCochlearActive(JNIEnv*, jclass);
-JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_core_NativeBridge_getCochlearIntensity(JNIEnv*, jclass);
-JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsCochlearActive(JNIEnv*, jobject);
-JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearIntensity(JNIEnv*, jobject);
-JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeIsCochlearActive(JNIEnv*, jclass);
 
 JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_audio_SystemAudioCapture_nativeHasData(JNIEnv*, jobject);
 JNIEXPORT jfloat JNICALL Java_com_ivanna_omega_audio_SystemAudioCapture_nativeGetLastRmsDb(JNIEnv*, jobject);
@@ -61,44 +54,35 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2
 JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2ProcessBlockFromNPE(JNIEnv*, jclass, jlong, jobject, jint);
 JNIEXPORT jfloatArray JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerNativeV2_nativeVisV2Sample(JNIEnv*, jclass, jlong);
 
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(JNIEnv*, jobject, jfloatArray);
-JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
-    JNIEnv*, jobject, jfloatArray, jfloatArray, jfloatArray, jfloatArray, jint);
+JNIEXPORT jlong JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeCreate(JNIEnv*, jclass, jfloat);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeDestroy(JNIEnv*, jclass, jlong);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeReset(JNIEnv*, jclass, jlong);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeProcessBlock(JNIEnv*, jclass, jlong, jobject, jint);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeSampleInto(JNIEnv*, jclass, jlong, jfloatArray);
 }
 
-TEST(Phase3JniCallersTest, IvannaNativeLibSetParamsAndProcessBlockFinite) {
+TEST(Phase3JniCallersTest, VisualizerBark64EndToEndFinite) {
     JNIEnv env{};
-    float params[13] = {
-        0.55f, 0.70f, 0.85f, 0.30f, 0.15f, -0.05f,
-        900.0f, 0.65f, 1.5f, 0.0f, 2.0f, 1.2f, 0.0f
-    };
-    _jfloatArray paramsArr{13, params};
-    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetParams(&env, nullptr, &paramsArr);
+    const jlong h = Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeCreate(&env, nullptr, 48000.0f);
+    ASSERT_NE(h, 0);
 
-    constexpr int kFrames = 64;
-    std::vector<float> inL(kFrames, 0.0f);
-    std::vector<float> inR(kFrames, 0.0f);
-    std::vector<float> outL(kFrames, 0.0f);
-    std::vector<float> outR(kFrames, 0.0f);
+    constexpr int kFrames = 256;
+    std::vector<float> mono(kFrames, 0.0f);
     for (int i = 0; i < kFrames; ++i) {
-        inL[i] = 0.2f * std::sin(0.08f * static_cast<float>(i));
-        inR[i] = 0.2f * std::cos(0.08f * static_cast<float>(i));
+        mono[i] = 0.35f * std::sin(0.08f * static_cast<float>(i));
     }
-    _jfloatArray inLArr{kFrames, inL.data()};
-    _jfloatArray inRArr{kFrames, inR.data()};
-    _jfloatArray outLArr{kFrames, outL.data()};
-    _jfloatArray outRArr{kFrames, outR.data()};
+    _jobject monoBuf{kFrames, mono.data()};
+    Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeProcessBlock(&env, nullptr, h, &monoBuf, kFrames);
 
-    Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
-        &env, nullptr, &inLArr, &inRArr, &outLArr, &outRArr, kFrames);
-
-    float energy = 0.0f;
-    for (int i = 0; i < kFrames; ++i) {
-        ASSERT_TRUE(std::isfinite(outL[i]));
-        ASSERT_TRUE(std::isfinite(outR[i]));
-        energy += outL[i] * outL[i] + outR[i] * outR[i];
+    std::vector<float> dst(80, 0.0f);
+    _jobject dstArr{80, dst.data()};
+    Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeSampleInto(&env, nullptr, h, &dstArr);
+    for (float v : dst) {
+        ASSERT_TRUE(std::isfinite(v));
     }
-    EXPECT_GT(energy, 0.0f);
+
+    Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeReset(&env, nullptr, h);
+    Java_com_ivanna_omega_visualizer_IvannaVisualizerBark64Native_nativeDestroy(&env, nullptr, h);
 }
 
 TEST(Phase3JniCallersTest, HiResConfigJniGettersAndValidation) {
@@ -182,10 +166,6 @@ TEST(Phase3JniCallersTest, NeuralUpmixerAtomicCrossfadeAndStemPosition) {
 }
 
 TEST(Phase3JniCallersTest, ReflectionDistanceClampingAndSmoothing) {
-    JNIEnv env{};
-    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionDelay(&env, nullptr, 0, 12.0f);
-    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetReflectionGain(&env, nullptr, 0, 0.65f);
-
     ivanna::CueBasedSpatial sp;
     sp.reset();
     sp.set_width(5.0f);  // debe acotarse a 2.0f
@@ -203,18 +183,15 @@ TEST(Phase3JniCallersTest, ReflectionDistanceClampingAndSmoothing) {
 }
 
 TEST(Phase3JniCallersTest, CochlearSingleSourceOfTruthAcrossBridges) {
-    JNIEnv env{};
-    Java_com_ivanna_omega_core_NativeBridge_setCochlearInverseEnabled(&env, nullptr, JNI_TRUE);
-    Java_com_ivanna_omega_core_NativeBridge_setCochlearIntensity(&env, nullptr, 0.72f);
+    auto& bus = ivanna::unified::UnifiedParamSnapshotBus::instance();
+    bus.setStageEnabled(ivanna::unified::StageId::CochlearPinn, true, 0.72f);
 
-    EXPECT_EQ(Java_com_ivanna_omega_core_NativeBridge_isCochlearActive(&env, nullptr), JNI_TRUE);
-    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsCochlearActive(&env, nullptr), JNI_TRUE);
-    EXPECT_EQ(Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeIsCochlearActive(&env, nullptr), JNI_TRUE);
-    EXPECT_NEAR(Java_com_ivanna_omega_core_NativeBridge_getCochlearIntensity(&env, nullptr), 0.72f, 1e-5f);
-    EXPECT_NEAR(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetCochlearIntensity(&env, nullptr), 0.72f, 1e-5f);
+    const auto snap = bus.readOncePreLoop();
+    EXPECT_TRUE(snap.isStageEnabled(ivanna::unified::StageId::CochlearPinn));
+    EXPECT_NEAR(snap.cochlearIntensity, 0.72f, 1e-5f);
 
-    Java_com_ivanna_omega_core_NativeBridge_setCochlearInverseEnabled(&env, nullptr, JNI_FALSE);
-    EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsCochlearActive(&env, nullptr), JNI_FALSE);
+    bus.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false, 0.72f);
+    EXPECT_FALSE(bus.readOncePreLoop().isStageEnabled(ivanna::unified::StageId::CochlearPinn));
 }
 
 TEST(Phase3JniCallersTest, NpeEngineSetParametersProcessMonoAndSnapshotScope) {

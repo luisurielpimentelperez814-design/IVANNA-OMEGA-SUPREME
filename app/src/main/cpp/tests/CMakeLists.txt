@@ -815,12 +815,14 @@ add_executable(test_phase3_jni_callers
   ../ivanna_hires_jni.cpp
   ../system_audio_capture.cpp
   ../benchmark_logger.cpp
+  ../audio_control_plane.cpp
   ../jni/saf_stimulus_jni.cpp
   ../jni/ivanna_npe_jni.cpp
   ../jni/ivanna_visualizer_jni.cpp
   ../jni/ivanna_visualizer_v2_jni.cpp
   ../jni/ivanna_visualizer_bark64_jni.cpp
   ../phase_oracle.cpp
+  ../neuromorphic/ivanna_neural_upmixer.cpp
   ../neuromorphic/neuro_cochlear_manifold.cpp
   ../neuromorphic/volterra_h2_symmetric.cpp
   ../hexagon/ivanna_fastrpc_client.cpp
