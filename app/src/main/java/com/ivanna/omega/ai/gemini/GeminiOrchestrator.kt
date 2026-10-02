@@ -278,11 +278,8 @@ class GeminiOrchestrator(
         // FIX (2026-09-04): mismo hueco que createLegacyModel() tenía — sin
         // generationConfig aquí, entry.maxOutputTokens tampoco llegaba a la
         // petición real vía Firebase, que es la ruta primaria ahora que
-        // firebaseAvailable() es true. No verificado por compilación (sin
-        // Android SDK en este sandbox): el nombre firebaseGenerationConfig
-        // sigue el mismo patrón exacto que firebaseContent (misma clase de
-        // paquete com.google.firebase.ai.type, mismo estilo DSL) pero
-        // confírmalo contra el resultado real de CI antes de darlo por bueno.
+        // firebaseAvailable() es true. Corregido pasando firebaseGenerationConfig
+        // en la construcción — lleva maxOutputTokens y temperature.
         //
         // FIX (2026-09-07, perfil adaptativo huérfano): mismo fix que
         // createLegacyModel() — ver ese comentario para el detalle completo.
@@ -306,12 +303,18 @@ class GeminiOrchestrator(
             createLegacyModel(entry, systemInstruction, profile).generateContent(prompt).text ?: ""
         }
 
-    /** Streaming con el backend que esté realmente disponible ahora mismo. */
+    /** Streaming con el backend que esté realmente disponible ahora mismo.
+     *  FIX (type inference): nombre explícito de parámetro `response` para evitar
+     *  "Cannot infer type for type parameter 'T'" en la lambda del map. */
     private fun streamWith(entry: ModelEntry, systemInstruction: String?, prompt: String, profile: ResponseProfile): Flow<String> =
         if (firebaseAvailable()) {
-            createFirebaseModel(entry, systemInstruction, profile).generateContentStream(prompt).map { it.text ?: "" }
+            createFirebaseModel(entry, systemInstruction, profile)
+                .generateContentStream(prompt)
+                .map { response -> response.text ?: "" }
         } else {
-            createLegacyModel(entry, systemInstruction, profile).generateContentStream(prompt).map { it.text ?: "" }
+            createLegacyModel(entry, systemInstruction, profile)
+                .generateContentStream(prompt)
+                .map { response -> response.text ?: "" }
         }
 
     private fun updateHealth(modelName: String, success: Boolean, latencyMs: Long) {
