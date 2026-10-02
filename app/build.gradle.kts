@@ -141,6 +141,10 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
     }
 
+    // Firebase Generative AI (VertexAI en Firebase)
+    implementation("com.google.firebase:firebase-vertexai")
+
+    // Legacy Google AI Client (fallback si Firebase no está disponible)
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
     implementation("io.coil-kt:coil-compose:2.5.0")
