@@ -51,18 +51,55 @@ object RouteDspCalibrator {
 
     private const val TAG = "RouteDspCalibrator"
     private const val POLL_MS = 2_000L
+    const val DRY_ROOM_T60_CEILING_SEC = 0.50f
+    const val LIVE_ROOM_T60_CUTOFF_SEC = 1.20f
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
 
     @Volatile private var lastRoute: OutputRoute = OutputRoute.UNKNOWN
 
+    /**
+     * §6.2 & §7.7: En sala viva (T60 >= 1.2 s) la cola y las ER sintéticas están OFF (0.0f) por defecto.
+     */
+    fun limitSyntheticReverbWetForRoomT60(requestedWet: Float, roomT60Sec: Float): Float {
+        if (requestedWet <= 0f || roomT60Sec >= LIVE_ROOM_T60_CUTOFF_SEC) return 0f
+        val clamped = requestedWet.coerceIn(0f, 1f)
+        if (roomT60Sec <= DRY_ROOM_T60_CEILING_SEC) return clamped
+        val scale = (LIVE_ROOM_T60_CUTOFF_SEC - roomT60Sec) /
+                    (LIVE_ROOM_T60_CUTOFF_SEC - DRY_ROOM_T60_CEILING_SEC)
+        return clamped * scale.coerceIn(0f, 1f)
+    }
+
+    /**
+     * §0.1: Llamado síncronamente desde AudioRouteManager.applyRoute() al arrancar
+     * y en cada cambio de dispositivo físico, publicando la activación de etapas
+     * ANTES del primer bloque de audio.
+     */
+    fun onRouteChanged(context: Context, route: OutputRoute) {
+        if (route == OutputRoute.UNKNOWN) return
+        val appCtx = context.applicationContext
+        lastRoute = route
+        applySynchronousInProcessStages(appCtx, route)
+        scope.launch {
+            runCatching { applyAsyncDaemonStages(appCtx, route) }
+                .onFailure { Log.w(TAG, "applyAsyncDaemonStages: ${it.message}") }
+        }
+    }
+
     /** Idempotente. Llamar desde IVANNAApplication tras AudioRouteManager.start(). */
     fun start(context: Context) {
-        if (job?.isActive == true) return
         val appCtx = context.applicationContext
+        // §0.1: Publicación síncrona inmediata antes del primer bloque de audio
+        runCatching {
+            val initialRoute = AudioRouteManager.detectOutputRoute()
+            if (initialRoute != OutputRoute.UNKNOWN && initialRoute != lastRoute) {
+                onRouteChanged(appCtx, initialRoute)
+            }
+        }
+        if (job?.isActive == true) return
         job = scope.launch {
-            // Primer chequeo inmediato + sondeo periódico.
+            // Sondeo periódico de respaldo.
             while (isActive) {
                 runCatching { calibrate(appCtx, AudioRouteManager.detectOutputRoute()) }
                     .onFailure { Log.w(TAG, "calibrate: ${it.message}") }
@@ -80,11 +117,41 @@ object RouteDspCalibrator {
     private fun calibrate(context: Context, route: OutputRoute) {
         if (route == lastRoute || route == OutputRoute.UNKNOWN) return
         lastRoute = route
-        applyRouteCalibration(context, route)
+        applySynchronousInProcessStages(context, route)
+        applyAsyncDaemonStages(context, route)
     }
 
-    private fun applyRouteCalibration(context: Context, route: OutputRoute) {
-        val nativeReady = IvannaNativeLib.isLoaded
+    private fun applySynchronousInProcessStages(context: Context, route: OutputRoute) {
+        if (!IvannaNativeLib.isLoaded) return
+        val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
+        val hrtfAllowed = saPrefs?.hrtfEnabled ?: true
+        when (route) {
+            OutputRoute.SPEAKER -> {
+                runCatching {
+                    IvannaNativeLib.nativeSetHRTFEnabled(false)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(2)
+                }.onFailure { Log.w(TAG, "HRTF off (speaker): ${it.message}") }
+            }
+            OutputRoute.WIRED_AUX, OutputRoute.USB -> {
+                runCatching {
+                    IvannaNativeLib.nativeSetHRTFEnabled(hrtfAllowed)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(0)
+                }.onFailure { Log.w(TAG, "HRTF on (aux/usb): ${it.message}") }
+            }
+            OutputRoute.BLUETOOTH -> {
+                runCatching {
+                    IvannaNativeLib.nativeSetHRTFEnabled(hrtfAllowed)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(1)
+                }.onFailure { Log.w(TAG, "HRTF on (bt): ${it.message}") }
+                runCatching {
+                    IvannaNativeLib.nativeSetSpatialWidthDirect(0.88f)
+                }.onFailure { Log.w(TAG, "width bt: ${it.message}") }
+            }
+            OutputRoute.UNKNOWN -> Unit
+        }
+    }
+
+    private fun applyAsyncDaemonStages(context: Context, route: OutputRoute) {
         val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
         val rirAllowed = saPrefs?.rirEnabled == true
         val hrtfAllowed = saPrefs?.hrtfEnabled ?: true
@@ -92,77 +159,62 @@ object RouteDspCalibrator {
 
         when (route) {
             OutputRoute.SPEAKER -> {
-                // Altavoz: HRTF de oreja fuera; sala abierta RIR #81 (rir_0081.wav, RT60=0.613s) acoplada con SAF + XTC Transaural.
-                if (nativeReady) runCatching {
-                    IvannaNativeLib.nativeSetHRTFEnabled(false)
-                    NativeBridge.safeSetWarpedLatticeRouteArchetype(2)
-                }.onFailure { Log.w(TAG, "HRTF off (speaker): ${it.message}") }
+                val rt60 = saPrefs?.rirRt60 ?: 0.613f
+                val effectiveWet = limitSyntheticReverbWetForRoomT60(saPrefs?.rirWet ?: 0.16f, rt60)
                 runCatching {
                     if (safAllowed) {
                         SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.613f, drr = 7.40f, steps = 24)
                         val q = SaFRoomBridge.getParams()
                         OmegaEngineBridge.pushSafLatentQ(q, gain = 0.65f)
                     }
-                    if (rirAllowed) {
+                    if (rirAllowed && effectiveWet > 0.001f) {
                         OmegaEngineBridge.setRoom(
-                            rt60S = saPrefs?.rirRt60 ?: 0.613f,
-                            wet = saPrefs?.rirWet ?: 0.16f,
+                            rt60S = rt60,
+                            wet = effectiveWet,
                             roomIdx = 81
                         )
                     } else {
                         OmegaEngineBridge.disableRoom()
                     }
                 }.onFailure { Log.w(TAG, "room speaker: ${it.message}") }
-                Log.i(TAG, "Ruta SPEAKER → HRTF off + RIR=${if (rirAllowed) "#81" else "OFF"} + Arquetipo Bark #2")
+                Log.i(TAG, "Ruta SPEAKER → HRTF off + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#81" else "OFF"} + Arquetipo Bark #2")
             }
 
             OutputRoute.WIRED_AUX, OutputRoute.USB -> {
-                // Canal directo a auricular/DAC/Genezi: HRTF binaural completo + Sala de Control Maestra
-                // ITU-R BS.1116 (rir_0051.wav, RT60=0.340s, DRR=10.31dB, C80=16.66dB) acoplada con SOFA-SAF + True-Stereo 4-Caminos.
-                if (nativeReady) runCatching {
-                    IvannaNativeLib.nativeSetHRTFEnabled(hrtfAllowed)
-                    NativeBridge.safeSetWarpedLatticeRouteArchetype(0)
-                }.onFailure { Log.w(TAG, "HRTF on (aux/usb): ${it.message}") }
+                val rt60 = saPrefs?.rirRt60 ?: 0.340f
+                val effectiveWet = limitSyntheticReverbWetForRoomT60(saPrefs?.rirWet ?: 0.22f, rt60)
                 runCatching {
                     if (safAllowed) {
                         SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.340f, drr = 10.31f, steps = 32)
                         val q = SaFRoomBridge.getParams()
                         OmegaEngineBridge.pushSafLatentQ(q, gain = 0.85f)
                     }
-                    if (rirAllowed) {
+                    if (rirAllowed && effectiveWet > 0.001f) {
                         OmegaEngineBridge.setRoom(
-                            rt60S = saPrefs?.rirRt60 ?: 0.340f,
-                            wet = saPrefs?.rirWet ?: 0.22f,
+                            rt60S = rt60,
+                            wet = effectiveWet,
                             roomIdx = 51
                         )
                     } else {
                         OmegaEngineBridge.disableRoom()
                     }
                 }.onFailure { Log.w(TAG, "room aux/usb: ${it.message}") }
-                Log.i(TAG, "Ruta ${route.name} → HRTF=$hrtfAllowed + RIR=${if (rirAllowed) "#51" else "OFF"} + Arquetipo Bark #0")
+                Log.i(TAG, "Ruta ${route.name} → HRTF=$hrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#51" else "OFF"} + Arquetipo Bark #0")
             }
 
             OutputRoute.BLUETOOTH -> {
-                // Codec con pérdida: HRTF on + Sala Compacta Anti-Codec #63 (rir_0063.wav, RT60=0.293s) acoplada con SOFA-SAF.
-                if (nativeReady) {
-                    runCatching {
-                        IvannaNativeLib.nativeSetHRTFEnabled(hrtfAllowed)
-                        NativeBridge.safeSetWarpedLatticeRouteArchetype(1)
-                    }.onFailure { Log.w(TAG, "HRTF on (bt): ${it.message}") }
-                    runCatching {
-                        IvannaNativeLib.nativeSetSpatialWidthDirect(0.88f)
-                    }.onFailure { Log.w(TAG, "width bt: ${it.message}") }
-                }
+                val rt60 = saPrefs?.rirRt60 ?: 0.293f
+                val effectiveWet = limitSyntheticReverbWetForRoomT60(saPrefs?.rirWet ?: 0.18f, rt60)
                 runCatching {
                     if (safAllowed) {
                         SaFRoomBridge.optimiseForCurrentRoom(rt60 = 0.293f, drr = 9.85f, steps = 24)
                         val q = SaFRoomBridge.getParams()
                         OmegaEngineBridge.pushSafLatentQ(q, gain = 0.78f)
                     }
-                    if (rirAllowed) {
+                    if (rirAllowed && effectiveWet > 0.001f) {
                         OmegaEngineBridge.setRoom(
-                            rt60S = saPrefs?.rirRt60 ?: 0.293f,
-                            wet = saPrefs?.rirWet ?: 0.18f,
+                            rt60S = rt60,
+                            wet = effectiveWet,
                             roomIdx = 63
                         )
                     } else {
@@ -171,7 +223,7 @@ object RouteDspCalibrator {
                 }.onFailure { Log.w(TAG, "room bt: ${it.message}") }
                 runCatching { MagiskBridge.setMid(1.12f) }
                 runCatching { MagiskBridge.setMaster(0.91f) }
-                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF=$hrtfAllowed + RIR=${if (rirAllowed) "#63" else "OFF"}, presencia +mid")
+                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF=$hrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#63" else "OFF"}, presencia +mid")
             }
 
             OutputRoute.UNKNOWN -> Unit

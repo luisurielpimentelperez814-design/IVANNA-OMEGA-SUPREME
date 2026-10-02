@@ -218,6 +218,11 @@ object AudioRouteManager {
         com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
         )
+        // §0.1: Activar inmediatamente las etapas exigidas por el perfil de ruta
+        // ANTES del primer bloque de audio (y en cada cambio de salida física).
+        appContextRef?.let { ctx ->
+            runCatching { RouteDspCalibrator.onRouteChanged(ctx, route) }
+        }
 
         // FIX DAC USB-C: al conectar un DAC USB-C, el historial de convolución
         // HRTF (m_histL/m_histR) contiene muestras de la ruta anterior. La

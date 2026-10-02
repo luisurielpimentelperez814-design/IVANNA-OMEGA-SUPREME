@@ -279,7 +279,7 @@ private:
     std::array<NativeAudioObject, kMaxObjects> m_activeObjects{};
     std::atomic<size_t> m_activeObjectCount{0};
 
-    std::atomic<bool>  m_enabled{true};
+    std::atomic<bool>  m_enabled{false};
     std::atomic<bool>  m_filtersDirty{true};
     std::atomic<float> m_binauralWet{0.65f};
     std::atomic<float> m_virtualAzimuthDeg{30.0f};

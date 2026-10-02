@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include "RirConvolver.hpp"
+#include "RoomGeometryConfig.hpp"
 #include "../supreme/SupremeTransitionEnvelope.hpp"
 
 namespace ivanna::spatial {
@@ -30,6 +31,7 @@ public:
     RoomProjectionEngine() noexcept {
         inversionGain_.store(0.25f, std::memory_order_relaxed);
         projectionWet_.store(0.35f, std::memory_order_relaxed);
+        estimatedRoomT60Sec_.store(0.42f, std::memory_order_relaxed);
         inversionEnv_.configure(48000.0f, 8.0f, 18.0f, 35.0f);
         inversionEnv_.setImmediate(0.25f);
     }
@@ -42,9 +44,23 @@ public:
         }
     }
 
+    void setEstimatedRoomT60(float t60Sec) noexcept {
+        if (!std::isfinite(t60Sec)) return;
+        const float clampedT60 = std::clamp(t60Sec, 0.05f, 5.0f);
+        estimatedRoomT60Sec_.store(clampedT60, std::memory_order_relaxed);
+        const float reqWet = projectionWet_.load(std::memory_order_relaxed);
+        convolver_.setWetDry(RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(reqWet, clampedT60));
+    }
+
+    [[nodiscard]] float estimatedRoomT60() const noexcept {
+        return estimatedRoomT60Sec_.load(std::memory_order_relaxed);
+    }
+
     void setProjectionWet(float wet) noexcept {
-        projectionWet_.store(std::clamp(wet, 0.0f, 1.0f), std::memory_order_relaxed);
-        convolver_.setWetDry(wet);
+        const float clampedWet = std::clamp(wet, 0.0f, 1.0f);
+        projectionWet_.store(clampedWet, std::memory_order_relaxed);
+        const float roomT60 = estimatedRoomT60Sec_.load(std::memory_order_relaxed);
+        convolver_.setWetDry(RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(clampedWet, roomT60));
     }
 
     void reset() noexcept {
@@ -173,6 +189,7 @@ private:
     Ivanna::RirConvolver convolver_;
     std::atomic<float> inversionGain_{0.25f};
     std::atomic<float> projectionWet_{0.35f};
+    std::atomic<float> estimatedRoomT60Sec_{0.42f};
 
     float envStateL_{0.0f};
     float envStateR_{0.0f};

@@ -302,7 +302,9 @@ public:
             }
 
             // 3. Eje 4: ObjectSpatialRenderer con mezcla húmeda controlada (ITD + ILD + ER)
-            const float wetObj = allowSpatialRender
+            spatialRenderer_.setEstimatedRoomT60(roomEngine_.estimatedRoomT60());
+            const bool hybridActive = hybridMagistralRenderer_.isEnabled();
+            const float wetObj = (allowSpatialRender && !hybridActive)
                 ? std::clamp(baseSpatialWet + 0.22f * realityK, 0.0f, 0.45f)
                 : 0.0f;
             if (wetObj > 1.0e-4f) {
@@ -318,17 +320,18 @@ public:
             }
 
             // 4. Eje 2: HrtfPersonalizer (filtro antropométrico de pinna/canal auditivo)
-            personalizer_.processStereo(chL, chR, chunk);
+            if (!hybridActive) {
+                personalizer_.processStereo(chL, chR, chunk);
+            }
 
             // 5. Eje 5: PhysicalSceneRenderer (oclusión y absorción acústica de paredes)
             physicalScene_.process(chL, chR, chunk);
 
-            // 6. Eje 3: RoomProjectionEngine (de-reverberación WPE de fase mínima + proyección)
-            roomEngine_.process(chL, chR, chunk);
-
-            // 6b. Motor Híbrido Magistral (HRTF KEMAR 128-Tap + Sala Acústica Schroeder/Moorer)
-            if (allowSpatialRender) {
+            // 6. Eje 3 vs 6b (§0.4: una sola cola / un solo HRTF activo por bloque)
+            if (allowSpatialRender && hybridActive) {
                 hybridMagistralRenderer_.renderPlanar(chL, chR, chunk);
+            } else {
+                roomEngine_.process(chL, chR, chunk);
             }
 
             // 7. Eje 6: HearingAdaptationEngine (isófonas, sello ear-tip, presbicusia y fatiga)
@@ -414,6 +417,7 @@ public:
 
         // 2. Eje 2 & 4: Spatial render 4 objects to stereo binaural stage
         stabilityGuard_.beginBlock(bufferL, bufferR, numSamples, false);
+        spatialRenderer_.setEstimatedRoomT60(roomEngine_.estimatedRoomT60());
         (void)stabilityGuard_.arbitration().claimSpatialSlot(ivanna::supreme::AcousticModuleId::ObjectRenderer);
         spatialRenderer_.renderObjects(objPtrs, activeObjs, bufferL, bufferR,
                                         numSamples, itdScale);
@@ -421,15 +425,21 @@ public:
                                      bufferL, bufferR, numSamples, itdScale);
 
         // 3. Eje 2: Apply personalized pinna/canal filter (estado L/R aislado)
-        personalizer_.processStereo(bufferL, bufferR, numSamples);
+        const bool hybridActive = hybridMagistralRenderer_.isEnabled();
+        if (!hybridActive) {
+            personalizer_.processStereo(bufferL, bufferR, numSamples);
+        }
 
         // 4. Eje 5: Physical scene occlusion and acoustic absorption
         physicalScene_.process(bufferL, bufferR, numSamples);
 
-        // 5. Eje 3: Room partial inversion and virtual room projection
+        // 5. Eje 3: Room partial inversion and virtual room projection (§0.4: una sola cola activa)
         (void)stabilityGuard_.arbitration().claimRoomSlot(ivanna::supreme::AcousticModuleId::RoomProjection);
-        roomEngine_.process(bufferL, bufferR, numSamples);
-        hybridMagistralRenderer_.renderPlanar(bufferL, bufferR, numSamples);
+        if (hybridActive) {
+            hybridMagistralRenderer_.renderPlanar(bufferL, bufferR, numSamples);
+        } else {
+            roomEngine_.process(bufferL, bufferR, numSamples);
+        }
         stabilityGuard_.inspectStage(ivanna::supreme::AcousticModuleId::RoomProjection,
                                      bufferL, bufferR, numSamples, 1.0f);
 

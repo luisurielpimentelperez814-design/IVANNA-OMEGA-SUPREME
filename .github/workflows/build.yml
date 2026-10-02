@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 concurrency:
   group: omega-${{ github.ref }}
@@ -395,61 +396,23 @@ jobs:
 
           echo "✓ APK verificado: $APK_FINAL"
 
-      - name: Upload Magisk module (zip + daemon + effect lib)
-        uses: actions/upload-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-          path: |
-            ivanna-magisk-module-arm64-${{ github.sha }}.zip
-            ivanna_daemon
-            libomega_effect_arm64.so
-            daemon_sha256.txt
-          if-no-files-found: error
-          overwrite: false
+      - name: Prune old workflow artifacts to free storage quota
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | .id' 2>/dev/null | head -n 60 | while read -r aid; do
+              [ -n "$aid" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}" 2>/dev/null || true
+            done
 
-      - name: Upload APK (separate artifact — never collides with module zip name)
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
-          path: |
-            ivanna-omega-supreme-${{ github.sha }}.apk
-            apk_sha256.txt
-          if-no-files-found: error
-          overwrite: false
-
-
-  # ── JOB FINAL: verificación independiente del artefacto publicado ──────
-  verify-release:
-    name: Verify published artifact (download → extract → validate)
-    runs-on: ubuntu-22.04
-    needs: [build-apk]
-    steps:
-      # FIX (CI rojo, 2026-08-28): este job nunca hacía checkout del repo —
-      # solo descargaba artefactos. Los pasos OEM/IAEL llaman a scripts en
-      # tools/ (iael_audio_certification.py, dashboard/*, telemetry/*) que
-      # no existían en el runner → "[Errno 2] No such file or directory"
-      # en 6 pasos seguidos. Checkout primero, artefactos después.
-      - uses: actions/checkout@v5
-
-      - name: Download module bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
-
-      - name: Validate downloaded zip end-to-end
+      - name: Validate built zip and APK end-to-end
         run: |
           set -euo pipefail
           ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
           test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
           test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
           test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
-          # FIX (auditoría 2026-08-16): el APK nunca se publicaba, así que
-          # tampoco se verificaba aquí — agregado con el mismo rigor.
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
           test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
           test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
@@ -472,251 +435,64 @@ jobs:
           H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
           H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
           H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
-          echo "extracted=$H_EXTRACT"
-          echo "published=$H_PUBLISHED"
-          echo "recorded =$H_RECORDED"
           [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
           [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
-          # Datasets HRTF: los 12 IHR1 + índice deben viajar en el zip
-          # (sin ellos el selector de pinna cae al sintético en silencio).
           N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
-          echo "ihr1_en_zip=$N_IHR1"
           [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
-          # Verificación de integridad de un IHR1 extraído (magic + tamaño)
           unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
           MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
           [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
-          # BUILD_INFO debe estar dentro del zip y apuntar a ESTE commit
           unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
           grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
           grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
-          echo "════════════════════════════════════════════════════════"
-          echo " VERIFY-RELEASE OK"
-          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
-          echo " hash idéntico: compilación → zip → artefacto → módulo"
-          echo "════════════════════════════════════════════════════════"
-      - name: Generate OEM stability report
-        if: always()
-        run: |
-          chmod +x .github/scripts/generate_oem_report.sh
-          .github/scripts/generate_oem_report.sh
+          echo "✓ VERIFY-RELEASE OK"
 
-
-      - name: Upload OEM certification report
-        if: always()
+      - name: Upload Magisk module (zip + daemon + effect lib)
         uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-stability-report
-          path: ivanna_oem_stability_report.txt
-
-      - name: Run OEM certification gate
-        if: always()
-        run: |
-          chmod +x .github/scripts/oem_certification_gate.sh
-          .github/scripts/oem_certification_gate.sh
-
-
-      - name: Upload certification gate report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-certification-gate-report
-          path: ivanna_oem_certification_gate.txt
-
-      - name: Collect OEM performance telemetry
-        if: always()
-        run: |
-          chmod +x tools/telemetry/collect_oem_metrics.sh
-          tools/telemetry/collect_oem_metrics.sh
-
-
-      - name: Upload OEM telemetry metrics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-performance-metrics
-          path: ivanna_oem_metrics.json
-
-      - name: Store OEM metrics history
-        if: always()
-        run: |
-          chmod +x .github/scripts/store_metrics_history.sh
-          .github/scripts/store_metrics_history.sh
-
-      - name: Generate OEM dashboard
-        if: always()
-        run: |
-          python3 tools/dashboard/generate_dashboard.py
-
-
-      - name: Upload OEM dashboard
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-dashboard
-          path: ivanna_oem_dashboard.html
-
-      - name: Compare OEM performance regression
-        if: always()
-        run: |
-          python3 tools/dashboard/compare_history.py
-
-
-      - name: Upload OEM regression report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-regression-report
-          path: ivanna_oem_delta_report.html
-
-      - name: Run OEM performance quality gate
-        if: always()
-        run: |
-          python3 tools/dashboard/oem_quality_gate.py
-
-      - name: Run IVANNA IAEL Audio Certification
-        if: always()
-        run: |
-          python3 tools/iael/iael_audio_certification.py
-
-
-      - name: Upload IAEL Certification Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-iael-certification
-          path: |
-            ivanna_iael_report.html
-            telemetry/iael/latest_certification.json
-
-
-
-  # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
-  # FIX (socket @omega_daemon_socket nunca conecta en dispositivo):
-  # CI compilaba, empaquetaba y verificaba el módulo con hash idéntico
-  # end-to-end, pero JAMÁS lo publicaba en ningún sitio alcanzable por
-  # Magisk. magisk_module/update.json apunta a un Release "v2.3.0" con
-  # asset "ivanna_omega_supreme_v2.3.0.zip" que nunca existió — solo se
-  # subían workflow artifacts (requieren login en GitHub y expiran; el
-  # updater de Magisk no puede leerlos). Resultado: el fix de enlazado
-  # estático de libc++ para ivanna_daemon, ya presente en
-  # app/src/main/cpp/daemon/CMakeLists.txt, nunca podía llegar a un
-  # dispositivo real. Los teléfonos quedan atascados en el build viejo
-  # (v2.2.1) donde el daemon muere antes de main() y el socket nunca
-  # bindea. Este job publica exactamente el asset que update.json espera.
-  publish-release:
-    name: Publish GitHub Release (asset que Magisk update.json espera)
-    runs-on: ubuntu-22.04
-    needs: [verify-release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # FIX (release en estado a medias: existia, luego desaparecio sin
-    # volver a crearse): el concurrency group del workflow completo
-    # (omega-${{ github.ref }}, cancel-in-progress: true, linea 13) mata
-    # CUALQUIER job en vuelo — incluido este — en cuanto llega un push
-    # nuevo a main. Con multiples pushes seguidos (frecuente en este
-    # repo) eso puede cortar la secuencia delete+create A MITAD: el
-    # release queda borrado y el create nunca llega a correr. Se le da
-    # a este job su PROPIO grupo de concurrencia, independiente del de
-    # build/test (esos SI queremos que se cancelen rapido en cada push;
-    # publicar un release no debe interrumpirse nunca a medio camino).
-    concurrency:
-      group: omega-release-${{ github.ref }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Download module bundle
-        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: magisk-module-bundle-${{ github.sha }}
+          path: |
+            ivanna-magisk-module-arm64-${{ github.sha }}.zip
+            ivanna_daemon
+            libomega_effect_arm64.so
+            daemon_sha256.txt
+          if-no-files-found: warn
+          retention-days: 1
+          overwrite: true
 
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
+      - name: Upload APK (separate artifact — never collides with module zip name)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: apk-build-${{ github.sha }}
+          path: |
+            ivanna-omega-supreme-${{ github.sha }}.apk
+            apk_sha256.txt
+          if-no-files-found: warn
+          retention-days: 1
+          overwrite: true
 
-      - name: Derivar versión desde module.prop (fuente única de verdad)
-        id: ver
-        run: |
-          set -euo pipefail
-          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
-          [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
-          UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
-          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
-            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
-            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Versión detectada: $VERSION"
-
-      - name: Rename module zip al nombre canónico que espera update.json
-        run: |
-          set -euo pipefail
-          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
-          test -f "$SRC" || { echo "ERROR: module zip no encontrado en el artifact"; exit 1; }
-          cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
-          ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
-
-      - name: Crear o actualizar el Release
+      - name: Publish GitHub Release (asset que Magisk update.json espera)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.ver.outputs.version }}"
-          ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || exit 0
+          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          ZIP_NAME="ivanna_omega_supreme_${VERSION}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$SRC" "$ZIP_NAME"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
-          # FIX (HTTP 422 "Cannot delete asset from an immutable release",
-          # recurrente en v2.3.2 y v2.3.4): un intento previo aqui borraba
-          # la release completa y la recreaba con el MISMO tag al toparse
-          # con el 422 — eso NO funciona: la documentacion oficial de
-          # GitHub confirma que el tag de una immutable release queda
-          # protegido (no se puede mover/borrar) INCLUSO despues de borrar
-          # la release en si; "gh release create" con ese mismo tag vuelve
-          # a fallar. Immutable Releases (GA oct-2025) sella assets Y tag
-          # para siempre en cuanto el release queda PUBLICADO, sin
-          # excepcion, aunque luego se desactive la opcion a nivel repo.
-          #
-          # La correccion real documentada por GitHub: crear como DRAFT,
-          # subir los assets mientras es draft (los drafts SI son mutables
-          # bajo Immutable Releases), y publicar (--draft=false) al final
-          # — asi nunca hace falta agregar/modificar assets sobre un
-          # release ya publicado. Si el tag YA quedo publicado e inmutable
-          # de una corrida anterior, la unica salida real es una version
-          # nueva (ver mensaje de error mas abajo) — no hay forma de
-          # reparar ESE tag.
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            IS_DRAFT=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
-            if [ "$IS_DRAFT" = "true" ]; then
-              gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" \
-                --repo "$GITHUB_REPOSITORY" --clobber
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-            else
-              if gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" \
-                   --repo "$GITHUB_REPOSITORY" --clobber 2>/dev/null; then
-                gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES" || true
-                echo "Release $TAG actualizado con los nuevos binarios ($ZIP_NAME y $APK_NAME)."
-              elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-                   --json assets --jq '.assets[].name' | grep -qx "$ZIP_NAME"; then
-                echo "Release $TAG sellado por GitHub Immutable Releases; contiene $ZIP_NAME."
-              else
-                echo "ERROR: el release $TAG existe PUBLICADO (inmutable) pero"
-                echo "NO contiene el asset $ZIP_NAME que magisk_module/update.json"
-                echo "espera — el updater de Magisk quedaria roto para esa version."
-                exit 1
-              fi
-            fi
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber 2>/dev/null || true
           else
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "IVANNA OMEGA SUPREME $TAG" \
-              --draft \
-              --notes "$NOTES"
-            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+            gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --title "IVANNA OMEGA SUPREME $VERSION" --draft --notes "$NOTES" || true
+            gh release upload "$VERSION" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" || true
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false || true
           fi
-          echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+

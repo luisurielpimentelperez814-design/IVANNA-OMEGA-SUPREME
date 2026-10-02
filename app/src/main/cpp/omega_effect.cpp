@@ -475,9 +475,14 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
         if (std::isfinite(s.intensity) && s.intensity > 0.0f) {
             ctx->audioPipeline->realityOrchestrator().setRealityIntensity(s.intensity);
         }
-        const bool roomActive = (s.room_rt60_s >= 0.01f && s.room_wet > 0.001f);
+        const float limitedWet = ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(
+            s.room_wet, s.room_rt60_s);
+        const bool roomActive = (s.room_rt60_s >= 0.01f && limitedWet > 0.001f);
+        ctx->audioPipeline->roomEngine().setEstimatedRoomT60(s.room_rt60_s > 0.01f ? s.room_rt60_s : 0.34f);
+        // §0.4: Si ctx->rirConvolver es la cola principal de Ruta B, roomEngine conserva
+        // únicamente la de-reverberación WPE (projectionWet=0) para evitar doble cola RIR.
         ctx->audioPipeline->roomEngine().setProjectionWet(
-            roomActive ? std::clamp(s.room_wet * 0.45f, 0.0f, 0.45f) : 0.0f);
+            (roomActive && !ctx->rirConvolver) ? std::clamp(limitedWet * 0.45f, 0.0f, 0.45f) : 0.0f);
         ctx->audioPipeline->roomEngine().setInversionGain(
             roomActive ? std::clamp(0.25f + 0.25f * s.room_rt60_s, 0.15f, 0.65f) : 0.20f);
         ctx->audioPipeline->physicalScene().setWallAbsorption(
@@ -635,7 +640,8 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     if (!ctx || !ctx->rirConvolver) return;
 
     const float rt60 = s.room_rt60_s;
-    const float wet  = s.room_wet;
+    const float wet  = ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(
+        s.room_wet, rt60);
 
     if (rt60 < 0.01f || wet <= 0.001f) {
         // Zero-Pop: fijar wet=0 para que RirConvolver::process() haga rampa
@@ -1077,8 +1083,10 @@ static int32_t omega_process(effect_handle_t self,
         if (ctx->rirConvolver &&
             ctx->stabilityGuard.arbitration().claimRoomSlot(
                 ivanna::supreme::AcousticModuleId::RirConvolver)) {
+            const float limitedSnapWet = ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(
+                ctx->pendingSnap.room_wet, ctx->pendingSnap.room_rt60_s);
             const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
-                ? std::clamp(ctx->pendingSnap.room_wet, 0.0f, 0.45f)
+                ? std::clamp(limitedSnapWet, 0.0f, 0.45f)
                 : 0.0f;
             ctx->rirConvolver->setWetDry(desiredRirWet);
             ctx->rirConvolver->process(L, R, chunk);

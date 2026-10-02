@@ -56,8 +56,9 @@ fun SpatialAudioPanel(
     var safStatus by remember { mutableStateOf("") }
 
     // Estado del Motor Híbrido Magistral (VBAP 3D + Ambisonics + HRTF KEMAR 128-tap + Schroeder/Moorer)
+    // §0.4: Por defecto OFF (0f) para no duplicar HRTF ni cola de sala sobre ObjectRenderer/RirConvolver.
     val initialHybridTelem = remember { com.ivanna.omega.core.NativeBridge.safeGetHybridMagistralTelemetry() }
-    var hybridEnabled by remember { mutableStateOf(initialHybridTelem.getOrElse(0) { 1f } >= 0.5f) }
+    var hybridEnabled by remember { mutableStateOf(initialHybridTelem.getOrElse(0) { 0f } >= 0.5f) }
     var hybridBinauralWet by remember { mutableStateOf(initialHybridTelem.getOrElse(1) { 0.65f }) }
     var hybridAzimuthDeg by remember { mutableStateOf(initialHybridTelem.getOrElse(2) { 30f }) }
     var hybridElevationDeg by remember { mutableStateOf(initialHybridTelem.getOrElse(3) { 0f }) }

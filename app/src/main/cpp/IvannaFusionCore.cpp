@@ -257,8 +257,8 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
 
         for (size_t i = 0; i < Ivanna::BLOCK_SIZE; ++i) {
             const float env = m_upmixEnv_.nextSample();
-            buffer->left[i]  = ivanna::supreme::SupremeTransitionEnvelope::mixSample(buffer->left[i],  hoaL[i], env);
-            buffer->right[i] = ivanna::supreme::SupremeTransitionEnvelope::mixSample(buffer->right[i], hoaR[i], env);
+            buffer->left[i]  = ivanna::supreme::SupremeTransitionEnvelope::mixConstantPower(buffer->left[i],  hoaL[i], env);
+            buffer->right[i] = ivanna::supreme::SupremeTransitionEnvelope::mixConstantPower(buffer->right[i], hoaR[i], env);
         }
     } else if (!m_upmixEnv_.isSilent()) {
         m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
@@ -268,7 +268,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         m_hrtf->processBinauralScene(buffer);
     }
 
-    // ── Wave Field Synthesis (2026-09-19) — arbitraje C1 con HOA/HRTF ──
+    // ── Wave Field Synthesis (2026-09-19) — arbitraje C1 + potencia constante (§7.11) con HOA/HRTF ──
     {
         if (m_wfsFade > 0.0f && m_wfsInit) {
             const int n = Ivanna::BLOCK_SIZE;
@@ -293,14 +293,15 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             }
             const float* wfsIn[2] = { m_wfsInL.data(), m_wfsInR.data() };
             m_wfs.process(wfsIn, 2, m_wfsOutL.data(), m_wfsOutR.data(), n);
-            // smoothstep del factor de fade (3t²−2t³): derivada cero en los
-            // extremos → continuidad C1, cero escalón perceptible.
+            // smoothstep C1 + ganancias de potencia constante (§0.2, §4, §7.11):
+            // gDry^2 + gWet^2 = 1.0 (0.00 dB, dentro de ±0.3 dB).
             const float t  = m_wfsFade;
             const float sm = t * t * (3.0f - 2.0f * t);
-            const float dry = 1.0f - sm;
+            float gDry = 1.0f, gWet = 0.0f;
+            ivanna::supreme::SupremeTransitionEnvelope::constantPowerGains(sm, gDry, gWet);
             for (int i = 0; i < n; ++i) {
-                buffer->left[i]  = dry * buffer->left[i]  + sm * m_wfsOutL[i];
-                buffer->right[i] = dry * buffer->right[i] + sm * m_wfsOutR[i];
+                buffer->left[i]  = gDry * buffer->left[i]  + gWet * m_wfsOutL[i];
+                buffer->right[i] = gDry * buffer->right[i] + gWet * m_wfsOutR[i];
             }
         }
     }

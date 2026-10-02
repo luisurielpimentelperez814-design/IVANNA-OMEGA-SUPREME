@@ -169,6 +169,37 @@ struct alignas(64) SupremeTransitionEnvelope {
     }
 
     /**
+     * @brief Constante física de dither anti-denormal a -140 dBFS (10^(-140/20) = 1.0e-7f) (§4).
+     */
+    static constexpr float kAntiDenormalDither140dBFS = 1.0e-7f;
+    static constexpr float kHalfPi = 1.57079632679489661923f;
+
+    /**
+     * @brief Ganancias de crossfade de potencia constante (§7.11):
+     *        gainDry = cos(pi/2 * env), gainWet = sin(pi/2 * env),
+     *        cumpliendo gainDry^2 + gainWet^2 = 1.0 (0.00 dB, dentro de ±0.3 dB).
+     */
+    [[gnu::always_inline]] static inline void constantPowerGains(
+        float env, float& gainDry, float& gainWet) noexcept
+    {
+        const float clamped = std::clamp(env, 0.0f, 1.0f);
+        const float angle = clamped * kHalfPi;
+        gainDry = std::cos(angle);
+        gainWet = std::sin(angle);
+    }
+
+    /**
+     * @brief Crossfade de potencia constante (§0.2, §4, §7.11) entre dos estados/señales.
+     */
+    [[gnu::always_inline]] static inline float mixConstantPower(
+        float dry, float wet, float env) noexcept
+    {
+        float gDry = 1.0f, gWet = 0.0f;
+        constantPowerGains(env, gDry, gWet);
+        return dry * gDry + wet * gWet;
+    }
+
+    /**
      * @brief Devuelve true únicamente cuando la transición terminó y la ganancia es cero.
      */
     [[gnu::always_inline]] constexpr bool isSilent() const noexcept {

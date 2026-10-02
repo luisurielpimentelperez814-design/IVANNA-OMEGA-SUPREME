@@ -20,6 +20,7 @@
 #pragma once
 
 #include "../experimental/adaptive_engine/adaptive_decision_engine.hpp"
+#include "../spatial/RoomGeometryConfig.hpp"
 #include "omega_control_bus.h"
 #include "acoustic_reality_hyperengine.hpp"
 #include <cmath>
@@ -110,9 +111,11 @@ public:
             snap.wfs_spread = std::clamp(snap.wfs_spread * state.wfs_spread_scale, 0.5f, 2.0f);
         }
 
-        // RIR: sala real balanceada con la inteligibilidad y localización
+        // RIR: sala real balanceada con la inteligibilidad y localización (§6.2: OFF si T60 >= 1.2 s)
         if (snap.room_wet > 0.0f) {
-            snap.room_wet = std::clamp(snap.room_wet * state.rir_wet_scale, 0.0f, 1.0f);
+            const float scaledWet = std::clamp(snap.room_wet * state.rir_wet_scale, 0.0f, 1.0f);
+            snap.room_wet = spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(
+                scaledWet, snap.room_rt60_s);
         }
 
         // ── 3. DINÁMICA: Preservación de transientes y ausencia de bombeo ────

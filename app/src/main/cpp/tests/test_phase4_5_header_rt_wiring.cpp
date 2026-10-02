@@ -130,3 +130,68 @@ TEST(Phase45HeaderRtWiring, AllProductionHeadersInstantiateAndOperateCleanly) {
     EXPECT_EQ(ivanna_dsp_open(&h), -1);
     EXPECT_NE(ivanna::hexagon::active_library(), nullptr);
 }
+
+TEST(Phase45HeaderRtWiring, PromptMaestroV30PhysicalAcousticsAndCrossfadeVerification) {
+    // 1. §5, §6.3, §10: Sala real de referencia (7 × 4 × 4 m = 112 m³) y frecuencia de Schroeder
+    const auto refRoom = ivanna::spatial::RoomGeometryConfig::referenceSonyMhcPz1dLayout();
+    EXPECT_FLOAT_EQ(refRoom.volumeM3(), 112.0f);
+    const float fsDry  = refRoom.schroederFrequencyHz(0.35f);
+    const float fsLive = refRoom.schroederFrequencyHz(2.0f);
+    EXPECT_NEAR(fsDry,  111.8034f, 0.05f);
+    EXPECT_NEAR(fsLive, 267.2612f, 0.05f);
+
+    // 2. §6.2 & §7.7: En sala viva (T60 >= 1.2 s) cola y ER sintéticas están OFF (0.0)
+    EXPECT_FLOAT_EQ(
+        ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(0.35f, 1.20f),
+        0.0f);
+    EXPECT_FLOAT_EQ(
+        ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(0.35f, 2.00f),
+        0.0f);
+    EXPECT_FLOAT_EQ(
+        ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(0.35f, 0.35f),
+        0.35f);
+
+    // MasterAcousticOrchestrator respeta el corte de T60 >= 1.2 s en el snapshot
+    ivanna::OmegaDspSnapshot snap{};
+    snap.room_rt60_s = 1.45f;
+    snap.room_wet    = 0.30f;
+    ivanna::experimental::AdaptiveState adaptSt{};
+    adaptSt.rir_wet_scale = 1.0f;
+    ivanna::MasterAcousticOrchestrator::arbitrateSnapshot(snap, adaptSt);
+    EXPECT_FLOAT_EQ(snap.room_wet, 0.0f);
+
+    // 3. §0.2, §4, §7.11: Crossfade de potencia constante (±0.3 dB) y dither -140 dBFS
+    EXPECT_FLOAT_EQ(ivanna::supreme::SupremeTransitionEnvelope::kAntiDenormalDither140dBFS, 1.0e-7f);
+    for (int step = 0; step <= 100; ++step) {
+        const float env = static_cast<float>(step) * 0.01f;
+        float gDry = 0.0f, gWet = 0.0f;
+        ivanna::supreme::SupremeTransitionEnvelope::constantPowerGains(env, gDry, gWet);
+        const float totalPower = gDry * gDry + gWet * gWet;
+        const float powerDb = 10.0f * std::log10(std::max(1.0e-12f, totalPower));
+        EXPECT_NEAR(powerDb, 0.0f, 0.05f); // Estrictamente dentro de ±0.3 dB
+    }
+
+    // 4. §0.4 & §4: HybridRenderer OFF por defecto (sin duplicación de HRTF/cola)
+    Ivanna::HybridRenderer defaultHybrid{};
+    EXPECT_FALSE(defaultHybrid.isEnabled());
+
+    // 5. §4 & §7.5: ObjectSpatialRenderer soporta bloques de 64/128/256 muestras con suavizado anti-click
+    ivanna::spatial::ObjectSpatialRenderer objRenderer{};
+    objRenderer.setEstimatedRoomT60(1.50f); // Sala viva -> ER sintéticas OFF
+    alignas(16) float objBuf[256]{};
+    for (size_t i = 0; i < 256; ++i) objBuf[i] = std::sin(0.1f * static_cast<float>(i));
+    const float* inPtrs[4] = {objBuf, objBuf, objBuf, objBuf};
+    std::array<ivanna::spatial::DecomposedObject, 4> objs{};
+    objs[0].position = {-0.6f, 1.5f, 0.0f};
+    objs[1].position = { 0.6f, 1.5f, 0.0f};
+    alignas(16) float outL[256]{}, outR[256]{};
+    for (size_t blk : {size_t(64), size_t(128), size_t(256)}) {
+        objs[0].position.x = -objs[0].position.x; // salto brusco de posición amortiguado con τ=15ms
+        objRenderer.renderObjects(inPtrs, objs, outL, outR, blk, 1.0f);
+        for (size_t n = 0; n < blk; ++n) {
+            EXPECT_TRUE(std::isfinite(outL[n]));
+            EXPECT_TRUE(std::isfinite(outR[n]));
+        }
+    }
+}
+
