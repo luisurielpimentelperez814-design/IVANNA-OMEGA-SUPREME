@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 490" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgCA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050811"/>
+      <stop offset="100%" stop-color="#091020"/>
+    </linearGradient>
+    <linearGradient id="c2CurveGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="65%" stop-color="#23F09A"/>
+      <stop offset="100%" stop-color="#FFD166"/>
+    </linearGradient>
+    <pattern id="plotGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1E293B" stroke-width="0.7" stroke-opacity="0.6"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="490" rx="20" fill="url(#bgCA)" stroke="#1E293B" stroke-width="2"/>
+
+  <!-- LEFT PANEL: RATIONAL C2 SOFT CEILING MATHEMATICAL CURVE -->
+  <g transform="translate(28, 24)">
+    <rect x="0" y="0" width="596" height="442" rx="14" fill="#081121" stroke="#23F09A" stroke-width="1.4" stroke-opacity="0.6"/>
+    <text x="22" y="30" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="12.5" font-weight="800">A · CURVA DE TRANSFERENCIA RATIONAL C² SOFT CEILING vs CLIP / TANH</text>
+    <text x="22" y="50" fill="#94A3B8" font-family="'JetBrains Mono', monospace" font-size="10.5">Identidad bit-exacta hasta x_k = 0.88 FS · Continuidad C² (f, f', f'') · Asíntota L = 0.994 FS</text>
+
+    <!-- Plot Area -->
+    <g transform="translate(52, 72)">
+      <rect x="0" y="0" width="510" height="270" fill="#050A14" stroke="#1E293B" stroke-width="1.2"/>
+      <rect x="0" y="0" width="510" height="270" fill="url(#plotGrid)"/>
+
+      <!-- Asymptote Line L = 0.994 FS -->
+      <line x1="0" y1="24" x2="510" y2="24" stroke="#FF2E93" stroke-width="1.3" stroke-dasharray="6 4"/>
+      <text x="12" y="18" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700">Asíntota DAC L = 0.994 FS (&lt; 1.0 FS · 0 Clipping Físico)</text>
+
+      <!-- Knee Threshold x_k = 0.88 FS -->
+      <line x1="295" y1="0" x2="295" y2="270" stroke="#00F0FF" stroke-width="1.2" stroke-dasharray="4 4" stroke-opacity="0.7"/>
+      <circle cx="295" cy="58" r="5.5" fill="#23F09A" stroke="#FFFFFF" stroke-width="1.5"/>
+      <text x="305" y="64" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700">Rodilla x_k = 0.88 FS</text>
+      <text x="305" y="78" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9.5">f(x_k)=x_k · f'(x_k)=1 · f''(x_k)=0</text>
+
+      <!-- Hard Clip Curve (Red Dashed) -->
+      <path d="M 0 270 L 336 24 L 510 24" fill="none" stroke="#EF4444" stroke-width="1.6" stroke-dasharray="3 3" stroke-opacity="0.75"/>
+      <text x="395" y="42" fill="#EF4444" font-family="'JetBrains Mono', monospace" font-size="9.5">Hard Clip (C⁰ · Aliasing)</text>
+
+      <!-- Classical tanh(x) Curve (Purple Dashed) -->
+      <path d="M 0 270 Q 190 115, 510 46" fill="none" stroke="#A97FFF" stroke-width="1.6" stroke-dasharray="5 3" stroke-opacity="0.8"/>
+      <text x="370" y="96" fill="#A97FFF" font-family="'JetBrains Mono', monospace" font-size="9.5">tanh(x) (distorsiona zona lineal)</text>
+
+      <!-- IVANNA RationalC2SoftCeiling Curve (Solid Glowing Cyan->Green->Gold) -->
+      <path d="M 0 270 L 295 58 C 345 32, 410 25, 510 24.5" fill="none" stroke="url(#c2CurveGrad)" stroke-width="3.2"/>
+      <text x="58" y="172" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5" font-weight="700" transform="rotate(-35 58 172)">Región Identidad 1:1 · f(x) ≡ x</text>
+    </g>
+
+    <!-- Formula Footer inside Left Panel -->
+    <rect x="22" y="356" width="552" height="68" rx="10" fill="#0B162B" stroke="#1E293B" stroke-width="1.2"/>
+    <text x="36" y="379" fill="#FFFFFF" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">Ley Racional C²:  f(x) = sgn(x) · [ x_k + (L - x_k) · (u + u²) / (1 + u + u²) ]</text>
+    <text x="36" y="399" fill="#94A3B8" font-family="'JetBrains Mono', monospace" font-size="10.5">donde u = (|x| - x_k) / (L - x_k) para |x| &gt; 0.88 FS  |  Hermite C¹: h₀₀(t)=2t³-3t²+1, h₁₀(t)=t³-2t²+t</text>
+    <text x="36" y="416" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10">Auditado en CTest: Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit (SNR 132.39 dB)</text>
+  </g>
+
+  <!-- RIGHT PANEL: ATLAS DE ESCENA MUSICAL (12 ESTILOS + IVW1 + TRIPLE BUFFER) -->
+  <g transform="translate(656, 24)">
+    <rect x="0" y="0" width="596" height="442" rx="14" fill="#081121" stroke="#00F0FF" stroke-width="1.4" stroke-opacity="0.6"/>
+    <text x="22" y="30" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="12.5" font-weight="800">B · ATLAS DE ESCENA MUSICAL (IvannaMusicIntelligenceEngine v2.4.0)</text>
+    <text x="22" y="50" fill="#94A3B8" font-family="'JetBrains Mono', monospace" font-size="10.5">12 Centroides Acústicos · Pesos IVW1 (8 774 params) · StyleBlender · Triple-Buffer Lock-Free</text>
+
+    <!-- 12 Styles Grid (3 columns x 4 rows) -->
+    <g transform="translate(22, 68)">
+      <rect x="0" y="0" width="176" height="38" rx="7" fill="#0D1B33" stroke="#00F0FF" stroke-width="1"/>
+      <text x="10" y="16" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">00 · PROG ROCK 70s</text>
+      <text x="10" y="30" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">RT60 0.42s · T₂/T₃ Analógico</text>
+
+      <rect x="188" y="0" width="176" height="38" rx="7" fill="#0D1B33" stroke="#FFD166" stroke-width="1"/>
+      <text x="198" y="16" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">01 · ANALOG WARM 60s</text>
+      <text x="198" y="30" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Cinta Par T₂ · Sala Íntima</text>
+
+      <rect x="376" y="0" width="176" height="38" rx="7" fill="#0D1B33" stroke="#A97FFF" stroke-width="1"/>
+      <text x="386" y="16" fill="#A97FFF" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">02 · NEO-SOUL / R&amp;B</text>
+      <text x="386" y="30" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Sub-Grave Sólido · Voz Cerca</text>
+
+      <rect x="0" y="46" width="176" height="38" rx="7" fill="#0D1B33" stroke="#23F09A" stroke-width="1"/>
+      <text x="10" y="62" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">03 · ELECTRONIC / IDM</text>
+      <text x="10" y="76" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Width 1.38x · Transiente Puro</text>
+
+      <rect x="188" y="46" width="176" height="38" rx="7" fill="#0D1B33" stroke="#38BDF8" stroke-width="1"/>
+      <text x="198" y="62" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">04 · SYMPHONIC HALL</text>
+      <text x="198" y="76" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Sala #169 · RT60 0.86s · HOA4</text>
+
+      <rect x="376" y="46" width="176" height="38" rx="7" fill="#0D1B33" stroke="#F472B6" stroke-width="1"/>
+      <text x="386" y="62" fill="#F472B6" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">05 · JAZZ QUARTET</text>
+      <text x="386" y="76" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">ER 6 Paredes · Micro-Paralaje</text>
+
+      <rect x="0" y="92" width="176" height="38" rx="7" fill="#0D1B33" stroke="#FF2E93" stroke-width="1"/>
+      <text x="10" y="108" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">06 · HIP-HOP SUB-808</text>
+      <text x="10" y="122" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">185Hz 3-Pole Protect · Punch</text>
+
+      <rect x="188" y="92" width="176" height="38" rx="7" fill="#0D1B33" stroke="#FB923C" stroke-width="1"/>
+      <text x="198" y="108" fill="#FB923C" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">07 · METAL HIGH-GAIN</text>
+      <text x="198" y="122" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Dereverb Cola + Des-enmascarado</text>
+
+      <rect x="376" y="92" width="176" height="38" rx="7" fill="#0D1B33" stroke="#38BDF8" stroke-width="1"/>
+      <text x="386" y="108" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">08 · AMBIENT CINEMATIC</text>
+      <text x="386" y="122" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Inmersión Holográfica 3D</text>
+
+      <rect x="0" y="138" width="176" height="38" rx="7" fill="#0D1B33" stroke="#4ADE80" stroke-width="1"/>
+      <text x="10" y="154" fill="#4ADE80" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">09 · POP MODERN MASTER</text>
+      <text x="10" y="168" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Sala #51 · De-Clipper Hermite</text>
+
+      <rect x="188" y="138" width="176" height="38" rx="7" fill="#0D1B33" stroke="#FBBF24" stroke-width="1"/>
+      <text x="198" y="154" fill="#FBBF24" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">10 · LATIN PERCUSSIVE</text>
+      <text x="198" y="168" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">All-Pass Transiente + Claridad</text>
+
+      <rect x="376" y="138" width="176" height="38" rx="7" fill="#0D1B33" stroke="#A78BFA" stroke-width="1"/>
+      <text x="386" y="154" fill="#A78BFA" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700">11 · PODCAST / VOICE</text>
+      <text x="386" y="168" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="9">Dereverb ≥4 dB · Foco Central</text>
+    </g>
+
+    <!-- Atlas Pipeline Flow inside Right Panel -->
+    <rect x="22" y="262" width="552" height="162" rx="10" fill="#0B162B" stroke="#1E293B" stroke-width="1.2"/>
+    <text x="36" y="286" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">CADENA MATEMÁTICA DEL ATLAS DE ESCENA (CERO INTERVENCIONES MANUALES):</text>
+    <text x="36" y="308" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12">1. <tspan fill="#00F0FF" font-weight="700">IvannaAudioClassifier (IVW1)</tspan>: Carga 8 774 pesos verificados y extrae vector 12-D por ventana.</text>
+    <text x="36" y="329" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12">2. <tspan fill="#A97FFF" font-weight="700">StyleBlender</tspan>: Calcula distancia Mahalanobis diagonal, Softmax (T=0.55), EMA (τ=2.0s) y</text>
+    <text x="52" y="347" fill="#CBD5E1" font-family="'Inter', sans-serif" font-size="11.5">confianza de entropía normalizada c = 1 + Σ p_k ln(p_k)/ln(12) con rampa [0.25, 0.55].</text>
+    <text x="36" y="368" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12">3. <tspan fill="#23F09A" font-weight="700">SceneTargetBus</tspan>: Publica SceneTarget (64B alignas) vía palabra de estado atómica CAS (1 byte).</text>
+    <text x="36" y="389" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12">4. <tspan fill="#FF2E93" font-weight="700">Motores Físicos RT</tspan>: LateReverbSuppressor (185 Hz 3-pole) + PhysicalEarlyReflections (6 paredes)</text>
+    <text x="52" y="407" fill="#CBD5E1" font-family="'Inter', sans-serif" font-size="11.5">+ HarmonicRichnessController (polinomios de Chebyshev T₂, T₃, T₄ con bloqueo DC).</text>
+  </g>
+</svg>

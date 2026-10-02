@@ -1,113 +1,137 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 560" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 620" width="100%" height="100%">
   <defs>
-    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#060911"/>
-      <stop offset="100%" stop-color="#0A0F1E"/>
+    <linearGradient id="bgSing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050811"/>
+      <stop offset="50%" stop-color="#091022"/>
+      <stop offset="100%" stop-color="#060A15"/>
     </linearGradient>
-    <linearGradient id="accentCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="laneRtBorder" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="50%" stop-color="#23F09A"/>
       <stop offset="100%" stop-color="#38BDF8"/>
     </linearGradient>
-    <linearGradient id="accentPurple" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#A97FFF"/>
+    <linearGradient id="laneWorkerBorder" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFD166"/>
+      <stop offset="50%" stop-color="#A97FFF"/>
       <stop offset="100%" stop-color="#FF2E93"/>
     </linearGradient>
-    <linearGradient id="accentGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#23F09A"/>
-      <stop offset="100%" stop-color="#00F0FF"/>
-    </linearGradient>
+    <pattern id="gridSing" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#1E293B" stroke-width="0.55" stroke-opacity="0.4"/>
+    </pattern>
   </defs>
 
-  <rect width="1280" height="560" rx="18" fill="url(#bg2)" stroke="#1E293B" stroke-width="2"/>
+  <rect width="1280" height="620" rx="20" fill="url(#bgSing)"/>
+  <rect width="1280" height="620" rx="20" fill="url(#gridSing)"/>
+  <rect x="2" y="2" width="1276" height="616" rx="18" fill="none" stroke="#1E293B" stroke-width="2"/>
 
-  <!-- Header -->
-  <text x="40" y="42" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" letter-spacing="1.4">ARQUITECTURA DE SEÑAL EN LAZO CERRADO · HOT-PATH RT (SCHED_FIFO) &amp; WORKER COGNITIVO ASÍNCRONO</text>
-  <line x1="40" y1="56" x2="1240" y2="56" stroke="#1E293B" stroke-width="1.5"/>
+  <!-- Top Header -->
+  <text x="38" y="38" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="13.5" font-weight="800" letter-spacing="1.2">PLANO DE ARQUITECTURA EN LAZO CERRADO v2.4.0 · HOT-PATH RT (SCHED_FIFO) ⟷ ATLAS DE ESCENA &amp; SINGULARITY WORKER</text>
+  <text x="1242" y="38" text-anchor="end" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="11.5" font-weight="700">[A3] 34/34 RT-SAFE · [A4] 0 MALLOC · [A5] C++20</text>
+  <line x1="38" y1="52" x2="1242" y2="52" stroke="#1E293B" stroke-width="1.5"/>
 
-  <!-- TOP LANE: REAL-TIME HOT PATH (0 malloc, 0 locks) -->
-  <rect x="36" y="74" width="1208" height="232" rx="14" fill="#0B1324" stroke="#00F0FF" stroke-width="1.4" stroke-opacity="0.5"/>
-  <text x="56" y="100" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="700">CARRIL 1 · HILO DE AUDIO EN TIEMPO REAL (Ruta A: libivanna_omega.so JNI  |  Ruta B: libomega_effect.so AudioFlinger) · 0 malloc · 0 mutex</text>
+  <!-- ========================================================================= -->
+  <!-- LANE 1: REAL-TIME AUDIO THREAD (SCHED_FIFO · 0 malloc · 0 locks)          -->
+  <!-- ========================================================================= -->
+  <rect x="32" y="68" width="1216" height="252" rx="14" fill="#081121" fill-opacity="0.92" stroke="url(#laneRtBorder)" stroke-width="1.6"/>
+  <rect x="48" y="80" width="1184" height="26" rx="6" fill="#0D1B33"/>
+  <text x="62" y="97" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="11.5" font-weight="700">CARRIL 1 · HILO DE AUDIO EN TIEMPO REAL (Ruta A: libivanna_omega.so JNI  |  Ruta B: libomega_effect.so AudioFlinger) · 0 malloc · 0 mutex · FPCR.FZ=1</text>
 
-  <!-- Stage Box 1 -->
-  <rect x="56" y="118" width="210" height="164" rx="10" fill="#0F172A" stroke="#38BDF8" stroke-width="1.2"/>
-  <text x="70" y="142" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">1. NÚCLEO DSP &amp; ESPACIAL</text>
-  <text x="70" y="165" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Pre-EQ Peak Guard (-1 dBFS)</text>
-  <text x="70" y="186" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• EQ 10-Bandas RBJ + Compresor</text>
-  <text x="70" y="207" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• HRTF IHR1/SOFA + HOA 4º</text>
-  <text x="70" y="228" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• WFS 2.5D + BRIR 16 896</text>
-  <text x="70" y="249" fill="#94A3B8" font-family="'JetBrains Mono', monospace" font-size="10.5">IvannaFusionEngine + Ejes 1–7</text>
+  <!-- Stage 1: Base & Spatial Atlas DSP -->
+  <rect x="48" y="118" width="272" height="184" rx="10" fill="#0B162B" stroke="#38BDF8" stroke-width="1.3"/>
+  <text x="62" y="140" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">1. CADENA BASE + ATLAS ESPACIAL</text>
+  <text x="62" y="162" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Pre-EQ Guard (-1 dBFS) + 10-Band RBJ</text>
+  <text x="62" y="181" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• LateReverbSuppressor (3-pole 185 Hz)</text>
+  <text x="62" y="200" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• PhysicalEarlyReflections (6 paredes)</text>
+  <text x="62" y="219" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Chebyshev T₂/T₃/T₄ Harmonic Shaper</text>
+  <text x="62" y="238" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Hybrid HRTF (128-tap) + BRIR (16 896)</text>
+  <text x="62" y="258" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Woodworth ITD + XTC Transaural</text>
+  <text x="62" y="284" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="10">RoomProjectionEngine + Ejes Espaciales 1–7</text>
 
   <!-- Arrow 1->2 -->
-  <path d="M 266 200 L 292 200" stroke="#00F0FF" stroke-width="2"/>
-  <polygon points="292,195 302,200 292,205" fill="#00F0FF"/>
+  <path d="M 320 210 L 342 210" stroke="#00F0FF" stroke-width="2.2"/>
+  <polygon points="342,205 352,210 342,215" fill="#00F0FF"/>
 
-  <!-- Stage Box 2 -->
-  <rect x="304" y="118" width="224" height="164" rx="10" fill="#0F172A" stroke="#A97FFF" stroke-width="1.2"/>
-  <text x="318" y="142" fill="#A97FFF" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">2. 5 EJES SUPREMOS + PINN</text>
-  <text x="318" y="165" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Eje 1: Bark Lattice + Hermite</text>
-  <text x="318" y="186" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Eje 2: CVNN + Cinta 2" J-A</text>
-  <text x="318" y="207" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Eje 3: SNN LIF INT8 + NMF</text>
-  <text x="318" y="228" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Eje 4/5: SIREN + Farrow 5º</text>
-  <text x="318" y="249" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5">• Cochlear-PINN (8 Greenwood)</text>
+  <!-- Stage 2: 5 Supreme Axes + Cochlear PINN -->
+  <rect x="354" y="118" width="260" height="184" rx="10" fill="#0B162B" stroke="#A97FFF" stroke-width="1.3"/>
+  <text x="368" y="140" fill="#A97FFF" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">2. 5 EJES SUPREMOS + PINN</text>
+  <text x="368" y="162" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Eje 1: Bark Lattice (λ=0.72) + Lorentz</text>
+  <text x="368" y="181" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Eje 2: CVNN modReLU + Cinta 2" J-A</text>
+  <text x="368" y="200" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Eje 3: SNN LIF INT8 + NMF → HOA 4.º</text>
+  <text x="368" y="219" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Eje 4: Pinna SIREN 6D + 7D SAF</text>
+  <text x="368" y="238" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Eje 5: SHM CAS + Farrow 5.º Orden</text>
+  <text x="368" y="258" fill="#23F09A" font-family="'Inter', sans-serif" font-size="12" font-weight="700">• CochlearActiveInverseEngine (RK2)</text>
+  <text x="368" y="284" fill="#A97FFF" font-family="'JetBrains Mono', monospace" font-size="10">0 muestras lookahead · 8 Bandas Greenwood</text>
 
   <!-- Arrow 2->3 -->
-  <path d="M 528 200 L 554 200" stroke="#A97FFF" stroke-width="2"/>
-  <polygon points="554,195 564,200 554,205" fill="#A97FFF"/>
+  <path d="M 614 210 L 636 210" stroke="#A97FFF" stroke-width="2.2"/>
+  <polygon points="636,205 646,210 636,215" fill="#A97FFF"/>
 
-  <!-- Stage Box 3 -->
-  <rect x="566" y="118" width="318" height="164" rx="10" fill="#0F172A" stroke="#FF2E93" stroke-width="1.5"/>
-  <text x="582" y="142" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">3. DECLARATIVE UNIFIED PIPELINE (5 ETAPAS)</text>
-  <text x="582" y="165" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• Stage 0–3: AntiDolby · TinyML · WaveUNet · PINN</text>
-  <text x="582" y="188" fill="#FFFFFF" font-family="'Inter', sans-serif" font-size="13" font-weight="800">★ Stage 4: OmniHolographicSingularityEngine</text>
-  <text x="594" y="209" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11">├─ All-Pass Transient Focuser (|H(e^jω)| ≡ 1)</text>
-  <text x="594" y="228" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11">├─ Orthogonal M/S Unmasking (√(M²+S²) inv.)</text>
-  <text x="594" y="247" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11">└─ Farrow 3rd-Order Fractional Micro-Parallax</text>
-  <text x="582" y="268" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="10.5">ClickFreeStageBase: Crossfade C¹ + Hermite Stitcher</text>
+  <!-- Stage 3: DeclarativeUnifiedPipeline & OmniHolographicSingularityEngine -->
+  <rect x="648" y="118" width="298" height="184" rx="10" fill="#0B162B" stroke="#FF2E93" stroke-width="1.5"/>
+  <text x="662" y="140" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">3. DECLARATIVE UNIFIED PIPELINE</text>
+  <text x="662" y="162" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• Stages 0–3: AntiDolby · TinyML · UNet · PINN</text>
+  <text x="662" y="183" fill="#FFFFFF" font-family="'Inter', sans-serif" font-size="12.5" font-weight="800">★ Stage 4: OmniHolographicSingularity</text>
+  <text x="672" y="203" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="10.5">├─ All-Pass Transiente (|H(e^jω)| ≡ 1.0)</text>
+  <text x="672" y="221" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="10.5">├─ Rotación M/S Ortogonal (E_out ≡ E_in)</text>
+  <text x="672" y="239" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="10.5">└─ Paralaje Binaural Farrow 3.er Orden</text>
+  <text x="662" y="260" fill="#FFD166" font-family="'Inter', sans-serif" font-size="11.5" font-weight="600">• ClickFreeStageBase (Crossfade Híbrido C¹)</text>
+  <text x="662" y="284" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="10">omega_unified_dsp_stage.hpp</text>
 
   <!-- Arrow 3->4 -->
-  <path d="M 884 200 L 910 200" stroke="#23F09A" stroke-width="2"/>
-  <polygon points="910,195 920,200 910,205" fill="#23F09A"/>
+  <path d="M 946 210 L 968 210" stroke="#23F09A" stroke-width="2.2"/>
+  <polygon points="968,205 978,210 968,215" fill="#23F09A"/>
 
-  <!-- Stage Box 4 -->
-  <rect x="922" y="118" width="302" height="164" rx="10" fill="#0F172A" stroke="#23F09A" stroke-width="1.5"/>
-  <text x="938" y="142" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">4. SUPREME ACOUSTIC STABILITY GUARD</text>
-  <text x="938" y="165" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• BiquadDcBlocker (5 Hz, double state)</text>
-  <text x="938" y="186" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• IsometricEnergyGovernor (+1.2 dB hyst.)</text>
-  <text x="938" y="207" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5" font-weight="600">• HermiteC1BoundaryStitcher (32 samples)</text>
-  <text x="938" y="228" fill="#FFFFFF" font-family="'Inter', sans-serif" font-size="12.5" font-weight="800">• RationalC2SoftCeiling (±0.88 → ±0.996 FS)</text>
-  <text x="938" y="252" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5">Identidad 1:1 (&lt;0.88 FS) · THD = 0.00000%</text>
+  <!-- Stage 4: SupremeAcousticStabilityGuard -->
+  <rect x="980" y="118" width="252" height="184" rx="10" fill="#0B162B" stroke="#23F09A" stroke-width="1.5"/>
+  <text x="994" y="140" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">4. STABILITY GUARD C²</text>
+  <text x="994" y="162" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• BiquadDcBlocker (5 Hz, double)</text>
+  <text x="994" y="181" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• IsometricEnergyGovernor (+1.2 dB)</text>
+  <text x="994" y="200" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12" font-weight="600">• HermiteC1BoundaryStitcher (16 smp)</text>
+  <text x="994" y="220" fill="#FFFFFF" font-family="'Inter', sans-serif" font-size="12" font-weight="800">• RationalC2SoftCeiling</text>
+  <text x="1004" y="239" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5">├─ |x| ≤ 0.88 FS → f(x) = x (1:1)</text>
+  <text x="1004" y="257" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5">└─ |x| &gt; 0.88 FS → L = 0.994 FS</text>
+  <text x="994" y="284" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="10">Barrera Final NaN/Inf → DAC / HAL</text>
 
-  <!-- BOTTOM LANE: ASYNC HEAVY WORKER & COGNITIVE ORCHESTRATOR -->
-  <rect x="36" y="334" width="1208" height="196" rx="14" fill="#0B1120" stroke="#A97FFF" stroke-width="1.4" stroke-opacity="0.5"/>
-  <text x="56" y="360" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="700">CARRIL 2 · PLANO COGNITIVO FUERA DEL HILO RT (HeavyWorkerEngine + AcousticRealityOrchestrator + OmegaControlBus SHM v5)</text>
+  <!-- ========================================================================= -->
+  <!-- LANE 2: ASYNC COGNITIVE & ATLAS WORKER PLANE (Wait-Free SPSC & TripleBuf) -->
+  <!-- ========================================================================= -->
+  <rect x="32" y="366" width="1216" height="224" rx="14" fill="#080F1E" fill-opacity="0.94" stroke="url(#laneWorkerBorder)" stroke-width="1.6"/>
+  <rect x="48" y="378" width="1184" height="26" rx="6" fill="#16122B"/>
+  <text x="62" y="395" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="11.5" font-weight="700">CARRIL 2 · PLANO COGNITIVO Y ATLAS DE ESCENA FUERA DEL HILO RT (HeavyWorkerEngine + IvannaMusicIntelligenceEngine + SHM v5)</text>
 
-  <!-- Worker Box 1: SPSC Ring -->
-  <rect x="56" y="378" width="255" height="130" rx="10" fill="#0F172A" stroke="#FFD166" stroke-width="1.2"/>
-  <text x="72" y="402" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">SPSC RING BUFFER LOCK-FREE</text>
-  <text x="72" y="425" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• HeavyWorkAudioPacket</text>
-  <text x="72" y="446" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• tryEnqueueAudio() wait-free</text>
-  <text x="72" y="467" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• Sub-muestreo Mel + Crest + RMS</text>
-  <text x="72" y="490" fill="#94A3B8" font-family="'JetBrains Mono', monospace" font-size="10.5">Capacidad acotada · 0 bloqueos RT</text>
+  <!-- Box A: Wait-Free SPSC Audio & Feature Ingestion -->
+  <rect x="48" y="416" width="272" height="156" rx="10" fill="#0D1528" stroke="#FFD166" stroke-width="1.3"/>
+  <text x="62" y="438" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">A. INGESTA SPSC WAIT-FREE</text>
+  <text x="62" y="460" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• HeavyWorkAudioPacket (tryEnqueue)</text>
+  <text x="62" y="480" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• IvannaAudioClassifier (IVW1 Bin)</text>
+  <text x="62" y="500" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• 8 774 pesos en ivanna_weights.ivw1</text>
+  <text x="62" y="520" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• Extracción 12-D (Crest, Flux, IACC…)</text>
+  <text x="62" y="552" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="10">Capacidad acotada · 0 bloqueos al RT</text>
 
-  <!-- Worker Box 2: HeavyWorkerEngine -->
-  <rect x="345" y="378" width="430" height="130" rx="10" fill="#0F172A" stroke="#00F0FF" stroke-width="1.2"/>
-  <text x="362" y="402" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">HEAVY WORKER ENGINE (INFERENCIA NEUROMÓRFICA)</text>
-  <text x="362" y="425" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• AntiDolbyAI (Pi-LSTM) + IvannaNeuromorphicTinyML (SeqLock)</text>
-  <text x="362" y="446" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• LIFPool32 / LIFPool128 + AutonomousBrain + SaFOptimizer</text>
-  <text x="362" y="467" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• AcousticRealityOrchestrator::orchestrateCycle (Fases 0–15)</text>
-  <text x="362" y="490" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5">Sincroniza AdaptiveDecisionEngine + CognitiveIntentTracker</text>
+  <!-- Box B: Atlas StyleBlender & HeavyWorkerEngine -->
+  <rect x="354" y="416" width="468" height="156" rx="10" fill="#0D1528" stroke="#00F0FF" stroke-width="1.3"/>
+  <text x="370" y="438" fill="#00F0FF" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">B. ATLAS DE ESCENA (12 ESTILOS) + ORQUESTADOR FASES 0–15</text>
+  <text x="370" y="460" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• StyleBlender: verosimilitud Mahalanobis diagonal sobre 12 centroides</text>
+  <text x="370" y="480" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• Temperatura T = 0.55 · EMA τ = 2.0 s · Compuerta de entropía [0.25, 0.55]</text>
+  <text x="370" y="500" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• AntiDolbyAI (Pi-LSTM) + IvannaNeuromorphicTinyML (SeqLock) + LIFPool128</text>
+  <text x="370" y="520" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• AcousticRealityOrchestrator::orchestrateCycle (16 fases cognitivas)</text>
+  <text x="370" y="552" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10">Convergencia de arranque en frío &lt; 1.5 s sin clicks (test_cold_start_sim)</text>
 
-  <!-- Worker Box 3: SingularityFieldDescriptor -->
-  <rect x="810" y="378" width="414" height="130" rx="10" fill="#0F172A" stroke="#FF2E93" stroke-width="1.2"/>
-  <text x="828" y="402" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">PUBLICACIÓN ATÓMICA LOCK-FREE AL HILO RT</text>
-  <text x="828" y="425" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• SingularityFieldDescriptor (memory_order_release/acquire)</text>
-  <text x="828" y="446" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• transientFocusCoeff · midVocalPresence · sideHoloAir</text>
-  <text x="828" y="467" fill="#E2E8F0" font-family="'Inter', sans-serif" font-size="12.5">• subharmonicCoherence · farrowParallaxSamples</text>
-  <text x="828" y="490" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="10.5">OmegaControlBus SHM v5 (MAGIC + VERSION + CRC32)</text>
+  <!-- Box C: Lock-Free Publication Buses -->
+  <rect x="856" y="416" width="376" height="156" rx="10" fill="#0D1528" stroke="#FF2E93" stroke-width="1.3"/>
+  <text x="872" y="438" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">C. PUBLICACIÓN ATÓMICA LOCK-FREE AL HILO RT</text>
+  <text x="872" y="460" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• SceneTargetBus: Triple-Buffer CAS empaquetado (1 byte)</text>
+  <text x="872" y="480" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• Slew-limiters por parámetro (RT60, Width, T₂/T₃/T₄, Dereverb)</text>
+  <text x="872" y="500" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• SingularityFieldDescriptor (release / acquire)</text>
+  <text x="872" y="520" fill="#F1F5F9" font-family="'Inter', sans-serif" font-size="12">• OmegaControlBus SHM Seqlock v5 (MAGIC + CRC32)</text>
+  <text x="872" y="552" fill="#FF2E93" font-family="'JetBrains Mono', monospace" font-size="10">0 torn reads · 0 data races bajo TSan/ASan</text>
 
-  <!-- Closed-loop vertical arrows between RT lane and Worker lane -->
-  <path d="M 180 282 L 180 374" stroke="#FFD166" stroke-width="2" stroke-dasharray="5 3"/>
-  <polygon points="175,370 180,378 185,370" fill="#FFD166"/>
-  <path d="M 725 378 L 725 286" stroke="#FF2E93" stroke-width="2" stroke-dasharray="5 3"/>
-  <polygon points="720,290 725,282 730,290" fill="#FF2E93"/>
+  <!-- Vertical Closed-Loop Signal Arrows -->
+  <path d="M 184 302 L 184 412" stroke="#FFD166" stroke-width="2.2" stroke-dasharray="5 3"/>
+  <polygon points="179,408 184,416 189,408" fill="#FFD166"/>
+  <text x="194" y="348" fill="#FFD166" font-family="'JetBrains Mono', monospace" font-size="10.5" font-weight="700">tryEnqueueAudio() Wait-Free</text>
+
+  <path d="M 960 416 L 960 306" stroke="#23F09A" stroke-width="2.2" stroke-dasharray="5 3"/>
+  <polygon points="955,310 960,302 965,310" fill="#23F09A"/>
+  <text x="720" y="348" fill="#23F09A" font-family="'JetBrains Mono', monospace" font-size="10.5" font-weight="700">SceneTargetBus (Triple-Buffer) + SingularityFieldDescriptor</text>
 </svg>

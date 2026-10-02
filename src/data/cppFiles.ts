@@ -165,7 +165,7 @@ export const CPP_FILES: CppFile[] = [
 export function generateFullTermuxScript(): string {
   let script = `#!/usr/bin/env bash
 # ==============================================================================
-# IVANNA OMEGA SUPREME v2.3.6 — Fuentes C++ del DSP nativo
+# IVANNA OMEGA SUPREME v2.4.0 — Fuentes C++ del DSP nativo
 # Bloque de extracción rápida para Termux / shell Linux
 # ==============================================================================
 
