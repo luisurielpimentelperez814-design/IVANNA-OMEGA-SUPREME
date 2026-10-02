@@ -406,29 +406,29 @@ jobs:
               [ -n "$aid" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}" 2>/dev/null || true
             done
 
-      - name: Upload Magisk module (zip + daemon + effect lib)
-        uses: actions/upload-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-          path: |
-            ivanna-magisk-module-arm64-${{ github.sha }}.zip
-            ivanna_daemon
-            libomega_effect_arm64.so
-            daemon_sha256.txt
-          if-no-files-found: error
-          retention-days: 5
-          overwrite: true
-
-      - name: Upload APK (separate artifact — never collides with module zip name)
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
-          path: |
-            ivanna-omega-supreme-${{ github.sha }}.apk
-            apk_sha256.txt
-          if-no-files-found: error
-          retention-days: 5
-          overwrite: true
+      - name: Stage build bundle to draft GitHub Release (quota-independent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          if ! gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "IVANNA OMEGA SUPREME $VERSION" \
+              --draft \
+              --notes "$NOTES"
+          fi
+          gh release upload "$VERSION" \
+            "ivanna-magisk-module-arm64-${GITHUB_SHA}.zip" \
+            "ivanna-omega-supreme-${GITHUB_SHA}.apk" \
+            ivanna_daemon \
+            libomega_effect_arm64.so \
+            daemon_sha256.txt \
+            apk_sha256.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "✓ Bundle staged en draft release $VERSION"
 
   # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
   verify-release:
@@ -438,15 +438,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download module bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
+      - name: Download staged bundle from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Validate downloaded zip end-to-end
         run: |
@@ -514,41 +512,17 @@ jobs:
           chmod +x .github/scripts/generate_oem_report.sh
           .github/scripts/generate_oem_report.sh
 
-      - name: Upload OEM certification report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-stability-report
-          path: ivanna_oem_stability_report.txt
-          retention-days: 2
-
       - name: Run OEM certification gate
         if: always()
         run: |
           chmod +x .github/scripts/oem_certification_gate.sh
           .github/scripts/oem_certification_gate.sh
 
-      - name: Upload certification gate report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-certification-gate-report
-          path: ivanna_oem_certification_gate.txt
-          retention-days: 2
-
       - name: Collect OEM performance telemetry
         if: always()
         run: |
           chmod +x tools/telemetry/collect_oem_metrics.sh
           tools/telemetry/collect_oem_metrics.sh
-
-      - name: Upload OEM telemetry metrics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-performance-metrics
-          path: ivanna_oem_metrics.json
-          retention-days: 2
 
       - name: Store OEM metrics history
         if: always()
@@ -561,26 +535,10 @@ jobs:
         run: |
           python3 tools/dashboard/generate_dashboard.py
 
-      - name: Upload OEM dashboard
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-dashboard
-          path: ivanna_oem_dashboard.html
-          retention-days: 2
-
       - name: Compare OEM performance regression
         if: always()
         run: |
           python3 tools/dashboard/compare_history.py
-
-      - name: Upload OEM regression report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-oem-regression-report
-          path: ivanna_oem_delta_report.html
-          retention-days: 2
 
       - name: Run OEM performance quality gate
         if: always()
@@ -591,16 +549,6 @@ jobs:
         if: always()
         run: |
           python3 tools/iael/iael_audio_certification.py
-
-      - name: Upload IAEL Certification Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ivanna-iael-certification
-          path: |
-            ivanna_iael_report.html
-            telemetry/iael/latest_certification.json
-          retention-days: 2
 
   # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
   publish-release:
@@ -616,15 +564,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download module bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
+      - name: Download verified bundle from draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Derivar versión desde module.prop (fuente única de verdad)
         id: ver
@@ -658,26 +604,10 @@ jobs:
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            IS_DRAFT=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
-            if [ "$IS_DRAFT" = "true" ]; then
-              gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" \
-                --repo "$GITHUB_REPOSITORY" --clobber
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-            else
-              gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" \
-                --repo "$GITHUB_REPOSITORY" --clobber
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES" || true
-              echo "Release $TAG actualizado con los nuevos binarios ($ZIP_NAME y $APK_NAME)."
-            fi
-          else
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "IVANNA OMEGA SUPREME $TAG" \
-              --draft \
-              --notes "$NOTES"
-            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          fi
+          gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+          for STAGED in "ivanna-magisk-module-arm64-${GITHUB_SHA}.zip" ivanna_daemon libomega_effect_arm64.so daemon_sha256.txt apk_sha256.txt; do
+            gh release delete-asset "$TAG" "$STAGED" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          done
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES" --draft=false
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
 
