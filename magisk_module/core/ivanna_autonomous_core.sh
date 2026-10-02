@@ -145,14 +145,15 @@ decision_evaluate() {
 component_isolate_execute() {
     local COMP_ID="$1"
     shift
-    local CMD=("$@")
+    # Use POSIX arguments directly
+
 
     local COMP_DIR="$ISOLATION_DIR/$COMP_ID"
     mkdir -p "$COMP_DIR"
 
     observatory_log "ISOLATION" "Desplegando $COMP_ID en burbuja de aislamiento..."
     
-    "${CMD[@]}" >> "$COMP_DIR/stdout.log" 2>&1 &
+    "$@" >> "$COMP_DIR/stdout.log" 2>&1 &
     local PID=$!
     echo "$PID" > "$COMP_DIR/pid"
 

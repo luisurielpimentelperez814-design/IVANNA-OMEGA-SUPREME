@@ -89,11 +89,17 @@ RIR_N=$(ls "$DATA_DIR/rir/"*.wav 2>/dev/null | wc -l)
     || ([ "$RIR_N" -gt 0 ] && warn "RIR: solo $RIR_N salas (esperadas 200)" \
         || fail "RIR: directorio $DATA_DIR/rir/ vacío o inexistente")
 
-# Recursivo: incluye el bloque ARI de HpIR (sofa/ari/*.sofa) integrado 2026-09.
+# Recursivo: incluye el bloque ARI de HpIR (sofa/ari/*.sofa) si fue desplegado.
+# En la distribución estándar del módulo Magisk, sofa/*.sofa se excluye del zip para no sobrecargar
+# el tamaño de descarga (72MB). El motor opera de forma nativa e independiente con IHR1 (CIPIC/KEMAR).
 SOFA_N=$(find "$DATA_DIR/sofa" -name '*.sofa' 2>/dev/null | wc -l)
-[ "$SOFA_N" -ge 10 ] && pass "SOFA: $SOFA_N archivos AES69 presentes" \
-    || ([ "$SOFA_N" -gt 0 ] && warn "SOFA: solo $SOFA_N archivos (esperados ≥20)" \
-        || fail "SOFA: directorio $DATA_DIR/sofa/ vacío (customize.sh puede necesitar reinstalar)")
+if [ "$SOFA_N" -ge 10 ]; then
+    pass "SOFA: $SOFA_N archivos AES69 presentes"
+elif [ "$SOFA_N" -gt 0 ]; then
+    warn "SOFA: solo $SOFA_N archivos (esperados ≥20)"
+else
+    pass "SOFA: dataset opcional ausente (el motor opera autónomamente con IHR1 de alta resolución)"
+fi
 
 # ── 5. Logs recientes ─────────────────────────────────────────────────────────
 section "LOGS"

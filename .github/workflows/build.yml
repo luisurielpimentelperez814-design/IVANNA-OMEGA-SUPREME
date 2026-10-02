@@ -321,8 +321,10 @@ jobs:
       - name: Generate BUILD_INFO manifest
         run: |
           set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
           {
             echo "commit=$GITHUB_SHA"
+            echo "version=$VERSION"
             echo "run=$GITHUB_RUN_NUMBER"
             echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "daemon_sha256=$(sha256sum ivanna_daemon | awk '{print $1}')"
@@ -330,7 +332,73 @@ jobs:
             echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | awk '{print $1}')"
             echo "ndk=${ANDROID_NDK_VERSION}"
           } > magisk_module/BUILD_INFO
+          cp magisk_module/BUILD_INFO ./BUILD_INFO
           cat magisk_module/BUILD_INFO
+
+      # ── VALIDACIONES DE CALIDAD DEL MÓDULO MAGISK (FLANCO 1) ───────────
+      - name: Validate Magisk module sources (ash -n, no CRLF, valid XML, HRTF hashes)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y busybox
+
+          echo "=== 1. Check busybox ash -n en todos los scripts shell ==="
+          for sh_file in $(find magisk_module -type f \( -name "*.sh" -o -name "update-binary" \)); do
+            echo "  ash -n: $sh_file"
+            busybox ash -n "$sh_file"
+          done
+          echo "OK: todos los scripts shell pasaron busybox ash -n"
+
+          echo "=== 2. Check sin CRLF en archivos de texto del módulo ==="
+          python3 -c '
+          import os, sys
+          binary_exts = {".so", ".ihr1", ".bin", ".wav", ".sofa"}
+          crlf = []
+          for root, _, files in os.walk("magisk_module"):
+              for f in files:
+                  if os.path.splitext(f)[1].lower() in binary_exts:
+                      continue
+                  p = os.path.join(root, f)
+                  with open(p, "rb") as fp:
+                      if b"\r" in fp.read():
+                          crlf.append(p)
+          if crlf:
+              print("ERROR: Archivos con CRLF encontrados:", crlf)
+              sys.exit(1)
+          print("OK: sin CRLF en ningún archivo de texto del módulo")
+          '
+
+          echo "=== 3. Validar sintaxis XML en magisk_module ==="
+          python3 -c '
+          import xml.etree.ElementTree as ET, glob, sys
+          for xml_file in glob.glob("magisk_module/**/*.xml", recursive=True):
+              try:
+                  ET.parse(xml_file)
+                  print("  XML válido:", xml_file)
+              except Exception as e:
+                  print("ERROR XML inválido:", xml_file, e)
+                  sys.exit(1)
+          print("OK: todos los archivos XML son válidos")
+          '
+
+          echo "=== 4. Validar hrtf_index.json contra los archivos .ihr1 ==="
+          python3 -c '
+          import json, hashlib, os, sys
+          idx_path = "magisk_module/system/etc/ivanna_omega/hrtf/hrtf_index.json"
+          with open(idx_path) as f:
+              data = json.load(f)
+          for subj in data["subjects"]:
+              sfile = subj["file"]
+              fn = os.path.join("magisk_module/system/etc/ivanna_omega/hrtf", sfile)
+              if not os.path.isfile(fn):
+                  print("ERROR: falta .ihr1:", fn)
+                  sys.exit(1)
+              with open(fn, "rb") as bf:
+                  h = hashlib.sha256(bf.read()).hexdigest()
+              if h != subj["sha256"]:
+                  print("ERROR: hash mismatch en " + sfile + ": " + h + " vs " + subj["sha256"])
+                  sys.exit(1)
+          print("OK: todos los .ihr1 coinciden con hrtf_index.json")
+          '
 
       # ── EMPAQUETADO + VALIDACIÓN DEL ZIP FINAL ─────────────────────────
       - name: Package Magisk module + verify zip integrity
@@ -342,10 +410,14 @@ jobs:
           fi
           ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
           ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" -x "system/etc/ivanna_omega/sofa/*" -x "*.sofa" )
-          # El zip DEBE contener el daemon
-          unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon" || { echo "ERROR: zip sin daemon"; exit 1; }
-          unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"            || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
-          unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"               || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
+          # El zip DEBE contener META-INF, module.prop, daemon, effect, sepolicy.rule y BUILD_INFO
+          unzip -l "$ZIPNAME" | grep -q "META-INF/com/google/android/update-binary" || { echo "ERROR: zip sin META-INF"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "module.prop"                               || { echo "ERROR: zip sin module.prop"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon"                  || { echo "ERROR: zip sin daemon"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/soundfx/libomega_effect.so" || { echo "ERROR: zip sin effect lib"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"                             || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"                                || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
+          unzip -t "$ZIPNAME" || { echo "ERROR: zip corrupto o con fallo CRC"; exit 1; }
           # Extracción + validación del daemon DENTRO del zip
           rm -f extracted_daemon
           unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
