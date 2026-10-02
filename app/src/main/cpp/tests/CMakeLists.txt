@@ -945,6 +945,44 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_music_intelligence COMMAND test_music_intelligence)
 
+# ── ATLAS-ESCENA 12D & SINGULARIDAD ACÚSTICA: Pruebas T3–T10 ────────────────
+ivanna_add_test(test_ime_style_blender)
+ivanna_add_test(test_scene_bus)
+ivanna_add_test(test_late_reverb_suppressor)
+ivanna_add_test(test_woodworth_itd)
+ivanna_add_test(test_er_tap_time)
+ivanna_add_test(test_cheb_shaper)
+
+add_executable(test_cold_start_sim
+  test_cold_start_sim.cpp
+  ../music_intelligence/MusicFeatureExtractor.cpp
+  ../music_intelligence/MusicIntelligenceEngine.cpp
+  ../music_intelligence/ImeBridge.cpp
+  ../IvannaAudioClassifier.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
+  ../neuromorphic/volterra_h2_symmetric.cpp
+)
+target_link_libraries(test_cold_start_sim PRIVATE GTest::gtest_main ivanna_dsp_under_test Threads::Threads m)
+target_include_directories(test_cold_start_sim PRIVATE
+  ..
+  ../include
+  ../spatial
+  ../neuromorphic
+  ../supreme
+  ../music_intelligence
+  ../experimental/adaptive_engine
+  host_stubs
+)
+target_compile_options(test_cold_start_sim PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_cold_start_sim PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_cold_start_sim PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_cold_start_sim)
+
+
 
 
 

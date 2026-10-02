@@ -1,88 +1,76 @@
 #pragma once
+/**
+ * HarmonicExciter.h — Psychoacoustic harmonic saturation with 2x oversampling
+ *
+ * Processing pipeline per channel:
+ *   1. High-pass filter at 2.8 kHz (butterworth 2nd order) — only excite highs
+ *   2. 2x upsample via 16-tap polyphase half-band FIR
+ *   3. Shaper mode 1 (default, M9): Chebyshev T2 (even) + T3 (odd) harmonic shaper
+ *      governed by warmth and spectral flatness (Anti-IMD) + 15 Hz DC blocker.
+ *      Shaper mode 0 (legacy fallback, R3): Padé [3/2] rational tanh soft-clip.
+ *   4. 2x downsample via matched polyphase FIR (rejects images > fs/2)
+ *   5. Mix excited signal back with dry signal via wet parameter
+ *
+ * Copyright (C) 2026 IVANNA-OMEGA Project
+ */
+
 #include "dsp_types.h"
+#include "../dsp/ChebHarmonicShaper.hpp"
+#include <cstddef>
 
 namespace ivanna {
 
-// Harmonic exciter: drive → soft-clip saturation + 2nd/3rd harmonic generation
-// CON ANTI-ALIASING: Oversampling 2x + LPF post-clip
 class HarmonicExciter {
 public:
-    void setParams(const DSPParams& p);
-    void process(float* left, float* right, int frames);
+    HarmonicExciter();
+
+    void setParams(const DSPParams& params);
+    void process(float* left, float* right, size_t numFrames);
     void reset();
 
-    // FASE 4C — cierre del lazo adaptativo: reducción runtime sugerida por
-    // AdaptiveDecisionEngine (exciter_reduction, 0..1). Se aplica sobre
-    // wet_ (cuánto del efecto se mezcla de vuelta), NO sobre drive_ (que
-    // define la curva/timbre de saturación) — así "bajar intensidad" no
-    // cambia el carácter del efecto, solo cuánto se escucha. Persiste
-    // entre llamadas a setParams() a propósito (no se resetea si el
-    // usuario mueve otro slider mientras el motor sugiere reducir).
-    void setRuntimeReduction(float reduction01) noexcept {
-        runtimeReductionMul_ = reduction01 < 0.f ? 1.f : (reduction01 > 1.f ? 0.f : 1.f - reduction01);
-    }
+    // Controles Atlas-Escena (M9 / R3):
+    // mode = 1: Chebyshev T2+T3 (default), mode = 0: softClip Padé legacy
+    void setShaperMode(int mode) noexcept { shaperMode_ = (mode == 0) ? 0 : 1; }
+    int  shaperMode() const noexcept { return shaperMode_; }
+
+    void setWarmth(float warmth) noexcept;
+    float warmth() const noexcept { return warmth_; }
+
+    void setFlatness1m(float f8) noexcept;
+    float flatness1m() const noexcept { return flatness1m_; }
 
 private:
-    float drive_ = 1.f;
-    // FIX (discontinuidad audible real, mismo patrón que wetSmooth_ ya
-    // documentado arriba): drive_ se pasaba directo a softClip() dentro
-    // del bucle de sobremuestreo, sin ningún suavizado propio — un
-    // cambio de drive_ (usuario arrastrando el fader de "drive") saltaba
-    // el CARÁCTER de la saturación armónica de golpe en la frontera
-    // exacta de bloque, mismo patrón "escalón en la frontera de bloque"
-    // ya identificado y reparado en SafetyLimiter/ParametricEQ. Variable
-    // de estado propia (no reutiliza wetSmooth_/wetNow_) para no
-    // interferir con la separación de diseño ya documentada arriba:
-    // esto es un fix de discontinuidad, no un cambio de qué controla el
-    // motor adaptativo vs el usuario.
-    float driveNow_    = 1.f;
-    float driveSmooth_ = 0.9995f;
-    float wet_   = 0.5f;
-    float dry_   = 0.5f;
-    float runtimeReductionMul_ = 1.f;  // 1.0 = sin reducción, 0.0 = exciter mudo
-    // Anti-zipper: wet_ cambia de golpe al arrastrar el slider y la mezcla
-    // dry+wet*exc es lineal en wet -> click por bloque. wetNow_ converge
-    // por muestra OS (~15 ms). Recalculado en setParams().
-    // FIX transparencia: arrancar en 0.0 — el bypass bit-exacto de
-    // process() exige wetNow_ <= 0.00001f; con 0.5 nunca se disparaba y
-    // wet=0 alteraba la señal ~6.7e-4 (medido por WetZeroIsTransparent).
-    float wetNow_    = 0.0f;
-    float wetSmooth_ = 0.9995f;
-    
-    // HPF to feed only highs into exciter (3 kHz cutoff)
-    Biquad hpfL_, hpfR_;
+    float drive_      = 1.5f;   // internal gain before shaper (1.0 – 16.0)
+    float driveNorm_  = 0.2f;   // normalized drive [0.0 – 1.0] for ChebHarmonicShaper
+    float wet_        = 0.15f;  // mix ratio (0.0 – 1.0)
+    float excScale_   = 0.30f;  // internal ceiling for excited path
+    float sampleRate_ = 48000.0f;
+    int   shaperMode_ = 1;      // 1 = Chebyshev M9 (default), 0 = Padé legacy
+    float warmth_     = 0.5f;   // [0..1] par/impar balance
+    float flatness1m_ = 0.25f;  // [0..1] anti-IMD spectral flatness proxy
 
-    // ── Pre-saturation LPF (FIX aliasing del exciter) ────────────────────────
-    // El softclip genera armónicos de hasta 3× la fundamental. Sin pre-filtro,
-    // contenido a 10-16 kHz (HPF pasa 3kHz+) produce 3er armónico a 30-48 kHz
-    // (tasa OS 96kHz). En el decimador 2:1 a 48kHz, frecuencias de 24-48kHz
-    // (OS) alias a 0-24kHz → tronidos de alta frecuencia audibles.
-    // Solución: LPF a 8kHz ANTES del softclip. H3 de 8kHz = 24kHz = Nyquist
-    // base → safe. El estado persiste entre bloques (igual que el fix IIR de
-    // Psychoacoustics — estado local = discontinuidad = pop por bloque).
-    Biquad preLpfL_, preLpfR_;  // fc=8kHz @48kHz base, coefs en setParams()
-    
-    // Anti-aliasing: oversampling 2x buffers
-    static constexpr int OS_FACTOR = 2;  // 2x oversampling
-    static constexpr int MAX_OS_FRAMES = 4096;
-    float osLeft_[MAX_OS_FRAMES * OS_FACTOR];   // Buffer para oversampling
-    float osRight_[MAX_OS_FRAMES * OS_FACTOR];
-    
-    // Resampling interpolation filter (LPF para downsample)
-    Biquad osLpfL_, osLpfR_;  // 11.5 kHz LPF @ 96kHz (anti-aliasing en downsample)
-    
-    // Interpolación lineal para upsample
-    float lastL_ = 0.f, lastR_ = 0.f;
+    // 2nd-order Butterworth HPF at 2.8 kHz (state per channel)
+    BiquadCoeffs hpfCoeffs_{};
+    BiquadState  hpfStateL_{};
+    BiquadState  hpfStateR_{};
 
-    // Techo interno del exciter (anti clipping digital): la suma
-    // dry + wet*excitación podía superar ±1.0 (medido: 1.52 con drive=16,
-    // wet=1.0 sobre onda cuadrada) y salir clipeada del exciter antes de
-    // llegar al SafetyLimiter. excScale_ escala SOLO la excitación para
-    // respetar el headroom que deja la señal seca, con ataque inmediato y
-    // release suave (~20 ms) para no modular el timbre muestra a muestra.
-    float excScaleL_ = 1.f, excScaleR_ = 1.f;
-    float excRelCoef_ = 0.999f;   // recalculado en setParams() (tasa OS)
-    int lastSampleRate_ = 0;      // guarda para no recalcular filtros si sr no cambia
+    // 2nd-order Butterworth LPF at 0.45 * fs (half-band anti-aliasing)
+    BiquadCoeffs lpfCoeffs_{};
+    BiquadState  lpfUpL_{},   lpfUpR_{};
+    BiquadState  lpfDownL_{}, lpfDownR_{};
+
+    // Polinomios de Chebyshev T2 + T3 con bloqueador DC a 2*fs (oversampled)
+    dsp::ChebHarmonicShaper chebL_{};
+    dsp::ChebHarmonicShaper chebR_{};
+
+    void computeFilterCoeffs();
+    static float softClip(float x) noexcept;
+    static float tickBiquad(float x, const BiquadCoeffs& c, BiquadState& s) noexcept;
+
+    void upsample2x(const float* in, float* out, size_t numFrames,
+                    BiquadState& lpfState) noexcept;
+    void downsample2x(const float* in, float* out, size_t numFrames,
+                      BiquadState& lpfState) noexcept;
 };
 
 } // namespace ivanna

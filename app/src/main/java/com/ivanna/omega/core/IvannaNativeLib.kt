@@ -268,9 +268,61 @@ object IvannaNativeLib {
     external fun nativeSetBinauralEnabled(enabled: Boolean)
     external fun nativeSetBinauralPositionRad(azimuthRad: Float, aggressiveness: Float)
 
-    // ═══ Music Intelligence Engine (IME) ════════════════════════════════
+    // ═══ Music Intelligence Engine & Singularidad Atlas-Escena (IME 12D) ═════
     external fun nativeImeSetEnabled(enabled: Boolean)
     external fun nativeImeDecideNow(): String
+    external fun nativeImeSetUseStatDereverb(enabled: Boolean)
+    external fun nativeImeSetUsePhysicalEr(enabled: Boolean)
+    external fun nativeImeSetShaperMode(mode: Int)
+    external fun nativeImeSetManualStyleOverride(styleIdx: Int)
+    external fun nativeImeSetUserWarmthOverride(warmthOrNeg: Float)
+    external fun nativeImeSetMaxCeilings(maxInvGain: Float, maxProjWet: Float, maxExcWet: Float)
+    external fun nativeImeSoftReset()
+
+    fun imeSetEnabled(enabled: Boolean) {
+        if (!isLoaded) return
+        try { nativeImeSetEnabled(enabled) } catch (_: Throwable) {}
+    }
+
+    fun imeDecideNow(): String {
+        if (!isLoaded) return "{}"
+        return try { nativeImeDecideNow() } catch (_: Throwable) { "{}" }
+    }
+
+    fun imeSetUseStatDereverb(enabled: Boolean) {
+        if (!isLoaded) return
+        try { nativeImeSetUseStatDereverb(enabled) } catch (_: Throwable) {}
+    }
+
+    fun imeSetUsePhysicalEr(enabled: Boolean) {
+        if (!isLoaded) return
+        try { nativeImeSetUsePhysicalEr(enabled) } catch (_: Throwable) {}
+    }
+
+    fun imeSetShaperMode(mode: Int) {
+        if (!isLoaded) return
+        try { nativeImeSetShaperMode(mode) } catch (_: Throwable) {}
+    }
+
+    fun imeSetManualStyleOverride(styleIdx: Int) {
+        if (!isLoaded) return
+        try { nativeImeSetManualStyleOverride(styleIdx) } catch (_: Throwable) {}
+    }
+
+    fun imeSetUserWarmthOverride(warmthOrNeg: Float) {
+        if (!isLoaded) return
+        try { nativeImeSetUserWarmthOverride(warmthOrNeg) } catch (_: Throwable) {}
+    }
+
+    fun imeSetMaxCeilings(maxInvGain: Float, maxProjWet: Float, maxExcWet: Float) {
+        if (!isLoaded) return
+        try { nativeImeSetMaxCeilings(maxInvGain, maxProjWet, maxExcWet) } catch (_: Throwable) {}
+    }
+
+    fun imeSoftReset() {
+        if (!isLoaded) return
+        try { nativeImeSoftReset() } catch (_: Throwable) {}
+    }
 
     // ═══ Supremacía Acústica: Volterra H2, FastRPC Hexagon cDSP & ATI ═════
     external fun nativeSetVolterraEnabled(enabled: Boolean)

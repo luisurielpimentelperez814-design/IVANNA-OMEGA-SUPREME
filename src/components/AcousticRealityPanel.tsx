@@ -50,6 +50,26 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
 
   const [cycleCount, setCycleCount] = useState<number>(14280);
   const [phaseTick, setPhaseTick] = useState<number>(0);
+  const [atlasStyleIdx, setAtlasStyleIdx] = useState<number>(4); // Default: Jazz Live Room
+  const [useStatDereverb, setUseStatDereverb] = useState<boolean>(true);
+  const [usePhysicalEr, setUsePhysicalEr] = useState<boolean>(true);
+  const [chebShaperActive, setChebShaperActive] = useState<boolean>(true);
+
+  const atlasStyles = [
+    { name: 'Prog Rock 70s', spread: 0.80, depth: 0.70, env: 0.55, warmth: 0.50, elev: 0.35, iacc: 0.35 },
+    { name: 'Analog Warm 60s', spread: 0.45, depth: 0.45, env: 0.40, warmth: 0.80, elev: 0.20, iacc: 0.55 },
+    { name: 'Stadium Rock 80s', spread: 0.75, depth: 0.60, env: 0.60, warmth: 0.30, elev: 0.40, iacc: 0.38 },
+    { name: 'Modern Master', spread: 0.40, depth: 0.40, env: 0.30, warmth: 0.20, elev: 0.22, iacc: 0.50 },
+    { name: 'Jazz Live Room', spread: 0.70, depth: 0.75, env: 0.70, warmth: 0.80, elev: 0.30, iacc: 0.32 },
+    { name: 'Electronic Dense', spread: 0.55, depth: 0.50, env: 0.35, warmth: 0.30, elev: 0.35, iacc: 0.42 },
+    { name: 'Organic Dynamic', spread: 0.75, depth: 0.70, env: 0.65, warmth: 0.60, elev: 0.38, iacc: 0.34 },
+    { name: 'Polymetric 7/8', spread: 0.70, depth: 0.65, env: 0.45, warmth: 0.40, elev: 0.32, iacc: 0.40 },
+    { name: 'Groove Impact', spread: 0.55, depth: 0.55, env: 0.35, warmth: 0.40, elev: 0.22, iacc: 0.48 },
+    { name: 'Harmonic Keys', spread: 0.65, depth: 0.60, env: 0.50, warmth: 0.70, elev: 0.28, iacc: 0.42 },
+    { name: 'Riff Texture', spread: 0.50, depth: 0.50, env: 0.30, warmth: 0.20, elev: 0.20, iacc: 0.50 },
+    { name: 'Wide Studio 3D', spread: 0.90, depth: 0.75, env: 0.55, warmth: 0.50, elev: 0.48, iacc: 0.28 },
+  ];
+  const activeAtlas = atlasStyles[atlasStyleIdx] ?? atlasStyles[4];
 
   useEffect(() => {
     if (!config.enabled || params.masterBypass) return;
@@ -654,6 +674,118 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                 CMA-ES + Q-Learning optimiza Presence/Naturalness/Separation/FatigueFree/Immersion. 6/6 Pruebas Humanas PASS.
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ATLAS-ESCENA 12D · SINGULARIDAD ACÚSTICA (M1–M10) */}
+      <div className="bg-[#10131A] border border-[#38BDF8]/40 rounded-2xl p-6 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#1E2433] pb-4">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Radar className="w-5 h-5 text-[#38BDF8]" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                ATLAS-ESCENA 12D · SINGULARIDAD ACÚSTICA (M1–M10)
+              </h3>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#4ADE80]/15 border border-[#4ADE80]/40 text-[#4ADE80] font-bold">
+                BAYES 12D · TRIPLE BUFFER WAIT-FREE · M10 GUARD
+              </span>
+            </div>
+            <p className="text-xs text-[#94A3B8] mt-1">
+              Inferencia Gaussiana diagonal 12D (<code className="text-[#38BDF8]">StyleBlender</code>) →{' '}
+              <code className="text-[#4ADE80]">LateReverbSuppressor</code> (Lebart/Habets) →{' '}
+              <code className="text-[#A855F7]">PhysicalEarlyReflections</code> (6 paredes Sabine-Eyring) →{' '}
+              <code className="text-[#F59E0B]">ObjectSpatialRenderer</code> (Woodworth ITD + Brown-Duda) →{' '}
+              <code className="text-[#38BDF8]">ChebHarmonicShaper</code> (T2 par + T3 impar).
+            </p>
+          </div>
+          <div className="flex items-center space-x-2 text-xs">
+            <span className="px-3 py-1.5 rounded-lg bg-[#0A0C10] border border-[#1E2433] text-[#4ADE80] font-bold">
+              Q(M10): 0.96 · C_t: 0.98 · C_s: 0.94 · C_d: 0.97
+            </span>
+          </div>
+        </div>
+
+        {/* 12 Style Selector Chips */}
+        <div className="flex flex-wrap gap-2">
+          {atlasStyles.map((st, idx) => (
+            <button
+              key={st.name}
+              onClick={() => setAtlasStyleIdx(idx)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                atlasStyleIdx === idx
+                  ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-[#38BDF8]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#94A3B8] hover:text-white'
+              }`}
+            >
+              {st.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Active Scene Targets + A/B Engine Toggles */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 bg-[#0A0C10] border border-[#1E2433] rounded-xl p-3 text-center">
+            <div>
+              <div className="text-[10px] text-[#64748B]">WFS SPREAD</div>
+              <div className="text-sm font-bold text-[#38BDF8]">{activeAtlas.spread.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#64748B]">HRTF DEPTH</div>
+              <div className="text-sm font-bold text-[#38BDF8]">{activeAtlas.depth.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#64748B]">ENV DEPTH</div>
+              <div className="text-sm font-bold text-[#4ADE80]">{activeAtlas.env.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#64748B]">WARMTH T2/T3</div>
+              <div className="text-sm font-bold text-[#F59E0B]">{activeAtlas.warmth.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#64748B]">ELEVACIÓN Z</div>
+              <div className="text-sm font-bold text-[#A855F7]">+{activeAtlas.elev.toFixed(2)}m</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#64748B]">TARGET IACC</div>
+              <div className="text-sm font-bold text-[#22D3EE]">{activeAtlas.iacc.toFixed(2)}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              onClick={() => setUseStatDereverb(!useStatDereverb)}
+              className={`p-3 rounded-xl border text-left text-xs transition-all ${
+                useStatDereverb
+                  ? 'bg-[#132A20] border-[#4ADE80]/60 text-[#4ADE80]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+              }`}
+            >
+              <div className="font-bold">Lebart/Habets M5</div>
+              <div className="text-[10px] opacity-80">{useStatDereverb ? 'ACTIVO (3-Pole 250Hz)' : 'WPE Fallback'}</div>
+            </button>
+            <button
+              onClick={() => setUsePhysicalEr(!usePhysicalEr)}
+              className={`p-3 rounded-xl border text-left text-xs transition-all ${
+                usePhysicalEr
+                  ? 'bg-[#111C2D] border-[#38BDF8]/60 text-[#38BDF8]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+              }`}
+            >
+              <div className="font-bold">6-Wall Sabine ER M7</div>
+              <div className="text-[10px] opacity-80">{usePhysicalEr ? 'ACTIVO (Image Sources)' : 'Cluster Fallback'}</div>
+            </button>
+            <button
+              onClick={() => setChebShaperActive(!chebShaperActive)}
+              className={`p-3 rounded-xl border text-left text-xs transition-all ${
+                chebShaperActive
+                  ? 'bg-[#281E12] border-[#F59E0B]/60 text-[#F59E0B]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+              }`}
+            >
+              <div className="font-bold">Chebyshev T2+T3 M9</div>
+              <div className="text-[10px] opacity-80">{chebShaperActive ? 'ACTIVO (Anti-IMD + DC)' : 'Padé Fallback'}</div>
+            </button>
           </div>
         </div>
       </div>

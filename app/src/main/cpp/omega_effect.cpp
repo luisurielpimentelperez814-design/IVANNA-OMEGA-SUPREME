@@ -9,6 +9,7 @@
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
 #include "spatial/IvannaAudioPipeline.hpp"
+#include "music_intelligence/ImeBridge.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
@@ -490,6 +491,13 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
         if (std::isfinite(s.listen_phon) && s.listen_phon >= 30.0f) {
             ctx->audioPipeline->hearingEngine().setListeningSpl(std::clamp(s.listen_phon, 40.0f, 100.0f));
         }
+        auto& atlasBus = ivanna::ime::SceneTargetBus::instance();
+        atlasBus.setSceneReconstructionEnabled((s.flags & ivanna::OMEGA_FLAG_ATLAS_SCENE_OFF) == 0u);
+        atlasBus.setUseStatDereverb((s.flags & ivanna::OMEGA_FLAG_ATLAS_LEGACY_DEREVERB) == 0u);
+        atlasBus.setUsePhysicalEr((s.flags & ivanna::OMEGA_FLAG_ATLAS_LEGACY_ER) == 0u);
+        atlasBus.setShaperMode(((s.flags & ivanna::OMEGA_FLAG_ATLAS_LEGACY_SHAPER) == 0u) ? 1 : 0);
+        const int encodedStyle = static_cast<int>((s.flags & ivanna::OMEGA_FLAG_ATLAS_STYLE_MASK) >> ivanna::OMEGA_FLAG_ATLAS_STYLE_SHIFT);
+        atlasBus.setManualStyleOverride((encodedStyle > 0 && encodedStyle <= 12) ? (encodedStyle - 1) : -1);
     }
 }
 
@@ -986,6 +994,7 @@ static int32_t omega_process(effect_handle_t self,
             ivanna::spatial::IvannaAudioPipeline::setActiveInstance(ctx->audioPipeline);
             const uint32_t srPipe = (ctx->config.outputCfg.samplingRate != 0)
                                   ? ctx->config.outputCfg.samplingRate : 48000u;
+            ivanna::ime::imeFeedPlanar(dryBufL, dryBufR, chunk, (float)srPipe);
             const bool allowPipeSpatial = !fc->getUpmixer().isUpmixingEnabled() && !fc->isWfsEnabled();
             ctx->audioPipeline->processLiveSpatialAxes(
                 L, R, (size_t)chunk, (float)srPipe, allowPipeSpatial, 0.16f,

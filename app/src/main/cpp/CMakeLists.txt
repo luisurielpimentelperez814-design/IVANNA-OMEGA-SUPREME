@@ -339,6 +339,9 @@ add_library(omega_effect SHARED
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
     daemon/core/omega_control_bus.cpp
+    music_intelligence/MusicFeatureExtractor.cpp
+    music_intelligence/MusicIntelligenceEngine.cpp
+    music_intelligence/ImeBridge.cpp
     # FIX(build): RirDataset y RirConvolver usados desde omega_apply_room()
     # en omega_effect.cpp. Estaban listados sólo en ivanna_native (target del
     # APK) pero no aquí → símbolos indefinidos al enlazar libomega_effect.so.

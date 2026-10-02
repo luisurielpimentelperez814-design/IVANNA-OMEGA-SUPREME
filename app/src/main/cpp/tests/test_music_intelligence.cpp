@@ -72,6 +72,43 @@ int main(){
     std::vector<float> ml(N,0.3f), mr(N,0.3f); fe.reset(); fe.processBlock(ml.data(),mr.data(),N);
     EXPECT(fe.features().stereoWidth<0.05f, "señal mono idéntica → stereoWidth≈0");
 
+    // T1 & T2: Invariancia a ganancia (±6 dB) de las 12 dimensiones y suma de 5 bandas == 1.0
+    {
+        const int nFrames = 4096;
+        std::vector<float> refL(nFrames), refR(nFrames);
+        std::vector<float> plus6L(nFrames), plus6R(nFrames);
+        for (int i = 0; i < nFrames; ++i) {
+            const float t = static_cast<float>(i) / sr;
+            const float sL = 0.25f * std::sin(6.2831853f * 120.f * t)
+                           + 0.12f * std::sin(6.2831853f * 1800.f * t)
+                           + 0.06f * std::sin(6.2831853f * 5200.f * t);
+            const float sR = 0.25f * std::sin(6.2831853f * 120.f * t)
+                           + 0.12f * std::cos(6.2831853f * 1800.f * t)
+                           - 0.06f * std::sin(6.2831853f * 5200.f * t);
+            refL[i] = sL; refR[i] = sR;
+            plus6L[i] = sL * 2.0f; plus6R[i] = sR * 2.0f;
+        }
+        MusicFeatureExtractor ext1, ext2;
+        ext1.prepare(sr, 4096);
+        ext2.prepare(sr, 4096);
+        ext1.processBlock(refL.data(), refR.data(), nFrames);
+        ext2.processBlock(plus6L.data(), plus6R.data(), nFrames);
+
+        float v1[12]{}, v2[12]{};
+        ext1.features().toVector12(v1);
+        ext2.features().toVector12(v2);
+        bool gainInvariant = true;
+        for (int k = 0; k < 12; ++k) {
+            if (std::fabs(v1[k] - v2[k]) > 1.0e-3f) gainInvariant = false;
+        }
+        EXPECT(gainInvariant, "T1/T2: vector 12D invariante a escalado de ganancia (+6 dB)");
+
+        const auto f1 = ext1.features();
+        const float bandSum = f1.subBandRatio + f1.bodyBandRatio + f1.defBandRatio
+                            + f1.presenceRatio + f1.airRatio;
+        EXPECT(std::fabs(bandSum - 1.0f) < 1.0e-4f, "T1: suma de las 5 bandas complementarias Atlas == 1.0 ± 1e-4");
+    }
+
     if(g_fail){ std::printf("FALLARON %d\n", g_fail); return 1; }
     std::printf("IME: TODOS LOS TESTS PASARON.\n"); return 0;
 }

@@ -130,6 +130,13 @@ constexpr uint32_t OMEGA_FLAG_SUPREME_PINNA_ON       = (1u << 12); // Eje 4: Pin
 constexpr uint32_t OMEGA_FLAG_SUPREME_FARROW_MSO_ON  = (1u << 13); // Eje 5: Farrow Order-5 MSO Phase Alignment
 constexpr uint32_t OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON = (1u << 14); // Eje 5: eBPF/XDP SHM Direct-to-HAL Bypass
 constexpr uint32_t OMEGA_FLAG_REALITY_RECON_ON       = (1u << 15); // Fases 1-8: Acoustic Reality Reconstruction Hyperengine
+// Flags de Singularidad Acústica Atlas-Escena (bits 16..23; 0 = defaults ON activos en arranque)
+constexpr uint32_t OMEGA_FLAG_ATLAS_SCENE_OFF        = (1u << 16); // 1 = desactivar SceneReconstruction
+constexpr uint32_t OMEGA_FLAG_ATLAS_LEGACY_DEREVERB  = (1u << 17); // 1 = usar Dereverb legacy en vez de Lebart/Habets
+constexpr uint32_t OMEGA_FLAG_ATLAS_LEGACY_ER        = (1u << 18); // 1 = usar ER legacy en vez de PhysicalEarlyReflections
+constexpr uint32_t OMEGA_FLAG_ATLAS_LEGACY_SHAPER    = (1u << 19); // 1 = usar softClip legacy en vez de Chebyshev T2+T3
+constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_SHIFT      = 20u;        // bits 20..23: (manualStyle + 1) & 0xF (0 = Auto)
+constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_MASK       = (0xFu << 20u);
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {

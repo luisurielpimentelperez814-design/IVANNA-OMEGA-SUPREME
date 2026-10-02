@@ -1,219 +1,222 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include "StereoObjectDecomposer.hpp"
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstring>
 #include <algorithm>
-#include "StereoObjectDecomposer.hpp"
-#include "RoomGeometryConfig.hpp"
 
 namespace ivanna::spatial {
 
-/**
- * @class ObjectSpatialRenderer
- * Eje 4: Object-based rendering with bilinear HRTF table lookup, fractional Doppler,
- * perceptual distance attenuation (1-pole IIR), and early reflections per object.
- * 
- * Latency budget: 0 samples (zero added latency).
- * CPU budget: <= 2.5%
- * RT-Safety: Zero malloc in hot path, zero locks.
- */
+// ============================================================================
+// ObjectSpatialRenderer — Renderizador Binaural Esférico 3D (M8)
+//   - ITD esférico exacto de Woodworth (1938):
+//       theta = atan2(|x|, max(y, 0)),  |ITD(theta)| = (a/c) * (|theta| + sin|theta|) * itdScale
+//     con radio craneal a = 0.0875 m y c = 343.0 m/s (~31.48 muestras @ 48 kHz, theta = pi/2).
+//   - Interpolación fraccionaria lineal libre de clicks sobre línea de retardo circular.
+//   - Difracción craneal de Brown & Duda (1998): filtro de sombra de cabeza de 1er orden
+//     a fc = 1500 Hz que atenúa altas frecuencias en el oído contralateral (> 4 dB @ 4 kHz, pi/2).
+//   - Clave espectral de elevación vertical Z (pinna notch/boost > 3.5 kHz) y ley 1/r 3D.
+// ============================================================================
 class ObjectSpatialRenderer {
 public:
-    static constexpr size_t MAX_BLOCK_SIZE = 512;
-    static constexpr size_t NUM_OBJECTS = 4;
-    static constexpr size_t EARLY_REFLECTIONS_TAPS = 4;
-
-    // Constantes físicas nombradas (§0.5, §4, §7.5):
-    static constexpr float kDefaultSampleRateHz = 48000.0f;
-    static constexpr float kWoodworthMaxItdSec  = 0.0006666667f; // ~667 us (radio cefálico Woodworth ~8.75 cm)
-    static constexpr float kItdMaxSamples       = kWoodworthMaxItdSec * kDefaultSampleRateHz; // 32.0 muestras @ 48 kHz
-    static constexpr float kParamSmoothTauSec   = 0.015f; // Constante de tiempo τ = 15 ms (patrón anti-click WFS §7.5)
-    static constexpr float kQuarterPiRad        = 0.7853981633974483096f; // pi/4 rad (ley de paneo constante ±45°)
-    static constexpr float kErMixScale          = 0.70f; // Peso relativo de reflexiones tempranas frente a campo directo
+    static constexpr int   kItdBuf    = 128;   // >= 65 muestras hasta 96 kHz
+    static constexpr float kHeadRadM  = 0.0875f;
+    static constexpr float kSoundSpdM = 343.0f;
 
     ObjectSpatialRenderer() noexcept {
+        prepare(48000.0f);
+    }
+
+    void prepare(float sr) noexcept {
+        fs_  = (sr > 8000.0f) ? sr : 48000.0f;
+        aSh_ = 1.0f - std::exp(-6.283185307179586f * 1500.0f / fs_);
         reset();
     }
 
     void reset() noexcept {
-        for (size_t obj = 0; obj < NUM_OBJECTS; ++obj) {
-            distFilterL_[obj] = 0.0f;
-            distFilterR_[obj] = 0.0f;
-            delayBufferPos_[obj] = 0;
-            ildSmoothL_[obj] = 0.0f;
-            ildSmoothR_[obj] = 0.0f;
-            itdSmoothL_[obj] = 0.0f;
-            itdSmoothR_[obj] = 0.0f;
-            tapSmoothInit_[obj] = false;
-            std::fill(delayBuffers_[obj].begin(), delayBuffers_[obj].end(), 0.0f);
-        }
-        erGains_ = {0.25f, 0.18f, 0.12f, 0.08f};
-        estimatedRoomT60Sec_ = 0.34f;
+        smoothGain_ = 1.0f;
+        pinnaLpState_.fill(0.0f);
+        std::memset(dlL_, 0, sizeof(dlL_));
+        std::memset(dlR_, 0, sizeof(dlR_));
+        std::memset(wIdx_, 0, sizeof(wIdx_));
+        std::memset(lpL_, 0, sizeof(lpL_));
+        std::memset(lpR_, 0, sizeof(lpR_));
     }
 
-    void setEarlyReflectionGains(const std::array<float, EARLY_REFLECTIONS_TAPS>& gains) noexcept {
-        for (size_t k = 0; k < EARLY_REFLECTIONS_TAPS; ++k) {
-            erGains_[k] = std::clamp(gains[k], 0.0f, 0.45f);
+    void setStageElevationOffset(float elevMeters) noexcept {
+        if (std::isfinite(elevMeters)) {
+            stageElevOffset_ = std::clamp(elevMeters, -0.5f, 1.0f);
         }
     }
 
-    // §6.2 & §7.7: En sala viva (T60 >= 1.2 s) las reflexiones tempranas (ER) sintéticas se apagan (0.0).
-    void setEstimatedRoomT60(float t60Sec) noexcept {
-        if (!std::isfinite(t60Sec)) return;
-        estimatedRoomT60Sec_ = std::clamp(t60Sec, 0.05f, 5.0f);
+    void setEarlyReflectionGains(const std::array<float, 4>& gains) noexcept {
+        for (size_t i = 0; i < 4; ++i) {
+            erGains_[i] = std::isfinite(gains[i]) ? std::clamp(gains[i], 0.0f, 1.0f) : 0.15f;
+        }
     }
 
-    [[nodiscard]] float estimatedRoomT60() const noexcept {
-        return estimatedRoomT60Sec_;
+    void setEstimatedRoomT60(float rt60Sec) noexcept {
+        if (std::isfinite(rt60Sec)) {
+            estimatedRoomT60_ = std::clamp(rt60Sec, 0.12f, 2.50f);
+        }
     }
 
-    /**
-     * @brief Renders 4 decomposed objects to stereo binaural output.
-     * @param inObjects Array of 4 mono object input buffers
-     * @param objects Metadata describing positions and properties
-     * @param outL Left accumulation output buffer
-     * @param outR Right accumulation output buffer
-     * @param numSamples Number of samples to render
-     * @param itdScale Interaural time difference scale from Eje 2
-     *   (HrtfPersonalizer::getItdScale(), Woodworth head-radius ratio,
-     *   1.0 = adult average). 0.0 disables ITD and reproduces the old
-     *   ILD-only behaviour exactly. Auditoria 2026-09-24: antes el
-     *   comentario decia "ITD + ILD" pero solo se calculaba ILD (ganancia);
-     *   getItdScale() no tenia ningun caller en todo el arbol.
-     */
-    void renderObjects(const float* const* __restrict inObjects,
-                       const std::array<DecomposedObject, NUM_OBJECTS>& objects,
-                       float* __restrict outL,
-                       float* __restrict outR,
-                       size_t numSamples,
-                       float itdScale = 1.0f) noexcept {
-        if (!inObjects || !outL || !outR || numSamples == 0) return;
+    float estimatedRoomT60() const noexcept {
+        return estimatedRoomT60_;
+    }
 
-        // Clear output accumulation buffers
-        std::fill_n(outL, numSamples, 0.0f);
-        std::fill_n(outR, numSamples, 0.0f);
+    // Cálculo analítico de Woodworth para ángulo azimutal theta (rad)
+    static float woodworthItdSamplesFromAngle(float thetaRad,
+                                              float fs = 48000.0f,
+                                              float itdScale = 1.0f) noexcept {
+        if (itdScale <= 0.0f) return 0.0f;
+        const float th = std::clamp(std::fabs(thetaRad), 0.0f, 1.57079632679f);
+        const float scale = std::clamp(itdScale, 0.0f, 1.5f);
+        const float itdSec = (kHeadRadM / kSoundSpdM) * (th + std::sin(th)) * scale;
+        const float safeFs = (fs > 8000.0f) ? fs : 48000.0f;
+        return std::clamp(itdSec * safeFs, 0.0f, static_cast<float>(kItdBuf - 4));
+    }
 
-        // Coeficiente one-pole por muestra (τ = 15 ms @ 48 kHz, patrón anti-click WFS §7.5)
-        const float smoothAlpha = 1.0f - std::exp(-1.0f / (kParamSmoothTauSec * kDefaultSampleRateHz));
-        const float erRoomScale = RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(1.0f, estimatedRoomT60Sec_);
+    // Cálculo de Woodworth a partir de coordenadas cartesianas (x, y)
+    static float computeWoodworthItdSamples(float x,
+                                            float y,
+                                            float fs = 48000.0f,
+                                            float itdScale = 1.0f) noexcept {
+        const float absX = std::fabs(x);
+        const float posY = std::max(y, 0.0f);
+        const float th = (absX < 1.0e-7f && posY < 1.0e-7f)
+                       ? 0.0f
+                       : std::atan2(absX, posY);
+        return woodworthItdSamplesFromAngle(th, fs, itdScale);
+    }
 
-        for (size_t objIdx = 0; objIdx < NUM_OBJECTS; ++objIdx) {
-            const float* inObj = inObjects[objIdx];
-            if (!inObj) continue;
+    // Calcula la ganancia ILD (sin sombra de cabeza) para inspección / prueba
+    static void computeIldGains(float x, float y, float& gainL, float& gainR) noexcept {
+        const float absX = std::fabs(x);
+        const float posY = std::max(y, 0.0f);
+        const float th = (absX < 1.0e-7f && posY < 1.0e-7f) ? 0.0f : std::atan2(absX, posY);
+        const float signedSin = (x >= 0.0f) ? std::sin(th) : -std::sin(th);
+        const float angle = (signedSin + 1.0f) * 0.78539816339f; // [0, pi/2]
+        gainL = std::cos(angle);
+        gainR = std::sin(angle);
+    }
 
-            const auto& meta = objects[objIdx];
-            const float x = std::clamp(meta.position.x, -1.0f, 1.0f);
-            const float z = std::clamp(meta.position.z, -1.5f, 2.5f);
-            const float dHoriz = std::max(0.5f, meta.position.y);
-            const float d = std::sqrt(dHoriz * dHoriz + z * z); // True 3D distance in meters
+    void renderObjects(
+        const float* const objectStreams[4],
+        const std::array<DecomposedObject, 4>& objects,
+        float* outL,
+        float* outR,
+        size_t numSamples,
+        float itdScale = 1.0f,
+        float widthScale = 1.0f) noexcept
+    {
+        if (!outL || !outR || numSamples == 0) return;
 
-            // 1. Distance law (1 / d with safety cap) + 1-pole high frequency air damping
-            //    modulated by vertical elevation (Blauert upper-hemisphere spectral cue)
-            const float distGain = (1.0f / d) * std::clamp(meta.gain, 0.1f, 1.5f);
-            const float elevTilt = 1.0f + 0.18f * z;
-            const float hfDampAlpha = std::clamp(0.05f * d * elevTilt, 0.01f, 0.55f);
+        for (size_t i = 0; i < numSamples; ++i) {
+            outL[i] = 0.0f;
+            outR[i] = 0.0f;
+        }
 
-            // 2. Bilinear panning / HRTF interaural cue calculation (ITD + ILD)
-            // Left & Right gain cues (constant-power sin/cos panning law)
-            const float panAngle = x * kQuarterPiRad; // ~45 deg max
-            const float ildTargetL = std::cos(kQuarterPiRad - panAngle) * distGain;
-            const float ildTargetR = std::sin(kQuarterPiRad - panAngle) * distGain;
+        const float clampedWidth = std::clamp(widthScale, 0.2f, 2.0f);
+        const float clampedItd   = (itdScale <= 0.0f) ? 0.0f : std::clamp(itdScale, 0.5f, 1.5f);
 
-            // Interaural time difference: ~667us max at 48kHz -> 32 samples.
-            const float itdSigned = std::sin(panAngle) * itdScale * kItdMaxSamples;
-            const float itdTargetL = itdSigned > 0.0f ? std::clamp(itdSigned, 0.0f, 64.0f) : 0.0f;
-            const float itdTargetR = itdSigned < 0.0f ? std::clamp(-itdSigned, 0.0f, 64.0f) : 0.0f;
+        for (size_t k = 0; k < 4; ++k) {
+            const float* src = objectStreams[k];
+            if (!src) continue;
 
-            if (!tapSmoothInit_[objIdx]) {
-                ildSmoothL_[objIdx] = ildTargetL;
-                ildSmoothR_[objIdx] = ildTargetR;
-                itdSmoothL_[objIdx] = itdTargetL;
-                itdSmoothR_[objIdx] = itdTargetR;
-                tapSmoothInit_[objIdx] = true;
-            }
+            const auto& obj = objects[k];
+            const float scaledX = obj.position.x * clampedWidth;
+            const float rawY    = obj.position.y;
+            const float depth   = std::max(0.5f, rawY);
+            // Objetos ambientales/armónicos (k >= 1) reciben el offset de elevación 3D del Atlas
+            const float zOffset = (k >= 1) ? stageElevOffset_ : 0.0f;
+            const float zElev   = std::clamp(obj.position.z + zOffset, -2.0f, 2.5f);
 
-            float curIldL = ildSmoothL_[objIdx];
-            float curIldR = ildSmoothR_[objIdx];
-            float curItdL = itdSmoothL_[objIdx];
-            float curItdR = itdSmoothR_[objIdx];
+            // Ángulo azimutal theta = atan2(|x|, max(y, 0)) para Woodworth ITD e ILD
+            const float absX = std::fabs(scaledX);
+            const float posY = std::max(rawY, 0.0f);
+            const float th   = (absX < 1.0e-7f && posY < 1.0e-7f)
+                             ? 0.0f
+                             : std::atan2(absX, posY);
+            const float sTh  = std::sin(th);
 
-            float fltL = distFilterL_[objIdx];
-            float fltR = distFilterR_[objIdx];
+            // Atenuación física por distancia 3D (x, y, z)
+            const float dist3D    = std::sqrt(scaledX * scaledX + depth * depth + zElev * zElev);
+            const float distAtten = 1.0f / std::max(0.75f, 0.65f + 0.35f * dist3D);
 
-            auto& dBuf = delayBuffers_[objIdx];
-            size_t dPos = delayBufferPos_[objIdx];
+            // Panorámica de potencia constante basada en sin(theta) con signo
+            const float signedSin = (scaledX >= 0.0f) ? sTh : -sTh;
+            const float panAngle  = (signedSin + 1.0f) * 0.78539816339f; // [0, pi/2]
+            const float gainL     = std::cos(panAngle) * obj.gain * distAtten;
+            const float gainR     = std::sin(panAngle) * obj.gain * distAtten;
+
+            // Clave espectral de pinna para elevación Z (> 3.5 kHz)
+            const float pinnaElevGain = std::clamp(1.0f + 0.18f * zElev, 0.75f, 1.30f);
+
+            // Woodworth ITD fraccionario en muestras: (a/c)*(theta + sin(theta)) * itdScale * fs
+            const float itdSamples = woodworthItdSamplesFromAngle(th, fs_, clampedItd);
+            const float dL = (scaledX >  1.0e-5f) ? itdSamples : 0.0f;
+            const float dR = (scaledX < -1.0e-5f) ? itdSamples : 0.0f;
+
+            // Sombra de cabeza de Brown-Duda (> 1.5 kHz en el oído contralateral)
+            const float gSh = 1.0f - 0.44f * sTh;
 
             for (size_t i = 0; i < numSamples; ++i) {
-                const float s = inObj[i];
+                smoothGain_ = 0.995f * smoothGain_ + 0.005f * 1.0f;
+                const float rawSample = std::isfinite(src[i]) ? src[i] : 0.0f;
 
-                // Suavizado one-pole por muestra (τ = 15 ms, patrón WFS §7.5)
-                curIldL += smoothAlpha * (ildTargetL - curIldL);
-                curIldR += smoothAlpha * (ildTargetR - curIldR);
-                curItdL += smoothAlpha * (itdTargetL - curItdL);
-                curItdR += smoothAlpha * (itdTargetR - curItdR);
+                pinnaLpState_[k] += 0.32f * (rawSample - pinnaLpState_[k]);
+                const float highBand = rawSample - pinnaLpState_[k];
+                const float s = (pinnaLpState_[k] + highBand * pinnaElevGain) * smoothGain_;
 
-                // Push to delay buffer FIRST — both the ITD read and the
-                // early-reflections taps below draw from it, and itdL/itdR
-                // == 0 must read back exactly this sample (backward compat).
-                dBuf[dPos] = s;
+                const int w = wIdx_[k];
+                dlL_[k][w] = s * gainL;
+                dlR_[k][w] = s * gainR;
 
-                // Lectura fraccional ITD con interpolación lineal (cero clicks en movimiento)
-                const size_t i0L = static_cast<size_t>(curItdL);
-                const float fracL = curItdL - static_cast<float>(i0L);
-                const float sL0 = dBuf[(dPos + 512 - i0L) & 511];
-                const float sL1 = dBuf[(dPos + 512 - (i0L + 1u)) & 511];
-                const float sL  = sL0 + fracL * (sL1 - sL0);
+                auto readFrac = [&](const float (&buf)[kItdBuf], float d) noexcept -> float {
+                    const int   di = static_cast<int>(d);
+                    const float fr = d - static_cast<float>(di);
+                    const float s0 = buf[(w - di)     & (kItdBuf - 1)];
+                    const float s1 = buf[(w - di - 1) & (kItdBuf - 1)];
+                    return s0 + fr * (s1 - s0);
+                };
 
-                const size_t i0R = static_cast<size_t>(curItdR);
-                const float fracR = curItdR - static_cast<float>(i0R);
-                const float sR0 = dBuf[(dPos + 512 - i0R) & 511];
-                const float sR1 = dBuf[(dPos + 512 - (i0R + 1u)) & 511];
-                const float sR  = sR0 + fracR * (sR1 - sR0);
+                float l = readFrac(dlL_[k], dL);
+                float r = readFrac(dlR_[k], dR);
 
-                // Direct sound filtering (distance damping), per-ear ITD-delayed
-                fltL += hfDampAlpha * (sL * curIldL - fltL);
-                fltR += hfDampAlpha * (sR * curIldR - fltR);
+                lpL_[k] += aSh_ * (l - lpL_[k]);
+                lpR_[k] += aSh_ * (r - lpR_[k]);
 
-                const float directL = fltL;
-                const float directR = fltR;
+                if (scaledX > 1.0e-5f) {
+                    // Fuente a la derecha -> oído izquierdo es contralateral (sombra craneal HF)
+                    l = lpL_[k] + gSh * (l - lpL_[k]);
+                } else if (scaledX < -1.0e-5f) {
+                    // Fuente a la izquierda -> oído derecho es contralateral (sombra craneal HF)
+                    r = lpR_[k] + gSh * (r - lpR_[k]);
+                }
 
-                // Early reflections per object (precomputed fixed taps: 8, 17, 29, 43 samples)
-                const float er1 = dBuf[(dPos + 512 - 8) & 511] * erGains_[0];
-                const float er2 = dBuf[(dPos + 512 - 17) & 511] * erGains_[1];
-                const float er3 = dBuf[(dPos + 512 - 29) & 511] * erGains_[2];
-                const float er4 = dBuf[(dPos + 512 - 43) & 511] * erGains_[3];
-                dPos = (dPos + 1) & 511;
-
-                const float erSum = (er1 + er2 + er3 + er4) * distGain * erRoomScale;
-
-                outL[i] += directL + erSum * kErMixScale;
-                outR[i] += directR + erSum * kErMixScale;
+                wIdx_[k] = (w + 1) & (kItdBuf - 1);
+                outL[i] += l;
+                outR[i] += r;
             }
-
-            ildSmoothL_[objIdx] = curIldL;
-            ildSmoothR_[objIdx] = curIldR;
-            itdSmoothL_[objIdx] = curItdL;
-            itdSmoothR_[objIdx] = curItdR;
-            distFilterL_[objIdx] = fltL;
-            distFilterR_[objIdx] = fltR;
-            delayBufferPos_[objIdx] = dPos;
         }
     }
 
 private:
-    float distFilterL_[NUM_OBJECTS]{};
-    float distFilterR_[NUM_OBJECTS]{};
-    float ildSmoothL_[NUM_OBJECTS]{};
-    float ildSmoothR_[NUM_OBJECTS]{};
-    float itdSmoothL_[NUM_OBJECTS]{};
-    float itdSmoothR_[NUM_OBJECTS]{};
-    bool  tapSmoothInit_[NUM_OBJECTS]{};
-    float estimatedRoomT60Sec_{0.34f};
-    std::array<std::array<float, 512>, NUM_OBJECTS> delayBuffers_{};
-    size_t delayBufferPos_[NUM_OBJECTS]{};
-    std::array<float, EARLY_REFLECTIONS_TAPS> erGains_{{0.25f, 0.18f, 0.12f, 0.08f}};
+    float fs_{48000.0f};
+    float aSh_{0.178f};
+    float smoothGain_{1.0f};
+    float stageElevOffset_{0.0f};
+    float estimatedRoomT60_{0.38f};
+    std::array<float, 4> erGains_{0.24f, 0.18f, 0.14f, 0.10f};
+    std::array<float, 4> pinnaLpState_{0.0f, 0.0f, 0.0f, 0.0f};
+    float dlL_[4][kItdBuf]{};
+    float dlR_[4][kItdBuf]{};
+    int   wIdx_[4]{};
+    float lpL_[4]{};
+    float lpR_[4]{};
 };
 
 } // namespace ivanna::spatial

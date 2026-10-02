@@ -1,36 +1,48 @@
-// ImeBridge.hpp — puente RT-safe entre el hilo de captura y el worker de decisión.
-// (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS.
-// Patrón: seqlock (impar=escribiendo) + atomics relaxed. Sin locks, sin malloc,
-// sin STL en el camino de feed. El JSON se construye solo en imeDecideNowJson
-// (hilo worker, cada ~2 s — nunca en el callback de audio).
+// ImeBridge.hpp — puente global libre de locks entre las rutas de audio
+// (Oboe / AudioTrack / omega_effect) y el motor MusicIntelligenceEngine + SceneTargetBus.
+// (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 #pragma once
-#include <atomic>
-#include <cstdint>
 #include "MusicIntelligenceEngine.hpp"
+#include "SceneTargetBus.hpp"
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <string>
 
 namespace ivanna { namespace ime {
 
 struct ImeSharedState {
-    std::atomic<bool>     enabled{false};   // el usuario lo activa en el panel
+    std::atomic<bool>     enabled{true};
     std::atomic<uint64_t> blocksFed{0};
-    std::atomic<uint32_t> featSeq{0};       // seqlock de features
-    MusicFeatures         latestFeatures{};
-    std::atomic<uint32_t> decSeq{0};        // seqlock de decisión
-    MusicDecision         latestDecision{};
 };
 
-// FIX (build 87cd652d): la declaración NO debe heredar extern "C" del
-// archivo .cpp — devuelve un tipo C++ (ImeSharedState&) y el NDK la
-// rechaza con -Werror=return-type-c-linkage. Al ser una definición en C++
-// puro (namespace ivanna::ime), la declaración limpia en C++ es correcta.
-void* imeSharedOpaque();
+// Acceso opaco al estado compartido atómico (compatibilidad con test_ime_bridge)
+void* imeSharedOpaque() noexcept;
 
-// RT-safe: interleaved estéreo [L0,R0,...], frames = muestras por canal.
-// Deinterleava a buffers estáticos preasignados y acumula en el extractor.
-void imeFeedBlock(const float* interleaved, int frames) noexcept;
+// Alimenta un bloque intercalado estéreo (L,R,L,R,...) de 2 canales.
+void imeFeedBlock(const float* interleavedStereo, int frames, float sampleRate = 48000.0f) noexcept;
 
-// Hilo worker (NO RT): decide sobre las últimas features y devuelve JSON.
-// Devuelve bytes escritos (0 si buf inválido).
-int imeDecideNowJson(char* buf, int bufSize) noexcept;
+// Alimenta un bloque intercalado (L,R,L,R,...) al extractor global.
+// RT-safe: sin locks, sin malloc. Ejecuta además el tick amortizado de arranque en frío
+// (cada 0.5 s las primeras 3 ventanas, luego cada 2.0 s) publicando en SceneTargetBus.
+void imeFeedInterleaved(const float* interleaved, int frames, int channels, float sampleRate) noexcept;
+
+// Alimenta un bloque planar L/R (como en IvannaFusionEngine::processBlock / omega_effect).
+void imeFeedPlanar(const float* l, const float* r, int frames, float sampleRate) noexcept;
+
+// Ejecuta la decisión sobre las features acumuladas, publica en SceneTargetBus y devuelve JSON.
+// Llamar desde un hilo de baja prioridad (worker / UI) cada 0.5–2 s.
+std::string imeDecideNowJson();
+
+// Sobrecarga sin heap en buffer fijo (compatibilidad con test_ime_bridge).
+// Devuelve bytes escritos (>0) o 0 si maxLen es insuficiente.
+int imeDecideNowJson(char* out, size_t maxLen) noexcept;
+
+// Acceso directo a la última decisión / features para pruebas y telemetría nativa.
+StyleDecision imeLastDecision() noexcept;
+MusicFeatures imeLastFeatures() noexcept;
+
+// Reinicio suave ante cambio manual de pista o ruta
+void imeSoftReset() noexcept;
 
 }} // namespace ivanna::ime

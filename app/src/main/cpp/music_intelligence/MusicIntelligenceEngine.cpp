@@ -1,44 +1,74 @@
 #include "MusicIntelligenceEngine.hpp"
 #include <cmath>
+#include <algorithm>
 
 namespace ivanna { namespace ime {
 
-// Base de conocimiento. Los centroides salen de metodología documentada de
-// producción (rangos tonales/dinámicos/espaciales típicos por época y estilo),
-// plasmados también en music_intelligence/production_profiles/*.json. No son
-// presets por artista: son regiones del espacio de características MEDIBLES.
-const ProductionProfile MusicIntelligenceEngine::kProfiles[kNumProfiles] = {
-    // style                 bass  treb crest wdt  trns dens | wfs  hrtf tilt dyn  env
-    { "progressive_rock_70s", {0.34f,0.18f,0.55f,0.62f,0.45f,0.70f}, 0.80f,0.70f,-1.0f,0.90f,0.55f },
-    { "analog_warm_60s",      {0.40f,0.12f,0.45f,0.35f,0.35f,0.65f}, 0.45f,0.45f,-2.0f,0.80f,0.40f },
-    { "stadium_rock_80s",     {0.36f,0.22f,0.40f,0.60f,0.55f,0.75f}, 0.75f,0.60f, 1.0f,0.70f,0.60f },
-    { "modern_compressed",    {0.33f,0.20f,0.18f,0.45f,0.40f,0.85f}, 0.40f,0.40f, 0.5f,0.40f,0.30f },
-    { "jazz_live_room",       {0.30f,0.16f,0.62f,0.55f,0.50f,0.55f}, 0.70f,0.75f,-0.5f,0.95f,0.70f },
-    { "electronic_dense",     {0.45f,0.26f,0.22f,0.50f,0.60f,0.90f}, 0.55f,0.50f, 1.5f,0.50f,0.35f },
-};
-
-MusicIntelligenceEngine::MusicIntelligenceEngine() = default;
-
-MusicDecision MusicIntelligenceEngine::decide(const MusicFeatures& f) const noexcept {
-    // Normalizar al espacio del centroide (crestDb escalado a /24).
-    const float v[6] = {
-        f.bassRatio, f.trebleRatio, f.crestDb/24.0f,
-        f.stereoWidth, f.transientRate, f.density
-    };
-    int best = 0; float bestD = 1e9f;
-    for (int p=0;p<kNumProfiles;++p){
-        float d=0.f;
-        for (int k=0;k<6;++k){ float df=v[k]-kProfiles[p].centroid[k]; d+=df*df; }
-        if (d<bestD){ bestD=d; best=p; }
+void MusicIntelligenceEngine::prepare() noexcept {
+    int n = 0;
+    const StyleProto* lib = defaultAtlasLibrary(n);
+    blender_.setLibrary(lib, n);
+    for (int i = 0; i < n && i < kDefaultAtlasStyles; ++i) {
+        StyleProfile& p = legacyProfiles_[i];
+        p.name           = lib[i].name;
+        p.bassRatio      = lib[i].mu[0];
+        p.trebleRatio    = lib[i].mu[1];
+        p.crest          = lib[i].mu[2];
+        p.width          = lib[i].mu[3];
+        p.transients     = lib[i].mu[4];
+        p.density        = lib[i].mu[5];
+        p.wfsSpread      = lib[i].t.wfsSpread;
+        p.hrtfDepth      = lib[i].t.hrtfDepth;
+        p.eqTiltDb       = lib[i].t.eqTiltDb;
+        p.dynamicsAmount = lib[i].t.dynamicsAmount;
+        p.envDepth       = lib[i].t.envDepth;
+        p.warmth         = lib[i].t.warmth;
     }
-    // confidence = inversa de la distancia, acotada a (0,1].
-    float conf = 1.0f/(1.0f+std::sqrt(bestD));
-    const ProductionProfile& pr = kProfiles[best];
-    MusicDecision out;
-    out.profileIndex=best; out.style=pr.style; out.confidence=conf;
-    out.wfsSpread=pr.wfsSpread; out.hrtfDepth=pr.hrtfDepth;
-    out.eqTiltDb=pr.eqTiltDb; out.dynamicsAmount=pr.dynamicsAmount; out.envDepth=pr.envDepth;
+}
+
+void MusicIntelligenceEngine::reset() noexcept {
+    blender_.reset();
+}
+
+void MusicIntelligenceEngine::softReset() noexcept {
+    blender_.softReset();
+}
+
+int MusicIntelligenceEngine::numProfiles() const noexcept {
+    return kDefaultAtlasStyles;
+}
+
+const StyleProfile& MusicIntelligenceEngine::profile(int idx) const noexcept {
+    if (idx < 0 || idx >= kDefaultAtlasStyles) return legacyProfiles_[0];
+    return legacyProfiles_[idx];
+}
+
+StyleDecision MusicIntelligenceEngine::decide(const MusicFeatures& f) const noexcept {
+    StyleDecision out;
+    if (f.rms < 1e-4f) {
+        return out; // silencio -> neutral exacto
+    }
+    float vec12[kDim]{};
+    f.toVector12(vec12);
+
+    // Evaluador puntual determinista (sin estado previo):
+    // En consulta puntual (decide), usamos dtSec = 20.0 s para converger en 1 paso
+    // a la distribución posterior estacionaria del vector f.
+    StyleBlender localBlender;
+    out = localBlender.update(vec12, 20.0f, -1);
     return out;
+}
+
+StyleDecision MusicIntelligenceEngine::updateStateful(const MusicFeatures& f,
+                                                      float dtSec,
+                                                      int manualOverrideIdx) noexcept {
+    if (f.rms < 1e-4f && manualOverrideIdx < 0) {
+        StyleDecision silentOut;
+        return silentOut;
+    }
+    float vec12[kDim]{};
+    f.toVector12(vec12);
+    return blender_.update(vec12, dtSec, manualOverrideIdx);
 }
 
 }} // namespace ivanna::ime

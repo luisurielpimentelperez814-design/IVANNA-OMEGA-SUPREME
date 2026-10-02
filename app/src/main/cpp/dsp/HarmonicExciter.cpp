@@ -1,313 +1,234 @@
-#if defined(__clang__)
-#pragma clang optimize on
-#else
-#pragma GCC optimize("O3", "unroll-loops")
-#endif
-#include "../include/HarmonicExciter.h"
+/**
+ * HarmonicExciter.cpp — Implementation
+ * Copyright (C) 2026 IVANNA-OMEGA Project
+ */
+
+#include "HarmonicExciter.h"
 #include <cmath>
-#include <cstring>
 #include <algorithm>
+#include <vector>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace ivanna {
 
+HarmonicExciter::HarmonicExciter() {
+    computeFilterCoeffs();
+    chebL_.prepare(sampleRate_ * 2.0f);
+    chebR_.prepare(sampleRate_ * 2.0f);
+}
+
+void HarmonicExciter::setParams(const DSPParams& params) {
+    // Map drive [0,1] → [1.0, 16.0] internal multiplier
+    const float d = std::isfinite(params.drive) ? std::clamp(params.drive, 0.0f, 1.0f) : 0.2f;
+    driveNorm_ = d;
+    drive_ = 1.0f + d * 15.0f;
+    wet_   = std::isfinite(params.wet) ? std::clamp(params.wet, 0.0f, 1.0f) : 0.15f;
+    if (params.sampleRate > 0 && static_cast<float>(params.sampleRate) != sampleRate_) {
+        sampleRate_ = static_cast<float>(params.sampleRate);
+        computeFilterCoeffs();
+        chebL_.prepare(sampleRate_ * 2.0f);
+        chebR_.prepare(sampleRate_ * 2.0f);
+    }
+}
+
+void HarmonicExciter::setWarmth(float warmth) noexcept {
+    if (std::isfinite(warmth)) {
+        warmth_ = std::clamp(warmth, 0.0f, 1.0f);
+    }
+}
+
+void HarmonicExciter::setFlatness1m(float f8) noexcept {
+    if (std::isfinite(f8)) {
+        flatness1m_ = std::clamp(f8, 0.0f, 1.0f);
+    }
+}
+
 void HarmonicExciter::reset() {
-    lastL_ = 0.0f;
-    lastR_ = 0.0f;
-    std::memset(osLeft_, 0, sizeof(osLeft_));
-    std::memset(osRight_, 0, sizeof(osRight_));
-    hpfL_.reset();
-    hpfR_.reset();
-    osLpfL_.reset();
-    osLpfR_.reset();
-    preLpfL_.reset();
-    preLpfR_.reset();
-    // FIX (estado residual): reset() se llama en el bypass por wet=0 y dejaba
-    // excScale_ (limitador de headroom) y wetNow_ (rampa anti-zipper) con los
-    // valores del estado anterior. Al reactivar, la excitación arrancaba
-    // atenuada ~20 ms (release de excScale) y el wet arrancaba a mitad de
-    // rampa — discontinuidad de nivel audible tras bypass→on.
-    excScaleL_ = 1.0f;
-    excScaleR_ = 1.0f;
-    wetNow_ = wet_;
-    // FIX (mismo criterio que wetNow_ arriba, ver comentario del header):
-    // sin esto, tras un reset() driveNow_ quedaría a mitad de una
-    // convergencia anterior en vez de arrancar ya en el objetivo actual.
-    driveNow_ = drive_;
-    lastSampleRate_ = 0;
+    hpfStateL_.reset();
+    hpfStateR_.reset();
+    lpfUpL_.reset();
+    lpfUpR_.reset();
+    lpfDownL_.reset();
+    lpfDownR_.reset();
+    chebL_.reset();
+    chebR_.reset();
 }
 
-void HarmonicExciter::setParams(const DSPParams& p) {
-    // FIX distorsión digital: drive 1..16 causaba que HPF signals típicas (0.2-0.4)
-    // × drive=12 = 2.4-4.8 → zona de clipping duro del softClip → THD masivo.
-    // Rango 1..4: drive=1 neutro, drive=4 saturación Chebyshev audible y limpia.
-    drive_ = 1.0f + p.drive * 3.0f;
-    wet_ = p.wet;
-    dry_ = 1.0f - p.wet;
-
-    const int srInt = p.sampleRate > 0 ? p.sampleRate : 48000;
-    if (srInt == lastSampleRate_) {
-        return;
-    }
-    lastSampleRate_ = srInt;
-
-    // Anti-zipper: coeficiente del one-pole que suaviza el wet EFECTIVO en
-    // process(). wetNow_/wetSmooth_ estaban declarados en el header pero
-    // nunca se cableaban — el mix usaba el wet calculado por bloque y cada
-    // cambio de slider (o de runtimeReductionMul_ del motor adaptativo) era
-    // un escalón de ganancia audible. ~15 ms a tasa OS (el loop de mezcla
-    // corre a sampleRate * OS_FACTOR).
+void HarmonicExciter::computeFilterCoeffs() {
+    // 2nd-order Butterworth HPF at 2800 Hz
     {
-        const double srOS = (double)srInt * (double)OS_FACTOR;
-        wetSmooth_ = (float)std::exp(-1.0 / (srOS * 0.015));
-        // FIX (discontinuidad real, ver header): mismo coeficiente/tiempo
-        // que wetSmooth_ — consistencia de "sensación" entre ambos
-        // parámetros suavizados de este efecto.
-        driveSmooth_ = wetSmooth_;
+        float fc = 2800.0f;
+        float w0 = 2.0f * static_cast<float>(M_PI) * fc / sampleRate_;
+        float cosw0 = std::cos(w0);
+        float sinw0 = std::sin(w0);
+        float alpha = sinw0 / static_cast<float>(M_SQRT2); // Q = 1/sqrt(2)
+
+        float b0 =  (1.0f + cosw0) / 2.0f;
+        float b1 = -(1.0f + cosw0);
+        float b2 =  (1.0f + cosw0) / 2.0f;
+        float a0 =   1.0f + alpha;
+        float a1 =  -2.0f * cosw0;
+        float a2 =   1.0f - alpha;
+
+        hpfCoeffs_.b0 = b0 / a0;
+        hpfCoeffs_.b1 = b1 / a0;
+        hpfCoeffs_.b2 = b2 / a0;
+        hpfCoeffs_.a1 = a1 / a0;
+        hpfCoeffs_.a2 = a2 / a0;
     }
 
-    double sampleRateOS = (double)srInt * (double)OS_FACTOR;
-
-    // ── Post-clip anti-alias LPF (rebajado 18kHz → 12kHz) ────────────────────
-    // FIX: el LPF a 18kHz a tasa OS (96kHz) sólo atenuaba -8 dB en 24kHz
-    // (la frontera del decimador 2:1). Los armónicos del softclip en 24-48kHz
-    // OS aliaseaban a 0-24kHz base → tronidos de alta frecuencia.
-    // A 12kHz, la 2° Butterworth da -15 dB en 24kHz: mucho mejor.
-    // Para eliminar completamente el aliasing se combinan dos acciones:
-    //   1. pre-LPF a 8kHz antes del softclip (ver preLpfL_/R_)
-    //   2. post-LPF a 12kHz para shaping final de la banda de excitación
-    double fc = 12000.0;  // rebajado de 18000 → 12000 Hz
-    if (fc > sampleRateOS * 0.45) fc = sampleRateOS * 0.45;
-    double omegaOS = 2.0 * M_PI * fc / sampleRateOS;
-    double swOS = std::sin(omegaOS);
-    double cwOS = std::cos(omegaOS);
-    double alphaOS = swOS / (2.0 * 0.707);
-    double a0OS_inv = 1.0 / (1.0 + alphaOS);
-
-    osLpfL_.b0 = (float)((1.0 - cwOS) * 0.5 * a0OS_inv);
-    osLpfL_.b1 = (float)((1.0 - cwOS) * a0OS_inv);
-    osLpfL_.b2 = osLpfL_.b0;
-    osLpfL_.a1 = (float)(-2.0 * cwOS * a0OS_inv);
-    osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
-    // FIX CRÍTICO: copiar SOLO coeficientes, nunca sobrescribir z1/z2 de R con L
-    osLpfR_.b0 = osLpfL_.b0;
-    osLpfR_.b1 = osLpfL_.b1;
-    osLpfR_.b2 = osLpfL_.b2;
-    osLpfR_.a1 = osLpfL_.a1;
-    osLpfR_.a2 = osLpfL_.a2;
-
-    // ── Pre-saturation LPF a 8kHz (tasa BASE, mismos coefs en ambas ramas) ──
-    // Butterworth 2° orden, fc=8000 Hz, sr=p.sampleRate (48000 Hz), Q=0.7071:
-    //   K=tan(π×8/48)=0.57735, norm=2.14984
-    //   b0=b2=0.15505, b1=0.31010, a1=-0.62003, a2=0.24041
-    // Con input limitado a ≤8kHz, H3 del softclip va a ≤24kHz = Nyquist base.
-    // No tiene estado en el loop de OS — se aplica antes del upsample.
+    // 2nd-order Butterworth LPF at 0.42 * fs (for 2x oversampled stream → 0.21 * 2fs)
     {
-        double sr = (double)srInt;
-        double fc_pre = 8000.0;
-        if (fc_pre > sr * 0.45) fc_pre = sr * 0.45;
-        double K = std::tan(M_PI * fc_pre / sr);
-        double KK = K * K;
-        double Q = 0.707106781;
-        double norm_pre = 1.0 + K / Q + KK;
-        preLpfL_.b0 = (float)(KK / norm_pre);
-        preLpfL_.b1 = (float)(2.0 * KK / norm_pre);
-        preLpfL_.b2 = preLpfL_.b0;
-        preLpfL_.a1 = (float)(2.0 * (KK - 1.0) / norm_pre);
-        preLpfL_.a2 = (float)((1.0 - K / Q + KK) / norm_pre);
-        preLpfR_.b0 = preLpfL_.b0;
-        preLpfR_.b1 = preLpfL_.b1;
-        preLpfR_.b2 = preLpfL_.b2;
-        preLpfR_.a1 = preLpfL_.a1;
-        preLpfR_.a2 = preLpfL_.a2;
+        float fc = 0.21f * (2.0f * sampleRate_);
+        float w0 = 2.0f * static_cast<float>(M_PI) * fc / (2.0f * sampleRate_);
+        float cosw0 = std::cos(w0);
+        float sinw0 = std::sin(w0);
+        float alpha = sinw0 / static_cast<float>(M_SQRT2);
+
+        float b0 =  (1.0f - cosw0) / 2.0f;
+        float b1 =   1.0f - cosw0;
+        float b2 =  (1.0f - cosw0) / 2.0f;
+        float a0 =   1.0f + alpha;
+        float a1 =  -2.0f * cosw0;
+        float a2 =   1.0f - alpha;
+
+        lpfCoeffs_.b0 = b0 / a0;
+        lpfCoeffs_.b1 = b1 / a0;
+        lpfCoeffs_.b2 = b2 / a0;
+        lpfCoeffs_.a1 = a1 / a0;
+        lpfCoeffs_.a2 = a2 / a0;
     }
-
-    double hpfFc = 3000.0;
-    if (hpfFc > sampleRateOS * 0.45) hpfFc = sampleRateOS * 0.45;
-    hpfL_.setHighpass(hpfFc, 0.707, sampleRateOS);
-    hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
-
-    excRelCoef_ = std::exp(-1.0f / ((float)srInt * OS_FACTOR * 0.020f));
 }
 
-static inline __attribute__((always_inline)) float softClip(float x, float drive) {
-    x *= drive;
-    float absX = x < 0.0f ? -x : x;
-    if (absX > 3.0f) {
-        x = x > 0.0f ? (3.0f + 0.5f * std::tanh((x - 3.0f) * 0.5f)) : (-3.0f - 0.5f * std::tanh((-x - 3.0f) * 0.5f));
-    }
-    float x2 = x * x;
-    return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
+// Padé [3/2] rational approximation of tanh(x), bounded to [-1, +1] (legacy fallback mode 0)
+float HarmonicExciter::softClip(float x) noexcept {
+    if (!std::isfinite(x)) return 0.0f;
+    x = std::clamp(x, -3.0f, 3.0f);
+    const float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
 }
 
-static constexpr float kExcCeiling = 0.98855f;
+// Direct Form II Transposed biquad tick
+float HarmonicExciter::tickBiquad(float x, const BiquadCoeffs& c, BiquadState& s) noexcept {
+    if (!std::isfinite(x)) x = 0.0f;
+    float y = c.b0 * x + s.z1;
+    s.z1 = c.b1 * x - c.a1 * y + s.z2;
+    s.z2 = c.b2 * x - c.a2 * y;
+    if (!std::isfinite(y) || !std::isfinite(s.z1) || !std::isfinite(s.z2)) {
+        s.reset();
+        return 0.0f;
+    }
+    if (std::fabs(s.z1) < 1e-20f) s.z1 = 0.0f;
+    if (std::fabs(s.z2) < 1e-20f) s.z2 = 0.0f;
+    return y;
+}
 
-__attribute__((hot, flatten))
-void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
-    if (frames <= 0 || frames > MAX_OS_FRAMES) return;
+void HarmonicExciter::upsample2x(const float* in, float* out, size_t numFrames,
+                                  BiquadState& lpfState) noexcept {
+    for (size_t n = 0; n < numFrames; ++n) {
+        out[2 * n]     = tickBiquad(in[n] * 2.0f, lpfCoeffs_, lpfState);
+        out[2 * n + 1] = tickBiquad(0.0f,         lpfCoeffs_, lpfState);
+    }
+}
 
-    // Objetivo del wet efectivo (slider * reducción adaptativa). El one-pole
-    // wetNow_ converge por muestra OS en el loop de mezcla de abajo — el
-    // primer bloque tras setParams/arranque arranca desde el objetivo para
-    // no introducir un fade-in al reproducir por primera vez.
-    const float wetTarget = wet_ * runtimeReductionMul_;
-    // FIX (tronido al aplicar perfil): Se borraba el smoothing cuando wet pasaba 
-    // de 0 (bypass) a >0, haciendo que wetNow_ saltara instantáneamente a wetTarget.
-    // Esto causaba que el transitorio natural del encendido de los HPF (con 
-    // estados reseteados) se sumara al 100% de golpe a la señal, generando un click.
-    // Al respetar el one-pole, wetNow_ sube desde 0 durante ~15ms, ocultando 
-    // el transitorio de estabilización del HPF debajo del fade-in acústico.
-    float wetNow = wetNow_;
-    const float wetSm = wetSmooth_ > 0.f ? wetSmooth_ : 0.9995f;
+void HarmonicExciter::downsample2x(const float* in, float* out, size_t numFrames,
+                                    BiquadState& lpfState) noexcept {
+    for (size_t n = 0; n < numFrames; ++n) {
+        float y0 = tickBiquad(in[2 * n],     lpfCoeffs_, lpfState);
+        (void)     tickBiquad(in[2 * n + 1], lpfCoeffs_, lpfState);
+        out[n] = y0;
+    }
+}
 
-    // Bypass perfecto: wet=0 debe ser bit-transparente.
-    // No destruir los estados internos de los filtros IIR/DC-blocker durante
-    // reproducción (Supreme Acoustic State Continuity): la historia acústica
-    // permanece intacta y wetNow_ subirá con rampa suave (~15 ms) al reactivar.
-    if (wetTarget <= 0.00001f && wetNow <= 0.00001f) {
-        wetNow_ = 0.0f;
-        return;
+void HarmonicExciter::process(float* left, float* right, size_t numFrames) {
+    if (numFrames == 0) return;
+
+    static constexpr size_t kMaxStackFrames = 2048;
+    float stackHpfL[kMaxStackFrames], stackHpfR[kMaxStackFrames];
+    float stackUpL [kMaxStackFrames * 2], stackUpR [kMaxStackFrames * 2];
+    float stackExcL[kMaxStackFrames * 2], stackExcR[kMaxStackFrames * 2];
+    float stackDownL[kMaxStackFrames], stackDownR[kMaxStackFrames];
+
+    std::vector<float> heapBuf;
+    float *hpfL, *hpfR, *upL, *upR, *excL, *excR, *downL, *downR;
+
+    if (numFrames <= kMaxStackFrames) {
+        hpfL  = stackHpfL;  hpfR  = stackHpfR;
+        upL   = stackUpL;   upR   = stackUpR;
+        excL  = stackExcL;  excR  = stackExcR;
+        downL = stackDownL; downR = stackDownR;
+    } else {
+        heapBuf.resize(numFrames * 12);
+        hpfL  = heapBuf.data();
+        hpfR  = hpfL  + numFrames;
+        upL   = hpfR  + numFrames;
+        upR   = upL   + numFrames * 2;
+        excL  = upR   + numFrames * 2;
+        excR  = excL  + numFrames * 2;
+        downL = excR  + numFrames * 2;
+        downR = downL + numFrames;
     }
 
-    // FIX (discontinuidad real, ver header): drive_ es ahora el objetivo
-    // fijado por setParams(); driveNow_ converge hacia él con el mismo
-    // one-pole que wetNow_/wetSmooth_ ya usa — evita el escalón de
-    // carácter de saturación en la frontera de bloque cuando el usuario
-    // mueve el fader de "drive".
-    driveNow_ = driveSmooth_ * driveNow_ + (1.0f - driveSmooth_) * drive_;
-    const float drive = driveNow_;
-
-    // FIX (distorsion digital): el clamp duro final (std::clamp ±1.0) de cada
-    // muestra generaba clipping de onda cuadrada cuando dry+wet*excitacion
-    // superaba el techo — armonicos impares de banda ancha en material ya
-    // saturado, antes de que el SafetyLimiter pudiera actuar limpiamente.
-    // Se activa el mecanismo excScale_ documentado en el header: escala la
-    // excitacion ANTES de sumarla al seco, con ataque inmediato (por muestra
-    // OS) y release suave (~20 ms a tasa OS) para no modular el timbre.
-    float scaleL = excScaleL_;
-    float scaleR = excScaleR_;
-    const float rel = excRelCoef_;
-
-    // ── Pre-filtro LPF 8kHz: filtrar el frame completo ANTES del loop OS ──────
-    // Así evitamos llamar preLpfL_.process() dos veces sobre el mismo sample
-    // dentro del loop de interpolación OS (que causaría doble-filtrado y
-    // avanzaría el estado del biquad incorrectamente en samples adelantados).
-    // El dry path (left[i]/right[i] originals) queda intacto — se usa en
-    // la mezcla final para preservar el timbre completo ≥8kHz.
-    float preFiltL[MAX_OS_FRAMES];
-    float preFiltR[MAX_OS_FRAMES];
-    for (int i = 0; i < frames; ++i) {
-        preFiltL[i] = preLpfL_.process(left[i]);
-        preFiltR[i] = preLpfR_.process(right[i]);
+    // Step 1: High-pass filter to isolate excitation band (> 2.8 kHz)
+    for (size_t n = 0; n < numFrames; ++n) {
+        hpfL[n] = tickBiquad(left[n],  hpfCoeffs_, hpfStateL_);
+        hpfR[n] = tickBiquad(right[n], hpfCoeffs_, hpfStateR_);
     }
 
-    int osIdx = 0;
-    for (int i = 0; i < frames; ++i) {
-        // dry path usa left[i]/right[i] directamente (evitar variable sin usar)
+    // Step 2: 2x upsample the high-passed signal
+    upsample2x(hpfL, excL, numFrames, lpfUpL_);
+    upsample2x(hpfR, excR, numFrames, lpfUpR_);
 
-        // OS buffer usa la señal pre-filtrada (≤8kHz) para el softclip
-        osLeft_[osIdx]  = preFiltL[i];
-        osRight_[osIdx] = preFiltR[i];
-        osIdx++;
-
-        // Punto medio OS: promedio entre muestra actual y siguiente (pre-filtradas)
-        float nextLF = (i + 1 < frames) ? preFiltL[i + 1] : preFiltL[i];
-        float nextRF = (i + 1 < frames) ? preFiltR[i + 1] : preFiltR[i];
-        osLeft_[osIdx]  = 0.5f * (preFiltL[i] + nextLF);
-        osRight_[osIdx] = 0.5f * (preFiltR[i] + nextRF);
-        osIdx++;
+    // Store dry signal in upL/upR (interleaved per sample for convenience)
+    for (size_t n = 0; n < numFrames; ++n) {
+        upL[n * 2]     = left[n];
+        upL[n * 2 + 1] = right[n];
     }
-    int osFrames = osIdx;
-    lastL_ = left[frames - 1];
-    lastR_ = right[frames - 1];
 
-    for (int i = 0; i < osFrames; ++i) {
-        float l = osLeft_[i];
-        float r = osRight_[i];
-
-        float hL = hpfL_.process(l);
-        float hR = hpfR_.process(r);
-
-        float excL = softClip(hL, drive) - hL;
-        float excR = softClip(hR, drive) - hR;
-
-        excL = osLpfL_.process(excL);
-        excR = osLpfR_.process(excR);
-
-        // Headroom disponible: cuanta excitacion cabe sin superar el techo.
-        // Ataque inmediato si la muestra reventaria, release exponencial
-        // cuando sobra headroom -> la reduccion se percibe como nivel, no
-        // como distorsion (sin modulacion muestra-a-muestra de la suma).
-        // FIX CRÍTICO (tronido al subir EQ > 0 dB): el EQ corre ANTES del
-        // HarmonicExciter y la compensación de ganancia de salida (GainStage::
-        // processOutput) corre DESPUÉS. Cuando el usuario sube cualquier banda
-        // del EQ por encima de 0 dB, |l| y |dry| superan 1.0f al entrar aquí.
-        // Antes, headL = 1.0f - |l| se volvía NEGATIVO (< 0), haciendo que
-        // needL = headL / 1e-9f explotara a -1e8f y excScaleL_ quedara
-        // enganchado en valores negativos gigantes durante ~200 ms, saturando
-        // la salida a onda cuadrada ±1.0f ("truena el audio al subir de 0").
-        // Se acota headL/headR a >= 0.0f y scaleL/scaleR a [0.0f, 1.0f], y el
-        // techo final respeta |dry| si la señal seca ya viene con boost pre-GainStage.
-        float dryL = left[i >> 1];
-        float dryR = right[i >> 1];
-        const float peakRefL = std::max(std::fabs(l), std::fabs(dryL));
-        const float peakRefR = std::max(std::fabs(r), std::fabs(dryR));
-        const float headL = std::max(0.0f, 1.0f - peakRefL);
-        const float headR = std::max(0.0f, 1.0f - peakRefR);
-        const float reqL = kExcCeiling * wetNow * std::fabs(excL);
-        const float reqR = kExcCeiling * wetNow * std::fabs(excR);
-        const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
-        const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
-        if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
-        if (needR < scaleR) scaleR = needR; else scaleR = rel * scaleR + (1.0f - rel);
-        scaleL = std::clamp(scaleL, 0.0f, 1.0f);
-        scaleR = std::clamp(scaleR, 0.0f, 1.0f);
-
-        // Mezcla con el MISMO wetNow que se usó para el headroom de arriba.
-        // FIX overshoot 1e-6: antes wetNow convergía ANTES de la mezcla, así
-        // la excitación aplicada usaba un wet mayor que el del headroom
-        // calculado → la suma dry+wet reventaba el techo en ~7e-6 por
-        // muestra (medido por ExciterOvershoot.NeverExceedsFullScale).
-        // FIX dry path: la señal seca DEBE ser el sample original (no pre-filtrado)
-        // para que el timbre ≥8kHz pase intacto. La excitación (wet*excL*scaleL)
-        // viene del path filtrado (≤8kHz) pero se mezcla sobre el dry original.
-        float outL = dryL + kExcCeiling * wetNow * excL * scaleL;
-        float outR = dryR + kExcCeiling * wetNow * excR * scaleR;
-
-        // Convergencia anti-zipper del wet efectivo (por muestra OS, ~15 ms)
-        // — DESPUÉS de la mezcla, para que la muestra actual sea consistente
-        // con el headroom que la limitó. El próximo OS-sample usa el valor
-        // convergido (equivalente a un retardo de 1 muestra OS, inaudible).
-        wetNow = wetSm * wetNow + (1.0f - wetSm) * wetTarget;
-        wetNow_ = wetNow;
-
-        // Clamp numérico de seguridad: para entradas <= 1.0f el techo es 1.0f
-        // exacto (atrapa residuos FP ~1e-6). Si dry supera 1.0f por boost de
-        // EQ pre-GainStage, scaleL=0 ya anuló la excitación y no debemos
-        // recortar con onda cuadrada la señal seca antes de GainStage::processOutput.
-        const float ceilL = std::max(1.0f, std::fabs(dryL));
-        const float ceilR = std::max(1.0f, std::fabs(dryR));
-        if (outL > ceilL) outL = ceilL; else if (outL < -ceilL) outL = -ceilL;
-        if (outR > ceilR) outR = ceilR; else if (outR < -ceilR) outR = -ceilR;
-
-        // Seguridad numerica silenciosa (NaN/Inf) — no deberia dispararse ya.
-        if (!std::isfinite(outL)) outL = 0.f;
-        if (!std::isfinite(outR)) outR = 0.f;
-
-        // FIX (desfase): el decimado debe escribir SOLO en índices PARES
-        // (muestras originales, i%2==0). Antes escribía en left[i/2] tanto
-        // en pares como en impares, de modo que la muestra impar (punto
-        // medio interpolado) SOBRESCRIBÍA a la par y la salida quedaba
-        // retardada 0.25 muestras respecto al resto de la cadena DSP →
-        // desfase global + peine sutil audible en agudos. Con i par, la
-        // señal de salida mantiene alineación temporal exacta.
-        if ((i & 1) == 0) {
-            left[i >> 1]  = outL;
-            right[i >> 1] = outR;
+    // Step 3: Harmonic generation (M9 Chebyshev T2+T3 by default, or mode 0 softClip fallback)
+    const size_t upLen = numFrames * 2;
+    if (shaperMode_ == 1) {
+        for (size_t i = 0; i < upLen; ++i) {
+            excL[i] = chebL_.tick(excL[i], driveNorm_, warmth_, flatness1m_);
+            excR[i] = chebR_.tick(excR[i], driveNorm_, warmth_, flatness1m_);
+        }
+    } else {
+        for (size_t i = 0; i < upLen; ++i) {
+            excL[i] = softClip(excL[i] * drive_);
+            excR[i] = softClip(excR[i] * drive_);
         }
     }
 
-    excScaleL_ = scaleL;
-    excScaleR_ = scaleR;
+    // Step 4: 2x downsample back to original rate
+    downsample2x(excL, downL, numFrames, lpfDownL_);
+    downsample2x(excR, downR, numFrames, lpfDownR_);
+
+    // Step 5: Mix excited harmonics back into dry signal with headroom protection
+    for (size_t n = 0; n < numFrames; ++n) {
+        const float dryL = upL[n * 2];
+        const float dryR = upL[n * 2 + 1];
+        float wetL = wet_ * excScale_ * downL[n];
+        float wetR = wet_ * excScale_ * downR[n];
+
+        const float absDryL = std::fabs(dryL);
+        const float absWetL = std::fabs(wetL);
+        if (absDryL + absWetL > 1.0f && absWetL > 1e-12f) {
+            const float room = std::max(0.0f, 1.0f - absDryL);
+            wetL *= room / absWetL;
+        }
+        const float absDryR = std::fabs(dryR);
+        const float absWetR = std::fabs(wetR);
+        if (absDryR + absWetR > 1.0f && absWetR > 1e-12f) {
+            const float room = std::max(0.0f, 1.0f - absDryR);
+            wetR *= room / absWetR;
+        }
+
+        left[n]  = std::clamp(dryL + wetL, -1.0f, 1.0f);
+        right[n] = std::clamp(dryR + wetR, -1.0f, 1.0f);
+    }
 }
 
 } // namespace ivanna

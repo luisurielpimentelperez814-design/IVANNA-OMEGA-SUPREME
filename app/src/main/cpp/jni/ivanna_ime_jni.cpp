@@ -1,32 +1,80 @@
-// ivanna_ime_jni.cpp — puente JNI para el Music Intelligence Engine (IME).
-// (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS.
-//
-// FIX (build roto, 2026-09-22): MusicIntelligenceWorker.kt llamaba a
-// IvannaNativeLib.nativeImeSetEnabled()/nativeImeDecideNow(), que no
-// resolvían a ningún símbolo — ni había declaración `external fun` en
-// IvannaNativeLib.kt ni wrapper JNI aquí. La lógica real (RT-safe, seqlock,
-// cero malloc) ya existía completa en music_intelligence/ImeBridge.{hpp,cpp}
-// — solo faltaba music_intelligence/*.cpp en el CMakeLists (ver ese archivo)
-// y este puente. Nada nuevo inventado: se expone tal cual la API existente
-// (ivanna::ime::imeSharedOpaque()->enabled, imeDecideNowJson()).
+// ivanna_ime_jni.cpp — Bridge JNI para MusicIntelligenceEngine + Singularidad Atlas-Escena
 #include <jni.h>
-#include <cstring>
+#include <atomic>
+#include <string>
 #include "../music_intelligence/ImeBridge.hpp"
+#include "../music_intelligence/SceneTargetBus.hpp"
+#include "../spatial/IvannaAudioPipeline.hpp"
 
-extern "C" {
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(JNIEnv*, jobject, jboolean on) {
-    auto* state = reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque());
-    state->enabled.store(on != JNI_FALSE, std::memory_order_relaxed);
+namespace {
+std::atomic<bool> g_imeEnabled{true};
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(JNIEnv* env, jobject) {
-    char buf[512];
-    const int n = ivanna::ime::imeDecideNowJson(buf, sizeof(buf));
-    if (n <= 0) return env->NewStringUTF("{}");
-    return env->NewStringUTF(buf);
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_imeEnabled.store(on, std::memory_order_relaxed);
+    reinterpret_cast<ivanna::ime::ImeSharedState*>(ivanna::ime::imeSharedOpaque())
+        ->enabled.store(on, std::memory_order_relaxed);
+    ivanna::ime::SceneTargetBus::instance().setSceneReconstructionEnabled(on);
 }
 
-} // extern "C"
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeDecideNow(
+    JNIEnv* env, jobject) {
+    if (!g_imeEnabled.load(std::memory_order_relaxed)) {
+        return env->NewStringUTF("{\"style\":\"disabled\",\"index\":-1,\"confidence\":0,\"gate\":0}");
+    }
+    std::string js = ivanna::ime::imeDecideNowJson();
+    return env->NewStringUTF(js.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetUseStatDereverb(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    ivanna::ime::SceneTargetBus::instance().setUseStatDereverb(on);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().roomEngine().setUseStatDereverb(on);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetUsePhysicalEr(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    ivanna::ime::SceneTargetBus::instance().setUsePhysicalEr(on);
+    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().roomEngine().setUsePhysicalEr(on);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetShaperMode(
+    JNIEnv*, jobject, jint mode) {
+    ivanna::ime::SceneTargetBus::instance().setShaperMode(static_cast<int>(mode));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetManualStyleOverride(
+    JNIEnv*, jobject, jint styleIdx) {
+    ivanna::ime::SceneTargetBus::instance().setManualStyleOverride(static_cast<int>(styleIdx));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetUserWarmthOverride(
+    JNIEnv*, jobject, jfloat warmthOrNeg) {
+    ivanna::ime::SceneTargetBus::instance().setUserWarmthOverride(static_cast<float>(warmthOrNeg));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetMaxCeilings(
+    JNIEnv*, jobject, jfloat maxInvGain, jfloat maxProjWet, jfloat maxExcWet) {
+    ivanna::ime::SceneTargetBus::instance().setMaxCeilings(
+        static_cast<float>(maxInvGain),
+        static_cast<float>(maxProjWet),
+        static_cast<float>(maxExcWet));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSoftReset(
+    JNIEnv*, jobject) {
+    ivanna::ime::imeSoftReset();
+}

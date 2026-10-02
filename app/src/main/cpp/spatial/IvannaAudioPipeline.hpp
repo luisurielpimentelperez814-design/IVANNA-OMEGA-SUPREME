@@ -11,6 +11,8 @@
 #include "ObjectSpatialRenderer.hpp"
 #include "PhysicalSceneRenderer.hpp"
 #include "HearingAdaptationEngine.hpp"
+#include "../music_intelligence/SceneTargetBus.hpp"
+#include "../dsp/ChebHarmonicShaper.hpp"
 #include "HybridRenderer.hpp"
 // Eje Supremo Neuroacústico (Eje 7): Inversión Biomecánica Coclear Activa
 // Cancelación de no-linealidades OHC (prestina) con resolución sub-microsegundo
@@ -72,6 +74,11 @@ public:
         const int blk  = static_cast<int>(std::clamp<size_t>(maxBlock, 16u, MAX_BLOCK_SIZE));
         sampleRate_ = sr;
         decomposer_.prepare(sr, blk);
+        spatialRenderer_.prepare(sr);
+        roomEngine_.prepare(sr);
+        chebShaperL_.prepare(sr);
+        chebShaperR_.prepare(sr);
+        aExcHpf_ = 1.0f - std::exp(-6.283185307179586f * 2800.0f / sr);
         cochlearEngine_.prepare(sr, blk);
         warpedLatticeInverter_.prepare(sr);
         transharmonicSynth_.prepare(sr);
@@ -115,6 +122,10 @@ public:
         shmMsoArbitrator_.reset();
         hybridMagistralRenderer_.reset();
         realityOrchestrator_.reset();
+        chebShaperL_.reset();
+        chebShaperR_.reset();
+        excLpL_ = 0.0f;
+        excLpR_ = 0.0f;
         realityEnv_.setImmediate(realityReconstructionEnabled_ ? 1.0f : 0.0f);
         lastRealitySeq_ = 0;
     }
@@ -235,6 +246,49 @@ public:
      *
      * Zero heap allocations, zero locks, 0.00 ms added algorithmic latency.
      */
+    void syncAtlasScenePreChunk(float& ioItdScale, float& outWidthScale, float& outTargetIacc) noexcept {
+        outWidthScale = 1.0f;
+        outTargetIacc = 0.45f;
+        auto& bus = ivanna::ime::SceneTargetBus::instance();
+        roomEngine_.setUseStatDereverb(bus.useStatDereverb());
+        roomEngine_.setUsePhysicalEr(bus.usePhysicalEr());
+
+        if (!bus.isSceneReconstructionEnabled()) {
+            spatialRenderer_.setStageElevationOffset(0.0f);
+            return;
+        }
+
+        const ivanna::ime::SceneApply sc = bus.peekLatest();
+        if (sc.seq == 0 || sc.gate <= 0.0f) {
+            spatialRenderer_.setStageElevationOffset(0.0f);
+            return;
+        }
+
+        const float guard   = bus.guardScale();
+        const float gGate   = std::clamp(sc.gate * guard, 0.0f, 1.0f);
+        const float maxInv  = bus.maxInvGainCeiling();
+        const float maxProj = bus.maxProjWetCeiling();
+
+        const float invGain = std::clamp((0.15f + 0.30f * (1.0f - sc.t.envDepth)) * gGate, 0.05f, maxInv);
+        const float projWet = std::clamp((0.08f + 0.28f * sc.t.envDepth) * gGate, 0.05f, maxProj);
+        const float Lx      = 4.5f + 7.5f * sc.t.wfsSpread;
+        const float Ly      = 5.5f + 9.5f * sc.t.hrtfDepth;
+        const float Lz      = 2.7f + 1.8f * sc.t.envDepth;
+        const float rt60    = 0.22f + 0.55f * sc.t.envDepth;
+
+        const float rawWidth = std::clamp(0.75f + 0.70f * sc.t.wfsSpread, 0.70f, 1.50f);
+        const float rawItd   = std::clamp(0.85f + 0.35f * sc.t.hrtfDepth, 0.75f, 1.25f);
+
+        outWidthScale = 1.0f + gGate * (rawWidth - 1.0f);
+        ioItdScale    = ioItdScale * (1.0f - gGate) + (ioItdScale * rawItd) * gGate;
+        outTargetIacc = sc.t.targetIacc;
+
+        roomEngine_.setInversionGain(invGain);
+        roomEngine_.setProjectionWet(projWet);
+        roomEngine_.setRoomGeometry(Lx, Ly, Lz, rt60);
+        spatialRenderer_.setStageElevationOffset(sc.t.stageElevation * gGate);
+    }
+
     void processLiveSpatialAxes(float* __restrict bufferL,
                                 float* __restrict bufferR,
                                 size_t numSamples,
@@ -251,6 +305,11 @@ public:
             float* chL = bufferL + offset;
             float* chR = bufferR + offset;
 
+            for (size_t i = 0; i < chunk; ++i) {
+                dryScratchL_[i] = chL[i];
+                dryScratchR_[i] = chR[i];
+            }
+
             // 1. Eje 1: Descomponer estéreo en 4 objetos discretos (CENTER, LEFT, RIGHT, AMBIENT)
             float* objPtrs[4] = {
                 objectBuffers_[0].data(),
@@ -260,9 +319,12 @@ public:
             };
             decomposer_.decompose(chL, chR, objPtrs, chunk);
 
-            // 2. Acoplamiento con AcousticRealityOrchestrator + Eje 2 ITD
+            // 2. Acoplamiento con AcousticRealityOrchestrator + Atlas-Escena (M4) + Eje 2 ITD
             std::array<DecomposedObject, 4> activeObjs = decomposer_.getObjects();
             float itdScale = personalizer_.getItdScale();
+            float atlasWidthScale = 1.0f;
+            float atlasTargetIacc = 0.45f;
+            syncAtlasScenePreChunk(itdScale, atlasWidthScale, atlasTargetIacc);
             float realityK = 0.0f;
             const float targetReality = realityReconstructionEnabled_ ? 1.0f : 0.0f;
             if (realityEnv_.beginBlock(targetReality)) {
@@ -301,7 +363,7 @@ public:
                 itdScale = itdScale * (1.0f - realityK) + targetItd * realityK;
             }
 
-            // 3. Eje 4: ObjectSpatialRenderer con mezcla húmeda controlada (ITD + ILD + ER)
+            // 3. Eje 4: ObjectSpatialRenderer con mezcla húmeda controlada (Woodworth ITD + Brown-Duda + ER)
             spatialRenderer_.setEstimatedRoomT60(roomEngine_.estimatedRoomT60());
             const bool hybridActive = hybridMagistralRenderer_.isEnabled();
             const float wetObj = (allowSpatialRender && !hybridActive)
@@ -311,7 +373,7 @@ public:
                 spatialRenderer_.renderObjects(
                     objPtrs, activeObjs,
                     spatialScratchL_.data(), spatialScratchR_.data(),
-                    chunk, itdScale);
+                    chunk, itdScale, atlasWidthScale);
                 const float dryObj = 1.0f - 0.35f * wetObj;
                 for (size_t i = 0; i < chunk; ++i) {
                     chL[i] = chL[i] * dryObj + spatialScratchL_[i] * wetObj;
@@ -332,6 +394,39 @@ public:
                 hybridMagistralRenderer_.renderPlanar(chL, chR, chunk);
             } else {
                 roomEngine_.process(chL, chR, chunk);
+                ivanna::ime::SceneTargetBus::instance().publishLateRatio(roomEngine_.lateRatio());
+            }
+
+            // 6c. Excitación Armónica Chebyshev T2+T3 gobernada por el Atlas (M4 + M9)
+            {
+                auto& bus = ivanna::ime::SceneTargetBus::instance();
+                const ivanna::ime::SceneApply sc = bus.peekLatest();
+                if (bus.isSceneReconstructionEnabled() && sc.seq > 0 && sc.gate > 0.0f) {
+                    const float gGate = std::clamp(sc.gate * bus.guardScale(), 0.0f, 1.0f);
+                    const float excDrive = std::clamp(0.15f + 0.55f * sc.t.warmth, 0.10f, 0.75f);
+                    const float presFactor = 1.0f - 0.5f * std::clamp(sc.presenceRatio / 0.25f, 0.0f, 1.0f);
+                    const float excWet = std::clamp((0.06f + 0.18f * sc.t.warmth) * presFactor,
+                                                    0.04f, bus.maxExcWetCeiling()) * gGate;
+                    const int mode = bus.shaperMode();
+                    for (size_t i = 0; i < chunk; ++i) {
+                        excLpL_ += aExcHpf_ * (chL[i] - excLpL_);
+                        excLpR_ += aExcHpf_ * (chR[i] - excLpR_);
+                        const float hiL = chL[i] - excLpL_;
+                        const float hiR = chR[i] - excLpR_;
+                        float harmL = 0.0f, harmR = 0.0f;
+                        if (mode == 1) {
+                            harmL = chebShaperL_.tick(hiL, excDrive, sc.t.warmth, sc.flatness1m);
+                            harmR = chebShaperR_.tick(hiR, excDrive, sc.t.warmth, sc.flatness1m);
+                        } else {
+                            const float xL = std::clamp(hiL * (1.0f + excDrive * 4.0f), -3.0f, 3.0f);
+                            const float xR = std::clamp(hiR * (1.0f + excDrive * 4.0f), -3.0f, 3.0f);
+                            harmL = xL * (27.0f + xL * xL) / (27.0f + 9.0f * xL * xL);
+                            harmR = xR * (27.0f + xR * xR) / (27.0f + 9.0f * xR * xR);
+                        }
+                        chL[i] = std::clamp(chL[i] + excWet * harmL, -1.0f, 1.0f);
+                        chR[i] = std::clamp(chR[i] + excWet * harmR, -1.0f, 1.0f);
+                    }
+                }
             }
 
             // 7. Eje 6: HearingAdaptationEngine (isófonas, sello ear-tip, presbicusia y fatiga)
@@ -344,6 +439,10 @@ public:
             if (runCochlearStage) {
                 cochlearEngine_.process(chL, chR, static_cast<int>(chunk));
             }
+
+            // 9. Guarda Cibernética de Realismo M10 (C_t, C_s, C_d, Q y protección anti-fase / transitorios)
+            (void)ivanna::ime::SceneTargetBus::instance().updateRealismM10(
+                dryScratchL_.data(), dryScratchR_.data(), chL, chR, chunk, sr, atlasTargetIacc);
 
             offset += chunk;
         }
@@ -532,6 +631,13 @@ private:
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};
     alignas(16) std::array<float, MAX_BLOCK_SIZE> spatialScratchL_{};
     alignas(16) std::array<float, MAX_BLOCK_SIZE> spatialScratchR_{};
+    alignas(16) std::array<float, MAX_BLOCK_SIZE> dryScratchL_{};
+    alignas(16) std::array<float, MAX_BLOCK_SIZE> dryScratchR_{};
+    ivanna::dsp::ChebHarmonicShaper chebShaperL_{};
+    ivanna::dsp::ChebHarmonicShaper chebShaperR_{};
+    float aExcHpf_{0.30f};
+    float excLpL_{0.0f};
+    float excLpR_{0.0f};
     float sampleRate_{48000.0f};
 
     // Atomic singleton pointer — registered by ivanna_omega_jni.cpp (Ruta A/C)

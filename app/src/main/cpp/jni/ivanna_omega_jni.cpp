@@ -1637,6 +1637,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
             !g_wfs_enabled.load(std::memory_order_relaxed);
+        ivanna::ime::imeFeedPlanar(g_ats.pdOutL, g_ats.pdOutR, n, srNow);
         ivanna_pilstm_bridge_tick_block(g_ats.pdOutL, g_ats.pdOutR, n, srNow);
         pipe.processLiveSpatialAxes(
             g_ats.pdOutL, g_ats.pdOutR, nSamples, srNow, allowLiveSpatial, 0.16f,
@@ -1971,6 +1972,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
             !g_wfs_enabled.load(std::memory_order_relaxed);
+        ivanna::ime::imeFeedPlanar(oL, oR, n, srNow);
         ivanna_pilstm_bridge_tick_block(oL, oR, n, srNow);
         pipe.processLiveSpatialAxes(
             oL, oR, nSamples, srNow, allowLiveSpatial, 0.16f,

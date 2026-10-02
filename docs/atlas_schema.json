@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IVANNA Atlas-Escena 12D Acoustic Manifold Schema",
+  "version": "2.0.0",
+  "featureVector12D": [
+    {"index": 0,  "name": "bassRatio",       "range": [0.0, 1.0], "layer": "Fundamental / Sub-Cuerpo (20-500 Hz)"},
+    {"index": 1,  "name": "trebleRatio",     "range": [0.0, 1.0], "layer": "Agudos Legacy (>2 kHz)"},
+    {"index": 2,  "name": "crest24",         "range": [0.0, 1.0], "layer": "Dinámica D (crestDb / 24 dB)"},
+    {"index": 3,  "name": "stereoWidth",     "range": [0.0, 1.0], "layer": "Movimiento Espacial M (1 - rho_LR)"},
+    {"index": 4,  "name": "transientRate",   "range": [0.0, 1.0], "layer": "Capa Transitoria (densidad de onsets)"},
+    {"index": 5,  "name": "density",         "range": [0.0, 1.0], "layer": "Textura T (proporción de muestras activas)"},
+    {"index": 6,  "name": "presenceRatio",   "range": [0.0, 1.0], "layer": "Banda Presencia Atlas (3-8 kHz / E_total)"},
+    {"index": 7,  "name": "airRatio",        "range": [0.0, 1.0], "layer": "Banda Aire Atlas (8-20 kHz / E_total)"},
+    {"index": 8,  "name": "flatness1m",      "range": [0.0, 1.0], "layer": "Densidad Armónica H (1 - SFM de 5 bandas)"},
+    {"index": 9,  "name": "onsetRegularity", "range": [0.0, 1.0], "layer": "Ritmo R (1 - CV(IOI): groove vs polímetro)"},
+    {"index": 10, "name": "lraProxy12",      "range": [0.0, 1.0], "layer": "Crecimiento Orgánico D (std(loudness_st)/12 dB)"},
+    {"index": 11, "name": "sideMid",         "range": [0.0, 1.0], "layer": "Ambiente M/S (E_S / (E_M + E_S))"}
+  ],
+  "complementaryBandsHz": [
+    {"name": "Sub",        "fLowHz": 20,   "fHighHz": 80},
+    {"name": "Cuerpo",     "fLowHz": 80,   "fHighHz": 400},
+    {"name": "Definicion", "fLowHz": 400,  "fHighHz": 3000},
+    {"name": "Presencia",  "fLowHz": 3000, "fHighHz": 8000},
+    {"name": "Aire",       "fLowHz": 8000, "fHighHz": 20000}
+  ],
+  "styles": [
+    "progressive_rock_70s",
+    "analog_warm_60s",
+    "stadium_rock_80s",
+    "modern_compressed",
+    "jazz_live_room",
+    "electronic_dense",
+    "organic_build_dynamic",
+    "polymetric_complex",
+    "groove_impact",
+    "harmonic_dense_keys",
+    "riff_texture",
+    "wide_scene_studio"
+  ],
+  "realismMetricsM10": {
+    "cTransient": "C_t = <e_in, e_out> / (||e_in|| * ||e_out||), guarda si < 0.85",
+    "cSpatial": "C_s = 1 - |IACC_out - IACC_target(style)|",
+    "cDynamic": "C_d = 1 - clamp(|crest_out - crest_in| / 12 dB, 0, 1)",
+    "qScore": "Q = max(0.05, C_t^0.4 * C_s^0.3 * C_d^0.3)"
+  }
+}
