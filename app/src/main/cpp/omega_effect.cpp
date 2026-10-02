@@ -30,6 +30,7 @@
 #include <atomic>
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
+#include "include/rt_band_meter.hpp"
 #include <cmath>
 #include <mutex>
 #include <condition_variable>
@@ -272,6 +273,7 @@ struct omega_effect_context_t {
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
     ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
+    uint64_t supremeAxesApplyCount;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -395,6 +397,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
                                             const ivanna::OmegaDspSnapshot& s) noexcept {
     if (!ctx) return;
+    ctx->supremeAxesApplyCount += 1u;
     if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
         return;
     }
@@ -833,7 +836,6 @@ static int32_t omega_process(effect_handle_t self,
     if (ctx->ctrlBusOpen) {
         ivanna::OmegaDspSnapshot snap;
         if (ivanna::effectControlBus().readLatest(snap, ctx->lastAppliedGen)) {
-            omega_apply_supreme_axes(ctx, snap);
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
             if (realityOrch.isEnabled()) {
                 realityOrch.coordinateSnapshot(snap);
@@ -923,9 +925,9 @@ static int32_t omega_process(effect_handle_t self,
         ctx->volterraEngine->setEnabled(wantVolterraPre);
         ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
     }
+    const auto unifiedSnapPre = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
     if (ctx->cochlearEngine) {
         const auto& snapPre = ctx->pendingSnap;
-        const auto unifiedSnapPre = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
         const bool  cochOnPre = ((snapPre.flags & ivanna::OMEGA_FLAG_COCHLEAR_ON) != 0) || unifiedSnapPre.cochlearEnabled;
         const float intensityPre =
             (std::isfinite(snapPre.cochlear_intensity) && snapPre.cochlear_intensity > 0.0f)
@@ -934,14 +936,16 @@ static int32_t omega_process(effect_handle_t self,
         ctx->cochlearEngine->setIntensity(intensityPre);
         ctx->cochlearEngine->setEnabled(cochOnPre && (unifiedSnapPre.activeCochlearVariant == 0u));
         ctx->cochlearEngine->setThermalBypass(ctx->thermalSkipVolterra);
-        if (ctx->unifiedPipeline) {
-            auto localUnifiedSnap = unifiedSnapPre;
+    }
+    if (ctx->unifiedPipeline) {
+        auto localUnifiedSnap = unifiedSnapPre;
+        if (ctx->cochlearEngine) {
             localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::CochlearPinn, false);
-            if (ctx->antiDolby) {
-                localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::AntiDolbyClassic, false);
-            }
-            ctx->unifiedPipeline->syncFromSnapshotPreLoop(localUnifiedSnap);
         }
+        if (ctx->antiDolby) {
+            localUnifiedSnap.setStageEnabled(ivanna::unified::StageId::AntiDolbyClassic, false);
+        }
+        ctx->unifiedPipeline->syncFromSnapshotPreLoop(localUnifiedSnap);
     }
     if (ctx->supremeLattice)   ctx->supremeLattice->setThermalBypass(ctx->thermalSkipVolterra);
     if (ctx->supremeCvnn)      ctx->supremeCvnn->setThermalBypass(ctx->thermalSkipVolterra);
@@ -1951,6 +1955,43 @@ static int32_t omega_get_descriptor_lib(const effect_uuid_t *uuid,
 //     anterior eliminó → quedó rota por construcción.
 // El push SAF→ObjectRenderer inter-proceso sigue siendo alcance
 // separado (documentado en saf_latent_bridge.cpp).
+
+extern "C" uint64_t omega_test_get_supreme_axes_apply_count(effect_handle_t self) noexcept {
+    if (!self) return 0;
+    auto* ctx = reinterpret_cast<omega_effect_context_t*>(self);
+    return ctx->supremeAxesApplyCount;
+}
+
+extern "C" void omega_test_reset_supreme_axes_apply_count(effect_handle_t self) noexcept {
+    if (!self) return;
+    auto* ctx = reinterpret_cast<omega_effect_context_t*>(self);
+    ctx->supremeAxesApplyCount = 0;
+}
+
+extern "C" void omega_test_inject_snapshot_for_next_process(effect_handle_t self,
+                                                            const ivanna::OmegaDspSnapshot& snap) noexcept {
+    if (!self) return;
+    auto* ctx = reinterpret_cast<omega_effect_context_t*>(self);
+    static constexpr const char* kTestBusPath = "/tmp/omega_test_control_bus_shm";
+    (void)ivanna::effectControlBus().openWriter(kTestBusPath);
+    ivanna::OmegaDspSnapshot s = snap;
+    ivanna::effectControlBus().publish(s);
+    ctx->ctrlBusOpen = ivanna::effectControlBus().openReader(kTestBusPath);
+    ctx->lastAppliedGen = 0;
+}
+
+extern "C" void omega_test_nullify_cochlear_engine(effect_handle_t self) noexcept {
+    if (!self) return;
+    auto* ctx = reinterpret_cast<omega_effect_context_t*>(self);
+    delete ctx->cochlearEngine;
+    ctx->cochlearEngine = nullptr;
+}
+
+extern "C" ivanna::unified::DeclarativeUnifiedPipeline* omega_test_get_unified_pipeline(effect_handle_t self) noexcept {
+    if (!self) return nullptr;
+    auto* ctx = reinterpret_cast<omega_effect_context_t*>(self);
+    return ctx->unifiedPipeline;
+}
 
 /* ── SÍMBOLO "AELI" — el que audioserver busca con dlsym() ───────────────── */
 extern "C" __attribute__((visibility("default"), used))
