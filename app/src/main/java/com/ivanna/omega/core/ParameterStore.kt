@@ -113,8 +113,8 @@ class ParameterStore(context: Context) {
         private const val KEY_AUDIO_PROFILE_ID = "audio_profile_id"
         private const val KEY_ADAPTIVE_MANUAL_MODE = "adaptive_manual_mode"
 
-        // Preset de primer arranque (IVANNA_OMEGA_SIGNATURE)
-        private const val KEY_SIGNATURE_APPLIED = "signature_preset_applied"
+        // Preset de arranque sincronizado con la versión actual (IVANNA_OMEGA_SIGNATURE v2.3.18)
+        private const val KEY_SIGNATURE_APPLIED = "signature_preset_applied_v2318"
         private const val KEY_ANTI_DOLBY_INTENSITY = "anti_dolby_intensity"
 
         // Intelligent Upmixing (HOA → Binaural)

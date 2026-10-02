@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.3.17
-versionCode=2317
+version=v2.3.18
+versionCode=2318
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.3.17: Magistral Hybrid 128-Tap KEMAR Binaural + Schroeder/Moorer Room Engine, 6DoF Quaternion Spatial Renderer, Kalman Period Refiner & Complete End-to-End UI Wiring.
+description=v2.3.18: Adaptive Spatial Audio v3.0 (Physical Sony MHC-PZ1D 2.4m Geometry, Schroeder Modal Cutoff, Live-Room T60 Limiter, Constant-Power Crossfade & Single-Path Arbitration).
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

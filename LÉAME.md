@@ -10,7 +10,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
 [![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20159%2F159%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
-[![Version](https://img.shields.io/badge/Release-v2.3.16%20%282316%29-00F0FF?style=for-the-badge)](version.properties)
+[![Version](https://img.shields.io/badge/Release-v2.3.18%20%282318%29-00F0FF?style=for-the-badge)](version.properties)
 [![DSP](https://img.shields.io/badge/DSP-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![SOFA-SAF-RIR](https://img.shields.io/badge/SOFA%20255%20%C2%B7%20SAF%207D%20%C2%B7%20RIR%20200-Trained%20Master-00E5FF?style=for-the-badge)](app/src/main/cpp/spatial/SofaSafRirMasterKnowledge.hpp)
 
@@ -20,7 +20,7 @@
 
 ---
 
-## ✦ Resumen Ejecutivo (`v2.3.16`)
+## ✦ Resumen Ejecutivo (`v2.3.18`)
 
 1. **Fusión en Lazo Cerrado (`OmniHolographicSingularityEngine` + `DeclarativeUnifiedPipeline`)**:
    - Une en un solo sistema cerrado la inferencia fuera del hilo RT (`HeavyWorkerEngine`: `TinyML`, `AntiDolbyAI` Pi-LSTM, `IvannaNeuromorphicTinyML` SeqLock, `Wave-U-Net`, `Quantum-PINN`) con el `AcousticRealityOrchestrator` (Fases 0–15), publicando descriptores atómicos `SingularityFieldDescriptor` hacia el hilo de audio.

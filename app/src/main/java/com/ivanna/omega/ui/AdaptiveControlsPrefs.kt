@@ -61,7 +61,8 @@ data class AdaptiveControlsState(
     val compressorAttack: Float = 12f,
     val compressorRelease: Float = 110f,
     // Motor Híbrido Magistral (HRTF KEMAR 128-Tap + Sala Schroeder/Moorer)
-    val hybridMagistralEnabled: Boolean = true,
+    // §0.4: Por defecto false para evitar doble HRTF/cola sobre ObjectSpatialRenderer + RirConvolver
+    val hybridMagistralEnabled: Boolean = false,
     val hybridBinauralWet: Float = 0.65f,
     val hybridRoomSize: Float = 0.55f,
     val hybridRoomAbsorption: Float = 0.35f,

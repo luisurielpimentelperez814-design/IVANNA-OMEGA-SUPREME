@@ -20,7 +20,7 @@
 [![Host CTest Suite](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=cplusplus&logoColor=white&label=CTEST%20154%2F154%20%28ASAN%2BUBSAN%29&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
 [![Supply Chain SLSA](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/supply-chain.yml?branch=main&style=for-the-badge&logo=slsa&logoColor=white&label=SLSA%20%C2%B7%20SBOM%20%C2%B7%20COSIGN&color=F7B733)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/supply-chain.yml)
 
-[![Version](https://img.shields.io/badge/Versi%C3%B3n%20Unificada-v2.3.16%20%282316%29-00F0FF?style=for-the-badge&logo=android&logoColor=white)](version.properties)
+[![Version](https://img.shields.io/badge/Versi%C3%B3n%20Unificada-v2.3.18%20%282318%29-00F0FF?style=for-the-badge&logo=android&logoColor=white)](version.properties)
 [![Android SDK](https://img.shields.io/badge/Android-9.0%20%E2%86%92%2015%20%28API%2028%E2%80%9335%29-3DDC84?style=for-the-badge&logo=android&logoColor=white)](app/build.gradle.kts)
 [![Native Core](https://img.shields.io/badge/N%C3%BAcleo%20DSP-332%20Archivos%20C%2B%2B20%20%28112.4K%20LOC%29-6FF3FF?style=for-the-badge&logo=cplusplus&logoColor=white)](app/src/main/cpp/)
 [![UI Compose](https://img.shields.io/badge/UI%20Aurora%20Obsidiana-221%20Archivos%20Kotlin%20%2850.1K%20LOC%29-A97FFF?style=for-the-badge&logo=kotlin&logoColor=white)](app/src/main/java/com/ivanna/omega/)
@@ -152,7 +152,7 @@ flowchart TB
 <img src="docs/release_media/ivanna_singularity_architecture.svg" alt="Arquitectura de Lazo Cerrado Omni-Holographic Singularity Engine y SupremeAcousticStabilityGuard" width="100%" />
 </div>
 
-En `v2.3.16`, todas las familias de procesamiento avanzado (Anti-Dolby clásico, inferencia TinyML neuromórfica, separación de fuentes Wave-U-Net, linealización cuántico-física PINN y el hiper-orquestador de realidad acústica) convergen en el **`DeclarativeUnifiedPipeline`** de 5 etapas bajo el contrato estricto `UnifiedDspStage`:
+En `v2.3.18`, todas las familias de procesamiento avanzado (Anti-Dolby clásico, inferencia TinyML neuromórfica, separación de fuentes Wave-U-Net, linealización cuántico-física PINN y el hiper-orquestador de realidad acústica) convergen en el **`DeclarativeUnifiedPipeline`** de 5 etapas bajo el contrato estricto `UnifiedDspStage`:
 
 ### Las 5 Etapas del `DeclarativeUnifiedPipeline`
 
@@ -392,7 +392,7 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 
 ## ✦ 11. IVANNA OMEGA SUPREME frente a los Estándares Comerciales de la Industria
 
-| Dimensión Técnica | Dolby Atmos Mobile | Apple Spatial Audio | Sony 360RA / DSEE Ultimate | Dirac Live / Virtuo | **IVANNA OMEGA SUPREME (`v2.3.16`)** |
+| Dimensión Técnica | Dolby Atmos Mobile | Apple Spatial Audio | Sony 360RA / DSEE Ultimate | Dirac Live / Virtuo | **IVANNA OMEGA SUPREME (`v2.3.18`)** |
 |-------------------|--------------------|---------------------|----------------------------|---------------------|--------------------------------------|
 | **Arquitectura de Espacialización** | Upmixer paramétrico + reverberador sintético fijo | HRTF genérica + escaneo TrueDepth (cerrado a hardware Apple) | Selección discreta de perfil por foto en la nube | Corrección FIR/IIR de fase mixta con latencia de bloque | **Ambisonics 4.º Orden (16 ch) + WFS 2.5D/4D + 255 SOFA + Manifold 7-D SAF + 200 BRIR reales True-Stereo 4x** |
 | **Fusión IA $\leftrightarrow$ DSP Espacial** | Reglas estáticas por perfil (*Movie / Music / Game*) | Sin lazo cerrado entre clasificador semántico y campo de onda | CNN aislada en magnitud sin control del campo espacial | Sin inferencia neuromórfica en tiempo real | **Lazo cerrado `HeavyWorkerEngine` $\leftrightarrow$ `AcousticRealityOrchestrator` $\leftrightarrow$ `OmniHolographicSingularityEngine`** |
@@ -406,22 +406,22 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 
 ## ✦ 12. Calidad Verificada en CI (`159/159 CTest`) e Instalación
 
-### Estado Verificado de Integración Continua (`v2.3.16`, commit `d70e9a0f`)
+### Estado Verificado de Integración Continua (`v2.3.18`)
 
 | Flujo / Suite de Verificación | Estado en GitHub Actions | Cobertura Técnica Auditada |
 |-------------------------------|:------------------------:|----------------------------|
 | **Datasets HRTF & SOFA (`tests-host.yml`)** | ✅ `SUCCESS` | Validación binaria de los 12 archivos `.ihr1`, firma HDF5 (`894844460d0a1a0a`) de los 255 `.sofa`, `pca_basis.bin` y las 200 salas WAV BRIR. |
 | **Host CTest Suite (`159/159` Tests)** | ✅ `SUCCESS` (`15.99 s`) | **159 de 159 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8: `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit` y `Phase8_OmniHolographicSingularityFusionClosedLoop`), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_phase2_jni_natives`, `test_phase3_jni_callers`, `test_phase4_5_header_rt_wiring` y `test_rt_no_alloc`. |
 | **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las 159 pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
-| **Build APK & Native Binaries (`build.yml`)** | ✅ `SUCCESS` | Compilación con Android NDK ARM64 (`arm64-v8a`), verificación de flags de seguridad ELF (`PIE`, `Full RELRO`, `BIND_NOW`), sincronización estricta de `version.properties` (`v2.3.16 / 2316`) y empaquetado de artefactos. |
-| **Verify & Publish GitHub Release** | ✅ `SUCCESS` | Extracción, validación de integridad de artefactos y publicación automática de `ivanna_omega_supreme_v2.3.16.zip` (Módulo Magisk/KernelSU) y el APK firmado para `update.json`. |
+| **Build APK & Native Binaries (`build.yml`)** | ✅ `SUCCESS` | Compilación con Android NDK ARM64 (`arm64-v8a`), verificación de flags de seguridad ELF (`PIE`, `Full RELRO`, `BIND_NOW`), sincronización estricta de `version.properties` (`v2.3.18 / 2318`) y empaquetado de artefactos. |
+| **Verify & Publish GitHub Release** | ✅ `SUCCESS` | Extracción, validación de integridad de artefactos y publicación automática de `ivanna_omega_supreme_v2.3.18.zip` (Módulo Magisk/KernelSU) y el APK firmado para `update.json`. |
 
 ### Guía de Instalación Rápida (Con Root y Sin Root)
 
 1. **Descarga Oficial**:
-   - Ve a la sección [**Releases**](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest) o al último artefacto verde de GitHub Actions y descarga el APK y (si tienes Root) `ivanna_omega_supreme_v2.3.16.zip`.
+   - Ve a la sección [**Releases**](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest) o al último artefacto verde de GitHub Actions y descarga el APK y (si tienes Root) `ivanna_omega_supreme_v2.3.18.zip`.
 2. **En Dispositivos CON Root (Magisk / KernelSU — Ruta B Global + Ruta A)**:
-   - Flashea `ivanna_omega_supreme_v2.3.16.zip` desde la app de Magisk o KernelSU y **reinicia el dispositivo**.
+   - Flashea `ivanna_omega_supreme_v2.3.18.zip` desde la app de Magisk o KernelSU y **reinicia el dispositivo**.
    - Instala el APK de **IVANNA OMEGA SUPREME**. Al abrirla, el daemon `ivanna_daemon` (`SCHED_FIFO 98`) y `libomega_effect.so` ya estarán activos dentro de `audioserver` con la calibración maestra `#51` desde $t = 0\text{ ms}$.
 3. **En Dispositivos SIN Root (Ruta A En Proceso + Captura + USB-C DAC Directo)**:
    - Instala únicamente el APK de **IVANNA OMEGA SUPREME**.
