@@ -1089,14 +1089,23 @@ static int32_t omega_process(effect_handle_t self,
         // Cable RIR: aplicar reverberación de sala con transición térmica suave.
         // RirConvolver mantiene rampa interna wetNow_ -> wetTarget y retorna en O(1)
         // cuando ambos llegan a cero (cero clics al entrar/salir de ThermalTier::LIMITED).
+        // FIX CINEMA / AMAZON PRIME VIDEO: En pasajes con diálogo hablado activo (voz detectada),
+        // atenuamos la reverberación sintética un 75% (-12 dB) para eliminar el eco y preservar
+        // inteligibilidad cristalina y sincronía labial perfecta, abriendo la sala en pasajes puramente musicales.
         if (ctx->rirConvolver &&
             ctx->stabilityGuard.arbitration().claimRoomSlot(
                 ivanna::supreme::AcousticModuleId::RirConvolver)) {
             const float limitedSnapWet = ivanna::spatial::RoomGeometryConfig::limitSyntheticReverbWetForRoomT60(
                 ctx->pendingSnap.room_wet, ctx->pendingSnap.room_rt60_s);
+            const bool isVoiceActive = (ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
+                                        ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced);
+            const float voiceDuck = isVoiceActive ? 0.25f : 1.0f;
             const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
-                ? std::clamp(limitedSnapWet, 0.0f, 0.45f)
+                ? std::clamp(limitedSnapWet * voiceDuck, 0.0f, 0.45f)
                 : 0.0f;
+            if (ctx->audioPipeline) {
+                ctx->audioPipeline->setExternalRirActive(desiredRirWet > 1.0e-4f);
+            }
             ctx->rirConvolver->setWetDry(desiredRirWet);
             ctx->rirConvolver->process(L, R, chunk);
             ctx->stabilityGuard.enforceStageEnergyCeiling(

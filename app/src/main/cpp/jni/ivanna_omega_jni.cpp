@@ -1587,7 +1587,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             }
         }
         if (s_rirConvolver->isLoaded()) {
+            const bool extActive = (s_rirConvolver->wetDry() > 0.001f);
+            g_liveAudioPipeline.setExternalRirActive(extActive);
             s_rirConvolver->process(g_ats.pdOutL, g_ats.pdOutR, n);
+        } else {
+            g_liveAudioPipeline.setExternalRirActive(false);
         }
         } // !s_rirConvolver guard
     }
