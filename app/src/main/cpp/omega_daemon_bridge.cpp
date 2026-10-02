@@ -1,3 +1,6 @@
+// omega_daemon_bridge.cpp — Puente SHM real entre ivanna_daemon y el proceso app.
+// Abre /data/adb/ivanna_omega/omega_shm, valida ShmHeader (magic/version/state_size)
+// mediante ivanna::validateShmHeader y expone OmegaSharedState* a JNI.
 #include <android/log.h>
 #include <atomic>
 #include <fcntl.h>

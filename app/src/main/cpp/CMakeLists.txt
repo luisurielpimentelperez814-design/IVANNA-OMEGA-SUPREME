@@ -81,12 +81,10 @@ add_library(ivanna_omega SHARED
     SafModelLoader.cpp
     # SAF Spatial Runtime (solo si existe en el checkout)
     $<$<BOOL:${EXISTS_SAF_SPATIAL_RUNTIME}>:SafSpatialRuntime.cpp>
-    # NOTA (auditoria 2026-08-24): SofaHRTFLoader.cpp y SafHRTFBridge.cpp
-    # retirados del target — cadena muerta confirmada: SafHRTFBridge solo se
-    # incluye a si mismo (0 call-sites), SofaHRTFLoader solo es usado por
-    # SafHRTFBridge. La HRTF real llega via IHR1 -> HRTFBinLoader ->
-    # SafHRTFDatasetBridge -> hrtf_convolver. Los archivos permanecen en el
-    # repo por si se retoma la carga SOFA directa (libmysofa).
+    # SofaHRTFLoader.cpp y SafHRTFBridge.cpp se compilan en este target (líneas 51-52)
+    # y alimentan la etapa SofaSafAnalysisBridge / HeavyWorkerEngine (omega_wave_stages.hpp);
+    # la ruta binaria IHR1 -> HRTFBinLoader -> SafHRTFDatasetBridge -> hrtf_convolver
+    # opera en paralelo para convolución directa en tiempo real.
     HRTFBinLoader.cpp
     SafHRTFDatasetBridge.cpp
     SaFStimulusRenderer.cpp
@@ -144,13 +142,12 @@ add_library(ivanna_omega SHARED
     # (daemon/omega_daemon.cpp, sin CMakeLists que lo enlace) se atacan en
     # commits siguientes.
 
-    # FIX (build): stub del puente omega_daemon → app process.
+    # Puente SHM real omega_daemon → proceso app.
     # Define omega_daemon_get_shared_state() referenciado por
-    # jni/ivanna_omega_jni.cpp:233 (audioRouteBridgeLoop). Devuelve
-    # nullptr; el caller ya maneja ese caso con `if (!shared) continue;`
-    # → el hilo puente se duerme silenciosamente. Ver el .cpp para el
-    # plan de sustitución cuando se restaure el puente memfd real.
-    omega_daemon_bridge_stub.cpp
+    # jni/ivanna_omega_jni.cpp (audioRouteBridgeLoop): abre y mapea
+    # /data/adb/ivanna_omega/omega_shm con validación de ShmHeader
+    # (ivanna::validateShmHeader) y devuelve el puntero a OmegaSharedState.
+    omega_daemon_bridge.cpp
 
     # FIX (build): undefined symbols g_upmixing_enabled /
     # g_upmixing_immersivity en libivanna_omega.so. Las definiciones

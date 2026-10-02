@@ -6,9 +6,10 @@
  * IVANNA OMEGA SUPREME — AdaptiveDecisionEngine (EXPERIMENTAL)
  * ============================================================================
  *
- * FASE 3 — capa de control lento. NO forma parte del audio thread todavía:
- * este módulo vive aislado en experimental/adaptive_engine/, no está
- * enlazado a ningún target de producción ni consumido por nativeProcess().
+ * FASE 3 — capa de control lento en producción. Conectada a ambos targets
+ * (`libivanna_omega.so` en Ruta A / `nativeProcess` y `libomega_effect.so`
+ * en Ruta B / `omega_process`), comunicándose con el hilo RT mediante buses
+ * seqlock libres de bloqueos (`RawMetricsBus` y `AdaptiveStateBus`).
  *
  * Arquitectura (mismo patrón que ControlFrame/ControlFrameBus, ya en
  * producción en control_frame.hpp — ver ese archivo para el razonamiento

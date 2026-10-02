@@ -13,15 +13,11 @@ namespace ivanna::experimental {
 namespace {
 constexpr float kEps = 1e-8f;
 
-// SafetyLimiter (app/src/main/cpp/include/SafetyLimiter.h, en producción,
-// NO se toca ni se incluye desde aquí) usa threshold=0.98855f/ceiling=0.989f.
-// Se repite el valor aquí como constante local — este módulo no depende de
-// SafetyLimiter, solo del VALOR que ya es de dominio público en el pipeline,
-// para poder calcular "qué tan cerca está el pico del techo real".
+// SafetyLimiter (app/src/main/cpp/include/SafetyLimiter.h) usa
+// threshold=0.98855f y ceiling=0.989f por defecto. Se definen aquí como
+// constantes locales para calcular proximidad de headroom en dB y convertir
+// reducción lineal a dB en gainReductionLinearToDb() sin acoplar el header.
 constexpr float kLimiterThreshold = 0.98855f;
-// Idem — ceiling real de SafetyLimiter (setParams() default). Necesario
-// para gainReductionLinearToDb(); no existía esta constante en el archivo
-// todavía porque hasta ahora nada la usaba.
 constexpr float kLimiterCeiling = 0.989f;
 
 inline float clamp01(float x) noexcept {

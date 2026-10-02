@@ -106,7 +106,7 @@ static_assert(offsetof(ShmHeader, state_size) == 20, "ShmHeader.state_size debe 
 
 // ── Validación canónica del header (FASE 5: magic/version/state_size/bounds) ──
 // UNICA fuente de verdad para "¿este mmap es una region SHM nuestra y sana?".
-// La usan el bridge C++ de la app (omega_daemon_bridge_stub.cpp), los tests
+// La usan el bridge C++ de la app (omega_daemon_bridge.cpp), los tests
 // host y cualquier futuro reader. Kotlin replica la misma lógica con los
 // offsets absolutos de arriba (no puede incluir este header).
 //

@@ -70,7 +70,7 @@
 // con la declaración original (la regla de C++ sólo restringe la
 // linkage entre archivos, no el lookup dentro del mismo archivo).
 // FIX (build, undefined symbol al linkear libivanna_omega.so):
-// omega_daemon_bridge_stub.cpp DEFINE este simbolo como `extern "C"`,
+// omega_daemon_bridge.cpp DEFINE este simbolo como `extern "C"`,
 // pero aqui se declaraba con enlace C++ por defecto. Son dos simbolos
 // distintos: el declarado se mangla como
 //   _Z30omega_daemon_get_shared_statev
