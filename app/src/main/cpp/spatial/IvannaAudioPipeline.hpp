@@ -25,6 +25,7 @@
 #include "../supreme/SupremeTransitionEnvelope.hpp"
 #include "../supreme/SupremeAcousticStabilityGuard.hpp"
 #include "../include/acoustic_reality_hyperengine.hpp"
+#include "../include/rt_band_meter.hpp"
 
 namespace ivanna::spatial {
 
@@ -185,30 +186,25 @@ public:
         if (!bufL || !bufR || numSamples == 0) return activeRealityState_;
         const size_t n = std::min(numSamples, MAX_BLOCK_SIZE);
 
-        // Quick 3-band energy & peak/RMS extraction for RawAudioMetrics
-        float sumSq = 0.0f, pk = 0.0f, eLow = 0.0f, eMid = 0.0f, eHigh = 0.0f;
-        float lp1 = 0.0f, lp2 = 0.0f;
+        // 3-band Linkwitz-Riley 2nd-order energy & peak/RMS extraction for RawAudioMetrics
+        float sumSq = 0.0f, pk = 0.0f;
         for (size_t i = 0; i < n; ++i) {
             const float m = 0.5f * (bufL[i] + bufR[i]);
             const float a = std::max(std::fabs(bufL[i]), std::fabs(bufR[i]));
             sumSq += m * m;
             if (a > pk) pk = a;
-            lp1 += 0.04f * (m - lp1);
-            lp2 += 0.30f * (m - lp2);
-            const float bL = lp1;
-            const float bM = lp2 - lp1;
-            const float bH = m - lp2;
-            eLow  += bL * bL;
-            eMid  += bM * bM;
-            eHigh += bH * bH;
         }
+        if (std::fabs(bandMeter_.sampleRate() - sampleRate) > 1.0f) {
+            bandMeter_.prepare(sampleRate);
+        }
+        const auto bands = bandMeter_.processBlock(bufL, bufR, n);
         const float invN = 1.0f / static_cast<float>(n);
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms              = std::sqrt(sumSq * invN);
         rawM.peak             = pk;
-        rawM.band_low_energy  = std::sqrt(eLow * invN);
-        rawM.band_mid_energy  = std::sqrt(eMid * invN);
-        rawM.band_high_energy = std::sqrt(eHigh * invN);
+        rawM.band_low_energy  = std::sqrt(bands.low  * invN);
+        rawM.band_mid_energy  = std::sqrt(bands.mid  * invN);
+        rawM.band_high_energy = std::sqrt(bands.high * invN);
         rawM.crest_factor_db  = (rawM.rms > 1.0e-6f)
             ? (20.0f * std::log10(std::max(1.0f, rawM.peak / rawM.rms)))
             : 0.0f;
@@ -520,6 +516,7 @@ private:
     uint64_t                                     lastRealitySeq_{0};
     uint64_t                                     realityTickUs_{0};
     bool                                         realityReconstructionEnabled_{false};
+    ivanna::rt::RtBandMeter                      bandMeter_{48000.0f};
 
     // Static scratch memory for zero-allocation hot-path guarantee
     alignas(16) std::array<std::array<float, MAX_BLOCK_SIZE>, 4> objectBuffers_{};

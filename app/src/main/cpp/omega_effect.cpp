@@ -276,6 +276,7 @@ struct omega_effect_context_t {
     uint64_t supremeAxesApplyCount;
     ivanna::experimental::AdaptiveDecisionEngine* adaptive;
     uint64_t lastAdaptiveSeq;
+    ivanna::rt::RtBandMeter bandMeter;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -951,6 +952,7 @@ static int32_t omega_process(effect_handle_t self,
 
     int offset = 0;
     float sumSq = 0.0f, pk = 0.0f;
+    ivanna::rt::BandEnergy bandAccum{};
     while (offset < frames) {
         const int chunk = ((frames - offset) < ctx->rtCapacity)
                           ? (frames - offset) : ctx->rtCapacity;
@@ -1013,13 +1015,19 @@ static int32_t omega_process(effect_handle_t self,
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
-            if (adaptParams.applyISO226) {
-                float isoGain = std::clamp(
-                    std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f)),
-                    0.50f, 1.35f);
+            // Consumir parámetros dinámicos y espaciales calculados por AdaptiveEngineV2
+            if (fc) {
+                fc->setCompressorParams(adaptParams.compressorThreshold, adaptParams.compressorRatio);
+            }
+            const float overallTrim = std::clamp(adaptParams.overallGain, 0.75f, 1.15f);
+            const float isoGain = adaptParams.applyISO226
+                ? std::clamp(std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f)), 0.50f, 1.35f)
+                : 1.0f;
+            const float combinedAdaptGain = std::clamp(overallTrim * isoGain, 0.50f, 1.35f);
+            if (std::fabs(combinedAdaptGain - 1.0f) > 1.0e-4f) {
                 for (int n = 0; n < chunk; ++n) {
-                    L[n] *= isoGain;
-                    R[n] *= isoGain;
+                    L[n] *= combinedAdaptGain;
+                    R[n] *= combinedAdaptGain;
                 }
             }
         }
@@ -1196,6 +1204,11 @@ static int32_t omega_process(effect_handle_t self,
         // SafetyLimiter que corre al final de la Ruta A.
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
+        const auto chunkBands = ctx->bandMeter.processBlock(L, R, (size_t)chunk);
+        bandAccum.low  += chunkBands.low;
+        bandAccum.mid  += chunkBands.mid;
+        bandAccum.high += chunkBands.high;
+
         // Interleave -> salida con Autonomous Stability Sanitizer y rampa Master/Thermal Zero-Pop
         for (int n = 0; n < chunk; ++n) {
             const float masterEnv = ctx->masterBypassEnv.nextSample();
@@ -1238,11 +1251,12 @@ static int32_t omega_process(effect_handle_t self,
         // Publicar métricas lock-free al hilo cognitivo/adaptativo out-of-RT (Ruta B)
         if (rms > 1e-6f || pk > 1e-6f) {
             ivanna::experimental::RawAudioMetrics rawM{};
+            const float invFrames = (outFrames > 0) ? (1.0f / (float)outFrames) : 0.0f;
             rawM.rms              = rms;
             rawM.peak             = pk;
-            rawM.band_low_energy  = rms * 0.35f;
-            rawM.band_mid_energy  = rms * 0.45f;
-            rawM.band_high_energy = rms * 0.20f;
+            rawM.band_low_energy  = __builtin_sqrtf(bandAccum.low  * invFrames);
+            rawM.band_mid_energy  = __builtin_sqrtf(bandAccum.mid  * invFrames);
+            rawM.band_high_energy = __builtin_sqrtf(bandAccum.high * invFrames);
             rawM.voice_score      = (ctx->adaptiveEngine && ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
                                      ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced) ? 0.72f : 0.35f;
             rawM.wfs_active       = (ctx->pendingSnap.wfs_enabled != 0u) ? 1.0f : 0.0f;
@@ -1252,6 +1266,12 @@ static int32_t omega_process(effect_handle_t self,
             if (ctx->adaptive) {
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
+                ivanna::experimental::AdaptiveState adSt{};
+                if (ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
+                    ctx->pendingSnap.target_gain = std::clamp(adSt.target_gain, 0.50f, 1.0f);
+                    ctx->pendingSnap.comp_amount = std::clamp(adSt.compressor_amount, 0.0f, 1.0f);
+                    ctx->pendingSnap.exc_red     = std::clamp(adSt.exciter_reduction, 0.0f, 1.0f);
+                }
             }
         }
 
@@ -1269,11 +1289,15 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
     switch (cmdCode) {
         case EFFECT_CMD_INIT:
-            if (ctx) ctx->stabilityGuard.reset();
+            if (ctx) {
+                ctx->stabilityGuard.reset();
+                ctx->bandMeter.reset();
+            }
             break;
         case EFFECT_CMD_RESET:
             if (ctx) {
                 ctx->stabilityGuard.reset();
+                ctx->bandMeter.reset();
                 g_hrtf_flush_req.store(true, std::memory_order_release);
             }
             break;
@@ -1285,6 +1309,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (sr == 0) sr = 48000;
                 const bool srChanged = (ctx->lastConfiguredSr != 0u && ctx->lastConfiguredSr != sr);
                 ctx->lastConfiguredSr = sr;
+                ctx->bandMeter.prepare((float)sr);
                 // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
@@ -1766,6 +1791,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     if (!ctx) return -ENOMEM;
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
+    ctx->bandMeter.prepare(48000.0f);
     ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
     ctx->masterBypassEnv.setImmediate(1.0f);
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
