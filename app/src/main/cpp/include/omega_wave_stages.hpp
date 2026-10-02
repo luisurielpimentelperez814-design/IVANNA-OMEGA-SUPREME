@@ -282,13 +282,18 @@ private:
         {
             safStimulus_.setDirection(res.safLatentQ[0] * 45.0f, res.safLatentQ[1] * 15.0f);
             ivanna::SyntheticHRTF synthHrtf{};
-            const auto& hrirPair = safSpatialMod_.update(res.safLatentQ, synthHrtf, res.safLatentQ[0] * 30.0f);
-            float hrirIldAcc = 0.0f;
-            const size_t taps = std::min(hrirPair.left.size(), hrirPair.right.size());
-            for (size_t t = 0; t < taps; ++t) {
-                hrirIldAcc += std::fabs(hrirPair.left[t] - hrirPair.right[t]);
+            float hrirSpread = 0.0f;
+            if (safSpatialMod_.update(res.safLatentQ, synthHrtf, res.safLatentQ[0] * 30.0f)) {
+                const auto& hrirPair = safSpatialMod_.current();
+                float hrirIldAcc = 0.0f;
+                const size_t taps = std::min(hrirPair.L.size(), hrirPair.R.size());
+                for (size_t t = 0; t < taps; ++t) {
+                    hrirIldAcc += std::fabs(hrirPair.L[t] - hrirPair.R[t]);
+                }
+                if (taps > 0) {
+                    hrirSpread = std::clamp(hrirIldAcc / static_cast<float>(taps), 0.0f, 0.25f);
+                }
             }
-            const float hrirSpread = (taps > 0) ? std::clamp(hrirIldAcc / static_cast<float>(taps), 0.0f, 0.25f) : 0.0f;
             res.safSpatialAggressiveness = std::clamp(0.25f + qEnergy * 0.45f + hrirSpread * 0.40f, 0.15f, 0.85f);
         }
 

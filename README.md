@@ -44,7 +44,7 @@
 [**8. Cerebros IA, TinyML y Gemini 2.5**](#-8-inteligencia-acústica-tinyml-neuromórfico-y-asistente-cognitivo-gemini-25) ·
 [**9. Daemon Root, SHM v5 y UI Compose**](#-9-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) ·
 [**10. Honestidad de Ingeniería**](#-10-honestidad-radical-de-ingeniería-lo-que-ivanna-hace-y-lo-que-no-hace) ·
-[**11. Verificación CI (159/159 CTest) e Instalación**](#-11-calidad-verificada-en-ci-154154-ctest-e-instalación)
+[**11. Verificación CI (159/159 CTest) e Instalación**](#-11-calidad-verificada-en-ci-159159-ctest-e-instalación)
 
 </div>
 
@@ -411,8 +411,8 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 | Flujo / Suite de Verificación | Estado en GitHub Actions | Cobertura Técnica Auditada |
 |-------------------------------|:------------------------:|----------------------------|
 | **Datasets HRTF & SOFA (`tests-host.yml`)** | ✅ `SUCCESS` | Validación binaria de los 12 archivos `.ihr1`, firma HDF5 (`894844460d0a1a0a`) de los 255 `.sofa`, `pca_basis.bin` y las 200 salas WAV BRIR. |
-| **Host CTest Suite (`159/159` Tests)** | ✅ `SUCCESS` (`15.99 s`) | **154 de 154 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8: `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit` y `Phase8_OmniHolographicSingularityFusionClosedLoop`), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_phase2_jni_natives`, `test_phase3_jni_callers`, `test_phase4_5_header_rt_wiring` y `test_rt_no_alloc`. |
-| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las 154 pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
+| **Host CTest Suite (`159/159` Tests)** | ✅ `SUCCESS` (`15.99 s`) | **159 de 159 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8: `Phase7_ZeroArtifactZeroClipTHDAndEnergyConservationAudit` y `Phase8_OmniHolographicSingularityFusionClosedLoop`), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_phase2_jni_natives`, `test_phase3_jni_callers`, `test_phase4_5_header_rt_wiring` y `test_rt_no_alloc`. |
+| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las 159 pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
 | **Build APK & Native Binaries (`build.yml`)** | ✅ `SUCCESS` | Compilación con Android NDK ARM64 (`arm64-v8a`), verificación de flags de seguridad ELF (`PIE`, `Full RELRO`, `BIND_NOW`), sincronización estricta de `version.properties` (`v2.3.16 / 2316`) y empaquetado de artefactos. |
 | **Verify & Publish GitHub Release** | ✅ `SUCCESS` | Extracción, validación de integridad de artefactos y publicación automática de `ivanna_omega_supreme_v2.3.16.zip` (Módulo Magisk/KernelSU) y el APK firmado para `update.json`. |
 
