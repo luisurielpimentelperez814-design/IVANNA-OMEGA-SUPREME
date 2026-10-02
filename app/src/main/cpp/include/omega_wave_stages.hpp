@@ -59,6 +59,7 @@
 // Oleada 5: Autocuidado (SelfHealingEngine + SuperAgentMemory fuera de RT)
 #include "../IvannaSelfHealingEngine.hpp"
 #include "../IvannaSuperAgentMemory.hpp"
+#include "rt_band_meter.hpp"
 
 namespace ivanna::unified {
 
@@ -242,22 +243,35 @@ private:
         // 4) AutonomousBrain -> Synthesizer + AcousticSynthesisCore
         autonomousBrain_.processBlock(pkt.mono.data(), static_cast<int>(pkt.numFrames), synthesizer_);
         synthesizer_.smoothTick(static_cast<int>(pkt.numFrames), pkt.sampleRate);
+        float synthCoreLift = 0.0f;
         {
             std::array<float, HeavyWorkAudioPacket::kPacketFrames * 2> synthStereo{};
             const size_t synthFrames = std::min<size_t>(pkt.numFrames, HeavyWorkAudioPacket::kPacketFrames);
+            float inEnergy = 0.0f;
             for (size_t i = 0; i < synthFrames; ++i) {
-                synthStereo[2 * i]     = pkt.mono[i];
-                synthStereo[2 * i + 1] = pkt.mono[i];
+                const float m = std::isfinite(pkt.mono[i]) ? pkt.mono[i] : 0.0f;
+                synthStereo[2 * i]     = m;
+                synthStereo[2 * i + 1] = m;
+                inEnergy += m * m;
             }
             synthCore_.process(synthStereo.data(), synthFrames);
+            float outEnergy = 0.0f;
+            for (size_t i = 0; i < synthFrames; ++i) {
+                const float sL = std::isfinite(synthStereo[2 * i]) ? synthStereo[2 * i] : 0.0f;
+                const float sR = std::isfinite(synthStereo[2 * i + 1]) ? synthStereo[2 * i + 1] : 0.0f;
+                outEnergy += 0.5f * (sL * sL + sR * sR);
+            }
+            if (inEnergy > 1.0e-9f) {
+                synthCoreLift = std::clamp(std::sqrt(outEnergy / inEnergy) - 1.0f, -0.15f, 0.25f);
+            }
         }
         res.synthBassWeight  = synthesizer_.bassWeight();
         res.synthMidPresence = synthesizer_.midPresence();
-        res.synthTrebleAir   = synthesizer_.trebleAir();
-        res.synthWarmth       = synthesizer_.warmth();
-        res.synthClarity      = synthesizer_.clarity();
+        res.synthTrebleAir   = std::clamp(synthesizer_.trebleAir() + 0.35f * synthCoreLift, -1.0f, 1.0f);
+        res.synthWarmth      = std::clamp(synthesizer_.warmth() + 0.25f * synthCoreLift, 0.0f, 1.0f);
+        res.synthClarity     = synthesizer_.clarity();
 
-        // 5) SaFOptimizer + SafSpatialModifier + SaFStimulusRenderer + SafPcaDecoder
+        // 5) SaFOptimizer + SafSpatialModifier + SaFStimulusRenderer (sin doble SafPcaDecoder::decode)
         safOptimizer_.getParams(res.safLatentQ.data());
         for (float& qv : res.safLatentQ) {
             if (!std::isfinite(qv)) qv = 0.0f;
@@ -265,12 +279,17 @@ private:
         }
         float qEnergy = 0.0f;
         for (float qv : res.safLatentQ) qEnergy += qv * qv;
-        res.safSpatialAggressiveness = std::clamp(0.25f + qEnergy * 0.5f, 0.15f, 0.85f);
         {
             safStimulus_.setDirection(res.safLatentQ[0] * 45.0f, res.safLatentQ[1] * 15.0f);
             ivanna::SyntheticHRTF synthHrtf{};
-            (void)safSpatialMod_.update(res.safLatentQ, synthHrtf, res.safLatentQ[0] * 30.0f);
-            (void)safPcaDecoder_.decode(res.safLatentQ.data(), 7);
+            const auto& hrirPair = safSpatialMod_.update(res.safLatentQ, synthHrtf, res.safLatentQ[0] * 30.0f);
+            float hrirIldAcc = 0.0f;
+            const size_t taps = std::min(hrirPair.left.size(), hrirPair.right.size());
+            for (size_t t = 0; t < taps; ++t) {
+                hrirIldAcc += std::fabs(hrirPair.left[t] - hrirPair.right[t]);
+            }
+            const float hrirSpread = (taps > 0) ? std::clamp(hrirIldAcc / static_cast<float>(taps), 0.0f, 0.25f) : 0.0f;
+            res.safSpatialAggressiveness = std::clamp(0.25f + qEnergy * 0.45f + hrirSpread * 0.40f, 0.15f, 0.85f);
         }
 
         // 6) FUSIÓN MAESTRA: Lazo Cerrado Bio-Holográfico con AcousticRealityOrchestrator (Fases 1–15)
@@ -284,13 +303,18 @@ private:
                 peak = std::max(peak, std::fabs(v));
             }
             const float rms = (n > 0) ? std::sqrt(sumSq / static_cast<float>(n)) : 0.0f;
+            if (std::fabs(workerBandMeter_.sampleRate() - pkt.sampleRate) > 1.0f) {
+                workerBandMeter_.prepare(pkt.sampleRate);
+            }
+            const auto bands = workerBandMeter_.processBlockMono(pkt.mono.data(), n);
+            const float invN = (n > 0) ? (1.0f / static_cast<float>(n)) : 0.0f;
 
             ivanna::experimental::RawAudioMetrics rawM{};
             rawM.rms              = rms;
             rawM.peak             = peak;
-            rawM.band_low_energy  = rms * std::clamp(0.30f + 0.25f * res.bassScore, 0.1f, 0.7f);
-            rawM.band_mid_energy  = rms * std::clamp(0.40f + 0.30f * res.voiceScore, 0.1f, 0.7f);
-            rawM.band_high_energy = rms * std::clamp(0.20f + 0.20f * res.musicScore, 0.05f, 0.5f);
+            rawM.band_low_energy  = std::sqrt(bands.low  * invN);
+            rawM.band_mid_energy  = std::sqrt(bands.mid  * invN);
+            rawM.band_high_energy = std::sqrt(bands.high * invN);
             rawM.voice_score      = std::clamp(res.voiceScore, 0.0f, 1.0f);
             rawM.upmix_active     = 1.0f;
 
@@ -382,6 +406,7 @@ private:
     Ivanna::SafPcaDecoder                 safPcaDecoder_{};
     Ivanna::IvannaSelfHealingEngine       selfHealer_{};
     Ivanna::IvannaSuperAgentMemory        superAgentMemory_{};
+    ivanna::rt::RtBandMeter               workerBandMeter_{48000.0f};
 };
 
 // ── Adaptador Base con Continuidad Inmortal, Techo Racional C2 y Zurcido C1 ──
@@ -657,12 +682,32 @@ public:
         const size_t frames = std::min(n, Ivanna::BLOCK_SIZE);
         std::memcpy(scratch.left,  L, frames * sizeof(float));
         std::memcpy(scratch.right, R, frames * sizeof(float));
+        float inSq = 0.0f;
+        for (size_t i = 0; i < frames; ++i) {
+            inSq += scratch.left[i] * scratch.left[i] + scratch.right[i] * scratch.right[i];
+        }
         psycho_.applyMaskingCompensation(&scratch);
         psycho_.predictAndMitigateFatigue(&scratch);
+        float outSq = 0.0f;
+        for (size_t i = 0; i < frames; ++i) {
+            outSq += scratch.left[i] * scratch.left[i] + scratch.right[i] * scratch.right[i];
+        }
+        lastFatigueIndex_ = std::clamp(psycho_.fatigueIndex(), 0.0f, 1.0f);
+        lastMaskingGain_  = std::clamp(0.5f * (psycho_.maskingGainL() + psycho_.maskingGainR()), 0.5f, 1.5f);
+        lastCompensationRatio_ = (inSq > 1.0e-9f)
+            ? std::clamp(std::sqrt(outSq / inSq), 0.75f, 1.25f)
+            : 1.0f;
     }
+
+    [[nodiscard]] float lastFatigueIndex() const noexcept { return lastFatigueIndex_; }
+    [[nodiscard]] float lastMaskingGain() const noexcept { return lastMaskingGain_; }
+    [[nodiscard]] float lastCompensationRatio() const noexcept { return lastCompensationRatio_; }
 
 private:
     Ivanna::Psychoacoustics psycho_{};
+    float lastFatigueIndex_{0.0f};
+    float lastMaskingGain_{1.0f};
+    float lastCompensationRatio_{1.0f};
 };
 
 class SofaSafAnalysisBridgeStage final : public ClickFreeStageBase<SofaSafAnalysisBridgeStage> {
@@ -954,17 +999,30 @@ public:
     SafOptimizerSuiteStage() noexcept
         : ClickFreeStageBase(StageId::SafOptimizerSuite, StageFamily::SafRoom, "SafOptimizerSuite") {}
 
+    void setBridgeLatent(const std::array<float, 7>& q, bool valid) noexcept {
+        bridgeLatent_      = q;
+        bridgeLatentValid_ = valid;
+    }
+
     void onProcessWet(float* __restrict L, float* __restrict R, size_t n) noexcept {
         const auto res = HeavyWorkerEngine::instance().readLatestValid();
-        const float aggr = std::clamp(res.safSpatialAggressiveness, 0.15f, 0.85f);
+        const auto& q = bridgeLatentValid_ ? bridgeLatent_ : res.safLatentQ;
+        float qNorm = 0.0f;
+        for (float v : q) qNorm += (std::isfinite(v) ? v * v : 0.0f);
+        const float aggr = std::clamp(res.safSpatialAggressiveness + 0.10f * qNorm, 0.15f, 0.85f);
         const float cross = 0.035f * aggr;
+        const float tilt  = std::clamp(q[0] * 0.02f, -0.02f, 0.02f);
         for (size_t i = 0; i < n; ++i) {
             const float l = L[i];
             const float r = R[i];
-            L[i] = RationalC2SoftCeiling::sanitizeSample(l * (1.0f - cross) + r * cross);
-            R[i] = RationalC2SoftCeiling::sanitizeSample(r * (1.0f - cross) + l * cross);
+            L[i] = RationalC2SoftCeiling::sanitizeSample(l * (1.0f - cross + tilt) + r * cross);
+            R[i] = RationalC2SoftCeiling::sanitizeSample(r * (1.0f - cross - tilt) + l * cross);
         }
     }
+
+private:
+    std::array<float, 7> bridgeLatent_{};
+    bool bridgeLatentValid_{false};
 };
 
 // Familia Cochlear — Variante A: CochlearActiveInverseEngine (Cochlear-PINN)
@@ -1301,6 +1359,10 @@ public:
                 const auto t1 = std::chrono::steady_clock::now();
                 const float elapsedUs = std::chrono::duration<float, std::micro>(t1 - t0).count();
 
+                if (stage->id() == StageId::SofaSafAnalysisBridge) {
+                    s13_safSuite_.setBridgeLatent(s2_sofaSaf_.lastLatent(), !s2_sofaSaf_.isBypassed());
+                }
+
                 const auto stTelem = stage->telemetry();
                 if (!stage->isBypassed() || stTelem.wetGainCurrent > 0.0f) {
                     float pk = 0.0f, rms = 0.0f, maxDelta = 0.0f;
@@ -1323,11 +1385,23 @@ public:
             // garantizando identidad bit-exacta 100% cuando todas las etapas están apagadas.
             if (holographicSingularityEnabled_ && maxAudioStageWet > 1.0e-6f) {
                 const auto workerRes = HeavyWorkerEngine::instance().readLatestValid();
+                SingularityFieldDescriptor field = workerRes.singularityField;
+                if (!s1_psycho_.isBypassed()) {
+                    const float psychoReliefDelta = (s1_psycho_.lastMaskingGain() - 1.0f) * 0.25f
+                                                  - s1_psycho_.lastFatigueIndex() * 0.10f;
+                    field.cochlearMaskingRelief = std::clamp(
+                        field.cochlearMaskingRelief + psychoReliefDelta, 0.05f, 0.55f);
+                }
+                if (!s2_sofaSaf_.isBypassed()) {
+                    field.subSampleParallaxSamples = std::clamp(
+                        field.subSampleParallaxSamples + 0.08f * s2_sofaSaf_.lastLatent()[0],
+                        -0.42f, 0.42f);
+                }
                 singularityEngine_.processHolographicFusion(
                     chL, chR,
                     preChainInputL_.data(), preChainInputR_.data(),
                     chunk,
-                    workerRes.singularityField,
+                    field,
                     s0_phaseOracle_.lastCoherence(),
                     maxAudioStageWet);
             } else {

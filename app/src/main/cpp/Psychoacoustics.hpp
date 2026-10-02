@@ -12,6 +12,10 @@ public:
     void applyMaskingCompensation(Ivanna::AudioBuffer* buffer);
     void predictAndMitigateFatigue(Ivanna::AudioBuffer* buffer);
 
+    [[nodiscard]] float fatigueIndex() const noexcept { return m_fatigueIndex; }
+    [[nodiscard]] float maskingGainL() const noexcept { return m_gainSmL; }
+    [[nodiscard]] float maskingGainR() const noexcept { return m_gainSmR; }
+
 private:
     // Quantized int8_t LSTM Weights
     ALIGN_NEON int8_t m_Wf[LSTM_UNITS][LSTM_UNITS];
