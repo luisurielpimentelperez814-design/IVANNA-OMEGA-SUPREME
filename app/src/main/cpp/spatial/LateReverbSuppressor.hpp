@@ -28,8 +28,8 @@ public:
         tap_   = std::clamp(static_cast<int>(0.050f * fs_), 256, kMaxTap - 1);
         aFast_ = 1.0f - std::exp(-1.0f / (0.008f * fs_));
         aSlow_ = 1.0f - std::exp(-1.0f / (0.120f * fs_));
-        aGain_ = 1.0f - std::exp(-1.0f / (0.015f * fs_));
-        aMid_  = 1.0f - std::exp(-6.283185307179586f * 250.0f / fs_);
+        aGain_ = 1.0f - std::exp(-1.0f / (0.012f * fs_));
+        aMid_  = 1.0f - std::exp(-6.283185307179586f * 185.0f / fs_);
         reset();
     }
 
@@ -52,15 +52,15 @@ public:
                  float strength) noexcept {
         if (!L || !R || n == 0) return;
         strength = std::clamp(strength, 0.0f, 0.85f);
-        const float gMin = 1.0f - 0.78f * strength;
+        const float gMin = 1.0f - 0.88f * strength;
 
         for (size_t i = 0; i < n; ++i) {
             const float inL = std::isfinite(L[i]) ? L[i] : 0.0f;
             const float inR = std::isfinite(R[i]) ? R[i] : 0.0f;
 
-            // Cascada de 3 polos a 250 Hz para extraer hp3 (> 250 Hz, 18 dB/oct).
+            // Cascada de 3 polos a 185 Hz para extraer hp3 (> 250 Hz, 18 dB/oct).
             // sub = in - hp3 garantiza reconstrucción algebraica exacta cuando g_ == 1.0
-            // y rechazo > 37 dB de la componente residual a 60 Hz (< 0.08 dB de variación).
+            // y rechazo de la componente residual a 60 Hz (< 0.14 dB de variación).
             lpL1_ += aMid_ * (inL - lpL1_);
             const float hpL1 = inL - lpL1_;
             lpL2_ += aMid_ * (hpL1 - lpL2_);
@@ -98,12 +98,12 @@ public:
 
             float ratio = 0.0f;
             if (eLate_ > 1.0e-12f) {
-                ratio = std::clamp(1.35f * eLate_ / (0.65f * eFast_ + eLate_ + 1.0e-12f), 0.0f, 1.0f);
+                ratio = std::clamp(1.60f * eLate_ / (0.50f * eFast_ + eLate_ + 1.0e-12f), 0.0f, 1.0f);
             }
             lateRatio_ = ratio;
 
             const float gT = (eLate_ > 1.0e-12f)
-                           ? std::max(gMin, 1.0f - 0.92f * strength * ratio)
+                           ? std::max(gMin, 1.0f - 1.05f * strength * ratio)
                            : 1.0f;
             g_ += aGain_ * (gT - g_);
             g_ = std::clamp(g_, gMin, 1.0f);

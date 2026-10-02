@@ -49,9 +49,9 @@ public:
         pool_[0] = SceneApply{};
         pool_[1] = SceneApply{};
         pool_[2] = SceneApply{};
-        cleanPtr_.store(&pool_[0], std::memory_order_relaxed);
-        readPtr_  = &pool_[1];
-        writePtr_ = &pool_[2];
+        state_.store(0u, std::memory_order_relaxed);
+        readIdx_  = 1u;
+        writeIdx_ = 2u;
     }
 
     // Singleton por proceso (libivanna_omega.so en app / libomega_effect.so en audioserver)
@@ -60,13 +60,14 @@ public:
         return s_bus;
     }
 
-    // Publicador (hilo worker / amortizado): wait-free O(1)
+    // Publicador (hilo worker / amortizado): wait-free O(1) con palabra atómica única (cleanIdx | dirtyBit)
     void publish(const SceneApply& in) noexcept {
         const uint32_t nextSeq = pubSeq_.fetch_add(1u, std::memory_order_relaxed) + 1u;
-        *writePtr_ = in;
-        writePtr_->seq = nextSeq;
-        writePtr_ = cleanPtr_.exchange(writePtr_, std::memory_order_acq_rel);
-        hasFresh_.store(true, std::memory_order_release);
+        pool_[writeIdx_] = in;
+        pool_[writeIdx_].seq = nextSeq;
+        const uint8_t nextState = static_cast<uint8_t>((writeIdx_ & 0x3u) | 0x4u);
+        const uint8_t prevState = state_.exchange(nextState, std::memory_order_acq_rel);
+        writeIdx_ = prevState & 0x3u;
     }
 
     // Consumidor (hilo de audio RT): wait-free O(1), devuelve true si había un frame nuevo
@@ -75,12 +76,15 @@ public:
             out = SceneApply{};
             return false;
         }
-        if (hasFresh_.exchange(false, std::memory_order_acquire)) {
-            readPtr_ = cleanPtr_.exchange(readPtr_, std::memory_order_acq_rel);
-            out = *readPtr_;
+        const uint8_t cur = state_.load(std::memory_order_acquire);
+        if ((cur & 0x4u) != 0u) {
+            const uint8_t nextState = static_cast<uint8_t>(readIdx_ & 0x3u);
+            const uint8_t prevState = state_.exchange(nextState, std::memory_order_acq_rel);
+            readIdx_ = prevState & 0x3u;
+            out = pool_[readIdx_];
             return true;
         }
-        out = *readPtr_;
+        out = pool_[readIdx_];
         return false;
     }
 
@@ -89,8 +93,9 @@ public:
         if (!sceneReconstructionEnabled_.load(std::memory_order_relaxed)) {
             return SceneApply{};
         }
-        SceneApply* clean = cleanPtr_.load(std::memory_order_acquire);
-        return clean ? *clean : SceneApply{};
+        const uint8_t cur = state_.load(std::memory_order_acquire);
+        const uint8_t idx = ((cur & 0x4u) != 0u) ? (cur & 0x3u) : (readIdx_ & 0x3u);
+        return pool_[idx];
     }
 
     // ── Controles Atómicos Maestros (R9 y Sección 5) ─────────────────────────
@@ -271,11 +276,10 @@ public:
 
 private:
     alignas(64) mutable SceneApply pool_[3]{};
-    alignas(64) mutable std::atomic<SceneApply*> cleanPtr_{nullptr};
-    alignas(64) SceneApply* readPtr_{nullptr};
-    alignas(64) SceneApply* writePtr_{nullptr};
+    alignas(64) mutable std::atomic<uint8_t> state_{0u};
+    alignas(64) uint8_t readIdx_{1u};
+    alignas(64) uint8_t writeIdx_{2u};
     std::atomic<uint32_t> pubSeq_{0};
-    std::atomic<bool>     hasFresh_{false};
 
     // Controles atómicos globales del flanco Atlas-Escena (R9: default ON)
     std::atomic<bool>  sceneReconstructionEnabled_{true};
