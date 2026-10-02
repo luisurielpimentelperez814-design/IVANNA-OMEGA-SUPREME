@@ -279,8 +279,8 @@ public:
         const bool physEr       = usePhysicalEr_.load(std::memory_order_relaxed);
         const bool wasSilent    = inversionEnv_.isSilent();
 
-        if (statDereverb && invGain > 1.0e-4f) {
-            lateReverbSuppressor_.process(bufferL, bufferR, numSamples, invGain);
+        if (statDereverb && inversionEnv_.currentGain > 1.0e-4f) {
+            lateReverbSuppressor_.process(bufferL, bufferR, numSamples, inversionEnv_.currentGain);
         }
 
         // 1. De-Reverberación de Fase Mínima por Predicción Lineal Ponderada (WPE) libre de divisiones
@@ -388,8 +388,8 @@ private:
     std::atomic<float> inversionGain_{0.25f};
     std::atomic<float> projectionWet_{0.35f};
     std::atomic<float> estimatedRoomT60Sec_{0.42f};
-    std::atomic<bool>  useStatDereverb_{true};
-    std::atomic<bool>  usePhysicalEr_{true};
+    std::atomic<bool>  useStatDereverb_{false};
+    std::atomic<bool>  usePhysicalEr_{false};
     float envStateL_{0.0f};
     float envStateR_{0.0f};
     float envFastL_{0.0f};

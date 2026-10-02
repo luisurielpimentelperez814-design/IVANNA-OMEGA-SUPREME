@@ -408,7 +408,7 @@ private:
         out.blended.warmth         = out.t.warmth;
     }
 
-    static constexpr float kTemp = 3.0f;
+    static constexpr float kTemp = 0.55f;
     static constexpr float kTau  = 2.0f;
     static constexpr float kHyst = 0.12f;
     static constexpr int   kHold = 3;

@@ -52,7 +52,7 @@ public:
                  float strength) noexcept {
         if (!L || !R || n == 0) return;
         strength = std::clamp(strength, 0.0f, 0.85f);
-        const float gMin = 1.0f - 0.65f * strength;
+        const float gMin = 1.0f - 0.78f * strength;
 
         for (size_t i = 0; i < n; ++i) {
             const float inL = std::isfinite(L[i]) ? L[i] : 0.0f;
@@ -98,12 +98,12 @@ public:
 
             float ratio = 0.0f;
             if (eLate_ > 1.0e-12f) {
-                ratio = std::clamp(eLate_ / (eFast_ + eLate_ + 1.0e-12f), 0.0f, 1.0f);
+                ratio = std::clamp(1.35f * eLate_ / (0.65f * eFast_ + eLate_ + 1.0e-12f), 0.0f, 1.0f);
             }
             lateRatio_ = ratio;
 
             const float gT = (eLate_ > 1.0e-12f)
-                           ? std::max(gMin, 1.0f - strength * ratio)
+                           ? std::max(gMin, 1.0f - 0.92f * strength * ratio)
                            : 1.0f;
             g_ += aGain_ * (gT - g_);
             g_ = std::clamp(g_, gMin, 1.0f);
