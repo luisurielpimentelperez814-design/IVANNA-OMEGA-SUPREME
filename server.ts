@@ -17,7 +17,6 @@ app.use(express.json({ limit: '256kb' }));
 // Cabeceras de seguridad mínimas para un panel de control servido al usuario.
 app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   next();
 });
@@ -227,7 +226,7 @@ async function startServer() {
   });
 
   const port = Number(process.env.PORT) || 3000;
-  app.listen(port, () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(`[server] IVANNA OMEGA SUPREME dashboard escuchando en puerto ${port} (${isProd ? 'producción' : 'desarrollo'})`);
   });
 }
