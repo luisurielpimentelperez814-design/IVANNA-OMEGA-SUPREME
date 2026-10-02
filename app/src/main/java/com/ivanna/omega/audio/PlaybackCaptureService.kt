@@ -580,16 +580,18 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             )
             runCatching {
                 val installed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    packageManager.getInstalledPackages(android.content.pm.PackageManager.PackageInfoFlags.of(0))
+                    context.packageManager.getInstalledPackages(android.content.pm.PackageManager.PackageInfoFlags.of(0))
                 } else {
                     @Suppress("DEPRECATION")
-                    packageManager.getInstalledPackages(0)
+                    context.packageManager.getInstalledPackages(0)
                 }
                 for (pi in installed) {
                     val pn = pi.packageName.lowercase(java.util.Locale.ROOT)
                     if (videoKeywords.any { pn.contains(it) }) {
-                        captureBuilder.excludeUid(pi.applicationInfo.uid)
-                        Log.i(TAG, "Excluido de loopback para A/V sync cero-desfase: ${pi.packageName} (uid=${pi.applicationInfo.uid})")
+                        pi.applicationInfo?.uid?.let { uid ->
+                            captureBuilder.excludeUid(uid)
+                            Log.i(TAG, "Excluido de loopback para A/V sync cero-desfase: ${pi.packageName} (uid=$uid)")
+                        }
                     }
                 }
             }
@@ -823,7 +825,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
                     val samplesToWrite = effectiveFrames * CHANNEL_COUNT
 
-                    val globalMgr = runCatching { (applicationContext as? IVANNAApplication)?.globalEffectManager }.getOrNull()
+                    val globalMgr = runCatching { (context.applicationContext as? IVANNAApplication)?.globalEffectManager }.getOrNull()
                     val inPlaceSessionActive = (globalMgr?.activeSessionCount ?: 0) > 0
                     val isVideoActive = globalMgr?.isVideoStreamingActive == true ||
                                         CinematicEngineHost.activeModeOrdinal == 1
