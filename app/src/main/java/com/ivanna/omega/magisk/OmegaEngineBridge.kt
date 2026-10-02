@@ -290,7 +290,7 @@ object OmegaEngineBridge {
                 val n = try { channel.input.read(buf) } catch (_: Exception) { -1 }
                 if (n <= 0) break
                 for (i in 0 until n) {
-                    val c = buf[i].toChar()
+                    val c = buf[i].toInt().toChar()
                     sb.append(c)
                     if (inStr) { if (esc) esc = false else if (c == '\\') esc = true else if (c == '"') inStr = false; continue }
                     when (c) {

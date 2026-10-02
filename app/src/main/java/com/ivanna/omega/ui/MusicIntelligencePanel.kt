@@ -389,7 +389,7 @@ private fun StyleChip(
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterVertically
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = label,
