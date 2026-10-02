@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.3.18
-versionCode=2318
+version=v2.4.0
+versionCode=240
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.3.18: Adaptive Spatial Audio v3.0 (Physical Sony MHC-PZ1D 2.4m Geometry, Schroeder Modal Cutoff, Live-Room T60 Limiter, Constant-Power Crossfade & Single-Path Arbitration).
+description=v2.4.0: Kotlin 2.4.20, dependency cleanup, Firebase/Gemini stability, unified build validation.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

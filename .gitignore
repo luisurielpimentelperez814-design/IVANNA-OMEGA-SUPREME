@@ -1,47 +1,34 @@
-# ── Builds generados ─────────────────────────────────────────────
-dist/
+# ============================================================================
+# IVANNA OMEGA SUPREME - .gitignore
+# ============================================================================
+
+.gradle/
 build/
-**/build/
+.idea/
+.vscode/
+*.iml
+*.log
 *.apk
 *.aab
 *.aar
+*.class
+*.dex
+*.jar
 *.so
-
-# ── Node / Vite / tooling JS ─────────────────────────────────────
-bun.lock
-bun.lockb
-node_modules/
-*.tsbuildinfo
-.vite/
-
-# ── Gradle / Android Studio ──────────────────────────────────────
-.gradle/
+*.sofa
+*.tmp
+*.temp
+*.swp
+*.swo
+*.DS_Store
 local.properties
-.cxx/
-*.iml
-.idea/
-.externalNativeBuild/
-captures/
-output.json
-
-# ── Firmas y secretos (NUNCA trackear) ───────────────────────────
 *.keystore
 *.jks
-*.pem
-*.key
-.env
-.env.local
-.env.*.local
 google-services.json
-
-# ── Parches temporales y artefactos de misión ────────────────────
-# (los históricos ya trackeados se conservan; no añadir nuevos)
-*.orig
-*.rej
-
-# ── SO / editor ──────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-*.log
-build-tests/
-__pycache__/
+coverage/
+node_modules/
+.cxx/
+app/release/
+
