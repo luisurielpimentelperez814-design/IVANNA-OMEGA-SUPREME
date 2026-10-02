@@ -638,6 +638,12 @@ enum WatchdogFaultFlags : uint32_t {
 
 class alignas(64) RtStageWatchdog {
 public:
+    static constexpr float kBudgetFraction = 0.35f;
+
+    void setSampleRate(float sampleRate) noexcept {
+        sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
+    }
+
     void reset() noexcept {
         dcTrackL_.fill(0.0f);
         dcTrackR_.fill(0.0f);
@@ -700,7 +706,7 @@ public:
             if (maxDelta > 0.95f) {
                 flags |= WD_FAULT_STEP_JUMP;
             }
-            if (elapsedUs > 4500.0f) {
+            if (elapsedUs > kBudgetFraction * (static_cast<float>(numFrames) / sampleRate_) * 1e6f) {
                 flags |= WD_FAULT_BUDGET_OVER;
             }
         }
@@ -734,6 +740,7 @@ public:
     }
 
 private:
+    float sampleRate_{48000.0f};
     std::array<float, kNumUnifiedStages> dcTrackL_{};
     std::array<float, kNumUnifiedStages> dcTrackR_{};
     std::atomic<uint32_t> isolatedMask_{0};

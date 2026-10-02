@@ -1227,6 +1227,7 @@ public:
     void prepare(float sampleRate, size_t maxBlockSize) noexcept {
         sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
         maxBlockSize_ = std::clamp<size_t>(maxBlockSize, 16u, kMaxRealtimeBlockFrames);
+        watchdog_.setSampleRate(sampleRate_);
         (void)HeavyWorkerEngine::instance();
         singularityEngine_.prepare(sampleRate_);
         for (IDspStage* st : stages_) {
