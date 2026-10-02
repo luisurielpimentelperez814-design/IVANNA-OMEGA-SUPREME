@@ -274,6 +274,8 @@ struct omega_effect_context_t {
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
     ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
     uint64_t supremeAxesApplyCount;
+    ivanna::experimental::AdaptiveDecisionEngine* adaptive;
+    uint64_t lastAdaptiveSeq;
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -527,11 +529,6 @@ static std::vector<omega_effect_context_t*> g_rirBLive;   // ctx vivos
 static omega_effect_context_t* g_rirBCtx = nullptr;       // petición pendiente
 static int32_t                 g_rirBIdx = -1;
 static float                   g_rirBSynthRt60 = -1.0f;
-// Motor adaptativo y cognitivo out-of-RT para el proceso audioserver (Ruta B):
-// ejecuta controlLoop() @ 50ms en hilo de control independiente y alimenta
-// AcousticRealityOrchestrator::instance().orchestrateCycle() sin tocar el hilo RT.
-static ivanna::experimental::AdaptiveDecisionEngine g_effectAdaptiveEngine;
-static std::atomic<bool>                            g_effectAdaptiveStarted{false};
 
 static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
     for (auto* c : g_rirBLive) if (c == ctx) return true;
@@ -1252,8 +1249,10 @@ static int32_t omega_process(effect_handle_t self,
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
-            g_effectAdaptiveEngine.rawMetrics.publish(
-                ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
+            if (ctx->adaptive) {
+                ctx->adaptive->rawMetrics.publish(
+                    ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
+            }
         }
 
         // publish() es no-op si el daemon no abrió el bus — seguro en ruta caliente
@@ -1457,8 +1456,10 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // bajo g_rirBMtx (release_effect des-registra antes de
                     // liberar -> sin UAF aunque el hilo sobreviva al efecto).
                 }
-                if (!g_effectAdaptiveStarted.exchange(true, std::memory_order_acq_rel)) {
-                    g_effectAdaptiveEngine.start();
+                if (!ctx->adaptive) {
+                    ctx->adaptive = new ivanna::experimental::AdaptiveDecisionEngine();
+                    ctx->lastAdaptiveSeq = 0;
+                    ctx->adaptive->start();
                 }
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
@@ -1835,6 +1836,11 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         omega_effect_context_t *ctx =
             reinterpret_cast<omega_effect_context_t *>(handle);
             
+        if (ctx->adaptive) {
+            ctx->adaptive->stop();
+            delete ctx->adaptive;
+            ctx->adaptive = nullptr;
+        }
         if (ctx->adaptiveEngine) {
             delete ctx->adaptiveEngine;
             ctx->adaptiveEngine = nullptr;

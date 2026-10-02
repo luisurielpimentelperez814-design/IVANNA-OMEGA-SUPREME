@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#if defined(__linux__) || defined(__ANDROID__)
+#include <sys/resource.h>
+#endif
 
 namespace ivanna::experimental {
 
@@ -347,6 +350,9 @@ void AdaptiveDecisionEngine::stop() noexcept {
 }
 
 void AdaptiveDecisionEngine::controlLoop() {
+#if defined(__linux__) || defined(__ANDROID__)
+    (void)setpriority(PRIO_PROCESS, 0, 10);
+#endif
     // Hilo de control dedicado — NUNCA el audio thread. Cadencia fija,
     // sin malloc (RawAudioMetrics/AdaptiveState son POD en stack).
     uint64_t lastSeenSeq = 0;
