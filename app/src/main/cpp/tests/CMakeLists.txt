@@ -389,12 +389,8 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_oem_stability_suite)
 
-# NOTA de auditoría (flanco Tests host): test_adaptive_eq_stress.cpp NO se
-# engancha — incluye "../dsp/AdaptiveEQ.h" que NO existe en el árbol
-# (verificado con find; ninguna clase/struct AdaptiveEQ en el repo). Es un
-# test de un módulo que fue eliminado sin borrar su test. Queda documentado
-# aquí para que nadie lo "rescate" a ciegas: rescatarlo implica primero
-# decidir si AdaptiveEQ vuelve al DSP (flanco DSP nativo, no este).
+# ── test_adaptive_eq_stress: 10 s @ 48 kHz contra ParametricEQ real ─────────
+ivanna_add_test(test_adaptive_eq_stress)
 
 # ── test_ivannalab: suite host del laboratorio de medición IvannaLab ────────
 # Coordinación pendiente del flanco IvannaLab (commit 2c0826c3, marcado
@@ -909,6 +905,45 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_rt_no_alloc PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 add_test(NAME test_rt_no_alloc COMMAND test_rt_no_alloc)
+
+# ── 1.6 D6: Registrar test_hrtf_convolver_rt_safety, test_wfs_adaptive_protection y test_music_intelligence ──
+add_executable(test_hrtf_convolver_rt_safety test_hrtf_convolver_rt_safety.cpp)
+target_link_libraries(test_hrtf_convolver_rt_safety PRIVATE ivanna_unified_pipeline_under_test GTest::gtest_main ivanna_dsp_under_test Threads::Threads m dl)
+target_include_directories(test_hrtf_convolver_rt_safety PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_hrtf_convolver_rt_safety PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hrtf_convolver_rt_safety PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hrtf_convolver_rt_safety PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_hrtf_convolver_rt_safety)
+
+add_executable(test_wfs_adaptive_protection
+  test_wfs_adaptive_protection.cpp
+  ../spatial/WfsRenderer.cpp
+)
+target_link_libraries(test_wfs_adaptive_protection PRIVATE ivanna_dsp_under_test Threads::Threads m)
+target_include_directories(test_wfs_adaptive_protection PRIVATE .. ../include ../spatial)
+target_compile_options(test_wfs_adaptive_protection PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_wfs_adaptive_protection PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_wfs_adaptive_protection PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_wfs_adaptive_protection COMMAND test_wfs_adaptive_protection)
+
+add_executable(test_music_intelligence
+  test_music_intelligence.cpp
+  ../music_intelligence/MusicFeatureExtractor.cpp
+  ../music_intelligence/MusicIntelligenceEngine.cpp
+  ../music_intelligence/ImeBridge.cpp
+)
+target_link_libraries(test_music_intelligence PRIVATE ivanna_dsp_under_test Threads::Threads m)
+target_include_directories(test_music_intelligence PRIVATE .. ../include ../music_intelligence)
+target_compile_options(test_music_intelligence PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_music_intelligence PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_music_intelligence PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_music_intelligence COMMAND test_music_intelligence)
 
 
 

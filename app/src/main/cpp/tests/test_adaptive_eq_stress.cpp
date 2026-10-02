@@ -1,57 +1,55 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <vector>
+#include "../include/ParametricEQ.h"
 
-#include "../dsp/AdaptiveEQ.h"
+namespace {
 
-TEST(AdaptiveEQStress, LongRunningSignalStability) {
+TEST(ParametricEqStressTest, TenSecondsAt48kRapidParameterSweepRemainsFiniteAndStable) {
+    constexpr int kSampleRate = 48000;
+    constexpr int kTotalFrames = kSampleRate * 10; // 10 s @ 48 kHz
+    constexpr int kBlockFrames = 256;
 
-    AdaptiveEQ eq;
+    ivanna::ParametricEQ eq;
+    eq.setSampleRate(static_cast<float>(kSampleRate));
+    std::vector<float> left(kBlockFrames, 0.0f);
+    std::vector<float> right(kBlockFrames, 0.0f);
 
-    constexpr int samples = 480000; // 10 segundos @48kHz
+    int frameCursor = 0;
+    int blockIdx = 0;
+    while (frameCursor < kTotalFrames) {
+        const int frames = std::min(kBlockFrames, kTotalFrames - frameCursor);
+        for (int i = 0; i < frames; ++i) {
+            const float t = static_cast<float>(frameCursor + i) / static_cast<float>(kSampleRate);
+            const float sig = 0.25f * std::sin(2.0f * 3.14159265f * 120.0f * t)
+                            + 0.20f * std::sin(2.0f * 3.14159265f * 1000.0f * t)
+                            + 0.15f * std::sin(2.0f * 3.14159265f * 6500.0f * t);
+            left[i]  = sig;
+            right[i] = sig * 0.95f;
+        }
 
-    std::vector<float> input(samples);
-    std::vector<float> output(samples);
+        // Modular continuamente los parámetros del EQ cada bloque (prueba anti-inestabilidad IIR)
+        ivanna::DSPParams p{};
+        p.sampleRate = static_cast<uint32_t>(kSampleRate);
+        const float mod = std::sin(0.07f * static_cast<float>(blockIdx));
+        p.low      = 6.0f * mod;
+        p.mid      = -4.0f * std::cos(0.05f * static_cast<float>(blockIdx));
+        p.high     = 5.0f * std::sin(0.11f * static_cast<float>(blockIdx));
+        p.presence = 3.0f * mod;
+        eq.setParams(p);
 
-    for (int i = 0; i < samples; i++) {
-        float t = static_cast<float>(i) / 48000.0f;
+        eq.process(left.data(), right.data(), frames);
 
-        // Señal compleja: mezcla tonos + variación dinámica
-        input[i] =
-            0.6f * sinf(2.0f * M_PI * 440.0f * t) +
-            0.3f * sinf(2.0f * M_PI * 3000.0f * t);
-    }
+        for (int i = 0; i < frames; ++i) {
+            ASSERT_TRUE(std::isfinite(left[i])) << "NaN/Inf en L[" << i << "] bloque " << blockIdx;
+            ASSERT_TRUE(std::isfinite(right[i])) << "NaN/Inf en R[" << i << "] bloque " << blockIdx;
+            ASSERT_LE(std::fabs(left[i]), 8.0f) << "Inestabilidad de biquad L en bloque " << blockIdx;
+            ASSERT_LE(std::fabs(right[i]), 8.0f) << "Inestabilidad de biquad R en bloque " << blockIdx;
+        }
 
-    for (int i = 0; i < samples; i++) {
-        output[i] = eq.process(input[i]);
-
-        EXPECT_TRUE(std::isfinite(output[i]));
-
-        EXPECT_LT(fabs(output[i]), 2.0f);
-    }
-
-    auto state = eq.getState();
-
-    EXPECT_TRUE(std::isfinite(state.gain));
-    EXPECT_TRUE(std::isfinite(state.energy));
-}
-
-
-TEST(AdaptiveEQStress, ParameterMovementDoesNotExplode) {
-
-    AdaptiveEQ eq;
-
-    for(int i=0;i<10000;i++){
-
-        float freq = 100.0f + i * 0.5f;
-        float gain = sinf(i*0.01f);
-
-        eq.setFrequency(freq);
-        eq.setGain(gain);
-
-        float out = eq.process(0.5f);
-
-        EXPECT_TRUE(std::isfinite(out));
-        EXPECT_LT(fabs(out),2.0f);
+        frameCursor += frames;
+        ++blockIdx;
     }
 }
+
+} // namespace
