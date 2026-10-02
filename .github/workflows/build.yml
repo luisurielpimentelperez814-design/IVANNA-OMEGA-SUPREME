@@ -228,11 +228,11 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          gradle assembleDebug --no-daemon --stacktrace \
+          gradle assembleRelease --no-daemon --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
             -Dorg.gradle.caching=true 2>&1 | tee gradle_build.log || \
           (echo "Retrying assembleDebug with --refresh-dependencies..." && \
-           gradle assembleDebug --no-daemon --stacktrace --refresh-dependencies \
+           gradle assembleRelease --no-daemon --stacktrace --refresh-dependencies \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_build.log)
 
       # Diagnostico: el log de un job fallido solo es legible con sesion en la
@@ -269,7 +269,7 @@ jobs:
           echo "Validación APK completada"
 
       # ── STAGING + VALIDACIÓN DEL APK (auditoría 2026-08-16) ────────────
-      # FIX: gradle assembleDebug SÍ generaba el APK en app/build/outputs/apk/
+      # FIX: gradle assembleRelease SÍ generaba el APK en app/build/outputs/apk/
       # pero ningún step posterior lo copiaba, validaba, ni lo incluía en
       # el path: del Upload artifacts de más abajo — se compilaba y se
       # descartaba en silencio. Nadie podía descargar un APK actualizado
@@ -280,7 +280,7 @@ jobs:
         run: |
           set -euo pipefail
           APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
-          test -n "$APK_PATH" || { echo "ERROR: gradle assembleDebug no produjo ningún .apk en app/build/outputs/apk/"; exit 1; }
+          test -n "$APK_PATH" || { echo "ERROR: gradle assembleRelease no produjo ningún .apk en app/build/outputs/apk/"; exit 1; }
           test -s "$APK_PATH" || { echo "ERROR: $APK_PATH existe pero está vacío (0 bytes)"; exit 1; }
           # Validación real de que es un APK válido, no un archivo corrupto:
           # todo APK es un ZIP y DEBE contener AndroidManifest.xml en la raíz.
@@ -535,6 +535,7 @@ jobs:
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
           test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
           test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -t "$APK_NAME"     || { echo "ERROR: APK publicado no pasa unzip -t"; exit 1; }
           unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
           test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
           H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')

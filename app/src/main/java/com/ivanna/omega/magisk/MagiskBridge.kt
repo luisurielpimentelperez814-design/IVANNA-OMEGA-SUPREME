@@ -71,7 +71,7 @@ object MagiskBridge {
     }
 
     val isModuleActive: Boolean
-        get() = getPropCached(PROP_ACTIVE) == "1"
+        get() = getPropCached(PROP_ACTIVE) == "1" || getPropCached(PROP_DAEMON) == "1"
 
     val moduleVersion: String
         get() = getPropCached(PROP_VERSION).ifEmpty { "unknown" }

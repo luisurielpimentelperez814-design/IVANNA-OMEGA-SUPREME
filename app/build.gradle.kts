@@ -39,8 +39,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            initWith(getByName("debug"))
+            val customKeystore = System.getenv("KEYSTORE_FILE") ?: (project.findProperty("KEYSTORE_FILE") as String?)
+            if (customKeystore != null && file(customKeystore).exists()) {
+                storeFile = file(customKeystore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: (project.findProperty("KEYSTORE_PASSWORD") as String?) ?: "android"
+                keyAlias = System.getenv("KEY_ALIAS") ?: (project.findProperty("KEY_ALIAS") as String?) ?: "androiddebugkey"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: (project.findProperty("KEY_PASSWORD") as String?) ?: "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -91,6 +105,19 @@ android {
                 "lib/armeabi-v7a/libomega_effect.so",
                 "lib/x86/libomega_effect.so",
                 "lib/x86_64/libomega_effect.so"
+            )
+        }
+        resources {
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/license.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/notice.txt",
+                "META-INF/ASL2.0",
+                "META-INF/*.kotlin_module"
             )
         }
     }
