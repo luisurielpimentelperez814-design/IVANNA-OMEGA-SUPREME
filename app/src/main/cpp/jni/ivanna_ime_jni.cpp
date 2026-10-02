@@ -4,7 +4,6 @@
 #include <string>
 #include "../music_intelligence/ImeBridge.hpp"
 #include "../music_intelligence/SceneTargetBus.hpp"
-#include "../spatial/IvannaAudioPipeline.hpp"
 
 namespace {
 std::atomic<bool> g_imeEnabled{true};
@@ -35,7 +34,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetUseStatDereverb(
     JNIEnv*, jobject, jboolean enabled) {
     const bool on = (enabled == JNI_TRUE);
     ivanna::ime::SceneTargetBus::instance().setUseStatDereverb(on);
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().roomEngine().setUseStatDereverb(on);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -43,7 +41,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeImeSetUsePhysicalEr(
     JNIEnv*, jobject, jboolean enabled) {
     const bool on = (enabled == JNI_TRUE);
     ivanna::ime::SceneTargetBus::instance().setUsePhysicalEr(on);
-    ivanna::spatial::IvannaAudioPipeline::getActiveInstance().roomEngine().setUsePhysicalEr(on);
 }
 
 extern "C" JNIEXPORT void JNICALL

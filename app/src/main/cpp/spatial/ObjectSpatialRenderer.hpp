@@ -1,9 +1,11 @@
 #pragma once
 
 #include "StereoObjectDecomposer.hpp"
+#include "RoomGeometryConfig.hpp"
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <algorithm>
 
@@ -21,9 +23,18 @@ namespace ivanna::spatial {
 // ============================================================================
 class ObjectSpatialRenderer {
 public:
-    static constexpr int   kItdBuf    = 128;   // >= 65 muestras hasta 96 kHz
-    static constexpr float kHeadRadM  = 0.0875f;
-    static constexpr float kSoundSpdM = 343.0f;
+    static constexpr size_t MAX_BLOCK_SIZE         = 512;
+    static constexpr size_t NUM_OBJECTS            = 4;
+    static constexpr size_t EARLY_REFLECTIONS_TAPS = 4;
+    static constexpr float  kDefaultSampleRateHz   = 48000.0f;
+    static constexpr float  kWoodworthMaxItdSec    = 0.0006666667f;
+    static constexpr float  kItdMaxSamples         = kWoodworthMaxItdSec * kDefaultSampleRateHz;
+    static constexpr float  kParamSmoothTauSec     = 0.015f;
+    static constexpr float  kQuarterPiRad          = 0.7853981633974483096f;
+    static constexpr float  kErMixScale            = 0.70f;
+    static constexpr int    kItdBuf                = 128;   // >= 65 muestras hasta 96 kHz
+    static constexpr float  kHeadRadM              = 0.0875f;
+    static constexpr float  kSoundSpdM             = 343.0f;
 
     ObjectSpatialRenderer() noexcept {
         prepare(48000.0f);
