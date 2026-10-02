@@ -33,6 +33,23 @@ if pidof ivanna_daemon >/dev/null 2>&1; then
     sleep 1
 fi
 
+# Anti-bootloop: Si el módulo está en safe_mode, no iniciar daemon
+if [ -f "$MODDIR/.safe_mode" ]; then
+    echo "$(date) SAFE_MODE activo — abortando arranque de ivanna_daemon" >> "$LOG"
+    setprop persist.ivanna.daemon_active 0 2>/dev/null
+    exit 0
+fi
+
+# Detección de bucles de choque continuos
+CRASH_COUNT_FILE="$STATE/daemon_crash_streak"
+CRASHES=$(cat "$CRASH_COUNT_FILE" 2>/dev/null || echo 0)
+if [ "$CRASHES" -ge 5 ]; then
+    echo "$(date) FATAL: 5 caídas consecutivas de ivanna_daemon. Activando .safe_mode" >> "$LOG"
+    touch "$MODDIR/.safe_mode"
+    setprop persist.ivanna.daemon_active 0 2>/dev/null
+    exit 1
+fi
+
 rm -f "$STATE/daemon.pid"
 # FIX (socket nunca conectaba, confirmado en dispositivo real por el usuario):
 # un daemon anterior muerto sin cleanup podía dejar omega_shm corrupto o con
@@ -55,6 +72,9 @@ sleep 3
 
 if kill -0 "$PID" 2>/dev/null; then
     echo "$(date) daemon activo PID=$PID" >> "$LOG"
+    setprop persist.ivanna.daemon_active 1 2>/dev/null
+    echo "0" > "$CRASH_COUNT_FILE"
+    touch /data/adb/ivanna_omega_last_boot_ok 2>/dev/null
     CLIENT="$MODDIR/system/bin/ivanna_client"
     if [ -x "$CLIENT" ]; then
         if [ -f "$STATE/supreme_axes.cfg" ]; then
@@ -67,4 +87,6 @@ if kill -0 "$PID" 2>/dev/null; then
     fi
 else
     echo "$(date) ERROR daemon murió al iniciar" >> "$LOG"
+    setprop persist.ivanna.daemon_active 0 2>/dev/null
+    echo $((CRASHES + 1)) > "$CRASH_COUNT_FILE"
 fi

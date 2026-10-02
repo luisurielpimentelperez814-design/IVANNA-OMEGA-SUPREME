@@ -63,7 +63,7 @@ if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
     HRTF_OK=1
     cd "$HRTF_DST"
     for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
-        EXPECTED=$(grep -A3 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+        EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
         if [ -n "$EXPECTED" ] && [ -f "$F" ]; then
             ACTUAL=$(sha256sum "$F" 2>/dev/null | awk '{print $1}')
             [ "$ACTUAL" = "$EXPECTED" ] || { ui_print "  ! hash mismatch en $F — rollback"; HRTF_OK=0; break; }
@@ -102,6 +102,30 @@ if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
     ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69, $ARI_COUNT HpIR ARI)"
 else
     ui_print "  ! SOFA dataset no encontrado en $SOFA_SRC — HRTF usará solo datasets IHR1"
+fi
+
+# ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
+ui_print "- Configurando audio_effects.xml..."
+TARGET_XML="$MODPATH/system/vendor/etc/audio_effects.xml"
+mkdir -p "$(dirname "$TARGET_XML")"
+ORIG_XML=""
+for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml; do
+    if [ -f "$P" ]; then
+        ORIG_XML="$P"
+        break
+    fi
+done
+
+if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; then
+    ui_print "  ✓ Base detectada: $ORIG_XML"
+    cp -f "$ORIG_XML" "$TARGET_XML"
+    if ! grep -q "omega_effect" "$TARGET_XML"; then
+        sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML"
+        sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML"
+        ui_print "  ✓ omega_effect fusionado preservando efectos OEM"
+    fi
+else
+    ui_print "  ! Base del sistema no accesible — manteniendo configuración propia"
 fi
 
 ui_print "- Setting permissions on DSP libraries..."

@@ -310,6 +310,12 @@ jobs:
           cp "$EFFECT_SO" magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
           cp "$EFFECT_SO" ./libomega_effect_arm64.so
           file libomega_effect_arm64.so
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          [ -x "$READELF" ] || READELF=readelf
+          EFFECT_NEEDED="$("$READELF" -dW ./libomega_effect_arm64.so | grep -i 'NEEDED' || true)"
+          echo "$EFFECT_NEEDED"
+          echo "$EFFECT_NEEDED" | grep -qi "libc++_shared" && { echo "ERROR: libomega_effect.so depende de libc++_shared.so — audioserver no la puede resolver en /system/vendor/lib64/soundfx"; exit 1; }
+          echo "OK: libomega_effect.so no depende de libc++_shared.so"
 
       # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
       - name: Generate BUILD_INFO manifest

@@ -366,17 +366,23 @@ target_include_directories(omega_effect PRIVATE
     ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
 )
 
-target_link_libraries(omega_effect
+target_link_options(omega_effect PRIVATE
+    -Wl,-z,relro
+    -Wl,-z,now
+    -Wl,--enable-new-dtags
+    $<$<BOOL:${ANDROID}>:-nostdlib++>
+)
+
+target_link_libraries(omega_effect PRIVATE
     ${log-lib}
     ${android-lib}
     m
     dl
 )
 
-# Exclude from APK packaging (shipped via Magisk)
-set_target_properties(omega_effect PROPERTIES
-    EXCLUDE_FROM_ALL TRUE
-)
+if(ANDROID)
+    target_link_libraries(omega_effect PRIVATE "-Wl,-Bstatic" c++_static c++abi "-Wl,-Bdynamic")
+endif()
 
 
 
