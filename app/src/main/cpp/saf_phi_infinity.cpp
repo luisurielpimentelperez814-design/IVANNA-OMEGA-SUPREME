@@ -16,6 +16,8 @@ double PhiSAFInfinity(
         deltaE /
         (deltaE + norm + 0.01 * memory + 1e-8);
 
+    if (!(G > 1e-6)) G = 1e-6;
+
     double update =
         alpha * (delta / G);
 

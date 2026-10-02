@@ -36,7 +36,7 @@ add_library(ivanna_omega SHARED
     # telemetría UI "SIN AUDIO"). Antes NO se enlazaba en este target:
     # audioRouteBridgeLoop() no podía abrir OMEGA_EFFECT_LOCAL_BUS_PATH.
     daemon/core/omega_control_bus.cpp
-    saf_optimizer.cpp
+    saf_phi_infinity.cpp
         neuromorphic/AntiDolbyAI.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
@@ -324,7 +324,7 @@ add_library(omega_effect SHARED
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
-    saf_optimizer.cpp
+    saf_phi_infinity.cpp
         neuromorphic/AntiDolbyAI.cpp
     anti_dolby.cpp
     saf_runtime.cpp
