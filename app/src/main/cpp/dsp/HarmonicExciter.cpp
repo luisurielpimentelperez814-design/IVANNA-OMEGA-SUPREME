@@ -1,12 +1,12 @@
-/**
- * HarmonicExciter.cpp — Implementation
- * Copyright (C) 2026 IVANNA-OMEGA Project
- */
-
-#include "HarmonicExciter.h"
+#if defined(__clang__)
+#pragma clang optimize on
+#else
+#pragma GCC optimize("O3", "unroll-loops")
+#endif
+#include "../include/HarmonicExciter.h"
 #include <cmath>
+#include <cstring>
 #include <algorithm>
-#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -14,221 +14,211 @@
 
 namespace ivanna {
 
-HarmonicExciter::HarmonicExciter() {
-    computeFilterCoeffs();
-    chebL_.prepare(sampleRate_ * 2.0f);
-    chebR_.prepare(sampleRate_ * 2.0f);
-}
-
-void HarmonicExciter::setParams(const DSPParams& params) {
-    // Map drive [0,1] → [1.0, 16.0] internal multiplier
-    const float d = std::isfinite(params.drive) ? std::clamp(params.drive, 0.0f, 1.0f) : 0.2f;
-    driveNorm_ = d;
-    drive_ = 1.0f + d * 15.0f;
-    wet_   = std::isfinite(params.wet) ? std::clamp(params.wet, 0.0f, 1.0f) : 0.15f;
-    if (params.sampleRate > 0 && static_cast<float>(params.sampleRate) != sampleRate_) {
-        sampleRate_ = static_cast<float>(params.sampleRate);
-        computeFilterCoeffs();
-        chebL_.prepare(sampleRate_ * 2.0f);
-        chebR_.prepare(sampleRate_ * 2.0f);
-    }
-}
-
-void HarmonicExciter::setWarmth(float warmth) noexcept {
-    if (std::isfinite(warmth)) {
-        warmth_ = std::clamp(warmth, 0.0f, 1.0f);
-    }
-}
-
-void HarmonicExciter::setFlatness1m(float f8) noexcept {
-    if (std::isfinite(f8)) {
-        flatness1m_ = std::clamp(f8, 0.0f, 1.0f);
-    }
-}
-
 void HarmonicExciter::reset() {
-    hpfStateL_.reset();
-    hpfStateR_.reset();
-    lpfUpL_.reset();
-    lpfUpR_.reset();
-    lpfDownL_.reset();
-    lpfDownR_.reset();
+    lastL_ = 0.0f;
+    lastR_ = 0.0f;
+    std::memset(osLeft_, 0, sizeof(osLeft_));
+    std::memset(osRight_, 0, sizeof(osRight_));
+    hpfL_.reset();
+    hpfR_.reset();
+    osLpfL_.reset();
+    osLpfR_.reset();
+    preLpfL_.reset();
+    preLpfR_.reset();
     chebL_.reset();
     chebR_.reset();
+    excScaleL_ = 1.0f;
+    excScaleR_ = 1.0f;
+    wetNow_ = wet_;
+    driveNow_ = drive_;
+    lastSampleRate_ = 0;
 }
 
-void HarmonicExciter::computeFilterCoeffs() {
-    // 2nd-order Butterworth HPF at 2800 Hz
+void HarmonicExciter::setParams(const DSPParams& p) {
+    drive_ = 1.0f + p.drive * 3.0f;
+    wet_ = p.wet;
+    dry_ = 1.0f - p.wet;
+
+    const int srInt = p.sampleRate > 0 ? p.sampleRate : 48000;
+    if (srInt == lastSampleRate_) {
+        return;
+    }
+    lastSampleRate_ = srInt;
+
     {
-        float fc = 2800.0f;
-        float w0 = 2.0f * static_cast<float>(M_PI) * fc / sampleRate_;
-        float cosw0 = std::cos(w0);
-        float sinw0 = std::sin(w0);
-        float alpha = sinw0 / static_cast<float>(M_SQRT2); // Q = 1/sqrt(2)
-
-        float b0 =  (1.0f + cosw0) / 2.0f;
-        float b1 = -(1.0f + cosw0);
-        float b2 =  (1.0f + cosw0) / 2.0f;
-        float a0 =   1.0f + alpha;
-        float a1 =  -2.0f * cosw0;
-        float a2 =   1.0f - alpha;
-
-        hpfCoeffs_.b0 = b0 / a0;
-        hpfCoeffs_.b1 = b1 / a0;
-        hpfCoeffs_.b2 = b2 / a0;
-        hpfCoeffs_.a1 = a1 / a0;
-        hpfCoeffs_.a2 = a2 / a0;
+        const double srOS = (double)srInt * (double)OS_FACTOR;
+        wetSmooth_ = (float)std::exp(-1.0 / (srOS * 0.015));
+        driveSmooth_ = wetSmooth_;
+        chebL_.prepare((float)srOS);
+        chebR_.prepare((float)srOS);
     }
 
-    // 2nd-order Butterworth LPF at 0.42 * fs (for 2x oversampled stream → 0.21 * 2fs)
+    double sampleRateOS = (double)srInt * (double)OS_FACTOR;
+
+    double fc = 12000.0;
+    if (fc > sampleRateOS * 0.45) fc = sampleRateOS * 0.45;
+    double omegaOS = 2.0 * M_PI * fc / sampleRateOS;
+    double swOS = std::sin(omegaOS);
+    double cwOS = std::cos(omegaOS);
+    double alphaOS = swOS / (2.0 * 0.707);
+    double a0OS_inv = 1.0 / (1.0 + alphaOS);
+
+    osLpfL_.b0 = (float)((1.0 - cwOS) * 0.5 * a0OS_inv);
+    osLpfL_.b1 = (float)((1.0 - cwOS) * a0OS_inv);
+    osLpfL_.b2 = osLpfL_.b0;
+    osLpfL_.a1 = (float)(-2.0 * cwOS * a0OS_inv);
+    osLpfL_.a2 = (float)((1.0 - alphaOS) * a0OS_inv);
+    osLpfR_.b0 = osLpfL_.b0;
+    osLpfR_.b1 = osLpfL_.b1;
+    osLpfR_.b2 = osLpfL_.b2;
+    osLpfR_.a1 = osLpfL_.a1;
+    osLpfR_.a2 = osLpfL_.a2;
+
     {
-        float fc = 0.21f * (2.0f * sampleRate_);
-        float w0 = 2.0f * static_cast<float>(M_PI) * fc / (2.0f * sampleRate_);
-        float cosw0 = std::cos(w0);
-        float sinw0 = std::sin(w0);
-        float alpha = sinw0 / static_cast<float>(M_SQRT2);
-
-        float b0 =  (1.0f - cosw0) / 2.0f;
-        float b1 =   1.0f - cosw0;
-        float b2 =  (1.0f - cosw0) / 2.0f;
-        float a0 =   1.0f + alpha;
-        float a1 =  -2.0f * cosw0;
-        float a2 =   1.0f - alpha;
-
-        lpfCoeffs_.b0 = b0 / a0;
-        lpfCoeffs_.b1 = b1 / a0;
-        lpfCoeffs_.b2 = b2 / a0;
-        lpfCoeffs_.a1 = a1 / a0;
-        lpfCoeffs_.a2 = a2 / a0;
+        double sr = (double)srInt;
+        double fc_pre = 8000.0;
+        if (fc_pre > sr * 0.45) fc_pre = sr * 0.45;
+        double K = std::tan(M_PI * fc_pre / sr);
+        double KK = K * K;
+        double Q = 0.707106781;
+        double norm_pre = 1.0 + K / Q + KK;
+        preLpfL_.b0 = (float)(KK / norm_pre);
+        preLpfL_.b1 = (float)(2.0 * KK / norm_pre);
+        preLpfL_.b2 = preLpfL_.b0;
+        preLpfL_.a1 = (float)(2.0 * (KK - 1.0) / norm_pre);
+        preLpfL_.a2 = (float)((1.0 - K / Q + KK) / norm_pre);
+        preLpfR_.b0 = preLpfL_.b0;
+        preLpfR_.b1 = preLpfL_.b1;
+        preLpfR_.b2 = preLpfL_.b2;
+        preLpfR_.a1 = preLpfL_.a1;
+        preLpfR_.a2 = preLpfL_.a2;
     }
+
+    double hpfFc = 3000.0;
+    if (hpfFc > sampleRateOS * 0.45) hpfFc = sampleRateOS * 0.45;
+    hpfL_.setHighpass(hpfFc, 0.707, sampleRateOS);
+    hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
+
+    excRelCoef_ = std::exp(-1.0f / ((float)srInt * OS_FACTOR * 0.020f));
 }
 
-// Padé [3/2] rational approximation of tanh(x), bounded to [-1, +1] (legacy fallback mode 0)
-float HarmonicExciter::softClip(float x) noexcept {
-    if (!std::isfinite(x)) return 0.0f;
-    x = std::clamp(x, -3.0f, 3.0f);
-    const float x2 = x * x;
-    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+static inline __attribute__((always_inline)) float softClip(float x, float drive) {
+    x *= drive;
+    float absX = x < 0.0f ? -x : x;
+    if (absX > 3.0f) {
+        x = x > 0.0f ? (3.0f + 0.5f * std::tanh((x - 3.0f) * 0.5f))
+                     : (-3.0f - 0.5f * std::tanh((-x - 3.0f) * 0.5f));
+    }
+    float x2 = x * x;
+    return x * (1.f + x2 * 0.037037f) / (1.f + x2 * 0.333333f);
 }
 
-// Direct Form II Transposed biquad tick
-float HarmonicExciter::tickBiquad(float x, const BiquadCoeffs& c, BiquadState& s) noexcept {
-    if (!std::isfinite(x)) x = 0.0f;
-    float y = c.b0 * x + s.z1;
-    s.z1 = c.b1 * x - c.a1 * y + s.z2;
-    s.z2 = c.b2 * x - c.a2 * y;
-    if (!std::isfinite(y) || !std::isfinite(s.z1) || !std::isfinite(s.z2)) {
-        s.reset();
-        return 0.0f;
-    }
-    if (std::fabs(s.z1) < 1e-20f) s.z1 = 0.0f;
-    if (std::fabs(s.z2) < 1e-20f) s.z2 = 0.0f;
-    return y;
-}
+static constexpr float kExcCeiling = 0.98855f;
 
-void HarmonicExciter::upsample2x(const float* in, float* out, size_t numFrames,
-                                  BiquadState& lpfState) noexcept {
-    for (size_t n = 0; n < numFrames; ++n) {
-        out[2 * n]     = tickBiquad(in[n] * 2.0f, lpfCoeffs_, lpfState);
-        out[2 * n + 1] = tickBiquad(0.0f,         lpfCoeffs_, lpfState);
-    }
-}
+__attribute__((hot, flatten))
+void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ right, int frames) {
+    if (frames <= 0 || frames > MAX_OS_FRAMES) return;
 
-void HarmonicExciter::downsample2x(const float* in, float* out, size_t numFrames,
-                                    BiquadState& lpfState) noexcept {
-    for (size_t n = 0; n < numFrames; ++n) {
-        float y0 = tickBiquad(in[2 * n],     lpfCoeffs_, lpfState);
-        (void)     tickBiquad(in[2 * n + 1], lpfCoeffs_, lpfState);
-        out[n] = y0;
-    }
-}
+    const float wetTarget = wet_ * runtimeReductionMul_;
+    float wetNow = wetNow_;
+    const float wetSm = wetSmooth_ > 0.f ? wetSmooth_ : 0.9995f;
 
-void HarmonicExciter::process(float* left, float* right, size_t numFrames) {
-    if (numFrames == 0) return;
-
-    static constexpr size_t kMaxStackFrames = 2048;
-    float stackHpfL[kMaxStackFrames], stackHpfR[kMaxStackFrames];
-    float stackUpL [kMaxStackFrames * 2], stackUpR [kMaxStackFrames * 2];
-    float stackExcL[kMaxStackFrames * 2], stackExcR[kMaxStackFrames * 2];
-    float stackDownL[kMaxStackFrames], stackDownR[kMaxStackFrames];
-
-    std::vector<float> heapBuf;
-    float *hpfL, *hpfR, *upL, *upR, *excL, *excR, *downL, *downR;
-
-    if (numFrames <= kMaxStackFrames) {
-        hpfL  = stackHpfL;  hpfR  = stackHpfR;
-        upL   = stackUpL;   upR   = stackUpR;
-        excL  = stackExcL;  excR  = stackExcR;
-        downL = stackDownL; downR = stackDownR;
-    } else {
-        heapBuf.resize(numFrames * 12);
-        hpfL  = heapBuf.data();
-        hpfR  = hpfL  + numFrames;
-        upL   = hpfR  + numFrames;
-        upR   = upL   + numFrames * 2;
-        excL  = upR   + numFrames * 2;
-        excR  = excL  + numFrames * 2;
-        downL = excR  + numFrames * 2;
-        downR = downL + numFrames;
+    if (wetTarget <= 0.00001f && wetNow <= 0.00001f) {
+        wetNow_ = 0.0f;
+        return;
     }
 
-    // Step 1: High-pass filter to isolate excitation band (> 2.8 kHz)
-    for (size_t n = 0; n < numFrames; ++n) {
-        hpfL[n] = tickBiquad(left[n],  hpfCoeffs_, hpfStateL_);
-        hpfR[n] = tickBiquad(right[n], hpfCoeffs_, hpfStateR_);
+    driveNow_ = driveSmooth_ * driveNow_ + (1.0f - driveSmooth_) * drive_;
+    const float drive = driveNow_;
+    const float dNorm = std::clamp((drive - 1.0f) / 3.0f, 0.0f, 1.0f);
+
+    float scaleL = excScaleL_;
+    float scaleR = excScaleR_;
+    const float rel = excRelCoef_;
+
+    float preFiltL[MAX_OS_FRAMES];
+    float preFiltR[MAX_OS_FRAMES];
+    for (int i = 0; i < frames; ++i) {
+        preFiltL[i] = preLpfL_.process(left[i]);
+        preFiltR[i] = preLpfR_.process(right[i]);
     }
 
-    // Step 2: 2x upsample the high-passed signal
-    upsample2x(hpfL, excL, numFrames, lpfUpL_);
-    upsample2x(hpfR, excR, numFrames, lpfUpR_);
+    int osIdx = 0;
+    for (int i = 0; i < frames; ++i) {
+        osLeft_[osIdx]  = preFiltL[i];
+        osRight_[osIdx] = preFiltR[i];
+        osIdx++;
 
-    // Store dry signal in upL/upR (interleaved per sample for convenience)
-    for (size_t n = 0; n < numFrames; ++n) {
-        upL[n * 2]     = left[n];
-        upL[n * 2 + 1] = right[n];
+        float nextLF = (i + 1 < frames) ? preFiltL[i + 1] : preFiltL[i];
+        float nextRF = (i + 1 < frames) ? preFiltR[i + 1] : preFiltR[i];
+        osLeft_[osIdx]  = 0.5f * (preFiltL[i] + nextLF);
+        osRight_[osIdx] = 0.5f * (preFiltR[i] + nextRF);
+        osIdx++;
     }
+    int osFrames = osIdx;
+    lastL_ = left[frames - 1];
+    lastR_ = right[frames - 1];
 
-    // Step 3: Harmonic generation (M9 Chebyshev T2+T3 by default, or mode 0 softClip fallback)
-    const size_t upLen = numFrames * 2;
-    if (shaperMode_ == 1) {
-        for (size_t i = 0; i < upLen; ++i) {
-            excL[i] = chebL_.tick(excL[i], driveNorm_, warmth_, flatness1m_);
-            excR[i] = chebR_.tick(excR[i], driveNorm_, warmth_, flatness1m_);
-        }
-    } else {
-        for (size_t i = 0; i < upLen; ++i) {
-            excL[i] = softClip(excL[i] * drive_);
-            excR[i] = softClip(excR[i] * drive_);
-        }
-    }
+    for (int i = 0; i < osFrames; ++i) {
+        float l = osLeft_[i];
+        float r = osRight_[i];
 
-    // Step 4: 2x downsample back to original rate
-    downsample2x(excL, downL, numFrames, lpfDownL_);
-    downsample2x(excR, downR, numFrames, lpfDownR_);
+        float hL = hpfL_.process(l);
+        float hR = hpfR_.process(r);
 
-    // Step 5: Mix excited harmonics back into dry signal with headroom protection
-    for (size_t n = 0; n < numFrames; ++n) {
-        const float dryL = upL[n * 2];
-        const float dryR = upL[n * 2 + 1];
-        float wetL = wet_ * excScale_ * downL[n];
-        float wetR = wet_ * excScale_ * downR[n];
-
-        const float absDryL = std::fabs(dryL);
-        const float absWetL = std::fabs(wetL);
-        if (absDryL + absWetL > 1.0f && absWetL > 1e-12f) {
-            const float room = std::max(0.0f, 1.0f - absDryL);
-            wetL *= room / absWetL;
-        }
-        const float absDryR = std::fabs(dryR);
-        const float absWetR = std::fabs(wetR);
-        if (absDryR + absWetR > 1.0f && absWetR > 1e-12f) {
-            const float room = std::max(0.0f, 1.0f - absDryR);
-            wetR *= room / absWetR;
+        float excL = 0.0f, excR = 0.0f;
+        if (shaperMode_ == 1) {
+            const float chebOutL = chebL_.tick(hL * drive, dNorm, warmth_, flatness1m_);
+            const float chebOutR = chebR_.tick(hR * drive, dNorm, warmth_, flatness1m_);
+            const float padeL = softClip(hL, drive) - hL;
+            const float padeR = softClip(hR, drive) - hR;
+            excL = 0.65f * chebOutL + 0.35f * padeL;
+            excR = 0.65f * chebOutR + 0.35f * padeR;
+        } else {
+            excL = softClip(hL, drive) - hL;
+            excR = softClip(hR, drive) - hR;
         }
 
-        left[n]  = std::clamp(dryL + wetL, -1.0f, 1.0f);
-        right[n] = std::clamp(dryR + wetR, -1.0f, 1.0f);
+        excL = osLpfL_.process(excL);
+        excR = osLpfR_.process(excR);
+
+        float dryL = left[i >> 1];
+        float dryR = right[i >> 1];
+        const float peakRefL = std::max(std::fabs(l), std::fabs(dryL));
+        const float peakRefR = std::max(std::fabs(r), std::fabs(dryR));
+        const float headL = std::max(0.0f, 1.0f - peakRefL);
+        const float headR = std::max(0.0f, 1.0f - peakRefR);
+        const float reqL = kExcCeiling * wetNow * std::fabs(excL);
+        const float reqR = kExcCeiling * wetNow * std::fabs(excR);
+        const float needL = (reqL > headL) ? (headL / (reqL > 1e-9f ? reqL : 1e-9f)) : 1.0f;
+        const float needR = (reqR > headR) ? (headR / (reqR > 1e-9f ? reqR : 1e-9f)) : 1.0f;
+        if (needL < scaleL) scaleL = needL; else scaleL = rel * scaleL + (1.0f - rel);
+        if (needR < scaleR) scaleR = needR; else scaleR = rel * scaleR + (1.0f - rel);
+        scaleL = std::clamp(scaleL, 0.0f, 1.0f);
+        scaleR = std::clamp(scaleR, 0.0f, 1.0f);
+
+        float outL = dryL + kExcCeiling * wetNow * excL * scaleL;
+        float outR = dryR + kExcCeiling * wetNow * excR * scaleR;
+
+        wetNow = wetSm * wetNow + (1.0f - wetSm) * wetTarget;
+        wetNow_ = wetNow;
+
+        const float ceilL = std::max(1.0f, std::fabs(dryL));
+        const float ceilR = std::max(1.0f, std::fabs(dryR));
+        if (outL > ceilL) outL = ceilL; else if (outL < -ceilL) outL = -ceilL;
+        if (outR > ceilR) outR = ceilR; else if (outR < -ceilR) outR = -ceilR;
+
+        if (!std::isfinite(outL)) outL = 0.f;
+        if (!std::isfinite(outR)) outR = 0.f;
+
+        if ((i & 1) == 0) {
+            left[i >> 1]  = outL;
+            right[i >> 1] = outR;
+        }
     }
+
+    excScaleL_ = scaleL;
+    excScaleR_ = scaleR;
 }
 
 } // namespace ivanna
