@@ -1,6 +1,7 @@
 #include "IvannaAudioClassifier.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <pthread.h>
 #include <sched.h>
@@ -306,6 +307,45 @@ bool IvannaAudioClassifier::getModelOutput(AIModelOutput& out) const noexcept {
 bool IvannaAudioClassifier::loadWeights(const void* data, size_t bytes) noexcept {
     if (!data || bytes > sizeof(m_qWeights)) return false;
     std::memcpy(m_qWeights, data, bytes);
+    m_weightsLoaded = true;
+    return true;
+}
+
+bool IvannaAudioClassifier::loadWeights(const char* path) noexcept {
+    if (!path || path[0] == '\0') return false;
+    std::FILE* fp = std::fopen(path, "rb");
+    if (!fp) return false;
+
+    uint32_t header[3] = {0u, 0u, 0u};
+    if (std::fread(header, sizeof(uint32_t), 3, fp) != 3) {
+        std::fclose(fp);
+        return false;
+    }
+    const uint32_t magic   = header[0];
+    const uint32_t version = header[1];
+    const uint32_t count   = header[2];
+    if (magic != 0x49565731u || version != 1u || count != expectedWeightCount()) {
+        std::fclose(fp);
+        return false;
+    }
+
+    size_t qIdx = 0;
+    float chunk[256];
+    size_t remaining = count;
+    while (remaining > 0) {
+        const size_t toRead = std::min<size_t>(remaining, 256u);
+        if (std::fread(chunk, sizeof(float), toRead, fp) != toRead) {
+            std::fclose(fp);
+            return false;
+        }
+        for (size_t i = 0; i < toRead && qIdx < sizeof(m_qWeights); ++i, ++qIdx) {
+            const float v = std::isfinite(chunk[i]) ? chunk[i] : 0.0f;
+            const int q = static_cast<int>(std::lround(std::clamp(v * 127.0f, -127.0f, 127.0f)));
+            m_qWeights[qIdx] = static_cast<int8_t>(q);
+        }
+        remaining -= toRead;
+    }
+    std::fclose(fp);
     m_weightsLoaded = true;
     return true;
 }

@@ -112,6 +112,8 @@ public:
     bool getModelOutput(AIModelOutput& out) const noexcept;
 
     bool loadWeights(const void* data, size_t bytes) noexcept;
+    bool loadWeights(const char* path) noexcept;
+    constexpr size_t expectedWeightCount() const noexcept { return 8774u; }
 
 private:
     LockFreeAudioRingBuffer<float, RING_BUFFER_CAPACITY> m_audioRingBuffer;
