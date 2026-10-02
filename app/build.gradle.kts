@@ -141,16 +141,8 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
     }
 
-    // Firebase AI Logic (com.google.firebase.ai en firebase-bom:34.17.0)
-    implementation("com.google.firebase:firebase-ai") {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
-    }
+    // Firebase Generative AI (Firebase AI Logic en BoM 34.x)
+    implementation("com.google.firebase:firebase-ai")
 
     // Legacy Google AI Client (fallback si Firebase no está disponible)
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
