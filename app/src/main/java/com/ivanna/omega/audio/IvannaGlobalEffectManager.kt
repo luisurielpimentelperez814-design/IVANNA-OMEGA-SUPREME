@@ -281,6 +281,9 @@ class IvannaGlobalEffectManager(
     @Volatile var activeProfile: IvannaEffectProfile = IvannaEffectProfile.WARM
         private set
 
+    val isVideoStreamingActive: Boolean
+        get() = activeSessions.values.any { it.isVideo }
+
     private data class SessionEffects(
         val equalizer:         Equalizer?,
         val bassBoost:         BassBoost?,
@@ -297,7 +300,8 @@ class IvannaGlobalEffectManager(
         // Se referencia con nombre completo porque com.ivanna.omega.audio.effects
         // .AudioEffect (interface propia) ensombrece a android.media.audiofx
         // .AudioEffect en el resolver de Kotlin -> error package-private.
-        val omega:             android.media.audiofx.AudioEffect? = null
+        val omega:             android.media.audiofx.AudioEffect? = null,
+        val isVideo:           Boolean = false
     )
 
 
@@ -346,6 +350,22 @@ class IvannaGlobalEffectManager(
         android.util.Log.i("IvannaGlobalFX", "ISO 226 EQ aplicado: ${clamped.map { "${it/100f}dB" }}")
     }
 
+    val activeSessionCount: Int get() = activeSessions.size
+
+    fun isVideoStreamingPackage(pkg: String?): Boolean {
+        if (pkg == null) {
+            return CinematicEngineHost.activeModeOrdinal == 1 || activeProfile == IvannaEffectProfile.CINEMATIC
+        }
+        val p = pkg.lowercase(Locale.ROOT)
+        return p.contains("amazon") || p.contains("prime") || p.contains("aiv") ||
+               p.contains("avod") || p.contains("firebat") || p.contains("netflix") ||
+               p.contains("disney") || p.contains("hbo") || p.contains("wbd") ||
+               p.contains("max") || p.contains("youtube") || p.contains("twitch") ||
+               p.contains("plex") || p.contains("vlc") || p.contains("videoplayer") ||
+               p.contains("kodi") || p.contains("movie") || p.contains("video") ||
+               p.contains("cinema") || p.contains("player") || p.contains("film")
+    }
+
     // ── Abre efectos para una nueva sesión de audio ───────────────────────────
     fun openSession(
         audioSession: Int,
@@ -358,7 +378,8 @@ class IvannaGlobalEffectManager(
         if (audioSession <= 0) return
         if (activeSessions.containsKey(audioSession)) return
 
-        Log.i(TAG, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"})")
+        val isVideo = isVideoStreamingPackage(sourcePackage)
+        Log.i(TAG, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"}, isVideo=$isVideo)")
 
         // AUDIT FIX (Omega DSP nunca se adjuntaba por sesión): se intenta
         // primero el efecto custom por UUID. Si el módulo Magisk está
@@ -370,18 +391,36 @@ class IvannaGlobalEffectManager(
         // (IllegalArgumentException/RuntimeException) y omega queda en null:
         // comportamiento idéntico al anterior (solo efectos stock).
         val omega = createOmegaEffect(audioSession)
-        val eq   = createEqualizer(audioSession)
-        val bb   = createBassBoost(audioSession)
-        val virt = createVirtualizer(audioSession)
-        val loud = createLoudness(audioSession)
-        val dyn  = createDynamics(audioSession)
-        val rev  = createEnvironmentalReverb(audioSession)
 
-        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega)
+        // FIX CINEMA / AMAZON PRIME VIDEO: Si el motor nativo omega_effect está activo,
+        // él procesa todo en C++20 con latencia 0.00 ms. NO montar efectos stock encima
+        // (evita doble compresión, desfase y eco). Si estamos en no-root y es una app de
+        // video/cine, se desactivan el Virtualizer (elimina desfase de diálogo) y el
+        // EnvironmentalReverb (elimina eco slapback de 900 ms).
+        val eq: Equalizer?
+        val bb: BassBoost?
+        val virt: Virtualizer?
+        val loud: LoudnessEnhancer?
+        val dyn: DynamicsProcessing?
+        val rev: EnvironmentalReverb?
+
+        if (omega != null) {
+            Log.i(TAG, "Sesión $audioSession acoplada a libomega_effect nativo (efectos stock en bypass)")
+            eq = null; bb = null; virt = null; loud = null; dyn = null; rev = null
+        } else {
+            dyn  = createDynamics(audioSession, isVideo)
+            eq   = createEqualizer(audioSession)
+            bb   = if (isVideo) null else createBassBoost(audioSession)
+            virt = if (isVideo) null else createVirtualizer(audioSession)
+            loud = createLoudness(audioSession)
+            rev  = if (isVideo) null else createEnvironmentalReverb(audioSession)
+        }
+
+        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega, isVideo)
         applyProfileToSession(audioSession, activeProfile)
 
         Log.i(TAG, "Sesión $audioSession activa: Omega=${omega != null} EQ=${eq != null} BB=${bb != null} " +
-                   "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null} Rev=${rev != null}")
+                   "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null} Rev=${rev != null} isVideo=$isVideo")
     }
 
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
@@ -625,31 +664,54 @@ class IvannaGlobalEffectManager(
         runCatching {
             val maxBoostMb = profile.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0
             val headroomMb = if (maxBoostMb > 300) ((maxBoostMb - 300) * 0.75f).toInt() else 0
-            fx.equalizer?.let { eq ->
-                if (eq.enabled) {
-                    val numBands = eq.numberOfBands.toInt()
-                    val range = runCatching { eq.bandLevelRange }.getOrNull()
-                    val minMb = range?.getOrNull(0)?.toInt() ?: -1500
-                    val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
-                    for (band in 0 until minOf(numBands, profile.eqBands.size)) {
-                        val levelMb = (profile.eqBands[band] - headroomMb).coerceIn(minMb, maxMb)
-                        eq.setBandLevel(band.toShort(), levelMb.toShort())
+
+            if (fx.isVideo) {
+                // Diálogo cinematográfico ultra-nítido para streaming (Amazon Prime / Netflix):
+                // Cero reverberación parásita, cero desfase de Virtualizer.
+                fx.reverb?.enabled = false
+                fx.virtualizer?.enabled = false
+                fx.equalizer?.let { eq ->
+                    if (eq.enabled) {
+                        val numBands = eq.numberOfBands.toInt()
+                        val range = runCatching { eq.bandLevelRange }.getOrNull()
+                        val minMb = range?.getOrNull(0)?.toInt() ?: -1500
+                        val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
+                        // Curva Cinema Intelligibility: atenuar retumbes (<125Hz) y realzar presencia vocal (1k-4kHz)
+                        val speechOffsets = intArrayOf(-200, -150, 0, 50, 150, 250, 250, 150, 50, 0)
+                        for (band in 0 until minOf(numBands, profile.eqBands.size)) {
+                            val boost = speechOffsets.getOrElse(band) { 0 }
+                            val levelMb = (profile.eqBands[band] + boost - headroomMb).coerceIn(minMb, maxMb)
+                            eq.setBandLevel(band.toShort(), levelMb.toShort())
+                        }
                     }
                 }
-            }
-            fx.bassBoost?.let { bb ->
-                if (bb.strengthSupported) bb.setStrength(profile.bassStrength)
-            }
-            fx.virtualizer?.let { v ->
-                if (v.strengthSupported) v.setStrength(profile.virtualizerStrength)
+            } else {
+                fx.equalizer?.let { eq ->
+                    if (eq.enabled) {
+                        val numBands = eq.numberOfBands.toInt()
+                        val range = runCatching { eq.bandLevelRange }.getOrNull()
+                        val minMb = range?.getOrNull(0)?.toInt() ?: -1500
+                        val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
+                        for (band in 0 until minOf(numBands, profile.eqBands.size)) {
+                            val levelMb = (profile.eqBands[band] - headroomMb).coerceIn(minMb, maxMb)
+                            eq.setBandLevel(band.toShort(), levelMb.toShort())
+                        }
+                    }
+                }
+                fx.bassBoost?.let { bb ->
+                    if (bb.strengthSupported) bb.setStrength(profile.bassStrength)
+                }
+                fx.virtualizer?.let { v ->
+                    if (v.strengthSupported) v.setStrength(profile.virtualizerStrength)
+                }
+                fx.reverb?.let { rev ->
+                    rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
+                    rev.setDecayTime(profile.reverbDecayTimeMs)
+                    rev.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
+                }
             }
             val safeLoudnessMb = (profile.loudnessGainMb - headroomMb).coerceAtLeast(0)
             fx.loudness?.setTargetGain(safeLoudnessMb)
-            fx.reverb?.let { rev ->
-                rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
-                rev.setDecayTime(profile.reverbDecayTimeMs)
-                rev.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
-            }
             applyDynamicsProfile(fx.dynamics, profile)
         }.onFailure { Log.w(TAG, "Error aplicando perfil a sesión $sessionId", it) }
     }
@@ -723,24 +785,31 @@ class IvannaGlobalEffectManager(
     // mismos parámetros conceptuales: nivel de sala, decaimiento RT60,
     // primeras reflexiones. Disponible sin root desde API 9.
     private fun createEnvironmentalReverb(session: Int): EnvironmentalReverb? = runCatching {
-        EnvironmentalReverb(Int.MAX_VALUE, session).also { it.enabled = true }
+        // En reposo por defecto para evitar eco tipo canyon en películas / llamadas.
+        EnvironmentalReverb(Int.MAX_VALUE, session).also { it.enabled = false }
     }.getOrNull()
 
     private fun createLoudness(session: Int): LoudnessEnhancer? = runCatching {
         LoudnessEnhancer(session).also { it.enabled = true }
     }.getOrNull()
 
-    private fun createDynamics(session: Int): DynamicsProcessing? {
+    private fun createDynamics(session: Int, isVideo: Boolean = false): DynamicsProcessing? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
         return runCatching {
+            val variant = if (isVideo) {
+                DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION
+            } else {
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION
+            }
+            val frameDuration = if (isVideo) 0.5f else 2.5f
             val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                variant,
                 2,    // canales
                 false, 0,   // sin preEQ
                 true,  1,   // MBC: 1 banda (compresor broadband)
                 false, 0,   // sin postEQ
                 false        // sin limiter
-            ).build()
+            ).setPreferredFrameDuration(frameDuration).build()
             DynamicsProcessing(Int.MAX_VALUE, session, config).also { it.enabled = true }
         }.getOrNull()
     }

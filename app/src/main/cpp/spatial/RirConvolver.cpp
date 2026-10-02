@@ -107,9 +107,10 @@ void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexc
     const int irLen = std::min(MAX_IR + 4 * BLOCK, static_cast<int>(rt60 * static_cast<float>(sr)));
     std::vector<float> irL(irLen, 0.0f), irR(irLen, 0.0f);
 
-    // Impulso directo + reflexiones tempranas de sala de control ITU-R BS.1116
-    irL[0] = 0.68f;
-    irR[0] = 0.68f;
+    // Reflexiones tempranas de sala de control ITU-R BS.1116
+    // NOTA ACÚSTICA: El camino directo llega intacto vía dry * inL (latencia 0.00 ms).
+    // Para evitar desfase o duplicación del diálogo (efecto slapback / comb-filter en películas),
+    // el convolucionador de sala genera exclusivamente el campo reflejado y la cola difusa.
     const int erTap1 = std::min(irLen - 1, static_cast<int>(0.0042f * sr));
     const int erTap2 = std::min(irLen - 1, static_cast<int>(0.0079f * sr));
     const int erTap3 = std::min(irLen - 1, static_cast<int>(0.0134f * sr));
@@ -150,22 +151,44 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     lastSynthRt60_ = -1.0f;
     lastSynthSr_   = 0;
 
-    // ── FIX CRÍTICO (2026-09-28): Eliminación de DC Offset + Normalización L2 Unit-Energy ──
-    // Los WAVs de RIR medidos en disco no están normalizados en energía L2: salas con
-    // mayor RT60 acumulan hasta +14 dB de ganancia de convolución discreta y componente DC.
-    // Al subir los dos sliders (RT60 y Wet) en la UI, el convolver inyectaba un sonido/ruido
-    // creciente que saturaba la cola FDL. Además, el hilo worker escribía directamente
-    // sobre tailIrReL_ mientras el hilo RT de audio lo leía (data race).
-    // Solución:
-    //   1) Copia local sin DC + ventana half-cosine de 64 muestras al final + normalización L2
-    //      para que cualquier sala tenga exactamente energía unitaria (0 dB).
-    //   2) Escribir las particiones de cola en pendTailIr* y hacer swap atómico en process().
-    const int safeLen = std::min(irLen, MAX_IR_TOTAL);
+    // ── FIX CRÍTICO: Eliminación de DC + Alineación Temporal Time-Of-Flight + Supresión de Eco Directo ──
+    // En respuestas al impulso de sala (RIR) grabadas en disco, el tiempo de vuelo altavoz->micrófono
+    // introduce un retraso acústico de 2 a 12 ms antes de la llegada directa. Si ese pico se convoluciona
+    // junto con el camino directo (dry * in), se genera un eco slapback y un filtrado en peine destructivo
+    // ("desfase y eco" en Amazon Prime Video / Netflix).
+    // Detectamos el inicio directo en los primeros 1024 frames, alineamos al origen y suprimimos la réplica
+    // directa redundante para que la convolución inyecte únicamente el campo reverberante limpio.
+    int onsetIdx = 0;
+    if (irLen >= 128) {
+        float maxVal = 0.0f;
+        const int searchRange = std::min(irLen / 2, 1024);
+        for (int i = 0; i < searchRange; ++i) {
+            const float aL = std::fabs(irL[i]);
+            const float aR = std::fabs(irR[i]);
+            if (aL > maxVal) maxVal = aL;
+            if (aR > maxVal) maxVal = aR;
+        }
+        if (maxVal > 1e-4f) {
+            const float thresh = maxVal * 0.35f;
+            for (int i = 0; i < searchRange; ++i) {
+                if (std::fabs(irL[i]) >= thresh || std::fabs(irR[i]) >= thresh) {
+                    onsetIdx = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    const int availableLen = irLen - onsetIdx;
+    const int safeLen = std::min(availableLen > 0 ? availableLen : irLen, MAX_IR_TOTAL);
+    const float* srcL = (availableLen > 0) ? (irL + onsetIdx) : irL;
+    const float* srcR = (availableLen > 0) ? (irR + onsetIdx) : irR;
+
     std::vector<float> normIrL(safeLen), normIrR(safeLen);
     double meanL = 0.0, meanR = 0.0;
     for (int i = 0; i < safeLen; ++i) {
-        meanL += std::isfinite(irL[i]) ? irL[i] : 0.0f;
-        meanR += std::isfinite(irR[i]) ? irR[i] : 0.0f;
+        meanL += std::isfinite(srcL[i]) ? srcL[i] : 0.0f;
+        meanR += std::isfinite(srcR[i]) ? srcR[i] : 0.0f;
     }
     meanL /= static_cast<double>(safeLen);
     meanR /= static_cast<double>(safeLen);
@@ -173,8 +196,14 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     double energySum = 0.0;
     const int fadeLen = std::min(64, safeLen / 4);
     for (int i = 0; i < safeLen; ++i) {
-        float vL = (std::isfinite(irL[i]) ? irL[i] : 0.0f) - static_cast<float>(meanL);
-        float vR = (std::isfinite(irR[i]) ? irR[i] : 0.0f) - static_cast<float>(meanR);
+        float vL = (std::isfinite(srcL[i]) ? srcL[i] : 0.0f) - static_cast<float>(meanL);
+        float vR = (std::isfinite(srcR[i]) ? srcR[i] : 0.0f) - static_cast<float>(meanR);
+        // Supresión suave de espiga directa en origen (primeras 8 muestras) para evitar comb-filter con dry
+        if (onsetIdx > 0 && i < 16) {
+            const float directNotch = 0.15f + 0.85f * (static_cast<float>(i) / 16.0f);
+            vL *= directNotch;
+            vR *= directNotch;
+        }
         if (fadeLen > 0 && i >= safeLen - fadeLen) {
             const float t = static_cast<float>(safeLen - 1 - i) / static_cast<float>(fadeLen);
             const float w = 0.5f * (1.0f - std::cos(3.14159265f * t));

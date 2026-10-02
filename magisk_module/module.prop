@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.4.0
-versionCode=240
+version=v2.4.1
+versionCode=241
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.4.0: 12D Bayesian Atlas-Escena Singularity, Lebart/Habets Dereverb, 6-Wall Sabine ER, Woodworth Spherical ITD, Chebyshev T2/T3 Shaper & M10 Realism Guard.
+description=v2.4.1: Cinema & Streaming Ultra-Low-Latency A/V Sync, Zero-Echo RIR TOF Alignment, Center Dialogue Phase-Lock, 12D Atlas-Escena, 6-Wall Sabine ER & C2 Acoustic Stability Guard.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

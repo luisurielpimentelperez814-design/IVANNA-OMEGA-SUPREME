@@ -157,6 +157,12 @@ public:
     bool isRealityReconstructionEnabled() const noexcept {
         return realityReconstructionEnabled_;
     }
+    void setExternalRirActive(bool active) noexcept {
+        externalRirActive_.store(active, std::memory_order_relaxed);
+    }
+    bool isExternalRirActive() const noexcept {
+        return externalRirActive_.load(std::memory_order_relaxed);
+    }
     const ivanna::reality::AcousticRealityState& activeRealityState() const noexcept {
         return activeRealityState_;
     }
@@ -284,7 +290,11 @@ public:
         outTargetIacc = sc.t.targetIacc;
 
         roomEngine_.setInversionGain(invGain);
-        roomEngine_.setProjectionWet(projWet);
+        // §0.4: Si RirConvolver externo está activo en Ruta A o Ruta B, roomEngine
+        // mantiene projectionWet=0.0f (ejecutando únicamente el de-reverberador WPE y el
+        // LateReverbSuppressor para limpiar colas parásitas) evitando doble reverberación y eco.
+        const bool extRir = externalRirActive_.load(std::memory_order_relaxed);
+        roomEngine_.setProjectionWet(extRir ? 0.0f : projWet);
         roomEngine_.setRoomGeometry(Lx, Ly, Lz, rt60);
         spatialRenderer_.setStageElevationOffset(sc.t.stageElevation * gGate);
     }
@@ -370,8 +380,20 @@ public:
                 ? std::clamp(baseSpatialWet + 0.22f * realityK, 0.0f, 0.45f)
                 : 0.0f;
             if (wetObj > 1.0e-4f) {
+                // NOTA ACÚSTICA CRÍTICA (Zero-Desfase en Diálogo): chL[i]/chR[i] ya contienen
+                // el objeto central (CENTER, diálogo/voces) en fase perfecta y retardo 0.00 ms vía dryObj.
+                // Pasar objPtrs[0] al renderizador espacial lo filtraría con filtros IIR y retardo ITD,
+                // produciendo filtrado en peine y desfase ("eco de diálogo" en Amazon Prime Video / películas).
+                // Al renderizar exclusivamente los objetos laterales y ambientales (LEFT, RIGHT, AMBIENT),
+                // el centro vocal permanece 100% libre de desfase y con máxima inteligibilidad.
+                const float* lateralObjPtrs[4] = {
+                    nullptr,
+                    objPtrs[1],
+                    objPtrs[2],
+                    objPtrs[3]
+                };
                 spatialRenderer_.renderObjects(
-                    objPtrs, activeObjs,
+                    lateralObjPtrs, activeObjs,
                     spatialScratchL_.data(), spatialScratchR_.data(),
                     chunk, itdScale, atlasWidthScale);
                 const float dryObj = 1.0f - 0.35f * wetObj;
@@ -639,6 +661,7 @@ private:
     float excLpL_{0.0f};
     float excLpR_{0.0f};
     float sampleRate_{48000.0f};
+    std::atomic<bool> externalRirActive_{false};
 
     // Atomic singleton pointer — registered by ivanna_omega_jni.cpp (Ruta A/C)
     // and omega_effect.cpp (Ruta B); null only before first engine init
