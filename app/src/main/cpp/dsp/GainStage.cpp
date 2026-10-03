@@ -63,8 +63,16 @@ void GainStage::processOutput(float* __restrict__ left, float* __restrict__ righ
 }
 
 void GainStage::reset() {
-    currentIn_ = inputGain_;
-    currentOut_ = outputGain_;
+    // FIX (pop al resetear con audio activo): reset() saltaba currentIn_/
+    // currentOut_ al objetivo de golpe -> escalon de ganancia audible si se
+    // invoca en cambio de ventana/sesion/motor. Una vez inicializado se
+    // conserva la ganancia actual: processInput/Output la llevan al objetivo
+    // con la rampa de 15 ms. Antes del primer setParams no hay senal previa,
+    // asi que ahi si se fija directamente.
+    if (!initialized_) {
+        currentIn_ = inputGain_;
+        currentOut_ = outputGain_;
+    }
 }
 
 } // namespace ivanna
