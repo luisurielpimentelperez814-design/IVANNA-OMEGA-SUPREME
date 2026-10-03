@@ -1,13 +1,4 @@
 pluginManagement {
-    buildscript {
-        repositories {
-            google()
-            mavenCentral()
-        }
-        dependencies {
-            classpath("com.android.tools:r8:8.8.34")
-        }
-    }
     repositories {
         google()
         mavenCentral()

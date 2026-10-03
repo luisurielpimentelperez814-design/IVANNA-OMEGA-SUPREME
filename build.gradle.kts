@@ -3,6 +3,16 @@
 // Source of truth for plugin versions.
 // ============================================================================
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools:r8:8.8.34")
+    }
+}
+
 plugins {
     id("com.android.application") version "8.5.2" apply false
     id("org.jetbrains.kotlin.android") version "2.4.20" apply false
