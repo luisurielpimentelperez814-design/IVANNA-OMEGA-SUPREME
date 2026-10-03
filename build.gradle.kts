@@ -11,6 +11,11 @@ buildscript {
     dependencies {
         classpath("com.android.tools:r8:8.8.34")
     }
+    configurations.classpath {
+        resolutionStrategy {
+            force("com.android.tools:r8:8.8.34")
+        }
+    }
 }
 
 plugins {
