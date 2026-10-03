@@ -101,6 +101,9 @@ public:
         // Heun OHC: coeficientes (= h/tau_sec, pre-comp → sin divisiones en RT)
         float att[NUM_BANDS];  // = 1/(tau_att_ms*Fs/1000)
         float rel[NUM_BANDS];  // = 1/(tau_rel_ms*Fs/1000)
+        // OHC Basolateral membrane lowpass smoothing (anti-sizzle / anti-hormigas)
+        float membraneState[NUM_BANDS];
+        float membraneCoeff[NUM_BANDS];
     };
 
     // Un ChannelState por oído (L y R independientes → stereo auditivo real)
@@ -307,6 +310,14 @@ private:
             ch.na2[b] = -(1.0f - alpha) * inv_a0;     // -a2/a0  [-]
             ch.att[b] = att_c;
             ch.rel[b] = rel_c;
+            // Cutoff de membrana basolateral OHC (~1500 Hz para bandas altas)
+            // Filtra componentes de portadora AC por encima de 1.8 kHz eliminando ripple en la envolvente
+            if (CF[b] > 1800.0f) {
+                constexpr float FC_MEMBRANE = 1500.0f;
+                ch.membraneCoeff[b] = 1.0f - std::exp(-PI2 * FC_MEMBRANE / Fs);
+            } else {
+                ch.membraneCoeff[b] = 1.0f;
+            }
         }
     }
 
@@ -355,8 +366,19 @@ private:
                 y2v = y1v;
                 y1v = bpf_v;
 
+                // ─── Denormal flush + Suavizado fisiológico de membrana basolateral OHC ─
+                const float32x4_t denormThresh = vdupq_n_f32(1.0e-15f);
+                const uint32x4_t isDenorm = vcltq_f32(vabsq_f32(bpf_v), denormThresh);
+                bpf_v = vbslq_f32(isDenorm, vdupq_n_f32(0.0f), bpf_v);
+
+                float32x4_t memState_v = vld1q_f32(ch.membraneState + bg);
+                float32x4_t memCoeff_v = vld1q_f32(ch.membraneCoeff + bg);
+                const float32x4_t rect_v = vabsq_f32(bpf_v);
+                memState_v = vaddq_f32(memState_v, vmulq_f32(memCoeff_v, vsubq_f32(rect_v, memState_v)));
+                vst1q_f32(ch.membraneState + bg, memState_v);
+
                 // ─── Heun OHC envelope (RK2, primer orden, sin divisiones) ─
-                const float32x4_t Ev = vabsq_f32(bpf_v);
+                const float32x4_t Ev = memState_v;
                 const uint32x4_t rising = vcgtq_f32(Ev, envv);
                 const float32x4_t coef  = vbslq_f32(rising, attv, relv);
                 const float32x4_t k1v   = vmulq_f32(vsubq_f32(Ev, envv), coef);
@@ -397,8 +419,18 @@ private:
                 ch.y2[b] = ch.y1[b];
                 ch.y1[b] = bpf;
 
-                // Heun OHC envelope (RK2)
-                const float E    = (bpf >= 0.0f) ? bpf : -bpf;
+                // Flush denormals to 0.0f (previene micro-pausas y ruido de fondo granular)
+                float bpf_clean = bpf;
+                if (std::fabs(bpf_clean) < 1.0e-15f) bpf_clean = 0.0f;
+                if (std::fabs(ch.y1[b]) < 1.0e-15f) ch.y1[b] = 0.0f;
+                if (std::fabs(ch.y2[b]) < 1.0e-15f) ch.y2[b] = 0.0f;
+
+                // Suavizado fisiológico de membrana basolateral OHC (anti-sizzle / anti-hormigas)
+                const float rect = (bpf_clean >= 0.0f) ? bpf_clean : -bpf_clean;
+                ch.membraneState[b] += ch.membraneCoeff[b] * (rect - ch.membraneState[b]);
+                if (ch.membraneState[b] < 1.0e-15f) ch.membraneState[b] = 0.0f;
+                const float E    = ch.membraneState[b];
+
                 const float coef = (E > ch.env[b]) ? ch.att[b] : ch.rel[b];
                 const float k1   = (E - ch.env[b]) * coef;
                 const float pred = ch.env[b] + k1;

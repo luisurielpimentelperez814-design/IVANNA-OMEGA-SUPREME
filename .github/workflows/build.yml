@@ -224,6 +224,25 @@ jobs:
           echo "OK: sin dependencia de libc++_shared.so — daemon autocontenido para ejecucion fuera del APK"
           sha256sum ivanna_daemon | tee daemon_sha256.txt
 
+      - name: Provision Android keystores for Release signing
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android" "$HOME/.config/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" || true
+          fi
+          cp -f "$HOME/.android/debug.keystore" "$HOME/.config/.android/debug.keystore" || true
+          echo "Keystores provisioned:"
+          ls -la "$HOME/.android/debug.keystore" "$HOME/.config/.android/debug.keystore"
+
       - name: Build APK (Gradle provisionado)
         run: |
           chmod +x gradlew

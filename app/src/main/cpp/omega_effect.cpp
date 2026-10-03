@@ -811,8 +811,8 @@ static inline void omega_write_output_frame(void* rawOut, uint8_t fmt,
         }
         default: { // AUDIO_FORMAT_PCM_FLOAT (0x05) o 0
             float* f32 = static_cast<float*>(rawOut) + (size_t)frameIdx * 2u;
-            f32[0] = std::isfinite(l) ? l : 0.0f;
-            f32[1] = std::isfinite(r) ? r : 0.0f;
+            f32[0] = std::isfinite(l) ? std::clamp(l, -1.0f, 1.0f) : 0.0f;
+            f32[1] = std::isfinite(r) ? std::clamp(r, -1.0f, 1.0f) : 0.0f;
             break;
         }
     }
@@ -821,6 +821,17 @@ static inline void omega_write_output_frame(void* rawOut, uint8_t fmt,
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
 static int32_t omega_process(effect_handle_t self,
                              audio_buffer_t *inBuf, audio_buffer_t *outBuf) {
+#if defined(__aarch64__)
+    uint64_t fpcr;
+    asm volatile("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= (1ULL << 24) | (1ULL << 19); // FTZ (Flush-To-Zero) + FZ16
+    asm volatile("msr fpcr, %0" :: "r"(fpcr));
+#elif defined(__arm__)
+    uint32_t fpscr;
+    asm volatile("vmrs %0, fpscr" : "=r"(fpscr));
+    fpscr |= (1u << 24);
+    asm volatile("vmsr fpscr, %0" :: "r"(fpscr));
+#endif
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
     if (!ctx || !ctx->enabled || !inBuf || !outBuf) return 0;
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
