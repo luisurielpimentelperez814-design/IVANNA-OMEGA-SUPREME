@@ -3,6 +3,7 @@
 # El resultado (ivanna_daemon) se stagea en magisk_module/system/bin/.
 
 cmake_minimum_required(VERSION 3.22.1)
+project(ivanna_daemon LANGUAGES CXX C)
 
 add_executable(ivanna_daemon
     ivanna_daemon.cpp

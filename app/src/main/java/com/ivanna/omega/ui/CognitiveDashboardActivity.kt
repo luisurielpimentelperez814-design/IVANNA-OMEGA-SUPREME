@@ -165,7 +165,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                 }
                 Column {
                     Text("Spatial Mode", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text(dspDecision?.spatialMode ?: "STEREO", color = Color(0xFFF7B733), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text(dspDecision.spatialMode ?: "STEREO", color = Color(0xFFF7B733), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
             }
         }

@@ -31,7 +31,7 @@ fun OemAiScreen(
         Row(Modifier.fillMaxWidth().background(ObsidianSoft).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = NeonMagenta)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = NeonMagenta)
             }
             Column(Modifier.weight(1f)) {
                 Text("IA ADAPTATIVA", color = NeonMagenta, fontWeight = FontWeight.ExtraBold,

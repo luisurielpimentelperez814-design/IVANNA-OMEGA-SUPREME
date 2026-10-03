@@ -501,7 +501,7 @@ class UsbAudioProManager private constructor(context: Context) {
         // lo cerraba dos veces (connection.close() + fileDescriptor.close()) —
         // doble close: si entre medias el kernel reasigna ese numero de fd a
         // otro hilo, el segundo close cierra un descriptor ajeno.
-        fileDescriptor = connection.fileDescriptor?.let { rawFd ->
+        fileDescriptor = connection.fileDescriptor.let { rawFd ->
             runCatching { ParcelFileDescriptor.fromFd(rawFd) }.getOrElse {
                 Log.w(TAG, "fromFd($rawFd) fallo: ${it.message} — bypass nativo sin fd")
                 null

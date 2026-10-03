@@ -388,7 +388,7 @@ class IvannaGeminiAgent(
 
     private fun resolveApiKey(context: Context): String {
         if (!secureConfig.state.value.isInitialized) secureConfig.initialize(context)
-        return secureConfig.getApiKey().takeIf { it.isNotBlank() } ?: BuildConfig.GEMINI_API_KEY ?: ""
+        return secureConfig.getApiKey().takeIf { it.isNotBlank() } ?: BuildConfig.GEMINI_API_KEY
     }
 
     private fun generateSessionId(): String = "sess_${System.currentTimeMillis()}"

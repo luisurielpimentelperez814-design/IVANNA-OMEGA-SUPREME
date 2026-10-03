@@ -219,7 +219,7 @@ fun SofaAfRirSafPanelScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
                 IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.ArrowBack, null, tint = TextMuted)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextMuted)
                 }
                 Spacer(Modifier.width(4.dp))
             }

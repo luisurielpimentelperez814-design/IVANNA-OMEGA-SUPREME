@@ -47,7 +47,7 @@ fun OemTelemetryScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = AmberSignal)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = AmberSignal)
             }
             Column(Modifier.weight(1f)) {
                 Text("TELEMETRÍA OEM", color = AmberSignal,

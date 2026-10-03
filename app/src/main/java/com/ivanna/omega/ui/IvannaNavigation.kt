@@ -329,7 +329,7 @@ private fun HubCard(title: String, subtitle: String, accent: Color, onClick: () 
                 Text(title,    color = TextPrimary,   style = MaterialTheme.typography.labelLarge,  fontWeight = FontWeight.SemiBold)
                 Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
             }
-            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = accent.copy(alpha = 0.6f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = accent.copy(alpha = 0.6f))
         }
     }
 }

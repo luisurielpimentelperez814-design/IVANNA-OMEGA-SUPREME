@@ -181,7 +181,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // Ajustar tamaño de buffer basado en fatiga auditiva
             // Si hay fatiga alta, aumentar buffer para suavizar ruido
             // Si hay fatiga baja, mantener buffer mínimo para latencia baja
-            val fatigueLevel = state.fatigue?.cumulativeSessionFatigueScore ?: 0.5f
+            val fatigueLevel = state.fatigue.cumulativeSessionFatigueScore ?: 0.5f
             val adaptiveBufferSize = if (fatigueLevel > 0.6f) 4096 else 2048
 
             // Log del cambio

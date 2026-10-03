@@ -223,7 +223,7 @@ private fun IvannaAssistantTopBar(onBack: () -> Unit) {
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Volver", tint = AuroraCyan)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver", tint = AuroraCyan)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -557,7 +557,7 @@ private fun MemoryPanel(
                         textInput = ""
                         keyboard?.hide()
                     }) {
-                        Icon(Icons.Default.Send, contentDescription = "Enviar", tint = AuroraCyan)
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar", tint = AuroraCyan)
                     }
                 }
             },
@@ -870,6 +870,6 @@ private fun phaseIcon(phase: AssistantPhase): ImageVector = when (phase) {
     AssistantPhase.LISTENING  -> Icons.Default.Mic
     AssistantPhase.PROCESSING -> Icons.Default.Psychology
     AssistantPhase.EXECUTING  -> Icons.Default.PlayCircle
-    AssistantPhase.SPEAKING   -> Icons.Default.VolumeUp
+    AssistantPhase.SPEAKING   -> Icons.AutoMirrored.Filled.VolumeUp
     AssistantPhase.ERROR      -> Icons.Default.ErrorOutline
 }

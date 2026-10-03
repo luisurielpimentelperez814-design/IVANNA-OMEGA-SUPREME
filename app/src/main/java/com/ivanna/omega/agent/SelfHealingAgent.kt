@@ -121,7 +121,7 @@ object SelfHealingAgent {
                 // Re-init con la SR real del HAL (mismo patrón que la app)
                 val sr = runCatching {
                     (com.ivanna.omega.core.IVANNAApplication.instance
-                        ?.getSystemService(android.content.Context.AUDIO_SERVICE)
+                        .getSystemService(android.content.Context.AUDIO_SERVICE)
                             as? android.media.AudioManager)
                         ?.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
                         ?.toIntOrNull()

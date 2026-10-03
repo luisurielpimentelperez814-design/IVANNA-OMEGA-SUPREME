@@ -86,7 +86,7 @@ class AudioResampler(
     private fun kaiserWindow(x: Float): Float {
         val beta = 8.6f
         val arg = beta * Math.sqrt(1.0 - x * x).toFloat()
-        return (bessel0(arg) / bessel0(beta)).toFloat()
+        return bessel0(arg) / bessel0(beta)
     }
 
     private fun bessel0(x: Float): Float {

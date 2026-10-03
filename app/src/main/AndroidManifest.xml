@@ -47,10 +47,7 @@
          host USB — la ruta directa se degrada con aviso, no con exclusion. -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
 
-    <!-- Red: Gemini API + panel de conectividad -->
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <!-- Red: cambio de estado de red/WiFi para conectividad -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
 
@@ -62,7 +59,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.IvannaOmega"
-        android:extractNativeLibs="false">
+>
         <!-- FIX (APK corrupto): extractNativeLibs=false instruye al package manager
              a mapear las .so directamente desde el APK sin extraerlas a disco.
              Requiere que las .so estén sin comprimir en el APK (useLegacyPackaging=false

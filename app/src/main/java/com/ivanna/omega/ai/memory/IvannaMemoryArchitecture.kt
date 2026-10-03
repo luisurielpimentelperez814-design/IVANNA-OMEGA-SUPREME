@@ -184,7 +184,7 @@ class IvannaMemoryArchitecture(context: Context) {
 
     class EpisodicMemory(private val onChange: suspend () -> Unit) {
         private val records = mutableListOf<EpisodicRecord>()
-        private val lock = Object()
+        private val lock = Any()
         fun loadRecords(new: List<EpisodicRecord>) { synchronized(lock) { records.clear(); records.addAll(new) } }
         fun getAllRecords(): List<EpisodicRecord> = synchronized(lock) { records.toList() }
 
@@ -246,7 +246,7 @@ class IvannaMemoryArchitecture(context: Context) {
 
     class SemanticMemory(private val onChange: suspend () -> Unit) {
         private val records = mutableListOf<SemanticRecord>()
-        private val lock = Object()
+        private val lock = Any()
         fun loadRecords(new: List<SemanticRecord>) { synchronized(lock) { records.clear(); records.addAll(new) } }
         fun getAllRecords(): List<SemanticRecord> = synchronized(lock) { records.toList() }
 

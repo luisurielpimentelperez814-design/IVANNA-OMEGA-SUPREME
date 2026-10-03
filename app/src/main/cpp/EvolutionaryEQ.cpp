@@ -185,14 +185,7 @@ void EvolutionaryEQ::updateLM_CMA_ES() {
         fitness[p] = calculateFitness(population[p]);
     }
 
-    size_t best_idx = 0;
-    float max_fit = fitness[0];
-    for (size_t p = 1; p < lambda; ++p) {
-        if (fitness[p] > max_fit) {
-            max_fit = fitness[p];
-            best_idx = p;
-        }
-    }
+
 
     // Selección por promedio ponderado por fitness (softmax estable) sobre la
     // población, en el dominio dB del genoma. La media lineal de ±1 aleatorios

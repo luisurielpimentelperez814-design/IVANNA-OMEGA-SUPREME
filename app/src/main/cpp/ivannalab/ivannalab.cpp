@@ -102,7 +102,7 @@ static Biquad makeKWeightStage2(float sr) noexcept {
     return b;
 }
 
-static Biquad makeGenericHighPass(float fc, float Q, float sr) noexcept {
+[[maybe_unused]] static Biquad makeGenericHighPass(float fc, float Q, float sr) noexcept {
     const float w0 = 2.f * static_cast<float>(M_PI) * fc / sr;
     const float cosW = std::cos(w0);
     const float sinW = std::sin(w0);

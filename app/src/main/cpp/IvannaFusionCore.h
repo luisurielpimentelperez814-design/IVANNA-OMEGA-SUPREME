@@ -262,9 +262,9 @@ private:
 
     float sampleRate_ = 48000.0f;
 
-    bool goldenEarMode_ = false;
+    [[maybe_unused]] bool goldenEarMode_ = false;
 
-    float safLatent_[7]{};
+    [[maybe_unused]] float safLatent_[7]{};
 
 
     HrtfManager* m_hrtf = nullptr;
@@ -331,7 +331,7 @@ private:
     float m_eqTrimTarget_         = 1.0f;
     float m_eqTrimSmoothed_       = 1.0f;
     float m_intensityTarget_      = 1.0f;
-    float m_intensitySmoothed_    = 1.0f;
+    [[maybe_unused]] float m_intensitySmoothed_    = 1.0f;
 
     // Carry-over Ring FIFO para desinterleaving y tamaños arbitrarios de bloque
     static constexpr size_t kFifoCapacity = 16384;

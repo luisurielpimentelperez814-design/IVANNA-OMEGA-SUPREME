@@ -22,7 +22,7 @@ constexpr float kAntiAliasingFir[5] = {0.0532f, 0.2468f, 0.4000f, 0.2468f, 0.053
 constexpr float kLogMelFloor = -100.0f;
 constexpr float kQuantScale  = 255.0f / 100.0f; // Escalar rango [0..100] a [0..255]
 
-inline float clampf(float val, float minVal, float maxVal) noexcept {
+[[maybe_unused]] inline float clampf(float val, float minVal, float maxVal) noexcept {
     return std::max(minVal, std::min(val, maxVal));
 }
 

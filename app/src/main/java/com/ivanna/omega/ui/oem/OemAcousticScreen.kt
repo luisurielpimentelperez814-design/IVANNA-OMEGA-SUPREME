@@ -26,7 +26,7 @@ fun OemAcousticScreen(state: OemState, onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth().background(ObsidianSoft).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = PhosphorGreen)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = PhosphorGreen)
             }
             Column(Modifier.weight(1f)) {
                 Text("ACÚSTICA SAF · RIR", color = PhosphorGreen, fontWeight = FontWeight.ExtraBold,

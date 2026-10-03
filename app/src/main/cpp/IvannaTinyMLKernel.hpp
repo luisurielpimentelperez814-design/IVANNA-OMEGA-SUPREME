@@ -190,7 +190,7 @@ private:
     IVANNA_ALIGNED_SIMD float m_stftTimeBuffer[kFftWindowSize]{0.0f};
     IVANNA_ALIGNED_SIMD float m_powerSpectrum[kFftSpectrumBins]{0.0f};
     IVANNA_ALIGNED_SIMD float m_logMelFeatures[kMelFilterBands]{0.0f};
-    IVANNA_ALIGNED_SIMD float m_melFilterbank[kMelFilterBands][kFftSpectrumBins]{0.0f};
+    IVANNA_ALIGNED_SIMD float m_melFilterbank[kMelFilterBands][kFftSpectrumBins]{};
 
     IVANNA_ALIGNED_SIMD int8_t m_gruHiddenState[kHiddenStates]{0};
 

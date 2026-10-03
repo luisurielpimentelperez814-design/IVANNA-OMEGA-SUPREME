@@ -42,7 +42,7 @@ fun OemThermalScreen(state: OemState, onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = thermalColor)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = thermalColor)
             }
             Column(Modifier.weight(1f)) {
                 Text("CONTROL TÉRMICO", color = thermalColor,

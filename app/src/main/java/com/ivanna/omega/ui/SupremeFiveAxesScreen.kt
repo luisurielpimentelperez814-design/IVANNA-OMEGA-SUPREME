@@ -8,8 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -625,7 +625,7 @@ private fun DetailRouteButton(label: String, accent: Color, onClick: () -> Unit)
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 0.8.sp
             )
-            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -672,7 +672,7 @@ fun SupremeFiveAxesHubScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = AuroraCyan)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = AuroraCyan)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -895,7 +895,7 @@ private fun DedicatedAxisScaffold(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = accent)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = accent)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, color = accent, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)

@@ -151,8 +151,8 @@ class NeuromorphicProcessingEngine(
                         val v = membrane[i]; val u = adaptation[i]
                         val dv = 0.04f * v * v + 5f * v + 140f - u + current
                         val du = 0.02f * (0.2f * v - u)
-                        membrane[i] += dv.toFloat() * dt
-                        adaptation[i] += du.toFloat() * dt
+                        membrane[i] += dv * dt
+                        adaptation[i] += du * dt
                     }
                     NeuronType.BURSTING -> membrane[i] += current * 2f
                     NeuronType.ADAPTIVE -> membrane[i] = membrane[i] * (1f - leakRate) + current

@@ -39,7 +39,7 @@ fun OemSpatialScreen(
         Row(Modifier.fillMaxWidth().background(ObsidianSoft).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = AuroraCyan)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = AuroraCyan)
             }
             Column(Modifier.weight(1f)) {
                 Text("AUDIO ESPACIAL", color = AuroraCyan, fontWeight = FontWeight.ExtraBold,

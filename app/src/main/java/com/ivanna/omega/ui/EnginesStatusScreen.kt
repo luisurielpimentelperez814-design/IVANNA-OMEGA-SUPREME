@@ -122,7 +122,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = AuroraCyan)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = AuroraCyan)
             }
             Column(Modifier.weight(1f)) {
                 Text("ESTADO DE MOTORES", color = AuroraCyan,
