@@ -12,7 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * IvannaTheme v3.0 — "Aurora Obsidiana OMNIPOTENTE"
+ * IvannaTheme v3.0 — "Aurora Obsidiana"
  *
  * REGLA DE ORO: no se borra nada de v2.0. Se conservan los mismos nombres
  * públicos (ObsidianDeep, AuroraCyan, IvannaTheme, etc.) para que el drop-in
