@@ -370,16 +370,20 @@ jobs:
           echo "=== 2. Check sin CRLF en archivos de texto del módulo ==="
           python3 -c '
           import os, sys
-          binary_exts = {".so", ".ihr1", ".bin", ".wav", ".sofa"}
+          text_exts = {".sh", ".prop", ".rule", ".xml", ".json", ".csv", ".txt", ".md"}
+          text_names = {"update-binary", "BUILD_INFO", "sepolicy.rule", "module.prop"}
           crlf = []
           for root, _, files in os.walk("magisk_module"):
               for f in files:
-                  if os.path.splitext(f)[1].lower() in binary_exts:
-                      continue
-                  p = os.path.join(root, f)
-                  with open(p, "rb") as fp:
-                      if b"\r" in fp.read():
-                          crlf.append(p)
+                  ext = os.path.splitext(f)[1].lower()
+                  if ext in text_exts or f in text_names:
+                      p = os.path.join(root, f)
+                      with open(p, "rb") as fp:
+                          data = fp.read()
+                          if data.startswith(b"\x7fELF"):
+                              continue
+                          if b"\r" in data:
+                              crlf.append(p)
           if crlf:
               print("ERROR: Archivos con CRLF encontrados:", crlf)
               sys.exit(1)
