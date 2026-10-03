@@ -288,6 +288,7 @@ public:
         inputBlockRms_ = 0.0f;
         inputBlockPeak_ = 0.0f;
         headroomGain_ = 1.0f;
+        for (auto& g : stageGain_) g = 1.0f;
         feedbackDamping_ = 1.0f;
         dcInPrevL_ = 0.0f;
         dcInPrevR_ = 0.0f;
@@ -588,13 +589,37 @@ public:
             targetScale = std::min(targetScale, hardPeakCeiling / maxPeak);
         }
 
-        if (targetScale < 0.999f) {
+        // FIX (tronidos/crujidos al subir volumen y al cambiar de cancion):
+        // antes targetScale se aplicaba como ganancia CONSTANTE por bloque y
+        // se olvidaba al siguiente bloque. Con volumen alto el techo de pico
+        // dispara en unos bloques si y en otros no -> la ganancia saltaba en
+        // escalon (p.ej. 0.62 -> 1.00) justo en la frontera de bloque: un
+        // clic por bloque (~150/s) = crujido. Ademas esta funcion se encadena
+        // ~15 veces en Ruta B, multiplicando los escalones.
+        // Ahora cada etapa recuerda su ganancia y la rampa es CONTINUA por
+        // muestra: ataque = rampa lineal dentro del bloque hacia el objetivo
+        // (el softCeiling sigue acotando el pico durante la rampa), release =
+        // recuperacion exponencial ~60 ms. Nunca hay discontinuidad de ganancia.
+        const size_t idx = static_cast<size_t>(id) < NUM_MODULES ? static_cast<size_t>(id) : 0u;
+        const float g0 = stageGain_[idx];
+        float g1 = targetScale;
+        if (g1 > g0) {
+            const float relFrac = 1.0f - std::exp(-static_cast<float>(numSamples) / (0.060f * sampleRate_));
+            g1 = g0 + (g1 - g0) * relFrac;
+            if (g1 > 0.9995f) g1 = 1.0f;
+        }
+        stageGain_[idx] = g1;
+
+        if (g0 < 0.999f || g1 < 0.999f) {
+            const float step = (g1 - g0) / static_cast<float>(numSamples);
+            float g = g0;
             for (size_t i = 0; i < numSamples; ++i) {
-                left[i]  = softCeilingSample(left[i] * targetScale, 0.85f, hardPeakCeiling);
-                right[i] = softCeilingSample(right[i] * targetScale, 0.85f, hardPeakCeiling);
+                g += step;
+                left[i]  = softCeilingSample(left[i] * g, 0.85f, hardPeakCeiling);
+                right[i] = softCeilingSample(right[i] * g, 0.85f, hardPeakCeiling);
             }
         }
-        inspectStage(id, left, right, numSamples, targetScale, ModuleOperationalState::Active);
+        inspectStage(id, left, right, numSamples, g1, ModuleOperationalState::Active);
     }
 
     /**
@@ -928,6 +953,7 @@ private:
     float inputBlockRms_{0.0f};
     float inputBlockPeak_{0.0f};
     float headroomGain_{1.0f};
+    float stageGain_[NUM_MODULES] = {};   // ganancia suavizada por etapa (reset() la pone a 1)
     float feedbackDamping_{1.0f};
     float dcInPrevL_{0.0f};
     float dcInPrevR_{0.0f};
