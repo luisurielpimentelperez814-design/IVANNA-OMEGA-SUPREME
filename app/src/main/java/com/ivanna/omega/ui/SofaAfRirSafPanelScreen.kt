@@ -1,4 +1,5 @@
 package com.ivanna.omega.ui
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*

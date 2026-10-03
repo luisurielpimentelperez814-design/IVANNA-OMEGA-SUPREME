@@ -1,4 +1,5 @@
 package com.ivanna.omega.ui
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

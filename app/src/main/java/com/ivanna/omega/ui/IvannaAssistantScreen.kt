@@ -1,4 +1,7 @@
 package com.ivanna.omega.ui
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 import android.Manifest
 import android.content.pm.PackageManager
