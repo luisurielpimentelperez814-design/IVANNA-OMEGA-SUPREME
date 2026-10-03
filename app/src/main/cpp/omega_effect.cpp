@@ -1081,7 +1081,15 @@ static int32_t omega_process(effect_handle_t self,
             const float sideTarget = spatialAlreadyActive
                 ? 1.0f
                 : std::clamp(ctx->antiDolby->currentWidener(), 0.75f, 1.35f);
-            const float sideCoef = std::exp(-1.0f / (0.010f * (float)srNow));
+            // FIX (tronido al cambiar de música o al activar módulo espacial):
+            // sideTarget salta entre 1.0 y currentWidener() (0.75-1.35) cuando
+            // spatialAlreadyActive cambia de estado entre bloques. La EMA fija
+            // de 10 ms NO alcanza a suavizar un salto de ±0.25-0.35 de ganancia
+            // -> escalón audible. Rampa adaptativa: salto grande (>0.10) usa
+            // tau=60 ms (inaudible); régimen permanece en 10 ms (tracking ágil).
+            const float sideJump = std::fabs(sideTarget - ctx->sideGainSmooth);
+            const float sideTauS = (sideJump > 0.10f) ? 0.060f : 0.010f;
+            const float sideCoef = std::exp(-1.0f / (sideTauS * (float)srNow));
             if (ctx->sideGainSmooth < 0.01f) ctx->sideGainSmooth = 1.0f;
 
             for (int n = 0; n < chunk; ++n) {
