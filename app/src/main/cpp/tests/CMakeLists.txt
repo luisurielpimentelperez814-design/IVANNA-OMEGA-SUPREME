@@ -982,6 +982,19 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_cold_start_sim)
 
+add_executable(test_tinyml_kernel
+  test_tinyml_kernel.cpp
+  ../IvannaTinyMLKernel.cpp
+)
+target_link_libraries(test_tinyml_kernel PRIVATE GTest::gtest_main Threads::Threads m)
+target_include_directories(test_tinyml_kernel PRIVATE .. ../include)
+target_compile_options(test_tinyml_kernel PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_tinyml_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_tinyml_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_tinyml_kernel)
+
 
 
 

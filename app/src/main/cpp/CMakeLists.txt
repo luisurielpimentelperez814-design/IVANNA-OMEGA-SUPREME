@@ -38,6 +38,7 @@ add_library(ivanna_omega SHARED
     daemon/core/omega_control_bus.cpp
     saf_phi_infinity.cpp
         neuromorphic/AntiDolbyAI.cpp
+        IvannaTinyMLKernel.cpp
     saf_runtime.cpp
     SaFOptimizer.cpp
     SafGlobalBridge.cpp
