@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.21 (261) — Perfiles por contenido robustos
+1. **`ContentProfileEngine`** — detección de streaming por subcadena (`max`, `prime`, `aiv`) clasificaba como streaming apps no relacionadas; ahora prefijos de paquete exactos. Histéresis (candidate/streak) protegida con lock: YAMNet y la UI ya no compiten. El cambio de perfil se aplica fuera del lock.
+2. **Pruebas:** compilación validada por CI.
+
 # CHANGELOG — v2.4.20 (260) — nativeSetDelta retirado de la superficie JNI
 1. Eliminados los `external fun nativeSetDelta` (IvannaNativeLib, PiLstmBridge) y sus símbolos C++ sin llamadores; JNI 322→320, 0 hallazgos. Comentario obsoleto de SoundScreen corregido (AGC va por `setAgc`).
 2. **Pruebas:** check_jni_wiring y check_kotlin_wrapper_wiring en PASS; build/tests completos pendientes de validación final.

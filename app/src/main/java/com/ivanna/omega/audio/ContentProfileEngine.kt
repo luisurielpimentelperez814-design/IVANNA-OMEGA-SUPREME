@@ -84,6 +84,14 @@ object ContentProfileEngine {
     @Volatile private var streamingSource = false
     private var candidate: ContentKind? = null
     private var streak = 0
+    private val lock = Any()
+
+    /** Paquetes de streaming de video conocidos (prefijos exactos, sin subcadenas ambiguas). */
+    private val STREAMING_PKGS = listOf(
+        "com.netflix.", "com.amazon.avod", "com.disney.", "com.hbo.", "com.wbd.",
+        "com.google.android.youtube", "tv.twitch.", "com.apple.atve", "com.hulu.",
+        "com.paramount.", "com.peacocktv."
+    )
 
     fun profileFor(kind: ContentKind): Profile = when (kind) {
         ContentKind.MUSIC -> MUSIC
@@ -106,8 +114,7 @@ object ContentProfileEngine {
         context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_SELECTED, kind.name).apply()
-        candidate = null
-        streak = 0
+        synchronized(lock) { candidate = null; streak = 0 }
         if (kind != ContentKind.AUTO) apply(kind)
     }
 
@@ -115,11 +122,7 @@ object ContentProfileEngine {
     fun noteSource(pkg: String?, isVideo: Boolean) {
         videoSource = isVideo
         val p = pkg?.lowercase(Locale.ROOT) ?: ""
-        streamingSource = isVideo && (
-            p.contains("netflix") || p.contains("amazon") || p.contains("prime") ||
-            p.contains("aiv") || p.contains("disney") || p.contains("hbo") ||
-            p.contains("wbd") || p.contains("youtube") || p.contains("twitch") ||
-            p.contains("max"))
+        streamingSource = isVideo && STREAMING_PKGS.any { p.startsWith(it) }
     }
 
     /** Clasificación automática; devuelve el perfil candidato para el estado actual. */
@@ -134,13 +137,12 @@ object ContentProfileEngine {
     fun onClassification(valid: Boolean, speech: Float, music: Float) {
         if (_selected.value != ContentKind.AUTO || !valid) return
         val next = classify(speech, music)
-        if (next == _active.value) { candidate = null; streak = 0; return }
-        if (next == candidate) streak++ else { candidate = next; streak = 1 }
-        if (streak >= SWITCH_STREAK) {
-            candidate = null
-            streak = 0
-            apply(next)
+        val switchTo: ContentKind? = synchronized(lock) {
+            if (next == _active.value) { candidate = null; streak = 0; return@synchronized null }
+            if (next == candidate) streak++ else { candidate = next; streak = 1 }
+            if (streak >= SWITCH_STREAK) { candidate = null; streak = 0; next } else null
         }
+        if (switchTo != null) apply(switchTo)
     }
 
     private fun apply(kind: ContentKind) {
