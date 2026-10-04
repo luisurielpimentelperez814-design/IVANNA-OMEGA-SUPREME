@@ -3,5 +3,5 @@ name=IVANNA OMEGA SUPREME
 version=v2.4.5
 versionCode=245
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.4.5 (UI WFS + Music Intelligence cableados, limpieza de duplicados) sobre v2.4.3: Anti-click gain ramps (volumen/cambio de pista), GainStage reset sin salto, TinyML Causal Kernel, R8 9.1.29, CTest 180, Cinema & Streaming Ultra-Low-Latency A/V Sync, Zero-Echo RIR TOF Alignment, Center Dialogue Phase-Lock, 12D Atlas-Escena, 6-Wall Sabine ER & C2 Acoustic Stability Guard.
+description=v2.4.5 (UI WFS + Music Intelligence cableados, limpieza de duplicados) sobre v2.4.3: Anti-click gain ramps (volumen/cambio de pista), GainStage reset sin salto, TinyML Causal Kernel, R8 8.8.34, CTest 180, Cinema & Streaming Ultra-Low-Latency A/V Sync, Zero-Echo RIR TOF Alignment, Center Dialogue Phase-Lock, 12D Atlas-Escena, 6-Wall Sabine ER & C2 Acoustic Stability Guard.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
