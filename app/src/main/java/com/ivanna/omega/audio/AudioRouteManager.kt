@@ -49,9 +49,14 @@ object AudioRouteManager {
     private val hrtfRestoreToken = AtomicLong(0L)
     private var pendingHrtfRestore: Runnable? = null
 
+    @Synchronized
     fun start(context: Context) {
         appContextRef = context.applicationContext
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        // Idempotente: un segundo start() no debe dejar el callback anterior vivo
+        // (duplicaría applyRoute en cada hotplug y filtraría la instancia).
+        deviceCallback?.let { runCatching { am.unregisterAudioDeviceCallback(it) } }
+        deviceCallback = null
         audioManager = am
 
         applyRoute(detectOutputRoute(am))
@@ -68,7 +73,11 @@ object AudioRouteManager {
         deviceCallback = callback
     }
 
+    @Synchronized
     fun stop() {
+        // Un restore HRTF diferido no debe dispararse tras detener el manager.
+        pendingHrtfRestore?.let { mainHandler.removeCallbacks(it) }
+        pendingHrtfRestore = null
         val am = audioManager ?: return
         deviceCallback?.let { am.unregisterAudioDeviceCallback(it) }
         deviceCallback = null

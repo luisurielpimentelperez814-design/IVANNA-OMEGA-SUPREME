@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.25 (265) — AudioRouteManager idempotente
+1. **`AudioRouteManager`** — `start()` podía registrar dos `AudioDeviceCallback` (applyRoute duplicado por hotplug + fuga); ahora desregistra el previo. `stop()` cancela el restore HRTF diferido pendiente. Ambos `@Synchronized`.
+2. **Pruebas:** compilación Kotlin la valida CI.
+
 # CHANGELOG — v2.4.24 (264) — post-fs-data a prueba de bootloop
 1. **`post-fs-data.sh`** — `source` (no POSIX) reemplazado por `.`; la carga de `ivanna_autonomous_core.sh` queda protegida (si faltaba el archivo, el `.` fallido abortaba post-fs-data → riesgo de bootloop) y `ivanna_platform_init` solo se invoca si existe. `local` + asignación separados (SC2155).
 2. **Pruebas:** `dash -n` OK; shellcheck sin errores nuevos.
