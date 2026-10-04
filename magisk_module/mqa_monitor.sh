@@ -154,8 +154,11 @@ detect_preset() {
         "")
             : ;; # sin app activa — mantener preset actual
         *)
+            # `grep -c` ya imprime 0 (y sale 1) sin coincidencias: el viejo `|| echo 0`
+            # producía "0\n0" y rompía `[ -gt ]` con "integer expression expected".
             IS_GAME=$(dumpsys package "$ACTIVE_PKG" 2>/dev/null \
-                | grep -c "CATEGORY_GAME" 2>/dev/null || echo 0)
+                | grep -c "CATEGORY_GAME" 2>/dev/null || true)
+            IS_GAME=${IS_GAME:-0}
             if [ "$IS_GAME" -gt 0 ]; then
                 TARGET_PRESET="Punch"
             else
@@ -163,7 +166,7 @@ detect_preset() {
                 # "game", "gaming", "play" o publisher conocidos
                 case "$ACTIVE_PKG" in
                     *.game.*|*game*.*|com.supercell.*|com.king.*|\
-                    com.ea.games.*|com.zynga.*|com.gameloft.*|\
+                    com.zynga.*|com.gameloft.*|\
                     com.activision.*|com.epicgames.*|com.riotgames.*)
                         TARGET_PRESET="Punch" ;;
                 esac
