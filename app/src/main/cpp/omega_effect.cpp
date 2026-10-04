@@ -34,6 +34,7 @@
 #include "include/rt_band_meter.hpp"
 #include <cmath>
 #include <mutex>
+#include <time.h>
 #include <condition_variable>
 #include <thread>
 
@@ -229,6 +230,14 @@ struct omega_effect_context_t {
     // desface/underrun. Mismo patrón que thermalSkipRIR: no se destruye el
     // engine (caro recrearlo), solo se salta el bloque.
     bool     thermalSkipVolterra;
+    // FIX (micro-cortes / voces robotizadas): vigilante de plazo de CPU. El
+    // gobernador térmico solo mira temperatura; si la cadena completa tarda
+    // mas que la duracion del bloque (SoC cargado por Tidal/Amazon + UI) el
+    // HAL sufre XRun = micro-corte. cpuShed apaga las etapas pesadas (mismos
+    // bypass suaves que el tier termico) con histeresis. calloc => 0.
+    bool     cpuShed;
+    int      cpuOverCount;
+    int      cpuUnderCount;
     // FIX (distorsion digital): limiter por instancia al final de la cadena
     // (tras expansion M/S TinyML + RIR). calloc zero-init deja el puntero
     // en nullptr; se instancia lazy en SET_CONFIG junto a los buffers RT.
@@ -851,6 +860,9 @@ static int32_t omega_process(effect_handle_t self,
         return 0;
     }
 
+    struct timespec cpuT0;
+    clock_gettime(CLOCK_MONOTONIC, &cpuT0);
+
     // AUDIT FIX (control plane reconnect): drena a lo más UN snapshot nuevo
     // por callback. readLatest() es lock-free (seqlock en SHM), no bloquea,
     // no malloc, y solo retorna true si hay una generation posterior a la
@@ -884,8 +896,8 @@ static int32_t omega_process(effect_handle_t self,
         }
         // Tier LIMITED o PROTECTED: rampa suave de desactivación para RIR,
         // Volterra y los 5 Ejes Supremos (sin corte duro de bloque).
-        ctx->thermalSkipRIR      = (tier >= ivanna::ThermalTier::LIMITED);
-        ctx->thermalSkipVolterra = (tier >= ivanna::ThermalTier::LIMITED);
+        ctx->thermalSkipRIR      = (tier >= ivanna::ThermalTier::LIMITED) || ctx->cpuShed;
+        ctx->thermalSkipVolterra = (tier >= ivanna::ThermalTier::LIMITED) || ctx->cpuShed;
     }
 
     if (!ctx->masterBypassEnv.beginBlock(wantMasterActive ? 1.0f : 0.0f, masterProfile)) {
@@ -1273,6 +1285,30 @@ static int32_t omega_process(effect_handle_t self,
             omega_write_output_frame(outBuf->raw, outFmt, offset + n, outL, outR);
         }
         offset += chunk;
+    }
+
+    {
+        struct timespec cpuT1;
+        clock_gettime(CLOCK_MONOTONIC, &cpuT1);
+        const double usedNs = (double)(cpuT1.tv_sec - cpuT0.tv_sec) * 1e9
+                            + (double)(cpuT1.tv_nsec - cpuT0.tv_nsec);
+        const uint32_t srCpu = (ctx->config.outputCfg.samplingRate != 0)
+                             ? ctx->config.outputCfg.samplingRate : 48000u;
+        const double blockNs = (double)frames * 1e9 / (double)srCpu;
+        const double load = (blockNs > 0.0) ? usedNs / blockNs : 0.0;
+        if (load > 0.80) {
+            ctx->cpuUnderCount = 0;
+            if (++ctx->cpuOverCount >= 3) ctx->cpuShed = true;
+        } else if (load < 0.40) {
+            ctx->cpuOverCount = 0;
+            if (ctx->cpuShed && ++ctx->cpuUnderCount >= 600) {
+                ctx->cpuShed = false;
+                ctx->cpuUnderCount = 0;
+            }
+        } else {
+            ctx->cpuOverCount = 0;
+            ctx->cpuUnderCount = 0;
+        }
     }
 
     // ── Telemetría de audio real → OmegaControlBus local ─────────────────────
