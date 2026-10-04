@@ -846,7 +846,12 @@ static int32_t omega_process(effect_handle_t self,
     asm volatile("vmsr fpscr, %0" :: "r"(fpscr));
 #endif
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
-    if (!ctx || !ctx->enabled || !inBuf || !outBuf) return 0;
+    // FIX (clic al cambiar de app/ventana, EFFECT_CMD_DISABLE): este retorno temprano hacia INALCANZABLE
+    // la rampa de salida de masterBypassEnv (wantMasterActive abajo), asi que al deshabilitarse el efecto
+    // el audio saltaba de procesado a seco de golpe. Ahora solo se sale cuando la envolvente ya llego a
+    // cero; mientras tanto el bloque sigue por la ruta normal y mixSample() funde a seco (release 18 ms).
+    if (!ctx || !inBuf || !outBuf) return 0;
+    if (!ctx->enabled && ctx->masterBypassEnv.isSilent()) return 0;
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
 
     const int frames = (int)inBuf->frameCount;
@@ -1580,7 +1585,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     ctx->supremeMsoFarrow = new (std::nothrow) ivanna::supreme::SupremeMsoFarrowArbitrator();
                 }
                 ctx->masterBypassEnv.configure(static_cast<float>(sr), 8.0f, 18.0f, 35.0f);
-                ctx->masterBypassEnv.setImmediate(1.0f);
+                ctx->masterBypassEnv.setImmediate(ctx->enabled ? 1.0f : 0.0f);  // deshabilitado => ya en seco; ENABLE sube con rampa de ataque
                 // FIX RT (2026-08-25): precargar dataset RIR (disco) y crear
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
@@ -1918,7 +1923,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->enabled = false;
     ctx->bandMeter.prepare(48000.0f);
     ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
-    ctx->masterBypassEnv.setImmediate(1.0f);
+    ctx->masterBypassEnv.setImmediate(ctx->enabled ? 1.0f : 0.0f);  // deshabilitado => ya en seco; ENABLE sube con rampa de ataque
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
     ctx->antiDolby = nullptr;
     ctx->rirConvolver = nullptr;
