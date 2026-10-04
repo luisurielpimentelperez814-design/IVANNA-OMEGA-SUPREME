@@ -7,8 +7,12 @@
 MODDIR="${0%/*}"
 
 # Inicializar plataforma core temprano
-source "$MODDIR/core/ivanna_autonomous_core.sh"
-ivanna_platform_init "$MODDIR"
+# POSIX '.' (no 'source') y guarda: en sh no interactivo un '.' fallido aborta el
+# script entero en post-fs-data → riesgo de bootloop si falta el archivo.
+if [ -f "$MODDIR/core/ivanna_autonomous_core.sh" ]; then
+    . "$MODDIR/core/ivanna_autonomous_core.sh"
+    command -v ivanna_platform_init >/dev/null 2>&1 && ivanna_platform_init "$MODDIR"
+fi
 
 set_state "BOOT_ANALYSIS"
 observatory_log "BOOT" "Iniciando análisis profundo de pre-montaje (post-fs-data)"
@@ -50,7 +54,8 @@ mkdir -p /dev/socket 2>/dev/null
 chmod 0755 /dev/socket 2>/dev/null
 
 is_elf() {
-    local hex=$(head -c4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    local hex
+    hex=$(head -c4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
     [ "$hex" = "7f454c46" ]
 }
 

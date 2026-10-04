@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.24 (264) — post-fs-data a prueba de bootloop
+1. **`post-fs-data.sh`** — `source` (no POSIX) reemplazado por `.`; la carga de `ivanna_autonomous_core.sh` queda protegida (si faltaba el archivo, el `.` fallido abortaba post-fs-data → riesgo de bootloop) y `ivanna_platform_init` solo se invoca si existe. `local` + asignación separados (SC2155).
+2. **Pruebas:** `dash -n` OK; shellcheck sin errores nuevos.
+
 # CHANGELOG — v2.4.23 (263) — Estado validado y binaural restaurado
 1. **`AudioStateManager.validateState`** — solo limitaba 5 campos; EQ, presencia, compresor e intensidad espacial entraban sin rango al DSP (estado persistido corrupto o modulador adaptativo). Ahora usa los mismos rangos que los sliders.
 2. **`restoreToNative`** — el HRTF/binaural guardado no se restauraba al arrancar (switch mostrado sin efecto). Ahora se empuja al nativo.
