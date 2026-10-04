@@ -630,6 +630,8 @@ fun OmegaApp() {
                     nav.popBackStack()
                 }
             }
+            // WfsCalibrationPanel existía completo (JNI→daemon→WfsRenderer) pero sin ruta ni acceso desde la UI.
+            composable("wfs_calibration") { com.ivanna.omega.ui.WfsCalibrationPanel() }
             composable(IvannaRoute.AUDIO_CONTROL_HUB) {
                 com.ivanna.omega.ui.SofaAfRirSafPanelScreen(
                     onBack = { nav.popBackStack() },

@@ -159,6 +159,7 @@ fun MainScaffold(
                     onOpenCochlearInverse = { outerNav.navigate("cochlear_inverse") },
                     onOpenSaF        = { outerNav.navigate("calibracion_saf") },
                     onOpenAudioControlHub = { outerNav.navigate(IvannaRoute.AUDIO_CONTROL_HUB) },
+                    onOpenWfs        = { outerNav.navigate("wfs_calibration") },
                     onOpenVisualizer = { outerNav.navigate("visualizer") },
                     onOpenOpe        = { outerNav.navigate("ope") },
                     onOpenBinaural   = { outerNav.navigate("spatial_audio") },
@@ -210,6 +211,7 @@ fun SpatialHubScreen(
     onOpenBenchmark  : () -> Unit = {},
     onOpenPhase7     : () -> Unit = {},
     onOpenAudioControlHub : () -> Unit = {},
+    onOpenWfs             : () -> Unit = {},
     onOpenCognitiveDash : () -> Unit = {},
     onOpenSpatialControl : () -> Unit = {}
 ) {
@@ -236,6 +238,7 @@ fun SpatialHubScreen(
         HubCard("PRUEBA ABX",                "Validación perceptual espacial",       NeonMagenta,  onOpenAbxTest)
         HubCard("BENCHMARK & EVIDENCE",      "Telemetría y validación acústica",     NeonMagenta,  onOpenBenchmark)
         HubCard("FASE 7: HEGEMONIA",         "Computer Vision & AutoEQ",             NeonMagenta,  onOpenPhase7)
+        HubCard("WFS · CALIBRACIÓN DE SALA", "Posición del oyente X/Y/Z · Preset 7ch · Wave Field Synthesis", NeonMagenta, onOpenWfs)
         HubCard("SOFA · AF · RIR · SAF",     "Panel de control de motores avanzados · HRTF real · Sala · Adaptativo", AuroraCyan, onOpenAudioControlHub)
         // FIX (sub-entorno muerto): CognitiveDashboardActivity estaba en el
         // Manifest pero sin entrada en la UI — pantalla inalcanzable. Ahora
