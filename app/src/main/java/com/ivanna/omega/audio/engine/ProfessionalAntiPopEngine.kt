@@ -86,8 +86,11 @@ class ProfessionalAntiPopEngine(
             val inL = if (rawL.isFinite()) rawL else 0f
             val inR = if (rawR.isFinite()) rawR else 0f
 
-            val outL = (inL - xL_prev + R * yL_prev).coerceIn(-1.0f, 1.0f)
-            val outR = (inR - xR_prev + R * yR_prev).coerceIn(-1.0f, 1.0f)
+            // FIX (distorsion digital en picos): el recorte duro a +-1.0 aqui clipeaba el
+            // overshoot del DC-blocker y picos float >1 de la fuente (armonicos impares).
+            // Solo se acota a +-4.0 (guarda anti-explosion); el limitador final decide el techo.
+            val outL = (inL - xL_prev + R * yL_prev).coerceIn(-4.0f, 4.0f)
+            val outR = (inR - xR_prev + R * yR_prev).coerceIn(-4.0f, 4.0f)
 
             buffer[idxL] = outL
             buffer[idxR] = outR
