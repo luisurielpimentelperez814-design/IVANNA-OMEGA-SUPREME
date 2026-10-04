@@ -1,3 +1,8 @@
+# CHANGELOG — v2.4.17 (257) — Presencia restaurada al arrancar
+1. **`AudioStateManager.restoreToNative`** — restauraba EQ/compresor/ancho/exciter pero NO la presencia: tras reiniciar, el slider mostraba el valor guardado y el motor trabajaba con 0 dB (control mostrado sin efecto real). Ahora llama `nativeSetPresenceDb(state.eqPresence)`.
+2. **Pruebas:** balance de sintaxis OK; compilación Kotlin la valida CI; nativo host 8/8 sin cambios.
+3. **Esperado:** el brillo/presencia guardado suena igual tras reiniciar la app.
+
 # CHANGELOG — v2.4.16 (256) — Espacialización complementaria (sin peine lateral)
 1. **`IvannaAudioPipeline::processLiveSpatialAxes`** — el render espacial (ITD/ILD + ER) se sumaba SOBRE el componente lateral seco (dry*(1-0.35w) + render*w, w hasta 0.45): la misma señal lateral dos veces con retardo relativo = filtro en peine / eco de espacialización. Ahora crossfade complementario del side (seco*(1-w) + render*w) y mid/diálogo a ganancia 1.0 intacto: el nivel total se conserva y los procesos se complementan en lugar de competir.
 2. **Pruebas:** build host completo OK; 8/8 suites de host OK.

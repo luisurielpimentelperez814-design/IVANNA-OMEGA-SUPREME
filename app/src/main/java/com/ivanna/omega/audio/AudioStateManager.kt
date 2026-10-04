@@ -179,6 +179,9 @@ object AudioStateManager {
                 state.eqBass, state.eqMid, state.eqTreble, state.masterGain)
         }.onFailure { Log.w(TAG, "restore EQ falló: ${it.message}") }
         runCatching {
+            IvannaNativeLib.nativeSetPresenceDb(state.eqPresence)
+        }.onFailure { Log.w(TAG, "restore presencia falló: ${it.message}") }
+        runCatching {
             IvannaNativeLib.nativeSetCompressorParams(
                 state.compressorThreshold, state.compressorRatio,
                 state.compressorAttack, state.compressorRelease)
