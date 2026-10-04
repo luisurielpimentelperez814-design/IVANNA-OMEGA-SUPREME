@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.theme.*
@@ -73,6 +74,8 @@ fun MagiskStatusPanel(
     var moduleVersion   by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
     var daemonRunning   by remember { mutableStateOf(false) }
+    // Senal REAL del efecto en audioserver (beacon de omega_effect), no solo "el daemon vive".
+    var effectState     by remember { mutableStateOf(DSPBridge.EffectState.UNAVAILABLE) }
     var daemonConnected by remember { mutableStateOf(false) }
     var lastCommandOutput by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -105,6 +108,7 @@ fun MagiskStatusPanel(
                 daemonProtoVerified = withContext(Dispatchers.IO) { omegaBridge.handshake() }
             }
 
+            effectState     = withContext(Dispatchers.IO) { DSPBridge.effectState() }
             moduleActive    = active
             moduleVersion   = version
             daemonRunning   = running || connected
@@ -191,6 +195,13 @@ fun MagiskStatusPanel(
         }
 
         StatusRow("DAEMON",  daemonRunning, "CORRIENDO", "DETENIDO")
+        // Solo se muestra si el beacon es legible: sin senal no se afirma nada (ni verde ni rojo).
+        if (effectState != DSPBridge.EffectState.UNAVAILABLE) {
+            StatusRow("EFECTO",
+                effectState != DSPBridge.EffectState.NO_EFFECT,
+                if (effectState == DSPBridge.EffectState.PROCESSING) "PROCESANDO AUDIO" else "INSERTADO (SIN AUDIO)",
+                "NO INSERTADO EN AUDIOSERVER")
+        }
 
         Spacer(Modifier.height(6.dp))
         DividerGlow()
