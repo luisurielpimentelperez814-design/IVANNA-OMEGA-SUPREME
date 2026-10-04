@@ -237,5 +237,8 @@ configurations.all {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // R8 8.8.34 (AGP 8.5.2) no lee metadata Kotlin 2.4 -> warning "error parsing kotlin metadata".
+        // Se emite metadata 2.1.0 (solo la version escrita; no cambia lenguaje ni bytecode).
+        freeCompilerArgs.add("-Xmetadata-version=2.1.0")
     }
 }
