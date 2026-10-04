@@ -616,7 +616,13 @@ public:
         // (curva comprimida vs. sin comprimir) = un click por transición. La forma de onda
         // ahora es SIEMPRE la misma función estática de la entrada: se aplica el softCeiling
         // también con g==1 cuando hay picos sobre la rodilla (ruta rápida idéntica si no).
-        constexpr float kStageKnee = 0.85f;
+        // FIX (distorsion constante en musica fuerte): la rodilla fija en 0.85
+        // hacia que CADA etapa (~15 en serie) deformara todo pico entre 0.85 y el
+        // techo con una curva no lineal -> armonicos acumulados aunque la etapa
+        // no hubiera ganado nada. La rodilla ahora sigue al techo de la etapa
+        // (97 %): la curva sigue siendo funcion estatica de la entrada (sin
+        // clicks de transicion) pero solo actua en los ultimos ~3 % del rango.
+        const float kStageKnee = hardPeakCeiling * 0.97f;
         if (g0 < 0.999f || g1 < 0.999f || maxPeak > kStageKnee) {
             const float step = (g1 - g0) / static_cast<float>(numSamples);
             float g = g0;
