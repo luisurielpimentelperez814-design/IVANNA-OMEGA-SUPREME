@@ -1,3 +1,8 @@
+# CHANGELOG — v2.4.23 (263) — Estado validado y binaural restaurado
+1. **`AudioStateManager.validateState`** — solo limitaba 5 campos; EQ, presencia, compresor e intensidad espacial entraban sin rango al DSP (estado persistido corrupto o modulador adaptativo). Ahora usa los mismos rangos que los sliders.
+2. **`restoreToNative`** — el HRTF/binaural guardado no se restauraba al arrancar (switch mostrado sin efecto). Ahora se empuja al nativo.
+3. **Pruebas:** compilación Kotlin la valida CI; nativo sin cambios (181/181 host).
+
 # CHANGELOG — v2.4.22 (262) — Origen de contenido sigue a las sesiones vivas
 1. **`IvannaGlobalEffectManager`** — `ContentProfileEngine.noteSource` solo se actualizaba al abrir sesión: al cerrar la última sesión de video el perfil AUTO seguía en PELÍCULAS/STREAMING. `closeSession` y `releaseAll` ahora limpian el origen cuando no queda video activo.
 2. **Pruebas:** 181/181 tests nativos host OK (sin cambios nativos); compilación Kotlin la valida CI.

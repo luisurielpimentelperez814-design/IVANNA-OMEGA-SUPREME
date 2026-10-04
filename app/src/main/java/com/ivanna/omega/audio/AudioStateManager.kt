@@ -103,6 +103,17 @@ object AudioStateManager {
             spatialWidth = validated.spatialWidth.coerceIn(0f, 2f),
             exciterAmount = validated.exciterAmount.coerceIn(0f, 1f),
             masterGain = validated.masterGain.coerceIn(0.1f, 2f),
+            // Mismos rangos que los sliders de SoundScreen: un valor persistido
+            // corrupto o un modulador adaptativo no pueden empujar el DSP fuera de rango.
+            eqBass = validated.eqBass.coerceIn(-18f, 18f),
+            eqMid = validated.eqMid.coerceIn(-18f, 18f),
+            eqTreble = validated.eqTreble.coerceIn(-18f, 18f),
+            eqPresence = validated.eqPresence.coerceIn(-12f, 12f),
+            compressorThreshold = validated.compressorThreshold.coerceIn(-60f, 0f),
+            compressorRatio = validated.compressorRatio.coerceIn(1f, 20f),
+            compressorAttack = validated.compressorAttack.coerceIn(0.1f, 200f),
+            compressorRelease = validated.compressorRelease.coerceIn(10f, 2000f),
+            spatialIntensity = validated.spatialIntensity.coerceIn(0f, 1f),
             safetyMargin = validated.safetyMargin.coerceIn(0.5f, 1f),
             phaseOracleIntensity = validated.phaseOracleIntensity.coerceIn(0f, 1f)
         )
@@ -195,6 +206,10 @@ object AudioStateManager {
         runCatching {
             IvannaNativeLib.nativeSetHarmonicGain(state.exciterAmount)
         }.onFailure { Log.w(TAG, "restore exciter falló: ${it.message}") }
+        runCatching {
+            IvannaNativeLib.nativeSetHRTFEnabled(state.binaural)
+            IvannaNativeLib.nativeSetBinauralEnabled(state.binaural)
+        }.onFailure { Log.w(TAG, "restore binaural falló: ${it.message}") }
         Log.i(TAG, "restoreToNative: estado restaurado al DSP " +
             "(eq=[${state.eqBass},${state.eqMid},${state.eqTreble}] " +
             "master=${state.masterGain} comp=${state.compressorThreshold}dB/${state.compressorRatio} " +
