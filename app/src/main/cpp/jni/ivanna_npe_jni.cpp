@@ -256,7 +256,16 @@ public:
 
             // ── AGC ───────────────────────────────────────────────────────
             const float instRms = 0.5f * (std::fabs(yL) + std::fabs(yR));
-            rms_envelope_ += 0.02f * (instRms - rms_envelope_);
+            // FIX (distorsion armonica / voces robotizadas): la envolvente seguia |x| con
+            // tau ~1 ms (0.02/muestra) y el AGC movia la ganancia a la velocidad de la onda
+            // -> modulacion de amplitud a frecuencia de audio (IMD). Ahora attack 10 ms /
+            // release 300 ms: la ganancia sigue el nivel del programa, no la forma de onda.
+            {
+                const float sr_ = sample_rate_ > 0.f ? static_cast<float>(sample_rate_) : 48000.f;
+                const float aAtt = 1.f - std::exp(-1.f / (0.010f * sr_));
+                const float aRel = 1.f - std::exp(-1.f / (0.300f * sr_));
+                rms_envelope_ += (instRms > rms_envelope_ ? aAtt : aRel) * (instRms - rms_envelope_);
+            }
             const float rmsDb = lin_to_db(rms_envelope_);
             const float desiredGain = db_to_lin(agc_target_db_ - rmsDb);
             // AUDIT FIX: slew-rate cap sobre el delta de ganancia por muestra.
@@ -266,8 +275,9 @@ public:
             // clipping. Se mantiene la misma fórmula (no se borra) pero se
             // acota el paso máximo por muestra a 0.02 (~0.17dB/muestra a 48kHz),
             // así el slider sigue siendo más rápido al subirlo, sin saltar.
-            const float rawStep = agc_rate_ * 0.05f * (desiredGain - agc_gain_);
-            const float step = std::clamp(rawStep, -0.02f, 0.02f);
+            // FIX: 0.05 -> 0.0004 por muestra (tau ~50 ms con agc_rate_=1); tope por muestra 0.0005.
+            const float rawStep = agc_rate_ * 0.0004f * (desiredGain - agc_gain_);
+            const float step = std::clamp(rawStep, -0.0005f, 0.0005f);
             agc_gain_ += step;
             agc_gain_ = std::clamp(agc_gain_, 0.25f, 4.f);
             yL *= agc_gain_; yR *= agc_gain_;
@@ -294,8 +304,18 @@ public:
 
             // AUDIT FIX: limiter final — nunca existía un techo aquí. Este es
             // el causante directo del crujido al subir AGC rate + Master gain.
-            yL = std::tanh(yL); // IVANNA DSP: True Soft Clipping
-            yR = std::tanh(yR); // IVANNA DSP: True Soft Clipping
+            // FIX (distorsion armonica constante): tanh(x) sobre TODA la senal deformaba
+            // incluso a 0.3-0.5 (THD de %). Rodilla suave C1: identidad hasta 0.8,
+            // asintota 1.0 — solo actua en picos reales.
+            {
+                auto knee = [](float x) {
+                    const float a = std::fabs(x);
+                    if (a <= 0.8f) return x;
+                    return std::copysign(0.8f + 0.2f * std::tanh((a - 0.8f) * 5.0f), x);
+                };
+                yL = knee(yL);
+                yR = knee(yR);
+            }
 
             outL[i] = yL; outR[i] = yR;
 
