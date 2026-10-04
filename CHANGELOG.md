@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.29 (269) — NPE JNI: buffers directos con capacidad mínima
+1. **`ivanna_npe_jni.cpp`** — `nativeProcess`, `nativeProcessStereo` y `nativeSnapshotScope` usaban `GetDirectBufferAddress` sin comprobar capacidad: un buffer menor que `numFrames` desbordaba memoria nativa. Ahora se exige capacidad >= n (cota mínima: la unidad es bytes en ByteBuffer y floats en FloatBuffer, por lo que no detecta un ByteBuffer con entre n y 4n bytes) y el snapshot se acota por capacidad.
+2. **Pruebas:** 181/181 tests host OK.
+
 # CHANGELOG — v2.4.28 (268) — JNI de audio acotado por longitud real
 1. **`ivanna_omega_jni.cpp`** — `nativeProcess` leía `2*n` floats y `nativeProcessBlock`/`copyJFloat` copiaban y escribían `n` floats sin comprobar la longitud del array: un array más corto que `frames` producía sobre-lectura/desbordamiento del heap de la JVM. `n` queda acotado por `GetArrayLength` de todos los buffers; arrays null salen limpio (antes `outL` null crasheaba en la ruta DSP).
 2. **Pruebas:** 181/181 tests host OK; RT-safety 34/34 y JNI wiring PASS.

@@ -581,6 +581,13 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeReset(
 }
 
 // ── Processing ────────────────────────────────────────────────────────────────
+// Cota mínima de capacidad: GetDirectBufferCapacity devuelve bytes en un
+// ByteBuffer y floats en un FloatBuffer, y Kotlin usa ambos. Exigir cap >= n
+// descarta buffers menores que el bloque (-1 = no directo) sin falsos rechazos.
+static inline bool directBufHolds(JNIEnv* env, jobject buf, jint n) {
+    return buf && n > 0 && env->GetDirectBufferCapacity(buf) >= static_cast<jlong>(n);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcess(
     JNIEnv* env, jclass, jlong handle, jobject inputBuffer, jobject outputBuffer, jint numFrames) {
@@ -589,6 +596,7 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcess(
     auto* in  = static_cast<float*>(env->GetDirectBufferAddress(inputBuffer));
     auto* out = static_cast<float*>(env->GetDirectBufferAddress(outputBuffer));
     if (!in || !out) return;
+    if (!directBufHolds(env, inputBuffer, numFrames) || !directBufHolds(env, outputBuffer, numFrames)) return;
     ivanna::audio::enableAudioThreadFastMathOnce();
     eng->process(in, out, numFrames);
 }
@@ -604,6 +612,8 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcessStereo(
     auto* pOutL = static_cast<float*>(env->GetDirectBufferAddress(outL));
     auto* pOutR = static_cast<float*>(env->GetDirectBufferAddress(outR));
     if (!pInL || !pInR || !pOutL || !pOutR) return;
+    if (!directBufHolds(env, inL, numFrames) || !directBufHolds(env, inR, numFrames) ||
+        !directBufHolds(env, outL, numFrames) || !directBufHolds(env, outR, numFrames)) return;
     ivanna::audio::enableAudioThreadFastMathOnce();
     eng->processStereo(pInL, pInR, pOutL, pOutR, numFrames);
 }
@@ -654,7 +664,10 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeSnapshotScope(
     if (!eng) return 0;
     auto* pDst = static_cast<float*>(env->GetDirectBufferAddress(dst));
     if (!pDst) return 0;
-    return eng->snapshotScope(pDst, maxFrames);
+    const jlong cap = env->GetDirectBufferCapacity(dst);
+    if (cap <= 0) return 0;
+    // cap puede estar en bytes o floats: min() solo puede reducir, nunca ampliar.
+    return eng->snapshotScope(pDst, static_cast<int>(std::min<jlong>(maxFrames, cap)));
 }
 
 // ── Engine flags / neuro params ───────────────────────────────────────────────
