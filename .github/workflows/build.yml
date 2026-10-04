@@ -718,6 +718,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          trap 'echo "::error title=publish-release::línea $LINENO falló: ${BASH_COMMAND:0:300}"' ERR
           TAG="${{ steps.ver.outputs.version }}"
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
@@ -744,7 +745,7 @@ jobs:
           for f in "$ZIP_NAME" "$APK_NAME"; do
             REMOTE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name==\"$f\") | .size")
             LOCAL=$(stat -c%s "$f")
-            [ "$REMOTE" = "$LOCAL" ] || { echo "ERROR: $f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
+            [ "$REMOTE" = "$LOCAL" ] || { echo "::error title=publish-release::$f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
           done
           echo "✓ Assets del release $TAG verificados contra el build ${GITHUB_SHA}"
 
