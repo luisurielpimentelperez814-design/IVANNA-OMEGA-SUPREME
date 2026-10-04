@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.20 (260) — nativeSetDelta retirado de la superficie JNI
+1. Eliminados los `external fun nativeSetDelta` (IvannaNativeLib, PiLstmBridge) y sus símbolos C++ sin llamadores; JNI 322→320, 0 hallazgos. Comentario obsoleto de SoundScreen corregido (AGC va por `setAgc`).
+2. **Pruebas:** check_jni_wiring y check_kotlin_wrapper_wiring en PASS; build/tests completos pendientes de validación final.
+
 # CHANGELOG — v2.4.19 (259) — Wrapper setDelta huérfano eliminado
 1. **`PiLstmBridge.setDelta`** — wrapper público sin llamadores que escribía `nativeSetDelta` (= ancho espacial del PDEngine). Fue la causa raíz de los bugs de v2.4.13–v2.4.15; eliminado para que no pueda reintroducirse. El ancho espacial sigue por su ruta propia.
 2. **Pruebas:** `check_kotlin_wrapper_wiring` pasa de 1 a 0 wrappers sin llamador; compilación completa la valida CI.

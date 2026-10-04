@@ -69,7 +69,6 @@ object IvannaNativeLib {
     external fun nativeSetAlpha(v: Float)
     external fun nativeSetBeta(v: Float)
     external fun nativeSetGamma(v: Float)
-    external fun nativeSetDelta(v: Float)
     external fun nativeSetEta(v: Float)
     external fun nativeSetSpatialWet(v: Float)
     /** Eje Supremo: activa/desactiva el motor Cochlear-PINN (alias para PiLstmBridge). */

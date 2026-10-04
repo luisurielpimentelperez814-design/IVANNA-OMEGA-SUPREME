@@ -88,12 +88,6 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetGamma(JNIEnv*, jobject,
     g_piLstmBridge.set_gamma(v);
 }
 
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetDelta(JNIEnv*, jobject, jfloat v) {
-    if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return;
-    g_piLstmBridge.set_delta(v);
-}
-
 // ── nativeSetEta — amortiguamiento η de la ODE (rango 0..5) ─────────────────
 // Faltaba: Kotlin declara nativeSetEta() en PiLstmBridge pero no había símbolo.
 // η controla la tasa de disipación del estado oculto entre pasos RK4 — a

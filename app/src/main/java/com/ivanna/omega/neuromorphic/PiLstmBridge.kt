@@ -107,7 +107,6 @@ object PiLstmBridge {
     private external fun nativeSetAlpha(v: Float)
     private external fun nativeSetBeta(v: Float)
     private external fun nativeSetGamma(v: Float)
-    private external fun nativeSetDelta(v: Float)
     private external fun nativeSetHarmonicGain(v: Float)
     private external fun nativeSetHrtfEnabled(en: Boolean)
     private external fun nativeGetNpSat(): Float

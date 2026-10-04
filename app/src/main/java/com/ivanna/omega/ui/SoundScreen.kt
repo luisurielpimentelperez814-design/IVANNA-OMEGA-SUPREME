@@ -24,7 +24,7 @@ import com.ivanna.omega.ui.theme.*
  *
  * Reemplaza y unifica: OpeEngineScreen + BinauralScreen + controles dispersos de IvannaControlPanel.
  * Conecta funciones nativas antes sin UI:
- *   · nativeSetDelta   → velocidad del AGC
+ *   · setAgc(target, rate) → nativeSetAGC (objetivo y velocidad del AGC)
  *   · nativeSetEta     → wet NHO/PDEngine
  *   · nativeSetNPMax   → target del AGC
  *   · nativeSetHRTFEnabled → toggle HRTF real
