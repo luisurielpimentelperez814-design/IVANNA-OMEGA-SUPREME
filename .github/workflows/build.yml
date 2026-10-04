@@ -734,5 +734,9 @@ jobs:
 
           # Limpiar draft temporal de staging
           gh release delete "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          # Barrer drafts staging-* huérfanos de runs cancelados (cada uno retiene ~110 MB).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq '.[] | select(.isDraft and (.tagName|startswith("staging-"))) | .tagName' \
+            | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
 
