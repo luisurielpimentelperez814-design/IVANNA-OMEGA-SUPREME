@@ -429,6 +429,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private val masterTiming       = MasterTimingController(SAMPLE_RATE)
         private val antiPopEngine      = ProfessionalAntiPopEngine(SAMPLE_RATE)
         private val budgetGuard        = AudioThreadBudgetGuard()
+        @Volatile private var trackMuted = false
         private val predictiveGovernor = PredictiveLoadGovernor(SAMPLE_RATE)
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
@@ -838,8 +839,26 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // Esto elimina el efecto Haas (eco de sala y desfase labial) de raíz.
                     // La captura para telemetría (Bark64, NPE, Cortex, Visualizador) sigue 100% activa.
                     if (!inPlaceSessionActive && !systemWideActive && !isVideoActive) {
+                        // FIX tronido/silencio al cambiar de ventana: antes setVolume(0f)
+                        // quedaba pegado para siempre (nadie lo restauraba) y el paso
+                        // escritura<->mute era un corte seco. Al reanudar: volumen a 1 y
+                        // fade-in lineal sobre el primer bloque (sin salto de onda).
+                        if (trackMuted) {
+                            audioTrack?.setVolume(1.0f)
+                            trackMuted = false
+                            val n = samplesToWrite.coerceAtMost(buffer.size)
+                            val inv = 1f / (n / CHANNEL_COUNT).coerceAtLeast(1)
+                            var i = 0
+                            while (i + 1 < n) {
+                                val g = (i / CHANNEL_COUNT) * inv
+                                buffer[i] *= g
+                                buffer[i + 1] *= g
+                                i += CHANNEL_COUNT
+                            }
+                        }
                         writeAllToTrack(buffer, samplesToWrite)
-                    } else {
+                    } else if (!trackMuted) {
+                        trackMuted = true
                         audioTrack?.setVolume(0.0f)
                     }
 
