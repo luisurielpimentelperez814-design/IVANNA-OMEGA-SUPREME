@@ -73,14 +73,6 @@ object PiLstmBridge {
             syncNpeParameters()
         }
     }
-    fun setDelta(v: Float) {
-        lastDelta = v
-        if (ready) {
-            nativeSetDelta(v)
-            runCatching { IvannaNativeLib.nativeSetDelta(v) }
-            syncNpeParameters()
-        }
-    }
     private var lastHarmonicGain = 0.2f
     fun setHarmonicGain(v: Float) {
         if (ready) {
