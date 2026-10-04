@@ -229,6 +229,9 @@ class IvannaGlobalEffectManager(
         private const val VIRT_STRENGTH_CAP: Short = 220
         private const val LOUDNESS_CAP_WITH_LIMITER_MB = 150
 
+        /** Preamp (mB) = boost maximo de banda, para que el EQ nunca sume sobre 0 dBFS. */
+        private fun eqPreampMb(maxBoostMb: Int): Int = maxBoostMb.coerceAtLeast(0)
+
         // AUDIT FIX (no-root omite el motor Omega): UUID real del efecto
         // compilado en omega_effect.cpp (effect_uuid_t layout AOSP:
         // timeLow=0x4956414e "IVAN", timeMid=0x4e41 "NA",
