@@ -430,6 +430,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private val antiPopEngine      = ProfessionalAntiPopEngine(SAMPLE_RATE)
         private val budgetGuard        = AudioThreadBudgetGuard()
         @Volatile private var trackMuted = false
+        // FIX (micro-cortes/crujido): RouteArbiter.isSystemWideEffectActive() hace
+        // AudioEffect.queryEffects() = llamada Binder a audioserver. Se ejecutaba en el hilo
+        // de audio EN CADA bloque (~150/s); cualquier demora del Binder (>20 ms con CPU cargada)
+        // vaciaba el AudioTrack -> underrun audible. Ahora se cachea y se refresca cada 2 s
+        // en un hilo aparte; el hilo de audio solo lee un booleano.
+        @Volatile private var systemWideCached = false
+        @Volatile private var systemWideCheckedAtMs = 0L
+        private val systemWideRefreshing = java.util.concurrent.atomic.AtomicBoolean(false)
         private val predictiveGovernor = PredictiveLoadGovernor(SAMPLE_RATE)
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
@@ -830,7 +838,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val inPlaceSessionActive = (globalMgr?.activeSessionCount ?: 0) > 0
                     val isVideoActive = globalMgr?.isVideoStreamingActive == true ||
                                         CinematicEngineHost.activeModeOrdinal == 1
-                    val systemWideActive = RouteArbiter.isSystemWideEffectActive()
+                    val nowSwMs = android.os.SystemClock.elapsedRealtime()
+                    if (nowSwMs - systemWideCheckedAtMs > 2000L &&
+                        systemWideRefreshing.compareAndSet(false, true)) {
+                        systemWideCheckedAtMs = nowSwMs
+                        Thread({
+                            try { systemWideCached = RouteArbiter.isSystemWideEffectActive() }
+                            finally { systemWideRefreshing.set(false) }
+                        }, "ivanna-routecheck").apply { isDaemon = true }.start()
+                    }
+                    val systemWideActive = systemWideCached
 
                     // FIX CINEMA / AMAZON PRIME VIDEO ZERO-ECHO & ZERO-DESFASE:
                     // Si la sesión ya se procesa in-place a nivel HAL/AudioEffect (IvannaGlobalEffectManager o
