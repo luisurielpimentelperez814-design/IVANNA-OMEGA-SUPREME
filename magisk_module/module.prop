@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.4.14
-versionCode=254
+version=v2.4.15
+versionCode=255
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.4.14 (Sliders ATAQUE y AGC con destino correcto sobre v2.4.13 (Presencia ya no se pisa con cambios armónicos sobre v2.4.12 (PRESENCIA con efecto real sobre v2.4.11 (reinyeccion solo-delta sin peine) sobre v2.4.10 (AGC NPE sin modulación de onda, rodilla C1, AntiPop sin clip duro) sobre v2.4.9 (gain staging stock + limiter final, rampa de ganancia adaptativa) sobre v2.4.8 (UI WFS + Music Intelligence cableados, limpieza de duplicados) sobre v2.4.3: Anti-click gain ramps (volumen/cambio de pista), GainStage reset sin salto, TinyML Causal Kernel, R8 8.8.34, CTest 180, Cinema & Streaming Ultra-Low-Latency A/V Sync, Zero-Echo RIR TOF Alignment, Center Dialogue Phase-Lock, 12D Atlas-Escena, 6-Wall Sabine ER & C2 Acoustic Stability Guard.
+description=v2.4.15 (AGC ya no altera el ancho espacial sobre v2.4.14 (Sliders ATAQUE y AGC con destino correcto sobre v2.4.13 (Presencia ya no se pisa con cambios armónicos sobre v2.4.12 (PRESENCIA con efecto real sobre v2.4.11 (reinyeccion solo-delta sin peine) sobre v2.4.10 (AGC NPE sin modulación de onda, rodilla C1, AntiPop sin clip duro) sobre v2.4.9 (gain staging stock + limiter final, rampa de ganancia adaptativa) sobre v2.4.8 (UI WFS + Music Intelligence cableados, limpieza de duplicados) sobre v2.4.3: Anti-click gain ramps (volumen/cambio de pista), GainStage reset sin salto, TinyML Causal Kernel, R8 8.8.34, CTest 180, Cinema & Streaming Ultra-Low-Latency A/V Sync, Zero-Echo RIR TOF Alignment, Center Dialogue Phase-Lock, 12D Atlas-Escena, 6-Wall Sabine ER & C2 Acoustic Stability Guard.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

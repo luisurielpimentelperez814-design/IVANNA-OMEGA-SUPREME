@@ -178,7 +178,8 @@ object PiLstmBridge {
             }
             runCatching { IvannaNpeEngine.setAgcParams(safeTarget, safeRate) }
             setNeuroplasticityMax((gain * 10f).coerceIn(0.1f, 10f))
-            setDelta(safeRate)
+            // setDelta(safeRate) eliminado: delta es el ancho espacial del PDEngine;
+            // la velocidad del AGC ya entra por IvannaNpeEngine.setAgcParams arriba.
         } catch (t: Throwable) {
             android.util.Log.e("IVANNA_OMEGA_LSTM", "setAgc safe fallback error", t)
         }
