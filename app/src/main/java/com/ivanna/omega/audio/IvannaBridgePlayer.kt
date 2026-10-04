@@ -77,20 +77,48 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                     if (state == State.PLAYING) {
                         pauseRequested = true
-                        runCatching { audioTrack?.pause() }
+                        // FIX (tronido al cambiar de ventana): pause() en seco y
+                        // setVolume escalonado cortaban la onda en medio de un
+                        // ciclo. Fade corto a 0 antes de pausar.
+                        fadeVolume(0f, 40) { runCatching { audioTrack?.pause() } }
                         state = State.PAUSED
                     }
                 }
                 android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                    runCatching { audioTrack?.setVolume(0.3f) }
+                    fadeVolume(0.3f, 80)
                 }
                 android.media.AudioManager.AUDIOFOCUS_GAIN -> {
-                    runCatching { audioTrack?.setVolume(1.0f) }
-                    if (state == State.PAUSED && pauseRequested) resume()
+                    if (state == State.PAUSED && pauseRequested) {
+                        runCatching { audioTrack?.setVolume(0f) }
+                        resume()
+                    }
+                    fadeVolume(1.0f, 80)
                 }
             }
         }
     }
+
+    // Rampa lineal de volumen del AudioTrack (evita escalones = clicks).
+    @Volatile private var fadeToken = 0
+    private fun fadeVolume(target: Float, ms: Int, onDone: () -> Unit = {}) {
+        val token = ++fadeToken
+        val track = audioTrack ?: run { onDone(); return }
+        Thread {
+            val steps = (ms / 5).coerceAtLeast(1)
+            var from = 1.0f
+            // Volumen inicial real no legible vía API: se asume el último destino.
+            from = lastVolume
+            for (i in 1..steps) {
+                if (token != fadeToken) return@Thread
+                val v = from + (target - from) * i / steps
+                runCatching { track.setVolume(v) }
+                try { Thread.sleep(5) } catch (_: InterruptedException) { return@Thread }
+            }
+            lastVolume = target
+            onDone()
+        }.start()
+    }
+    @Volatile private var lastVolume = 1.0f
 
     companion object {
         private const val TAG = "IVANNA.BridgePlayer"
