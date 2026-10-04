@@ -117,7 +117,9 @@ fi
 
 # Buscar errores recientes en el log
 if [ -f "$DAEMON_LOG" ]; then
-    ERRORS=$(grep -c "ERROR\|FATAL\|EADDRINUSE\|bind failed" "$DAEMON_LOG" 2>/dev/null || echo 0)
+    # grep -c imprime 0 y sale 1 sin coincidencias: `|| echo 0` duplicaba "0\n0" y rompía `-eq`.
+    ERRORS=$(grep -c "ERROR\|FATAL\|EADDRINUSE\|bind failed" "$DAEMON_LOG" 2>/dev/null || true)
+    ERRORS=${ERRORS:-0}
     [ "$ERRORS" -eq 0 ] && pass "0 errores FATAL/ERROR en daemon.log" \
         || warn "$ERRORS entradas ERROR/FATAL en daemon.log (revisar $DAEMON_LOG)"
 fi
@@ -159,7 +161,6 @@ else
 fi
 
 # ── 8. Resumen ────────────────────────────────────────────────────────────────
-TOTAL=$((OK+WARN+FAIL))
 printf "\n╔══════════════════════════════════════════════════╗\n"
 printf "║  IVANNA OMEGA SUPREME — Health Check v1.0       ║\n"
 printf "╠══════════════════════════════════════════════════╣\n"
