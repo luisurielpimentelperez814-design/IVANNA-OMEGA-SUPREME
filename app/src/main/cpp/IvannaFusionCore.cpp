@@ -332,7 +332,13 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
     {
         const float routeDb = std::clamp((m_routeBassDb_ + m_routeDialogDb_) * 0.35f, -6.0f, 6.0f);
-        const float targetTrim = m_eqTrimTarget_ * std::pow(10.0f, routeDb / 20.0f) * m_intensityTarget_;
+        // FIX (distorsion al subir volumen): este trim llegaba a +12 dB (media del EQ
+        // + perfil de ruta) y AMPLIFICABA toda la mezcla por encima de 0 dBFS antes
+        // del limitador -> saturacion continua en masters modernos (Tidal/Amazon).
+        // La ganancia global del FusionCore solo puede atenuar (techo 1.0): el
+        // realce espectral ya lo hace el EQ por banda, sin makeup gain ciego.
+        const float targetTrim = std::min(1.0f,
+            m_eqTrimTarget_ * std::pow(10.0f, routeDb / 20.0f) * m_intensityTarget_);
         const bool compActive = (m_compRatio_ > 1.005f && m_compThresholdDb_ < -0.1f);
         if (compActive || std::fabs(m_eqTrimSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetTrim - 1.0f) > 1.0e-4f) {
             static constexpr float kTrimSlew = 1.0f / 4096.0f;
