@@ -61,7 +61,7 @@ if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
     cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_DST/" 2>/dev/null
     # Validación por hash contra el índice — rollback si alguno no coincide
     HRTF_OK=1
-    cd "$HRTF_DST"
+    cd "$HRTF_DST" || { ui_print "  ! no se pudo entrar a $HRTF_DST — se descarta HRTF"; HRTF_OK=0; }
     for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
         EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
         if [ -n "$EXPECTED" ] && [ -f "$F" ]; then
@@ -76,7 +76,7 @@ if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
         rm -rf "$HRTF_DST"
         ui_print "  ! HRTF rollback completo — se usará HRTF sintético (fallback seguro)"
     fi
-    cd "$MODPATH"
+    cd "$MODPATH" || abort "! no se pudo volver a $MODPATH tras desplegar HRTF"
 fi
 
 
