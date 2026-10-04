@@ -414,12 +414,17 @@ class IvannaGlobalEffectManager(
             Log.i(TAG, "Sesión $audioSession acoplada a libomega_effect nativo (efectos stock en bypass)")
             eq = null; bb = null; virt = null; loud = null; dyn = null; rev = null
         } else {
-            dyn  = createDynamics(audioSession, isVideo)
+            // FIX (distorsion al subir volumen): Android encadena los efectos de una
+            // sesion en ORDEN DE CREACION. DynamicsProcessing se creaba primero, asi
+            // que el compresor/limitador corria ANTES de EQ+BassBoost+Virtualizer+
+            // Loudness y todo el realce posterior pegaba directo al mixer sin red.
+            // Ahora se crea al final: es la ultima etapa y su limiter protege la salida.
             eq   = createEqualizer(audioSession)
             bb   = if (isVideo) null else createBassBoost(audioSession)
             virt = if (isVideo) null else createVirtualizer(audioSession)
             loud = createLoudness(audioSession)
             rev  = if (isVideo) null else createEnvironmentalReverb(audioSession)
+            dyn  = createDynamics(audioSession, isVideo)
         }
 
         activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega, isVideo)
@@ -738,25 +743,37 @@ class IvannaGlobalEffectManager(
     private fun applyDynamicsProfile(dyn: DynamicsProcessing?, profile: IvannaEffectProfile) {
         if (dyn == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
         runCatching {
-            val ch0 = dyn.getChannelByChannelIndex(0)
-            
-            // CORRECCIÓN: Navegación jerárquica correcta de la API (Channel -> Mbc -> Band)
-            val mbcBand = ch0?.mbc?.getBand(0) ?: return@runCatching
-            
-            mbcBand.attackTime   = 5f
-            mbcBand.releaseTime  = 100f
-            mbcBand.ratio        = profile.compRatio
-            mbcBand.threshold    = profile.compThresholdDb // CORRECCIÓN: 'threshold', no 'thresholdDb'
-            mbcBand.isEnabled    = true
-            
-            dyn.setChannelTo(0, ch0)
+            // FIX (pumping + imagen estereo desbalanceada): antes solo se configuraba
+            // el canal 0 (el derecho pasaba sin compresion), con rodilla dura 0 dB,
+            // ataque 5 ms (modula los graves = bombeo) y sin limitador. Ahora:
+            // ambos canales con la misma curva, rodilla suave, ataque/release lentos
+            // y un limiter de seguridad a -1.5 dBFS como ultima etapa de la sesion.
+            val band = DynamicsProcessing.MbcBand(
+                true,                                         // enabled
+                20000f,                                       // cutoff: banda unica full-range
+                12f,                                          // attack ms
+                160f,                                         // release ms
+                profile.compRatio.coerceIn(1f, 6f),           // ratio
+                profile.compThresholdDb.coerceIn(-40f, 0f),   // threshold dBFS
+                8f,                                           // knee dB (suave)
+                -90f,                                         // noise gate off
+                1f,                                           // expander off
+                0f,                                           // preGain
+                0f                                            // postGain: sin make-up
+            )
+            dyn.setMbcBandAllChannelsTo(0, band)
+            val limiter = DynamicsProcessing.Limiter(
+                true, true, 0,
+                1f,       // attack ms
+                60f,      // release ms
+                20f,      // ratio ~ brickwall
+                -1.5f,    // threshold dBFS
+                0f        // postGain
+            )
+            dyn.setLimiterAllChannelsTo(limiter)
             dyn.setEnabled(true)
         }.onFailure { Log.w(TAG, "Error aplicando Dynamics a la sesión", it) }
     }
-
-    // ─── Gain staging de la cadena stock (EQ + BassBoost + Virtualizer + Loudness) ─
-    /** Preamp del EQ: resta el realce maximo completo -> ninguna banda > 0 dB neto. */
-    private fun eqPreampMb(maxBoostMb: Int): Int = maxBoostMb.coerceAtLeast(0)
 
     // ─── Creadores con manejo de error (muchos dispositivos no soportan todos) ─
 
@@ -831,7 +848,7 @@ class IvannaGlobalEffectManager(
                 false, 0,   // sin preEQ
                 true,  1,   // MBC: 1 banda (compresor broadband)
                 false, 0,   // sin postEQ
-                false        // sin limiter
+                true         // limiter de seguridad (ultima etapa de la sesion)
             ).setPreferredFrameDuration(frameDuration).build()
             DynamicsProcessing(Int.MAX_VALUE, session, config).also { it.enabled = true }
         }.getOrNull()
