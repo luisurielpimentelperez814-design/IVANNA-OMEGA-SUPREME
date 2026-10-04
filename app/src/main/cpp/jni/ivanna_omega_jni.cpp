@@ -2438,12 +2438,9 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHarmo
     if (!std::isfinite(v)) return;
     const float clampedV = std::clamp((float)v, 0.0f, 1.0f);
     g_pd.set_nho_harmonic(std::clamp(clampedV, 0.0f, 0.65f));
-    {
-        std::lock_guard<std::mutex> lock(g_uiMutex);
-        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
-        g_params_ui.presence = std::clamp((clampedV - 0.5f) * 24.0f, -12.0f, 12.0f);
-    }
-    g_eq_dirty.store(true, std::memory_order_release);
+    // La presencia del EQ tiene su propio setter (nativeSetPresenceDb): antes
+    // cada cambio armónico (MusicIntelligence, AudioStateManager...) pisaba el
+    // slider PRESENCIA del usuario.
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
     uint64_t seen = 0;

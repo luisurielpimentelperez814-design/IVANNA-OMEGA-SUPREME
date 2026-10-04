@@ -64,7 +64,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
         if (IvannaNativeLib.isLoaded) {
             runCatching {
                 IvannaNativeLib.nativeSetEQParams(p.eqBass, p.eqMid, p.eqTreble, p.masterGain)
-                IvannaNativeLib.nativeSetHarmonicGain((p.eqPresence / 12f + 0.5f).coerceIn(0f, 1f))
+                IvannaNativeLib.nativeSetPresenceDb(p.eqPresence)
                 IvannaNativeLib.nativeSetCompressorParams(
                     p.compressorThreshold, p.compressorRatio,
                     p.compressorAttack, p.compressorRelease
