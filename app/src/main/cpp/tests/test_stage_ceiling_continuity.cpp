@@ -90,3 +90,42 @@ TEST(StageCeilingContinuity, SenalNormalPasaIntacta) {
     EXPECT_LT(r.maxBoundaryGainJump, 1e-5f);
     EXPECT_NEAR(r.maxAbs, 0.30f, 1e-3f);
 }
+
+// Regresión del click residual a volumen alto: con ganancia de etapa == 1 la forma de
+// onda sobre la rodilla (0.85) debe ser la MISMA curva softCeiling que con ganancia < 1.
+// Antes, con g==1 la etapa dejaba pasar la senal sin comprimir y al alternar con g<1 las
+// muestras entre 0.85 y el techo saltaban de valor en la frontera de bloque.
+TEST(StageCeilingContinuity, FormaDeOndaSobreRodillaIndependienteDeLaGananciaDeEtapa) {
+    SupremeAcousticStabilityGuard g;
+    g.prepare(kSr);
+    g.reset();
+    std::vector<float> inL(kBlock), inR(kBlock), L(kBlock), R(kBlock);
+    double phase = 0.0;
+    float maxDev = 0.0f;
+    bool checkedHot = false;
+    for (int b = 0; b < 400; ++b) {
+        // 0..9: etapa que realza x3 sobre senal fuerte -> el techo baja g < 1.
+        // 10..399: sin realce, g se recupera hacia 1 (release ~60 ms) con pico 0.92 > rodilla.
+        const bool hot = b < 10;
+        const float amp = hot ? 0.9f : 0.92f;
+        const float boost = hot ? 3.0f : 1.0f;
+        for (size_t i = 0; i < kBlock; ++i) {
+            const float s = amp * (float)std::sin(phase);
+            phase += 2.0 * M_PI * 997.0 / kSr;
+            inL[i] = s; inR[i] = s;
+            L[i] = s * boost; R[i] = s * boost;
+        }
+        g.beginBlock(inL.data(), inR.data(), kBlock, true);
+        g.enforceStageEnergyCeiling(AcousticModuleId::ObjectRenderer,
+                                    L.data(), R.data(), kBlock, 1.25f, 0.95f);
+        if (b == 399) {
+            for (size_t i = 0; i < kBlock; ++i) {
+                const float expect = SupremeAcousticStabilityGuard::softCeilingSample(inL[i], 0.85f, 0.95f);
+                maxDev = std::max(maxDev, std::fabs(L[i] - expect));
+                if (std::fabs(inL[i]) > 0.86f) checkedHot = true;
+            }
+        }
+    }
+    EXPECT_TRUE(checkedHot) << "la senal de prueba debe superar la rodilla";
+    EXPECT_LT(maxDev, 1.0e-4f) << "desviacion de la curva softCeiling con g==1: " << maxDev;
+}

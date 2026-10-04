@@ -610,13 +610,20 @@ public:
         }
         stageGain_[idx] = g1;
 
-        if (g0 < 0.999f || g1 < 0.999f) {
+        // FIX (tronido residual a volumen alto): softCeilingSample solo se aplicaba con
+        // g<0.999. Al pasar de un bloque con techo activo a uno sin él, las muestras entre
+        // la rodilla (0.85) y el techo cambiaban de valor de golpe en la frontera de bloque
+        // (curva comprimida vs. sin comprimir) = un click por transición. La forma de onda
+        // ahora es SIEMPRE la misma función estática de la entrada: se aplica el softCeiling
+        // también con g==1 cuando hay picos sobre la rodilla (ruta rápida idéntica si no).
+        constexpr float kStageKnee = 0.85f;
+        if (g0 < 0.999f || g1 < 0.999f || maxPeak > kStageKnee) {
             const float step = (g1 - g0) / static_cast<float>(numSamples);
             float g = g0;
             for (size_t i = 0; i < numSamples; ++i) {
                 g += step;
-                left[i]  = softCeilingSample(left[i] * g, 0.85f, hardPeakCeiling);
-                right[i] = softCeilingSample(right[i] * g, 0.85f, hardPeakCeiling);
+                left[i]  = softCeilingSample(left[i] * g, kStageKnee, hardPeakCeiling);
+                right[i] = softCeilingSample(right[i] * g, kStageKnee, hardPeakCeiling);
             }
         }
         inspectStage(id, left, right, numSamples, g1, ModuleOperationalState::Active);
