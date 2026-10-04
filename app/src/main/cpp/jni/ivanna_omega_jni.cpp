@@ -12,6 +12,7 @@
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
+#include "../include/omega_effect_beacon.h"   // readEffectBeacon(): senal real de que omega_effect procesa
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
@@ -1739,6 +1740,16 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
     env->ReleaseFloatArrayElements(buf, data, 0);
 }
+// Senal REAL de que omega_effect.so procesa audio en audioserver (Ruta B).
+// -1 = no disponible (sin archivo / DAC o SELinux lo bloquea): el llamador debe CONSERVAR su
+//      comportamiento previo. 0 = ningun efecto habilitado. 1 = habilitado sin bloques recientes
+//      (pausa). 2 = procesando (bloque dentro de idleMs). Ver include/omega_effect_beacon.h.
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeEffectBeaconState(JNIEnv*, jobject, jint idleMs) {
+    const uint64_t win = idleMs > 0 ? static_cast<uint64_t>(idleMs) : 2000ull;
+    return static_cast<jint>(ivanna::readEffectBeacon(win));
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_pd.stop_evo_thread();

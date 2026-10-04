@@ -244,6 +244,24 @@ object DSPBridge {
 
     fun version(): String = if (loaded) nativeVersion() else "native unavailable"
 
+    /**
+     * Estado REAL del efecto omega_effect.so en audioserver (Ruta B), leido del beacon que el
+     * propio efecto mantiene. A diferencia de MagiskBridge.isDaemonRunning (solo prueba que el
+     * proceso daemon vive), esto prueba que el efecto esta insertado/procesando.
+     */
+    enum class EffectState { UNAVAILABLE, NO_EFFECT, ENABLED_IDLE, PROCESSING }
+
+    /** UNAVAILABLE => el beacon no se puede leer (DAC/SELinux o libreria no cargada): el llamador debe conservar su comportamiento previo. */
+    fun effectState(idleMs: Int = 2000): EffectState {
+        if (!loaded) return EffectState.UNAVAILABLE
+        return when (runCatching { nativeEffectBeaconState(idleMs) }.getOrDefault(-1)) {
+            0 -> EffectState.NO_EFFECT
+            1 -> EffectState.ENABLED_IDLE
+            2 -> EffectState.PROCESSING
+            else -> EffectState.UNAVAILABLE
+        }
+    }
+
     private external fun nativeInit(sampleRate: Int)
     private external fun nativeSetParams(
         drive: Float, wet: Float, mix: Float,
@@ -260,4 +278,5 @@ object DSPBridge {
     private external fun nativeProcess(buf: FloatArray, numFrames: Int)
     private external fun nativeReset()
     private external fun nativeVersion(): String
+    private external fun nativeEffectBeaconState(idleMs: Int): Int
 }
