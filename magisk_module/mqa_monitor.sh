@@ -167,7 +167,7 @@ detect_preset() {
                 case "$ACTIVE_PKG" in
                     *.game.*|*game*.*|com.supercell.*|com.king.*|\
                     com.zynga.*|\
-                    com.activision.*|com.riotgames.*)
+                    com.activision.*)
                         TARGET_PRESET="Punch" ;;
                 esac
             fi ;;
