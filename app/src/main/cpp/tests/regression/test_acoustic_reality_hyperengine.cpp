@@ -12,6 +12,7 @@
 //   6. Latencia (0.00 ms de latencia algorítmica añadida y bus seqlock wait-free)
 // ============================================================================
 
+#include <ctime>
 #include <gtest/gtest.h>
 #include <array>
 #include <chrono>
@@ -345,14 +346,26 @@ TEST(AcousticRealityHyperengineValidation, 5_CpuLoadRealTimeBudget) {
     pipeline.orchestrateRealityFromBlock(bufL.data(), bufR.data(), kBlockSize, kSampleRate);
 
     constexpr int kNumIterations = 1000;
-    const auto t0 = std::chrono::steady_clock::now();
+    // Tiempo de CPU del HILO (no de pared): la carga de CPU no debe depender de que
+    // el runner (CI compartido / ctest -j) desplace el proceso. Con steady_clock este
+    // test pasaba aislado y fallaba bajo carga, bloqueando build-apk y publish-release.
+    auto threadCpuUs = []() -> double {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+        timespec ts{};
+        if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
+            return static_cast<double>(ts.tv_sec) * 1.0e6 + static_cast<double>(ts.tv_nsec) * 1.0e-3;
+        }
+#endif
+        return static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    };
+    const double t0 = threadCpuUs();
     for (int it = 0; it < kNumIterations; ++it) {
         pipeline.process(bufL.data(), bufR.data(), kBlockSize);
     }
-    const auto t1 = std::chrono::steady_clock::now();
+    const double t1 = threadCpuUs();
 
-    const double totalUs = static_cast<double>(
-        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+    const double totalUs = t1 - t0;
     const double avgBlockUs = totalUs / static_cast<double>(kNumIterations);
     const double blockDurationUs = (static_cast<double>(kBlockSize) / kSampleRate) * 1.0e6; // 5333.3 us
     const double cpuLoadPercent = (avgBlockUs / blockDurationUs) * 100.0;
