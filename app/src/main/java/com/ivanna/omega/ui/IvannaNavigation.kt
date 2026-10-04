@@ -185,7 +185,8 @@ fun MainScaffold(
                     onOpenAssistant = { outerNav.navigate(IvannaRoute.IVANNA_ASSISTANT) },
                     onOpenNetwork   = { outerNav.navigate(IvannaRoute.NETWORK) },
                     onOpenAdaptiveProfiles = { outerNav.navigate("adaptive_profiles") },
-                    onOpenHiRes     = { outerNav.navigate("hires") }
+                    onOpenHiRes     = { outerNav.navigate("hires") },
+                    onOpenMusicIntel = { outerNav.navigate("music_intelligence") }
                 )
             }
         }
@@ -260,7 +261,8 @@ fun SystemHubScreen(
     onOpenAssistant : () -> Unit = {},
     onOpenNetwork   : () -> Unit = {},
     onOpenAdaptiveProfiles : () -> Unit = {},
-    onOpenHiRes     : () -> Unit = {}
+    onOpenHiRes     : () -> Unit = {},
+    onOpenMusicIntel : () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
@@ -303,6 +305,9 @@ fun SystemHubScreen(
         HubCard("AUDIO HI-RES",
             "Selector de frecuencia 16..384 kHz y profundidad de bits",
             AuroraCyan, onOpenHiRes)
+        HubCard("MUSIC INTELLIGENCE",
+            "Análisis musical en tiempo real · género · tempo · tonalidad",
+            PhosphorGreen, onOpenMusicIntel)
     }
 }
 

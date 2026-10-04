@@ -270,6 +270,8 @@ fun OmegaApp() {
                     nav.navigate("dashboard")
                 }
             }
+            // MusicIntelligencePanel estaba huérfano (0 referencias): sin ruta ni acceso desde la UI.
+            composable("music_intelligence") { com.ivanna.omega.ui.MusicIntelligencePanel() }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
