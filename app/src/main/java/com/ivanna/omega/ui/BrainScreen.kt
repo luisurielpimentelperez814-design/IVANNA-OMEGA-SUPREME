@@ -247,6 +247,12 @@ private fun EvolutionTab(
                     Slider(
                         value = prefs.evoPopSize.toFloat(),
                         onValueChange = { updatePrefs { s -> s.copy(evoPopSize = it.toInt()) } },
+                        onValueChangeFinished = {
+                            // Soltar el slider aplica al motor si la evolución ya corre
+                            // (antes sólo tenía efecto tras volver a pulsar INICIAR).
+                            if (isRunning && IvannaNativeLib.isLoaded)
+                                runCatching { IvannaNativeLib.nativeInitializeEvolution(prefs.evoPopSize, prefs.evoGenerations) }
+                        },
                         valueRange = 10f..200f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
                     )
@@ -258,6 +264,10 @@ private fun EvolutionTab(
                     Slider(
                         value = prefs.evoGenerations.toFloat(),
                         onValueChange = { updatePrefs { s -> s.copy(evoGenerations = it.toInt()) } },
+                        onValueChangeFinished = {
+                            if (isRunning && IvannaNativeLib.isLoaded)
+                                runCatching { IvannaNativeLib.nativeInitializeEvolution(prefs.evoPopSize, prefs.evoGenerations) }
+                        },
                         valueRange = 10f..500f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
                     )

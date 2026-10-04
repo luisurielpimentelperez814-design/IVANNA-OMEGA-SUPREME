@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.38 (278) — BRAIN: sliders de población y generaciones aplican al soltar
+1. **`BrainScreen.kt`** — POBLACIÓN y GENERACIONES del kernel evolutivo sólo guardaban prefs; ahora, al soltar, reinicializan el motor si la evolución ya está corriendo.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.37 (277) — BRAIN: telemetría cognitiva sin valores inventados
 1. **`BrainScreen.kt` / `NativeBridge.kt`** — el tab COGNITIVO 9-15 mostraba cifras inventadas (84 %, 91 %, sala 6.8×8.6×3.5 m, 12 estados…) cuando el motor nativo no respondía, violando la regla de no fabricar métricas. Se añaden `safeGetRealityTelemetryOrNull`/`safeGetCognitiveTelemetryOrNull` (las `safeGet*` previas se conservan) y la UI muestra "—" si no hay dato.
 2. **Límite conocido:** el JNI `getCognitiveEvolutionTelemetrySnapshot` aún siembra un snapshot sintético si el orquestador no ha corrido ningún ciclo (sequence==0); sin audio procesándose, esos valores no son medición real. No se tocó el JNI en este release.
