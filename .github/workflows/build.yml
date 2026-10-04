@@ -732,6 +732,19 @@ jobs:
               --title "IVANNA OMEGA SUPREME $TAG" \
               --notes "$NOTES"
           else
+            # Los releases publicados son INMUTABLES (GitHub): no admiten subir/borrar assets.
+            # Re-publicar la misma versión nunca puede funcionar; hay que subir la versión
+            # (module.prop + update.json + version.properties). No es un fallo del build:
+            # se avisa y se conserva el draft staging-* con el bundle verificado.
+            IMMUTABLE=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false')
+            if [ "$IMMUTABLE" = "true" ]; then
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$APK_NAME"; then
+                echo "Release $TAG (inmutable) ya contiene este build ${GITHUB_SHA}."
+              else
+                echo "::warning title=publish-release::El release $TAG es inmutable y no contiene el build ${GITHUB_SHA}. Sube la versión para publicarlo. Bundle verificado conservado en el draft ${STAGE_TAG}."
+              fi
+              exit 0
+            fi
             # Quitar APKs de commits anteriores: el release solo debe exponer el build actual.
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
               | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
