@@ -11,8 +11,10 @@ if [ -n "$PID" ]; then
   SCHED=$(chrt -p "$PID" 2>/dev/null | grep -o 'SCHED_[A-Z]*' | head -1)
   STATE="alive pid=$PID cpu=${CPU:-?}% rss=${RSS:-?}KB sched=${SCHED:-?}"
 else STATE="DOWN"; fi
-SOCK=$(grep -c 'omega_daemon_socket\|omega_command_socket' /proc/net/unix 2>/dev/null || echo 0)
+SOCK=$(grep -c 'omega_daemon_socket\|omega_command_socket' /proc/net/unix 2>/dev/null || true)
+SOCK=${SOCK:-0}  # grep -c ya imprime 0; el viejo '|| echo 0' duplicaba "0\n0" en el log
 # Disponibilidad cDSP/FastRPC en tiempo real (ruta híbrida Hexagon/NEON)
 CDSP="absent"; [ -e /dev/adsprpc-smd ] || [ -e /dev/fastrpc-cdsp ] && CDSP="present"
-AF=$(dumpsys audio 2>/dev/null | grep -c "stream type:" 2>/dev/null || echo 0)
+AF=$(dumpsys audio 2>/dev/null | grep -c "stream type:" 2>/dev/null || true)
+AF=${AF:-0}
 echo "$TS daemon=[$STATE] sockets=$SOCK cdsp=$CDSP audio_streams=$AF" >> "$LOG"
