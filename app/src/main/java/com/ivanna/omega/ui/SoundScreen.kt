@@ -168,17 +168,7 @@ private fun EQTab(
                 AudioStateManager.updateState { it.copy(eqPresence = v) }
                 updatePrefs { it.copy(eqPresence = v) }
                 if (IvannaNativeLib.isLoaded)
-                    runCatching {
-                        // DSPBridge tiene presence como 5º band; nativeSetEQParams
-                        // solo tiene 4 params, así que la presencia va a través de
-                        // setParams completo con los valores actuales del audioState.
-                        IvannaNativeLib.nativeSetEQParams(
-                            audioState.eqBass, audioState.eqMid, audioState.eqTreble,
-                            audioState.masterGain
-                        )
-                        // Presence separada via setHarmonicGain escalado (0.5=neutro)
-                        IvannaNativeLib.nativeSetHarmonicGain((v / 12f + 0.5f).coerceIn(0f, 1f))
-                    }
+                    runCatching { IvannaNativeLib.nativeSetPresenceDb(v) }
             }
             // FIX: VOLUMEN actualizaba audioState.masterGain pero no rellamaba
             // nativeSetEQParams — el motor seguía con el masterGain anterior.

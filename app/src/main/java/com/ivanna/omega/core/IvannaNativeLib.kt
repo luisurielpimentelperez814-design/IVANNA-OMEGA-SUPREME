@@ -56,6 +56,8 @@ object IvannaNativeLib {
     // SOLO reconfigura g_eq/g_gain en el motor nativo (ver ivanna_omega_jni.cpp).
     // Usar este método para EQ en tiempo real; NO usar nativeSetParams para eso.
     external fun nativeSetEQParams(low: Float, mid: Float, high: Float, master: Float)
+    /** Presencia (dB, ±12) directa al EQ; no toca la ganancia armónica NHO. */
+    external fun nativeSetPresenceDb(db: Float)
     external fun nativeResetDSP()
     external fun nativeGetClipCount(): Int
     external fun nativeResetClipCount()

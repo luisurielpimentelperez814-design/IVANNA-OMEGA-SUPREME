@@ -2335,6 +2335,18 @@ constexpr float kExciterWetBase = 0.32f;
 } // namespace
 
 JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPresenceDb(
+    JNIEnv*, jobject, jfloat db) {
+    if (!std::isfinite(db)) return;
+    {
+        std::lock_guard<std::mutex> lock(g_uiMutex);
+        if (g_params_ui.sampleRate == 0) g_params_ui = g_params;
+        g_params_ui.presence = std::clamp((float)db, -12.0f, 12.0f);
+    }
+    g_eq_dirty.store(true, std::memory_order_release);
+}
+
+JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPerceptualGain(
     JNIEnv*, jobject, jfloat gain) {
     if (!std::isfinite(gain)) return;
