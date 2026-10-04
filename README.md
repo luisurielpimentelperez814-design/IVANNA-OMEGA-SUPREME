@@ -43,7 +43,7 @@
 | **I. Fundamentos y Arquitectura Dual** | [**§1. Visión General y Tablero de Métricas Verificadas**](#-1-qué-es-ivanna-omega-supreme-y-tablero-ejecutivo-v240) · [**§2. Fusión Maestra en Lazo Cerrado (`OmniHolographicSingularityEngine`)**](#-2-fusión-maestra-en-lazo-cerrado-omniholographicsingularityengine--declarativeunifiedpipeline) |
 | **II. Física Matemática y Atlas v2.4.0** | [**§3. Blindaje C² Cero-Artefactos (`SupremeAcousticStabilityGuard`)**](#-3-blindaje-acústico-cero-artefactos-y-cero-clipping-supremeacousticstabilityguard) · [**§4. Atlas de Escena Musical (`IvannaMusicIntelligenceEngine` + `IVW1`)**](#-4-atlas-de-escena-musical-v240-ivannamusicintelligenceengine-pesos-ivw1-y-motores-físicos-de-sala) |
 | **III. Motores Supremos y Espacialización** | [**§5. Los 5 Ejes Supremos + Inversión Coclear PINN**](#-5-los-5-ejes-de-supremacía-cuántico-neuromórfica--inversión-coclear-pinn-0-muestras-de-lookahead) · [**§6. Hipermotor Fases 0–15 y 7 Ejes Espaciales**](#-6-hipermotor-de-reconstrucción-de-realidad-acústica-fases-015-y-los-7-ejes-espaciales) · [**§7. Entrenamiento 255-SOFA + 7D-SAF + 200-RIR**](#-7-entrenamiento-conjunto-sofa-255-aes69--saf-manifold-7-d--rir-200-salas-desde-t--0-ms) |
-| **IV. Hardware, IA, Daemon y Verificación** | [**§8. Cadena DSP, DAC USB-C y Bluetooth**](#-8-cadena-dsp-de-9-etapas-ruta-isócrona-usb-c-dac-y-bluetooth-master-path) · [**§9. Cerebros IA, TinyML y Gemini 2.5**](#-9-inteligencia-acústica-tinyml-neuromórfico-y-asistente-cognitivo-gemini-25) · [**§10. Daemon Root, SHM v5 y UI Compose**](#-10-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§11. Honestidad Radical de Ingeniería**](#-11-honestidad-radical-de-ingeniería-lo-que-ivanna-hace-y-lo-que-no-hace) · [**§12. Comparativa Industrial**](#-12-ivanna-omega-supreme-frente-a-los-estándares-comerciales-de-la-industria) · [**§13. Matriz CI (`181/181 CTest`) e Instalación**](#-13-matriz-de-verificación-determinista-6-puertas--174174-ctest-e-instalación) |
+| **IV. Hardware, IA, Daemon y Verificación** | [**§8. Cadena DSP, DAC USB-C y Bluetooth**](#-8-cadena-dsp-de-9-etapas-ruta-isócrona-usb-c-dac-y-bluetooth-master-path) · [**§9. Cerebros IA, TinyML y Gemini 2.5**](#-9-inteligencia-acústica-tinyml-neuromórfico-y-asistente-cognitivo-gemini-25) · [**§10. Daemon Root, SHM v5 y UI Compose**](#-10-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§11. Honestidad Radical de Ingeniería**](#-11-honestidad-radical-de-ingeniería-lo-que-ivanna-hace-y-lo-que-no-hace) · [**§12. Comparativa Industrial**](#-12-ivanna-omega-supreme-frente-a-los-estándares-comerciales-de-la-industria) · [**§13. Matriz CI (`182/182 CTest`) e Instalación**](#-13-matriz-de-verificación-determinista-6-puertas--174174-ctest-e-instalación) |
 
 </div>
 
@@ -84,7 +84,7 @@ Cuando escuchas música, películas o videojuegos en un teléfono Android, el so
 | **Puente JNI Biyectivo (`[0.1] check_jni_wiring.py`)** | **`321 de 321` símbolos (`100%`)** | `321` declaraciones `external fun` Kotlin $\leftrightarrow$ `321` funciones `Java_*` C++ + `232 de 232` wrappers invocados |
 | **Seguridad de Tiempo Real (`[A3] check_rt_safety.py`)** | **`34/34` entradas RT (`0` violaciones)** | Auditoría estática AST de 2 niveles + intercepción dinámica de `malloc`/`new` en `test_rt_no_alloc.cpp` |
 | **Pesos Pre-Entrenados TinyML (`IVW1` Binary Format)** | **`8 774` parámetros (`35 108 bytes`)** | `app/src/main/assets/models/ivanna_weights.ivw1` cargado por `IvannaAudioClassifier::loadWeights` |
-| **Suite de Pruebas Nativas Host (`CTest` + `ASan/UBSan`)** | **`181/181` tests en verde (`16.48 s`)** | `telemetry/ctest_summary.json` · `53` ejecutables de prueba C++20 auditados en cada push |
+| **Suite de Pruebas Nativas Host (`CTest` + `ASan/UBSan`)** | **`182/182` tests en verde (`16.48 s`)** | `telemetry/ctest_summary.json` · `53` ejecutables de prueba C++20 auditados en cada push |
 | **Sincronía A/V y Supresión de Eco en Streaming** | **`< 0.1 ms` desfase relativo · `0.0 dB` eco** | `PlaybackCaptureService` (auto-exclude UIDs + Track Mute) + `IvannaGlobalEffectManager` |
 
 ---
@@ -481,10 +481,10 @@ Este proyecto mantiene una política estricta de **cero inflación de marketing*
 
 ---
 
-## ✦ 13. Matriz de Verificación Determinista (`6 Puertas + 181/181 CTest`) e Instalación
+## ✦ 13. Matriz de Verificación Determinista (`6 Puertas + 182/182 CTest`) e Instalación
 
 <div align="center">
-<img src="docs/release_media/ivanna_verification_matrix.svg" alt="Matriz de Verificación Determinista de 6 Puertas Estáticas, 181/181 CTest y Release v2.4.0" width="100%" />
+<img src="docs/release_media/ivanna_verification_matrix.svg" alt="Matriz de Verificación Determinista de 6 Puertas Estáticas, 182/182 CTest y Release v2.4.0" width="100%" />
 </div>
 
 ### 13.1 Las 6 Puertas Estáticas de Ingeniería (`scripts/check_*.py`)
@@ -498,15 +498,15 @@ Cada commit es auditado por 6 analizadores estáticos deterministas que bloquean
 | **`[0.2]`** | `scripts/check_header_wiring.py` | **148 de 148** headers de producción (`.h`/`.hpp`) alcanzables desde las unidades de traducción compiladas (**0** huérfanos) | ✅ `PASS` |
 | **`[0.1]`** | `scripts/check_jni_wiring.py` | **321 de 321** declaraciones `external fun` en Kotlin emparejadas biyectivamente 1:1 con **321** símbolos `Java_*` en **96** fuentes C/C++ | ✅ `PASS` |
 | **`[A2]`** | `scripts/check_kotlin_wrapper_wiring.py` | **232 de 232** wrappers públicos de `OmegaEngineBridge` cuentan con al menos un llamador real en la app/servicios (**0** código muerto) | ✅ `PASS` |
-| **`[A5]`** | `scripts/check_docs_claims.py` | Sincronía documental estricta contra `CMAKE_CXX_STANDARD=20`, `HybridRenderer::kActiveTaps=128`, puertas A3/A4 y `telemetry/ctest_summary.json` (`181/181`) | ✅ `PASS` |
+| **`[A5]`** | `scripts/check_docs_claims.py` | Sincronía documental estricta contra `CMAKE_CXX_STANDARD=20`, `HybridRenderer::kActiveTaps=128`, puertas A3/A4 y `telemetry/ctest_summary.json` (`182/182`) | ✅ `PASS` |
 
 ### 13.2 Estado Verificado de Integración Continua en GitHub Actions (`v2.4.0`)
 
 | Flujo / Suite de Verificación | Estado en GitHub Actions | Cobertura Técnica Auditada |
 |-------------------------------|:------------------------:|----------------------------|
 | **Datasets HRTF, SOFA & IVW1 (`tests-host.yml`)** | ✅ `SUCCESS` | Validación binaria de los 12 archivos `.ihr1`, firma HDF5 (`894844460d0a1a0a`) de los 255 `.sofa`, `pca_basis.bin`, las 200 salas WAV BRIR y `ivanna_weights.ivw1` (`8 774` parámetros). |
-| **Host CTest Suite (`181/181` Tests)** | ✅ `SUCCESS` (`16.48 s`) | **181/181 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_ime_style_blender`, `test_scene_bus`, `test_late_reverb_suppressor`, `test_woodworth_itd`, `test_er_tap_time`, `test_cheb_shaper`, `test_cold_start_sim` y `test_rt_no_alloc`. |
-| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las **181/181** pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
+| **Host CTest Suite (`182/182` Tests)** | ✅ `SUCCESS` (`16.48 s`) | **182/182 tests en verde**, incluyendo `UnifiedMasterV3SafetyBench` (Fases 1–8), `test_supreme_five_axes`, `test_acoustic_reality_hyperengine`, `test_cochlear_inverse_model`, `test_supreme_zero_pop_transition`, `test_supreme_acoustic_continuity`, `test_ime_style_blender`, `test_scene_bus`, `test_late_reverb_suppressor`, `test_woodworth_itd`, `test_er_tap_time`, `test_cheb_shaper`, `test_cold_start_sim` y `test_rt_no_alloc`. |
+| **Host CTest (`ASan + UBSan`)** | ✅ `SUCCESS` | Ejecución completa de las **182/182** pruebas bajo **AddressSanitizer + UndefinedBehaviorSanitizer** con 0 fugas de memoria, 0 accesos fuera de límites y 0 comportamientos indefinidos. |
 | **Build APK & Native Binaries (`build.yml`)** | ✅ `SUCCESS` | Compilación con Android NDK ARM64 (`arm64-v8a`), verificación de flags de seguridad ELF (`PIE`, `Full RELRO`, `BIND_NOW`), sincronización estricta de `version.properties` (`v2.4.0 / 240`) y empaquetado de artefactos. |
 | **Verify & Publish GitHub Release (`v2.4.0`)** | ✅ `SUCCESS` | Extracción, validación de integridad de artefactos y publicación automática de `ivanna_omega_supreme_v2.4.0.zip` (Módulo Magisk/KernelSU) y el APK firmado para `magisk_module/update.json`. |
 
@@ -534,7 +534,7 @@ python3 scripts/check_jni_wiring.py && \
 python3 scripts/check_kotlin_wrapper_wiring.py && \
 python3 scripts/check_docs_claims.py
 
-# 2. Ejecutar la suite completa de 181/181 tests nativos C++20 en host (normal)
+# 2. Ejecutar la suite completa de 182/182 tests nativos C++20 en host (normal)
 bash scripts/run_ctest.sh
 
 # 3. Ejecutar la suite completa bajo AddressSanitizer + UndefinedBehaviorSanitizer
