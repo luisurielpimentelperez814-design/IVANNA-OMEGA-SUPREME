@@ -136,6 +136,35 @@ private fun EQTab(
     updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
 ) {
     val audioState by AudioStateManager.audioState.collectAsState()
+    val ctx = LocalContext.current
+    val selectedKind by com.ivanna.omega.audio.ContentProfileEngine.selected.collectAsState()
+    val activeKind by com.ivanna.omega.audio.ContentProfileEngine.active.collectAsState()
+
+    GlassCard(
+        "PERFIL POR CONTENIDO", NeonMagenta,
+        "Activo: ${activeKind?.label ?: "—"} · EQ + dinámica + espacial coordinados"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.ivanna.omega.audio.ContentKind.values().toList().chunked(3).forEach { rowKinds ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowKinds.forEach { kind ->
+                        FilterChip(
+                            selected = selectedKind == kind,
+                            onClick = {
+                                com.ivanna.omega.audio.ContentProfileEngine.select(ctx, kind)
+                            },
+                            label = { Text(kind.label, fontSize = 10.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
 
     GlassCard("ECUALIZADOR PARAMÉTRICO", AuroraCyan, "8 bandas · Q adaptativo · ISO 226") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

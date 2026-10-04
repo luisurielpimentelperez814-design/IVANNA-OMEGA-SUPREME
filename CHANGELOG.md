@@ -1,3 +1,10 @@
+# CHANGELOG — v2.4.18 (258) — Perfiles por contenido (Música · Películas · Streaming · IVANNA Magistral)
+1. **Nuevo `ContentProfileEngine`** — perfiles reales sobre los controles ya cableados (EQ, presencia, compresor, ancho/intensidad espacial, exciter), escribiendo el mismo `AudioState` y los mismos JNI que los sliders: UI, estado y DSP quedan sincronizados. MÚSICA: dinámica conservada (ratio 1.6, ataque 25 ms), ancho 1.5, intensidad 0.90, microdetalle. PELÍCULAS: diálogo estable (presencia +3 dB, ratio 3.0, ataque 8 ms), escena amplia con intensidad 0.70. STREAMING: ataque/release cortos y espacialización contenida (0.45) para no sumar latencia/desfase con el video. IVANNA MAGISTRAL: calibración magistral coordinada.
+2. **Selección AUTO** — YAMNet (speech/music) + tipo de fuente (`IvannaGlobalEffectManager.openSession` → `noteSource`) con histéresis de 3 lecturas consecutivas; elección del usuario persistente. Selector en SoundScreen → EQ (`FilterChip`).
+3. **Cableado:** `MainActivity` (YAMNet → perfil, carga al abrir), `IvannaGlobalEffectManager`, `SoundScreen`.
+4. **Pruebas:** balance de sintaxis OK; compilación Kotlin la valida CI; nativo host 8/8 sin cambios.
+5. **Esperado:** cada tipo de contenido suena con su calibración sin apilar espacialización; el cambio automático no oscila.
+
 # CHANGELOG — v2.4.17 (257) — Presencia restaurada al arrancar
 1. **`AudioStateManager.restoreToNative`** — restauraba EQ/compresor/ancho/exciter pero NO la presencia: tras reiniciar, el slider mostraba el valor guardado y el motor trabajaba con 0 dB (control mostrado sin efecto real). Ahora llama `nativeSetPresenceDb(state.eqPresence)`.
 2. **Pruebas:** balance de sintaxis OK; compilación Kotlin la valida CI; nativo host 8/8 sin cambios.

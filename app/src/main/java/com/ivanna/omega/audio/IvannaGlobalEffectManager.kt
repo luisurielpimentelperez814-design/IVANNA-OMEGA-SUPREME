@@ -388,6 +388,7 @@ class IvannaGlobalEffectManager(
         if (activeSessions.containsKey(audioSession)) return
 
         val isVideo = isVideoStreamingPackage(sourcePackage)
+        ContentProfileEngine.noteSource(sourcePackage, isVideo)
         Log.i(TAG, "Abriendo sesión $audioSession (${sourcePackage ?: "desconocido"}, isVideo=$isVideo)")
 
         // AUDIT FIX (Omega DSP nunca se adjuntaba por sesión): se intenta

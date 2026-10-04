@@ -1003,6 +1003,11 @@ fun DashboardScreen(
         }
     }
     DisposableEffect(Unit) { onDispose { learningController.release() } }
+    LaunchedEffect(yamnetForLearning) {
+        com.ivanna.omega.audio.ContentProfileEngine.onClassification(
+            yamnetForLearning.valid, yamnetForLearning.speech, yamnetForLearning.music)
+    }
+    LaunchedEffect(Unit) { com.ivanna.omega.audio.ContentProfileEngine.load(context) }
 
     val player = remember { IvannaBridgePlayer(context) }
     DisposableEffect(player) { onDispose { player.release() } }
