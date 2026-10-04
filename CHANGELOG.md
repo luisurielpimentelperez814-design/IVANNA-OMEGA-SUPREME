@@ -1,11 +1,11 @@
-# CHANGELOG — v2.4.4 (244) — Cableado de UI y entrega de artefactos
+# CHANGELOG — v2.4.5 (245) — Cableado de UI y entrega de artefactos
 1. **`WfsCalibrationPanel` cableado** — Ruta `wfs_calibration` + tarjeta en el hub SPATIAL (existía completo, JNI→daemon→WfsRenderer, sin acceso desde la UI).
 2. **`MusicIntelligencePanel` cableado** — Ruta `music_intelligence` (con scroll) + tarjeta en el hub SYSTEM.
 3. **Duplicados eliminados** — `AudioResampler.kt` (el 48→16 kHz ya vive en `AudioPipeline`) y `HeadTrackingManager.kt` (duplicado de `IvannaHeadTracker`, ya cableado).
 4. **Entrega de artefactos** — `main` ya no cancela builds en curso; `CpuLoadRealTimeBudget` mide CPU del hilo (era flaky bajo carga y bloqueaba `build-apk`); `publish-release` anota el fallo y no intenta re-publicar un release inmutable (hay que subir versión).
 5. **Tronido al subir volumen** — `softCeiling` de etapa ya no se apaga con g==1 (salto 0.85→techo por bloque).
 6. **Tronido al cambiar de ventana** — `IvannaBridgePlayer` aplica fade de volumen (40–80 ms) en cambios de foco de audio en vez de `pause()`/`setVolume` en escalón.
-7. **R8** — reglas `-dontwarn`/`keep` para clases opcionales faltantes (TFLite GPU, AutoValue, errorprone, conscrypt…) y metadata Kotlin/serialization.
+7. **R8** — R8 9.1.29 (mínimo para Kotlin 2.4) + reglas `-dontwarn`/`keep` para clases opcionales faltantes y metadata Kotlin/serialization.
 
 # CHANGELOG — v2.4.3 (243) — Anti-click: tronidos al subir volumen y cambiar de pista
 1. **Rampa continua de ganancia por etapa (`SupremeAcousticStabilityGuard`)** — Elimina los tronidos/crujidos al subir el volumen: la ganancia de cada etapa ya no salta en escalón.
