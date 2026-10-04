@@ -697,7 +697,7 @@ jobs:
           cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
           ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
 
-      - name: Crear o actualizar el Release
+      - name: Crear o actualizar el Release (sin enmascarar fallos)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -711,12 +711,26 @@ jobs:
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" \
               --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
               --title "IVANNA OMEGA SUPREME $TAG" \
               --notes "$NOTES"
           else
-            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber || true
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES" 2>/dev/null || true
+            # Quitar APKs de commits anteriores: el release solo debe exponer el build actual.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
+              | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done || true
+            # Sin '|| true': si la subida falla, el job DEBE fallar (antes quedaban assets viejos con notas nuevas).
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
           fi
+
+          # Verificación posterior: lo publicado debe tener el mismo tamaño que lo local.
+          for f in "$ZIP_NAME" "$APK_NAME"; do
+            REMOTE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name==\"$f\") | .size")
+            LOCAL=$(stat -c%s "$f")
+            [ "$REMOTE" = "$LOCAL" ] || { echo "ERROR: $f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
+          done
+          echo "✓ Assets del release $TAG verificados contra el build ${GITHUB_SHA}"
 
           # Limpiar draft temporal de staging
           gh release delete "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
