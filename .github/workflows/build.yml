@@ -38,7 +38,16 @@ jobs:
       - name: Build
         run: cmake --build build-tests -j4
       - name: Run tests
-        run: ctest --test-dir build-tests --output-on-failure
+        run: |
+          set -o pipefail
+          rc=0
+          ctest --test-dir build-tests --output-on-failure 2>&1 | tee ctest_last.log || rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            fails=$(grep -E "^\s*[0-9]+ - .*\((Failed|Timeout|SEGFAULT|Subprocess aborted|Exception)" ctest_last.log | sed 's/^ *//' | tr '\n' ';' | cut -c1-600)
+            detail=$(grep -E "Failure|Expected|Actual|which is|SUMMARY:|medido:" ctest_last.log | head -8 | tr '\n' ' ' | cut -c1-700)
+            echo "::error title=DSP CTest fallido::${fails} | ${detail}"
+          fi
+          exit $rc
 
   build-apk:
     name: Build APK & Native Binaries (artifact integrity enforced)
