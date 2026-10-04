@@ -21,8 +21,6 @@ object PersistedStateRestorer {
         val acPrefs = AdaptiveControlsPrefs.load(ctx)
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSetEta(acPrefs.nhoEta) }
-            runCatching { IvannaNativeLib.nativeSetNPMax(acPrefs.agcTarget / -36f) }
-            runCatching { IvannaNativeLib.nativeSetDelta(acPrefs.agcRate) }
             runCatching { IvannaNativeLib.nativeSetHarmonicGain(acPrefs.nhoHarmonicGain) }
             runCatching { IvannaNativeLib.nativeSetBeta(acPrefs.nhoLateralInhib) }
             runCatching { IvannaNativeLib.nativeSetAlpha(acPrefs.nhoOhcGain) }
@@ -38,6 +36,7 @@ object PersistedStateRestorer {
             // npeMasterGain is mapped to ETA (wet NHO) via PiLstmBridge in some places, but let's just make sure PiLstmBridge gets the state if it exists.
             runCatching { 
                 com.ivanna.omega.neuromorphic.PiLstmBridge.setMasterGain(acPrefs.npeMasterGain)
+                com.ivanna.omega.neuromorphic.PiLstmBridge.setAgc(acPrefs.agcTarget, acPrefs.agcRate)
             }
             
             // Azimuth/Elevation

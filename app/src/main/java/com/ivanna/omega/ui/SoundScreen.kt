@@ -225,13 +225,10 @@ private fun DynamicsTab(
             IvannaSliderRow("ATAQUE", audioState.compressorAttack, 0.1f, 200f, "ms") { v ->
                 AudioStateManager.updateState { it.copy(compressorAttack = v) }
                 updatePrefs { it.copy(compressorAttack = v) }
-                // FIX: nativeSetGamma controla attack/release timing en el DSP.
-                // Nunca se llamaba desde UI aunque la declaración JNI existía.
-                // Derivación: gamma = attackMs/200 (normalizado 0..1 para release).
-                val gamma = (v / 200f).coerceIn(0f, 1f)
+                // nativeSetGamma NO es del compresor: mueve el ángulo espacial
+                // (g_pd.set_spatial_angle). El ataque va solo por setCompressorParams.
                 if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetCompressorParams(audioState.compressorThreshold, audioState.compressorRatio, v, audioState.compressorRelease) }
-                    runCatching { IvannaNativeLib.nativeSetGamma(gamma) }
                 }
             }
             IvannaSliderRow("RELEASE", audioState.compressorRelease, 10f, 2000f, "ms") { v ->
@@ -264,14 +261,14 @@ private fun DynamicsTab(
             IvannaSliderRow("TARGET AGC / LUFS", prefs.agcTarget, -36f, -6f, "LUFS") { v ->
                 updatePrefs { it.copy(agcTarget = v) }
                 if (IvannaNativeLib.isLoaded) {
-                    runCatching { IvannaNativeLib.nativeSetNPMax(v / -36f) }
                     runCatching { IvannaNativeLib.nativeSetLoudnessTarget(v) }
                 }
+                runCatching { com.ivanna.omega.neuromorphic.PiLstmBridge.setAgc(v, prefs.agcRate) }
             }
             IvannaSliderRow("VELOCIDAD", prefs.agcRate, 0f, 1f, "") { v ->
                 updatePrefs { it.copy(agcRate = v) }
-                if (IvannaNativeLib.isLoaded)
-                    runCatching { IvannaNativeLib.nativeSetDelta(v) }
+                // nativeSetDelta es el ancho espacial del PDEngine, no la velocidad del AGC.
+                runCatching { com.ivanna.omega.neuromorphic.PiLstmBridge.setAgc(prefs.agcTarget, v) }
             }
         }
     }
