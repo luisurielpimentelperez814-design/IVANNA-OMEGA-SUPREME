@@ -312,6 +312,7 @@ fun OmegaApp() {
                     dsp          = dsp,
                     adaptiveBack = adaptiveBackend,
                     voiceMgr     = voiceProtectionManager,
+                    metrics      = com.ivanna.omega.audio.OmegaMetrics.shared.collectAsState().value,
                     adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioStateMs.adaptiveMode.name),
                     onAdaptiveModeChange = { uiMode ->
                         val bm = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)

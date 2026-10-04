@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.31 (271) — CONTROL: panel ENGINE recibe métricas reales
+1. **`MainActivity.kt`** — `MainScaffold` se invocaba sin `metrics`: el panel IVANNA OMEGA ENGINE de la pestaña CONTROL quedaba para siempre en los defaults (STANDBY, 0.0 ms, HRTF OFF, Width 0%). Ahora recibe `OmegaMetrics.shared`.
+2. **Pruebas:** no ejecutadas localmente (sin toolchain Android); validación en CI.
+
 # CHANGELOG — v2.4.30 (270) — Spatial JNI: capacidad de buffers directos
 1. **`ivanna_spatial_jni.cpp`** — `nativeObjectRendererRenderBlock` escribía `numFrames` floats por canal y `nativeUpmixerProcess` leía 2 y escribía 8 floats por frame sin comprobar la capacidad de los `FloatBuffer`. Ahora se exige capacidad >= `numFrames` (salidas L/R), >= 2·`numFrames` (entrada del upmixer) y >= 8·`numFrames` (salida del upmixer); strides verificados en `NeuralUpmixer::process`. El buffer de objetos del renderer no se valida: su stride depende de `numObjects`.
 2. **Pruebas:** 181/181 host OK, pero ningún test host ejercita estas dos funciones, así que el cambio no está cubierto por tests; RT-safety y JNI wiring PASS.
