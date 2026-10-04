@@ -38,4 +38,14 @@ CTEST_JOBS="${CTEST_JOBS:-4}"
 if [[ -z "${TIMEOUT_PER_TEST:-}" ]]; then
   if [[ "${IVANNA_SAN:-0}" == "tsan" ]]; then TIMEOUT_PER_TEST=900; else TIMEOUT_PER_TEST=300; fi
 fi
-ctest --test-dir "$BUILD" --output-on-failure -j"$CTEST_JOBS" --timeout "$TIMEOUT_PER_TEST"
+# Los logs de job no son legibles vía API: al fallar, se publican los nombres de los
+# tests rotos y el cuerpo de su fallo como anotación ::error:: (visible en check-runs).
+rc=0
+ctest --test-dir "$BUILD" --output-on-failure -j"$CTEST_JOBS" --timeout "$TIMEOUT_PER_TEST" \
+  2>&1 | tee "$BUILD/ctest_last.log" || rc=${PIPESTATUS[0]}
+if [[ "$rc" -ne 0 && "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  fails=$(grep -E "^\s*[0-9]+ - .*\((Failed|Timeout|SEGFAULT|Subprocess aborted|Exception)" "$BUILD/ctest_last.log" | sed 's/^ *//' | tr '\n' ';' | cut -c1-600)
+  detail=$(grep -E "Failure|Expected|Actual|which is|ERROR: AddressSanitizer|runtime error|SUMMARY:|medido:" "$BUILD/ctest_last.log" | head -8 | tr '\n' ' ' | cut -c1-700)
+  echo "::error title=CTest fallido::${fails} | ${detail}"
+fi
+exit "$rc"
