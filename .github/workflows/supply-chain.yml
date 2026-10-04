@@ -180,6 +180,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
+          set -euo pipefail
           mkdir -p signatures
           # FIX: globs reales — los artefactos llegan con el nombre versionado
           # por SHA de build.yml (apk-build-<sha> / magisk-module-bundle-<sha>),
@@ -191,8 +192,8 @@ jobs:
             echo "Signing: $f"
             cosign sign-blob \
               --yes \
-              --bundle "signatures/$(basename $f).cosign.bundle" \
-              "$f" || echo "WARN: cosign sign failed for $f (check OIDC)"
+              --bundle "signatures/$(basename "$f").cosign.bundle" \
+              "$f" || { echo "::error::cosign sign-blob falló para $f (¿permiso id-token: write / OIDC?)"; exit 1; }
           done
           ls -lh signatures/ || true
 
