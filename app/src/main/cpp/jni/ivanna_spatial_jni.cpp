@@ -717,6 +717,14 @@ Java_com_ivanna_omega_core_NativeBridge_isShmCrossProcessMapped(JNIEnv*, jclass)
 }
 
 extern "C++" {
+// Secuencia del último snapshot SEMBRADO (sintético). La telemetría sólo es medición
+// real si la secuencia del bus es mayor: es decir, si corrió al menos un ciclo vivo
+// del pipeline después de la siembra. Si no, la UI recibe null y muestra "—".
+static std::atomic<uint64_t> g_cogSeedSeq{0};
+static inline bool cognitiveSnapshotIsLive(uint64_t seq) noexcept {
+    return seq != 0ULL && seq > g_cogSeedSeq.load(std::memory_order_acquire);
+}
+
 static inline ivanna::reality::AcousticRealityState
 refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& orch) noexcept {
     ivanna::experimental::RawAudioMetrics seedM{};
@@ -734,7 +742,9 @@ refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& o
     seedObjs[2].position = { 0.58f, 2.20f, 0.18f }; seedObjs[2].energy = 0.05f; seedObjs[2].gain = 0.8f;
     seedObjs[3].position = { 0.0f, 1.70f, -0.18f }; seedObjs[3].energy = 0.08f; seedObjs[3].gain = 0.7f;
     const uint64_t nextTs = (orch.stateBus().readLatestSnapshot().sequence + 1ULL) * 20000ULL;
-    return orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, nextTs);
+    const auto seeded = orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, nextTs);
+    g_cogSeedSeq.store(orch.stateBus().readLatestSnapshot().sequence, std::memory_order_release);
+    return seeded;
 }
 } // extern "C++"
 
@@ -818,14 +828,12 @@ Java_com_ivanna_omega_core_NativeBridge_setHearingAdaptationParams(
 
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getRealityTelemetrySnapshot(JNIEnv* env, jclass) {
-    jfloatArray outArr = env->NewFloatArray(16);
-    if (!outArr) return nullptr;
-
     auto& orch = ivanna::reality::AcousticRealityOrchestrator::instance();
     auto snap = orch.stateBus().readLatestSnapshot();
-    if (snap.sequence == 0) {
-        snap = refreshCognitiveSnapshotWithSeed(orch);
-    }
+    // Sin ciclo vivo no hay medición: null → la UI muestra "—" en vez de cifras inventadas.
+    if (!cognitiveSnapshotIsLive(snap.sequence)) return nullptr;
+    jfloatArray outArr = env->NewFloatArray(16);
+    if (!outArr) return nullptr;
 
     float t[16]{};
     t[0]  = snap.perceptual.scores.presence;
@@ -851,28 +859,12 @@ Java_com_ivanna_omega_core_NativeBridge_getRealityTelemetrySnapshot(JNIEnv* env,
 
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getCognitiveEvolutionTelemetrySnapshot(JNIEnv* env, jclass) {
-    jfloatArray outArr = env->NewFloatArray(16);
-    if (!outArr) return nullptr;
-
     auto& orch = ivanna::reality::AcousticRealityOrchestrator::instance();
     auto snap = orch.stateBus().readLatestSnapshot();
-    if (snap.sequence == 0) {
-        ivanna::experimental::RawAudioMetrics seedM{};
-        seedM.rms              = 0.22f;
-        seedM.peak             = 0.68f;
-        seedM.crest_factor_db  = 9.8f;
-        seedM.band_low_energy  = 0.08f;
-        seedM.band_mid_energy  = 0.11f;
-        seedM.band_high_energy = 0.04f;
-        seedM.voice_score      = 0.64f;
-        const auto seedAdapt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(seedM, 0.12f, 0.08f);
-        std::array<ivanna::spatial::DecomposedObject, 4> seedObjs{};
-        seedObjs[0].position = { 0.0f, 1.45f, 0.05f }; seedObjs[0].energy = 0.11f; seedObjs[0].gain = 1.0f;
-        seedObjs[1].position = {-0.58f, 2.20f, 0.18f }; seedObjs[1].energy = 0.05f; seedObjs[1].gain = 0.8f;
-        seedObjs[2].position = { 0.58f, 2.20f, 0.18f }; seedObjs[2].energy = 0.05f; seedObjs[2].gain = 0.8f;
-        seedObjs[3].position = { 0.0f, 1.70f, -0.18f }; seedObjs[3].energy = 0.08f; seedObjs[3].gain = 0.7f;
-        snap = orch.orchestrateCycle(seedM, seedAdapt, seedObjs, 0.42f, 0.34f, 48000.0f, 0.020f, 20000ULL);
-    }
+    // Sin ciclo vivo no hay medición: null → la UI muestra "—" en vez de cifras sembradas.
+    if (!cognitiveSnapshotIsLive(snap.sequence)) return nullptr;
+    jfloatArray outArr = env->NewFloatArray(16);
+    if (!outArr) return nullptr;
 
     const auto& cog = snap.cognitive;
     float c[16]{};

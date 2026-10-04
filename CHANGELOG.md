@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.40 (280) — JNI cognitivo: telemetría real o null, nunca sembrada
+1. **`ivanna_spatial_jni.cpp`** — `getRealityTelemetrySnapshot` y `getCognitiveEvolutionTelemetrySnapshot` sembraban un snapshot sintético (rms 0.22, peak 0.68…) cuando el bus no tenía ciclos y lo devolvían como telemetría. Ahora registran la secuencia de la siembra (`g_cogSeedSeq`) y devuelven `null` hasta que corra un ciclo VIVO posterior; la UI (2.4.37) muestra "—". La siembra al activar/cambiar intensidad se conserva (el orquestador la necesita) pero ya no se presenta como medición.
+2. **Pruebas:** no compilado localmente (sin jni.h/cmake); ningún test host referencia estas dos funciones; validación en CI.
+
 # CHANGELOG — v2.4.39 (279) — BRAIN: slider de fatiga con throttle y valor final garantizado
 1. **`TinyMlClassifierPanel.kt`** — el slider Fatigue Index enviaba al daemon un `sendPerceptualState` por cada evento táctil. Ahora hay throttle de 100 ms y `onValueChangeFinished` garantiza el valor final.
 2. **Pruebas:** sin toolchain Android local; validación en CI.
