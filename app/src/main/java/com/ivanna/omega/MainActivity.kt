@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -271,7 +272,13 @@ fun OmegaApp() {
                 }
             }
             // MusicIntelligencePanel estaba huérfano (0 referencias): sin ruta ni acceso desde la UI.
-            composable("music_intelligence") { com.ivanna.omega.ui.MusicIntelligencePanel() }
+            composable("music_intelligence") {
+                androidx.compose.foundation.layout.Column(
+                    modifier = androidx.compose.ui.Modifier
+                        .fillMaxSize()
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                ) { com.ivanna.omega.ui.MusicIntelligencePanel() }
+            }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
