@@ -261,7 +261,7 @@ static_assert(sizeof(SinglePathArbitrationState) == 64,
 class alignas(64) SupremeAcousticStabilityGuard {
 public:
     static constexpr size_t NUM_MODULES = static_cast<size_t>(AcousticModuleId::Count);
-    static constexpr float kDefaultCeilingLinear = 0.92f;     // -0.72 dBFS (bajo el umbral 0.95 del SafetyLimiter)
+    static constexpr float kDefaultCeilingLinear = 0.985f;     // -0.72 dBFS (bajo el umbral 0.95 del SafetyLimiter)
     static constexpr float kStageHardSafetyLimit = 1.25f;     // Techo máximo por etapa interna antes de gobernación
     static constexpr float kMaxSampleJumpLimit   = 1.15f;     // Umbral físico de salto impulsivo
     static constexpr float kMaxEnergyGrowthRatio = 2.60f;     // Máximo crecimiento RMS permitido por etapa (8.3 dB)
@@ -653,8 +653,12 @@ public:
     {
         if (!left || !right || numSamples == 0) return;
 
-        const float safeCeiling = std::clamp(ceilingLinear, 0.50f, 0.98f);
-        const float knee = safeCeiling * 0.86f;
+        // FIX (distorsion armonica constante): knee 0.86 x 0.92 = 0.79 hacia que
+        // CUALQUIER pico por encima de -2 dBFS (todo master moderno) entrara en
+        // saturacion en este guardia, ANTES del SafetyLimiter. Es una red de
+        // seguridad: el knee sube a 0.95 x techo; el limiter da forma al resto.
+        const float safeCeiling = std::clamp(ceilingLinear, 0.50f, 0.985f);
+        const float knee = safeCeiling * 0.95f;
 
         // 1. Medir energía bruta entrante al guardia para detectar runaway energy
         double rawSumSq = 0.0;
@@ -668,8 +672,11 @@ public:
         // Si la energía acumulada de la cadena supera el crecimiento físico permitido
         // respecto a la entrada original del bloque, activar amortiguamiento suave de feedback.
         float targetDamping = 1.0f;
-        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 1.45f) {
-            targetDamping = std::clamp((inputBlockRms_ * 1.45f) / rawRms, 0.15f, 1.0f);
+        // FIX (voces robotizadas): 1.45x (3.2 dB) peleaba contra el propio EQ/graves
+        // y el objetivo cambiaba bloque a bloque -> modulacion de amplitud a la
+        // frecuencia de bloque. Se permite 2x (6 dB) de crecimiento legitimo.
+        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 2.0f) {
+            targetDamping = std::clamp((inputBlockRms_ * 2.0f) / rawRms, 0.15f, 1.0f);
         } else if (rawRms > safeCeiling * 0.78f) {
             targetDamping = std::clamp((safeCeiling * 0.78f) / rawRms, 0.20f, 1.0f);
         }
@@ -694,7 +701,7 @@ public:
             sR = dcOutPrevR_;
 
             // Suavizado de amortiguamiento anti-runaway
-            feedbackDamping_ += 0.008f * (targetDamping - feedbackDamping_);
+            feedbackDamping_ += ((targetDamping < feedbackDamping_) ? 0.008f : 0.0004f) * (targetDamping - feedbackDamping_); // ataque ~2.6 ms, release ~52 ms (sin AM por bloque)
             sL *= feedbackDamping_;
             sR *= feedbackDamping_;
 
@@ -767,8 +774,12 @@ public:
     {
         if (!interleaved || numFrames == 0) return;
 
-        const float safeCeiling = std::clamp(ceilingLinear, 0.50f, 0.98f);
-        const float knee = safeCeiling * 0.86f;
+        // FIX (distorsion armonica constante): knee 0.86 x 0.92 = 0.79 hacia que
+        // CUALQUIER pico por encima de -2 dBFS (todo master moderno) entrara en
+        // saturacion en este guardia, ANTES del SafetyLimiter. Es una red de
+        // seguridad: el knee sube a 0.95 x techo; el limiter da forma al resto.
+        const float safeCeiling = std::clamp(ceilingLinear, 0.50f, 0.985f);
+        const float knee = safeCeiling * 0.95f;
 
         double rawSumSq = 0.0;
         for (size_t i = 0; i < numFrames; ++i) {
@@ -779,8 +790,11 @@ public:
         const float rawRms = static_cast<float>(std::sqrt(rawSumSq / static_cast<double>(2 * numFrames)));
 
         float targetDamping = 1.0f;
-        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 1.45f) {
-            targetDamping = std::clamp((inputBlockRms_ * 1.45f) / rawRms, 0.15f, 1.0f);
+        // FIX (voces robotizadas): 1.45x (3.2 dB) peleaba contra el propio EQ/graves
+        // y el objetivo cambiaba bloque a bloque -> modulacion de amplitud a la
+        // frecuencia de bloque. Se permite 2x (6 dB) de crecimiento legitimo.
+        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 2.0f) {
+            targetDamping = std::clamp((inputBlockRms_ * 2.0f) / rawRms, 0.15f, 1.0f);
         } else if (rawRms > safeCeiling * 0.78f) {
             targetDamping = std::clamp((safeCeiling * 0.78f) / rawRms, 0.20f, 1.0f);
         }
@@ -802,7 +816,7 @@ public:
             sL = dcOutPrevL_;
             sR = dcOutPrevR_;
 
-            feedbackDamping_ += 0.008f * (targetDamping - feedbackDamping_);
+            feedbackDamping_ += ((targetDamping < feedbackDamping_) ? 0.008f : 0.0004f) * (targetDamping - feedbackDamping_); // ataque ~2.6 ms, release ~52 ms (sin AM por bloque)
             sL *= feedbackDamping_;
             sR *= feedbackDamping_;
 

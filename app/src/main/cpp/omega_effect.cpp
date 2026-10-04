@@ -1271,7 +1271,7 @@ static int32_t omega_process(effect_handle_t self,
 
         // FASE 4: Protección maestra pre-limiter (bloqueador DC, amortiguador anti-runaway,
         // gobernador C2 de headroom continuo y continuidad C1 Hermite en fronteras).
-        ctx->stabilityGuard.processBlock(L, R, (size_t)chunk, 0.92f);
+        ctx->stabilityGuard.processBlock(L, R, (size_t)chunk, 0.985f);
 
         // FIX (distorsion digital): ultimo eslabon real de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A.
