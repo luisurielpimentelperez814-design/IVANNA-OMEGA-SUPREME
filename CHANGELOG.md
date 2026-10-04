@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.39 (279) — BRAIN: slider de fatiga con throttle y valor final garantizado
+1. **`TinyMlClassifierPanel.kt`** — el slider Fatigue Index enviaba al daemon un `sendPerceptualState` por cada evento táctil. Ahora hay throttle de 100 ms y `onValueChangeFinished` garantiza el valor final.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.38 (278) — BRAIN: sliders de población y generaciones aplican al soltar
 1. **`BrainScreen.kt`** — POBLACIÓN y GENERACIONES del kernel evolutivo sólo guardaban prefs; ahora, al soltar, reinicializan el motor si la evolución ya está corriendo.
 2. **Pruebas:** sin toolchain Android local; validación en CI.

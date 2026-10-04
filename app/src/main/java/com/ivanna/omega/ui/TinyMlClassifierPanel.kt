@@ -41,6 +41,7 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
     }
 
     var fatigueIndex by remember { mutableFloatStateOf(prefs.getFloat("fatigueIndex", 0.15f)) }
+    var lastFatigueSendMs by remember { mutableLongStateOf(0L) }
     val iirAlpha  = (0.9f - fatigueIndex * 0.4f).coerceIn(0.5f, 0.95f)
     val highCutHz = (19500f - fatigueIndex * 3500f).coerceIn(16000f, 19500f)
 
@@ -95,6 +96,22 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                             fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
                     Slider(value = fatigueIndex,
+                        onValueChangeFinished = {
+                            // Garantiza que el valor FINAL llegue al daemon aunque el último
+                            // evento haya caído dentro de la ventana de throttle.
+                            val v = fatigueIndex
+                            val liveHighCut = (19500f - v * 3500f).coerceIn(16000f, 19500f)
+                            val hg = exciterPrefs.getFloat("harmonicGain", 0.78f)
+                            val ad = exciterPrefs.getFloat("antiDolby", 0.85f)
+                            scope.launch(Dispatchers.IO) {
+                                runCatching {
+                                    OmegaEngineBridge.sendPerceptualState(
+                                        compressor = -5.5f, exciterRed = 0.15f,
+                                        highCut = liveHighCut, spatialWidth = 1.55f,
+                                        loudnessTarget = -16f, harmonicGain = hg, antiDolby = ad)
+                                }
+                            }
+                        },
                         onValueChange = { v ->
                             fatigueIndex = v
                             // FIX (botón muerto): el slider recomputa highCutHz
@@ -109,6 +126,11 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                             prefs.edit().putFloat("fatigueIndex", v).apply()
                             val hg = exciterPrefs.getFloat("harmonicGain", 0.78f)
                             val ad = exciterPrefs.getFloat("antiDolby", 0.85f)
+                            // Throttle 100 ms: arrastrar el slider disparaba un envío al daemon
+                            // por cada evento de touch (decenas por segundo).
+                            val nowMs = android.os.SystemClock.uptimeMillis()
+                            if (nowMs - lastFatigueSendMs < 100L) return@Slider
+                            lastFatigueSendMs = nowMs
                             scope.launch(Dispatchers.IO) {
                                 runCatching {
                                     OmegaEngineBridge.sendPerceptualState(
