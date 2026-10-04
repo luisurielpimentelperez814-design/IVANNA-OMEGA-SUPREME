@@ -674,6 +674,7 @@ static inline float blend_adaptive_from_neutral(float neutral, float suggestion,
 }
 static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     if (!src || n <= 0) return false;
+    if (env->GetArrayLength(src) < n) return false;   // evita sobre-lectura del heap
     jfloat* p = env->GetFloatArrayElements(src, nullptr);
     if (!p) return false;
     memcpy(dst, p, n * sizeof(float));
@@ -1076,7 +1077,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 
     if (!g_initialized.load(std::memory_order_acquire)) return;
     if (!buf || nFrames <= 0) return;
-    const int n = std::min((int)nFrames, 2048);
+    // Buffer intercalado L/R: n frames exigen 2n floats. Sin este límite un array
+    // más corto que nFrames provocaba lectura/escritura fuera de rango del heap.
+    const int n = std::min({(int)nFrames, 2048, (int)(env->GetArrayLength(buf) / 2)});
+    if (n <= 0) return;
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
     // Alimentar MusicIntelligenceEngine (IME) con el bloque estéreo intercalado seco
@@ -1836,9 +1840,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloatArray outL, jfloatArray outR,
     jint frames) {
     if (frames <= 0) return;
+    if (!inL || !inR || !outL || !outR) return;
     // Stack buffers — zero allocations
     float lBuf[2048], rBuf[2048], oL[2048], oR[2048];
-    const int n = std::min((int)frames, 2048);
+    // n acotado por la longitud REAL de los cuatro arrays: los memcpy de salida
+    // escriben n floats y un array de salida corto desbordaba el heap de la JVM.
+    const int n = std::min({(int)frames, 2048,
+                            (int)env->GetArrayLength(inL), (int)env->GetArrayLength(inR),
+                            (int)env->GetArrayLength(outL), (int)env->GetArrayLength(outR)});
+    if (n <= 0) return;
     if (!copyJFloat(env, inL, lBuf, n)) return;
     if (!copyJFloat(env, inR, rBuf, n)) return;
     NonBlockingDspProcessGuard dspGuard;

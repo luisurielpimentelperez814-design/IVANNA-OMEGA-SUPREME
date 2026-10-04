@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.28 (268) — JNI de audio acotado por longitud real
+1. **`ivanna_omega_jni.cpp`** — `nativeProcess` leía `2*n` floats y `nativeProcessBlock`/`copyJFloat` copiaban y escribían `n` floats sin comprobar la longitud del array: un array más corto que `frames` producía sobre-lectura/desbordamiento del heap de la JVM. `n` queda acotado por `GetArrayLength` de todos los buffers; arrays null salen limpio (antes `outL` null crasheaba en la ruta DSP).
+2. **Pruebas:** 181/181 tests host OK; RT-safety 34/34 y JNI wiring PASS.
+
 # CHANGELOG — v2.4.27 (267) — Daemon: comandos sin NaN ni inf
 1. **`command_server.cpp`** — `_clamp` dejaba pasar NaN (las comparaciones son falsas) y `strtof` acepta "nan"/"inf" desde el socket: un comando malformado podía inyectar NaN en el estado DSP. `_clamp` mapea no-finitos a límites válidos; `_jsonFloat`/`_jsonFloatArray` rechazan no-finitos; `SET_PF_DRIVE` usa `strtof` validado y clamp 0..1 (antes `atof` sin rango).
 2. **Pruebas:** syntax-check con stub OK; 181/181 tests host OK.
