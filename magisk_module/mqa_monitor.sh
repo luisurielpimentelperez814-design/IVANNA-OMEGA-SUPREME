@@ -166,7 +166,7 @@ detect_preset() {
                 # "game", "gaming", "play" o publisher conocidos
                 case "$ACTIVE_PKG" in
                     *.game.*|*game*.*|com.supercell.*|com.king.*|\
-                    com.zynga.*|com.gameloft.*|\
+                    com.zynga.*|\
                     com.activision.*|com.epicgames.*|com.riotgames.*)
                         TARGET_PRESET="Punch" ;;
                 esac
