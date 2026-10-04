@@ -3,6 +3,7 @@ package com.ivanna.omega.audio
 import android.content.Context
 import android.util.Log
 import com.ivanna.omega.core.RootAccess
+import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.MagiskBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,16 @@ object AudioBackendSelector {
     private val _mode = MutableStateFlow(Mode.UNKNOWN)
     val mode: StateFlow<Mode> = _mode.asStateFlow()
 
+    /**
+     * Estado REAL del efecto omega_effect en audioserver (beacon). "Daemon vivo" NO implica "efecto
+     * procesando" (AGENT_CLAIMS 2026-09-24); esto es la senal que faltaba. Por ahora SOLO
+     * observabilidad: no cambia que backend se elige, porque no esta verificado en dispositivo que
+     * reactivar el fallback con efecto ausente no duplique el procesado (eco/desface).
+     * UNAVAILABLE = beacon ilegible (DAC/SELinux) -> no se afirma nada.
+     */
+    private val _effectState = MutableStateFlow(DSPBridge.EffectState.UNAVAILABLE)
+    val effectState: StateFlow<DSPBridge.EffectState> = _effectState.asStateFlow()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var noRoot: NoRootAudioProcessor? = null
@@ -69,8 +80,21 @@ object AudioBackendSelector {
         }
     }
 
+    private fun refreshEffectState(daemon: Boolean) {
+        val fx = DSPBridge.effectState()
+        val prev = _effectState.value
+        if (fx == prev) return
+        _effectState.value = fx
+        Log.i(TAG, "efecto omega_effect: $prev -> $fx (daemon=$daemon)")
+        if (daemon && fx == DSPBridge.EffectState.NO_EFFECT) {
+            Log.w(TAG, "daemon vivo pero omega_effect NO esta insertado/habilitado en audioserver: " +
+                "Ruta B no esta sonando (con audio activo esto significa IVANNA sin procesar)")
+        }
+    }
+
     private fun evaluate(app: Context) {
         val daemon = runCatching { MagiskBridge.isDaemonRunning }.getOrDefault(false)
+        refreshEffectState(daemon)
         val root = if (daemon) true else RootAccess.probeSu()
         val next = when {
             root && daemon -> Mode.ROOT_DAEMON

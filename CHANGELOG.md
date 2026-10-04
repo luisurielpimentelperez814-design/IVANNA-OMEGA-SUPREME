@@ -1,3 +1,9 @@
+# CHANGELOG -- v2.4.42 (282) -- Beacon: senal real de que omega_effect procesa (Ruta A/B)
+1. **`omega_effect_beacon.h` (nuevo) + `omega_effect.cpp`** -- `isDaemonRunning` solo prueba que el daemon vive, no que el efecto este insertado/procesando en audioserver; `OmegaDspSnapshot::effect_frames` nunca llegaba a la app con daemon activo (el efecto es solo reader del bus del daemon). El efecto ahora mantiene un beacon mmap de 64 B (enable/disable por transicion, `onBlock` RT-safe al final del camino completo, descuento en release). Test host `test_effect_beacon` (182 CTest).
+2. **`ivanna_omega_jni.cpp` / `DSPBridge.kt`** -- `nativeEffectBeaconState` + `DSPBridge.effectState()` (UNAVAILABLE / NO_EFFECT / ENABLED_IDLE / PROCESSING). UNAVAILABLE obliga al llamador a conservar su comportamiento previo.
+3. **`MagiskStatusPanel.kt` / `AudioBackendSelector.kt`** -- fila EFECTO en el panel (solo si el beacon es legible) y `effectState` observable + log de transiciones. **Solo observabilidad:** no se cambia que backend se elige ni se bloquea la Ruta A, porque no esta verificado en dispositivo.
+4. **Pruebas:** `test_effect_beacon` pasa en host; `omega_effect.cpp` sintaxis OK con host_stubs; Kotlin y NDK sin compilar localmente (sin SDK); validacion en CI. **Pendiente en dispositivo:** que el beacon sea legible desde la app (DAC/SELinux sobre `/data/local/tmp`) y usar el dato para decidir el gate de la Ruta A.
+
 # CHANGELOG — v2.4.41 (281) — CONTROL: modo e intensidad adaptativos llegan al motor
 1. **`ControlTabScreen.kt`** — ADAPTIVE modo/intensidad sólo se propagaban si el modo manual estaba activo; en automático se quedaban en `AudioState`. Ahora llaman a `nativeSetAdaptiveControls` siempre (igual que BRAIN → ADAPTATIVO).
 2. **Pruebas:** sin toolchain Android local; validación en CI.
