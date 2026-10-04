@@ -2559,3 +2559,12 @@ Archivos que toqué: `.github/workflows/build.yml` (publish-release, validación
 
 **No tocar sin avisar:** el barrido de drafts `staging-*` (solo borra los de más de 6 h para no pisar builds de otras ramas).
 **Pendiente / sin verificar en dispositivo:** que el APK 2.4.3 instalado elimine los tronidos — verificado por lectura de código y CI, no en dispositivo.
+
+
+### 🔒 TOMADO — Señal real "omega_effect procesa" (Ruta A/B) — 2026-10-04 (sesión Claude/chat)
+
+**Flanco:** reemplazar `isDaemonRunning` como prueba de que Ruta B suena. `omega_effect` ya publica `effect_frames`
+(monótono) en `OMEGA_EFFECT_LOCAL_BUS_PATH` pero ningún consumidor lo lee; `AudioBackendSelector` detiene el fallback
+local con solo ver el daemon vivo. Plan: JNI expone avance de `effect_frames` -> `MagiskBridge.isEffectProcessing`
+-> `AudioBackendSelector`. Archivos: `ivanna_omega_jni.cpp`, `NativeBridge.kt`, `AudioBackendSelector.kt`.
+**Otros agentes:** elijan un flanco distinto. Estado: en curso (verificación por lectura/g++, no en dispositivo).
