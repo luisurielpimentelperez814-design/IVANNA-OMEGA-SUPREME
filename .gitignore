@@ -32,3 +32,4 @@ node_modules/
 .cxx/
 app/release/
 
+__pycache__/

@@ -84,17 +84,33 @@ jobs:
         if: matrix.san == ''
         run: |
           set -euo pipefail
-          python3 scripts/check_jni_wiring.py
-          python3 scripts/check_kotlin_wrapper_wiring.py
-          python3 scripts/check_header_wiring.py
-          python3 scripts/check_rt_safety.py
-          python3 scripts/check_build_flags.py
-          python3 scripts/check_docs_claims.py
-          if command -v cppcheck >/dev/null 2>&1 || sudo apt-get install -y -qq cppcheck; then
-            cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
+          # Cada chequeo emite una anotación ::error:: con su nombre y las últimas
+          # líneas de salida, para que el fallo sea legible vía API/UI sin abrir logs.
+          rc=0
+          run_check() {
+            local name="$1"; shift
+            if ! out=$("$@" 2>&1); then
+              echo "$out"
+              echo "::error title=Fase 0 · ${name}::$(echo "$out" | tail -n 6 | tr '\n' ' ' | cut -c1-900)"
+              rc=1
+            else
+              echo "$out" | tail -n 3
+            fi
+          }
+          run_check jni_wiring            python3 scripts/check_jni_wiring.py
+          run_check kotlin_wrapper_wiring python3 scripts/check_kotlin_wrapper_wiring.py
+          run_check header_wiring         python3 scripts/check_header_wiring.py
+          run_check rt_safety             python3 scripts/check_rt_safety.py
+          run_check build_flags           python3 scripts/check_build_flags.py
+          run_check docs_claims           python3 scripts/check_docs_claims.py
+          if command -v cppcheck >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck; }; then
+            run_check cppcheck cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
               app/src/main/cpp/omega_effect.cpp \
               app/src/main/cpp/IvannaFusionCore.cpp
+          else
+            echo "::error title=Fase 0 · cppcheck::no se pudo instalar cppcheck"; rc=1
           fi
+          exit $rc
 
       - name: Resumen
         if: always()
