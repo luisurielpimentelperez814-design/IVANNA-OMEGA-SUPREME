@@ -361,10 +361,15 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y busybox
 
           echo "=== 1. Check busybox ash -n en todos los scripts shell ==="
-          for sh_file in $(find magisk_module -type f \( -name "*.sh" -o -name "update-binary" \)); do
+          # while-read con -print0: tolera espacios en rutas y, a diferencia de
+          # `for x in $(find ...)`, un fallo de find aborta el paso (set -e + pipefail).
+          n_sh=0
+          while IFS= read -r -d '' sh_file; do
             echo "  ash -n: $sh_file"
             busybox ash -n "$sh_file"
-          done
+            n_sh=$((n_sh+1))
+          done < <(find magisk_module -type f \( -name "*.sh" -o -name "update-binary" \) -print0)
+          [ "$n_sh" -gt 0 ] || { echo "ERROR: no se encontró ningún script shell que validar en magisk_module"; exit 1; }
           echo "OK: todos los scripts shell pasaron busybox ash -n"
 
           echo "=== 2. Check sin CRLF en archivos de texto del módulo ==="
