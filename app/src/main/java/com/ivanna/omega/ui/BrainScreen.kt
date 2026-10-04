@@ -39,7 +39,10 @@ import kotlinx.coroutines.withContext
  *   · nativeLabReset / nativeLabFeed / nativeLabMeasure / nativeLabReport
  */
 @Composable
-fun BrainScreen(modifier: Modifier = Modifier) {
+fun BrainScreen(
+    modifier: Modifier = Modifier,
+    adaptiveBack: com.ivanna.omega.audio.AdaptiveBackend? = null
+) {
     val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -91,7 +94,7 @@ fun BrainScreen(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (selectedTab) {
-                0 -> AdaptiveTab()
+                0 -> AdaptiveTab(adaptiveBack)
                 1 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { PerceptualTab(); TinyMlClassifierPanel() }
                 2 -> CognitiveEvolutionTab()
                 3 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { EvolutionTab(prefs, ::updatePrefs); CmaEsFitnessPanel() }
@@ -104,7 +107,7 @@ fun BrainScreen(modifier: Modifier = Modifier) {
 
 // ── Tab ADAPTATIVO ────────────────────────────────────────────────────────────
 @Composable
-private fun AdaptiveTab() {
+private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null) {
     val audioState by AudioStateManager.audioState.collectAsState()
 
     GlassCard("MODO ADAPTATIVO", NeonMagenta, "Motor A · Decisión en tiempo real") {
@@ -135,6 +138,7 @@ private fun AdaptiveTab() {
             }
             IvannaSliderRowBrain("SAFETY MARGIN", audioState.safetyMargin, 0.5f, 1f, "") { v ->
                 AudioStateManager.updateState { it.copy(safetyMargin = v) }
+                backend?.applyManualState(AudioStateManager.audioState.value)
             }
         }
     }
@@ -147,15 +151,25 @@ private fun AdaptiveTab() {
                 Text("MODO MANUAL", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
                     checked = audioState.manualModeEnabled,
-                    onCheckedChange = { AudioStateManager.updateState { s -> s.copy(manualModeEnabled = it) } }
+                    onCheckedChange = { enabled ->
+                        AudioStateManager.updateState { s -> s.copy(manualModeEnabled = enabled) }
+                        // Motor A y manual nunca escriben a la vez (mismo contrato que AdaptiveEngineScreen).
+                        if (IvannaNativeLib.isLoaded)
+                            runCatching { IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled) } }
+                        val st = AudioStateManager.audioState.value
+                        if (enabled) { backend?.resetModulator(); backend?.forceManualState(st) }
+                        else backend?.persist(st)
+                    }
                 )
             }
             if (audioState.manualModeEnabled) {
                 IvannaSliderRowBrain("COMPRESOR", audioState.compressorThreshold, -60f, 0f, "dB") { v ->
                     AudioStateManager.updateState { it.copy(compressorThreshold = v) }
+                    backend?.applyManualState(AudioStateManager.audioState.value)
                 }
                 IvannaSliderRowBrain("EXCITER", audioState.exciterAmount, 0f, 1f, "") { v ->
                     AudioStateManager.updateState { it.copy(exciterAmount = v) }
+                    backend?.applyManualState(AudioStateManager.audioState.value)
                 }
             }
         }

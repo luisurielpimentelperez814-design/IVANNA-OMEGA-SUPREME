@@ -119,7 +119,8 @@ fun MainScaffold(
             // ── BRAIN ────────────────────────────────────────────────────
             composable(TABS[1].route) {
                 BrainScreen(
-                    modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                    modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+                    adaptiveBack = adaptiveBack
                 )
             }
 

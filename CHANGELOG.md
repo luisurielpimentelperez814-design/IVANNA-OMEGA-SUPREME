@@ -1,3 +1,8 @@
+# CHANGELOG — v2.4.32 (272) — BRAIN: modo manual cableado al motor
+1. **`BrainScreen.kt`** — el MODO MANUAL (umbral de compresor, exciter, safety margin y el propio interruptor) sólo escribía en `AudioState`: ningún código lo enviaba al motor nativo. Ahora usa `AdaptiveBackend` (`applyManualState`/`forceManualState`/`persist`) y `nativeSetAdaptiveEngineEnabled`, igual que `AdaptiveEngineScreen`.
+2. **`IvannaNavigation.kt`** — pasa `adaptiveBack` a `BrainScreen`.
+3. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.31 (271) — CONTROL: panel ENGINE recibe métricas reales
 1. **`MainActivity.kt`** — `MainScaffold` se invocaba sin `metrics`: el panel IVANNA OMEGA ENGINE de la pestaña CONTROL quedaba para siempre en los defaults (STANDBY, 0.0 ms, HRTF OFF, Width 0%). Ahora recibe `OmegaMetrics.shared`.
 2. **Pruebas:** no ejecutadas localmente (sin toolchain Android); validación en CI.
