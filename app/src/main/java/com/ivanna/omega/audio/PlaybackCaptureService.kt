@@ -684,6 +684,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 // AUDIT FIX (realtime allocation): estos dos ya se creaban
                 // una sola vez fuera del while — se conservan con margen para micro-slip/extension.
                 val buffer = FloatArray(BLOCK_SAMPLES + 8)
+                // COMPLEMENTO SIN PEINE: dryRef = captura sin procesar (identica a lo que ya
+                // suena por la via original, 0 ms). Solo se reinyecta DELTA = procesado - seco:
+                // output = seco(t) + g*(procesado-seco)(t-L). El termino seco(t-L) -fuente
+                // del filtro de peine- desaparece; donde el DSP no cambia nada, delta ~ 0 y no
+                // se suma nada (cero peine). Es mezcla (1-g)*seco + g*procesado, sin salto de nivel.
+                val dryRef   = FloatArray(BLOCK_SAMPLES + 8)
+                val deltaBuf = FloatArray(BLOCK_SAMPLES + 8)
                 val mono   = FloatArray(BLOCK_FRAMES + 4)
                 var blockCounter = 0
                 while (active && !Thread.currentThread().isInterrupted) {
@@ -692,6 +699,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
                     if (read == 0) continue
                     val frames = read / CHANNEL_COUNT
+                    System.arraycopy(buffer, 0, dryRef, 0, read)
 
                     // OBJETIVO 4 & 5: INICIO MEDICIÓN DE TIEMPO REAL Y GOBERNADOR PREDICTIVO
                     budgetGuard.startBlock(frames, SAMPLE_RATE)
@@ -770,7 +778,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     if (mixGain < mixGainTarget) mixGain = minOf(mixGain + MIX_GAIN_STEP, mixGainTarget)
                     else if (mixGain > mixGainTarget) mixGain = maxOf(mixGain - MIX_GAIN_STEP, mixGainTarget)
                     val gEnd = mixGain
-                    if (gEnd < 1f) {
+                    if (LEGACY_HAAS_MIX && gEnd < 1f) {
                         if (gStart == gEnd) {
                             for (i in 0 until read) buffer[i] *= gEnd
                         } else {
@@ -811,13 +819,25 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // Cierre de presupuesto del bloque
                     budgetGuard.finishBlock()
 
+                    // Reinyeccion = solo DELTA con rampa per-sample (ver dryRef). `buffer` conserva
+                    // el procesado completo para telemetria/visualizadores; `deltaBuf` va al track.
+                    val outBuf = if (LEGACY_HAAS_MIX) buffer else deltaBuf
+                    if (!LEGACY_HAAS_MIX) {
+                        val invN = 1f / read
+                        val dg = gEnd - gStart
+                        for (i in 0 until read) {
+                            val g = gStart + dg * (i * invN)
+                            deltaBuf[i] = (buffer[i] - dryRef[i]) * g
+                        }
+                    }
+
                     // OBJETIVOS 1 & 2: SINCRONIZACIÓN A/V Y REGULACIÓN DE DERIVA
                     // Usar la medición cacheada de adaptiveLatency (sin cruzar Binder en cada bloque)
                     val targetHeadroom = adaptiveLatency.targetHeadroomFrames
                     val currentQueued = (adaptiveLatency.measuredLatencyMs * SAMPLE_RATE / 1000f).toLong().coerceAtLeast(0L)
 
                     val effectiveFrames = masterTiming.processAndCompensate(
-                        inOutBuffer = buffer,
+                        inOutBuffer = outBuf,
                         inFrames = frames,
                         targetHeadroomFrames = targetHeadroom,
                         currentQueuedFrames = currentQueued,
@@ -855,7 +875,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // está activa, mutear la re-inyección por AudioTrack para no duplicar el audio con 25-40ms de retardo.
                     // Esto elimina el efecto Haas (eco de sala y desfase labial) de raíz.
                     // La captura para telemetría (Bark64, NPE, Cortex, Visualizador) sigue 100% activa.
-                    if (!inPlaceSessionActive && !systemWideActive && !isVideoActive) {
+                    // COMPLEMENTO MODULO+APK: con el motor in-place (Magisk/sesion) activo ya no se
+                    // silencia la reinyeccion: al ser solo DELTA no duplica el audio ni crea peine.
+                    // Solo el video sigue silenciado (desfase labial). Blend algo menor con modulo.
+                    mixGainTarget = if (inPlaceSessionActive || systemWideActive) DELTA_BLEND_WITH_MODULE else DELTA_BLEND_SOLO
+                    if (LEGACY_HAAS_MIX) mixGainTarget = HAAS_SAFE_GAIN
+                    val reinject = if (LEGACY_HAAS_MIX) (!inPlaceSessionActive && !systemWideActive && !isVideoActive) else !isVideoActive
+                    if (reinject) {
                         // FIX tronido/silencio al cambiar de ventana: antes setVolume(0f)
                         // quedaba pegado para siempre (nadie lo restauraba) y el paso
                         // escritura<->mute era un corte seco. Al reanudar: volumen a 1 y
@@ -863,17 +889,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         if (trackMuted) {
                             audioTrack?.setVolume(1.0f)
                             trackMuted = false
-                            val n = samplesToWrite.coerceAtMost(buffer.size)
+                            val n = samplesToWrite.coerceAtMost(outBuf.size)
                             val inv = 1f / (n / CHANNEL_COUNT).coerceAtLeast(1)
                             var i = 0
                             while (i + 1 < n) {
                                 val g = (i / CHANNEL_COUNT) * inv
-                                buffer[i] *= g
-                                buffer[i + 1] *= g
+                                outBuf[i] *= g
+                                outBuf[i + 1] *= g
                                 i += CHANNEL_COUNT
                             }
                         }
-                        writeAllToTrack(buffer, samplesToWrite)
+                        writeAllToTrack(outBuf, samplesToWrite)
                     } else if (!trackMuted) {
                         trackMuted = true
                         audioTrack?.setVolume(0.0f)
@@ -1097,7 +1123,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             } catch (e: Throwable) { Log.w(TAG, "latency probe: ${e.message}") }
         }
 
-        private fun resetMixRamp() { mixGain = 0f; mixGainTarget = HAAS_SAFE_GAIN }
+        private fun resetMixRamp() { mixGain = 0f; mixGainTarget = if (LEGACY_HAAS_MIX) HAAS_SAFE_GAIN else DELTA_BLEND_SOLO }
 
         companion object {
             private const val TAG = "CaptureEngine"
@@ -1105,6 +1131,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // (48 bloques × 512 frames / 48 kHz). Los const viven aquí — en el
             // cuerpo de una clase normal son ilegales en Kotlin.
             private const val MIX_GAIN_STEP = 1f / 48f
+            // true = mezcla Haas antigua (seco 100% + procesado 40% retardado = peine). false = solo delta.
+            private const val LEGACY_HAAS_MIX = false
+            private const val DELTA_BLEND_SOLO = 0.6f        // (1-g)*seco + g*procesado en el oyente
+            private const val DELTA_BLEND_WITH_MODULE = 0.45f
             // Punto de fusión Haas validado empíricamente en dispositivo:
             // original 100% + procesado al 50% (−6 dB) — sin eco discreto.
             // Ajustes finos 2026-09-17: 0.5 (-6.0 dB) -> 0.425 (-7.4 dB) -> 0.40 (-8.0 dB).
