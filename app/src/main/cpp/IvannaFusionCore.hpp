@@ -33,4 +33,19 @@ inline float fast_tanh_scalar(float x) {
     return a / b;
 }
 
+// FIX (distorsion armonica constante): tanh() NO es transparente — deforma
+// toda muestra con |x| > ~0.3 (THD de ~2% a 0.5 de amplitud) y se aplicaba a
+// TODO el audio al final del FusionCore. Soft-knee C1: identidad exacta hasta
+// 0.8, curva racional suave por encima con asintota en 1.0 (pendiente y valor
+// continuos en el codo). Solo actua sobre picos reales.
+inline float soft_knee_scalar(float x) {
+    constexpr float kKnee = 0.8f;
+    constexpr float kRange = 1.0f - kKnee;
+    const float ax = x < 0.0f ? -x : x;
+    if (ax <= kKnee) return x;
+    const float over = (ax - kKnee) * (1.0f / kRange);
+    const float y = kKnee + kRange * (over / (1.0f + over));
+    return x < 0.0f ? -y : y;
+}
+
 } // namespace Ivanna

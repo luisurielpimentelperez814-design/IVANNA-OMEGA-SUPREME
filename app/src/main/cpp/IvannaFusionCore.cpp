@@ -372,19 +372,10 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         // seguro. Cuando GoldenEar está on, fast_tanh() actúa de limitador
         // suave. Cuando está off, no había nada. Se aplica el mismo soft-clip
         // Padé [3/2] sobre la señal antes de salir de process().
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-        for (size_t i = 0; i < BLOCK_SIZE; i += 4) {
-            float32x4_t l = vld1q_f32(&buffer->left[i]);
-            float32x4_t r = vld1q_f32(&buffer->right[i]);
-            vst1q_f32(&buffer->left[i],  fast_tanh_neon(l));
-            vst1q_f32(&buffer->right[i], fast_tanh_neon(r));
-        }
-#else
         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-            buffer->left[i]  = fast_tanh_scalar(buffer->left[i]);
-            buffer->right[i] = fast_tanh_scalar(buffer->right[i]);
+            buffer->left[i]  = soft_knee_scalar(buffer->left[i]);
+            buffer->right[i] = soft_knee_scalar(buffer->right[i]);
         }
-#endif
     }
 }
 
@@ -456,8 +447,8 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
         const float h2L = rawH2L - m_h2DcMeanL;
         const float h2R = rawH2R - m_h2DcMeanR;
 
-        buffer->left[i]  = fast_tanh_scalar(xL + h2L * mix_eff);
-        buffer->right[i] = fast_tanh_scalar(xR + h2R * mix_eff);
+        buffer->left[i]  = soft_knee_scalar(xL + h2L * mix_eff);
+        buffer->right[i] = soft_knee_scalar(xR + h2R * mix_eff);
     }
     // Nota: la versión NEON del loop original se elimina intencionalmente.
     // El biquad tiene dependencia de datos entre muestras (IIR) que impide
