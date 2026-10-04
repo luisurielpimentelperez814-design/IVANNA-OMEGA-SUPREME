@@ -256,6 +256,9 @@ struct omega_effect_context_t {
     // hará EMA desde 0 hacia el target, pero al ser coef ≈ 0.9998 a 48kHz la
     // rampa de 0→1 tarda ~50ms — imperceptible vs el salto duro de ±4 dB.
     float sideGainSmooth;
+    // FIX (tronido/zipper por escalon de ganancia adaptativa): ganancia aplicada
+    // en el bloque anterior; 0 = sin inicializar (calloc) -> se trata como 1.0.
+    float adaptGainPrev;
     AntiDolbyState* antiDolby;
     // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
@@ -1077,11 +1080,24 @@ static int32_t omega_process(effect_handle_t self,
             const float isoGain = adaptParams.applyISO226
                 ? std::clamp(std::pow(10.0f, (adaptParams.iso226Correction[3] / 20.0f)), 0.50f, 1.35f)
                 : 1.0f;
-            const float combinedAdaptGain = std::clamp(overallTrim * isoGain, 0.50f, 1.35f);
-            if (std::fabs(combinedAdaptGain - 1.0f) > 1.0e-4f) {
+            // FIX (distorsion al subir volumen + zipper): antes la ganancia podia
+            // AMPLIFICAR hasta +4.3 dB (1.35) justo antes de la cadena de guardas,
+            // empujando picos sobre 0 dBFS (mismo defecto que el trim del FusionCore,
+            // ya corregido a "solo atenua"), y se aplicaba como ESCALON por bloque
+            // (cada bloque cambia el valor suavizado -> clic periodico). Ahora el
+            // techo es 1.0 y la ganancia se rampa linealmente por muestra desde el
+            // valor del bloque anterior hasta el nuevo.
+            const float combinedAdaptGain = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
+            const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
+            ctx->adaptGainPrev = combinedAdaptGain;
+            if (std::fabs(combinedAdaptGain - 1.0f) > 1.0e-4f ||
+                std::fabs(gStart - 1.0f) > 1.0e-4f) {
+                const float gStep = (combinedAdaptGain - gStart) / (float)chunk;
+                float g = gStart;
                 for (int n = 0; n < chunk; ++n) {
-                    L[n] *= combinedAdaptGain;
-                    R[n] *= combinedAdaptGain;
+                    g += gStep;
+                    L[n] *= g;
+                    R[n] *= g;
                 }
             }
         }
