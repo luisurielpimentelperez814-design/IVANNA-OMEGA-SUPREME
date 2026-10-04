@@ -95,6 +95,31 @@ data class OmegaMetrics(
             )
         }
 
+        /**
+         * Refresco desde el motor nativo, independiente de captura/reproductor.
+         * Lo llama [com.ivanna.omega.ui.ControlTabScreen] mientras la pestaña
+         * CONTROL está visible, para que ENGINE no dependa de que el bridge
+         * esté reproduciendo.
+         */
+        fun refreshFromNative() {
+            val lib = com.ivanna.omega.core.IvannaNativeLib
+            if (!lib.isLoaded) return
+            val running = runCatching { lib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
+            val capturing = com.ivanna.omega.audio.PlaybackCaptureService.isCapturing.value
+            val hrtf = runCatching { lib.nativeGetSpatialState().contains("HRTF_ON") }.getOrDefault(false)
+            val tele = runCatching { lib.nativeGetAdaptiveTelemetry() }.getOrNull()
+            val cur = _shared.value
+            _shared.value = cur.copy(
+                dspActive      = running || capturing,
+                hrtfActive     = hrtf,
+                rmsLevel       = tele?.getOrNull(0) ?: cur.rmsLevel,
+                peakLevel      = tele?.getOrNull(1) ?: cur.peakLevel,
+                cpuPercent     = tele?.getOrNull(3)?.let { it * 100f } ?: cur.cpuPercent,
+                dspLoadPercent = tele?.getOrNull(3)?.let { it * 100f } ?: cur.dspLoadPercent,
+                spatialWidth   = tele?.getOrNull(6) ?: cur.spatialWidth
+            )
+        }
+
         fun updateSharedLevels(
             rms: Float? = null,
             peak: Float? = null,

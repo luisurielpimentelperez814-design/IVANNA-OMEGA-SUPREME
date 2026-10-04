@@ -1,3 +1,8 @@
+# CHANGELOG — v2.4.33 (273) — CONTROL: ENGINE refresca desde el motor nativo
+1. **`OmegaMetrics.refreshFromNative()`** (nuevo) — publica en el bus compartido dspActive (motor adaptativo corriendo o captura activa), HRTF, RMS/pico, carga DSP y ancho espacial leídos del motor nativo.
+2. **`ControlTabScreen.kt`** — lo invoca a 2 Hz mientras CONTROL es visible; ENGINE ya no depende de que el bridge reproduzca.
+3. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.32 (272) — BRAIN: modo manual cableado al motor
 1. **`BrainScreen.kt`** — el MODO MANUAL (umbral de compresor, exciter, safety margin y el propio interruptor) sólo escribía en `AudioState`: ningún código lo enviaba al motor nativo. Ahora usa `AdaptiveBackend` (`applyManualState`/`forceManualState`/`persist`) y `nativeSetAdaptiveEngineEnabled`, igual que `AdaptiveEngineScreen`.
 2. **`IvannaNavigation.kt`** — pasa `adaptiveBack` a `BrainScreen`.

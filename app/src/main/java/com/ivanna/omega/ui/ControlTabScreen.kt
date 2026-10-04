@@ -63,6 +63,16 @@ fun ControlTabScreen(
         VolterraSwitch.enabled = paramStore.isNpeManifoldEnabled()
     }
 
+    // Refresco vivo del panel ENGINE (2 Hz) mientras CONTROL está en pantalla.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            while (true) {
+                runCatching { OmegaMetrics.refreshFromNative() }
+                kotlinx.coroutines.delay(500)
+            }
+        }
+    }
+
     val adaptiveTelemetryRaw by adaptiveBack.telemetry.collectAsState()
     val adaptiveTelemetry = adaptiveTelemetryRaw.toSnapshot()
 
