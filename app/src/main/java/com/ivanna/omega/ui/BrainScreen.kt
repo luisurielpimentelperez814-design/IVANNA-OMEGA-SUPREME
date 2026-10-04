@@ -212,7 +212,7 @@ private fun PerceptualTab() {
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
                 LinearProgressIndicator(
-                    progress = { value.coerceIn(0f, 1f) },
+                    progress = { (value ?: 0f).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
                     color = NeonMagenta,
                     trackColor = ObsidianEdge
@@ -480,15 +480,15 @@ private fun CognitiveEvolutionTab() {
     var axesState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
     var realityEnabled by remember { mutableStateOf(axesState.realityReconstructionEnabled) }
     var realityIntensity by remember { mutableFloatStateOf(axesState.realityIntensity) }
-    var realityTele by remember { mutableStateOf(NativeBridge.safeGetRealityTelemetrySnapshot()) }
-    var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()) }
+    var realityTele by remember { mutableStateOf(NativeBridge.safeGetRealityTelemetryOrNull()) }
+    var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveTelemetryOrNull()) }
 
     LaunchedEffect(Unit) {
         NativeBridge.safeSetRealityReconstructionEnabled(realityEnabled)
         NativeBridge.safeSetRealityIntensity(realityIntensity)
         while (true) {
-            realityTele = NativeBridge.safeGetRealityTelemetrySnapshot()
-            cogTele = NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
+            realityTele = NativeBridge.safeGetRealityTelemetryOrNull()
+            cogTele = NativeBridge.safeGetCognitiveTelemetryOrNull()
             kotlinx.coroutines.delay(250L)
         }
     }
@@ -499,7 +499,10 @@ private fun CognitiveEvolutionTab() {
         "3. CLARIDAD VOCAL",
         "4. EXPANSIÓN AMBIENTAL"
     )
-    val topAxisIdx = cogTele.getOrElse(0) { 0f }.toInt().coerceIn(0, 3)
+    val topAxisIdx = cogTele?.getOrNull(0)?.toInt()?.coerceIn(0, 3)
+    val cogPct: (Int) -> Float? = { i -> cogTele?.getOrNull(i)?.takeIf { it.isFinite() } }
+    val realPct: (Int) -> Float? = { i -> realityTele?.getOrNull(i)?.takeIf { it.isFinite() } }
+    val fmtPct: (Float?) -> String = { v -> v?.let { "%.1f %%".format(it * 100f) } ?: "—" }
 
     GlassCard(
         "SISTEMA NERVIOSO SUPERIOR · FASES 9–15",
@@ -533,7 +536,7 @@ private fun CognitiveEvolutionTab() {
                 NativeBridge.safeSetRealityIntensity(v)
             }
             Text(
-                "EJE LÍDER ACTUAL: ${priorityNames[topAxisIdx]}",
+                "EJE LÍDER ACTUAL: ${topAxisIdx?.let { priorityNames[it] } ?: "— (motor nativo no disponible)"}",
                 color = PhosphorGreen,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -548,15 +551,15 @@ private fun CognitiveEvolutionTab() {
         "Spatial · Room · MicroReality · HumanPerception Judge"
     ) {
         val metrics = listOf(
-            "Prioridad Profundidad" to cogTele.getOrElse(1) { 0.84f },
-            "Prioridad Microdinámica" to cogTele.getOrElse(2) { 0.80f },
-            "Prioridad Claridad Vocal" to cogTele.getOrElse(3) { 0.76f },
-            "Prioridad Expansión" to cogTele.getOrElse(4) { 0.62f },
-            "Spatial Agent (Localización)" to cogTele.getOrElse(5) { 0.88f },
-            "Room Agent (Realismo Físico)" to cogTele.getOrElse(6) { 0.86f },
-            "MicroReality Agent (Vitalidad)" to cogTele.getOrElse(7) { 0.84f },
-            "HumanPerception Judge (Veredicto)" to cogTele.getOrElse(8) { 0.90f },
-            "Índice Anti-Espectacularidad" to cogTele.getOrElse(9) { 0.94f }
+            "Prioridad Profundidad" to cogPct(1),
+            "Prioridad Microdinámica" to cogPct(2),
+            "Prioridad Claridad Vocal" to cogPct(3),
+            "Prioridad Expansión" to cogPct(4),
+            "Spatial Agent (Localización)" to cogPct(5),
+            "Room Agent (Realismo Físico)" to cogPct(6),
+            "MicroReality Agent (Vitalidad)" to cogPct(7),
+            "HumanPerception Judge (Veredicto)" to cogPct(8),
+            "Índice Anti-Espectacularidad" to cogPct(9)
         )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             metrics.forEach { (label, value) ->
@@ -566,7 +569,7 @@ private fun CognitiveEvolutionTab() {
                 ) {
                     Text(label, color = TextSecondary, fontSize = 11.sp)
                     Text(
-                        "%.1f %%".format(value * 100f),
+                        fmtPct(value),
                         color = NeonMagenta,
                         fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -588,18 +591,15 @@ private fun CognitiveEvolutionTab() {
         "Arbitraje de Conflictos · Rush Xanadu Memory · PID Homeostático · CMA-ES + Q-Learning"
     ) {
         val execMetrics = listOf(
-            "Coherencia Executive Brain" to "%.1f %%".format(cogTele.getOrElse(10) { 0.91f } * 100f),
-            "Conflictos Arbitrados (Flags)" to "0x%02X".format(cogTele.getOrElse(11) { 0f }.toInt()),
-            "Estabilidad Homeostática (Fase 13)" to "%.1f %%".format(cogTele.getOrElse(12) { 0.96f } * 100f),
-            "Coherencia Digital Twin (Fase 14)" to "%.1f %%".format(cogTele.getOrElse(13) { 0.92f } * 100f),
-            "Fitness CMA-ES / Q-Learning (Fase 15)" to "%.3f".format(cogTele.getOrElse(14) { 0.89f }),
-            "Consolidaciones Memoria (Fase 12)" to "${cogTele.getOrElse(15) { 12f }.toInt()} estados",
-            "Sala Inferida (W×D×H)" to "%.1f×%.1f×%.1f m".format(
-                realityTele.getOrElse(6) { 6.8f },
-                realityTele.getOrElse(7) { 8.6f },
-                realityTele.getOrElse(8) { 3.5f }
-            ),
-            "Realismo Perceptual Compuesto" to "%.1f %%".format(realityTele.getOrElse(5) { 0.88f } * 100f)
+            "Coherencia Executive Brain" to fmtPct(cogPct(10)),
+            "Conflictos Arbitrados (Flags)" to cogPct(11)?.let { "0x%02X".format(it.toInt()) } ?: "—",
+            "Estabilidad Homeostática (Fase 13)" to fmtPct(cogPct(12)),
+            "Coherencia Digital Twin (Fase 14)" to fmtPct(cogPct(13)),
+            "Fitness CMA-ES / Q-Learning (Fase 15)" to cogPct(14)?.let { "%.3f".format(it) } ?: "—",
+            "Consolidaciones Memoria (Fase 12)" to cogPct(15)?.let { "${it.toInt()} estados" } ?: "—",
+            "Sala Inferida (W×D×H)" to (if (realPct(6) != null && realPct(7) != null && realPct(8) != null)
+                "%.1f×%.1f×%.1f m".format(realPct(6), realPct(7), realPct(8)) else "—"),
+            "Realismo Perceptual Compuesto" to fmtPct(realPct(5))
         )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             execMetrics.forEach { (k, v) ->

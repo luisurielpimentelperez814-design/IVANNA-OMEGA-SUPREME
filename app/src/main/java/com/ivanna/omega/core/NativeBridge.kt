@@ -273,6 +273,14 @@ object NativeBridge {
             ?: floatArrayOf(0.84f, 0.91f, 0.86f, 0.11f, 0.89f, 0.88f, 6.8f, 8.6f, 3.5f, 0.38f, 9.4f, 1.18f, 0.78f, 0.42f, 0.65f, 0.92f)
         else floatArrayOf(0.84f, 0.91f, 0.86f, 0.11f, 0.89f, 0.88f, 6.8f, 8.6f, 3.5f, 0.38f, 9.4f, 1.18f, 0.78f, 0.42f, 0.65f, 0.92f)
 
+    // Variantes honestas (sin valores inventados): null = motor nativo no disponible.
+    // Las versiones safeGet* de arriba/abajo se conservan por compatibilidad (regla: no borrar).
+    fun safeGetRealityTelemetryOrNull(): FloatArray? =
+        if (isLoaded) runCatching { getRealityTelemetrySnapshot() }.getOrNull() else null
+
+    fun safeGetCognitiveTelemetryOrNull(): FloatArray? =
+        if (isLoaded) runCatching { getCognitiveEvolutionTelemetrySnapshot() }.getOrNull() else null
+
     fun safeGetCognitiveEvolutionTelemetrySnapshot(): FloatArray =
         if (isLoaded) runCatching { getCognitiveEvolutionTelemetrySnapshot() }.getOrNull()
             ?: floatArrayOf(0f, 0.84f, 0.80f, 0.76f, 0.62f, 0.88f, 0.86f, 0.84f, 0.90f, 0.94f, 0.91f, 0f, 0.96f, 0.92f, 0.89f, 12f)
