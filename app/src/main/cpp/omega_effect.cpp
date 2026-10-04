@@ -848,6 +848,22 @@ static int32_t omega_process(effect_handle_t self,
     const int frames = (int)inBuf->frameCount;
     const uint8_t inFmt  = ctx->config.inputCfg.format;
     const uint8_t outFmt = (ctx->config.outputCfg.format != 0u) ? ctx->config.outputCfg.format : inFmt;
+    // FIX (voces robotizadas / audio embrollado en Amazon Prime y streams
+    // multicanal): todo el DSP asume ESTEREO intercalado. Si AudioFlinger
+    // entrega mono o 5.1/7.1 (video con Dolby), se leian canales mezclados
+    // como si fueran L/R -> voz trinada y distorsion. Solo se procesa 2 canales
+    // (mascara 0 = sin informar, p.ej. tests = estereo); el resto pasa intacto.
+    {
+        const uint32_t chMask = ctx->config.inputCfg.channels & 0x3FFFFu;
+        const int chCount = __builtin_popcount(chMask);
+        if (chMask != 0u && chCount != 2) {
+            if (outBuf->raw != inBuf->raw) {
+                memmove(outBuf->raw, inBuf->raw,
+                        (size_t)frames * omega_bytes_per_sample(inFmt) * (size_t)chCount);
+            }
+            return 0;
+        }
+    }
     const size_t frameBytes = omega_bytes_per_sample(inFmt) * 2u;
 
     // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
