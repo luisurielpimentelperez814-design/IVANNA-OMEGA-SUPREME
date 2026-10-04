@@ -33,12 +33,17 @@ uint64_t CommandServer::_nowMs() {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000ULL);
 }
-float CommandServer::_clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+// NaN: las comparaciones son falsas y el valor pasaba intacto al estado DSP.
+// strtof acepta "nan"/"inf" desde el socket, así que se mapea a un valor válido.
+float CommandServer::_clamp(float v, float lo, float hi) {
+    if (!std::isfinite(v)) return v != v ? lo : (v > 0.f ? hi : lo);
+    return v < lo ? lo : (v > hi ? hi : v);
+}
 float CommandServer::_jsonFloat(const char* j, const char* key, float def) {
     char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
     const char* p = strstr(j, search); if (!p) return def;
     p += strlen(search); while (*p == ' ' || *p == ':') p++;
-    char* end; float v = strtof(p, &end); return (end == p) ? def : v;
+    char* end; float v = strtof(p, &end); return (end == p || !std::isfinite(v)) ? def : v;
 }
 bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, int maxN) {
     char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
@@ -46,7 +51,7 @@ bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, 
     p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
     int n=0; while (n<maxN && *p && *p!=']') {
         while (*p==' '||*p==',') p++; if (*p==']') break;
-        char* end; float v=strtof(p,&end); if (end==p) break; out[n++]=v; p=end;
+        char* end; float v=strtof(p,&end); if (end==p || !std::isfinite(v)) break; out[n++]=v; p=end;
     } return n>0;
 }
 const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
@@ -635,7 +640,9 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
     // fuente cableada devuelven sentinela (-1.0/0), nunca datos inventados.
     std::string tUpper=t; for(char&c:tUpper){ if(c>='a'&&c<='z') c=(char)(c-'a'+'A'); }
     if (t.find("SET_PF_DRIVE:")==0) {
-        float v=atof(t.c_str()+13); m_state.pf_params[0]=v;
+        char* pfEnd = nullptr; const char* pfArg = t.c_str()+13;
+        float v=strtof(pfArg,&pfEnd); if (pfEnd==pfArg || !std::isfinite(v)) v = m_state.pf_params[0];
+        v=_clamp(v,0.f,1.f); m_state.pf_params[0]=v;
         uint64_t gen=publishCurrentState(m_state);
         n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_drive\":%.3f,\"gen\":%llu}",v,(unsigned long long)gen);
     } else if (tUpper=="GET_TELEMETRY" || tUpper=="TELEMETRY") {

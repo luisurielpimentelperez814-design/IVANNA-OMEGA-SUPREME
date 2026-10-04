@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.27 (267) — Daemon: comandos sin NaN ni inf
+1. **`command_server.cpp`** — `_clamp` dejaba pasar NaN (las comparaciones son falsas) y `strtof` acepta "nan"/"inf" desde el socket: un comando malformado podía inyectar NaN en el estado DSP. `_clamp` mapea no-finitos a límites válidos; `_jsonFloat`/`_jsonFloatArray` rechazan no-finitos; `SET_PF_DRIVE` usa `strtof` validado y clamp 0..1 (antes `atof` sin rango).
+2. **Pruebas:** syntax-check con stub OK; 181/181 tests host OK.
+
 # CHANGELOG — v2.4.26 (266) — service.sh: rotación de log y contador robusto
 1. **`service.sh`** — `daemon.log` crecía sin límite en /data: rotación a `.old` al superar 1 MiB. Contador de caídas corrupto/no numérico ya no rompe el `[ -ge ]` (se trata como 0).
 2. **Pruebas:** `dash -n` OK.
