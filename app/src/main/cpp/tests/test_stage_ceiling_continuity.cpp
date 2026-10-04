@@ -92,7 +92,7 @@ TEST(StageCeilingContinuity, SenalNormalPasaIntacta) {
 }
 
 // Regresión del click residual a volumen alto: con ganancia de etapa == 1 la forma de
-// onda sobre la rodilla (0.85) debe ser la MISMA curva softCeiling que con ganancia < 1.
+// onda sobre la rodilla (0.97 x techo) debe ser la MISMA curva softCeiling que con ganancia < 1.
 // Antes, con g==1 la etapa dejaba pasar la senal sin comprimir y al alternar con g<1 las
 // muestras entre 0.85 y el techo saltaban de valor en la frontera de bloque.
 TEST(StageCeilingContinuity, FormaDeOndaSobreRodillaIndependienteDeLaGananciaDeEtapa) {
@@ -105,9 +105,9 @@ TEST(StageCeilingContinuity, FormaDeOndaSobreRodillaIndependienteDeLaGananciaDeE
     bool checkedHot = false;
     for (int b = 0; b < 400; ++b) {
         // 0..9: etapa que realza x3 sobre senal fuerte -> el techo baja g < 1.
-        // 10..399: sin realce, g se recupera hacia 1 (release ~60 ms) con pico 0.92 > rodilla.
+        // 10..399: sin realce, g se recupera hacia 1 (release ~60 ms) con pico 0.94 > rodilla (0.95*0.97).
         const bool hot = b < 10;
-        const float amp = hot ? 0.9f : 0.92f;
+        const float amp = hot ? 0.9f : 0.94f;
         const float boost = hot ? 3.0f : 1.0f;
         for (size_t i = 0; i < kBlock; ++i) {
             const float s = amp * (float)std::sin(phase);
@@ -120,9 +120,9 @@ TEST(StageCeilingContinuity, FormaDeOndaSobreRodillaIndependienteDeLaGananciaDeE
                                     L.data(), R.data(), kBlock, 1.25f, 0.95f);
         if (b == 399) {
             for (size_t i = 0; i < kBlock; ++i) {
-                const float expect = SupremeAcousticStabilityGuard::softCeilingSample(inL[i], 0.85f, 0.95f);
+                const float expect = SupremeAcousticStabilityGuard::softCeilingSample(inL[i], 0.95f * 0.97f, 0.95f);
                 maxDev = std::max(maxDev, std::fabs(L[i] - expect));
-                if (std::fabs(inL[i]) > 0.86f) checkedHot = true;
+                if (std::fabs(inL[i]) > 0.93f) checkedHot = true;
             }
         }
     }
