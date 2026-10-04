@@ -1400,7 +1400,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // reduction ni se contaminan la telemetria entre si.
                 if (!ctx->safetyLimiter) ctx->safetyLimiter = new ivanna::SafetyLimiter();
                 if (ctx->safetyLimiter) {
-                    ctx->safetyLimiter->setParams();
+                    // FIX (distorsion constante): umbral -4 dBFS hacia que cualquier
+                    // master moderno (picos > 0.63) estuviera SIEMPRE bajo reduccion
+                    // de ganancia variable por bloque. Umbral -1 dBFS: el limiter
+                    // solo actua en picos reales.
+                    ctx->safetyLimiter->setParams(0.891251f, 0.98855f);
                     // FIX CRITICO (clipping/bombeo, 2026-08-27): faltaba
                     // setSampleRate() — ataque/release quedaban calculados
                     // para 48 kHz aunque el HAL corriera a 96/192/384 kHz

@@ -756,7 +756,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // dBFS — ver include/SafetyLimiter.h) y setSampleRate() recalcula los
     // coeficientes con la SR real de la sesion. Idempotente: se re-ejecuta
     // si nativeInit se re-llama por cambio de SR.
-    g_safety_limiter.setParams();
+    g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
@@ -1767,7 +1767,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // setParams() para el soft-knee (threshold -4 dBFS). Sin esto, esta ruta
     // limitaba con pared de ladrillo y constantes 8x cortas a 384 kHz
     // (ataque 0.19ms = distorsion armonica; release 6.25ms = bombeo).
-    g_safety_limiter.setParams();
+    g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
     // Called here (UI thread, non-RT) — process() will never allocate.
