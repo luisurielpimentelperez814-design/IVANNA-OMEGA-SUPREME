@@ -278,6 +278,21 @@ jobs:
             | while IFS= read -r l; do echo "::error::${l:0:400}"; done
           exit 0
 
+      # Diagnóstico R8: los logs de job no son legibles vía API; los avisos de R8 se
+      # publican como anotaciones (conteo + únicos) y, si existe, missing_rules.txt.
+      - name: Surface R8 warnings as annotations
+        if: always()
+        run: |
+          [ -f gradle_build.log ] || exit 0
+          total=$(grep -cE 'R8|r8' gradle_build.log || true)
+          echo "::notice title=R8::${total} líneas mencionan R8 en el log de Gradle"
+          grep -E 'WARNING: R8|R8:|Missing class|kotlin metadata|Kotlin metadata' gradle_build.log \
+            | sed 's/\r$//; s/%/%25/g' | sort -u | head -8 \
+            | while IFS= read -r l; do echo "::warning title=R8::${l:0:380}"; done
+          M=$(find app/build -name missing_rules.txt 2>/dev/null | head -1)
+          if [ -n "$M" ]; then echo "::warning title=R8 missing_rules::$(head -c 900 "$M" | tr '\n' ' ')"; fi
+          exit 0
+
       # ── VALIDACIÓN EXTRA: detectar APK corrupto antes de artifact upload ──
       - name: Validate Gradle APK CRC before staging
         run: |
