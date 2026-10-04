@@ -15,6 +15,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
+#include <vector>
 
 using namespace ivanna;
 
@@ -68,6 +70,23 @@ int main() {
     EffectBeaconWriter w2;
     CHECK(w2.open(path.c_str()), "segundo writer abre el mismo archivo");
     CHECK(readEffectBeacon(2000, path.c_str()) == EffectBeaconState::NoEffect, "reabrir reinicia enabled (audioserver reiniciado)");
+
+    // 4b. Carrera de open(): N hilos hacen onEnable() a la vez sobre un writer nuevo; el contador final
+    //     debe ser exactamente N (sin reinicios por doble mapeo).
+    {
+        const std::string rp = path + "_race";
+        ::unlink(rp.c_str());
+        EffectBeaconWriter wr;
+        constexpr int kThreads = 8;
+        std::vector<std::thread> th;
+        for (int i = 0; i < kThreads; ++i) th.emplace_back([&] { if (wr.open(rp.c_str())) wr.onEnable(); });
+        for (auto& t : th) t.join();
+        for (int i = 0; i < kThreads - 1; ++i) wr.onDisable();
+        CHECK(readEffectBeacon(2000, rp.c_str()) == EffectBeaconState::EnabledIdle, "carrera de open(): N enables concurrentes -> quedan N-(N-1)=1 habilitado");
+        wr.onDisable();
+        CHECK(readEffectBeacon(2000, rp.c_str()) == EffectBeaconState::NoEffect, "carrera de open(): contador exacto (0 tras N disables)");
+        ::unlink(rp.c_str());
+    }
 
     // 5. Magic invalido => Unavailable
     {

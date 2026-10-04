@@ -179,6 +179,7 @@ add_test(NAME test_shm_lifecycle COMMAND test_shm_lifecycle)
 add_executable(test_effect_beacon test_effect_beacon.cpp)
 target_include_directories(test_effect_beacon PRIVATE .. ../include)
 target_compile_options(test_effect_beacon PRIVATE -Wall -Wextra)
+target_link_libraries(test_effect_beacon PRIVATE Threads::Threads)
 add_test(NAME test_effect_beacon COMMAND test_effect_beacon)
 
 # ── test_upmixing_control_plane: evidencia del canal app->daemon->SHM->effect ──

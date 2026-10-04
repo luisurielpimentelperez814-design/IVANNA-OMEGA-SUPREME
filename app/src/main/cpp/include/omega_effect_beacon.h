@@ -19,6 +19,7 @@
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
+#include <mutex>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -97,6 +98,11 @@ public:
     // NO-RT. Idempotente. false si el archivo no se puede crear/mapear (se degrada en silencio).
     bool open(const char* path = OMEGA_EFFECT_BEACON_PATH) noexcept {
         if (m_beacon.load(std::memory_order_acquire)) return true;
+        // Varias instancias del efecto (sesiones AudioFlinger) pueden llegar aqui a la vez desde
+        // hilos distintos: sin exclusion, ambas mapearian y la segunda pondria a 0 el contador que
+        // la primera ya incremento. open() es NO-RT, asi que un mutex aqui es seguro.
+        std::lock_guard<std::mutex> lk(m_openMtx);
+        if (m_beacon.load(std::memory_order_acquire)) return true;
         const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (fd < 0) return false;
         ::fchmod(fd, 0666);  // la app (otro uid) debe poder leerlo
@@ -140,6 +146,7 @@ public:
     }
 private:
     std::atomic<EffectBeacon*> m_beacon{nullptr};
+    std::mutex m_openMtx;
 };
 
 inline EffectBeaconWriter& effectBeacon() noexcept {
