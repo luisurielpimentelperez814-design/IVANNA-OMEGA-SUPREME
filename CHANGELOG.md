@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.30 (270) — Spatial JNI: capacidad de buffers directos
+1. **`ivanna_spatial_jni.cpp`** — `nativeObjectRendererRenderBlock` escribía `numFrames` floats por canal y `nativeUpmixerProcess` leía 2 y escribía 8 floats por frame sin comprobar la capacidad de los `FloatBuffer`. Ahora se exige capacidad >= `numFrames` (salidas L/R), >= 2·`numFrames` (entrada del upmixer) y >= 8·`numFrames` (salida del upmixer); strides verificados en `NeuralUpmixer::process`. El buffer de objetos del renderer no se valida: su stride depende de `numObjects`.
+2. **Pruebas:** 181/181 host OK, pero ningún test host ejercita estas dos funciones, así que el cambio no está cubierto por tests; RT-safety y JNI wiring PASS.
+
 # CHANGELOG — v2.4.29 (269) — NPE JNI: buffers directos con capacidad mínima
 1. **`ivanna_npe_jni.cpp`** — `nativeProcess`, `nativeProcessStereo` y `nativeSnapshotScope` usaban `GetDirectBufferAddress` sin comprobar capacidad: un buffer menor que `numFrames` desbordaba memoria nativa. Ahora se exige capacidad >= n (cota mínima: la unidad es bytes en ByteBuffer y floats en FloatBuffer, por lo que no detecta un ByteBuffer con entre n y 4n bytes) y el snapshot se acota por capacidad.
 2. **Pruebas:** 181/181 tests host OK.

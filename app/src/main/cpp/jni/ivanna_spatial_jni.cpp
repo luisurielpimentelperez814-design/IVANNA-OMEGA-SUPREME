@@ -172,6 +172,11 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererRenderBloc
     auto* outL = static_cast<float*>(env->GetDirectBufferAddress(outLeftBuffer));
     auto* outR = static_cast<float*>(env->GetDirectBufferAddress(outRightBuffer));
     if (!objectsIn || !outL || !outR) return;
+    // renderBlock escribe numFrames floats en cada canal de salida (FloatBuffer:
+    // la capacidad JNI se mide en floats). Un buffer corto desbordaba memoria nativa.
+    if (numFrames <= 0 ||
+        env->GetDirectBufferCapacity(outLeftBuffer)  < static_cast<jlong>(numFrames) ||
+        env->GetDirectBufferCapacity(outRightBuffer) < static_cast<jlong>(numFrames)) return;
 
     renderer->renderBlock(objectsIn, numObjects, outL, outR, numFrames);
     if (g_hybridMagistralRenderer.isEnabled() && numFrames > 0) {
@@ -239,6 +244,11 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerProcess(
     auto* in = static_cast<float*>(env->GetDirectBufferAddress(inBuffer));
     auto* out = static_cast<float*>(env->GetDirectBufferAddress(outBuffer));
     if (!in || !out) return;
+    // NeuralUpmixer: entrada estéreo intercalada (2 floats/frame) y salida de 8
+    // stems intercalados (8 floats/frame). Capacidad en floats (FloatBuffer).
+    if (numFrames <= 0 ||
+        env->GetDirectBufferCapacity(inBuffer)  < static_cast<jlong>(numFrames) * 2 ||
+        env->GetDirectBufferCapacity(outBuffer) < static_cast<jlong>(numFrames) * 8) return;
 
     upmixer->process(in, out, numFrames);
 }
