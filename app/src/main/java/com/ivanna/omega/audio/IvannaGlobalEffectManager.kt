@@ -223,6 +223,12 @@ class IvannaGlobalEffectManager(
     private val TAG = "IvannaNPE.GlobalFX"
 
     companion object {
+        // Gain staging (ver eqPreampMb): BassBoost stock empuja picos de bombo sobre
+        // 0 dBFS; Virtualizer stock fuerte da voces huecas/robotizadas.
+        private const val BASS_STRENGTH_CAP: Short = 300
+        private const val VIRT_STRENGTH_CAP: Short = 220
+        private const val LOUDNESS_CAP_WITH_LIMITER_MB = 150
+
         // AUDIT FIX (no-root omite el motor Omega): UUID real del efecto
         // compilado en omega_effect.cpp (effect_uuid_t layout AOSP:
         // timeLow=0x4956414e "IVAN", timeMid=0x4e41 "NA",
@@ -460,7 +466,7 @@ class IvannaGlobalEffectManager(
                 val maxBandMb = (0 until prof.eqBands.size).maxOfOrNull { b ->
                     prof.eqBands[b] + offsetMb
                 } ?: 0
-                val headroomMb = if (maxBandMb > 0) (maxBandMb * 0.75f).toInt() else 0
+                val headroomMb = eqPreampMb(maxBandMb)
                 fx.equalizer?.let { eq ->
                     if (!eq.enabled) return@let
                     val numBands = eq.numberOfBands.toInt()
@@ -480,7 +486,7 @@ class IvannaGlobalEffectManager(
                 fx.virtualizer?.let { v ->
                     if (v.strengthSupported)
                         v.setStrength(
-                            (stereoWidth / 1.5f * 1000f).toInt().coerceIn(0, 1000).toShort()
+                            (stereoWidth / 1.5f * 1000f).toInt().coerceIn(0, VIRT_STRENGTH_CAP.toInt()).toShort()
                         )
                 }
                 // Compressor: reemplaza threshold/ratio del perfil activo
@@ -626,15 +632,19 @@ class IvannaGlobalEffectManager(
                 fx.virtualizer?.let { v ->
                     if (!v.strengthSupported) return@let
                     val base = prof.virtualizerStrength.toInt()
-                    val next = (base + virtNudge).toInt().coerceIn(0, 1000)
+                    val next = (base + virtNudge).toInt().coerceIn(0, VIRT_STRENGTH_CAP.toInt())
                     v.setStrength(next.toShort())
                 }
                 fx.equalizer?.let { eq ->
                     if (!eq.enabled) return@let
                     val numBands = eq.numberOfBands.toInt()
+                    // FIX: este camino reescribia las bandas SIN el preamp del perfil
+                    // (deshacia el headroom y sumaba hasta +1.2 dB mas) -> clipping.
+                    val preampMb = eqPreampMb(prof.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0)
+                    val limitMb = eqNudgeMb.coerceAtLeast(0)
                     for (band in 0 until numBands) {
                         val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
-                        val nextMb = (baseMb + eqNudgeMb).coerceIn(-1500, 1500)
+                        val nextMb = (baseMb - preampMb + eqNudgeMb - limitMb).coerceIn(-1500, 1500)
                         eq.setBandLevel(band.toShort(), nextMb.toShort())
                     }
                 }
@@ -662,8 +672,14 @@ class IvannaGlobalEffectManager(
     private fun applyProfileToSession(sessionId: Int, profile: IvannaEffectProfile) {
         val fx = activeSessions[sessionId] ?: return
         runCatching {
+            // FIX (distorsion al subir volumen en Amazon/Tidal): auto-preamp REAL.
+            // Antes solo se restaba headroom si la banda maxima pasaba de +3 dB, asi
+            // que con el perfil por defecto (hasta +1.2 dB) + BassBoost + Loudness
+            // + Virtualizer apilados, el mixer de Android saturaba (clip duro) en
+            // cuanto el volumen de la app subia. Ahora ninguna banda queda por
+            // encima de 0 dB netos: el preamp resta el realce maximo completo.
             val maxBoostMb = profile.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0
-            val headroomMb = if (maxBoostMb > 300) ((maxBoostMb - 300) * 0.75f).toInt() else 0
+            val headroomMb = eqPreampMb(maxBoostMb)
 
             if (fx.isVideo) {
                 // Diálogo cinematográfico ultra-nítido para streaming (Amazon Prime / Netflix):
@@ -699,10 +715,10 @@ class IvannaGlobalEffectManager(
                     }
                 }
                 fx.bassBoost?.let { bb ->
-                    if (bb.strengthSupported) bb.setStrength(profile.bassStrength)
+                    if (bb.strengthSupported) bb.setStrength(profile.bassStrength.coerceAtMost(BASS_STRENGTH_CAP))
                 }
                 fx.virtualizer?.let { v ->
-                    if (v.strengthSupported) v.setStrength(profile.virtualizerStrength)
+                    if (v.strengthSupported) v.setStrength(profile.virtualizerStrength.coerceAtMost(VIRT_STRENGTH_CAP))
                 }
                 fx.reverb?.let { rev ->
                     rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
@@ -710,7 +726,10 @@ class IvannaGlobalEffectManager(
                     rev.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
                 }
             }
-            val safeLoudnessMb = (profile.loudnessGainMb - headroomMb).coerceAtLeast(0)
+            // LoudnessEnhancer de Android suma ganancia ANTES de cualquier limitador
+            // de la sesion: sin DynamicsProcessing-limiter detras es un clip duro.
+            val loudCapMb = if (fx.dynamics != null) LOUDNESS_CAP_WITH_LIMITER_MB else 0
+            val safeLoudnessMb = profile.loudnessGainMb.coerceIn(0, loudCapMb)
             fx.loudness?.setTargetGain(safeLoudnessMb)
             applyDynamicsProfile(fx.dynamics, profile)
         }.onFailure { Log.w(TAG, "Error aplicando perfil a sesión $sessionId", it) }
@@ -734,6 +753,10 @@ class IvannaGlobalEffectManager(
             dyn.setEnabled(true)
         }.onFailure { Log.w(TAG, "Error aplicando Dynamics a la sesión", it) }
     }
+
+    // ─── Gain staging de la cadena stock (EQ + BassBoost + Virtualizer + Loudness) ─
+    /** Preamp del EQ: resta el realce maximo completo -> ninguna banda > 0 dB neto. */
+    private fun eqPreampMb(maxBoostMb: Int): Int = maxBoostMb.coerceAtLeast(0)
 
     // ─── Creadores con manejo de error (muchos dispositivos no soportan todos) ─
 
