@@ -15,12 +15,22 @@ on:
       - 'app/src/main/cpp/**'
       - 'tests/**'
       - 'scripts/run_ctest.sh'
+      - 'scripts/check_*.py'
+      - 'README.md'
+      - 'LÉAME.md'
+      - 'telemetry/**'
+      - 'magisk_module/module.prop'
       - '.github/workflows/tests-host.yml'
   pull_request:
     paths:
       - 'app/src/main/cpp/**'
       - 'tests/**'
       - 'scripts/run_ctest.sh'
+      - 'scripts/check_*.py'
+      - 'README.md'
+      - 'LÉAME.md'
+      - 'telemetry/**'
+      - 'magisk_module/module.prop'
       - '.github/workflows/tests-host.yml'
   # TSan no cabe en la puerta por-push: 2 cancelaciones medidas (corridas
   # 34166260673 y 34167465625 — jobs cancelados exactamente a los 20m15s y
