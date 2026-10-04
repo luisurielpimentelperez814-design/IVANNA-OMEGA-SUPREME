@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.26 (266) — service.sh: rotación de log y contador robusto
+1. **`service.sh`** — `daemon.log` crecía sin límite en /data: rotación a `.old` al superar 1 MiB. Contador de caídas corrupto/no numérico ya no rompe el `[ -ge ]` (se trata como 0).
+2. **Pruebas:** `dash -n` OK.
+
 # CHANGELOG — v2.4.25 (265) — AudioRouteManager idempotente
 1. **`AudioRouteManager`** — `start()` podía registrar dos `AudioDeviceCallback` (applyRoute duplicado por hotplug + fuga); ahora desregistra el previo. `stop()` cancela el restore HRTF diferido pendiente. Ambos `@Synchronized`.
 2. **Pruebas:** compilación Kotlin la valida CI.

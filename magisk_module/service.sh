@@ -8,6 +8,15 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE"
 
+# Rotación de log: daemon.log crecía sin límite en /data (>1 MiB → .old).
+if [ -f "$LOG" ]; then
+    LOG_SZ=$(wc -c < "$LOG" 2>/dev/null || echo 0)
+    case "$LOG_SZ" in ''|*[!0-9]*) LOG_SZ=0 ;; esac
+    if [ "$LOG_SZ" -gt 1048576 ]; then
+        mv -f "$LOG" "$LOG.old" 2>/dev/null
+    fi
+fi
+
 chmod 755 "$DAEMON" 2>/dev/null
 chmod 755 "$MODDIR/system/bin/ivanna_client" 2>/dev/null
 chmod 755 "$MODDIR/service.sh" 2>/dev/null
@@ -43,6 +52,8 @@ fi
 # Detección de bucles de choque continuos
 CRASH_COUNT_FILE="$STATE/daemon_crash_streak"
 CRASHES=$(cat "$CRASH_COUNT_FILE" 2>/dev/null || echo 0)
+# Contador corrupto/no numérico: tratar como 0 (evita "integer expression expected").
+case "$CRASHES" in ''|*[!0-9]*) CRASHES=0 ;; esac
 if [ "$CRASHES" -ge 5 ]; then
     echo "$(date) FATAL: 5 caídas consecutivas de ivanna_daemon. Activando .safe_mode" >> "$LOG"
     touch "$MODDIR/.safe_mode"
