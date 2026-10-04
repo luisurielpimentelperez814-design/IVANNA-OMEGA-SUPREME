@@ -328,7 +328,14 @@ fun IvannaControlPanel(
             // ya terminado): sin este guard, npeGenre/npeRmsDb/etc. nunca se
             // reseteaban al morir la captura — el título dice "tiempo real"
             // pero el estado era "último valor conocido, sin caducidad".
-            if (!com.ivanna.omega.audio.PlaybackCaptureService.isCapturing.value) {
+            // FIX (HUD muerto fuera de captura): la telemetría sólo se daba por viva con
+            // MediaProjection activo; con el motor NPE/nativo procesando por otra vía
+            // (módulo Magisk, bridge) quedaba clavada en -60 dB / "—". Ahora se considera
+            // viva si hay captura, inferencia NPE reciente o nivel en el bus compartido.
+            val sharedRmsLin = com.ivanna.omega.audio.OmegaMetrics.shared.value.rmsLevel
+            val npeLive = IvannaNpeEngine.isReady && IvannaNpeEngine.lastInferenceUs >= 0L
+            if (!com.ivanna.omega.audio.PlaybackCaptureService.isCapturing.value &&
+                !npeLive && sharedRmsLin <= 1e-6f) {
                 npeGenre = "\u2014"
                 npeRmsDb = -60f
                 npeAgcGainDb = 0f
@@ -340,13 +347,13 @@ fun IvannaControlPanel(
                 kotlinx.coroutines.delay(750)
                 continue
             }
-            npeGenre = IvannaNpeEngine.getDetectedGenre()
-            val m = IvannaNpeEngine.getMetrics()
-            val rmsLin = m.getOrElse(1) { 0f }
+            npeGenre = if (IvannaNpeEngine.isReady) IvannaNpeEngine.getDetectedGenre() else "\u2014"
+            val m = if (IvannaNpeEngine.isReady) IvannaNpeEngine.getMetrics() else FloatArray(0)
+            val rmsLin = m.getOrElse(1) { 0f }.takeIf { it > 1e-6f } ?: sharedRmsLin
             npeRmsDb = if (rmsLin > 1e-6f) (20f * log10(rmsLin)) else -60f
             val agcLin = m.getOrElse(2) { 1f }
             npeAgcGainDb = if (agcLin > 1e-6f) (20f * log10(agcLin)) else 0f
-            val c = IvannaNpeEngine.getSynthClassify()
+            val c = if (IvannaNpeEngine.isReady) IvannaNpeEngine.getSynthClassify() else FloatArray(0)
             npeClassifyConfidence = c.getOrElse(1) { 0f }
             npeClassifyThd = c.getOrElse(2) { 0f }
             npeInferenceUs = IvannaNpeEngine.lastInferenceUs
