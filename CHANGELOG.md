@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.36 (276) — SAF: tonos de calibración HRTF audibles
+1. **`SaFStimulusPlayer.kt`** — los tonos de calibración no se oían: (a) `USAGE_ASSISTANCE_SONIFICATION` los mandaba al volumen de sistema (típicamente 0/silenciado, sin seguir ruta DAC) → ahora `USAGE_MEDIA`/`CONTENT_TYPE_MUSIC`; (b) el estímulo nativo dura 1200 ms pero el track se liberaba a los 560 ms (duración fija de 500 ms) → duración calculada de las muestras reales; (c) la salida nativa no se validaba → ahora se exige estéreo entrelazado, finito y con pico audible, se normaliza a −9 dBFS y, si falla, cae al chirp Kotlin.
+2. **Pruebas:** sin toolchain Android local; validación en CI y auditivamente en dispositivo.
+
 # CHANGELOG — v2.4.35 (275) — CONTROL: NAEL persistente
 1. **`IvannaControlPanel.kt`** — el toggle NAEL · ISO 226:2023 arrancaba siempre apagado y no se reenviaba al motor al reabrir. Ahora persiste en prefs y se reaplica al nativo al abrir CONTROL.
 2. **Pruebas:** sin toolchain Android local; validación en CI.

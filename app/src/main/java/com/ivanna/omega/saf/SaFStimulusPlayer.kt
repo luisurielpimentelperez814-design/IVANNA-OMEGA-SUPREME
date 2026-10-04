@@ -133,7 +133,13 @@ class SaFStimulusPlayer(
                 SaFBridge.nativeGenerateStimulus(direction.azimuth, direction.elevation)
             }.getOrNull()?.takeIf { it.isNotEmpty() }
         } else null
-        val samples = nativeSamples ?: renderStereo(direction)
+        // FIX (tonos mudos/cortados): la salida nativa (1.2 s, ruido rosa * 0.25 y
+        // convolver) se aceptaba sin validar — si el convolver devolvía silencio o
+        // NaN, el AudioTrack reproducía nada. Ahora se exige estéreo entrelazado,
+        // finito y con pico audible; se normaliza a PEAK_AMPLITUDE (nivel seguro y
+        // constante entre direcciones) y, si no cumple, se usa el chirp Kotlin.
+        val samples = nativeSamples?.let { sanitizeNative(it) } ?: renderStereo(direction)
+        val stimulusMs = (samples.size / 2L * 1000L / sampleRateHz).toLong().coerceAtLeast(1L)
         val minBuf = AudioTrack.getMinBufferSize(
             sampleRateHz,
             AudioFormat.CHANNEL_OUT_STEREO,
@@ -147,10 +153,13 @@ class SaFStimulusPlayer(
         val bufBytes = max(minBuf, samples.size * 4)
         val track = try {
             AudioTrack.Builder()
+                // FIX (volumen): SONIFICATION usa el stream de sistema/notificación, que
+                // suele estar en 0 o silenciado y no sigue el volumen de medios ni la
+                // ruta DAC/auriculares. La calibración debe oírse por MEDIA.
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
                 .setAudioFormat(
@@ -186,7 +195,9 @@ class SaFStimulusPlayer(
             try {
                 track.play()
                 // Duración total con margen de flush del hardware.
-                val totalMs = durationMs.toLong() + 60L
+                // FIX (corte): antes era durationMs fijo (500 ms) aunque el estímulo
+                // nativo dura 1200 ms — el track se liberaba a mitad del tono.
+                val totalMs = stimulusMs + 80L
                 var elapsed = 0L
                 while (isActive && elapsed < totalMs && generation.get() == myGen) {
                     kotlinx.coroutines.delay(20L)
@@ -204,6 +215,24 @@ class SaFStimulusPlayer(
             }
         }
         return true
+    }
+
+    /**
+     * Valida y normaliza el estímulo nativo. Devuelve null (→ fallback Kotlin) si es
+     * impar, demasiado corto (<100 ms), contiene NaN/Inf o es prácticamente silencio.
+     */
+    private fun sanitizeNative(raw: FloatArray): FloatArray? {
+        if (raw.size < 2 || raw.size % 2 != 0) return null
+        if (raw.size / 2 < sampleRateHz / 10) return null
+        var peak = 0f
+        for (v in raw) {
+            if (!v.isFinite()) return null
+            val a = abs(v)
+            if (a > peak) peak = a
+        }
+        if (peak < 1e-4f) return null
+        val g = PEAK_AMPLITUDE / peak
+        return FloatArray(raw.size) { i -> raw[i] * g }
     }
 
     /** Cancela reproducción en curso y libera recursos. Idempotente. */
