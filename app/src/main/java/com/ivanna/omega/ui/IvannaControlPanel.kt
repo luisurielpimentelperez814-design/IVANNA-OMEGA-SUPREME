@@ -1303,8 +1303,15 @@ private fun AcousticRealityReconstructionCard() {
 // ═══════════════════════════════════════════════════════════════════════
 @Composable
 private fun NaelCard() {
-    var enabled by remember { mutableStateOf(false) }
+    // FIX (NAEL no persistía): el toggle arrancaba siempre en OFF y no se reaplicaba
+    // al motor tras cerrar la app. Ahora se guarda en prefs y se reenvía al nativo.
+    val naelPrefs = androidx.compose.ui.platform.LocalContext.current
+        .getSharedPreferences("ivanna_ui_prefs", android.content.Context.MODE_PRIVATE)
+    var enabled by remember { mutableStateOf(naelPrefs.getBoolean("nael_enabled", false)) }
     var corrections by remember { mutableStateOf(FloatArray(10)) }
+    LaunchedEffect(Unit) {
+        if (enabled) runCatching { IvannaNativeLib.nativeSetNaelEnabled(true) }
+    }
 
     LaunchedEffect(enabled) {
         while (isActive && enabled) {
@@ -1328,6 +1335,7 @@ private fun NaelCard() {
         rightSlot = {
             ToggleSwitch(enabled, { on ->
                 enabled = on
+                naelPrefs.edit().putBoolean("nael_enabled", on).apply()
                 runCatching { IvannaNativeLib.nativeSetNaelEnabled(on) }
                     .onFailure { Log.w("IvannaControlPanel", "NAEL toggle falla: ${it.message}") }
             }, AuroraCyan)

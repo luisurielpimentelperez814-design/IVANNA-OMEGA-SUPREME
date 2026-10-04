@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.35 (275) — CONTROL: NAEL persistente
+1. **`IvannaControlPanel.kt`** — el toggle NAEL · ISO 226:2023 arrancaba siempre apagado y no se reenviaba al motor al reabrir. Ahora persiste en prefs y se reaplica al nativo al abrir CONTROL.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.34 (274) — CONTROL: telemetría en vivo sin depender de MediaProjection
 1. **`IvannaControlPanel.kt`** — el HUD TELEMETRÍA EN VIVO se reseteaba a -60 dB / "—" siempre que no hubiera captura de pantalla. Ahora se considera viva con captura, inferencia NPE reciente o nivel en `OmegaMetrics.shared` (RMS cae al bus compartido si el NPE no lo publica) y no llama al NPE si no está listo.
 2. **Pruebas:** sin toolchain Android local; validación en CI.
