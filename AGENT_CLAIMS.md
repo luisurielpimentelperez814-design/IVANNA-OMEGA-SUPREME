@@ -2555,7 +2555,7 @@ Archivos que toqué: `.github/workflows/build.yml` (publish-release, validación
 **Verificado (leído en CI real, no solo "compila"):**
 - Release `v2.4.2` conservaba el APK de otro commit porque `gh release upload ... || true` tragaba fallos. Ahora el job falla si la subida falla y compara el tamaño de cada asset publicado contra el local.
 - `versionCode` seguía en 242 aunque ya había fixes anti-click en `main`; se subió a 243 (los 4 archivos que exige el check de Gradle).
-- "Tests host / Fase 0" fallaba por README 177/177 vs CI 180/180. El número 180 viene de la corrida real de CI (`ctest_summary.json` generado por `check_docs_claims.py --generate-from-log`), no de una estimación; localmente `ctest -N` lista 57 en el árbol de tests de este entorno, así que el conteo de CI sigue siendo la fuente de verdad.
+- "Tests host / Fase 0" fallaba por README 177/177 vs CI 180/180. El número 180 viene de la corrida real de CI (`ctest_summary.json` generado por `check_docs_claims.py --generate-from-log`), no de una estimación. Nota: `ctest -N` sin compilar solo ve los 57 `add_test` estáticos (los casos de GoogleTest se descubren al compilar), por eso el único conteo válido es el del log de CI.
 
 **No tocar sin avisar:** el barrido de drafts `staging-*` (solo borra los de más de 6 h para no pisar builds de otras ramas).
 **Pendiente / sin verificar en dispositivo:** que el APK 2.4.3 instalado elimine los tronidos — verificado por lectura de código y CI, no en dispositivo.
