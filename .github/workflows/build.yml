@@ -176,6 +176,7 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-27 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags" \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
           cmake --build build-daemon -j --config Release
           # Localizar el binario producido — DEBE existir, nunca copiar otra cosa
@@ -208,15 +209,17 @@ jobs:
           echo "$FILE_OUT"
           echo "$FILE_OUT" | grep -q "64-bit"  || { echo "ERROR: daemon no es 64-bit"; exit 1; }
           echo "$FILE_OUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon no es ARM64"; exit 1; }
-          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          [ -x "$READELF" ] || READELF=readelf
+          READELF=readelf
+          command -v "$READELF" >/dev/null 2>&1 || READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           HDR="$("$READELF" -h ivanna_daemon)"
           echo "$HDR"
           echo "$HDR" | grep -q "AArch64"          || { echo "ERROR: readelf no reporta AArch64"; exit 1; }
           echo "$HDR" | grep -qE "Type:.*DYN"       || { echo "ERROR: daemon no es PIE (Type != DYN)"; exit 1; }
           # Hardening: RELRO + BIND_NOW (segmento GNU_RELRO + flag BIND_NOW)
-          "$READELF" -lW ivanna_daemon | grep -q "GNU_RELRO" || { echo "ERROR: sin RELRO"; exit 1; }
-          "$READELF" -dW ivanna_daemon | grep -qE "BIND_NOW|FLAGS.*NOW" || { echo "ERROR: sin BIND_NOW"; exit 1; }
+          PH_OUT="$("$READELF" -l -W ivanna_daemon 2>/dev/null || "$READELF" -lW ivanna_daemon 2>/dev/null || "$READELF" --program-headers ivanna_daemon 2>/dev/null || true)"
+          echo "$PH_OUT" | grep -qiE "GNU_RELRO|PT_GNU_RELRO" || { echo "ERROR: sin RELRO"; echo "--- Program Headers ---"; echo "$PH_OUT"; exit 1; }
+          DYN_OUT="$("$READELF" -d -W ivanna_daemon 2>/dev/null || "$READELF" -dW ivanna_daemon 2>/dev/null || "$READELF" --dynamic-table ivanna_daemon 2>/dev/null || true)"
+          echo "$DYN_OUT" | grep -qE "BIND_NOW|FLAGS.*NOW" || { echo "ERROR: sin BIND_NOW"; echo "--- Dynamic Table ---"; echo "$DYN_OUT"; exit 1; }
           # FIX (comprobacion real, no supuesta): el daemon lo lanza Magisk
           # service.sh como root FUERA del sandbox del APK, sin el
           # directorio de librerias nativas en LD_LIBRARY_PATH. Si queda
@@ -229,7 +232,7 @@ jobs:
           # /system/bin/linker64 para cargarse a si mismo aunque su C++
           # runtime este estatico). La unica prueba real es el NEEDED
           # explicito de la seccion dinamica:
-          NEEDED="$("$READELF" -dW ivanna_daemon | grep -i 'NEEDED')"
+          NEEDED="$(echo "$DYN_OUT" | grep -i 'NEEDED' || true)"
           echo "$NEEDED"
           echo "$NEEDED" | grep -qi "libc++_shared" && { echo "ERROR: ivanna_daemon depende de libc++_shared.so — se ejecuta fuera del sandbox del APK via Magisk y NO puede resolverla, el proceso moriria antes de bindear el socket"; exit 1; }
           echo "OK: sin dependencia de libc++_shared.so — daemon autocontenido para ejecucion fuera del APK"
@@ -355,9 +358,9 @@ jobs:
           cp "$EFFECT_SO" magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
           cp "$EFFECT_SO" ./libomega_effect_arm64.so
           file libomega_effect_arm64.so
-          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          [ -x "$READELF" ] || READELF=readelf
-          EFFECT_NEEDED="$("$READELF" -dW ./libomega_effect_arm64.so | grep -i 'NEEDED' || true)"
+          READELF=readelf
+          command -v "$READELF" >/dev/null 2>&1 || READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          EFFECT_NEEDED="$("$READELF" -d -W ./libomega_effect_arm64.so 2>/dev/null || "$READELF" -dW ./libomega_effect_arm64.so 2>/dev/null || "$READELF" --dynamic-table ./libomega_effect_arm64.so 2>/dev/null || true)"
           echo "$EFFECT_NEEDED"
           echo "$EFFECT_NEEDED" | grep -qi "libc++_shared" && { echo "ERROR: libomega_effect.so depende de libc++_shared.so — audioserver no la puede resolver en /system/vendor/lib64/soundfx"; exit 1; }
           echo "OK: libomega_effect.so no depende de libc++_shared.so"

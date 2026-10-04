@@ -5,12 +5,20 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(ivanna_daemon LANGUAGES CXX C)
 
+# Hardening global para ejecutables PIE del daemon (RELRO + BIND_NOW + new-dtags)
+set(IVANNA_DAEMON_HARDENING_FLAGS "-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IVANNA_DAEMON_HARDENING_FLAGS}")
+
 add_executable(ivanna_daemon
     ivanna_daemon.cpp
     control/command_server.cpp
     core/shm_manager.cpp
     core/omega_control_bus.cpp
     ../IvannaSelfHealingEngine.cpp
+)
+
+set_target_properties(ivanna_daemon PROPERTIES
+    LINK_FLAGS "${IVANNA_DAEMON_HARDENING_FLAGS}"
 )
 
 # FIX (CI exit 1, "fatal error: 'omega_shared.h' file not found"):
@@ -35,25 +43,12 @@ target_compile_options(ivanna_daemon PRIVATE
     -Wall -Wno-unused-parameter -Wno-unused-function
 )
 
-# FIX (CI: "ERROR: sin RELRO" en Validate daemon ELF): las opciones de
-# linker de PIE/RELRO/BIND_NOW y las de libc++ estático vivían en DOS
-# llamadas separadas a target_link_options()/target_link_libraries() más
-# abajo. No hay garantía documentada de orden entre múltiples llamadas de
-# CMake 3.22 combinadas con "-Wl,-Bstatic ... -Wl,-Bdynamic" de
-# target_link_libraries en el mismo target — sin NDK/CMake real disponible
-# en este entorno para reproducir la línea de link exacta que generaba,
-# la corrección robusta es consolidar TODO el hardening en una sola
-# llamada y reforzarlo también vía CMAKE_EXE_LINKER_FLAGS (variable que
-# CMake añade directo a la línea de link final, independiente de cómo se
-# combinen target_link_options/target_link_libraries).
-set(IVANNA_DAEMON_HARDENING_FLAGS "-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IVANNA_DAEMON_HARDENING_FLAGS}")
-
-# -nostdlib++ consolidado aquí (antes en una segunda llamada a
-# target_link_options() más abajo, bajo el guard ANDROID) — una sola
-# llamada para todo el target, sin depender del orden entre llamadas.
+# Hardening: RELRO + BIND_NOW + new-dtags (LINKER: y -Wl para compatibilidad universal)
 target_link_options(ivanna_daemon PRIVATE
     -pie
+    "LINKER:-z,relro"
+    "LINKER:-z,now"
+    "LINKER:--enable-new-dtags"
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,--enable-new-dtags
