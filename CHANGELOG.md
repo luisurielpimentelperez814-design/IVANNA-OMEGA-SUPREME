@@ -1,3 +1,7 @@
+# CHANGELOG — v2.4.41 (281) — CONTROL: modo e intensidad adaptativos llegan al motor
+1. **`ControlTabScreen.kt`** — ADAPTIVE modo/intensidad sólo se propagaban si el modo manual estaba activo; en automático se quedaban en `AudioState`. Ahora llaman a `nativeSetAdaptiveControls` siempre (igual que BRAIN → ADAPTATIVO).
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.4.40 (280) — JNI cognitivo: telemetría real o null, nunca sembrada
 1. **`ivanna_spatial_jni.cpp`** — `getRealityTelemetrySnapshot` y `getCognitiveEvolutionTelemetrySnapshot` sembraban un snapshot sintético (rms 0.22, peak 0.68…) cuando el bus no tenía ciclos y lo devolvían como telemetría. Ahora registran la secuencia de la siembra (`g_cogSeedSeq`) y devuelven `null` hasta que corra un ciclo VIVO posterior; la UI (2.4.37) muestra "—". La siembra al activar/cambiar intensidad se conserva (el orquestador la necesita) pero ya no se presenta como medición.
 2. **Pruebas:** no compilado localmente (sin jni.h/cmake); ningún test host referencia estas dos funciones; validación en CI.
