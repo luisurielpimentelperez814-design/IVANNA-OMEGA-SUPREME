@@ -38,7 +38,7 @@
 5. **5 Ejes de Supremacía Cuántico-Neuromórfica + Inversión Coclear PINN (sample-by-sample, 0 muestras de lookahead)**:
    - `WarpedLatticeTransducerInverter` (Bark $\lambda=0.72$ + Lorentz $Bl(x)$ + De-Clipper Hermite), `PhaseCoherentTransharmonicSynthesizer` (CVNN `modReLU` + 8 osciladores DDSP NEON + Cinta 2" Jiles-Atherton), `SnnNmfHoaUpmixer` (SNN LIF INT8 + NMF 4 flujos $\to$ HOA 4.º Orden), `PinnaManifoldInterpolator` (SIREN 6-D + FIR fase mínima) y `SupremeMsoFarrowArbitrator` (SHM CAS + Farrow 5.º Orden), coronados por `CochlearActiveInverseEngine` (8 bandas Greenwood con integrador Heun RK2).
 6. **Verificación Determinista (6 Puertas Estáticas + `180/180` CTest + Doble Ruta $t = 0\text{ ms}$)**:
-   - **6/6 puertas estáticas en `[PASS]`**: `34/34` entradas RT sin alloc/locks (`[A3]`), `321 de 321` símbolos JNI (`[0.1]`), `147 de 147` headers sin huérfanos (`[0.2]`), `232 de 232` wrappers Kotlin invocados (`[A2]`), `6/6` builds sin `-ffast-math` (`[0.4]`) y `180/180` tests nativos C++20 en verde bajo `ASan + UBSan` (`[A5]`).
+   - **6/6 puertas estáticas en `[PASS]`**: `34/34` entradas RT sin alloc/locks (`[A3]`), `321 de 321` símbolos JNI (`[0.1]`), `148 de 148` headers sin huérfanos (`[0.2]`), `232 de 232` wrappers Kotlin invocados (`[A2]`), `6/6` builds sin `-ffast-math` (`[0.4]`) y `180/180` tests nativos C++20 en verde bajo `ASan + UBSan` (`[A5]`).
 
 ---
 

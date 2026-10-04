@@ -79,7 +79,7 @@ Cuando escuchas música, películas o videojuegos en un teléfono Android, el so
 | Dimensión Auditada | Cifra Exacta en Código / CI | Evidencia Directa Verificable |
 |:---|:---:|:---|
 | **Versión Unificada (`Unified Version Manager`)** | **`v2.4.1` (`versionCode = 241`)** | `version.properties` $\leftrightarrow$ `magisk_module/module.prop` $\leftrightarrow$ `magisk_module/update.json` |
-| **Código Fuente Nativo C/C++20 (`app/src/main/cpp/`)** | **`456` archivos (`174 633 LOC`)** | `96` unidades de traducción compiladas en `CMakeLists.txt` + `147` headers de producción (0 huérfanos) |
+| **Código Fuente Nativo C/C++20 (`app/src/main/cpp/`)** | **`456` archivos (`174 633 LOC`)** | `96` unidades de traducción compiladas en `CMakeLists.txt` + `148` headers de producción (0 huérfanos) |
 | **Aplicación e Instrumentación Kotlin (`app/src/main/java/`)** | **`221` archivos (`52 172 LOC`)** | Sistema visual **Aurora Obsidiana** en Jetpack Compose + `OmegaEngineBridge` |
 | **Puente JNI Biyectivo (`[0.1] check_jni_wiring.py`)** | **`321 de 321` símbolos (`100%`)** | `321` declaraciones `external fun` Kotlin $\leftrightarrow$ `321` funciones `Java_*` C++ + `232 de 232` wrappers invocados |
 | **Seguridad de Tiempo Real (`[A3] check_rt_safety.py`)** | **`34/34` entradas RT (`0` violaciones)** | Auditoría estática AST de 2 niveles + intercepción dinámica de `malloc`/`new` en `test_rt_no_alloc.cpp` |
@@ -495,7 +495,7 @@ Cada commit es auditado por 6 analizadores estáticos deterministas que bloquean
 |:------:|----------------|:------------------------------:|:------:|
 | **`[A3]`** | `scripts/check_rt_safety.py` | **34/34** puntos de entrada RT y sus callees de 1.er y 2.º nivel libres de `malloc`, `free`, `new`, `delete`, `mutex`, `syslog` o `fopen` | ✅ `PASS` |
 | **`[0.4]`** | `scripts/check_build_flags.py` | **6/6** archivos CMake/Gradle auditados con **0** flags IEEE-754 destructivos (`-ffast-math`, `-Ofast`, `-ffinite-math-only`) | ✅ `PASS` |
-| **`[0.2]`** | `scripts/check_header_wiring.py` | **147 de 147** headers de producción (`.h`/`.hpp`) alcanzables desde las unidades de traducción compiladas (**0** huérfanos) | ✅ `PASS` |
+| **`[0.2]`** | `scripts/check_header_wiring.py` | **148 de 148** headers de producción (`.h`/`.hpp`) alcanzables desde las unidades de traducción compiladas (**0** huérfanos) | ✅ `PASS` |
 | **`[0.1]`** | `scripts/check_jni_wiring.py` | **321 de 321** declaraciones `external fun` en Kotlin emparejadas biyectivamente 1:1 con **321** símbolos `Java_*` en **96** fuentes C/C++ | ✅ `PASS` |
 | **`[A2]`** | `scripts/check_kotlin_wrapper_wiring.py` | **232 de 232** wrappers públicos de `OmegaEngineBridge` cuentan con al menos un llamador real en la app/servicios (**0** código muerto) | ✅ `PASS` |
 | **`[A5]`** | `scripts/check_docs_claims.py` | Sincronía documental estricta contra `CMAKE_CXX_STANDARD=20`, `HybridRenderer::kActiveTaps=128`, puertas A3/A4 y `telemetry/ctest_summary.json` (`180/180`) | ✅ `PASS` |
