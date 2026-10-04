@@ -26,6 +26,10 @@ void AntiDolbyState::reset() noexcept {
     // Reset de parámetros de suavizado lock-free
     targetWidener.store(1.0f, std::memory_order_relaxed);
     smoothedWidener.store(1.0f, std::memory_order_relaxed);
+    targetEqBoost.store(0.0f, std::memory_order_relaxed);
+    smoothedEqBoost.store(0.0f, std::memory_order_relaxed);
+    targetSpreadMul.store(1.0f, std::memory_order_relaxed);
+    smoothedSpreadMul.store(1.0f, std::memory_order_relaxed);
     
     // Reset de clasificación y parámetros DSP
     speechScore.store(0.0f, std::memory_order_relaxed);

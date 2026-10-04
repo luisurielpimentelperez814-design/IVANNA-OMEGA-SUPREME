@@ -100,6 +100,10 @@ struct AntiDolbyState {
 private:
     std::atomic<float> targetWidener{1.0f};
     std::atomic<float> smoothedWidener{1.0f};
+    std::atomic<float> targetEqBoost{0.0f};
+    std::atomic<float> smoothedEqBoost{0.0f};
+    std::atomic<float> targetSpreadMul{1.0f};
+    std::atomic<float> smoothedSpreadMul{1.0f};
 
     // Constantes de tiempo atómicas: attack < release (respuesta rápida + cierre suave).
     std::atomic<float> attackTau{0.02f};   // 20 ms
