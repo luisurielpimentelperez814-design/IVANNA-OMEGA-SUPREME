@@ -59,6 +59,20 @@ TEST(SceneBusTest, WaitFreeTripleBufferHasZeroTornReadsUnderHighConcurrency) {
     }
 
     producer.join();
+
+    // Drenado final determinista: si el hilo consumidor fue desprogramado (runner cargado /
+    // ASan) y el productor terminó todo entre su última lectura y el chequeo de `stop`, el
+    // bucle salía sin haber leído ni un frame (lastSeq == 0, falso positivo intermitente).
+    // Tras join() el último frame publicado es visible: se lee y valida igual que en el bucle.
+    {
+        SceneApply out{};
+        if (bus.consume(out) && out.seq > 0) {
+            EXPECT_GE(out.seq, lastSeq);
+            lastSeq = out.seq;
+            EXPECT_NEAR(out.t.wfsSpread + out.t.hrtfDepth, 1.0f, 1.0e-5f);
+        }
+    }
+
     EXPECT_EQ(publishedCount.load(), 25000);
     EXPECT_GT(lastSeq, 0u);
 }
