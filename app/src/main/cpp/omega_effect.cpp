@@ -19,6 +19,7 @@
 #include "supreme/SnnNmfHoaUpmixer.hpp"
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
+#include "include/omega_effect_beacon.h"   // senal real "el efecto procesa" para la app (Ruta A/B)
 #include "supreme/SupremeTransitionEnvelope.hpp"
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include "include/omega_wave_stages.hpp"
@@ -1393,6 +1394,9 @@ static int32_t omega_process(effect_handle_t self,
             ivanna::effectControlBus().publish(ctx->pendingSnap);
         }
     }
+    // Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede
+    // usar para saber que Ruta B realmente suena (isDaemonRunning solo prueba el daemon).
+    ivanna::effectBeacon().onBlock(static_cast<uint32_t>(frames));
     return 0;
 }
 
@@ -1663,10 +1667,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             }
             break;
         case EFFECT_CMD_ENABLE:
-            ctx->enabled = true;
+            // Beacon: cuenta solo la transicion deshabilitado->habilitado (ENABLE repetido
+            // no debe inflar el contador). Camino NO-RT: open()/mmap permitido aqui.
+            if (ctx && !ctx->enabled) ivanna::effectBeacon().onEnable();
+            if (ctx) ctx->enabled = true;
             break;
         case EFFECT_CMD_DISABLE:
-            ctx->enabled = false;
+            if (ctx && ctx->enabled) ivanna::effectBeacon().onDisable();
+            if (ctx) ctx->enabled = false;
             break;
         case EFFECT_CMD_SET_PARAM:
         case EFFECT_CMD_SET_PARAM_COMMIT: {
@@ -1978,6 +1986,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
     if (handle) {
         omega_effect_context_t *ctx =
             reinterpret_cast<omega_effect_context_t *>(handle);
+        if (ctx->enabled) {   // liberar sin DISABLE previo no debe dejar el contador del beacon colgado
+            ivanna::effectBeacon().onDisable();
+            ctx->enabled = false;
+        }
             
         if (ctx->adaptive) {
             ctx->adaptive->stop();
