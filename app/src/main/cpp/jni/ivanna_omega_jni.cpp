@@ -1142,7 +1142,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         // a muestra: ahí no hay riesgo de divergencia (siempre se viene
         // de una reducción hacia menos reducción), y es exactamente donde
         // vivía el escalón audible al bajar la protección de golpe.
-        const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
+        // FIX (crujido/rugosidad constante, causa raiz): el umbral 0.89 se superaba en casi
+        // cualquier master moderno (picos 0.95-1.0) -> targetSc = 0.89/pk cambiaba CADA bloque
+        // (~150 Hz) con ataque instantaneo = modulacion de amplitud a nivel de bloque. Un biquad
+        // IIR estable no diverge por 1.0-1.5; el SafetyLimiter final ya fija el techo. Este guard
+        // queda solo como proteccion de emergencia (entrada > +3.5 dBFS).
+        constexpr float kPreEqGuard = 1.5f;
+        const float targetSc = (pk > kPreEqGuard && pk > 1e-9f) ? (kPreEqGuard / pk) : 1.0f;
         const float startSc = g_ats.peakGuardScale;
         if (targetSc < startSc) {
             for (int i = 0; i < n; ++i) { g_ats.chL[i] *= targetSc; g_ats.chR[i] *= targetSc; }
